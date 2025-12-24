@@ -7,7 +7,9 @@ pub mod thresholds {
     pub const STATEMENTS_PER_FUNCTION: usize = 50;
     pub const METHODS_PER_CLASS: usize = 20;
     pub const LINES_PER_FILE: usize = 500;
-    pub const ARGUMENTS_PER_FUNCTION: usize = 5;
+    pub const ARGUMENTS_PER_FUNCTION: usize = 7;
+    pub const ARGUMENTS_POSITIONAL: usize = 3;
+    pub const ARGUMENTS_KEYWORD_ONLY: usize = 6;
     pub const MAX_INDENTATION_DEPTH: usize = 4;
     pub const CLASSES_PER_FILE: usize = 3;
     pub const NESTED_FUNCTION_DEPTH: usize = 2;
@@ -17,6 +19,7 @@ pub mod thresholds {
     pub const IMPORTS_PER_FILE: usize = 15;
     pub const CYCLOMATIC_COMPLEXITY: usize = 10;
     pub const FAN_OUT: usize = 10;
+    pub const FAN_IN: usize = 20;
 }
 
 /// Configuration for kiss thresholds
@@ -26,6 +29,8 @@ pub struct Config {
     pub methods_per_class: usize,
     pub lines_per_file: usize,
     pub arguments_per_function: usize,
+    pub arguments_positional: usize,
+    pub arguments_keyword_only: usize,
     pub max_indentation_depth: usize,
     pub classes_per_file: usize,
     pub nested_function_depth: usize,
@@ -35,6 +40,7 @@ pub struct Config {
     pub imports_per_file: usize,
     pub cyclomatic_complexity: usize,
     pub fan_out: usize,
+    pub fan_in: usize,
 }
 
 impl Default for Config {
@@ -44,6 +50,8 @@ impl Default for Config {
             methods_per_class: thresholds::METHODS_PER_CLASS,
             lines_per_file: thresholds::LINES_PER_FILE,
             arguments_per_function: thresholds::ARGUMENTS_PER_FUNCTION,
+            arguments_positional: thresholds::ARGUMENTS_POSITIONAL,
+            arguments_keyword_only: thresholds::ARGUMENTS_KEYWORD_ONLY,
             max_indentation_depth: thresholds::MAX_INDENTATION_DEPTH,
             classes_per_file: thresholds::CLASSES_PER_FILE,
             nested_function_depth: thresholds::NESTED_FUNCTION_DEPTH,
@@ -53,6 +61,7 @@ impl Default for Config {
             imports_per_file: thresholds::IMPORTS_PER_FILE,
             cyclomatic_complexity: thresholds::CYCLOMATIC_COMPLEXITY,
             fan_out: thresholds::FAN_OUT,
+            fan_in: thresholds::FAN_IN,
         }
     }
 }
@@ -75,6 +84,19 @@ impl Config {
         let local_config = Path::new(".kissconfig");
         if let Ok(content) = std::fs::read_to_string(local_config) {
             config.merge_from_toml(&content);
+        }
+
+        config
+    }
+
+    /// Load config from a specific file path
+    pub fn load_from(path: &Path) -> Self {
+        let mut config = Self::default();
+
+        if let Ok(content) = std::fs::read_to_string(path) {
+            config.merge_from_toml(&content);
+        } else {
+            eprintln!("Warning: Could not read config file: {}", path.display());
         }
 
         config
@@ -108,6 +130,12 @@ impl Config {
         if let Some(v) = get_usize(thresholds, "arguments_per_function") {
             self.arguments_per_function = v;
         }
+        if let Some(v) = get_usize(thresholds, "arguments_positional") {
+            self.arguments_positional = v;
+        }
+        if let Some(v) = get_usize(thresholds, "arguments_keyword_only") {
+            self.arguments_keyword_only = v;
+        }
         if let Some(v) = get_usize(thresholds, "max_indentation_depth") {
             self.max_indentation_depth = v;
         }
@@ -134,6 +162,9 @@ impl Config {
         }
         if let Some(v) = get_usize(thresholds, "fan_out") {
             self.fan_out = v;
+        }
+        if let Some(v) = get_usize(thresholds, "fan_in") {
+            self.fan_in = v;
         }
     }
 }

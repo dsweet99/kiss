@@ -7,6 +7,8 @@ pub mod discovery;
 pub mod duplication;
 pub mod graph;
 pub mod parsing;
+pub mod stats;
+pub mod test_refs;
 pub mod units;
 
 // Re-export main types and functions for easy access
@@ -25,6 +27,10 @@ pub use graph::{
     DependencyGraph, ModuleGraphMetrics,
 };
 pub use parsing::{create_parser, parse_file, parse_files, ParseError, ParsedFile};
+pub use stats::{
+    compute_summaries, format_stats_table, generate_config_toml, MetricStats, PercentileSummary,
+};
+pub use test_refs::{analyze_test_refs, is_test_file, CodeDefinition, TestRefAnalysis};
 pub use units::{extract_code_units, CodeUnit, CodeUnitKind};
 
 #[cfg(test)]

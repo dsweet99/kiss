@@ -11,7 +11,9 @@ use tree_sitter::Node;
 #[derive(Debug, Default)]
 pub struct FunctionMetrics {
     pub statements: usize,
-    pub arguments: usize,
+    pub arguments: usize,             // Total count for backwards compatibility
+    pub arguments_positional: usize,   // Positional-only + positional-or-keyword
+    pub arguments_keyword_only: usize, // Keyword-only (after *args or *)
     pub max_indentation: usize,
     pub nested_function_depth: usize,
     pub returns: usize,
@@ -128,8 +130,34 @@ fn analyze_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Viol
                     metric: "arguments_per_function".to_string(),
                     value: metrics.arguments,
                     threshold: config.arguments_per_function,
-                    message: format!("{} '{}' has {} arguments (threshold: {})", unit_type, name, metrics.arguments, config.arguments_per_function),
+                    message: format!("{} '{}' has {} total arguments (threshold: {})", unit_type, name, metrics.arguments, config.arguments_per_function),
                     suggestion: "Group related arguments into a data class or dict.".to_string(),
+                });
+            }
+
+            if metrics.arguments_positional > config.arguments_positional {
+                violations.push(Violation {
+                    file: file.to_path_buf(),
+                    line,
+                    unit_name: name.clone(),
+                    metric: "arguments_positional".to_string(),
+                    value: metrics.arguments_positional,
+                    threshold: config.arguments_positional,
+                    message: format!("{} '{}' has {} positional arguments (threshold: {})", unit_type, name, metrics.arguments_positional, config.arguments_positional),
+                    suggestion: "Consider using keyword-only arguments (`*`) after the first 2-3 to prevent argument order mistakes.".to_string(),
+                });
+            }
+
+            if metrics.arguments_keyword_only > config.arguments_keyword_only {
+                violations.push(Violation {
+                    file: file.to_path_buf(),
+                    line,
+                    unit_name: name.clone(),
+                    metric: "arguments_keyword_only".to_string(),
+                    value: metrics.arguments_keyword_only,
+                    threshold: config.arguments_keyword_only,
+                    message: format!("{} '{}' has {} keyword-only arguments (threshold: {})", unit_type, name, metrics.arguments_keyword_only, config.arguments_keyword_only),
+                    suggestion: "Consider grouping related parameters into a configuration object.".to_string(),
                 });
             }
 
@@ -261,7 +289,10 @@ pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
 
     // Count arguments
     if let Some(params) = node.child_by_field_name("parameters") {
-        metrics.arguments = count_parameters(params);
+        let counts = count_parameters(params);
+        metrics.arguments = counts.total;
+        metrics.arguments_positional = counts.positional;
+        metrics.arguments_keyword_only = counts.keyword_only;
     }
 
     // Analyze function body
@@ -299,20 +330,51 @@ pub fn compute_file_metrics(parsed: &ParsedFile) -> FileMetrics {
     }
 }
 
-fn count_parameters(params: Node) -> usize {
-    let mut count = 0;
+/// Breakdown of parameter counts
+struct ParameterCounts {
+    positional: usize,
+    keyword_only: usize,
+    total: usize,
+}
+
+fn count_parameters(params: Node) -> ParameterCounts {
+    let mut positional = 0;
+    let mut keyword_only = 0;
+    let mut after_star = false;
+
     for i in 0..params.child_count() {
         if let Some(child) = params.child(i) {
             match child.kind() {
+                "list_splat_pattern" => {
+                    // *args - marks start of keyword-only section
+                    // *args itself is not counted as a regular parameter
+                    after_star = true;
+                }
+                "keyword_separator" => {
+                    // bare * - marks start of keyword-only section without *args
+                    after_star = true;
+                }
+                "dictionary_splat_pattern" => {
+                    // **kwargs - not counted as a regular parameter
+                }
                 "identifier" | "typed_parameter" | "default_parameter"
-                | "typed_default_parameter" | "list_splat_pattern" | "dictionary_splat_pattern" => {
-                    count += 1;
+                | "typed_default_parameter" => {
+                    if after_star {
+                        keyword_only += 1;
+                    } else {
+                        positional += 1;
+                    }
                 }
                 _ => {}
             }
         }
     }
-    count
+
+    ParameterCounts {
+        positional,
+        keyword_only,
+        total: positional + keyword_only,
+    }
 }
 
 fn count_statements(node: Node) -> usize {

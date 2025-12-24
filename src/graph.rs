@@ -101,7 +101,18 @@ impl DependencyGraph {
 
         let cycles: Vec<Vec<String>> = sccs
             .into_iter()
-            .filter(|scc| scc.len() > 1)
+            .filter(|scc| {
+                if scc.len() > 1 {
+                    // Multi-node SCC is always a cycle
+                    true
+                } else if scc.len() == 1 {
+                    // Single-node SCC is a cycle only if it has a self-loop
+                    let idx = scc[0];
+                    self.graph.contains_edge(idx, idx)
+                } else {
+                    false
+                }
+            })
             .map(|scc| {
                 scc.into_iter()
                     .map(|idx| self.graph[idx].clone())
@@ -147,6 +158,22 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
                     module_name, metrics.fan_out, config.fan_out
                 ),
                 suggestion: "Reduce dependencies by introducing abstractions or splitting the module.".to_string(),
+            });
+        }
+
+        if metrics.fan_in > config.fan_in {
+            violations.push(Violation {
+                file: get_path(module_name),
+                line: 1,
+                unit_name: module_name.clone(),
+                metric: "fan_in".to_string(),
+                value: metrics.fan_in,
+                threshold: config.fan_in,
+                message: format!(
+                    "Module '{}' is depended on by {} other modules (threshold: {})",
+                    module_name, metrics.fan_in, config.fan_in
+                ),
+                suggestion: "Consider if this module has too many responsibilities; split if needed.".to_string(),
             });
         }
     }
