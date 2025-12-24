@@ -26,6 +26,7 @@ pub struct Violation {
     pub value: usize, pub threshold: usize, pub message: String, pub suggestion: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn mk_v(file: PathBuf, line: usize, name: &str, metric: &str, val: usize, thresh: usize, msg: String, sug: &str) -> Violation {
     Violation { file, line, unit_name: name.to_string(), metric: metric.to_string(), value: val, threshold: thresh, message: msg, suggestion: sug.to_string() }
 }
@@ -214,20 +215,19 @@ fn compute_lcom(body: Node, source: &str) -> f64 {
 fn extract_self_attributes(node: Node, source: &str) -> std::collections::HashSet<String> {
     use std::collections::HashSet;
     let mut fields = HashSet::new();
-    _extract_self_attributes_recursive(node, source, &mut fields);
+    extract_self_attributes_recursive(node, source, &mut fields);
     fields
 }
 
-fn _extract_self_attributes_recursive(node: Node, source: &str, fields: &mut std::collections::HashSet<String>) {
+fn extract_self_attributes_recursive(node: Node, source: &str, fields: &mut std::collections::HashSet<String>) {
     // Look for self.attribute pattern
-    if node.kind() == "attribute" {
-        if let (Some(obj), Some(attr)) = (node.child_by_field_name("object"), node.child_by_field_name("attribute")) {
+    if node.kind() == "attribute"
+        && let (Some(obj), Some(attr)) = (node.child_by_field_name("object"), node.child_by_field_name("attribute")) {
             let is_self = obj.kind() == "identifier" && &source[obj.start_byte()..obj.end_byte()] == "self";
             if is_self { fields.insert(source[attr.start_byte()..attr.end_byte()].to_string()); }
         }
-    }
     let mut cursor = node.walk();
-    for child in node.children(&mut cursor) { _extract_self_attributes_recursive(child, source, fields); }
+    for child in node.children(&mut cursor) { extract_self_attributes_recursive(child, source, fields); }
 }
 
 /// Computes metrics for an entire file
@@ -740,6 +740,41 @@ mod tests {
         let func = parsed.tree.root_node().child(0).unwrap();
         analyze_function_node(func, &parsed.source, &parsed.path, &mut viols, false, &Config::default());
         assert!(viols.is_empty());
+    }
+
+    #[test]
+    fn test_extract_self_attributes_recursive_simple() {
+        let code = r#"
+class Foo:
+    def method(self):
+        self.x = 1
+        self.y = 2
+"#;
+        let parsed = parse_source(code);
+        let root = parsed.tree.root_node();
+        let mut fields = std::collections::HashSet::new();
+        // Find the function_definition node
+        let class_node = root.child(0).unwrap();
+        let body = class_node.child_by_field_name("body").unwrap();
+        let method = body.child(0).unwrap();
+        extract_self_attributes_recursive(method, &parsed.source, &mut fields);
+        assert!(fields.contains("x"), "should find self.x, got: {:?}", fields);
+        assert!(fields.contains("y"), "should find self.y, got: {:?}", fields);
+    }
+
+    #[test]
+    fn test_extract_self_attributes_recursive_no_self() {
+        let code = r#"
+def func():
+    x = 1
+    y = 2
+"#;
+        let parsed = parse_source(code);
+        let root = parsed.tree.root_node();
+        let mut fields = std::collections::HashSet::new();
+        let func_node = root.child(0).unwrap();
+        extract_self_attributes_recursive(func_node, &parsed.source, &mut fields);
+        assert!(fields.is_empty(), "should not find any self attributes, got: {:?}", fields);
     }
 }
 

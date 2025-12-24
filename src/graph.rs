@@ -481,4 +481,3 @@ from pathlib import Path
         assert!(count_decision_points(tree.root_node()) >= 1);
     }
 }
-

@@ -36,6 +36,7 @@ pub mod thresholds {
     pub const FAN_IN: usize = 20;
     pub const TRANSITIVE_DEPS: usize = 30;
     pub const LCOM: usize = 50; // Stored as percentage (0-100), threshold > 50%
+    pub const TEST_COVERAGE_THRESHOLD: usize = 90; // percentage (0-100)
 }
 
 /// Configuration for kiss thresholds
@@ -270,6 +271,59 @@ fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
         .and_then(|v| v.as_integer())
         .filter(|&v| v >= 0)  // Ignore negative values
         .map(|v| v as usize)
+}
+
+/// Gate configuration for test coverage requirements
+#[derive(Debug, Clone)]
+pub struct GateConfig {
+    pub test_coverage_threshold: usize, // percentage (0-100)
+}
+
+impl Default for GateConfig {
+    fn default() -> Self {
+        Self {
+            test_coverage_threshold: thresholds::TEST_COVERAGE_THRESHOLD,
+        }
+    }
+}
+
+impl GateConfig {
+    /// Load gate config from standard config files
+    pub fn load() -> Self {
+        let mut config = Self::default();
+        
+        if let Some(home) = std::env::var_os("HOME") {
+            let home_config = Path::new(&home).join(".kissconfig");
+            if let Ok(content) = std::fs::read_to_string(&home_config) {
+                config.merge_from_toml(&content);
+            }
+        }
+        
+        let local_config = Path::new(".kissconfig");
+        if let Ok(content) = std::fs::read_to_string(local_config) {
+            config.merge_from_toml(&content);
+        }
+        
+        config
+    }
+    
+    /// Load gate config from a specific file
+    pub fn load_from(path: &Path) -> Self {
+        let mut config = Self::default();
+        if let Ok(content) = std::fs::read_to_string(path) {
+            config.merge_from_toml(&content);
+        }
+        config
+    }
+    
+    fn merge_from_toml(&mut self, toml_str: &str) {
+        let Ok(value) = toml_str.parse::<toml::Table>() else { return };
+        
+        if let Some(gate) = value.get("gate").and_then(|v| v.as_table())
+            && let Some(thresh) = get_usize(gate, "test_coverage_threshold") {
+                self.test_coverage_threshold = thresh.min(100); // Cap at 100%
+            }
+    }
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 
 use crate::rust_parsing::ParsedRustFile;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use syn::visit::Visit;
 use syn::{Attribute, Expr, ImplItem, Item};
 
@@ -37,11 +37,10 @@ pub fn is_rust_test_file(path: &std::path::Path) -> bool {
     }
     
     // Check for test module files
-    if let Some(name) = path.file_stem().and_then(|n| n.to_str()) {
-        if name.ends_with("_test") || name.starts_with("test_") {
+    if let Some(name) = path.file_stem().and_then(|n| n.to_str())
+        && (name.ends_with("_test") || name.starts_with("test_")) {
             return true;
         }
-    }
     
     false
 }
@@ -56,11 +55,10 @@ fn has_test_attribute(attrs: &[Attribute]) -> bool {
 /// Check if an item has #[cfg(test)] attribute
 fn has_cfg_test_attribute(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|attr| {
-        if attr.path().is_ident("cfg") {
-            if let Ok(nested) = attr.parse_args::<syn::Ident>() {
+        if attr.path().is_ident("cfg")
+            && let Ok(nested) = attr.parse_args::<syn::Ident>() {
                 return nested == "test";
             }
-        }
         false
     })
 }
@@ -98,13 +96,11 @@ pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAn
             
             // For trait impl methods, check if the implementing type is referenced
             // If the type is tested, the trait impl is considered indirectly tested
-            if def.kind == "trait_impl_method" {
-                if let Some(ref type_name) = def.impl_for_type {
-                    if test_references.contains(type_name) {
+            if def.kind == "trait_impl_method"
+                && let Some(ref type_name) = def.impl_for_type
+                    && test_references.contains(type_name) {
                         return false; // Type is referenced, trait impl is indirectly covered
                     }
-                }
-            }
             
             true // Not covered
         })
@@ -119,7 +115,7 @@ pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAn
 }
 
 /// Collect function, struct, enum definitions from a Rust file
-fn collect_rust_definitions(ast: &syn::File, file: &PathBuf, defs: &mut Vec<RustCodeDefinition>) {
+fn collect_rust_definitions(ast: &syn::File, file: &Path, defs: &mut Vec<RustCodeDefinition>) {
     for item in &ast.items {
         collect_definitions_from_item(item, file, defs);
     }
@@ -127,14 +123,14 @@ fn collect_rust_definitions(ast: &syn::File, file: &PathBuf, defs: &mut Vec<Rust
 
 fn is_private(name: &str) -> bool { name.starts_with('_') }
 
-fn try_add_def(defs: &mut Vec<RustCodeDefinition>, name: &str, kind: &'static str, file: &PathBuf, line: usize, impl_for_type: Option<String>) {
+fn try_add_def(defs: &mut Vec<RustCodeDefinition>, name: &str, kind: &'static str, file: &Path, line: usize, impl_for_type: Option<String>) {
     if !is_private(name) {
-        defs.push(RustCodeDefinition { name: name.to_string(), kind, file: file.clone(), line, impl_for_type });
+        defs.push(RustCodeDefinition { name: name.to_string(), kind, file: file.to_path_buf(), line, impl_for_type });
     }
 }
 
 /// Extract the type name from a syn::Type (for impl blocks)
-fn _extract_type_name(ty: &syn::Type) -> Option<String> {
+fn extract_type_name(ty: &syn::Type) -> Option<String> {
     if let syn::Type::Path(type_path) = ty {
         // Get the last segment (the actual type name, ignoring module path)
         type_path.path.segments.last().map(|seg| seg.ident.to_string())
@@ -143,9 +139,9 @@ fn _extract_type_name(ty: &syn::Type) -> Option<String> {
     }
 }
 
-fn _collect_impl_methods(impl_block: &syn::ItemImpl, file: &PathBuf, defs: &mut Vec<RustCodeDefinition>) {
+fn collect_impl_methods(impl_block: &syn::ItemImpl, file: &Path, defs: &mut Vec<RustCodeDefinition>) {
     let is_trait_impl = impl_block.trait_.is_some();
-    let impl_type_name = _extract_type_name(&impl_block.self_ty);
+    let impl_type_name = extract_type_name(&impl_block.self_ty);
     
     for impl_item in &impl_block.items {
         let ImplItem::Fn(method) = impl_item else { continue };
@@ -160,7 +156,7 @@ fn _collect_impl_methods(impl_block: &syn::ItemImpl, file: &PathBuf, defs: &mut 
     }
 }
 
-fn collect_definitions_from_item(item: &Item, file: &PathBuf, defs: &mut Vec<RustCodeDefinition>) {
+fn collect_definitions_from_item(item: &Item, file: &Path, defs: &mut Vec<RustCodeDefinition>) {
     match item {
         Item::Fn(func) if !has_test_attribute(&func.attrs) => {
             try_add_def(defs, &func.sig.ident.to_string(), "function", file, func.sig.ident.span().start().line, None);
@@ -168,7 +164,7 @@ fn collect_definitions_from_item(item: &Item, file: &PathBuf, defs: &mut Vec<Rus
         Item::Struct(s) => try_add_def(defs, &s.ident.to_string(), "struct", file, s.ident.span().start().line, None),
         Item::Enum(e) => try_add_def(defs, &e.ident.to_string(), "enum", file, e.ident.span().start().line, None),
         Item::Impl(impl_block) if !has_cfg_test_attribute(&impl_block.attrs) => {
-            _collect_impl_methods(impl_block, file, defs);
+            collect_impl_methods(impl_block, file, defs);
         }
         Item::Mod(m) if !has_cfg_test_attribute(&m.attrs) => {
             if let Some((_, items)) = &m.content {
@@ -213,7 +209,7 @@ struct ReferenceVisitor<'a> {
 }
 
 /// Check if a path segment is from an external crate (std, core, etc.)
-fn _is_external_crate(name: &str) -> bool {
+fn is_external_crate(name: &str) -> bool {
     matches!(name, "std" | "core" | "alloc" | "syn" | "proc_macro" | "proc_macro2" 
         | "quote" | "serde" | "tokio" | "async_std" | "futures" | "anyhow" 
         | "thiserror" | "clap" | "log" | "tracing" | "regex" | "chrono"
@@ -223,13 +219,12 @@ fn _is_external_crate(name: &str) -> bool {
 }
 
 /// Insert all segments from a path into the reference set, filtering external crates
-fn _insert_path_segments(path: &syn::Path, refs: &mut HashSet<String>) {
+fn insert_path_segments(path: &syn::Path, refs: &mut HashSet<String>) {
     // Skip paths that start with external crates
-    if let Some(first) = path.segments.first() {
-        if _is_external_crate(&first.ident.to_string()) {
+    if let Some(first) = path.segments.first()
+        && is_external_crate(&first.ident.to_string()) {
             return;
         }
-    }
     // Insert ALL segments from the path
     for segment in &path.segments {
         let name = segment.ident.to_string();
@@ -246,7 +241,7 @@ impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
             Expr::Call(call) => {
                 // Extract ALL path segments from call (e.g., MyStruct::new -> both MyStruct and new)
                 if let Expr::Path(path) = call.func.as_ref() {
-                    _insert_path_segments(&path.path, self.refs);
+                    insert_path_segments(&path.path, self.refs);
                 }
             }
             Expr::MethodCall(method) => {
@@ -254,16 +249,16 @@ impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
             }
             Expr::Struct(s) => {
                 // Struct instantiation - capture all segments
-                _insert_path_segments(&s.path, self.refs);
+                insert_path_segments(&s.path, self.refs);
             }
             Expr::Path(path) => {
                 // Variable/type reference - capture all segments
-                _insert_path_segments(&path.path, self.refs);
+                insert_path_segments(&path.path, self.refs);
             }
             Expr::Macro(mac) => {
                 // Macros like assert!, assert_eq!, println! contain expressions in their token stream
                 // Try to parse the tokens as expressions and visit them
-                _visit_macro_tokens(&mac.mac.tokens, self.refs);
+                visit_macro_tokens(&mac.mac.tokens, self.refs);
             }
             _ => {}
         }
@@ -272,22 +267,22 @@ impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
 
     fn visit_type(&mut self, ty: &'ast syn::Type) {
         if let syn::Type::Path(type_path) = ty {
-            _insert_path_segments(&type_path.path, self.refs);
+            insert_path_segments(&type_path.path, self.refs);
         }
         syn::visit::visit_type(self, ty);
     }
     
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {
         // Also handle macro invocations in statement position (not just expressions)
-        _visit_macro_tokens(&mac.tokens, self.refs);
+        visit_macro_tokens(&mac.tokens, self.refs);
         syn::visit::visit_macro(self, mac);
     }
 }
 
 /// Helper struct to parse comma-separated expressions
-struct _ExprList(Vec<Expr>);
+struct ExprList(Vec<Expr>);
 
-impl syn::parse::Parse for _ExprList {
+impl syn::parse::Parse for ExprList {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut exprs = Vec::new();
         while !input.is_empty() {
@@ -296,12 +291,12 @@ impl syn::parse::Parse for _ExprList {
                 let _: syn::Token![,] = input.parse()?;
             }
         }
-        Ok(_ExprList(exprs))
+        Ok(ExprList(exprs))
     }
 }
 
 /// Try to extract and visit expressions from macro token streams
-fn _visit_macro_tokens(tokens: &proc_macro2::TokenStream, refs: &mut HashSet<String>) {
+fn visit_macro_tokens(tokens: &proc_macro2::TokenStream, refs: &mut HashSet<String>) {
     // Try parsing as a comma-separated list of expressions (covers assert!, assert_eq!, etc.)
     // First, try to parse the entire token stream as a single expression
     if let Ok(expr) = syn::parse2::<Expr>(tokens.clone()) {
@@ -313,7 +308,7 @@ fn _visit_macro_tokens(tokens: &proc_macro2::TokenStream, refs: &mut HashSet<Str
     // Try parsing as comma-separated expressions (proper comma-separated handling)
     // This handles cases like assert_eq!(estimate_similarity(&a, &b), 1.0)
     // where simple comma-splitting would fail due to nested commas
-    if let Ok(_ExprList(exprs)) = syn::parse2::<_ExprList>(tokens.clone()) {
+    if let Ok(ExprList(exprs)) = syn::parse2::<ExprList>(tokens.clone()) {
         for expr in exprs {
             let mut visitor = ReferenceVisitor { refs };
             visitor.visit_expr(&expr);
@@ -324,7 +319,7 @@ fn _visit_macro_tokens(tokens: &proc_macro2::TokenStream, refs: &mut HashSet<Str
     // Last resort: try each token group individually
     for token in tokens.clone() {
         if let proc_macro2::TokenTree::Group(group) = token {
-            _visit_macro_tokens(&group.stream(), refs);
+            visit_macro_tokens(&group.stream(), refs);
         }
     }
 }
@@ -577,6 +572,122 @@ mod tests {
         let mut visitor = ReferenceVisitor { refs: &mut refs };
         visitor.visit_type(&ty);
         assert!(refs.contains("Vec") || refs.is_empty());
+    }
+
+    #[test]
+    fn test_extract_type_name_simple() {
+        let ty: syn::Type = syn::parse_str("MyStruct").unwrap();
+        assert_eq!(extract_type_name(&ty), Some("MyStruct".to_string()));
+    }
+
+    #[test]
+    fn test_extract_type_name_path() {
+        let ty: syn::Type = syn::parse_str("crate::module::MyStruct").unwrap();
+        assert_eq!(extract_type_name(&ty), Some("MyStruct".to_string()));
+    }
+
+    #[test]
+    fn test_extract_type_name_reference() {
+        // Reference types don't have a simple path
+        let ty: syn::Type = syn::parse_str("&MyStruct").unwrap();
+        assert_eq!(extract_type_name(&ty), None);
+    }
+
+    #[test]
+    fn test_is_external_crate() {
+        assert!(is_external_crate("std"));
+        assert!(is_external_crate("syn"));
+        assert!(is_external_crate("tokio"));
+        assert!(!is_external_crate("my_module"));
+        assert!(!is_external_crate("MyStruct"));
+    }
+
+    #[test]
+    fn test_insert_path_segments_local() {
+        let path: syn::Path = syn::parse_str("MyStruct::new").unwrap();
+        let mut refs = HashSet::new();
+        insert_path_segments(&path, &mut refs);
+        assert!(refs.contains("MyStruct"), "refs: {:?}", refs);
+        assert!(refs.contains("new"), "refs: {:?}", refs);
+    }
+
+    #[test]
+    fn test_insert_path_segments_external() {
+        let path: syn::Path = syn::parse_str("std::collections::HashMap").unwrap();
+        let mut refs = HashSet::new();
+        insert_path_segments(&path, &mut refs);
+        // Should skip external crate paths
+        assert!(refs.is_empty(), "external crate paths should be skipped, got: {:?}", refs);
+    }
+
+    #[test]
+    fn test_insert_path_segments_skips_keywords() {
+        let path: syn::Path = syn::parse_str("self::module::Type").unwrap();
+        let mut refs = HashSet::new();
+        insert_path_segments(&path, &mut refs);
+        assert!(!refs.contains("self"), "should skip 'self'");
+        assert!(refs.contains("module"), "refs: {:?}", refs);
+        assert!(refs.contains("Type"), "refs: {:?}", refs);
+    }
+
+    #[test]
+    fn test_visit_macro_tokens_simple() {
+        let tokens: proc_macro2::TokenStream = "foo()".parse().unwrap();
+        let mut refs = HashSet::new();
+        visit_macro_tokens(&tokens, &mut refs);
+        assert!(refs.contains("foo"), "refs: {:?}", refs);
+    }
+
+    #[test]
+    fn test_visit_macro_tokens_with_args() {
+        let tokens: proc_macro2::TokenStream = "my_func(arg1, arg2)".parse().unwrap();
+        let mut refs = HashSet::new();
+        visit_macro_tokens(&tokens, &mut refs);
+        assert!(refs.contains("my_func"), "refs: {:?}", refs);
+    }
+
+    #[test]
+    fn test_expr_list_parse() {
+        let tokens: proc_macro2::TokenStream = "foo(), bar, baz()".parse().unwrap();
+        let expr_list: ExprList = syn::parse2(tokens).unwrap();
+        assert_eq!(expr_list.0.len(), 3);
+    }
+
+    #[test]
+    fn test_expr_list_single() {
+        let tokens: proc_macro2::TokenStream = "single_expr".parse().unwrap();
+        let expr_list: ExprList = syn::parse2(tokens).unwrap();
+        assert_eq!(expr_list.0.len(), 1);
+    }
+
+    #[test]
+    fn test_collect_impl_methods_regular() {
+        let code = "impl MyStruct { fn method1(&self) {} fn method2(&self) {} }";
+        let file: syn::File = syn::parse_str(code).unwrap();
+        let mut defs = Vec::new();
+        let path = std::path::PathBuf::from("test.rs");
+        if let syn::Item::Impl(impl_block) = &file.items[0] {
+            collect_impl_methods(impl_block, &path, &mut defs);
+        }
+        assert_eq!(defs.len(), 2);
+        assert_eq!(defs[0].name, "method1");
+        assert_eq!(defs[0].kind, "method");
+        assert!(defs[0].impl_for_type.is_none());
+    }
+
+    #[test]
+    fn test_collect_impl_methods_trait_impl() {
+        let code = "impl Display for MyStruct { fn fmt(&self, f: &mut Formatter) -> Result { Ok(()) } }";
+        let file: syn::File = syn::parse_str(code).unwrap();
+        let mut defs = Vec::new();
+        let path = std::path::PathBuf::from("test.rs");
+        if let syn::Item::Impl(impl_block) = &file.items[0] {
+            collect_impl_methods(impl_block, &path, &mut defs);
+        }
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].name, "fmt");
+        assert_eq!(defs[0].kind, "trait_impl_method");
+        assert_eq!(defs[0].impl_for_type, Some("MyStruct".to_string()));
     }
 }
 

@@ -3,7 +3,7 @@ use kiss::{
     analyze_file, analyze_graph, analyze_rust_file, analyze_rust_test_refs, analyze_test_refs,
     build_dependency_graph, build_rust_dependency_graph, cluster_duplicates, compute_summaries,
     detect_duplicates, extract_chunks_for_duplication, find_python_files, find_rust_files,
-    format_stats_table, parse_files, parse_rust_files, Config, ConfigLanguage,
+    format_stats_table, parse_files, parse_rust_files, Config, ConfigLanguage, GateConfig,
     DuplicationConfig, MetricStats, ParsedFile, ParsedRustFile,
 };
 use std::path::{Path, PathBuf};
@@ -19,6 +19,10 @@ struct Cli {
     /// Only analyze specified language (python, rust)
     #[arg(long, global = true, value_parser = parse_language)]
     lang: Option<Language>,
+
+    /// Bypass test coverage gate, run all checks unconditionally
+    #[arg(long, global = true)]
+    all: bool,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -68,6 +72,7 @@ fn main() {
 
     // Load language-specific configs
     let (py_config, rs_config) = load_configs(&cli.config);
+    let gate_config = load_gate_config(&cli.config);
 
     match cli.command {
         Some(Commands::Stats { paths }) => {
@@ -77,8 +82,16 @@ fn main() {
             run_mimic(&paths, out.as_deref(), cli.lang);
         }
         None => {
-            run_analyze(&cli.path, &py_config, &rs_config, cli.lang);
+            run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config);
         }
+    }
+}
+
+fn load_gate_config(config_path: &Option<PathBuf>) -> GateConfig {
+    if let Some(path) = config_path {
+        GateConfig::load_from(path)
+    } else {
+        GateConfig::load()
     }
 }
 
@@ -99,21 +112,82 @@ fn load_configs(config_path: &Option<PathBuf>) -> (Config, Config) {
 
 use kiss::{Violation, DuplicateCluster, PercentileSummary};
 
-fn run_analyze(path: &str, py_config: &Config, rs_config: &Config, lang_filter: Option<Language>) {
+fn run_analyze(path: &str, py_config: &Config, rs_config: &Config, lang_filter: Option<Language>, bypass_gate: bool, gate_config: &GateConfig) {
     let root = Path::new(path);
     let (py_files, rs_files) = gather_files(root, lang_filter);
+    
     if py_files.is_empty() && rs_files.is_empty() {
-        println!("{} in {}", match lang_filter { Some(Language::Python) => "No Python files", Some(Language::Rust) => "No Rust files", None => "No files" }, root.display());
+        print_no_files_message(lang_filter, root);
         return;
     }
-    let (py_parsed, mut viols) = parse_and_analyze_py(&py_files, py_config);
-    let (rs_parsed, rs_viols) = parse_and_analyze_rs(&rs_files, rs_config);
-    viols.extend(rs_viols);
+    
+    let (py_parsed, rs_parsed, mut viols) = parse_all(&py_files, &rs_files, py_config, rs_config);
+    
+    if !bypass_gate && !check_coverage_gate(&py_parsed, &rs_parsed, gate_config) {
+        return;
+    }
+    
     viols.extend(analyze_py_graph(&py_parsed, py_config));
     viols.extend(analyze_rs_graph(&rs_parsed, rs_config));
     print_violations(&viols, py_parsed.len() + rs_parsed.len());
     print_duplicates(&detect_py_duplicates(&py_parsed));
-    print_py_test_refs(&py_parsed); print_rs_test_refs(&rs_parsed);
+    print_py_test_refs(&py_parsed);
+    print_rs_test_refs(&rs_parsed);
+}
+
+fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
+    let msg = match lang_filter {
+        Some(Language::Python) => "No Python files",
+        Some(Language::Rust) => "No Rust files",
+        None => "No files",
+    };
+    println!("{} in {}", msg, root.display());
+}
+
+fn parse_all(py_files: &[PathBuf], rs_files: &[PathBuf], py_config: &Config, rs_config: &Config) -> (Vec<ParsedFile>, Vec<ParsedRustFile>, Vec<Violation>) {
+    let (py_parsed, mut viols) = parse_and_analyze_py(py_files, py_config);
+    let (rs_parsed, rs_viols) = parse_and_analyze_rs(rs_files, rs_config);
+    viols.extend(rs_viols);
+    (py_parsed, rs_parsed, viols)
+}
+
+fn check_coverage_gate(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], gate_config: &GateConfig) -> bool {
+    let (coverage, tested, total) = compute_test_coverage(py_parsed, rs_parsed);
+    if coverage < gate_config.test_coverage_threshold {
+        print_coverage_gate_failure(coverage, gate_config.test_coverage_threshold, tested, total);
+        return false;
+    }
+    true
+}
+
+fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (usize, usize, usize) {
+    let mut tested = 0;
+    let mut total = 0;
+    
+    if !py_parsed.is_empty() {
+        let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
+        let analysis = analyze_test_refs(&refs);
+        total += analysis.definitions.len();
+        tested += analysis.definitions.len() - analysis.unreferenced.len();
+    }
+    
+    if !rs_parsed.is_empty() {
+        let refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
+        let analysis = analyze_rust_test_refs(&refs);
+        total += analysis.definitions.len();
+        tested += analysis.definitions.len() - analysis.unreferenced.len();
+    }
+    
+    let coverage = if total > 0 { (tested * 100) / total } else { 100 };
+    (coverage, tested, total)
+}
+
+fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: usize, total: usize) {
+    println!("❌ Test coverage too low to safely suggest refactoring.\n");
+    println!("   Test reference coverage: {}% (threshold: {}%)", coverage, threshold);
+    println!("   Functions with test references: {} / {}\n", tested, total);
+    println!("   Add tests for untested code, then run kiss again.");
+    println!("   Or use --all to bypass this check and proceed anyway.");
 }
 
 fn gather_files(root: &Path, lang: Option<Language>) -> (Vec<PathBuf>, Vec<PathBuf>) {
@@ -278,7 +352,7 @@ fn merge_config_toml(path: &Path, new: &str, upd_py: bool, upd_rs: bool) -> Stri
     for (k, upd) in [("python", upd_py), ("rust", upd_rs)] { if let Some(v) = pick(k, upd) { m.insert(k.to_string(), v); } }
     let shared = if upd_py && upd_rs { nw.get("shared") } else { ex.get("shared").or(nw.get("shared")) }.cloned();
     if let Some(v) = shared { m.insert("shared".to_string(), v); }
-    if !(upd_py && upd_rs) { if let Some(v) = ex.get("thresholds").cloned() { m.insert("thresholds".to_string(), v); } }
+    if !(upd_py && upd_rs) && let Some(v) = ex.get("thresholds").cloned() { m.insert("thresholds".to_string(), v); }
     build_merged_output(&m)
 }
 
@@ -467,7 +541,7 @@ mod tests {
     #[test]
     fn test_cli_struct() {
         // Just verify the struct can be constructed
-        let cli = Cli { config: None, lang: None, command: None, path: ".".to_string() };
+        let cli = Cli { config: None, lang: None, all: false, command: None, path: ".".to_string() };
         assert_eq!(cli.path, ".");
     }
 
@@ -598,7 +672,7 @@ mod tests {
     fn test_run_analyze_on_empty_dir() {
         use tempfile::TempDir;
         let tmp = TempDir::new().unwrap();
-        run_analyze(&tmp.path().to_string_lossy(), &Config::default(), &Config::default(), None);
+        run_analyze(&tmp.path().to_string_lossy(), &Config::default(), &Config::default(), None, true, &GateConfig::default());
         // Just verify it doesn't panic (no exit on empty)
     }
 
@@ -606,5 +680,59 @@ mod tests {
     fn test_main_fn_exists() {
         // main calls parse() which expects CLI args, so we just verify it exists
         let _ = main as fn();
+    }
+
+    #[test]
+    fn test_load_gate_config_from_file() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("kiss.toml");
+        std::fs::write(&path, "[gate]\ntest_coverage_threshold = 80\n").unwrap();
+        let gate = load_gate_config(&Some(path));
+        assert_eq!(gate.test_coverage_threshold, 80);
+    }
+
+    #[test]
+    fn test_compute_test_coverage_empty() {
+        let py: Vec<ParsedFile> = vec![];
+        let rs: Vec<ParsedRustFile> = vec![];
+        let (coverage, tested, total) = compute_test_coverage(&py, &rs);
+        assert_eq!(tested, 0);
+        assert_eq!(total, 0);
+        assert_eq!(coverage, 100); // 0/0 = 100%
+    }
+
+    #[test]
+    fn test_check_coverage_gate_passes() {
+        let py: Vec<ParsedFile> = vec![];
+        let rs: Vec<ParsedRustFile> = vec![];
+        let gate = GateConfig { test_coverage_threshold: 0 };
+        let passed = check_coverage_gate(&py, &rs, &gate);
+        assert!(passed);
+    }
+
+    #[test]
+    fn test_parse_all_empty() {
+        let py_config = Config::default();
+        let rs_config = Config::default();
+        let (py_parsed, rs_parsed, viols) = parse_all(&[], &[], &py_config, &rs_config);
+        assert!(py_parsed.is_empty());
+        assert!(rs_parsed.is_empty());
+        assert!(viols.is_empty());
+    }
+
+    #[test]
+    fn test_print_no_files_message_no_panic() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().unwrap();
+        // Just verify it doesn't panic
+        print_no_files_message(None, tmp.path());
+        print_no_files_message(Some(Language::Python), tmp.path());
+    }
+
+    #[test]
+    fn test_print_coverage_gate_failure_no_panic() {
+        // Just verify it doesn't panic and prints output
+        print_coverage_gate_failure(50, 80, 5, 10);
     }
 }

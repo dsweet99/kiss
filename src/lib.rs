@@ -19,7 +19,7 @@ pub mod rust_test_refs;
 pub mod rust_units;
 
 // Re-export main types and functions for easy access
-pub use config::{thresholds, Config, ConfigLanguage};
+pub use config::{thresholds, Config, ConfigLanguage, GateConfig};
 pub use counts::{
     analyze_file, compute_class_metrics, compute_file_metrics, compute_function_metrics,
     ClassMetrics, FileMetrics, FunctionMetrics, Violation,

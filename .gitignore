@@ -10,3 +10,4 @@ __pycache__
 check
 .vscode/
 Cargo.lock
+.kissconfig

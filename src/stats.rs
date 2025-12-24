@@ -112,6 +112,7 @@ impl MetricStats {
     }
 }
 
+#[allow(clippy::only_used_in_recursion)]
 fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_class: bool) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {

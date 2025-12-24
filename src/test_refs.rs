@@ -3,7 +3,7 @@
 use crate::parsing::ParsedFile;
 use crate::units::get_child_by_field;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tree_sitter::Node;
 
 /// A code unit definition (function, method, or class)
@@ -142,21 +142,20 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
     }
 }
 
-fn try_add_def(node: Node, source: &str, file: &PathBuf, defs: &mut Vec<CodeDefinition>, kind: &'static str) {
-    if let Some(name) = get_child_by_field(node, "name", source) {
-        if !name.starts_with('_') || name == "__init__" {
-            defs.push(CodeDefinition { name, kind, file: file.clone(), line: node.start_position().row + 1 });
+fn try_add_def(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, kind: &'static str) {
+    if let Some(name) = get_child_by_field(node, "name", source)
+        && (!name.starts_with('_') || name == "__init__") {
+            defs.push(CodeDefinition { name, kind, file: file.to_path_buf(), line: node.start_position().row + 1 });
         }
-    }
 }
 
-fn recurse_children(node: Node, source: &str, file: &PathBuf, defs: &mut Vec<CodeDefinition>, inside_class: bool) {
+fn recurse_children(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, inside_class: bool) {
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i) { collect_definitions(child, source, file, defs, inside_class); }
     }
 }
 
-fn collect_definitions(node: Node, source: &str, file: &PathBuf, defs: &mut Vec<CodeDefinition>, inside_class: bool) {
+fn collect_definitions(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, inside_class: bool) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {
             try_add_def(node, source, file, defs, if inside_class { "method" } else { "function" });

@@ -28,6 +28,7 @@ pub struct RustFileMetrics { pub lines: usize, pub types: usize, pub imports: us
 struct ViolationContext<'a> { file: &'a PathBuf, violations: &'a mut Vec<Violation> }
 
 impl<'a> ViolationContext<'a> {
+    #[allow(clippy::too_many_arguments)]
     fn add(&mut self, line: usize, name: &str, metric: &str, val: usize, thresh: usize, msg: String, sug: &str) {
         self.violations.push(Violation {
             file: self.file.clone(), line, unit_name: name.to_string(), metric: metric.to_string(),
@@ -55,7 +56,6 @@ pub fn analyze_rust_file(parsed: &ParsedRustFile, config: &Config) -> Vec<Violat
         ctx.add(1, &fname, "imports_per_file", file_metrics.imports, config.imports_per_file,
             format!("File has {} use statements (threshold: {})", file_metrics.imports, config.imports_per_file), "Module may have too many responsibilities. Consider splitting.");
     }
-    drop(ctx);
 
     let mut analyzer = RustAnalyzer::new(&file, config, &mut violations);
     for item in &parsed.ast.items { analyzer.analyze_item(item); }
@@ -98,9 +98,9 @@ impl<'a> RustAnalyzer<'a> {
         let line = impl_block.impl_token.span.start().line;
         let name = type_name.as_deref().unwrap_or("<impl>");
 
-        self._check_methods_per_type(line, name, method_count);
-        let lcom_pct = self._check_lcom(impl_block, line, name, method_count);
-        self._check_god_class(line, name, method_count, lcom_pct);
+        self.check_methods_per_type(line, name, method_count);
+        let lcom_pct = self.check_lcom(impl_block, line, name, method_count);
+        self.check_god_class(line, name, method_count, lcom_pct);
 
         for impl_item in &impl_block.items {
             if let ImplItem::Fn(method) = impl_item {
@@ -111,6 +111,7 @@ impl<'a> RustAnalyzer<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push(&mut self, line: usize, name: &str, metric: &str, val: usize, thresh: usize, msg: String, sug: &str) {
         self.violations.push(Violation {
             file: self.file.clone(), line, unit_name: name.to_string(), metric: metric.to_string(),
@@ -118,7 +119,7 @@ impl<'a> RustAnalyzer<'a> {
         });
     }
 
-    fn _check_methods_per_type(&mut self, line: usize, name: &str, count: usize) {
+    fn check_methods_per_type(&mut self, line: usize, name: &str, count: usize) {
         if count > self.config.methods_per_class {
             self.push(line, name, "methods_per_type", count, self.config.methods_per_class,
                 format!("Type '{}' has {} methods (threshold: {})", name, count, self.config.methods_per_class),
@@ -126,7 +127,7 @@ impl<'a> RustAnalyzer<'a> {
         }
     }
 
-    fn _check_lcom(&mut self, impl_block: &syn::ItemImpl, line: usize, name: &str, method_count: usize) -> usize {
+    fn check_lcom(&mut self, impl_block: &syn::ItemImpl, line: usize, name: &str, method_count: usize) -> usize {
         if method_count <= 1 { return 0; }
         let pct = (compute_rust_lcom(impl_block) * 100.0).round() as usize;
         if pct > self.config.lcom {
@@ -137,7 +138,7 @@ impl<'a> RustAnalyzer<'a> {
         pct
     }
 
-    fn _check_god_class(&mut self, line: usize, name: &str, method_count: usize, lcom_pct: usize) {
+    fn check_god_class(&mut self, line: usize, name: &str, method_count: usize, lcom_pct: usize) {
         if method_count > 20 && lcom_pct > 50 {
             self.push(line, name, "god_class", 1, 0,
                 format!("Type '{}' is a God Class: {} methods + {}% LCOM indicates low cohesion", name, method_count, lcom_pct),
@@ -233,13 +234,11 @@ fn extract_self_field_accesses(block: &Block) -> std::collections::HashSet<Strin
         fn visit_expr(&mut self, expr: &'ast Expr) {
             if let Expr::Field(field_expr) = expr {
                 // Check if base is `self`
-                if let Expr::Path(path_expr) = &*field_expr.base {
-                    if path_expr.path.is_ident("self") {
-                        if let syn::Member::Named(ident) = &field_expr.member {
+                if let Expr::Path(path_expr) = &*field_expr.base
+                    && path_expr.path.is_ident("self")
+                        && let syn::Member::Named(ident) = &field_expr.member {
                             self.fields.insert(ident.to_string());
                         }
-                    }
-                }
             }
             syn::visit::visit_expr(self, expr);
         }
@@ -271,6 +270,7 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
 }
 
 /// Computes metrics for a Rust function
+#[allow(clippy::field_reassign_with_default)]
 pub fn compute_rust_function_metrics(
     inputs: &syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
     block: &Block,
@@ -620,6 +620,73 @@ fn foo(x: i32) {
                 assert_eq!(v.local_variables, 3);
             }
         }
+    }
+
+    #[test]
+    fn test_check_methods_per_type_under_threshold() {
+        let mut violations = Vec::new();
+        let path = std::path::PathBuf::from("test.rs");
+        let mut config = Config::default();
+        config.methods_per_class = 20;
+        let mut analyzer = RustAnalyzer::new(&path, &config, &mut violations);
+        analyzer.check_methods_per_type(1, "MyStruct", 5);
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    fn test_check_methods_per_type_over_threshold() {
+        let mut violations = Vec::new();
+        let path = std::path::PathBuf::from("test.rs");
+        let mut config = Config::default();
+        config.methods_per_class = 5;
+        let mut analyzer = RustAnalyzer::new(&path, &config, &mut violations);
+        analyzer.check_methods_per_type(1, "MyStruct", 10);
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].metric, "methods_per_type");
+    }
+
+    #[test]
+    fn test_check_lcom_low_cohesion() {
+        let code = r#"
+            impl MyStruct {
+                fn method1(&self) { self.field1; }
+                fn method2(&self) { self.field2; }
+            }
+        "#;
+        let file: syn::File = syn::parse_str(code).unwrap();
+        let mut violations = Vec::new();
+        let path = std::path::PathBuf::from("test.rs");
+        let mut config = Config::default();
+        config.lcom = 50;
+        let mut analyzer = RustAnalyzer::new(&path, &config, &mut violations);
+        if let syn::Item::Impl(impl_block) = &file.items[0] {
+            let pct = analyzer.check_lcom(impl_block, 1, "MyStruct", 2);
+            // Just verify it returns a percentage and doesn't panic
+            assert!(pct <= 100);
+        }
+    }
+
+    #[test]
+    fn test_check_god_class_triggers() {
+        let mut violations = Vec::new();
+        let path = std::path::PathBuf::from("test.rs");
+        let config = Config::default();
+        let mut analyzer = RustAnalyzer::new(&path, &config, &mut violations);
+        // God class: methods > 20 AND lcom > 50
+        analyzer.check_god_class(1, "BigClass", 25, 75);
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].metric, "god_class");
+    }
+
+    #[test]
+    fn test_check_god_class_no_trigger() {
+        let mut violations = Vec::new();
+        let path = std::path::PathBuf::from("test.rs");
+        let config = Config::default();
+        let mut analyzer = RustAnalyzer::new(&path, &config, &mut violations);
+        // Not a god class: methods <= 20
+        analyzer.check_god_class(1, "SmallClass", 5, 75);
+        assert!(violations.is_empty());
     }
 }
 
