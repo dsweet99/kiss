@@ -26,13 +26,79 @@ pub struct TestRefAnalysis {
     pub unreferenced: Vec<CodeDefinition>,
 }
 
-/// Check if a file path is a test file (test_*.py or *_test.py)
+/// Check if a file path is a test file (test_*.py, *_test.py, or in tests/ directory)
 pub fn is_test_file(path: &std::path::Path) -> bool {
+    // Check for tests/ or test/ directory in path
+    if path.components().any(|c| {
+        let s = c.as_os_str();
+        s == "tests" || s == "test"
+    }) {
+        return true;
+    }
+    
+    // Check filename patterns
     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
         name.starts_with("test_") || name.ends_with("_test.py")
     } else {
         false
     }
+}
+
+/// Check if a parsed file contains pytest or unittest imports (fallback heuristic)
+pub fn has_test_framework_import(node: Node, source: &str) -> bool {
+    let mut cursor = node.walk();
+    
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "import_statement" => {
+                // import pytest, import unittest
+                if contains_test_module_name(child, source) {
+                    return true;
+                }
+            }
+            "import_from_statement" => {
+                // from pytest import ..., from unittest import ...
+                if let Some(module) = child.child_by_field_name("module_name") {
+                    let module_name = &source[module.start_byte()..module.end_byte()];
+                    if module_name == "pytest" || module_name.starts_with("pytest.")
+                        || module_name == "unittest" || module_name.starts_with("unittest.")
+                    {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    
+    false
+}
+
+/// Check if an import statement contains pytest or unittest
+fn contains_test_module_name(node: Node, source: &str) -> bool {
+    let mut cursor = node.walk();
+    
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "dotted_name" => {
+                let name = &source[child.start_byte()..child.end_byte()];
+                if name == "pytest" || name == "unittest" {
+                    return true;
+                }
+            }
+            "aliased_import" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    let name = &source[name_node.start_byte()..name_node.end_byte()];
+                    if name == "pytest" || name == "unittest" {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    
+    false
 }
 
 /// Analyze test references across all parsed files
@@ -41,7 +107,13 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
     let mut test_references = HashSet::new();
 
     for parsed in parsed_files {
-        if is_test_file(&parsed.path) {
+        // A file is a test file if:
+        // 1. It matches naming patterns (test_*.py, *_test.py) or is in tests/ directory
+        // 2. Or it imports pytest/unittest (fallback heuristic)
+        let is_test = is_test_file(&parsed.path) 
+            || has_test_framework_import(parsed.tree.root_node(), &parsed.source);
+        
+        if is_test {
             // Collect references from test files
             collect_references(parsed.tree.root_node(), &parsed.source, &mut test_references);
         } else {
@@ -205,13 +277,60 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn test_is_test_file() {
+    fn test_is_test_file_by_name() {
         assert!(is_test_file(Path::new("test_foo.py")));
         assert!(is_test_file(Path::new("foo_test.py")));
         assert!(is_test_file(Path::new("/some/path/test_bar.py")));
         assert!(!is_test_file(Path::new("foo.py")));
         assert!(!is_test_file(Path::new("testing.py")));
         assert!(!is_test_file(Path::new("my_test_helper.py")));
+    }
+
+    #[test]
+    fn test_is_test_file_by_path_component() {
+        // Files in tests/ directory should be detected
+        assert!(is_test_file(Path::new("tests/conftest.py")));
+        assert!(is_test_file(Path::new("tests/helpers.py")));
+        assert!(is_test_file(Path::new("/project/tests/unit/test_utils.py")));
+        
+        // Files in test/ directory should also be detected
+        assert!(is_test_file(Path::new("test/integration.py")));
+        
+        // Regular source files should not be detected
+        assert!(!is_test_file(Path::new("src/utils.py")));
+        assert!(!is_test_file(Path::new("myproject/testing_utils.py")));
+    }
+
+    #[test]
+    fn test_has_test_framework_import() {
+        use crate::parsing::create_parser;
+        
+        let mut parser = create_parser().unwrap();
+        
+        // File with pytest import
+        let source = "import pytest\n\ndef test_foo():\n    pass\n";
+        let tree = parser.parse(source, None).unwrap();
+        assert!(has_test_framework_import(tree.root_node(), source));
+        
+        // File with unittest import
+        let source = "import unittest\n\nclass TestCase(unittest.TestCase):\n    pass\n";
+        let tree = parser.parse(source, None).unwrap();
+        assert!(has_test_framework_import(tree.root_node(), source));
+        
+        // File with from pytest import
+        let source = "from pytest import fixture\n\n@fixture\ndef my_fixture():\n    pass\n";
+        let tree = parser.parse(source, None).unwrap();
+        assert!(has_test_framework_import(tree.root_node(), source));
+        
+        // File with aliased pytest import
+        let source = "import pytest as pt\n";
+        let tree = parser.parse(source, None).unwrap();
+        assert!(has_test_framework_import(tree.root_node(), source));
+        
+        // Regular source file
+        let source = "import os\nimport sys\n\ndef main():\n    pass\n";
+        let tree = parser.parse(source, None).unwrap();
+        assert!(!has_test_framework_import(tree.root_node(), source));
     }
 }
 

@@ -5,6 +5,7 @@ use crate::counts::Violation;
 use crate::parsing::ParsedFile;
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::visit::Dfs;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tree_sitter::Node;
@@ -28,6 +29,8 @@ pub struct ModuleGraphMetrics {
     pub fan_out: usize,
     /// Instability: fan_out / (fan_in + fan_out)
     pub instability: f64,
+    /// Transitive dependencies: all modules reachable from this one
+    pub transitive_deps: usize,
 }
 
 /// Result of cycle detection
@@ -48,7 +51,7 @@ impl DependencyGraph {
     }
 
     /// Get or create a node for a module
-    fn get_or_create_node(&mut self, name: &str) -> NodeIndex {
+    pub fn get_or_create_node(&mut self, name: &str) -> NodeIndex {
         if let Some(&idx) = self.nodes.get(name) {
             idx
         } else {
@@ -88,11 +91,30 @@ impl DependencyGraph {
             0.0
         };
 
+        // Compute transitive dependencies using DFS
+        let transitive_deps = self.count_transitive_deps(idx);
+
         ModuleGraphMetrics {
             fan_in,
             fan_out,
             instability,
+            transitive_deps,
         }
+    }
+
+    /// Count all modules reachable from a given node (transitive dependencies)
+    fn count_transitive_deps(&self, start: NodeIndex) -> usize {
+        let mut dfs = Dfs::new(&self.graph, start);
+        let mut count = 0;
+        
+        // Skip the starting node itself
+        dfs.next(&self.graph);
+        
+        while dfs.next(&self.graph).is_some() {
+            count += 1;
+        }
+        
+        count
     }
 
     /// Find all cycles in the graph
@@ -174,6 +196,22 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
                     module_name, metrics.fan_in, config.fan_in
                 ),
                 suggestion: "Consider if this module has too many responsibilities; split if needed.".to_string(),
+            });
+        }
+
+        if metrics.transitive_deps > config.transitive_deps {
+            violations.push(Violation {
+                file: get_path(module_name),
+                line: 1,
+                unit_name: module_name.clone(),
+                metric: "transitive_deps".to_string(),
+                value: metrics.transitive_deps,
+                threshold: config.transitive_deps,
+                message: format!(
+                    "Module '{}' has {} transitive dependencies (threshold: {})",
+                    module_name, metrics.transitive_deps, config.transitive_deps
+                ),
+                suggestion: "High transitive dependencies make code fragile; consider reducing coupling.".to_string(),
             });
         }
     }

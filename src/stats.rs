@@ -1,8 +1,11 @@
 //! Statistics collection and percentile calculation for metrics
 
-use crate::counts::{compute_class_metrics, compute_file_metrics, compute_function_metrics};
+use crate::counts::{compute_class_metrics_with_source, compute_file_metrics, compute_function_metrics};
 use crate::graph::{compute_cyclomatic_complexity, DependencyGraph};
 use crate::parsing::ParsedFile;
+use crate::rust_counts::{compute_rust_file_metrics, compute_rust_function_metrics, compute_rust_lcom};
+use crate::rust_parsing::ParsedRustFile;
+use syn::{ImplItem, Item};
 use tree_sitter::Node;
 
 /// All metric values collected from a codebase
@@ -26,6 +29,9 @@ pub struct MetricStats {
     pub fan_out: Vec<usize>,
     pub fan_in: Vec<usize>,
     pub instability: Vec<usize>, // Stored as percentage (0-100)
+    pub transitive_deps: Vec<usize>,
+    // Class cohesion metrics
+    pub lcom: Vec<usize>, // Stored as percentage (0-100)
 }
 
 impl MetricStats {
@@ -71,6 +77,8 @@ impl MetricStats {
         self.fan_out.extend(other.fan_out);
         self.fan_in.extend(other.fan_in);
         self.instability.extend(other.instability);
+        self.transitive_deps.extend(other.transitive_deps);
+        self.lcom.extend(other.lcom);
     }
 
     /// Collect graph metrics from a dependency graph
@@ -81,7 +89,26 @@ impl MetricStats {
             self.fan_in.push(metrics.fan_in);
             // Store instability as percentage (0-100)
             self.instability.push((metrics.instability * 100.0).round() as usize);
+            self.transitive_deps.push(metrics.transitive_deps);
         }
+    }
+
+    /// Collect metrics from all parsed Rust files
+    pub fn collect_rust(parsed_files: &[&ParsedRustFile]) -> Self {
+        let mut stats = Self::default();
+
+        for parsed in parsed_files {
+            // File-level metrics
+            let file_metrics = compute_rust_file_metrics(parsed);
+            stats.lines_per_file.push(file_metrics.lines);
+            stats.classes_per_file.push(file_metrics.types); // types = struct + enum
+            stats.imports_per_file.push(file_metrics.imports);
+
+            // Walk AST for function and impl metrics
+            collect_rust_from_items(&parsed.ast.items, &mut stats);
+        }
+
+        stats
     }
 }
 
@@ -110,8 +137,10 @@ fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_c
             }
         }
         "class_definition" => {
-            let metrics = compute_class_metrics(node);
+            let metrics = compute_class_metrics_with_source(node, source);
             stats.methods_per_class.push(metrics.methods);
+            // Store LCOM as percentage (0-100)
+            stats.lcom.push((metrics.lcom * 100.0).round() as usize);
 
             // Recurse into class body
             for i in 0..node.child_count() {
@@ -126,6 +155,67 @@ fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_c
                     collect_from_node(child, source, stats, inside_class);
                 }
             }
+        }
+    }
+}
+
+/// Collect metrics from Rust AST items
+fn collect_rust_from_items(items: &[Item], stats: &mut MetricStats) {
+    for item in items {
+        match item {
+            Item::Fn(func) => {
+                let metrics = compute_rust_function_metrics(&func.sig.inputs, &func.block);
+                stats.statements_per_function.push(metrics.statements);
+                stats.arguments_per_function.push(metrics.arguments);
+                stats.arguments_positional.push(metrics.arguments); // Rust: all args are "positional"
+                stats.arguments_keyword_only.push(0); // Rust doesn't have keyword-only args
+                stats.max_indentation.push(metrics.max_indentation);
+                stats.nested_function_depth.push(metrics.nested_function_depth);
+                stats.returns_per_function.push(metrics.returns);
+                stats.branches_per_function.push(metrics.branches);
+                stats.local_variables_per_function.push(metrics.local_variables);
+                stats.cyclomatic_complexity.push(metrics.cyclomatic_complexity);
+            }
+            Item::Impl(impl_block) => {
+                // Count methods
+                let method_count = impl_block
+                    .items
+                    .iter()
+                    .filter(|item| matches!(item, ImplItem::Fn(_)))
+                    .count();
+                stats.methods_per_class.push(method_count);
+                
+                // Compute LCOM for impl blocks with methods
+                if method_count > 1 {
+                    let lcom = compute_rust_lcom(impl_block);
+                    stats.lcom.push((lcom * 100.0).round() as usize);
+                } else {
+                    stats.lcom.push(0); // Single method or no methods = cohesive
+                }
+
+                // Analyze each method
+                for impl_item in &impl_block.items {
+                    if let ImplItem::Fn(method) = impl_item {
+                        let metrics = compute_rust_function_metrics(&method.sig.inputs, &method.block);
+                        stats.statements_per_function.push(metrics.statements);
+                        stats.arguments_per_function.push(metrics.arguments);
+                        stats.arguments_positional.push(metrics.arguments);
+                        stats.arguments_keyword_only.push(0);
+                        stats.max_indentation.push(metrics.max_indentation);
+                        stats.nested_function_depth.push(metrics.nested_function_depth);
+                        stats.returns_per_function.push(metrics.returns);
+                        stats.branches_per_function.push(metrics.branches);
+                        stats.local_variables_per_function.push(metrics.local_variables);
+                        stats.cyclomatic_complexity.push(metrics.cyclomatic_complexity);
+                    }
+                }
+            }
+            Item::Mod(m) => {
+                if let Some((_, items)) = &m.content {
+                    collect_rust_from_items(items, stats);
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -200,7 +290,9 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         PercentileSummary::from_values("Imports per file", &stats.imports_per_file),
         PercentileSummary::from_values("Fan-out (per module)", &stats.fan_out),
         PercentileSummary::from_values("Fan-in (per module)", &stats.fan_in),
+        PercentileSummary::from_values("Transitive deps (per module)", &stats.transitive_deps),
         PercentileSummary::from_values("Instability % (per module)", &stats.instability),
+        PercentileSummary::from_values("LCOM % (per class)", &stats.lcom),
     ]
 }
 
@@ -254,6 +346,8 @@ pub fn generate_config_toml(summaries: &[PercentileSummary]) -> String {
             "Imports per file" => "imports_per_file",
             "Fan-out (per module)" => "fan_out",
             "Fan-in (per module)" => "fan_in",
+            "Transitive deps (per module)" => "transitive_deps",
+            "LCOM % (per class)" => "lcom",
             // Instability is informational, not a threshold
             _ => continue,
         };

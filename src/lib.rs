@@ -1,6 +1,6 @@
-//! kiss - Python code-quality metrics tool
+//! kiss - Code-quality metrics tool for Python and Rust
 
-// Modules
+// Python modules
 pub mod config;
 pub mod counts;
 pub mod discovery;
@@ -11,13 +11,20 @@ pub mod stats;
 pub mod test_refs;
 pub mod units;
 
+// Rust modules
+pub mod rust_counts;
+pub mod rust_graph;
+pub mod rust_parsing;
+pub mod rust_test_refs;
+pub mod rust_units;
+
 // Re-export main types and functions for easy access
-pub use config::{thresholds, Config};
+pub use config::{thresholds, Config, ConfigLanguage};
 pub use counts::{
     analyze_file, compute_class_metrics, compute_file_metrics, compute_function_metrics,
     ClassMetrics, FileMetrics, FunctionMetrics, Violation,
 };
-pub use discovery::find_python_files;
+pub use discovery::{find_python_files, find_rust_files, find_source_files, Language, SourceFile};
 pub use duplication::{
     cluster_duplicates, detect_duplicates, extract_chunks_for_duplication, CodeChunk,
     DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
@@ -32,6 +39,13 @@ pub use stats::{
 };
 pub use test_refs::{analyze_test_refs, is_test_file, CodeDefinition, TestRefAnalysis};
 pub use units::{extract_code_units, CodeUnit, CodeUnitKind};
+
+// Rust re-exports
+pub use rust_counts::{analyze_rust_file, RustFileMetrics, RustFunctionMetrics, RustTypeMetrics};
+pub use rust_graph::build_rust_dependency_graph;
+pub use rust_parsing::{parse_rust_file, parse_rust_files, ParsedRustFile, RustParseError};
+pub use rust_test_refs::{analyze_rust_test_refs, is_rust_test_file, RustCodeDefinition, RustTestRefAnalysis};
+pub use rust_units::{extract_rust_code_units, RustCodeUnit};
 
 #[cfg(test)]
 mod tests {

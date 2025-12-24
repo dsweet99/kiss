@@ -25,6 +25,8 @@ pub struct FunctionMetrics {
 #[derive(Debug, Default)]
 pub struct ClassMetrics {
     pub methods: usize,
+    /// Lack of Cohesion of Methods (0.0 = cohesive, 1.0 = no cohesion)
+    pub lcom: f64,
 }
 
 /// Metrics computed for a file/module
@@ -251,7 +253,7 @@ fn analyze_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Viol
         "class_definition" => {
             let name = get_child_by_field(node, "name", source).unwrap_or_else(|| "<unknown>".to_string());
             let line = node.start_position().row + 1;
-            let metrics = compute_class_metrics(node);
+            let metrics = compute_class_metrics_with_source(node, source);
 
             if metrics.methods > config.methods_per_class {
                 violations.push(Violation {
@@ -263,6 +265,38 @@ fn analyze_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Viol
                     threshold: config.methods_per_class,
                     message: format!("Class '{}' has {} methods (threshold: {})", name, metrics.methods, config.methods_per_class),
                     suggestion: "Split into multiple classes with single responsibilities.".to_string(),
+                });
+            }
+
+            // Check LCOM (stored as percentage 0-100)
+            let lcom_pct = (metrics.lcom * 100.0).round() as usize;
+            if lcom_pct > config.lcom {
+                violations.push(Violation {
+                    file: file.to_path_buf(),
+                    line,
+                    unit_name: name.clone(),
+                    metric: "lcom".to_string(),
+                    value: lcom_pct,
+                    threshold: config.lcom,
+                    message: format!("Class '{}' has LCOM of {}% (threshold: {}%)", name, lcom_pct, config.lcom),
+                    suggestion: "Methods in this class don't share fields; consider splitting into cohesive classes.".to_string(),
+                });
+            }
+
+            // God Class indicator: methods > 20 AND LCOM > 50%
+            if metrics.methods > 20 && lcom_pct > 50 {
+                violations.push(Violation {
+                    file: file.to_path_buf(),
+                    line,
+                    unit_name: name.clone(),
+                    metric: "god_class".to_string(),
+                    value: 1,
+                    threshold: 0,
+                    message: format!(
+                        "Class '{}' is a God Class: {} methods + {}% LCOM indicates low cohesion",
+                        name, metrics.methods, lcom_pct
+                    ),
+                    suggestion: "Break into smaller, focused classes with single responsibilities.".to_string(),
                 });
             }
 
@@ -310,14 +344,102 @@ pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
 
 /// Computes metrics for a class node
 pub fn compute_class_metrics(node: Node) -> ClassMetrics {
+    compute_class_metrics_with_source(node, "")
+}
+
+/// Computes metrics for a class, including LCOM which requires source code
+pub fn compute_class_metrics_with_source(node: Node, source: &str) -> ClassMetrics {
     let mut metrics = ClassMetrics::default();
 
     if let Some(body) = node.child_by_field_name("body") {
         metrics.methods = count_node_kind(body, "function_definition")
             + count_node_kind(body, "async_function_definition");
+        
+        // Compute LCOM if we have source and methods
+        if !source.is_empty() && metrics.methods > 1 {
+            metrics.lcom = compute_lcom(body, source);
+        }
     }
 
     metrics
+}
+
+/// Compute LCOM (Lack of Cohesion of Methods) for a class body
+/// Returns a value between 0.0 (cohesive) and 1.0 (no cohesion)
+fn compute_lcom(body: Node, source: &str) -> f64 {
+    use std::collections::HashSet;
+    
+    // Collect fields accessed by each method
+    let mut method_fields: Vec<HashSet<String>> = Vec::new();
+    let mut cursor = body.walk();
+    
+    for child in body.children(&mut cursor) {
+        if child.kind() == "function_definition" || child.kind() == "async_function_definition" {
+            let fields = extract_self_attributes(child, source);
+            if !fields.is_empty() {
+                method_fields.push(fields);
+            }
+        }
+    }
+    
+    let num_methods = method_fields.len();
+    if num_methods < 2 {
+        return 0.0; // Single method or no methods with field access = cohesive
+    }
+    
+    // Count pairs that share fields vs pairs that don't
+    let mut pairs_sharing = 0usize;
+    let mut pairs_not_sharing = 0usize;
+    
+    for i in 0..num_methods {
+        for j in (i + 1)..num_methods {
+            if method_fields[i].intersection(&method_fields[j]).count() > 0 {
+                pairs_sharing += 1;
+            } else {
+                pairs_not_sharing += 1;
+            }
+        }
+    }
+    
+    let total_pairs = pairs_sharing + pairs_not_sharing;
+    if total_pairs == 0 {
+        return 0.0;
+    }
+    
+    // LCOM = proportion of pairs that don't share fields
+    pairs_not_sharing as f64 / total_pairs as f64
+}
+
+/// Extract all self.attribute accesses from a function node
+fn extract_self_attributes(node: Node, source: &str) -> std::collections::HashSet<String> {
+    use std::collections::HashSet;
+    let mut fields = HashSet::new();
+    extract_self_attributes_recursive(node, source, &mut fields);
+    fields
+}
+
+fn extract_self_attributes_recursive(node: Node, source: &str, fields: &mut std::collections::HashSet<String>) {
+    // Look for attribute access on "self"
+    if node.kind() == "attribute" {
+        // Check if it's self.something
+        if let Some(object) = node.child_by_field_name("object") {
+            if object.kind() == "identifier" {
+                let obj_name = &source[object.start_byte()..object.end_byte()];
+                if obj_name == "self" {
+                    if let Some(attr) = node.child_by_field_name("attribute") {
+                        let attr_name = &source[attr.start_byte()..attr.end_byte()];
+                        fields.insert(attr_name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    
+    // Recurse into children
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        extract_self_attributes_recursive(child, source, fields);
+    }
 }
 
 /// Computes metrics for an entire file
