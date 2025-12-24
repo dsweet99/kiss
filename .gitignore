@@ -1,0 +1,8 @@
+# Rust build artifacts
+target/
+design.md
+style.md
+.cursorrules
+*~
+__pycache__
+check
