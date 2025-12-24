@@ -126,5 +126,26 @@ use crate::module;
         let imports = extract_rust_imports(&ast);
         assert!(imports.contains(&String::from("std")), "imports: {:?}", imports);
     }
+
+    #[test]
+    fn test_build_rust_dependency_graph() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "use std::io;").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let refs: Vec<&crate::rust_parsing::ParsedRustFile> = vec![&parsed];
+        let graph = build_rust_dependency_graph(&refs);
+        assert!(graph.nodes.len() >= 1);
+    }
+
+    #[test]
+    fn test_collect_use_paths() {
+        let ast = parse_rust_code("use foo::bar;");
+        let mut imports = Vec::new();
+        if let syn::Item::Use(u) = &ast.items[0] {
+            collect_use_paths(&u.tree, &mut imports);
+        }
+        assert!(imports.contains(&"foo".to_string()));
+    }
 }
 

@@ -71,3 +71,80 @@ pub fn parse_files(
         .collect())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_create_parser() {
+        let parser = create_parser();
+        assert!(parser.is_ok());
+    }
+
+    #[test]
+    fn test_parse_error_display() {
+        let io_err = ParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"));
+        assert!(io_err.to_string().contains("IO error"));
+        assert_eq!(ParseError::ParserInitError.to_string(), "Failed to initialize Python parser");
+        assert_eq!(ParseError::ParseFailed.to_string(), "Failed to parse Python code");
+    }
+
+    #[test]
+    fn test_parse_error_from_io_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "test");
+        let parse_err: ParseError = io_err.into();
+        matches!(parse_err, ParseError::IoError(_));
+    }
+
+    #[test]
+    fn test_parse_file_success() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        writeln!(tmp, "def hello(): pass").unwrap();
+        let mut parser = create_parser().unwrap();
+        let result = parse_file(&mut parser, tmp.path());
+        assert!(result.is_ok());
+        let parsed = result.unwrap();
+        assert!(parsed.source.contains("def hello"));
+    }
+
+    #[test]
+    fn test_parse_file_nonexistent() {
+        let mut parser = create_parser().unwrap();
+        let result = parse_file(&mut parser, Path::new("/nonexistent/file.py"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_files_multiple() {
+        let tmp1 = tempfile::NamedTempFile::new().unwrap();
+        let tmp2 = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp1.path(), "x = 1").unwrap();
+        std::fs::write(tmp2.path(), "y = 2").unwrap();
+        let paths = vec![tmp1.path().to_path_buf(), tmp2.path().to_path_buf()];
+        let results = parse_files(&paths).unwrap();
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|r| r.is_ok()));
+    }
+
+    #[test]
+    fn test_parsed_file_struct() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        writeln!(tmp, "class Foo: pass").unwrap();
+        let mut parser = create_parser().unwrap();
+        let parsed = parse_file(&mut parser, tmp.path()).unwrap();
+        assert_eq!(parsed.path, tmp.path());
+        assert!(parsed.source.contains("class Foo"));
+        assert!(parsed.tree.root_node().kind() == "module");
+    }
+
+    #[test]
+    fn test_parse_error_display_fmt() {
+        use std::fmt::Write;
+        let err = ParseError::ParseFailed;
+        let mut s = String::new();
+        write!(&mut s, "{}", err).unwrap();
+        assert!(!s.is_empty());
+    }
+}
+

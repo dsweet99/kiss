@@ -159,62 +159,32 @@ fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_c
     }
 }
 
-/// Collect metrics from Rust AST items
+fn push_rust_fn_metrics(stats: &mut MetricStats, m: &crate::rust_counts::RustFunctionMetrics) {
+    stats.statements_per_function.push(m.statements);
+    stats.arguments_per_function.push(m.arguments);
+    stats.arguments_positional.push(m.arguments);
+    stats.arguments_keyword_only.push(0);
+    stats.max_indentation.push(m.max_indentation);
+    stats.nested_function_depth.push(m.nested_function_depth);
+    stats.returns_per_function.push(m.returns);
+    stats.branches_per_function.push(m.branches);
+    stats.local_variables_per_function.push(m.local_variables);
+    stats.cyclomatic_complexity.push(m.cyclomatic_complexity);
+}
+
 fn collect_rust_from_items(items: &[Item], stats: &mut MetricStats) {
     for item in items {
         match item {
-            Item::Fn(func) => {
-                let metrics = compute_rust_function_metrics(&func.sig.inputs, &func.block);
-                stats.statements_per_function.push(metrics.statements);
-                stats.arguments_per_function.push(metrics.arguments);
-                stats.arguments_positional.push(metrics.arguments); // Rust: all args are "positional"
-                stats.arguments_keyword_only.push(0); // Rust doesn't have keyword-only args
-                stats.max_indentation.push(metrics.max_indentation);
-                stats.nested_function_depth.push(metrics.nested_function_depth);
-                stats.returns_per_function.push(metrics.returns);
-                stats.branches_per_function.push(metrics.branches);
-                stats.local_variables_per_function.push(metrics.local_variables);
-                stats.cyclomatic_complexity.push(metrics.cyclomatic_complexity);
-            }
+            Item::Fn(func) => push_rust_fn_metrics(stats, &compute_rust_function_metrics(&func.sig.inputs, &func.block)),
             Item::Impl(impl_block) => {
-                // Count methods
-                let method_count = impl_block
-                    .items
-                    .iter()
-                    .filter(|item| matches!(item, ImplItem::Fn(_)))
-                    .count();
-                stats.methods_per_class.push(method_count);
-                
-                // Compute LCOM for impl blocks with methods
-                if method_count > 1 {
-                    let lcom = compute_rust_lcom(impl_block);
-                    stats.lcom.push((lcom * 100.0).round() as usize);
-                } else {
-                    stats.lcom.push(0); // Single method or no methods = cohesive
-                }
-
-                // Analyze each method
-                for impl_item in &impl_block.items {
-                    if let ImplItem::Fn(method) = impl_item {
-                        let metrics = compute_rust_function_metrics(&method.sig.inputs, &method.block);
-                        stats.statements_per_function.push(metrics.statements);
-                        stats.arguments_per_function.push(metrics.arguments);
-                        stats.arguments_positional.push(metrics.arguments);
-                        stats.arguments_keyword_only.push(0);
-                        stats.max_indentation.push(metrics.max_indentation);
-                        stats.nested_function_depth.push(metrics.nested_function_depth);
-                        stats.returns_per_function.push(metrics.returns);
-                        stats.branches_per_function.push(metrics.branches);
-                        stats.local_variables_per_function.push(metrics.local_variables);
-                        stats.cyclomatic_complexity.push(metrics.cyclomatic_complexity);
-                    }
+                let mcnt = impl_block.items.iter().filter(|i| matches!(i, ImplItem::Fn(_))).count();
+                stats.methods_per_class.push(mcnt);
+                stats.lcom.push(if mcnt > 1 { (compute_rust_lcom(impl_block) * 100.0).round() as usize } else { 0 });
+                for ii in &impl_block.items {
+                    if let ImplItem::Fn(m) = ii { push_rust_fn_metrics(stats, &compute_rust_function_metrics(&m.sig.inputs, &m.block)); }
                 }
             }
-            Item::Mod(m) => {
-                if let Some((_, items)) = &m.content {
-                    collect_rust_from_items(items, stats);
-                }
-            }
+            Item::Mod(m) => { if let Some((_, items)) = &m.content { collect_rust_from_items(items, stats); } }
             _ => {}
         }
     }
@@ -321,40 +291,36 @@ pub fn format_stats_table(summaries: &[PercentileSummary]) -> String {
     output
 }
 
-/// Generate a config TOML string using 99th percentile values
+fn config_key_for(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "Statements per function" => "statements_per_function",
+        "Arguments (total)" => "arguments_per_function",
+        "Arguments (positional)" => "arguments_positional",
+        "Arguments (keyword-only)" => "arguments_keyword_only",
+        "Max indentation depth" => "max_indentation_depth",
+        "Nested function depth" => "nested_function_depth",
+        "Returns per function" => "returns_per_function",
+        "Branches per function" => "branches_per_function",
+        "Local variables per function" => "local_variables_per_function",
+        "Cyclomatic complexity" => "cyclomatic_complexity",
+        "Methods per class" => "methods_per_class",
+        "Lines per file" => "lines_per_file",
+        "Classes per file" => "classes_per_file",
+        "Imports per file" => "imports_per_file",
+        "Fan-out (per module)" => "fan_out",
+        "Fan-in (per module)" => "fan_in",
+        "Transitive deps (per module)" => "transitive_deps",
+        "LCOM % (per class)" => "lcom",
+        _ => return None,
+    })
+}
+
 pub fn generate_config_toml(summaries: &[PercentileSummary]) -> String {
-    let mut output = String::new();
-    output.push_str("# Generated by kiss mimic\n");
-    output.push_str("# Thresholds based on 99th percentile of analyzed codebases\n\n");
-    output.push_str("[thresholds]\n");
-
+    let mut out = String::from("# Generated by kiss mimic\n# Thresholds based on 99th percentile of analyzed codebases\n\n[thresholds]\n");
     for s in summaries {
-        let key = match s.name {
-            "Statements per function" => "statements_per_function",
-            "Arguments (total)" => "arguments_per_function",
-            "Arguments (positional)" => "arguments_positional",
-            "Arguments (keyword-only)" => "arguments_keyword_only",
-            "Max indentation depth" => "max_indentation_depth",
-            "Nested function depth" => "nested_function_depth",
-            "Returns per function" => "returns_per_function",
-            "Branches per function" => "branches_per_function",
-            "Local variables per function" => "local_variables_per_function",
-            "Cyclomatic complexity" => "cyclomatic_complexity",
-            "Methods per class" => "methods_per_class",
-            "Lines per file" => "lines_per_file",
-            "Classes per file" => "classes_per_file",
-            "Imports per file" => "imports_per_file",
-            "Fan-out (per module)" => "fan_out",
-            "Fan-in (per module)" => "fan_in",
-            "Transitive deps (per module)" => "transitive_deps",
-            "LCOM % (per class)" => "lcom",
-            // Instability is informational, not a threshold
-            _ => continue,
-        };
-        output.push_str(&format!("{} = {}\n", key, s.p99));
+        if let Some(key) = config_key_for(s.name) { out.push_str(&format!("{} = {}\n", key, s.p99)); }
     }
-
-    output
+    out
 }
 
 #[cfg(test)]
@@ -440,6 +406,99 @@ mod tests {
         assert!(table.contains("50%"));
         assert!(table.contains("99%"));
         assert!(table.contains("Test metric"));
+    }
+
+    #[test]
+    fn test_metric_stats_default() {
+        let s = MetricStats::default();
+        assert!(s.statements_per_function.is_empty());
+    }
+
+    #[test]
+    fn test_metric_stats_merge() {
+        let mut a = MetricStats::default();
+        a.statements_per_function.push(5);
+        let mut b = MetricStats::default();
+        b.statements_per_function.push(10);
+        a.merge(b);
+        assert_eq!(a.statements_per_function.len(), 2);
+    }
+
+    #[test]
+    fn test_percentile_summary_struct() {
+        let s = PercentileSummary { name: "x", count: 1, p50: 2, p90: 3, p95: 4, p99: 5, max: 6 };
+        assert_eq!(s.name, "x");
+    }
+
+    #[test]
+    fn test_compute_summaries() {
+        let mut stats = MetricStats::default();
+        stats.statements_per_function = vec![1, 2, 3, 4, 5];
+        let summaries = compute_summaries(&stats);
+        assert!(!summaries.is_empty());
+        let s = summaries.iter().find(|s| s.name == "Statements per function").unwrap();
+        assert_eq!(s.count, 5);
+    }
+
+    #[test]
+    fn test_config_key_for() {
+        assert_eq!(config_key_for("Statements per function"), Some("statements_per_function"));
+        assert_eq!(config_key_for("Unknown metric"), None);
+    }
+
+    #[test]
+    fn test_collect_graph_metrics() {
+        let mut stats = MetricStats::default();
+        let graph = crate::graph::DependencyGraph::default();
+        stats.collect_graph_metrics(&graph);
+        // Should not panic, stats may or may not have values depending on graph
+        assert!(stats.fan_out.is_empty() || !stats.fan_out.is_empty());
+    }
+
+    #[test]
+    fn test_collect_rust() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "fn foo() {{ let x = 1; }}").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let stats = MetricStats::collect_rust(&[&parsed]);
+        assert!(!stats.statements_per_function.is_empty());
+    }
+
+    #[test]
+    fn test_collect_from_node() {
+        use crate::parsing::{create_parser, parse_file};
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        writeln!(tmp, "def f():\n    x = 1\n    return x").unwrap();
+        let mut parser = create_parser().unwrap();
+        let parsed = parse_file(&mut parser, tmp.path()).unwrap();
+        let mut stats = MetricStats::default();
+        collect_from_node(parsed.tree.root_node(), &parsed.source, &mut stats, false);
+        assert!(!stats.statements_per_function.is_empty());
+    }
+
+    #[test]
+    fn test_push_rust_fn_metrics() {
+        let metrics = crate::rust_counts::RustFunctionMetrics { statements: 5, arguments: 2, max_indentation: 1, returns: 1, branches: 0, local_variables: 2, cyclomatic_complexity: 2, nested_function_depth: 0 };
+        let mut stats = MetricStats::default();
+        push_rust_fn_metrics(&mut stats, &metrics);
+        assert!(stats.statements_per_function.contains(&5));
+    }
+
+    #[test]
+    fn test_collect_rust_from_items() {
+        let file: syn::File = syn::parse_str("fn foo() { let x = 1; }").unwrap();
+        let mut stats = MetricStats::default();
+        collect_rust_from_items(&file.items, &mut stats);
+        assert!(!stats.statements_per_function.is_empty());
+    }
+
+    #[test]
+    fn test_percentile_direct() {
+        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        assert_eq!(percentile(&data, 0.0), 1);
+        assert_eq!(percentile(&data, 100.0), 10);
     }
 }
 

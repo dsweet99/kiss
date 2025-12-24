@@ -228,5 +228,29 @@ impl Counter {
         let modules: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Module).collect();
         assert!(!modules.is_empty(), "Should have at least one module (the file)");
     }
+
+    #[test]
+    fn test_code_unit_visitor_struct() {
+        let visitor = CodeUnitVisitor::new("fn foo() {}\n");
+        assert!(visitor.source_lines >= 1);
+    }
+
+    #[test]
+    fn test_visit_item_directly() {
+        use syn::visit::Visit;
+        let file: syn::File = syn::parse_str("fn bar() {}").unwrap();
+        let mut visitor = CodeUnitVisitor::new("fn bar() {}\n");
+        visitor.visit_item(&file.items[0]);
+        assert!(visitor.units.iter().any(|u| u.name == "bar"));
+    }
+
+    #[test]
+    fn test_estimate_block_lines() {
+        let file: syn::File = syn::parse_str("fn f() { let x = 1; let y = 2; }").unwrap();
+        if let syn::Item::Fn(func) = &file.items[0] {
+            let lines = estimate_block_lines(&func.block);
+            assert!(lines >= 1);
+        }
+    }
 }
 

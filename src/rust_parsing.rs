@@ -107,5 +107,41 @@ impl Counter {{
         let result = parse_rust_file(Path::new("nonexistent_file.rs"));
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_rust_parse_error_enum() {
+        let io_err = RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
+        assert!(matches!(io_err, RustParseError::IoError(_)));
+    }
+
+    #[test]
+    fn test_rust_parse_error_display_fmt() {
+        use std::fmt::Write;
+        let err = RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
+        let mut s = String::new();
+        write!(&mut s, "{}", err).unwrap();
+        assert!(s.contains("IO error"));
+    }
+
+    #[test]
+    fn test_parsed_rust_file_struct() {
+        let mut file = NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(file, "fn foo() {{}}").unwrap();
+        let parsed = parse_rust_file(file.path()).unwrap();
+        assert!(!parsed.source.is_empty());
+        assert!(!parsed.ast.items.is_empty());
+    }
+
+    #[test]
+    fn test_parse_rust_files() {
+        let mut f1 = NamedTempFile::with_suffix(".rs").unwrap();
+        let mut f2 = NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(f1, "fn a() {{}}").unwrap();
+        writeln!(f2, "fn b() {{}}").unwrap();
+        let paths = vec![f1.path().to_path_buf(), f2.path().to_path_buf()];
+        let results = parse_rust_files(&paths);
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|r| r.is_ok()));
+    }
 }
 

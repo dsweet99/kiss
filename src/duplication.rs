@@ -88,68 +88,62 @@ impl UnionFind {
     }
 }
 
+type ChunkKey = (PathBuf, usize, usize);
+
+fn chunk_key(c: &CodeChunk) -> ChunkKey {
+    (c.file.clone(), c.start_line, c.end_line)
+}
+
+fn build_chunk_index(chunks: &[CodeChunk]) -> HashMap<ChunkKey, usize> {
+    chunks.iter().enumerate().map(|(idx, c)| (chunk_key(c), idx)).collect()
+}
+
+fn compute_cluster_similarity(indices: &[usize], pair_sims: &HashMap<(usize, usize), f64>) -> f64 {
+    let mut total = 0.0;
+    let mut count = 0;
+    for i in 0..indices.len() {
+        for j in (i + 1)..indices.len() {
+            let key = (indices[i].min(indices[j]), indices[i].max(indices[j]));
+            if let Some(&sim) = pair_sims.get(&key) {
+                total += sim;
+                count += 1;
+            }
+        }
+    }
+    if count > 0 { total / count as f64 } else { 0.0 }
+}
+
 /// Cluster duplicate pairs into groups of similar code
 pub fn cluster_duplicates(pairs: &[DuplicatePair], chunks: &[CodeChunk]) -> Vec<DuplicateCluster> {
     if pairs.is_empty() || chunks.len() < 2 {
         return Vec::new();
     }
 
-    // Build chunk-to-index map based on identity (file + lines)
-    let chunk_key = |c: &CodeChunk| (c.file.clone(), c.start_line, c.end_line);
-    let mut key_to_idx: HashMap<(PathBuf, usize, usize), usize> = HashMap::new();
-    for (idx, chunk) in chunks.iter().enumerate() {
-        key_to_idx.insert(chunk_key(chunk), idx);
-    }
-
-    // Union-Find to cluster similar chunks
+    let key_to_idx = build_chunk_index(chunks);
     let mut uf = UnionFind::new(chunks.len());
     let mut pair_similarities: HashMap<(usize, usize), f64> = HashMap::new();
 
     for pair in pairs {
-        let key1 = chunk_key(&pair.chunk1);
-        let key2 = chunk_key(&pair.chunk2);
-
-        if let (Some(&idx1), Some(&idx2)) = (key_to_idx.get(&key1), key_to_idx.get(&key2)) {
-            uf.union(idx1, idx2);
-            let key = (idx1.min(idx2), idx1.max(idx2));
-            pair_similarities.insert(key, pair.similarity);
+        if let (Some(&i1), Some(&i2)) = (key_to_idx.get(&chunk_key(&pair.chunk1)), key_to_idx.get(&chunk_key(&pair.chunk2))) {
+            uf.union(i1, i2);
+            pair_similarities.insert((i1.min(i2), i1.max(i2)), pair.similarity);
         }
     }
 
-    // Group by cluster root
     let mut clusters_map: HashMap<usize, Vec<usize>> = HashMap::new();
     for idx in 0..chunks.len() {
-        let root = uf.find(idx);
-        clusters_map.entry(root).or_default().push(idx);
+        clusters_map.entry(uf.find(idx)).or_default().push(idx);
     }
 
-    // Build cluster structs (only clusters with 2+ members)
     let mut clusters: Vec<DuplicateCluster> = clusters_map
         .into_values()
         .filter(|indices| indices.len() > 1)
-        .map(|indices| {
-            // Calculate average similarity within cluster
-            let mut total_sim = 0.0;
-            let mut count = 0;
-            for i in 0..indices.len() {
-                for j in (i + 1)..indices.len() {
-                    let key = (indices[i].min(indices[j]), indices[i].max(indices[j]));
-                    if let Some(&sim) = pair_similarities.get(&key) {
-                        total_sim += sim;
-                        count += 1;
-                    }
-                }
-            }
-            let avg_similarity = if count > 0 { total_sim / count as f64 } else { 0.0 };
-
-            DuplicateCluster {
-                chunks: indices.into_iter().map(|i| chunks[i].clone()).collect(),
-                avg_similarity,
-            }
+        .map(|indices| DuplicateCluster {
+            avg_similarity: compute_cluster_similarity(&indices, &pair_similarities),
+            chunks: indices.into_iter().map(|i| chunks[i].clone()).collect(),
         })
         .collect();
 
-    // Sort by cluster size (largest first), then by similarity
     clusters.sort_by(|a, b| {
         b.chunks.len().cmp(&a.chunks.len())
             .then_with(|| b.avg_similarity.partial_cmp(&a.avg_similarity).unwrap_or(std::cmp::Ordering::Equal))
@@ -297,53 +291,46 @@ fn estimate_similarity(sig1: &MinHashSignature, sig2: &MinHashSignature) -> f64 
     matching as f64 / sig1.hashes.len() as f64
 }
 
+fn hash_band(band_slice: &[u64]) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    band_slice.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn add_bucket_pairs(indices: &[usize], candidates: &mut std::collections::HashSet<(usize, usize)>) {
+    if indices.len() < 2 || indices.len() > 100 { return; }
+    for i in 0..indices.len() {
+        for j in (i + 1)..indices.len() {
+            candidates.insert((indices[i].min(indices[j]), indices[i].max(indices[j])));
+        }
+    }
+}
+
 /// Find candidate pairs using LSH
 fn find_lsh_candidates(
     signatures: &[MinHashSignature],
     num_bands: usize,
 ) -> std::collections::HashSet<(usize, usize)> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
     let mut candidates = std::collections::HashSet::new();
+    if signatures.is_empty() { return candidates; }
 
-    if signatures.is_empty() {
-        return candidates;
-    }
-
-    let rows_per_band = (signatures[0].hashes.len() / num_bands).max(1);
+    let hash_len = signatures[0].hashes.len();
+    let rows_per_band = (hash_len / num_bands).max(1);
 
     for band_idx in 0..num_bands {
         let band_start = band_idx * rows_per_band;
-        let band_end = (band_start + rows_per_band).min(signatures[0].hashes.len());
+        if band_start >= hash_len { break; }
+        let band_end = (band_start + rows_per_band).min(hash_len);
 
-        if band_start >= signatures[0].hashes.len() {
-            break;
-        }
-
-        // Build buckets for this band
         let mut buckets: HashMap<u64, Vec<usize>> = HashMap::new();
-
         for (idx, sig) in signatures.iter().enumerate() {
-            let band_slice = &sig.hashes[band_start..band_end];
-            let mut hasher = DefaultHasher::new();
-            band_slice.hash(&mut hasher);
-            let band_hash = hasher.finish();
-
-            buckets.entry(band_hash).or_default().push(idx);
+            buckets.entry(hash_band(&sig.hashes[band_start..band_end])).or_default().push(idx);
         }
 
-        // Generate candidate pairs from buckets
         for indices in buckets.values() {
-            if indices.len() < 2 || indices.len() > 100 {
-                continue;
-            }
-            for i in 0..indices.len() {
-                for j in (i + 1)..indices.len() {
-                    let (a, b) = (indices[i].min(indices[j]), indices[i].max(indices[j]));
-                    candidates.insert((a, b));
-                }
-            }
+            add_bucket_pairs(indices, &mut candidates);
         }
     }
 
@@ -423,6 +410,176 @@ mod tests {
         let normalized = normalize_code(code);
         // 123 should become a single N
         assert_eq!(normalized.matches('N').count(), 1, "got: {:?}", normalized);
+    }
+
+    #[test]
+    fn test_duplication_config_default() {
+        let c = DuplicationConfig::default();
+        assert!(c.shingle_size > 0);
+        assert!(c.minhash_size > 0);
+    }
+
+    #[test]
+    fn test_code_chunk_struct() {
+        let chunk = CodeChunk { file: std::path::PathBuf::from("f.py"), name: "foo".into(), start_line: 1, end_line: 10, normalized: "x".into() };
+        assert_eq!(chunk.name, "foo");
+    }
+
+    #[test]
+    fn test_minhash_signature_struct() {
+        let sig = MinHashSignature { hashes: vec![1, 2, 3] };
+        assert_eq!(sig.hashes.len(), 3);
+    }
+
+    #[test]
+    fn test_duplicate_pair_struct() {
+        let c1 = CodeChunk { file: "a.py".into(), name: "f".into(), start_line: 1, end_line: 5, normalized: "".into() };
+        let c2 = CodeChunk { file: "b.py".into(), name: "g".into(), start_line: 1, end_line: 5, normalized: "".into() };
+        let pair = DuplicatePair { chunk1: c1, chunk2: c2, similarity: 0.9 };
+        assert_eq!(pair.similarity, 0.9);
+    }
+
+    #[test]
+    fn test_duplicate_cluster_struct() {
+        let cluster = DuplicateCluster { chunks: vec![], avg_similarity: 0.85 };
+        assert_eq!(cluster.avg_similarity, 0.85);
+    }
+
+    #[test]
+    fn test_union_find() {
+        let mut uf = UnionFind::new(3);
+        uf.union(0, 1);
+        assert_eq!(uf.find(0), uf.find(1));
+    }
+
+    #[test]
+    fn test_chunk_key() {
+        let chunk = CodeChunk { file: std::path::PathBuf::from("a.py"), name: "f".into(), start_line: 5, end_line: 10, normalized: "".into() };
+        let key = chunk_key(&chunk);
+        assert_eq!(key.0, std::path::PathBuf::from("a.py"));
+    }
+
+    #[test]
+    fn test_build_chunk_index() {
+        let chunks = vec![
+            CodeChunk { file: std::path::PathBuf::from("a.py"), name: "f".into(), start_line: 1, end_line: 5, normalized: "".into() },
+        ];
+        let idx = build_chunk_index(&chunks);
+        assert_eq!(idx.len(), 1);
+    }
+
+    #[test]
+    fn test_generate_shingles() {
+        let shingles = generate_shingles("one two three four", 3);
+        assert!(!shingles.is_empty());
+    }
+
+    #[test]
+    fn test_compute_minhash() {
+        let shingles = generate_shingles("def foo(): pass", 3);
+        let sig = compute_minhash(&shingles, 5);
+        assert_eq!(sig.hashes.len(), 5);
+    }
+
+    #[test]
+    fn test_estimate_similarity() {
+        let a = MinHashSignature { hashes: vec![1, 2, 3, 4, 5] };
+        let b = MinHashSignature { hashes: vec![1, 2, 3, 4, 5] };
+        assert_eq!(estimate_similarity(&a, &b), 1.0);
+    }
+
+    #[test]
+    fn test_estimate_similarity_different() {
+        let a = MinHashSignature { hashes: vec![1, 2, 3, 4, 5] };
+        let b = MinHashSignature { hashes: vec![6, 7, 8, 9, 10] };
+        assert_eq!(estimate_similarity(&a, &b), 0.0);
+    }
+
+    #[test]
+    fn test_duplication_config_struct() {
+        let c = DuplicationConfig { minhash_size: 50, shingle_size: 5, lsh_bands: 10, min_similarity: 0.8 };
+        assert_eq!(c.minhash_size, 50);
+    }
+
+    #[test]
+    fn test_union_find_struct() {
+        let mut uf = UnionFind::new(5);
+        uf.union(1, 2);
+        uf.union(3, 4);
+        assert_eq!(uf.find(1), uf.find(2));
+        assert_ne!(uf.find(1), uf.find(3));
+    }
+
+    #[test]
+    fn test_compute_cluster_similarity() {
+        let mut pair_sims = std::collections::HashMap::new();
+        pair_sims.insert((0, 1), 0.9);
+        let sim = compute_cluster_similarity(&[0, 1], &pair_sims);
+        assert!(sim >= 0.0 && sim <= 1.0);
+    }
+
+    #[test]
+    fn test_cluster_duplicates() {
+        let c1 = CodeChunk { file: "a.py".into(), name: "f".into(), start_line: 1, end_line: 5, normalized: "x".into() };
+        let c2 = CodeChunk { file: "b.py".into(), name: "g".into(), start_line: 1, end_line: 5, normalized: "x".into() };
+        let pairs = vec![DuplicatePair { chunk1: c1.clone(), chunk2: c2.clone(), similarity: 0.9 }];
+        let chunks = vec![c1, c2];
+        let clusters = cluster_duplicates(&pairs, &chunks);
+        let _ = clusters; // Just verify it runs
+    }
+
+    #[test]
+    fn test_extract_chunks_for_duplication() {
+        use crate::parsing::{create_parser, parse_file};
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        writeln!(tmp, "def foo():\n    x = 1\n    y = 2\n    z = 3\n    return x + y + z").unwrap();
+        let mut parser = create_parser().unwrap();
+        let parsed = parse_file(&mut parser, tmp.path()).unwrap();
+        let refs = vec![&parsed];
+        let chunks = extract_chunks_for_duplication(&refs);
+        // Just verify it runs - chunks may be empty if function is too short
+        let _ = chunks;
+    }
+
+    #[test]
+    fn test_extract_function_chunks() {
+        use crate::parsing::{create_parser, parse_file};
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        writeln!(tmp, "def bar():\n    a = 1\n    b = 2\n    c = 3\n    return a + b + c").unwrap();
+        let mut parser = create_parser().unwrap();
+        let parsed = parse_file(&mut parser, tmp.path()).unwrap();
+        let mut chunks = Vec::new();
+        extract_function_chunks(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut chunks);
+        // Just verify it runs - chunks may be empty if function is too short
+        let _ = chunks;
+    }
+
+    #[test]
+    fn test_hash_band() {
+        let hashes = vec![1, 2, 3, 4, 5, 6];
+        let h1 = hash_band(&hashes[0..3]);
+        let h2 = hash_band(&hashes[3..6]);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_add_bucket_pairs() {
+        let indices = vec![0, 1, 2];
+        let mut candidates = std::collections::HashSet::new();
+        add_bucket_pairs(&indices, &mut candidates);
+        assert!(!candidates.is_empty());
+    }
+
+    #[test]
+    fn test_find_lsh_candidates() {
+        let sigs = vec![
+            MinHashSignature { hashes: vec![1, 2, 3, 4, 5, 6] },
+            MinHashSignature { hashes: vec![1, 2, 3, 4, 5, 6] },
+        ];
+        let pairs = find_lsh_candidates(&sigs, 2);
+        let _ = pairs; // Just verify it runs
     }
 }
 

@@ -2,6 +2,13 @@
 
 use std::path::Path;
 
+/// Macro to reduce boilerplate in apply_* methods
+macro_rules! apply_config {
+    ($self:ident, $table:ident, $($key:literal => $field:ident),+ $(,)?) => {
+        $( if let Some(v) = get_usize($table, $key) { $self.$field = v; } )+
+    };
+}
+
 /// Language for config loading
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigLanguage {
@@ -193,152 +200,68 @@ impl Config {
         }
     }
 
-    /// Apply values from legacy [thresholds] section
     fn apply_thresholds(&mut self, table: &toml::Table) {
-        if let Some(v) = get_usize(table, "statements_per_function") {
-            self.statements_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "methods_per_class") {
-            self.methods_per_class = v;
-        }
-        if let Some(v) = get_usize(table, "lines_per_file") {
-            self.lines_per_file = v;
-        }
-        if let Some(v) = get_usize(table, "arguments_per_function") {
-            self.arguments_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "arguments_positional") {
-            self.arguments_positional = v;
-        }
-        if let Some(v) = get_usize(table, "arguments_keyword_only") {
-            self.arguments_keyword_only = v;
-        }
-        if let Some(v) = get_usize(table, "max_indentation_depth") {
-            self.max_indentation_depth = v;
-        }
-        if let Some(v) = get_usize(table, "classes_per_file") {
-            self.classes_per_file = v;
-        }
-        if let Some(v) = get_usize(table, "nested_function_depth") {
-            self.nested_function_depth = v;
-        }
-        if let Some(v) = get_usize(table, "returns_per_function") {
-            self.returns_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "branches_per_function") {
-            self.branches_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "local_variables_per_function") {
-            self.local_variables_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "imports_per_file") {
-            self.imports_per_file = v;
-        }
-        if let Some(v) = get_usize(table, "cyclomatic_complexity") {
-            self.cyclomatic_complexity = v;
-        }
-        if let Some(v) = get_usize(table, "fan_out") {
-            self.fan_out = v;
-        }
-        if let Some(v) = get_usize(table, "fan_in") {
-            self.fan_in = v;
-        }
-        if let Some(v) = get_usize(table, "transitive_deps") {
-            self.transitive_deps = v;
-        }
-        if let Some(v) = get_usize(table, "lcom") {
-            self.lcom = v;
-        }
+        apply_config!(self, table,
+            "statements_per_function" => statements_per_function,
+            "methods_per_class" => methods_per_class,
+            "lines_per_file" => lines_per_file,
+            "arguments_per_function" => arguments_per_function,
+            "arguments_positional" => arguments_positional,
+            "arguments_keyword_only" => arguments_keyword_only,
+            "max_indentation_depth" => max_indentation_depth,
+            "classes_per_file" => classes_per_file,
+            "nested_function_depth" => nested_function_depth,
+            "returns_per_function" => returns_per_function,
+            "branches_per_function" => branches_per_function,
+            "local_variables_per_function" => local_variables_per_function,
+            "imports_per_file" => imports_per_file,
+            "cyclomatic_complexity" => cyclomatic_complexity,
+            "fan_out" => fan_out,
+            "fan_in" => fan_in,
+            "transitive_deps" => transitive_deps,
+            "lcom" => lcom
+        );
     }
 
-    /// Apply values from [shared] section
     fn apply_shared(&mut self, table: &toml::Table) {
-        if let Some(v) = get_usize(table, "lines_per_file") {
-            self.lines_per_file = v;
-        }
-        if let Some(v) = get_usize(table, "types_per_file") {
-            self.classes_per_file = v;
-        }
-        if let Some(v) = get_usize(table, "imports_per_file") {
-            self.imports_per_file = v;
-        }
+        apply_config!(self, table,
+            "lines_per_file" => lines_per_file,
+            "types_per_file" => classes_per_file,
+            "imports_per_file" => imports_per_file
+        );
     }
 
-    /// Apply values from [python] section
     fn apply_python(&mut self, table: &toml::Table) {
-        if let Some(v) = get_usize(table, "statements_per_function") {
-            self.statements_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "positional_args") {
-            self.arguments_positional = v;
-        }
-        if let Some(v) = get_usize(table, "keyword_only_args") {
-            self.arguments_keyword_only = v;
-        }
-        if let Some(v) = get_usize(table, "max_indentation") {
-            self.max_indentation_depth = v;
-        }
-        if let Some(v) = get_usize(table, "branches_per_function") {
-            self.branches_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "local_variables") {
-            self.local_variables_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "methods_per_class") {
-            self.methods_per_class = v;
-        }
-        if let Some(v) = get_usize(table, "cyclomatic_complexity") {
-            self.cyclomatic_complexity = v;
-        }
-        if let Some(v) = get_usize(table, "fan_out") {
-            self.fan_out = v;
-        }
-        if let Some(v) = get_usize(table, "fan_in") {
-            self.fan_in = v;
-        }
-        if let Some(v) = get_usize(table, "transitive_deps") {
-            self.transitive_deps = v;
-        }
-        if let Some(v) = get_usize(table, "lcom") {
-            self.lcom = v;
-        }
+        apply_config!(self, table,
+            "statements_per_function" => statements_per_function,
+            "positional_args" => arguments_positional,
+            "keyword_only_args" => arguments_keyword_only,
+            "max_indentation" => max_indentation_depth,
+            "branches_per_function" => branches_per_function,
+            "local_variables" => local_variables_per_function,
+            "methods_per_class" => methods_per_class,
+            "cyclomatic_complexity" => cyclomatic_complexity,
+            "fan_out" => fan_out,
+            "fan_in" => fan_in,
+            "transitive_deps" => transitive_deps,
+            "lcom" => lcom
+        );
     }
 
-    /// Apply values from [rust] section
     fn apply_rust(&mut self, table: &toml::Table) {
-        if let Some(v) = get_usize(table, "statements_per_function") {
-            self.statements_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "arguments") {
-            self.arguments_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "max_indentation") {
-            self.max_indentation_depth = v;
-        }
-        if let Some(v) = get_usize(table, "branches_per_function") {
-            self.branches_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "local_variables") {
-            self.local_variables_per_function = v;
-        }
-        if let Some(v) = get_usize(table, "methods_per_type") {
-            self.methods_per_class = v;
-        }
-        if let Some(v) = get_usize(table, "cyclomatic_complexity") {
-            self.cyclomatic_complexity = v;
-        }
-        if let Some(v) = get_usize(table, "fan_out") {
-            self.fan_out = v;
-        }
-        if let Some(v) = get_usize(table, "fan_in") {
-            self.fan_in = v;
-        }
-        if let Some(v) = get_usize(table, "transitive_deps") {
-            self.transitive_deps = v;
-        }
-        if let Some(v) = get_usize(table, "lcom") {
-            self.lcom = v;
-        }
+        apply_config!(self, table,
+            "statements_per_function" => statements_per_function,
+            "arguments" => arguments_per_function,
+            "max_indentation" => max_indentation_depth,
+            "branches_per_function" => branches_per_function,
+            "local_variables" => local_variables_per_function,
+            "methods_per_type" => methods_per_class,
+            "cyclomatic_complexity" => cyclomatic_complexity,
+            "fan_out" => fan_out,
+            "fan_in" => fan_in,
+            "transitive_deps" => transitive_deps,
+            "lcom" => lcom
+        );
     }
 }
 
@@ -545,6 +468,93 @@ statements_per_function = 80
         rs_config.merge_from_toml(toml, Some(ConfigLanguage::Rust));
         assert_eq!(rs_config.lines_per_file, 700);
         assert_eq!(rs_config.statements_per_function, 80);
+    }
+
+    #[test]
+    fn test_config_language_enum() {
+        assert_ne!(ConfigLanguage::Python, ConfigLanguage::Rust);
+        let _p = ConfigLanguage::Python;
+        let _r = ConfigLanguage::Rust;
+    }
+
+    #[test]
+    fn test_config_struct_fields() {
+        let c = Config::default();
+        assert!(c.statements_per_function > 0);
+        assert!(c.lines_per_file > 0);
+    }
+
+    #[test]
+    fn test_load_returns_config() {
+        // Just verify it doesn't panic
+        let c = Config::load();
+        assert!(c.statements_per_function > 0);
+    }
+
+    #[test]
+    fn test_load_for_language() {
+        let c = Config::load_for_language(ConfigLanguage::Python);
+        assert!(c.statements_per_function > 0);
+    }
+
+    #[test]
+    fn test_load_from_nonexistent() {
+        let c = Config::load_from(std::path::Path::new("/nonexistent/path"));
+        // Should return default config
+        assert!(c.statements_per_function > 0);
+    }
+
+    #[test]
+    fn test_load_from_for_language() {
+        let c = Config::load_from_for_language(std::path::Path::new("/nonexistent"), ConfigLanguage::Rust);
+        assert!(c.statements_per_function > 0);
+    }
+
+    #[test]
+    fn test_apply_thresholds() {
+        let mut c = Config::default();
+        let toml = "[thresholds]\nstatements_per_function = 100".parse::<toml::Table>().unwrap();
+        if let Some(t) = toml.get("thresholds").and_then(|v| v.as_table()) {
+            c.apply_thresholds(t);
+        }
+        assert_eq!(c.statements_per_function, 100);
+    }
+
+    #[test]
+    fn test_apply_shared() {
+        let mut c = Config::default();
+        let toml = "[shared]\nlines_per_file = 999".parse::<toml::Table>().unwrap();
+        if let Some(t) = toml.get("shared").and_then(|v| v.as_table()) {
+            c.apply_shared(t);
+        }
+        assert_eq!(c.lines_per_file, 999);
+    }
+
+    #[test]
+    fn test_apply_python() {
+        let mut c = Config::default();
+        let toml = "[python]\nstatements_per_function = 55".parse::<toml::Table>().unwrap();
+        if let Some(t) = toml.get("python").and_then(|v| v.as_table()) {
+            c.apply_python(t);
+        }
+        assert_eq!(c.statements_per_function, 55);
+    }
+
+    #[test]
+    fn test_apply_rust() {
+        let mut c = Config::default();
+        let toml = "[rust]\nstatements_per_function = 66".parse::<toml::Table>().unwrap();
+        if let Some(t) = toml.get("rust").and_then(|v| v.as_table()) {
+            c.apply_rust(t);
+        }
+        assert_eq!(c.statements_per_function, 66);
+    }
+
+    #[test]
+    fn test_get_usize() {
+        let toml = "x = 42".parse::<toml::Table>().unwrap();
+        assert_eq!(get_usize(&toml, "x"), Some(42));
+        assert_eq!(get_usize(&toml, "y"), None);
     }
 }
 

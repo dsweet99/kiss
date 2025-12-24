@@ -413,5 +413,72 @@ from pathlib import Path
         assert!(imports.contains(&"collections".to_string()), "imports: {:?}", imports);
         assert!(imports.contains(&"pathlib".to_string()), "imports: {:?}", imports);
     }
+
+    #[test]
+    fn test_dependency_graph_struct() {
+        let mut g = DependencyGraph::default();
+        let idx = g.get_or_create_node("module_a");
+        assert!(g.graph.node_weight(idx).is_some());
+    }
+
+    #[test]
+    fn test_get_or_create_node_idempotent() {
+        let mut g = DependencyGraph::default();
+        let idx1 = g.get_or_create_node("foo");
+        let idx2 = g.get_or_create_node("foo");
+        assert_eq!(idx1, idx2);
+    }
+
+    #[test]
+    fn test_add_dependency() {
+        let mut g = DependencyGraph::default();
+        g.add_dependency("a", "b");
+        assert_eq!(g.graph.edge_count(), 1);
+    }
+
+    #[test]
+    fn test_module_graph_metrics_struct() {
+        let m = ModuleGraphMetrics { fan_in: 1, fan_out: 2, instability: 0.5, transitive_deps: 3 };
+        assert_eq!(m.fan_in, 1);
+    }
+
+    #[test]
+    fn test_count_transitive_deps() {
+        let mut g = DependencyGraph::default();
+        g.add_dependency("a", "b");
+        g.add_dependency("b", "c");
+        let a_idx = *g.nodes.get("a").unwrap();
+        assert!(g.count_transitive_deps(a_idx) >= 2);
+    }
+
+    #[test]
+    fn test_find_cycles() {
+        let mut g = DependencyGraph::default();
+        g.add_dependency("a", "b");
+        g.add_dependency("b", "a");
+        let cycles = g.find_cycles();
+        assert!(!cycles.cycles.is_empty());
+    }
+
+    #[test]
+    fn test_cycle_info_struct() {
+        let c = CycleInfo { cycles: vec![vec!["a".into(), "b".into()]] };
+        assert_eq!(c.cycles.len(), 1);
+    }
+
+    #[test]
+    fn test_analyze_graph_empty() {
+        let g = DependencyGraph::default();
+        let config = crate::Config::default();
+        let violations = analyze_graph(&g, &config);
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    fn test_count_decision_points() {
+        let mut parser = create_parser().unwrap();
+        let tree = parser.parse("if x: pass", None).unwrap();
+        assert!(count_decision_points(tree.root_node()) >= 1);
+    }
 }
 

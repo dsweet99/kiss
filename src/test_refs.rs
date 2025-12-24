@@ -142,57 +142,31 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
     }
 }
 
-/// Collect all function, method, and class definitions from a node
-fn collect_definitions(
-    node: Node,
-    source: &str,
-    file: &PathBuf,
-    defs: &mut Vec<CodeDefinition>,
-    inside_class: bool,
-) {
+fn try_add_def(node: Node, source: &str, file: &PathBuf, defs: &mut Vec<CodeDefinition>, kind: &'static str) {
+    if let Some(name) = get_child_by_field(node, "name", source) {
+        if !name.starts_with('_') || name == "__init__" {
+            defs.push(CodeDefinition { name, kind, file: file.clone(), line: node.start_position().row + 1 });
+        }
+    }
+}
+
+fn recurse_children(node: Node, source: &str, file: &PathBuf, defs: &mut Vec<CodeDefinition>, inside_class: bool) {
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) { collect_definitions(child, source, file, defs, inside_class); }
+    }
+}
+
+fn collect_definitions(node: Node, source: &str, file: &PathBuf, defs: &mut Vec<CodeDefinition>, inside_class: bool) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {
-            if let Some(name) = get_child_by_field(node, "name", source) {
-                // Skip private/dunder methods unless they're significant
-                if !name.starts_with('_') || name == "__init__" {
-                    defs.push(CodeDefinition {
-                        name,
-                        kind: if inside_class { "method" } else { "function" },
-                        file: file.clone(),
-                        line: node.start_position().row + 1,
-                    });
-                }
-            }
-            // Recurse into function body for nested definitions
-            for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    collect_definitions(child, source, file, defs, false);
-                }
-            }
+            try_add_def(node, source, file, defs, if inside_class { "method" } else { "function" });
+            recurse_children(node, source, file, defs, false);
         }
         "class_definition" => {
-            if let Some(name) = get_child_by_field(node, "name", source) {
-                defs.push(CodeDefinition {
-                    name,
-                    kind: "class",
-                    file: file.clone(),
-                    line: node.start_position().row + 1,
-                });
-            }
-            // Recurse into class body for methods
-            for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    collect_definitions(child, source, file, defs, true);
-                }
-            }
+            try_add_def(node, source, file, defs, "class");
+            recurse_children(node, source, file, defs, true);
         }
-        _ => {
-            for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    collect_definitions(child, source, file, defs, inside_class);
-                }
-            }
-        }
+        _ => recurse_children(node, source, file, defs, inside_class),
     }
 }
 
@@ -304,33 +278,18 @@ mod tests {
     #[test]
     fn test_has_test_framework_import() {
         use crate::parsing::create_parser;
-        
         let mut parser = create_parser().unwrap();
         
-        // File with pytest import
-        let source = "import pytest\n\ndef test_foo():\n    pass\n";
-        let tree = parser.parse(source, None).unwrap();
-        assert!(has_test_framework_import(tree.root_node(), source));
+        let mut check = |src: &str| {
+            let tree = parser.parse(src, None).unwrap();
+            has_test_framework_import(tree.root_node(), src)
+        };
         
-        // File with unittest import
-        let source = "import unittest\n\nclass TestCase(unittest.TestCase):\n    pass\n";
-        let tree = parser.parse(source, None).unwrap();
-        assert!(has_test_framework_import(tree.root_node(), source));
-        
-        // File with from pytest import
-        let source = "from pytest import fixture\n\n@fixture\ndef my_fixture():\n    pass\n";
-        let tree = parser.parse(source, None).unwrap();
-        assert!(has_test_framework_import(tree.root_node(), source));
-        
-        // File with aliased pytest import
-        let source = "import pytest as pt\n";
-        let tree = parser.parse(source, None).unwrap();
-        assert!(has_test_framework_import(tree.root_node(), source));
-        
-        // Regular source file
-        let source = "import os\nimport sys\n\ndef main():\n    pass\n";
-        let tree = parser.parse(source, None).unwrap();
-        assert!(!has_test_framework_import(tree.root_node(), source));
+        assert!(check("import pytest\n\ndef test_foo():\n    pass\n"));
+        assert!(check("import unittest\n\nclass TestCase(unittest.TestCase):\n    pass\n"));
+        assert!(check("from pytest import fixture\n\n@fixture\ndef my_fixture():\n    pass\n"));
+        assert!(check("import pytest as pt\n"));
+        assert!(!check("import os\nimport sys\n\ndef main():\n    pass\n"));
     }
 }
 
