@@ -53,6 +53,111 @@ pub struct DuplicatePair {
     pub similarity: f64,
 }
 
+/// A cluster of duplicate code chunks
+#[derive(Debug)]
+pub struct DuplicateCluster {
+    /// All chunks in this cluster (similar to each other)
+    pub chunks: Vec<CodeChunk>,
+    /// Average similarity within the cluster
+    pub avg_similarity: f64,
+}
+
+/// Union-Find data structure for clustering
+struct UnionFind {
+    parent: Vec<usize>,
+}
+
+impl UnionFind {
+    fn new(n: usize) -> Self {
+        Self { parent: (0..n).collect() }
+    }
+
+    fn find(&mut self, x: usize) -> usize {
+        if self.parent[x] != x {
+            self.parent[x] = self.find(self.parent[x]); // path compression
+        }
+        self.parent[x]
+    }
+
+    fn union(&mut self, x: usize, y: usize) {
+        let px = self.find(x);
+        let py = self.find(y);
+        if px != py {
+            self.parent[px] = py;
+        }
+    }
+}
+
+/// Cluster duplicate pairs into groups of similar code
+pub fn cluster_duplicates(pairs: &[DuplicatePair], chunks: &[CodeChunk]) -> Vec<DuplicateCluster> {
+    if pairs.is_empty() || chunks.len() < 2 {
+        return Vec::new();
+    }
+
+    // Build chunk-to-index map based on identity (file + lines)
+    let chunk_key = |c: &CodeChunk| (c.file.clone(), c.start_line, c.end_line);
+    let mut key_to_idx: HashMap<(PathBuf, usize, usize), usize> = HashMap::new();
+    for (idx, chunk) in chunks.iter().enumerate() {
+        key_to_idx.insert(chunk_key(chunk), idx);
+    }
+
+    // Union-Find to cluster similar chunks
+    let mut uf = UnionFind::new(chunks.len());
+    let mut pair_similarities: HashMap<(usize, usize), f64> = HashMap::new();
+
+    for pair in pairs {
+        let key1 = chunk_key(&pair.chunk1);
+        let key2 = chunk_key(&pair.chunk2);
+
+        if let (Some(&idx1), Some(&idx2)) = (key_to_idx.get(&key1), key_to_idx.get(&key2)) {
+            uf.union(idx1, idx2);
+            let key = (idx1.min(idx2), idx1.max(idx2));
+            pair_similarities.insert(key, pair.similarity);
+        }
+    }
+
+    // Group by cluster root
+    let mut clusters_map: HashMap<usize, Vec<usize>> = HashMap::new();
+    for idx in 0..chunks.len() {
+        let root = uf.find(idx);
+        clusters_map.entry(root).or_default().push(idx);
+    }
+
+    // Build cluster structs (only clusters with 2+ members)
+    let mut clusters: Vec<DuplicateCluster> = clusters_map
+        .into_values()
+        .filter(|indices| indices.len() > 1)
+        .map(|indices| {
+            // Calculate average similarity within cluster
+            let mut total_sim = 0.0;
+            let mut count = 0;
+            for i in 0..indices.len() {
+                for j in (i + 1)..indices.len() {
+                    let key = (indices[i].min(indices[j]), indices[i].max(indices[j]));
+                    if let Some(&sim) = pair_similarities.get(&key) {
+                        total_sim += sim;
+                        count += 1;
+                    }
+                }
+            }
+            let avg_similarity = if count > 0 { total_sim / count as f64 } else { 0.0 };
+
+            DuplicateCluster {
+                chunks: indices.into_iter().map(|i| chunks[i].clone()).collect(),
+                avg_similarity,
+            }
+        })
+        .collect();
+
+    // Sort by cluster size (largest first), then by similarity
+    clusters.sort_by(|a, b| {
+        b.chunks.len().cmp(&a.chunks.len())
+            .then_with(|| b.avg_similarity.partial_cmp(&a.avg_similarity).unwrap_or(std::cmp::Ordering::Equal))
+    });
+
+    clusters
+}
+
 /// Extract code chunks from parsed files for duplication detection
 pub fn extract_chunks_for_duplication(parsed_files: &[&ParsedFile]) -> Vec<CodeChunk> {
     let mut chunks = Vec::new();
@@ -120,8 +225,9 @@ fn normalize_code(code: &str) -> String {
             }
         } else if c.is_ascii_digit() {
             // Replace numbers with placeholder
-            if !last_was_space && !result.ends_with('N') {
+            if !result.ends_with('N') {
                 result.push('N');
+                last_was_space = false;
             }
         } else {
             result.push(c.to_ascii_lowercase());
@@ -179,6 +285,9 @@ fn compute_minhash(shingles: &std::collections::HashSet<u64>, size: usize) -> Mi
 
 /// Estimate Jaccard similarity from MinHash signatures
 fn estimate_similarity(sig1: &MinHashSignature, sig2: &MinHashSignature) -> f64 {
+    if sig1.hashes.is_empty() {
+        return 0.0;
+    }
     let matching = sig1
         .hashes
         .iter()
@@ -292,9 +401,28 @@ mod tests {
     fn normalize_code_removes_numbers() {
         let code = "x = 123 + 456";
         let normalized = normalize_code(code);
+        // Numbers should be replaced with N placeholders
         assert!(!normalized.contains('1'));
         assert!(!normalized.contains('2'));
-        assert!(normalized.contains('n') || normalized.contains('N') || !normalized.chars().any(|c| c.is_ascii_digit()));
+        assert!(normalized.contains('N'), "Expected 'N' placeholder, got: {:?}", normalized);
+    }
+
+    #[test]
+    fn normalize_code_preserves_number_placeholder_after_space() {
+        // Bug fix: numbers after whitespace should still get N placeholder
+        let code = "x = 123";
+        let normalized = normalize_code(code);
+        // Should be something like "x = N", not "x = "
+        assert!(normalized.contains('N'), "Expected 'N' placeholder, got: {:?}", normalized);
+        assert_eq!(normalized, "x = N");
+    }
+
+    #[test]
+    fn normalize_code_collapses_consecutive_digits() {
+        let code = "arr[123]";
+        let normalized = normalize_code(code);
+        // 123 should become a single N
+        assert_eq!(normalized.matches('N').count(), 1, "got: {:?}", normalized);
     }
 }
 

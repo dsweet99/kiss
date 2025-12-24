@@ -1,7 +1,8 @@
 use clap::Parser;
 use kiss::{
-    analyze_file, analyze_graph, build_dependency_graph, detect_duplicates, find_python_files,
-    parse_files, Config, DuplicationConfig, ParsedFile,
+    analyze_file, analyze_graph, build_dependency_graph, cluster_duplicates, detect_duplicates,
+    extract_chunks_for_duplication, find_python_files, parse_files, Config, DuplicationConfig,
+    ParsedFile,
 };
 use std::path::Path;
 
@@ -56,8 +57,11 @@ fn main() {
     let graph_violations = analyze_graph(&dep_graph, &config);
     all_violations.extend(graph_violations);
 
-    // Detect duplicates
-    let duplicates = detect_duplicates(&parsed_refs, &DuplicationConfig::default());
+    // Detect duplicates and cluster them
+    let dup_config = DuplicationConfig::default();
+    let chunks = extract_chunks_for_duplication(&parsed_refs);
+    let pairs = detect_duplicates(&parsed_refs, &dup_config);
+    let clusters = cluster_duplicates(&pairs, &chunks);
 
     // Report violations
     if all_violations.is_empty() {
@@ -72,29 +76,30 @@ fn main() {
         }
     }
 
-    // Report duplicates
-    if !duplicates.is_empty() {
-        println!("\n--- Duplicate Code Detected ({}) ---\n", duplicates.len());
+    // Report duplicate clusters
+    if !clusters.is_empty() {
+        println!(
+            "\n--- Duplicate Code Detected ({} clusters) ---\n",
+            clusters.len()
+        );
 
-        for dup in &duplicates {
+        for (i, cluster) in clusters.iter().enumerate() {
             println!(
-                "Similarity: {:.0}%",
-                dup.similarity * 100.0
+                "Cluster {}: {} copies (~{:.0}% similar)",
+                i + 1,
+                cluster.chunks.len(),
+                cluster.avg_similarity * 100.0
             );
-            println!(
-                "  {}:{}-{} ({})",
-                dup.chunk1.file.display(),
-                dup.chunk1.start_line,
-                dup.chunk1.end_line,
-                dup.chunk1.name
-            );
-            println!(
-                "  {}:{}-{} ({})\n",
-                dup.chunk2.file.display(),
-                dup.chunk2.start_line,
-                dup.chunk2.end_line,
-                dup.chunk2.name
-            );
+            for chunk in &cluster.chunks {
+                println!(
+                    "  {}:{}-{} ({})",
+                    chunk.file.display(),
+                    chunk.start_line,
+                    chunk.end_line,
+                    chunk.name
+                );
+            }
+            println!();
         }
     }
 }

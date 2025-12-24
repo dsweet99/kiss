@@ -17,8 +17,8 @@ pub use counts::{
 };
 pub use discovery::find_python_files;
 pub use duplication::{
-    detect_duplicates, extract_chunks_for_duplication, CodeChunk, DuplicatePair,
-    DuplicationConfig, MinHashSignature,
+    cluster_duplicates, detect_duplicates, extract_chunks_for_duplication, CodeChunk,
+    DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
 };
 pub use graph::{
     analyze_graph, build_dependency_graph, compute_cyclomatic_complexity, CycleInfo,

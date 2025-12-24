@@ -15,6 +15,8 @@ pub struct DependencyGraph {
     pub graph: DiGraph<String, ()>,
     /// Map from module name to node index
     pub nodes: HashMap<String, NodeIndex>,
+    /// Map from module name to actual file path
+    pub paths: HashMap<String, PathBuf>,
 }
 
 /// Metrics for a single module in the dependency graph
@@ -41,6 +43,7 @@ impl DependencyGraph {
         Self {
             graph: DiGraph::new(),
             nodes: HashMap::new(),
+            paths: HashMap::new(),
         }
     }
 
@@ -120,13 +123,20 @@ impl Default for DependencyGraph {
 pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation> {
     let mut violations = Vec::new();
 
+    // Helper to get actual file path or synthesize one
+    let get_path = |module_name: &str| -> PathBuf {
+        graph.paths.get(module_name)
+            .cloned()
+            .unwrap_or_else(|| PathBuf::from(format!("{}.py", module_name)))
+    };
+
     // Check fan-out for each module
-    for (module_name, &idx) in &graph.nodes {
+    for module_name in graph.nodes.keys() {
         let metrics = graph.module_metrics(module_name);
 
         if metrics.fan_out > config.fan_out {
             violations.push(Violation {
-                file: PathBuf::from(format!("{}.py", module_name)),
+                file: get_path(module_name),
                 line: 1,
                 unit_name: module_name.clone(),
                 metric: "fan_out".to_string(),
@@ -139,10 +149,6 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
                 suggestion: "Reduce dependencies by introducing abstractions or splitting the module.".to_string(),
             });
         }
-
-        // We don't warn on fan-in as that indicates a useful, reusable module
-        // Just mark idx as used to avoid warning
-        let _ = idx;
     }
 
     // Check for cycles
@@ -152,7 +158,7 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
         let first_module = cycle.first().cloned().unwrap_or_default();
 
         violations.push(Violation {
-            file: PathBuf::from(format!("{}.py", first_module)),
+            file: get_path(&first_module),
             line: 1,
             unit_name: first_module,
             metric: "dependency_cycle".to_string(),
@@ -176,6 +182,9 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "unknown".to_string());
+
+        // Store the actual file path for this module
+        graph.paths.insert(module_name.clone(), parsed.path.clone());
 
         // Ensure the module exists in the graph even if it has no dependencies
         graph.get_or_create_node(&module_name);
@@ -276,5 +285,68 @@ fn count_decision_points(node: Node) -> usize {
     }
 
     count
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parsing::create_parser;
+
+    fn parse_and_extract_imports(code: &str) -> Vec<String> {
+        let mut parser = create_parser().unwrap();
+        let tree = parser.parse(code, None).unwrap();
+        extract_imports(tree.root_node(), code)
+    }
+
+    #[test]
+    fn extracts_simple_import() {
+        let imports = parse_and_extract_imports("import os");
+        assert!(imports.contains(&"os".to_string()), "imports: {:?}", imports);
+    }
+
+    #[test]
+    fn extracts_dotted_import() {
+        let imports = parse_and_extract_imports("import os.path");
+        // Should extract top-level module "os"
+        assert!(imports.contains(&"os".to_string()), "imports: {:?}", imports);
+    }
+
+    #[test]
+    fn extracts_aliased_import() {
+        let imports = parse_and_extract_imports("import numpy as np");
+        assert!(imports.contains(&"numpy".to_string()), "imports: {:?}", imports);
+    }
+
+    #[test]
+    fn extracts_from_import() {
+        let imports = parse_and_extract_imports("from collections import defaultdict");
+        assert!(
+            imports.contains(&"collections".to_string()),
+            "Expected 'collections' in imports, got: {:?}",
+            imports
+        );
+    }
+
+    #[test]
+    fn extracts_from_dotted_import() {
+        let imports = parse_and_extract_imports("from os.path import join");
+        // Should extract top-level module "os"
+        assert!(imports.contains(&"os".to_string()), "imports: {:?}", imports);
+    }
+
+    #[test]
+    fn extracts_multiple_imports() {
+        let code = r#"
+import os
+import sys
+from collections import defaultdict
+from pathlib import Path
+"#;
+        let imports = parse_and_extract_imports(code);
+        assert!(imports.contains(&"os".to_string()), "imports: {:?}", imports);
+        assert!(imports.contains(&"sys".to_string()), "imports: {:?}", imports);
+        assert!(imports.contains(&"collections".to_string()), "imports: {:?}", imports);
+        assert!(imports.contains(&"pathlib".to_string()), "imports: {:?}", imports);
+    }
 }
 

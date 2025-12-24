@@ -90,7 +90,10 @@ impl Config {
         };
 
         fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
-            table.get(key).and_then(|v| v.as_integer()).map(|v| v as usize)
+            table.get(key)
+                .and_then(|v| v.as_integer())
+                .filter(|&v| v >= 0)  // Ignore negative values
+                .map(|v| v as usize)
         }
 
         if let Some(v) = get_usize(thresholds, "statements_per_function") {
@@ -132,6 +135,95 @@ impl Config {
         if let Some(v) = get_usize(thresholds, "fan_out") {
             self.fan_out = v;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_uses_threshold_constants() {
+        let config = Config::default();
+        assert_eq!(config.statements_per_function, thresholds::STATEMENTS_PER_FUNCTION);
+        assert_eq!(config.methods_per_class, thresholds::METHODS_PER_CLASS);
+        assert_eq!(config.lines_per_file, thresholds::LINES_PER_FILE);
+    }
+
+    #[test]
+    fn merge_from_toml_overrides_values() {
+        let mut config = Config::default();
+        let toml = r#"
+[thresholds]
+statements_per_function = 100
+methods_per_class = 30
+"#;
+        config.merge_from_toml(toml);
+        assert_eq!(config.statements_per_function, 100);
+        assert_eq!(config.methods_per_class, 30);
+        // Other values should remain at default
+        assert_eq!(config.lines_per_file, thresholds::LINES_PER_FILE);
+    }
+
+    #[test]
+    fn merge_from_toml_ignores_malformed_toml() {
+        let mut config = Config::default();
+        let original_statements = config.statements_per_function;
+        config.merge_from_toml("this is not valid toml {{{{");
+        // Should remain unchanged
+        assert_eq!(config.statements_per_function, original_statements);
+    }
+
+    #[test]
+    fn merge_from_toml_ignores_missing_thresholds_section() {
+        let mut config = Config::default();
+        let original_statements = config.statements_per_function;
+        let toml = r#"
+[other_section]
+some_key = 123
+"#;
+        config.merge_from_toml(toml);
+        // Should remain unchanged
+        assert_eq!(config.statements_per_function, original_statements);
+    }
+
+    #[test]
+    fn merge_from_toml_ignores_negative_values() {
+        let mut config = Config::default();
+        let original_statements = config.statements_per_function;
+        let toml = r#"
+[thresholds]
+statements_per_function = -1
+"#;
+        config.merge_from_toml(toml);
+        // Negative values should be ignored, keeping the original
+        assert_eq!(config.statements_per_function, original_statements);
+    }
+
+    #[test]
+    fn merge_from_toml_ignores_wrong_types() {
+        let mut config = Config::default();
+        let original_statements = config.statements_per_function;
+        let toml = r#"
+[thresholds]
+statements_per_function = "not a number"
+"#;
+        config.merge_from_toml(toml);
+        // Wrong types should be ignored
+        assert_eq!(config.statements_per_function, original_statements);
+    }
+
+    #[test]
+    fn merge_from_toml_handles_partial_config() {
+        let mut config = Config::default();
+        let toml = r#"
+[thresholds]
+cyclomatic_complexity = 15
+"#;
+        config.merge_from_toml(toml);
+        // Only the specified value should change
+        assert_eq!(config.cyclomatic_complexity, 15);
+        assert_eq!(config.statements_per_function, thresholds::STATEMENTS_PER_FUNCTION);
     }
 }
 
