@@ -22,16 +22,17 @@ pub mod rust_units;
 pub use config::{thresholds, Config, ConfigLanguage, GateConfig};
 pub use counts::{
     analyze_file, compute_class_metrics, compute_file_metrics, compute_function_metrics,
-    ClassMetrics, FileMetrics, FunctionMetrics, Violation,
+    ClassMetrics, FileMetrics, FunctionMetrics, Violation, ViolationBuilder,
 };
 pub use discovery::{find_python_files, find_rust_files, find_source_files, Language, SourceFile};
 pub use duplication::{
-    cluster_duplicates, detect_duplicates, extract_chunks_for_duplication, CodeChunk,
+    cluster_duplicates, detect_duplicates, detect_duplicates_from_chunks,
+    extract_chunks_for_duplication, extract_rust_chunks_for_duplication, CodeChunk,
     DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
 };
 pub use graph::{
-    analyze_graph, build_dependency_graph, compute_cyclomatic_complexity, CycleInfo,
-    DependencyGraph, ModuleGraphMetrics,
+    analyze_graph, build_dependency_graph, collect_instability_metrics, compute_cyclomatic_complexity,
+    CycleInfo, DependencyGraph, InstabilityMetric, ModuleGraphMetrics,
 };
 pub use parsing::{create_parser, parse_file, parse_files, ParseError, ParsedFile};
 pub use stats::{
@@ -277,5 +278,81 @@ mod tests {
             "Expected similarity > 0.7, got {}",
             duplicates[0].similarity
         );
+    }
+
+    #[test]
+    fn handles_empty_python_file() {
+        use tempfile::TempDir;
+        use std::fs;
+
+        let tmp = TempDir::new().unwrap();
+        let empty_py = tmp.path().join("empty.py");
+        fs::write(&empty_py, "").unwrap();
+
+        let mut parser = create_parser().expect("parser should initialize");
+        let parsed = parse_file(&mut parser, &empty_py).expect("should parse empty file");
+
+        // Should not panic and produce valid (empty) results
+        assert_eq!(parsed.source, "");
+        let units = extract_code_units(&parsed);
+        // Empty file should have just a module unit
+        assert!(units.len() <= 1);
+
+        let file_metrics = compute_file_metrics(&parsed);
+        assert_eq!(file_metrics.lines, 0);
+        assert_eq!(file_metrics.classes, 0);
+        assert_eq!(file_metrics.imports, 0);
+    }
+
+    #[test]
+    fn handles_empty_rust_file() {
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let mut tmp = NamedTempFile::with_suffix(".rs").unwrap();
+        write!(tmp, "").unwrap();
+
+        let parsed = parse_rust_file(tmp.path()).expect("should parse empty Rust file");
+
+        // Should not panic
+        assert_eq!(parsed.source, "");
+        assert!(parsed.ast.items.is_empty());
+
+        let file_metrics = rust_counts::compute_rust_file_metrics(&parsed);
+        assert_eq!(file_metrics.lines, 0);
+        assert_eq!(file_metrics.types, 0);
+        assert_eq!(file_metrics.imports, 0);
+    }
+
+    #[test]
+    fn analyze_empty_python_file_no_violations() {
+        use tempfile::TempDir;
+        use std::fs;
+
+        let tmp = TempDir::new().unwrap();
+        let empty_py = tmp.path().join("empty.py");
+        fs::write(&empty_py, "").unwrap();
+
+        let mut parser = create_parser().expect("parser should initialize");
+        let parsed = parse_file(&mut parser, &empty_py).expect("should parse");
+
+        let violations = analyze_file(&parsed, &Config::default());
+        // Empty file should have no violations
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    fn analyze_empty_rust_file_no_violations() {
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        let mut tmp = NamedTempFile::with_suffix(".rs").unwrap();
+        write!(tmp, "").unwrap();
+
+        let parsed = parse_rust_file(tmp.path()).expect("should parse");
+        let violations = rust_counts::analyze_rust_file(&parsed, &Config::default());
+
+        // Empty file should have no violations
+        assert!(violations.is_empty());
     }
 }

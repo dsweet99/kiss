@@ -1,10 +1,12 @@
 use clap::{Parser, Subcommand};
 use kiss::{
     analyze_file, analyze_graph, analyze_rust_file, analyze_rust_test_refs, analyze_test_refs,
-    build_dependency_graph, build_rust_dependency_graph, cluster_duplicates, compute_summaries,
-    detect_duplicates, extract_chunks_for_duplication, find_python_files, find_rust_files,
-    format_stats_table, parse_files, parse_rust_files, Config, ConfigLanguage, GateConfig,
-    DuplicationConfig, MetricStats, ParsedFile, ParsedRustFile,
+    build_dependency_graph, build_rust_dependency_graph, cluster_duplicates,
+    collect_instability_metrics, compute_summaries, detect_duplicates, detect_duplicates_from_chunks,
+    extract_chunks_for_duplication, extract_rust_chunks_for_duplication, find_python_files,
+    find_rust_files, format_stats_table, parse_files, parse_rust_files, Config, ConfigLanguage,
+    DuplicationConfig, GateConfig, Language, MetricStats, ParsedFile,
+    ParsedRustFile,
 };
 use std::path::{Path, PathBuf};
 
@@ -30,13 +32,6 @@ struct Cli {
     /// Directory to analyze (for default analyze command)
     #[arg(default_value = ".")]
     path: String,
-}
-
-/// Language filter for analysis
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Language {
-    Python,
-    Rust,
 }
 
 fn parse_language(s: &str) -> Result<Language, String> {
@@ -127,10 +122,24 @@ fn run_analyze(path: &str, py_config: &Config, rs_config: &Config, lang_filter: 
         return;
     }
     
-    viols.extend(analyze_py_graph(&py_parsed, py_config));
-    viols.extend(analyze_rs_graph(&rs_parsed, rs_config));
+    let py_graph = if !py_parsed.is_empty() {
+        let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
+        Some(build_dependency_graph(&refs))
+    } else { None };
+    
+    let rs_graph = if !rs_parsed.is_empty() {
+        let refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
+        Some(build_rust_dependency_graph(&refs))
+    } else { None };
+    
+    if let Some(ref g) = py_graph { viols.extend(analyze_graph(g, py_config)); }
+    if let Some(ref g) = rs_graph { viols.extend(analyze_graph(g, rs_config)); }
+    
     print_violations(&viols, py_parsed.len() + rs_parsed.len());
-    print_duplicates(&detect_py_duplicates(&py_parsed));
+    print_duplicates("Python", &detect_py_duplicates(&py_parsed));
+    print_duplicates("Rust", &detect_rs_duplicates(&rs_parsed));
+    print_instability("Python", py_graph.as_ref());
+    print_instability("Rust", rs_graph.as_ref());
     print_py_test_refs(&py_parsed);
     print_rs_test_refs(&rs_parsed);
 }
@@ -178,7 +187,9 @@ fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile])
         tested += analysis.definitions.len() - analysis.unreferenced.len();
     }
     
-    let coverage = if total > 0 { (tested * 100) / total } else { 100 };
+    let coverage = if total > 0 { 
+        ((tested as f64 / total as f64) * 100.0).round() as usize 
+    } else { 100 };
     (coverage, tested, total)
 }
 
@@ -198,29 +209,62 @@ fn gather_files(root: &Path, lang: Option<Language>) -> (Vec<PathBuf>, Vec<PathB
 
 fn parse_and_analyze_py(files: &[PathBuf], config: &Config) -> (Vec<ParsedFile>, Vec<Violation>) {
     if files.is_empty() { return (Vec::new(), Vec::new()); }
-    let results = parse_files(files).unwrap_or_default();
-    let mut parsed = Vec::new(); let mut viols = Vec::new();
-    for r in results { match r { Ok(p) => { viols.extend(analyze_file(&p, config)); parsed.push(p); } Err(e) => eprintln!("Error parsing Python: {}", e) } }
+    let results = match parse_files(files) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Failed to initialize Python parser: {}", e);
+            return (Vec::new(), Vec::new());
+        }
+    };
+    let mut parsed = Vec::new();
+    let mut viols = Vec::new();
+    for result in results {
+        match result {
+            Ok(p) => {
+                viols.extend(analyze_file(&p, config));
+                parsed.push(p);
+            }
+            Err(e) => eprintln!("Error parsing Python: {}", e),
+        }
+    }
     (parsed, viols)
 }
 
 fn parse_and_analyze_rs(files: &[PathBuf], config: &Config) -> (Vec<ParsedRustFile>, Vec<Violation>) {
     if files.is_empty() { return (Vec::new(), Vec::new()); }
-    let mut parsed = Vec::new(); let mut viols = Vec::new();
-    for r in parse_rust_files(files) { match r { Ok(p) => { viols.extend(analyze_rust_file(&p, config)); parsed.push(p); } Err(e) => eprintln!("Error parsing Rust: {}", e) } }
+    let mut parsed = Vec::new();
+    let mut viols = Vec::new();
+    for result in parse_rust_files(files) {
+        match result {
+            Ok(p) => {
+                viols.extend(analyze_rust_file(&p, config));
+                parsed.push(p);
+            }
+            Err(e) => eprintln!("Error parsing Rust: {}", e),
+        }
+    }
     (parsed, viols)
 }
 
-fn analyze_py_graph(parsed: &[ParsedFile], config: &Config) -> Vec<Violation> {
-    if parsed.is_empty() { return Vec::new(); }
-    let refs: Vec<&ParsedFile> = parsed.iter().collect();
-    analyze_graph(&build_dependency_graph(&refs), config)
-}
+use kiss::DependencyGraph;
 
-fn analyze_rs_graph(parsed: &[ParsedRustFile], config: &Config) -> Vec<Violation> {
-    if parsed.is_empty() { return Vec::new(); }
-    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-    analyze_graph(&build_rust_dependency_graph(&refs), config)
+fn print_instability(lang: &str, graph: Option<&DependencyGraph>) {
+    let Some(g) = graph else { return; };
+    let metrics = collect_instability_metrics(g);
+    if metrics.is_empty() { return; }
+    
+    // Only show top 10 most unstable modules
+    let top_unstable: Vec<_> = metrics.into_iter().take(10).collect();
+    
+    println!("\n--- {} Module Instability (top unstable) ---\n", lang);
+    println!("  {:30} {:>10} {:>10} {:>12}", "Module", "Instability", "Fan-in", "Fan-out");
+    println!("  {:30} {:>10} {:>10} {:>12}", "------", "-----------", "------", "-------");
+    for m in &top_unstable {
+        println!("  {:30} {:>10.1}% {:>10} {:>12}", m.module_name, m.instability * 100.0, m.fan_in, m.fan_out);
+    }
+    println!();
+    println!("  Instability = Fan-out / (Fan-in + Fan-out)");
+    println!("  Lower is more stable (more incoming deps than outgoing).");
 }
 
 fn detect_py_duplicates(parsed: &[ParsedFile]) -> Vec<DuplicateCluster> {
@@ -229,21 +273,27 @@ fn detect_py_duplicates(parsed: &[ParsedFile]) -> Vec<DuplicateCluster> {
     cluster_duplicates(&detect_duplicates(&refs, &DuplicationConfig::default()), &chunks)
 }
 
+fn detect_rs_duplicates(parsed: &[ParsedRustFile]) -> Vec<DuplicateCluster> {
+    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
+    let chunks = extract_rust_chunks_for_duplication(&refs);
+    cluster_duplicates(&detect_duplicates_from_chunks(&chunks, &DuplicationConfig::default()), &chunks)
+}
+
 fn print_violations(viols: &[Violation], total: usize) {
     if viols.is_empty() { println!("✓ No violations found in {} files.", total); return; }
     println!("Found {} violations:\n", viols.len());
     for v in viols { println!("{}:{}\n  {}\n  → {}\n", v.file.display(), v.line, v.message, v.suggestion); }
 }
 
-fn print_duplicates(clusters: &[DuplicateCluster]) {
+fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
     if clusters.is_empty() { return; }
-    println!("\n--- Duplicate Code Detected ({} clusters) ---\n", clusters.len());
+    println!("\n--- {} Duplicate Code Detected ({} clusters) ---\n", lang, clusters.len());
     for (i, c) in clusters.iter().enumerate() {
         println!("Cluster {}: {} copies (~{:.0}% similar)", i + 1, c.chunks.len(), c.avg_similarity * 100.0);
         for ch in &c.chunks { println!("  {}:{}-{} ({})", ch.file.display(), ch.start_line, ch.end_line, ch.name); }
-            println!();
-        }
+        println!();
     }
+}
 
 fn print_py_test_refs(parsed: &[ParsedFile]) {
     if parsed.is_empty() { return; }
@@ -568,16 +618,10 @@ mod tests {
     }
 
     #[test]
-    fn test_analyze_py_graph_empty() {
+    fn test_analyze_graph_empty() {
         let config = Config::default();
-        let viols = analyze_py_graph(&[], &config);
-        assert!(viols.is_empty());
-    }
-
-    #[test]
-    fn test_analyze_rs_graph_empty() {
-        let config = Config::default();
-        let viols = analyze_rs_graph(&[], &config);
+        let empty_graph = DependencyGraph::new();
+        let viols = analyze_graph(&empty_graph, &config);
         assert!(viols.is_empty());
     }
 
@@ -588,13 +632,19 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_rs_duplicates_empty() {
+        let clusters = detect_rs_duplicates(&[]);
+        assert!(clusters.is_empty());
+    }
+
+    #[test]
     fn test_print_violations_empty() {
         print_violations(&[], 0); // Just verify it doesn't panic
     }
 
     #[test]
     fn test_print_duplicates_empty() {
-        print_duplicates(&[]); // Just verify it doesn't panic
+        print_duplicates("Python", &[]); // Just verify it doesn't panic
     }
 
     #[test]

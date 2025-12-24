@@ -1,4 +1,27 @@
 //! Dependency graph analysis
+//!
+//! ## Tarjan's Strongly Connected Components (SCC) Algorithm
+//!
+//! This module uses Tarjan's algorithm to detect circular dependencies in the codebase.
+//! A strongly connected component is a maximal set of nodes where every node is reachable
+//! from every other node. SCCs with more than one node indicate dependency cycles.
+//!
+//! ### Algorithm Overview
+//! 1. Perform DFS traversal, assigning each node a discovery time (index) and low-link value
+//! 2. The low-link value is the smallest index reachable from the node's subtree
+//! 3. A node is the root of an SCC if its low-link equals its index
+//! 4. When an SCC root is found, pop all nodes from the stack up to and including it
+//!
+//! ### Complexity
+//! - Time: O(V + E) where V = modules, E = dependencies
+//! - Space: O(V) for the stack and metadata
+//!
+//! ## Dependency Metrics
+//!
+//! - **Fan-in (Ca)**: Afferent coupling — number of modules that depend on this module
+//! - **Fan-out (Ce)**: Efferent coupling — number of modules this module depends on
+//! - **Instability**: Ce / (Ca + Ce) — ranges from 0 (stable) to 1 (unstable)
+//! - **Transitive deps**: All modules reachable from this one via DFS
 
 use crate::config::Config;
 use crate::counts::Violation;
@@ -153,6 +176,7 @@ impl Default for DependencyGraph {
 }
 
 /// Analyze dependency graph and return violations for high fan-out and cycles
+#[must_use]
 pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation> {
     let mut violations = Vec::new();
 
@@ -237,7 +261,46 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
     violations
 }
 
+/// Instability metrics for a module
+#[derive(Debug)]
+pub struct InstabilityMetric {
+    pub module_name: String,
+    pub instability: f64,
+    pub fan_in: usize,
+    pub fan_out: usize,
+}
+
+/// Collect instability metrics for all modules in the graph
+/// Returns modules with instability > 0, sorted by instability (highest first)
+#[must_use]
+pub fn collect_instability_metrics(graph: &DependencyGraph) -> Vec<InstabilityMetric> {
+    let mut metrics: Vec<InstabilityMetric> = graph
+        .nodes
+        .keys()
+        .map(|module_name| {
+            let m = graph.module_metrics(module_name);
+            InstabilityMetric {
+                module_name: module_name.clone(),
+                instability: m.instability,
+                fan_in: m.fan_in,
+                fan_out: m.fan_out,
+            }
+        })
+        .filter(|m| m.instability > 0.0 && (m.fan_in > 0 || m.fan_out > 0))
+        .collect();
+    
+    // Sort by instability (highest first), then by name for consistency
+    metrics.sort_by(|a, b| {
+        b.instability.partial_cmp(&a.instability)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.module_name.cmp(&b.module_name))
+    });
+    
+    metrics
+}
+
 /// Build a dependency graph from parsed files
+#[must_use]
 pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
     let mut graph = DependencyGraph::new();
 

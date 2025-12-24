@@ -1,7 +1,7 @@
 //! Test References - detect code units that may lack test coverage
 
 use crate::parsing::ParsedFile;
-use crate::units::get_child_by_field;
+use crate::units::{get_child_by_field, CodeUnitKind};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tree_sitter::Node;
@@ -10,7 +10,7 @@ use tree_sitter::Node;
 #[derive(Debug, Clone)]
 pub struct CodeDefinition {
     pub name: String,
-    pub kind: &'static str, // "function", "method", "class"
+    pub kind: CodeUnitKind,
     pub file: PathBuf,
     pub line: usize,
 }
@@ -27,6 +27,7 @@ pub struct TestRefAnalysis {
 }
 
 /// Check if a file path is a test file (test_*.py, *_test.py, or in tests/ directory)
+#[must_use]
 pub fn is_test_file(path: &std::path::Path) -> bool {
     // Check for tests/ or test/ directory in path
     if path.components().any(|c| {
@@ -38,7 +39,7 @@ pub fn is_test_file(path: &std::path::Path) -> bool {
     
     // Check filename patterns
     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-        name.starts_with("test_") || name.ends_with("_test.py")
+        (name.starts_with("test_") && name.ends_with(".py")) || name.ends_with("_test.py")
     } else {
         false
     }
@@ -142,7 +143,7 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
     }
 }
 
-fn try_add_def(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, kind: &'static str) {
+fn try_add_def(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, kind: CodeUnitKind) {
     if let Some(name) = get_child_by_field(node, "name", source)
         && (!name.starts_with('_') || name == "__init__") {
             defs.push(CodeDefinition { name, kind, file: file.to_path_buf(), line: node.start_position().row + 1 });
@@ -150,19 +151,21 @@ fn try_add_def(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinit
 }
 
 fn recurse_children(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, inside_class: bool) {
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) { collect_definitions(child, source, file, defs, inside_class); }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_definitions(child, source, file, defs, inside_class);
     }
 }
 
 fn collect_definitions(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, inside_class: bool) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {
-            try_add_def(node, source, file, defs, if inside_class { "method" } else { "function" });
+            let kind = if inside_class { CodeUnitKind::Method } else { CodeUnitKind::Function };
+            try_add_def(node, source, file, defs, kind);
             recurse_children(node, source, file, defs, false);
         }
         "class_definition" => {
-            try_add_def(node, source, file, defs, "class");
+            try_add_def(node, source, file, defs, CodeUnitKind::Class);
             recurse_children(node, source, file, defs, true);
         }
         _ => recurse_children(node, source, file, defs, inside_class),
@@ -191,10 +194,9 @@ fn collect_references(node: Node, source: &str, refs: &mut HashSet<String>) {
     }
 
     // Recurse to children
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            collect_references(child, source, refs);
-        }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_references(child, source, refs);
     }
 }
 
@@ -257,6 +259,9 @@ mod tests {
         assert!(!is_test_file(Path::new("foo.py")));
         assert!(!is_test_file(Path::new("testing.py")));
         assert!(!is_test_file(Path::new("my_test_helper.py")));
+        // Non-.py files with test_ prefix should NOT be detected as test files
+        assert!(!is_test_file(Path::new("test_foo.txt")));
+        assert!(!is_test_file(Path::new("test_data.json")));
     }
 
     #[test]

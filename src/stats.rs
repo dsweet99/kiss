@@ -131,10 +131,9 @@ fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_c
             stats.cyclomatic_complexity.push(complexity);
 
             // Recurse into function body for nested functions
-            for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    collect_from_node(child, source, stats, false);
-                }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_from_node(child, source, stats, false);
             }
         }
         "class_definition" => {
@@ -144,17 +143,15 @@ fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_c
             stats.lcom.push((metrics.lcom * 100.0).round() as usize);
 
             // Recurse into class body
-            for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    collect_from_node(child, source, stats, true);
-                }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_from_node(child, source, stats, true);
             }
         }
         _ => {
-            for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    collect_from_node(child, source, stats, inside_class);
-                }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_from_node(child, source, stats, inside_class);
             }
         }
     }

@@ -3,7 +3,7 @@
 use crate::config::Config;
 use crate::counts::Violation;
 use crate::rust_parsing::ParsedRustFile;
-use std::path::PathBuf;
+use std::path::Path;
 use syn::visit::Visit;
 use syn::{Block, Expr, ImplItem, Item, Pat, Stmt};
 
@@ -25,24 +25,32 @@ pub struct RustTypeMetrics { pub methods: usize }
 #[derive(Debug, Default)]
 pub struct RustFileMetrics { pub lines: usize, pub types: usize, pub imports: usize }
 
-struct ViolationContext<'a> { file: &'a PathBuf, violations: &'a mut Vec<Violation> }
+struct ViolationContext<'a> { file: &'a Path, violations: &'a mut Vec<Violation> }
 
 impl<'a> ViolationContext<'a> {
     #[allow(clippy::too_many_arguments)]
     fn add(&mut self, line: usize, name: &str, metric: &str, val: usize, thresh: usize, msg: String, sug: &str) {
-        self.violations.push(Violation {
-            file: self.file.clone(), line, unit_name: name.to_string(), metric: metric.to_string(),
-            value: val, threshold: thresh, message: msg, suggestion: sug.to_string(),
-        });
+        self.violations.push(
+            Violation::builder(self.file)
+                .line(line)
+                .unit_name(name)
+                .metric(metric)
+                .value(val)
+                .threshold(thresh)
+                .message(msg)
+                .suggestion(sug)
+                .build()
+        );
     }
 }
 
+#[must_use]
 pub fn analyze_rust_file(parsed: &ParsedRustFile, config: &Config) -> Vec<Violation> {
     let mut violations = Vec::new();
-    let file = parsed.path.clone();
+    let file = &parsed.path;
     let file_metrics = compute_rust_file_metrics(parsed);
     let fname = file.file_name().unwrap_or_default().to_string_lossy().into_owned();
-    let mut ctx = ViolationContext { file: &file, violations: &mut violations };
+    let mut ctx = ViolationContext { file, violations: &mut violations };
 
     if file_metrics.lines > config.lines_per_file {
         ctx.add(1, &fname, "lines_per_file", file_metrics.lines, config.lines_per_file,
@@ -57,19 +65,19 @@ pub fn analyze_rust_file(parsed: &ParsedRustFile, config: &Config) -> Vec<Violat
             format!("File has {} use statements (threshold: {})", file_metrics.imports, config.imports_per_file), "Module may have too many responsibilities. Consider splitting.");
     }
 
-    let mut analyzer = RustAnalyzer::new(&file, config, &mut violations);
+    let mut analyzer = RustAnalyzer::new(file, config, &mut violations);
     for item in &parsed.ast.items { analyzer.analyze_item(item); }
     violations
 }
 
 struct RustAnalyzer<'a> {
-    file: &'a PathBuf,
+    file: &'a Path,
     config: &'a Config,
     violations: &'a mut Vec<Violation>,
 }
 
 impl<'a> RustAnalyzer<'a> {
-    fn new(file: &'a PathBuf, config: &'a Config, violations: &'a mut Vec<Violation>) -> Self {
+    fn new(file: &'a Path, config: &'a Config, violations: &'a mut Vec<Violation>) -> Self {
         Self { file, config, violations }
     }
 
@@ -113,10 +121,17 @@ impl<'a> RustAnalyzer<'a> {
 
     #[allow(clippy::too_many_arguments)]
     fn push(&mut self, line: usize, name: &str, metric: &str, val: usize, thresh: usize, msg: String, sug: &str) {
-        self.violations.push(Violation {
-            file: self.file.clone(), line, unit_name: name.to_string(), metric: metric.to_string(),
-            value: val, threshold: thresh, message: msg, suggestion: sug.to_string(),
-        });
+        self.violations.push(
+            Violation::builder(self.file)
+                .line(line)
+                .unit_name(name)
+                .metric(metric)
+                .value(val)
+                .threshold(thresh)
+                .message(msg)
+                .suggestion(sug)
+                .build()
+        );
     }
 
     fn check_methods_per_type(&mut self, line: usize, name: &str, count: usize) {
@@ -250,6 +265,7 @@ fn extract_self_field_accesses(block: &Block) -> std::collections::HashSet<Strin
 }
 
 /// Computes metrics for a Rust file
+#[must_use]
 pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
     let mut types = 0;
     let mut imports = 0;

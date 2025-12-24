@@ -10,6 +10,33 @@ pub enum CodeUnitKind {
     Method,
     Class,
     Module,
+    /// Rust struct type
+    Struct,
+    /// Rust enum type
+    Enum,
+    /// Method from a trait implementation (may be indirectly tested via type reference)
+    TraitImplMethod,
+}
+
+impl CodeUnitKind {
+    /// Returns a human-readable label for display
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CodeUnitKind::Function => "function",
+            CodeUnitKind::Method => "method",
+            CodeUnitKind::Class => "class",
+            CodeUnitKind::Module => "module",
+            CodeUnitKind::Struct => "struct",
+            CodeUnitKind::Enum => "enum",
+            CodeUnitKind::TraitImplMethod => "trait_impl_method",
+        }
+    }
+}
+
+impl std::fmt::Display for CodeUnitKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 /// A code unit extracted from Python source
@@ -67,10 +94,9 @@ fn extract_from_node(node: Node, source: &str, units: &mut Vec<CodeUnit>, inside
             }
             // Don't recurse into nested functions for now (they'd be Functions, not Methods)
             // But we do want to count them - recurse with inside_class=false
-            for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    extract_from_node(child, source, units, false);
-                }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                extract_from_node(child, source, units, false);
             }
         }
         "class_definition" => {
@@ -85,18 +111,16 @@ fn extract_from_node(node: Node, source: &str, units: &mut Vec<CodeUnit>, inside
                 });
             }
             // Recurse into class body - methods are inside_class=true
-            for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    extract_from_node(child, source, units, true);
-                }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                extract_from_node(child, source, units, true);
             }
         }
         _ => {
             // Recurse into children
-            for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    extract_from_node(child, source, units, inside_class);
-                }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                extract_from_node(child, source, units, inside_class);
             }
         }
     }

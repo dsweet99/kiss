@@ -1,10 +1,37 @@
 //! Code duplication detection using MinHash and LSH
+//!
+//! ## MinHash/LSH Algorithm
+//!
+//! This module detects near-duplicate code using the MinHash signature scheme
+//! with Locality-Sensitive Hashing (LSH) for efficient candidate pair detection.
+//!
+//! ### Pipeline
+//! 1. **Normalization**: Code is normalized (lowercase, collapse whitespace, digits → 'N')
+//!    to detect clones that differ only in variable names or literals.
+//! 2. **Shingling**: Normalized code is split into overlapping k-grams (shingles).
+//! 3. **MinHash**: For each chunk, compute a signature of `minhash_size` hash values.
+//!    Each value is the minimum hash of all shingles under a different hash function.
+//!    Similar documents have similar MinHash signatures with high probability.
+//! 4. **LSH Banding**: Signatures are divided into `lsh_bands` bands. Chunks that
+//!    share identical band hashes become candidates for comparison.
+//! 5. **Verification**: Candidate pairs are verified by computing exact Jaccard similarity.
+//!
+//! ### Complexity
+//! - MinHash signature: O(|shingles| × minhash_size)
+//! - LSH candidate generation: O(n × bands) where n = number of chunks
+//! - Verification: O(candidates × |shingles|) - only performed on candidate pairs
 
 use crate::parsing::ParsedFile;
+use crate::rust_parsing::ParsedRustFile;
 use crate::units::get_child_by_field;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use syn::{ImplItem, Item};
 use tree_sitter::Node;
+
+/// Minimum number of tokens for a code chunk to be considered for duplication detection.
+/// Smaller chunks are too trivial to be meaningful duplicates.
+const MIN_CHUNK_TOKENS: usize = 10;
 
 /// Configuration for duplication detection
 pub struct DuplicationConfig {
@@ -153,6 +180,7 @@ pub fn cluster_duplicates(pairs: &[DuplicatePair], chunks: &[CodeChunk]) -> Vec<
 }
 
 /// Extract code chunks from parsed files for duplication detection
+#[must_use]
 pub fn extract_chunks_for_duplication(parsed_files: &[&ParsedFile]) -> Vec<CodeChunk> {
     let mut chunks = Vec::new();
 
@@ -162,6 +190,79 @@ pub fn extract_chunks_for_duplication(parsed_files: &[&ParsedFile]) -> Vec<CodeC
     }
 
     chunks
+}
+
+/// Extract code chunks from parsed Rust files for duplication detection
+#[must_use]
+pub fn extract_rust_chunks_for_duplication(parsed_files: &[&ParsedRustFile]) -> Vec<CodeChunk> {
+    let mut chunks = Vec::new();
+
+    for parsed in parsed_files {
+        extract_rust_function_chunks(&parsed.ast, &parsed.source, &parsed.path, &mut chunks);
+    }
+
+    chunks
+}
+
+fn extract_rust_function_chunks(ast: &syn::File, source: &str, file: &Path, chunks: &mut Vec<CodeChunk>) {
+    for item in &ast.items {
+        extract_chunks_from_item(item, source, file, chunks);
+    }
+}
+
+fn extract_chunks_from_item(item: &Item, source: &str, file: &Path, chunks: &mut Vec<CodeChunk>) {
+    match item {
+        Item::Fn(func) => {
+            add_rust_function_chunk(&func.sig.ident.to_string(), func.sig.ident.span(), &func.block, source, file, chunks);
+        }
+        Item::Impl(impl_block) => {
+            for impl_item in &impl_block.items {
+                if let ImplItem::Fn(method) = impl_item {
+                    add_rust_function_chunk(&method.sig.ident.to_string(), method.sig.ident.span(), &method.block, source, file, chunks);
+                }
+            }
+        }
+        Item::Mod(m) => {
+            if let Some((_, items)) = &m.content {
+                for item in items {
+                    extract_chunks_from_item(item, source, file, chunks);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn add_rust_function_chunk(
+    name: &str,
+    span: proc_macro2::Span,
+    _block: &syn::Block,
+    source: &str,
+    file: &Path,
+    chunks: &mut Vec<CodeChunk>,
+) {
+    // Get the body text from the source using line positions
+    let start_line = span.start().line;
+    let end_line = span.end().line;
+    
+    // Extract the function body from source by line range
+    // This is an approximation but works well for duplication detection
+    let lines: Vec<&str> = source.lines().collect();
+    if start_line > 0 && end_line <= lines.len() {
+        let body_text: String = lines[start_line - 1..end_line].join("\n");
+        let normalized = normalize_code(&body_text);
+
+        // Only include non-trivial chunks
+        if normalized.split_whitespace().count() >= MIN_CHUNK_TOKENS {
+            chunks.push(CodeChunk {
+                file: file.to_path_buf(),
+                name: name.to_string(),
+                start_line,
+                end_line,
+                normalized,
+            });
+        }
+    }
 }
 
 fn extract_function_chunks(node: Node, source: &str, file: &Path, chunks: &mut Vec<CodeChunk>) {
@@ -177,7 +278,7 @@ fn extract_function_chunks(node: Node, source: &str, file: &Path, chunks: &mut V
                 let normalized = normalize_code(body_text);
 
                 // Only include non-trivial chunks
-                if normalized.split_whitespace().count() >= 10 {
+                if normalized.split_whitespace().count() >= MIN_CHUNK_TOKENS {
                     chunks.push(CodeChunk {
                         file: file.to_path_buf(),
                         name,
@@ -189,17 +290,15 @@ fn extract_function_chunks(node: Node, source: &str, file: &Path, chunks: &mut V
             }
 
             // Recurse for nested functions
-            for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    extract_function_chunks(child, source, file, chunks);
-                }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                extract_function_chunks(child, source, file, chunks);
             }
         }
         _ => {
-            for i in 0..node.child_count() {
-                if let Some(child) = node.child(i) {
-                    extract_function_chunks(child, source, file, chunks);
-                }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                extract_function_chunks(child, source, file, chunks);
             }
         }
     }
@@ -343,7 +442,15 @@ pub fn detect_duplicates(
     config: &DuplicationConfig,
 ) -> Vec<DuplicatePair> {
     let chunks = extract_chunks_for_duplication(parsed_files);
+    detect_duplicates_from_chunks(&chunks, config)
+}
 
+/// Detect duplicate code from pre-extracted code chunks
+/// This is the core duplication detection algorithm, usable for any language
+pub fn detect_duplicates_from_chunks(
+    chunks: &[CodeChunk],
+    config: &DuplicationConfig,
+) -> Vec<DuplicatePair> {
     if chunks.len() < 2 {
         return Vec::new();
     }

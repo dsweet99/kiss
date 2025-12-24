@@ -1,4 +1,24 @@
 //! Count-based code metrics
+//!
+//! ## LCOM (Lack of Cohesion of Methods)
+//!
+//! LCOM measures how well the methods of a class work together by examining
+//! which instance fields they access. A cohesive class has methods that share
+//! common state; a non-cohesive class has methods that operate on disjoint fields.
+//!
+//! ### Calculation
+//! 1. For each method, collect the set of `self.field` accesses
+//! 2. For each pair of methods, check if their field sets intersect
+//! 3. LCOM = (pairs not sharing fields) / (total pairs)
+//!
+//! ### Interpretation
+//! - **0.0** = Perfectly cohesive (all method pairs share at least one field)
+//! - **1.0** = No cohesion (no method pairs share any fields)
+//! - **God Class**: methods > 20 AND LCOM > 50% indicates a class doing too much
+//!
+//! ### Limitations
+//! - Methods that don't access `self` fields are excluded from the calculation
+//! - This means a class with only static-like methods will have LCOM = 0.0
 
 use crate::config::Config;
 use crate::graph::compute_cyclomatic_complexity;
@@ -9,28 +29,111 @@ use tree_sitter::Node;
 
 #[derive(Debug, Default)]
 pub struct FunctionMetrics {
-    pub statements: usize, pub arguments: usize, pub arguments_positional: usize,
-    pub arguments_keyword_only: usize, pub max_indentation: usize, pub nested_function_depth: usize,
-    pub returns: usize, pub branches: usize, pub local_variables: usize,
+    pub statements: usize,
+    pub arguments: usize,
+    pub arguments_positional: usize,
+    pub arguments_keyword_only: usize,
+    pub max_indentation: usize,
+    pub nested_function_depth: usize,
+    pub returns: usize,
+    pub branches: usize,
+    pub local_variables: usize,
 }
 
 #[derive(Debug, Default)]
-pub struct ClassMetrics { pub methods: usize, pub lcom: f64 }
+pub struct ClassMetrics {
+    pub methods: usize,
+    pub lcom: f64,
+}
 
 #[derive(Debug, Default)]
-pub struct FileMetrics { pub lines: usize, pub classes: usize, pub imports: usize }
+pub struct FileMetrics {
+    pub lines: usize,
+    pub classes: usize,
+    pub imports: usize,
+}
 
 #[derive(Debug)]
 pub struct Violation {
-    pub file: PathBuf, pub line: usize, pub unit_name: String, pub metric: String,
-    pub value: usize, pub threshold: usize, pub message: String, pub suggestion: String,
+    pub file: PathBuf,
+    pub line: usize,
+    pub unit_name: String,
+    pub metric: String,
+    pub value: usize,
+    pub threshold: usize,
+    pub message: String,
+    pub suggestion: String,
+}
+
+impl Violation {
+    /// Create a new violation builder for the given file
+    pub fn builder(file: impl Into<PathBuf>) -> ViolationBuilder {
+        ViolationBuilder::new(file)
+    }
+}
+
+/// Builder for constructing Violation instances with a fluent API
+pub struct ViolationBuilder {
+    file: PathBuf,
+    line: usize,
+    unit_name: String,
+    metric: String,
+    value: usize,
+    threshold: usize,
+    message: String,
+    suggestion: String,
+}
+
+impl ViolationBuilder {
+    pub fn new(file: impl Into<PathBuf>) -> Self {
+        Self {
+            file: file.into(),
+            line: 1,
+            unit_name: String::new(),
+            metric: String::new(),
+            value: 0,
+            threshold: 0,
+            message: String::new(),
+            suggestion: String::new(),
+        }
+    }
+
+    pub fn line(mut self, line: usize) -> Self { self.line = line; self }
+    pub fn unit_name(mut self, name: impl Into<String>) -> Self { self.unit_name = name.into(); self }
+    pub fn metric(mut self, metric: impl Into<String>) -> Self { self.metric = metric.into(); self }
+    pub fn value(mut self, value: usize) -> Self { self.value = value; self }
+    pub fn threshold(mut self, threshold: usize) -> Self { self.threshold = threshold; self }
+    pub fn message(mut self, message: impl Into<String>) -> Self { self.message = message.into(); self }
+    pub fn suggestion(mut self, suggestion: impl Into<String>) -> Self { self.suggestion = suggestion.into(); self }
+
+    pub fn build(self) -> Violation {
+        Violation {
+            file: self.file,
+            line: self.line,
+            unit_name: self.unit_name,
+            metric: self.metric,
+            value: self.value,
+            threshold: self.threshold,
+            message: self.message,
+            suggestion: self.suggestion,
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn mk_v(file: PathBuf, line: usize, name: &str, metric: &str, val: usize, thresh: usize, msg: String, sug: &str) -> Violation {
-    Violation { file, line, unit_name: name.to_string(), metric: metric.to_string(), value: val, threshold: thresh, message: msg, suggestion: sug.to_string() }
+    Violation::builder(file)
+        .line(line)
+        .unit_name(name)
+        .metric(metric)
+        .value(val)
+        .threshold(thresh)
+        .message(msg)
+        .suggestion(sug)
+        .build()
 }
 
+#[must_use]
 pub fn analyze_file(parsed: &ParsedFile, config: &Config) -> Vec<Violation> {
     let mut violations = Vec::new();
     let file = parsed.path.clone();
@@ -62,8 +165,9 @@ fn analyze_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Viol
 }
 
 fn recurse_children(node: Node, source: &str, file: &Path, violations: &mut Vec<Violation>, inside_class: bool, config: &Config) {
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) { analyze_node(child, source, file, violations, inside_class, config); }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        analyze_node(child, source, file, violations, inside_class, config);
     }
 }
 
@@ -119,6 +223,7 @@ fn analyze_class_node(node: Node, source: &str, file: &Path, violations: &mut Ve
 }
 
 /// Computes metrics for a function node
+#[must_use]
 pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
     let mut metrics = FunctionMetrics::default();
 
@@ -144,6 +249,7 @@ pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
 }
 
 /// Computes metrics for a class node
+#[must_use]
 pub fn compute_class_metrics(node: Node) -> ClassMetrics {
     compute_class_metrics_with_source(node, "")
 }
@@ -231,6 +337,7 @@ fn extract_self_attributes_recursive(node: Node, source: &str, fields: &mut std:
 }
 
 /// Computes metrics for an entire file
+#[must_use]
 pub fn compute_file_metrics(parsed: &ParsedFile) -> FileMetrics {
     let root = parsed.tree.root_node();
     FileMetrics {

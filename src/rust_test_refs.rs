@@ -1,6 +1,7 @@
 //! Test References for Rust - detect code units that may lack test coverage
 
 use crate::rust_parsing::ParsedRustFile;
+use crate::units::CodeUnitKind;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use syn::visit::Visit;
@@ -10,7 +11,7 @@ use syn::{Attribute, Expr, ImplItem, Item};
 #[derive(Debug, Clone)]
 pub struct RustCodeDefinition {
     pub name: String,
-    pub kind: &'static str, // "function", "method", "struct", "enum", "trait_impl_method"
+    pub kind: CodeUnitKind,
     pub file: PathBuf,
     pub line: usize,
     /// For trait impl methods, the type this trait is implemented for
@@ -30,6 +31,7 @@ pub struct RustTestRefAnalysis {
 }
 
 /// Check if a file is a test file based on Rust conventions
+#[must_use]
 pub fn is_rust_test_file(path: &std::path::Path) -> bool {
     // Check for tests/ directory
     if path.components().any(|c| c.as_os_str() == "tests") {
@@ -96,7 +98,7 @@ pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAn
             
             // For trait impl methods, check if the implementing type is referenced
             // If the type is tested, the trait impl is considered indirectly tested
-            if def.kind == "trait_impl_method"
+            if def.kind == CodeUnitKind::TraitImplMethod
                 && let Some(ref type_name) = def.impl_for_type
                     && test_references.contains(type_name) {
                         return false; // Type is referenced, trait impl is indirectly covered
@@ -123,7 +125,7 @@ fn collect_rust_definitions(ast: &syn::File, file: &Path, defs: &mut Vec<RustCod
 
 fn is_private(name: &str) -> bool { name.starts_with('_') }
 
-fn try_add_def(defs: &mut Vec<RustCodeDefinition>, name: &str, kind: &'static str, file: &Path, line: usize, impl_for_type: Option<String>) {
+fn try_add_def(defs: &mut Vec<RustCodeDefinition>, name: &str, kind: CodeUnitKind, file: &Path, line: usize, impl_for_type: Option<String>) {
     if !is_private(name) {
         defs.push(RustCodeDefinition { name: name.to_string(), kind, file: file.to_path_buf(), line, impl_for_type });
     }
@@ -148,9 +150,9 @@ fn collect_impl_methods(impl_block: &syn::ItemImpl, file: &Path, defs: &mut Vec<
         if has_test_attribute(&method.attrs) { continue; }
         
         let (kind, impl_for) = if is_trait_impl {
-            ("trait_impl_method", impl_type_name.clone())
+            (CodeUnitKind::TraitImplMethod, impl_type_name.clone())
         } else {
-            ("method", None)
+            (CodeUnitKind::Method, None)
         };
         try_add_def(defs, &method.sig.ident.to_string(), kind, file, method.sig.ident.span().start().line, impl_for);
     }
@@ -159,10 +161,10 @@ fn collect_impl_methods(impl_block: &syn::ItemImpl, file: &Path, defs: &mut Vec<
 fn collect_definitions_from_item(item: &Item, file: &Path, defs: &mut Vec<RustCodeDefinition>) {
     match item {
         Item::Fn(func) if !has_test_attribute(&func.attrs) => {
-            try_add_def(defs, &func.sig.ident.to_string(), "function", file, func.sig.ident.span().start().line, None);
+            try_add_def(defs, &func.sig.ident.to_string(), CodeUnitKind::Function, file, func.sig.ident.span().start().line, None);
         }
-        Item::Struct(s) => try_add_def(defs, &s.ident.to_string(), "struct", file, s.ident.span().start().line, None),
-        Item::Enum(e) => try_add_def(defs, &e.ident.to_string(), "enum", file, e.ident.span().start().line, None),
+        Item::Struct(s) => try_add_def(defs, &s.ident.to_string(), CodeUnitKind::Struct, file, s.ident.span().start().line, None),
+        Item::Enum(e) => try_add_def(defs, &e.ident.to_string(), CodeUnitKind::Enum, file, e.ident.span().start().line, None),
         Item::Impl(impl_block) if !has_cfg_test_attribute(&impl_block.attrs) => {
             collect_impl_methods(impl_block, file, defs);
         }
@@ -353,8 +355,9 @@ mod tests {
 
     #[test]
     fn test_rust_code_definition_struct() {
-        let d = RustCodeDefinition { name: "foo".into(), kind: "function", file: "f.rs".into(), line: 10, impl_for_type: None };
+        let d = RustCodeDefinition { name: "foo".into(), kind: CodeUnitKind::Function, file: "f.rs".into(), line: 10, impl_for_type: None };
         assert_eq!(d.name, "foo");
+        assert_eq!(d.kind, CodeUnitKind::Function);
     }
 
     #[test]
@@ -671,7 +674,7 @@ mod tests {
         }
         assert_eq!(defs.len(), 2);
         assert_eq!(defs[0].name, "method1");
-        assert_eq!(defs[0].kind, "method");
+        assert_eq!(defs[0].kind, CodeUnitKind::Method);
         assert!(defs[0].impl_for_type.is_none());
     }
 
@@ -686,7 +689,7 @@ mod tests {
         }
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "fmt");
-        assert_eq!(defs[0].kind, "trait_impl_method");
+        assert_eq!(defs[0].kind, CodeUnitKind::TraitImplMethod);
         assert_eq!(defs[0].impl_for_type, Some("MyStruct".to_string()));
     }
 }
