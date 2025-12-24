@@ -2,7 +2,11 @@
 target/
 design.md
 style.md
+TODO.md
+review.md
 .cursorrules
 *~
 __pycache__
 check
+.vscode/
+Cargo.lock

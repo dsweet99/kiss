@@ -1,0 +1,33 @@
+[package]
+name = "kiss"
+version = "0.1.0"
+edition = "2024"
+description = "A command-line tool"
+license = "MIT"
+repository = "https://github.com/dsweet99/kiss"
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# File traversal with gitignore support
+ignore = "0.4"
+
+# Python parsing
+tree-sitter = "0.24"
+tree-sitter-python = "0.23"
+
+# Graph algorithms for dependency analysis
+petgraph = "0.7"
+
+# Configuration file parsing
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
