@@ -87,4 +87,4 @@ kiss rules               Show coding rules (LLM context priming)
 kiss stats [PATH...]     Summary statistics
 kiss mimic --out FILE    Generate config (uses max values from codebase)
 ```
-Options: `--lang`, `--config`, `--defaults`, `--all` (bypass gate), `--ignore PREFIX` (skip paths with component starting with PREFIX)
+Options: `--lang`, `--config`, `--defaults`, `--all` (bypass gate), `--ignore PREFIX` (skip paths with component starting with PREFIX), `--warnings` (show test coverage warnings)

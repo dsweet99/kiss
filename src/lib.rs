@@ -23,6 +23,7 @@ pub mod config;
 pub mod config_gen;
 pub mod defaults;
 pub mod py_metrics;
+pub mod rule_defs;
 pub mod violation;
 
 // Python modules
@@ -85,3 +86,6 @@ pub use rust_test_refs::{
     analyze_rust_test_refs, is_rust_test_file, RustCodeDefinition, RustTestRefAnalysis,
 };
 pub use rust_units::{extract_rust_code_units, RustCodeUnit};
+
+// Rule definitions for kiss rules command
+pub use rule_defs::{rules_for_python, rules_for_rust, Applicability, Rule, RuleCategory, RULES};

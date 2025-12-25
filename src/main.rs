@@ -51,6 +51,10 @@ struct Cli {
     #[arg(long, global = true)]
     ignore: Vec<String>,
 
+    /// Show test coverage warnings
+    #[arg(long, global = true)]
+    warnings: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 
@@ -92,7 +96,7 @@ fn main() {
         Some(Commands::Mimic { paths, out }) => run_mimic(&paths, out.as_deref(), cli.lang, &cli.ignore),
         Some(Commands::Rules) => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
         None => {
-            if !run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config, &cli.ignore) {
+            if !run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config, &cli.ignore, cli.warnings) {
                 std::process::exit(1);
             }
         }

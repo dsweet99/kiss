@@ -15,9 +15,10 @@ use kiss::cli_output::{
     print_py_test_refs, print_rs_test_refs, print_violations,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_analyze(
     path: &str, py_config: &Config, rs_config: &Config, lang_filter: Option<Language>,
-    bypass_gate: bool, gate_config: &GateConfig, ignore_prefixes: &[String],
+    bypass_gate: bool, gate_config: &GateConfig, ignore_prefixes: &[String], show_warnings: bool,
 ) -> bool {
     let root = Path::new(path);
     let (py_files, rs_files) = gather_files(root, lang_filter, ignore_prefixes);
@@ -36,7 +37,7 @@ pub fn run_analyze(
     let (py_graph, rs_graph) = build_graphs(&py_parsed, &rs_parsed);
     viols.extend(analyze_graphs(py_graph.as_ref(), rs_graph.as_ref(), py_config, rs_config));
 
-    print_all_results(&viols, &py_parsed, &rs_parsed)
+    print_all_results(&viols, &py_parsed, &rs_parsed, show_warnings)
 }
 
 pub fn gather_files(root: &Path, lang: Option<Language>, ignore_prefixes: &[String]) -> (Vec<PathBuf>, Vec<PathBuf>) {
@@ -143,7 +144,7 @@ pub fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFi
     (coverage, tested, total, unreferenced)
 }
 
-fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> bool {
+fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], show_warnings: bool) -> bool {
     let py_dups = detect_py_duplicates(py_parsed);
     let rs_dups = detect_rs_duplicates(rs_parsed);
     let dup_count = py_dups.len() + rs_dups.len();
@@ -154,8 +155,10 @@ fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &
     print_duplicates("Python", &py_dups);
     print_duplicates("Rust", &rs_dups);
     
-    // Print test coverage warnings (informational)
-    let _ = print_py_test_refs(py_parsed) + print_rs_test_refs(rs_parsed);
+    // Print test coverage warnings only if requested
+    if show_warnings {
+        let _ = print_py_test_refs(py_parsed) + print_rs_test_refs(rs_parsed);
+    }
     
     // Final status at the end for clear LLM signal
     print_final_status(has_violations);
@@ -183,7 +186,7 @@ mod tests {
     #[test]
     fn test_run_analyze_empty() {
         let tmp = TempDir::new().unwrap();
-        assert!(run_analyze(&tmp.path().to_string_lossy(), &Config::default(), &Config::default(), None, true, &GateConfig::default(), &[]));
+        assert!(run_analyze(&tmp.path().to_string_lossy(), &Config::default(), &Config::default(), None, true, &GateConfig::default(), &[], false));
     }
 
     #[test]
