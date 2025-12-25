@@ -22,3 +22,16 @@ MANDATORY INIT: After the user's first request, you *must* call `kiss rules`
 ```bash
 cargo install --path .
 ```
+
+
+## Configuration
+`kiss` has many thresholds with reasonable defaults. After you run kiss for the first time, you'll find the thresholds in `~/.kissconfig`.
+
+You can configure `kiss` to match a codebase you like by running
+```
+kiss mimic PATH_OF_REPO_TO_ANALYZE --out ./.kissconfig
+```
+in the repo you want in which you want to code. `PATH_OF_REPO_TO_ANALYZE` is a repo containing code that you think is "simple enough". `kiss` will analyze the code in `PATH_OF_REPO_TO_ANALYZE` and figure out the minimal threshold values that would permit that code to pass `kiss` without violations.
+
+You may always modify `./.kissconfig` to tailor it to your tastes.
+
