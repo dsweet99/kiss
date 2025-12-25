@@ -18,10 +18,18 @@ pub fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
     println!("{} in {}", msg, root.display());
 }
 
-pub fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: usize, total: usize) {
+pub fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: usize, total: usize, unreferenced: &[(std::path::PathBuf, String, usize)]) {
     println!("❌ Test coverage too low to safely suggest refactoring.\n");
     println!("   Test reference coverage: {}% (threshold: {}%)", coverage, threshold);
     println!("   Functions with test references: {} / {}\n", tested, total);
+    
+    for (file, name, line) in unreferenced {
+        println!("UNCOVERED:{}:{}: {}. Add test coverage for this code unit.", file.display(), line, name);
+    }
+    if !unreferenced.is_empty() {
+        println!();
+    }
+    
     println!("   Add tests for untested code, then run kiss again.");
     println!("   Or use --all to bypass this check and proceed anyway.");
 }
@@ -100,7 +108,10 @@ mod tests {
 
     #[test]
     fn test_print_coverage_gate_failure_no_panic() {
-        print_coverage_gate_failure(50, 80, 5, 10);
+        let unreferenced = vec![
+            (std::path::PathBuf::from("foo.py"), "bar".to_string(), 10),
+        ];
+        print_coverage_gate_failure(50, 80, 5, 10, &unreferenced);
     }
 
     #[test]

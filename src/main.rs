@@ -3,8 +3,8 @@ use kiss::{
     analyze_file, analyze_graph, analyze_rust_file, analyze_rust_test_refs, analyze_test_refs,
     build_dependency_graph, build_rust_dependency_graph, cluster_duplicates, compute_summaries,
     detect_duplicates, detect_duplicates_from_chunks,
-    extract_chunks_for_duplication, extract_rust_chunks_for_duplication, find_python_files,
-    find_rust_files, format_stats_table, parse_files, parse_rust_files, Config, ConfigLanguage,
+    extract_chunks_for_duplication, extract_rust_chunks_for_duplication, find_source_files,
+    format_stats_table, parse_files, parse_rust_files, Config, ConfigLanguage,
     DuplicationConfig, GateConfig, Language, MetricStats, ParsedFile, ParsedRustFile,
 };
 use kiss::config_gen::{
@@ -179,23 +179,27 @@ fn parse_all(py_files: &[PathBuf], rs_files: &[PathBuf], py_config: &Config, rs_
 }
 
 fn check_coverage_gate(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], gate_config: &GateConfig) -> bool {
-    let (coverage, tested, total) = compute_test_coverage(py_parsed, rs_parsed);
+    let (coverage, tested, total, unreferenced) = compute_test_coverage(py_parsed, rs_parsed);
     if coverage < gate_config.test_coverage_threshold {
-        print_coverage_gate_failure(coverage, gate_config.test_coverage_threshold, tested, total);
+        print_coverage_gate_failure(coverage, gate_config.test_coverage_threshold, tested, total, &unreferenced);
         return false;
     }
     true
 }
 
-fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (usize, usize, usize) {
+fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
     let mut tested = 0;
     let mut total = 0;
+    let mut unreferenced = Vec::new();
     
     if !py_parsed.is_empty() {
         let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
         let analysis = analyze_test_refs(&refs);
         total += analysis.definitions.len();
         tested += analysis.definitions.len() - analysis.unreferenced.len();
+        for def in analysis.unreferenced {
+            unreferenced.push((def.file, def.name, def.line));
+        }
     }
     
     if !rs_parsed.is_empty() {
@@ -203,18 +207,30 @@ fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile])
         let analysis = analyze_rust_test_refs(&refs);
         total += analysis.definitions.len();
         tested += analysis.definitions.len() - analysis.unreferenced.len();
+        for def in analysis.unreferenced {
+            unreferenced.push((def.file, def.name, def.line));
+        }
     }
+    
+    unreferenced.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
     
     let coverage = if total > 0 { 
         ((tested as f64 / total as f64) * 100.0).round() as usize 
     } else { 100 };
-    (coverage, tested, total)
+    (coverage, tested, total, unreferenced)
 }
 
 
 fn gather_files(root: &Path, lang: Option<Language>) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let py = if lang.is_none() || lang == Some(Language::Python) { find_python_files(root) } else { vec![] };
-    let rs = if lang.is_none() || lang == Some(Language::Rust) { find_rust_files(root) } else { vec![] };
+    let all = find_source_files(root);
+    let (mut py, mut rs) = (Vec::new(), Vec::new());
+    for sf in all {
+        match (sf.language, lang) {
+            (Language::Python, None | Some(Language::Python)) => py.push(sf.path),
+            (Language::Rust, None | Some(Language::Rust)) => rs.push(sf.path),
+            _ => {}
+        }
+    }
     (py, rs)
 }
 
@@ -408,8 +424,9 @@ mod tests {
     fn test_coverage_and_gate_empty() {
         let py: Vec<ParsedFile> = vec![];
         let rs: Vec<ParsedRustFile> = vec![];
-        let (cov, tested, total) = compute_test_coverage(&py, &rs);
+        let (cov, tested, total, unreferenced) = compute_test_coverage(&py, &rs);
         assert_eq!((tested, total, cov), (0, 0, 100));
+        assert!(unreferenced.is_empty());
         assert!(check_coverage_gate(&py, &rs, &GateConfig { test_coverage_threshold: 0 }));
     }
 
@@ -426,10 +443,11 @@ mod tests {
         let (py_parsed, _) = parse_and_analyze_py(&py_files, &Config::default());
         assert_eq!(py_parsed.len(), 1);
         
-        let (coverage, tested, total) = compute_test_coverage(&py_parsed, &[]);
+        let (coverage, tested, total, unreferenced) = compute_test_coverage(&py_parsed, &[]);
         assert_eq!(total, 1, "Should find 1 definition");
         assert_eq!(tested, 0, "No tests reference this function");
         assert_eq!(coverage, 0, "Coverage should be 0%");
+        assert_eq!(unreferenced.len(), 1, "Should have 1 unreferenced item");
         
         assert!(!check_coverage_gate(&py_parsed, &[], &GateConfig { test_coverage_threshold: 90 }),
             "Gate should block when coverage (0%) < threshold (90%)");
@@ -449,10 +467,11 @@ mod tests {
         
         let (py_parsed, _) = parse_and_analyze_py(&py_files, &Config::default());
         
-        let (coverage, tested, total) = compute_test_coverage(&py_parsed, &[]);
+        let (coverage, tested, total, unreferenced) = compute_test_coverage(&py_parsed, &[]);
         assert_eq!(total, 1, "Should find 1 definition (test file excluded)");
         assert_eq!(tested, 1, "Test references my_function");
         assert_eq!(coverage, 100, "Coverage should be 100%");
+        assert!(unreferenced.is_empty(), "No unreferenced items expected");
         
         assert!(check_coverage_gate(&py_parsed, &[], &GateConfig { test_coverage_threshold: 90 }),
             "Gate should pass when coverage (100%) >= threshold (90%)");
@@ -473,7 +492,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         print_no_files_message(None, tmp.path());
         print_no_files_message(Some(Language::Python), tmp.path());
-        print_coverage_gate_failure(50, 80, 5, 10);
+        print_coverage_gate_failure(50, 80, 5, 10, &[]);
         assert!(print_all_results(&[], &[], &[]));
     }
 }
