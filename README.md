@@ -1,2 +1,2 @@
 # kiss
-Code quality checks for LLMs
+Code quality checks for use with LLM coding agents
