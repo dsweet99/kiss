@@ -177,5 +177,37 @@ mod tests {
         let candidates = find_lsh_candidates(&signatures, 20);
         assert!(!candidates.is_empty());
     }
+
+    #[test]
+    fn test_minhash_signature_struct() {
+        let sig = MinHashSignature { hashes: vec![1, 2, 3] };
+        assert_eq!(sig.hashes.len(), 3);
+    }
+
+    #[test]
+    fn test_hash_band() {
+        let band = [1u64, 2, 3];
+        let h1 = hash_band(&band);
+        let h2 = hash_band(&band);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_add_bucket_pairs() {
+        let indices = vec![0, 1, 2];
+        let mut candidates = HashSet::new();
+        add_bucket_pairs(&indices, &mut candidates);
+        assert!(candidates.contains(&(0, 1)));
+        assert!(candidates.contains(&(0, 2)));
+        assert!(candidates.contains(&(1, 2)));
+    }
+
+    #[test]
+    fn test_add_bucket_pairs_single() {
+        let indices = vec![0];
+        let mut candidates = HashSet::new();
+        add_bucket_pairs(&indices, &mut candidates);
+        assert!(candidates.is_empty());
+    }
 }
 

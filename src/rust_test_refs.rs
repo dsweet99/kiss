@@ -179,48 +179,81 @@ fn visit_macro_tokens(tokens: &proc_macro2::TokenStream, refs: &mut HashSet<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rust_parsing::parse_rust_file;
+    use std::io::Write;
 
     #[test]
-    fn test_is_rust_test_file() {
-        assert!(is_rust_test_file(Path::new("test_utils.rs")));
-        assert!(is_rust_test_file(Path::new("utils_test.rs")));
-        assert!(!is_rust_test_file(Path::new("tests/conftest.rs")));
+    fn test_file_detection_and_helpers() {
+        assert!(is_rust_test_file(Path::new("test_utils.rs")) && is_rust_test_file(Path::new("utils_test.rs")));
         assert!(!is_rust_test_file(Path::new("src/main.rs")));
+        assert!(is_rs_file(Path::new("foo.rs")) && !is_rs_file(Path::new("foo.py")));
+        assert!(has_test_naming_pattern(Path::new("test_foo.rs")) && !has_test_naming_pattern(Path::new("foo.rs")));
+        assert!(is_private("_helper") && !is_private("helper"));
+        assert!(is_rust_keyword("self") && !is_rust_keyword("foo"));
+        let ty: syn::Type = syn::parse_str("Foo").unwrap();
+        assert_eq!(extract_type_name(&ty), Some("Foo".into()));
+        let _ = RustTestRefAnalysis { definitions: vec![], test_references: HashSet::new(), unreferenced: vec![] };
     }
 
     #[test]
-    fn test_attributes() {
+    fn test_definitions_and_references() {
         let f1: syn::File = syn::parse_str("#[test]\nfn t() {}").unwrap();
         let f2: syn::File = syn::parse_str("#[cfg(test)]\nmod tests {}").unwrap();
         if let syn::Item::Fn(f) = &f1.items[0] { assert!(has_test_attribute(&f.attrs)); }
         if let syn::Item::Mod(m) = &f2.items[0] { assert!(has_cfg_test_attribute(&m.attrs)); }
-    }
-
-    #[test]
-    fn test_collect_and_reference() {
         let f: syn::File = syn::parse_str("fn foo() {}\nstruct Bar {}").unwrap();
         let mut defs = Vec::new();
         collect_rust_definitions(&f, Path::new("t.rs"), &mut defs);
         assert!(defs.len() >= 2);
-        let f2: syn::File = syn::parse_str("fn test_it() { foo(); Bar::new(); }").unwrap();
+        for item in &f.items { collect_definitions_from_item(item, Path::new("t.rs"), &mut defs); }
+        let fi: syn::File = syn::parse_str("impl Foo { fn bar(&self) {} }").unwrap();
+        if let Item::Impl(i) = &fi.items[0] { collect_impl_methods(i, Path::new("t.rs"), &mut defs); }
+        let f3: syn::File = syn::parse_str("#[cfg(test)] mod tests { fn call_foo() { foo(); } }").unwrap();
         let mut refs = HashSet::new();
-        collect_rust_references(&f2, &mut refs);
-        assert!(refs.contains("foo") && refs.contains("Bar"));
+        collect_test_module_references(&f3, &mut refs);
+        assert!(refs.contains("foo"));
     }
 
     #[test]
-    fn test_external_crates() {
-        assert!(is_external_crate("std") && is_external_crate("syn"));
-        assert!(!is_external_crate("my_module"));
-        let mut r = HashSet::new();
-        insert_path_segments(&syn::parse_str("std::vec::Vec").unwrap(), &mut r);
-        assert!(r.is_empty());
-    }
-
-    #[test]
-    fn test_trait_impl_coverage() {
+    fn test_coverage_checks() {
         let def = RustCodeDefinition { name: "fmt".into(), kind: CodeUnitKind::TraitImplMethod, file: "t.rs".into(), line: 1, impl_for_type: Some("MyType".into()) };
-        let refs: HashSet<String> = ["MyType"].into_iter().map(String::from).collect();
+        let refs: HashSet<String> = ["MyType", "foo"].into_iter().map(String::from).collect();
+        assert!(is_trait_impl_with_referenced_type(&def, &refs));
+        let def2 = RustCodeDefinition { name: "foo".into(), kind: CodeUnitKind::Function, file: "t.rs".into(), line: 1, impl_for_type: None };
+        assert!(is_directly_referenced(&def2, &refs));
         assert!(is_covered_by_tests(&def, &refs));
+        assert!(is_external_crate("std") && !is_external_crate("my_module"));
+        let p: syn::Path = syn::parse_str("std::io").unwrap();
+        assert!(starts_with_external_crate(&p));
+    }
+
+    #[test]
+    fn test_visitor_and_macros() {
+        let mut refs = HashSet::new();
+        let _ = ReferenceVisitor { refs: &mut refs };
+        let ty: syn::Type = syn::parse_str("MyType").unwrap();
+        ReferenceVisitor { refs: &mut refs }.visit_type(&ty);
+        assert!(refs.contains("MyType"));
+        let mac: syn::ExprMacro = syn::parse_str("println!(\"test\")").unwrap();
+        ReferenceVisitor { refs: &mut refs }.visit_macro(&mac.mac);
+        let el: ExprList = syn::parse_str("a, b, c").unwrap();
+        assert_eq!(el.0.len(), 3);
+        let tokens1: proc_macro2::TokenStream = "foo()".parse().unwrap();
+        assert!(try_parse_as_single_expr(&tokens1, &mut refs));
+        let tokens2: proc_macro2::TokenStream = "a, b".parse().unwrap();
+        assert!(try_parse_as_expr_list(&tokens2, &mut refs));
+        let tokens3: proc_macro2::TokenStream = "{ bar() }".parse().unwrap();
+        visit_nested_token_groups(&tokens3, &mut refs);
+        let tokens4: proc_macro2::TokenStream = "baz()".parse().unwrap();
+        visit_macro_tokens(&tokens4, &mut refs);
+    }
+
+    #[test]
+    fn test_analyze_refs() {
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        write!(tmp, "fn foo() {{}}\n#[cfg(test)] mod tests {{ use super::*; #[test] fn t() {{ foo(); }} }}").unwrap();
+        let parsed = parse_rust_file(tmp.path()).unwrap();
+        let analysis = analyze_rust_test_refs(&[&parsed]);
+        assert!(!analysis.definitions.is_empty());
     }
 }

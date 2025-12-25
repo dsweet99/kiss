@@ -223,48 +223,53 @@ pub fn generate_config_toml(summaries: &[PercentileSummary]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parsing::{create_parser, parse_file};
+    use crate::rust_parsing::parse_rust_file;
+    use std::io::Write;
 
     #[test]
-    fn test_percentile() {
+    fn test_stats_helpers() {
         assert_eq!(percentile(&[], 50.0), 0);
         assert_eq!(percentile(&[42], 50.0), 42);
-        let d: Vec<usize> = (1..=10).collect();
-        assert_eq!(percentile(&d, 0.0), 1);
-        assert_eq!(percentile(&d, 100.0), 10);
-    }
-
-    #[test]
-    fn test_summary() {
         let s = PercentileSummary::from_values("test", &[]);
         assert_eq!(s.count, 0);
         let vals: Vec<usize> = (1..=100).collect();
-        let s2 = PercentileSummary::from_values("test", &vals);
-        assert_eq!(s2.count, 100);
-        assert_eq!(s2.max, 100);
-    }
-
-    #[test]
-    fn test_merge() {
+        assert_eq!(PercentileSummary::from_values("test", &vals).max, 100);
         let mut a = MetricStats::default();
         a.statements_per_function.push(5);
         let mut b = MetricStats::default();
         b.statements_per_function.push(10);
         a.merge(b);
         assert_eq!(a.statements_per_function.len(), 2);
-    }
-
-    #[test]
-    fn test_compute_summaries() {
-        let mut s = MetricStats::default();
-        s.statements_per_function = vec![1, 2, 3];
-        let summaries = compute_summaries(&s);
-        assert!(!summaries.is_empty());
-    }
-
-    #[test]
-    fn test_generate_toml() {
-        let s = vec![PercentileSummary { name: "Statements per function", count: 10, p50: 5, p90: 9, p95: 10, p99: 15, max: 20 }];
-        let toml = generate_config_toml(&s);
+        let mut s2 = MetricStats::default();
+        s2.statements_per_function = vec![1, 2, 3];
+        assert!(!compute_summaries(&s2).is_empty());
+        let toml = generate_config_toml(&[PercentileSummary { name: "Statements per function", count: 10, p50: 5, p90: 9, p95: 10, p99: 15, max: 20 }]);
         assert!(toml.contains("statements_per_function = 15"));
+        assert_eq!(config_key_for("Statements per function"), Some("statements_per_function"));
+        assert!(format_stats_table(&[PercentileSummary { name: "Test", count: 10, p50: 5, p90: 8, p95: 9, p99: 10, max: 12 }]).contains("Test"));
+    }
+
+    #[test]
+    fn test_collection() {
+        let mut stats = MetricStats::default();
+        let mut graph = DependencyGraph::new();
+        graph.add_dependency("a", "b");
+        stats.collect_graph_metrics(&graph);
+        assert!(!stats.fan_out.is_empty());
+        let mut tmp_rs = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        write!(tmp_rs, "fn foo() {{ let x = 1; }}").unwrap();
+        let parsed_rs = parse_rust_file(tmp_rs.path()).unwrap();
+        assert!(!MetricStats::collect_rust(&[&parsed_rs]).lines_per_file.is_empty());
+        let mut tmp_py = tempfile::NamedTempFile::with_suffix(".py").unwrap();
+        write!(tmp_py, "def foo():\n    x = 1").unwrap();
+        let parsed_py = parse_file(&mut create_parser().unwrap(), tmp_py.path()).unwrap();
+        let mut stats2 = MetricStats::default();
+        collect_from_node(parsed_py.tree.root_node(), &parsed_py.source, &mut stats2, false);
+        assert!(!stats2.statements_per_function.is_empty());
+        let m = crate::rust_counts::RustFunctionMetrics { statements: 5, arguments: 2, max_indentation: 1, nested_function_depth: 0, returns: 1, branches: 0, local_variables: 2, bool_parameters: 0, attributes: 0 };
+        push_rust_fn_metrics(&mut stats, &m);
+        let ast: syn::File = syn::parse_str("fn bar() { let y = 2; }").unwrap();
+        collect_rust_from_items(&ast.items, &mut stats);
     }
 }

@@ -2,16 +2,16 @@ pub mod python {
     pub const IMPORTS_PER_FILE: usize = 20;
     pub const LINES_PER_FILE: usize = 300;
     pub const TYPES_PER_FILE: usize = 10;
-    pub const STATEMENTS_PER_FUNCTION: usize = 40;
+    pub const STATEMENTS_PER_FUNCTION: usize = 35;
     pub const POSITIONAL_ARGS: usize = 5;
     pub const KEYWORD_ONLY_ARGS: usize = 6;
     pub const MAX_INDENTATION: usize = 4;
     pub const BRANCHES_PER_FUNCTION: usize = 10;
     pub const LOCAL_VARIABLES: usize = 20;
     pub const METHODS_PER_CLASS: usize = 20;
-    pub const LCOM: usize = 50;
-    pub const FAN_OUT: usize = 20;
-    pub const FAN_IN: usize = 20;
+    pub const LCOM: usize = 40;
+    pub const FAN_OUT: usize = 10;
+    pub const FAN_IN: usize = 15;
     pub const RETURNS_PER_FUNCTION: usize = 5;
     pub const NESTED_FUNCTION_DEPTH: usize = 2;
     pub const STATEMENTS_PER_TRY_BLOCK: usize = 5;
@@ -29,9 +29,9 @@ pub mod rust {
     pub const BRANCHES_PER_FUNCTION: usize = 8;
     pub const LOCAL_VARIABLES: usize = 20;
     pub const METHODS_PER_TYPE: usize = 15;
-    pub const LCOM: usize = 100;
-    pub const FAN_OUT: usize = 20;
-    pub const FAN_IN: usize = 20;
+    pub const LCOM: usize = 40;
+    pub const FAN_OUT: usize = 10;
+    pub const FAN_IN: usize = 15;
     pub const RETURNS_PER_FUNCTION: usize = 5;
     pub const NESTED_FUNCTION_DEPTH: usize = 2;
     pub const BOOLEAN_PARAMETERS: usize = 2;
@@ -45,7 +45,7 @@ pub mod graph {
 }
 
 pub mod gate {
-    pub const TEST_COVERAGE_THRESHOLD: usize = 65;
+    pub const TEST_COVERAGE_THRESHOLD: usize = 90;
 }
 
 pub fn default_config_toml() -> String {

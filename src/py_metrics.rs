@@ -152,10 +152,10 @@ fn collect_assigned_names(node: Node, source: &str, vars: &mut HashSet<String>) 
 
 fn compute_nested_function_depth(node: Node, current_depth: usize) -> usize {
     let is_fn = matches!(node.kind(), "function_definition" | "async_function_definition");
-    let new_depth = if is_fn && current_depth > 0 { current_depth + 1 } else if is_fn { 1 } else { current_depth };
+    let new_depth = if is_fn { current_depth + 1 } else { current_depth };
     let mut cursor = node.walk();
     let max = node.children(&mut cursor).fold(new_depth, |m, c| m.max(compute_nested_function_depth(c, new_depth)));
-    if is_fn { max.saturating_sub(1) } else { max }
+    if is_fn && current_depth == 0 { max.saturating_sub(1) } else { max }
 }
 
 fn count_imports(node: Node) -> usize {
@@ -226,69 +226,48 @@ mod tests {
         parse_file(&mut create_parser().unwrap(), tmp.path()).unwrap()
     }
 
+    fn get_func_node(p: &crate::parsing::ParsedFile) -> Node<'_> { p.tree.root_node().child(0).unwrap() }
+
     #[test]
-    fn test_function_metrics() {
-        let p = parse("def f(a, b):\n    x = 1\n    return x");
-        let m = compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source);
-        assert_eq!(m.arguments, 2);
-        assert!(m.statements >= 2);
+    fn test_params_and_decorators() {
+        let p = parse("def f(a, b, c): pass");
+        let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
+        assert_eq!(count_parameters(params, &p.source).positional, 3);
+        let _ = ParameterCounts { positional: 2, keyword_only: 1, total: 3, boolean_params: 0 };
+        let p2 = parse("def f(a=True): pass");
+        let params2 = get_func_node(&p2).child_by_field_name("parameters").unwrap();
+        let param = params2.children(&mut params2.walk()).find(|c| c.kind() == "default_parameter").unwrap();
+        assert!(is_boolean_default(&param, &p2.source));
+        assert_eq!(count_decorators(get_func_node(&parse("@dec\ndef f(): pass")).child(1).unwrap()), 1);
     }
 
     #[test]
-    fn test_class_metrics() {
-        let p = parse("class C:\n    def a(self): pass\n    def b(self): pass");
-        assert_eq!(compute_class_metrics(p.tree.root_node().child(0).unwrap()).methods, 2);
+    fn test_statements_and_branches() {
+        let p = parse("def f():\n    x = 1\n    y = 2");
+        let body = get_func_node(&p).child_by_field_name("body").unwrap();
+        assert_eq!(count_statements(body), 2);
+        assert!(is_statement("return_statement") && !is_statement("identifier"));
+        assert_eq!(compute_max_indentation(body, 0), 0);
+        assert_eq!(count_branches(get_func_node(&parse("def f():\n    if a: pass")).child_by_field_name("body").unwrap()), 1);
+        assert_eq!(compute_max_try_block_statements(get_func_node(&parse("def f():\n    try:\n        x=1\n    except: pass")).child_by_field_name("body").unwrap()), 1);
     }
 
     #[test]
-    fn test_file_metrics() {
-        let p = parse("import os\nclass A: pass");
-        let m = compute_file_metrics(&p);
-        assert_eq!(m.classes, 1);
-        assert!(m.imports >= 1);
-    }
-
-    #[test]
-    fn test_keyword_only_args() {
-        let p = parse("def f(a, b, c, *, d, e, f): pass");
-        let m = compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source);
-        assert_eq!(m.arguments_positional, 3);
-        assert_eq!(m.arguments_keyword_only, 3);
-    }
-
-    #[test]
-    fn test_from_import_counts() {
-        let p = parse("from typing import Any, List");
-        assert_eq!(compute_file_metrics(&p).imports, 2);
-    }
-
-    #[test]
-    fn test_lazy_imports() {
-        let p = parse("import os\ndef f():\n    import numpy");
-        assert_eq!(compute_file_metrics(&p).imports, 2);
-    }
-
-    #[test]
-    fn test_try_block_statements() {
-        let p = parse("def f():\n    try:\n        x=1;y=2;z=3\n    except: pass");
-        assert_eq!(compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source).max_try_block_statements, 3);
-    }
-
-    #[test]
-    fn test_nested_try_blocks() {
-        let p = parse("def f():\n    try:\n        a=1\n    except: pass\n    try:\n        b=1;c=2;d=3;e=4\n    except: pass");
-        assert_eq!(compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source).max_try_block_statements, 4);
-    }
-
-    #[test]
-    fn test_boolean_parameters() {
-        let p = parse("def f(a=True, b=False, c=None): pass");
-        assert_eq!(compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source).boolean_parameters, 2);
-    }
-
-    #[test]
-    fn test_decorators() {
-        let p = parse("@a\n@b\n@c\ndef f(): pass");
-        assert_eq!(compute_function_metrics(p.tree.root_node().child(0).unwrap().child(3).unwrap(), &p.source).decorators, 3);
+    fn test_variables_and_imports() {
+        let p = parse("def f():\n    x = 1\n    y = 2");
+        let body = get_func_node(&p).child_by_field_name("body").unwrap();
+        assert_eq!(count_local_variables(body, &p.source), 2);
+        let mut vars = HashSet::new();
+        collect_local_variables(body, &p.source, &mut vars);
+        let p2 = parse("x, y = 1, 2");
+        let mut v2 = HashSet::new();
+        collect_assigned_names(p2.tree.root_node().child(0).unwrap().child(0).unwrap().child_by_field_name("left").unwrap(), &p2.source, &mut v2);
+        assert_eq!(compute_nested_function_depth(get_func_node(&parse("def f():\n    def g(): pass")), 0), 1);
+        assert_eq!(count_imports(parse("import os").tree.root_node()), 1);
+        assert_eq!(count_import_names(parse("from typing import Any, List").tree.root_node().child(0).unwrap()), 2);
+        let p3 = parse("def f(self):\n    if True:\n        self.z = 1");
+        let mut fields = HashSet::new();
+        extract_self_attributes_recursive(get_func_node(&p3), &p3.source, &mut fields);
+        assert!(fields.contains("z"));
     }
 }

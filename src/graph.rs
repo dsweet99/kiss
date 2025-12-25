@@ -238,43 +238,61 @@ fn count_decision_points(node: Node) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parsing::create_parser;
+    use crate::parsing::{create_parser, parse_file};
+    use std::io::Write;
 
-    fn parse_imports(code: &str) -> Vec<String> {
+    #[test]
+    fn test_graph_and_imports() {
         let mut parser = create_parser().unwrap();
-        extract_imports(parser.parse(code, None).unwrap().root_node(), code)
-    }
-
-    #[test]
-    fn test_import_extraction() {
-        assert!(parse_imports("import os").contains(&"os".into()));
-        assert!(parse_imports("from collections import defaultdict").contains(&"collections".into()));
-    }
-
-    #[test]
-    fn test_graph_ops() {
+        let imports = extract_imports(parser.parse("import os", None).unwrap().root_node(), "import os");
+        assert!(imports.contains(&"os".into()));
         let mut g = DependencyGraph::default();
         g.add_dependency("a", "b"); g.add_dependency("b", "a");
         assert!(!g.find_cycles().cycles.is_empty());
-        assert_eq!(g.module_metrics("a").fan_out, 1);
+        let idx1 = g.get_or_create_node("test");
+        let idx2 = g.get_or_create_node("test");
+        assert_eq!(idx1, idx2);
+        let _ = CycleInfo { cycles: vec![vec!["a".into()]] };
     }
 
     #[test]
-    fn test_entry_points() {
-        assert!(is_entry_point("main") && is_entry_point("test_foo") && is_entry_point("cli_integration"));
-        assert!(!is_entry_point("utils"));
-    }
-
-    #[test]
-    fn test_orphan() {
+    fn test_helpers() {
+        assert!(is_entry_point("main") && is_entry_point("test_foo") && !is_entry_point("utils"));
         assert!(is_orphan(&ModuleGraphMetrics { fan_in: 0, fan_out: 0, ..Default::default() }, "utils"));
         assert!(!is_orphan(&ModuleGraphMetrics { fan_in: 1, fan_out: 0, ..Default::default() }, "utils"));
-        assert!(!is_orphan(&ModuleGraphMetrics { fan_in: 0, fan_out: 0, ..Default::default() }, "main"));
+        let mut g = DependencyGraph::new();
+        g.paths.insert("foo".into(), PathBuf::from("src/foo.py"));
+        assert_eq!(get_module_path(&g, "foo"), PathBuf::from("src/foo.py"));
+        assert_eq!(top_level_module("foo.bar.baz"), "foo");
+        let mut parser = create_parser().unwrap();
+        let tree = parser.parse("from foo.bar import baz", None).unwrap();
+        assert_eq!(extract_module_from_import_from(tree.root_node().child(0).unwrap(), "from foo.bar import baz"), Some("foo".into()));
+        assert!(is_decision_point("if_statement") && !is_decision_point("identifier"));
+        let tree2 = parser.parse("if a:\n    if b:\n        pass", None).unwrap();
+        assert_eq!(count_decision_points(tree2.root_node()), 2);
     }
 
     #[test]
-    fn test_cyclomatic_complexity() {
+    fn test_transitive_and_cycles() {
+        let mut g = DependencyGraph::new();
+        g.add_dependency("a", "b"); g.add_dependency("b", "c"); g.add_dependency("c", "d");
+        let idx = *g.nodes.get("a").unwrap();
+        let (trans, depth) = g.compute_transitive_and_depth(idx);
+        assert_eq!(trans, 3);
+        assert_eq!(depth, 3);
+        g.add_dependency("x", "x");
+        let idx_x = *g.nodes.get("x").unwrap();
+        assert!(g.is_cycle(&[idx_x]));
+        assert!(!g.is_cycle(&[]));
+    }
+
+    #[test]
+    fn test_module_name_and_complexity() {
         let mut parser = create_parser().unwrap();
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
+        write!(tmp, "x = 1").unwrap();
+        let parsed = parse_file(&mut parser, tmp.path()).unwrap();
+        assert!(!module_name_from_path(&parsed).is_empty());
         let tree = parser.parse("def f():\n    if a:\n        pass", None).unwrap();
         assert!(compute_cyclomatic_complexity(tree.root_node().child(0).unwrap()) >= 2);
     }

@@ -47,4 +47,12 @@ mod tests {
         run_rules(&py_config, &rs_config, &gate_config, Some(Language::Python), true);
         run_rules(&py_config, &rs_config, &gate_config, Some(Language::Rust), true);
     }
+
+    #[test]
+    fn test_print_rules() {
+        let config = Config::python_defaults();
+        let gate = GateConfig::default();
+        print_rules(&config, &gate, true);
+        print_rules(&Config::rust_defaults(), &gate, false);
+    }
 }

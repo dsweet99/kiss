@@ -245,6 +245,15 @@ mod tests {
     }
 
     #[test]
+    fn test_is_bool_param() {
+        let f: syn::File = syn::parse_str("fn foo(a: bool, b: i32) {}").unwrap();
+        if let syn::Item::Fn(func) = &f.items[0] {
+            assert!(is_bool_param(&func.sig.inputs[0]));
+            assert!(!is_bool_param(&func.sig.inputs[1]));
+        }
+    }
+
+    #[test]
     fn test_structs() {
         let _ = RustFunctionMetrics {
             statements: 1,

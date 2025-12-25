@@ -213,4 +213,16 @@ mod tests {
         assert!(detect_py_duplicates(&[]).is_empty());
         assert!(detect_rs_duplicates(&[]).is_empty());
     }
+
+    #[test]
+    fn test_parse_all() {
+        let config = Config::default();
+        let (py, rs, viols) = parse_all(&[], &[], &config, &config);
+        assert!(py.is_empty() && rs.is_empty() && viols.is_empty());
+    }
+
+    #[test]
+    fn test_print_all_results() {
+        print_all_results(&[], &[], &[], false);
+    }
 }

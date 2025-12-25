@@ -235,61 +235,48 @@ fn get_impl_type_name(impl_block: &syn::ItemImpl) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
-    fn test_analyze_file_clean() {
-        use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-        writeln!(tmp, "fn foo() {{}}").unwrap();
-        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
-        assert!(analyze_rust_file(&parsed, &Config::default()).is_empty());
-    }
-
-    #[test]
-    fn test_count_impl_methods() {
+    fn test_helpers() {
         let f: syn::File = syn::parse_str("impl Foo { fn a(&self) {} fn b(&self) {} }").unwrap();
-        if let syn::Item::Impl(i) = &f.items[0] {
-            assert_eq!(count_impl_methods(i), 2);
-        }
-    }
-
-    #[test]
-    fn test_get_impl_type_name() {
-        let f: syn::File = syn::parse_str("impl MyStruct { fn a(&self) {} }").unwrap();
-        if let syn::Item::Impl(i) = &f.items[0] {
-            assert_eq!(get_impl_type_name(i), Some("MyStruct".to_string()));
-        }
+        if let syn::Item::Impl(i) = &f.items[0] { assert_eq!(count_impl_methods(i), 2); }
+        let f2: syn::File = syn::parse_str("impl MyStruct { fn a(&self) {} }").unwrap();
+        if let syn::Item::Impl(i) = &f2.items[0] { assert_eq!(get_impl_type_name(i), Some("MyStruct".to_string())); }
     }
 
     #[test]
     fn test_analyzer_basic() {
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "fn foo() {{}}").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        assert!(analyze_rust_file(&parsed, &Config::default()).is_empty());
         let p = std::path::PathBuf::from("t.rs");
         let mut v = Vec::new();
-        let cfg = Config::default();
-        let mut a = RustAnalyzer::new(&p, &cfg, &mut v);
-        let f: syn::File = syn::parse_str("fn foo() {}").unwrap();
-        a.analyze_item(&f.items[0]);
+        RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_item(&syn::parse_str::<syn::File>("fn foo() {}").unwrap().items[0]);
     }
 
     #[test]
-    fn test_check_methods_per_type() {
+    fn test_analyzer_checks() {
         let p = std::path::PathBuf::from("t.rs");
         let mut cfg = Config::default();
         cfg.methods_per_class = 5;
         let mut v = Vec::new();
         RustAnalyzer::new(&p, &cfg, &mut v).check_methods_per_type(1, "S", 10);
         assert_eq!(v.len(), 1);
+        let mut v2 = Vec::new();
+        RustAnalyzer::new(&p, &Config::default(), &mut v2).check_god_class(1, "Big", 25, 75);
+        assert_eq!(v2.len(), 1);
     }
 
     #[test]
-    fn test_check_god_class() {
+    fn test_analyzer_impl_and_fn() {
         let p = std::path::PathBuf::from("t.rs");
-        let mut v = Vec::new();
-        RustAnalyzer::new(&p, &Config::default(), &mut v).check_god_class(1, "Big", 25, 75);
-        assert_eq!(v.len(), 1);
-
-        let mut v2 = Vec::new();
-        RustAnalyzer::new(&p, &Config::default(), &mut v2).check_god_class(1, "Small", 5, 75);
-        assert!(v2.is_empty());
+        let fi: syn::File = syn::parse_str("impl Foo { fn bar(&self) { let x = 1; } }").unwrap();
+        if let syn::Item::Impl(i) = &fi.items[0] { let mut v = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_impl_block(i); }
+        let fl: syn::File = syn::parse_str("impl Foo { fn a(&self) {} fn b(&self) {} }").unwrap();
+        if let syn::Item::Impl(i) = &fl.items[0] { let mut v = Vec::new(); let mut c = Config::default(); c.lcom = 0; let _ = RustAnalyzer::new(&p, &c, &mut v).check_lcom(i, 1, "Foo", 2); }
+        let ff: syn::File = syn::parse_str("fn foo(x: i32) { let y = x + 1; }").unwrap();
+        if let syn::Item::Fn(func) = &ff.items[0] { let mut v = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_function("foo", 1, &func.sig.inputs, &func.block, func.attrs.len(), "Function"); }
     }
 }

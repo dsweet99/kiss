@@ -218,4 +218,23 @@ mod tests {
         let _ = run_mimic as fn(&[String], Option<&Path>, Option<Language>, &[String]);
         let _ = main as fn();
     }
+
+    #[test]
+    fn test_cli_struct() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["kiss", "."]).unwrap();
+        assert_eq!(cli.path, ".");
+    }
+
+    #[test]
+    fn test_commands_enum() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["kiss", "rules"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Rules)));
+    }
+
+    #[test]
+    fn test_ensure_default_config_exists() {
+        ensure_default_config_exists();
+    }
 }

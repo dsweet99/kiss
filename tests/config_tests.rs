@@ -6,7 +6,7 @@ fn default_config_has_reasonable_values() {
     let py_config = Config::python_defaults();
     let rs_config = Config::rust_defaults();
     
-    assert_eq!(py_config.statements_per_function, 40);
+    assert_eq!(py_config.statements_per_function, 35);
     assert_eq!(py_config.methods_per_class, 20);
     assert_eq!(py_config.lines_per_file, 300);
     

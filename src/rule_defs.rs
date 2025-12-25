@@ -260,26 +260,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_rules_registry_not_empty() {
+    fn test_rules_and_categories() {
         assert!(!RULES.is_empty());
-    }
-
-    #[test]
-    fn test_rules_for_both_languages() {
         let config = Config::python_defaults();
         let gate = GateConfig::default();
-        let py_rules = rules_for_python(&config, &gate);
-        let rs_rules = rules_for_rust(&Config::rust_defaults(), &gate);
-        assert!(!py_rules.is_empty());
-        assert!(!rs_rules.is_empty());
-    }
-
-    #[test]
-    fn test_rule_formatting() {
-        let config = Config::python_defaults();
-        let gate = GateConfig::default();
-        let rule = &RULES[0];
-        let formatted = rule.format(&config, &gate);
-        assert!(formatted.contains(&config.statements_per_function.to_string()));
+        assert!(!rules_for_python(&config, &gate).is_empty());
+        assert!(!rules_for_rust(&Config::rust_defaults(), &gate).is_empty());
+        assert!(RULES[0].format(&config, &gate).contains(&config.statements_per_function.to_string()));
+        assert_eq!(RuleCategory::Functions.python_heading(), "Functions");
+        assert_eq!(RuleCategory::Classes.rust_heading(), "Types");
+        assert_eq!(RuleCategory::Dependencies.python_heading(), "Dependencies");
+        let _ = (Applicability::Python, Applicability::Rust, Applicability::Both);
+        let rule = Rule { category: RuleCategory::Functions, template: "Test {}", get_threshold: |c, _| c.statements_per_function, applicability: Applicability::Both };
+        assert!(rule.applies_to_python() && rule.applies_to_rust());
+        let py_rule = Rule { category: RuleCategory::Functions, template: "Test", get_threshold: |_, _| 0, applicability: Applicability::Python };
+        assert!(py_rule.applies_to_python() && !py_rule.applies_to_rust());
+        let rs_rule = Rule { category: RuleCategory::Functions, template: "Test", get_threshold: |_, _| 0, applicability: Applicability::Rust };
+        assert!(!rs_rule.applies_to_python() && rs_rule.applies_to_rust());
+        assert!(!rules_grouped(&config, &gate, true).is_empty());
     }
 }

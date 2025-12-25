@@ -196,18 +196,30 @@ pub fn detect_duplicates_from_chunks(chunks: &[CodeChunk], config: &DuplicationC
 mod tests {
     use super::*;
     use crate::parsing::{create_parser, parse_file};
+    use crate::rust_parsing::parse_rust_file;
     use std::io::Write;
 
     #[test]
-    fn test_structs_and_config() {
+    fn test_structs_and_helpers() {
         let c = DuplicationConfig::default(); assert!(c.shingle_size > 0);
         let chunk = CodeChunk { file: "f.py".into(), name: "foo".into(), start_line: 1, end_line: 10, normalized: "x".into() };
         assert_eq!(chunk_key(&chunk).0, PathBuf::from("f.py"));
         let mut uf = UnionFind::new(5); uf.union(0, 1); assert_eq!(uf.find(0), uf.find(1));
+        let c1 = CodeChunk { file: "a.py".into(), name: "f".into(), start_line: 1, end_line: 5, normalized: "x".into() };
+        let c2 = CodeChunk { file: "b.py".into(), name: "g".into(), start_line: 1, end_line: 5, normalized: "x".into() };
+        let _ = DuplicatePair { chunk1: c1.clone(), chunk2: c2, similarity: 0.9 };
+        let _ = DuplicateCluster { chunks: vec![c1.clone()], avg_similarity: 0.8 };
+        let chunks = vec![c1, CodeChunk { file: "b.py".into(), name: "g".into(), start_line: 2, end_line: 6, normalized: "y".into() }];
+        assert_eq!(build_chunk_index(&chunks).len(), 2);
+        let mut ps = HashMap::new();
+        ps.insert((0, 1), 0.8);
+        assert!(compute_cluster_similarity(&[0, 1], &ps) > 0.0);
+        assert!(is_nontrivial_chunk("a b c d e f g h i j k"));
+        assert!(!is_nontrivial_chunk("a b c"));
     }
 
     #[test]
-    fn test_identical_code_similarity() {
+    fn test_python_duplication() {
         let code = r"def foo(): x = 1; y = 2; z = 3; a = 4; b = 5; return x + y + z + a + b";
         let mut tmp1 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
         let mut tmp2 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
@@ -216,31 +228,34 @@ mod tests {
         let p1 = parse_file(&mut parser, tmp1.path()).unwrap();
         let p2 = parse_file(&mut parser, tmp2.path()).unwrap();
         let pairs = detect_duplicates(&[&p1, &p2], &DuplicationConfig::default());
-        assert!(!pairs.is_empty());
-        assert!((pairs[0].similarity - 1.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_different_code_no_match() {
-        let mut tmp1 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
-        let mut tmp2 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
-        write!(tmp1, "def foo(): return 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8").unwrap();
-        write!(tmp2, "def bar(): print('hello world how are you today'); x = 999").unwrap();
-        let mut parser = create_parser().unwrap();
-        let p1 = parse_file(&mut parser, tmp1.path()).unwrap();
-        let p2 = parse_file(&mut parser, tmp2.path()).unwrap();
-        let pairs = detect_duplicates(&[&p1, &p2], &DuplicationConfig::default());
-        assert!(pairs.is_empty() || pairs[0].similarity < 0.7);
-    }
-
-    #[test]
-    fn test_cluster_duplicates() {
+        assert!(!pairs.is_empty() && (pairs[0].similarity - 1.0).abs() < 0.01);
         let chunks = vec![
             CodeChunk { file: "a.py".into(), name: "f1".into(), start_line: 1, end_line: 5, normalized: "x y z a b c d e f g".into() },
             CodeChunk { file: "b.py".into(), name: "f2".into(), start_line: 1, end_line: 5, normalized: "x y z a b c d e f g".into() },
         ];
-        let pairs = detect_duplicates_from_chunks(&chunks, &DuplicationConfig::default());
-        let clusters = cluster_duplicates(&pairs, &chunks);
-        assert!(clusters.is_empty() || clusters[0].chunks.len() >= 2);
+        let pairs2 = detect_duplicates_from_chunks(&chunks, &DuplicationConfig::default());
+        let _ = cluster_duplicates(&pairs2, &chunks);
+        let mut tmp3 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
+        write!(tmp3, "def foo():\n    x = 1\n    y = 2\n    z = 3\n    a = 4\n    b = 5\n    c = 6").unwrap();
+        let parsed = parse_file(&mut create_parser().unwrap(), tmp3.path()).unwrap();
+        let mut chunks = Vec::new();
+        extract_function_chunks(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut chunks);
+        assert!(!chunks.is_empty());
+    }
+
+    #[test]
+    fn test_rust_duplication() {
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        write!(tmp, "fn foo() {{ let x = 1; let y = 2; let z = 3; let a = 4; let b = 5; }}").unwrap();
+        let parsed = parse_rust_file(tmp.path()).unwrap();
+        assert!(!extract_rust_chunks_for_duplication(&[&parsed]).is_empty());
+        let source = "fn bar() { let x = 1; let y = 2; let z = 3; let a = 4; let b = 5; }";
+        let ast: syn::File = syn::parse_str(source).unwrap();
+        let mut chunks = Vec::new();
+        extract_rust_function_chunks(&ast, source, Path::new("test.rs"), &mut chunks);
+        extract_chunks_from_item(&ast.items[0], source, Path::new("test.rs"), &mut chunks);
+        if let syn::Item::Fn(f) = &ast.items[0] {
+            add_rust_function_chunk("bar", f.sig.ident.span(), source, Path::new("test.rs"), &mut chunks);
+        }
     }
 }

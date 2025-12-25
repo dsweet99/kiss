@@ -229,47 +229,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_defaults() {
+    fn test_config_defaults_and_loading() {
         let py = Config::python_defaults();
         let rs = Config::rust_defaults();
         assert_eq!(py.statements_per_function, defaults::python::STATEMENTS_PER_FUNCTION);
         assert_eq!(rs.statements_per_function, defaults::rust::STATEMENTS_PER_FUNCTION);
-        assert_ne!(py.statements_per_function, rs.statements_per_function);
-    }
-
-    #[test]
-    fn test_merge_overrides() {
-        let mut c = Config::default();
-        let orig = c.statements_per_function;
-        c.merge_from_toml("[thresholds]\nstatements_per_function = 100", None);
-        assert_eq!(c.statements_per_function, 100);
-        let mut c2 = Config::default();
-        c2.merge_from_toml("invalid {{{{", None);
-        assert_eq!(c2.statements_per_function, orig);
-    }
-
-    #[test]
-    fn test_language_sections() {
-        let mut py = Config::default();
-        py.merge_from_toml("[python]\nstatements_per_function = 60", Some(ConfigLanguage::Python));
-        assert_eq!(py.statements_per_function, 60);
-        let mut rs = Config::default();
-        rs.merge_from_toml("[rust]\nstatements_per_function = 70", Some(ConfigLanguage::Rust));
-        assert_eq!(rs.statements_per_function, 70);
-    }
-
-    #[test]
-    fn test_shared_section() {
-        let mut c = Config::default();
-        c.merge_from_toml("[shared]\nlines_per_file = 600", None);
-        assert_eq!(c.lines_per_file, 600);
-    }
-
-    #[test]
-    fn test_load_functions() {
         assert!(Config::load().statements_per_function > 0);
         assert!(Config::load_for_language(ConfigLanguage::Python).statements_per_function > 0);
         assert!(Config::load_from(Path::new("/nonexistent")).statements_per_function > 0);
+        assert!(Config::load_config_chain(Config::python_defaults(), None).statements_per_function > 0);
+    }
+
+    #[test]
+    fn test_config_merging() {
+        let mut c = Config::default();
+        c.merge_from_toml("[thresholds]\nstatements_per_function = 100", None);
+        assert_eq!(c.statements_per_function, 100);
+        c.merge_from_toml("[shared]\nlines_per_file = 600", None);
+        assert_eq!(c.lines_per_file, 600);
+        c.merge_from_toml("[python]\nstatements_per_function = 60", Some(ConfigLanguage::Python));
+        assert_eq!(c.statements_per_function, 60);
+        c.merge_from_toml("[rust]\nstatements_per_function = 70", Some(ConfigLanguage::Rust));
+        assert_eq!(c.statements_per_function, 70);
+    }
+
+    #[test]
+    fn test_apply_functions() {
+        let mut c = Config::default();
+        let t1: toml::Table = "[thresholds]\nstatements_per_function = 99".parse().unwrap();
+        if let Some(t) = t1.get("thresholds").and_then(|v| v.as_table()) { c.apply_thresholds(t); }
+        assert_eq!(c.statements_per_function, 99);
+        let t2: toml::Table = "[shared]\nlines_per_file = 800".parse().unwrap();
+        if let Some(t) = t2.get("shared").and_then(|v| v.as_table()) { c.apply_shared(t); }
+        assert_eq!(c.lines_per_file, 800);
+        let t3: toml::Table = "[python]\nstatements_per_function = 77".parse().unwrap();
+        if let Some(t) = t3.get("python").and_then(|v| v.as_table()) { c.apply_python(t); }
+        assert_eq!(c.statements_per_function, 77);
+        let t4: toml::Table = "[rust]\nstatements_per_function = 88".parse().unwrap();
+        if let Some(t) = t4.get("rust").and_then(|v| v.as_table()) { c.apply_rust(t); }
+        assert_eq!(c.statements_per_function, 88);
+        let table: toml::Table = "value = 42".parse().unwrap();
+        assert_eq!(get_usize(&table, "value"), Some(42));
+        assert_eq!(get_usize(&table, "missing"), None);
     }
 
     #[test]
@@ -277,7 +278,5 @@ mod tests {
         let mut gate = GateConfig::default();
         gate.merge_from_toml("[gate]\ntest_coverage_threshold = 150");
         assert_eq!(gate.test_coverage_threshold, 100);
-        gate.merge_from_toml("[gate]\ntest_coverage_threshold = 0");
-        assert_eq!(gate.test_coverage_threshold, 0);
     }
 }

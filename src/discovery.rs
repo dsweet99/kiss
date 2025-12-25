@@ -141,6 +141,24 @@ mod tests {
     }
 
     #[test]
+    fn test_has_ignored_prefix() {
+        assert!(has_ignored_prefix("fake_data", &["fake_".to_string()]));
+        assert!(has_ignored_prefix("mock_dir", &["mock_".to_string()]));
+        assert!(!has_ignored_prefix("real_data", &["fake_".to_string()]));
+    }
+
+    #[test]
+    fn test_find_files_by_extension() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.py"), "").unwrap();
+        fs::write(tmp.path().join("b.rs"), "").unwrap();
+        fs::write(tmp.path().join("c.txt"), "").unwrap();
+        assert_eq!(find_files_by_extension(tmp.path(), "py").len(), 1);
+        assert_eq!(find_files_by_extension(tmp.path(), "rs").len(), 1);
+        assert_eq!(find_files_by_extension(tmp.path(), "txt").len(), 1);
+    }
+
+    #[test]
     fn test_find_source_files_with_ignore() {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("a.py"), "").unwrap();
