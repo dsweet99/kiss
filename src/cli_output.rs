@@ -59,8 +59,8 @@ pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
     }
 }
 
-pub fn print_py_test_refs(parsed: &[ParsedFile]) {
-    if parsed.is_empty() { return; }
+pub fn print_py_test_refs(parsed: &[ParsedFile]) -> usize {
+    if parsed.is_empty() { return 0; }
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
     let analysis = analyze_test_refs(&refs);
     if !analysis.unreferenced.is_empty() {
@@ -71,10 +71,11 @@ pub fn print_py_test_refs(parsed: &[ParsedFile]) {
         }
         println!("\nAdd tests that directly call these items, or remove them if they are dead code.");
     }
+    analysis.unreferenced.len()
 }
 
-pub fn print_rs_test_refs(parsed: &[ParsedRustFile]) {
-    if parsed.is_empty() { return; }
+pub fn print_rs_test_refs(parsed: &[ParsedRustFile]) -> usize {
+    if parsed.is_empty() { return 0; }
     let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
     let analysis = analyze_rust_test_refs(&refs);
     if !analysis.unreferenced.is_empty() {
@@ -85,6 +86,7 @@ pub fn print_rs_test_refs(parsed: &[ParsedRustFile]) {
         }
         println!("\nAdd tests that directly reference these items, or remove them if they are dead code.");
     }
+    analysis.unreferenced.len()
 }
 
 #[cfg(test)]

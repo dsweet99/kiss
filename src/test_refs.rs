@@ -26,23 +26,17 @@ pub struct TestRefAnalysis {
     pub unreferenced: Vec<CodeDefinition>,
 }
 
-fn is_in_test_directory(path: &Path) -> bool {
-    path.components().any(|c| {
-        let s = c.as_os_str();
-        s == "tests" || s == "test"
-    })
-}
-
 fn has_python_test_naming(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
         .is_some_and(|name| (name.starts_with("test_") && name.ends_with(".py")) || name.ends_with("_test.py"))
 }
 
-/// Check if a file path is a test file (test_*.py, *_test.py, or in tests/ directory)
+/// Check if a file path is a test file (test_*.py or *_test.py)
+/// Note: Being in a tests/ directory alone is NOT sufficient - file must have test naming
 #[must_use]
 pub fn is_test_file(path: &std::path::Path) -> bool {
-    is_in_test_directory(path) || has_python_test_naming(path)
+    has_python_test_naming(path)
 }
 
 fn is_test_framework(name: &str) -> bool {
@@ -195,11 +189,12 @@ mod tests {
     }
 
     #[test]
-    fn test_is_test_file_by_path_component() {
-        assert!(is_test_file(Path::new("tests/conftest.py")));
-        assert!(is_test_file(Path::new("tests/helpers.py")));
+    fn test_is_test_file_requires_naming_pattern() {
+        assert!(is_test_file(Path::new("test_utils.py")));
+        assert!(is_test_file(Path::new("utils_test.py")));
         assert!(is_test_file(Path::new("/project/tests/unit/test_utils.py")));
-        assert!(is_test_file(Path::new("test/integration.py")));
+        assert!(!is_test_file(Path::new("tests/conftest.py")));
+        assert!(!is_test_file(Path::new("tests/helpers.py")));
         assert!(!is_test_file(Path::new("src/utils.py")));
         assert!(!is_test_file(Path::new("myproject/testing_utils.py")));
     }

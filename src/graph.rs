@@ -369,8 +369,16 @@ fn count_decision_points(node: Node) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parsing::create_parser;
+    use crate::parsing::{create_parser, parse_file, ParsedFile};
     use std::path::Path;
+    use std::io::Write;
+
+    fn parse_source(code: &str) -> ParsedFile {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        write!(tmp, "{}", code).unwrap();
+        let mut parser = create_parser().unwrap();
+        parse_file(&mut parser, tmp.path()).unwrap()
+    }
 
     fn parse_imports(code: &str) -> Vec<String> {
         let mut parser = create_parser().unwrap();
@@ -461,14 +469,19 @@ mod tests {
     }
 
     #[test]
-    fn test_is_cycle() {
+    fn test_graph_methods() {
         let mut g = DependencyGraph::default();
         g.add_dependency("a", "a");
-        let idx = *g.nodes.get("a").unwrap();
-        assert!(g.is_cycle(&[idx]));
-        let mut g2 = DependencyGraph::default();
-        g2.add_dependency("x", "y");
-        let x = *g2.nodes.get("x").unwrap();
-        assert!(!g2.is_cycle(&[x]));
+        assert!(g.is_cycle(&[*g.nodes.get("a").unwrap()]));
+        g.add_dependency("x", "y");
+        assert!(!g.is_cycle(&[*g.nodes.get("x").unwrap()]));
+        g.add_dependency("c", "y");
+        assert_eq!(g.module_metrics("y").fan_in, 2);
+        assert_eq!(g.module_metrics("nonexistent").fan_in, 0);
+        let parsed = parse_source("import os\nfrom collections import deque");
+        assert!(!build_dependency_graph(&[&parsed]).nodes.is_empty());
+        let mut parser = create_parser().unwrap();
+        let tree = parser.parse("def f():\n    if a:\n        if b:\n            pass", None).unwrap();
+        assert!(compute_cyclomatic_complexity(tree.root_node().child(0).unwrap()) >= 3);
     }
 }

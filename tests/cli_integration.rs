@@ -76,11 +76,13 @@ fn cli_with_lang_filter_python() {
         .output()
         .expect("Failed to execute kiss");
 
-    // Should run without error
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Should run and report violations (exit code 1 expected for violations)
     assert!(
-        output.status.success(),
-        "kiss --lang python should succeed. stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+        !stdout.is_empty() && stdout.contains("VIOLATION"),
+        "kiss --lang python should report violations. stdout: {}",
+        stdout
     );
 }
 

@@ -79,7 +79,9 @@ fn main() {
             run_mimic(&paths, out.as_deref(), cli.lang);
         }
         None => {
-            run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config);
+            if !run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config) {
+                std::process::exit(1);
+            }
         }
     }
 }
@@ -113,25 +115,25 @@ use kiss::cli_output::{
     print_violations, print_duplicates, print_py_test_refs, print_rs_test_refs,
 };
 
-fn run_analyze(path: &str, py_config: &Config, rs_config: &Config, lang_filter: Option<Language>, bypass_gate: bool, gate_config: &GateConfig) {
+fn run_analyze(path: &str, py_config: &Config, rs_config: &Config, lang_filter: Option<Language>, bypass_gate: bool, gate_config: &GateConfig) -> bool {
     let root = Path::new(path);
     let (py_files, rs_files) = gather_files(root, lang_filter);
     
     if py_files.is_empty() && rs_files.is_empty() {
         print_no_files_message(lang_filter, root);
-        return;
+        return true;
     }
     
     let (py_parsed, rs_parsed, mut viols) = parse_all(&py_files, &rs_files, py_config, rs_config);
     
     if !bypass_gate && !check_coverage_gate(&py_parsed, &rs_parsed, gate_config) {
-        return;
+        return false;
     }
     
     let (py_graph, rs_graph) = build_graphs(&py_parsed, &rs_parsed);
     viols.extend(analyze_graphs(&py_graph, &rs_graph, py_config, rs_config));
     
-    print_all_results(&viols, &py_parsed, &rs_parsed, &py_graph, &rs_graph);
+    print_all_results(&viols, &py_parsed, &rs_parsed, &py_graph, &rs_graph)
 }
 
 fn build_graphs(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (Option<DependencyGraph>, Option<DependencyGraph>) {
@@ -155,7 +157,7 @@ fn analyze_graphs(py_graph: &Option<DependencyGraph>, rs_graph: &Option<Dependen
     viols
 }
 
-fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], py_graph: &Option<DependencyGraph>, rs_graph: &Option<DependencyGraph>) {
+fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], py_graph: &Option<DependencyGraph>, rs_graph: &Option<DependencyGraph>) -> bool {
     let py_dups = detect_py_duplicates(py_parsed);
     let rs_dups = detect_rs_duplicates(rs_parsed);
     let dup_count = py_dups.len() + rs_dups.len();
@@ -165,8 +167,9 @@ fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &
     print_duplicates("Rust", &rs_dups);
     print_instability("Python", py_graph.as_ref());
     print_instability("Rust", rs_graph.as_ref());
-    print_py_test_refs(py_parsed);
-    print_rs_test_refs(rs_parsed);
+    let untested = print_py_test_refs(py_parsed) + print_rs_test_refs(rs_parsed);
+    
+    viols.is_empty() && dup_count == 0 && untested == 0
 }
 
 
@@ -359,8 +362,8 @@ mod tests {
     fn test_print_functions_no_panic() {
         print_violations(&[], 0, 0);
         print_duplicates("Python", &[]);
-        print_py_test_refs(&[]);
-        print_rs_test_refs(&[]);
+        assert_eq!(print_py_test_refs(&[]), 0);
+        assert_eq!(print_rs_test_refs(&[]), 0);
     }
 
     #[test]
@@ -397,19 +400,64 @@ mod tests {
     #[test]
     fn test_run_analyze_and_gate_config() {
         let tmp = TempDir::new().unwrap();
-        run_analyze(&tmp.path().to_string_lossy(), &Config::default(), &Config::default(), None, true, &GateConfig::default());
+        assert!(run_analyze(&tmp.path().to_string_lossy(), &Config::default(), &Config::default(), None, true, &GateConfig::default()));
         let path = tmp.path().join("kiss.toml");
         std::fs::write(&path, "[gate]\ntest_coverage_threshold = 80\n").unwrap();
         assert_eq!(load_gate_config(&Some(path)).test_coverage_threshold, 80);
     }
 
     #[test]
-    fn test_coverage_and_gate() {
+    fn test_coverage_and_gate_empty() {
         let py: Vec<ParsedFile> = vec![];
         let rs: Vec<ParsedRustFile> = vec![];
         let (cov, tested, total) = compute_test_coverage(&py, &rs);
         assert_eq!((tested, total, cov), (0, 0, 100));
         assert!(check_coverage_gate(&py, &rs, &GateConfig { test_coverage_threshold: 0 }));
+    }
+
+    #[test]
+    fn test_coverage_gate_blocks_untested_code() {
+        let tmp = TempDir::new().unwrap();
+        
+        let src = tmp.path().join("utils.py");
+        std::fs::write(&src, "def my_function():\n    pass\n").unwrap();
+        
+        let (py_files, _) = gather_files(tmp.path(), Some(Language::Python));
+        assert_eq!(py_files.len(), 1);
+        
+        let (py_parsed, _) = parse_and_analyze_py(&py_files, &Config::default());
+        assert_eq!(py_parsed.len(), 1);
+        
+        let (coverage, tested, total) = compute_test_coverage(&py_parsed, &[]);
+        assert_eq!(total, 1, "Should find 1 definition");
+        assert_eq!(tested, 0, "No tests reference this function");
+        assert_eq!(coverage, 0, "Coverage should be 0%");
+        
+        assert!(!check_coverage_gate(&py_parsed, &[], &GateConfig { test_coverage_threshold: 90 }),
+            "Gate should block when coverage (0%) < threshold (90%)");
+        assert!(check_coverage_gate(&py_parsed, &[], &GateConfig { test_coverage_threshold: 0 }),
+            "Gate should pass when threshold is 0%");
+    }
+
+    #[test]
+    fn test_coverage_gate_passes_with_tests() {
+        let tmp = TempDir::new().unwrap();
+        
+        std::fs::write(tmp.path().join("utils.py"), "def my_function():\n    pass\n").unwrap();
+        std::fs::write(tmp.path().join("test_utils.py"), "from utils import my_function\ndef test_it():\n    my_function()\n").unwrap();
+        
+        let (py_files, _) = gather_files(tmp.path(), Some(Language::Python));
+        assert_eq!(py_files.len(), 2);
+        
+        let (py_parsed, _) = parse_and_analyze_py(&py_files, &Config::default());
+        
+        let (coverage, tested, total) = compute_test_coverage(&py_parsed, &[]);
+        assert_eq!(total, 1, "Should find 1 definition (test file excluded)");
+        assert_eq!(tested, 1, "Test references my_function");
+        assert_eq!(coverage, 100, "Coverage should be 100%");
+        
+        assert!(check_coverage_gate(&py_parsed, &[], &GateConfig { test_coverage_threshold: 90 }),
+            "Gate should pass when coverage (100%) >= threshold (90%)");
     }
 
     #[test]
@@ -428,7 +476,7 @@ mod tests {
         print_no_files_message(None, tmp.path());
         print_no_files_message(Some(Language::Python), tmp.path());
         print_coverage_gate_failure(50, 80, 5, 10);
-        print_all_results(&[], &[], &[], &None, &None);
+        assert!(print_all_results(&[], &[], &[], &None, &None));
         print_instability("Test", None);
     }
 }

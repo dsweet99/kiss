@@ -403,6 +403,15 @@ pub fn detect_duplicates_from_chunks(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parsing::{create_parser, parse_file, ParsedFile};
+    use std::io::Write;
+
+    fn parse_source(code: &str) -> ParsedFile {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        write!(tmp, "{}", code).unwrap();
+        let mut parser = create_parser().unwrap();
+        parse_file(&mut parser, tmp.path()).unwrap()
+    }
 
     #[test]
     fn test_normalize() {
@@ -460,34 +469,21 @@ mod tests {
     }
 
     #[test]
-    fn test_python_extraction() {
-        use crate::parsing::{create_parser, parse_file}; use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        writeln!(tmp, "def foo():\n    x = 1\n    y = 2\n    z = 3\n    return x + y + z").unwrap();
-        let mut parser = create_parser().unwrap();
-        let parsed = parse_file(&mut parser, tmp.path()).unwrap();
+    fn test_extraction_and_detection() {
+        let parsed = parse_source("def foo():\n    x = 1\n    y = 2\n    z = 3\n    w = 4");
         let _ = extract_chunks_for_duplication(&[&parsed]);
-        let mut chunks = Vec::new(); extract_function_chunks(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut chunks);
-    }
-
-    #[test]
-    fn test_rust_extraction() {
+        let mut chunks = Vec::new();
+        extract_function_chunks(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut chunks);
+        assert!(detect_duplicates(&[&parsed], &DuplicationConfig::default()).is_empty());
         assert!(extract_rust_chunks_for_duplication(&[]).is_empty());
         assert!(detect_duplicates_from_chunks(&[], &DuplicationConfig::default()).is_empty());
-        let c1 = CodeChunk { file: "a.rs".into(), name: "foo".into(), start_line: 1, end_line: 5, normalized: "let x = N".into() };
-        let c2 = CodeChunk { file: "b.rs".into(), name: "bar".into(), start_line: 1, end_line: 5, normalized: "fn main hello".into() };
-        assert!(detect_duplicates_from_chunks(&[c1, c2], &DuplicationConfig::default()).is_empty());
         let src = "fn foo() { let x=1; let y=2; let z=3; let w=4; let v=5; }";
         let ast: syn::File = syn::parse_str(src).unwrap();
-        let mut chunks = Vec::new(); extract_rust_function_chunks(&ast, src, std::path::Path::new("t.rs"), &mut chunks);
+        let mut rc = Vec::new(); extract_rust_function_chunks(&ast, src, std::path::Path::new("t.rs"), &mut rc);
         let item: syn::Item = syn::parse_str(src).unwrap();
         let mut c2 = Vec::new(); extract_chunks_from_item(&item, src, std::path::Path::new("t.rs"), &mut c2);
         let f: syn::ItemFn = syn::parse_str(src).unwrap();
         let mut c3 = Vec::new(); add_rust_function_chunk(&f.sig.ident.to_string(), f.sig.ident.span(), &f.block, src, std::path::Path::new("t.rs"), &mut c3);
-    }
-
-    #[test]
-    fn test_is_nontrivial_chunk() {
         assert!(!is_nontrivial_chunk("a b c"));
         assert!(is_nontrivial_chunk(&"word ".repeat(MIN_CHUNK_TOKENS)));
     }

@@ -34,20 +34,17 @@ fn is_rs_file(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("rs")
 }
 
-fn is_in_tests_directory(path: &Path) -> bool {
-    path.components().any(|c| c.as_os_str() == "tests")
-}
-
 fn has_test_naming_pattern(path: &Path) -> bool {
     path.file_stem()
         .and_then(|n| n.to_str())
-        .is_some_and(|name| name.ends_with("_test") || name.starts_with("test_"))
+        .is_some_and(|name| name.ends_with("_test") || name.starts_with("test_") || name.ends_with("_integration"))
 }
 
-/// Check if a file is a test file based on Rust conventions
+/// Check if a file is a test file based on Rust conventions (test_*.rs, *_test.rs, *_integration.rs)
+/// Note: Being in a tests/ directory alone is NOT sufficient - file must have test naming
 #[must_use]
 pub fn is_rust_test_file(path: &std::path::Path) -> bool {
-    is_rs_file(path) && (is_in_tests_directory(path) || has_test_naming_pattern(path))
+    is_rs_file(path) && has_test_naming_pattern(path)
 }
 
 /// Check if an item has a #[test] attribute
@@ -308,10 +305,12 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn test_is_rust_test_file() {
-        assert!(is_rust_test_file(Path::new("tests/integration.rs")));
+    fn test_is_rust_test_file_requires_naming_pattern() {
         assert!(is_rust_test_file(Path::new("test_utils.rs")));
         assert!(is_rust_test_file(Path::new("utils_test.rs")));
+        assert!(is_rust_test_file(Path::new("cli_integration.rs")));
+        assert!(!is_rust_test_file(Path::new("tests/integration.rs")));
+        assert!(!is_rust_test_file(Path::new("tests/fake_rust/god_class.rs")));
         assert!(!is_rust_test_file(Path::new("src/main.rs")));
         assert!(!is_rust_test_file(Path::new("testing.rs")));
     }
@@ -440,11 +439,12 @@ mod tests {
     fn test_helper_predicates() {
         assert!(is_rs_file(Path::new("foo.rs")));
         assert!(!is_rs_file(Path::new("foo.py")));
-        assert!(is_in_tests_directory(Path::new("tests/foo.rs")));
-        assert!(!is_in_tests_directory(Path::new("src/foo.rs")));
         assert!(has_test_naming_pattern(Path::new("test_foo.rs")));
         assert!(has_test_naming_pattern(Path::new("foo_test.rs")));
+        assert!(has_test_naming_pattern(Path::new("cli_integration.rs")));
         assert!(!has_test_naming_pattern(Path::new("foo.rs")));
+        assert!(is_rust_test_file(Path::new("test_foo.rs")));
+        assert!(!is_rust_test_file(Path::new("tests/fake_rust/god_class.rs")));
     }
 
     #[test]
