@@ -63,6 +63,8 @@ enum Commands {
         #[arg(long, short)]
         out: Option<PathBuf>,
     },
+    /// Show coding rules for LLM context priming
+    Rules,
 }
 
 fn main() {
@@ -79,6 +81,9 @@ fn main() {
         }
         Some(Commands::Mimic { paths, out }) => {
             run_mimic(&paths, out.as_deref(), cli.lang);
+        }
+        Some(Commands::Rules) => {
+            run_rules(&py_config, &rs_config, &gate_config, cli.lang);
         }
         None => {
             if !run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config) {
@@ -337,6 +342,93 @@ fn run_mimic(paths: &[String], out: Option<&Path>, lang_filter: Option<Language>
     }
 }
 
+fn run_rules(py_config: &Config, rs_config: &Config, gate_config: &GateConfig, lang_filter: Option<Language>) {
+    let config_source = if Path::new(".kissconfig").exists() {
+        ".kissconfig"
+    } else if std::env::var_os("HOME").map(|h| Path::new(&h).join(".kissconfig").exists()).unwrap_or(false) {
+        "~/.kissconfig"
+    } else {
+        "defaults"
+    };
+    
+    println!("# kiss coding rules\n");
+    println!("*Source: {}*\n", config_source);
+    
+    match lang_filter {
+        Some(Language::Python) => print_python_rules(py_config, gate_config),
+        Some(Language::Rust) => print_rust_rules(rs_config, gate_config),
+        None => {
+            print_python_rules(py_config, gate_config);
+            println!();
+            print_rust_rules(rs_config, gate_config);
+        }
+    }
+}
+
+fn print_python_rules(config: &Config, gate: &GateConfig) {
+    println!("## Python\n");
+    println!("### Functions\n");
+    println!("- Keep functions ≤ {} statements", config.statements_per_function);
+    println!("- Use ≤ {} positional arguments; prefer keyword-only args after that", config.arguments_positional);
+    println!("- Limit keyword-only arguments to ≤ {}", config.arguments_keyword_only);
+    println!("- Keep indentation depth ≤ {} levels", config.max_indentation_depth);
+    println!("- Limit branches (if/elif/else) to ≤ {} per function", config.branches_per_function);
+    println!("- Keep cyclomatic complexity ≤ {}", config.cyclomatic_complexity);
+    println!("- Keep local variables ≤ {} per function", config.local_variables_per_function);
+    println!("- Limit return statements to ≤ {} per function", config.returns_per_function);
+    println!("- Avoid deeply nested functions (max depth: {})", config.nested_function_depth);
+    println!();
+    println!("### Classes\n");
+    println!("- Keep methods per class ≤ {}", config.methods_per_class);
+    println!("- Ensure methods share instance fields (LCOM ≤ {}%)", config.lcom);
+    println!();
+    println!("### Files\n");
+    println!("- Keep files ≤ {} lines", config.lines_per_file);
+    println!("- Limit to ≤ {} classes per file", config.classes_per_file);
+    println!("- Keep imports ≤ {} per file", config.imports_per_file);
+    println!();
+    print_shared_rules(config, gate);
+}
+
+fn print_rust_rules(config: &Config, gate: &GateConfig) {
+    println!("## Rust\n");
+    println!("### Functions\n");
+    println!("- Keep functions ≤ {} statements", config.statements_per_function);
+    println!("- Limit arguments to ≤ {}", config.arguments_per_function);
+    println!("- Keep indentation depth ≤ {} levels", config.max_indentation_depth);
+    println!("- Limit branches (if/match/loop) to ≤ {} per function", config.branches_per_function);
+    println!("- Keep cyclomatic complexity ≤ {}", config.cyclomatic_complexity);
+    println!("- Keep local variables ≤ {} per function", config.local_variables_per_function);
+    println!("- Limit return statements to ≤ {} per function", config.returns_per_function);
+    println!("- Avoid deeply nested closures (max depth: {})", config.nested_function_depth);
+    println!();
+    println!("### Types\n");
+    println!("- Keep methods per type ≤ {}", config.methods_per_class);
+    println!("- Ensure methods share fields (LCOM ≤ {}%)", config.lcom);
+    println!();
+    println!("### Files\n");
+    println!("- Keep files ≤ {} lines", config.lines_per_file);
+    println!("- Limit to ≤ {} types per file", config.classes_per_file);
+    println!("- Keep imports (use statements) ≤ {} per file", config.imports_per_file);
+    println!();
+    print_shared_rules(config, gate);
+}
+
+fn print_shared_rules(config: &Config, gate: &GateConfig) {
+    println!("### Dependencies\n");
+    println!("- Avoid circular dependencies");
+    println!("- Limit fan-out (direct dependencies) to ≤ {}", config.fan_out);
+    println!("- Keep fan-in modules stable and well-tested (threshold: {})", config.fan_in);
+    println!("- Limit transitive dependencies to ≤ {}", config.transitive_deps);
+    println!();
+    println!("### Testing\n");
+    println!("- Every function/class/type should be referenced by tests");
+    println!("- Maintain ≥ {}% test reference coverage", gate.test_coverage_threshold);
+    println!();
+    println!("### Duplication\n");
+    println!("- Avoid copy-pasted code blocks");
+    println!("- Factor out repeated patterns into shared functions");
+}
 
 #[cfg(test)]
 mod tests {
@@ -512,5 +604,22 @@ mod tests {
         print_no_files_message(Some(Language::Python), tmp.path());
         print_coverage_gate_failure(50, 80, 5, 10, &[]);
         assert!(print_all_results(&[], &[], &[]));
+    }
+
+    #[test]
+    fn test_rules_functions_no_panic() {
+        let py_config = Config::python_defaults();
+        let rs_config = Config::rust_defaults();
+        let gate_config = GateConfig::default();
+        
+        // Test individual print functions don't panic
+        print_python_rules(&py_config, &gate_config);
+        print_rust_rules(&rs_config, &gate_config);
+        print_shared_rules(&py_config, &gate_config);
+        
+        // Test run_rules with different lang filters
+        run_rules(&py_config, &rs_config, &gate_config, None);
+        run_rules(&py_config, &rs_config, &gate_config, Some(Language::Python));
+        run_rules(&py_config, &rs_config, &gate_config, Some(Language::Rust));
     }
 }

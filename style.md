@@ -2,97 +2,84 @@
 
 ## Project Overview
 
-**kiss** is a code-quality metrics tool for Python and Rust, written in Rust. Designed as LLM coder feedback alongside linters/test runners.
+**kiss** is a code-quality metrics tool for Python and Rust, written in Rust. LLM coder feedback alongside linters/test runners. **Primary consumer is the LLM** — output restrictions control LLM behavior. Strict-by-default.
 
-**Analysis types:**
-1. **Count metrics** — statements, arguments, indentation, methods, LCOM
-2. **Graph analysis** — fan-in/out, cycles (Tarjan's SCC), transitive deps, orphan detection
-3. **Duplication detection** — MinHash/LSH for near-duplicate code
-4. **Test references** — static analysis of test coverage by name matching
-5. **Coverage gate** — refuse analysis if test coverage < threshold (default 90%)
+**Analysis types:** Count metrics, Graph analysis (fan-in/out, cycles, orphans), Duplication (MinHash/LSH), Test references (static), Coverage gate (default 90%).
 
 ## Architecture
 
-| Python Module | Rust Module | Purpose |
-|---------------|-------------|---------|
-| `parsing.rs` | `rust_parsing.rs` | AST parsing (tree-sitter / syn) |
-| `counts.rs` | `rust_counts.rs` | Metrics and violations |
-| `graph.rs` | — | Dependency graphs (shared) |
-| `test_refs.rs` | `rust_test_refs.rs` | Test reference analysis |
-
-Shared: `config.rs`, `discovery.rs`, `duplication.rs`, `stats.rs`, `cli_output.rs`
+| Module | Purpose |
+|--------|---------|
+| `counts.rs` / `rust_counts.rs` | Metrics and violations |
+| `graph.rs` | Dependency graphs, cycles (Tarjan), orphan detection |
+| `test_refs.rs` / `rust_test_refs.rs` | Test reference analysis |
+| `config.rs`, `defaults.rs`, `duplication.rs`, `stats.rs` | Shared infrastructure |
 
 ## Output Format
 
-Single-line violations: `VIOLATION:file:line: value metric. message. suggestion.`
-- `NO VIOLATIONS` only when truly clean (no metric violations AND no duplicates)
-- Suggestions must be specific and actionable, not vague ("use guard clauses" not "restructure")
-- Language-aware: Rust advice mentions traits/generics; Python mentions dataclasses
+- `VIOLATION:file:line: value metric. message. suggestion.`
+- `UNCOVERED:file:line: name. Add test coverage.`
+- Suggestions: specific, actionable, language-aware (Rust: traits/generics; Python: dataclasses)
 
 ## Conventions
 
-**Code:**
-- Prefer `&Path` over `&PathBuf` in signatures
-- Max 500 lines per file; inline small helpers if they trigger duplication detection
-- Comments: only *why* explanations, algorithm docs, module-level docs
-
-**Quality:**
-- `kiss --lang rust` must pass cleanly with no violations or untested items
-- No workarounds — write proper tests instead
-- Run `cargo clippy --fix` for auto-fixable warnings
+- Prefer `&Path` over `&PathBuf`; max 500 lines/file
+- Self-documenting: descriptive names and types over comments
+- Single source of truth: defaults in `defaults.rs`
+- `kiss --lang rust` must pass cleanly; measure before optimizing
+- Tolerate duplication until 3+ instances justify extraction
 
 ## Key Algorithms
 
-### MinHash/LSH (duplication.rs)
-Normalize → 3-gram shingles → 100 MinHash functions → 20 LSH bands → Jaccard ≥ 0.7
+**MinHash/LSH:** Normalize → 3-gram shingles → 100 MinHash → 20 bands → Jaccard ≥ 0.7
 
-### LCOM (counts.rs, rust_counts.rs)
-`pairs_not_sharing_fields / total_pairs` (0.0 = cohesive, 1.0 = no cohesion)
-God Class: methods > 20 AND LCOM > 50%
+**LCOM:** `pairs_not_sharing_fields / total_pairs`. God Class: methods > 20 AND LCOM > 50%
 
-### Dependency Analysis (graph.rs)
-- Tarjan's SCC for cycle detection
-- Orphan detection: fan_in=0 AND fan_out=0 (excluding main/lib/test_*)
-- High fan-in is acceptable for utility modules — advise stability, not splitting
+**Graph:** Tarjan's SCC for cycles; orphan = fan_in=0 AND fan_out=0 (excluding entry points)
 
-### Test Reference Analysis (rust_test_refs.rs)
-- Parse macro tokens (assert!, assert_eq!) via `ExprList` custom parser
-- Capture all path segments: `Foo::bar()` → both `Foo` and `bar`
-- Filter external crates (std, syn, tokio, etc.)
+**Test References edge cases:**
+- Capture ALL path segments: `Foo::bar()` → both `Foo` and `bar`
+- Auto-mark trait impl methods as "indirectly tested" when type is referenced
+- Must traverse `#[cfg(test)]` inline modules; filter external crates
 
-## Violation Advice Guidelines
+## Violation Advice
 
 | Metric | Good Advice | Avoid |
 |--------|-------------|-------|
-| `methods_per_type` (Rust) | "Extract into separate types" | "Split into multiple impl blocks" |
-| `returns_per_function` | "Use guard returns at top, single main return" | "Restructure logic" |
-| `transitive_deps` | "Introduce interfaces, use DI, split module" | "Reduce coupling" |
+| `methods_per_type` | "Extract into separate types" | "Split impl blocks" |
+| `transitive_deps` | "Introduce interfaces, use DI" | "Reduce coupling" |
 | `fan_in` | "Ensure stable and well-tested" | "Split the module" |
-| `cyclomatic_complexity` | "Reduce if/for/while/and/or expressions" | Same as branches |
-| Duplication (Rust) | "Extract function, or use traits/generics" | Just "shared function" |
-| Untested code | "Add tests or remove if dead code" | (no suggestion) |
+| Duplication | "Extract fn, use traits/generics" | Just "shared function" |
 
 ## Configuration
 
+Precedence: `defaults.rs` → `~/.kissconfig` → `./.kissconfig`
+
+Prefer empirical thresholds. Use `kiss mimic` on respected codebases:
+- Rust: ripgrep, fd, bat
+- Python: rich, click, attrs, httpx
+
 ```toml
-[shared]
-lines_per_file = 500
+[gate]
+test_coverage_threshold = 90
 
 [python]
-statements_per_function = 50
-positional_args = 3
+statements_per_function = 30
 
 [rust]
-statements_per_function = 60
-arguments = 5
+statements_per_function = 25
 ```
 
 ## CLI
 
-`kiss [PATH]` — analyze | `kiss stats` — summaries | `kiss mimic --out FILE` — generate config
-Options: `--lang python|rust`, `--config FILE`, `--all` (bypass coverage gate)
+```
+kiss [PATH]              Analyze (gated by test coverage)
+kiss rules               Show coding rules (LLM context priming)
+kiss stats [PATH...]     Summary statistics
+kiss mimic --out FILE    Generate config from respected codebase
+```
+Options: `--lang`, `--config`, `--all` (bypass gate)
 
 ## Testing
 
-Inline modules: `#[cfg(test)] mod tests`. Naming: `test_<function>_<scenario>`.
-Rust 2024 edition.
+Inline: `#[cfg(test)] mod tests`. Naming: `test_<function>_<scenario>`. Rust 2024 edition.

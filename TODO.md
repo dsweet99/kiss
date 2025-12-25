@@ -90,6 +90,19 @@ High-level tasks to satisfy the design in `design.md`.
 
 ---
 
+## Missing Functionality (per design.md) ✅
+
+- [x] **`kiss rules` command** — Output compact list of coding rules for LLM context priming (design.md lines 153-199). Should load config and emit imperative rules like "Keep functions ≤ 50 statements". Supports `--lang` filter.
+
+---
+
+## Code Quality Issues ✅
+
+- [x] **Move defaults to `defaults.rs`** — `returns_per_function` (5) and `nested_function_depth` (2) are hardcoded in `config.rs` instead of `defaults.rs`. Should follow "single source of truth" per style.md.
+- [x] **Add missing metrics to default config TOML** — `returns_per_function` and `nested_function_depth` are not included in `default_config_toml()` output.
+
+---
+
 ## Future Enhancements
 
 Optional improvements not required by design.md:

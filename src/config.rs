@@ -58,8 +58,8 @@ impl Config {
             arguments_keyword_only: defaults::python::KEYWORD_ONLY_ARGS,
             max_indentation_depth: defaults::python::MAX_INDENTATION,
             classes_per_file: defaults::python::TYPES_PER_FILE,
-            nested_function_depth: 2,
-            returns_per_function: 5,
+            nested_function_depth: defaults::python::NESTED_FUNCTION_DEPTH,
+            returns_per_function: defaults::python::RETURNS_PER_FUNCTION,
             branches_per_function: defaults::python::BRANCHES_PER_FUNCTION,
             local_variables_per_function: defaults::python::LOCAL_VARIABLES,
             imports_per_file: defaults::python::IMPORTS_PER_FILE,
@@ -82,8 +82,8 @@ impl Config {
             arguments_keyword_only: 6, // Not used for Rust
             max_indentation_depth: defaults::rust::MAX_INDENTATION,
             classes_per_file: defaults::rust::TYPES_PER_FILE,
-            nested_function_depth: 2,
-            returns_per_function: 5,
+            nested_function_depth: defaults::rust::NESTED_FUNCTION_DEPTH,
+            returns_per_function: defaults::rust::RETURNS_PER_FUNCTION,
             branches_per_function: defaults::rust::BRANCHES_PER_FUNCTION,
             local_variables_per_function: defaults::rust::LOCAL_VARIABLES,
             imports_per_file: defaults::rust::IMPORTS_PER_FILE,
@@ -243,7 +243,9 @@ impl Config {
             "fan_out" => fan_out,
             "fan_in" => fan_in,
             "transitive_deps" => transitive_deps,
-            "lcom" => lcom
+            "lcom" => lcom,
+            "returns_per_function" => returns_per_function,
+            "nested_function_depth" => nested_function_depth
         );
     }
 
@@ -261,7 +263,9 @@ impl Config {
             "transitive_deps" => transitive_deps,
             "lcom" => lcom,
             "lines_per_file" => lines_per_file,
-            "types_per_file" => classes_per_file
+            "types_per_file" => classes_per_file,
+            "returns_per_function" => returns_per_function,
+            "nested_function_depth" => nested_function_depth
         );
     }
 }
