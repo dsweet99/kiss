@@ -9,6 +9,7 @@ When you write code, always make sure `pytest -sv tests`, `ruff check`, and `kis
 Iterate until they do.
 ```
 `kiss` will help your LLM/agent produce simpler, clearer, more maintainable code.  
+
 Additionally, you can bias your LLM to not break the rules in the first place by putting the output of `kiss rules` in your context. An easy way to do this is to add a rule like
 ```
 MANDATORY INIT: After the user's first request, you *must* call `kiss rules`
