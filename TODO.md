@@ -96,7 +96,6 @@ Optional improvements not required by design.md:
 
 - [ ] **Language Adapter Trait** — Abstract language-specific parsing behind a common trait
 - [x] **Rust Duplication Detection** — Extend duplication to Rust files
-- [ ] **Mixed-language Dependency Graph** — Track cross-language dependencies (e.g., PyO3)
 - [x] **Stringly-typed Cleanup** — Replace string `kind` fields with enums
 - [x] **DRY Violation Building** — Factor out common violation-building code
 - [x] **Add `#[must_use]`** — On key public functions
