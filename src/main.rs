@@ -23,8 +23,8 @@ use kiss::{
     MetricStats,
 };
 use kiss::config_gen::{
-    collect_all_stats, collect_py_stats, collect_rs_stats, generate_config_toml_by_language,
-    write_mimic_config,
+    collect_all_stats_with_ignore, collect_py_stats_with_ignore, collect_rs_stats_with_ignore,
+    generate_config_toml_by_language, write_mimic_config,
 };
 use std::path::{Path, PathBuf};
 
@@ -88,8 +88,8 @@ fn main() {
     let gate_config = load_gate_config(&cli.config, cli.defaults);
 
     match cli.command {
-        Some(Commands::Stats { paths }) => run_stats(&paths, cli.lang),
-        Some(Commands::Mimic { paths, out }) => run_mimic(&paths, out.as_deref(), cli.lang),
+        Some(Commands::Stats { paths }) => run_stats(&paths, cli.lang, &cli.ignore),
+        Some(Commands::Mimic { paths, out }) => run_mimic(&paths, out.as_deref(), cli.lang, &cli.ignore),
         Some(Commands::Rules) => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
         None => {
             if !run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config, &cli.ignore) {
@@ -140,18 +140,18 @@ fn load_configs(config_path: &Option<PathBuf>, use_defaults: bool) -> (Config, C
     }
 }
 
-fn run_stats(paths: &[String], lang_filter: Option<Language>) {
+fn run_stats(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
     let (mut py_stats, mut rs_stats) = (MetricStats::default(), MetricStats::default());
     let (mut py_cnt, mut rs_cnt) = (0, 0);
     for path in paths {
         let root = Path::new(path);
         if lang_filter.is_none() || lang_filter == Some(Language::Python) {
-            let (s, c) = collect_py_stats(root);
+            let (s, c) = collect_py_stats_with_ignore(root, ignore);
             py_stats.merge(s);
             py_cnt += c;
         }
         if lang_filter.is_none() || lang_filter == Some(Language::Rust) {
-            let (s, c) = collect_rs_stats(root);
+            let (s, c) = collect_rs_stats_with_ignore(root, ignore);
             rs_stats.merge(s);
             rs_cnt += c;
         }
@@ -169,8 +169,8 @@ fn run_stats(paths: &[String], lang_filter: Option<Language>) {
     }
 }
 
-fn run_mimic(paths: &[String], out: Option<&Path>, lang_filter: Option<Language>) {
-    let ((py_stats, py_cnt), (rs_stats, rs_cnt)) = collect_all_stats(paths, lang_filter);
+fn run_mimic(paths: &[String], out: Option<&Path>, lang_filter: Option<Language>, ignore: &[String]) {
+    let ((py_stats, py_cnt), (rs_stats, rs_cnt)) = collect_all_stats_with_ignore(paths, lang_filter, ignore);
     if py_cnt + rs_cnt == 0 {
         eprintln!("No source files found.");
         std::process::exit(1);
@@ -214,8 +214,8 @@ mod tests {
 
     #[test]
     fn test_fn_pointers() {
-        let _ = run_stats as fn(&[String], Option<Language>);
-        let _ = run_mimic as fn(&[String], Option<&Path>, Option<Language>);
+        let _ = run_stats as fn(&[String], Option<Language>, &[String]);
+        let _ = run_mimic as fn(&[String], Option<&Path>, Option<Language>, &[String]);
         let _ = main as fn();
     }
 }
