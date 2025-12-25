@@ -1,6 +1,3 @@
-//! Python code analysis and violation detection
-//!
-//! This module analyzes Python code for quality issues and reports violations.
 
 use crate::config::Config;
 use crate::parsing::ParsedFile;
@@ -12,7 +9,6 @@ use crate::violation::{Violation, ViolationBuilder};
 use std::path::Path;
 use tree_sitter::Node;
 
-// Re-export types for backwards compatibility
 pub use crate::py_metrics::{
     compute_class_metrics, compute_file_metrics as get_file_metrics,
     compute_function_metrics as get_function_metrics, ClassMetrics as PyClassMetrics,
@@ -20,7 +16,6 @@ pub use crate::py_metrics::{
 };
 pub use crate::violation::{Violation as PyViolation, ViolationBuilder as PyViolationBuilder};
 
-/// Analyze a parsed Python file and return violations
 #[must_use]
 pub fn analyze_file(parsed: &ParsedFile, config: &Config) -> Vec<Violation> {
     let mut violations = Vec::new();

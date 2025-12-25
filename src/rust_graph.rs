@@ -1,10 +1,8 @@
-//! Dependency graph analysis for Rust
 
 use crate::graph::DependencyGraph;
 use crate::rust_parsing::ParsedRustFile;
 use syn::Item;
 
-/// Build a dependency graph from parsed Rust files
 pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> DependencyGraph {
     let mut graph = DependencyGraph::new();
 
@@ -25,7 +23,6 @@ pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> Dependen
     graph
 }
 
-/// Extract imported crate/module names from a Rust file
 fn extract_rust_imports(ast: &syn::File) -> Vec<String> {
     let mut imports = Vec::new();
 
@@ -38,7 +35,6 @@ fn extract_rust_imports(ast: &syn::File) -> Vec<String> {
     imports
 }
 
-/// Recursively collect crate names from use trees
 fn collect_use_paths(tree: &syn::UseTree, imports: &mut Vec<String>) {
     match tree {
         syn::UseTree::Path(path) => {

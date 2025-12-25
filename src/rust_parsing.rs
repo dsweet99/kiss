@@ -1,8 +1,6 @@
-//! Rust file parsing using syn
 
 use std::path::{Path, PathBuf};
 
-/// Error type for Rust parsing failures
 #[derive(Debug)]
 pub enum RustParseError {
     IoError(std::io::Error),
@@ -32,14 +30,12 @@ impl std::fmt::Display for RustParseError {
 
 impl std::error::Error for RustParseError {}
 
-/// A parsed Rust file with its AST
 pub struct ParsedRustFile {
     pub path: PathBuf,
     pub source: String,
     pub ast: syn::File,
 }
 
-/// Parses a Rust file and returns its AST
 pub fn parse_rust_file(path: &Path) -> Result<ParsedRustFile, RustParseError> {
     let source = std::fs::read_to_string(path)?;
     let ast = syn::parse_file(&source)?;
@@ -51,8 +47,6 @@ pub fn parse_rust_file(path: &Path) -> Result<ParsedRustFile, RustParseError> {
     })
 }
 
-/// Parses all Rust files in the given paths.
-/// Returns individual Results for each file.
 pub fn parse_rust_files(paths: &[PathBuf]) -> Vec<Result<ParsedRustFile, RustParseError>> {
     paths.iter().map(|path| parse_rust_file(path)).collect()
 }
@@ -95,7 +89,7 @@ impl Counter {{
     #[test]
     fn returns_error_for_invalid_rust() {
         let mut file = NamedTempFile::with_suffix(".rs").unwrap();
-        writeln!(file, "fn broken {{ }}").unwrap(); // Invalid syntax
+        writeln!(file, "fn broken {{ }}").unwrap();
         
         let result = parse_rust_file(file.path());
         assert!(result.is_err());

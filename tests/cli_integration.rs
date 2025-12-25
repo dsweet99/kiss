@@ -1,4 +1,3 @@
-//! CLI integration tests for the kiss binary
 
 use std::fs;
 use std::process::Command;

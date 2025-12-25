@@ -1,4 +1,3 @@
-//! Integration tests for Rust count-based violation detection
 
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::format_push_string)]

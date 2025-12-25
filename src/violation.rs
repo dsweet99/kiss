@@ -1,8 +1,5 @@
-//! Violation reporting types
-
 use std::path::PathBuf;
 
-/// A code quality violation detected during analysis
 #[derive(Debug)]
 pub struct Violation {
     pub file: PathBuf,
@@ -16,13 +13,11 @@ pub struct Violation {
 }
 
 impl Violation {
-    /// Create a new violation builder for the given file
     pub fn builder(file: impl Into<PathBuf>) -> ViolationBuilder {
         ViolationBuilder::new(file)
     }
 }
 
-/// Builder for constructing Violation instances with a fluent API
 pub struct ViolationBuilder {
     file: PathBuf,
     line: usize,
@@ -102,9 +97,6 @@ mod tests {
         assert_eq!(v.line, 1);
     }
 
-    // --- Design doc: Output Format Compliance ---
-    // Format: "VIOLATION:metric:file:line:name: message. suggestion."
-
     #[test]
     fn test_violation_has_all_required_fields() {
         let v = Violation::builder("src/foo.py")
@@ -117,7 +109,6 @@ mod tests {
             .suggestion("Break into smaller, focused functions.")
             .build();
         
-        // All fields must be present for proper output formatting
         assert!(!v.file.to_string_lossy().is_empty(), "file must be set");
         assert!(v.line > 0, "line must be positive");
         assert!(!v.unit_name.is_empty(), "unit_name must be set");
@@ -129,12 +120,10 @@ mod tests {
 
     #[test]
     fn test_violation_suggestion_is_actionable() {
-        // Design doc: "Suggestions: specific, actionable, language-aware"
         let v = Violation::builder("test.py")
             .suggestion("Break into smaller, focused functions.")
             .build();
         
-        // Actionable suggestions should contain verbs/actions
         let suggestion = v.suggestion.to_lowercase();
         let has_action_word = suggestion.contains("break") 
             || suggestion.contains("extract") 
@@ -148,4 +137,3 @@ mod tests {
         assert!(has_action_word, "suggestion should contain actionable verb");
     }
 }
-

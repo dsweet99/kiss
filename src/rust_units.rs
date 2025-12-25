@@ -1,22 +1,18 @@
-//! Code unit extraction from Rust ASTs
 
 use crate::rust_parsing::ParsedRustFile;
 use crate::units::CodeUnitKind;
 use syn::visit::Visit;
 use syn::{ImplItem, Item};
 
-/// A code unit extracted from Rust source
 #[derive(Debug)]
 pub struct RustCodeUnit {
     pub kind: CodeUnitKind,
     pub name: String,
     pub start_line: usize,
     pub end_line: usize,
-    /// For methods: the impl type name (e.g., "`MyStruct`")
     pub parent_type: Option<String>,
 }
 
-/// Visitor to extract code units from Rust AST
 struct CodeUnitVisitor {
     units: Vec<RustCodeUnit>,
     current_impl_type: Option<String>,
@@ -52,17 +48,17 @@ impl<'ast> Visit<'ast> for CodeUnitVisitor {
             Item::Struct(s) => {
                 let start_line = s.ident.span().start().line;
                 self.units.push(RustCodeUnit {
-                    kind: CodeUnitKind::Class, // struct maps to Class
+                    kind: CodeUnitKind::Class,
                     name: s.ident.to_string(),
                     start_line,
-                    end_line: start_line, // Approximate
+                    end_line: start_line,
                     parent_type: None,
                 });
             }
             Item::Enum(e) => {
                 let start_line = e.ident.span().start().line;
                 self.units.push(RustCodeUnit {
-                    kind: CodeUnitKind::Class, // enum maps to Class
+                    kind: CodeUnitKind::Class,
                     name: e.ident.to_string(),
                     start_line,
                     end_line: start_line,
@@ -105,7 +101,7 @@ impl<'ast> Visit<'ast> for CodeUnitVisitor {
                         kind: CodeUnitKind::Module,
                         name: m.ident.to_string(),
                         start_line,
-                        end_line: start_line, // Will be updated
+                        end_line: start_line,
                         parent_type: None,
                     });
                 }
@@ -118,7 +114,6 @@ impl<'ast> Visit<'ast> for CodeUnitVisitor {
     }
 }
 
-/// Estimate the number of lines in a block (rough approximation)
 fn estimate_block_lines(block: &syn::Block) -> usize {
     if block.stmts.is_empty() {
         return 1;
@@ -133,7 +128,6 @@ fn estimate_block_lines(block: &syn::Block) -> usize {
     }
 }
 
-/// Extracts all code units from a parsed Rust file
 pub fn extract_rust_code_units(parsed: &ParsedRustFile) -> Vec<RustCodeUnit> {
     let mut visitor = CodeUnitVisitor::new(&parsed.source);
     visitor.units.push(RustCodeUnit {

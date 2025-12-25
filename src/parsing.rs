@@ -1,9 +1,7 @@
-//! Python file parsing using tree-sitter
 
 use std::path::{Path, PathBuf};
 use tree_sitter::{Parser, Tree};
 
-/// Error type for parsing failures
 #[derive(Debug)]
 pub enum ParseError {
     IoError(std::io::Error),
@@ -29,14 +27,12 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-/// A parsed Python file with its AST
 pub struct ParsedFile {
     pub path: PathBuf,
     pub source: String,
     pub tree: Tree,
 }
 
-/// Creates a tree-sitter parser configured for Python
 pub fn create_parser() -> Result<Parser, ParseError> {
     let mut parser = Parser::new();
     let language = tree_sitter_python::LANGUAGE;
@@ -46,7 +42,6 @@ pub fn create_parser() -> Result<Parser, ParseError> {
     Ok(parser)
 }
 
-/// Parses a Python file and returns its AST
 pub fn parse_file(parser: &mut Parser, path: &Path) -> Result<ParsedFile, ParseError> {
     let source = std::fs::read_to_string(path)?;
     let tree = parser.parse(&source, None).ok_or(ParseError::ParseFailed)?;
@@ -58,8 +53,6 @@ pub fn parse_file(parser: &mut Parser, path: &Path) -> Result<ParsedFile, ParseE
     })
 }
 
-/// Parses all Python files in the given paths.
-/// Returns Err if parser initialization fails; individual file errors are in the inner Results.
 pub fn parse_files(
     paths: &[PathBuf],
 ) -> Result<Vec<Result<ParsedFile, ParseError>>, ParseError> {

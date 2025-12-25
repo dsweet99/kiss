@@ -1,4 +1,3 @@
-//! Configuration management for kiss
 
 use crate::defaults;
 use std::path::Path;
@@ -88,7 +87,7 @@ impl Config {
             fan_out: defaults::rust::FAN_OUT,
             fan_in: defaults::rust::FAN_IN,
             lcom: defaults::rust::LCOM,
-            statements_per_try_block: usize::MAX, // Not applicable to Rust
+            statements_per_try_block: usize::MAX,
             boolean_parameters: defaults::rust::BOOLEAN_PARAMETERS,
             decorators_per_function: defaults::rust::ATTRIBUTES_PER_FUNCTION,
             cycle_size: defaults::graph::CYCLE_SIZE,

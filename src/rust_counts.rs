@@ -1,4 +1,3 @@
-//! Count-based code metrics analysis for Rust
 
 use std::path::Path;
 use syn::{Block, ImplItem, Item};
@@ -9,7 +8,6 @@ use crate::rust_lcom::compute_rust_lcom;
 use crate::rust_parsing::ParsedRustFile;
 use crate::violation::{Violation, ViolationBuilder};
 
-// Re-export for backwards compatibility
 pub use crate::rust_fn_metrics::{RustFileMetrics, RustFunctionMetrics, RustTypeMetrics};
 pub use crate::rust_lcom::compute_rust_lcom as compute_lcom;
 

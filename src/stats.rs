@@ -1,4 +1,3 @@
-//! Statistics collection and percentile calculation for metrics
 
 use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;

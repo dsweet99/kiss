@@ -1,4 +1,3 @@
-// Allow some pedantic clippy lints that are acceptable in this codebase
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
@@ -31,7 +30,6 @@ use std::path::{Path, PathBuf};
 use crate::analyze::run_analyze;
 use crate::rules::run_rules;
 
-/// kiss - Code-quality metrics tool for Python and Rust
 #[derive(Parser, Debug)]
 #[command(name = "kiss", version, about = "Code-quality metrics tool for Python and Rust")]
 struct Cli {
@@ -47,11 +45,9 @@ struct Cli {
     #[arg(long, global = true)]
     defaults: bool,
 
-    /// Ignore directories/files whose path contains a component starting with this prefix
     #[arg(long, global = true)]
     ignore: Vec<String>,
 
-    /// Show test coverage warnings
     #[arg(long, global = true)]
     warnings: bool,
 

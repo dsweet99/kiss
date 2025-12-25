@@ -1,4 +1,3 @@
-//! Integration tests for main command functionality
 
 use kiss::cli_output::{
     print_coverage_gate_failure, print_duplicates, print_final_status, print_no_files_message,

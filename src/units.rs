@@ -1,25 +1,19 @@
-//! Code unit extraction from Python ASTs
 
 use crate::parsing::ParsedFile;
 use tree_sitter::Node;
 
-/// The type of a code unit
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodeUnitKind {
     Function,
     Method,
     Class,
     Module,
-    /// Rust struct type
     Struct,
-    /// Rust enum type
     Enum,
-    /// Method from a trait implementation (may be indirectly tested via type reference)
     TraitImplMethod,
 }
 
 impl CodeUnitKind {
-    /// Returns a human-readable label for display
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Function => "function",
@@ -39,7 +33,6 @@ impl std::fmt::Display for CodeUnitKind {
     }
 }
 
-/// A code unit extracted from Python source
 #[derive(Debug)]
 pub struct CodeUnit {
     pub kind: CodeUnitKind,
@@ -50,7 +43,6 @@ pub struct CodeUnit {
     pub end_byte: usize,
 }
 
-/// Extracts all code units from a parsed file
 pub fn extract_code_units(parsed: &ParsedFile) -> Vec<CodeUnit> {
     let mut units = Vec::new();
     let root = parsed.tree.root_node();

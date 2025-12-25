@@ -1,4 +1,3 @@
-//! Code duplication detection using MinHash/LSH
 
 use crate::minhash::{compute_minhash, estimate_similarity, find_lsh_candidates, generate_shingles, normalize_code};
 use crate::parsing::ParsedFile;

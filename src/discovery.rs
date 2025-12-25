@@ -1,9 +1,6 @@
-//! File discovery and traversal
-
 use ignore::WalkBuilder;
 use std::path::{Path, PathBuf};
 
-/// Supported source file languages
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
     Python,
@@ -151,10 +148,8 @@ mod tests {
         fs::create_dir(&fake_dir).unwrap();
         fs::write(fake_dir.join("b.py"), "").unwrap();
 
-        // Without ignore, finds both files
         assert_eq!(find_source_files(tmp.path()).len(), 2);
 
-        // With ignore, skips fake_data directory
         let ignore = vec!["fake_".to_string()];
         assert_eq!(find_source_files_with_ignore(tmp.path(), &ignore).len(), 1);
     }

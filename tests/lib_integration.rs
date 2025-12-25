@@ -1,6 +1,5 @@
-//! Integration tests for the kiss library API
 
-#![allow(clippy::needless_collect)] // collect is needed to access elements by index
+#![allow(clippy::needless_collect)]
 
 use kiss::*;
 use std::path::Path;

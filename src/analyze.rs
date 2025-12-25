@@ -1,4 +1,3 @@
-//! Core analysis logic for kiss
 
 use std::path::{Path, PathBuf};
 
@@ -150,17 +149,14 @@ fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &
     let dup_count = py_dups.len() + rs_dups.len();
     let has_violations = !viols.is_empty() || dup_count > 0;
     
-    // Print violations and duplicates first
     print_violations(viols);
     print_duplicates("Python", &py_dups);
     print_duplicates("Rust", &rs_dups);
     
-    // Print test coverage warnings only if requested
     if show_warnings {
         let _ = print_py_test_refs(py_parsed) + print_rs_test_refs(rs_parsed);
     }
     
-    // Final status at the end for clear LLM signal
     print_final_status(has_violations);
     
     !has_violations

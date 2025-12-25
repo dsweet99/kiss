@@ -1,5 +1,3 @@
-//! CLI output formatting functions
-
 use crate::discovery::Language;
 use crate::duplication::DuplicateCluster;
 use crate::parsing::ParsedFile;

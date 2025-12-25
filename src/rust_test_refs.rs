@@ -1,4 +1,3 @@
-//! Test References for Rust - detect code units that may lack test coverage
 
 use crate::rust_parsing::ParsedRustFile;
 use crate::units::CodeUnitKind;

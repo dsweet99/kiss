@@ -1,4 +1,3 @@
-//! Function-level metrics computation for Rust
 
 use syn::visit::Visit;
 use syn::{Block, Expr, Pat, Stmt};
@@ -30,7 +29,6 @@ pub struct RustFileMetrics {
     pub imports: usize,
 }
 
-/// Computes metrics for a Rust file
 #[must_use]
 pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
     let mut types = 0;
@@ -51,7 +49,6 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
     }
 }
 
-/// Computes metrics for a Rust function
 #[allow(clippy::field_reassign_with_default)]
 pub fn compute_rust_function_metrics(
     inputs: &syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
@@ -202,7 +199,7 @@ mod tests {
         let (i1, b1) = parse_fn("fn foo(a: i32, b: String, c: bool) {}");
         let m1 = compute_rust_function_metrics(&i1, &b1, 0);
         assert_eq!(m1.arguments, 3);
-        assert_eq!(m1.bool_parameters, 1); // c: bool
+        assert_eq!(m1.bool_parameters, 1);
 
         let (i2, b2) = parse_fn(r#"fn f() { let x=1; let y=2; println!("{}",x+y); }"#);
         assert!(compute_rust_function_metrics(&i2, &b2, 0).statements >= 3);
@@ -213,7 +210,6 @@ mod tests {
         let (i4, b4) = parse_fn("fn f() { let a=1; let b=2; let (c,d)=(3,4); }");
         assert_eq!(compute_rust_function_metrics(&i4, &b4, 0).local_variables, 4);
 
-        // Test attributes
         let (i5, b5) = parse_fn("fn f() {}");
         assert_eq!(compute_rust_function_metrics(&i5, &b5, 3).attributes, 3);
     }

@@ -1,13 +1,3 @@
-//! Default configuration values for kiss
-//!
-//! Thresholds based on analysis of high-quality open-source codebases:
-//! - Python: rich, click, attrs, httpx (366 files, 5426 functions)
-//! - Rust: fd, ripgrep (123 files, 3002 functions)
-//!
-//! These thresholds target the top ~5-10% of code as potential issues,
-//! balancing strictness with practicality.
-
-/// Python-specific default thresholds
 pub mod python {
     pub const IMPORTS_PER_FILE: usize = 20;
     pub const LINES_PER_FILE: usize = 300;
@@ -29,7 +19,6 @@ pub mod python {
     pub const DECORATORS_PER_FUNCTION: usize = 3;
 }
 
-/// Rust-specific default thresholds
 pub mod rust {
     pub const IMPORTS_PER_FILE: usize = 20;
     pub const LINES_PER_FILE: usize = 300;
@@ -49,32 +38,19 @@ pub mod rust {
     pub const ATTRIBUTES_PER_FUNCTION: usize = 4;
 }
 
-/// Graph-based thresholds (shared across languages)
 pub mod graph {
     pub const CYCLE_SIZE: usize = 3;
     pub const TRANSITIVE_DEPENDENCIES: usize = 30;
     pub const DEPENDENCY_DEPTH: usize = 6;
 }
 
-/// Gate configuration defaults
 pub mod gate {
-    pub const TEST_COVERAGE_THRESHOLD: usize = 45;
+    pub const TEST_COVERAGE_THRESHOLD: usize = 65;
 }
 
-/// Generate default config file content
 pub fn default_config_toml() -> String {
-    format!(r"# kiss configuration
-#
-# Thresholds based on analysis of high-quality open-source codebases:
-# - Python: rich, click, attrs, httpx (366 files, 5426 functions)
-# - Rust: fd, ripgrep (123 files, 3002 functions)
-
-[gate]
+    format!(r"[gate]
 test_coverage_threshold = {gate_coverage}
-
-#------------------------------------------------------------------------------
-# PYTHON-SPECIFIC SETTINGS
-#------------------------------------------------------------------------------
 
 [python]
 imports_per_file = {py_imports}
@@ -96,17 +72,9 @@ statements_per_try_block = {py_try_stmts}
 boolean_parameters = {py_bool_params}
 decorators_per_function = {py_decorators}
 
-#------------------------------------------------------------------------------
-# GRAPH-BASED SETTINGS (shared)
-#------------------------------------------------------------------------------
-
 cycle_size = {cycle_size}
 transitive_dependencies = {transitive_deps}
 dependency_depth = {dep_depth}
-
-#------------------------------------------------------------------------------
-# RUST-SPECIFIC SETTINGS
-#------------------------------------------------------------------------------
 
 [rust]
 imports_per_file = {rs_imports}
@@ -185,4 +153,3 @@ mod tests {
         assert!(toml.parse::<toml::Table>().is_ok());
     }
 }
-

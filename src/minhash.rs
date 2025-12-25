@@ -1,4 +1,3 @@
-//! MinHash/LSH algorithms for code similarity detection
 
 use std::collections::{HashMap, HashSet};
 
@@ -7,7 +6,6 @@ pub struct MinHashSignature {
     pub hashes: Vec<u64>,
 }
 
-/// Normalize code: lowercase, collapse whitespace, replace numbers with 'N'
 pub fn normalize_code(code: &str) -> String {
     let mut result = String::with_capacity(code.len());
     let mut last_was_space = true;
@@ -32,7 +30,6 @@ pub fn normalize_code(code: &str) -> String {
     result.trim().to_string()
 }
 
-/// Generate shingles (n-grams of tokens)
 pub fn generate_shingles(text: &str, shingle_size: usize) -> HashSet<u64> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -51,7 +48,6 @@ pub fn generate_shingles(text: &str, shingle_size: usize) -> HashSet<u64> {
     shingles
 }
 
-/// Compute `MinHash` signature for a set of shingles
 pub fn compute_minhash(shingles: &HashSet<u64>, size: usize) -> MinHashSignature {
     let mut hashes = vec![u64::MAX; size];
     let coefficients: Vec<(u64, u64)> = (0..size)
@@ -75,7 +71,6 @@ pub fn compute_minhash(shingles: &HashSet<u64>, size: usize) -> MinHashSignature
     MinHashSignature { hashes }
 }
 
-/// Estimate Jaccard similarity from `MinHash` signatures
 pub fn estimate_similarity(sig1: &MinHashSignature, sig2: &MinHashSignature) -> f64 {
     if sig1.hashes.is_empty() {
         return 0.0;
@@ -108,7 +103,6 @@ fn add_bucket_pairs(indices: &[usize], candidates: &mut HashSet<(usize, usize)>)
     }
 }
 
-/// Find candidate pairs using LSH
 pub fn find_lsh_candidates(signatures: &[MinHashSignature], num_bands: usize) -> HashSet<(usize, usize)> {
     let mut candidates = HashSet::new();
     if signatures.is_empty() {

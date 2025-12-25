@@ -1,4 +1,3 @@
-//! Test References - detect code units that may lack test coverage
 
 use crate::parsing::ParsedFile;
 use crate::units::{get_child_by_field, CodeUnitKind};
@@ -6,25 +5,19 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tree_sitter::Node;
 
-/// A code unit definition (function, method, or class)
 #[derive(Debug, Clone)]
 pub struct CodeDefinition {
     pub name: String,
     pub kind: CodeUnitKind,
     pub file: PathBuf,
     pub line: usize,
-    /// For methods, the name of the containing class
     pub containing_class: Option<String>,
 }
 
-/// Result of test reference analysis
 #[derive(Debug)]
 pub struct TestRefAnalysis {
-    /// All definitions found in source files
     pub definitions: Vec<CodeDefinition>,
-    /// Names referenced in test files
     pub test_references: HashSet<String>,
-    /// Definitions not referenced by any test
     pub unreferenced: Vec<CodeDefinition>,
 }
 
@@ -34,12 +27,10 @@ fn has_python_test_naming(path: &Path) -> bool {
         .is_some_and(|name| {
             (name.starts_with("test_") && name.ends_with(".py"))
                 || name.ends_with("_test.py")
-                || name == "conftest.py"  // pytest fixture/config file
+                || name == "conftest.py"
         })
 }
 
-/// Check if a file path is a test file (test_*.py, *_test.py, or conftest.py)
-/// Note: Being in a tests/ directory alone is NOT sufficient - file must have test naming
 #[must_use]
 pub fn is_test_file(path: &std::path::Path) -> bool {
     has_python_test_naming(path)
@@ -68,7 +59,6 @@ fn contains_test_module_name(node: Node, source: &str) -> bool {
     false
 }
 
-/// Check if a parsed file contains pytest or unittest imports (fallback heuristic)
 pub fn has_test_framework_import(node: Node, source: &str) -> bool {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -85,7 +75,6 @@ fn is_python_test_file(parsed: &ParsedFile) -> bool {
     is_test_file(&parsed.path) || has_test_framework_import(parsed.tree.root_node(), &parsed.source)
 }
 
-/// Analyze test references across all parsed files
 pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
     let mut definitions = Vec::new();
     let mut test_references = HashSet::new();
@@ -98,7 +87,6 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
         }
     }
 
-    // Mark __init__ as covered if its class is referenced (instantiation calls __init__ implicitly)
     let class_names: HashSet<_> = definitions.iter()
         .filter(|d| d.kind == CodeUnitKind::Class && test_references.contains(&d.name))
         .map(|d| d.name.clone())
@@ -109,7 +97,6 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
             if test_references.contains(&def.name) {
                 return false;
             }
-            // __init__ is covered if its containing class is referenced
             if def.name == "__init__"
                 && let Some(ref class_name) = def.containing_class {
                     return !class_names.contains(class_name);
@@ -153,7 +140,6 @@ fn insert_identifier(node: Node, source: &str, refs: &mut HashSet<String>) {
     refs.insert(source[node.start_byte()..node.end_byte()].to_string());
 }
 
-/// Collect all name references from a node (imports, calls, attribute access)
 fn collect_references(node: Node, source: &str, refs: &mut HashSet<String>) {
     match node.kind() {
         "call" => if let Some(func) = node.child_by_field_name("function") {
@@ -169,7 +155,6 @@ fn collect_references(node: Node, source: &str, refs: &mut HashSet<String>) {
     }
 }
 
-/// Extract the target name from a call expression
 fn collect_call_target(node: Node, source: &str, refs: &mut HashSet<String>) {
     match node.kind() {
         "identifier" => insert_identifier(node, source, refs),
@@ -181,7 +166,6 @@ fn collect_call_target(node: Node, source: &str, refs: &mut HashSet<String>) {
     }
 }
 
-/// Extract imported names from import statements
 fn collect_import_names(node: Node, source: &str, refs: &mut HashSet<String>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {

@@ -1,4 +1,3 @@
-//! Python-specific metrics computation
 
 use crate::parsing::ParsedFile;
 use std::collections::HashSet;
@@ -118,11 +117,10 @@ fn count_branches(node: Node) -> usize {
 
 fn compute_max_try_block_statements(node: Node) -> usize {
     let mut max = 0;
-    if node.kind() == "try_statement" {
-        // The try block body is the first "block" child of the try_statement
-        if let Some(body) = node.child_by_field_name("body") {
-            max = max.max(count_statements(body));
-        }
+    if node.kind() == "try_statement"
+        && let Some(body) = node.child_by_field_name("body")
+    {
+        max = max.max(count_statements(body));
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {

@@ -1,5 +1,3 @@
-//! Coding rules output for LLM context priming
-
 use kiss::rule_defs::{rules_for_python, rules_for_rust};
 use kiss::{Config, GateConfig, Language};
 
@@ -21,6 +19,7 @@ pub fn run_rules(
 }
 
 fn print_rules(config: &Config, gate: &GateConfig, is_python: bool) {
+    let lang = if is_python { "Python" } else { "Rust" };
     let rules = if is_python {
         rules_for_python(config, gate)
     } else {
@@ -29,7 +28,7 @@ fn print_rules(config: &Config, gate: &GateConfig, is_python: bool) {
 
     for (_category, rule_texts) in rules {
         for rule in rule_texts {
-            println!("{rule}");
+            println!("RULE: [{lang}] {rule}");
         }
     }
 }

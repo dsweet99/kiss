@@ -1,4 +1,3 @@
-//! Tests that explicitly reference functions to ensure coverage detection
 
 use kiss::cli_output::{print_py_test_refs, print_rs_test_refs};
 use kiss::config_gen::{merge_config_toml, write_mimic_config};

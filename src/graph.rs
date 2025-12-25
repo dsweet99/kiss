@@ -1,7 +1,3 @@
-//! Dependency graph analysis using Tarjan's SCC algorithm
-//!
-//! Detects cycles (strongly connected components) and computes dependency metrics:
-//! - Fan-in/out: coupling to/from other modules
 
 use crate::config::Config;
 use crate::parsing::ParsedFile;
@@ -12,7 +8,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tree_sitter::Node;
 
-/// A dependency graph for a codebase
 pub struct DependencyGraph {
     pub graph: DiGraph<String, ()>,
     pub nodes: HashMap<String, NodeIndex>,
@@ -112,7 +107,7 @@ fn is_orphan(metrics: &ModuleGraphMetrics, module_name: &str) -> bool {
 pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation> {
     let mut violations = Vec::new();
     for module_name in graph.nodes.keys() {
-        if !graph.paths.contains_key(module_name) { continue; } // Skip external deps
+        if !graph.paths.contains_key(module_name) { continue; }
         let metrics = graph.module_metrics(module_name);
 
         if metrics.fan_out > config.fan_out {

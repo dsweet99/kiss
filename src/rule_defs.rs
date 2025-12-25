@@ -1,9 +1,3 @@
-//! Self-documenting rule definitions
-//!
-//! Each rule defines its own description, so `kiss rules` can just iterate
-//! over this registry. When adding a new check, add it here and it automatically
-//! appears in the rules output.
-
 use crate::config::Config;
 use crate::GateConfig;
 
@@ -69,9 +63,7 @@ impl Rule {
     }
 }
 
-/// All rules in the system. Add new rules here and they automatically appear in `kiss rules`.
 pub static RULES: &[Rule] = &[
-    // === Functions ===
     Rule {
         category: RuleCategory::Functions,
         template: "Keep functions ≤ {} statements",
@@ -150,7 +142,6 @@ pub static RULES: &[Rule] = &[
         get_threshold: |c, _| c.decorators_per_function,
         applicability: Applicability::Rust,
     },
-    // === Classes/Types ===
     Rule {
         category: RuleCategory::Classes,
         template: "Keep methods per class/type ≤ {}",
@@ -163,7 +154,6 @@ pub static RULES: &[Rule] = &[
         get_threshold: |c, _| c.lcom,
         applicability: Applicability::Both,
     },
-    // === Files ===
     Rule {
         category: RuleCategory::Files,
         template: "Keep files ≤ {} lines",
@@ -182,11 +172,10 @@ pub static RULES: &[Rule] = &[
         get_threshold: |c, _| c.imports_per_file,
         applicability: Applicability::Both,
     },
-    // === Dependencies ===
     Rule {
         category: RuleCategory::Dependencies,
         template: "Avoid circular dependencies",
-        get_threshold: |_, _| 0, // No threshold, just a rule
+        get_threshold: |_, _| 0,
         applicability: Applicability::Both,
     },
     Rule {
@@ -219,7 +208,6 @@ pub static RULES: &[Rule] = &[
         get_threshold: |c, _| c.dependency_depth,
         applicability: Applicability::Both,
     },
-    // === Testing ===
     Rule {
         category: RuleCategory::Testing,
         template: "Every function/class/type should be referenced by tests",
@@ -232,7 +220,6 @@ pub static RULES: &[Rule] = &[
         get_threshold: |_, g| g.test_coverage_threshold,
         applicability: Applicability::Both,
     },
-    // === Duplication ===
     Rule {
         category: RuleCategory::Duplication,
         template: "Avoid copy-pasted code blocks",
@@ -247,7 +234,6 @@ pub static RULES: &[Rule] = &[
     },
 ];
 
-/// Returns rules grouped by category for a given language
 pub fn rules_for_python(config: &Config, gate: &GateConfig) -> Vec<(RuleCategory, Vec<String>)> {
     rules_grouped(config, gate, true)
 }
@@ -292,9 +278,8 @@ mod tests {
     fn test_rule_formatting() {
         let config = Config::python_defaults();
         let gate = GateConfig::default();
-        let rule = &RULES[0]; // statements_per_function
+        let rule = &RULES[0];
         let formatted = rule.format(&config, &gate);
         assert!(formatted.contains(&config.statements_per_function.to_string()));
     }
 }
-

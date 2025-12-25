@@ -1,4 +1,3 @@
-//! Tests for configuration management
 
 use kiss::{Config, ConfigLanguage};
 
@@ -7,14 +6,12 @@ fn default_config_has_reasonable_values() {
     let py_config = Config::python_defaults();
     let rs_config = Config::rust_defaults();
     
-    // Python defaults (from defaults.rs)
     assert_eq!(py_config.statements_per_function, 40);
     assert_eq!(py_config.methods_per_class, 20);
     assert_eq!(py_config.lines_per_file, 300);
     
-    // Rust defaults (from defaults.rs)
     assert_eq!(rs_config.statements_per_function, 25);
-    assert_eq!(rs_config.methods_per_class, 15); // methods_per_type
+    assert_eq!(rs_config.methods_per_class, 15);
     assert_eq!(rs_config.lines_per_file, 300);
 }
 

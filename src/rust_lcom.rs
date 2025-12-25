@@ -1,11 +1,8 @@
-//! LCOM (Lack of Cohesion of Methods) computation for Rust impl blocks
 
 use std::collections::HashSet;
 use syn::visit::Visit;
 use syn::{Block, Expr, ImplItem};
 
-/// Compute LCOM for a Rust impl block.
-/// LCOM = `pairs_not_sharing_fields` / `total_pairs`. Returns 0.0 (cohesive) to 1.0 (no cohesion).
 #[must_use]
 pub fn compute_rust_lcom(impl_block: &syn::ItemImpl) -> f64 {
     const MIN_METHODS_FOR_LCOM: usize = 2;
@@ -52,7 +49,6 @@ pub fn count_field_sharing_pairs(fields_per_method: &[HashSet<String>]) -> (usiz
     (sharing, not_sharing)
 }
 
-/// Extract all self.field accesses from a block
 pub fn extract_self_field_accesses(block: &Block) -> HashSet<String> {
     struct FieldAccessVisitor {
         fields: HashSet<String>,
