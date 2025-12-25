@@ -10,9 +10,9 @@ fn kiss_binary() -> Command {
 }
 
 #[test]
-fn cli_analyze_on_fake_code_runs_successfully() {
+fn cli_analyze_on_fake_python_runs_successfully() {
     let output = kiss_binary()
-        .arg("tests/fake_code")
+        .arg("tests/fake_python")
         .arg("--all") // bypass coverage gate for test
         .output()
         .expect("Failed to execute kiss");
@@ -31,7 +31,7 @@ fn cli_analyze_on_fake_code_runs_successfully() {
 #[test]
 fn cli_analyze_reports_violations_on_god_class() {
     let output = kiss_binary()
-        .arg("tests/fake_code/god_class.py")
+        .arg("tests/fake_python/god_class.py")
         .arg("--all")
         .arg("--lang")
         .arg("python")
@@ -52,7 +52,7 @@ fn cli_analyze_reports_violations_on_god_class() {
 fn cli_stats_command_runs() {
     let output = kiss_binary()
         .arg("stats")
-        .arg("tests/fake_code")
+        .arg("tests/fake_python")
         .output()
         .expect("Failed to execute kiss stats");
 
@@ -69,7 +69,7 @@ fn cli_stats_command_runs() {
 #[test]
 fn cli_with_lang_filter_python() {
     let output = kiss_binary()
-        .arg("tests/fake_code")
+        .arg("tests/fake_python")
         .arg("--lang")
         .arg("python")
         .arg("--all")
@@ -87,7 +87,7 @@ fn cli_with_lang_filter_python() {
 #[test]
 fn cli_with_lang_filter_rust() {
     let output = kiss_binary()
-        .arg("tests/fake_code")
+        .arg("tests/fake_python")
         .arg("--lang")
         .arg("rust")
         .arg("--all")
@@ -96,7 +96,7 @@ fn cli_with_lang_filter_rust() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Should report no Rust files found (fake_code only has Python)
+    // Should report no Rust files found (fake_python only has Python)
     assert!(
         stdout.contains("No Rust files") || stdout.contains("No files"),
         "Should report no Rust files. stdout: {}",
@@ -174,7 +174,7 @@ fn cli_on_empty_directory() {
 fn cli_mimic_command_runs() {
     let output = kiss_binary()
         .arg("mimic")
-        .arg("tests/fake_code")
+        .arg("tests/fake_python")
         .output()
         .expect("Failed to execute kiss mimic");
 

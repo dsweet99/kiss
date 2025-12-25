@@ -157,9 +157,13 @@ fn analyze_graphs(py_graph: &Option<DependencyGraph>, rs_graph: &Option<Dependen
 }
 
 fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], py_graph: &Option<DependencyGraph>, rs_graph: &Option<DependencyGraph>) {
-    print_violations(viols, py_parsed.len() + rs_parsed.len());
-    print_duplicates("Python", &detect_py_duplicates(py_parsed));
-    print_duplicates("Rust", &detect_rs_duplicates(rs_parsed));
+    let py_dups = detect_py_duplicates(py_parsed);
+    let rs_dups = detect_rs_duplicates(rs_parsed);
+    let dup_count = py_dups.len() + rs_dups.len();
+    
+    print_violations(viols, py_parsed.len() + rs_parsed.len(), dup_count);
+    print_duplicates("Python", &py_dups);
+    print_duplicates("Rust", &rs_dups);
     print_instability("Python", py_graph.as_ref());
     print_instability("Rust", rs_graph.as_ref());
     print_py_test_refs(py_parsed);
@@ -354,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_print_functions_no_panic() {
-        print_violations(&[], 0);
+        print_violations(&[], 0, 0);
         print_duplicates("Python", &[]);
         print_py_test_refs(&[]);
         print_rs_test_refs(&[]);

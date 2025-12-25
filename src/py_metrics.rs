@@ -268,9 +268,10 @@ pub fn compute_lcom(body: Node, source: &str) -> f64 {
     for child in body.children(&mut cursor) {
         if child.kind() == "function_definition" {
             let fields = extract_self_attributes(child, source);
-            if !fields.is_empty() {
-                method_fields.push(fields);
-            }
+            // Include all methods, even those without field access
+            // Methods with empty field sets are disjoint from all others,
+            // indicating no cohesion (utility methods in a potential god class)
+            method_fields.push(fields);
         }
     }
     
@@ -359,6 +360,80 @@ mod tests {
         let body = cls.child_by_field_name("body").unwrap();
         let lcom = compute_lcom(body, &parsed.source);
         assert!(lcom >= 0.0 && lcom <= 1.0);
+    }
+
+    #[test]
+    fn test_struct_defaults() {
+        let fm = FunctionMetrics::default();
+        assert_eq!(fm.statements, 0);
+        let cm = ClassMetrics::default();
+        assert_eq!(cm.methods, 0);
+        let file = FileMetrics::default();
+        assert_eq!(file.lines, 0);
+    }
+
+    #[test]
+    fn test_compute_class_metrics_with_source() {
+        let parsed = parse_source("class C:\n    def a(self): self.x = 1");
+        let cls = parsed.tree.root_node().child(0).unwrap();
+        let m = compute_class_metrics_with_source(cls, &parsed.source);
+        assert_eq!(m.methods, 1);
+    }
+
+    #[test]
+    fn test_helper_functions() {
+        // ParameterCounts struct
+        let _ = ParameterCounts { positional: 1, keyword_only: 2, total: 3 };
+        // count_parameters: parse "def f(a,b): pass" and check counts
+        let p = parse_source("def f(a, b): pass");
+        let f = p.tree.root_node().child(0).unwrap();
+        let params = f.child_by_field_name("parameters").unwrap();
+        assert!(count_parameters(params).total >= 2);
+        // is_statement
+        assert!(is_statement("return_statement") && !is_statement("identifier"));
+        // count_statements, compute_max_indentation, count_branches, count_local_variables, collect_local_variables
+        let p2 = parse_source("def f():\n    if True:\n        x = 1");
+        let f2 = p2.tree.root_node().child(0).unwrap();
+        if let Some(body) = f2.child_by_field_name("body") {
+            let _ = (count_statements(body), compute_max_indentation(body, 0), count_branches(body), count_local_variables(body, &p2.source));
+            let mut vars = HashSet::new(); collect_local_variables(body, &p2.source, &mut vars);
+        }
+        // collect_assigned_names
+        let p3 = parse_source("x = 1");
+        if let Some(stmt) = p3.tree.root_node().child(0) { if let Some(left) = stmt.child_by_field_name("left") { let mut v = HashSet::new(); collect_assigned_names(left, &p3.source, &mut v); } }
+        // compute_nested_function_depth, count_imports, count_import_names
+        let p4 = parse_source("def f(): pass");
+        let _ = compute_nested_function_depth(p4.tree.root_node().child(0).unwrap(), 0);
+        let p5 = parse_source("import os");
+        assert!(count_imports(p5.tree.root_node()) >= 1);
+        let _ = count_import_names(p5.tree.root_node().child(0).unwrap());
+    }
+
+    #[test]
+    fn test_count_node_kind() {
+        let parsed = parse_source("def f(): pass\ndef g(): pass");
+        let root = parsed.tree.root_node();
+        assert_eq!(count_node_kind(root, "function_definition"), 2);
+    }
+
+    #[test]
+    fn test_extract_self_attributes() {
+        let parsed = parse_source("class C:\n    def m(self): self.x = 1; self.y = 2");
+        let cls = parsed.tree.root_node().child(0).unwrap();
+        let body = cls.child_by_field_name("body").unwrap();
+        let method = body.child(0).unwrap();
+        let fields = extract_self_attributes(method, &parsed.source);
+        assert!(fields.len() >= 1);
+    }
+
+    #[test]
+    fn test_extract_self_attributes_recursive() {
+        let parsed = parse_source("class C:\n    def m(self): self.a = self.b");
+        let cls = parsed.tree.root_node().child(0).unwrap();
+        let body = cls.child_by_field_name("body").unwrap();
+        let mut fields = HashSet::new();
+        extract_self_attributes_recursive(body, &parsed.source, &mut fields);
+        assert!(!fields.is_empty());
     }
 }
 

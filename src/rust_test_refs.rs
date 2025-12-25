@@ -33,6 +33,11 @@ pub struct RustTestRefAnalysis {
 /// Check if a file is a test file based on Rust conventions
 #[must_use]
 pub fn is_rust_test_file(path: &std::path::Path) -> bool {
+    // Must be a .rs file
+    if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+        return false;
+    }
+    
     // Check for tests/ directory
     if path.components().any(|c| c.as_os_str() == "tests") {
         return true;
@@ -436,12 +441,28 @@ mod tests {
     fn test_impl_methods() {
         let f: syn::File = syn::parse_str("impl S { fn m1(&self) {} fn m2(&self) {} }").unwrap();
         let mut defs = Vec::new();
-        if let syn::Item::Impl(i) = &f.items[0] { collect_impl_methods(i, &std::path::PathBuf::from("t.rs"), &mut defs); }
+        if let syn::Item::Impl(i) = &f.items[0] { collect_impl_methods(i, Path::new("t.rs"), &mut defs); }
         assert_eq!(defs.len(), 2);
         let f2: syn::File = syn::parse_str("impl Trait for S { fn m(&self) {} }").unwrap();
         let mut defs2 = Vec::new();
-        if let syn::Item::Impl(i) = &f2.items[0] { collect_impl_methods(i, &std::path::PathBuf::from("t.rs"), &mut defs2); }
+        if let syn::Item::Impl(i) = &f2.items[0] { collect_impl_methods(i, Path::new("t.rs"), &mut defs2); }
         assert_eq!(defs2[0].kind, CodeUnitKind::TraitImplMethod);
+    }
+
+    #[test]
+    fn test_collect_definitions_from_item() {
+        let f: syn::File = syn::parse_str("fn foo() {} struct Bar; enum Baz {}").unwrap();
+        let mut defs = Vec::new();
+        for item in &f.items { collect_definitions_from_item(item, Path::new("t.rs"), &mut defs); }
+        assert_eq!(defs.len(), 3);
+    }
+
+    #[test]
+    fn test_collect_rust_references() {
+        let f: syn::File = syn::parse_str("fn test_it() { foo(); Bar::new(); }").unwrap();
+        let mut refs = HashSet::new();
+        collect_rust_references(&f, &mut refs);
+        assert!(refs.contains("foo") && refs.contains("Bar"));
     }
 }
 

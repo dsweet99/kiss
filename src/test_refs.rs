@@ -150,25 +150,22 @@ fn try_add_def(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinit
         }
 }
 
-fn recurse_children(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, inside_class: bool) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_definitions(child, source, file, defs, inside_class);
-    }
-}
-
 fn collect_definitions(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, inside_class: bool) {
-    match node.kind() {
+    let next_inside = match node.kind() {
         "function_definition" | "async_function_definition" => {
             let kind = if inside_class { CodeUnitKind::Method } else { CodeUnitKind::Function };
             try_add_def(node, source, file, defs, kind);
-            recurse_children(node, source, file, defs, false);
+            false
         }
         "class_definition" => {
             try_add_def(node, source, file, defs, CodeUnitKind::Class);
-            recurse_children(node, source, file, defs, true);
+            true
         }
-        _ => recurse_children(node, source, file, defs, inside_class),
+        _ => inside_class,
+    };
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_definitions(child, source, file, defs, next_inside);
     }
 }
 

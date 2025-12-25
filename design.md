@@ -293,7 +293,7 @@ Build a directed graph showing how code units couple to (call/use) other code un
 | Metric | Formula | Threshold | What It Means |
 |--------|---------|-----------|---------------|
 | Instability | Ce / (Ca + Ce) | report only | 0 = stable, 1 = unstable (not inherently bad) |
-| God Class indicator | methods > 20 AND fan-out > 10 AND LCOM > 0.5 | any trigger | Class doing too much |
+| God Class indicator | methods > 20 AND LCOM > 50% | any trigger | Class doing too much |
 
 #### Metrics Intentionally Omitted
 
@@ -301,11 +301,12 @@ To avoid redundancy:
 
 | Metric | Why Omitted |
 |--------|-------------|
-| Cyclomatic Complexity | Covered by Branches per function in Counts |
 | WMC (Weighted Methods per Class) | = methods × avg complexity; redundant |
 | DIT / NOC (inheritance depth/children) | Less relevant for Python/Rust (composition over inheritance) |
 | Centrality / PageRank | Sophisticated fan-in; overkill for now |
 | Feature Envy | Requires detailed field tracking; complex |
+
+**Note:** Cyclomatic Complexity is computed separately from Branches per function. Branches counts only if/elif/else statements, while Cyclomatic Complexity includes loops and boolean operators (&& / ||). The suggestions are differentiated accordingly.
 
 ### 3. Duplication
 

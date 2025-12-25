@@ -5,7 +5,7 @@ use std::path::Path;
 
 #[test]
 fn finds_python_files_in_test_directory() {
-    let root = Path::new("tests/fake_code");
+    let root = Path::new("tests/fake_python");
     let files = find_python_files(root);
     assert!(!files.is_empty(), "Should find Python files");
     assert!(files.iter().all(|p| p.extension().unwrap() == "py"), "All files should be .py");
@@ -21,7 +21,7 @@ fn returns_empty_for_nonexistent_directory() {
 #[test]
 fn parses_python_file_successfully() {
     let mut parser = create_parser().expect("parser should initialize");
-    let path = Path::new("tests/fake_code/clean_utils.py");
+    let path = Path::new("tests/fake_python/clean_utils.py");
     let parsed = parse_file(&mut parser, path).expect("should parse");
     assert_eq!(parsed.path, path);
     assert!(!parsed.source.is_empty());
@@ -30,7 +30,7 @@ fn parses_python_file_successfully() {
 
 #[test]
 fn parses_all_test_files_without_errors() {
-    let files = find_python_files(Path::new("tests/fake_code"));
+    let files = find_python_files(Path::new("tests/fake_python"));
     let results = parse_files(&files).expect("parser should initialize");
     for result in &results {
         let parsed = result.as_ref().expect("all files should parse");
@@ -41,7 +41,7 @@ fn parses_all_test_files_without_errors() {
 #[test]
 fn extracts_code_units_from_clean_utils() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_code/clean_utils.py")).expect("should parse");
+    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/clean_utils.py")).expect("should parse");
     let units = extract_code_units(&parsed);
 
     let modules: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Module).collect();
@@ -61,7 +61,7 @@ fn extracts_code_units_from_clean_utils() {
 #[test]
 fn extracts_many_methods_from_god_class() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_code/god_class.py")).expect("should parse");
+    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
     let units = extract_code_units(&parsed);
     let methods: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Method).collect();
     assert!(methods.len() > 20, "Expected >20 methods, got {}", methods.len());
@@ -70,7 +70,7 @@ fn extracts_many_methods_from_god_class() {
 #[test]
 fn computes_file_metrics_for_god_class() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_code/god_class.py")).expect("should parse");
+    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
     let metrics = compute_file_metrics(&parsed);
     assert!(metrics.lines > 200, "Expected >200 lines, got {}", metrics.lines);
     assert_eq!(metrics.classes, 1);
@@ -80,7 +80,7 @@ fn computes_file_metrics_for_god_class() {
 #[test]
 fn computes_class_metrics_for_god_class() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_code/god_class.py")).expect("should parse");
+    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
     let class_node = find_first_node_of_kind(parsed.tree.root_node(), "class_definition").expect("should find class");
     let metrics = compute_class_metrics(class_node);
     assert!(metrics.methods > thresholds::METHODS_PER_CLASS);
@@ -89,7 +89,7 @@ fn computes_class_metrics_for_god_class() {
 #[test]
 fn computes_function_metrics() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_code/clean_utils.py")).expect("should parse");
+    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/clean_utils.py")).expect("should parse");
     let func_node = find_first_node_of_kind(parsed.tree.root_node(), "function_definition").expect("should find function");
     let metrics = compute_function_metrics(func_node, &parsed.source);
     assert_eq!(metrics.arguments, 1);
@@ -111,7 +111,7 @@ fn find_first_node_of_kind<'a>(node: tree_sitter::Node<'a>, kind: &str) -> Optio
 #[test]
 fn builds_dependency_graph() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed_god = parse_file(&mut parser, Path::new("tests/fake_code/god_class.py")).expect("should parse");
+    let parsed_god = parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
     let parsed_files: Vec<&ParsedFile> = vec![&parsed_god];
     let graph = build_dependency_graph(&parsed_files);
     assert!(graph.nodes.len() > 1, "Should have multiple nodes in graph");
@@ -123,7 +123,7 @@ fn builds_dependency_graph() {
 #[test]
 fn computes_cyclomatic_complexity() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_code/deeply_nested.py")).expect("should parse");
+    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/deeply_nested.py")).expect("should parse");
     let func_node = find_first_node_of_kind(parsed.tree.root_node(), "function_definition").expect("should find function");
     let complexity = compute_cyclomatic_complexity(func_node);
     assert!(complexity > 5, "Expected complexity > 5, got {}", complexity);
@@ -132,7 +132,7 @@ fn computes_cyclomatic_complexity() {
 #[test]
 fn detects_duplicate_code() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_code/user_service.py")).expect("should parse");
+    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/user_service.py")).expect("should parse");
     let parsed_files: Vec<&ParsedFile> = vec![&parsed];
     let duplicates = detect_duplicates(&parsed_files, &DuplicationConfig::default());
     assert!(!duplicates.is_empty(), "Should detect duplicates in user_service.py");

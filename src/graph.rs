@@ -157,6 +157,13 @@ impl Default for DependencyGraph {
     }
 }
 
+/// Check if module name is a known entry point (shouldn't be flagged as orphan)
+fn is_entry_point(name: &str) -> bool {
+    matches!(name, "main" | "lib" | "__main__" | "__init__")
+        || name.starts_with("test_") || name.ends_with("_test")
+        || name.contains("_integration") || name.contains("_bench")
+}
+
 /// Analyze dependency graph and return violations for high fan-out and cycles
 #[must_use]
 pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation> {
@@ -201,7 +208,21 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
                     "Module '{}' is depended on by {} other modules (threshold: {})",
                     module_name, metrics.fan_in, config.fan_in
                 ),
-                suggestion: "Consider if this module has too many responsibilities; split if needed.".to_string(),
+                suggestion: "This module is heavily depended upon. Ensure it's stable and well-tested; changes here have wide impact.".to_string(),
+            });
+        }
+
+        // Detect orphan modules (no incoming or outgoing dependencies)
+        if metrics.fan_in == 0 && metrics.fan_out == 0 && !is_entry_point(module_name) {
+            violations.push(Violation {
+                file: get_path(module_name),
+                line: 1,
+                unit_name: module_name.clone(),
+                metric: "orphan_module".to_string(),
+                value: 0,
+                threshold: 0,
+                message: format!("Module '{}' has no dependencies and nothing depends on it", module_name),
+                suggestion: "This may be dead code. Remove it, or integrate it into the codebase.".to_string(),
             });
         }
 
@@ -217,7 +238,7 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
                     "Module '{}' has {} transitive dependencies (threshold: {})",
                     module_name, metrics.transitive_deps, config.transitive_deps
                 ),
-                suggestion: "High transitive dependencies make code fragile; consider reducing coupling.".to_string(),
+                suggestion: "Reduce coupling by introducing interfaces, using dependency injection, or splitting into smaller modules.".to_string(),
             });
         }
     }
@@ -461,5 +482,13 @@ mod tests {
         nodes.insert("a".into(), a); nodes.insert("b".into(), b);
         let g = DependencyGraph { graph, nodes, paths: HashMap::new() };
         assert!(!collect_instability_metrics(&g).is_empty());
+    }
+
+    #[test]
+    fn test_is_entry_point() {
+        assert!(is_entry_point("main") && is_entry_point("lib") && is_entry_point("__main__"));
+        assert!(is_entry_point("test_foo") && is_entry_point("foo_test"));
+        assert!(is_entry_point("cli_integration") && is_entry_point("perf_bench"));
+        assert!(!is_entry_point("utils") && !is_entry_point("parser") && !is_entry_point("config"));
     }
 }

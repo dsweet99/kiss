@@ -68,32 +68,24 @@ fn mk_v(file: &Path, line: usize, name: &str, metric: &str, val: usize, thresh: 
 fn analyze_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Violation>, inside_class: bool, config: &Config) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {
-            analyze_function_node(node, source, file, violations, inside_class, config);
+            let name = node.child_by_field_name("name").and_then(|n| n.utf8_text(source.as_bytes()).ok()).unwrap_or("<anonymous>");
+            let line = node.start_position().row + 1;
+            let m = compute_function_metrics(node, source);
+            check_function_metrics(&m, file, line, name, inside_class, config, violations);
+            check_cyclomatic_complexity(node, file, line, name, inside_class, config, violations);
+            // Don't recurse into function body - metrics are computed from the whole function
         }
         "class_definition" => {
+            // analyze_class_node handles its own recursion into the body
             analyze_class_node(node, source, file, violations, config);
+            return;
         }
-        _ => recurse_children(node, source, file, violations, inside_class, config),
+        _ => {}
     }
-}
-
-fn recurse_children(node: Node, source: &str, file: &Path, violations: &mut Vec<Violation>, inside_class: bool, config: &Config) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         analyze_node(child, source, file, violations, inside_class, config);
     }
-}
-
-fn analyze_function_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Violation>, inside_class: bool, config: &Config) {
-    let name = node.child_by_field_name("name")
-        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
-        .unwrap_or("<anonymous>");
-    let line = node.start_position().row + 1;
-    let m = compute_function_metrics(node, source);
-
-    check_function_metrics(&m, file, line, name, inside_class, config, violations);
-    check_cyclomatic_complexity(node, file, line, name, config, violations);
-    recurse_children(node, source, file, violations, inside_class, config);
 }
 
 fn check_function_metrics(m: &FunctionMetrics, file: &Path, line: usize, name: &str, inside_class: bool, cfg: &Config, v: &mut Vec<Violation>) {
@@ -134,12 +126,12 @@ fn check_function_metrics(m: &FunctionMetrics, file: &Path, line: usize, name: &
     }
 }
 
-fn check_cyclomatic_complexity(node: Node, file: &Path, line: usize, name: &str, cfg: &Config, v: &mut Vec<Violation>) {
+fn check_cyclomatic_complexity(node: Node, file: &Path, line: usize, name: &str, inside_class: bool, cfg: &Config, v: &mut Vec<Violation>) {
     let cc = compute_cyclomatic_complexity(node);
     if cc > cfg.cyclomatic_complexity {
         v.push(mk_v(file, line, name, "cyclomatic_complexity", cc, cfg.cyclomatic_complexity,
-            format!("Function '{}' has cyclomatic complexity {} (threshold: {})", name, cc, cfg.cyclomatic_complexity),
-            "Reduce conditional branches or extract into smaller functions."));
+            format!("{} '{}' has cyclomatic complexity {} (threshold: {})", if inside_class { "Method" } else { "Function" }, name, cc, cfg.cyclomatic_complexity),
+            "Reduce if/for/while/and/or expressions; extract complex conditions into helper functions."));
     }
 }
 
@@ -160,7 +152,7 @@ fn analyze_class_node(node: Node, source: &str, file: &Path, violations: &mut Ve
         violations.push(mk_v(file, line, name, "lcom", lcom_pct, config.lcom,
             format!("Class '{}' may be a God Class: {} methods with {}% LCOM (threshold: {} methods, {}% LCOM)", name, m.methods, lcom_pct, 20, config.lcom),
             "Consider splitting into multiple focused classes with cohesive responsibilities."));
-    }
+            }
     if let Some(body) = node.child_by_field_name("body") {
         let mut cursor = body.walk();
         for child in body.children(&mut cursor) {
@@ -221,5 +213,53 @@ mod tests {
         let cls = parsed.tree.root_node().child(0).unwrap();
         analyze_class_node(cls, &parsed.source, &parsed.path, &mut viols, &Config::default());
         assert!(viols.is_empty());
+    }
+
+    #[test]
+    fn test_check_file_metrics() {
+        let m = FileMetrics { lines: 1000, classes: 20, imports: 50 };
+        let mut cfg = Config::default();
+        cfg.lines_per_file = 500;
+        cfg.classes_per_file = 10;
+        cfg.imports_per_file = 30;
+        let mut viols = Vec::new();
+        check_file_metrics(&m, Path::new("t.py"), "t.py", &cfg, &mut viols);
+        assert_eq!(viols.len(), 3);
+    }
+
+    #[test]
+    fn test_analyze_node_function() {
+        let parsed = parse_source("def f(a): x = 1");
+        let func = parsed.tree.root_node().child(0).unwrap();
+        let mut viols = Vec::new();
+        analyze_node(func, &parsed.source, &parsed.path, &mut viols, false, &Config::default());
+        assert!(viols.is_empty());
+    }
+
+    #[test]
+    fn test_check_function_metrics() {
+        let m = FunctionMetrics { statements: 100, arguments: 0, arguments_positional: 10, arguments_keyword_only: 10, max_indentation: 10, nested_function_depth: 5, returns: 0, branches: 20, local_variables: 30 };
+        let mut cfg = Config::default();
+        cfg.statements_per_function = 50;
+        cfg.arguments_positional = 5;
+        cfg.arguments_keyword_only = 5;
+        cfg.max_indentation_depth = 5;
+        cfg.nested_function_depth = 2;
+        cfg.branches_per_function = 10;
+        cfg.local_variables_per_function = 15;
+        let mut viols = Vec::new();
+        check_function_metrics(&m, Path::new("t.py"), 1, "f", false, &cfg, &mut viols);
+        assert!(viols.len() >= 5);
+    }
+
+    #[test]
+    fn test_check_cyclomatic_complexity() {
+        let parsed = parse_source("def f():\n    if a: pass\n    if b: pass\n    if c: pass");
+        let func = parsed.tree.root_node().child(0).unwrap();
+        let mut cfg = Config::default();
+        cfg.cyclomatic_complexity = 1;
+        let mut viols = Vec::new();
+        check_cyclomatic_complexity(func, Path::new("t.py"), 1, "f", false, &cfg, &mut viols);
+        assert!(!viols.is_empty());
     }
 }

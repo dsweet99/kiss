@@ -2,7 +2,7 @@
 
 use crate::discovery::Language;
 use crate::duplication::DuplicateCluster;
-use crate::graph::{collect_instability_metrics, DependencyGraph};
+use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
 use crate::rust_test_refs::analyze_rust_test_refs;
@@ -27,44 +27,36 @@ pub fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: us
     println!("   Or use --all to bypass this check and proceed anyway.");
 }
 
-pub fn print_instability(lang: &str, graph: Option<&DependencyGraph>) {
-    let Some(g) = graph else { return; };
-    let metrics = collect_instability_metrics(g);
-    if metrics.is_empty() { return; }
-    
-    let top_unstable: Vec<_> = metrics.into_iter().take(10).collect();
-    
-    println!("\n--- {} Module Instability (top unstable) ---\n", lang);
-    println!("  {:30} {:>10} {:>10} {:>12}", "Module", "Instability", "Fan-in", "Fan-out");
-    println!("  {:30} {:>10} {:>10} {:>12}", "------", "-----------", "------", "-------");
-    for m in &top_unstable {
-        println!("  {:30} {:>10.1}% {:>10} {:>12}", m.module_name, m.instability * 100.0, m.fan_in, m.fan_out);
-    }
-    println!();
-    println!("  Instability = Fan-out / (Fan-in + Fan-out)");
-    println!("  Lower is more stable (more incoming deps than outgoing).");
+pub fn print_instability(_lang: &str, _graph: Option<&DependencyGraph>) {
+    // Disabled: instability output was confusing (entry points always show 100%)
 }
 
-pub fn print_violations(viols: &[Violation], total: usize) {
-    if viols.is_empty() { 
-        println!("✓ No violations found in {} files.", total); 
+pub fn print_violations(viols: &[Violation], _total: usize, dup_count: usize) {
+    if viols.is_empty() && dup_count == 0 { 
+        println!("NO VIOLATIONS"); 
         return; 
     }
-    println!("Found {} violations:\n", viols.len());
     for v in viols { 
-        println!("{}:{}\n  {}\n  → {}\n", v.file.display(), v.line, v.message, v.suggestion); 
+        println!("VIOLATION:{}:{}: {} {}. {} {}", 
+            v.file.display(), v.line, v.value, v.metric, v.message, v.suggestion); 
     }
 }
 
 pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
-    if clusters.is_empty() { return; }
-    println!("\n--- {} Duplicate Code Detected ({} clusters) ---\n", lang, clusters.len());
-    for (i, c) in clusters.iter().enumerate() {
-        println!("Cluster {}: {} copies (~{:.0}% similar)", i + 1, c.chunks.len(), c.avg_similarity * 100.0);
-        for ch in &c.chunks { 
-            println!("  {}:{}-{} ({})", ch.file.display(), ch.start_line, ch.end_line, ch.name); 
+    let suggestion = if lang == "Rust" {
+        "Extract into a shared function, or use traits/generics if the pattern varies by type."
+    } else {
+        "Extract common code into a shared function."
+    };
+    for c in clusters {
+        if let Some(first) = c.chunks.first() {
+            let locations: Vec<String> = c.chunks.iter()
+                .map(|ch| format!("{}:{}-{}", ch.file.display(), ch.start_line, ch.end_line))
+                .collect();
+            println!("VIOLATION:{}:{}: {:.0}% duplication. {} copies of similar code: [{}]. {}",
+                first.file.display(), first.start_line, c.avg_similarity * 100.0, 
+                c.chunks.len(), locations.join(", "), suggestion);
         }
-        println!();
     }
 }
 
@@ -78,6 +70,7 @@ pub fn print_py_test_refs(parsed: &[ParsedFile]) {
         for d in &analysis.unreferenced { 
             println!("  {}:{} {} '{}'", d.file.display(), d.line, d.kind.as_str(), d.name); 
         }
+        println!("\nAdd tests that directly call these items, or remove them if they are dead code.");
     }
 }
 
@@ -91,6 +84,7 @@ pub fn print_rs_test_refs(parsed: &[ParsedRustFile]) {
         for d in &analysis.unreferenced { 
             println!("  {}:{} {} '{}'", d.file.display(), d.line, d.kind, d.name); 
         }
+        println!("\nAdd tests that directly reference these items, or remove them if they are dead code.");
     }
 }
 
@@ -118,7 +112,7 @@ mod tests {
 
     #[test]
     fn test_print_violations_empty() {
-        print_violations(&[], 5);
+        print_violations(&[], 5, 0);
     }
 
     #[test]

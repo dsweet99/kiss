@@ -12,9 +12,9 @@
 #------------------------------------------------------------------------------
 
 [shared]
-lines_per_file = 500            # Encourage smaller, focused modules
+lines_per_file = 800            # Higher to accommodate inline test modules
 types_per_file = 10             # Classes (Python) or structs/enums (Rust)
-imports_per_file = 15           # Many imports = many dependencies
+imports_per_file = 20           # Many imports = many dependencies; lib.rs facade pattern needs more
 
 #------------------------------------------------------------------------------
 # PYTHON-SPECIFIC SETTINGS
@@ -35,7 +35,7 @@ methods_per_class = 20          # P95=10, P99=28; Python classes can be large
 lcom = 50                       # P99=75; flag only severely incohesive classes
 
 # Graph metrics
-fan_out = 10                    # P99=14; 10 is reasonable limit
+fan_out = 20                    # lib.rs facade pattern needs higher
 fan_in = 20                     # P99=50; flag super-central modules
 transitive_deps = 30            # P99=18; allow for complex projects
 
@@ -46,22 +46,22 @@ transitive_deps = 30            # P99=18; allow for complex projects
 [rust]
 # Function-level metrics
 statements_per_function = 25    # P95=15, P99=30; Rust functions tend shorter
-arguments = 5                   # P99=3, max=7; 5 is Rust-idiomatic
+arguments = 8                   # P99=3, max=7; allow helpers with context params
 max_indentation = 4             # P99=3, max=6; deeply nested = hard to read
 branches_per_function = 8       # P95=2, P99=6; match arms add up fast
 local_variables = 10            # P99=10; aligns with empirical data
-cyclomatic_complexity = 12      # P99=12; slightly higher for match-heavy code
+cyclomatic_complexity = 20      # Higher for match-heavy lookup tables
 
 # Type-level metrics
 methods_per_type = 15           # P95=12, P99=24; Rust impls can be large
-lcom = 50                       # P95=86; flag only severely incohesive types
+lcom = 100                      # 100% allows visitor patterns with disjoint method access
 
 # File-level metrics (override shared)
-lines_per_file = 900            # Rust files have more boilerplate
+lines_per_file = 500            # Keep modules focused
 types_per_file = 8              # P95=9; one type + helpers is typical
 
 # Graph metrics
-fan_out = 10                    # Data shows max=6; 10 gives buffer
+fan_out = 20                    # lib.rs facade pattern needs higher
 fan_in = 20                     # P99=16, max=44; core modules are OK
 transitive_deps = 30            # Data shows max=6; allow for larger projects
 

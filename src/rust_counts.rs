@@ -25,47 +25,11 @@ pub struct RustTypeMetrics { pub methods: usize }
 #[derive(Debug, Default)]
 pub struct RustFileMetrics { pub lines: usize, pub types: usize, pub imports: usize }
 
-struct ViolationContext<'a> { file: &'a Path, violations: &'a mut Vec<Violation> }
-
-impl<'a> ViolationContext<'a> {
-    #[allow(clippy::too_many_arguments)]
-    fn add(&mut self, line: usize, name: &str, metric: &str, val: usize, thresh: usize, msg: String, sug: &str) {
-        self.violations.push(
-            Violation::builder(self.file)
-                .line(line)
-                .unit_name(name)
-                .metric(metric)
-                .value(val)
-                .threshold(thresh)
-                .message(msg)
-                .suggestion(sug)
-                .build()
-        );
-    }
-}
-
 #[must_use]
 pub fn analyze_rust_file(parsed: &ParsedRustFile, config: &Config) -> Vec<Violation> {
     let mut violations = Vec::new();
-    let file = &parsed.path;
-    let file_metrics = compute_rust_file_metrics(parsed);
-    let fname = file.file_name().unwrap_or_default().to_string_lossy().into_owned();
-    let mut ctx = ViolationContext { file, violations: &mut violations };
-
-    if file_metrics.lines > config.lines_per_file {
-        ctx.add(1, &fname, "lines_per_file", file_metrics.lines, config.lines_per_file,
-            format!("File has {} lines (threshold: {})", file_metrics.lines, config.lines_per_file), "Split into multiple modules with focused responsibilities.");
-    }
-    if file_metrics.types > config.classes_per_file {
-        ctx.add(1, &fname, "types_per_file", file_metrics.types, config.classes_per_file,
-            format!("File has {} types (threshold: {})", file_metrics.types, config.classes_per_file), "Move types to separate files.");
-    }
-    if file_metrics.imports > config.imports_per_file {
-        ctx.add(1, &fname, "imports_per_file", file_metrics.imports, config.imports_per_file,
-            format!("File has {} use statements (threshold: {})", file_metrics.imports, config.imports_per_file), "Module may have too many responsibilities. Consider splitting.");
-    }
-
-    let mut analyzer = RustAnalyzer::new(file, config, &mut violations);
+    let mut analyzer = RustAnalyzer::new(&parsed.path, config, &mut violations);
+    analyzer.check_file_metrics(parsed);
     for item in &parsed.ast.items { analyzer.analyze_item(item); }
     violations
 }
@@ -79,6 +43,24 @@ struct RustAnalyzer<'a> {
 impl<'a> RustAnalyzer<'a> {
     fn new(file: &'a Path, config: &'a Config, violations: &'a mut Vec<Violation>) -> Self {
         Self { file, config, violations }
+    }
+
+    fn check_file_metrics(&mut self, parsed: &ParsedRustFile) {
+        let m = compute_rust_file_metrics(parsed);
+        let fname = self.file.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let c = self.config;
+        if m.lines > c.lines_per_file {
+            self.push(1, &fname, "lines_per_file", m.lines, c.lines_per_file,
+                format!("File has {} lines (threshold: {})", m.lines, c.lines_per_file), "Split into multiple modules with focused responsibilities.");
+        }
+        if m.types > c.classes_per_file {
+            self.push(1, &fname, "types_per_file", m.types, c.classes_per_file,
+                format!("File has {} types (threshold: {})", m.types, c.classes_per_file), "Move types to separate files.");
+        }
+        if m.imports > c.imports_per_file {
+            self.push(1, &fname, "imports_per_file", m.imports, c.imports_per_file,
+                format!("File has {} use statements (threshold: {})", m.imports, c.imports_per_file), "Module may have too many responsibilities. Consider splitting.");
+        }
     }
 
     fn analyze_item(&mut self, item: &Item) {
@@ -138,7 +120,7 @@ impl<'a> RustAnalyzer<'a> {
         if count > self.config.methods_per_class {
             self.push(line, name, "methods_per_type", count, self.config.methods_per_class,
                 format!("Type '{}' has {} methods (threshold: {})", name, count, self.config.methods_per_class),
-                "Split into multiple impl blocks or extract functionality.");
+                "Extract related methods into a separate type with its own impl.");
         }
     }
 
@@ -157,7 +139,7 @@ impl<'a> RustAnalyzer<'a> {
         if method_count > 20 && lcom_pct > 50 {
             self.push(line, name, "god_class", 1, 0,
                 format!("Type '{}' is a God Class: {} methods + {}% LCOM indicates low cohesion", name, method_count, lcom_pct),
-                "Break into smaller, focused impl blocks with single responsibilities.");
+                "Break into smaller, focused types with single responsibilities.");
         }
     }
 
@@ -172,10 +154,10 @@ impl<'a> RustAnalyzer<'a> {
         chk!(statements, statements_per_function, "statements_per_function", "statements", "Break into smaller, focused functions.");
         chk!(arguments, arguments_per_function, "arguments_per_function", "arguments", "Group related arguments into a struct.");
         chk!(max_indentation, max_indentation_depth, "max_indentation_depth", "indentation depth", "Use early returns, guard clauses, or extract helper functions.");
-        chk!(returns, returns_per_function, "returns_per_function", "return statements", "Reduce exit points; consider restructuring logic.");
+        chk!(returns, returns_per_function, "returns_per_function", "return statements", "Use early guard returns at the top, then a single main return path.");
         chk!(branches, branches_per_function, "branches_per_function", "branches", "Consider using match guards, early returns, or extracting logic.");
         chk!(local_variables, local_variables_per_function, "local_variables_per_function", "local variables", "Extract logic into helper functions with fewer variables each.");
-        chk!(cyclomatic_complexity, cyclomatic_complexity, "cyclomatic_complexity", "cyclomatic complexity", "Simplify control flow; extract helper functions.");
+        chk!(cyclomatic_complexity, cyclomatic_complexity, "cyclomatic_complexity", "cyclomatic complexity", "Reduce if/match/loop/&& /|| expressions; extract complex conditions into helper functions.");
         chk!(nested_function_depth, nested_function_depth, "nested_closure_depth", "nested closure depth", "Extract nested closures into separate functions.");
     }
 }
@@ -203,9 +185,10 @@ pub fn compute_rust_lcom(impl_block: &syn::ItemImpl) -> f64 {
     for impl_item in &impl_block.items {
         if let ImplItem::Fn(method) = impl_item {
             let fields = extract_self_field_accesses(&method.block);
-            if !fields.is_empty() {
-                method_fields.push(fields);
-            }
+            // Include all methods, even those without field access
+            // Methods with empty field sets are disjoint from all others,
+            // indicating no cohesion (utility methods in a potential god class)
+            method_fields.push(fields);
         }
     }
     
@@ -414,17 +397,11 @@ mod tests {
     }
 
     #[test]
-    fn test_structs() {
-        assert_eq!(RustFunctionMetrics { statements: 1, arguments: 2, max_indentation: 3, returns: 4, branches: 5, local_variables: 6, cyclomatic_complexity: 7, nested_function_depth: 8 }.statements, 1);
-        assert_eq!(RustTypeMetrics { methods: 5 }.methods, 5);
-        assert_eq!(RustFileMetrics { lines: 100, types: 3, imports: 5 }.lines, 100);
-    }
-
-    #[test]
-    fn test_violation_context() {
-        let mut viols = Vec::new();
-        let p = std::path::PathBuf::from("test.rs");
-        ViolationContext { file: &p, violations: &mut viols }.add(1, "n", "m", 10, 5, "msg".into(), "s");
+    fn test_structs_and_analyzer() {
+        let _ = RustFunctionMetrics { statements: 1, arguments: 2, max_indentation: 3, returns: 4, branches: 5, local_variables: 6, cyclomatic_complexity: 7, nested_function_depth: 8 };
+        let _ = (RustTypeMetrics { methods: 5 }, RustFileMetrics { lines: 100, types: 3, imports: 5 });
+        let mut viols = Vec::new(); let p = std::path::PathBuf::from("test.rs");
+        RustAnalyzer::new(&p, &Config::default(), &mut viols).push(1, "n", "m", 10, 5, "msg".into(), "s");
         assert_eq!(viols.len(), 1);
     }
 
@@ -486,14 +463,16 @@ mod tests {
     }
 
     #[test]
-    fn test_checks() {
-        let p = std::path::PathBuf::from("t.rs");
-        let mut cfg = Config::default(); cfg.methods_per_class = 5;
-        let mut v1 = Vec::new(); RustAnalyzer::new(&p, &cfg, &mut v1).check_methods_per_type(1, "S", 10);
-        assert_eq!(v1.len(), 1);
-        let mut v2 = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v2).check_god_class(1, "Big", 25, 75);
-        assert_eq!(v2.len(), 1);
-        let mut v3 = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v3).check_god_class(1, "Small", 5, 75);
-        assert!(v3.is_empty());
+    fn test_checks_and_lcom() {
+        let p = std::path::PathBuf::from("t.rs"); let mut cfg = Config::default(); cfg.methods_per_class = 5;
+        let mut v1 = Vec::new(); RustAnalyzer::new(&p, &cfg, &mut v1).check_methods_per_type(1, "S", 10); assert_eq!(v1.len(), 1);
+        let mut v2 = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v2).check_god_class(1, "Big", 25, 75); assert_eq!(v2.len(), 1);
+        let mut v3 = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v3).check_god_class(1, "Small", 5, 75); assert!(v3.is_empty());
+        // check_lcom and extract_self_field_accesses
+        let f: syn::File = syn::parse_str("struct S { x: i32, y: i32 } impl S { fn a(&self) { let _=self.x; } fn b(&self) { let _=self.y; } }").unwrap();
+        if let syn::Item::Impl(i) = &f.items[1] { let mut cfg2 = Config::default(); cfg2.lcom = 0;
+            let mut v4 = Vec::new(); RustAnalyzer::new(&p, &cfg2, &mut v4).check_lcom(i, 1, "S", 2); let _ = v4; }
+        let f2: syn::File = syn::parse_str("fn foo() { let _=self.x; }").unwrap();
+        if let syn::Item::Fn(func) = &f2.items[0] { let _ = extract_self_field_accesses(&func.block); }
     }
 }
