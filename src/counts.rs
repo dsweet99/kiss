@@ -3,7 +3,6 @@
 //! This module analyzes Python code for quality issues and reports violations.
 
 use crate::config::Config;
-use crate::graph::compute_cyclomatic_complexity;
 use crate::parsing::ParsedFile;
 use crate::py_metrics::{
     compute_class_metrics_with_source, compute_file_metrics, compute_function_metrics,
@@ -66,7 +65,6 @@ fn analyze_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Viol
             let line = node.start_position().row + 1;
             let m = compute_function_metrics(node, source);
             check_function_metrics(&m, file, line, name, inside_class, config, violations);
-            check_cyclomatic_complexity(node, file, line, name, inside_class, config, violations);
             Recursion::Skip
         }
         "class_definition" => {
@@ -105,16 +103,6 @@ fn check_function_metrics(m: &FunctionMetrics, file: &Path, line: usize, name: &
     chk!(nested_function_depth, nested_function_depth, "nested_function_depth", "nested functions", "Move nested functions to module level or use classes.");
     chk!(branches, branches_per_function, "branches_per_function", "branches", "Consider using polymorphism, lookup tables, or the strategy pattern.");
     chk!(local_variables, local_variables_per_function, "local_variables", "local variables", "Extract related variables into a data class or split the function.");
-}
-
-fn check_cyclomatic_complexity(node: Node, file: &Path, line: usize, name: &str, inside_class: bool, cfg: &Config, v: &mut Vec<Violation>) {
-    let cc = compute_cyclomatic_complexity(node);
-    if cc > cfg.cyclomatic_complexity {
-        let ut = if inside_class { "Method" } else { "Function" };
-        v.push(violation(file, line, name).metric("cyclomatic_complexity").value(cc).threshold(cfg.cyclomatic_complexity)
-            .message(format!("{} '{}' has cyclomatic complexity {} (threshold: {})", ut, name, cc, cfg.cyclomatic_complexity))
-            .suggestion("Reduce if/for/while/and/or expressions; extract complex conditions into helper functions.").build());
-    }
 }
 
 fn analyze_class_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Violation>, config: &Config) {
@@ -236,21 +224,58 @@ mod tests {
     }
 
     #[test]
-    fn test_check_cyclomatic_complexity() {
-        let parsed = parse_source("def f():\n    if a: pass\n    if b: pass\n    if c: pass");
-        let func = parsed.tree.root_node().child(0).unwrap();
-        let mut cfg = Config::default();
-        cfg.cyclomatic_complexity = 1;
-        let mut viols = Vec::new();
-        check_cyclomatic_complexity(func, Path::new("t.py"), 1, "f", false, &cfg, &mut viols);
-        assert!(!viols.is_empty());
-    }
-
-    #[test]
     fn test_recursion_enum() {
         let skip = Recursion::Skip;
         let cont = Recursion::Continue(true);
         assert!(matches!(skip, Recursion::Skip));
         assert!(matches!(cont, Recursion::Continue(true)));
+    }
+
+    // --- Violation-triggering tests for Python class metrics ---
+
+    #[test]
+    fn test_methods_per_class_violation() {
+        // Create a class with many methods that exceeds threshold
+        let code = r#"
+class BigClass:
+    def m1(self): pass
+    def m2(self): pass
+    def m3(self): pass
+    def m4(self): pass
+    def m5(self): pass
+    def m6(self): pass
+"#;
+        let parsed = parse_source(code);
+        let mut config = Config::default();
+        config.methods_per_class = 3; // Set low threshold
+        
+        let violations = analyze_file(&parsed, &config);
+        
+        let has_methods_violation = violations.iter()
+            .any(|v| v.metric == "methods_per_class");
+        assert!(has_methods_violation, 
+            "should trigger methods_per_class violation when class has 6 methods > threshold 3");
+    }
+
+    #[test]
+    fn test_lcom_violation_requires_both_methods_and_low_cohesion() {
+        // LCOM violation requires: methods > 20 AND lcom% > threshold
+        // Create a class with 21+ methods that don't share fields
+        let mut methods = String::new();
+        for i in 0..22 {
+            methods.push_str(&format!("    def m{}(self): self.field{} = {}\n", i, i, i));
+        }
+        let code = format!("class LowCohesion:\n{}", methods);
+        
+        let parsed = parse_source(&code);
+        let mut config = Config::default();
+        config.lcom = 10; // Low threshold to trigger violation
+        
+        let violations = analyze_file(&parsed, &config);
+        
+        let has_lcom_violation = violations.iter()
+            .any(|v| v.metric == "lcom");
+        assert!(has_lcom_violation,
+            "should trigger lcom violation when class has >20 methods with low cohesion");
     }
 }

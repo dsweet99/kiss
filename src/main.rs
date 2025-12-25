@@ -29,6 +29,10 @@ struct Cli {
     #[arg(long, global = true)]
     all: bool,
 
+    /// Use built-in defaults, ignore config files
+    #[arg(long, global = true)]
+    defaults: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 
@@ -72,8 +76,8 @@ fn main() {
 
     ensure_default_config_exists();
     
-    let (py_config, rs_config) = load_configs(&cli.config);
-    let gate_config = load_gate_config(&cli.config);
+    let (py_config, rs_config) = load_configs(&cli.config, cli.defaults);
+    let gate_config = load_gate_config(&cli.config, cli.defaults);
 
     match cli.command {
         Some(Commands::Stats { paths }) => {
@@ -83,7 +87,7 @@ fn main() {
             run_mimic(&paths, out.as_deref(), cli.lang);
         }
         Some(Commands::Rules) => {
-            run_rules(&py_config, &rs_config, &gate_config, cli.lang);
+            run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults);
         }
         None => {
             if !run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config) {
@@ -109,8 +113,10 @@ fn ensure_default_config_exists() {
     }
 }
 
-fn load_gate_config(config_path: &Option<PathBuf>) -> GateConfig {
-    if let Some(path) = config_path {
+fn load_gate_config(config_path: &Option<PathBuf>, use_defaults: bool) -> GateConfig {
+    if use_defaults {
+        GateConfig::default()
+    } else if let Some(path) = config_path {
         GateConfig::load_from(path)
     } else {
         GateConfig::load()
@@ -118,8 +124,10 @@ fn load_gate_config(config_path: &Option<PathBuf>) -> GateConfig {
 }
 
 /// Load separate configs for Python and Rust analysis
-fn load_configs(config_path: &Option<PathBuf>) -> (Config, Config) {
-    if let Some(path) = config_path {
+fn load_configs(config_path: &Option<PathBuf>, use_defaults: bool) -> (Config, Config) {
+    if use_defaults {
+        (Config::python_defaults(), Config::rust_defaults())
+    } else if let Some(path) = config_path {
         (
             Config::load_from_for_language(path, ConfigLanguage::Python),
             Config::load_from_for_language(path, ConfigLanguage::Rust),
@@ -342,13 +350,15 @@ fn run_mimic(paths: &[String], out: Option<&Path>, lang_filter: Option<Language>
     }
 }
 
-fn run_rules(py_config: &Config, rs_config: &Config, gate_config: &GateConfig, lang_filter: Option<Language>) {
-    let config_source = if Path::new(".kissconfig").exists() {
+fn run_rules(py_config: &Config, rs_config: &Config, gate_config: &GateConfig, lang_filter: Option<Language>, use_defaults: bool) {
+    let config_source = if use_defaults {
+        "built-in defaults"
+    } else if Path::new(".kissconfig").exists() {
         ".kissconfig"
     } else if std::env::var_os("HOME").map(|h| Path::new(&h).join(".kissconfig").exists()).unwrap_or(false) {
         "~/.kissconfig"
     } else {
-        "defaults"
+        "built-in defaults"
     };
     
     println!("# kiss coding rules\n");
@@ -373,7 +383,6 @@ fn print_python_rules(config: &Config, gate: &GateConfig) {
     println!("- Limit keyword-only arguments to ≤ {}", config.arguments_keyword_only);
     println!("- Keep indentation depth ≤ {} levels", config.max_indentation_depth);
     println!("- Limit branches (if/elif/else) to ≤ {} per function", config.branches_per_function);
-    println!("- Keep cyclomatic complexity ≤ {}", config.cyclomatic_complexity);
     println!("- Keep local variables ≤ {} per function", config.local_variables_per_function);
     println!("- Limit return statements to ≤ {} per function", config.returns_per_function);
     println!("- Avoid deeply nested functions (max depth: {})", config.nested_function_depth);
@@ -397,7 +406,6 @@ fn print_rust_rules(config: &Config, gate: &GateConfig) {
     println!("- Limit arguments to ≤ {}", config.arguments_per_function);
     println!("- Keep indentation depth ≤ {} levels", config.max_indentation_depth);
     println!("- Limit branches (if/match/loop) to ≤ {} per function", config.branches_per_function);
-    println!("- Keep cyclomatic complexity ≤ {}", config.cyclomatic_complexity);
     println!("- Keep local variables ≤ {} per function", config.local_variables_per_function);
     println!("- Limit return statements to ≤ {} per function", config.returns_per_function);
     println!("- Avoid deeply nested closures (max depth: {})", config.nested_function_depth);
@@ -419,7 +427,6 @@ fn print_shared_rules(config: &Config, gate: &GateConfig) {
     println!("- Avoid circular dependencies");
     println!("- Limit fan-out (direct dependencies) to ≤ {}", config.fan_out);
     println!("- Keep fan-in modules stable and well-tested (threshold: {})", config.fan_in);
-    println!("- Limit transitive dependencies to ≤ {}", config.transitive_deps);
     println!();
     println!("### Testing\n");
     println!("- Every function/class/type should be referenced by tests");
@@ -446,9 +453,13 @@ mod tests {
 
     #[test]
     fn test_load_configs_and_cli() {
-        let (py, rs) = load_configs(&None);
+        let (py, rs) = load_configs(&None, false);
         assert!(py.statements_per_function > 0 && rs.statements_per_function > 0);
-        let cli = Cli { config: None, lang: None, all: false, command: None, path: ".".to_string() };
+        // Test --defaults flag uses built-in defaults
+        let (py_def, rs_def) = load_configs(&None, true);
+        assert_eq!(py_def.statements_per_function, kiss::defaults::python::STATEMENTS_PER_FUNCTION);
+        assert_eq!(rs_def.statements_per_function, kiss::defaults::rust::STATEMENTS_PER_FUNCTION);
+        let cli = Cli { config: None, lang: None, all: false, defaults: false, command: None, path: ".".to_string() };
         assert_eq!(cli.path, ".");
         let cmd = Commands::Stats { paths: vec![".".to_string()] };
         if let Commands::Stats { paths } = cmd { assert_eq!(paths.len(), 1); }
@@ -527,7 +538,9 @@ mod tests {
         assert!(run_analyze(&tmp.path().to_string_lossy(), &Config::default(), &Config::default(), None, true, &GateConfig::default()));
         let path = tmp.path().join("kiss.toml");
         std::fs::write(&path, "[gate]\ntest_coverage_threshold = 80\n").unwrap();
-        assert_eq!(load_gate_config(&Some(path)).test_coverage_threshold, 80);
+        assert_eq!(load_gate_config(&Some(path.clone()), false).test_coverage_threshold, 80);
+        // Test --defaults flag ignores config files
+        assert_eq!(load_gate_config(&Some(path), true).test_coverage_threshold, kiss::defaults::gate::TEST_COVERAGE_THRESHOLD);
     }
 
     #[test]
@@ -617,9 +630,9 @@ mod tests {
         print_rust_rules(&rs_config, &gate_config);
         print_shared_rules(&py_config, &gate_config);
         
-        // Test run_rules with different lang filters
-        run_rules(&py_config, &rs_config, &gate_config, None);
-        run_rules(&py_config, &rs_config, &gate_config, Some(Language::Python));
-        run_rules(&py_config, &rs_config, &gate_config, Some(Language::Rust));
+        // Test run_rules with different lang filters and defaults flag
+        run_rules(&py_config, &rs_config, &gate_config, None, false);
+        run_rules(&py_config, &rs_config, &gate_config, Some(Language::Python), false);
+        run_rules(&py_config, &rs_config, &gate_config, Some(Language::Rust), true);
     }
 }

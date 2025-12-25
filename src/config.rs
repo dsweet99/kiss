@@ -33,10 +33,8 @@ pub struct Config {
     pub branches_per_function: usize,
     pub local_variables_per_function: usize,
     pub imports_per_file: usize,
-    pub cyclomatic_complexity: usize,
     pub fan_out: usize,
     pub fan_in: usize,
-    pub transitive_deps: usize,
     pub lcom: usize, // Stored as percentage (0-100)
 }
 
@@ -63,10 +61,8 @@ impl Config {
             branches_per_function: defaults::python::BRANCHES_PER_FUNCTION,
             local_variables_per_function: defaults::python::LOCAL_VARIABLES,
             imports_per_file: defaults::python::IMPORTS_PER_FILE,
-            cyclomatic_complexity: defaults::python::CYCLOMATIC_COMPLEXITY,
             fan_out: defaults::python::FAN_OUT,
             fan_in: defaults::python::FAN_IN,
-            transitive_deps: defaults::python::TRANSITIVE_DEPS,
             lcom: defaults::python::LCOM,
         }
     }
@@ -87,10 +83,8 @@ impl Config {
             branches_per_function: defaults::rust::BRANCHES_PER_FUNCTION,
             local_variables_per_function: defaults::rust::LOCAL_VARIABLES,
             imports_per_file: defaults::rust::IMPORTS_PER_FILE,
-            cyclomatic_complexity: defaults::rust::CYCLOMATIC_COMPLEXITY,
             fan_out: defaults::rust::FAN_OUT,
             fan_in: defaults::rust::FAN_IN,
-            transitive_deps: defaults::rust::TRANSITIVE_DEPS,
             lcom: defaults::rust::LCOM,
         }
     }
@@ -214,10 +208,8 @@ impl Config {
             "branches_per_function" => branches_per_function,
             "local_variables_per_function" => local_variables_per_function,
             "imports_per_file" => imports_per_file,
-            "cyclomatic_complexity" => cyclomatic_complexity,
             "fan_out" => fan_out,
             "fan_in" => fan_in,
-            "transitive_deps" => transitive_deps,
             "lcom" => lcom
         );
     }
@@ -239,10 +231,8 @@ impl Config {
             "branches_per_function" => branches_per_function,
             "local_variables" => local_variables_per_function,
             "methods_per_class" => methods_per_class,
-            "cyclomatic_complexity" => cyclomatic_complexity,
             "fan_out" => fan_out,
             "fan_in" => fan_in,
-            "transitive_deps" => transitive_deps,
             "lcom" => lcom,
             "returns_per_function" => returns_per_function,
             "nested_function_depth" => nested_function_depth
@@ -257,10 +247,8 @@ impl Config {
             "branches_per_function" => branches_per_function,
             "local_variables" => local_variables_per_function,
             "methods_per_type" => methods_per_class,
-            "cyclomatic_complexity" => cyclomatic_complexity,
             "fan_out" => fan_out,
             "fan_in" => fan_in,
-            "transitive_deps" => transitive_deps,
             "lcom" => lcom,
             "lines_per_file" => lines_per_file,
             "types_per_file" => classes_per_file,
@@ -361,8 +349,6 @@ mod tests {
         assert_eq!(c2.statements_per_function, orig);
         c2.merge_from_toml("[thresholds]\nstatements_per_function = \"bad\"", None);
         assert_eq!(c2.statements_per_function, orig);
-        c2.merge_from_toml("[thresholds]\ncyclomatic_complexity = 15", None);
-        assert_eq!(c2.cyclomatic_complexity, 15);
     }
 
     #[test]
@@ -419,5 +405,80 @@ mod tests {
         if let Some(t) = toml.get("rust").and_then(|v| v.as_table()) { c2.apply_rust(t); }
         assert_eq!(c2.statements_per_function, 66);
         assert_eq!(get_usize(&"x = 42".parse::<toml::Table>().unwrap(), "x"), Some(42));
+    }
+
+    // --- Design doc: Configuration Precedence Chain ---
+    // "Configurable thresholds are read from config files in this order 
+    // (later overrides earlier): 1. ~/.kissconfig 2. ./.kissconfig"
+
+    #[test]
+    fn test_local_config_overrides_earlier_values() {
+        // Test that later values in merge chain override earlier ones
+        let mut config = Config::python_defaults();
+        let original = config.statements_per_function;
+        
+        // First merge: sets to 100
+        config.merge_from_toml("[python]\nstatements_per_function = 100", Some(ConfigLanguage::Python));
+        assert_eq!(config.statements_per_function, 100);
+        
+        // Second merge: overrides to 50 (simulating local config override)
+        config.merge_from_toml("[python]\nstatements_per_function = 50", Some(ConfigLanguage::Python));
+        assert_eq!(config.statements_per_function, 50, "later config should override earlier");
+        
+        // Verify original was different
+        assert_ne!(original, 50);
+    }
+
+    #[test]
+    fn test_partial_override_preserves_other_values() {
+        // Test that overriding one field doesn't affect others
+        let mut config = Config::python_defaults();
+        let original_lines = config.lines_per_file;
+        let original_methods = config.methods_per_class;
+        
+        // Override only statements_per_function
+        config.merge_from_toml("[python]\nstatements_per_function = 999", Some(ConfigLanguage::Python));
+        
+        assert_eq!(config.statements_per_function, 999, "overridden value should change");
+        assert_eq!(config.lines_per_file, original_lines, "unspecified value should be preserved");
+        assert_eq!(config.methods_per_class, original_methods, "unspecified value should be preserved");
+    }
+
+    #[test]
+    fn test_explicit_config_file_takes_precedence() {
+        use std::io::Write;
+        
+        // Create a config file with specific values
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        writeln!(tmp, "[python]\nstatements_per_function = 42").unwrap();
+        
+        let config = Config::load_from_for_language(tmp.path(), ConfigLanguage::Python);
+        assert_eq!(config.statements_per_function, 42, "--config file should set value");
+    }
+
+    // --- Design doc: Language-Specific Default Differences ---
+    // "Shows different thresholds for Python vs Rust"
+
+    #[test]
+    fn test_python_and_rust_defaults_differ() {
+        let py = Config::python_defaults();
+        let rs = Config::rust_defaults();
+        
+        // These should differ based on defaults.rs
+        assert_ne!(py.statements_per_function, rs.statements_per_function, 
+            "Python and Rust should have different statements_per_function defaults");
+        assert_ne!(py.classes_per_file, rs.classes_per_file,
+            "Python (types_per_file) and Rust (types_per_file) should differ");
+    }
+
+    #[test]
+    fn test_gate_config_threshold_boundary() {
+        // Test that threshold is properly capped at 100
+        let mut gate = GateConfig::default();
+        gate.merge_from_toml("[gate]\ntest_coverage_threshold = 150");
+        assert_eq!(gate.test_coverage_threshold, 100, "threshold should be capped at 100%");
+        
+        gate.merge_from_toml("[gate]\ntest_coverage_threshold = 0");
+        assert_eq!(gate.test_coverage_threshold, 0, "0% threshold should be allowed");
     }
 }

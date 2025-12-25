@@ -2,15 +2,12 @@
 //!
 //! Detects cycles (strongly connected components) and computes dependency metrics:
 //! - Fan-in/out: coupling to/from other modules
-//! - Instability: Ce / (Ca + Ce), 0 (stable) to 1 (unstable)
-//! - Transitive deps: all reachable modules via DFS
 
 use crate::config::Config;
 use crate::violation::Violation;
 use crate::parsing::ParsedFile;
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
-use petgraph::visit::Dfs;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tree_sitter::Node;
@@ -32,10 +29,6 @@ pub struct ModuleGraphMetrics {
     pub fan_in: usize,
     /// Number of modules this module depends on
     pub fan_out: usize,
-    /// Instability: fan_out / (fan_in + fan_out)
-    pub instability: f64,
-    /// Transitive dependencies: all modules reachable from this one
-    pub transitive_deps: usize,
 }
 
 /// Result of cycle detection
@@ -89,27 +82,11 @@ impl DependencyGraph {
             .graph
             .neighbors_directed(idx, petgraph::Direction::Outgoing)
             .count();
-        let instability = if fan_in + fan_out > 0 {
-            fan_out as f64 / (fan_in + fan_out) as f64
-        } else {
-            0.0
-        };
-
-        let transitive_deps = self.count_transitive_deps(idx);
 
         ModuleGraphMetrics {
             fan_in,
             fan_out,
-            instability,
-            transitive_deps,
         }
-    }
-
-    /// Count all modules reachable from a given node (transitive dependencies)
-    fn count_transitive_deps(&self, start: NodeIndex) -> usize {
-        let mut dfs = Dfs::new(&self.graph, start);
-        dfs.next(&self.graph); // skip starting node
-        std::iter::from_fn(|| dfs.next(&self.graph)).count()
     }
 
     fn is_cycle(&self, scc: &[NodeIndex]) -> bool {
@@ -204,22 +181,6 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
                 suggestion: "This may be dead code. Remove it, or integrate it into the codebase.".to_string(),
             });
         }
-
-        if metrics.transitive_deps > config.transitive_deps {
-            violations.push(Violation {
-                file: get_module_path(graph, module_name),
-                line: 1,
-                unit_name: module_name.clone(),
-                metric: "transitive_deps".to_string(),
-                value: metrics.transitive_deps,
-                threshold: config.transitive_deps,
-                message: format!(
-                    "Module '{}' has {} transitive dependencies (threshold: {})",
-                    module_name, metrics.transitive_deps, config.transitive_deps
-                ),
-                suggestion: "Reduce coupling by introducing interfaces, using dependency injection, or splitting into smaller modules.".to_string(),
-            });
-        }
     }
 
     for cycle in graph.find_cycles().cycles {
@@ -239,43 +200,6 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
     }
 
     violations
-}
-
-/// Instability metrics for a module
-#[derive(Debug)]
-pub struct InstabilityMetric {
-    pub module_name: String,
-    pub instability: f64,
-    pub fan_in: usize,
-    pub fan_out: usize,
-}
-
-/// Collect instability metrics for all modules in the graph
-/// Returns modules with instability > 0, sorted by instability (highest first)
-#[must_use]
-pub fn collect_instability_metrics(graph: &DependencyGraph) -> Vec<InstabilityMetric> {
-    let mut metrics: Vec<InstabilityMetric> = graph
-        .nodes
-        .keys()
-        .map(|module_name| {
-            let m = graph.module_metrics(module_name);
-            InstabilityMetric {
-                module_name: module_name.clone(),
-                instability: m.instability,
-                fan_in: m.fan_in,
-                fan_out: m.fan_out,
-            }
-        })
-        .filter(|m| m.instability > 0.0 && (m.fan_in > 0 || m.fan_out > 0))
-        .collect();
-    
-    metrics.sort_by(|a, b| {
-        b.instability.partial_cmp(&a.instability)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.module_name.cmp(&b.module_name))
-    });
-    
-    metrics
 }
 
 fn module_name_from_path(parsed: &ParsedFile) -> String {
@@ -405,7 +329,6 @@ mod tests {
         assert_eq!(idx, idx2);
         g.add_dependency("a", "b"); g.add_dependency("b", "c");
         assert_eq!(g.graph.edge_count(), 2);
-        assert!(g.count_transitive_deps(*g.nodes.get("a").unwrap()) >= 2);
     }
 
     #[test]
@@ -413,7 +336,7 @@ mod tests {
         let mut g = DependencyGraph::default();
         g.add_dependency("a", "b"); g.add_dependency("b", "a");
         assert!(!g.find_cycles().cycles.is_empty());
-        let m = ModuleGraphMetrics { fan_in: 1, fan_out: 2, instability: 0.5, transitive_deps: 3 };
+        let m = ModuleGraphMetrics { fan_in: 1, fan_out: 2 };
         assert_eq!(m.fan_in, 1);
         let c = CycleInfo { cycles: vec![vec!["a".into()]] };
         assert_eq!(c.cycles.len(), 1);
@@ -424,21 +347,6 @@ mod tests {
         assert!(analyze_graph(&DependencyGraph::default(), &crate::Config::default()).is_empty());
         let mut parser = create_parser().unwrap();
         assert!(count_decision_points(parser.parse("if x: pass", None).unwrap().root_node()) >= 1);
-    }
-
-    #[test]
-    fn test_instability_metrics() {
-        let m = InstabilityMetric { module_name: "m".into(), instability: 50.0, fan_in: 2, fan_out: 2 };
-        assert_eq!(m.instability, 50.0);
-        let empty = DependencyGraph { graph: petgraph::Graph::new(), nodes: HashMap::new(), paths: HashMap::new() };
-        assert!(collect_instability_metrics(&empty).is_empty());
-        let mut graph = petgraph::Graph::new();
-        let (a, b) = (graph.add_node("a".into()), graph.add_node("b".into()));
-        graph.add_edge(a, b, ());
-        let mut nodes = HashMap::new();
-        nodes.insert("a".into(), a); nodes.insert("b".into(), b);
-        let g = DependencyGraph { graph, nodes, paths: HashMap::new() };
-        assert!(!collect_instability_metrics(&g).is_empty());
     }
 
     #[test]
@@ -483,5 +391,74 @@ mod tests {
         let mut parser = create_parser().unwrap();
         let tree = parser.parse("def f():\n    if a:\n        if b:\n            pass", None).unwrap();
         assert!(compute_cyclomatic_complexity(tree.root_node().child(0).unwrap()) >= 3);
+    }
+
+    // --- Design doc: Orphan Detection ---
+    // "orphan = fan_in=0 AND fan_out=0 (excluding entry points)"
+
+    #[test]
+    fn test_orphan_detection_excludes_all_entry_points() {
+        let entry_points = [
+            "main", "lib", "__main__", "__init__",
+            "test_foo", "bar_test",
+            "cli_integration", "perf_bench"
+        ];
+        
+        for name in entry_points {
+            let metrics = ModuleGraphMetrics { fan_in: 0, fan_out: 0, ..Default::default() };
+            assert!(!is_orphan(&metrics, name), 
+                "{} should be excluded as entry point", name);
+        }
+    }
+
+    #[test]
+    fn test_orphan_requires_zero_fan_in_and_fan_out() {
+        // fan_in=0, fan_out=0, non-entry point -> orphan
+        assert!(is_orphan(&ModuleGraphMetrics { fan_in: 0, fan_out: 0, ..Default::default() }, "utils"));
+        
+        // fan_in=0, fan_out=1 -> NOT orphan (it uses something)
+        assert!(!is_orphan(&ModuleGraphMetrics { fan_in: 0, fan_out: 1, ..Default::default() }, "utils"));
+        
+        // fan_in=1, fan_out=0 -> NOT orphan (something uses it)
+        assert!(!is_orphan(&ModuleGraphMetrics { fan_in: 1, fan_out: 0, ..Default::default() }, "utils"));
+        
+        // fan_in=1, fan_out=1 -> NOT orphan (connected)
+        assert!(!is_orphan(&ModuleGraphMetrics { fan_in: 1, fan_out: 1, ..Default::default() }, "utils"));
+    }
+
+    // --- Design doc: Cyclomatic Complexity vs Branches ---
+    // "Cyclomatic Complexity includes loops and boolean operators"
+
+    #[test]
+    fn test_cyclomatic_includes_for_loops() {
+        let mut parser = create_parser().unwrap();
+        let code = "def f():\n    for x in y:\n        pass";
+        let tree = parser.parse(code, None).unwrap();
+        let func = tree.root_node().child(0).unwrap();
+        let cc = compute_cyclomatic_complexity(func);
+        // Base 1 + for loop = 2
+        assert!(cc >= 2, "for loop should contribute to CC, got {}", cc);
+    }
+
+    #[test]
+    fn test_cyclomatic_includes_while_loops() {
+        let mut parser = create_parser().unwrap();
+        let code = "def f():\n    while True:\n        pass";
+        let tree = parser.parse(code, None).unwrap();
+        let func = tree.root_node().child(0).unwrap();
+        let cc = compute_cyclomatic_complexity(func);
+        // Base 1 + while loop = 2
+        assert!(cc >= 2, "while loop should contribute to CC, got {}", cc);
+    }
+
+    #[test]
+    fn test_cyclomatic_includes_boolean_operators() {
+        let mut parser = create_parser().unwrap();
+        let code = "def f():\n    if a and b or c:\n        pass";
+        let tree = parser.parse(code, None).unwrap();
+        let func = tree.root_node().child(0).unwrap();
+        let cc = compute_cyclomatic_complexity(func);
+        // Base 1 + if + and + or = at least 4
+        assert!(cc >= 3, "boolean operators should contribute to CC, got {}", cc);
     }
 }

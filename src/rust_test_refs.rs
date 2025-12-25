@@ -485,5 +485,101 @@ mod tests {
         visit_nested_token_groups(&"(bar())".parse().unwrap(), &mut refs3);
         assert!(refs3.contains("bar"));
     }
+
+    // --- Design doc: Test References Edge Cases ---
+    // "Collect ALL segments of a path... MyStruct::new() should mark both MyStruct and new"
+
+    #[test]
+    fn test_path_segments_all_collected() {
+        // MyStruct::Builder::new().build() should reference: MyStruct, Builder, new, build
+        let code = r#"
+fn test_it() {
+    MyStruct::Builder::new().build();
+}
+"#;
+        let f: syn::File = syn::parse_str(code).unwrap();
+        let mut refs = HashSet::new();
+        collect_rust_references(&f, &mut refs);
+        
+        assert!(refs.contains("MyStruct"), "should reference MyStruct");
+        assert!(refs.contains("Builder"), "should reference Builder");
+        assert!(refs.contains("new"), "should reference new");
+        assert!(refs.contains("build"), "should reference build");
+    }
+
+    #[test]
+    fn test_chained_method_calls_all_referenced() {
+        let code = r#"
+fn test_chain() {
+    Config::default().with_name("test").build();
+}
+"#;
+        let f: syn::File = syn::parse_str(code).unwrap();
+        let mut refs = HashSet::new();
+        collect_rust_references(&f, &mut refs);
+        
+        assert!(refs.contains("Config"), "should reference Config");
+        assert!(refs.contains("default"), "should reference default");
+        assert!(refs.contains("with_name"), "should reference with_name");
+        assert!(refs.contains("build"), "should reference build");
+    }
+
+    // "If a type is referenced by tests, auto-mark its trait impl methods as 'indirectly referenced'"
+
+    #[test]
+    fn test_trait_impl_covered_via_type_reference() {
+        use std::io::Write;
+        
+        // Source with a trait impl
+        let source_code = r#"
+struct MyType;
+
+impl std::fmt::Display for MyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MyType")
+    }
+}
+
+impl MyType {
+    fn new() -> Self { Self }
+}
+"#;
+        
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "{}", source_code).unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        
+        // Collect definitions
+        let mut defs = Vec::new();
+        collect_rust_definitions(&parsed.ast, tmp.path(), &mut defs);
+        
+        // Find the fmt method (trait impl)
+        let fmt_def = defs.iter().find(|d| d.name == "fmt");
+        assert!(fmt_def.is_some(), "should find fmt method");
+        assert_eq!(fmt_def.unwrap().kind, CodeUnitKind::TraitImplMethod);
+        assert_eq!(fmt_def.unwrap().impl_for_type, Some("MyType".to_string()));
+        
+        // If MyType is referenced, fmt should be covered
+        let refs: HashSet<String> = ["MyType", "new"].iter().map(|s| s.to_string()).collect();
+        assert!(is_covered_by_tests(fmt_def.unwrap(), &refs), 
+            "trait impl method should be covered when its type is referenced");
+    }
+
+    #[test]
+    fn test_trait_impl_not_covered_without_type_reference() {
+        let def = RustCodeDefinition {
+            name: "fmt".into(),
+            kind: CodeUnitKind::TraitImplMethod,
+            file: "t.rs".into(),
+            line: 1,
+            impl_for_type: Some("UnusedType".into()),
+        };
+        
+        // References don't include UnusedType
+        let refs: HashSet<String> = ["OtherType", "some_func"].iter().map(|s| s.to_string()).collect();
+        
+        assert!(!is_covered_by_tests(&def, &refs),
+            "trait impl should NOT be covered if its type is not referenced");
+    }
 }
 

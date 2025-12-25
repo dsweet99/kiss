@@ -109,11 +109,15 @@ fn count_parameters(params: Node) -> ParameterCounts {
     
     for child in params.children(&mut cursor) {
         match child.kind() {
-            "list_splat_pattern" | "dictionary_splat_pattern" => {}
+            // *args and **kwargs don't count as regular parameters
+            "list_splat_pattern" | "dictionary_splat_pattern" => {
+                after_star = true; // *args also marks the boundary
+            }
             "identifier" | "default_parameter" | "typed_parameter" | "typed_default_parameter" => {
                 if after_star { keyword_only += 1; } else { positional += 1; }
             }
-            "*" => { after_star = true; }
+            // Bare * (keyword_separator) marks the boundary between positional and keyword-only
+            "*" | "keyword_separator" => { after_star = true; }
             _ => {}
         }
     }
@@ -237,14 +241,17 @@ fn count_imports(node: Node) -> usize {
     count
 }
 
+/// Count imported names in an import_from_statement.
+/// For `from X import a, b, c`, counts a, b, c (not X).
 fn count_import_names(node: Node) -> usize {
     let mut count = 0;
+    let mut seen_import_keyword = false;
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if matches!(child.kind(), "dotted_name" | "aliased_import") {
-            count += 1;
-        } else {
-            count += count_import_names(child);
+        match child.kind() {
+            "import" => seen_import_keyword = true,
+            "dotted_name" | "aliased_import" if seen_import_keyword => count += 1,
+            _ => {}
         }
     }
     count
@@ -400,6 +407,56 @@ mod tests {
         let parsed = parse_source("def f(): pass\ndef g(): pass");
         let root = parsed.tree.root_node();
         assert_eq!(count_node_kind(root, "function_definition"), 2);
+    }
+
+    #[test]
+    fn test_keyword_only_args_after_bare_star() {
+        // Regression test: bare * should mark boundary between positional and keyword-only args
+        let parsed = parse_source("def f(a, b, c, *, d, e, f): pass");
+        let func = parsed.tree.root_node().child(0).unwrap();
+        let m = compute_function_metrics(func, &parsed.source);
+        assert_eq!(m.arguments_positional, 3, "a, b, c are positional");
+        assert_eq!(m.arguments_keyword_only, 3, "d, e, f are keyword-only");
+        assert_eq!(m.arguments, 6, "total arguments");
+    }
+
+    #[test]
+    fn test_keyword_only_args_with_typed_params() {
+        // Regression test: typed parameters after * should be keyword-only
+        let parsed = parse_source(
+            "def subsample_loglik(model: Any, x: Any, y: Any, *, paramss: list, P: int = 10, rng: Any) -> list: pass"
+        );
+        let func = parsed.tree.root_node().child(0).unwrap();
+        let m = compute_function_metrics(func, &parsed.source);
+        assert_eq!(m.arguments_positional, 3, "model, x, y are positional");
+        assert_eq!(m.arguments_keyword_only, 3, "paramss, P, rng are keyword-only");
+    }
+
+    #[test]
+    fn test_from_import_counts_names_not_module() {
+        // Regression test: `from X import a, b` should count 2 (a, b), not 3 (X, a, b)
+        let code = "from typing import Any, List";
+        let parsed = parse_source(code);
+        let m = compute_file_metrics(&parsed);
+        assert_eq!(m.imports, 2, "from X import a, b should count imported names (2), not module name");
+    }
+
+    #[test]
+    fn test_imports_counts_all_including_lazy() {
+        // Imports inside functions (lazy imports) are still dependencies and should be counted
+        let code = r#"
+import os
+from typing import Any, List
+
+def my_function():
+    import numpy as np
+    from collections import deque
+    pass
+"#;
+        let parsed = parse_source(code);
+        let m = compute_file_metrics(&parsed);
+        // os (1) + Any, List (2) + numpy (1) + deque (1) = 5
+        assert_eq!(m.imports, 5, "should count all imports including lazy imports inside functions");
     }
 
     #[test]

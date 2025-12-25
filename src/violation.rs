@@ -101,5 +101,51 @@ mod tests {
         let v = ViolationBuilder::new("test.py").build();
         assert_eq!(v.line, 1);
     }
+
+    // --- Design doc: Output Format Compliance ---
+    // Format: "VIOLATION:metric:file:line:name: message. suggestion."
+
+    #[test]
+    fn test_violation_has_all_required_fields() {
+        let v = Violation::builder("src/foo.py")
+            .line(42)
+            .unit_name("process_data")
+            .metric("statements_per_function")
+            .value(75)
+            .threshold(50)
+            .message("Function has 75 statements (threshold: 50)")
+            .suggestion("Break into smaller, focused functions.")
+            .build();
+        
+        // All fields must be present for proper output formatting
+        assert!(!v.file.to_string_lossy().is_empty(), "file must be set");
+        assert!(v.line > 0, "line must be positive");
+        assert!(!v.unit_name.is_empty(), "unit_name must be set");
+        assert!(!v.metric.is_empty(), "metric must be set");
+        assert!(v.value > v.threshold, "violation should have value > threshold");
+        assert!(!v.message.is_empty(), "message must be set");
+        assert!(!v.suggestion.is_empty(), "suggestion must be set");
+    }
+
+    #[test]
+    fn test_violation_suggestion_is_actionable() {
+        // Design doc: "Suggestions: specific, actionable, language-aware"
+        let v = Violation::builder("test.py")
+            .suggestion("Break into smaller, focused functions.")
+            .build();
+        
+        // Actionable suggestions should contain verbs/actions
+        let suggestion = v.suggestion.to_lowercase();
+        let has_action_word = suggestion.contains("break") 
+            || suggestion.contains("extract") 
+            || suggestion.contains("split")
+            || suggestion.contains("reduce")
+            || suggestion.contains("move")
+            || suggestion.contains("use")
+            || suggestion.contains("consider")
+            || suggestion.contains("introduce");
+        
+        assert!(has_action_word, "suggestion should contain actionable verb");
+    }
 }
 

@@ -36,8 +36,7 @@ High-level tasks to satisfy the design in `design.md`.
 - [x] Fan-in (threshold > 20)
 - [x] Fan-out (threshold > 10)
 - [x] Strongly connected components (cycle detection)
-- [x] Instability (Ce / (Ca + Ce)) — report only
-- [x] Transitive dependencies (threshold > 30)
+- [x] LCOM (Lack of Cohesion) at class/type level
 
 ### 3. Class Cohesion ✅
 - [x] LCOM (Lack of Cohesion of Methods) (threshold > 50%)
@@ -90,26 +89,11 @@ High-level tasks to satisfy the design in `design.md`.
 
 ---
 
-## Missing Functionality (per design.md) ✅
+## Completed ✅
 
-- [x] **`kiss rules` command** — Output compact list of coding rules for LLM context priming (design.md lines 153-199). Should load config and emit imperative rules like "Keep functions ≤ 50 statements". Supports `--lang` filter.
-
----
-
-## Code Quality Issues ✅
-
-- [x] **Move defaults to `defaults.rs`** — `returns_per_function` (5) and `nested_function_depth` (2) are hardcoded in `config.rs` instead of `defaults.rs`. Should follow "single source of truth" per style.md.
-- [x] **Add missing metrics to default config TOML** — `returns_per_function` and `nested_function_depth` are not included in `default_config_toml()` output.
-
----
-
-## Future Enhancements
-
-Optional improvements not required by design.md:
-
-- [ ] **Language Adapter Trait** — Abstract language-specific parsing behind a common trait
-- [x] **Rust Duplication Detection** — Extend duplication to Rust files
-- [x] **Stringly-typed Cleanup** — Replace string `kind` fields with enums
-- [x] **DRY Violation Building** — Factor out common violation-building code
-- [x] **Add `#[must_use]`** — On key public functions
-- [x] **Instability Reporting** — Report instability in main analysis output
+- [x] **`kiss rules` command** — Output compact list of coding rules for LLM context priming
+- [x] **Move defaults to `defaults.rs`** — Centralized `returns_per_function` and `nested_function_depth`
+- [x] **Add missing metrics to default config TOML** — Added to `default_config_toml()` output
+- [x] **REMOVE: transitive_deps** — Removed per design.md "Metrics Intentionally Omitted"
+- [x] **REMOVE: instability** — Removed per design.md "Metrics Intentionally Omitted"
+- [x] **REMOVE: cyclomatic_complexity** — Removed per design.md "Covered by Branches per function"

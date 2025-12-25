@@ -147,10 +147,8 @@ pub fn python_config_key(name: &str) -> Option<&'static str> {
         "Branches per function" => Some("branches_per_function"),
         "Local variables per function" => Some("local_variables"),
         "Methods per class" => Some("methods_per_class"),
-        "Cyclomatic complexity" => Some("cyclomatic_complexity"),
         "Fan-out (per module)" => Some("fan_out"),
         "Fan-in (per module)" => Some("fan_in"),
-        "Transitive deps (per module)" => Some("transitive_deps"),
         "LCOM % (per class)" => Some("lcom"),
         _ => None,
     }
@@ -165,10 +163,8 @@ pub fn rust_config_key(name: &str) -> Option<&'static str> {
         "Branches per function" => Some("branches_per_function"),
         "Local variables per function" => Some("local_variables"),
         "Methods per class" => Some("methods_per_type"),
-        "Cyclomatic complexity" => Some("cyclomatic_complexity"),
         "Fan-out (per module)" => Some("fan_out"),
         "Fan-in (per module)" => Some("fan_in"),
-        "Transitive deps (per module)" => Some("transitive_deps"),
         "LCOM % (per class)" => Some("lcom"),
         _ => None,
     }

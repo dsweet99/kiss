@@ -257,16 +257,16 @@ Collects all metric values across the codebase and reports summary statistics, g
 
 ### `kiss mimic`
 
-Analyzes one or more "respected" codebases and generates a config file with thresholds set to the 99th percentile values.
+Analyzes one or more "respected" codebases and generates a config file with thresholds set to the max values found.
 
 **Workflow:**
 1. Find codebases you respect (e.g., well-maintained open source projects)
 2. Run `kiss mimic /path/to/good/code1 /path/to/good/code2 --out .kissconfig`
 3. Use the generated config to analyze and refactor your own codebase
 
-**Rationale:** Instead of guessing thresholds, derive them empirically from code you trust. The 99th percentile means "allow everything those codebases allow, flag anything worse."
+**Rationale:** Instead of guessing thresholds, derive them empirically from code you trust. Using max values means "allow everything those codebases allow, flag anything worse." Simple and intuitive.
 
-**Multiple paths:** Combining multiple codebases gives a broader sample and more robust percentiles.
+**Multiple paths:** Combining multiple codebases captures the maximum across all of them.
 
 **Merge mode:** When writing to a file with `--out`:
 - Reads the existing config file if present
@@ -332,16 +332,8 @@ Build a directed graph showing how code units couple to (call/use) other code un
 | Fan-out | function/class | > 10 | How many units this unit calls/uses |
 | Afferent coupling (Ca) | module | > 15 | Incoming dependencies from other modules |
 | Efferent coupling (Ce) | module | > 10 | Outgoing dependencies to other modules |
-| Transitive dependencies | function/class | > 30 | All dependencies (direct + indirect) |
 | Strongly connected components | graph-wide | > 0 (any cycle) | Circular dependency clusters |
 | LCOM (Lack of Cohesion) | class | > 0.5 | How well methods share fields (0=cohesive, 1=no cohesion) |
-
-#### Derived Metrics (computed from core)
-
-| Metric | Formula | Threshold | What It Means |
-|--------|---------|-----------|---------------|
-| Instability | Ce / (Ca + Ce) | report only | 0 = stable, 1 = unstable (not inherently bad) |
-| God Class indicator | methods > 20 AND LCOM > 50% | any trigger | Class doing too much |
 
 #### Metrics Intentionally Omitted
 
@@ -349,12 +341,13 @@ To avoid redundancy:
 
 | Metric | Why Omitted |
 |--------|-------------|
+| Transitive dependencies | If fan-out is controlled, transitive usually is too |
+| Instability | Ce / (Ca + Ce) — ratio doesn't add actionable insight beyond the components |
+| Cyclomatic Complexity | Covered by Branches per function |
 | WMC (Weighted Methods per Class) | = methods × avg complexity; redundant |
 | DIT / NOC (inheritance depth/children) | Less relevant for Python/Rust (composition over inheritance) |
 | Centrality / PageRank | Sophisticated fan-in; overkill for now |
 | Feature Envy | Requires detailed field tracking; complex |
-
-**Note:** Cyclomatic Complexity is computed separately from Branches per function. Branches counts only if/elif/else statements, while Cyclomatic Complexity includes loops and boolean operators (&& / ||). The suggestions are differentiated accordingly.
 
 ### 3. Duplication
 
@@ -467,8 +460,6 @@ A group of code units where each unit can reach every other unit through the dep
 
 **Example:** `A → B → C → A` is a cycle. To understand any of them, you must understand all of them.
 
-**Note:** Cyclomatic Complexity is a related concept (counting decision paths through a function), but we capture this via "Branches per function" in Count metrics to avoid redundancy.
-
 #### Afferent / Efferent Coupling
 
 These measure coupling at the module/package level:
@@ -476,31 +467,9 @@ These measure coupling at the module/package level:
 - **Afferent (Ca)**: Number of *outside* modules that depend on this module (incoming)
 - **Efferent (Ce)**: Number of *outside* modules this module depends on (outgoing)
 
-**Derived metric - Instability**: `I = Ce / (Ca + Ce)`
-- I = 0 → maximally stable (everyone depends on you, you depend on nobody)
-- I = 1 → maximally unstable (you depend on everyone, nobody depends on you)
-
 **What it tells you:**
-- Stable modules (low I) should be abstract/interfaces
-- Unstable modules (high I) should be concrete implementations
-- Violations of this principle indicate architectural issues
-
-#### Transitive Dependencies
-
-The total number of code units this unit depends on, directly or indirectly.
-
-**How it differs from fan-out:**
-- Fan-out = direct dependencies only
-- Transitive = all reachable dependencies in the graph
-
-**What it tells you:**
-- High transitive deps = fragile; many things can break you
-- A change deep in your dependency chain can ripple up to you
-- Useful for identifying "high risk" code units
-
-**Example:** Function A calls B and C. B calls D, E, F. C calls G.
-- Fan-out of A = 2 (B, C)
-- Transitive deps of A = 6 (B, C, D, E, F, G)
+- High Ca → this module is heavily depended upon; changes are risky
+- High Ce → this module depends on many things; it's fragile
 
 #### LCOM (Lack of Cohesion of Methods)
 
@@ -518,21 +487,6 @@ Measures whether methods in a class use the same instance fields.
 - High LCOM → class has unrelated responsibilities, consider splitting
 
 **Example:** A class with methods `get_name()`, `set_name()` (use `self.name`) and `calculate_tax()`, `format_invoice()` (use `self.items`, `self.total`) has low cohesion — it's mixing identity and billing.
-
-#### God Class Indicator
-
-A derived metric combining several signals:
-
-**Triggers when a class has:**
-- High method count (> threshold)
-- High fan-out (depends on many other units)
-- Low cohesion (high LCOM)
-- Optionally: high lines of code
-
-**What it tells you:**
-- The class has accumulated too many responsibilities
-- It's a maintenance burden and testing nightmare
-- Should be refactored into multiple focused classes
 
 ### Count Metrics
 

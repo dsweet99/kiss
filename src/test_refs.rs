@@ -13,6 +13,8 @@ pub struct CodeDefinition {
     pub kind: CodeUnitKind,
     pub file: PathBuf,
     pub line: usize,
+    /// For methods, the name of the containing class
+    pub containing_class: Option<String>,
 }
 
 /// Result of test reference analysis
@@ -88,37 +90,59 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
         if is_python_test_file(parsed) {
             collect_references(parsed.tree.root_node(), &parsed.source, &mut test_references);
         } else {
-            collect_definitions(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut definitions, false);
+            collect_definitions(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut definitions, false, None);
         }
     }
 
-    let unreferenced = definitions.iter().filter(|def| !test_references.contains(&def.name)).cloned().collect();
+    // Mark __init__ as covered if its class is referenced (instantiation calls __init__ implicitly)
+    let class_names: HashSet<_> = definitions.iter()
+        .filter(|d| d.kind == CodeUnitKind::Class && test_references.contains(&d.name))
+        .map(|d| d.name.clone())
+        .collect();
+    
+    let unreferenced = definitions.iter()
+        .filter(|def| {
+            if test_references.contains(&def.name) {
+                return false;
+            }
+            // __init__ is covered if its containing class is referenced
+            if def.name == "__init__" {
+                if let Some(ref class_name) = def.containing_class {
+                    return !class_names.contains(class_name);
+                }
+            }
+            true
+        })
+        .cloned()
+        .collect();
+    
     TestRefAnalysis { definitions, test_references, unreferenced }
 }
 
-fn try_add_def(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, kind: CodeUnitKind) {
+fn try_add_def(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, kind: CodeUnitKind, containing_class: Option<String>) {
     if let Some(name) = get_child_by_field(node, "name", source)
         && (!name.starts_with('_') || name == "__init__") {
-            defs.push(CodeDefinition { name, kind, file: file.to_path_buf(), line: node.start_position().row + 1 });
+            defs.push(CodeDefinition { name, kind, file: file.to_path_buf(), line: node.start_position().row + 1, containing_class });
         }
 }
 
-fn collect_definitions(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, inside_class: bool) {
-    let next_inside = match node.kind() {
+fn collect_definitions(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, inside_class: bool, class_name: Option<&str>) {
+    let (next_inside, next_class_name) = match node.kind() {
         "function_definition" | "async_function_definition" => {
             let kind = if inside_class { CodeUnitKind::Method } else { CodeUnitKind::Function };
-            try_add_def(node, source, file, defs, kind);
-            false
+            try_add_def(node, source, file, defs, kind, class_name.map(String::from));
+            (false, None)
         }
         "class_definition" => {
-            try_add_def(node, source, file, defs, CodeUnitKind::Class);
-            true
+            try_add_def(node, source, file, defs, CodeUnitKind::Class, None);
+            let name = get_child_by_field(node, "name", source);
+            (true, name)
         }
-        _ => inside_class,
+        _ => (inside_class, class_name.map(String::from).as_deref().map(|s| s.to_string())),
     };
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_definitions(child, source, file, defs, next_inside);
+        collect_definitions(child, source, file, defs, next_inside, next_class_name.as_deref());
     }
 }
 

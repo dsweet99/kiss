@@ -17,8 +17,9 @@
 
 ## Output Format
 
-- `VIOLATION:file:line: value metric. message. suggestion.`
-- `UNCOVERED:file:line: name. Add test coverage.`
+- `VIOLATION:metric:file:line:name: message. suggestion.`
+- `UNCOVERED:test_coverage:file:line:name: Add test coverage for this code unit.`
+- `NO VIOLATIONS` only when truly clean (no violations, duplicates, or untested items)
 - Suggestions: specific, actionable, language-aware (Rust: traits/generics; Python: dataclasses)
 
 ## Conventions
@@ -33,7 +34,7 @@
 
 **MinHash/LSH:** Normalize → 3-gram shingles → 100 MinHash → 20 bands → Jaccard ≥ 0.7
 
-**LCOM:** `pairs_not_sharing_fields / total_pairs`. God Class: methods > 20 AND LCOM > 50%
+**LCOM:** `pairs_not_sharing_fields / total_pairs` (0.0 = cohesive, 1.0 = no cohesion)
 
 **Graph:** Tarjan's SCC for cycles; orphan = fan_in=0 AND fan_out=0 (excluding entry points)
 
@@ -47,7 +48,6 @@
 | Metric | Good Advice | Avoid |
 |--------|-------------|-------|
 | `methods_per_type` | "Extract into separate types" | "Split impl blocks" |
-| `transitive_deps` | "Introduce interfaces, use DI" | "Reduce coupling" |
 | `fan_in` | "Ensure stable and well-tested" | "Split the module" |
 | Duplication | "Extract fn, use traits/generics" | Just "shared function" |
 

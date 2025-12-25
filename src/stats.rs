@@ -1,6 +1,6 @@
 //! Statistics collection and percentile calculation for metrics
 use crate::py_metrics::{compute_class_metrics_with_source, compute_file_metrics, compute_function_metrics};
-use crate::graph::{compute_cyclomatic_complexity, DependencyGraph};
+use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
 use crate::rust_counts::{compute_rust_file_metrics, compute_rust_function_metrics, compute_rust_lcom};
 use crate::rust_parsing::ParsedRustFile;
@@ -19,15 +19,12 @@ pub struct MetricStats {
     pub returns_per_function: Vec<usize>,
     pub branches_per_function: Vec<usize>,
     pub local_variables_per_function: Vec<usize>,
-    pub cyclomatic_complexity: Vec<usize>,
     pub methods_per_class: Vec<usize>,
     pub lines_per_file: Vec<usize>,
     pub classes_per_file: Vec<usize>,
     pub imports_per_file: Vec<usize>,
     pub fan_out: Vec<usize>,
     pub fan_in: Vec<usize>,
-    pub instability: Vec<usize>,
-    pub transitive_deps: Vec<usize>,
     pub lcom: Vec<usize>,
 }
 
@@ -64,15 +61,12 @@ impl MetricStats {
         self.returns_per_function.extend(other.returns_per_function);
         self.branches_per_function.extend(other.branches_per_function);
         self.local_variables_per_function.extend(other.local_variables_per_function);
-        self.cyclomatic_complexity.extend(other.cyclomatic_complexity);
         self.methods_per_class.extend(other.methods_per_class);
         self.lines_per_file.extend(other.lines_per_file);
         self.classes_per_file.extend(other.classes_per_file);
         self.imports_per_file.extend(other.imports_per_file);
         self.fan_out.extend(other.fan_out);
         self.fan_in.extend(other.fan_in);
-        self.instability.extend(other.instability);
-        self.transitive_deps.extend(other.transitive_deps);
         self.lcom.extend(other.lcom);
     }
 
@@ -82,8 +76,6 @@ impl MetricStats {
             let metrics = graph.module_metrics(module_name);
             self.fan_out.push(metrics.fan_out);
             self.fan_in.push(metrics.fan_in);
-            self.instability.push((metrics.instability * 100.0).round() as usize);
-            self.transitive_deps.push(metrics.transitive_deps);
         }
     }
 
@@ -117,9 +109,6 @@ fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_c
             stats.returns_per_function.push(metrics.returns);
             stats.branches_per_function.push(metrics.branches);
             stats.local_variables_per_function.push(metrics.local_variables);
-
-            let complexity = compute_cyclomatic_complexity(node);
-            stats.cyclomatic_complexity.push(complexity);
 
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
@@ -155,7 +144,6 @@ fn push_rust_fn_metrics(stats: &mut MetricStats, m: &crate::rust_counts::RustFun
     stats.returns_per_function.push(m.returns);
     stats.branches_per_function.push(m.branches);
     stats.local_variables_per_function.push(m.local_variables);
-    stats.cyclomatic_complexity.push(m.cyclomatic_complexity);
 }
 
 fn collect_rust_from_items(items: &[Item], stats: &mut MetricStats) {
@@ -239,15 +227,12 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         PercentileSummary::from_values("Returns per function", &stats.returns_per_function),
         PercentileSummary::from_values("Branches per function", &stats.branches_per_function),
         PercentileSummary::from_values("Local variables per function", &stats.local_variables_per_function),
-        PercentileSummary::from_values("Cyclomatic complexity", &stats.cyclomatic_complexity),
         PercentileSummary::from_values("Methods per class", &stats.methods_per_class),
         PercentileSummary::from_values("Lines per file", &stats.lines_per_file),
         PercentileSummary::from_values("Classes per file", &stats.classes_per_file),
         PercentileSummary::from_values("Imports per file", &stats.imports_per_file),
         PercentileSummary::from_values("Fan-out (per module)", &stats.fan_out),
         PercentileSummary::from_values("Fan-in (per module)", &stats.fan_in),
-        PercentileSummary::from_values("Transitive deps (per module)", &stats.transitive_deps),
-        PercentileSummary::from_values("Instability % (per module)", &stats.instability),
         PercentileSummary::from_values("LCOM % (per class)", &stats.lcom),
     ]
 }
@@ -285,14 +270,12 @@ fn config_key_for(name: &str) -> Option<&'static str> {
         "Returns per function" => "returns_per_function",
         "Branches per function" => "branches_per_function",
         "Local variables per function" => "local_variables_per_function",
-        "Cyclomatic complexity" => "cyclomatic_complexity",
         "Methods per class" => "methods_per_class",
         "Lines per file" => "lines_per_file",
         "Classes per file" => "classes_per_file",
         "Imports per file" => "imports_per_file",
         "Fan-out (per module)" => "fan_out",
         "Fan-in (per module)" => "fan_in",
-        "Transitive deps (per module)" => "transitive_deps",
         "LCOM % (per class)" => "lcom",
         _ => return None,
     })
@@ -460,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_push_rust_fn_metrics() {
-        let metrics = crate::rust_counts::RustFunctionMetrics { statements: 5, arguments: 2, max_indentation: 1, returns: 1, branches: 0, local_variables: 2, cyclomatic_complexity: 2, nested_function_depth: 0 };
+        let metrics = crate::rust_counts::RustFunctionMetrics { statements: 5, arguments: 2, max_indentation: 1, returns: 1, branches: 0, local_variables: 2, nested_function_depth: 0 };
         let mut stats = MetricStats::default();
         push_rust_fn_metrics(&mut stats, &metrics);
         assert!(stats.statements_per_function.contains(&5));

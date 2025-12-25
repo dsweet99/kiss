@@ -24,7 +24,7 @@ pub fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: us
     println!("   Functions with test references: {} / {}\n", tested, total);
     
     for (file, name, line) in unreferenced {
-        println!("UNCOVERED:{}:{}: {}. Add test coverage for this code unit.", file.display(), line, name);
+        println!("UNCOVERED:test_coverage:{}:{}:{}: Add test coverage for this code unit.", file.display(), line, name);
     }
     if !unreferenced.is_empty() {
         println!();
@@ -41,8 +41,8 @@ pub fn print_violations(viols: &[Violation], _total: usize, dup_count: usize) {
         return; 
     }
     for v in viols { 
-        println!("VIOLATION:{}:{}: {} {}. {} {}", 
-            v.file.display(), v.line, v.value, v.metric, v.message, v.suggestion); 
+        println!("VIOLATION:{}:{}:{}:{}: {} {}", 
+            v.metric, v.file.display(), v.line, v.unit_name, v.message, v.suggestion); 
     }
 }
 
@@ -57,9 +57,9 @@ pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
             let locations: Vec<String> = c.chunks.iter()
                 .map(|ch| format!("{}:{}-{}", ch.file.display(), ch.start_line, ch.end_line))
                 .collect();
-            println!("VIOLATION:{}:{}: {:.0}% duplication. {} copies of similar code: [{}]. {}",
-                first.file.display(), first.start_line, c.avg_similarity * 100.0, 
-                c.chunks.len(), locations.join(", "), suggestion);
+            println!("VIOLATION:duplication:{}:{}:{}: {:.0}% similar, {} copies: [{}]. {}",
+                first.file.display(), first.start_line, first.name,
+                c.avg_similarity * 100.0, c.chunks.len(), locations.join(", "), suggestion);
         }
     }
 }

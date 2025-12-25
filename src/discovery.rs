@@ -186,5 +186,137 @@ mod tests {
         let files = find_python_files(tmp.path());
         assert_eq!(files.len(), 1);
     }
+
+    // --- Design doc: File Filtering and .gitignore ---
+    // "Respect .gitignore"
+    
+    /// Helper to create .git directory; skips test if permission denied (e.g., in sandbox)
+    fn try_create_git_dir(path: &std::path::Path) -> bool {
+        fs::create_dir(path.join(".git")).is_ok()
+    }
+
+    #[test]
+    fn test_gitignore_excludes_ignored_files() {
+        let tmp = TempDir::new().unwrap();
+        
+        // Need to initialize git for gitignore to work with the `ignore` crate
+        if !try_create_git_dir(tmp.path()) {
+            eprintln!("Skipping test_gitignore_excludes_ignored_files: cannot create .git (sandbox?)");
+            return;
+        }
+        
+        // Create .gitignore that ignores specific file
+        fs::write(tmp.path().join(".gitignore"), "ignored.py\n").unwrap();
+        
+        // Create both ignored and included files
+        fs::write(tmp.path().join("ignored.py"), "# should be ignored").unwrap();
+        fs::write(tmp.path().join("included.py"), "# should be included").unwrap();
+        
+        let files = find_python_files(tmp.path());
+        
+        let filenames: Vec<String> = files.iter()
+            .filter_map(|p| p.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .collect();
+        
+        assert!(filenames.contains(&"included.py".to_string()), 
+            "included.py should be found");
+        assert!(!filenames.contains(&"ignored.py".to_string()), 
+            "ignored.py should be excluded by .gitignore");
+    }
+
+    #[test]
+    fn test_gitignore_excludes_directory_patterns() {
+        let tmp = TempDir::new().unwrap();
+        
+        if !try_create_git_dir(tmp.path()) {
+            eprintln!("Skipping test_gitignore_excludes_directory_patterns: cannot create .git (sandbox?)");
+            return;
+        }
+        
+        // Create .gitignore that ignores __pycache__ directory
+        fs::write(tmp.path().join(".gitignore"), "__pycache__/\n").unwrap();
+        
+        // Create __pycache__ directory with files
+        let cache_dir = tmp.path().join("__pycache__");
+        fs::create_dir(&cache_dir).unwrap();
+        fs::write(cache_dir.join("cached.py"), "# cached file").unwrap();
+        
+        // Create normal file
+        fs::write(tmp.path().join("normal.py"), "# normal file").unwrap();
+        
+        let files = find_python_files(tmp.path());
+        
+        let filenames: Vec<String> = files.iter()
+            .filter_map(|p| p.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .collect();
+        
+        assert!(filenames.contains(&"normal.py".to_string()),
+            "normal.py should be found");
+        assert!(!filenames.contains(&"cached.py".to_string()),
+            "__pycache__/cached.py should be excluded");
+    }
+
+    #[test]
+    fn test_gitignore_glob_patterns() {
+        let tmp = TempDir::new().unwrap();
+        
+        if !try_create_git_dir(tmp.path()) {
+            eprintln!("Skipping test_gitignore_glob_patterns: cannot create .git (sandbox?)");
+            return;
+        }
+        
+        // Create .gitignore with glob pattern
+        fs::write(tmp.path().join(".gitignore"), "*.generated.py\n").unwrap();
+        
+        // Create matching and non-matching files
+        fs::write(tmp.path().join("code.generated.py"), "# generated").unwrap();
+        fs::write(tmp.path().join("code.py"), "# normal").unwrap();
+        
+        let files = find_python_files(tmp.path());
+        
+        let filenames: Vec<String> = files.iter()
+            .filter_map(|p| p.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .collect();
+        
+        assert!(filenames.contains(&"code.py".to_string()),
+            "code.py should be found");
+        assert!(!filenames.contains(&"code.generated.py".to_string()),
+            "*.generated.py should be excluded by glob pattern");
+    }
+
+    #[test]
+    fn test_nested_gitignore() {
+        let tmp = TempDir::new().unwrap();
+        
+        if !try_create_git_dir(tmp.path()) {
+            eprintln!("Skipping test_nested_gitignore: cannot create .git (sandbox?)");
+            return;
+        }
+        
+        // Create subdirectory with its own .gitignore
+        let subdir = tmp.path().join("subdir");
+        fs::create_dir(&subdir).unwrap();
+        fs::write(subdir.join(".gitignore"), "local_ignored.py\n").unwrap();
+        
+        // Create files
+        fs::write(subdir.join("local_ignored.py"), "# ignored by nested gitignore").unwrap();
+        fs::write(subdir.join("included.py"), "# included").unwrap();
+        fs::write(tmp.path().join("root.py"), "# root file").unwrap();
+        
+        let files = find_python_files(tmp.path());
+        
+        let filenames: Vec<String> = files.iter()
+            .filter_map(|p| p.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .collect();
+        
+        assert!(filenames.contains(&"root.py".to_string()));
+        assert!(filenames.contains(&"included.py".to_string()));
+        assert!(!filenames.contains(&"local_ignored.py".to_string()),
+            "file ignored by nested .gitignore should be excluded");
+    }
 }
 

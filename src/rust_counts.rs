@@ -16,7 +16,6 @@ pub struct RustFunctionMetrics {
     pub returns: usize,
     pub branches: usize,
     pub local_variables: usize,
-    pub cyclomatic_complexity: usize,
 }
 
 #[derive(Debug, Default)]
@@ -160,7 +159,6 @@ impl<'a> RustAnalyzer<'a> {
         chk!(returns, returns_per_function, "returns_per_function", "return statements", "Use early guard returns at the top, then a single main return path.");
         chk!(branches, branches_per_function, "branches_per_function", "branches", "Consider using match guards, early returns, or extracting logic.");
         chk!(local_variables, local_variables_per_function, "local_variables_per_function", "local variables", "Extract logic into helper functions with fewer variables each.");
-        chk!(cyclomatic_complexity, cyclomatic_complexity, "cyclomatic_complexity", "cyclomatic complexity", "Reduce if/match/loop/&& /|| expressions; extract complex conditions into helper functions.");
         chk!(nested_function_depth, nested_function_depth, "nested_closure_depth", "nested closure depth", "Extract nested closures into separate functions.");
     }
 }
@@ -282,7 +280,6 @@ pub fn compute_rust_function_metrics(
     metrics.branches = visitor.branches;
     metrics.local_variables = visitor.local_variables;
     metrics.nested_function_depth = visitor.max_closure_depth;
-    metrics.cyclomatic_complexity = visitor.complexity + 1; // +1 for the function itself
 
     metrics
 }
@@ -382,18 +379,16 @@ mod tests {
         assert!(compute_rust_function_metrics(&i3, &b3).branches >= 2);
         let (i4, b4) = parse_fn("fn f() { let a=1; let b=2; let (c,d)=(3,4); }");
         assert_eq!(compute_rust_function_metrics(&i4, &b4).local_variables, 4);
-        let (i5, b5) = parse_fn("fn f(x: i32) { if x>0 { for i in 0..x { } } }");
-        assert!(compute_rust_function_metrics(&i5, &b5).cyclomatic_complexity >= 3);
     }
 
     #[test]
     fn test_structs_and_analyzer() {
-        let _ = RustFunctionMetrics { statements: 1, arguments: 2, max_indentation: 3, returns: 4, branches: 5, local_variables: 6, cyclomatic_complexity: 7, nested_function_depth: 8 };
+        let _ = RustFunctionMetrics { statements: 1, arguments: 2, max_indentation: 3, returns: 4, branches: 5, local_variables: 6, nested_function_depth: 8 };
         let _ = (RustTypeMetrics { methods: 5 }, RustFileMetrics { lines: 100, types: 3, imports: 5 });
         let mut viols = Vec::new(); let p = std::path::PathBuf::from("test.rs");
         let cfg = Config::default();
         {
-            let mut analyzer = RustAnalyzer::new(&p, &cfg, &mut viols);
+            let analyzer = RustAnalyzer::new(&p, &cfg, &mut viols);
             analyzer.violations.push(analyzer.violation(1, "n").metric("m").value(10).threshold(5).message("msg").suggestion("s").build());
         }
         assert_eq!(viols.len(), 1);
@@ -478,6 +473,252 @@ mod tests {
         let (sharing, not_sharing) = count_field_sharing_pairs(&[m1, m2, m3]);
         assert_eq!(sharing, 1);
         assert_eq!(not_sharing, 2);
+    }
+
+    // --- Violation-triggering tests for Rust file-level metrics ---
+
+    #[test]
+    fn test_lines_per_file_violation() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        // Write enough lines to exceed threshold
+        for i in 0..50 {
+            writeln!(tmp, "// line {}", i).unwrap();
+        }
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        
+        let mut config = Config::default();
+        config.lines_per_file = 10; // Set low threshold
+        
+        let violations = analyze_rust_file(&parsed, &config);
+        
+        let has_lines_violation = violations.iter()
+            .any(|v| v.metric == "lines_per_file");
+        assert!(has_lines_violation,
+            "should trigger lines_per_file violation when file has 50 lines > threshold 10");
+    }
+
+    #[test]
+    fn test_types_per_file_violation() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "struct A {{}}\nstruct B {{}}\nstruct C {{}}\nstruct D {{}}\nstruct E {{}}").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        
+        let mut config = Config::default();
+        config.classes_per_file = 2; // types_per_file threshold
+        
+        let violations = analyze_rust_file(&parsed, &config);
+        
+        let has_types_violation = violations.iter()
+            .any(|v| v.metric == "types_per_file");
+        assert!(has_types_violation,
+            "should trigger types_per_file violation when file has 5 types > threshold 2");
+    }
+
+    #[test]
+    fn test_imports_per_file_violation() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "use std::io;\nuse std::fs;\nuse std::path;\nuse std::env;\nuse std::collections;").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        
+        let mut config = Config::default();
+        config.imports_per_file = 2;
+        
+        let violations = analyze_rust_file(&parsed, &config);
+        
+        let has_imports_violation = violations.iter()
+            .any(|v| v.metric == "imports_per_file");
+        assert!(has_imports_violation,
+            "should trigger imports_per_file violation when file has 5 imports > threshold 2");
+    }
+
+    // --- Violation-triggering tests for Rust function-level metrics ---
+
+    #[test]
+    fn test_statements_per_function_violation() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        // Function with many statements
+        let mut code = String::from("fn big_fn() {\n");
+        for i in 0..30 {
+            code.push_str(&format!("    let x{} = {};\n", i, i));
+        }
+        code.push_str("}\n");
+        write!(tmp, "{}", code).unwrap();
+        
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let mut config = Config::default();
+        config.statements_per_function = 10;
+        
+        let violations = analyze_rust_file(&parsed, &config);
+        
+        let has_stmts_violation = violations.iter()
+            .any(|v| v.metric == "statements_per_function");
+        assert!(has_stmts_violation,
+            "should trigger statements_per_function violation when fn has 30 stmts > threshold 10");
+    }
+
+    #[test]
+    fn test_arguments_per_function_violation() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "fn many_args(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) {{}}").unwrap();
+        
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let mut config = Config::default();
+        config.arguments_per_function = 3;
+        
+        let violations = analyze_rust_file(&parsed, &config);
+        
+        let has_args_violation = violations.iter()
+            .any(|v| v.metric == "arguments_per_function");
+        assert!(has_args_violation,
+            "should trigger arguments_per_function violation when fn has 8 args > threshold 3");
+    }
+
+    #[test]
+    fn test_max_indentation_depth_violation() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        // Deeply nested code
+        writeln!(tmp, r#"
+fn deeply_nested() {{
+    if true {{
+        if true {{
+            if true {{
+                if true {{
+                    if true {{
+                        let x = 1;
+                    }}
+                }}
+            }}
+        }}
+    }}
+}}
+"#).unwrap();
+        
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let mut config = Config::default();
+        config.max_indentation_depth = 2;
+        
+        let violations = analyze_rust_file(&parsed, &config);
+        
+        let has_indent_violation = violations.iter()
+            .any(|v| v.metric == "max_indentation_depth");
+        assert!(has_indent_violation,
+            "should trigger max_indentation_depth violation for deeply nested code");
+    }
+
+    #[test]
+    fn test_returns_per_function_violation() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, r#"
+fn many_returns(x: i32) -> i32 {{
+    if x == 1 {{ return 1; }}
+    if x == 2 {{ return 2; }}
+    if x == 3 {{ return 3; }}
+    if x == 4 {{ return 4; }}
+    if x == 5 {{ return 5; }}
+    if x == 6 {{ return 6; }}
+    0
+}}
+"#).unwrap();
+        
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let mut config = Config::default();
+        config.returns_per_function = 2;
+        
+        let violations = analyze_rust_file(&parsed, &config);
+        
+        let has_returns_violation = violations.iter()
+            .any(|v| v.metric == "returns_per_function");
+        assert!(has_returns_violation,
+            "should trigger returns_per_function violation when fn has 6 returns > threshold 2");
+    }
+
+    #[test]
+    fn test_branches_per_function_violation() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, r#"
+fn many_branches(x: i32) {{
+    if x == 1 {{ }}
+    if x == 2 {{ }}
+    if x == 3 {{ }}
+    if x == 4 {{ }}
+    if x == 5 {{ }}
+    if x == 6 {{ }}
+    if x == 7 {{ }}
+    if x == 8 {{ }}
+}}
+"#).unwrap();
+        
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let mut config = Config::default();
+        config.branches_per_function = 3;
+        
+        let violations = analyze_rust_file(&parsed, &config);
+        
+        let has_branches_violation = violations.iter()
+            .any(|v| v.metric == "branches_per_function");
+        assert!(has_branches_violation,
+            "should trigger branches_per_function violation when fn has 8 branches > threshold 3");
+    }
+
+    #[test]
+    fn test_local_variables_per_function_violation() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        let mut code = String::from("fn many_vars() {\n");
+        for i in 0..25 {
+            code.push_str(&format!("    let var{} = {};\n", i, i));
+        }
+        code.push_str("}\n");
+        write!(tmp, "{}", code).unwrap();
+        
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let mut config = Config::default();
+        config.local_variables_per_function = 5;
+        
+        let violations = analyze_rust_file(&parsed, &config);
+        
+        let has_vars_violation = violations.iter()
+            .any(|v| v.metric == "local_variables_per_function");
+        assert!(has_vars_violation,
+            "should trigger local_variables_per_function violation when fn has 25 vars > threshold 5");
+    }
+
+    #[test]
+    fn test_nested_closure_depth_violation() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, r#"
+fn nested_closures() {{
+    let f1 = || {{
+        let f2 = || {{
+            let f3 = || {{
+                let f4 = || {{
+                    1
+                }};
+            }};
+        }};
+    }};
+}}
+"#).unwrap();
+        
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let mut config = Config::default();
+        config.nested_function_depth = 1;
+        
+        let violations = analyze_rust_file(&parsed, &config);
+        
+        let has_nested_violation = violations.iter()
+            .any(|v| v.metric == "nested_closure_depth");
+        assert!(has_nested_violation,
+            "should trigger nested_closure_depth violation for deeply nested closures");
     }
 }
 

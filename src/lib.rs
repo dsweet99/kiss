@@ -41,8 +41,8 @@ pub use duplication::{
     DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
 };
 pub use graph::{
-    analyze_graph, build_dependency_graph, collect_instability_metrics,
-    compute_cyclomatic_complexity, CycleInfo, DependencyGraph, InstabilityMetric,
+    analyze_graph, build_dependency_graph,
+    compute_cyclomatic_complexity, CycleInfo, DependencyGraph,
     ModuleGraphMetrics,
 };
 pub use parsing::{create_parser, parse_file, parse_files, ParseError, ParsedFile};
