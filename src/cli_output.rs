@@ -2,7 +2,6 @@
 
 use crate::discovery::Language;
 use crate::duplication::DuplicateCluster;
-use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
 use crate::rust_test_refs::analyze_rust_test_refs;
@@ -27,8 +26,6 @@ pub fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: us
     println!("   Or use --all to bypass this check and proceed anyway.");
 }
 
-pub fn print_instability(_lang: &str, _graph: Option<&DependencyGraph>) {
-}
 
 pub fn print_violations(viols: &[Violation], _total: usize, dup_count: usize) {
     if viols.is_empty() && dup_count == 0 { 
@@ -104,11 +101,6 @@ mod tests {
     #[test]
     fn test_print_coverage_gate_failure_no_panic() {
         print_coverage_gate_failure(50, 80, 5, 10);
-    }
-
-    #[test]
-    fn test_print_instability_no_panic() {
-        print_instability("Test", None);
     }
 
     #[test]

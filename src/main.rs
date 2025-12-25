@@ -111,7 +111,7 @@ fn load_configs(config_path: &Option<PathBuf>) -> (Config, Config) {
 
 use kiss::{Violation, DuplicateCluster};
 use kiss::cli_output::{
-    print_no_files_message, print_coverage_gate_failure, print_instability,
+    print_no_files_message, print_coverage_gate_failure,
     print_violations, print_duplicates, print_py_test_refs, print_rs_test_refs,
 };
 
@@ -133,7 +133,7 @@ fn run_analyze(path: &str, py_config: &Config, rs_config: &Config, lang_filter: 
     let (py_graph, rs_graph) = build_graphs(&py_parsed, &rs_parsed);
     viols.extend(analyze_graphs(&py_graph, &rs_graph, py_config, rs_config));
     
-    print_all_results(&viols, &py_parsed, &rs_parsed, &py_graph, &rs_graph)
+    print_all_results(&viols, &py_parsed, &rs_parsed)
 }
 
 fn build_graphs(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (Option<DependencyGraph>, Option<DependencyGraph>) {
@@ -157,7 +157,7 @@ fn analyze_graphs(py_graph: &Option<DependencyGraph>, rs_graph: &Option<Dependen
     viols
 }
 
-fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], py_graph: &Option<DependencyGraph>, rs_graph: &Option<DependencyGraph>) -> bool {
+fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> bool {
     let py_dups = detect_py_duplicates(py_parsed);
     let rs_dups = detect_rs_duplicates(rs_parsed);
     let dup_count = py_dups.len() + rs_dups.len();
@@ -165,8 +165,6 @@ fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &
     print_violations(viols, py_parsed.len() + rs_parsed.len(), dup_count);
     print_duplicates("Python", &py_dups);
     print_duplicates("Rust", &rs_dups);
-    print_instability("Python", py_graph.as_ref());
-    print_instability("Rust", rs_graph.as_ref());
     let untested = print_py_test_refs(py_parsed) + print_rs_test_refs(rs_parsed);
     
     viols.is_empty() && dup_count == 0 && untested == 0
@@ -476,7 +474,6 @@ mod tests {
         print_no_files_message(None, tmp.path());
         print_no_files_message(Some(Language::Python), tmp.path());
         print_coverage_gate_failure(50, 80, 5, 10);
-        assert!(print_all_results(&[], &[], &[], &None, &None));
-        print_instability("Test", None);
+        assert!(print_all_results(&[], &[], &[]));
     }
 }

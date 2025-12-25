@@ -9,7 +9,7 @@ use crate::py_metrics::{
     compute_class_metrics_with_source, compute_file_metrics, compute_function_metrics,
     FileMetrics, FunctionMetrics,
 };
-use crate::violation::Violation;
+use crate::violation::{Violation, ViolationBuilder};
 use std::path::Path;
 use tree_sitter::Node;
 
@@ -37,32 +37,24 @@ pub fn analyze_file(parsed: &ParsedFile, config: &Config) -> Vec<Violation> {
 
 fn check_file_metrics(m: &FileMetrics, file: &Path, fname: &str, cfg: &Config, v: &mut Vec<Violation>) {
     if m.lines > cfg.lines_per_file {
-        v.push(mk_v(file, 1, fname, "lines_per_file", m.lines, cfg.lines_per_file,
-            format!("File has {} lines (threshold: {})", m.lines, cfg.lines_per_file),
-            "Split into multiple modules with focused responsibilities."));
+        v.push(violation(file, 1, fname).metric("lines_per_file").value(m.lines).threshold(cfg.lines_per_file)
+            .message(format!("File has {} lines (threshold: {})", m.lines, cfg.lines_per_file))
+            .suggestion("Split into multiple modules with focused responsibilities.").build());
     }
     if m.classes > cfg.classes_per_file {
-        v.push(mk_v(file, 1, fname, "classes_per_file", m.classes, cfg.classes_per_file,
-            format!("File has {} classes (threshold: {})", m.classes, cfg.classes_per_file),
-            "Consider splitting into separate modules."));
+        v.push(violation(file, 1, fname).metric("classes_per_file").value(m.classes).threshold(cfg.classes_per_file)
+            .message(format!("File has {} classes (threshold: {})", m.classes, cfg.classes_per_file))
+            .suggestion("Consider splitting into separate modules.").build());
     }
     if m.imports > cfg.imports_per_file {
-        v.push(mk_v(file, 1, fname, "imports_per_file", m.imports, cfg.imports_per_file,
-            format!("File has {} imports (threshold: {})", m.imports, cfg.imports_per_file),
-            "Consider reducing dependencies or splitting the module."));
+        v.push(violation(file, 1, fname).metric("imports_per_file").value(m.imports).threshold(cfg.imports_per_file)
+            .message(format!("File has {} imports (threshold: {})", m.imports, cfg.imports_per_file))
+            .suggestion("Consider reducing dependencies or splitting the module.").build());
     }
 }
 
-fn mk_v(file: &Path, line: usize, name: &str, metric: &str, val: usize, thresh: usize, msg: String, sug: &str) -> Violation {
-    Violation::builder(file)
-        .line(line)
-        .unit_name(name)
-        .metric(metric)
-        .value(val)
-        .threshold(thresh)
-        .message(msg)
-        .suggestion(sug)
-        .build()
+fn violation(file: &Path, line: usize, name: &str) -> ViolationBuilder {
+    Violation::builder(file).line(line).unit_name(name)
 }
 
 enum Recursion { Skip, Continue(bool) }
@@ -92,49 +84,36 @@ fn analyze_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Viol
 }
 
 fn check_function_metrics(m: &FunctionMetrics, file: &Path, line: usize, name: &str, inside_class: bool, cfg: &Config, v: &mut Vec<Violation>) {
-    if m.statements > cfg.statements_per_function {
-        v.push(mk_v(file, line, name, "statements_per_function", m.statements, cfg.statements_per_function,
-            format!("{} '{}' has {} statements (threshold: {})", if inside_class { "Method" } else { "Function" }, name, m.statements, cfg.statements_per_function),
-            "Break into smaller, focused functions."));
+    let ut = if inside_class { "Method" } else { "Function" };
+    macro_rules! chk {
+        ($mf:ident, $cf:ident, $metric:literal, $label:literal, $sug:literal) => {
+            if m.$mf > cfg.$cf {
+                v.push(violation(file, line, name).metric($metric).value(m.$mf).threshold(cfg.$cf)
+                    .message(format!("{} '{}' has {} {} (threshold: {})", ut, name, m.$mf, $label, cfg.$cf))
+                    .suggestion($sug).build());
+            }
+        };
     }
+    chk!(statements, statements_per_function, "statements_per_function", "statements", "Break into smaller, focused functions.");
     if !inside_class && m.arguments_positional > cfg.arguments_positional {
-        v.push(mk_v(file, line, name, "positional_args", m.arguments_positional, cfg.arguments_positional,
-            format!("Function '{}' has {} positional arguments (threshold: {})", name, m.arguments_positional, cfg.arguments_positional),
-            "Consider using keyword-only arguments, a config object, or the builder pattern."));
+        v.push(violation(file, line, name).metric("positional_args").value(m.arguments_positional).threshold(cfg.arguments_positional)
+            .message(format!("Function '{}' has {} positional arguments (threshold: {})", name, m.arguments_positional, cfg.arguments_positional))
+            .suggestion("Consider using keyword-only arguments, a config object, or the builder pattern.").build());
     }
-    if m.arguments_keyword_only > cfg.arguments_keyword_only {
-        v.push(mk_v(file, line, name, "keyword_only_args", m.arguments_keyword_only, cfg.arguments_keyword_only,
-            format!("{} '{}' has {} keyword-only arguments (threshold: {})", if inside_class { "Method" } else { "Function" }, name, m.arguments_keyword_only, cfg.arguments_keyword_only),
-            "Consider grouping related parameters into a config object."));
-    }
-    if m.max_indentation > cfg.max_indentation_depth {
-        v.push(mk_v(file, line, name, "max_indentation", m.max_indentation, cfg.max_indentation_depth,
-            format!("{} '{}' has indentation depth {} (threshold: {})", if inside_class { "Method" } else { "Function" }, name, m.max_indentation, cfg.max_indentation_depth),
-            "Extract nested logic into helper functions or use early returns."));
-    }
-    if m.nested_function_depth > cfg.nested_function_depth {
-        v.push(mk_v(file, line, name, "nested_function_depth", m.nested_function_depth, cfg.nested_function_depth,
-            format!("{} '{}' has {} nested functions (threshold: {})", if inside_class { "Method" } else { "Function" }, name, m.nested_function_depth, cfg.nested_function_depth),
-            "Move nested functions to module level or use classes."));
-    }
-    if m.branches > cfg.branches_per_function {
-        v.push(mk_v(file, line, name, "branches_per_function", m.branches, cfg.branches_per_function,
-            format!("{} '{}' has {} branches (threshold: {})", if inside_class { "Method" } else { "Function" }, name, m.branches, cfg.branches_per_function),
-            "Consider using polymorphism, lookup tables, or the strategy pattern."));
-    }
-    if m.local_variables > cfg.local_variables_per_function {
-        v.push(mk_v(file, line, name, "local_variables", m.local_variables, cfg.local_variables_per_function,
-            format!("{} '{}' has {} local variables (threshold: {})", if inside_class { "Method" } else { "Function" }, name, m.local_variables, cfg.local_variables_per_function),
-            "Extract related variables into a data class or split the function."));
-    }
+    chk!(arguments_keyword_only, arguments_keyword_only, "keyword_only_args", "keyword-only arguments", "Consider grouping related parameters into a config object.");
+    chk!(max_indentation, max_indentation_depth, "max_indentation", "indentation depth", "Extract nested logic into helper functions or use early returns.");
+    chk!(nested_function_depth, nested_function_depth, "nested_function_depth", "nested functions", "Move nested functions to module level or use classes.");
+    chk!(branches, branches_per_function, "branches_per_function", "branches", "Consider using polymorphism, lookup tables, or the strategy pattern.");
+    chk!(local_variables, local_variables_per_function, "local_variables", "local variables", "Extract related variables into a data class or split the function.");
 }
 
 fn check_cyclomatic_complexity(node: Node, file: &Path, line: usize, name: &str, inside_class: bool, cfg: &Config, v: &mut Vec<Violation>) {
     let cc = compute_cyclomatic_complexity(node);
     if cc > cfg.cyclomatic_complexity {
-        v.push(mk_v(file, line, name, "cyclomatic_complexity", cc, cfg.cyclomatic_complexity,
-            format!("{} '{}' has cyclomatic complexity {} (threshold: {})", if inside_class { "Method" } else { "Function" }, name, cc, cfg.cyclomatic_complexity),
-            "Reduce if/for/while/and/or expressions; extract complex conditions into helper functions."));
+        let ut = if inside_class { "Method" } else { "Function" };
+        v.push(violation(file, line, name).metric("cyclomatic_complexity").value(cc).threshold(cfg.cyclomatic_complexity)
+            .message(format!("{} '{}' has cyclomatic complexity {} (threshold: {})", ut, name, cc, cfg.cyclomatic_complexity))
+            .suggestion("Reduce if/for/while/and/or expressions; extract complex conditions into helper functions.").build());
     }
 }
 
@@ -146,16 +125,16 @@ fn analyze_class_node(node: Node, source: &str, file: &Path, violations: &mut Ve
     let m = compute_class_metrics_with_source(node, source);
 
     if m.methods > config.methods_per_class {
-        violations.push(mk_v(file, line, name, "methods_per_class", m.methods, config.methods_per_class,
-            format!("Class '{}' has {} methods (threshold: {})", name, m.methods, config.methods_per_class),
-            "Consider extracting groups of related methods into separate classes."));
+        violations.push(violation(file, line, name).metric("methods_per_class").value(m.methods).threshold(config.methods_per_class)
+            .message(format!("Class '{}' has {} methods (threshold: {})", name, m.methods, config.methods_per_class))
+            .suggestion("Consider extracting groups of related methods into separate classes.").build());
     }
     let lcom_pct = (m.lcom * 100.0) as usize;
     if m.methods > 20 && lcom_pct > config.lcom {
-        violations.push(mk_v(file, line, name, "lcom", lcom_pct, config.lcom,
-            format!("Class '{}' may be a God Class: {} methods with {}% LCOM (threshold: {} methods, {}% LCOM)", name, m.methods, lcom_pct, 20, config.lcom),
-            "Consider splitting into multiple focused classes with cohesive responsibilities."));
-            }
+        violations.push(violation(file, line, name).metric("lcom").value(lcom_pct).threshold(config.lcom)
+            .message(format!("Class '{}' may be a God Class: {} methods with {}% LCOM (threshold: {} methods, {}% LCOM)", name, m.methods, lcom_pct, 20, config.lcom))
+            .suggestion("Consider splitting into multiple focused classes with cohesive responsibilities.").build());
+    }
     if let Some(body) = node.child_by_field_name("body") {
         let mut cursor = body.walk();
         for child in body.children(&mut cursor) {
@@ -195,8 +174,9 @@ mod tests {
     }
 
     #[test]
-    fn test_mk_v() {
-        let v = mk_v(&PathBuf::from("f.py"), 1, "n", "m", 10, 5, "msg".into(), "sug");
+    fn test_violation_builder() {
+        let v = violation(&PathBuf::from("f.py"), 1, "n")
+            .metric("m").value(10).threshold(5).message("msg").suggestion("sug").build();
         assert_eq!(v.value, 10);
         assert_eq!(v.threshold, 5);
     }

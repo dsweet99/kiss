@@ -194,6 +194,10 @@ struct ReferenceVisitor<'a> {
 }
 
 /// Check if a path segment is from an external crate (std, core, etc.)
+/// 
+/// NOTE: This list is hardcoded for common crates. If your project uses unlisted
+/// external crates, their types may appear as "unreferenced" false positives.
+/// Consider adding frequently-used crates here as needed.
 fn is_external_crate(name: &str) -> bool {
     matches!(name, "std" | "core" | "alloc" | "syn" | "proc_macro" | "proc_macro2" 
         | "quote" | "serde" | "tokio" | "async_std" | "futures" | "anyhow" 

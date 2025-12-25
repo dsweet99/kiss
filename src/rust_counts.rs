@@ -1,7 +1,7 @@
 //! Count-based code metrics for Rust
 
 use crate::config::Config;
-use crate::violation::Violation;
+use crate::violation::{Violation, ViolationBuilder};
 use crate::rust_parsing::ParsedRustFile;
 use std::path::Path;
 use syn::visit::Visit;
@@ -50,16 +50,22 @@ impl<'a> RustAnalyzer<'a> {
         let fname = self.file.file_name().unwrap_or_default().to_string_lossy().into_owned();
         let c = self.config;
         if m.lines > c.lines_per_file {
-            self.push(1, &fname, "lines_per_file", m.lines, c.lines_per_file,
-                format!("File has {} lines (threshold: {})", m.lines, c.lines_per_file), "Split into multiple modules with focused responsibilities.");
+            self.violations.push(self.violation(1, &fname)
+                .metric("lines_per_file").value(m.lines).threshold(c.lines_per_file)
+                .message(format!("File has {} lines (threshold: {})", m.lines, c.lines_per_file))
+                .suggestion("Split into multiple modules with focused responsibilities.").build());
         }
         if m.types > c.classes_per_file {
-            self.push(1, &fname, "types_per_file", m.types, c.classes_per_file,
-                format!("File has {} types (threshold: {})", m.types, c.classes_per_file), "Move types to separate files.");
+            self.violations.push(self.violation(1, &fname)
+                .metric("types_per_file").value(m.types).threshold(c.classes_per_file)
+                .message(format!("File has {} types (threshold: {})", m.types, c.classes_per_file))
+                .suggestion("Move types to separate files.").build());
         }
         if m.imports > c.imports_per_file {
-            self.push(1, &fname, "imports_per_file", m.imports, c.imports_per_file,
-                format!("File has {} use statements (threshold: {})", m.imports, c.imports_per_file), "Module may have too many responsibilities. Consider splitting.");
+            self.violations.push(self.violation(1, &fname)
+                .metric("imports_per_file").value(m.imports).threshold(c.imports_per_file)
+                .message(format!("File has {} use statements (threshold: {})", m.imports, c.imports_per_file))
+                .suggestion("Module may have too many responsibilities. Consider splitting.").build());
         }
     }
 
@@ -101,26 +107,16 @@ impl<'a> RustAnalyzer<'a> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn push(&mut self, line: usize, name: &str, metric: &str, val: usize, thresh: usize, msg: String, sug: &str) {
-        self.violations.push(
-            Violation::builder(self.file)
-                .line(line)
-                .unit_name(name)
-                .metric(metric)
-                .value(val)
-                .threshold(thresh)
-                .message(msg)
-                .suggestion(sug)
-                .build()
-        );
+    fn violation(&self, line: usize, name: &str) -> ViolationBuilder {
+        Violation::builder(self.file).line(line).unit_name(name)
     }
 
     fn check_methods_per_type(&mut self, line: usize, name: &str, count: usize) {
         if count > self.config.methods_per_class {
-            self.push(line, name, "methods_per_type", count, self.config.methods_per_class,
-                format!("Type '{}' has {} methods (threshold: {})", name, count, self.config.methods_per_class),
-                "Extract related methods into a separate type with its own impl.");
+            self.violations.push(self.violation(line, name)
+                .metric("methods_per_type").value(count).threshold(self.config.methods_per_class)
+                .message(format!("Type '{}' has {} methods (threshold: {})", name, count, self.config.methods_per_class))
+                .suggestion("Extract related methods into a separate type with its own impl.").build());
         }
     }
 
@@ -128,18 +124,20 @@ impl<'a> RustAnalyzer<'a> {
         if method_count <= 1 { return 0; }
         let pct = (compute_rust_lcom(impl_block) * 100.0).round() as usize;
         if pct > self.config.lcom {
-            self.push(line, name, "lcom", pct, self.config.lcom,
-                format!("Type '{}' has LCOM of {}% (threshold: {}%)", name, pct, self.config.lcom),
-                "Methods in this impl don't share fields; consider splitting.");
+            self.violations.push(self.violation(line, name)
+                .metric("lcom").value(pct).threshold(self.config.lcom)
+                .message(format!("Type '{}' has LCOM of {}% (threshold: {}%)", name, pct, self.config.lcom))
+                .suggestion("Methods in this impl don't share fields; consider splitting.").build());
         }
         pct
     }
 
     fn check_god_class(&mut self, line: usize, name: &str, method_count: usize, lcom_pct: usize) {
         if method_count > 20 && lcom_pct > 50 {
-            self.push(line, name, "god_class", 1, 0,
-                format!("Type '{}' is a God Class: {} methods + {}% LCOM indicates low cohesion", name, method_count, lcom_pct),
-                "Break into smaller, focused types with single responsibilities.");
+            self.violations.push(self.violation(line, name)
+                .metric("god_class").value(1).threshold(0)
+                .message(format!("Type '{}' is a God Class: {} methods + {}% LCOM indicates low cohesion", name, method_count, lcom_pct))
+                .suggestion("Break into smaller, focused types with single responsibilities.").build());
         }
     }
 
@@ -148,7 +146,12 @@ impl<'a> RustAnalyzer<'a> {
         let c = self.config;
         macro_rules! chk {
             ($mf:ident, $cf:ident, $metric:literal, $label:literal, $sug:literal) => {
-                if m.$mf > c.$cf { self.push(line, name, $metric, m.$mf, c.$cf, format!("{} '{}' has {} {} (threshold: {})", ut, name, m.$mf, $label, c.$cf), $sug); }
+                if m.$mf > c.$cf {
+                    self.violations.push(self.violation(line, name)
+                        .metric($metric).value(m.$mf).threshold(c.$cf)
+                        .message(format!("{} '{}' has {} {} (threshold: {})", ut, name, m.$mf, $label, c.$cf))
+                        .suggestion($sug).build());
+                }
             };
         }
         chk!(statements, statements_per_function, "statements_per_function", "statements", "Break into smaller, focused functions.");
@@ -388,7 +391,11 @@ mod tests {
         let _ = RustFunctionMetrics { statements: 1, arguments: 2, max_indentation: 3, returns: 4, branches: 5, local_variables: 6, cyclomatic_complexity: 7, nested_function_depth: 8 };
         let _ = (RustTypeMetrics { methods: 5 }, RustFileMetrics { lines: 100, types: 3, imports: 5 });
         let mut viols = Vec::new(); let p = std::path::PathBuf::from("test.rs");
-        RustAnalyzer::new(&p, &Config::default(), &mut viols).push(1, "n", "m", 10, 5, "msg".into(), "s");
+        let cfg = Config::default();
+        {
+            let mut analyzer = RustAnalyzer::new(&p, &cfg, &mut viols);
+            analyzer.violations.push(analyzer.violation(1, "n").metric("m").value(10).threshold(5).message("msg").suggestion("s").build());
+        }
         assert_eq!(viols.len(), 1);
     }
 
