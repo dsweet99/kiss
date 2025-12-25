@@ -40,7 +40,7 @@ struct RustAnalyzer<'a> {
 }
 
 impl<'a> RustAnalyzer<'a> {
-    fn new(file: &'a Path, config: &'a Config, violations: &'a mut Vec<Violation>) -> Self {
+    const fn new(file: &'a Path, config: &'a Config, violations: &'a mut Vec<Violation>) -> Self {
         Self { file, config, violations }
     }
 
@@ -135,7 +135,7 @@ impl<'a> RustAnalyzer<'a> {
         if method_count > 20 && lcom_pct > 50 {
             self.violations.push(self.violation(line, name)
                 .metric("god_class").value(1).threshold(0)
-                .message(format!("Type '{}' is a God Class: {} methods + {}% LCOM indicates low cohesion", name, method_count, lcom_pct))
+                .message(format!("Type '{name}' is a God Class: {method_count} methods + {lcom_pct}% LCOM indicates low cohesion"))
                 .suggestion("Break into smaller, focused types with single responsibilities.").build());
         }
     }
@@ -176,9 +176,10 @@ fn get_impl_type_name(impl_block: &syn::ItemImpl) -> Option<String> {
 }
 
 /// Compute LCOM (Lack of Cohesion of Methods) for a Rust impl block.
-/// LCOM = pairs_not_sharing_fields / total_pairs. Returns 0.0 (cohesive) to 1.0 (no cohesion).
+/// LCOM = `pairs_not_sharing_fields` / `total_pairs`. Returns 0.0 (cohesive) to 1.0 (no cohesion).
 pub fn compute_rust_lcom(impl_block: &syn::ItemImpl) -> f64 {
     use std::collections::HashSet;
+    const MIN_METHODS_FOR_LCOM: usize = 2;
     
     let fields_per_method: Vec<HashSet<String>> = impl_block.items.iter()
         .filter_map(|item| match item {
@@ -187,7 +188,6 @@ pub fn compute_rust_lcom(impl_block: &syn::ItemImpl) -> f64 {
         })
         .collect();
     
-    const MIN_METHODS_FOR_LCOM: usize = 2;
     if fields_per_method.len() < MIN_METHODS_FOR_LCOM {
         return 0.0;
     }
@@ -303,7 +303,7 @@ impl FunctionMetricsVisitor {
         self.max_depth = self.max_depth.max(self.current_depth);
     }
 
-    fn exit_block(&mut self) { self.current_depth -= 1; }
+    const fn exit_block(&mut self) { self.current_depth -= 1; }
 }
 
 impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
@@ -431,12 +431,11 @@ mod tests {
         let mut v2 = FunctionMetricsVisitor::default(); v2.visit_expr(&e);
         assert!(v2.branches >= 1);
         let f2: syn::File = syn::parse_str("fn f() { let (a,b,c)=(1,2,3); }").unwrap();
-        if let syn::Item::Fn(func) = &f2.items[0] {
-            if let syn::Stmt::Local(l) = &func.block.stmts[0] {
+        if let syn::Item::Fn(func) = &f2.items[0]
+            && let syn::Stmt::Local(l) = &func.block.stmts[0] {
                 let mut v3 = FunctionMetricsVisitor::default(); v3.count_pattern_bindings(&l.pat);
                 assert_eq!(v3.local_variables, 3);
             }
-        }
     }
 
     #[test]
@@ -483,7 +482,7 @@ mod tests {
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
         // Write enough lines to exceed threshold
         for i in 0..50 {
-            writeln!(tmp, "// line {}", i).unwrap();
+            writeln!(tmp, "// line {i}").unwrap();
         }
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         
@@ -543,10 +542,10 @@ mod tests {
         // Function with many statements
         let mut code = String::from("fn big_fn() {\n");
         for i in 0..30 {
-            code.push_str(&format!("    let x{} = {};\n", i, i));
+            code.push_str(&format!("    let x{i} = {i};\n"));
         }
         code.push_str("}\n");
-        write!(tmp, "{}", code).unwrap();
+        write!(tmp, "{code}").unwrap();
         
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let mut config = Config::default();
@@ -583,7 +582,7 @@ mod tests {
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
         // Deeply nested code
-        writeln!(tmp, r#"
+        writeln!(tmp, r"
 fn deeply_nested() {{
     if true {{
         if true {{
@@ -597,7 +596,7 @@ fn deeply_nested() {{
         }}
     }}
 }}
-"#).unwrap();
+").unwrap();
         
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let mut config = Config::default();
@@ -615,7 +614,7 @@ fn deeply_nested() {{
     fn test_returns_per_function_violation() {
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-        writeln!(tmp, r#"
+        writeln!(tmp, r"
 fn many_returns(x: i32) -> i32 {{
     if x == 1 {{ return 1; }}
     if x == 2 {{ return 2; }}
@@ -625,7 +624,7 @@ fn many_returns(x: i32) -> i32 {{
     if x == 6 {{ return 6; }}
     0
 }}
-"#).unwrap();
+").unwrap();
         
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let mut config = Config::default();
@@ -643,7 +642,7 @@ fn many_returns(x: i32) -> i32 {{
     fn test_branches_per_function_violation() {
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-        writeln!(tmp, r#"
+        writeln!(tmp, r"
 fn many_branches(x: i32) {{
     if x == 1 {{ }}
     if x == 2 {{ }}
@@ -654,7 +653,7 @@ fn many_branches(x: i32) {{
     if x == 7 {{ }}
     if x == 8 {{ }}
 }}
-"#).unwrap();
+").unwrap();
         
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let mut config = Config::default();
@@ -674,10 +673,10 @@ fn many_branches(x: i32) {{
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
         let mut code = String::from("fn many_vars() {\n");
         for i in 0..25 {
-            code.push_str(&format!("    let var{} = {};\n", i, i));
+            code.push_str(&format!("    let var{i} = {i};\n"));
         }
         code.push_str("}\n");
-        write!(tmp, "{}", code).unwrap();
+        write!(tmp, "{code}").unwrap();
         
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let mut config = Config::default();
@@ -695,7 +694,7 @@ fn many_branches(x: i32) {{
     fn test_nested_closure_depth_violation() {
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-        writeln!(tmp, r#"
+        writeln!(tmp, r"
 fn nested_closures() {{
     let f1 = || {{
         let f2 = || {{
@@ -707,7 +706,7 @@ fn nested_closures() {{
         }};
     }};
 }}
-"#).unwrap();
+").unwrap();
         
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let mut config = Config::default();

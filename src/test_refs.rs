@@ -48,7 +48,7 @@ fn is_test_framework(name: &str) -> bool {
 fn is_test_framework_import_from(child: Node, source: &str) -> bool {
     child.child_by_field_name("module_name")
         .map(|m| &source[m.start_byte()..m.end_byte()])
-        .is_some_and(|name| is_test_framework(name))
+        .is_some_and(is_test_framework)
 }
 
 fn contains_test_module_name(node: Node, source: &str) -> bool {
@@ -106,11 +106,10 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
                 return false;
             }
             // __init__ is covered if its containing class is referenced
-            if def.name == "__init__" {
-                if let Some(ref class_name) = def.containing_class {
+            if def.name == "__init__"
+                && let Some(ref class_name) = def.containing_class {
                     return !class_names.contains(class_name);
                 }
-            }
             true
         })
         .cloned()
@@ -138,7 +137,7 @@ fn collect_definitions(node: Node, source: &str, file: &Path, defs: &mut Vec<Cod
             let name = get_child_by_field(node, "name", source);
             (true, name)
         }
-        _ => (inside_class, class_name.map(String::from).as_deref().map(|s| s.to_string())),
+        _ => (inside_class, class_name.map(String::from).as_deref().map(std::string::ToString::to_string)),
     };
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {

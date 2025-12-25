@@ -1,4 +1,4 @@
-//! Code duplication detection using MinHash/LSH (Normalize → Shingle → MinHash → LSH → Verify)
+//! Code duplication detection using MinHash/LSH (Normalize → Shingle → `MinHash` → LSH → Verify)
 
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
@@ -96,7 +96,7 @@ fn compute_cluster_similarity(indices: &[usize], pair_sims: &HashMap<(usize, usi
             }
         }
     }
-    if count > 0 { total / count as f64 } else { 0.0 }
+    if count > 0 { total / f64::from(count) } else { 0.0 }
 }
 
 /// Cluster duplicate pairs into groups of similar code
@@ -304,14 +304,14 @@ fn generate_shingles(text: &str, shingle_size: usize) -> std::collections::HashS
     shingles
 }
 
-/// Compute MinHash signature for a set of shingles
+/// Compute `MinHash` signature for a set of shingles
 fn compute_minhash(shingles: &std::collections::HashSet<u64>, size: usize) -> MinHashSignature {
     let mut hashes = vec![u64::MAX; size];
     let coefficients: Vec<(u64, u64)> = (0..size)
         .map(|i| {
-            let seed = 0x9E3779B97F4A7C15_u64.wrapping_add(i as u64);
-            let a = seed.wrapping_mul(0xBF58476D1CE4E5B9) | 1;
-            let b = seed.wrapping_mul(0x94D049BB133111EB);
+            let seed = 0x9E37_79B9_7F4A_7C15_u64.wrapping_add(i as u64);
+            let a = seed.wrapping_mul(0xBF58_476D_1CE4_E5B9) | 1;
+            let b = seed.wrapping_mul(0x94D0_49BB_1331_11EB);
             (a, b)
         })
         .collect();
@@ -328,7 +328,7 @@ fn compute_minhash(shingles: &std::collections::HashSet<u64>, size: usize) -> Mi
     MinHashSignature { hashes }
 }
 
-/// Estimate Jaccard similarity from MinHash signatures
+/// Estimate Jaccard similarity from `MinHash` signatures
 fn estimate_similarity(sig1: &MinHashSignature, sig2: &MinHashSignature) -> f64 {
     if sig1.hashes.is_empty() {
         return 0.0;
@@ -442,7 +442,7 @@ mod tests {
 
     fn parse_source(code: &str) -> ParsedFile {
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        write!(tmp, "{}", code).unwrap();
+        write!(tmp, "{code}").unwrap();
         let mut parser = create_parser().unwrap();
         parse_file(&mut parser, tmp.path()).unwrap()
     }
@@ -522,7 +522,7 @@ mod tests {
         let sig2 = compute_minhash(&generate_shingles(text2, 3), 100);
         
         let similarity = estimate_similarity(&sig1, &sig2);
-        assert!(similarity < 0.3, "completely different text should have low similarity, got {}", similarity);
+        assert!(similarity < 0.3, "completely different text should have low similarity, got {similarity}");
     }
 
     #[test]

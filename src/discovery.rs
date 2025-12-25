@@ -12,12 +12,12 @@ pub enum Language {
 
 impl Language {
     /// Detect language from file extension
-    pub fn from_path(path: &Path) -> Option<Language> {
+    pub fn from_path(path: &Path) -> Option<Self> {
         path.extension().and_then(|ext| {
             if ext == "py" {
-                Some(Language::Python)
+                Some(Self::Python)
             } else if ext == "rs" {
-                Some(Language::Rust)
+                Some(Self::Rust)
             } else {
                 None
             }
@@ -25,10 +25,10 @@ impl Language {
     }
 
     /// Get the file extension for this language
-    pub fn extension(&self) -> &'static str {
+    pub const fn extension(&self) -> &'static str {
         match self {
-            Language::Python => "py",
-            Language::Rust => "rs",
+            Self::Python => "py",
+            Self::Rust => "rs",
         }
     }
 }
@@ -61,8 +61,8 @@ pub fn find_source_files(root: &Path) -> Vec<SourceFile> {
         .git_global(true)
         .git_exclude(true)
         .build()
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().map(|ft| ft.is_file()).unwrap_or(false))
+        .filter_map(std::result::Result::ok)
+        .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
         .filter_map(|entry| {
             let path = entry.into_path();
             Language::from_path(&path).map(|language| SourceFile { path, language })
@@ -77,16 +77,15 @@ fn find_files_by_extension(root: &Path, ext: &str) -> Vec<PathBuf> {
         .git_global(true)
         .git_exclude(true)
         .build()
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().map(|ft| ft.is_file()).unwrap_or(false))
+        .filter_map(std::result::Result::ok)
+        .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
         .filter(move |entry| {
             entry
                 .path()
                 .extension()
-                .map(|e| e == ext)
-                .unwrap_or(false)
+                .is_some_and(|e| e == ext)
         })
-        .map(|entry| entry.into_path())
+        .map(ignore::DirEntry::into_path)
         .collect()
 }
 

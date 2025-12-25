@@ -1,5 +1,7 @@
 //! Integration tests for the kiss library API
 
+#![allow(clippy::needless_collect)] // collect is needed to access elements by index
+
 use kiss::*;
 use std::path::Path;
 
@@ -126,7 +128,7 @@ fn computes_cyclomatic_complexity() {
     let parsed = parse_file(&mut parser, Path::new("tests/fake_python/deeply_nested.py")).expect("should parse");
     let func_node = find_first_node_of_kind(parsed.tree.root_node(), "function_definition").expect("should find function");
     let complexity = compute_cyclomatic_complexity(func_node);
-    assert!(complexity > 5, "Expected complexity > 5, got {}", complexity);
+    assert!(complexity > 5, "Expected complexity > 5, got {complexity}");
 }
 
 #[test]

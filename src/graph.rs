@@ -122,7 +122,7 @@ fn is_entry_point(name: &str) -> bool {
 }
 
 fn get_module_path(graph: &DependencyGraph, module_name: &str) -> PathBuf {
-    graph.paths.get(module_name).cloned().unwrap_or_else(|| PathBuf::from(format!("{}.py", module_name)))
+    graph.paths.get(module_name).cloned().unwrap_or_else(|| PathBuf::from(format!("{module_name}.py")))
 }
 
 fn is_orphan(metrics: &ModuleGraphMetrics, module_name: &str) -> bool {
@@ -177,7 +177,7 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
                 metric: "orphan_module".to_string(),
                 value: 0,
                 threshold: 0,
-                message: format!("Module '{}' has no dependencies and nothing depends on it", module_name),
+                message: format!("Module '{module_name}' has no dependencies and nothing depends on it"),
                 suggestion: "This may be dead code. Remove it, or integrate it into the codebase.".to_string(),
             });
         }
@@ -203,7 +203,7 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
 }
 
 fn module_name_from_path(parsed: &ParsedFile) -> String {
-    parsed.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "unknown".to_string())
+    parsed.path.file_stem().map_or_else(|| "unknown".to_string(), |s| s.to_string_lossy().into_owned())
 }
 
 /// Build a dependency graph from parsed files
@@ -286,7 +286,7 @@ fn is_decision_point(kind: &str) -> bool {
 fn count_decision_points(node: Node) -> usize {
     let mut cursor = node.walk();
     node.children(&mut cursor)
-        .map(|child| is_decision_point(child.kind()) as usize + count_decision_points(child))
+        .map(|child| usize::from(is_decision_point(child.kind())) + count_decision_points(child))
         .sum()
 }
 
@@ -299,7 +299,7 @@ mod tests {
 
     fn parse_source(code: &str) -> ParsedFile {
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        write!(tmp, "{}", code).unwrap();
+        write!(tmp, "{code}").unwrap();
         let mut parser = create_parser().unwrap();
         parse_file(&mut parser, tmp.path()).unwrap()
     }
@@ -407,7 +407,7 @@ mod tests {
         for name in entry_points {
             let metrics = ModuleGraphMetrics { fan_in: 0, fan_out: 0, ..Default::default() };
             assert!(!is_orphan(&metrics, name), 
-                "{} should be excluded as entry point", name);
+                "{name} should be excluded as entry point");
         }
     }
 
@@ -437,7 +437,7 @@ mod tests {
         let func = tree.root_node().child(0).unwrap();
         let cc = compute_cyclomatic_complexity(func);
         // Base 1 + for loop = 2
-        assert!(cc >= 2, "for loop should contribute to CC, got {}", cc);
+        assert!(cc >= 2, "for loop should contribute to CC, got {cc}");
     }
 
     #[test]
@@ -448,7 +448,7 @@ mod tests {
         let func = tree.root_node().child(0).unwrap();
         let cc = compute_cyclomatic_complexity(func);
         // Base 1 + while loop = 2
-        assert!(cc >= 2, "while loop should contribute to CC, got {}", cc);
+        assert!(cc >= 2, "while loop should contribute to CC, got {cc}");
     }
 
     #[test]
@@ -459,6 +459,6 @@ mod tests {
         let func = tree.root_node().child(0).unwrap();
         let cc = compute_cyclomatic_complexity(func);
         // Base 1 + if + and + or = at least 4
-        assert!(cc >= 3, "boolean operators should contribute to CC, got {}", cc);
+        assert!(cc >= 3, "boolean operators should contribute to CC, got {cc}");
     }
 }

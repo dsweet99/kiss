@@ -23,8 +23,7 @@ fn cli_analyze_on_fake_python_runs_successfully() {
     // Should complete without panic (exit code 0 or produce output)
     assert!(
         output.status.success() || !stdout.is_empty(),
-        "kiss should run successfully. stderr: {}",
-        stderr
+        "kiss should run successfully. stderr: {stderr}"
     );
 }
 
@@ -43,8 +42,7 @@ fn cli_analyze_reports_violations_on_god_class() {
     // god_class.py should trigger violations
     assert!(
         stdout.contains("violation") || stdout.contains("methods"),
-        "god_class.py should report violations. stdout: {}",
-        stdout
+        "god_class.py should report violations. stdout: {stdout}"
     );
 }
 
@@ -61,8 +59,7 @@ fn cli_stats_command_runs() {
     // Should produce stats output
     assert!(
         stdout.contains("stats") || stdout.contains("Python") || stdout.contains("files"),
-        "kiss stats should produce output. stdout: {}",
-        stdout
+        "kiss stats should produce output. stdout: {stdout}"
     );
 }
 
@@ -81,8 +78,7 @@ fn cli_with_lang_filter_python() {
     // Should run and report violations (exit code 1 expected for violations)
     assert!(
         !stdout.is_empty() && stdout.contains("VIOLATION"),
-        "kiss --lang python should report violations. stdout: {}",
-        stdout
+        "kiss --lang python should report violations. stdout: {stdout}"
     );
 }
 
@@ -101,8 +97,7 @@ fn cli_with_lang_filter_rust() {
     // Should report no Rust files found (fake_python only has Python)
     assert!(
         stdout.contains("No Rust files") || stdout.contains("No files"),
-        "Should report no Rust files. stdout: {}",
-        stdout
+        "Should report no Rust files. stdout: {stdout}"
     );
 }
 
@@ -146,8 +141,7 @@ fn cli_invalid_lang_reports_error() {
     assert!(!output.status.success());
     assert!(
         stderr.contains("Unknown language") || stderr.contains("error"),
-        "Should report unknown language error. stderr: {}",
-        stderr
+        "Should report unknown language error. stderr: {stderr}"
     );
 }
 
@@ -167,8 +161,7 @@ fn cli_on_empty_directory() {
     // Should report no files found
     assert!(
         stdout.contains("No files") || stdout.contains("No Python") || stdout.contains("No Rust"),
-        "Should report no files. stdout: {}",
-        stdout
+        "Should report no files. stdout: {stdout}"
     );
 }
 
@@ -185,8 +178,7 @@ fn cli_mimic_command_runs() {
     // Should produce TOML config output
     assert!(
         stdout.contains("[python]") || stdout.contains("Generated"),
-        "kiss mimic should produce config. stdout: {}",
-        stdout
+        "kiss mimic should produce config. stdout: {stdout}"
     );
 }
 

@@ -20,8 +20,8 @@ pub fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
 
 pub fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: usize, total: usize, unreferenced: &[(std::path::PathBuf, String, usize)]) {
     println!("❌ Test coverage too low to safely suggest refactoring.\n");
-    println!("   Test reference coverage: {}% (threshold: {}%)", coverage, threshold);
-    println!("   Functions with test references: {} / {}\n", tested, total);
+    println!("   Test reference coverage: {coverage}% (threshold: {threshold}%)");
+    println!("   Functions with test references: {tested} / {total}\n");
     
     for (file, name, line) in unreferenced {
         println!("UNCOVERED:test_coverage:{}:{}:{}: Add test coverage for this code unit.", file.display(), line, name);

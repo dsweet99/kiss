@@ -13,16 +13,16 @@ pub enum ParseError {
 
 impl From<std::io::Error> for ParseError {
     fn from(err: std::io::Error) -> Self {
-        ParseError::IoError(err)
+        Self::IoError(err)
     }
 }
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::IoError(e) => write!(f, "IO error: {}", e),
-            ParseError::ParserInitError => write!(f, "Failed to initialize Python parser"),
-            ParseError::ParseFailed => write!(f, "Failed to parse Python code"),
+            Self::IoError(e) => write!(f, "IO error: {e}"),
+            Self::ParserInitError => write!(f, "Failed to initialize Python parser"),
+            Self::ParseFailed => write!(f, "Failed to parse Python code"),
         }
     }
 }
@@ -124,7 +124,7 @@ mod tests {
         let paths = vec![tmp1.path().to_path_buf(), tmp2.path().to_path_buf()];
         let results = parse_files(&paths).unwrap();
         assert_eq!(results.len(), 2);
-        assert!(results.iter().all(|r| r.is_ok()));
+        assert!(results.iter().all(std::result::Result::is_ok));
     }
 
     #[test]
@@ -143,7 +143,7 @@ mod tests {
         use std::fmt::Write;
         let err = ParseError::ParseFailed;
         let mut s = String::new();
-        write!(&mut s, "{}", err).unwrap();
+        write!(&mut s, "{err}").unwrap();
         assert!(!s.is_empty());
     }
 }

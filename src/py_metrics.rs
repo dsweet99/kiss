@@ -62,9 +62,8 @@ pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
 /// Compute basic metrics for a class node (method count only)
 #[must_use]
 pub fn compute_class_metrics(node: Node) -> ClassMetrics {
-    let body = match node.child_by_field_name("body") {
-        Some(b) => b,
-        None => return ClassMetrics::default(),
+    let Some(body) = node.child_by_field_name("body") else {
+        return ClassMetrics::default();
     };
     ClassMetrics { methods: count_node_kind(body, "function_definition"), lcom: 0.0 }
 }
@@ -72,9 +71,8 @@ pub fn compute_class_metrics(node: Node) -> ClassMetrics {
 /// Compute metrics for a class node including LCOM
 #[must_use]
 pub fn compute_class_metrics_with_source(node: Node, source: &str) -> ClassMetrics {
-    let body = match node.child_by_field_name("body") {
-        Some(b) => b,
-        None => return ClassMetrics::default(),
+    let Some(body) = node.child_by_field_name("body") else {
+        return ClassMetrics::default();
     };
     ClassMetrics {
         methods: count_node_kind(body, "function_definition"),
@@ -130,10 +128,8 @@ fn count_statements(node: Node) -> usize {
     for child in node.children(&mut cursor) {
         if is_statement(child.kind()) {
             count += 1;
-            count += count_statements(child);
-        } else {
-            count += count_statements(child);
         }
+        count += count_statements(child);
     }
     count
 }
@@ -189,11 +185,10 @@ fn count_local_variables(node: Node, source: &str) -> usize {
 }
 
 fn collect_local_variables(node: Node, source: &str, variables: &mut HashSet<String>) {
-    if node.kind() == "assignment" || node.kind() == "augmented_assignment" {
-        if let Some(left) = node.child_by_field_name("left") {
+    if (node.kind() == "assignment" || node.kind() == "augmented_assignment")
+        && let Some(left) = node.child_by_field_name("left") {
             collect_assigned_names(left, source, variables);
         }
-    }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         collect_local_variables(child, source, variables);
@@ -241,7 +236,7 @@ fn count_imports(node: Node) -> usize {
     count
 }
 
-/// Count imported names in an import_from_statement.
+/// Count imported names in an `import_from_statement`.
 /// For `from X import a, b, c`, counts a, b, c (not X).
 fn count_import_names(node: Node) -> usize {
     let mut count = 0;
@@ -259,7 +254,7 @@ fn count_import_names(node: Node) -> usize {
 
 /// Count nodes of a specific kind in the tree
 pub fn count_node_kind(node: Node, kind: &str) -> usize {
-    let mut count = if node.kind() == kind { 1 } else { 0 };
+    let mut count = usize::from(node.kind() == kind);
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         count += count_node_kind(child, kind);
@@ -268,8 +263,10 @@ pub fn count_node_kind(node: Node, kind: &str) -> usize {
 }
 
 /// Compute LCOM (Lack of Cohesion of Methods) for a class body.
-/// LCOM = pairs_not_sharing_fields / total_pairs. Returns 0.0 (cohesive) to 1.0 (no cohesion).
+/// LCOM = `pairs_not_sharing_fields` / `total_pairs`. Returns 0.0 (cohesive) to 1.0 (no cohesion).
 pub fn compute_lcom(body: Node, source: &str) -> f64 {
+    const MIN_METHODS_FOR_LCOM: usize = 2;
+    
     let mut fields_per_method: Vec<HashSet<String>> = Vec::new();
     let mut cursor = body.walk();
     
@@ -279,7 +276,6 @@ pub fn compute_lcom(body: Node, source: &str) -> f64 {
         }
     }
     
-    const MIN_METHODS_FOR_LCOM: usize = 2;
     if fields_per_method.len() < MIN_METHODS_FOR_LCOM { return 0.0; }
     
     let total_pairs = fields_per_method.len() * (fields_per_method.len() - 1) / 2;
@@ -299,15 +295,12 @@ pub fn extract_self_attributes(node: Node, source: &str) -> HashSet<String> {
 }
 
 pub fn extract_self_attributes_recursive(node: Node, source: &str, fields: &mut HashSet<String>) {
-    if node.kind() == "attribute" {
-        if let (Some(obj), Some(attr)) = (node.child_by_field_name("object"), node.child_by_field_name("attribute")) {
-            if obj.kind() == "identifier" && obj.utf8_text(source.as_bytes()).unwrap_or("") == "self" {
-                if let Ok(name) = attr.utf8_text(source.as_bytes()) {
+    if node.kind() == "attribute"
+        && let (Some(obj), Some(attr)) = (node.child_by_field_name("object"), node.child_by_field_name("attribute"))
+            && obj.kind() == "identifier" && obj.utf8_text(source.as_bytes()).unwrap_or("") == "self"
+                && let Ok(name) = attr.utf8_text(source.as_bytes()) {
                     fields.insert(name.to_string());
                 }
-            }
-        }
-    }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         extract_self_attributes_recursive(child, source, fields);
@@ -322,7 +315,7 @@ mod tests {
 
     fn parse_source(code: &str) -> ParsedFile {
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        write!(tmp, "{}", code).unwrap();
+        write!(tmp, "{code}").unwrap();
         let mut parser = create_parser().unwrap();
         parse_file(&mut parser, tmp.path()).unwrap()
     }
@@ -358,7 +351,7 @@ mod tests {
         let cls = parsed.tree.root_node().child(0).unwrap();
         let body = cls.child_by_field_name("body").unwrap();
         let lcom = compute_lcom(body, &parsed.source);
-        assert!(lcom >= 0.0 && lcom <= 1.0);
+        assert!((0.0..=1.0).contains(&lcom));
     }
 
     #[test]
@@ -394,7 +387,7 @@ mod tests {
             let mut vars = HashSet::new(); collect_local_variables(body, &p2.source, &mut vars);
         }
         let p3 = parse_source("x = 1");
-        if let Some(stmt) = p3.tree.root_node().child(0) { if let Some(left) = stmt.child_by_field_name("left") { let mut v = HashSet::new(); collect_assigned_names(left, &p3.source, &mut v); } }
+        if let Some(stmt) = p3.tree.root_node().child(0) && let Some(left) = stmt.child_by_field_name("left") { let mut v = HashSet::new(); collect_assigned_names(left, &p3.source, &mut v); }
         let p4 = parse_source("def f(): pass");
         let _ = compute_nested_function_depth(p4.tree.root_node().child(0).unwrap(), 0);
         let p5 = parse_source("import os");
@@ -444,7 +437,7 @@ mod tests {
     #[test]
     fn test_imports_counts_all_including_lazy() {
         // Imports inside functions (lazy imports) are still dependencies and should be counted
-        let code = r#"
+        let code = r"
 import os
 from typing import Any, List
 
@@ -452,7 +445,7 @@ def my_function():
     import numpy as np
     from collections import deque
     pass
-"#;
+";
         let parsed = parse_source(code);
         let m = compute_file_metrics(&parsed);
         // os (1) + Any, List (2) + numpy (1) + deque (1) = 5
@@ -466,7 +459,7 @@ def my_function():
         let body = cls.child_by_field_name("body").unwrap();
         let method = body.child(0).unwrap();
         let fields = extract_self_attributes(method, &parsed.source);
-        assert!(fields.len() >= 1);
+        assert!(!fields.is_empty());
     }
 
     #[test]

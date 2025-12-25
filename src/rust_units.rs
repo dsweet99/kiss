@@ -12,7 +12,7 @@ pub struct RustCodeUnit {
     pub name: String,
     pub start_line: usize,
     pub end_line: usize,
-    /// For methods: the impl type name (e.g., "MyStruct")
+    /// For methods: the impl type name (e.g., "`MyStruct`")
     pub parent_type: Option<String>,
 }
 
@@ -140,9 +140,7 @@ pub fn extract_rust_code_units(parsed: &ParsedRustFile) -> Vec<RustCodeUnit> {
         kind: CodeUnitKind::Module,
         name: parsed
             .path
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "unknown".to_string()),
+            .file_stem().map_or_else(|| "unknown".to_string(), |s| s.to_string_lossy().into_owned()),
         start_line: 1,
         end_line: visitor.source_lines,
         parent_type: None,
@@ -163,7 +161,7 @@ mod tests {
 
     fn parse_and_extract(code: &str) -> Vec<RustCodeUnit> {
         let mut file = NamedTempFile::with_suffix(".rs").unwrap();
-        write!(file, "{}", code).unwrap();
+        write!(file, "{code}").unwrap();
         let parsed = parse_rust_file(file.path()).expect("should parse");
         extract_rust_code_units(&parsed)
     }
@@ -179,14 +177,14 @@ mod tests {
 
     #[test]
     fn extracts_struct_and_methods() {
-        let units = parse_and_extract(r#"
+        let units = parse_and_extract(r"
 struct Counter { value: i32 }
 
 impl Counter {
     fn new() -> Self { Counter { value: 0 } }
     fn get(&self) -> i32 { self.value }
 }
-"#);
+");
         
         let structs: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Class).collect();
         let methods: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Method).collect();
@@ -212,8 +210,8 @@ impl Counter {
     fn includes_module_for_file() {
         let units = parse_and_extract("fn foo() {}");
         
-        let modules: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Module).collect();
-        assert!(!modules.is_empty(), "Should have at least one module (the file)");
+        let has_module = units.iter().any(|u| u.kind == CodeUnitKind::Module);
+        assert!(has_module, "Should have at least one module (the file)");
     }
 
     #[test]

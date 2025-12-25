@@ -50,8 +50,8 @@ impl MetricStats {
         stats
     }
 
-    /// Merge another MetricStats into this one
-    pub fn merge(&mut self, other: MetricStats) {
+    /// Merge another `MetricStats` into this one
+    pub fn merge(&mut self, other: Self) {
         self.statements_per_function.extend(other.statements_per_function);
         self.arguments_per_function.extend(other.arguments_per_function);
         self.arguments_positional.extend(other.arguments_positional);

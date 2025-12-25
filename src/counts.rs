@@ -140,7 +140,7 @@ mod tests {
 
     fn parse_source(code: &str) -> ParsedFile {
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        write!(tmp, "{}", code).unwrap();
+        write!(tmp, "{code}").unwrap();
         let mut parser = create_parser().unwrap();
         parse_file(&mut parser, tmp.path()).unwrap()
     }
@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn test_methods_per_class_violation() {
         // Create a class with many methods that exceeds threshold
-        let code = r#"
+        let code = r"
 class BigClass:
     def m1(self): pass
     def m2(self): pass
@@ -244,7 +244,7 @@ class BigClass:
     def m4(self): pass
     def m5(self): pass
     def m6(self): pass
-"#;
+";
         let parsed = parse_source(code);
         let mut config = Config::default();
         config.methods_per_class = 3; // Set low threshold
@@ -263,9 +263,9 @@ class BigClass:
         // Create a class with 21+ methods that don't share fields
         let mut methods = String::new();
         for i in 0..22 {
-            methods.push_str(&format!("    def m{}(self): self.field{} = {}\n", i, i, i));
+            methods.push_str(&format!("    def m{i}(self): self.field{i} = {i}\n"));
         }
-        let code = format!("class LowCohesion:\n{}", methods);
+        let code = format!("class LowCohesion:\n{methods}");
         
         let parsed = parse_source(&code);
         let mut config = Config::default();

@@ -1,3 +1,19 @@
+// Allow some pedantic clippy lints that are acceptable in this codebase
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::struct_field_names)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::format_push_string)]
+#![allow(clippy::return_self_not_must_use)]
+#![allow(clippy::needless_update)]
+#![allow(clippy::iter_on_single_items)]
+#![allow(clippy::float_cmp)]
+#![allow(clippy::ref_option)] // &Option<T> is fine for function parameters
+
 use clap::{Parser, Subcommand};
 use kiss::{
     analyze_file, analyze_graph, analyze_rust_file, analyze_rust_test_refs, analyze_test_refs,
@@ -45,7 +61,7 @@ fn parse_language(s: &str) -> Result<Language, String> {
     match s.to_lowercase().as_str() {
         "python" | "py" => Ok(Language::Python),
         "rust" | "rs" => Ok(Language::Rust),
-        _ => Err(format!("Unknown language '{}'. Use 'python' or 'rust'.", s)),
+        _ => Err(format!("Unknown language '{s}'. Use 'python' or 'rust'.")),
     }
 }
 
@@ -105,11 +121,10 @@ fn ensure_default_config_exists() {
     
     if let Some(home) = std::env::var_os("HOME") {
         let home_config = Path::new(&home).join(".kissconfig");
-        if !home_config.exists() {
-            if let Err(e) = std::fs::write(&home_config, kiss::default_config_toml()) {
+        if !home_config.exists()
+            && let Err(e) = std::fs::write(&home_config, kiss::default_config_toml()) {
                 eprintln!("Note: Could not write default config to {}: {}", home_config.display(), e);
             }
-        }
     }
 }
 
@@ -168,15 +183,15 @@ fn run_analyze(path: &str, py_config: &Config, rs_config: &Config, lang_filter: 
 }
 
 fn build_graphs(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (Option<DependencyGraph>, Option<DependencyGraph>) {
-    let py_graph = if !py_parsed.is_empty() {
+    let py_graph = if py_parsed.is_empty() { None } else {
         let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
         Some(build_dependency_graph(&refs))
-    } else { None };
+    };
     
-    let rs_graph = if !rs_parsed.is_empty() {
+    let rs_graph = if rs_parsed.is_empty() { None } else {
         let refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
         Some(build_rust_dependency_graph(&refs))
-    } else { None };
+    };
     
     (py_graph, rs_graph)
 }
@@ -270,7 +285,7 @@ fn parse_and_analyze_py(files: &[PathBuf], config: &Config) -> (Vec<ParsedFile>,
     let results = match parse_files(files) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("Failed to initialize Python parser: {}", e);
+            eprintln!("Failed to initialize Python parser: {e}");
             return (Vec::new(), Vec::new());
         }
     };
@@ -282,7 +297,7 @@ fn parse_and_analyze_py(files: &[PathBuf], config: &Config) -> (Vec<ParsedFile>,
                 viols.extend(analyze_file(&p, config));
                 parsed.push(p);
             }
-            Err(e) => eprintln!("Error parsing Python: {}", e),
+            Err(e) => eprintln!("Error parsing Python: {e}"),
         }
     }
     (parsed, viols)
@@ -298,7 +313,7 @@ fn parse_and_analyze_rs(files: &[PathBuf], config: &Config) -> (Vec<ParsedRustFi
                 viols.extend(analyze_rust_file(&p, config));
                 parsed.push(p);
             }
-            Err(e) => eprintln!("Error parsing Rust: {}", e),
+            Err(e) => eprintln!("Error parsing Rust: {e}"),
         }
     }
     (parsed, viols)
@@ -346,7 +361,7 @@ fn run_mimic(paths: &[String], out: Option<&Path>, lang_filter: Option<Language>
     let toml = generate_config_toml_by_language(&py_stats, &rs_stats, py_cnt, rs_cnt);
     match out {
         Some(p) => write_mimic_config(p, &toml, py_cnt, rs_cnt),
-        None => print!("{}", toml),
+        None => print!("{toml}"),
     }
 }
 
@@ -355,14 +370,14 @@ fn run_rules(py_config: &Config, rs_config: &Config, gate_config: &GateConfig, l
         "built-in defaults"
     } else if Path::new(".kissconfig").exists() {
         ".kissconfig"
-    } else if std::env::var_os("HOME").map(|h| Path::new(&h).join(".kissconfig").exists()).unwrap_or(false) {
+    } else if std::env::var_os("HOME").is_some_and(|h| Path::new(&h).join(".kissconfig").exists()) {
         "~/.kissconfig"
     } else {
         "built-in defaults"
     };
     
     println!("# kiss coding rules\n");
-    println!("*Source: {}*\n", config_source);
+    println!("*Source: {config_source}*\n");
     
     match lang_filter {
         Some(Language::Python) => print_python_rules(py_config, gate_config),

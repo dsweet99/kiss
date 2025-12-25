@@ -20,15 +20,15 @@ pub enum CodeUnitKind {
 
 impl CodeUnitKind {
     /// Returns a human-readable label for display
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            CodeUnitKind::Function => "function",
-            CodeUnitKind::Method => "method",
-            CodeUnitKind::Class => "class",
-            CodeUnitKind::Module => "module",
-            CodeUnitKind::Struct => "struct",
-            CodeUnitKind::Enum => "enum",
-            CodeUnitKind::TraitImplMethod => "trait_impl_method",
+            Self::Function => "function",
+            Self::Method => "method",
+            Self::Class => "class",
+            Self::Module => "module",
+            Self::Struct => "struct",
+            Self::Enum => "enum",
+            Self::TraitImplMethod => "trait_impl_method",
         }
     }
 }
@@ -59,9 +59,7 @@ pub fn extract_code_units(parsed: &ParsedFile) -> Vec<CodeUnit> {
         kind: CodeUnitKind::Module,
         name: parsed
             .path
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "unknown".to_string()),
+            .file_stem().map_or_else(|| "unknown".to_string(), |s| s.to_string_lossy().into_owned()),
         start_line: 1,
         end_line: root.end_position().row + 1,
         start_byte: 0,
@@ -133,7 +131,7 @@ mod tests {
 
     fn parse_source(code: &str) -> ParsedFile {
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        write!(tmp, "{}", code).unwrap();
+        write!(tmp, "{code}").unwrap();
         let mut parser = create_parser().unwrap();
         parse_file(&mut parser, tmp.path()).unwrap()
     }

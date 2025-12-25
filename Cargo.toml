@@ -2,9 +2,11 @@
 name = "kiss"
 version = "0.1.0"
 edition = "2024"
-description = "A command-line tool"
+description = "Code-quality metrics tool for Python and Rust"
 license = "MIT"
 repository = "https://github.com/dsweet99/kiss"
+keywords = ["code-quality", "metrics", "linting", "python", "rust"]
+categories = ["development-tools", "command-line-utilities"]
 
 [dependencies]
 # CLI

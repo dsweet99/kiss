@@ -15,7 +15,7 @@ pub fn collect_py_stats(root: &Path) -> (MetricStats, usize) {
     let py_files = find_python_files(root);
     if py_files.is_empty() { return (MetricStats::default(), 0); }
     let Ok(results) = parse_files(&py_files) else { return (MetricStats::default(), 0); };
-    let parsed: Vec<ParsedFile> = results.into_iter().filter_map(|r| r.ok()).collect();
+    let parsed: Vec<ParsedFile> = results.into_iter().filter_map(std::result::Result::ok).collect();
     let cnt = parsed.len();
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
     let mut stats = MetricStats::collect(&refs);
@@ -27,7 +27,7 @@ pub fn collect_py_stats(root: &Path) -> (MetricStats, usize) {
 pub fn collect_rs_stats(root: &Path) -> (MetricStats, usize) {
     let rs_files = find_rust_files(root);
     if rs_files.is_empty() { return (MetricStats::default(), 0); }
-    let parsed: Vec<ParsedRustFile> = parse_rust_files(&rs_files).into_iter().filter_map(|r| r.ok()).collect();
+    let parsed: Vec<ParsedRustFile> = parse_rust_files(&rs_files).into_iter().filter_map(std::result::Result::ok).collect();
     let cnt = parsed.len();
     let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
     let mut stats = MetricStats::collect_rust(&refs);
@@ -70,10 +70,10 @@ pub fn write_mimic_config(out: &Path, toml: &str, py_cnt: usize, rs_cnt: usize) 
 
 fn format_section(out: &mut String, name: &str, section: Option<&toml::Value>) {
     if let Some(v) = section {
-        out.push_str(&format!("[{}]\n", name));
+        out.push_str(&format!("[{name}]\n"));
         if let Some(t) = v.as_table() { 
             for (k, v) in t { 
-                out.push_str(&format!("{} = {}\n", k, v)); 
+                out.push_str(&format!("{k} = {v}\n")); 
             } 
         }
         out.push('\n');
@@ -91,7 +91,7 @@ pub fn merge_config_toml(path: &Path, new: &str, upd_py: bool, upd_rs: bool) -> 
     for (k, upd) in [("python", upd_py), ("rust", upd_rs)] { 
         if let Some(v) = pick(k, upd) { m.insert(k.to_string(), v); } 
     }
-    let shared = if upd_py && upd_rs { nw.get("shared") } else { ex.get("shared").or(nw.get("shared")) }.cloned();
+    let shared = if upd_py && upd_rs { nw.get("shared") } else { ex.get("shared").or_else(|| nw.get("shared")) }.cloned();
     if let Some(v) = shared { m.insert("shared".to_string(), v); }
     if !(upd_py && upd_rs) && let Some(v) = ex.get("thresholds").cloned() { 
         m.insert("thresholds".to_string(), v); 
@@ -131,7 +131,7 @@ fn append_shared_section(out: &mut String, py_sums: &[PercentileSummary], rs_sum
     out.push_str("[shared]\n");
     for py_s in py_sums {
         if let Some(k) = shared_config_key(py_s.name) {
-            let rs_val = rs_sums.iter().find(|s| s.name == py_s.name).map(|s| s.p99).unwrap_or(0);
+            let rs_val = rs_sums.iter().find(|s| s.name == py_s.name).map_or(0, |s| s.p99);
             out.push_str(&format!("{} = {}\n", k, py_s.p99.max(rs_val)));
         }
     }

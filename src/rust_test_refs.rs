@@ -116,7 +116,7 @@ fn try_add_def(defs: &mut Vec<RustCodeDefinition>, name: &str, kind: CodeUnitKin
     }
 }
 
-/// Extract the type name from a syn::Type (for impl blocks)
+/// Extract the type name from a `syn::Type` (for impl blocks)
 fn extract_type_name(ty: &syn::Type) -> Option<String> {
     match ty {
         syn::Type::Path(type_path) => type_path.path.segments.last().map(|seg| seg.ident.to_string()),
@@ -266,7 +266,7 @@ impl syn::parse::Parse for ExprList {
                 let _: syn::Token![,] = input.parse()?;
             }
         }
-        Ok(ExprList(exprs))
+        Ok(Self(exprs))
     }
 }
 
@@ -492,11 +492,11 @@ mod tests {
     #[test]
     fn test_path_segments_all_collected() {
         // MyStruct::Builder::new().build() should reference: MyStruct, Builder, new, build
-        let code = r#"
+        let code = r"
 fn test_it() {
     MyStruct::Builder::new().build();
 }
-"#;
+";
         let f: syn::File = syn::parse_str(code).unwrap();
         let mut refs = HashSet::new();
         collect_rust_references(&f, &mut refs);
@@ -546,7 +546,7 @@ impl MyType {
 "#;
         
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-        writeln!(tmp, "{}", source_code).unwrap();
+        writeln!(tmp, "{source_code}").unwrap();
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         
         // Collect definitions
@@ -560,7 +560,7 @@ impl MyType {
         assert_eq!(fmt_def.unwrap().impl_for_type, Some("MyType".to_string()));
         
         // If MyType is referenced, fmt should be covered
-        let refs: HashSet<String> = ["MyType", "new"].iter().map(|s| s.to_string()).collect();
+        let refs: HashSet<String> = ["MyType", "new"].iter().map(|s| (*s).to_string()).collect();
         assert!(is_covered_by_tests(fmt_def.unwrap(), &refs), 
             "trait impl method should be covered when its type is referenced");
     }
@@ -576,7 +576,7 @@ impl MyType {
         };
         
         // References don't include UnusedType
-        let refs: HashSet<String> = ["OtherType", "some_func"].iter().map(|s| s.to_string()).collect();
+        let refs: HashSet<String> = ["OtherType", "some_func"].iter().map(|s| (*s).to_string()).collect();
         
         assert!(!is_covered_by_tests(&def, &refs),
             "trait impl should NOT be covered if its type is not referenced");

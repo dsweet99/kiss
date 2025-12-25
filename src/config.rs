@@ -46,7 +46,7 @@ impl Default for Config {
 
 impl Config {
     /// Python-specific defaults
-    pub fn python_defaults() -> Self {
+    pub const fn python_defaults() -> Self {
         Self {
             statements_per_function: defaults::python::STATEMENTS_PER_FUNCTION,
             methods_per_class: defaults::python::METHODS_PER_CLASS,
@@ -68,7 +68,7 @@ impl Config {
     }
 
     /// Rust-specific defaults
-    pub fn rust_defaults() -> Self {
+    pub const fn rust_defaults() -> Self {
         Self {
             statements_per_function: defaults::rust::STATEMENTS_PER_FUNCTION,
             methods_per_class: defaults::rust::METHODS_PER_TYPE,
@@ -260,7 +260,7 @@ impl Config {
 
 fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
     table.get(key)
-        .and_then(|v| v.as_integer())
+        .and_then(toml::Value::as_integer)
         .filter(|&v| v >= 0)  // Ignore negative values
         .map(|v| v as usize)
 }

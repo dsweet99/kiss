@@ -11,9 +11,7 @@ pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> Dependen
     for parsed in parsed_files {
         let module_name = parsed
             .path
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| String::from("unknown"));
+            .file_stem().map_or_else(|| String::from("unknown"), |s| s.to_string_lossy().into_owned());
 
         graph.paths.insert(module_name.clone(), parsed.path.clone());
         graph.get_or_create_node(&module_name);
@@ -82,28 +80,28 @@ mod tests {
     fn extracts_simple_use() {
         let ast = parse_rust_code("use std;");
         let imports = extract_rust_imports(&ast);
-        assert!(imports.contains(&String::from("std")), "imports: {:?}", imports);
+        assert!(imports.contains(&String::from("std")), "imports: {imports:?}");
     }
 
     #[test]
     fn extracts_path_use() {
         let ast = parse_rust_code("use std::collections::HashMap;");
         let imports = extract_rust_imports(&ast);
-        assert!(imports.contains(&String::from("std")), "imports: {:?}", imports);
+        assert!(imports.contains(&String::from("std")), "imports: {imports:?}");
     }
 
     #[test]
     fn extracts_multiple_uses() {
         let ast = parse_rust_code(
-            r#"
+            r"
 use std::io;
 use serde::Serialize;
 use crate::module;
-"#,
+",
         );
         let imports = extract_rust_imports(&ast);
-        assert!(imports.contains(&String::from("std")), "imports: {:?}", imports);
-        assert!(imports.contains(&String::from("serde")), "imports: {:?}", imports);
+        assert!(imports.contains(&String::from("std")), "imports: {imports:?}");
+        assert!(imports.contains(&String::from("serde")), "imports: {imports:?}");
         assert!(!imports.contains(&String::from("crate")), "crate:: should be excluded");
     }
 
@@ -111,7 +109,7 @@ use crate::module;
     fn handles_grouped_uses() {
         let ast = parse_rust_code("use std::{io, collections::HashMap};");
         let imports = extract_rust_imports(&ast);
-        assert!(imports.contains(&String::from("std")), "imports: {:?}", imports);
+        assert!(imports.contains(&String::from("std")), "imports: {imports:?}");
     }
 
     #[test]
@@ -122,7 +120,7 @@ use crate::module;
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let refs: Vec<&crate::rust_parsing::ParsedRustFile> = vec![&parsed];
         let graph = build_rust_dependency_graph(&refs);
-        assert!(graph.nodes.len() >= 1);
+        assert!(!graph.nodes.is_empty());
     }
 
     #[test]
