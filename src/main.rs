@@ -1,12 +1,15 @@
 use clap::{Parser, Subcommand};
 use kiss::{
     analyze_file, analyze_graph, analyze_rust_file, analyze_rust_test_refs, analyze_test_refs,
-    build_dependency_graph, build_rust_dependency_graph, cluster_duplicates,
-    collect_instability_metrics, compute_summaries, detect_duplicates, detect_duplicates_from_chunks,
+    build_dependency_graph, build_rust_dependency_graph, cluster_duplicates, compute_summaries,
+    detect_duplicates, detect_duplicates_from_chunks,
     extract_chunks_for_duplication, extract_rust_chunks_for_duplication, find_python_files,
     find_rust_files, format_stats_table, parse_files, parse_rust_files, Config, ConfigLanguage,
-    DuplicationConfig, GateConfig, Language, MetricStats, ParsedFile,
-    ParsedRustFile,
+    DuplicationConfig, GateConfig, Language, MetricStats, ParsedFile, ParsedRustFile,
+};
+use kiss::config_gen::{
+    collect_all_stats, collect_py_stats, collect_rs_stats, generate_config_toml_by_language,
+    write_mimic_config,
 };
 use std::path::{Path, PathBuf};
 
@@ -105,7 +108,11 @@ fn load_configs(config_path: &Option<PathBuf>) -> (Config, Config) {
     }
 }
 
-use kiss::{Violation, DuplicateCluster, PercentileSummary};
+use kiss::{Violation, DuplicateCluster};
+use kiss::cli_output::{
+    print_no_files_message, print_coverage_gate_failure, print_instability,
+    print_violations, print_duplicates, print_py_test_refs, print_rs_test_refs,
+};
 
 fn run_analyze(path: &str, py_config: &Config, rs_config: &Config, lang_filter: Option<Language>, bypass_gate: bool, gate_config: &GateConfig) {
     let root = Path::new(path);
@@ -122,6 +129,13 @@ fn run_analyze(path: &str, py_config: &Config, rs_config: &Config, lang_filter: 
         return;
     }
     
+    let (py_graph, rs_graph) = build_graphs(&py_parsed, &rs_parsed);
+    viols.extend(analyze_graphs(&py_graph, &rs_graph, py_config, rs_config));
+    
+    print_all_results(&viols, &py_parsed, &rs_parsed, &py_graph, &rs_graph);
+}
+
+fn build_graphs(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (Option<DependencyGraph>, Option<DependencyGraph>) {
     let py_graph = if !py_parsed.is_empty() {
         let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
         Some(build_dependency_graph(&refs))
@@ -132,26 +146,26 @@ fn run_analyze(path: &str, py_config: &Config, rs_config: &Config, lang_filter: 
         Some(build_rust_dependency_graph(&refs))
     } else { None };
     
-    if let Some(ref g) = py_graph { viols.extend(analyze_graph(g, py_config)); }
-    if let Some(ref g) = rs_graph { viols.extend(analyze_graph(g, rs_config)); }
-    
-    print_violations(&viols, py_parsed.len() + rs_parsed.len());
-    print_duplicates("Python", &detect_py_duplicates(&py_parsed));
-    print_duplicates("Rust", &detect_rs_duplicates(&rs_parsed));
-    print_instability("Python", py_graph.as_ref());
-    print_instability("Rust", rs_graph.as_ref());
-    print_py_test_refs(&py_parsed);
-    print_rs_test_refs(&rs_parsed);
+    (py_graph, rs_graph)
 }
 
-fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
-    let msg = match lang_filter {
-        Some(Language::Python) => "No Python files",
-        Some(Language::Rust) => "No Rust files",
-        None => "No files",
-    };
-    println!("{} in {}", msg, root.display());
+fn analyze_graphs(py_graph: &Option<DependencyGraph>, rs_graph: &Option<DependencyGraph>, py_config: &Config, rs_config: &Config) -> Vec<Violation> {
+    let mut viols = Vec::new();
+    if let Some(g) = py_graph { viols.extend(analyze_graph(g, py_config)); }
+    if let Some(g) = rs_graph { viols.extend(analyze_graph(g, rs_config)); }
+    viols
 }
+
+fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], py_graph: &Option<DependencyGraph>, rs_graph: &Option<DependencyGraph>) {
+    print_violations(viols, py_parsed.len() + rs_parsed.len());
+    print_duplicates("Python", &detect_py_duplicates(py_parsed));
+    print_duplicates("Rust", &detect_rs_duplicates(rs_parsed));
+    print_instability("Python", py_graph.as_ref());
+    print_instability("Rust", rs_graph.as_ref());
+    print_py_test_refs(py_parsed);
+    print_rs_test_refs(rs_parsed);
+}
+
 
 fn parse_all(py_files: &[PathBuf], rs_files: &[PathBuf], py_config: &Config, rs_config: &Config) -> (Vec<ParsedFile>, Vec<ParsedRustFile>, Vec<Violation>) {
     let (py_parsed, mut viols) = parse_and_analyze_py(py_files, py_config);
@@ -193,13 +207,6 @@ fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile])
     (coverage, tested, total)
 }
 
-fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: usize, total: usize) {
-    println!("❌ Test coverage too low to safely suggest refactoring.\n");
-    println!("   Test reference coverage: {}% (threshold: {}%)", coverage, threshold);
-    println!("   Functions with test references: {} / {}\n", tested, total);
-    println!("   Add tests for untested code, then run kiss again.");
-    println!("   Or use --all to bypass this check and proceed anyway.");
-}
 
 fn gather_files(root: &Path, lang: Option<Language>) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let py = if lang.is_none() || lang == Some(Language::Python) { find_python_files(root) } else { vec![] };
@@ -248,25 +255,6 @@ fn parse_and_analyze_rs(files: &[PathBuf], config: &Config) -> (Vec<ParsedRustFi
 
 use kiss::DependencyGraph;
 
-fn print_instability(lang: &str, graph: Option<&DependencyGraph>) {
-    let Some(g) = graph else { return; };
-    let metrics = collect_instability_metrics(g);
-    if metrics.is_empty() { return; }
-    
-    // Only show top 10 most unstable modules
-    let top_unstable: Vec<_> = metrics.into_iter().take(10).collect();
-    
-    println!("\n--- {} Module Instability (top unstable) ---\n", lang);
-    println!("  {:30} {:>10} {:>10} {:>12}", "Module", "Instability", "Fan-in", "Fan-out");
-    println!("  {:30} {:>10} {:>10} {:>12}", "------", "-----------", "------", "-------");
-    for m in &top_unstable {
-        println!("  {:30} {:>10.1}% {:>10} {:>12}", m.module_name, m.instability * 100.0, m.fan_in, m.fan_out);
-    }
-    println!();
-    println!("  Instability = Fan-out / (Fan-in + Fan-out)");
-    println!("  Lower is more stable (more incoming deps than outgoing).");
-}
-
 fn detect_py_duplicates(parsed: &[ParsedFile]) -> Vec<DuplicateCluster> {
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
     let chunks = extract_chunks_for_duplication(&refs);
@@ -279,66 +267,7 @@ fn detect_rs_duplicates(parsed: &[ParsedRustFile]) -> Vec<DuplicateCluster> {
     cluster_duplicates(&detect_duplicates_from_chunks(&chunks, &DuplicationConfig::default()), &chunks)
 }
 
-fn print_violations(viols: &[Violation], total: usize) {
-    if viols.is_empty() { println!("✓ No violations found in {} files.", total); return; }
-    println!("Found {} violations:\n", viols.len());
-    for v in viols { println!("{}:{}\n  {}\n  → {}\n", v.file.display(), v.line, v.message, v.suggestion); }
-}
 
-fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
-    if clusters.is_empty() { return; }
-    println!("\n--- {} Duplicate Code Detected ({} clusters) ---\n", lang, clusters.len());
-    for (i, c) in clusters.iter().enumerate() {
-        println!("Cluster {}: {} copies (~{:.0}% similar)", i + 1, c.chunks.len(), c.avg_similarity * 100.0);
-        for ch in &c.chunks { println!("  {}:{}-{} ({})", ch.file.display(), ch.start_line, ch.end_line, ch.name); }
-        println!();
-    }
-}
-
-fn print_py_test_refs(parsed: &[ParsedFile]) {
-    if parsed.is_empty() { return; }
-    let refs: Vec<&ParsedFile> = parsed.iter().collect();
-    let analysis = analyze_test_refs(&refs);
-    if !analysis.unreferenced.is_empty() {
-        println!("\n--- Possibly Untested Python Code ({} items) ---\n", analysis.unreferenced.len());
-        println!("The following code units are not referenced by any test file.\n(Note: This is static analysis only; actual coverage may differ.)\n");
-        for d in &analysis.unreferenced { println!("  {}:{} {} '{}'", d.file.display(), d.line, d.kind, d.name); }
-    }
-}
-
-fn print_rs_test_refs(parsed: &[ParsedRustFile]) {
-    if parsed.is_empty() { return; }
-    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-    let analysis = analyze_rust_test_refs(&refs);
-    if !analysis.unreferenced.is_empty() {
-        println!("\n--- Possibly Untested Rust Code ({} items) ---\n", analysis.unreferenced.len());
-        println!("The following code units are not referenced by any test.\n(Note: This is static analysis only; actual coverage may differ.)\n");
-        for d in &analysis.unreferenced { println!("  {}:{} {} '{}'", d.file.display(), d.line, d.kind, d.name); }
-    }
-}
-
-fn collect_py_stats(root: &Path) -> (MetricStats, usize) {
-    let py_files = find_python_files(root);
-    if py_files.is_empty() { return (MetricStats::default(), 0); }
-    let Ok(results) = parse_files(&py_files) else { return (MetricStats::default(), 0); };
-    let parsed: Vec<ParsedFile> = results.into_iter().filter_map(|r| r.ok()).collect();
-    let cnt = parsed.len();
-    let refs: Vec<&ParsedFile> = parsed.iter().collect();
-    let mut stats = MetricStats::collect(&refs);
-    stats.collect_graph_metrics(&build_dependency_graph(&refs));
-    (stats, cnt)
-}
-
-fn collect_rs_stats(root: &Path) -> (MetricStats, usize) {
-    let rs_files = find_rust_files(root);
-    if rs_files.is_empty() { return (MetricStats::default(), 0); }
-    let parsed: Vec<ParsedRustFile> = parse_rust_files(&rs_files).into_iter().filter_map(|r| r.ok()).collect();
-    let cnt = parsed.len();
-    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-    let mut stats = MetricStats::collect_rust(&refs);
-    stats.collect_graph_metrics(&build_rust_dependency_graph(&refs));
-    (stats, cnt)
-}
 
 fn run_stats(paths: &[String], lang_filter: Option<Language>) {
     let (mut py_stats, mut rs_stats) = (MetricStats::default(), MetricStats::default());
@@ -370,419 +299,133 @@ fn run_mimic(paths: &[String], out: Option<&Path>, lang_filter: Option<Language>
     }
 }
 
-fn collect_all_stats(paths: &[String], lang: Option<Language>) -> ((MetricStats, usize), (MetricStats, usize)) {
-    let (mut py, mut rs) = ((MetricStats::default(), 0), (MetricStats::default(), 0));
-    for path in paths {
-        let root = Path::new(path);
-        if lang.is_none() || lang == Some(Language::Python) { let (s, c) = collect_py_stats(root); py.0.merge(s); py.1 += c; }
-        if lang.is_none() || lang == Some(Language::Rust) { let (s, c) = collect_rs_stats(root); rs.0.merge(s); rs.1 += c; }
-    }
-    (py, rs)
-}
-
-fn write_mimic_config(out: &Path, toml: &str, py_cnt: usize, rs_cnt: usize) {
-    let content = if out.exists() { merge_config_toml(out, toml, py_cnt > 0, rs_cnt > 0) } else { toml.to_string() };
-    if let Err(e) = std::fs::write(out, &content) { eprintln!("Error writing to {}: {}", out.display(), e); std::process::exit(1); }
-    eprintln!("Generated config from {} files → {}", py_cnt + rs_cnt, out.display());
-}
-
-fn format_section(out: &mut String, name: &str, section: Option<&toml::Value>) {
-    if let Some(v) = section {
-        out.push_str(&format!("[{}]\n", name));
-        if let Some(t) = v.as_table() { for (k, v) in t { out.push_str(&format!("{} = {}\n", k, v)); } }
-        out.push('\n');
-    }
-}
-
-fn merge_config_toml(path: &Path, new: &str, upd_py: bool, upd_rs: bool) -> String {
-    let (Ok(ex_str), Ok(nw)) = (std::fs::read_to_string(path), new.parse::<toml::Table>()) else { return new.to_string(); };
-    let Ok(ex) = ex_str.parse::<toml::Table>() else { return new.to_string(); };
-    let pick = |k: &str, upd: bool| if upd { nw.get(k) } else { ex.get(k) }.cloned();
-    let mut m = toml::Table::new();
-    for (k, upd) in [("python", upd_py), ("rust", upd_rs)] { if let Some(v) = pick(k, upd) { m.insert(k.to_string(), v); } }
-    let shared = if upd_py && upd_rs { nw.get("shared") } else { ex.get("shared").or(nw.get("shared")) }.cloned();
-    if let Some(v) = shared { m.insert("shared".to_string(), v); }
-    if !(upd_py && upd_rs) && let Some(v) = ex.get("thresholds").cloned() { m.insert("thresholds".to_string(), v); }
-    build_merged_output(&m)
-}
-
-fn build_merged_output(m: &toml::Table) -> String {
-    let mut out = String::from("# Generated by kiss mimic\n# Thresholds based on 99th percentile of analyzed codebases\n\n");
-    for k in ["python", "rust", "shared", "thresholds"] { format_section(&mut out, k, m.get(k)); }
-    out
-}
-
-fn generate_config_toml_by_language(py: &MetricStats, rs: &MetricStats, py_n: usize, rs_n: usize) -> String {
-    let mut out = String::from("# Generated by kiss mimic\n# Thresholds based on 99th percentile of analyzed codebases\n\n");
-    if py_n > 0 { append_section(&mut out, "[python]", &compute_summaries(py), python_config_key); }
-    if rs_n > 0 { append_section(&mut out, "[rust]", &compute_summaries(rs), rust_config_key); }
-    if py_n > 0 && rs_n > 0 { append_shared_section(&mut out, &compute_summaries(py), &compute_summaries(rs)); }
-    out
-}
-
-fn append_section(out: &mut String, header: &str, sums: &[PercentileSummary], key_fn: fn(&str) -> Option<&'static str>) {
-    out.push_str(header); out.push('\n');
-    for s in sums { if let Some(k) = key_fn(s.name) { out.push_str(&format!("{} = {}\n", k, s.p99)); } }
-    out.push('\n');
-}
-
-fn append_shared_section(out: &mut String, py_sums: &[PercentileSummary], rs_sums: &[PercentileSummary]) {
-    out.push_str("[shared]\n");
-    for py_s in py_sums {
-        if let Some(k) = shared_config_key(py_s.name) {
-            let rs_val = rs_sums.iter().find(|s| s.name == py_s.name).map(|s| s.p99).unwrap_or(0);
-            out.push_str(&format!("{} = {}\n", k, py_s.p99.max(rs_val)));
-        }
-    }
-}
-
-/// Map metric name to Python-specific config key
-fn python_config_key(name: &str) -> Option<&'static str> {
-    match name {
-        "Statements per function" => Some("statements_per_function"),
-        "Arguments (positional)" => Some("positional_args"),
-        "Arguments (keyword-only)" => Some("keyword_only_args"),
-        "Max indentation depth" => Some("max_indentation"),
-        "Branches per function" => Some("branches_per_function"),
-        "Local variables per function" => Some("local_variables"),
-        "Methods per class" => Some("methods_per_class"),
-        "Cyclomatic complexity" => Some("cyclomatic_complexity"),
-        "Fan-out (per module)" => Some("fan_out"),
-        "Fan-in (per module)" => Some("fan_in"),
-        "Transitive deps (per module)" => Some("transitive_deps"),
-        "LCOM % (per class)" => Some("lcom"),
-        _ => None,
-    }
-}
-
-/// Map metric name to Rust-specific config key
-fn rust_config_key(name: &str) -> Option<&'static str> {
-    match name {
-        "Statements per function" => Some("statements_per_function"),
-        "Arguments (total)" => Some("arguments"),
-        "Max indentation depth" => Some("max_indentation"),
-        "Branches per function" => Some("branches_per_function"),
-        "Local variables per function" => Some("local_variables"),
-        "Methods per class" => Some("methods_per_type"),
-        "Cyclomatic complexity" => Some("cyclomatic_complexity"),
-        "Fan-out (per module)" => Some("fan_out"),
-        "Fan-in (per module)" => Some("fan_in"),
-        "Transitive deps (per module)" => Some("transitive_deps"),
-        "LCOM % (per class)" => Some("lcom"),
-        _ => None,
-    }
-}
-
-/// Map metric name to shared config key (metrics that apply to both languages)
-fn shared_config_key(name: &str) -> Option<&'static str> {
-    match name {
-        "Lines per file" => Some("lines_per_file"),
-        "Classes per file" => Some("types_per_file"),
-        "Imports per file" => Some("imports_per_file"),
-        _ => None,
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kiss::config_gen::{collect_py_stats, collect_rs_stats, collect_all_stats, merge_config_toml, write_mimic_config};
+    use tempfile::TempDir;
 
     #[test]
-    fn test_parse_language() {
+    fn test_language_parsing_and_enum() {
         assert_eq!(parse_language("python"), Ok(Language::Python));
         assert_eq!(parse_language("rust"), Ok(Language::Rust));
         assert!(parse_language("invalid").is_err());
+        assert_ne!(Language::Python, Language::Rust);
     }
 
     #[test]
-    fn test_language_enum() {
-        let p = Language::Python;
-        let r = Language::Rust;
-        assert_ne!(p, r);
-    }
-
-    #[test]
-    fn test_python_config_key() {
-        assert_eq!(python_config_key("Statements per function"), Some("statements_per_function"));
-        assert_eq!(python_config_key("Unknown"), None);
-    }
-
-    #[test]
-    fn test_rust_config_key() {
-        assert_eq!(rust_config_key("Statements per function"), Some("statements_per_function"));
-        assert_eq!(rust_config_key("Unknown"), None);
-    }
-
-    #[test]
-    fn test_shared_config_key() {
-        assert_eq!(shared_config_key("Lines per file"), Some("lines_per_file"));
-        assert_eq!(shared_config_key("Unknown"), None);
-    }
-
-    #[test]
-    fn test_load_configs() {
+    fn test_load_configs_and_cli() {
         let (py, rs) = load_configs(&None);
-        assert!(py.statements_per_function > 0);
-        assert!(rs.statements_per_function > 0);
-    }
-
-    #[test]
-    fn test_gather_files() {
-        use tempfile::TempDir;
-        let tmp = TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("a.py"), "").unwrap();
-        std::fs::write(tmp.path().join("b.rs"), "").unwrap();
-        let (py, rs) = gather_files(tmp.path(), None);
-        assert_eq!(py.len(), 1);
-        assert_eq!(rs.len(), 1);
-    }
-
-    #[test]
-    fn test_gather_files_filtered() {
-        use tempfile::TempDir;
-        let tmp = TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("a.py"), "").unwrap();
-        std::fs::write(tmp.path().join("b.rs"), "").unwrap();
-        let (py, rs) = gather_files(tmp.path(), Some(Language::Python));
-        assert_eq!(py.len(), 1);
-        assert_eq!(rs.len(), 0);
-    }
-
-    #[test]
-    fn test_format_section() {
-        let mut out = String::new();
-        let table = toml::toml! { x = 1 };
-        format_section(&mut out, "test", Some(&toml::Value::Table(table)));
-        assert!(out.contains("[test]"));
-    }
-
-    #[test]
-    fn test_build_merged_output() {
-        let table = toml::Table::new();
-        let out = build_merged_output(&table);
-        assert!(out.contains("Generated by kiss"));
-    }
-
-    #[test]
-    fn test_generate_config_toml_by_language_empty() {
-        let py = MetricStats::default();
-        let rs = MetricStats::default();
-        let toml = generate_config_toml_by_language(&py, &rs, 0, 0);
-        assert!(toml.contains("Generated by kiss"));
-    }
-
-    #[test]
-    fn test_append_section() {
-        let mut out = String::new();
-        let summaries = vec![PercentileSummary { name: "Statements per function", count: 1, p50: 1, p90: 2, p95: 3, p99: 4, max: 5 }];
-        append_section(&mut out, "[test]", &summaries, python_config_key);
-        assert!(out.contains("[test]"));
-    }
-
-    #[test]
-    fn test_append_shared_section() {
-        let py = vec![PercentileSummary { name: "Lines per file", count: 1, p50: 1, p90: 2, p95: 3, p99: 100, max: 200 }];
-        let rs = vec![PercentileSummary { name: "Lines per file", count: 1, p50: 1, p90: 2, p95: 3, p99: 150, max: 300 }];
-        let mut out = String::new();
-        append_shared_section(&mut out, &py, &rs);
-        assert!(out.contains("[shared]"));
-    }
-
-    #[test]
-    fn test_cli_struct() {
-        // Just verify the struct can be constructed
+        assert!(py.statements_per_function > 0 && rs.statements_per_function > 0);
         let cli = Cli { config: None, lang: None, all: false, command: None, path: ".".to_string() };
         assert_eq!(cli.path, ".");
-    }
-
-    #[test]
-    fn test_commands_enum() {
         let cmd = Commands::Stats { paths: vec![".".to_string()] };
         if let Commands::Stats { paths } = cmd { assert_eq!(paths.len(), 1); }
     }
 
     #[test]
-    fn test_parse_and_analyze_py_empty() {
+    fn test_gather_files_all_and_filtered() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("a.py"), "").unwrap();
+        std::fs::write(tmp.path().join("b.rs"), "").unwrap();
+        let (py, rs) = gather_files(tmp.path(), None);
+        assert_eq!(py.len(), 1); assert_eq!(rs.len(), 1);
+        let (py2, rs2) = gather_files(tmp.path(), Some(Language::Python));
+        assert_eq!(py2.len(), 1); assert_eq!(rs2.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_and_analyze_empty() {
         let config = Config::default();
-        let (parsed, viols) = parse_and_analyze_py(&[], &config);
-        assert!(parsed.is_empty());
+        let (py_parsed, py_viols) = parse_and_analyze_py(&[], &config);
+        let (rs_parsed, rs_viols) = parse_and_analyze_rs(&[], &config);
+        assert!(py_parsed.is_empty() && py_viols.is_empty());
+        assert!(rs_parsed.is_empty() && rs_viols.is_empty());
+        let viols = analyze_graph(&DependencyGraph::new(), &config);
         assert!(viols.is_empty());
     }
 
     #[test]
-    fn test_parse_and_analyze_rs_empty() {
-        let config = Config::default();
-        let (parsed, viols) = parse_and_analyze_rs(&[], &config);
-        assert!(parsed.is_empty());
-        assert!(viols.is_empty());
+    fn test_detect_duplicates_empty() {
+        assert!(detect_py_duplicates(&[]).is_empty());
+        assert!(detect_rs_duplicates(&[]).is_empty());
     }
 
     #[test]
-    fn test_analyze_graph_empty() {
-        let config = Config::default();
-        let empty_graph = DependencyGraph::new();
-        let viols = analyze_graph(&empty_graph, &config);
-        assert!(viols.is_empty());
+    fn test_print_functions_no_panic() {
+        print_violations(&[], 0);
+        print_duplicates("Python", &[]);
+        print_py_test_refs(&[]);
+        print_rs_test_refs(&[]);
     }
 
     #[test]
-    fn test_detect_py_duplicates_empty() {
-        let clusters = detect_py_duplicates(&[]);
-        assert!(clusters.is_empty());
-    }
-
-    #[test]
-    fn test_detect_rs_duplicates_empty() {
-        let clusters = detect_rs_duplicates(&[]);
-        assert!(clusters.is_empty());
-    }
-
-    #[test]
-    fn test_print_violations_empty() {
-        print_violations(&[], 0); // Just verify it doesn't panic
-    }
-
-    #[test]
-    fn test_print_duplicates_empty() {
-        print_duplicates("Python", &[]); // Just verify it doesn't panic
-    }
-
-    #[test]
-    fn test_print_py_test_refs_empty() {
-        print_py_test_refs(&[]); // Just verify it doesn't panic
-    }
-
-    #[test]
-    fn test_print_rs_test_refs_empty() {
-        print_rs_test_refs(&[]); // Just verify it doesn't panic
-    }
-
-    #[test]
-    fn test_collect_py_stats() {
-        use tempfile::TempDir;
+    fn test_collect_stats_empty() {
         let tmp = TempDir::new().unwrap();
-        let (stats, count) = collect_py_stats(tmp.path());
-        assert_eq!(count, 0);
-        let _ = stats;
-    }
-
-    #[test]
-    fn test_collect_rs_stats() {
-        use tempfile::TempDir;
-        let tmp = TempDir::new().unwrap();
-        let (stats, count) = collect_rs_stats(tmp.path());
-        assert_eq!(count, 0);
-        let _ = stats;
-    }
-
-    #[test]
-    fn test_collect_all_stats() {
-        use tempfile::TempDir;
-        let tmp = TempDir::new().unwrap();
+        let (py_stats, py_cnt) = collect_py_stats(tmp.path());
+        let (rs_stats, rs_cnt) = collect_rs_stats(tmp.path());
+        assert_eq!(py_cnt, 0); assert_eq!(rs_cnt, 0);
+        let _ = (py_stats, rs_stats);
         let paths = vec![tmp.path().to_string_lossy().to_string()];
         let ((py, py_count), (rs, rs_count)) = collect_all_stats(&paths, None);
-        assert_eq!(py_count, 0);
-        assert_eq!(rs_count, 0);
+        assert_eq!(py_count, 0); assert_eq!(rs_count, 0);
         let _ = (py, rs);
     }
 
     #[test]
-    fn test_merge_config_toml() {
+    fn test_config_merge_and_write() {
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         writeln!(tmp, "[python]\nstatements_per_function = 10").unwrap();
-        let new_toml = "[rust]\nstatements_per_function = 20";
-        let merged = merge_config_toml(tmp.path(), new_toml, false, true);
+        let merged = merge_config_toml(tmp.path(), "[rust]\nstatements_per_function = 20", false, true);
         assert!(merged.contains("[python]") || merged.contains("[rust]"));
+        let tmp2 = TempDir::new().unwrap();
+        write_mimic_config(&tmp2.path().join("out.toml"), "[python]\nx = 1", 1, 0);
     }
 
     #[test]
-    fn test_write_mimic_config() {
-        use tempfile::TempDir;
-        let tmp = TempDir::new().unwrap();
-        let out = tmp.path().join("out.toml");
-        let toml = "[python]\nx = 1";
-        write_mimic_config(&out, toml, 1, 0);
-        // Just verify it doesn't panic
-    }
-
-    #[test]
-    fn test_run_stats_fn_exists() {
-        // run_stats calls process::exit on empty, so we just verify it exists
+    fn test_fn_pointers_exist() {
         let _ = run_stats as fn(&[String], Option<Language>);
-    }
-
-    #[test]
-    fn test_run_mimic_fn_exists() {
-        // run_mimic calls process::exit on empty, so we just verify it exists
         let _ = run_mimic as fn(&[String], Option<&Path>, Option<Language>);
-    }
-
-    #[test]
-    fn test_run_analyze_on_empty_dir() {
-        use tempfile::TempDir;
-        let tmp = TempDir::new().unwrap();
-        run_analyze(&tmp.path().to_string_lossy(), &Config::default(), &Config::default(), None, true, &GateConfig::default());
-        // Just verify it doesn't panic (no exit on empty)
-    }
-
-    #[test]
-    fn test_main_fn_exists() {
-        // main calls parse() which expects CLI args, so we just verify it exists
         let _ = main as fn();
     }
 
     #[test]
-    fn test_load_gate_config_from_file() {
-        use tempfile::TempDir;
+    fn test_run_analyze_and_gate_config() {
         let tmp = TempDir::new().unwrap();
+        run_analyze(&tmp.path().to_string_lossy(), &Config::default(), &Config::default(), None, true, &GateConfig::default());
         let path = tmp.path().join("kiss.toml");
         std::fs::write(&path, "[gate]\ntest_coverage_threshold = 80\n").unwrap();
-        let gate = load_gate_config(&Some(path));
-        assert_eq!(gate.test_coverage_threshold, 80);
+        assert_eq!(load_gate_config(&Some(path)).test_coverage_threshold, 80);
     }
 
     #[test]
-    fn test_compute_test_coverage_empty() {
+    fn test_coverage_and_gate() {
         let py: Vec<ParsedFile> = vec![];
         let rs: Vec<ParsedRustFile> = vec![];
-        let (coverage, tested, total) = compute_test_coverage(&py, &rs);
-        assert_eq!(tested, 0);
-        assert_eq!(total, 0);
-        assert_eq!(coverage, 100); // 0/0 = 100%
+        let (cov, tested, total) = compute_test_coverage(&py, &rs);
+        assert_eq!((tested, total, cov), (0, 0, 100));
+        assert!(check_coverage_gate(&py, &rs, &GateConfig { test_coverage_threshold: 0 }));
     }
 
     #[test]
-    fn test_check_coverage_gate_passes() {
-        let py: Vec<ParsedFile> = vec![];
-        let rs: Vec<ParsedRustFile> = vec![];
-        let gate = GateConfig { test_coverage_threshold: 0 };
-        let passed = check_coverage_gate(&py, &rs, &gate);
-        assert!(passed);
+    fn test_parse_all_and_graphs_empty() {
+        let config = Config::default();
+        let (py_parsed, rs_parsed, viols) = parse_all(&[], &[], &config, &config);
+        assert!(py_parsed.is_empty() && rs_parsed.is_empty() && viols.is_empty());
+        let (py_g, rs_g) = build_graphs(&py_parsed, &rs_parsed);
+        assert!(py_g.is_none() && rs_g.is_none());
+        assert!(analyze_graphs(&None, &None, &config, &config).is_empty());
     }
 
     #[test]
-    fn test_parse_all_empty() {
-        let py_config = Config::default();
-        let rs_config = Config::default();
-        let (py_parsed, rs_parsed, viols) = parse_all(&[], &[], &py_config, &rs_config);
-        assert!(py_parsed.is_empty());
-        assert!(rs_parsed.is_empty());
-        assert!(viols.is_empty());
-    }
-
-    #[test]
-    fn test_print_no_files_message_no_panic() {
-        use tempfile::TempDir;
+    fn test_print_helpers_no_panic() {
         let tmp = TempDir::new().unwrap();
-        // Just verify it doesn't panic
         print_no_files_message(None, tmp.path());
         print_no_files_message(Some(Language::Python), tmp.path());
-    }
-
-    #[test]
-    fn test_print_coverage_gate_failure_no_panic() {
-        // Just verify it doesn't panic and prints output
         print_coverage_gate_failure(50, 80, 5, 10);
+        print_all_results(&[], &[], &[], &None, &None);
+        print_instability("Test", None);
     }
 }

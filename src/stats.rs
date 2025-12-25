@@ -1,6 +1,5 @@
 //! Statistics collection and percentile calculation for metrics
-
-use crate::counts::{compute_class_metrics_with_source, compute_file_metrics, compute_function_metrics};
+use crate::py_metrics::{compute_class_metrics_with_source, compute_file_metrics, compute_function_metrics};
 use crate::graph::{compute_cyclomatic_complexity, DependencyGraph};
 use crate::parsing::ParsedFile;
 use crate::rust_counts::{compute_rust_file_metrics, compute_rust_function_metrics, compute_rust_lcom};
@@ -499,4 +498,3 @@ mod tests {
         assert_eq!(percentile(&data, 100.0), 10);
     }
 }
-

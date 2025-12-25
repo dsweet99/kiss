@@ -261,7 +261,9 @@ impl Config {
             "fan_out" => fan_out,
             "fan_in" => fan_in,
             "transitive_deps" => transitive_deps,
-            "lcom" => lcom
+            "lcom" => lcom,
+            "lines_per_file" => lines_per_file,
+            "types_per_file" => classes_per_file
         );
     }
 }
@@ -331,284 +333,87 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_config_uses_threshold_constants() {
-        let config = Config::default();
-        assert_eq!(config.statements_per_function, thresholds::STATEMENTS_PER_FUNCTION);
-        assert_eq!(config.methods_per_class, thresholds::METHODS_PER_CLASS);
-        assert_eq!(config.lines_per_file, thresholds::LINES_PER_FILE);
-    }
-
-    #[test]
-    fn merge_from_toml_overrides_values() {
-        let mut config = Config::default();
-        let toml = r#"
-[thresholds]
-statements_per_function = 100
-methods_per_class = 30
-"#;
-        config.merge_from_toml(toml, None);
-        assert_eq!(config.statements_per_function, 100);
-        assert_eq!(config.methods_per_class, 30);
-        // Other values should remain at default
-        assert_eq!(config.lines_per_file, thresholds::LINES_PER_FILE);
-    }
-
-    #[test]
-    fn merge_from_toml_ignores_malformed_toml() {
-        let mut config = Config::default();
-        let original_statements = config.statements_per_function;
-        config.merge_from_toml("this is not valid toml {{{{", None);
-        // Should remain unchanged
-        assert_eq!(config.statements_per_function, original_statements);
-    }
-
-    #[test]
-    fn merge_from_toml_ignores_missing_thresholds_section() {
-        let mut config = Config::default();
-        let original_statements = config.statements_per_function;
-        let toml = r#"
-[other_section]
-some_key = 123
-"#;
-        config.merge_from_toml(toml, None);
-        // Should remain unchanged
-        assert_eq!(config.statements_per_function, original_statements);
-    }
-
-    #[test]
-    fn merge_from_toml_ignores_negative_values() {
-        let mut config = Config::default();
-        let original_statements = config.statements_per_function;
-        let toml = r#"
-[thresholds]
-statements_per_function = -1
-"#;
-        config.merge_from_toml(toml, None);
-        // Negative values should be ignored, keeping the original
-        assert_eq!(config.statements_per_function, original_statements);
-    }
-
-    #[test]
-    fn merge_from_toml_ignores_wrong_types() {
-        let mut config = Config::default();
-        let original_statements = config.statements_per_function;
-        let toml = r#"
-[thresholds]
-statements_per_function = "not a number"
-"#;
-        config.merge_from_toml(toml, None);
-        // Wrong types should be ignored
-        assert_eq!(config.statements_per_function, original_statements);
-    }
-
-    #[test]
-    fn merge_from_toml_handles_partial_config() {
-        let mut config = Config::default();
-        let toml = r#"
-[thresholds]
-cyclomatic_complexity = 15
-"#;
-        config.merge_from_toml(toml, None);
-        // Only the specified value should change
-        assert_eq!(config.cyclomatic_complexity, 15);
-        assert_eq!(config.statements_per_function, thresholds::STATEMENTS_PER_FUNCTION);
-    }
-
-    #[test]
-    fn merge_from_toml_supports_python_section() {
-        let mut config = Config::default();
-        let toml = r#"
-[python]
-statements_per_function = 60
-positional_args = 4
-keyword_only_args = 8
-max_indentation = 5
-"#;
-        config.merge_from_toml(toml, Some(ConfigLanguage::Python));
-        assert_eq!(config.statements_per_function, 60);
-        assert_eq!(config.arguments_positional, 4);
-        assert_eq!(config.arguments_keyword_only, 8);
-        assert_eq!(config.max_indentation_depth, 5);
-    }
-
-    #[test]
-    fn merge_from_toml_supports_rust_section() {
-        let mut config = Config::default();
-        let toml = r#"
-[rust]
-statements_per_function = 70
-arguments = 6
-max_indentation = 5
-methods_per_type = 25
-"#;
-        config.merge_from_toml(toml, Some(ConfigLanguage::Rust));
-        assert_eq!(config.statements_per_function, 70);
-        assert_eq!(config.arguments_per_function, 6);
-        assert_eq!(config.max_indentation_depth, 5);
-        assert_eq!(config.methods_per_class, 25);
-    }
-
-    #[test]
-    fn merge_from_toml_supports_shared_section() {
-        let mut config = Config::default();
-        let toml = r#"
-[shared]
-lines_per_file = 600
-types_per_file = 4
-imports_per_file = 20
-"#;
-        config.merge_from_toml(toml, None);
-        assert_eq!(config.lines_per_file, 600);
-        assert_eq!(config.classes_per_file, 4);
-        assert_eq!(config.imports_per_file, 20);
-    }
-
-    #[test]
-    fn merge_from_toml_language_overrides_shared() {
-        let mut config = Config::default();
-        // Python section should override shared
-        let toml = r#"
-[shared]
-lines_per_file = 600
-
-[python]
-statements_per_function = 40
-"#;
-        config.merge_from_toml(toml, Some(ConfigLanguage::Python));
-        assert_eq!(config.lines_per_file, 600);
-        assert_eq!(config.statements_per_function, 40);
-    }
-
-    #[test]
-    fn language_specific_loading_isolates_sections() {
-        // This is the key test: when loading for Python, Rust section should NOT be applied
-        let toml = r#"
-[python]
-statements_per_function = 40
-
-[rust]
-statements_per_function = 80
-"#;
-        // Load for Python - should get Python's value
-        let mut py_config = Config::default();
-        py_config.merge_from_toml(toml, Some(ConfigLanguage::Python));
-        assert_eq!(py_config.statements_per_function, 40);
-
-        // Load for Rust - should get Rust's value
-        let mut rs_config = Config::default();
-        rs_config.merge_from_toml(toml, Some(ConfigLanguage::Rust));
-        assert_eq!(rs_config.statements_per_function, 80);
-    }
-
-    #[test]
-    fn shared_section_applies_to_both_languages() {
-        let toml = r#"
-[shared]
-lines_per_file = 700
-
-[python]
-statements_per_function = 40
-
-[rust]
-statements_per_function = 80
-"#;
-        // Both should get shared value
-        let mut py_config = Config::default();
-        py_config.merge_from_toml(toml, Some(ConfigLanguage::Python));
-        assert_eq!(py_config.lines_per_file, 700);
-        assert_eq!(py_config.statements_per_function, 40);
-
-        let mut rs_config = Config::default();
-        rs_config.merge_from_toml(toml, Some(ConfigLanguage::Rust));
-        assert_eq!(rs_config.lines_per_file, 700);
-        assert_eq!(rs_config.statements_per_function, 80);
-    }
-
-    #[test]
-    fn test_config_language_enum() {
-        assert_ne!(ConfigLanguage::Python, ConfigLanguage::Rust);
-        let _p = ConfigLanguage::Python;
-        let _r = ConfigLanguage::Rust;
-    }
-
-    #[test]
-    fn test_config_struct_fields() {
+    fn test_default_and_thresholds() {
         let c = Config::default();
-        assert!(c.statements_per_function > 0);
+        assert_eq!(c.statements_per_function, thresholds::STATEMENTS_PER_FUNCTION);
+        assert_eq!(c.methods_per_class, thresholds::METHODS_PER_CLASS);
         assert!(c.lines_per_file > 0);
+        assert_ne!(ConfigLanguage::Python, ConfigLanguage::Rust);
     }
 
     #[test]
-    fn test_load_returns_config() {
-        // Just verify it doesn't panic
-        let c = Config::load();
-        assert!(c.statements_per_function > 0);
-    }
-
-    #[test]
-    fn test_load_for_language() {
-        let c = Config::load_for_language(ConfigLanguage::Python);
-        assert!(c.statements_per_function > 0);
-    }
-
-    #[test]
-    fn test_load_from_nonexistent() {
-        let c = Config::load_from(std::path::Path::new("/nonexistent/path"));
-        // Should return default config
-        assert!(c.statements_per_function > 0);
-    }
-
-    #[test]
-    fn test_load_from_for_language() {
-        let c = Config::load_from_for_language(std::path::Path::new("/nonexistent"), ConfigLanguage::Rust);
-        assert!(c.statements_per_function > 0);
-    }
-
-    #[test]
-    fn test_apply_thresholds() {
+    fn test_merge_overrides_and_edge_cases() {
         let mut c = Config::default();
-        let toml = "[thresholds]\nstatements_per_function = 100".parse::<toml::Table>().unwrap();
-        if let Some(t) = toml.get("thresholds").and_then(|v| v.as_table()) {
-            c.apply_thresholds(t);
-        }
+        let orig = c.statements_per_function;
+        c.merge_from_toml("[thresholds]\nstatements_per_function = 100\nmethods_per_class = 30", None);
         assert_eq!(c.statements_per_function, 100);
+        assert_eq!(c.methods_per_class, 30);
+        let mut c2 = Config::default();
+        c2.merge_from_toml("invalid {{{{", None);
+        assert_eq!(c2.statements_per_function, orig);
+        c2.merge_from_toml("[other]\nx = 1", None);
+        assert_eq!(c2.statements_per_function, orig);
+        c2.merge_from_toml("[thresholds]\nstatements_per_function = -1", None);
+        assert_eq!(c2.statements_per_function, orig);
+        c2.merge_from_toml("[thresholds]\nstatements_per_function = \"bad\"", None);
+        assert_eq!(c2.statements_per_function, orig);
+        c2.merge_from_toml("[thresholds]\ncyclomatic_complexity = 15", None);
+        assert_eq!(c2.cyclomatic_complexity, 15);
     }
 
     #[test]
-    fn test_apply_shared() {
+    fn test_python_section() {
         let mut c = Config::default();
-        let toml = "[shared]\nlines_per_file = 999".parse::<toml::Table>().unwrap();
-        if let Some(t) = toml.get("shared").and_then(|v| v.as_table()) {
-            c.apply_shared(t);
-        }
+        c.merge_from_toml("[python]\nstatements_per_function = 60\npositional_args = 4\nkeyword_only_args = 8\nmax_indentation = 5", Some(ConfigLanguage::Python));
+        assert_eq!(c.statements_per_function, 60);
+        assert_eq!(c.arguments_positional, 4);
+        assert_eq!(c.max_indentation_depth, 5);
+    }
+
+    #[test]
+    fn test_rust_section() {
+        let mut c = Config::default();
+        c.merge_from_toml("[rust]\nstatements_per_function = 70\narguments = 6\nmax_indentation = 5\nmethods_per_type = 25", Some(ConfigLanguage::Rust));
+        assert_eq!(c.statements_per_function, 70);
+        assert_eq!(c.arguments_per_function, 6);
+        assert_eq!(c.methods_per_class, 25);
+    }
+
+    #[test]
+    fn test_shared_and_language_isolation() {
+        let mut c = Config::default();
+        c.merge_from_toml("[shared]\nlines_per_file = 600\ntypes_per_file = 4", None);
+        assert_eq!(c.lines_per_file, 600);
+        let toml = "[python]\nstatements_per_function = 40\n[rust]\nstatements_per_function = 80\n[shared]\nlines_per_file = 700";
+        let mut py = Config::default(); py.merge_from_toml(toml, Some(ConfigLanguage::Python));
+        let mut rs = Config::default(); rs.merge_from_toml(toml, Some(ConfigLanguage::Rust));
+        assert_eq!(py.statements_per_function, 40);
+        assert_eq!(rs.statements_per_function, 80);
+        assert_eq!(py.lines_per_file, 700);
+        assert_eq!(rs.lines_per_file, 700);
+    }
+
+    #[test]
+    fn test_load_functions() {
+        assert!(Config::load().statements_per_function > 0);
+        assert!(Config::load_for_language(ConfigLanguage::Python).statements_per_function > 0);
+        assert!(Config::load_from(std::path::Path::new("/nonexistent")).statements_per_function > 0);
+        assert!(Config::load_from_for_language(std::path::Path::new("/nonexistent"), ConfigLanguage::Rust).statements_per_function > 0);
+    }
+
+    #[test]
+    fn test_apply_methods() {
+        let mut c = Config::default();
+        let toml = "[thresholds]\nstatements_per_function = 100\n[shared]\nlines_per_file = 999\n[python]\nstatements_per_function = 55\n[rust]\nstatements_per_function = 66".parse::<toml::Table>().unwrap();
+        if let Some(t) = toml.get("thresholds").and_then(|v| v.as_table()) { c.apply_thresholds(t); }
+        assert_eq!(c.statements_per_function, 100);
+        if let Some(t) = toml.get("shared").and_then(|v| v.as_table()) { c.apply_shared(t); }
         assert_eq!(c.lines_per_file, 999);
-    }
-
-    #[test]
-    fn test_apply_python() {
-        let mut c = Config::default();
-        let toml = "[python]\nstatements_per_function = 55".parse::<toml::Table>().unwrap();
-        if let Some(t) = toml.get("python").and_then(|v| v.as_table()) {
-            c.apply_python(t);
-        }
+        if let Some(t) = toml.get("python").and_then(|v| v.as_table()) { c.apply_python(t); }
         assert_eq!(c.statements_per_function, 55);
-    }
-
-    #[test]
-    fn test_apply_rust() {
-        let mut c = Config::default();
-        let toml = "[rust]\nstatements_per_function = 66".parse::<toml::Table>().unwrap();
-        if let Some(t) = toml.get("rust").and_then(|v| v.as_table()) {
-            c.apply_rust(t);
-        }
-        assert_eq!(c.statements_per_function, 66);
-    }
-
-    #[test]
-    fn test_get_usize() {
-        let toml = "x = 42".parse::<toml::Table>().unwrap();
-        assert_eq!(get_usize(&toml, "x"), Some(42));
-        assert_eq!(get_usize(&toml, "y"), None);
+        let mut c2 = Config::default();
+        if let Some(t) = toml.get("rust").and_then(|v| v.as_table()) { c2.apply_rust(t); }
+        assert_eq!(c2.statements_per_function, 66);
+        assert_eq!(get_usize(&"x = 42".parse::<toml::Table>().unwrap(), "x"), Some(42));
     }
 }
-

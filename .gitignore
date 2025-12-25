@@ -1,8 +1,5 @@
 # Rust build artifacts
 target/
-design.md
-style.md
-TODO.md
 review.md
 .cursorrules
 *~

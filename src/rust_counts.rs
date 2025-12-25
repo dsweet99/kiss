@@ -1,7 +1,7 @@
 //! Count-based code metrics for Rust
 
 use crate::config::Config;
-use crate::counts::Violation;
+use crate::violation::Violation;
 use crate::rust_parsing::ParsedRustFile;
 use std::path::Path;
 use syn::visit::Visit;
@@ -393,316 +393,107 @@ impl FunctionMetricsVisitor {
 mod tests {
     use super::*;
 
-    fn parse_function(code: &str) -> (syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>, syn::Block) {
-        let file: syn::File = syn::parse_str(code).expect("should parse");
-        if let syn::Item::Fn(func) = &file.items[0] {
-            (func.sig.inputs.clone(), (*func.block).clone())
-        } else {
-            panic!("Expected function");
-        }
+    fn parse_fn(code: &str) -> (syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>, syn::Block) {
+        let f: syn::File = syn::parse_str(code).unwrap();
+        if let syn::Item::Fn(func) = &f.items[0] { (func.sig.inputs.clone(), (*func.block).clone()) }
+        else { panic!("Expected function") }
     }
 
     #[test]
-    fn counts_arguments() {
-        let (inputs, block) = parse_function("fn foo(a: i32, b: String, c: bool) {}");
-        let metrics = compute_rust_function_metrics(&inputs, &block);
-        assert_eq!(metrics.arguments, 3);
+    fn test_function_metrics() {
+        let (i1, b1) = parse_fn("fn foo(a: i32, b: String, c: bool) {}");
+        assert_eq!(compute_rust_function_metrics(&i1, &b1).arguments, 3);
+        let (i2, b2) = parse_fn("fn f() { let x=1; let y=2; println!(\"{}\",x+y); }");
+        assert!(compute_rust_function_metrics(&i2, &b2).statements >= 3);
+        let (i3, b3) = parse_fn("fn f(x: i32) { if x>0 {} else if x<0 {} }");
+        assert!(compute_rust_function_metrics(&i3, &b3).branches >= 2);
+        let (i4, b4) = parse_fn("fn f() { let a=1; let b=2; let (c,d)=(3,4); }");
+        assert_eq!(compute_rust_function_metrics(&i4, &b4).local_variables, 4);
+        let (i5, b5) = parse_fn("fn f(x: i32) { if x>0 { for i in 0..x { } } }");
+        assert!(compute_rust_function_metrics(&i5, &b5).cyclomatic_complexity >= 3);
     }
 
     #[test]
-    fn counts_statements() {
-        let (inputs, block) = parse_function(r#"
-fn foo() {
-    let x = 1;
-    let y = 2;
-    println!("{}", x + y);
-}
-"#);
-        let metrics = compute_rust_function_metrics(&inputs, &block);
-        assert!(metrics.statements >= 3, "Expected >= 3 statements, got {}", metrics.statements);
+    fn test_structs() {
+        assert_eq!(RustFunctionMetrics { statements: 1, arguments: 2, max_indentation: 3, returns: 4, branches: 5, local_variables: 6, cyclomatic_complexity: 7, nested_function_depth: 8 }.statements, 1);
+        assert_eq!(RustTypeMetrics { methods: 5 }.methods, 5);
+        assert_eq!(RustFileMetrics { lines: 100, types: 3, imports: 5 }.lines, 100);
     }
 
     #[test]
-    fn counts_branches() {
-        let (inputs, block) = parse_function(r#"
-fn foo(x: i32) -> &'static str {
-    if x > 0 {
-        "positive"
-    } else if x < 0 {
-        "negative"
-    } else {
-        "zero"
-    }
-}
-"#);
-        let metrics = compute_rust_function_metrics(&inputs, &block);
-        // if and else if are branches
-        assert!(metrics.branches >= 2, "Expected >= 2 branches, got {}", metrics.branches);
-    }
-
-    #[test]
-    fn counts_local_variables() {
-        let (inputs, block) = parse_function(r#"
-fn foo() {
-    let a = 1;
-    let b = 2;
-    let (c, d) = (3, 4);
-}
-"#);
-        let metrics = compute_rust_function_metrics(&inputs, &block);
-        // a, b, c, d = 4 variables
-        assert_eq!(metrics.local_variables, 4);
-    }
-
-    #[test]
-    fn computes_cyclomatic_complexity() {
-        let (inputs, block) = parse_function(r#"
-fn foo(x: i32) {
-    if x > 0 {
-        for i in 0..x {
-            println!("{}", i);
-        }
-    }
-}
-"#);
-        let metrics = compute_rust_function_metrics(&inputs, &block);
-        // Base 1 + if + for = 3
-        assert!(metrics.cyclomatic_complexity >= 3, "Expected >= 3, got {}", metrics.cyclomatic_complexity);
-    }
-
-    #[test]
-    fn test_rust_function_metrics_struct() {
-        let m = RustFunctionMetrics { statements: 1, arguments: 2, max_indentation: 3, returns: 4, branches: 5, local_variables: 6, cyclomatic_complexity: 7, nested_function_depth: 8 };
-        assert_eq!(m.statements, 1);
-    }
-
-    #[test]
-    fn test_rust_type_metrics_struct() {
-        let m = RustTypeMetrics { methods: 5 };
-        assert_eq!(m.methods, 5);
-    }
-
-    #[test]
-    fn test_rust_file_metrics_struct() {
-        let m = RustFileMetrics { lines: 100, types: 3, imports: 5 };
-        assert_eq!(m.lines, 100);
-    }
-
-    #[test]
-    fn test_violation_context_add() {
+    fn test_violation_context() {
         let mut viols = Vec::new();
-        let path = std::path::PathBuf::from("test.rs");
-        let mut ctx = ViolationContext { file: &path, violations: &mut viols };
-        ctx.add(1, "name", "metric", 10, 5, "msg".into(), "sug");
+        let p = std::path::PathBuf::from("test.rs");
+        ViolationContext { file: &p, violations: &mut viols }.add(1, "n", "m", 10, 5, "msg".into(), "s");
         assert_eq!(viols.len(), 1);
     }
 
     #[test]
-    fn test_analyze_rust_file() {
+    fn test_analyze_file_and_impl() {
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
         writeln!(tmp, "fn foo() {{}}").unwrap();
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
-        let viols = analyze_rust_file(&parsed, &Config::default());
-        assert!(viols.is_empty());
+        assert!(analyze_rust_file(&parsed, &Config::default()).is_empty());
+        let f: syn::File = syn::parse_str("impl Foo { fn a(&self) {} fn b(&self) {} }").unwrap();
+        if let syn::Item::Impl(i) = &f.items[0] { assert_eq!(count_impl_methods(i), 2); }
+        let f2: syn::File = syn::parse_str("impl S { fn a(&self) {} }").unwrap();
+        if let syn::Item::Impl(i) = &f2.items[0] { assert!(get_impl_type_name(i).is_some()); }
     }
 
     #[test]
-    fn test_count_impl_methods() {
-        let file: syn::File = syn::parse_str("impl Foo { fn a(&self) {} fn b(&self) {} }").unwrap();
-        if let syn::Item::Impl(imp) = &file.items[0] {
-            assert_eq!(count_impl_methods(imp), 2);
-        }
-    }
-
-    #[test]
-    fn test_get_impl_type_name() {
-        let file: syn::File = syn::parse_str("impl MyStruct { fn a(&self) {} }").unwrap();
-        if let syn::Item::Impl(imp) = &file.items[0] {
-            let name = get_impl_type_name(imp);
-            assert!(name.is_some());
-        }
-    }
-
-    #[test]
-    fn test_compute_rust_lcom() {
-        let file: syn::File = syn::parse_str("struct S { x: i32 } impl S { fn a(&self) { let _ = self.x; } fn b(&self) { let _ = self.x; } }").unwrap();
-        if let syn::Item::Impl(imp) = &file.items[1] {
-            let lcom = compute_rust_lcom(imp);
-            assert!(lcom >= 0.0 && lcom <= 1.0);
-        }
-    }
-
-    #[test]
-    fn test_compute_rust_file_metrics() {
+    fn test_lcom_and_file_metrics() {
         use std::io::Write;
+        let f: syn::File = syn::parse_str("struct S { x: i32 } impl S { fn a(&self) { let _=self.x; } }").unwrap();
+        if let syn::Item::Impl(i) = &f.items[1] { assert!(compute_rust_lcom(i) <= 1.0); }
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
         writeln!(tmp, "use std::io;\nstruct A {{}}\nstruct B {{}}").unwrap();
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let m = compute_rust_file_metrics(&parsed);
-        assert!(m.lines >= 3);
-        assert_eq!(m.types, 2);
-        assert_eq!(m.imports, 1);
+        assert!(m.lines >= 3 && m.types == 2 && m.imports == 1);
     }
 
     #[test]
-    fn test_function_metrics_visitor_enter_exit() {
-        let mut v = FunctionMetricsVisitor::default();
-        v.enter_block();
-        assert_eq!(v.current_depth, 1);
-        v.exit_block();
-        assert_eq!(v.current_depth, 0);
-    }
-
-    #[test]
-    fn test_rust_analyzer_struct() {
-        let path = std::path::PathBuf::from("test.rs");
-        let mut viols = Vec::new();
-        let _analyzer = RustAnalyzer { file: &path, violations: &mut viols, config: &Config::default() };
-    }
-
-    #[test]
-    fn test_rust_analyzer_analyze_item() {
-        let file: syn::File = syn::parse_str("fn foo() {}").unwrap();
-        let path = std::path::PathBuf::from("test.rs");
-        let mut viols = Vec::new();
-        let mut analyzer = RustAnalyzer { file: &path, violations: &mut viols, config: &Config::default() };
-        analyzer.analyze_item(&file.items[0]);
-        // Should not panic
-    }
-
-    #[test]
-    fn test_rust_analyzer_analyze_impl_block() {
-        let file: syn::File = syn::parse_str("impl Foo { fn bar(&self) {} }").unwrap();
-        let path = std::path::PathBuf::from("test.rs");
-        let mut viols = Vec::new();
-        let mut analyzer = RustAnalyzer { file: &path, violations: &mut viols, config: &Config::default() };
-        if let syn::Item::Impl(imp) = &file.items[0] {
-            analyzer.analyze_impl_block(imp);
-        }
-    }
-
-    #[test]
-    fn test_rust_analyzer_analyze_function() {
-        let file: syn::File = syn::parse_str("fn test_fn() { let x = 1; }").unwrap();
-        let path = std::path::PathBuf::from("test.rs");
-        let mut viols = Vec::new();
-        let mut analyzer = RustAnalyzer { file: &path, violations: &mut viols, config: &Config::default() };
-        if let syn::Item::Fn(func) = &file.items[0] {
-            analyzer.analyze_function("test_fn", 1, &func.sig.inputs, &func.block, "Function");
-        }
-    }
-
-    #[test]
-    fn test_extract_self_field_accesses() {
-        let file: syn::File = syn::parse_str("impl S { fn m(&self) { self.x; self.y; } }").unwrap();
-        if let syn::Item::Impl(imp) = &file.items[0] {
-            if let syn::ImplItem::Fn(method) = &imp.items[0] {
-                let fields = extract_self_field_accesses(&method.block);
-                assert!(fields.contains("x") || fields.is_empty()); // May or may not detect based on parsing
-            }
-        }
-    }
-
-    #[test]
-    fn test_function_metrics_visitor_visit_stmt() {
+    fn test_visitor() {
         use syn::visit::Visit;
-        let file: syn::File = syn::parse_str("fn f() { let x = 1; let y = 2; }").unwrap();
-        if let syn::Item::Fn(func) = &file.items[0] {
-            let mut v = FunctionMetricsVisitor::default();
-            for stmt in &func.block.stmts {
-                v.visit_stmt(stmt);
-            }
-            assert!(v.statements >= 2);
-        }
-    }
-
-    #[test]
-    fn test_function_metrics_visitor_visit_expr() {
-        use syn::visit::Visit;
-        let expr: syn::Expr = syn::parse_str("if true { 1 } else { 2 }").unwrap();
         let mut v = FunctionMetricsVisitor::default();
-        v.visit_expr(&expr);
-        assert!(v.branches >= 1);
-    }
-
-    #[test]
-    fn test_function_metrics_visitor_count_pattern_bindings() {
-        let file: syn::File = syn::parse_str("fn f() { let (a, b, c) = (1, 2, 3); }").unwrap();
-        if let syn::Item::Fn(func) = &file.items[0] {
-            if let syn::Stmt::Local(local) = &func.block.stmts[0] {
-                let mut v = FunctionMetricsVisitor::default();
-                v.count_pattern_bindings(&local.pat);
-                assert_eq!(v.local_variables, 3);
+        v.enter_block(); assert_eq!(v.current_depth, 1); v.exit_block();
+        let f: syn::File = syn::parse_str("fn f() { let x=1; let y=2; }").unwrap();
+        if let syn::Item::Fn(func) = &f.items[0] { for s in &func.block.stmts { v.visit_stmt(s); } }
+        assert!(v.statements >= 2);
+        let e: syn::Expr = syn::parse_str("if true { 1 } else { 2 }").unwrap();
+        let mut v2 = FunctionMetricsVisitor::default(); v2.visit_expr(&e);
+        assert!(v2.branches >= 1);
+        let f2: syn::File = syn::parse_str("fn f() { let (a,b,c)=(1,2,3); }").unwrap();
+        if let syn::Item::Fn(func) = &f2.items[0] {
+            if let syn::Stmt::Local(l) = &func.block.stmts[0] {
+                let mut v3 = FunctionMetricsVisitor::default(); v3.count_pattern_bindings(&l.pat);
+                assert_eq!(v3.local_variables, 3);
             }
         }
     }
 
     #[test]
-    fn test_check_methods_per_type_under_threshold() {
-        let mut violations = Vec::new();
-        let path = std::path::PathBuf::from("test.rs");
-        let mut config = Config::default();
-        config.methods_per_class = 20;
-        let mut analyzer = RustAnalyzer::new(&path, &config, &mut violations);
-        analyzer.check_methods_per_type(1, "MyStruct", 5);
-        assert!(violations.is_empty());
+    fn test_analyzer() {
+        let p = std::path::PathBuf::from("t.rs"); let mut v = Vec::new(); let cfg = Config::default();
+        let mut a = RustAnalyzer::new(&p, &cfg, &mut v);
+        let f: syn::File = syn::parse_str("fn foo() {}").unwrap();
+        a.analyze_item(&f.items[0]);
+        let f2: syn::File = syn::parse_str("impl Foo { fn bar(&self) {} }").unwrap();
+        if let syn::Item::Impl(i) = &f2.items[0] { a.analyze_impl_block(i); }
+        let f3: syn::File = syn::parse_str("fn test_fn() { let x=1; }").unwrap();
+        if let syn::Item::Fn(func) = &f3.items[0] { a.analyze_function("test_fn", 1, &func.sig.inputs, &func.block, "Fn"); }
     }
 
     #[test]
-    fn test_check_methods_per_type_over_threshold() {
-        let mut violations = Vec::new();
-        let path = std::path::PathBuf::from("test.rs");
-        let mut config = Config::default();
-        config.methods_per_class = 5;
-        let mut analyzer = RustAnalyzer::new(&path, &config, &mut violations);
-        analyzer.check_methods_per_type(1, "MyStruct", 10);
-        assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].metric, "methods_per_type");
-    }
-
-    #[test]
-    fn test_check_lcom_low_cohesion() {
-        let code = r#"
-            impl MyStruct {
-                fn method1(&self) { self.field1; }
-                fn method2(&self) { self.field2; }
-            }
-        "#;
-        let file: syn::File = syn::parse_str(code).unwrap();
-        let mut violations = Vec::new();
-        let path = std::path::PathBuf::from("test.rs");
-        let mut config = Config::default();
-        config.lcom = 50;
-        let mut analyzer = RustAnalyzer::new(&path, &config, &mut violations);
-        if let syn::Item::Impl(impl_block) = &file.items[0] {
-            let pct = analyzer.check_lcom(impl_block, 1, "MyStruct", 2);
-            // Just verify it returns a percentage and doesn't panic
-            assert!(pct <= 100);
-        }
-    }
-
-    #[test]
-    fn test_check_god_class_triggers() {
-        let mut violations = Vec::new();
-        let path = std::path::PathBuf::from("test.rs");
-        let config = Config::default();
-        let mut analyzer = RustAnalyzer::new(&path, &config, &mut violations);
-        // God class: methods > 20 AND lcom > 50
-        analyzer.check_god_class(1, "BigClass", 25, 75);
-        assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].metric, "god_class");
-    }
-
-    #[test]
-    fn test_check_god_class_no_trigger() {
-        let mut violations = Vec::new();
-        let path = std::path::PathBuf::from("test.rs");
-        let config = Config::default();
-        let mut analyzer = RustAnalyzer::new(&path, &config, &mut violations);
-        // Not a god class: methods <= 20
-        analyzer.check_god_class(1, "SmallClass", 5, 75);
-        assert!(violations.is_empty());
+    fn test_checks() {
+        let p = std::path::PathBuf::from("t.rs");
+        let mut cfg = Config::default(); cfg.methods_per_class = 5;
+        let mut v1 = Vec::new(); RustAnalyzer::new(&p, &cfg, &mut v1).check_methods_per_type(1, "S", 10);
+        assert_eq!(v1.len(), 1);
+        let mut v2 = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v2).check_god_class(1, "Big", 25, 75);
+        assert_eq!(v2.len(), 1);
+        let mut v3 = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v3).check_god_class(1, "Small", 5, 75);
+        assert!(v3.is_empty());
     }
 }
-

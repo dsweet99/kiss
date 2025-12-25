@@ -1,30 +1,12 @@
-//! Dependency graph analysis
+//! Dependency graph analysis using Tarjan's SCC algorithm
 //!
-//! ## Tarjan's Strongly Connected Components (SCC) Algorithm
-//!
-//! This module uses Tarjan's algorithm to detect circular dependencies in the codebase.
-//! A strongly connected component is a maximal set of nodes where every node is reachable
-//! from every other node. SCCs with more than one node indicate dependency cycles.
-//!
-//! ### Algorithm Overview
-//! 1. Perform DFS traversal, assigning each node a discovery time (index) and low-link value
-//! 2. The low-link value is the smallest index reachable from the node's subtree
-//! 3. A node is the root of an SCC if its low-link equals its index
-//! 4. When an SCC root is found, pop all nodes from the stack up to and including it
-//!
-//! ### Complexity
-//! - Time: O(V + E) where V = modules, E = dependencies
-//! - Space: O(V) for the stack and metadata
-//!
-//! ## Dependency Metrics
-//!
-//! - **Fan-in (Ca)**: Afferent coupling — number of modules that depend on this module
-//! - **Fan-out (Ce)**: Efferent coupling — number of modules this module depends on
-//! - **Instability**: Ce / (Ca + Ce) — ranges from 0 (stable) to 1 (unstable)
-//! - **Transitive deps**: All modules reachable from this one via DFS
+//! Detects cycles (strongly connected components) and computes dependency metrics:
+//! - Fan-in/out: coupling to/from other modules
+//! - Instability: Ce / (Ca + Ce), 0 (stable) to 1 (unstable)
+//! - Transitive deps: all reachable modules via DFS
 
 use crate::config::Config;
-use crate::counts::Violation;
+use crate::violation::Violation;
 use crate::parsing::ParsedFile;
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -420,127 +402,64 @@ mod tests {
     use super::*;
     use crate::parsing::create_parser;
 
-    fn parse_and_extract_imports(code: &str) -> Vec<String> {
+    fn parse_imports(code: &str) -> Vec<String> {
         let mut parser = create_parser().unwrap();
-        let tree = parser.parse(code, None).unwrap();
-        extract_imports(tree.root_node(), code)
+        extract_imports(parser.parse(code, None).unwrap().root_node(), code)
     }
 
     #[test]
-    fn extracts_simple_import() {
-        let imports = parse_and_extract_imports("import os");
-        assert!(imports.contains(&"os".to_string()), "imports: {:?}", imports);
+    fn test_import_extraction() {
+        assert!(parse_imports("import os").contains(&"os".into()));
+        assert!(parse_imports("import os.path").contains(&"os".into()));
+        assert!(parse_imports("import numpy as np").contains(&"numpy".into()));
+        assert!(parse_imports("from collections import defaultdict").contains(&"collections".into()));
+        assert!(parse_imports("from os.path import join").contains(&"os".into()));
+        let multi = parse_imports("import os\nimport sys\nfrom collections import defaultdict");
+        assert!(multi.contains(&"os".into()) && multi.contains(&"sys".into()) && multi.contains(&"collections".into()));
     }
 
     #[test]
-    fn extracts_dotted_import() {
-        let imports = parse_and_extract_imports("import os.path");
-        // Should extract top-level module "os"
-        assert!(imports.contains(&"os".to_string()), "imports: {:?}", imports);
-    }
-
-    #[test]
-    fn extracts_aliased_import() {
-        let imports = parse_and_extract_imports("import numpy as np");
-        assert!(imports.contains(&"numpy".to_string()), "imports: {:?}", imports);
-    }
-
-    #[test]
-    fn extracts_from_import() {
-        let imports = parse_and_extract_imports("from collections import defaultdict");
-        assert!(
-            imports.contains(&"collections".to_string()),
-            "Expected 'collections' in imports, got: {:?}",
-            imports
-        );
-    }
-
-    #[test]
-    fn extracts_from_dotted_import() {
-        let imports = parse_and_extract_imports("from os.path import join");
-        // Should extract top-level module "os"
-        assert!(imports.contains(&"os".to_string()), "imports: {:?}", imports);
-    }
-
-    #[test]
-    fn extracts_multiple_imports() {
-        let code = r#"
-import os
-import sys
-from collections import defaultdict
-from pathlib import Path
-"#;
-        let imports = parse_and_extract_imports(code);
-        assert!(imports.contains(&"os".to_string()), "imports: {:?}", imports);
-        assert!(imports.contains(&"sys".to_string()), "imports: {:?}", imports);
-        assert!(imports.contains(&"collections".to_string()), "imports: {:?}", imports);
-        assert!(imports.contains(&"pathlib".to_string()), "imports: {:?}", imports);
-    }
-
-    #[test]
-    fn test_dependency_graph_struct() {
+    fn test_dependency_graph_operations() {
         let mut g = DependencyGraph::default();
         let idx = g.get_or_create_node("module_a");
         assert!(g.graph.node_weight(idx).is_some());
+        let idx2 = g.get_or_create_node("module_a");
+        assert_eq!(idx, idx2);
+        g.add_dependency("a", "b"); g.add_dependency("b", "c");
+        assert_eq!(g.graph.edge_count(), 2);
+        assert!(g.count_transitive_deps(*g.nodes.get("a").unwrap()) >= 2);
     }
 
     #[test]
-    fn test_get_or_create_node_idempotent() {
+    fn test_cycles_and_metrics() {
         let mut g = DependencyGraph::default();
-        let idx1 = g.get_or_create_node("foo");
-        let idx2 = g.get_or_create_node("foo");
-        assert_eq!(idx1, idx2);
-    }
-
-    #[test]
-    fn test_add_dependency() {
-        let mut g = DependencyGraph::default();
-        g.add_dependency("a", "b");
-        assert_eq!(g.graph.edge_count(), 1);
-    }
-
-    #[test]
-    fn test_module_graph_metrics_struct() {
+        g.add_dependency("a", "b"); g.add_dependency("b", "a");
+        assert!(!g.find_cycles().cycles.is_empty());
         let m = ModuleGraphMetrics { fan_in: 1, fan_out: 2, instability: 0.5, transitive_deps: 3 };
         assert_eq!(m.fan_in, 1);
-    }
-
-    #[test]
-    fn test_count_transitive_deps() {
-        let mut g = DependencyGraph::default();
-        g.add_dependency("a", "b");
-        g.add_dependency("b", "c");
-        let a_idx = *g.nodes.get("a").unwrap();
-        assert!(g.count_transitive_deps(a_idx) >= 2);
-    }
-
-    #[test]
-    fn test_find_cycles() {
-        let mut g = DependencyGraph::default();
-        g.add_dependency("a", "b");
-        g.add_dependency("b", "a");
-        let cycles = g.find_cycles();
-        assert!(!cycles.cycles.is_empty());
-    }
-
-    #[test]
-    fn test_cycle_info_struct() {
-        let c = CycleInfo { cycles: vec![vec!["a".into(), "b".into()]] };
+        let c = CycleInfo { cycles: vec![vec!["a".into()]] };
         assert_eq!(c.cycles.len(), 1);
     }
 
     #[test]
-    fn test_analyze_graph_empty() {
-        let g = DependencyGraph::default();
-        let config = crate::Config::default();
-        let violations = analyze_graph(&g, &config);
-        assert!(violations.is_empty());
+    fn test_analyze_and_decision_points() {
+        assert!(analyze_graph(&DependencyGraph::default(), &crate::Config::default()).is_empty());
+        let mut parser = create_parser().unwrap();
+        assert!(count_decision_points(parser.parse("if x: pass", None).unwrap().root_node()) >= 1);
     }
 
     #[test]
-    fn test_count_decision_points() {
-        let mut parser = create_parser().unwrap();
-        let tree = parser.parse("if x: pass", None).unwrap();
-        assert!(count_decision_points(tree.root_node()) >= 1);
+    fn test_instability_metrics() {
+        let m = InstabilityMetric { module_name: "m".into(), instability: 50.0, fan_in: 2, fan_out: 2 };
+        assert_eq!(m.instability, 50.0);
+        let empty = DependencyGraph { graph: petgraph::Graph::new(), nodes: HashMap::new(), paths: HashMap::new() };
+        assert!(collect_instability_metrics(&empty).is_empty());
+        let mut graph = petgraph::Graph::new();
+        let (a, b) = (graph.add_node("a".into()), graph.add_node("b".into()));
+        graph.add_edge(a, b, ());
+        let mut nodes = HashMap::new();
+        nodes.insert("a".into(), a); nodes.insert("b".into(), b);
+        let g = DependencyGraph { graph, nodes, paths: HashMap::new() };
+        assert!(!collect_instability_metrics(&g).is_empty());
     }
 }

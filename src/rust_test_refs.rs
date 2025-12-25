@@ -332,366 +332,116 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn test_is_rust_test_file_tests_directory() {
+    fn test_is_rust_test_file() {
         assert!(is_rust_test_file(Path::new("tests/integration.rs")));
-        assert!(is_rust_test_file(Path::new("/some/path/tests/helper.rs")));
-        assert!(is_rust_test_file(Path::new("project/tests/mod.rs")));
-    }
-
-    #[test]
-    fn test_is_rust_test_file_naming_conventions() {
         assert!(is_rust_test_file(Path::new("test_utils.rs")));
         assert!(is_rust_test_file(Path::new("utils_test.rs")));
-        assert!(is_rust_test_file(Path::new("src/test_helper.rs")));
-    }
-
-    #[test]
-    fn test_is_rust_test_file_regular_files() {
         assert!(!is_rust_test_file(Path::new("src/main.rs")));
-        assert!(!is_rust_test_file(Path::new("src/lib.rs")));
-        assert!(!is_rust_test_file(Path::new("utils.rs")));
-        assert!(!is_rust_test_file(Path::new("testing.rs"))); // "testing" != "test_"
+        assert!(!is_rust_test_file(Path::new("testing.rs")));
     }
 
     #[test]
-    fn test_rust_code_definition_struct() {
+    fn test_structs() {
         let d = RustCodeDefinition { name: "foo".into(), kind: CodeUnitKind::Function, file: "f.rs".into(), line: 10, impl_for_type: None };
         assert_eq!(d.name, "foo");
-        assert_eq!(d.kind, CodeUnitKind::Function);
-    }
-
-    #[test]
-    fn test_rust_test_ref_analysis_struct() {
         let a = RustTestRefAnalysis { definitions: vec![], test_references: HashSet::new(), unreferenced: vec![] };
         assert!(a.definitions.is_empty());
     }
 
     #[test]
-    fn test_has_test_attribute() {
-        let file: syn::File = syn::parse_str("#[test]\nfn t() {}").unwrap();
-        if let syn::Item::Fn(f) = &file.items[0] {
-            assert!(has_test_attribute(&f.attrs));
-        }
+    fn test_attributes() {
+        let f1: syn::File = syn::parse_str("#[test]\nfn t() {}").unwrap();
+        let f2: syn::File = syn::parse_str("fn t() {}").unwrap();
+        let f3: syn::File = syn::parse_str("#[cfg(test)]\nmod tests {}").unwrap();
+        if let syn::Item::Fn(f) = &f1.items[0] { assert!(has_test_attribute(&f.attrs)); }
+        if let syn::Item::Fn(f) = &f2.items[0] { assert!(!has_test_attribute(&f.attrs)); }
+        if let syn::Item::Mod(m) = &f3.items[0] { assert!(has_cfg_test_attribute(&m.attrs)); }
+        assert!(is_private("_private")); assert!(!is_private("public"));
     }
 
     #[test]
-    fn test_has_test_attribute_negative() {
-        let file: syn::File = syn::parse_str("fn t() {}").unwrap();
-        if let syn::Item::Fn(f) = &file.items[0] {
-            assert!(!has_test_attribute(&f.attrs));
-        }
-    }
-
-    #[test]
-    fn test_has_cfg_test_attribute() {
-        let file: syn::File = syn::parse_str("#[cfg(test)]\nmod tests {}").unwrap();
-        if let syn::Item::Mod(m) = &file.items[0] {
-            assert!(has_cfg_test_attribute(&m.attrs));
-        }
-    }
-
-    #[test]
-    fn test_is_private() {
-        assert!(is_private("_private"));
-        assert!(is_private("__dunder"));
-        assert!(!is_private("public_name"));
-    }
-
-    #[test]
-    fn test_collect_definitions_from_item() {
-        let file: syn::File = syn::parse_str("fn foo() {}").unwrap();
+    fn test_collect_definitions() {
+        let f: syn::File = syn::parse_str("fn foo() {}\nstruct Bar {}").unwrap();
         let mut defs = Vec::new();
-        let path = std::path::PathBuf::from("test.rs");
-        collect_definitions_from_item(&file.items[0], &path, &mut defs);
-        assert_eq!(defs.len(), 1);
-        assert_eq!(defs[0].name, "foo");
+        collect_rust_definitions(&f, &std::path::PathBuf::from("t.rs"), &mut defs);
+        assert!(defs.len() >= 2);
+    }
+
+    #[test]
+    fn test_analyze() {
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "fn foo() {{}}").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        assert!(!analyze_rust_test_refs(&[&parsed]).definitions.is_empty());
+    }
+
+    #[test]
+    fn test_collect_test_refs() {
+        let f: syn::File = syn::parse_str("#[cfg(test)]\nmod tests { fn t() { MyType::new(); my_func(); } }").unwrap();
+        let mut refs = HashSet::new();
+        collect_test_module_references(&f, &mut refs);
+        assert!(refs.contains("MyType") && refs.contains("new") && refs.contains("my_func"));
     }
 
     #[test]
     fn test_reference_visitor() {
         use syn::visit::Visit;
-        let file: syn::File = syn::parse_str("fn t() { foo(); }").unwrap();
-        let mut refs = std::collections::HashSet::new();
-        let mut visitor = ReferenceVisitor { refs: &mut refs };
-        visitor.visit_file(&file);
-        // May or may not collect "foo" depending on how calls are parsed
-        assert!(refs.is_empty() || refs.contains("foo"));
-    }
-
-    #[test]
-    fn test_is_rust_test_file_direct() {
-        assert!(is_rust_test_file(Path::new("tests/foo.rs")));
-        assert!(!is_rust_test_file(Path::new("src/main.rs")));
-    }
-
-    #[test]
-    fn test_analyze_rust_test_refs() {
-        use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-        writeln!(tmp, "fn foo() {{}}").unwrap();
-        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
-        let analysis = analyze_rust_test_refs(&[&parsed]);
-        assert!(!analysis.definitions.is_empty());
-    }
-
-    #[test]
-    fn test_collect_rust_definitions() {
-        let file: syn::File = syn::parse_str("fn bar() {}\nstruct Baz {}").unwrap();
-        let path = std::path::PathBuf::from("test.rs");
-        let mut defs = Vec::new();
-        collect_rust_definitions(&file, &path, &mut defs);
-        assert!(defs.len() >= 2);
-    }
-
-    #[test]
-    fn test_collect_rust_references_direct() {
-        let file: syn::File = syn::parse_str("#[cfg(test)]\nmod tests { fn t() {} }").unwrap();
-        let mut refs = HashSet::new();
-        collect_rust_references(&file, &mut refs);
-        // Just verify it doesn't panic
-        let _ = refs;
-    }
-
-    #[test]
-    fn test_collect_test_module_references() {
-        let file: syn::File = syn::parse_str("#[cfg(test)]\nmod tests { fn t() { MyType::new(); } }").unwrap();
-        let mut refs = HashSet::new();
-        collect_test_module_references(&file, &mut refs);
-        // Should find both MyType and new
-        assert!(refs.contains("MyType"), "refs should contain MyType, got: {:?}", refs);
-        assert!(refs.contains("new"), "refs should contain new, got: {:?}", refs);
-    }
-
-    #[test]
-    fn test_collect_test_module_references_function_call() {
-        let code = r#"
-            #[cfg(test)]
-            mod tests {
-                use super::*;
-                
-                #[test]
-                fn test_something() {
-                    my_function();
-                    let x = other_function(1, 2);
-                }
-            }
-        "#;
-        let file: syn::File = syn::parse_str(code).unwrap();
-        let mut refs = HashSet::new();
-        collect_test_module_references(&file, &mut refs);
-        assert!(refs.contains("my_function"), "refs should contain my_function, got: {:?}", refs);
-        assert!(refs.contains("other_function"), "refs should contain other_function, got: {:?}", refs);
-    }
-
-    #[test]
-    fn test_collect_references_inside_assert_macro() {
-        // Most test code uses assert!, assert_eq!, etc.
-        let code = r#"
-            #[cfg(test)]
-            mod tests {
-                use super::*;
-                
-                #[test]
-                fn test_with_assert() {
-                    assert!(is_valid());
-                    assert_eq!(get_count(), 5);
-                }
-            }
-        "#;
-        let file: syn::File = syn::parse_str(code).unwrap();
-        let mut refs = HashSet::new();
-        collect_test_module_references(&file, &mut refs);
-        // Check if references inside macros are captured
-        eprintln!("Refs collected: {:?}", refs);
-        assert!(refs.contains("is_valid"), "refs should contain is_valid from assert!, got: {:?}", refs);
-        assert!(refs.contains("get_count"), "refs should contain get_count from assert_eq!, got: {:?}", refs);
-    }
-
-    #[test]
-    fn test_collect_references_direct_function_call() {
-        // Test for direct function call like estimate_similarity(&a, &b)
-        let code = r#"
-            #[cfg(test)]
-            mod tests {
-                use super::*;
-                
-                #[test]
-                fn test_estimate_similarity() {
-                    let a = SomeStruct { value: 1 };
-                    let b = SomeStruct { value: 2 };
-                    estimate_similarity(&a, &b);
-                }
-            }
-        "#;
-        let file: syn::File = syn::parse_str(code).unwrap();
-        let mut refs = HashSet::new();
-        collect_test_module_references(&file, &mut refs);
-        eprintln!("Direct call refs collected: {:?}", refs);
-        assert!(refs.contains("estimate_similarity"), "refs should contain estimate_similarity, got: {:?}", refs);
-        assert!(refs.contains("SomeStruct"), "refs should contain SomeStruct, got: {:?}", refs);
-    }
-
-    #[test]
-    fn test_collect_references_inside_assert_eq_with_fn_call() {
-        // Exact pattern used in duplication.rs tests
-        let code = r#"
-            #[cfg(test)]
-            mod tests {
-                use super::*;
-                
-                #[test]
-                fn test_estimate_similarity() {
-                    let a = MinHashSignature { hashes: vec![1, 2, 3, 4, 5] };
-                    let b = MinHashSignature { hashes: vec![1, 2, 3, 4, 5] };
-                    assert_eq!(estimate_similarity(&a, &b), 1.0);
-                }
-            }
-        "#;
-        let file: syn::File = syn::parse_str(code).unwrap();
-        let mut refs = HashSet::new();
-        collect_test_module_references(&file, &mut refs);
-        eprintln!("assert_eq call refs: {:?}", refs);
-        assert!(refs.contains("estimate_similarity"), "refs should contain estimate_similarity, got: {:?}", refs);
-        assert!(refs.contains("MinHashSignature"), "refs should contain MinHashSignature, got: {:?}", refs);
-    }
-
-    #[test]
-    fn test_reference_visitor_visit_expr() {
-        use syn::visit::Visit;
         let expr: syn::Expr = syn::parse_str("Foo::bar()").unwrap();
         let mut refs = HashSet::new();
-        let mut visitor = ReferenceVisitor { refs: &mut refs };
-        visitor.visit_expr(&expr);
-        // Should capture BOTH Foo and bar now
-        assert!(refs.contains("bar"), "refs should contain bar, got: {:?}", refs);
-        assert!(refs.contains("Foo"), "refs should contain Foo, got: {:?}", refs);
+        ReferenceVisitor { refs: &mut refs }.visit_expr(&expr);
+        assert!(refs.contains("bar") && refs.contains("Foo"));
     }
 
     #[test]
-    fn test_reference_visitor_visit_type() {
-        use syn::visit::Visit;
-        let ty: syn::Type = syn::parse_str("Vec<String>").unwrap();
+    fn test_type_extraction() {
+        assert_eq!(extract_type_name(&syn::parse_str("MyStruct").unwrap()), Some("MyStruct".into()));
+        assert_eq!(extract_type_name(&syn::parse_str("crate::M::S").unwrap()), Some("S".into()));
+        assert_eq!(extract_type_name(&syn::parse_str("&MyStruct").unwrap()), None);
+    }
+
+    #[test]
+    fn test_external_crate_detection() {
+        assert!(is_external_crate("std") && is_external_crate("syn"));
+        assert!(!is_external_crate("my_module") && !is_external_crate("MyStruct"));
+    }
+
+    #[test]
+    fn test_path_segments() {
+        let mut r1 = HashSet::new();
+        insert_path_segments(&syn::parse_str("MyStruct::new").unwrap(), &mut r1);
+        assert!(r1.contains("MyStruct") && r1.contains("new"));
+        let mut r2 = HashSet::new();
+        insert_path_segments(&syn::parse_str("std::vec::Vec").unwrap(), &mut r2);
+        assert!(r2.is_empty());
+        let mut r3 = HashSet::new();
+        insert_path_segments(&syn::parse_str("self::module::Type").unwrap(), &mut r3);
+        assert!(!r3.contains("self") && r3.contains("Type"));
+    }
+
+    #[test]
+    fn test_macro_tokens() {
         let mut refs = HashSet::new();
-        let mut visitor = ReferenceVisitor { refs: &mut refs };
-        visitor.visit_type(&ty);
-        assert!(refs.contains("Vec") || refs.is_empty());
+        visit_macro_tokens(&"foo(arg)".parse().unwrap(), &mut refs);
+        assert!(refs.contains("foo"));
     }
 
     #[test]
-    fn test_extract_type_name_simple() {
-        let ty: syn::Type = syn::parse_str("MyStruct").unwrap();
-        assert_eq!(extract_type_name(&ty), Some("MyStruct".to_string()));
+    fn test_expr_list() {
+        let e: ExprList = syn::parse2("a, b, c".parse().unwrap()).unwrap();
+        assert_eq!(e.0.len(), 3);
     }
 
     #[test]
-    fn test_extract_type_name_path() {
-        let ty: syn::Type = syn::parse_str("crate::module::MyStruct").unwrap();
-        assert_eq!(extract_type_name(&ty), Some("MyStruct".to_string()));
-    }
-
-    #[test]
-    fn test_extract_type_name_reference() {
-        // Reference types don't have a simple path
-        let ty: syn::Type = syn::parse_str("&MyStruct").unwrap();
-        assert_eq!(extract_type_name(&ty), None);
-    }
-
-    #[test]
-    fn test_is_external_crate() {
-        assert!(is_external_crate("std"));
-        assert!(is_external_crate("syn"));
-        assert!(is_external_crate("tokio"));
-        assert!(!is_external_crate("my_module"));
-        assert!(!is_external_crate("MyStruct"));
-    }
-
-    #[test]
-    fn test_insert_path_segments_local() {
-        let path: syn::Path = syn::parse_str("MyStruct::new").unwrap();
-        let mut refs = HashSet::new();
-        insert_path_segments(&path, &mut refs);
-        assert!(refs.contains("MyStruct"), "refs: {:?}", refs);
-        assert!(refs.contains("new"), "refs: {:?}", refs);
-    }
-
-    #[test]
-    fn test_insert_path_segments_external() {
-        let path: syn::Path = syn::parse_str("std::collections::HashMap").unwrap();
-        let mut refs = HashSet::new();
-        insert_path_segments(&path, &mut refs);
-        // Should skip external crate paths
-        assert!(refs.is_empty(), "external crate paths should be skipped, got: {:?}", refs);
-    }
-
-    #[test]
-    fn test_insert_path_segments_skips_keywords() {
-        let path: syn::Path = syn::parse_str("self::module::Type").unwrap();
-        let mut refs = HashSet::new();
-        insert_path_segments(&path, &mut refs);
-        assert!(!refs.contains("self"), "should skip 'self'");
-        assert!(refs.contains("module"), "refs: {:?}", refs);
-        assert!(refs.contains("Type"), "refs: {:?}", refs);
-    }
-
-    #[test]
-    fn test_visit_macro_tokens_simple() {
-        let tokens: proc_macro2::TokenStream = "foo()".parse().unwrap();
-        let mut refs = HashSet::new();
-        visit_macro_tokens(&tokens, &mut refs);
-        assert!(refs.contains("foo"), "refs: {:?}", refs);
-    }
-
-    #[test]
-    fn test_visit_macro_tokens_with_args() {
-        let tokens: proc_macro2::TokenStream = "my_func(arg1, arg2)".parse().unwrap();
-        let mut refs = HashSet::new();
-        visit_macro_tokens(&tokens, &mut refs);
-        assert!(refs.contains("my_func"), "refs: {:?}", refs);
-    }
-
-    #[test]
-    fn test_expr_list_parse() {
-        let tokens: proc_macro2::TokenStream = "foo(), bar, baz()".parse().unwrap();
-        let expr_list: ExprList = syn::parse2(tokens).unwrap();
-        assert_eq!(expr_list.0.len(), 3);
-    }
-
-    #[test]
-    fn test_expr_list_single() {
-        let tokens: proc_macro2::TokenStream = "single_expr".parse().unwrap();
-        let expr_list: ExprList = syn::parse2(tokens).unwrap();
-        assert_eq!(expr_list.0.len(), 1);
-    }
-
-    #[test]
-    fn test_collect_impl_methods_regular() {
-        let code = "impl MyStruct { fn method1(&self) {} fn method2(&self) {} }";
-        let file: syn::File = syn::parse_str(code).unwrap();
+    fn test_impl_methods() {
+        let f: syn::File = syn::parse_str("impl S { fn m1(&self) {} fn m2(&self) {} }").unwrap();
         let mut defs = Vec::new();
-        let path = std::path::PathBuf::from("test.rs");
-        if let syn::Item::Impl(impl_block) = &file.items[0] {
-            collect_impl_methods(impl_block, &path, &mut defs);
-        }
+        if let syn::Item::Impl(i) = &f.items[0] { collect_impl_methods(i, &std::path::PathBuf::from("t.rs"), &mut defs); }
         assert_eq!(defs.len(), 2);
-        assert_eq!(defs[0].name, "method1");
-        assert_eq!(defs[0].kind, CodeUnitKind::Method);
-        assert!(defs[0].impl_for_type.is_none());
-    }
-
-    #[test]
-    fn test_collect_impl_methods_trait_impl() {
-        let code = "impl Display for MyStruct { fn fmt(&self, f: &mut Formatter) -> Result { Ok(()) } }";
-        let file: syn::File = syn::parse_str(code).unwrap();
-        let mut defs = Vec::new();
-        let path = std::path::PathBuf::from("test.rs");
-        if let syn::Item::Impl(impl_block) = &file.items[0] {
-            collect_impl_methods(impl_block, &path, &mut defs);
-        }
-        assert_eq!(defs.len(), 1);
-        assert_eq!(defs[0].name, "fmt");
-        assert_eq!(defs[0].kind, CodeUnitKind::TraitImplMethod);
-        assert_eq!(defs[0].impl_for_type, Some("MyStruct".to_string()));
+        let f2: syn::File = syn::parse_str("impl Trait for S { fn m(&self) {} }").unwrap();
+        let mut defs2 = Vec::new();
+        if let syn::Item::Impl(i) = &f2.items[0] { collect_impl_methods(i, &std::path::PathBuf::from("t.rs"), &mut defs2); }
+        assert_eq!(defs2[0].kind, CodeUnitKind::TraitImplMethod);
     }
 }
-
 

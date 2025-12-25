@@ -241,5 +241,15 @@ mod tests {
         assert!(units.iter().any(|u| u.name == "f"));
         assert!(units.iter().any(|u| u.name == "C"));
     }
+
+    #[test]
+    fn test_code_unit_kind_as_str() {
+        assert_eq!(CodeUnitKind::Function.as_str(), "function");
+        assert_eq!(CodeUnitKind::Class.as_str(), "class");
+        assert_eq!(CodeUnitKind::Method.as_str(), "method");
+        assert_eq!(CodeUnitKind::Struct.as_str(), "struct");
+        assert_eq!(CodeUnitKind::Enum.as_str(), "enum");
+        assert_eq!(CodeUnitKind::TraitImplMethod.as_str(), "trait_impl_method");
+    }
 }
 

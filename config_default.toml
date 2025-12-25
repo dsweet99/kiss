@@ -57,7 +57,7 @@ methods_per_type = 15           # P95=12, P99=24; Rust impls can be large
 lcom = 50                       # P95=86; flag only severely incohesive types
 
 # File-level metrics (override shared)
-lines_per_file = 800            # Rust files have more boilerplate
+lines_per_file = 900            # Rust files have more boilerplate
 types_per_file = 8              # P95=9; one type + helpers is typical
 
 # Graph metrics

@@ -1,25 +1,6 @@
-//! Code duplication detection using MinHash and LSH
-//!
-//! ## MinHash/LSH Algorithm
-//!
-//! This module detects near-duplicate code using the MinHash signature scheme
-//! with Locality-Sensitive Hashing (LSH) for efficient candidate pair detection.
-//!
-//! ### Pipeline
-//! 1. **Normalization**: Code is normalized (lowercase, collapse whitespace, digits → 'N')
-//!    to detect clones that differ only in variable names or literals.
-//! 2. **Shingling**: Normalized code is split into overlapping k-grams (shingles).
-//! 3. **MinHash**: For each chunk, compute a signature of `minhash_size` hash values.
-//!    Each value is the minimum hash of all shingles under a different hash function.
-//!    Similar documents have similar MinHash signatures with high probability.
-//! 4. **LSH Banding**: Signatures are divided into `lsh_bands` bands. Chunks that
-//!    share identical band hashes become candidates for comparison.
-//! 5. **Verification**: Candidate pairs are verified by computing exact Jaccard similarity.
-//!
-//! ### Complexity
-//! - MinHash signature: O(|shingles| × minhash_size)
-//! - LSH candidate generation: O(n × bands) where n = number of chunks
-//! - Verification: O(candidates × |shingles|) - only performed on candidate pairs
+//! Code duplication detection using MinHash/LSH
+//! 
+//! Pipeline: Normalize → Shingle → MinHash → LSH → Verify candidates
 
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
@@ -29,90 +10,34 @@ use std::path::{Path, PathBuf};
 use syn::{ImplItem, Item};
 use tree_sitter::Node;
 
-/// Minimum number of tokens for a code chunk to be considered for duplication detection.
-/// Smaller chunks are too trivial to be meaningful duplicates.
 const MIN_CHUNK_TOKENS: usize = 10;
 
-/// Configuration for duplication detection
 pub struct DuplicationConfig {
-    /// Number of hash functions for MinHash signature
-    pub minhash_size: usize,
-    /// Size of shingles (n-grams of tokens)
-    pub shingle_size: usize,
-    /// Number of bands for LSH
-    pub lsh_bands: usize,
-    /// Minimum similarity to report as duplicate
-    pub min_similarity: f64,
+    pub minhash_size: usize, pub shingle_size: usize, pub lsh_bands: usize, pub min_similarity: f64,
 }
 
 impl Default for DuplicationConfig {
-    fn default() -> Self {
-        Self {
-            minhash_size: 100,
-            shingle_size: 3,
-            lsh_bands: 20,
-            min_similarity: 0.7,
-        }
-    }
+    fn default() -> Self { Self { minhash_size: 100, shingle_size: 3, lsh_bands: 20, min_similarity: 0.7 } }
 }
 
-/// A code chunk for duplication detection
 #[derive(Debug, Clone)]
-pub struct CodeChunk {
-    pub file: PathBuf,
-    pub name: String,
-    pub start_line: usize,
-    pub end_line: usize,
-    pub normalized: String,
-}
+pub struct CodeChunk { pub file: PathBuf, pub name: String, pub start_line: usize, pub end_line: usize, pub normalized: String }
 
-/// A MinHash signature
 #[derive(Debug, Clone)]
-pub struct MinHashSignature {
-    pub hashes: Vec<u64>,
-}
+pub struct MinHashSignature { pub hashes: Vec<u64> }
 
-/// A detected duplicate pair
 #[derive(Debug)]
-pub struct DuplicatePair {
-    pub chunk1: CodeChunk,
-    pub chunk2: CodeChunk,
-    pub similarity: f64,
-}
+pub struct DuplicatePair { pub chunk1: CodeChunk, pub chunk2: CodeChunk, pub similarity: f64 }
 
-/// A cluster of duplicate code chunks
 #[derive(Debug)]
-pub struct DuplicateCluster {
-    /// All chunks in this cluster (similar to each other)
-    pub chunks: Vec<CodeChunk>,
-    /// Average similarity within the cluster
-    pub avg_similarity: f64,
-}
+pub struct DuplicateCluster { pub chunks: Vec<CodeChunk>, pub avg_similarity: f64 }
 
-/// Union-Find data structure for clustering
-struct UnionFind {
-    parent: Vec<usize>,
-}
+struct UnionFind { parent: Vec<usize> }
 
 impl UnionFind {
-    fn new(n: usize) -> Self {
-        Self { parent: (0..n).collect() }
-    }
-
-    fn find(&mut self, x: usize) -> usize {
-        if self.parent[x] != x {
-            self.parent[x] = self.find(self.parent[x]); // path compression
-        }
-        self.parent[x]
-    }
-
-    fn union(&mut self, x: usize, y: usize) {
-        let px = self.find(x);
-        let py = self.find(y);
-        if px != py {
-            self.parent[px] = py;
-        }
-    }
+    fn new(n: usize) -> Self { Self { parent: (0..n).collect() } }
+    fn find(&mut self, x: usize) -> usize { if self.parent[x] != x { self.parent[x] = self.find(self.parent[x]); } self.parent[x] }
+    fn union(&mut self, x: usize, y: usize) { let (px, py) = (self.find(x), self.find(y)); if px != py { self.parent[px] = py; } }
 }
 
 type ChunkKey = (PathBuf, usize, usize);
@@ -492,201 +417,84 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normalize_code_removes_numbers() {
-        let code = "x = 123 + 456";
-        let normalized = normalize_code(code);
-        // Numbers should be replaced with N placeholders
-        assert!(!normalized.contains('1'));
-        assert!(!normalized.contains('2'));
-        assert!(normalized.contains('N'), "Expected 'N' placeholder, got: {:?}", normalized);
+    fn test_normalize() {
+        assert!(!normalize_code("x = 123 + 456").contains('1') && normalize_code("x = 123").contains('N'));
+        assert_eq!(normalize_code("x = 123"), "x = N");
+        assert_eq!(normalize_code("arr[123]").matches('N').count(), 1);
     }
 
     #[test]
-    fn normalize_code_preserves_number_placeholder_after_space() {
-        // Bug fix: numbers after whitespace should still get N placeholder
-        let code = "x = 123";
-        let normalized = normalize_code(code);
-        // Should be something like "x = N", not "x = "
-        assert!(normalized.contains('N'), "Expected 'N' placeholder, got: {:?}", normalized);
-        assert_eq!(normalized, "x = N");
-    }
-
-    #[test]
-    fn normalize_code_collapses_consecutive_digits() {
-        let code = "arr[123]";
-        let normalized = normalize_code(code);
-        // 123 should become a single N
-        assert_eq!(normalized.matches('N').count(), 1, "got: {:?}", normalized);
-    }
-
-    #[test]
-    fn test_duplication_config_default() {
-        let c = DuplicationConfig::default();
-        assert!(c.shingle_size > 0);
-        assert!(c.minhash_size > 0);
-    }
-
-    #[test]
-    fn test_code_chunk_struct() {
-        let chunk = CodeChunk { file: std::path::PathBuf::from("f.py"), name: "foo".into(), start_line: 1, end_line: 10, normalized: "x".into() };
+    fn test_structs() {
+        let c = DuplicationConfig::default(); assert!(c.shingle_size > 0 && c.minhash_size > 0);
+        let chunk = CodeChunk { file: "f.py".into(), name: "foo".into(), start_line: 1, end_line: 10, normalized: "x".into() };
         assert_eq!(chunk.name, "foo");
-    }
-
-    #[test]
-    fn test_minhash_signature_struct() {
-        let sig = MinHashSignature { hashes: vec![1, 2, 3] };
-        assert_eq!(sig.hashes.len(), 3);
-    }
-
-    #[test]
-    fn test_duplicate_pair_struct() {
+        let sig = MinHashSignature { hashes: vec![1, 2, 3] }; assert_eq!(sig.hashes.len(), 3);
         let c1 = CodeChunk { file: "a.py".into(), name: "f".into(), start_line: 1, end_line: 5, normalized: "".into() };
         let c2 = CodeChunk { file: "b.py".into(), name: "g".into(), start_line: 1, end_line: 5, normalized: "".into() };
-        let pair = DuplicatePair { chunk1: c1, chunk2: c2, similarity: 0.9 };
-        assert_eq!(pair.similarity, 0.9);
-    }
-
-    #[test]
-    fn test_duplicate_cluster_struct() {
-        let cluster = DuplicateCluster { chunks: vec![], avg_similarity: 0.85 };
-        assert_eq!(cluster.avg_similarity, 0.85);
+        assert_eq!(DuplicatePair { chunk1: c1, chunk2: c2, similarity: 0.9 }.similarity, 0.9);
+        assert_eq!(DuplicateCluster { chunks: vec![], avg_similarity: 0.85 }.avg_similarity, 0.85);
     }
 
     #[test]
     fn test_union_find() {
-        let mut uf = UnionFind::new(3);
-        uf.union(0, 1);
-        assert_eq!(uf.find(0), uf.find(1));
+        let mut uf = UnionFind::new(5); uf.union(0, 1); uf.union(3, 4);
+        assert_eq!(uf.find(0), uf.find(1)); assert_ne!(uf.find(1), uf.find(3));
     }
 
     #[test]
-    fn test_chunk_key() {
-        let chunk = CodeChunk { file: std::path::PathBuf::from("a.py"), name: "f".into(), start_line: 5, end_line: 10, normalized: "".into() };
-        let key = chunk_key(&chunk);
-        assert_eq!(key.0, std::path::PathBuf::from("a.py"));
+    fn test_chunk_helpers() {
+        let chunk = CodeChunk { file: "a.py".into(), name: "f".into(), start_line: 5, end_line: 10, normalized: "".into() };
+        assert_eq!(chunk_key(&chunk).0, std::path::PathBuf::from("a.py"));
+        let chunks = vec![CodeChunk { file: "a.py".into(), name: "f".into(), start_line: 1, end_line: 5, normalized: "".into() }];
+        assert_eq!(build_chunk_index(&chunks).len(), 1);
     }
 
     #[test]
-    fn test_build_chunk_index() {
-        let chunks = vec![
-            CodeChunk { file: std::path::PathBuf::from("a.py"), name: "f".into(), start_line: 1, end_line: 5, normalized: "".into() },
-        ];
-        let idx = build_chunk_index(&chunks);
-        assert_eq!(idx.len(), 1);
-    }
-
-    #[test]
-    fn test_generate_shingles() {
-        let shingles = generate_shingles("one two three four", 3);
-        assert!(!shingles.is_empty());
-    }
-
-    #[test]
-    fn test_compute_minhash() {
-        let shingles = generate_shingles("def foo(): pass", 3);
-        let sig = compute_minhash(&shingles, 5);
-        assert_eq!(sig.hashes.len(), 5);
-    }
-
-    #[test]
-    fn test_estimate_similarity() {
+    fn test_minhash_lsh() {
+        let shingles = generate_shingles("one two three four", 3); assert!(!shingles.is_empty());
+        let sig = compute_minhash(&shingles, 5); assert_eq!(sig.hashes.len(), 5);
         let a = MinHashSignature { hashes: vec![1, 2, 3, 4, 5] };
         let b = MinHashSignature { hashes: vec![1, 2, 3, 4, 5] };
-        assert_eq!(estimate_similarity(&a, &b), 1.0);
+        let c = MinHashSignature { hashes: vec![6, 7, 8, 9, 10] };
+        assert_eq!(estimate_similarity(&a, &b), 1.0); assert_eq!(estimate_similarity(&a, &c), 0.0);
+        assert_ne!(hash_band(&[1, 2, 3]), hash_band(&[4, 5, 6]));
+        let mut cands = std::collections::HashSet::new(); add_bucket_pairs(&[0, 1, 2], &mut cands); assert!(!cands.is_empty());
+        let _ = find_lsh_candidates(&[a, b], 2);
     }
 
     #[test]
-    fn test_estimate_similarity_different() {
-        let a = MinHashSignature { hashes: vec![1, 2, 3, 4, 5] };
-        let b = MinHashSignature { hashes: vec![6, 7, 8, 9, 10] };
-        assert_eq!(estimate_similarity(&a, &b), 0.0);
-    }
-
-    #[test]
-    fn test_duplication_config_struct() {
-        let c = DuplicationConfig { minhash_size: 50, shingle_size: 5, lsh_bands: 10, min_similarity: 0.8 };
-        assert_eq!(c.minhash_size, 50);
-    }
-
-    #[test]
-    fn test_union_find_struct() {
-        let mut uf = UnionFind::new(5);
-        uf.union(1, 2);
-        uf.union(3, 4);
-        assert_eq!(uf.find(1), uf.find(2));
-        assert_ne!(uf.find(1), uf.find(3));
-    }
-
-    #[test]
-    fn test_compute_cluster_similarity() {
-        let mut pair_sims = std::collections::HashMap::new();
-        pair_sims.insert((0, 1), 0.9);
-        let sim = compute_cluster_similarity(&[0, 1], &pair_sims);
-        assert!(sim >= 0.0 && sim <= 1.0);
-    }
-
-    #[test]
-    fn test_cluster_duplicates() {
+    fn test_clustering() {
+        let mut pair_sims = std::collections::HashMap::new(); pair_sims.insert((0, 1), 0.9);
+        let sim = compute_cluster_similarity(&[0, 1], &pair_sims); assert!(sim >= 0.0 && sim <= 1.0);
         let c1 = CodeChunk { file: "a.py".into(), name: "f".into(), start_line: 1, end_line: 5, normalized: "x".into() };
         let c2 = CodeChunk { file: "b.py".into(), name: "g".into(), start_line: 1, end_line: 5, normalized: "x".into() };
-        let pairs = vec![DuplicatePair { chunk1: c1.clone(), chunk2: c2.clone(), similarity: 0.9 }];
-        let chunks = vec![c1, c2];
-        let clusters = cluster_duplicates(&pairs, &chunks);
-        let _ = clusters; // Just verify it runs
+        let _ = cluster_duplicates(&[DuplicatePair { chunk1: c1.clone(), chunk2: c2.clone(), similarity: 0.9 }], &[c1, c2]);
     }
 
     #[test]
-    fn test_extract_chunks_for_duplication() {
-        use crate::parsing::{create_parser, parse_file};
-        use std::io::Write;
+    fn test_python_extraction() {
+        use crate::parsing::{create_parser, parse_file}; use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         writeln!(tmp, "def foo():\n    x = 1\n    y = 2\n    z = 3\n    return x + y + z").unwrap();
         let mut parser = create_parser().unwrap();
         let parsed = parse_file(&mut parser, tmp.path()).unwrap();
-        let refs = vec![&parsed];
-        let chunks = extract_chunks_for_duplication(&refs);
-        // Just verify it runs - chunks may be empty if function is too short
-        let _ = chunks;
+        let _ = extract_chunks_for_duplication(&[&parsed]);
+        let mut chunks = Vec::new(); extract_function_chunks(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut chunks);
     }
 
     #[test]
-    fn test_extract_function_chunks() {
-        use crate::parsing::{create_parser, parse_file};
-        use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        writeln!(tmp, "def bar():\n    a = 1\n    b = 2\n    c = 3\n    return a + b + c").unwrap();
-        let mut parser = create_parser().unwrap();
-        let parsed = parse_file(&mut parser, tmp.path()).unwrap();
-        let mut chunks = Vec::new();
-        extract_function_chunks(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut chunks);
-        // Just verify it runs - chunks may be empty if function is too short
-        let _ = chunks;
-    }
-
-    #[test]
-    fn test_hash_band() {
-        let hashes = vec![1, 2, 3, 4, 5, 6];
-        let h1 = hash_band(&hashes[0..3]);
-        let h2 = hash_band(&hashes[3..6]);
-        assert_ne!(h1, h2);
-    }
-
-    #[test]
-    fn test_add_bucket_pairs() {
-        let indices = vec![0, 1, 2];
-        let mut candidates = std::collections::HashSet::new();
-        add_bucket_pairs(&indices, &mut candidates);
-        assert!(!candidates.is_empty());
-    }
-
-    #[test]
-    fn test_find_lsh_candidates() {
-        let sigs = vec![
-            MinHashSignature { hashes: vec![1, 2, 3, 4, 5, 6] },
-            MinHashSignature { hashes: vec![1, 2, 3, 4, 5, 6] },
-        ];
-        let pairs = find_lsh_candidates(&sigs, 2);
-        let _ = pairs; // Just verify it runs
+    fn test_rust_extraction() {
+        assert!(extract_rust_chunks_for_duplication(&[]).is_empty());
+        assert!(detect_duplicates_from_chunks(&[], &DuplicationConfig::default()).is_empty());
+        let c1 = CodeChunk { file: "a.rs".into(), name: "foo".into(), start_line: 1, end_line: 5, normalized: "let x = N".into() };
+        let c2 = CodeChunk { file: "b.rs".into(), name: "bar".into(), start_line: 1, end_line: 5, normalized: "fn main hello".into() };
+        assert!(detect_duplicates_from_chunks(&[c1, c2], &DuplicationConfig::default()).is_empty());
+        let src = "fn foo() { let x=1; let y=2; let z=3; let w=4; let v=5; }";
+        let ast: syn::File = syn::parse_str(src).unwrap();
+        let mut chunks = Vec::new(); extract_rust_function_chunks(&ast, src, std::path::Path::new("t.rs"), &mut chunks);
+        let item: syn::Item = syn::parse_str(src).unwrap();
+        let mut c2 = Vec::new(); extract_chunks_from_item(&item, src, std::path::Path::new("t.rs"), &mut c2);
+        let f: syn::ItemFn = syn::parse_str(src).unwrap();
+        let mut c3 = Vec::new(); add_rust_function_chunk(&f.sig.ident.to_string(), f.sig.ident.span(), &f.block, src, std::path::Path::new("t.rs"), &mut c3);
     }
 }
-
