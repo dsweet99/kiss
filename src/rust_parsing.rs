@@ -89,7 +89,6 @@ impl Counter {{
         
         let parsed = parse_rust_file(file.path()).expect("should parse");
         
-        // Should have struct and impl items
         assert!(parsed.ast.items.len() >= 2);
     }
 

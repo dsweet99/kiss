@@ -93,16 +93,12 @@ impl Config {
     /// This loads ALL sections (legacy behavior for backwards compatibility).
     pub fn load() -> Self {
         let mut config = Self::default();
-
-        // Try home directory config
         if let Some(home) = std::env::var_os("HOME") {
             let home_config = Path::new(&home).join(".kissconfig");
             if let Ok(content) = std::fs::read_to_string(&home_config) {
                 config.merge_from_toml(&content, None);
             }
         }
-
-        // Try local config (overrides home config)
         let local_config = Path::new(".kissconfig");
         if let Ok(content) = std::fs::read_to_string(local_config) {
             config.merge_from_toml(&content, None);
@@ -115,16 +111,12 @@ impl Config {
     /// Only applies [thresholds], [shared], and the specified language section.
     pub fn load_for_language(lang: ConfigLanguage) -> Self {
         let mut config = Self::default();
-
-        // Try home directory config
         if let Some(home) = std::env::var_os("HOME") {
             let home_config = Path::new(&home).join(".kissconfig");
             if let Ok(content) = std::fs::read_to_string(&home_config) {
                 config.merge_from_toml(&content, Some(lang));
             }
         }
-
-        // Try local config (overrides home config)
         let local_config = Path::new(".kissconfig");
         if let Ok(content) = std::fs::read_to_string(local_config) {
             config.merge_from_toml(&content, Some(lang));
@@ -166,18 +158,12 @@ impl Config {
         let Ok(table) = content.parse::<toml::Table>() else {
             return;
         };
-
-        // Try legacy [thresholds] section first
         if let Some(thresholds) = table.get("thresholds").and_then(|v| v.as_table()) {
             self.apply_thresholds(thresholds);
         }
-
-        // Apply [shared] section (overrides thresholds)
         if let Some(shared) = table.get("shared").and_then(|v| v.as_table()) {
             self.apply_shared(shared);
         }
-
-        // Apply language-specific section based on lang parameter
         match lang {
             Some(ConfigLanguage::Python) => {
                 if let Some(python) = table.get("python").and_then(|v| v.as_table()) {
@@ -190,7 +176,6 @@ impl Config {
                 }
             }
             None => {
-                // Legacy: apply both (last one wins for overlapping fields)
                 if let Some(python) = table.get("python").and_then(|v| v.as_table()) {
                     self.apply_python(python);
                 }

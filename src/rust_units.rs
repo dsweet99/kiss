@@ -38,7 +38,6 @@ impl<'ast> Visit<'ast> for CodeUnitVisitor {
         match item {
             Item::Fn(func) => {
                 let start_line = func.sig.ident.span().start().line;
-                // Approximate end line from block
                 let end_line = start_line + estimate_block_lines(&func.block);
                 
                 self.units.push(RustCodeUnit {
@@ -48,8 +47,6 @@ impl<'ast> Visit<'ast> for CodeUnitVisitor {
                     end_line,
                     parent_type: None,
                 });
-                
-                // Visit nested items
                 syn::visit::visit_item_fn(self, func);
             }
             Item::Struct(s) => {
@@ -73,7 +70,6 @@ impl<'ast> Visit<'ast> for CodeUnitVisitor {
                 });
             }
             Item::Impl(impl_block) => {
-                // Get the type name being implemented
                 let type_name = if let syn::Type::Path(type_path) = impl_block.self_ty.as_ref() {
                     type_path
                         .path
@@ -85,8 +81,6 @@ impl<'ast> Visit<'ast> for CodeUnitVisitor {
                 };
                 
                 self.current_impl_type = type_name;
-                
-                // Visit methods in the impl block
                 for impl_item in &impl_block.items {
                     if let ImplItem::Fn(method) = impl_item {
                         let start_line = method.sig.ident.span().start().line;
@@ -106,7 +100,6 @@ impl<'ast> Visit<'ast> for CodeUnitVisitor {
             }
             Item::Mod(m) => {
                 if m.content.is_some() {
-                    // Inline module
                     let start_line = m.ident.span().start().line;
                     self.units.push(RustCodeUnit {
                         kind: CodeUnitKind::Module,
@@ -130,8 +123,6 @@ fn estimate_block_lines(block: &syn::Block) -> usize {
     if block.stmts.is_empty() {
         return 1;
     }
-    
-    // Use span info if available
     let start = block.brace_token.span.open().start().line;
     let end = block.brace_token.span.close().end().line;
     
@@ -145,8 +136,6 @@ fn estimate_block_lines(block: &syn::Block) -> usize {
 /// Extracts all code units from a parsed Rust file
 pub fn extract_rust_code_units(parsed: &ParsedRustFile) -> Vec<RustCodeUnit> {
     let mut visitor = CodeUnitVisitor::new(&parsed.source);
-    
-    // Add the module itself as a code unit
     visitor.units.push(RustCodeUnit {
         kind: CodeUnitKind::Module,
         name: parsed
@@ -158,8 +147,6 @@ pub fn extract_rust_code_units(parsed: &ParsedRustFile) -> Vec<RustCodeUnit> {
         end_line: visitor.source_lines,
         parent_type: None,
     });
-    
-    // Visit all items in the file
     for item in &parsed.ast.items {
         visitor.visit_item(item);
     }

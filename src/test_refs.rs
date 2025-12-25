@@ -26,80 +26,63 @@ pub struct TestRefAnalysis {
     pub unreferenced: Vec<CodeDefinition>,
 }
 
+fn is_in_test_directory(path: &Path) -> bool {
+    path.components().any(|c| {
+        let s = c.as_os_str();
+        s == "tests" || s == "test"
+    })
+}
+
+fn has_python_test_naming(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|name| (name.starts_with("test_") && name.ends_with(".py")) || name.ends_with("_test.py"))
+}
+
 /// Check if a file path is a test file (test_*.py, *_test.py, or in tests/ directory)
 #[must_use]
 pub fn is_test_file(path: &std::path::Path) -> bool {
-    // Check for tests/ or test/ directory in path
-    if path.components().any(|c| {
-        let s = c.as_os_str();
-        s == "tests" || s == "test"
-    }) {
-        return true;
+    is_in_test_directory(path) || has_python_test_naming(path)
+}
+
+fn is_test_framework(name: &str) -> bool {
+    name == "pytest" || name == "unittest" || name.starts_with("pytest.") || name.starts_with("unittest.")
+}
+
+fn is_test_framework_import_from(child: Node, source: &str) -> bool {
+    child.child_by_field_name("module_name")
+        .map(|m| &source[m.start_byte()..m.end_byte()])
+        .is_some_and(|name| is_test_framework(name))
+}
+
+fn contains_test_module_name(node: Node, source: &str) -> bool {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let name = match child.kind() {
+            "dotted_name" => Some(&source[child.start_byte()..child.end_byte()]),
+            "aliased_import" => child.child_by_field_name("name").map(|n| &source[n.start_byte()..n.end_byte()]),
+            _ => None,
+        };
+        if name.is_some_and(|n| n == "pytest" || n == "unittest") { return true; }
     }
-    
-    // Check filename patterns
-    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-        (name.starts_with("test_") && name.ends_with(".py")) || name.ends_with("_test.py")
-    } else {
-        false
-    }
+    false
 }
 
 /// Check if a parsed file contains pytest or unittest imports (fallback heuristic)
 pub fn has_test_framework_import(node: Node, source: &str) -> bool {
     let mut cursor = node.walk();
-    
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "import_statement" => {
-                // import pytest, import unittest
-                if contains_test_module_name(child, source) {
-                    return true;
-                }
-            }
-            "import_from_statement" => {
-                // from pytest import ..., from unittest import ...
-                if let Some(module) = child.child_by_field_name("module_name") {
-                    let module_name = &source[module.start_byte()..module.end_byte()];
-                    if module_name == "pytest" || module_name.starts_with("pytest.")
-                        || module_name == "unittest" || module_name.starts_with("unittest.")
-                    {
-                        return true;
-                    }
-                }
-            }
+            "import_statement" if contains_test_module_name(child, source) => return true,
+            "import_from_statement" if is_test_framework_import_from(child, source) => return true,
             _ => {}
         }
     }
-    
     false
 }
 
-/// Check if an import statement contains pytest or unittest
-fn contains_test_module_name(node: Node, source: &str) -> bool {
-    let mut cursor = node.walk();
-    
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "dotted_name" => {
-                let name = &source[child.start_byte()..child.end_byte()];
-                if name == "pytest" || name == "unittest" {
-                    return true;
-                }
-            }
-            "aliased_import" => {
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    let name = &source[name_node.start_byte()..name_node.end_byte()];
-                    if name == "pytest" || name == "unittest" {
-                        return true;
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    
-    false
+fn is_python_test_file(parsed: &ParsedFile) -> bool {
+    is_test_file(&parsed.path) || has_test_framework_import(parsed.tree.root_node(), &parsed.source)
 }
 
 /// Analyze test references across all parsed files
@@ -108,39 +91,15 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
     let mut test_references = HashSet::new();
 
     for parsed in parsed_files {
-        // A file is a test file if:
-        // 1. It matches naming patterns (test_*.py, *_test.py) or is in tests/ directory
-        // 2. Or it imports pytest/unittest (fallback heuristic)
-        let is_test = is_test_file(&parsed.path) 
-            || has_test_framework_import(parsed.tree.root_node(), &parsed.source);
-        
-        if is_test {
-            // Collect references from test files
+        if is_python_test_file(parsed) {
             collect_references(parsed.tree.root_node(), &parsed.source, &mut test_references);
         } else {
-            // Collect definitions from source files
-            collect_definitions(
-                parsed.tree.root_node(),
-                &parsed.source,
-                &parsed.path,
-                &mut definitions,
-                false,
-            );
+            collect_definitions(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut definitions, false);
         }
     }
 
-    // Find unreferenced definitions
-    let unreferenced = definitions
-        .iter()
-        .filter(|def| !test_references.contains(&def.name))
-        .cloned()
-        .collect();
-
-    TestRefAnalysis {
-        definitions,
-        test_references,
-        unreferenced,
-    }
+    let unreferenced = definitions.iter().filter(|def| !test_references.contains(&def.name)).cloned().collect();
+    TestRefAnalysis { definitions, test_references, unreferenced }
 }
 
 fn try_add_def(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, kind: CodeUnitKind) {
@@ -169,28 +128,20 @@ fn collect_definitions(node: Node, source: &str, file: &Path, defs: &mut Vec<Cod
     }
 }
 
+fn insert_identifier(node: Node, source: &str, refs: &mut HashSet<String>) {
+    refs.insert(source[node.start_byte()..node.end_byte()].to_string());
+}
+
 /// Collect all name references from a node (imports, calls, attribute access)
 fn collect_references(node: Node, source: &str, refs: &mut HashSet<String>) {
     match node.kind() {
-        // Function/method calls
-        "call" => {
-            if let Some(func) = node.child_by_field_name("function") {
-                collect_call_target(func, source, refs);
-            }
-        }
-        // Import statements
-        "import_statement" | "import_from_statement" => {
-            collect_import_names(node, source, refs);
-        }
-        // Simple identifier references (variable access)
-        "identifier" => {
-            let name = source[node.start_byte()..node.end_byte()].to_string();
-            refs.insert(name);
-        }
+        "call" => if let Some(func) = node.child_by_field_name("function") {
+            collect_call_target(func, source, refs);
+        },
+        "import_statement" | "import_from_statement" => collect_import_names(node, source, refs),
+        "identifier" => insert_identifier(node, source, refs),
         _ => {}
     }
-
-    // Recurse to children
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         collect_references(child, source, refs);
@@ -200,20 +151,10 @@ fn collect_references(node: Node, source: &str, refs: &mut HashSet<String>) {
 /// Extract the target name from a call expression
 fn collect_call_target(node: Node, source: &str, refs: &mut HashSet<String>) {
     match node.kind() {
-        "identifier" => {
-            let name = source[node.start_byte()..node.end_byte()].to_string();
-            refs.insert(name);
-        }
+        "identifier" => insert_identifier(node, source, refs),
         "attribute" => {
-            // For method calls like obj.method(), extract "method"
-            if let Some(attr) = node.child_by_field_name("attribute") {
-                let name = source[attr.start_byte()..attr.end_byte()].to_string();
-                refs.insert(name);
-            }
-            // Also extract the object for chained calls
-            if let Some(obj) = node.child_by_field_name("object") {
-                collect_call_target(obj, source, refs);
-            }
+            if let Some(attr) = node.child_by_field_name("attribute") { insert_identifier(attr, source, refs); }
+            if let Some(obj) = node.child_by_field_name("object") { collect_call_target(obj, source, refs); }
         }
         _ => {}
     }
@@ -225,19 +166,12 @@ fn collect_import_names(node: Node, source: &str, refs: &mut HashSet<String>) {
     for child in node.children(&mut cursor) {
         match child.kind() {
             "dotted_name" | "aliased_import" => {
-                // Get the first identifier (the module/name being imported)
                 let mut inner_cursor = child.walk();
                 for inner in child.children(&mut inner_cursor) {
-                    if inner.kind() == "identifier" {
-                        let name = source[inner.start_byte()..inner.end_byte()].to_string();
-                        refs.insert(name);
-                    }
+                    if inner.kind() == "identifier" { insert_identifier(inner, source, refs); }
                 }
             }
-            "identifier" => {
-                let name = source[child.start_byte()..child.end_byte()].to_string();
-                refs.insert(name);
-            }
+            "identifier" => insert_identifier(child, source, refs),
             _ => {}
         }
     }
@@ -256,22 +190,16 @@ mod tests {
         assert!(!is_test_file(Path::new("foo.py")));
         assert!(!is_test_file(Path::new("testing.py")));
         assert!(!is_test_file(Path::new("my_test_helper.py")));
-        // Non-.py files with test_ prefix should NOT be detected as test files
-        assert!(!is_test_file(Path::new("test_foo.txt")));
-        assert!(!is_test_file(Path::new("test_data.json")));
+        assert!(!is_test_file(Path::new("test_foo.txt")), "non-.py should not match");
+        assert!(!is_test_file(Path::new("test_data.json")), "non-.py should not match");
     }
 
     #[test]
     fn test_is_test_file_by_path_component() {
-        // Files in tests/ directory should be detected
         assert!(is_test_file(Path::new("tests/conftest.py")));
         assert!(is_test_file(Path::new("tests/helpers.py")));
         assert!(is_test_file(Path::new("/project/tests/unit/test_utils.py")));
-        
-        // Files in test/ directory should also be detected
         assert!(is_test_file(Path::new("test/integration.py")));
-        
-        // Regular source files should not be detected
         assert!(!is_test_file(Path::new("src/utils.py")));
         assert!(!is_test_file(Path::new("myproject/testing_utils.py")));
     }

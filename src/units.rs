@@ -55,7 +55,6 @@ pub fn extract_code_units(parsed: &ParsedFile) -> Vec<CodeUnit> {
     let mut units = Vec::new();
     let root = parsed.tree.root_node();
 
-    // The module itself is a code unit
     units.push(CodeUnit {
         kind: CodeUnitKind::Module,
         name: parsed
@@ -69,7 +68,6 @@ pub fn extract_code_units(parsed: &ParsedFile) -> Vec<CodeUnit> {
         end_byte: parsed.source.len(),
     });
 
-    // Walk the AST to find functions and classes
     extract_from_node(root, &parsed.source, &mut units, false);
 
     units
@@ -92,8 +90,6 @@ fn extract_from_node(node: Node, source: &str, units: &mut Vec<CodeUnit>, inside
                     end_byte: node.end_byte(),
                 });
             }
-            // Don't recurse into nested functions for now (they'd be Functions, not Methods)
-            // But we do want to count them - recurse with inside_class=false
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 extract_from_node(child, source, units, false);
@@ -110,14 +106,12 @@ fn extract_from_node(node: Node, source: &str, units: &mut Vec<CodeUnit>, inside
                     end_byte: node.end_byte(),
                 });
             }
-            // Recurse into class body - methods are inside_class=true
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 extract_from_node(child, source, units, true);
             }
         }
         _ => {
-            // Recurse into children
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 extract_from_node(child, source, units, inside_class);

@@ -30,26 +30,24 @@ pub struct RustTestRefAnalysis {
     pub unreferenced: Vec<RustCodeDefinition>,
 }
 
+fn is_rs_file(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()) == Some("rs")
+}
+
+fn is_in_tests_directory(path: &Path) -> bool {
+    path.components().any(|c| c.as_os_str() == "tests")
+}
+
+fn has_test_naming_pattern(path: &Path) -> bool {
+    path.file_stem()
+        .and_then(|n| n.to_str())
+        .is_some_and(|name| name.ends_with("_test") || name.starts_with("test_"))
+}
+
 /// Check if a file is a test file based on Rust conventions
 #[must_use]
 pub fn is_rust_test_file(path: &std::path::Path) -> bool {
-    // Must be a .rs file
-    if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-        return false;
-    }
-    
-    // Check for tests/ directory
-    if path.components().any(|c| c.as_os_str() == "tests") {
-        return true;
-    }
-    
-    // Check for test module files
-    if let Some(name) = path.file_stem().and_then(|n| n.to_str())
-        && (name.ends_with("_test") || name.starts_with("test_")) {
-            return true;
-        }
-    
-    false
+    is_rs_file(path) && (is_in_tests_directory(path) || has_test_naming_pattern(path))
 }
 
 /// Check if an item has a #[test] attribute
@@ -70,55 +68,40 @@ fn has_cfg_test_attribute(attrs: &[Attribute]) -> bool {
     })
 }
 
+fn is_directly_referenced(def: &RustCodeDefinition, refs: &HashSet<String>) -> bool {
+    refs.contains(&def.name)
+}
+
+fn is_trait_impl_with_referenced_type(def: &RustCodeDefinition, refs: &HashSet<String>) -> bool {
+    def.kind == CodeUnitKind::TraitImplMethod
+        && def.impl_for_type.as_ref().is_some_and(|t| refs.contains(t))
+}
+
+fn is_covered_by_tests(def: &RustCodeDefinition, refs: &HashSet<String>) -> bool {
+    is_directly_referenced(def, refs) || is_trait_impl_with_referenced_type(def, refs)
+}
+
 /// Analyze test references across all parsed Rust files
 pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAnalysis {
     let mut definitions = Vec::new();
     let mut test_references = HashSet::new();
 
     for parsed in parsed_files {
-        let is_test = is_rust_test_file(&parsed.path);
-        
-        // Collect definitions from non-test files
-        if !is_test {
-            collect_rust_definitions(&parsed.ast, &parsed.path, &mut definitions);
-        }
-        
-        // Collect test references from test files AND #[test] functions
-        if is_test {
+        if is_rust_test_file(&parsed.path) {
             collect_rust_references(&parsed.ast, &mut test_references);
         } else {
-            // Also collect references from #[cfg(test)] modules and #[test] functions
+            collect_rust_definitions(&parsed.ast, &parsed.path, &mut definitions);
             collect_test_module_references(&parsed.ast, &mut test_references);
         }
     }
 
-    // Find unreferenced definitions, with special handling for trait impl methods
     let unreferenced = definitions
         .iter()
-        .filter(|def| {
-            // If directly referenced, it's covered
-            if test_references.contains(&def.name) {
-                return false;
-            }
-            
-            // For trait impl methods, check if the implementing type is referenced
-            // If the type is tested, the trait impl is considered indirectly tested
-            if def.kind == CodeUnitKind::TraitImplMethod
-                && let Some(ref type_name) = def.impl_for_type
-                    && test_references.contains(type_name) {
-                        return false; // Type is referenced, trait impl is indirectly covered
-                    }
-            
-            true // Not covered
-        })
+        .filter(|def| !is_covered_by_tests(def, &test_references))
         .cloned()
         .collect();
 
-    RustTestRefAnalysis {
-        definitions,
-        test_references,
-        unreferenced,
-    }
+    RustTestRefAnalysis { definitions, test_references, unreferenced }
 }
 
 /// Collect function, struct, enum definitions from a Rust file
@@ -138,11 +121,9 @@ fn try_add_def(defs: &mut Vec<RustCodeDefinition>, name: &str, kind: CodeUnitKin
 
 /// Extract the type name from a syn::Type (for impl blocks)
 fn extract_type_name(ty: &syn::Type) -> Option<String> {
-    if let syn::Type::Path(type_path) = ty {
-        // Get the last segment (the actual type name, ignoring module path)
-        type_path.path.segments.last().map(|seg| seg.ident.to_string())
-    } else {
-        None
+    match ty {
+        syn::Type::Path(type_path) => type_path.path.segments.last().map(|seg| seg.ident.to_string()),
+        _ => None,
     }
 }
 
@@ -225,18 +206,20 @@ fn is_external_crate(name: &str) -> bool {
         | "petgraph" | "tempfile" | "ignore" | "tree_sitter" | "tree_sitter_python")
 }
 
+fn starts_with_external_crate(path: &syn::Path) -> bool {
+    path.segments.first().is_some_and(|seg| is_external_crate(&seg.ident.to_string()))
+}
+
+fn is_rust_keyword(name: &str) -> bool {
+    matches!(name, "self" | "Self" | "super" | "crate")
+}
+
 /// Insert all segments from a path into the reference set, filtering external crates
 fn insert_path_segments(path: &syn::Path, refs: &mut HashSet<String>) {
-    // Skip paths that start with external crates
-    if let Some(first) = path.segments.first()
-        && is_external_crate(&first.ident.to_string()) {
-            return;
-        }
-    // Insert ALL segments from the path
+    if starts_with_external_crate(path) { return; }
     for segment in &path.segments {
         let name = segment.ident.to_string();
-        // Skip common Rust keywords/primitives that aren't user definitions
-        if !matches!(name.as_str(), "self" | "Self" | "super" | "crate") {
+        if !is_rust_keyword(&name) {
             refs.insert(name);
         }
     }
@@ -245,28 +228,13 @@ fn insert_path_segments(path: &syn::Path, refs: &mut HashSet<String>) {
 impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
     fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
-            Expr::Call(call) => {
-                // Extract ALL path segments from call (e.g., MyStruct::new -> both MyStruct and new)
-                if let Expr::Path(path) = call.func.as_ref() {
-                    insert_path_segments(&path.path, self.refs);
-                }
-            }
-            Expr::MethodCall(method) => {
-                self.refs.insert(method.method.to_string());
-            }
-            Expr::Struct(s) => {
-                // Struct instantiation - capture all segments
-                insert_path_segments(&s.path, self.refs);
-            }
-            Expr::Path(path) => {
-                // Variable/type reference - capture all segments
+            Expr::Call(call) => if let Expr::Path(path) = call.func.as_ref() {
                 insert_path_segments(&path.path, self.refs);
-            }
-            Expr::Macro(mac) => {
-                // Macros like assert!, assert_eq!, println! contain expressions in their token stream
-                // Try to parse the tokens as expressions and visit them
-                visit_macro_tokens(&mac.mac.tokens, self.refs);
-            }
+            },
+            Expr::MethodCall(method) => { self.refs.insert(method.method.to_string()); }
+            Expr::Struct(s) => insert_path_segments(&s.path, self.refs),
+            Expr::Path(path) => insert_path_segments(&path.path, self.refs),
+            Expr::Macro(mac) => visit_macro_tokens(&mac.mac.tokens, self.refs),
             _ => {}
         }
         syn::visit::visit_expr(self, expr);
@@ -280,7 +248,6 @@ impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
     }
     
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {
-        // Also handle macro invocations in statement position (not just expressions)
         visit_macro_tokens(&mac.tokens, self.refs);
         syn::visit::visit_macro(self, mac);
     }
@@ -302,33 +269,37 @@ impl syn::parse::Parse for ExprList {
     }
 }
 
-/// Try to extract and visit expressions from macro token streams
-fn visit_macro_tokens(tokens: &proc_macro2::TokenStream, refs: &mut HashSet<String>) {
-    // Try parsing as a comma-separated list of expressions (covers assert!, assert_eq!, etc.)
-    // First, try to parse the entire token stream as a single expression
+fn try_parse_as_single_expr(tokens: &proc_macro2::TokenStream, refs: &mut HashSet<String>) -> bool {
     if let Ok(expr) = syn::parse2::<Expr>(tokens.clone()) {
-        let mut visitor = ReferenceVisitor { refs };
-        visitor.visit_expr(&expr);
-        return;
+        ReferenceVisitor { refs }.visit_expr(&expr);
+        return true;
     }
-    
-    // Try parsing as comma-separated expressions (proper comma-separated handling)
-    // This handles cases like assert_eq!(estimate_similarity(&a, &b), 1.0)
-    // where simple comma-splitting would fail due to nested commas
+    false
+}
+
+fn try_parse_as_expr_list(tokens: &proc_macro2::TokenStream, refs: &mut HashSet<String>) -> bool {
     if let Ok(ExprList(exprs)) = syn::parse2::<ExprList>(tokens.clone()) {
         for expr in exprs {
-            let mut visitor = ReferenceVisitor { refs };
-            visitor.visit_expr(&expr);
+            ReferenceVisitor { refs }.visit_expr(&expr);
         }
-        return;
+        return true;
     }
-    
-    // Last resort: try each token group individually
+    false
+}
+
+fn visit_nested_token_groups(tokens: &proc_macro2::TokenStream, refs: &mut HashSet<String>) {
     for token in tokens.clone() {
         if let proc_macro2::TokenTree::Group(group) = token {
             visit_macro_tokens(&group.stream(), refs);
         }
     }
+}
+
+/// Try to extract and visit expressions from macro token streams
+fn visit_macro_tokens(tokens: &proc_macro2::TokenStream, refs: &mut HashSet<String>) {
+    if try_parse_as_single_expr(tokens, refs) { return; }
+    if try_parse_as_expr_list(tokens, refs) { return; }
+    visit_nested_token_groups(tokens, refs);
 }
 
 #[cfg(test)]
@@ -463,6 +434,52 @@ mod tests {
         let mut refs = HashSet::new();
         collect_rust_references(&f, &mut refs);
         assert!(refs.contains("foo") && refs.contains("Bar"));
+    }
+
+    #[test]
+    fn test_helper_predicates() {
+        assert!(is_rs_file(Path::new("foo.rs")));
+        assert!(!is_rs_file(Path::new("foo.py")));
+        assert!(is_in_tests_directory(Path::new("tests/foo.rs")));
+        assert!(!is_in_tests_directory(Path::new("src/foo.rs")));
+        assert!(has_test_naming_pattern(Path::new("test_foo.rs")));
+        assert!(has_test_naming_pattern(Path::new("foo_test.rs")));
+        assert!(!has_test_naming_pattern(Path::new("foo.rs")));
+    }
+
+    #[test]
+    fn test_coverage_predicates() {
+        let def = RustCodeDefinition { name: "foo".into(), kind: CodeUnitKind::Function, file: "t.rs".into(), line: 1, impl_for_type: None };
+        let refs: HashSet<String> = ["foo"].into_iter().map(String::from).collect();
+        assert!(is_directly_referenced(&def, &refs));
+        assert!(is_covered_by_tests(&def, &refs));
+        let def2 = RustCodeDefinition { name: "bar".into(), kind: CodeUnitKind::TraitImplMethod, file: "t.rs".into(), line: 2, impl_for_type: Some("MyType".into()) };
+        let refs2: HashSet<String> = ["MyType"].into_iter().map(String::from).collect();
+        assert!(is_trait_impl_with_referenced_type(&def2, &refs2));
+        assert!(is_covered_by_tests(&def2, &refs2));
+    }
+
+    #[test]
+    fn test_path_helpers() {
+        let path: syn::Path = syn::parse_str("std::vec::Vec").unwrap();
+        assert!(starts_with_external_crate(&path));
+        let path2: syn::Path = syn::parse_str("my_module::Foo").unwrap();
+        assert!(!starts_with_external_crate(&path2));
+        assert!(is_rust_keyword("self") && is_rust_keyword("Self"));
+        assert!(!is_rust_keyword("foo"));
+    }
+
+    #[test]
+    fn test_macro_parsing_helpers() {
+        let mut refs = HashSet::new();
+        assert!(try_parse_as_single_expr(&"foo()".parse().unwrap(), &mut refs));
+        assert!(refs.contains("foo"));
+        let mut refs2 = HashSet::new();
+        assert!(try_parse_as_expr_list(&"a, b".parse().unwrap(), &mut refs2));
+        assert!(refs2.contains("a") && refs2.contains("b"));
+        let mut refs3 = HashSet::new();
+        visit_nested_token_groups(&"(bar())".parse().unwrap(), &mut refs3);
+        assert!(refs3.contains("bar"));
     }
 }
 

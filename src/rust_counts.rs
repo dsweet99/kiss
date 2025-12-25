@@ -174,50 +174,42 @@ fn get_impl_type_name(impl_block: &syn::ItemImpl) -> Option<String> {
     }
 }
 
-/// Compute LCOM (Lack of Cohesion of Methods) for a Rust impl block
-/// Returns a value between 0.0 (cohesive) and 1.0 (no cohesion)
+/// Compute LCOM (Lack of Cohesion of Methods) for a Rust impl block.
+/// LCOM = pairs_not_sharing_fields / total_pairs. Returns 0.0 (cohesive) to 1.0 (no cohesion).
 pub fn compute_rust_lcom(impl_block: &syn::ItemImpl) -> f64 {
     use std::collections::HashSet;
     
-    // Collect fields accessed by each method via self.field
-    let mut method_fields: Vec<HashSet<String>> = Vec::new();
+    let fields_per_method: Vec<HashSet<String>> = impl_block.items.iter()
+        .filter_map(|item| match item {
+            ImplItem::Fn(method) => Some(extract_self_field_accesses(&method.block)),
+            _ => None,
+        })
+        .collect();
     
-    for impl_item in &impl_block.items {
-        if let ImplItem::Fn(method) = impl_item {
-            let fields = extract_self_field_accesses(&method.block);
-            // Include all methods, even those without field access
-            // Methods with empty field sets are disjoint from all others,
-            // indicating no cohesion (utility methods in a potential god class)
-            method_fields.push(fields);
-        }
-    }
-    
-    let num_methods = method_fields.len();
-    if num_methods < 2 {
-        return 0.0; // Single method or no methods with field access = cohesive
-    }
-    
-    // Count pairs that share fields vs pairs that don't
-    let mut pairs_sharing = 0usize;
-    let mut pairs_not_sharing = 0usize;
-    
-    for i in 0..num_methods {
-        for j in (i + 1)..num_methods {
-            if method_fields[i].intersection(&method_fields[j]).count() > 0 {
-                pairs_sharing += 1;
-            } else {
-                pairs_not_sharing += 1;
-            }
-        }
-    }
-    
-    let total_pairs = pairs_sharing + pairs_not_sharing;
-    if total_pairs == 0 {
+    const MIN_METHODS_FOR_LCOM: usize = 2;
+    if fields_per_method.len() < MIN_METHODS_FOR_LCOM {
         return 0.0;
     }
     
-    // LCOM = proportion of pairs that don't share fields
-    pairs_not_sharing as f64 / total_pairs as f64
+    let (pairs_sharing, pairs_not_sharing) = count_field_sharing_pairs(&fields_per_method);
+    let total_pairs = pairs_sharing + pairs_not_sharing;
+    
+    if total_pairs == 0 { 0.0 } else { pairs_not_sharing as f64 / total_pairs as f64 }
+}
+
+fn count_field_sharing_pairs(fields_per_method: &[std::collections::HashSet<String>]) -> (usize, usize) {
+    let mut sharing = 0;
+    let mut not_sharing = 0;
+    for i in 0..fields_per_method.len() {
+        for j in (i + 1)..fields_per_method.len() {
+            if fields_per_method[i].intersection(&fields_per_method[j]).next().is_some() {
+                sharing += 1;
+            } else {
+                not_sharing += 1;
+            }
+        }
+    }
+    (sharing, not_sharing)
 }
 
 /// Extract all self.field accesses from a block
@@ -230,13 +222,12 @@ fn extract_self_field_accesses(block: &Block) -> std::collections::HashSet<Strin
     
     impl<'ast> Visit<'ast> for FieldAccessVisitor {
         fn visit_expr(&mut self, expr: &'ast Expr) {
-            if let Expr::Field(field_expr) = expr {
-                // Check if base is `self`
-                if let Expr::Path(path_expr) = &*field_expr.base
-                    && path_expr.path.is_ident("self")
-                        && let syn::Member::Named(ident) = &field_expr.member {
-                            self.fields.insert(ident.to_string());
-                        }
+            if let Expr::Field(field_expr) = expr
+                && let Expr::Path(path_expr) = &*field_expr.base
+                && path_expr.path.is_ident("self")
+                && let syn::Member::Named(ident) = &field_expr.member
+            {
+                self.fields.insert(ident.to_string());
             }
             syn::visit::visit_expr(self, expr);
         }
@@ -276,13 +267,9 @@ pub fn compute_rust_function_metrics(
 ) -> RustFunctionMetrics {
     let mut metrics = RustFunctionMetrics::default();
 
-    // Count arguments (excluding self)
-    metrics.arguments = inputs
-        .iter()
-        .filter(|arg| !matches!(arg, syn::FnArg::Receiver(_)))
-        .count();
+    let non_self_args = inputs.iter().filter(|arg| !matches!(arg, syn::FnArg::Receiver(_)));
+    metrics.arguments = non_self_args.count();
 
-    // Analyze block
     let mut visitor = FunctionMetricsVisitor::default();
     visitor.visit_block(block);
 
@@ -468,11 +455,23 @@ mod tests {
         let mut v1 = Vec::new(); RustAnalyzer::new(&p, &cfg, &mut v1).check_methods_per_type(1, "S", 10); assert_eq!(v1.len(), 1);
         let mut v2 = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v2).check_god_class(1, "Big", 25, 75); assert_eq!(v2.len(), 1);
         let mut v3 = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v3).check_god_class(1, "Small", 5, 75); assert!(v3.is_empty());
-        // check_lcom and extract_self_field_accesses
         let f: syn::File = syn::parse_str("struct S { x: i32, y: i32 } impl S { fn a(&self) { let _=self.x; } fn b(&self) { let _=self.y; } }").unwrap();
         if let syn::Item::Impl(i) = &f.items[1] { let mut cfg2 = Config::default(); cfg2.lcom = 0;
             let mut v4 = Vec::new(); RustAnalyzer::new(&p, &cfg2, &mut v4).check_lcom(i, 1, "S", 2); let _ = v4; }
         let f2: syn::File = syn::parse_str("fn foo() { let _=self.x; }").unwrap();
         if let syn::Item::Fn(func) = &f2.items[0] { let _ = extract_self_field_accesses(&func.block); }
     }
+
+    #[test]
+    fn test_count_field_sharing_pairs() {
+        use std::collections::HashSet;
+        let m1: HashSet<String> = ["x"].into_iter().map(String::from).collect();
+        let m2: HashSet<String> = ["x"].into_iter().map(String::from).collect();
+        let m3: HashSet<String> = ["y"].into_iter().map(String::from).collect();
+        let (sharing, not_sharing) = count_field_sharing_pairs(&[m1, m2, m3]);
+        assert_eq!(sharing, 1);
+        assert_eq!(not_sharing, 2);
+    }
 }
+
+

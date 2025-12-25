@@ -24,13 +24,11 @@ pub struct MetricStats {
     pub lines_per_file: Vec<usize>,
     pub classes_per_file: Vec<usize>,
     pub imports_per_file: Vec<usize>,
-    // Graph metrics (per module)
     pub fan_out: Vec<usize>,
     pub fan_in: Vec<usize>,
-    pub instability: Vec<usize>, // Stored as percentage (0-100)
+    pub instability: Vec<usize>,
     pub transitive_deps: Vec<usize>,
-    // Class cohesion metrics
-    pub lcom: Vec<usize>, // Stored as percentage (0-100)
+    pub lcom: Vec<usize>,
 }
 
 impl MetricStats {
@@ -39,13 +37,11 @@ impl MetricStats {
         let mut stats = Self::default();
 
         for parsed in parsed_files {
-            // File-level metrics
             let file_metrics = compute_file_metrics(parsed);
             stats.lines_per_file.push(file_metrics.lines);
             stats.classes_per_file.push(file_metrics.classes);
             stats.imports_per_file.push(file_metrics.imports);
 
-            // Walk AST for function and class metrics
             collect_from_node(
                 parsed.tree.root_node(),
                 &parsed.source,
@@ -86,7 +82,6 @@ impl MetricStats {
             let metrics = graph.module_metrics(module_name);
             self.fan_out.push(metrics.fan_out);
             self.fan_in.push(metrics.fan_in);
-            // Store instability as percentage (0-100)
             self.instability.push((metrics.instability * 100.0).round() as usize);
             self.transitive_deps.push(metrics.transitive_deps);
         }
@@ -97,13 +92,10 @@ impl MetricStats {
         let mut stats = Self::default();
 
         for parsed in parsed_files {
-            // File-level metrics
             let file_metrics = compute_rust_file_metrics(parsed);
             stats.lines_per_file.push(file_metrics.lines);
-            stats.classes_per_file.push(file_metrics.types); // types = struct + enum
+            stats.classes_per_file.push(file_metrics.types);
             stats.imports_per_file.push(file_metrics.imports);
-
-            // Walk AST for function and impl metrics
             collect_rust_from_items(&parsed.ast.items, &mut stats);
         }
 
@@ -129,7 +121,6 @@ fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_c
             let complexity = compute_cyclomatic_complexity(node);
             stats.cyclomatic_complexity.push(complexity);
 
-            // Recurse into function body for nested functions
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 collect_from_node(child, source, stats, false);
@@ -138,10 +129,8 @@ fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_c
         "class_definition" => {
             let metrics = compute_class_metrics_with_source(node, source);
             stats.methods_per_class.push(metrics.methods);
-            // Store LCOM as percentage (0-100)
             stats.lcom.push((metrics.lcom * 100.0).round() as usize);
 
-            // Recurse into class body
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 collect_from_node(child, source, stats, true);
@@ -266,8 +255,6 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
 /// Format summaries as a table string
 pub fn format_stats_table(summaries: &[PercentileSummary]) -> String {
     let mut output = String::new();
-    
-    // Header
     output.push_str(&format!(
         "{:<32} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}\n",
         "Metric", "Count", "50%", "90%", "95%", "99%", "Max"
@@ -275,7 +262,6 @@ pub fn format_stats_table(summaries: &[PercentileSummary]) -> String {
     output.push_str(&"-".repeat(74));
     output.push('\n');
 
-    // Rows
     for s in summaries {
         if s.count > 0 {
             output.push_str(&format!(
@@ -341,8 +327,7 @@ mod tests {
     fn percentile_multiple_elements() {
         let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         assert_eq!(percentile(&data, 0.0), 1);
-        // 50th percentile of 10 elements: idx = (9 * 0.5).round() = 5, so data[5] = 6
-        assert_eq!(percentile(&data, 50.0), 6);
+        assert_eq!(percentile(&data, 50.0), 6);  // idx = (9 * 0.5).round() = 5
         assert_eq!(percentile(&data, 100.0), 10);
     }
 
@@ -359,7 +344,6 @@ mod tests {
         let values: Vec<usize> = (1..=100).collect();
         let summary = PercentileSummary::from_values("test", &values);
         assert_eq!(summary.count, 100);
-        // 50th percentile: idx = (99 * 0.5).round() = 50, so data[50] = 51
         assert_eq!(summary.p50, 51);
         assert_eq!(summary.p90, 90);
         assert_eq!(summary.p95, 95);
@@ -448,7 +432,6 @@ mod tests {
         let mut stats = MetricStats::default();
         let graph = crate::graph::DependencyGraph::default();
         stats.collect_graph_metrics(&graph);
-        // Should not panic, stats may or may not have values depending on graph
         assert!(stats.fan_out.is_empty() || !stats.fan_out.is_empty());
     }
 

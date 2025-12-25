@@ -65,26 +65,29 @@ fn mk_v(file: &Path, line: usize, name: &str, metric: &str, val: usize, thresh: 
         .build()
 }
 
+enum Recursion { Skip, Continue(bool) }
+
 fn analyze_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Violation>, inside_class: bool, config: &Config) {
-    match node.kind() {
+    let recursion = match node.kind() {
         "function_definition" | "async_function_definition" => {
             let name = node.child_by_field_name("name").and_then(|n| n.utf8_text(source.as_bytes()).ok()).unwrap_or("<anonymous>");
             let line = node.start_position().row + 1;
             let m = compute_function_metrics(node, source);
             check_function_metrics(&m, file, line, name, inside_class, config, violations);
             check_cyclomatic_complexity(node, file, line, name, inside_class, config, violations);
-            // Don't recurse into function body - metrics are computed from the whole function
+            Recursion::Skip
         }
         "class_definition" => {
-            // analyze_class_node handles its own recursion into the body
             analyze_class_node(node, source, file, violations, config);
-            return;
+            Recursion::Skip
         }
-        _ => {}
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        analyze_node(child, source, file, violations, inside_class, config);
+        _ => Recursion::Continue(inside_class),
+    };
+    if let Recursion::Continue(ctx) = recursion {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            analyze_node(child, source, file, violations, ctx, config);
+        }
     }
 }
 
@@ -261,5 +264,13 @@ mod tests {
         let mut viols = Vec::new();
         check_cyclomatic_complexity(func, Path::new("t.py"), 1, "f", false, &cfg, &mut viols);
         assert!(!viols.is_empty());
+    }
+
+    #[test]
+    fn test_recursion_enum() {
+        let skip = Recursion::Skip;
+        let cont = Recursion::Continue(true);
+        assert!(matches!(skip, Recursion::Skip));
+        assert!(matches!(cont, Recursion::Continue(true)));
     }
 }

@@ -68,7 +68,6 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
-    // Load language-specific configs
     let (py_config, rs_config) = load_configs(&cli.config);
     let gate_config = load_gate_config(&cli.config);
 

@@ -15,13 +15,8 @@ pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> Dependen
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| String::from("unknown"));
 
-        // Store the actual file path for this module
         graph.paths.insert(module_name.clone(), parsed.path.clone());
-
-        // Ensure the module exists in the graph
         graph.get_or_create_node(&module_name);
-
-        // Extract use statements
         let imports = extract_rust_imports(&parsed.ast);
 
         for import in imports {
@@ -49,15 +44,10 @@ fn extract_rust_imports(ast: &syn::File) -> Vec<String> {
 fn collect_use_paths(tree: &syn::UseTree, imports: &mut Vec<String>) {
     match tree {
         syn::UseTree::Path(path) => {
-            // Get the first segment (crate name)
             let crate_name = path.ident.to_string();
-            
-            // Skip common preludes and self/super/crate
             if !matches!(crate_name.as_str(), "self" | "super" | "crate") {
                 imports.push(crate_name);
             }
-            
-            // Don't recurse - we only want top-level crate names
         }
         syn::UseTree::Name(name) => {
             let crate_name = name.ident.to_string();
@@ -71,9 +61,7 @@ fn collect_use_paths(tree: &syn::UseTree, imports: &mut Vec<String>) {
                 imports.push(crate_name);
             }
         }
-        syn::UseTree::Glob(_) => {
-            // Can't determine specific imports from glob
-        }
+        syn::UseTree::Glob(_) => {}
         syn::UseTree::Group(group) => {
             for item in &group.items {
                 collect_use_paths(item, imports);
@@ -116,8 +104,7 @@ use crate::module;
         let imports = extract_rust_imports(&ast);
         assert!(imports.contains(&String::from("std")), "imports: {:?}", imports);
         assert!(imports.contains(&String::from("serde")), "imports: {:?}", imports);
-        // crate:: is excluded
-        assert!(!imports.contains(&String::from("crate")), "imports: {:?}", imports);
+        assert!(!imports.contains(&String::from("crate")), "crate:: should be excluded");
     }
 
     #[test]

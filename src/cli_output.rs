@@ -28,7 +28,6 @@ pub fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: us
 }
 
 pub fn print_instability(_lang: &str, _graph: Option<&DependencyGraph>) {
-    // Disabled: instability output was confusing (entry points always show 100%)
 }
 
 pub fn print_violations(viols: &[Violation], _total: usize, dup_count: usize) {

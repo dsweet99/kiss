@@ -158,6 +158,10 @@ fn extract_chunks_from_item(item: &Item, source: &str, file: &Path, chunks: &mut
     }
 }
 
+fn is_nontrivial_chunk(normalized: &str) -> bool {
+    normalized.split_whitespace().count() >= MIN_CHUNK_TOKENS
+}
+
 fn add_rust_function_chunk(
     name: &str,
     span: proc_macro2::Span,
@@ -166,19 +170,15 @@ fn add_rust_function_chunk(
     file: &Path,
     chunks: &mut Vec<CodeChunk>,
 ) {
-    // Get the body text from the source using line positions
     let start_line = span.start().line;
     let end_line = span.end().line;
-    
-    // Extract the function body from source by line range
-    // This is an approximation but works well for duplication detection
     let lines: Vec<&str> = source.lines().collect();
+    
     if start_line > 0 && end_line <= lines.len() {
         let body_text: String = lines[start_line - 1..end_line].join("\n");
         let normalized = normalize_code(&body_text);
 
-        // Only include non-trivial chunks
-        if normalized.split_whitespace().count() >= MIN_CHUNK_TOKENS {
+        if is_nontrivial_chunk(&normalized) {
             chunks.push(CodeChunk {
                 file: file.to_path_buf(),
                 name: name.to_string(),
@@ -197,13 +197,11 @@ fn extract_function_chunks(node: Node, source: &str, file: &Path, chunks: &mut V
             let start_line = node.start_position().row + 1;
             let end_line = node.end_position().row + 1;
 
-            // Get the function body and normalize it
             if let Some(body) = node.child_by_field_name("body") {
                 let body_text = &source[body.start_byte()..body.end_byte()];
                 let normalized = normalize_code(body_text);
 
-                // Only include non-trivial chunks
-                if normalized.split_whitespace().count() >= MIN_CHUNK_TOKENS {
+                if is_nontrivial_chunk(&normalized) {
                     chunks.push(CodeChunk {
                         file: file.to_path_buf(),
                         name,
@@ -214,7 +212,6 @@ fn extract_function_chunks(node: Node, source: &str, file: &Path, chunks: &mut V
                 }
             }
 
-            // Recurse for nested functions
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 extract_function_chunks(child, source, file, chunks);
@@ -229,9 +226,8 @@ fn extract_function_chunks(node: Node, source: &str, file: &Path, chunks: &mut V
     }
 }
 
-/// Normalize code by removing variable names, string literals, etc.
+/// Normalize code: lowercase, collapse whitespace, replace numbers with 'N'
 fn normalize_code(code: &str) -> String {
-    // Simple normalization: lowercase, collapse whitespace, remove numbers
     let mut result = String::with_capacity(code.len());
     let mut last_was_space = true;
 
@@ -242,7 +238,6 @@ fn normalize_code(code: &str) -> String {
                 last_was_space = true;
             }
         } else if c.is_ascii_digit() {
-            // Replace numbers with placeholder
             if !result.ends_with('N') {
                 result.push('N');
                 last_was_space = false;
@@ -278,8 +273,6 @@ fn generate_shingles(text: &str, shingle_size: usize) -> std::collections::HashS
 /// Compute MinHash signature for a set of shingles
 fn compute_minhash(shingles: &std::collections::HashSet<u64>, size: usize) -> MinHashSignature {
     let mut hashes = vec![u64::MAX; size];
-
-    // Use deterministic hash coefficients
     let coefficients: Vec<(u64, u64)> = (0..size)
         .map(|i| {
             let seed = 0x9E3779B97F4A7C15_u64.wrapping_add(i as u64);
@@ -380,7 +373,6 @@ pub fn detect_duplicates_from_chunks(
         return Vec::new();
     }
 
-    // Compute MinHash signatures
     let signatures: Vec<MinHashSignature> = chunks
         .iter()
         .map(|chunk| {
@@ -389,10 +381,7 @@ pub fn detect_duplicates_from_chunks(
         })
         .collect();
 
-    // Find candidate pairs via LSH
     let candidates = find_lsh_candidates(&signatures, config.lsh_bands);
-
-    // Verify candidates and compute actual similarity
     let mut duplicates = Vec::new();
 
     for (i, j) in candidates {
@@ -406,7 +395,6 @@ pub fn detect_duplicates_from_chunks(
         }
     }
 
-    // Sort by similarity (highest first)
     duplicates.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap());
 
     duplicates
@@ -496,5 +484,11 @@ mod tests {
         let mut c2 = Vec::new(); extract_chunks_from_item(&item, src, std::path::Path::new("t.rs"), &mut c2);
         let f: syn::ItemFn = syn::parse_str(src).unwrap();
         let mut c3 = Vec::new(); add_rust_function_chunk(&f.sig.ident.to_string(), f.sig.ident.span(), &f.block, src, std::path::Path::new("t.rs"), &mut c3);
+    }
+
+    #[test]
+    fn test_is_nontrivial_chunk() {
+        assert!(!is_nontrivial_chunk("a b c"));
+        assert!(is_nontrivial_chunk(&"word ".repeat(MIN_CHUNK_TOKENS)));
     }
 }

@@ -260,34 +260,26 @@ pub fn count_node_kind(node: Node, kind: &str) -> usize {
     count
 }
 
-/// Compute LCOM (Lack of Cohesion of Methods) for a class body
+/// Compute LCOM (Lack of Cohesion of Methods) for a class body.
+/// LCOM = pairs_not_sharing_fields / total_pairs. Returns 0.0 (cohesive) to 1.0 (no cohesion).
 pub fn compute_lcom(body: Node, source: &str) -> f64 {
-    let mut method_fields: Vec<HashSet<String>> = Vec::new();
+    let mut fields_per_method: Vec<HashSet<String>> = Vec::new();
     let mut cursor = body.walk();
     
     for child in body.children(&mut cursor) {
         if child.kind() == "function_definition" {
-            let fields = extract_self_attributes(child, source);
-            // Include all methods, even those without field access
-            // Methods with empty field sets are disjoint from all others,
-            // indicating no cohesion (utility methods in a potential god class)
-            method_fields.push(fields);
+            fields_per_method.push(extract_self_attributes(child, source));
         }
     }
     
-    let n = method_fields.len();
-    if n < 2 { return 0.0; }
+    const MIN_METHODS_FOR_LCOM: usize = 2;
+    if fields_per_method.len() < MIN_METHODS_FOR_LCOM { return 0.0; }
     
-    let total_pairs = n * (n - 1) / 2;
-    let mut sharing_pairs = 0;
-    
-    for i in 0..n {
-        for j in (i + 1)..n {
-            if !method_fields[i].is_disjoint(&method_fields[j]) {
-                sharing_pairs += 1;
-            }
-        }
-    }
+    let total_pairs = fields_per_method.len() * (fields_per_method.len() - 1) / 2;
+    let sharing_pairs = (0..fields_per_method.len())
+        .flat_map(|i| ((i + 1)..fields_per_method.len()).map(move |j| (i, j)))
+        .filter(|(i, j)| !fields_per_method[*i].is_disjoint(&fields_per_method[*j]))
+        .count();
     
     (total_pairs - sharing_pairs) as f64 / total_pairs as f64
 }
@@ -382,26 +374,20 @@ mod tests {
 
     #[test]
     fn test_helper_functions() {
-        // ParameterCounts struct
         let _ = ParameterCounts { positional: 1, keyword_only: 2, total: 3 };
-        // count_parameters: parse "def f(a,b): pass" and check counts
         let p = parse_source("def f(a, b): pass");
         let f = p.tree.root_node().child(0).unwrap();
         let params = f.child_by_field_name("parameters").unwrap();
         assert!(count_parameters(params).total >= 2);
-        // is_statement
         assert!(is_statement("return_statement") && !is_statement("identifier"));
-        // count_statements, compute_max_indentation, count_branches, count_local_variables, collect_local_variables
         let p2 = parse_source("def f():\n    if True:\n        x = 1");
         let f2 = p2.tree.root_node().child(0).unwrap();
         if let Some(body) = f2.child_by_field_name("body") {
             let _ = (count_statements(body), compute_max_indentation(body, 0), count_branches(body), count_local_variables(body, &p2.source));
             let mut vars = HashSet::new(); collect_local_variables(body, &p2.source, &mut vars);
         }
-        // collect_assigned_names
         let p3 = parse_source("x = 1");
         if let Some(stmt) = p3.tree.root_node().child(0) { if let Some(left) = stmt.child_by_field_name("left") { let mut v = HashSet::new(); collect_assigned_names(left, &p3.source, &mut v); } }
-        // compute_nested_function_depth, count_imports, count_import_names
         let p4 = parse_source("def f(): pass");
         let _ = compute_nested_function_depth(p4.tree.root_node().child(0).unwrap(), 0);
         let p5 = parse_source("import os");

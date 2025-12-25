@@ -70,7 +70,6 @@ impl DependencyGraph {
     pub fn add_dependency(&mut self, from: &str, to: &str) {
         let from_idx = self.get_or_create_node(from);
         let to_idx = self.get_or_create_node(to);
-        // Avoid duplicate edges
         if !self.graph.contains_edge(from_idx, to_idx) {
             self.graph.add_edge(from_idx, to_idx, ());
         }
@@ -96,7 +95,6 @@ impl DependencyGraph {
             0.0
         };
 
-        // Compute transitive dependencies using DFS
         let transitive_deps = self.count_transitive_deps(idx);
 
         ModuleGraphMetrics {
@@ -110,43 +108,25 @@ impl DependencyGraph {
     /// Count all modules reachable from a given node (transitive dependencies)
     fn count_transitive_deps(&self, start: NodeIndex) -> usize {
         let mut dfs = Dfs::new(&self.graph, start);
-        let mut count = 0;
-        
-        // Skip the starting node itself
-        dfs.next(&self.graph);
-        
-        while dfs.next(&self.graph).is_some() {
-            count += 1;
+        dfs.next(&self.graph); // skip starting node
+        std::iter::from_fn(|| dfs.next(&self.graph)).count()
+    }
+
+    fn is_cycle(&self, scc: &[NodeIndex]) -> bool {
+        match scc.len() {
+            0 => false,
+            1 => self.graph.contains_edge(scc[0], scc[0]), // self-loop
+            _ => true, // multi-node SCC
         }
-        
-        count
     }
 
     /// Find all cycles in the graph
     pub fn find_cycles(&self) -> CycleInfo {
-        let sccs = tarjan_scc(&self.graph);
-
-        let cycles: Vec<Vec<String>> = sccs
+        let cycles = tarjan_scc(&self.graph)
             .into_iter()
-            .filter(|scc| {
-                if scc.len() > 1 {
-                    // Multi-node SCC is always a cycle
-                    true
-                } else if scc.len() == 1 {
-                    // Single-node SCC is a cycle only if it has a self-loop
-                    let idx = scc[0];
-                    self.graph.contains_edge(idx, idx)
-                } else {
-                    false
-                }
-            })
-            .map(|scc| {
-                scc.into_iter()
-                    .map(|idx| self.graph[idx].clone())
-                    .collect()
-            })
+            .filter(|scc| self.is_cycle(scc))
+            .map(|scc| scc.into_iter().map(|idx| self.graph[idx].clone()).collect())
             .collect();
-
         CycleInfo { cycles }
     }
 }
@@ -164,25 +144,25 @@ fn is_entry_point(name: &str) -> bool {
         || name.contains("_integration") || name.contains("_bench")
 }
 
+fn get_module_path(graph: &DependencyGraph, module_name: &str) -> PathBuf {
+    graph.paths.get(module_name).cloned().unwrap_or_else(|| PathBuf::from(format!("{}.py", module_name)))
+}
+
+fn is_orphan(metrics: &ModuleGraphMetrics, module_name: &str) -> bool {
+    metrics.fan_in == 0 && metrics.fan_out == 0 && !is_entry_point(module_name)
+}
+
 /// Analyze dependency graph and return violations for high fan-out and cycles
 #[must_use]
 pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation> {
     let mut violations = Vec::new();
 
-    // Helper to get actual file path or synthesize one
-    let get_path = |module_name: &str| -> PathBuf {
-        graph.paths.get(module_name)
-            .cloned()
-            .unwrap_or_else(|| PathBuf::from(format!("{}.py", module_name)))
-    };
-
-    // Check fan-out for each module
     for module_name in graph.nodes.keys() {
         let metrics = graph.module_metrics(module_name);
 
         if metrics.fan_out > config.fan_out {
             violations.push(Violation {
-                file: get_path(module_name),
+                file: get_module_path(graph, module_name),
                 line: 1,
                 unit_name: module_name.clone(),
                 metric: "fan_out".to_string(),
@@ -198,7 +178,7 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
 
         if metrics.fan_in > config.fan_in {
             violations.push(Violation {
-                file: get_path(module_name),
+                file: get_module_path(graph, module_name),
                 line: 1,
                 unit_name: module_name.clone(),
                 metric: "fan_in".to_string(),
@@ -212,10 +192,9 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
             });
         }
 
-        // Detect orphan modules (no incoming or outgoing dependencies)
-        if metrics.fan_in == 0 && metrics.fan_out == 0 && !is_entry_point(module_name) {
+        if is_orphan(&metrics, module_name) {
             violations.push(Violation {
-                file: get_path(module_name),
+                file: get_module_path(graph, module_name),
                 line: 1,
                 unit_name: module_name.clone(),
                 metric: "orphan_module".to_string(),
@@ -228,7 +207,7 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
 
         if metrics.transitive_deps > config.transitive_deps {
             violations.push(Violation {
-                file: get_path(module_name),
+                file: get_module_path(graph, module_name),
                 line: 1,
                 unit_name: module_name.clone(),
                 metric: "transitive_deps".to_string(),
@@ -243,14 +222,12 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
         }
     }
 
-    // Check for cycles
-    let cycle_info = graph.find_cycles();
-    for cycle in cycle_info.cycles {
+    for cycle in graph.find_cycles().cycles {
         let cycle_str = cycle.join(" → ");
         let first_module = cycle.first().cloned().unwrap_or_default();
 
         violations.push(Violation {
-            file: get_path(&first_module),
+            file: get_module_path(graph, &first_module),
             line: 1,
             unit_name: first_module,
             metric: "dependency_cycle".to_string(),
@@ -292,7 +269,6 @@ pub fn collect_instability_metrics(graph: &DependencyGraph) -> Vec<InstabilityMe
         .filter(|m| m.instability > 0.0 && (m.fan_in > 0 || m.fan_out > 0))
         .collect();
     
-    // Sort by instability (highest first), then by name for consistency
     metrics.sort_by(|a, b| {
         b.instability.partial_cmp(&a.instability)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -302,34 +278,35 @@ pub fn collect_instability_metrics(graph: &DependencyGraph) -> Vec<InstabilityMe
     metrics
 }
 
+fn module_name_from_path(parsed: &ParsedFile) -> String {
+    parsed.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "unknown".to_string())
+}
+
 /// Build a dependency graph from parsed files
 #[must_use]
 pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
     let mut graph = DependencyGraph::new();
 
     for parsed in parsed_files {
-        let module_name = parsed
-            .path
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "unknown".to_string());
-
-        // Store the actual file path for this module
+        let module_name = module_name_from_path(parsed);
         graph.paths.insert(module_name.clone(), parsed.path.clone());
-
-        // Ensure the module exists in the graph even if it has no dependencies
         graph.get_or_create_node(&module_name);
 
-        // Extract imports
-        let root = parsed.tree.root_node();
-        let imports = extract_imports(root, &parsed.source);
-
-        for import in imports {
+        for import in extract_imports(parsed.tree.root_node(), &parsed.source) {
             graph.add_dependency(&module_name, &import);
         }
     }
 
     graph
+}
+
+fn top_level_module(name: &str) -> String {
+    name.split('.').next().unwrap_or(name).to_string()
+}
+
+fn extract_module_from_import_from(child: Node, source: &str) -> Option<String> {
+    child.child_by_field_name("module_name")
+        .map(|m| top_level_module(&source[m.start_byte()..m.end_byte()]))
 }
 
 /// Extract imported module names from a file
@@ -339,19 +316,10 @@ fn extract_imports(node: Node, source: &str) -> Vec<String> {
 
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "import_statement" => {
-                // import foo, bar
-                collect_import_names(child, source, &mut imports);
-            }
-            "import_from_statement" => {
-                // from foo import bar
-                if let Some(module) = child.child_by_field_name("module_name") {
-                    let name = source[module.start_byte()..module.end_byte()].to_string();
-                    // Take the top-level module name
-                    let top_level = name.split('.').next().unwrap_or(&name).to_string();
-                    imports.push(top_level);
-                }
-            }
+            "import_statement" => collect_import_names(child, source, &mut imports),
+            "import_from_statement" => if let Some(m) = extract_module_from_import_from(child, source) {
+                imports.push(m);
+            },
             _ => {}
         }
     }
@@ -364,19 +332,10 @@ fn collect_import_names(node: Node, source: &str, imports: &mut Vec<String>) {
 
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "dotted_name" => {
-                let name = source[child.start_byte()..child.end_byte()].to_string();
-                let top_level = name.split('.').next().unwrap_or(&name).to_string();
-                imports.push(top_level);
-            }
-            "aliased_import" => {
-                // import foo as bar
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    let name = source[name_node.start_byte()..name_node.end_byte()].to_string();
-                    let top_level = name.split('.').next().unwrap_or(&name).to_string();
-                    imports.push(top_level);
-                }
-            }
+            "dotted_name" => imports.push(top_level_module(&source[child.start_byte()..child.end_byte()])),
+            "aliased_import" => if let Some(name_node) = child.child_by_field_name("name") {
+                imports.push(top_level_module(&source[name_node.start_byte()..name_node.end_byte()]));
+            },
             _ => {}
         }
     }
@@ -392,36 +351,26 @@ pub fn compute_cyclomatic_complexity(node: Node) -> usize {
     complexity
 }
 
+fn is_decision_point(kind: &str) -> bool {
+    matches!(kind, 
+        "if_statement" | "elif_clause" | "for_statement" | "while_statement"
+        | "except_clause" | "with_statement" | "match_statement" | "case_clause"
+        | "boolean_operator" | "conditional_expression"
+    )
+}
+
 fn count_decision_points(node: Node) -> usize {
-    let mut count = 0;
     let mut cursor = node.walk();
-
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "if_statement" | "elif_clause" | "for_statement" | "while_statement"
-            | "except_clause" | "with_statement" | "match_statement" | "case_clause" => {
-                count += 1;
-            }
-            "boolean_operator" => {
-                // Each `and` or `or` adds a decision point
-                count += 1;
-            }
-            "conditional_expression" => {
-                // Ternary operator: x if cond else y
-                count += 1;
-            }
-            _ => {}
-        }
-        count += count_decision_points(child);
-    }
-
-    count
+    node.children(&mut cursor)
+        .map(|child| is_decision_point(child.kind()) as usize + count_decision_points(child))
+        .sum()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::parsing::create_parser;
+    use std::path::Path;
 
     fn parse_imports(code: &str) -> Vec<String> {
         let mut parser = create_parser().unwrap();
@@ -490,5 +439,36 @@ mod tests {
         assert!(is_entry_point("test_foo") && is_entry_point("foo_test"));
         assert!(is_entry_point("cli_integration") && is_entry_point("perf_bench"));
         assert!(!is_entry_point("utils") && !is_entry_point("parser") && !is_entry_point("config"));
+    }
+
+    #[test]
+    fn test_helper_functions() {
+        let g = DependencyGraph::default();
+        assert_eq!(get_module_path(&g, "foo"), std::path::PathBuf::from("foo.py"));
+        let metrics = ModuleGraphMetrics::default();
+        assert!(!is_orphan(&metrics, "main"));
+        assert!(is_orphan(&ModuleGraphMetrics { fan_in: 0, fan_out: 0, ..Default::default() }, "utils"));
+        assert!(is_decision_point("if_statement") && is_decision_point("boolean_operator"));
+        assert!(!is_decision_point("identifier"));
+        assert_eq!(top_level_module("os.path"), "os");
+        assert_eq!(top_level_module("collections"), "collections");
+        let parsed = crate::parsing::parse_file(&mut create_parser().unwrap(), Path::new("test.py"));
+        if let Ok(p) = parsed { let _ = module_name_from_path(&p); }
+        let mut parser = create_parser().unwrap();
+        let tree = parser.parse("from os import path", None).unwrap();
+        let node = tree.root_node().child(0).unwrap();
+        let _ = extract_module_from_import_from(node, "from os import path");
+    }
+
+    #[test]
+    fn test_is_cycle() {
+        let mut g = DependencyGraph::default();
+        g.add_dependency("a", "a");
+        let idx = *g.nodes.get("a").unwrap();
+        assert!(g.is_cycle(&[idx]));
+        let mut g2 = DependencyGraph::default();
+        g2.add_dependency("x", "y");
+        let x = *g2.nodes.get("x").unwrap();
+        assert!(!g2.is_cycle(&[x]));
     }
 }
