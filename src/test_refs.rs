@@ -31,10 +31,14 @@ pub struct TestRefAnalysis {
 fn has_python_test_naming(path: &Path) -> bool {
     path.file_name()
         .and_then(|n| n.to_str())
-        .is_some_and(|name| (name.starts_with("test_") && name.ends_with(".py")) || name.ends_with("_test.py"))
+        .is_some_and(|name| {
+            (name.starts_with("test_") && name.ends_with(".py"))
+                || name.ends_with("_test.py")
+                || name == "conftest.py"  // pytest fixture/config file
+        })
 }
 
-/// Check if a file path is a test file (test_*.py or *_test.py)
+/// Check if a file path is a test file (test_*.py, *_test.py, or conftest.py)
 /// Note: Being in a tests/ directory alone is NOT sufficient - file must have test naming
 #[must_use]
 pub fn is_test_file(path: &std::path::Path) -> bool {
@@ -216,7 +220,8 @@ mod tests {
         assert!(is_test_file(Path::new("test_utils.py")));
         assert!(is_test_file(Path::new("utils_test.py")));
         assert!(is_test_file(Path::new("/project/tests/unit/test_utils.py")));
-        assert!(!is_test_file(Path::new("tests/conftest.py")));
+        assert!(is_test_file(Path::new("tests/conftest.py")), "conftest.py is pytest infrastructure");
+        assert!(is_test_file(Path::new("conftest.py")), "conftest.py at any level");
         assert!(!is_test_file(Path::new("tests/helpers.py")));
         assert!(!is_test_file(Path::new("src/utils.py")));
         assert!(!is_test_file(Path::new("myproject/testing_utils.py")));

@@ -12,16 +12,15 @@
 #![allow(clippy::needless_update)]
 #![allow(clippy::iter_on_single_items)]
 #![allow(clippy::float_cmp)]
-#![allow(clippy::ref_option)] // &Option<T> is fine for function parameters
+#![allow(clippy::ref_option)]
+
+mod analyze;
+mod rules;
 
 use clap::{Parser, Subcommand};
 use kiss::{
-    analyze_file, analyze_graph, analyze_rust_file, analyze_rust_test_refs, analyze_test_refs,
-    build_dependency_graph, build_rust_dependency_graph, cluster_duplicates, compute_summaries,
-    detect_duplicates, detect_duplicates_from_chunks,
-    extract_chunks_for_duplication, extract_rust_chunks_for_duplication, find_source_files,
-    format_stats_table, parse_files, parse_rust_files, Config, ConfigLanguage,
-    DuplicationConfig, GateConfig, Language, MetricStats, ParsedFile, ParsedRustFile,
+    compute_summaries, format_stats_table, Config, ConfigLanguage, GateConfig, Language,
+    MetricStats,
 };
 use kiss::config_gen::{
     collect_all_stats, collect_py_stats, collect_rs_stats, generate_config_toml_by_language,
@@ -29,30 +28,32 @@ use kiss::config_gen::{
 };
 use std::path::{Path, PathBuf};
 
+use crate::analyze::run_analyze;
+use crate::rules::run_rules;
+
 /// kiss - Code-quality metrics tool for Python and Rust
 #[derive(Parser, Debug)]
 #[command(name = "kiss", version, about = "Code-quality metrics tool for Python and Rust")]
 struct Cli {
-    /// Use specified config file instead of defaults
     #[arg(long, global = true)]
     config: Option<PathBuf>,
 
-    /// Only analyze specified language (python, rust)
     #[arg(long, global = true, value_parser = parse_language)]
     lang: Option<Language>,
 
-    /// Bypass test coverage gate, run all checks unconditionally
     #[arg(long, global = true)]
     all: bool,
 
-    /// Use built-in defaults, ignore config files
     #[arg(long, global = true)]
     defaults: bool,
+
+    /// Ignore directories/files whose path contains a component starting with this prefix
+    #[arg(long, global = true)]
+    ignore: Vec<String>,
 
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Directory to analyze (for default analyze command)
     #[arg(default_value = ".")]
     path: String,
 }
@@ -67,46 +68,31 @@ fn parse_language(s: &str) -> Result<Language, String> {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Report summary statistics for all metrics
     Stats {
-        /// Directories to analyze (can specify multiple)
         #[arg(default_value = ".")]
         paths: Vec<String>,
     },
-    /// Generate config file with thresholds from analyzed codebases
     Mimic {
-        /// Directories to analyze (can specify multiple)
         #[arg(required = true)]
         paths: Vec<String>,
-
-        /// Output file (defaults to stdout)
         #[arg(long, short)]
         out: Option<PathBuf>,
     },
-    /// Show coding rules for LLM context priming
     Rules,
 }
 
 fn main() {
     let cli = Cli::parse();
-
     ensure_default_config_exists();
-    
     let (py_config, rs_config) = load_configs(&cli.config, cli.defaults);
     let gate_config = load_gate_config(&cli.config, cli.defaults);
 
     match cli.command {
-        Some(Commands::Stats { paths }) => {
-            run_stats(&paths, cli.lang);
-        }
-        Some(Commands::Mimic { paths, out }) => {
-            run_mimic(&paths, out.as_deref(), cli.lang);
-        }
-        Some(Commands::Rules) => {
-            run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults);
-        }
+        Some(Commands::Stats { paths }) => run_stats(&paths, cli.lang),
+        Some(Commands::Mimic { paths, out }) => run_mimic(&paths, out.as_deref(), cli.lang),
+        Some(Commands::Rules) => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
         None => {
-            if !run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config) {
+            if !run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config, &cli.ignore) {
                 std::process::exit(1);
             }
         }
@@ -116,15 +102,15 @@ fn main() {
 fn ensure_default_config_exists() {
     let local_config = Path::new(".kissconfig");
     if local_config.exists() {
-        return; // Local config takes precedence, don't create home config
+        return;
     }
-    
     if let Some(home) = std::env::var_os("HOME") {
         let home_config = Path::new(&home).join(".kissconfig");
         if !home_config.exists()
-            && let Err(e) = std::fs::write(&home_config, kiss::default_config_toml()) {
-                eprintln!("Note: Could not write default config to {}: {}", home_config.display(), e);
-            }
+            && let Err(e) = std::fs::write(&home_config, kiss::default_config_toml())
+        {
+            eprintln!("Note: Could not write default config to {}: {}", home_config.display(), e);
+        }
     }
 }
 
@@ -138,7 +124,6 @@ fn load_gate_config(config_path: &Option<PathBuf>, use_defaults: bool) -> GateCo
     }
 }
 
-/// Load separate configs for Python and Rust analysis
 fn load_configs(config_path: &Option<PathBuf>, use_defaults: bool) -> (Config, Config) {
     if use_defaults {
         (Config::python_defaults(), Config::rust_defaults())
@@ -155,209 +140,41 @@ fn load_configs(config_path: &Option<PathBuf>, use_defaults: bool) -> (Config, C
     }
 }
 
-use kiss::{Violation, DuplicateCluster};
-use kiss::cli_output::{
-    print_no_files_message, print_coverage_gate_failure,
-    print_violations, print_duplicates, print_py_test_refs, print_rs_test_refs,
-};
-
-fn run_analyze(path: &str, py_config: &Config, rs_config: &Config, lang_filter: Option<Language>, bypass_gate: bool, gate_config: &GateConfig) -> bool {
-    let root = Path::new(path);
-    let (py_files, rs_files) = gather_files(root, lang_filter);
-    
-    if py_files.is_empty() && rs_files.is_empty() {
-        print_no_files_message(lang_filter, root);
-        return true;
-    }
-    
-    let (py_parsed, rs_parsed, mut viols) = parse_all(&py_files, &rs_files, py_config, rs_config);
-    
-    if !bypass_gate && !check_coverage_gate(&py_parsed, &rs_parsed, gate_config) {
-        return false;
-    }
-    
-    let (py_graph, rs_graph) = build_graphs(&py_parsed, &rs_parsed);
-    viols.extend(analyze_graphs(&py_graph, &rs_graph, py_config, rs_config));
-    
-    print_all_results(&viols, &py_parsed, &rs_parsed)
-}
-
-fn build_graphs(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (Option<DependencyGraph>, Option<DependencyGraph>) {
-    let py_graph = if py_parsed.is_empty() { None } else {
-        let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-        Some(build_dependency_graph(&refs))
-    };
-    
-    let rs_graph = if rs_parsed.is_empty() { None } else {
-        let refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-        Some(build_rust_dependency_graph(&refs))
-    };
-    
-    (py_graph, rs_graph)
-}
-
-fn analyze_graphs(py_graph: &Option<DependencyGraph>, rs_graph: &Option<DependencyGraph>, py_config: &Config, rs_config: &Config) -> Vec<Violation> {
-    let mut viols = Vec::new();
-    if let Some(g) = py_graph { viols.extend(analyze_graph(g, py_config)); }
-    if let Some(g) = rs_graph { viols.extend(analyze_graph(g, rs_config)); }
-    viols
-}
-
-fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> bool {
-    let py_dups = detect_py_duplicates(py_parsed);
-    let rs_dups = detect_rs_duplicates(rs_parsed);
-    let dup_count = py_dups.len() + rs_dups.len();
-    
-    print_violations(viols, py_parsed.len() + rs_parsed.len(), dup_count);
-    print_duplicates("Python", &py_dups);
-    print_duplicates("Rust", &rs_dups);
-    let untested = print_py_test_refs(py_parsed) + print_rs_test_refs(rs_parsed);
-    
-    viols.is_empty() && dup_count == 0 && untested == 0
-}
-
-
-fn parse_all(py_files: &[PathBuf], rs_files: &[PathBuf], py_config: &Config, rs_config: &Config) -> (Vec<ParsedFile>, Vec<ParsedRustFile>, Vec<Violation>) {
-    let (py_parsed, mut viols) = parse_and_analyze_py(py_files, py_config);
-    let (rs_parsed, rs_viols) = parse_and_analyze_rs(rs_files, rs_config);
-    viols.extend(rs_viols);
-    (py_parsed, rs_parsed, viols)
-}
-
-fn check_coverage_gate(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], gate_config: &GateConfig) -> bool {
-    let (coverage, tested, total, unreferenced) = compute_test_coverage(py_parsed, rs_parsed);
-    if coverage < gate_config.test_coverage_threshold {
-        print_coverage_gate_failure(coverage, gate_config.test_coverage_threshold, tested, total, &unreferenced);
-        return false;
-    }
-    true
-}
-
-fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
-    let mut tested = 0;
-    let mut total = 0;
-    let mut unreferenced = Vec::new();
-    
-    if !py_parsed.is_empty() {
-        let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-        let analysis = analyze_test_refs(&refs);
-        total += analysis.definitions.len();
-        tested += analysis.definitions.len() - analysis.unreferenced.len();
-        for def in analysis.unreferenced {
-            unreferenced.push((def.file, def.name, def.line));
-        }
-    }
-    
-    if !rs_parsed.is_empty() {
-        let refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-        let analysis = analyze_rust_test_refs(&refs);
-        total += analysis.definitions.len();
-        tested += analysis.definitions.len() - analysis.unreferenced.len();
-        for def in analysis.unreferenced {
-            unreferenced.push((def.file, def.name, def.line));
-        }
-    }
-    
-    unreferenced.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
-    
-    let coverage = if total > 0 { 
-        ((tested as f64 / total as f64) * 100.0).round() as usize 
-    } else { 100 };
-    (coverage, tested, total, unreferenced)
-}
-
-
-fn gather_files(root: &Path, lang: Option<Language>) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let all = find_source_files(root);
-    let (mut py, mut rs) = (Vec::new(), Vec::new());
-    for sf in all {
-        match (sf.language, lang) {
-            (Language::Python, None | Some(Language::Python)) => py.push(sf.path),
-            (Language::Rust, None | Some(Language::Rust)) => rs.push(sf.path),
-            _ => {}
-        }
-    }
-    (py, rs)
-}
-
-fn parse_and_analyze_py(files: &[PathBuf], config: &Config) -> (Vec<ParsedFile>, Vec<Violation>) {
-    if files.is_empty() { return (Vec::new(), Vec::new()); }
-    let results = match parse_files(files) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Failed to initialize Python parser: {e}");
-            return (Vec::new(), Vec::new());
-        }
-    };
-    let mut parsed = Vec::new();
-    let mut viols = Vec::new();
-    for result in results {
-        match result {
-            Ok(p) => {
-                viols.extend(analyze_file(&p, config));
-                parsed.push(p);
-            }
-            Err(e) => eprintln!("Error parsing Python: {e}"),
-        }
-    }
-    (parsed, viols)
-}
-
-fn parse_and_analyze_rs(files: &[PathBuf], config: &Config) -> (Vec<ParsedRustFile>, Vec<Violation>) {
-    if files.is_empty() { return (Vec::new(), Vec::new()); }
-    let mut parsed = Vec::new();
-    let mut viols = Vec::new();
-    for result in parse_rust_files(files) {
-        match result {
-            Ok(p) => {
-                viols.extend(analyze_rust_file(&p, config));
-                parsed.push(p);
-            }
-            Err(e) => eprintln!("Error parsing Rust: {e}"),
-        }
-    }
-    (parsed, viols)
-}
-
-use kiss::DependencyGraph;
-
-fn detect_py_duplicates(parsed: &[ParsedFile]) -> Vec<DuplicateCluster> {
-    let refs: Vec<&ParsedFile> = parsed.iter().collect();
-    let chunks = extract_chunks_for_duplication(&refs);
-    cluster_duplicates(&detect_duplicates(&refs, &DuplicationConfig::default()), &chunks)
-}
-
-fn detect_rs_duplicates(parsed: &[ParsedRustFile]) -> Vec<DuplicateCluster> {
-    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-    let chunks = extract_rust_chunks_for_duplication(&refs);
-    cluster_duplicates(&detect_duplicates_from_chunks(&chunks, &DuplicationConfig::default()), &chunks)
-}
-
-
-
 fn run_stats(paths: &[String], lang_filter: Option<Language>) {
     let (mut py_stats, mut rs_stats) = (MetricStats::default(), MetricStats::default());
     let (mut py_cnt, mut rs_cnt) = (0, 0);
-
     for path in paths {
         let root = Path::new(path);
         if lang_filter.is_none() || lang_filter == Some(Language::Python) {
-            let (s, c) = collect_py_stats(root); py_stats.merge(s); py_cnt += c;
+            let (s, c) = collect_py_stats(root);
+            py_stats.merge(s);
+            py_cnt += c;
         }
         if lang_filter.is_none() || lang_filter == Some(Language::Rust) {
-            let (s, c) = collect_rs_stats(root); rs_stats.merge(s); rs_cnt += c;
+            let (s, c) = collect_rs_stats(root);
+            rs_stats.merge(s);
+            rs_cnt += c;
         }
     }
-
-    if py_cnt + rs_cnt == 0 { eprintln!("No source files found."); std::process::exit(1); }
+    if py_cnt + rs_cnt == 0 {
+        eprintln!("No source files found.");
+        std::process::exit(1);
+    }
     println!("kiss stats - Summary Statistics\nAnalyzed from: {}\n", paths.join(", "));
-    if py_cnt > 0 { println!("=== Python ({} files) ===\n{}\n", py_cnt, format_stats_table(&compute_summaries(&py_stats))); }
-    if rs_cnt > 0 { println!("=== Rust ({} files) ===\n{}", rs_cnt, format_stats_table(&compute_summaries(&rs_stats))); }
+    if py_cnt > 0 {
+        println!("=== Python ({py_cnt} files) ===\n{}\n", format_stats_table(&compute_summaries(&py_stats)));
+    }
+    if rs_cnt > 0 {
+        println!("=== Rust ({rs_cnt} files) ===\n{}", format_stats_table(&compute_summaries(&rs_stats)));
+    }
 }
 
 fn run_mimic(paths: &[String], out: Option<&Path>, lang_filter: Option<Language>) {
     let ((py_stats, py_cnt), (rs_stats, rs_cnt)) = collect_all_stats(paths, lang_filter);
-    if py_cnt + rs_cnt == 0 { eprintln!("No source files found."); std::process::exit(1); }
+    if py_cnt + rs_cnt == 0 {
+        eprintln!("No source files found.");
+        std::process::exit(1);
+    }
     let toml = generate_config_toml_by_language(&py_stats, &rs_stats, py_cnt, rs_cnt);
     match out {
         Some(p) => write_mimic_config(p, &toml, py_cnt, rs_cnt),
@@ -365,289 +182,40 @@ fn run_mimic(paths: &[String], out: Option<&Path>, lang_filter: Option<Language>
     }
 }
 
-fn run_rules(py_config: &Config, rs_config: &Config, gate_config: &GateConfig, lang_filter: Option<Language>, use_defaults: bool) {
-    let config_source = if use_defaults {
-        "built-in defaults"
-    } else if Path::new(".kissconfig").exists() {
-        ".kissconfig"
-    } else if std::env::var_os("HOME").is_some_and(|h| Path::new(&h).join(".kissconfig").exists()) {
-        "~/.kissconfig"
-    } else {
-        "built-in defaults"
-    };
-    
-    println!("# kiss coding rules\n");
-    println!("*Source: {config_source}*\n");
-    
-    match lang_filter {
-        Some(Language::Python) => print_python_rules(py_config, gate_config),
-        Some(Language::Rust) => print_rust_rules(rs_config, gate_config),
-        None => {
-            print_python_rules(py_config, gate_config);
-            println!();
-            print_rust_rules(rs_config, gate_config);
-        }
-    }
-}
-
-fn print_python_rules(config: &Config, gate: &GateConfig) {
-    println!("## Python\n");
-    println!("### Functions\n");
-    println!("- Keep functions ≤ {} statements", config.statements_per_function);
-    println!("- Use ≤ {} positional arguments; prefer keyword-only args after that", config.arguments_positional);
-    println!("- Limit keyword-only arguments to ≤ {}", config.arguments_keyword_only);
-    println!("- Keep indentation depth ≤ {} levels", config.max_indentation_depth);
-    println!("- Limit branches (if/elif/else) to ≤ {} per function", config.branches_per_function);
-    println!("- Keep local variables ≤ {} per function", config.local_variables_per_function);
-    println!("- Limit return statements to ≤ {} per function", config.returns_per_function);
-    println!("- Avoid deeply nested functions (max depth: {})", config.nested_function_depth);
-    println!();
-    println!("### Classes\n");
-    println!("- Keep methods per class ≤ {}", config.methods_per_class);
-    println!("- Ensure methods share instance fields (LCOM ≤ {}%)", config.lcom);
-    println!();
-    println!("### Files\n");
-    println!("- Keep files ≤ {} lines", config.lines_per_file);
-    println!("- Limit to ≤ {} classes per file", config.classes_per_file);
-    println!("- Keep imports ≤ {} per file", config.imports_per_file);
-    println!();
-    print_shared_rules(config, gate);
-}
-
-fn print_rust_rules(config: &Config, gate: &GateConfig) {
-    println!("## Rust\n");
-    println!("### Functions\n");
-    println!("- Keep functions ≤ {} statements", config.statements_per_function);
-    println!("- Limit arguments to ≤ {}", config.arguments_per_function);
-    println!("- Keep indentation depth ≤ {} levels", config.max_indentation_depth);
-    println!("- Limit branches (if/match/loop) to ≤ {} per function", config.branches_per_function);
-    println!("- Keep local variables ≤ {} per function", config.local_variables_per_function);
-    println!("- Limit return statements to ≤ {} per function", config.returns_per_function);
-    println!("- Avoid deeply nested closures (max depth: {})", config.nested_function_depth);
-    println!();
-    println!("### Types\n");
-    println!("- Keep methods per type ≤ {}", config.methods_per_class);
-    println!("- Ensure methods share fields (LCOM ≤ {}%)", config.lcom);
-    println!();
-    println!("### Files\n");
-    println!("- Keep files ≤ {} lines", config.lines_per_file);
-    println!("- Limit to ≤ {} types per file", config.classes_per_file);
-    println!("- Keep imports (use statements) ≤ {} per file", config.imports_per_file);
-    println!();
-    print_shared_rules(config, gate);
-}
-
-fn print_shared_rules(config: &Config, gate: &GateConfig) {
-    println!("### Dependencies\n");
-    println!("- Avoid circular dependencies");
-    println!("- Limit fan-out (direct dependencies) to ≤ {}", config.fan_out);
-    println!("- Keep fan-in modules stable and well-tested (threshold: {})", config.fan_in);
-    println!();
-    println!("### Testing\n");
-    println!("- Every function/class/type should be referenced by tests");
-    println!("- Maintain ≥ {}% test reference coverage", gate.test_coverage_threshold);
-    println!();
-    println!("### Duplication\n");
-    println!("- Avoid copy-pasted code blocks");
-    println!("- Factor out repeated patterns into shared functions");
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kiss::config_gen::{collect_py_stats, collect_rs_stats, collect_all_stats, merge_config_toml, write_mimic_config};
     use tempfile::TempDir;
 
     #[test]
-    fn test_language_parsing_and_enum() {
+    fn test_language_parsing() {
         assert_eq!(parse_language("python"), Ok(Language::Python));
         assert_eq!(parse_language("rust"), Ok(Language::Rust));
         assert!(parse_language("invalid").is_err());
-        assert_ne!(Language::Python, Language::Rust);
     }
 
     #[test]
-    fn test_load_configs_and_cli() {
+    fn test_load_configs() {
         let (py, rs) = load_configs(&None, false);
         assert!(py.statements_per_function > 0 && rs.statements_per_function > 0);
-        // Test --defaults flag uses built-in defaults
         let (py_def, rs_def) = load_configs(&None, true);
         assert_eq!(py_def.statements_per_function, kiss::defaults::python::STATEMENTS_PER_FUNCTION);
         assert_eq!(rs_def.statements_per_function, kiss::defaults::rust::STATEMENTS_PER_FUNCTION);
-        let cli = Cli { config: None, lang: None, all: false, defaults: false, command: None, path: ".".to_string() };
-        assert_eq!(cli.path, ".");
-        let cmd = Commands::Stats { paths: vec![".".to_string()] };
-        if let Commands::Stats { paths } = cmd { assert_eq!(paths.len(), 1); }
     }
 
     #[test]
-    fn test_gather_files_all_and_filtered() {
+    fn test_gate_config_loading() {
         let tmp = TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("a.py"), "").unwrap();
-        std::fs::write(tmp.path().join("b.rs"), "").unwrap();
-        let (py, rs) = gather_files(tmp.path(), None);
-        assert_eq!(py.len(), 1); assert_eq!(rs.len(), 1);
-        let (py2, rs2) = gather_files(tmp.path(), Some(Language::Python));
-        assert_eq!(py2.len(), 1); assert_eq!(rs2.len(), 0);
-    }
-
-    #[test]
-    fn test_parse_and_analyze_empty() {
-        let config = Config::default();
-        let (py_parsed, py_viols) = parse_and_analyze_py(&[], &config);
-        let (rs_parsed, rs_viols) = parse_and_analyze_rs(&[], &config);
-        assert!(py_parsed.is_empty() && py_viols.is_empty());
-        assert!(rs_parsed.is_empty() && rs_viols.is_empty());
-        let viols = analyze_graph(&DependencyGraph::new(), &config);
-        assert!(viols.is_empty());
-    }
-
-    #[test]
-    fn test_detect_duplicates_empty() {
-        assert!(detect_py_duplicates(&[]).is_empty());
-        assert!(detect_rs_duplicates(&[]).is_empty());
-    }
-
-    #[test]
-    fn test_print_functions_no_panic() {
-        print_violations(&[], 0, 0);
-        print_duplicates("Python", &[]);
-        assert_eq!(print_py_test_refs(&[]), 0);
-        assert_eq!(print_rs_test_refs(&[]), 0);
-    }
-
-    #[test]
-    fn test_collect_stats_empty() {
-        let tmp = TempDir::new().unwrap();
-        let (py_stats, py_cnt) = collect_py_stats(tmp.path());
-        let (rs_stats, rs_cnt) = collect_rs_stats(tmp.path());
-        assert_eq!(py_cnt, 0); assert_eq!(rs_cnt, 0);
-        let _ = (py_stats, rs_stats);
-        let paths = vec![tmp.path().to_string_lossy().to_string()];
-        let ((py, py_count), (rs, rs_count)) = collect_all_stats(&paths, None);
-        assert_eq!(py_count, 0); assert_eq!(rs_count, 0);
-        let _ = (py, rs);
-    }
-
-    #[test]
-    fn test_config_merge_and_write() {
-        use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        writeln!(tmp, "[python]\nstatements_per_function = 10").unwrap();
-        let merged = merge_config_toml(tmp.path(), "[rust]\nstatements_per_function = 20", false, true);
-        assert!(merged.contains("[python]") || merged.contains("[rust]"));
-        let tmp2 = TempDir::new().unwrap();
-        write_mimic_config(&tmp2.path().join("out.toml"), "[python]\nx = 1", 1, 0);
-    }
-
-    #[test]
-    fn test_fn_pointers_exist() {
-        let _ = run_stats as fn(&[String], Option<Language>);
-        let _ = run_mimic as fn(&[String], Option<&Path>, Option<Language>);
-        let _ = main as fn();
-    }
-
-    #[test]
-    fn test_run_analyze_and_gate_config() {
-        let tmp = TempDir::new().unwrap();
-        assert!(run_analyze(&tmp.path().to_string_lossy(), &Config::default(), &Config::default(), None, true, &GateConfig::default()));
         let path = tmp.path().join("kiss.toml");
         std::fs::write(&path, "[gate]\ntest_coverage_threshold = 80\n").unwrap();
         assert_eq!(load_gate_config(&Some(path.clone()), false).test_coverage_threshold, 80);
-        // Test --defaults flag ignores config files
         assert_eq!(load_gate_config(&Some(path), true).test_coverage_threshold, kiss::defaults::gate::TEST_COVERAGE_THRESHOLD);
     }
 
     #[test]
-    fn test_coverage_and_gate_empty() {
-        let py: Vec<ParsedFile> = vec![];
-        let rs: Vec<ParsedRustFile> = vec![];
-        let (cov, tested, total, unreferenced) = compute_test_coverage(&py, &rs);
-        assert_eq!((tested, total, cov), (0, 0, 100));
-        assert!(unreferenced.is_empty());
-        assert!(check_coverage_gate(&py, &rs, &GateConfig { test_coverage_threshold: 0 }));
-    }
-
-    #[test]
-    fn test_coverage_gate_blocks_untested_code() {
-        let tmp = TempDir::new().unwrap();
-        
-        let src = tmp.path().join("utils.py");
-        std::fs::write(&src, "def my_function():\n    pass\n").unwrap();
-        
-        let (py_files, _) = gather_files(tmp.path(), Some(Language::Python));
-        assert_eq!(py_files.len(), 1);
-        
-        let (py_parsed, _) = parse_and_analyze_py(&py_files, &Config::default());
-        assert_eq!(py_parsed.len(), 1);
-        
-        let (coverage, tested, total, unreferenced) = compute_test_coverage(&py_parsed, &[]);
-        assert_eq!(total, 1, "Should find 1 definition");
-        assert_eq!(tested, 0, "No tests reference this function");
-        assert_eq!(coverage, 0, "Coverage should be 0%");
-        assert_eq!(unreferenced.len(), 1, "Should have 1 unreferenced item");
-        
-        assert!(!check_coverage_gate(&py_parsed, &[], &GateConfig { test_coverage_threshold: 90 }),
-            "Gate should block when coverage (0%) < threshold (90%)");
-        assert!(check_coverage_gate(&py_parsed, &[], &GateConfig { test_coverage_threshold: 0 }),
-            "Gate should pass when threshold is 0%");
-    }
-
-    #[test]
-    fn test_coverage_gate_passes_with_tests() {
-        let tmp = TempDir::new().unwrap();
-        
-        std::fs::write(tmp.path().join("utils.py"), "def my_function():\n    pass\n").unwrap();
-        std::fs::write(tmp.path().join("test_utils.py"), "from utils import my_function\ndef test_it():\n    my_function()\n").unwrap();
-        
-        let (py_files, _) = gather_files(tmp.path(), Some(Language::Python));
-        assert_eq!(py_files.len(), 2);
-        
-        let (py_parsed, _) = parse_and_analyze_py(&py_files, &Config::default());
-        
-        let (coverage, tested, total, unreferenced) = compute_test_coverage(&py_parsed, &[]);
-        assert_eq!(total, 1, "Should find 1 definition (test file excluded)");
-        assert_eq!(tested, 1, "Test references my_function");
-        assert_eq!(coverage, 100, "Coverage should be 100%");
-        assert!(unreferenced.is_empty(), "No unreferenced items expected");
-        
-        assert!(check_coverage_gate(&py_parsed, &[], &GateConfig { test_coverage_threshold: 90 }),
-            "Gate should pass when coverage (100%) >= threshold (90%)");
-    }
-
-    #[test]
-    fn test_parse_all_and_graphs_empty() {
-        let config = Config::default();
-        let (py_parsed, rs_parsed, viols) = parse_all(&[], &[], &config, &config);
-        assert!(py_parsed.is_empty() && rs_parsed.is_empty() && viols.is_empty());
-        let (py_g, rs_g) = build_graphs(&py_parsed, &rs_parsed);
-        assert!(py_g.is_none() && rs_g.is_none());
-        assert!(analyze_graphs(&None, &None, &config, &config).is_empty());
-    }
-
-    #[test]
-    fn test_print_helpers_no_panic() {
-        let tmp = TempDir::new().unwrap();
-        print_no_files_message(None, tmp.path());
-        print_no_files_message(Some(Language::Python), tmp.path());
-        print_coverage_gate_failure(50, 80, 5, 10, &[]);
-        assert!(print_all_results(&[], &[], &[]));
-    }
-
-    #[test]
-    fn test_rules_functions_no_panic() {
-        let py_config = Config::python_defaults();
-        let rs_config = Config::rust_defaults();
-        let gate_config = GateConfig::default();
-        
-        // Test individual print functions don't panic
-        print_python_rules(&py_config, &gate_config);
-        print_rust_rules(&rs_config, &gate_config);
-        print_shared_rules(&py_config, &gate_config);
-        
-        // Test run_rules with different lang filters and defaults flag
-        run_rules(&py_config, &rs_config, &gate_config, None, false);
-        run_rules(&py_config, &rs_config, &gate_config, Some(Language::Python), false);
-        run_rules(&py_config, &rs_config, &gate_config, Some(Language::Rust), true);
+    fn test_fn_pointers() {
+        let _ = run_stats as fn(&[String], Option<Language>);
+        let _ = run_mimic as fn(&[String], Option<&Path>, Option<Language>);
+        let _ = main as fn();
     }
 }

@@ -19,36 +19,28 @@ pub fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
 }
 
 pub fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: usize, total: usize, unreferenced: &[(std::path::PathBuf, String, usize)]) {
-    println!("❌ Test coverage too low to safely suggest refactoring.\n");
-    println!("   Test reference coverage: {coverage}% (threshold: {threshold}%)");
-    println!("   Functions with test references: {tested} / {total}\n");
-    
+    println!("GATE_FAILED:test_coverage: {coverage}% coverage (threshold: {threshold}%, {tested}/{total} units tested)");
     for (file, name, line) in unreferenced {
-        println!("UNCOVERED:test_coverage:{}:{}:{}: Add test coverage for this code unit.", file.display(), line, name);
+        println!("VIOLATION:test_coverage:{}:{}:{}: Add test coverage for this code unit.", file.display(), line, name);
     }
-    if !unreferenced.is_empty() {
-        println!();
-    }
-    
-    println!("   Add tests for untested code, then run kiss again.");
-    println!("   Or use --all to bypass this check and proceed anyway.");
 }
 
-
-pub fn print_violations(viols: &[Violation], _total: usize, dup_count: usize) {
-    if viols.is_empty() && dup_count == 0 { 
-        println!("NO VIOLATIONS"); 
-        return; 
-    }
+pub fn print_violations(viols: &[Violation]) {
     for v in viols { 
         println!("VIOLATION:{}:{}:{}:{}: {} {}", 
             v.metric, v.file.display(), v.line, v.unit_name, v.message, v.suggestion); 
     }
 }
 
+pub fn print_final_status(has_violations: bool) {
+    if !has_violations {
+        println!("NO VIOLATIONS");
+    }
+}
+
 pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
     let suggestion = if lang == "Rust" {
-        "Extract into a shared function, or use traits/generics if the pattern varies by type."
+        "Extract into a shared function, or use traits/generics."
     } else {
         "Extract common code into a shared function."
     };
@@ -66,30 +58,18 @@ pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
 
 pub fn print_py_test_refs(parsed: &[ParsedFile]) -> usize {
     if parsed.is_empty() { return 0; }
-    let refs: Vec<&ParsedFile> = parsed.iter().collect();
-    let analysis = analyze_test_refs(&refs);
-    if !analysis.unreferenced.is_empty() {
-        println!("\n--- Possibly Untested Python Code ({} items) ---\n", analysis.unreferenced.len());
-        println!("The following code units are not referenced by any test file.\n(Note: This is static analysis only; actual coverage may differ.)\n");
-        for d in &analysis.unreferenced { 
-            println!("  {}:{} {} '{}'", d.file.display(), d.line, d.kind.as_str(), d.name); 
-        }
-        println!("\nAdd tests that directly call these items, or remove them if they are dead code.");
+    let analysis = analyze_test_refs(&parsed.iter().collect::<Vec<_>>());
+    for d in &analysis.unreferenced { 
+        println!("WARNING:test_coverage:{}:{}:{}: Code unit may lack test coverage.", d.file.display(), d.line, d.name); 
     }
     analysis.unreferenced.len()
 }
 
 pub fn print_rs_test_refs(parsed: &[ParsedRustFile]) -> usize {
     if parsed.is_empty() { return 0; }
-    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-    let analysis = analyze_rust_test_refs(&refs);
-    if !analysis.unreferenced.is_empty() {
-        println!("\n--- Possibly Untested Rust Code ({} items) ---\n", analysis.unreferenced.len());
-        println!("The following code units are not referenced by any test.\n(Note: This is static analysis only; actual coverage may differ.)\n");
-        for d in &analysis.unreferenced { 
-            println!("  {}:{} {} '{}'", d.file.display(), d.line, d.kind, d.name); 
-        }
-        println!("\nAdd tests that directly reference these items, or remove them if they are dead code.");
+    let analysis = analyze_rust_test_refs(&parsed.iter().collect::<Vec<_>>());
+    for d in &analysis.unreferenced { 
+        println!("WARNING:test_coverage:{}:{}:{}: Code unit may lack test coverage.", d.file.display(), d.line, d.name); 
     }
     analysis.unreferenced.len()
 }
@@ -108,15 +88,14 @@ mod tests {
 
     #[test]
     fn test_print_coverage_gate_failure_no_panic() {
-        let unreferenced = vec![
-            (std::path::PathBuf::from("foo.py"), "bar".to_string(), 10),
-        ];
-        print_coverage_gate_failure(50, 80, 5, 10, &unreferenced);
+        print_coverage_gate_failure(50, 80, 5, 10, &[(std::path::PathBuf::from("foo.py"), "bar".to_string(), 10)]);
     }
 
     #[test]
     fn test_print_violations_empty() {
-        print_violations(&[], 5, 0);
+        print_violations(&[]);
+        print_final_status(false);
+        print_final_status(true);
     }
 
     #[test]
@@ -124,4 +103,3 @@ mod tests {
         print_duplicates("Test", &[]);
     }
 }
-

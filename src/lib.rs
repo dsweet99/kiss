@@ -30,6 +30,7 @@ pub mod counts;
 pub mod discovery;
 pub mod duplication;
 pub mod graph;
+pub mod minhash;
 pub mod parsing;
 pub mod stats;
 pub mod test_refs;
@@ -37,7 +38,9 @@ pub mod units;
 
 // Rust modules
 pub mod rust_counts;
+pub mod rust_fn_metrics;
 pub mod rust_graph;
+pub mod rust_lcom;
 pub mod rust_parsing;
 pub mod rust_test_refs;
 pub mod rust_units;
@@ -51,7 +54,7 @@ pub use py_metrics::{
     compute_function_metrics, ClassMetrics, FileMetrics, FunctionMetrics,
 };
 pub use violation::{Violation, ViolationBuilder};
-pub use discovery::{find_python_files, find_rust_files, find_source_files, Language, SourceFile};
+pub use discovery::{find_python_files, find_rust_files, find_source_files, find_source_files_with_ignore, Language, SourceFile};
 pub use duplication::{
     cluster_duplicates, detect_duplicates, detect_duplicates_from_chunks,
     extract_chunks_for_duplication, extract_rust_chunks_for_duplication, CodeChunk,
@@ -70,8 +73,13 @@ pub use test_refs::{analyze_test_refs, is_test_file, CodeDefinition, TestRefAnal
 pub use units::{extract_code_units, CodeUnit, CodeUnitKind};
 
 // Rust re-exports
-pub use rust_counts::{analyze_rust_file, RustFileMetrics, RustFunctionMetrics, RustTypeMetrics};
+pub use rust_counts::analyze_rust_file;
+pub use rust_fn_metrics::{
+    compute_rust_file_metrics, compute_rust_function_metrics, RustFileMetrics,
+    RustFunctionMetrics, RustTypeMetrics,
+};
 pub use rust_graph::build_rust_dependency_graph;
+pub use rust_lcom::compute_rust_lcom;
 pub use rust_parsing::{parse_rust_file, parse_rust_files, ParsedRustFile, RustParseError};
 pub use rust_test_refs::{
     analyze_rust_test_refs, is_rust_test_file, RustCodeDefinition, RustTestRefAnalysis,

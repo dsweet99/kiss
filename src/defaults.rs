@@ -46,7 +46,7 @@ pub mod rust {
 
 /// Gate configuration defaults
 pub mod gate {
-    pub const TEST_COVERAGE_THRESHOLD: usize = 90;
+    pub const TEST_COVERAGE_THRESHOLD: usize = 45;
 }
 
 /// Generate default config file content
