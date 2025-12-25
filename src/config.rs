@@ -30,6 +30,7 @@ pub struct Config {
     pub fan_out: usize,
     pub fan_in: usize,
     pub lcom: usize,
+    pub statements_per_try_block: usize,
 }
 
 impl Default for Config {
@@ -55,6 +56,7 @@ impl Config {
             fan_out: defaults::python::FAN_OUT,
             fan_in: defaults::python::FAN_IN,
             lcom: defaults::python::LCOM,
+            statements_per_try_block: defaults::python::STATEMENTS_PER_TRY_BLOCK,
         }
     }
 
@@ -76,6 +78,7 @@ impl Config {
             fan_out: defaults::rust::FAN_OUT,
             fan_in: defaults::rust::FAN_IN,
             lcom: defaults::rust::LCOM,
+            statements_per_try_block: usize::MAX, // Not applicable to Rust
         }
     }
 
@@ -148,7 +151,8 @@ impl Config {
             "keyword_only_args" => arguments_keyword_only, "max_indentation" => max_indentation_depth,
             "branches_per_function" => branches_per_function, "local_variables" => local_variables_per_function,
             "methods_per_class" => methods_per_class, "fan_out" => fan_out, "fan_in" => fan_in, "lcom" => lcom,
-            "returns_per_function" => returns_per_function, "nested_function_depth" => nested_function_depth);
+            "returns_per_function" => returns_per_function, "nested_function_depth" => nested_function_depth,
+            "statements_per_try_block" => statements_per_try_block);
     }
 
     fn apply_rust(&mut self, table: &toml::Table) {

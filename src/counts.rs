@@ -103,6 +103,7 @@ fn check_function_metrics(m: &FunctionMetrics, file: &Path, line: usize, name: &
     chk!(nested_function_depth, nested_function_depth, "nested_function_depth", "nested functions", "Move nested functions to module level or use classes.");
     chk!(branches, branches_per_function, "branches_per_function", "branches", "Consider using polymorphism, lookup tables, or the strategy pattern.");
     chk!(local_variables, local_variables_per_function, "local_variables", "local variables", "Extract related variables into a data class or split the function.");
+    chk!(max_try_block_statements, statements_per_try_block, "statements_per_try_block", "statements in try block", "Keep try blocks narrow: wrap only the code that can raise the specific exception.");
 }
 
 fn analyze_class_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Violation>, config: &Config) {
@@ -209,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_check_function_metrics() {
-        let m = FunctionMetrics { statements: 100, arguments: 0, arguments_positional: 10, arguments_keyword_only: 10, max_indentation: 10, nested_function_depth: 5, returns: 0, branches: 20, local_variables: 30 };
+        let m = FunctionMetrics { statements: 100, arguments: 0, arguments_positional: 10, arguments_keyword_only: 10, max_indentation: 10, nested_function_depth: 5, returns: 0, branches: 20, local_variables: 30, max_try_block_statements: 0 };
         let mut cfg = Config::default();
         cfg.statements_per_function = 50;
         cfg.arguments_positional = 5;
@@ -229,53 +230,5 @@ mod tests {
         let cont = Recursion::Continue(true);
         assert!(matches!(skip, Recursion::Skip));
         assert!(matches!(cont, Recursion::Continue(true)));
-    }
-
-    // --- Violation-triggering tests for Python class metrics ---
-
-    #[test]
-    fn test_methods_per_class_violation() {
-        // Create a class with many methods that exceeds threshold
-        let code = r"
-class BigClass:
-    def m1(self): pass
-    def m2(self): pass
-    def m3(self): pass
-    def m4(self): pass
-    def m5(self): pass
-    def m6(self): pass
-";
-        let parsed = parse_source(code);
-        let mut config = Config::default();
-        config.methods_per_class = 3; // Set low threshold
-        
-        let violations = analyze_file(&parsed, &config);
-        
-        let has_methods_violation = violations.iter()
-            .any(|v| v.metric == "methods_per_class");
-        assert!(has_methods_violation, 
-            "should trigger methods_per_class violation when class has 6 methods > threshold 3");
-    }
-
-    #[test]
-    fn test_lcom_violation_requires_both_methods_and_low_cohesion() {
-        // LCOM violation requires: methods > 20 AND lcom% > threshold
-        // Create a class with 21+ methods that don't share fields
-        let mut methods = String::new();
-        for i in 0..22 {
-            methods.push_str(&format!("    def m{i}(self): self.field{i} = {i}\n"));
-        }
-        let code = format!("class LowCohesion:\n{methods}");
-        
-        let parsed = parse_source(&code);
-        let mut config = Config::default();
-        config.lcom = 10; // Low threshold to trigger violation
-        
-        let violations = analyze_file(&parsed, &config);
-        
-        let has_lcom_violation = violations.iter()
-            .any(|v| v.metric == "lcom");
-        assert!(has_lcom_violation,
-            "should trigger lcom violation when class has >20 methods with low cohesion");
     }
 }

@@ -8,6 +8,7 @@ use tree_sitter::Node;
 pub struct FunctionMetrics {
     pub statements: usize, pub arguments: usize, pub arguments_positional: usize, pub arguments_keyword_only: usize,
     pub max_indentation: usize, pub nested_function_depth: usize, pub returns: usize, pub branches: usize, pub local_variables: usize,
+    pub max_try_block_statements: usize,
 }
 
 #[derive(Debug, Default)]
@@ -29,6 +30,7 @@ pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
         m.branches = count_branches(body);
         m.local_variables = count_local_variables(body, source);
         m.returns = count_node_kind(body, "return_statement");
+        m.max_try_block_statements = compute_max_try_block_statements(body);
     }
     m.nested_function_depth = compute_nested_function_depth(node, 0);
     m
@@ -93,6 +95,21 @@ fn compute_max_indentation(node: Node, current_depth: usize) -> usize {
 fn count_branches(node: Node) -> usize {
     let mut cursor = node.walk();
     node.children(&mut cursor).map(|c| usize::from(matches!(c.kind(), "if_statement" | "elif_clause")) + count_branches(c)).sum()
+}
+
+fn compute_max_try_block_statements(node: Node) -> usize {
+    let mut max = 0;
+    if node.kind() == "try_statement" {
+        // The try block body is the first "block" child of the try_statement
+        if let Some(body) = node.child_by_field_name("body") {
+            max = max.max(count_statements(body));
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        max = max.max(compute_max_try_block_statements(child));
+    }
+    max
 }
 
 fn count_local_variables(node: Node, source: &str) -> usize {
@@ -232,5 +249,42 @@ mod tests {
     fn test_lazy_imports() {
         let p = parse("import os\ndef f():\n    import numpy");
         assert_eq!(compute_file_metrics(&p).imports, 2);
+    }
+
+    #[test]
+    fn test_try_block_statements() {
+        let code = r"
+def f():
+    try:
+        x = 1
+        y = 2
+        z = 3
+    except Exception:
+        pass
+";
+        let p = parse(code);
+        let m = compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source);
+        assert_eq!(m.max_try_block_statements, 3);
+    }
+
+    #[test]
+    fn test_nested_try_blocks() {
+        let code = r"
+def f():
+    try:
+        a = 1
+    except:
+        pass
+    try:
+        b = 1
+        c = 2
+        d = 3
+        e = 4
+    except:
+        pass
+";
+        let p = parse(code);
+        let m = compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source);
+        assert_eq!(m.max_try_block_statements, 4); // max of 1 and 4
     }
 }

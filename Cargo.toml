@@ -1,12 +1,21 @@
 [package]
-name = "kiss"
+name = "kiss-ai"
 version = "0.1.0"
 edition = "2024"
 description = "Code-quality metrics tool for Python and Rust"
 license = "MIT"
 repository = "https://github.com/dsweet99/kiss"
+readme = "README.md"
 keywords = ["code-quality", "metrics", "linting", "python", "rust"]
 categories = ["development-tools", "command-line-utilities"]
+
+[[bin]]
+name = "kiss"
+path = "src/main.rs"
+
+[lib]
+name = "kiss"
+path = "src/lib.rs"
 
 [dependencies]
 # CLI

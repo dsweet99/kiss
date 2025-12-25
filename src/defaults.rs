@@ -24,6 +24,7 @@ pub mod python {
     pub const FAN_IN: usize = 20;
     pub const RETURNS_PER_FUNCTION: usize = 5;
     pub const NESTED_FUNCTION_DEPTH: usize = 2;
+    pub const STATEMENTS_PER_TRY_BLOCK: usize = 5;
 }
 
 /// Rust-specific default thresholds
@@ -80,6 +81,7 @@ fan_out = {py_fan_out}
 fan_in = {py_fan_in}
 returns_per_function = {py_returns}
 nested_function_depth = {py_nested}
+statements_per_try_block = {py_try_stmts}
 
 #------------------------------------------------------------------------------
 # RUST-SPECIFIC SETTINGS
@@ -117,6 +119,7 @@ nested_function_depth = {rs_nested}
         py_fan_in = python::FAN_IN,
         py_returns = python::RETURNS_PER_FUNCTION,
         py_nested = python::NESTED_FUNCTION_DEPTH,
+        py_try_stmts = python::STATEMENTS_PER_TRY_BLOCK,
         rs_imports = rust::IMPORTS_PER_FILE,
         rs_lines = rust::LINES_PER_FILE,
         rs_types = rust::TYPES_PER_FILE,
