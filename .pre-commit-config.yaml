@@ -1,0 +1,27 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+repos:
+  - repo: local
+    hooks:
+      - id: check-untracked
+        name: Check for untracked source files
+        entry: ./scripts/check-untracked.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
+      - id: clippy
+        name: Rust clippy
+        entry: ./scripts/pre-commit-clippy.sh
+        language: script
+        pass_filenames: false
+        types: [rust]
+
+      - id: cargo-test
+        name: Rust tests
+        entry: cargo test
+        language: system
+        pass_filenames: false
+        types: [rust]
+
