@@ -25,6 +25,8 @@ pub mod python {
     pub const RETURNS_PER_FUNCTION: usize = 5;
     pub const NESTED_FUNCTION_DEPTH: usize = 2;
     pub const STATEMENTS_PER_TRY_BLOCK: usize = 5;
+    pub const BOOLEAN_PARAMETERS: usize = 1;
+    pub const DECORATORS_PER_FUNCTION: usize = 3;
 }
 
 /// Rust-specific default thresholds
@@ -43,6 +45,15 @@ pub mod rust {
     pub const FAN_IN: usize = 20;
     pub const RETURNS_PER_FUNCTION: usize = 5;
     pub const NESTED_FUNCTION_DEPTH: usize = 2;
+    pub const BOOLEAN_PARAMETERS: usize = 2;
+    pub const ATTRIBUTES_PER_FUNCTION: usize = 4;
+}
+
+/// Graph-based thresholds (shared across languages)
+pub mod graph {
+    pub const CYCLE_SIZE: usize = 3;
+    pub const TRANSITIVE_DEPENDENCIES: usize = 30;
+    pub const DEPENDENCY_DEPTH: usize = 6;
 }
 
 /// Gate configuration defaults
@@ -82,6 +93,16 @@ fan_in = {py_fan_in}
 returns_per_function = {py_returns}
 nested_function_depth = {py_nested}
 statements_per_try_block = {py_try_stmts}
+boolean_parameters = {py_bool_params}
+decorators_per_function = {py_decorators}
+
+#------------------------------------------------------------------------------
+# GRAPH-BASED SETTINGS (shared)
+#------------------------------------------------------------------------------
+
+cycle_size = {cycle_size}
+transitive_dependencies = {transitive_deps}
+dependency_depth = {dep_depth}
 
 #------------------------------------------------------------------------------
 # RUST-SPECIFIC SETTINGS
@@ -102,6 +123,8 @@ fan_out = {rs_fan_out}
 fan_in = {rs_fan_in}
 returns_per_function = {rs_returns}
 nested_function_depth = {rs_nested}
+bool_parameters = {rs_bool_params}
+attributes_per_function = {rs_attrs}
 ",
         gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
         py_imports = python::IMPORTS_PER_FILE,
@@ -120,6 +143,11 @@ nested_function_depth = {rs_nested}
         py_returns = python::RETURNS_PER_FUNCTION,
         py_nested = python::NESTED_FUNCTION_DEPTH,
         py_try_stmts = python::STATEMENTS_PER_TRY_BLOCK,
+        py_bool_params = python::BOOLEAN_PARAMETERS,
+        py_decorators = python::DECORATORS_PER_FUNCTION,
+        cycle_size = graph::CYCLE_SIZE,
+        transitive_deps = graph::TRANSITIVE_DEPENDENCIES,
+        dep_depth = graph::DEPENDENCY_DEPTH,
         rs_imports = rust::IMPORTS_PER_FILE,
         rs_lines = rust::LINES_PER_FILE,
         rs_types = rust::TYPES_PER_FILE,
@@ -134,6 +162,8 @@ nested_function_depth = {rs_nested}
         rs_fan_in = rust::FAN_IN,
         rs_returns = rust::RETURNS_PER_FUNCTION,
         rs_nested = rust::NESTED_FUNCTION_DEPTH,
+        rs_bool_params = rust::BOOLEAN_PARAMETERS,
+        rs_attrs = rust::ATTRIBUTES_PER_FUNCTION,
     )
 }
 

@@ -23,6 +23,8 @@ pub struct DependencyGraph {
 pub struct ModuleGraphMetrics {
     pub fan_in: usize,
     pub fan_out: usize,
+    pub transitive_dependencies: usize,
+    pub dependency_depth: usize,
 }
 
 #[derive(Debug)]
@@ -48,10 +50,30 @@ impl DependencyGraph {
 
     pub fn module_metrics(&self, module: &str) -> ModuleGraphMetrics {
         let Some(&idx) = self.nodes.get(module) else { return ModuleGraphMetrics::default(); };
+        let (transitive, depth) = self.compute_transitive_and_depth(idx);
         ModuleGraphMetrics {
             fan_in: self.graph.neighbors_directed(idx, petgraph::Direction::Incoming).count(),
             fan_out: self.graph.neighbors_directed(idx, petgraph::Direction::Outgoing).count(),
+            transitive_dependencies: transitive,
+            dependency_depth: depth,
         }
+    }
+
+    fn compute_transitive_and_depth(&self, start: NodeIndex) -> (usize, usize) {
+        use std::collections::{HashSet, VecDeque};
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        let mut max_depth = 0;
+        queue.push_back((start, 0));
+        while let Some((node, depth)) = queue.pop_front() {
+            for neighbor in self.graph.neighbors_directed(node, petgraph::Direction::Outgoing) {
+                if visited.insert(neighbor) {
+                    max_depth = max_depth.max(depth + 1);
+                    queue.push_back((neighbor, depth + 1));
+                }
+            }
+        }
+        (visited.len(), max_depth)
     }
 
     fn is_cycle(&self, scc: &[NodeIndex]) -> bool {
@@ -117,16 +139,40 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
                 suggestion: "This may be dead code. Remove it, or integrate it into the codebase.".to_string(),
             });
         }
+        if metrics.transitive_dependencies > config.transitive_dependencies {
+            violations.push(Violation {
+                file: get_module_path(graph, module_name), line: 1, unit_name: module_name.clone(),
+                metric: "transitive_dependencies".to_string(), value: metrics.transitive_dependencies, threshold: config.transitive_dependencies,
+                message: format!("Module '{}' has {} transitive dependencies (threshold: {})", module_name, metrics.transitive_dependencies, config.transitive_dependencies),
+                suggestion: "Reduce coupling by introducing abstraction layers or splitting responsibilities.".to_string(),
+            });
+        }
+        if metrics.dependency_depth > config.dependency_depth {
+            violations.push(Violation {
+                file: get_module_path(graph, module_name), line: 1, unit_name: module_name.clone(),
+                metric: "dependency_depth".to_string(), value: metrics.dependency_depth, threshold: config.dependency_depth,
+                message: format!("Module '{}' has dependency depth {} (threshold: {})", module_name, metrics.dependency_depth, config.dependency_depth),
+                suggestion: "Flatten the dependency chain by moving shared logic to a common base layer.".to_string(),
+            });
+        }
     }
     for cycle in graph.find_cycles().cycles {
         let cycle_str = cycle.join(" → ");
         let first_module = cycle.first().cloned().unwrap_or_default();
         violations.push(Violation {
-            file: get_module_path(graph, &first_module), line: 1, unit_name: first_module,
+            file: get_module_path(graph, &first_module), line: 1, unit_name: first_module.clone(),
             metric: "dependency_cycle".to_string(), value: cycle.len(), threshold: 0,
             message: format!("Circular dependency detected: {} → {}", cycle_str, cycle.first().unwrap_or(&String::new())),
             suggestion: "Break the cycle by introducing an interface or restructuring dependencies.".to_string(),
         });
+        if cycle.len() > config.cycle_size {
+            violations.push(Violation {
+                file: get_module_path(graph, &first_module), line: 1, unit_name: first_module,
+                metric: "cycle_size".to_string(), value: cycle.len(), threshold: config.cycle_size,
+                message: format!("Dependency cycle has {} modules (threshold: {})", cycle.len(), config.cycle_size),
+                suggestion: "Large cycles are harder to untangle. Prioritize breaking this cycle into smaller pieces.".to_string(),
+            });
+        }
     }
     violations
 }
@@ -226,9 +272,9 @@ mod tests {
 
     #[test]
     fn test_orphan() {
-        assert!(is_orphan(&ModuleGraphMetrics { fan_in: 0, fan_out: 0 }, "utils"));
-        assert!(!is_orphan(&ModuleGraphMetrics { fan_in: 1, fan_out: 0 }, "utils"));
-        assert!(!is_orphan(&ModuleGraphMetrics { fan_in: 0, fan_out: 0 }, "main"));
+        assert!(is_orphan(&ModuleGraphMetrics { fan_in: 0, fan_out: 0, ..Default::default() }, "utils"));
+        assert!(!is_orphan(&ModuleGraphMetrics { fan_in: 1, fan_out: 0, ..Default::default() }, "utils"));
+        assert!(!is_orphan(&ModuleGraphMetrics { fan_in: 0, fan_out: 0, ..Default::default() }, "main"));
     }
 
     #[test]

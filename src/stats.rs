@@ -128,12 +128,12 @@ fn push_rust_fn_metrics(stats: &mut MetricStats, m: &crate::rust_counts::RustFun
 fn collect_rust_from_items(items: &[Item], stats: &mut MetricStats) {
     for item in items {
         match item {
-            Item::Fn(f) => push_rust_fn_metrics(stats, &compute_rust_function_metrics(&f.sig.inputs, &f.block)),
+            Item::Fn(f) => push_rust_fn_metrics(stats, &compute_rust_function_metrics(&f.sig.inputs, &f.block, f.attrs.len())),
             Item::Impl(i) => {
                 let mcnt = i.items.iter().filter(|ii| matches!(ii, ImplItem::Fn(_))).count();
                 stats.methods_per_class.push(mcnt);
                 stats.lcom.push(if mcnt > 1 { (compute_rust_lcom(i) * 100.0).round() as usize } else { 0 });
-                for ii in &i.items { if let ImplItem::Fn(m) = ii { push_rust_fn_metrics(stats, &compute_rust_function_metrics(&m.sig.inputs, &m.block)); } }
+                for ii in &i.items { if let ImplItem::Fn(m) = ii { push_rust_fn_metrics(stats, &compute_rust_function_metrics(&m.sig.inputs, &m.block, m.attrs.len())); } }
             }
             Item::Mod(m) => if let Some((_, items)) = &m.content { collect_rust_from_items(items, stats); },
             _ => {}

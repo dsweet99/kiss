@@ -8,7 +8,7 @@ use tree_sitter::Node;
 pub struct FunctionMetrics {
     pub statements: usize, pub arguments: usize, pub arguments_positional: usize, pub arguments_keyword_only: usize,
     pub max_indentation: usize, pub nested_function_depth: usize, pub returns: usize, pub branches: usize, pub local_variables: usize,
-    pub max_try_block_statements: usize,
+    pub max_try_block_statements: usize, pub boolean_parameters: usize, pub decorators: usize,
 }
 
 #[derive(Debug, Default)]
@@ -21,8 +21,9 @@ pub struct FileMetrics { pub lines: usize, pub classes: usize, pub imports: usiz
 pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
     let mut m = FunctionMetrics::default();
     if let Some(params) = node.child_by_field_name("parameters") {
-        let c = count_parameters(params);
+        let c = count_parameters(params, source);
         m.arguments = c.total; m.arguments_positional = c.positional; m.arguments_keyword_only = c.keyword_only;
+        m.boolean_parameters = c.boolean_params;
     }
     if let Some(body) = node.child_by_field_name("body") {
         m.statements = count_statements(body);
@@ -33,6 +34,7 @@ pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
         m.max_try_block_statements = compute_max_try_block_statements(body);
     }
     m.nested_function_depth = compute_nested_function_depth(node, 0);
+    m.decorators = count_decorators(node);
     m
 }
 
@@ -54,19 +56,36 @@ pub fn compute_file_metrics(parsed: &ParsedFile) -> FileMetrics {
     FileMetrics { lines: parsed.source.lines().count(), classes: count_node_kind(root, "class_definition"), imports: count_imports(root) }
 }
 
-struct ParameterCounts { positional: usize, keyword_only: usize, total: usize }
+struct ParameterCounts { positional: usize, keyword_only: usize, total: usize, boolean_params: usize }
 
-fn count_parameters(params: Node) -> ParameterCounts {
-    let (mut positional, mut keyword_only, mut after_star) = (0, 0, false);
+fn count_parameters(params: Node, source: &str) -> ParameterCounts {
+    let (mut positional, mut keyword_only, mut after_star, mut boolean_params) = (0, 0, false, 0);
     let mut cursor = params.walk();
     for child in params.children(&mut cursor) {
         match child.kind() {
-            "identifier" | "default_parameter" | "typed_parameter" | "typed_default_parameter" => if after_star { keyword_only += 1 } else { positional += 1 },
+            "identifier" | "typed_parameter" => if after_star { keyword_only += 1 } else { positional += 1 },
+            "default_parameter" | "typed_default_parameter" => {
+                if after_star { keyword_only += 1 } else { positional += 1 }
+                if is_boolean_default(&child, source) { boolean_params += 1; }
+            }
             "list_splat_pattern" | "dictionary_splat_pattern" | "*" | "keyword_separator" => after_star = true,
             _ => {}
         }
     }
-    ParameterCounts { positional, keyword_only, total: positional + keyword_only }
+    ParameterCounts { positional, keyword_only, total: positional + keyword_only, boolean_params }
+}
+
+fn is_boolean_default(param: &Node, source: &str) -> bool {
+    param.child_by_field_name("value").is_some_and(|v| {
+        let text = v.utf8_text(source.as_bytes()).unwrap_or("");
+        matches!(text, "True" | "False")
+    })
+}
+
+fn count_decorators(node: Node) -> usize {
+    node.parent()
+        .filter(|p| p.kind() == "decorated_definition")
+        .map_or(0, |p| p.children(&mut p.walk()).filter(|c| c.kind() == "decorator").count())
 }
 
 fn count_statements(node: Node) -> usize {
@@ -253,38 +272,25 @@ mod tests {
 
     #[test]
     fn test_try_block_statements() {
-        let code = r"
-def f():
-    try:
-        x = 1
-        y = 2
-        z = 3
-    except Exception:
-        pass
-";
-        let p = parse(code);
-        let m = compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source);
-        assert_eq!(m.max_try_block_statements, 3);
+        let p = parse("def f():\n    try:\n        x=1;y=2;z=3\n    except: pass");
+        assert_eq!(compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source).max_try_block_statements, 3);
     }
 
     #[test]
     fn test_nested_try_blocks() {
-        let code = r"
-def f():
-    try:
-        a = 1
-    except:
-        pass
-    try:
-        b = 1
-        c = 2
-        d = 3
-        e = 4
-    except:
-        pass
-";
-        let p = parse(code);
-        let m = compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source);
-        assert_eq!(m.max_try_block_statements, 4); // max of 1 and 4
+        let p = parse("def f():\n    try:\n        a=1\n    except: pass\n    try:\n        b=1;c=2;d=3;e=4\n    except: pass");
+        assert_eq!(compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source).max_try_block_statements, 4);
+    }
+
+    #[test]
+    fn test_boolean_parameters() {
+        let p = parse("def f(a=True, b=False, c=None): pass");
+        assert_eq!(compute_function_metrics(p.tree.root_node().child(0).unwrap(), &p.source).boolean_parameters, 2);
+    }
+
+    #[test]
+    fn test_decorators() {
+        let p = parse("@a\n@b\n@c\ndef f(): pass");
+        assert_eq!(compute_function_metrics(p.tree.root_node().child(0).unwrap().child(3).unwrap(), &p.source).decorators, 3);
     }
 }

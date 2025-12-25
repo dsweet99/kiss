@@ -104,6 +104,8 @@ fn check_function_metrics(m: &FunctionMetrics, file: &Path, line: usize, name: &
     chk!(branches, branches_per_function, "branches_per_function", "branches", "Consider using polymorphism, lookup tables, or the strategy pattern.");
     chk!(local_variables, local_variables_per_function, "local_variables", "local variables", "Extract related variables into a data class or split the function.");
     chk!(max_try_block_statements, statements_per_try_block, "statements_per_try_block", "statements in try block", "Keep try blocks narrow: wrap only the code that can raise the specific exception.");
+    chk!(boolean_parameters, boolean_parameters, "boolean_parameters", "boolean parameters", "Use keyword-only arguments, an enum, or separate functions instead of boolean flags.");
+    chk!(decorators, decorators_per_function, "decorators_per_function", "decorators", "Consider consolidating decorators or simplifying the function's responsibilities.");
 }
 
 fn analyze_class_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Violation>, config: &Config) {
@@ -210,15 +212,8 @@ mod tests {
 
     #[test]
     fn test_check_function_metrics() {
-        let m = FunctionMetrics { statements: 100, arguments: 0, arguments_positional: 10, arguments_keyword_only: 10, max_indentation: 10, nested_function_depth: 5, returns: 0, branches: 20, local_variables: 30, max_try_block_statements: 0 };
-        let mut cfg = Config::default();
-        cfg.statements_per_function = 50;
-        cfg.arguments_positional = 5;
-        cfg.arguments_keyword_only = 5;
-        cfg.max_indentation_depth = 5;
-        cfg.nested_function_depth = 2;
-        cfg.branches_per_function = 10;
-        cfg.local_variables_per_function = 15;
+        let m = FunctionMetrics { statements: 100, arguments: 0, arguments_positional: 10, arguments_keyword_only: 10, max_indentation: 10, nested_function_depth: 5, returns: 0, branches: 20, local_variables: 30, max_try_block_statements: 0, boolean_parameters: 0, decorators: 0 };
+        let cfg = Config { statements_per_function: 50, arguments_positional: 5, arguments_keyword_only: 5, max_indentation_depth: 5, nested_function_depth: 2, branches_per_function: 10, local_variables_per_function: 15, ..Default::default() };
         let mut viols = Vec::new();
         check_function_metrics(&m, Path::new("t.py"), 1, "f", false, &cfg, &mut viols);
         assert!(viols.len() >= 5);

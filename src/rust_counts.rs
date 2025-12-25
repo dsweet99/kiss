@@ -84,7 +84,7 @@ impl<'a> RustAnalyzer<'a> {
             Item::Fn(func) => {
                 let name = func.sig.ident.to_string();
                 let line = func.sig.ident.span().start().line;
-                self.analyze_function(&name, line, &func.sig.inputs, &func.block, "Function");
+                self.analyze_function(&name, line, &func.sig.inputs, &func.block, func.attrs.len(), "Function");
             }
             Item::Impl(impl_block) => self.analyze_impl_block(impl_block),
             Item::Mod(m) => {
@@ -112,7 +112,7 @@ impl<'a> RustAnalyzer<'a> {
             if let ImplItem::Fn(method) = impl_item {
                 let mname = method.sig.ident.to_string();
                 let mline = method.sig.ident.span().start().line;
-                self.analyze_function(&mname, mline, &method.sig.inputs, &method.block, "Method");
+                self.analyze_function(&mname, mline, &method.sig.inputs, &method.block, method.attrs.len(), "Method");
             }
         }
     }
@@ -179,9 +179,10 @@ impl<'a> RustAnalyzer<'a> {
         line: usize,
         inputs: &syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
         block: &Block,
+        attr_count: usize,
         ut: &str,
     ) {
-        let m = compute_rust_function_metrics(inputs, block);
+        let m = compute_rust_function_metrics(inputs, block, attr_count);
         let c = self.config;
 
         macro_rules! chk {
@@ -214,6 +215,10 @@ impl<'a> RustAnalyzer<'a> {
              "Extract logic into helper functions with fewer variables each.");
         chk!(nested_function_depth, nested_function_depth, "nested_closure_depth", "nested closure depth", 
              "Extract nested closures into separate functions.");
+        chk!(bool_parameters, boolean_parameters, "bool_parameters", "bool parameters", 
+             "Use an enum or a struct with named fields instead of multiple bools.");
+        chk!(attributes, decorators_per_function, "attributes_per_function", "attributes", 
+             "Consider consolidating attributes or simplifying the function's responsibilities.");
     }
 }
 

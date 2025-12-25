@@ -14,6 +14,8 @@ pub struct RustFunctionMetrics {
     pub returns: usize,
     pub branches: usize,
     pub local_variables: usize,
+    pub bool_parameters: usize,
+    pub attributes: usize,
 }
 
 #[derive(Debug, Default)]
@@ -54,13 +56,17 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
 pub fn compute_rust_function_metrics(
     inputs: &syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
     block: &Block,
+    attr_count: usize,
 ) -> RustFunctionMetrics {
     let mut metrics = RustFunctionMetrics::default();
 
-    let non_self_args = inputs
+    let non_self_args: Vec<_> = inputs
         .iter()
-        .filter(|arg| !matches!(arg, syn::FnArg::Receiver(_)));
-    metrics.arguments = non_self_args.count();
+        .filter(|arg| !matches!(arg, syn::FnArg::Receiver(_)))
+        .collect();
+    metrics.arguments = non_self_args.len();
+    metrics.bool_parameters = non_self_args.iter().filter(|arg| is_bool_param(arg)).count();
+    metrics.attributes = attr_count;
 
     let mut visitor = FunctionMetricsVisitor::default();
     visitor.visit_block(block);
@@ -73,6 +79,10 @@ pub fn compute_rust_function_metrics(
     metrics.nested_function_depth = visitor.max_closure_depth;
 
     metrics
+}
+
+fn is_bool_param(arg: &syn::FnArg) -> bool {
+    matches!(arg, syn::FnArg::Typed(pt) if matches!(&*pt.ty, syn::Type::Path(tp) if tp.path.is_ident("bool")))
 }
 
 #[derive(Default)]
@@ -190,16 +200,22 @@ mod tests {
     #[test]
     fn test_function_metrics() {
         let (i1, b1) = parse_fn("fn foo(a: i32, b: String, c: bool) {}");
-        assert_eq!(compute_rust_function_metrics(&i1, &b1).arguments, 3);
+        let m1 = compute_rust_function_metrics(&i1, &b1, 0);
+        assert_eq!(m1.arguments, 3);
+        assert_eq!(m1.bool_parameters, 1); // c: bool
 
         let (i2, b2) = parse_fn(r#"fn f() { let x=1; let y=2; println!("{}",x+y); }"#);
-        assert!(compute_rust_function_metrics(&i2, &b2).statements >= 3);
+        assert!(compute_rust_function_metrics(&i2, &b2, 0).statements >= 3);
 
         let (i3, b3) = parse_fn("fn f(x: i32) { if x>0 {} else if x<0 {} }");
-        assert!(compute_rust_function_metrics(&i3, &b3).branches >= 2);
+        assert!(compute_rust_function_metrics(&i3, &b3, 0).branches >= 2);
 
         let (i4, b4) = parse_fn("fn f() { let a=1; let b=2; let (c,d)=(3,4); }");
-        assert_eq!(compute_rust_function_metrics(&i4, &b4).local_variables, 4);
+        assert_eq!(compute_rust_function_metrics(&i4, &b4, 0).local_variables, 4);
+
+        // Test attributes
+        let (i5, b5) = parse_fn("fn f() {}");
+        assert_eq!(compute_rust_function_metrics(&i5, &b5, 3).attributes, 3);
     }
 
     #[test]
@@ -242,6 +258,8 @@ mod tests {
             branches: 5,
             local_variables: 6,
             nested_function_depth: 8,
+            bool_parameters: 0,
+            attributes: 0,
         };
         let _ = (
             RustTypeMetrics { methods: 5 },

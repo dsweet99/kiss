@@ -31,6 +31,11 @@ pub struct Config {
     pub fan_in: usize,
     pub lcom: usize,
     pub statements_per_try_block: usize,
+    pub boolean_parameters: usize,
+    pub decorators_per_function: usize,
+    pub cycle_size: usize,
+    pub transitive_dependencies: usize,
+    pub dependency_depth: usize,
 }
 
 impl Default for Config {
@@ -57,6 +62,11 @@ impl Config {
             fan_in: defaults::python::FAN_IN,
             lcom: defaults::python::LCOM,
             statements_per_try_block: defaults::python::STATEMENTS_PER_TRY_BLOCK,
+            boolean_parameters: defaults::python::BOOLEAN_PARAMETERS,
+            decorators_per_function: defaults::python::DECORATORS_PER_FUNCTION,
+            cycle_size: defaults::graph::CYCLE_SIZE,
+            transitive_dependencies: defaults::graph::TRANSITIVE_DEPENDENCIES,
+            dependency_depth: defaults::graph::DEPENDENCY_DEPTH,
         }
     }
 
@@ -79,6 +89,11 @@ impl Config {
             fan_in: defaults::rust::FAN_IN,
             lcom: defaults::rust::LCOM,
             statements_per_try_block: usize::MAX, // Not applicable to Rust
+            boolean_parameters: defaults::rust::BOOLEAN_PARAMETERS,
+            decorators_per_function: defaults::rust::ATTRIBUTES_PER_FUNCTION,
+            cycle_size: defaults::graph::CYCLE_SIZE,
+            transitive_dependencies: defaults::graph::TRANSITIVE_DEPENDENCIES,
+            dependency_depth: defaults::graph::DEPENDENCY_DEPTH,
         }
     }
 
@@ -142,7 +157,9 @@ impl Config {
     }
 
     fn apply_shared(&mut self, table: &toml::Table) {
-        apply_config!(self, table, "lines_per_file" => lines_per_file, "types_per_file" => classes_per_file, "imports_per_file" => imports_per_file);
+        apply_config!(self, table, "lines_per_file" => lines_per_file, "types_per_file" => classes_per_file, 
+            "imports_per_file" => imports_per_file, "cycle_size" => cycle_size,
+            "transitive_dependencies" => transitive_dependencies, "dependency_depth" => dependency_depth);
     }
 
     fn apply_python(&mut self, table: &toml::Table) {
@@ -152,7 +169,8 @@ impl Config {
             "branches_per_function" => branches_per_function, "local_variables" => local_variables_per_function,
             "methods_per_class" => methods_per_class, "fan_out" => fan_out, "fan_in" => fan_in, "lcom" => lcom,
             "returns_per_function" => returns_per_function, "nested_function_depth" => nested_function_depth,
-            "statements_per_try_block" => statements_per_try_block);
+            "statements_per_try_block" => statements_per_try_block, "boolean_parameters" => boolean_parameters,
+            "decorators_per_function" => decorators_per_function);
     }
 
     fn apply_rust(&mut self, table: &toml::Table) {
@@ -162,7 +180,8 @@ impl Config {
             "local_variables" => local_variables_per_function, "methods_per_type" => methods_per_class,
             "fan_out" => fan_out, "fan_in" => fan_in, "lcom" => lcom, "lines_per_file" => lines_per_file,
             "types_per_file" => classes_per_file, "returns_per_function" => returns_per_function,
-            "nested_function_depth" => nested_function_depth);
+            "nested_function_depth" => nested_function_depth, "bool_parameters" => boolean_parameters,
+            "attributes_per_function" => decorators_per_function);
     }
 }
 
