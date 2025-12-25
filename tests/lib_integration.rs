@@ -83,7 +83,7 @@ fn computes_class_metrics_for_god_class() {
     let parsed = parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
     let class_node = find_first_node_of_kind(parsed.tree.root_node(), "class_definition").expect("should find class");
     let metrics = compute_class_metrics(class_node);
-    assert!(metrics.methods > thresholds::METHODS_PER_CLASS);
+    assert!(metrics.methods > 20, "God class should have more than 20 methods");
 }
 
 #[test]

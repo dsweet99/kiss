@@ -68,6 +68,8 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
+    ensure_default_config_exists();
+    
     let (py_config, rs_config) = load_configs(&cli.config);
     let gate_config = load_gate_config(&cli.config);
 
@@ -81,6 +83,22 @@ fn main() {
         None => {
             if !run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config) {
                 std::process::exit(1);
+            }
+        }
+    }
+}
+
+fn ensure_default_config_exists() {
+    let local_config = Path::new(".kissconfig");
+    if local_config.exists() {
+        return; // Local config takes precedence, don't create home config
+    }
+    
+    if let Some(home) = std::env::var_os("HOME") {
+        let home_config = Path::new(&home).join(".kissconfig");
+        if !home_config.exists() {
+            if let Err(e) = std::fs::write(&home_config, kiss::default_config_toml()) {
+                eprintln!("Note: Could not write default config to {}: {}", home_config.display(), e);
             }
         }
     }

@@ -1,5 +1,6 @@
 //! Configuration management for kiss
 
+use crate::defaults;
 use std::path::Path;
 
 /// Macro to reduce boilerplate in apply_* methods
@@ -14,29 +15,6 @@ macro_rules! apply_config {
 pub enum ConfigLanguage {
     Python,
     Rust,
-}
-
-/// Default thresholds for count metrics
-pub mod thresholds {
-    pub const STATEMENTS_PER_FUNCTION: usize = 50;
-    pub const METHODS_PER_CLASS: usize = 20;
-    pub const LINES_PER_FILE: usize = 500;
-    pub const ARGUMENTS_PER_FUNCTION: usize = 7;
-    pub const ARGUMENTS_POSITIONAL: usize = 3;
-    pub const ARGUMENTS_KEYWORD_ONLY: usize = 6;
-    pub const MAX_INDENTATION_DEPTH: usize = 4;
-    pub const CLASSES_PER_FILE: usize = 3;
-    pub const NESTED_FUNCTION_DEPTH: usize = 2;
-    pub const RETURNS_PER_FUNCTION: usize = 5;
-    pub const BRANCHES_PER_FUNCTION: usize = 10;
-    pub const LOCAL_VARIABLES_PER_FUNCTION: usize = 10;
-    pub const IMPORTS_PER_FILE: usize = 15;
-    pub const CYCLOMATIC_COMPLEXITY: usize = 10;
-    pub const FAN_OUT: usize = 10;
-    pub const FAN_IN: usize = 20;
-    pub const TRANSITIVE_DEPS: usize = 30;
-    pub const LCOM: usize = 50; // Stored as percentage (0-100), threshold > 50%
-    pub const TEST_COVERAGE_THRESHOLD: usize = 90; // percentage (0-100)
 }
 
 /// Configuration for kiss thresholds
@@ -64,30 +42,59 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self {
-            statements_per_function: thresholds::STATEMENTS_PER_FUNCTION,
-            methods_per_class: thresholds::METHODS_PER_CLASS,
-            lines_per_file: thresholds::LINES_PER_FILE,
-            arguments_per_function: thresholds::ARGUMENTS_PER_FUNCTION,
-            arguments_positional: thresholds::ARGUMENTS_POSITIONAL,
-            arguments_keyword_only: thresholds::ARGUMENTS_KEYWORD_ONLY,
-            max_indentation_depth: thresholds::MAX_INDENTATION_DEPTH,
-            classes_per_file: thresholds::CLASSES_PER_FILE,
-            nested_function_depth: thresholds::NESTED_FUNCTION_DEPTH,
-            returns_per_function: thresholds::RETURNS_PER_FUNCTION,
-            branches_per_function: thresholds::BRANCHES_PER_FUNCTION,
-            local_variables_per_function: thresholds::LOCAL_VARIABLES_PER_FUNCTION,
-            imports_per_file: thresholds::IMPORTS_PER_FILE,
-            cyclomatic_complexity: thresholds::CYCLOMATIC_COMPLEXITY,
-            fan_out: thresholds::FAN_OUT,
-            fan_in: thresholds::FAN_IN,
-            transitive_deps: thresholds::TRANSITIVE_DEPS,
-            lcom: thresholds::LCOM,
-        }
+        Self::python_defaults()
     }
 }
 
 impl Config {
+    /// Python-specific defaults
+    pub fn python_defaults() -> Self {
+        Self {
+            statements_per_function: defaults::python::STATEMENTS_PER_FUNCTION,
+            methods_per_class: defaults::python::METHODS_PER_CLASS,
+            lines_per_file: defaults::python::LINES_PER_FILE,
+            arguments_per_function: 7, // Not used for Python, keep reasonable default
+            arguments_positional: defaults::python::POSITIONAL_ARGS,
+            arguments_keyword_only: defaults::python::KEYWORD_ONLY_ARGS,
+            max_indentation_depth: defaults::python::MAX_INDENTATION,
+            classes_per_file: defaults::python::TYPES_PER_FILE,
+            nested_function_depth: 2,
+            returns_per_function: 5,
+            branches_per_function: defaults::python::BRANCHES_PER_FUNCTION,
+            local_variables_per_function: defaults::python::LOCAL_VARIABLES,
+            imports_per_file: defaults::python::IMPORTS_PER_FILE,
+            cyclomatic_complexity: defaults::python::CYCLOMATIC_COMPLEXITY,
+            fan_out: defaults::python::FAN_OUT,
+            fan_in: defaults::python::FAN_IN,
+            transitive_deps: defaults::python::TRANSITIVE_DEPS,
+            lcom: defaults::python::LCOM,
+        }
+    }
+
+    /// Rust-specific defaults
+    pub fn rust_defaults() -> Self {
+        Self {
+            statements_per_function: defaults::rust::STATEMENTS_PER_FUNCTION,
+            methods_per_class: defaults::rust::METHODS_PER_TYPE,
+            lines_per_file: defaults::rust::LINES_PER_FILE,
+            arguments_per_function: defaults::rust::ARGUMENTS,
+            arguments_positional: 5, // Not used for Rust
+            arguments_keyword_only: 6, // Not used for Rust
+            max_indentation_depth: defaults::rust::MAX_INDENTATION,
+            classes_per_file: defaults::rust::TYPES_PER_FILE,
+            nested_function_depth: 2,
+            returns_per_function: 5,
+            branches_per_function: defaults::rust::BRANCHES_PER_FUNCTION,
+            local_variables_per_function: defaults::rust::LOCAL_VARIABLES,
+            imports_per_file: defaults::rust::IMPORTS_PER_FILE,
+            cyclomatic_complexity: defaults::rust::CYCLOMATIC_COMPLEXITY,
+            fan_out: defaults::rust::FAN_OUT,
+            fan_in: defaults::rust::FAN_IN,
+            transitive_deps: defaults::rust::TRANSITIVE_DEPS,
+            lcom: defaults::rust::LCOM,
+        }
+    }
+
     /// Load config from files, with later files overriding earlier ones.
     /// Loads from: ~/.kissconfig, ./.kissconfig
     /// This loads ALL sections (legacy behavior for backwards compatibility).
@@ -110,7 +117,10 @@ impl Config {
     /// Load config for a specific language.
     /// Only applies [thresholds], [shared], and the specified language section.
     pub fn load_for_language(lang: ConfigLanguage) -> Self {
-        let mut config = Self::default();
+        let mut config = match lang {
+            ConfigLanguage::Python => Self::python_defaults(),
+            ConfigLanguage::Rust => Self::rust_defaults(),
+        };
         if let Some(home) = std::env::var_os("HOME") {
             let home_config = Path::new(&home).join(".kissconfig");
             if let Ok(content) = std::fs::read_to_string(&home_config) {
@@ -140,7 +150,10 @@ impl Config {
 
     /// Load config from a specific file path for a specific language
     pub fn load_from_for_language(path: &Path, lang: ConfigLanguage) -> Self {
-        let mut config = Self::default();
+        let mut config = match lang {
+            ConfigLanguage::Python => Self::python_defaults(),
+            ConfigLanguage::Rust => Self::rust_defaults(),
+        };
 
         if let Ok(content) = std::fs::read_to_string(path) {
             config.merge_from_toml(&content, Some(lang));
@@ -269,7 +282,7 @@ pub struct GateConfig {
 impl Default for GateConfig {
     fn default() -> Self {
         Self {
-            test_coverage_threshold: thresholds::TEST_COVERAGE_THRESHOLD,
+            test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD,
         }
     }
 }
@@ -319,10 +332,12 @@ mod tests {
 
     #[test]
     fn test_default_and_thresholds() {
-        let c = Config::default();
-        assert_eq!(c.statements_per_function, thresholds::STATEMENTS_PER_FUNCTION);
-        assert_eq!(c.methods_per_class, thresholds::METHODS_PER_CLASS);
-        assert!(c.lines_per_file > 0);
+        let py = Config::python_defaults();
+        let rs = Config::rust_defaults();
+        assert_eq!(py.statements_per_function, defaults::python::STATEMENTS_PER_FUNCTION);
+        assert_eq!(rs.statements_per_function, defaults::rust::STATEMENTS_PER_FUNCTION);
+        assert!(py.lines_per_file > 0);
+        assert!(rs.lines_per_file > 0);
         assert_ne!(ConfigLanguage::Python, ConfigLanguage::Rust);
     }
 

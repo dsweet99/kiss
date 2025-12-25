@@ -4,6 +4,7 @@
 pub mod cli_output;
 pub mod config;
 pub mod config_gen;
+pub mod defaults;
 pub mod py_metrics;
 pub mod violation;
 
@@ -25,7 +26,8 @@ pub mod rust_test_refs;
 pub mod rust_units;
 
 // Re-export main types and functions for easy access
-pub use config::{thresholds, Config, ConfigLanguage, GateConfig};
+pub use config::{Config, ConfigLanguage, GateConfig};
+pub use defaults::default_config_toml;
 pub use counts::analyze_file;
 pub use py_metrics::{
     compute_class_metrics, compute_class_metrics_with_source, compute_file_metrics,

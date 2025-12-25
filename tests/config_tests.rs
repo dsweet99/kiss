@@ -1,13 +1,21 @@
 //! Tests for configuration management
 
-use kiss::{Config, ConfigLanguage, thresholds};
+use kiss::{Config, ConfigLanguage};
 
 #[test]
-fn default_config_uses_threshold_constants() {
-    let config = Config::default();
-    assert_eq!(config.statements_per_function, thresholds::STATEMENTS_PER_FUNCTION);
-    assert_eq!(config.methods_per_class, thresholds::METHODS_PER_CLASS);
-    assert_eq!(config.lines_per_file, thresholds::LINES_PER_FILE);
+fn default_config_has_reasonable_values() {
+    let py_config = Config::python_defaults();
+    let rs_config = Config::rust_defaults();
+    
+    // Python defaults (from defaults.rs, synced with original config_default.toml)
+    assert_eq!(py_config.statements_per_function, 30);
+    assert_eq!(py_config.methods_per_class, 20);
+    assert_eq!(py_config.lines_per_file, 300);
+    
+    // Rust defaults are different
+    assert_eq!(rs_config.statements_per_function, 25);
+    assert_eq!(rs_config.methods_per_class, 15); // methods_per_type
+    assert_eq!(rs_config.lines_per_file, 500);
 }
 
 #[test]
@@ -45,4 +53,3 @@ fn test_load_from_for_language() {
     let c = Config::load_from_for_language(std::path::Path::new("/nonexistent"), ConfigLanguage::Rust);
     assert!(c.statements_per_function > 0);
 }
-

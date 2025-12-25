@@ -134,6 +134,7 @@ Language-specific metrics (e.g., `positional_args` for Python) only appear in th
 
 ```
 kiss [PATH]                              Analyze codebase, report violations
+kiss rules                               Show coding rules (for LLM context priming)
 kiss stats [PATH...]                     Report summary statistics for all metrics
 kiss mimic [PATH...]                     Generate config file (stdout) with thresholds
 kiss mimic --out <file> [PATH...]        Generate config file (write/merge to file)
@@ -148,6 +149,53 @@ Note: `stats` and `mimic` accept multiple paths to combine statistics across cod
 --lang <lang>         Only analyze specified language (python, rust)
 --all                 Bypass test coverage gate, run all checks unconditionally
 ```
+
+### `kiss rules`
+
+Outputs a compact list of coding rules derived from the current config. Designed to be read by an LLM at the start of a coding session to bias it toward producing code that passes `kiss` checks.
+
+**Use case:** Before starting work, the LLM calls `kiss rules` and incorporates the output into its context. This proactively guides the LLM rather than just catching violations after the fact.
+
+**Example output:**
+```
+kiss coding rules (from .kissconfig)
+
+FUNCTIONS:
+- Keep functions ≤ 50 statements
+- Use ≤ 3 positional arguments; prefer keyword-only args after that
+- Limit total arguments to ≤ 7
+- Keep indentation depth ≤ 4 levels
+- Limit branches (if/elif/else) to ≤ 10 per function
+- Keep local variables ≤ 10 per function
+- Avoid deeply nested functions (max depth: 2)
+
+CLASSES:
+- Keep methods per class ≤ 20
+- Ensure methods share instance fields (high cohesion)
+
+FILES:
+- Keep files ≤ 500 lines
+- Limit to ≤ 3 classes per file
+- Keep imports ≤ 15 per file
+
+DEPENDENCIES:
+- Avoid circular dependencies
+- Limit direct dependencies (fan-out) to ≤ 10 per function
+- Avoid high transitive dependency counts (≤ 30)
+
+TESTING:
+- Every function/class should be referenced by tests
+- Maintain ≥ 90% test reference coverage
+
+DUPLICATION:
+- Avoid copy-pasted code blocks
+- Factor out repeated patterns into shared functions
+```
+
+**Behavior:**
+- Loads config from `~/.kissconfig` and `./.kissconfig` (or `--config` if specified)
+- Uses `--lang` to filter to language-specific rules if provided
+- Outputs rules in a compact, imperative style suitable for LLM consumption
 
 ### Test Coverage Gate
 
