@@ -24,6 +24,7 @@ pub struct MetricStats {
     pub imports_per_file: Vec<usize>,
     pub fan_in: Vec<usize>,
     pub fan_out: Vec<usize>,
+    pub dependency_depth: Vec<usize>,
 }
 
 impl MetricStats {
@@ -55,6 +56,7 @@ impl MetricStats {
         self.imports_per_file.extend(other.imports_per_file);
         self.fan_in.extend(other.fan_in);
         self.fan_out.extend(other.fan_out);
+        self.dependency_depth.extend(other.dependency_depth);
     }
 
     pub fn collect_graph_metrics(&mut self, graph: &DependencyGraph) {
@@ -62,7 +64,12 @@ impl MetricStats {
             let m = graph.module_metrics(name);
             self.fan_in.push(m.fan_in);
             self.fan_out.push(m.fan_out);
+            self.dependency_depth.push(m.dependency_depth);
         }
+    }
+
+    pub fn max_depth(&self) -> usize {
+        self.dependency_depth.iter().copied().max().unwrap_or(0)
     }
 
     pub fn collect_rust(parsed_files: &[&ParsedRustFile]) -> Self {
@@ -173,6 +180,7 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         PercentileSummary::from_values("Imports per file", &stats.imports_per_file),
         PercentileSummary::from_values("Fan-in (per module)", &stats.fan_in),
         PercentileSummary::from_values("Fan-out (per module)", &stats.fan_out),
+        PercentileSummary::from_values("Dependency depth (per module)", &stats.dependency_depth),
     ]
 }
 

@@ -35,7 +35,7 @@ pub mod rust {
 pub mod graph {
     pub const CYCLE_SIZE: usize = 3;
     pub const TRANSITIVE_DEPENDENCIES: usize = 30;
-    pub const DEPENDENCY_DEPTH: usize = 6;
+    pub const DEPENDENCY_DEPTH: usize = 4;
 }
 
 pub mod duplication {
