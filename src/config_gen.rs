@@ -171,7 +171,7 @@ pub fn rust_config_key(name: &str) -> Option<&'static str> {
         "Max indentation depth" => Some("max_indentation"),
         "Branches per function" => Some("branches_per_function"),
         "Local variables per function" => Some("local_variables"),
-        "Methods per class" => Some("methods_per_type"),
+        "Methods per class" => Some("methods_per_class"),
         _ => None,
     }
 }

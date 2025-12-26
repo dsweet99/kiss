@@ -47,11 +47,15 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
     }
 
     let (py_graph, rs_graph) = build_graphs(&result.py_parsed, &result.rs_parsed);
-    print_analysis_summary(result.py_parsed.len() + result.rs_parsed.len(), result.code_unit_count, py_graph.as_ref(), rs_graph.as_ref());
+    let file_count = result.py_parsed.len() + result.rs_parsed.len();
+    print_analysis_summary(file_count, result.code_unit_count, py_graph.as_ref(), rs_graph.as_ref());
 
-    let mut graph_viols = analyze_graphs(py_graph.as_ref(), rs_graph.as_ref(), opts.py_config, opts.rs_config);
-    graph_viols.retain(|v| is_focus_file(&v.file, &focus_set));
-    viols.extend(graph_viols);
+    // Skip graph violations for single-file analysis (orphan_module is meaningless)
+    if file_count > 1 {
+        let mut graph_viols = analyze_graphs(py_graph.as_ref(), rs_graph.as_ref(), opts.py_config, opts.rs_config);
+        graph_viols.retain(|v| is_focus_file(&v.file, &focus_set));
+        viols.extend(graph_viols);
+    }
 
     print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.show_warnings, opts.gate_config.min_similarity, &focus_set)
 }

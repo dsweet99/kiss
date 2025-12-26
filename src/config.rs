@@ -197,18 +197,18 @@ impl Config {
 
     fn apply_rust(&mut self, table: &toml::Table) {
         const VALID: &[&str] = &["statements_per_function", "arguments", "max_indentation",
-            "branches_per_function", "local_variables", "methods_per_type", "lines_per_file",
+            "branches_per_function", "local_variables", "methods_per_class", "lines_per_file",
             "types_per_file", "returns_per_function", "nested_function_depth",
-            "bool_parameters", "attributes_per_function", "imports_per_file",
+            "boolean_parameters", "attributes_per_function", "imports_per_file",
             "cycle_size", "transitive_dependencies", "dependency_depth", "nested_closure_depth"];
         check_unknown_keys(table, VALID, "rust");
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "arguments" => arguments_per_function,
             "max_indentation" => max_indentation_depth, "branches_per_function" => branches_per_function,
-            "local_variables" => local_variables_per_function, "methods_per_type" => methods_per_class,
+            "local_variables" => local_variables_per_function, "methods_per_class" => methods_per_class,
             "lines_per_file" => lines_per_file,
             "types_per_file" => classes_per_file, "returns_per_function" => returns_per_function,
-            "nested_function_depth" => nested_function_depth, "bool_parameters" => boolean_parameters,
+            "nested_function_depth" => nested_function_depth, "boolean_parameters" => boolean_parameters,
             "attributes_per_function" => decorators_per_function);
     }
 }
@@ -276,8 +276,14 @@ impl GateConfig {
         let Ok(value) = toml_str.parse::<toml::Table>() else { return };
         if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
             check_unknown_keys(gate, &["test_coverage_threshold", "min_similarity"], "gate");
-            if let Some(t) = get_usize(gate, "test_coverage_threshold") { self.test_coverage_threshold = t.min(100); }
-            if let Some(s) = get_f64(gate, "min_similarity") { self.min_similarity = s.clamp(0.0, 1.0); }
+            if let Some(t) = get_usize(gate, "test_coverage_threshold") {
+                if t > 100 { eprintln!("Error: test_coverage_threshold must be 0-100, got {t}"); std::process::exit(1); }
+                self.test_coverage_threshold = t;
+            }
+            if let Some(s) = get_f64(gate, "min_similarity") {
+                if !(0.0..=1.0).contains(&s) { eprintln!("Error: min_similarity must be 0.0-1.0, got {s}"); std::process::exit(1); }
+                self.min_similarity = s;
+            }
         }
     }
 }

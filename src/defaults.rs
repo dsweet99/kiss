@@ -81,10 +81,10 @@ arguments = {rs_args}
 max_indentation = {rs_indent}
 branches_per_function = {rs_branches}
 local_variables = {rs_locals}
-methods_per_type = {rs_methods}
+methods_per_class = {rs_methods}
 returns_per_function = {rs_returns}
 nested_function_depth = {rs_nested}
-bool_parameters = {rs_bool_params}
+boolean_parameters = {rs_bool_params}
 attributes_per_function = {rs_attrs}
 ",
         gate_coverage = gate::TEST_COVERAGE_THRESHOLD,

@@ -66,7 +66,7 @@ fn print_rust_config(c: &Config) {
     println!("statements_per_function = {}", c.statements_per_function);
     println!("lines_per_file = {}", c.lines_per_file);
     println!("arguments = {}", c.arguments_per_function);
-    println!("methods_per_type = {}", c.methods_per_class);
+    println!("methods_per_class = {}", c.methods_per_class);
     println!("types_per_file = {}", c.classes_per_file);
     println!("max_indentation = {}", c.max_indentation_depth);
     println!("branches_per_function = {}", c.branches_per_function);
@@ -74,7 +74,7 @@ fn print_rust_config(c: &Config) {
     println!("local_variables = {}", c.local_variables_per_function);
     println!("nested_function_depth = {}", c.nested_function_depth);
     println!("imports_per_file = {}", c.imports_per_file);
-    println!("bool_parameters = {}", c.boolean_parameters);
+    println!("boolean_parameters = {}", c.boolean_parameters);
     println!("attributes_per_function = {}", c.decorators_per_function);
 }
 
