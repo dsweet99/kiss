@@ -43,13 +43,13 @@ impl ViolationBuilder {
         }
     }
 
-    pub const fn line(mut self, line: usize) -> Self { self.line = line; self }
-    pub fn unit_name(mut self, name: impl Into<String>) -> Self { self.unit_name = name.into(); self }
-    pub fn metric(mut self, metric: impl Into<String>) -> Self { self.metric = metric.into(); self }
-    pub const fn value(mut self, value: usize) -> Self { self.value = value; self }
-    pub const fn threshold(mut self, threshold: usize) -> Self { self.threshold = threshold; self }
-    pub fn message(mut self, message: impl Into<String>) -> Self { self.message = message.into(); self }
-    pub fn suggestion(mut self, suggestion: impl Into<String>) -> Self { self.suggestion = suggestion.into(); self }
+    #[must_use] pub const fn line(mut self, line: usize) -> Self { self.line = line; self }
+    #[must_use] pub fn unit_name(mut self, name: impl Into<String>) -> Self { self.unit_name = name.into(); self }
+    #[must_use] pub fn metric(mut self, metric: impl Into<String>) -> Self { self.metric = metric.into(); self }
+    #[must_use] pub const fn value(mut self, value: usize) -> Self { self.value = value; self }
+    #[must_use] pub const fn threshold(mut self, threshold: usize) -> Self { self.threshold = threshold; self }
+    #[must_use] pub fn message(mut self, message: impl Into<String>) -> Self { self.message = message.into(); self }
+    #[must_use] pub fn suggestion(mut self, suggestion: impl Into<String>) -> Self { self.suggestion = suggestion.into(); self }
 
     pub fn build(self) -> Violation {
         Violation {

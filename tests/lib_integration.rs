@@ -1,6 +1,3 @@
-
-#![allow(clippy::needless_collect)]
-
 use kiss::*;
 use std::path::Path;
 
@@ -48,7 +45,7 @@ fn extracts_code_units_from_clean_utils() {
     let modules: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Module).collect();
     let functions: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Function).collect();
     let classes: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Class).collect();
-    let methods: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Method).collect();
+    let method_count = units.iter().filter(|u| u.kind == CodeUnitKind::Method).count();
 
     assert_eq!(modules.len(), 1);
     assert_eq!(modules[0].name, "clean_utils");
@@ -56,7 +53,7 @@ fn extracts_code_units_from_clean_utils() {
     assert!(functions.iter().any(|f| f.name == "calculate_average"));
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].name, "Counter");
-    assert_eq!(methods.len(), 4);
+    assert_eq!(method_count, 4);
 }
 
 #[test]

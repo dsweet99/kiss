@@ -220,8 +220,7 @@ mod tests {
     #[test]
     fn test_analyzer_checks() {
         let p = std::path::PathBuf::from("t.rs");
-        let mut cfg = Config::default();
-        cfg.methods_per_class = 5;
+        let cfg = Config { methods_per_class: 5, ..Default::default() };
         let mut v = Vec::new();
         RustAnalyzer::new(&p, &cfg, &mut v).check_methods_per_type(1, "S", 10);
         assert_eq!(v.len(), 1);

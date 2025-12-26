@@ -22,11 +22,12 @@ pub struct TestRefAnalysis {
 }
 
 fn has_python_test_naming(path: &Path) -> bool {
+    let is_py = path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("py"));
     path.file_name()
         .and_then(|n| n.to_str())
         .is_some_and(|name| {
-            (name.starts_with("test_") && name.ends_with(".py"))
-                || name.ends_with("_test.py")
+            (name.starts_with("test_") && is_py)
+                || (name.len() > 8 && name[..name.len()-3].ends_with("_test") && is_py)
                 || name == "conftest.py"
         })
 }

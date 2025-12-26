@@ -1,18 +1,3 @@
-#![allow(clippy::cast_precision_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::struct_field_names)]
-#![allow(clippy::module_name_repetitions)]
-#![allow(clippy::similar_names)]
-#![allow(clippy::field_reassign_with_default)]
-#![allow(clippy::format_push_string)]
-#![allow(clippy::return_self_not_must_use)]
-#![allow(clippy::needless_update)]
-#![allow(clippy::iter_on_single_items)]
-#![allow(clippy::float_cmp)]
-#![allow(clippy::implicit_hasher)]
-#![allow(clippy::case_sensitive_file_extension_comparisons)]
-
 pub mod cli_output;
 pub mod config;
 pub mod config_gen;

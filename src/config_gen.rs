@@ -82,11 +82,12 @@ pub fn write_mimic_config(out: &Path, toml: &str, py_cnt: usize, rs_cnt: usize) 
 }
 
 fn format_section(out: &mut String, name: &str, section: Option<&toml::Value>) {
+    use std::fmt::Write;
     if let Some(v) = section {
-        out.push_str(&format!("[{name}]\n"));
+        let _ = writeln!(out, "[{name}]");
         if let Some(t) = v.as_table() { 
             for (k, v) in t { 
-                out.push_str(&format!("{k} = {v}\n")); 
+                let _ = writeln!(out, "{k} = {v}"); 
             } 
         }
         out.push('\n');
@@ -128,22 +129,24 @@ pub fn generate_config_toml_by_language(py: &MetricStats, rs: &MetricStats, py_n
 }
 
 fn append_section(out: &mut String, header: &str, sums: &[PercentileSummary], key_fn: fn(&str) -> Option<&'static str>) {
+    use std::fmt::Write;
     out.push_str(header); 
     out.push('\n');
     for s in sums { 
         if let Some(k) = key_fn(s.name) { 
-            out.push_str(&format!("{} = {}\n", k, s.p99)); 
+            let _ = writeln!(out, "{k} = {}", s.p99); 
         } 
     }
     out.push('\n');
 }
 
 fn append_shared_section(out: &mut String, py_sums: &[PercentileSummary], rs_sums: &[PercentileSummary]) {
+    use std::fmt::Write;
     out.push_str("[shared]\n");
     for py_s in py_sums {
         if let Some(k) = shared_config_key(py_s.name) {
             let rs_val = rs_sums.iter().find(|s| s.name == py_s.name).map_or(0, |s| s.p99);
-            out.push_str(&format!("{} = {}\n", k, py_s.p99.max(rs_val)));
+            let _ = writeln!(out, "{k} = {}", py_s.p99.max(rs_val));
         }
     }
 }

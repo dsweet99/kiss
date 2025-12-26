@@ -147,8 +147,7 @@ mod tests {
     #[test]
     fn test_analyze_file_with_violation() {
         let parsed = parse_source("def f(a,b,c,d,e,f,g,h,i,j): pass");
-        let mut config = Config::default();
-        config.arguments_positional = 5;
+        let config = Config { arguments_positional: 5, ..Default::default() };
         let violations = analyze_file(&parsed, &config);
         assert!(!violations.is_empty());
     }
@@ -181,10 +180,7 @@ mod tests {
     #[test]
     fn test_check_file_metrics() {
         let m = FileMetrics { lines: 1000, classes: 20, imports: 50 };
-        let mut cfg = Config::default();
-        cfg.lines_per_file = 500;
-        cfg.classes_per_file = 10;
-        cfg.imports_per_file = 30;
+        let cfg = Config { lines_per_file: 500, classes_per_file: 10, imports_per_file: 30, ..Default::default() };
         let mut viols = Vec::new();
         check_file_metrics(&m, Path::new("t.py"), "t.py", &cfg, &mut viols);
         assert_eq!(viols.len(), 3);

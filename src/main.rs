@@ -1,17 +1,3 @@
-#![allow(clippy::cast_precision_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::struct_field_names)]
-#![allow(clippy::module_name_repetitions)]
-#![allow(clippy::similar_names)]
-#![allow(clippy::field_reassign_with_default)]
-#![allow(clippy::format_push_string)]
-#![allow(clippy::return_self_not_must_use)]
-#![allow(clippy::needless_update)]
-#![allow(clippy::iter_on_single_items)]
-#![allow(clippy::float_cmp)]
-#![allow(clippy::ref_option)]
-
 mod analyze;
 mod rules;
 
@@ -83,8 +69,8 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     ensure_default_config_exists();
-    let (py_config, rs_config) = load_configs(&cli.config, cli.defaults);
-    let gate_config = load_gate_config(&cli.config, cli.defaults);
+    let (py_config, rs_config) = load_configs(cli.config.as_ref(), cli.defaults);
+    let gate_config = load_gate_config(cli.config.as_ref(), cli.defaults);
 
     match cli.command {
         Some(Commands::Stats { paths }) => run_stats(&paths, cli.lang, &cli.ignore, cli.all),
@@ -113,7 +99,7 @@ fn ensure_default_config_exists() {
     }
 }
 
-fn load_gate_config(config_path: &Option<PathBuf>, use_defaults: bool) -> GateConfig {
+fn load_gate_config(config_path: Option<&PathBuf>, use_defaults: bool) -> GateConfig {
     if use_defaults {
         GateConfig::default()
     } else if let Some(path) = config_path {
@@ -123,7 +109,7 @@ fn load_gate_config(config_path: &Option<PathBuf>, use_defaults: bool) -> GateCo
     }
 }
 
-fn load_configs(config_path: &Option<PathBuf>, use_defaults: bool) -> (Config, Config) {
+fn load_configs(config_path: Option<&PathBuf>, use_defaults: bool) -> (Config, Config) {
     if use_defaults {
         (Config::python_defaults(), Config::rust_defaults())
     } else if let Some(path) = config_path {
@@ -240,16 +226,16 @@ mod tests {
         assert_eq!(parse_language("python"), Ok(Language::Python));
         assert_eq!(parse_language("rust"), Ok(Language::Rust));
         assert!(parse_language("invalid").is_err());
-        let (py, rs) = load_configs(&None, false);
+        let (py, rs) = load_configs(None, false);
         assert!(py.statements_per_function > 0 && rs.statements_per_function > 0);
-        let (py_def, rs_def) = load_configs(&None, true);
+        let (py_def, rs_def) = load_configs(None, true);
         assert_eq!(py_def.statements_per_function, kiss::defaults::python::STATEMENTS_PER_FUNCTION);
         assert_eq!(rs_def.statements_per_function, kiss::defaults::rust::STATEMENTS_PER_FUNCTION);
         let tmp = tempfile::TempDir::new().unwrap();
         let path = tmp.path().join("kiss.toml");
         std::fs::write(&path, "[gate]\ntest_coverage_threshold = 80\n").unwrap();
-        assert_eq!(load_gate_config(&Some(path.clone()), false).test_coverage_threshold, 80);
-        assert_eq!(load_gate_config(&Some(path), true).test_coverage_threshold, kiss::defaults::gate::TEST_COVERAGE_THRESHOLD);
+        assert_eq!(load_gate_config(Some(&path), false).test_coverage_threshold, 80);
+        assert_eq!(load_gate_config(Some(&path), true).test_coverage_threshold, kiss::defaults::gate::TEST_COVERAGE_THRESHOLD);
     }
     #[test]
     fn test_cli_and_commands() {

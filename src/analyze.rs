@@ -139,6 +139,7 @@ pub fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFi
     }
 
     unreferenced.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let coverage = if total > 0 { ((tested as f64 / total as f64) * 100.0).round() as usize } else { 100 };
     (coverage, tested, total, unreferenced)
 }

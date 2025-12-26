@@ -48,7 +48,7 @@ pub fn generate_shingles(text: &str, shingle_size: usize) -> HashSet<u64> {
     shingles
 }
 
-pub fn compute_minhash(shingles: &HashSet<u64>, size: usize) -> MinHashSignature {
+pub fn compute_minhash<S: std::hash::BuildHasher>(shingles: &HashSet<u64, S>, size: usize) -> MinHashSignature {
     let mut hashes = vec![u64::MAX; size];
     let coefficients: Vec<(u64, u64)> = (0..size)
         .map(|i| {
@@ -81,7 +81,9 @@ pub fn estimate_similarity(sig1: &MinHashSignature, sig2: &MinHashSignature) -> 
         .zip(&sig2.hashes)
         .filter(|(a, b)| a == b)
         .count();
-    matching as f64 / sig1.hashes.len() as f64
+    #[allow(clippy::cast_precision_loss)]
+    let sim = matching as f64 / sig1.hashes.len() as f64;
+    sim
 }
 
 fn hash_band(band_slice: &[u64]) -> u64 {

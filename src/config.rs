@@ -175,7 +175,7 @@ impl Config {
 }
 
 fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
-    table.get(key).and_then(toml::Value::as_integer).filter(|&v| v >= 0).map(|v| v as usize)
+    table.get(key).and_then(toml::Value::as_integer).and_then(|v| usize::try_from(v).ok())
 }
 
 #[derive(Debug, Clone)]

@@ -1,7 +1,3 @@
-
-#![allow(clippy::field_reassign_with_default)]
-#![allow(clippy::format_push_string)]
-
 use kiss::analyze_file;
 use kiss::config::Config;
 use kiss::parsing::{create_parser, parse_file};
@@ -26,8 +22,7 @@ class BigClass:
     def m6(self): pass
 ";
     let parsed = parse_source(code);
-    let mut config = Config::default();
-    config.methods_per_class = 3;
+    let config = Config { methods_per_class: 3, ..Default::default() };
 
     let violations = analyze_file(&parsed, &config);
 
@@ -53,8 +48,7 @@ def risky_function():
         pass
 ";
     let parsed = parse_source(code);
-    let mut config = Config::default();
-    config.statements_per_try_block = 3;
+    let config = Config { statements_per_try_block: 3, ..Default::default() };
 
     let violations = analyze_file(&parsed, &config);
 
