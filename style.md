@@ -4,24 +4,38 @@
 
 **kiss** is a code-quality metrics tool for Python and Rust, written in Rust. LLM coder feedback alongside linters/test runners. **Primary consumer is the LLM** — output controls LLM behavior. Strict-by-default.
 
-**Analysis types:** Count metrics, Graph analysis (fan-in/out, cycles, LCOM), Duplication (MinHash/LSH), Test references (static), Coverage gate.
+**Analysis types:** Count metrics, Graph analysis (fan-in/out, cycles, depth), Duplication (MinHash/LSH), Test references (static), Coverage gate (90% default).
 
 ## Design Philosophy
 
 - **KISS is the ethos** — simplicity over sophistication in all choices
-- **Component checks, not composites** — avoid derived metrics (God Class, Instability, Cyclomatic) when components already catch the issue
+- **Component checks, not composites** — avoid derived metrics (God Class, LCOM, Cyclomatic) when components already catch the issue; derived metrics prove "finicky"
 - **Empirical over arbitrary** — use `mimic` on respected codebases; max values, not percentiles
-- **Proactive guidance** — `rules` command primes LLM context before coding, not just reactive violations
 - **Redundancy aversion** — if two metrics overlap significantly, keep only one
+- **Informational vs thresholded** — some metrics (fan-in/out) are useful for detection (orphans) but not for direct thresholds
+
+## Global Metrics (LLM Peripheral Vision)
+
+LLMs work locally but need global awareness. **Pattern:** Local action → Global consequence → LLM blindspot → Actionable fix.
+
+| Metric | Measures | Local trigger |
+|--------|----------|---------------|
+| `max_depth` | Longest dependency chain | Adding an import |
+| `cycle_count` | Circular dependencies | Import that closes a loop |
+| `orphan_count` | Dead modules | Refactoring that removes last reference |
+
+**Delta reporting:** "max_depth increased 5→6" beats "max_depth is 6".
 
 ## Architecture
 
 | Module | Purpose |
 |--------|---------|
 | `counts.rs` / `rust_counts.rs` | Metrics and violations |
-| `graph.rs` | Dependencies, cycles (Tarjan), LCOM |
+| `graph.rs` | Dependencies, cycles (Tarjan), module-level graph |
+| `rule_defs.rs` | Self-documenting rule registry (auto-included in `kiss rules`) |
 | `test_refs.rs` / `rust_test_refs.rs` | Test reference analysis |
-| `config.rs`, `defaults.rs`, `duplication.rs`, `stats.rs` | Shared infrastructure |
+
+**Dependency graph is module-level** (not code-unit level): matches import semantics, provides actionable refactoring units, keeps graph tractable.
 
 ## Output Format
 
@@ -31,23 +45,21 @@
 - `WARNING:test_coverage:file:line:name: message.`
 - `NO VIOLATIONS` — final line when clean
 
-Gate failure uses `VIOLATION:test_coverage:...` since it blocks analysis.
+## Rust Conventions
 
-## Conventions
-
-- Max 300 lines/file; refactor to meet it, don't lower threshold
-- Prefer `&Path` over `&PathBuf`; self-documenting names over comments
-- Single source of truth: defaults in `defaults.rs`
-- **Eat your own dog food:** `kiss` must pass cleanly on its own codebase
-- `tests/fake_*` are test fixtures (intentionally bad code) — use `--ignore fake_` to exclude
+- **No file-level lint suppression** — `#![allow(clippy::...)]` is cheating; fix properly or allow at specific line with justification
+- **Struct init syntax** — `Config { field: val, ..Default::default() }` not field reassignment
+- **`Option<&T>` over `&Option<T>`** in function signatures
+- **`writeln!` over `format!` + `push_str`** for string building
+- Max 300 lines/file; consolidate tests or extract to `tests/*.rs` when approaching limit
+- Self-documenting names; no comments (code should be clear)
+- `tests/fake_*` are test fixtures (intentionally bad) — use `--ignore fake_`
 
 ## Key Algorithms
 
-**MinHash/LSH:** Normalize → 3-gram shingles → 100 MinHash → 20 bands → Jaccard ≥ 0.7
+**MinHash/LSH:** Normalize → 3-gram shingles → 100 MinHash → 20 bands → Jaccard ≥ `min_similarity` (default 0.7)
 
-**LCOM:** `pairs_not_sharing_fields / total_pairs` (0.0 = cohesive, 1.0 = no cohesion)
-
-**Graph:** Tarjan's SCC for cycles. External modules excluded from violations.
+**Graph:** Tarjan's SCC for cycles. Module-level (file = module). External crates excluded from violations.
 
 **Test References:**
 - Capture ALL path segments: `Foo::bar()` → both `Foo` and `bar`
@@ -59,7 +71,7 @@ Gate failure uses `VIOLATION:test_coverage:...` since it blocks analysis.
 | Metric | Good Advice | Avoid |
 |--------|-------------|-------|
 | `methods_per_type` | "Extract into separate types" | "Split impl blocks" |
-| `fan_in` | "Ensure stable and well-tested" | "Split the module" |
+| `fan_in` (informational) | "Ensure stable and well-tested" | "Split the module" |
 | Duplication | "Extract fn, use traits/generics" | Just "shared function" |
 
 ## Configuration
@@ -68,23 +80,8 @@ Precedence: `defaults.rs` → `~/.kissconfig` → `./.kissconfig` → `--config`
 
 **Reference codebases for mimic:** ripgrep, fd, bat (Rust); rich, click, attrs (Python)
 
-```toml
-[gate]
-test_coverage_threshold = 90
-
-[python]
-statements_per_function = 40
-
-[rust]
-statements_per_function = 25
-```
-
 ## CLI
 
-```
-kiss [PATH]              Analyze (gated by test coverage)
-kiss rules               Show coding rules (LLM context priming)
-kiss stats [PATH...]     Summary statistics
-kiss mimic --out FILE    Generate config (uses max values from codebase)
-```
-Options: `--lang`, `--config`, `--defaults`, `--all` (bypass gate), `--ignore PREFIX` (skip paths with component starting with PREFIX), `--warnings` (show test coverage warnings)
+`kiss [PATH]` analyze | `kiss rules` show rules | `kiss stats [--all]` summary | `kiss mimic --out FILE`
+
+Options: `--lang`, `--config`, `--defaults`, `--ignore PREFIX`, `--warnings`

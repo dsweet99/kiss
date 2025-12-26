@@ -39,8 +39,11 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
+    /// Paths to analyze. First path is the "universe" (used for graph/test lookup).
+    /// Remaining paths are "focus" files/directories where violations are reported
+    /// and coverage is enforced. If only one path given, it serves as both.
     #[arg(default_value = ".")]
-    path: String,
+    paths: Vec<String>,
 }
 
 fn parse_language(s: &str) -> Result<Language, String> {
@@ -77,7 +80,14 @@ fn main() {
         Some(Commands::Mimic { paths, out }) => run_mimic(&paths, out.as_deref(), cli.lang, &cli.ignore),
         Some(Commands::Rules) => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
         None => {
-            if !run_analyze(&cli.path, &py_config, &rs_config, cli.lang, cli.all, &gate_config, &cli.ignore, cli.warnings) {
+            let universe = &cli.paths[0];
+            let focus = if cli.paths.len() > 1 { &cli.paths[1..] } else { &cli.paths[..] };
+            let opts = analyze::AnalyzeOptions {
+                universe, focus_paths: focus, py_config: &py_config, rs_config: &rs_config,
+                lang_filter: cli.lang, bypass_gate: cli.all, gate_config: &gate_config,
+                ignore_prefixes: &cli.ignore, show_warnings: cli.warnings,
+            };
+            if !run_analyze(&opts) {
                 std::process::exit(1);
             }
         }
@@ -241,9 +251,11 @@ mod tests {
     fn test_cli_and_commands() {
         use clap::Parser;
         let cli = Cli::try_parse_from(["kiss", "."]).unwrap();
-        assert_eq!(cli.path, ".");
+        assert_eq!(cli.paths, vec!["."]);
         let cli2 = Cli::try_parse_from(["kiss", "rules"]).unwrap();
         assert!(matches!(cli2.command, Some(Commands::Rules)));
+        let cli3 = Cli::try_parse_from(["kiss", ".", "src/", "lib/"]).unwrap();
+        assert_eq!(cli3.paths, vec![".", "src/", "lib/"]);
         let _ = run_stats as fn(&[String], Option<Language>, &[String], bool);
         let _ = run_mimic as fn(&[String], Option<&Path>, Option<Language>, &[String]);
         let _ = main as fn();

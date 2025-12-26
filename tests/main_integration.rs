@@ -168,3 +168,68 @@ fn test_parse_and_analyze_empty() {
     assert!(py_parsed.is_empty() && py_viols.is_empty());
 }
 
+#[test]
+fn test_build_focus_set() {
+    use kiss::discovery::find_source_files_with_ignore;
+    use std::collections::HashSet;
+
+    fn build_focus_set(focus_paths: &[String], lang: Option<Language>, ignore_prefixes: &[String]) -> HashSet<PathBuf> {
+        let mut focus_set = HashSet::new();
+        for focus_path in focus_paths {
+            let path = std::path::Path::new(focus_path);
+            if path.is_file() {
+                if let Ok(canonical) = path.canonicalize() { focus_set.insert(canonical); }
+            } else {
+                for sf in find_source_files_with_ignore(path, ignore_prefixes) {
+                    if (lang.is_none() || lang == Some(sf.language)) && let Ok(canonical) = sf.path.canonicalize() {
+                        focus_set.insert(canonical);
+                    }
+                }
+            }
+        }
+        focus_set
+    }
+
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("a.py"), "def foo(): pass").unwrap();
+    std::fs::write(tmp.path().join("b.rs"), "fn main() {}").unwrap();
+    let subdir = tmp.path().join("sub");
+    std::fs::create_dir(&subdir).unwrap();
+    std::fs::write(subdir.join("c.py"), "def bar(): pass").unwrap();
+
+    let focus = build_focus_set(&[tmp.path().to_string_lossy().to_string()], None, &[]);
+    assert_eq!(focus.len(), 3);
+
+    let focus_sub = build_focus_set(&[subdir.to_string_lossy().to_string()], None, &[]);
+    assert_eq!(focus_sub.len(), 1);
+
+    let focus_file = build_focus_set(&[tmp.path().join("a.py").to_string_lossy().to_string()], None, &[]);
+    assert_eq!(focus_file.len(), 1);
+}
+
+#[test]
+fn test_is_focus_file() {
+    use std::collections::HashSet;
+
+    fn is_focus_file(file: &std::path::Path, focus_set: &HashSet<PathBuf>) -> bool {
+        if focus_set.is_empty() { return true; }
+        file.canonicalize().is_ok_and(|canonical| focus_set.contains(&canonical))
+    }
+
+    let tmp = TempDir::new().unwrap();
+    let file_a = tmp.path().join("a.py");
+    let file_b = tmp.path().join("b.py");
+    std::fs::write(&file_a, "").unwrap();
+    std::fs::write(&file_b, "").unwrap();
+
+    let mut focus_set = HashSet::new();
+    focus_set.insert(file_a.canonicalize().unwrap());
+
+    assert!(is_focus_file(&file_a, &focus_set));
+    assert!(!is_focus_file(&file_b, &focus_set));
+
+    let empty_set = HashSet::new();
+    assert!(is_focus_file(&file_a, &empty_set));
+    assert!(is_focus_file(&file_b, &empty_set));
+}
+

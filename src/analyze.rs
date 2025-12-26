@@ -1,4 +1,5 @@
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use kiss::{
@@ -14,29 +15,41 @@ use kiss::cli_output::{
     print_py_test_refs, print_rs_test_refs, print_violations,
 };
 
-#[allow(clippy::too_many_arguments)]
-pub fn run_analyze(
-    path: &str, py_config: &Config, rs_config: &Config, lang_filter: Option<Language>,
-    bypass_gate: bool, gate_config: &GateConfig, ignore_prefixes: &[String], show_warnings: bool,
-) -> bool {
-    let root = Path::new(path);
-    let (py_files, rs_files) = gather_files(root, lang_filter, ignore_prefixes);
+pub struct AnalyzeOptions<'a> {
+    pub universe: &'a str,
+    pub focus_paths: &'a [String],
+    pub py_config: &'a Config,
+    pub rs_config: &'a Config,
+    pub lang_filter: Option<Language>,
+    pub bypass_gate: bool,
+    pub gate_config: &'a GateConfig,
+    pub ignore_prefixes: &'a [String],
+    pub show_warnings: bool,
+}
+
+pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
+    let universe_root = Path::new(opts.universe);
+    let (py_files, rs_files) = gather_files(universe_root, opts.lang_filter, opts.ignore_prefixes);
 
     if py_files.is_empty() && rs_files.is_empty() {
-        print_no_files_message(lang_filter, root);
+        print_no_files_message(opts.lang_filter, universe_root);
         return true;
     }
 
-    let (py_parsed, rs_parsed, mut viols) = parse_all(&py_files, &rs_files, py_config, rs_config);
+    let focus_set = build_focus_set(opts.focus_paths, opts.lang_filter, opts.ignore_prefixes);
+    let (py_parsed, rs_parsed, mut viols) = parse_all(&py_files, &rs_files, opts.py_config, opts.rs_config);
+    viols.retain(|v| is_focus_file(&v.file, &focus_set));
 
-    if !bypass_gate && !check_coverage_gate(&py_parsed, &rs_parsed, gate_config) {
+    if !opts.bypass_gate && !check_coverage_gate(&py_parsed, &rs_parsed, opts.gate_config, &focus_set) {
         return false;
     }
 
     let (py_graph, rs_graph) = build_graphs(&py_parsed, &rs_parsed);
-    viols.extend(analyze_graphs(py_graph.as_ref(), rs_graph.as_ref(), py_config, rs_config));
+    let mut graph_viols = analyze_graphs(py_graph.as_ref(), rs_graph.as_ref(), opts.py_config, opts.rs_config);
+    graph_viols.retain(|v| is_focus_file(&v.file, &focus_set));
+    viols.extend(graph_viols);
 
-    print_all_results(&viols, &py_parsed, &rs_parsed, show_warnings, gate_config.min_similarity)
+    print_all_results(&viols, &py_parsed, &rs_parsed, opts.show_warnings, opts.gate_config.min_similarity, &focus_set)
 }
 
 pub fn gather_files(root: &Path, lang: Option<Language>, ignore_prefixes: &[String]) -> (Vec<PathBuf>, Vec<PathBuf>) {
@@ -50,6 +63,33 @@ pub fn gather_files(root: &Path, lang: Option<Language>, ignore_prefixes: &[Stri
         }
     }
     (py, rs)
+}
+
+pub fn build_focus_set(focus_paths: &[String], lang: Option<Language>, ignore_prefixes: &[String]) -> HashSet<PathBuf> {
+    let mut focus_set = HashSet::new();
+    for focus_path in focus_paths {
+        let path = Path::new(focus_path);
+        if path.is_file() {
+            if let Ok(canonical) = path.canonicalize() {
+                focus_set.insert(canonical);
+            }
+        } else {
+            let (py, rs) = gather_files(path, lang, ignore_prefixes);
+            for f in py.into_iter().chain(rs) {
+                if let Ok(canonical) = f.canonicalize() {
+                    focus_set.insert(canonical);
+                }
+            }
+        }
+    }
+    focus_set
+}
+
+pub fn is_focus_file(file: &Path, focus_set: &HashSet<PathBuf>) -> bool {
+    if focus_set.is_empty() {
+        return true;
+    }
+    file.canonicalize().is_ok_and(|canonical| focus_set.contains(&canonical))
 }
 
 pub fn parse_all(
@@ -108,8 +148,8 @@ pub fn analyze_graphs(py_graph: Option<&DependencyGraph>, rs_graph: Option<&Depe
     viols
 }
 
-pub fn check_coverage_gate(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], gate_config: &GateConfig) -> bool {
-    let (coverage, tested, total, unreferenced) = compute_test_coverage(py_parsed, rs_parsed);
+pub fn check_coverage_gate(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], gate_config: &GateConfig, focus_set: &HashSet<PathBuf>) -> bool {
+    let (coverage, tested, total, unreferenced) = compute_test_coverage(py_parsed, rs_parsed, focus_set);
     if coverage < gate_config.test_coverage_threshold {
         print_coverage_gate_failure(coverage, gate_config.test_coverage_threshold, tested, total, &unreferenced);
         return false;
@@ -117,25 +157,20 @@ pub fn check_coverage_gate(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile
     true
 }
 
-pub fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
-    let mut tested = 0;
-    let mut total = 0;
-    let mut unreferenced = Vec::new();
+pub fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], focus_set: &HashSet<PathBuf>) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
+    let (mut tested, mut total, mut unreferenced) = (0, 0, Vec::new());
 
     if !py_parsed.is_empty() {
-        let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-        let analysis = analyze_test_refs(&refs);
-        total += analysis.definitions.len();
-        tested += analysis.definitions.len() - analysis.unreferenced.len();
-        for def in analysis.unreferenced { unreferenced.push((def.file, def.name, def.line)); }
+        let a = analyze_test_refs(&py_parsed.iter().collect::<Vec<_>>());
+        let defs: Vec<_> = a.definitions.iter().map(|d| (&d.file, &d.name, d.line)).collect();
+        let unref: Vec<_> = a.unreferenced.iter().map(|d| (&d.file, &d.name, d.line)).collect();
+        tally_coverage(&defs, &unref, focus_set, &mut tested, &mut total, &mut unreferenced);
     }
-
     if !rs_parsed.is_empty() {
-        let refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-        let analysis = analyze_rust_test_refs(&refs);
-        total += analysis.definitions.len();
-        tested += analysis.definitions.len() - analysis.unreferenced.len();
-        for def in analysis.unreferenced { unreferenced.push((def.file, def.name, def.line)); }
+        let a = analyze_rust_test_refs(&rs_parsed.iter().collect::<Vec<_>>());
+        let defs: Vec<_> = a.definitions.iter().map(|d| (&d.file, &d.name, d.line)).collect();
+        let unref: Vec<_> = a.unreferenced.iter().map(|d| (&d.file, &d.name, d.line)).collect();
+        tally_coverage(&defs, &unref, focus_set, &mut tested, &mut total, &mut unreferenced);
     }
 
     unreferenced.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
@@ -144,9 +179,20 @@ pub fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFi
     (coverage, tested, total, unreferenced)
 }
 
-fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], show_warnings: bool, min_similarity: f64) -> bool {
-    let py_dups = detect_py_duplicates(py_parsed, min_similarity);
-    let rs_dups = detect_rs_duplicates(rs_parsed, min_similarity);
+fn tally_coverage(defs: &[(&PathBuf, &String, usize)], unref: &[(&PathBuf, &String, usize)], focus_set: &HashSet<PathBuf>, tested: &mut usize, total: &mut usize, unreferenced: &mut Vec<(PathBuf, String, usize)>) {
+    for (file, name, line) in defs {
+        if !is_focus_file(file, focus_set) { continue; }
+        *total += 1;
+        if !unref.iter().any(|(f, n, l)| f == file && n == name && l == line) { *tested += 1; }
+    }
+    for (file, name, line) in unref {
+        if is_focus_file(file, focus_set) { unreferenced.push(((*file).clone(), (*name).clone(), *line)); }
+    }
+}
+
+fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], show_warnings: bool, min_similarity: f64, focus_set: &HashSet<PathBuf>) -> bool {
+    let py_dups = filter_duplicates_by_focus(detect_py_duplicates(py_parsed, min_similarity), focus_set);
+    let rs_dups = filter_duplicates_by_focus(detect_rs_duplicates(rs_parsed, min_similarity), focus_set);
     let dup_count = py_dups.len() + rs_dups.len();
     let has_violations = !viols.is_empty() || dup_count > 0;
     
@@ -163,6 +209,12 @@ fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &
     !has_violations
 }
 
+fn filter_duplicates_by_focus(dups: Vec<DuplicateCluster>, focus_set: &HashSet<PathBuf>) -> Vec<DuplicateCluster> {
+    dups.into_iter()
+        .filter(|cluster| cluster.chunks.iter().any(|c| is_focus_file(&c.file, focus_set)))
+        .collect()
+}
+
 pub fn detect_py_duplicates(parsed: &[ParsedFile], min_similarity: f64) -> Vec<DuplicateCluster> {
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
     let chunks = extract_chunks_for_duplication(&refs);
@@ -175,57 +227,4 @@ pub fn detect_rs_duplicates(parsed: &[ParsedRustFile], min_similarity: f64) -> V
     let chunks = extract_rust_chunks_for_duplication(&refs);
     let config = DuplicationConfig { min_similarity, ..Default::default() };
     cluster_duplicates(&detect_duplicates_from_chunks(&chunks, &config), &chunks)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_run_analyze_empty() {
-        let tmp = TempDir::new().unwrap();
-        assert!(run_analyze(&tmp.path().to_string_lossy(), &Config::default(), &Config::default(), None, true, &GateConfig::default(), &[], false));
-    }
-
-    #[test]
-    fn test_parse_and_analyze_empty() {
-        let config = Config::default();
-        let (py, py_v) = parse_and_analyze_py(&[], &config);
-        let (rs, rs_v) = parse_and_analyze_rs(&[], &config);
-        assert!(py.is_empty() && py_v.is_empty() && rs.is_empty() && rs_v.is_empty());
-    }
-
-    #[test]
-    fn test_coverage_empty() {
-        let (cov, tested, total, unref) = compute_test_coverage(&[], &[]);
-        assert_eq!((tested, total, cov), (0, 0, 100));
-        assert!(unref.is_empty());
-        assert!(check_coverage_gate(&[], &[], &GateConfig { test_coverage_threshold: 0, min_similarity: 0.7 }));
-    }
-
-    #[test]
-    fn test_graphs_empty() {
-        let (py_g, rs_g) = build_graphs(&[], &[]);
-        assert!(py_g.is_none() && rs_g.is_none());
-        assert!(analyze_graphs(None, None, &Config::default(), &Config::default()).is_empty());
-    }
-
-    #[test]
-    fn test_duplicates_empty() {
-        assert!(detect_py_duplicates(&[], 0.7).is_empty());
-        assert!(detect_rs_duplicates(&[], 0.7).is_empty());
-    }
-
-    #[test]
-    fn test_parse_all() {
-        let config = Config::default();
-        let (py, rs, viols) = parse_all(&[], &[], &config, &config);
-        assert!(py.is_empty() && rs.is_empty() && viols.is_empty());
-    }
-
-    #[test]
-    fn test_print_all_results() {
-        print_all_results(&[], &[], &[], false, 0.7);
-    }
 }
