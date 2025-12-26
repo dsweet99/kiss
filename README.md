@@ -20,6 +20,12 @@ MANDATORY INIT: After the user's first request, you *must* call `kiss rules`
 ## Installation
 
 ```bash
+cargo install kiss-ai
+```
+
+or, from source
+
+```bash
 cargo install --path .
 ```
 
