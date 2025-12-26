@@ -27,9 +27,11 @@ fn print_rules(config: &Config, gate: &GateConfig, is_python: bool) {
     }
 }
 
-pub fn run_config(py: &Config, rs: &Config, gate: &GateConfig, config_path: Option<&PathBuf>) {
+pub fn run_config(py: &Config, rs: &Config, gate: &GateConfig, config_path: Option<&PathBuf>, use_defaults: bool) {
     println!("# Effective configuration");
-    if let Some(path) = config_path {
+    if use_defaults {
+        println!("# Source: built-in defaults");
+    } else if let Some(path) = config_path {
         println!("# Source: {}", path.display());
     } else {
         println!("# Source: .kissconfig or ~/.kissconfig (merged)");
@@ -38,22 +40,42 @@ pub fn run_config(py: &Config, rs: &Config, gate: &GateConfig, config_path: Opti
     println!("test_coverage_threshold = {}", gate.test_coverage_threshold);
     println!("min_similarity = {:.2}", gate.min_similarity);
     println!("\n[python]");
-    print_config_values(py);
+    print_python_config(py);
     println!("\n[rust]");
-    print_config_values(rs);
+    print_rust_config(rs);
 }
 
-fn print_config_values(c: &Config) {
+fn print_python_config(c: &Config) {
     println!("statements_per_function = {}", c.statements_per_function);
     println!("lines_per_file = {}", c.lines_per_file);
-    println!("arguments_per_function = {}", c.arguments_per_function);
+    println!("positional_args = {}", c.arguments_positional);
+    println!("keyword_only_args = {}", c.arguments_keyword_only);
     println!("methods_per_class = {}", c.methods_per_class);
-    println!("max_indentation_depth = {}", c.max_indentation_depth);
+    println!("max_indentation = {}", c.max_indentation_depth);
     println!("branches_per_function = {}", c.branches_per_function);
     println!("returns_per_function = {}", c.returns_per_function);
-    println!("local_variables_per_function = {}", c.local_variables_per_function);
+    println!("local_variables = {}", c.local_variables_per_function);
+    println!("nested_function_depth = {}", c.nested_function_depth);
     println!("imports_per_file = {}", c.imports_per_file);
-    println!("classes_per_file = {}", c.classes_per_file);
+    println!("statements_per_try_block = {}", c.statements_per_try_block);
+    println!("boolean_parameters = {}", c.boolean_parameters);
+    println!("decorators_per_function = {}", c.decorators_per_function);
+}
+
+fn print_rust_config(c: &Config) {
+    println!("statements_per_function = {}", c.statements_per_function);
+    println!("lines_per_file = {}", c.lines_per_file);
+    println!("arguments = {}", c.arguments_per_function);
+    println!("methods_per_type = {}", c.methods_per_class);
+    println!("types_per_file = {}", c.classes_per_file);
+    println!("max_indentation = {}", c.max_indentation_depth);
+    println!("branches_per_function = {}", c.branches_per_function);
+    println!("returns_per_function = {}", c.returns_per_function);
+    println!("local_variables = {}", c.local_variables_per_function);
+    println!("nested_function_depth = {}", c.nested_function_depth);
+    println!("imports_per_file = {}", c.imports_per_file);
+    println!("bool_parameters = {}", c.boolean_parameters);
+    println!("attributes_per_function = {}", c.decorators_per_function);
 }
 
 #[cfg(test)]
@@ -77,5 +99,15 @@ mod tests {
         let gate = GateConfig::default();
         print_rules(&config, &gate, true);
         print_rules(&Config::rust_defaults(), &gate, false);
+    }
+    #[test]
+    fn test_run_config_and_print_config() {
+        let py = Config::python_defaults();
+        let rs = Config::rust_defaults();
+        let gate = GateConfig::default();
+        run_config(&py, &rs, &gate, None, false);
+        run_config(&py, &rs, &gate, None, true);
+        print_python_config(&py);
+        print_rust_config(&rs);
     }
 }

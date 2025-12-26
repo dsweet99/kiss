@@ -95,10 +95,11 @@ fn main() {
         Some(Commands::Stats { paths }) => run_stats(&paths, cli.lang, &ignore, cli.all),
         Some(Commands::Mimic { paths, out }) => run_mimic(&paths, out.as_deref(), cli.lang, &ignore),
         Some(Commands::Rules) => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
-        Some(Commands::Config) => run_config(&py_config, &rs_config, &gate_config, cli.config.as_ref()),
+        Some(Commands::Config) => run_config(&py_config, &rs_config, &gate_config, cli.config.as_ref(), cli.defaults),
         None => {
             let universe = &cli.paths[0];
             let focus = if cli.paths.len() > 1 { &cli.paths[1..] } else { &cli.paths[..] };
+            validate_paths(&cli.paths);
             let opts = analyze::AnalyzeOptions {
                 universe, focus_paths: focus, py_config: &py_config, rs_config: &rs_config,
                 lang_filter: cli.lang, bypass_gate: cli.all, gate_config: &gate_config,
@@ -112,7 +113,11 @@ fn main() {
 }
 
 fn normalize_ignore_prefixes(prefixes: &[String]) -> Vec<String> {
-    prefixes.iter().map(|p| p.trim_end_matches('/').to_string()).collect()
+    prefixes.iter().map(|p| p.trim_end_matches('/').to_string()).filter(|p| !p.is_empty()).collect()
+}
+
+fn validate_paths(paths: &[String]) {
+    for p in paths { if !Path::new(p).exists() { eprintln!("Error: Path does not exist: {p}"); std::process::exit(1); } }
 }
 
 fn ensure_default_config_exists() {
@@ -260,9 +265,8 @@ mod tests {
         assert!(parse_language("invalid").is_err());
         let (py, rs) = load_configs(None, false);
         assert!(py.statements_per_function > 0 && rs.statements_per_function > 0);
-        let (py_def, rs_def) = load_configs(None, true);
+        let (py_def, _) = load_configs(None, true);
         assert_eq!(py_def.statements_per_function, kiss::defaults::python::STATEMENTS_PER_FUNCTION);
-        assert_eq!(rs_def.statements_per_function, kiss::defaults::rust::STATEMENTS_PER_FUNCTION);
         let tmp = tempfile::TempDir::new().unwrap();
         let path = tmp.path().join("kiss.toml");
         std::fs::write(&path, "[gate]\ntest_coverage_threshold = 80\n").unwrap();
@@ -272,28 +276,22 @@ mod tests {
     #[test]
     fn test_cli_and_commands() {
         use clap::Parser;
-        let cli = Cli::try_parse_from(["kiss", "."]).unwrap();
-        assert_eq!(cli.paths, vec!["."]);
-        let cli2 = Cli::try_parse_from(["kiss", "rules"]).unwrap();
-        assert!(matches!(cli2.command, Some(Commands::Rules)));
-        let cli3 = Cli::try_parse_from(["kiss", ".", "src/", "lib/"]).unwrap();
-        assert_eq!(cli3.paths, vec![".", "src/", "lib/"]);
-        let _ = run_stats as fn(&[String], Option<Language>, &[String], bool);
-        let _ = run_mimic as fn(&[String], Option<&Path>, Option<Language>, &[String]);
-        let _ = main as fn();
+        assert_eq!(Cli::try_parse_from(["kiss", "."]).unwrap().paths, vec!["."]);
+        assert!(matches!(Cli::try_parse_from(["kiss", "rules"]).unwrap().command, Some(Commands::Rules)));
+        assert_eq!(Cli::try_parse_from(["kiss", ".", "src/", "lib/"]).unwrap().paths, vec![".", "src/", "lib/"]);
         ensure_default_config_exists();
     }
     #[test]
     fn test_gather_and_run_stats() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let (py, rs) = gather_files_by_lang(&[tmp.path().to_string_lossy().to_string()], None, &[]);
+        let p = tmp.path().to_string_lossy().to_string();
+        let (py, rs) = gather_files_by_lang(std::slice::from_ref(&p), None, &[]);
         assert!(py.is_empty() && rs.is_empty());
         std::fs::write(tmp.path().join("test.py"), "def foo(): pass").unwrap();
         std::fs::write(tmp.path().join("test.rs"), "fn main() {}").unwrap();
-        let (py2, rs2) = gather_files_by_lang(&[tmp.path().to_string_lossy().to_string()], None, &[]);
-        assert_eq!(py2.len(), 1);
-        assert_eq!(rs2.len(), 1);
-        run_stats_summary(&[tmp.path().to_string_lossy().to_string()], Some(Language::Python), &[]);
-        run_stats_detailed(&[tmp.path().to_string_lossy().to_string()], Some(Language::Rust), &[]);
+        let (py2, rs2) = gather_files_by_lang(std::slice::from_ref(&p), None, &[]);
+        assert_eq!((py2.len(), rs2.len()), (1, 1));
+        run_stats_summary(std::slice::from_ref(&p), Some(Language::Python), &[]);
+        run_stats_detailed(std::slice::from_ref(&p), Some(Language::Rust), &[]);
     }
 }

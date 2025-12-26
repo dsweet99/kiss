@@ -154,6 +154,11 @@ impl Config {
     }
 
     fn apply_thresholds(&mut self, table: &toml::Table) {
+        const VALID: &[&str] = &["statements_per_function", "methods_per_class", "lines_per_file",
+            "arguments_per_function", "arguments_positional", "arguments_keyword_only",
+            "max_indentation_depth", "classes_per_file", "nested_function_depth", "returns_per_function",
+            "branches_per_function", "local_variables_per_function", "imports_per_file"];
+        check_unknown_keys(table, VALID, "thresholds");
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "methods_per_class" => methods_per_class,
             "lines_per_file" => lines_per_file, "arguments_per_function" => arguments_per_function,
@@ -165,12 +170,21 @@ impl Config {
     }
 
     fn apply_shared(&mut self, table: &toml::Table) {
+        const VALID: &[&str] = &["lines_per_file", "types_per_file", "imports_per_file",
+            "cycle_size", "transitive_dependencies", "dependency_depth"];
+        check_unknown_keys(table, VALID, "shared");
         apply_config!(self, table, "lines_per_file" => lines_per_file, "types_per_file" => classes_per_file, 
             "imports_per_file" => imports_per_file, "cycle_size" => cycle_size,
             "transitive_dependencies" => transitive_dependencies, "dependency_depth" => dependency_depth);
     }
 
     fn apply_python(&mut self, table: &toml::Table) {
+        const VALID: &[&str] = &["statements_per_function", "positional_args", "keyword_only_args",
+            "max_indentation", "branches_per_function", "local_variables", "methods_per_class",
+            "returns_per_function", "nested_function_depth", "statements_per_try_block",
+            "boolean_parameters", "decorators_per_function", "imports_per_file", "lines_per_file",
+            "types_per_file", "cycle_size", "transitive_dependencies", "dependency_depth"];
+        check_unknown_keys(table, VALID, "python");
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "positional_args" => arguments_positional,
             "keyword_only_args" => arguments_keyword_only, "max_indentation" => max_indentation_depth,
@@ -181,6 +195,12 @@ impl Config {
     }
 
     fn apply_rust(&mut self, table: &toml::Table) {
+        const VALID: &[&str] = &["statements_per_function", "arguments", "max_indentation",
+            "branches_per_function", "local_variables", "methods_per_type", "lines_per_file",
+            "types_per_file", "returns_per_function", "nested_function_depth",
+            "bool_parameters", "attributes_per_function", "imports_per_file",
+            "cycle_size", "transitive_dependencies", "dependency_depth", "nested_closure_depth"];
+        check_unknown_keys(table, VALID, "rust");
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "arguments" => arguments_per_function,
             "max_indentation" => max_indentation_depth, "branches_per_function" => branches_per_function,
@@ -189,6 +209,15 @@ impl Config {
             "types_per_file" => classes_per_file, "returns_per_function" => returns_per_function,
             "nested_function_depth" => nested_function_depth, "bool_parameters" => boolean_parameters,
             "attributes_per_function" => decorators_per_function);
+    }
+}
+
+fn check_unknown_keys(table: &toml::Table, valid: &[&str], section: &str) {
+    for key in table.keys() {
+        if !valid.contains(&key.as_str()) {
+            eprintln!("Error: Unknown config key '{key}' in [{section}]");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -236,6 +265,8 @@ impl GateConfig {
     fn merge_from_toml(&mut self, toml_str: &str) {
         let Ok(value) = toml_str.parse::<toml::Table>() else { return };
         if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
+            const VALID: &[&str] = &["test_coverage_threshold", "min_similarity"];
+            check_unknown_keys(gate, VALID, "gate");
             if let Some(thresh) = get_usize(gate, "test_coverage_threshold") {
                 self.test_coverage_threshold = thresh.min(100);
             }
