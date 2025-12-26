@@ -8,5 +8,9 @@ echo "=== Running Rust lints (clippy) ==="
 ./scripts/pre-commit-clippy.sh
 
 echo ""
+echo "=== Running kiss ==="
+./scripts/pre-commit-kiss.sh
+
+echo ""
 echo "=== All pre-commit checks passed! ==="
 

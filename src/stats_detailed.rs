@@ -168,4 +168,26 @@ mod tests {
         let units = collect_detailed_rs(&[], None);
         assert!(units.is_empty());
     }
+
+    #[test]
+    fn test_collect_detailed_from_node() {
+        use crate::parsing::{create_parser, parse_file};
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
+        write!(tmp, "def foo():\n    x = 1\nclass Bar:\n    def m(self): pass").unwrap();
+        let parsed = parse_file(&mut create_parser().unwrap(), tmp.path()).unwrap();
+        let mut units = Vec::new();
+        collect_detailed_from_node(parsed.tree.root_node(), &parsed.source, "t.py", &mut units);
+        assert!(units.iter().any(|u| u.name == "foo" && u.kind == "function"));
+        assert!(units.iter().any(|u| u.name == "Bar" && u.kind == "class"));
+    }
+
+    #[test]
+    fn test_collect_detailed_from_items() {
+        let code: syn::File = syn::parse_quote! { fn foo() { let x = 1; } impl Bar { fn m(&self) {} } };
+        let mut units = Vec::new();
+        collect_detailed_from_items(&code.items, "t.rs", &mut units);
+        assert!(units.iter().any(|u| u.name == "foo" && u.kind == "function"));
+        assert!(units.iter().any(|u| u.name == "Bar" && u.kind == "impl"));
+    }
 }

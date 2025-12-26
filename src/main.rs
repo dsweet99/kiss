@@ -235,82 +235,45 @@ fn run_mimic(paths: &[String], out: Option<&Path>, lang_filter: Option<Language>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-
     #[test]
-    fn test_language_parsing() {
+    fn test_language_and_config() {
         assert_eq!(parse_language("python"), Ok(Language::Python));
         assert_eq!(parse_language("rust"), Ok(Language::Rust));
         assert!(parse_language("invalid").is_err());
-    }
-
-    #[test]
-    fn test_load_configs() {
         let (py, rs) = load_configs(&None, false);
         assert!(py.statements_per_function > 0 && rs.statements_per_function > 0);
         let (py_def, rs_def) = load_configs(&None, true);
         assert_eq!(py_def.statements_per_function, kiss::defaults::python::STATEMENTS_PER_FUNCTION);
         assert_eq!(rs_def.statements_per_function, kiss::defaults::rust::STATEMENTS_PER_FUNCTION);
-    }
-
-    #[test]
-    fn test_gate_config_loading() {
-        let tmp = TempDir::new().unwrap();
+        let tmp = tempfile::TempDir::new().unwrap();
         let path = tmp.path().join("kiss.toml");
         std::fs::write(&path, "[gate]\ntest_coverage_threshold = 80\n").unwrap();
         assert_eq!(load_gate_config(&Some(path.clone()), false).test_coverage_threshold, 80);
         assert_eq!(load_gate_config(&Some(path), true).test_coverage_threshold, kiss::defaults::gate::TEST_COVERAGE_THRESHOLD);
     }
-
     #[test]
-    fn test_fn_pointers() {
-        let _ = run_stats as fn(&[String], Option<Language>, &[String], bool);
-        let _ = run_mimic as fn(&[String], Option<&Path>, Option<Language>, &[String]);
-        let _ = main as fn();
-    }
-
-    #[test]
-    fn test_cli_struct() {
+    fn test_cli_and_commands() {
         use clap::Parser;
         let cli = Cli::try_parse_from(["kiss", "."]).unwrap();
         assert_eq!(cli.path, ".");
-    }
-
-    #[test]
-    fn test_commands_enum() {
-        use clap::Parser;
-        let cli = Cli::try_parse_from(["kiss", "rules"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Rules)));
-    }
-
-    #[test]
-    fn test_ensure_default_config_exists() {
+        let cli2 = Cli::try_parse_from(["kiss", "rules"]).unwrap();
+        assert!(matches!(cli2.command, Some(Commands::Rules)));
+        let _ = run_stats as fn(&[String], Option<Language>, &[String], bool);
+        let _ = run_mimic as fn(&[String], Option<&Path>, Option<Language>, &[String]);
+        let _ = main as fn();
         ensure_default_config_exists();
     }
-
     #[test]
-    fn test_gather_files_by_lang() {
+    fn test_gather_and_run_stats() {
         let tmp = tempfile::TempDir::new().unwrap();
         let (py, rs) = gather_files_by_lang(&[tmp.path().to_string_lossy().to_string()], None, &[]);
         assert!(py.is_empty() && rs.is_empty());
-        std::fs::write(tmp.path().join("test.py"), "x = 1").unwrap();
+        std::fs::write(tmp.path().join("test.py"), "def foo(): pass").unwrap();
         std::fs::write(tmp.path().join("test.rs"), "fn main() {}").unwrap();
         let (py2, rs2) = gather_files_by_lang(&[tmp.path().to_string_lossy().to_string()], None, &[]);
         assert_eq!(py2.len(), 1);
         assert_eq!(rs2.len(), 1);
-    }
-
-    #[test]
-    fn test_run_stats_summary_with_files() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("test.py"), "def foo(): pass").unwrap();
         run_stats_summary(&[tmp.path().to_string_lossy().to_string()], Some(Language::Python), &[]);
-    }
-
-    #[test]
-    fn test_run_stats_detailed_with_files() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("test.rs"), "fn main() {}").unwrap();
         run_stats_detailed(&[tmp.path().to_string_lossy().to_string()], Some(Language::Rust), &[]);
     }
 }

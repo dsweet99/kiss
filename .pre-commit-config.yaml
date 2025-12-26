@@ -25,3 +25,10 @@ repos:
         pass_filenames: false
         types: [rust]
 
+      - id: kiss
+        name: kiss code quality
+        entry: ./scripts/pre-commit-kiss.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
