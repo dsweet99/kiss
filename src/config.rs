@@ -26,9 +26,6 @@ pub struct Config {
     pub branches_per_function: usize,
     pub local_variables_per_function: usize,
     pub imports_per_file: usize,
-    pub fan_out: usize,
-    pub fan_in: usize,
-    pub lcom: usize,
     pub statements_per_try_block: usize,
     pub boolean_parameters: usize,
     pub decorators_per_function: usize,
@@ -57,9 +54,6 @@ impl Config {
             branches_per_function: defaults::python::BRANCHES_PER_FUNCTION,
             local_variables_per_function: defaults::python::LOCAL_VARIABLES,
             imports_per_file: defaults::python::IMPORTS_PER_FILE,
-            fan_out: defaults::python::FAN_OUT,
-            fan_in: defaults::python::FAN_IN,
-            lcom: defaults::python::LCOM,
             statements_per_try_block: defaults::python::STATEMENTS_PER_TRY_BLOCK,
             boolean_parameters: defaults::python::BOOLEAN_PARAMETERS,
             decorators_per_function: defaults::python::DECORATORS_PER_FUNCTION,
@@ -84,9 +78,6 @@ impl Config {
             branches_per_function: defaults::rust::BRANCHES_PER_FUNCTION,
             local_variables_per_function: defaults::rust::LOCAL_VARIABLES,
             imports_per_file: defaults::rust::IMPORTS_PER_FILE,
-            fan_out: defaults::rust::FAN_OUT,
-            fan_in: defaults::rust::FAN_IN,
-            lcom: defaults::rust::LCOM,
             statements_per_try_block: usize::MAX,
             boolean_parameters: defaults::rust::BOOLEAN_PARAMETERS,
             decorators_per_function: defaults::rust::ATTRIBUTES_PER_FUNCTION,
@@ -152,7 +143,7 @@ impl Config {
             "max_indentation_depth" => max_indentation_depth, "classes_per_file" => classes_per_file,
             "nested_function_depth" => nested_function_depth, "returns_per_function" => returns_per_function,
             "branches_per_function" => branches_per_function, "local_variables_per_function" => local_variables_per_function,
-            "imports_per_file" => imports_per_file, "fan_out" => fan_out, "fan_in" => fan_in, "lcom" => lcom);
+            "imports_per_file" => imports_per_file);
     }
 
     fn apply_shared(&mut self, table: &toml::Table) {
@@ -166,8 +157,7 @@ impl Config {
             "statements_per_function" => statements_per_function, "positional_args" => arguments_positional,
             "keyword_only_args" => arguments_keyword_only, "max_indentation" => max_indentation_depth,
             "branches_per_function" => branches_per_function, "local_variables" => local_variables_per_function,
-            "methods_per_class" => methods_per_class, "fan_out" => fan_out, "fan_in" => fan_in, "lcom" => lcom,
-            "returns_per_function" => returns_per_function, "nested_function_depth" => nested_function_depth,
+            "methods_per_class" => methods_per_class, "returns_per_function" => returns_per_function, "nested_function_depth" => nested_function_depth,
             "statements_per_try_block" => statements_per_try_block, "boolean_parameters" => boolean_parameters,
             "decorators_per_function" => decorators_per_function);
     }
@@ -177,7 +167,7 @@ impl Config {
             "statements_per_function" => statements_per_function, "arguments" => arguments_per_function,
             "max_indentation" => max_indentation_depth, "branches_per_function" => branches_per_function,
             "local_variables" => local_variables_per_function, "methods_per_type" => methods_per_class,
-            "fan_out" => fan_out, "fan_in" => fan_in, "lcom" => lcom, "lines_per_file" => lines_per_file,
+            "lines_per_file" => lines_per_file,
             "types_per_file" => classes_per_file, "returns_per_function" => returns_per_function,
             "nested_function_depth" => nested_function_depth, "bool_parameters" => boolean_parameters,
             "attributes_per_function" => decorators_per_function);

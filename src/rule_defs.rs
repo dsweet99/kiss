@@ -149,12 +149,6 @@ pub static RULES: &[Rule] = &[
         applicability: Applicability::Both,
     },
     Rule {
-        category: RuleCategory::Classes,
-        template: "Ensure methods share fields (LCOM ≤ {}%)",
-        get_threshold: |c, _| c.lcom,
-        applicability: Applicability::Both,
-    },
-    Rule {
         category: RuleCategory::Files,
         template: "Keep files ≤ {} lines",
         get_threshold: |c, _| c.lines_per_file,
@@ -182,18 +176,6 @@ pub static RULES: &[Rule] = &[
         category: RuleCategory::Dependencies,
         template: "Keep cycles small (≤ {} modules)",
         get_threshold: |c, _| c.cycle_size,
-        applicability: Applicability::Both,
-    },
-    Rule {
-        category: RuleCategory::Dependencies,
-        template: "Limit fan-out (direct dependencies) to ≤ {}",
-        get_threshold: |c, _| c.fan_out,
-        applicability: Applicability::Both,
-    },
-    Rule {
-        category: RuleCategory::Dependencies,
-        template: "Keep fan-in modules stable and well-tested (threshold: {})",
-        get_threshold: |c, _| c.fan_in,
         applicability: Applicability::Both,
     },
     Rule {

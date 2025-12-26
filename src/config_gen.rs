@@ -1,6 +1,5 @@
 
 use crate::discovery::{find_source_files_with_ignore, Language};
-use crate::graph::build_dependency_graph;
 use crate::parsing::{parse_files, ParsedFile};
 use crate::rust_parsing::{parse_rust_files, ParsedRustFile};
 use crate::stats::{compute_summaries, MetricStats, PercentileSummary};
@@ -21,8 +20,7 @@ pub fn collect_py_stats_with_ignore(root: &Path, ignore: &[String]) -> (MetricSt
     let parsed: Vec<ParsedFile> = results.into_iter().filter_map(std::result::Result::ok).collect();
     let cnt = parsed.len();
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
-    let mut stats = MetricStats::collect(&refs);
-    stats.collect_graph_metrics(&build_dependency_graph(&refs));
+    let stats = MetricStats::collect(&refs);
     (stats, cnt)
 }
 
@@ -40,8 +38,7 @@ pub fn collect_rs_stats_with_ignore(root: &Path, ignore: &[String]) -> (MetricSt
     let parsed: Vec<ParsedRustFile> = parse_rust_files(&rs_files).into_iter().filter_map(std::result::Result::ok).collect();
     let cnt = parsed.len();
     let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-    let mut stats = MetricStats::collect_rust(&refs);
-    stats.collect_graph_metrics(&crate::rust_graph::build_rust_dependency_graph(&refs));
+    let stats = MetricStats::collect_rust(&refs);
     (stats, cnt)
 }
 
@@ -156,9 +153,6 @@ pub fn python_config_key(name: &str) -> Option<&'static str> {
         "Branches per function" => Some("branches_per_function"),
         "Local variables per function" => Some("local_variables"),
         "Methods per class" => Some("methods_per_class"),
-        "Fan-out (per module)" => Some("fan_out"),
-        "Fan-in (per module)" => Some("fan_in"),
-        "LCOM % (per class)" => Some("lcom"),
         _ => None,
     }
 }
@@ -171,9 +165,6 @@ pub fn rust_config_key(name: &str) -> Option<&'static str> {
         "Branches per function" => Some("branches_per_function"),
         "Local variables per function" => Some("local_variables"),
         "Methods per class" => Some("methods_per_type"),
-        "Fan-out (per module)" => Some("fan_out"),
-        "Fan-in (per module)" => Some("fan_in"),
-        "LCOM % (per class)" => Some("lcom"),
         _ => None,
     }
 }

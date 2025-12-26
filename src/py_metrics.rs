@@ -11,7 +11,7 @@ pub struct FunctionMetrics {
 }
 
 #[derive(Debug, Default)]
-pub struct ClassMetrics { pub methods: usize, pub lcom: f64 }
+pub struct ClassMetrics { pub methods: usize }
 
 #[derive(Debug, Default)]
 pub struct FileMetrics { pub lines: usize, pub classes: usize, pub imports: usize }
@@ -40,13 +40,14 @@ pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
 #[must_use]
 pub fn compute_class_metrics(node: Node) -> ClassMetrics {
     let Some(body) = node.child_by_field_name("body") else { return ClassMetrics::default() };
-    ClassMetrics { methods: count_node_kind(body, "function_definition"), lcom: 0.0 }
+    ClassMetrics { methods: count_node_kind(body, "function_definition") }
 }
 
 #[must_use]
 pub fn compute_class_metrics_with_source(node: Node, source: &str) -> ClassMetrics {
+    let _ = source;
     let Some(body) = node.child_by_field_name("body") else { return ClassMetrics::default() };
-    ClassMetrics { methods: count_node_kind(body, "function_definition"), lcom: compute_lcom(body, source) }
+    ClassMetrics { methods: count_node_kind(body, "function_definition") }
 }
 
 #[must_use]
@@ -185,35 +186,6 @@ pub fn count_node_kind(node: Node, kind: &str) -> usize {
     usize::from(node.kind() == kind) + node.children(&mut cursor).map(|c| count_node_kind(c, kind)).sum::<usize>()
 }
 
-pub fn compute_lcom(body: Node, source: &str) -> f64 {
-    const MIN_METHODS: usize = 2;
-    let mut fields: Vec<HashSet<String>> = Vec::new();
-    let mut cursor = body.walk();
-    for child in body.children(&mut cursor) {
-        if child.kind() == "function_definition" { fields.push(extract_self_attributes(child, source)); }
-    }
-    if fields.len() < MIN_METHODS { return 0.0 }
-    let total = fields.len() * (fields.len() - 1) / 2;
-    let sharing = (0..fields.len()).flat_map(|i| ((i+1)..fields.len()).map(move |j| (i, j)))
-        .filter(|(i, j)| !fields[*i].is_disjoint(&fields[*j])).count();
-    (total - sharing) as f64 / total as f64
-}
-
-pub fn extract_self_attributes(node: Node, source: &str) -> HashSet<String> {
-    let mut fields = HashSet::new();
-    extract_self_attributes_recursive(node, source, &mut fields);
-    fields
-}
-
-pub fn extract_self_attributes_recursive(node: Node, source: &str, fields: &mut HashSet<String>) {
-    if node.kind() == "attribute"
-        && let (Some(obj), Some(attr)) = (node.child_by_field_name("object"), node.child_by_field_name("attribute"))
-        && obj.kind() == "identifier" && obj.utf8_text(source.as_bytes()).unwrap_or("") == "self"
-        && let Ok(name) = attr.utf8_text(source.as_bytes()) { fields.insert(name.to_string()); }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) { extract_self_attributes_recursive(child, source, fields); }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,9 +237,5 @@ mod tests {
         assert_eq!(compute_nested_function_depth(get_func_node(&parse("def f():\n    def g(): pass")), 0), 1);
         assert_eq!(count_imports(parse("import os").tree.root_node()), 1);
         assert_eq!(count_import_names(parse("from typing import Any, List").tree.root_node().child(0).unwrap()), 2);
-        let p3 = parse("def f(self):\n    if True:\n        self.z = 1");
-        let mut fields = HashSet::new();
-        extract_self_attributes_recursive(get_func_node(&p3), &p3.source, &mut fields);
-        assert!(fields.contains("z"));
     }
 }

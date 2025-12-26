@@ -115,12 +115,6 @@ fn analyze_class_node(node: Node, source: &str, file: &Path, violations: &mut Ve
             .message(format!("Class '{}' has {} methods (threshold: {})", name, m.methods, config.methods_per_class))
             .suggestion("Consider extracting groups of related methods into separate classes.").build());
     }
-    let lcom_pct = (m.lcom * 100.0) as usize;
-    if m.methods > 20 && lcom_pct > config.lcom {
-        violations.push(violation(file, line, name).metric("lcom").value(lcom_pct).threshold(config.lcom)
-            .message(format!("Class '{}' may be a God Class: {} methods with {}% LCOM (threshold: {} methods, {}% LCOM)", name, m.methods, lcom_pct, 20, config.lcom))
-            .suggestion("Consider splitting into multiple focused classes with cohesive responsibilities.").build());
-    }
     if let Some(body) = node.child_by_field_name("body") {
         let mut cursor = body.walk();
         for child in body.children(&mut cursor) {

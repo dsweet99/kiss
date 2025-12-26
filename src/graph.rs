@@ -110,22 +110,6 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
         if !graph.paths.contains_key(module_name) { continue; }
         let metrics = graph.module_metrics(module_name);
 
-        if metrics.fan_out > config.fan_out {
-            violations.push(Violation {
-                file: get_module_path(graph, module_name), line: 1, unit_name: module_name.clone(),
-                metric: "fan_out".to_string(), value: metrics.fan_out, threshold: config.fan_out,
-                message: format!("Module '{}' depends on {} other modules (threshold: {})", module_name, metrics.fan_out, config.fan_out),
-                suggestion: "Reduce dependencies by introducing abstractions or splitting the module.".to_string(),
-            });
-        }
-        if metrics.fan_in > config.fan_in {
-            violations.push(Violation {
-                file: get_module_path(graph, module_name), line: 1, unit_name: module_name.clone(),
-                metric: "fan_in".to_string(), value: metrics.fan_in, threshold: config.fan_in,
-                message: format!("Module '{}' is depended on by {} other modules (threshold: {})", module_name, metrics.fan_in, config.fan_in),
-                suggestion: "This module is heavily depended upon. Ensure it's stable and well-tested; changes here have wide impact.".to_string(),
-            });
-        }
         if is_orphan(&metrics, module_name) {
             violations.push(Violation {
                 file: get_module_path(graph, module_name), line: 1, unit_name: module_name.clone(),

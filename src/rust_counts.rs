@@ -4,12 +4,10 @@ use syn::{Block, ImplItem, Item};
 
 use crate::config::Config;
 use crate::rust_fn_metrics::{compute_rust_file_metrics, compute_rust_function_metrics};
-use crate::rust_lcom::compute_rust_lcom;
 use crate::rust_parsing::ParsedRustFile;
 use crate::violation::{Violation, ViolationBuilder};
 
 pub use crate::rust_fn_metrics::{RustFileMetrics, RustFunctionMetrics, RustTypeMetrics};
-pub use crate::rust_lcom::compute_rust_lcom as compute_lcom;
 
 #[must_use]
 pub fn analyze_rust_file(parsed: &ParsedRustFile, config: &Config) -> Vec<Violation> {
@@ -103,8 +101,6 @@ impl<'a> RustAnalyzer<'a> {
         let name = type_name.as_deref().unwrap_or("<impl>");
 
         self.check_methods_per_type(line, name, method_count);
-        let lcom_pct = self.check_lcom(impl_block, line, name, method_count);
-        self.check_god_class(line, name, method_count, lcom_pct);
 
         for impl_item in &impl_block.items {
             if let ImplItem::Fn(method) = impl_item {
@@ -131,41 +127,6 @@ impl<'a> RustAnalyzer<'a> {
                         name, count, self.config.methods_per_class
                     ))
                     .suggestion("Extract related methods into a separate type with its own impl.")
-                    .build(),
-            );
-        }
-    }
-
-    fn check_lcom(&mut self, impl_block: &syn::ItemImpl, line: usize, name: &str, method_count: usize) -> usize {
-        if method_count <= 1 {
-            return 0;
-        }
-        let pct = (compute_rust_lcom(impl_block) * 100.0).round() as usize;
-        if pct > self.config.lcom {
-            self.violations.push(
-                self.violation(line, name)
-                    .metric("lcom")
-                    .value(pct)
-                    .threshold(self.config.lcom)
-                    .message(format!("Type '{}' has LCOM of {}% (threshold: {}%)", name, pct, self.config.lcom))
-                    .suggestion("Methods in this impl don't share fields; consider splitting.")
-                    .build(),
-            );
-        }
-        pct
-    }
-
-    fn check_god_class(&mut self, line: usize, name: &str, method_count: usize, lcom_pct: usize) {
-        if method_count > 20 && lcom_pct > 50 {
-            self.violations.push(
-                self.violation(line, name)
-                    .metric("god_class")
-                    .value(1)
-                    .threshold(0)
-                    .message(format!(
-                        "Type '{name}' is a God Class: {method_count} methods + {lcom_pct}% LCOM indicates low cohesion"
-                    ))
-                    .suggestion("Break into smaller, focused types with single responsibilities.")
                     .build(),
             );
         }
@@ -264,9 +225,6 @@ mod tests {
         let mut v = Vec::new();
         RustAnalyzer::new(&p, &cfg, &mut v).check_methods_per_type(1, "S", 10);
         assert_eq!(v.len(), 1);
-        let mut v2 = Vec::new();
-        RustAnalyzer::new(&p, &Config::default(), &mut v2).check_god_class(1, "Big", 25, 75);
-        assert_eq!(v2.len(), 1);
     }
 
     #[test]
@@ -274,8 +232,6 @@ mod tests {
         let p = std::path::PathBuf::from("t.rs");
         let fi: syn::File = syn::parse_str("impl Foo { fn bar(&self) { let x = 1; } }").unwrap();
         if let syn::Item::Impl(i) = &fi.items[0] { let mut v = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_impl_block(i); }
-        let fl: syn::File = syn::parse_str("impl Foo { fn a(&self) {} fn b(&self) {} }").unwrap();
-        if let syn::Item::Impl(i) = &fl.items[0] { let mut v = Vec::new(); let mut c = Config::default(); c.lcom = 0; let _ = RustAnalyzer::new(&p, &c, &mut v).check_lcom(i, 1, "Foo", 2); }
         let ff: syn::File = syn::parse_str("fn foo(x: i32) { let y = x + 1; }").unwrap();
         if let syn::Item::Fn(func) = &ff.items[0] { let mut v = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_function("foo", 1, &func.sig.inputs, &func.block, func.attrs.len(), "Function"); }
     }

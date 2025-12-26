@@ -1,9 +1,7 @@
 
-use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
 use crate::py_metrics::{compute_class_metrics_with_source, compute_file_metrics, compute_function_metrics};
 use crate::rust_fn_metrics::{compute_rust_file_metrics, compute_rust_function_metrics};
-use crate::rust_lcom::compute_rust_lcom;
 use crate::rust_parsing::ParsedRustFile;
 use syn::{ImplItem, Item};
 use tree_sitter::Node;
@@ -23,9 +21,6 @@ pub struct MetricStats {
     pub lines_per_file: Vec<usize>,
     pub classes_per_file: Vec<usize>,
     pub imports_per_file: Vec<usize>,
-    pub fan_out: Vec<usize>,
-    pub fan_in: Vec<usize>,
-    pub lcom: Vec<usize>,
 }
 
 impl MetricStats {
@@ -55,18 +50,8 @@ impl MetricStats {
         self.lines_per_file.extend(other.lines_per_file);
         self.classes_per_file.extend(other.classes_per_file);
         self.imports_per_file.extend(other.imports_per_file);
-        self.fan_out.extend(other.fan_out);
-        self.fan_in.extend(other.fan_in);
-        self.lcom.extend(other.lcom);
     }
 
-    pub fn collect_graph_metrics(&mut self, graph: &DependencyGraph) {
-        for name in graph.nodes.keys() {
-            let m = graph.module_metrics(name);
-            self.fan_out.push(m.fan_out);
-            self.fan_in.push(m.fan_in);
-        }
-    }
 
     pub fn collect_rust(parsed_files: &[&ParsedRustFile]) -> Self {
         let mut stats = Self::default();
@@ -101,7 +86,6 @@ fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_c
         "class_definition" => {
             let m = compute_class_metrics_with_source(node, source);
             stats.methods_per_class.push(m.methods);
-            stats.lcom.push((m.lcom * 100.0).round() as usize);
             let mut c = node.walk();
             for child in node.children(&mut c) { collect_from_node(child, source, stats, true); }
         }
@@ -131,7 +115,6 @@ fn collect_rust_from_items(items: &[Item], stats: &mut MetricStats) {
             Item::Impl(i) => {
                 let mcnt = i.items.iter().filter(|ii| matches!(ii, ImplItem::Fn(_))).count();
                 stats.methods_per_class.push(mcnt);
-                stats.lcom.push(if mcnt > 1 { (compute_rust_lcom(i) * 100.0).round() as usize } else { 0 });
                 for ii in &i.items { if let ImplItem::Fn(m) = ii { push_rust_fn_metrics(stats, &compute_rust_function_metrics(&m.sig.inputs, &m.block, m.attrs.len())); } }
             }
             Item::Mod(m) => if let Some((_, items)) = &m.content { collect_rust_from_items(items, stats); },
@@ -176,9 +159,6 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         PercentileSummary::from_values("Lines per file", &stats.lines_per_file),
         PercentileSummary::from_values("Classes per file", &stats.classes_per_file),
         PercentileSummary::from_values("Imports per file", &stats.imports_per_file),
-        PercentileSummary::from_values("Fan-out (per module)", &stats.fan_out),
-        PercentileSummary::from_values("Fan-in (per module)", &stats.fan_in),
-        PercentileSummary::from_values("LCOM % (per class)", &stats.lcom),
     ]
 }
 
@@ -207,9 +187,6 @@ fn config_key_for(name: &str) -> Option<&'static str> {
         "Lines per file" => "lines_per_file",
         "Classes per file" => "classes_per_file",
         "Imports per file" => "imports_per_file",
-        "Fan-out (per module)" => "fan_out",
-        "Fan-in (per module)" => "fan_in",
-        "LCOM % (per class)" => "lcom",
         _ => return None,
     })
 }
@@ -253,10 +230,6 @@ mod tests {
     #[test]
     fn test_collection() {
         let mut stats = MetricStats::default();
-        let mut graph = DependencyGraph::new();
-        graph.add_dependency("a", "b");
-        stats.collect_graph_metrics(&graph);
-        assert!(!stats.fan_out.is_empty());
         let mut tmp_rs = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
         write!(tmp_rs, "fn foo() {{ let x = 1; }}").unwrap();
         let parsed_rs = parse_rust_file(tmp_rs.path()).unwrap();

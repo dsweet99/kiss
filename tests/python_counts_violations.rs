@@ -39,27 +39,6 @@ class BigClass:
 }
 
 #[test]
-fn test_lcom_violation_requires_both_methods_and_low_cohesion() {
-    let mut methods = String::new();
-    for i in 0..22 {
-        methods.push_str(&format!("    def m{i}(self): self.field{i} = {i}\n"));
-    }
-    let code = format!("class LowCohesion:\n{methods}");
-
-    let parsed = parse_source(&code);
-    let mut config = Config::default();
-    config.lcom = 10;
-
-    let violations = analyze_file(&parsed, &config);
-
-    let has_violation = violations.iter().any(|v| v.metric == "lcom");
-    assert!(
-        has_violation,
-        "should trigger lcom violation when class has >20 methods with low cohesion"
-    );
-}
-
-#[test]
 fn test_statements_per_try_block_violation() {
     let code = r"
 def risky_function():

@@ -1,8 +1,7 @@
 use kiss::parsing::{create_parser, parse_file, ParsedFile};
 use kiss::py_metrics::{
     compute_class_metrics, compute_class_metrics_with_source, compute_file_metrics,
-    compute_function_metrics, compute_lcom, count_node_kind, extract_self_attributes,
-    ClassMetrics,
+    compute_function_metrics, count_node_kind, ClassMetrics,
 };
 use std::io::Write;
 
@@ -39,12 +38,11 @@ fn test_class_metrics_with_source() {
     let p = parse("class C:\n    def a(self): self.x = 1\n    def b(self): self.x = 2");
     let m = compute_class_metrics_with_source(get_class_node(&p), &p.source);
     assert_eq!(m.methods, 2);
-    assert!(m.lcom >= 0.0);
 }
 
 #[test]
 fn test_class_metrics_struct() {
-    let m = ClassMetrics { methods: 5, lcom: 0.5 };
+    let m = ClassMetrics { methods: 5 };
     assert_eq!(m.methods, 5);
 }
 
@@ -105,18 +103,3 @@ fn test_count_node_kind() {
     let p = parse("def f(): pass\ndef g(): pass");
     assert_eq!(count_node_kind(p.tree.root_node(), "function_definition"), 2);
 }
-
-#[test]
-fn test_compute_lcom() {
-    let p = parse("class C:\n    def a(self): self.x = 1\n    def b(self): self.y = 2");
-    let body = get_class_node(&p).child_by_field_name("body").unwrap();
-    assert!(compute_lcom(body, &p.source) > 0.0);
-}
-
-#[test]
-fn test_extract_self_attributes() {
-    let p = parse("def f(self):\n    self.x = 1\n    self.y = 2");
-    let attrs = extract_self_attributes(get_func_node(&p), &p.source);
-    assert!(attrs.contains("x") && attrs.contains("y"));
-}
-

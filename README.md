@@ -33,5 +33,5 @@ kiss mimic PATH_OF_REPO_TO_ANALYZE --out ./.kissconfig
 ```
 in the repo you want in which you want to code. `PATH_OF_REPO_TO_ANALYZE` is a repo containing code that you think is "simple enough". `kiss` will analyze the code in `PATH_OF_REPO_TO_ANALYZE` and figure out the minimal threshold values that would permit that code to pass `kiss` without violations.
 
-You may always modify the global `~/.kissconfig` or repo-specific `./.kissconfig` to tailor `kiss`'s behavior to your tastes.
+You may always modify the global `~/.kissconfig` or repo-specific `./.kissconfig` to tailor `kiss`'s behavior to your tastes. The thresholds should be tight enough to prevent odd/outlier/strange code from getting into your code base. They should be so tight that it's very difficult for the LLM to figure out how to write the code.
 

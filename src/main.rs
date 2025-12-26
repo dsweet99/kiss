@@ -88,7 +88,7 @@ fn main() {
     let gate_config = load_gate_config(&cli.config, cli.defaults);
 
     match cli.command {
-        Some(Commands::Stats { paths }) => run_stats(&paths, cli.lang, &cli.ignore),
+        Some(Commands::Stats { paths }) => run_stats(&paths, cli.lang, &cli.ignore, cli.all),
         Some(Commands::Mimic { paths, out }) => run_mimic(&paths, out.as_deref(), cli.lang, &cli.ignore),
         Some(Commands::Rules) => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
         None => {
@@ -140,7 +140,15 @@ fn load_configs(config_path: &Option<PathBuf>, use_defaults: bool) -> (Config, C
     }
 }
 
-fn run_stats(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
+fn run_stats(paths: &[String], lang_filter: Option<Language>, ignore: &[String], show_all: bool) {
+    if show_all {
+        run_stats_detailed(paths, lang_filter, ignore);
+    } else {
+        run_stats_summary(paths, lang_filter, ignore);
+    }
+}
+
+fn run_stats_summary(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
     let (mut py_stats, mut rs_stats) = (MetricStats::default(), MetricStats::default());
     let (mut py_cnt, mut rs_cnt) = (0, 0);
     for path in paths {
@@ -166,6 +174,46 @@ fn run_stats(paths: &[String], lang_filter: Option<Language>, ignore: &[String])
     }
     if rs_cnt > 0 {
         println!("=== Rust ({rs_cnt} files) ===\n{}", format_stats_table(&compute_summaries(&rs_stats)));
+    }
+}
+
+fn gather_files_by_lang(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) -> (Vec<std::path::PathBuf>, Vec<std::path::PathBuf>) {
+    use kiss::discovery::find_source_files_with_ignore;
+    let (mut py_files, mut rs_files) = (Vec::new(), Vec::new());
+    for path in paths {
+        for sf in find_source_files_with_ignore(Path::new(path), ignore) {
+            match (sf.language, lang_filter) {
+                (Language::Python, None | Some(Language::Python)) => py_files.push(sf.path),
+                (Language::Rust, None | Some(Language::Rust)) => rs_files.push(sf.path),
+                _ => {}
+            }
+        }
+    }
+    (py_files, rs_files)
+}
+
+fn run_stats_detailed(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
+    use kiss::{collect_detailed_py, collect_detailed_rs, format_detailed_table};
+    use kiss::parsing::parse_files;
+    use kiss::rust_parsing::parse_rust_files;
+
+    let (py_files, rs_files) = gather_files_by_lang(paths, lang_filter, ignore);
+    if py_files.is_empty() && rs_files.is_empty() {
+        eprintln!("No source files found.");
+        std::process::exit(1);
+    }
+    println!("kiss stats --all - Detailed Metrics\nAnalyzed from: {}\n", paths.join(", "));
+    if !py_files.is_empty() {
+        let results = parse_files(&py_files).expect("parse files");
+        let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+        let units = collect_detailed_py(&parsed);
+        println!("=== Python ({} files, {} units) ===\n{}", py_files.len(), units.len(), format_detailed_table(&units));
+    }
+    if !rs_files.is_empty() {
+        let results = parse_rust_files(&rs_files);
+        let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+        let units = collect_detailed_rs(&parsed);
+        println!("=== Rust ({} files, {} units) ===\n{}", rs_files.len(), units.len(), format_detailed_table(&units));
     }
 }
 
@@ -214,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_fn_pointers() {
-        let _ = run_stats as fn(&[String], Option<Language>, &[String]);
+        let _ = run_stats as fn(&[String], Option<Language>, &[String], bool);
         let _ = run_mimic as fn(&[String], Option<&Path>, Option<Language>, &[String]);
         let _ = main as fn();
     }

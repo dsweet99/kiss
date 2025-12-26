@@ -50,3 +50,4 @@ fn test_load_from_for_language() {
     let c = Config::load_from_for_language(std::path::Path::new("/nonexistent"), ConfigLanguage::Rust);
     assert!(c.statements_per_function > 0);
 }
+

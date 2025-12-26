@@ -29,13 +29,13 @@ pub mod graph;
 pub mod minhash;
 pub mod parsing;
 pub mod stats;
+pub mod stats_detailed;
 pub mod test_refs;
 pub mod units;
 
 pub mod rust_counts;
 pub mod rust_fn_metrics;
 pub mod rust_graph;
-pub mod rust_lcom;
 pub mod rust_parsing;
 pub mod rust_test_refs;
 pub mod rust_units;
@@ -60,9 +60,8 @@ pub use graph::{
     ModuleGraphMetrics,
 };
 pub use parsing::{create_parser, parse_file, parse_files, ParseError, ParsedFile};
-pub use stats::{
-    compute_summaries, format_stats_table, generate_config_toml, MetricStats, PercentileSummary,
-};
+pub use stats::{compute_summaries, format_stats_table, generate_config_toml, MetricStats, PercentileSummary};
+pub use stats_detailed::{collect_detailed_py, collect_detailed_rs, format_detailed_table, UnitMetrics};
 pub use test_refs::{analyze_test_refs, is_test_file, CodeDefinition, TestRefAnalysis};
 pub use units::{extract_code_units, CodeUnit, CodeUnitKind};
 
@@ -72,7 +71,6 @@ pub use rust_fn_metrics::{
     RustFunctionMetrics, RustTypeMetrics,
 };
 pub use rust_graph::build_rust_dependency_graph;
-pub use rust_lcom::compute_rust_lcom;
 pub use rust_parsing::{parse_rust_file, parse_rust_files, ParsedRustFile, RustParseError};
 pub use rust_test_refs::{
     analyze_rust_test_refs, is_rust_test_file, RustCodeDefinition, RustTestRefAnalysis,
