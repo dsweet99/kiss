@@ -46,7 +46,10 @@ pub fn find_source_files(root: &Path) -> Vec<SourceFile> {
 
 pub fn find_source_files_with_ignore(root: &Path, ignore_prefixes: &[String]) -> Vec<SourceFile> {
     WalkBuilder::new(root)
-        .hidden(false).git_ignore(true).git_global(true).git_exclude(true).build()
+        .hidden(false)
+        .git_ignore(true).git_global(true).git_exclude(true)
+        .add_custom_ignore_filename(".kissignore")
+        .build()
         .filter_map(std::result::Result::ok)
         .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
         .filter_map(|entry| {
@@ -59,7 +62,10 @@ pub fn find_source_files_with_ignore(root: &Path, ignore_prefixes: &[String]) ->
 
 fn find_files_by_extension(root: &Path, ext: &str) -> Vec<PathBuf> {
     WalkBuilder::new(root)
-        .hidden(false).git_ignore(true).git_global(true).git_exclude(true).build()
+        .hidden(false)
+        .git_ignore(true).git_global(true).git_exclude(true)
+        .add_custom_ignore_filename(".kissignore")
+        .build()
         .filter_map(std::result::Result::ok)
         .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
         .filter(move |entry| entry.path().extension().is_some_and(|e| e == ext))
@@ -170,5 +176,19 @@ mod tests {
 
         let ignore = vec!["fake_".to_string()];
         assert_eq!(find_source_files_with_ignore(tmp.path(), &ignore).len(), 1);
+    }
+
+    #[test]
+    fn test_kissignore_file() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.py"), "").unwrap();
+        let ignored_dir = tmp.path().join("ignored");
+        fs::create_dir(&ignored_dir).unwrap();
+        fs::write(ignored_dir.join("b.py"), "").unwrap();
+        fs::write(tmp.path().join(".kissignore"), "ignored/\n").unwrap();
+
+        let files = find_source_files_with_ignore(tmp.path(), &[]);
+        assert_eq!(files.len(), 1);
+        assert!(files[0].path.ends_with("a.py"));
     }
 }

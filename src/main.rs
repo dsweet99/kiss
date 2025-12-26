@@ -17,31 +17,38 @@ use crate::rules::run_rules;
 
 #[derive(Parser, Debug)]
 #[command(name = "kiss", version, about = "Code-quality metrics tool for Python and Rust")]
+#[command(after_help = "EXAMPLES:\n  kiss .                    Analyze current directory\n  kiss . src/module/        Analyze module against full codebase (focus mode)\n  kiss --lang rust src/     Analyze only Rust files in src/\n  kiss mimic . --out .kissconfig   Generate config from codebase")]
 struct Cli {
-    #[arg(long, global = true)]
+    /// Path to custom config file (default: .kissconfig or ~/.kissconfig)
+    #[arg(long, global = true, value_name = "FILE")]
     config: Option<PathBuf>,
 
-    #[arg(long, global = true, value_parser = parse_language)]
+    /// Filter by language: python (py) or rust (rs)
+    #[arg(long, global = true, value_parser = parse_language, value_name = "LANG")]
     lang: Option<Language>,
 
+    /// Bypass coverage gate and show all results (for exploration)
     #[arg(long, global = true)]
     all: bool,
 
+    /// Use built-in defaults, ignoring config files
     #[arg(long, global = true)]
     defaults: bool,
 
-    #[arg(long, global = true)]
+    /// Ignore files/directories starting with PREFIX (repeatable)
+    #[arg(long, global = true, value_name = "PREFIX")]
     ignore: Vec<String>,
 
+    /// Show test coverage warnings for unreferenced code
     #[arg(long, global = true)]
     warnings: bool,
 
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// Paths to analyze. First path is the "universe" (used for graph/test lookup).
-    /// Remaining paths are "focus" files/directories where violations are reported
-    /// and coverage is enforced. If only one path given, it serves as both.
+    /// Paths to analyze: [UNIVERSE] [FOCUS...]. UNIVERSE defines scope for graph
+    /// and test discovery. FOCUS paths (if provided) restrict where violations
+    /// are reported and coverage is enforced. Use focus mode for gradual adoption.
     #[arg(default_value = ".")]
     paths: Vec<String>,
 }
@@ -56,16 +63,22 @@ fn parse_language(s: &str) -> Result<Language, String> {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Show metric statistics for codebase (summary by default, --all for details)
     Stats {
+        /// Paths to analyze
         #[arg(default_value = ".")]
         paths: Vec<String>,
     },
+    /// Generate .kissconfig thresholds from an existing codebase
     Mimic {
+        /// Paths to analyze for threshold generation
         #[arg(required = true)]
         paths: Vec<String>,
-        #[arg(long, short)]
+        /// Output file (prints to stdout if not specified)
+        #[arg(long, short, value_name = "FILE")]
         out: Option<PathBuf>,
     },
+    /// Display all available rules and their current thresholds
     Rules,
 }
 
