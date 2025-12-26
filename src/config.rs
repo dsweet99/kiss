@@ -193,7 +193,11 @@ impl Config {
 }
 
 fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
-    table.get(key).and_then(toml::Value::as_integer).and_then(|v| usize::try_from(v).ok())
+    let value = table.get(key)?;
+    value.as_integer().and_then(|v| usize::try_from(v).ok()).or_else(|| {
+        eprintln!("Warning: Config key '{key}' expected integer, got {}", value.type_str());
+        None
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -243,5 +247,9 @@ impl GateConfig {
 }
 
 fn get_f64(table: &toml::Table, key: &str) -> Option<f64> {
-    table.get(key).and_then(toml::Value::as_float)
+    let value = table.get(key)?;
+    value.as_float().or_else(|| {
+        eprintln!("Warning: Config key '{key}' expected float, got {}", value.type_str());
+        None
+    })
 }

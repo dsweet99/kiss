@@ -13,7 +13,7 @@ use kiss::config_gen::{
 use std::path::{Path, PathBuf};
 
 use crate::analyze::run_analyze;
-use crate::rules::run_rules;
+use crate::rules::{run_config, run_rules};
 
 #[derive(Parser, Debug)]
 #[command(name = "kiss", version, about = "Code-quality metrics tool for Python and Rust")]
@@ -80,6 +80,8 @@ enum Commands {
     },
     /// Display all available rules and their current thresholds
     Rules,
+    /// Show effective configuration (merged from all sources)
+    Config,
 }
 
 fn main() {
@@ -93,6 +95,7 @@ fn main() {
         Some(Commands::Stats { paths }) => run_stats(&paths, cli.lang, &ignore, cli.all),
         Some(Commands::Mimic { paths, out }) => run_mimic(&paths, out.as_deref(), cli.lang, &ignore),
         Some(Commands::Rules) => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
+        Some(Commands::Config) => run_config(&py_config, &rs_config, &gate_config, cli.config.as_ref()),
         None => {
             let universe = &cli.paths[0];
             let focus = if cli.paths.len() > 1 { &cli.paths[1..] } else { &cli.paths[..] };

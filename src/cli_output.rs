@@ -18,6 +18,7 @@ pub fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
 
 pub fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: usize, total: usize, unreferenced: &[(std::path::PathBuf, String, usize)]) {
     println!("GATE_FAILED:test_coverage: {coverage}% coverage (threshold: {threshold}%, {tested}/{total} units tested)");
+    println!("Hint: Use --all to bypass coverage gate for exploration");
     for (file, name, line) in unreferenced {
         println!("VIOLATION:test_coverage:{}:{}:{}: Add test coverage for this code unit.", file.display(), line, name);
     }
