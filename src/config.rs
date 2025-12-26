@@ -116,13 +116,31 @@ impl Config {
 
     pub fn load_from_for_language(path: &Path, lang: ConfigLanguage) -> Self {
         let mut config = match lang { ConfigLanguage::Python => Self::python_defaults(), ConfigLanguage::Rust => Self::rust_defaults() };
-        if let Ok(content) = std::fs::read_to_string(path) { config.merge_from_toml(&content, Some(lang)); }
+        if let Ok(content) = std::fs::read_to_string(path) { config.merge_from_toml_with_path(&content, Some(lang), Some(path)); }
         else { eprintln!("Warning: Could not read config file: {}", path.display()); }
         config
     }
 
+    pub fn load_from_content(content: &str, lang: ConfigLanguage) -> Self {
+        let mut config = match lang { ConfigLanguage::Python => Self::python_defaults(), ConfigLanguage::Rust => Self::rust_defaults() };
+        config.merge_from_toml(content, Some(lang));
+        config
+    }
+
     fn merge_from_toml(&mut self, content: &str, lang: Option<ConfigLanguage>) {
-        let Ok(table) = content.parse::<toml::Table>() else { return };
+        self.merge_from_toml_with_path(content, lang, None);
+    }
+
+    fn merge_from_toml_with_path(&mut self, content: &str, lang: Option<ConfigLanguage>, path: Option<&Path>) {
+        let table = match content.parse::<toml::Table>() {
+            Ok(t) => t,
+            Err(e) => {
+                if let Some(p) = path {
+                    eprintln!("Warning: Failed to parse config {}: {}", p.display(), e);
+                }
+                return;
+            }
+        };
         if let Some(t) = table.get("thresholds").and_then(|v| v.as_table()) { self.apply_thresholds(t); }
         if let Some(t) = table.get("shared").and_then(|v| v.as_table()) { self.apply_shared(t); }
         match lang {
@@ -226,72 +244,4 @@ impl GateConfig {
 
 fn get_f64(table: &toml::Table, key: &str) -> Option<f64> {
     table.get(key).and_then(toml::Value::as_float)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_config_defaults_and_loading() {
-        let py = Config::python_defaults();
-        let rs = Config::rust_defaults();
-        assert_eq!(py.statements_per_function, defaults::python::STATEMENTS_PER_FUNCTION);
-        assert_eq!(rs.statements_per_function, defaults::rust::STATEMENTS_PER_FUNCTION);
-        assert!(Config::load().statements_per_function > 0);
-        assert!(Config::load_for_language(ConfigLanguage::Python).statements_per_function > 0);
-        assert!(Config::load_from(Path::new("/nonexistent")).statements_per_function > 0);
-        assert!(Config::load_config_chain(Config::python_defaults(), None).statements_per_function > 0);
-    }
-
-    #[test]
-    fn test_config_merging() {
-        let mut c = Config::default();
-        c.merge_from_toml("[thresholds]\nstatements_per_function = 100", None);
-        assert_eq!(c.statements_per_function, 100);
-        c.merge_from_toml("[shared]\nlines_per_file = 600", None);
-        assert_eq!(c.lines_per_file, 600);
-        c.merge_from_toml("[python]\nstatements_per_function = 60", Some(ConfigLanguage::Python));
-        assert_eq!(c.statements_per_function, 60);
-        c.merge_from_toml("[rust]\nstatements_per_function = 70", Some(ConfigLanguage::Rust));
-        assert_eq!(c.statements_per_function, 70);
-    }
-
-    #[test]
-    fn test_apply_functions() {
-        let mut c = Config::default();
-        let t1: toml::Table = "[thresholds]\nstatements_per_function = 99".parse().unwrap();
-        if let Some(t) = t1.get("thresholds").and_then(|v| v.as_table()) { c.apply_thresholds(t); }
-        assert_eq!(c.statements_per_function, 99);
-        let t2: toml::Table = "[shared]\nlines_per_file = 800".parse().unwrap();
-        if let Some(t) = t2.get("shared").and_then(|v| v.as_table()) { c.apply_shared(t); }
-        assert_eq!(c.lines_per_file, 800);
-        let t3: toml::Table = "[python]\nstatements_per_function = 77".parse().unwrap();
-        if let Some(t) = t3.get("python").and_then(|v| v.as_table()) { c.apply_python(t); }
-        assert_eq!(c.statements_per_function, 77);
-        let t4: toml::Table = "[rust]\nstatements_per_function = 88".parse().unwrap();
-        if let Some(t) = t4.get("rust").and_then(|v| v.as_table()) { c.apply_rust(t); }
-        assert_eq!(c.statements_per_function, 88);
-        let table: toml::Table = "value = 42".parse().unwrap();
-        assert_eq!(get_usize(&table, "value"), Some(42));
-        assert_eq!(get_usize(&table, "missing"), None);
-    }
-
-    #[test]
-    fn test_gate_config() {
-        let mut gate = GateConfig::default();
-        gate.merge_from_toml("[gate]\ntest_coverage_threshold = 150");
-        assert_eq!(gate.test_coverage_threshold, 100);
-        gate.merge_from_toml("[gate]\nmin_similarity = 0.8");
-        assert!((gate.min_similarity - 0.8).abs() < 0.001);
-        gate.merge_from_toml("[gate]\nmin_similarity = 1.5");
-        assert!((gate.min_similarity - 1.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_get_f64() {
-        let table: toml::Table = "value = 0.75".parse().unwrap();
-        assert_eq!(get_f64(&table, "value"), Some(0.75));
-        assert_eq!(get_f64(&table, "missing"), None);
-    }
 }

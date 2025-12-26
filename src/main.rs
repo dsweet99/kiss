@@ -87,10 +87,11 @@ fn main() {
     ensure_default_config_exists();
     let (py_config, rs_config) = load_configs(cli.config.as_ref(), cli.defaults);
     let gate_config = load_gate_config(cli.config.as_ref(), cli.defaults);
+    let ignore = normalize_ignore_prefixes(&cli.ignore);
 
     match cli.command {
-        Some(Commands::Stats { paths }) => run_stats(&paths, cli.lang, &cli.ignore, cli.all),
-        Some(Commands::Mimic { paths, out }) => run_mimic(&paths, out.as_deref(), cli.lang, &cli.ignore),
+        Some(Commands::Stats { paths }) => run_stats(&paths, cli.lang, &ignore, cli.all),
+        Some(Commands::Mimic { paths, out }) => run_mimic(&paths, out.as_deref(), cli.lang, &ignore),
         Some(Commands::Rules) => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
         None => {
             let universe = &cli.paths[0];
@@ -98,13 +99,17 @@ fn main() {
             let opts = analyze::AnalyzeOptions {
                 universe, focus_paths: focus, py_config: &py_config, rs_config: &rs_config,
                 lang_filter: cli.lang, bypass_gate: cli.all, gate_config: &gate_config,
-                ignore_prefixes: &cli.ignore, show_warnings: cli.warnings,
+                ignore_prefixes: &ignore, show_warnings: cli.warnings,
             };
             if !run_analyze(&opts) {
                 std::process::exit(1);
             }
         }
     }
+}
+
+fn normalize_ignore_prefixes(prefixes: &[String]) -> Vec<String> {
+    prefixes.iter().map(|p| p.trim_end_matches('/').to_string()).collect()
 }
 
 fn ensure_default_config_exists() {
@@ -133,19 +138,20 @@ fn load_gate_config(config_path: Option<&PathBuf>, use_defaults: bool) -> GateCo
 }
 
 fn load_configs(config_path: Option<&PathBuf>, use_defaults: bool) -> (Config, Config) {
-    if use_defaults {
-        (Config::python_defaults(), Config::rust_defaults())
-    } else if let Some(path) = config_path {
-        (
-            Config::load_from_for_language(path, ConfigLanguage::Python),
-            Config::load_from_for_language(path, ConfigLanguage::Rust),
-        )
-    } else {
-        (
-            Config::load_for_language(ConfigLanguage::Python),
-            Config::load_for_language(ConfigLanguage::Rust),
-        )
+    let defaults = || (Config::python_defaults(), Config::rust_defaults());
+    if use_defaults { return defaults(); }
+    let Some(path) = config_path else {
+        return (Config::load_for_language(ConfigLanguage::Python), Config::load_for_language(ConfigLanguage::Rust));
+    };
+    let Ok(content) = std::fs::read_to_string(path) else {
+        eprintln!("Warning: Config file not found: {}", path.display());
+        return defaults();
+    };
+    if let Err(e) = content.parse::<toml::Table>() {
+        eprintln!("Warning: Failed to parse config {}: {}", path.display(), e);
+        return defaults();
     }
+    (Config::load_from_content(&content, ConfigLanguage::Python), Config::load_from_content(&content, ConfigLanguage::Rust))
 }
 
 fn run_stats(paths: &[String], lang_filter: Option<Language>, ignore: &[String], show_all: bool) {

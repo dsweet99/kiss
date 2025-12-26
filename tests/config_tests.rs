@@ -1,15 +1,12 @@
-
-use kiss::{Config, ConfigLanguage};
+use kiss::{Config, ConfigLanguage, GateConfig};
 
 #[test]
 fn default_config_has_reasonable_values() {
     let py_config = Config::python_defaults();
     let rs_config = Config::rust_defaults();
-    
     assert_eq!(py_config.statements_per_function, 35);
     assert_eq!(py_config.methods_per_class, 20);
     assert_eq!(py_config.lines_per_file, 300);
-    
     assert_eq!(rs_config.statements_per_function, 25);
     assert_eq!(rs_config.methods_per_class, 15);
     assert_eq!(rs_config.lines_per_file, 300);
@@ -23,8 +20,7 @@ fn test_config_language_enum() {
 #[test]
 fn test_config_struct_fields() {
     let c = Config::default();
-    assert!(c.statements_per_function > 0);
-    assert!(c.lines_per_file > 0);
+    assert!(c.statements_per_function > 0 && c.lines_per_file > 0);
 }
 
 #[test]
@@ -51,3 +47,22 @@ fn test_load_from_for_language() {
     assert!(c.statements_per_function > 0);
 }
 
+#[test]
+fn test_gate_config_defaults() {
+    let gate = GateConfig::default();
+    assert!(gate.test_coverage_threshold > 0);
+    assert!(gate.min_similarity > 0.0 && gate.min_similarity <= 1.0);
+}
+
+#[test]
+fn test_gate_config_load() {
+    let gate = GateConfig::load();
+    assert!(gate.test_coverage_threshold > 0);
+}
+
+#[test]
+fn test_load_from_content() {
+    let content = "[python]\nstatements_per_function = 99";
+    let c = Config::load_from_content(content, ConfigLanguage::Python);
+    assert_eq!(c.statements_per_function, 99);
+}
