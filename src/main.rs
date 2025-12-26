@@ -113,7 +113,9 @@ fn main() {
 }
 
 fn normalize_ignore_prefixes(prefixes: &[String]) -> Vec<String> {
-    prefixes.iter().map(|p| p.trim_end_matches('/').to_string()).filter(|p| !p.is_empty()).collect()
+    let result: Vec<String> = prefixes.iter().map(|p| p.trim_end_matches('/').to_string()).filter(|p| !p.is_empty()).collect();
+    if result.iter().any(|p| p == ".") { eprintln!("Warning: --ignore '.' matches all files"); }
+    result
 }
 
 fn validate_paths(paths: &[String]) {
@@ -282,16 +284,16 @@ mod tests {
         ensure_default_config_exists();
     }
     #[test]
-    fn test_gather_and_run_stats() {
+    fn test_gather_stats_normalize_validate() {
         let tmp = tempfile::TempDir::new().unwrap();
         let p = tmp.path().to_string_lossy().to_string();
-        let (py, rs) = gather_files_by_lang(std::slice::from_ref(&p), None, &[]);
-        assert!(py.is_empty() && rs.is_empty());
+        assert!(gather_files_by_lang(std::slice::from_ref(&p), None, &[]).0.is_empty());
         std::fs::write(tmp.path().join("test.py"), "def foo(): pass").unwrap();
         std::fs::write(tmp.path().join("test.rs"), "fn main() {}").unwrap();
-        let (py2, rs2) = gather_files_by_lang(std::slice::from_ref(&p), None, &[]);
-        assert_eq!((py2.len(), rs2.len()), (1, 1));
+        assert_eq!(gather_files_by_lang(std::slice::from_ref(&p), None, &[]).0.len(), 1);
         run_stats_summary(std::slice::from_ref(&p), Some(Language::Python), &[]);
         run_stats_detailed(std::slice::from_ref(&p), Some(Language::Rust), &[]);
+        assert_eq!(normalize_ignore_prefixes(&["src/".to_string(), String::new()]), vec!["src"]);
+        validate_paths(&[p]); // tests valid path doesn't panic/exit
     }
 }

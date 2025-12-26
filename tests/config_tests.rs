@@ -66,3 +66,10 @@ fn test_load_from_content() {
     let c = Config::load_from_content(content, ConfigLanguage::Python);
     assert_eq!(c.statements_per_function, 99);
 }
+
+#[test]
+fn test_is_similar() {
+    assert!(kiss::is_similar("pytohn", "python"));
+    assert!(kiss::is_similar("rus", "rust"));
+    assert!(!kiss::is_similar("xyz", "python"));
+}

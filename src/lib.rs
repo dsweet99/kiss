@@ -24,7 +24,7 @@ pub mod rust_parsing;
 pub mod rust_test_refs;
 pub mod rust_units;
 
-pub use config::{Config, ConfigLanguage, GateConfig};
+pub use config::{is_similar, Config, ConfigLanguage, GateConfig};
 pub use defaults::default_config_toml;
 pub use counts::analyze_file;
 pub use py_metrics::{

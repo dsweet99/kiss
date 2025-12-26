@@ -141,6 +141,7 @@ impl Config {
                 return;
             }
         };
+        check_unknown_sections(&table);
         if let Some(t) = table.get("thresholds").and_then(|v| v.as_table()) { self.apply_thresholds(t); }
         if let Some(t) = table.get("shared").and_then(|v| v.as_table()) { self.apply_shared(t); }
         match lang {
@@ -221,12 +222,32 @@ fn check_unknown_keys(table: &toml::Table, valid: &[&str], section: &str) {
     }
 }
 
+fn check_unknown_sections(table: &toml::Table) {
+    const VALID: &[&str] = &["python", "rust", "shared", "thresholds", "gate"];
+    for key in table.keys() {
+        if VALID.contains(&key.as_str()) { continue; }
+        let hint = VALID.iter().find(|v| similar(key, v)).map(|s| format!(" - did you mean '[{s}]'?")).unwrap_or_default();
+        eprintln!("Error: Unknown config section '[{key}]'{hint}"); std::process::exit(1);
+    }
+}
+
+fn similar(a: &str, b: &str) -> bool {
+    if a.len().abs_diff(b.len()) > 2 { return false; }
+    let common = a.chars().filter(|c| b.contains(*c)).count();
+    common >= a.len().saturating_sub(2) && common >= b.len().saturating_sub(2)
+}
+
 fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
     let value = table.get(key)?;
-    value.as_integer().and_then(|v| usize::try_from(v).ok()).or_else(|| {
-        eprintln!("Warning: Config key '{key}' expected integer, got {}", value.type_str());
-        None
-    })
+    if let Some(v) = value.as_integer() {
+        if v < 0 {
+            eprintln!("Warning: Config key '{key}' must be non-negative, got {v}");
+            return None;
+        }
+        return usize::try_from(v).ok();
+    }
+    eprintln!("Warning: Config key '{key}' expected integer, got {}", value.type_str());
+    None
 }
 
 #[derive(Debug, Clone)]
@@ -236,43 +257,27 @@ pub struct GateConfig {
 }
 
 impl Default for GateConfig {
-    fn default() -> Self {
-        Self {
-            test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD,
-            min_similarity: defaults::duplication::MIN_SIMILARITY,
-        }
-    }
+    fn default() -> Self { Self { test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD, min_similarity: defaults::duplication::MIN_SIMILARITY } }
 }
 
 impl GateConfig {
     pub fn load() -> Self {
         let mut config = Self::default();
-        if let Some(home) = std::env::var_os("HOME")
-            && let Ok(content) = std::fs::read_to_string(Path::new(&home).join(".kissconfig"))
-        {
-            config.merge_from_toml(&content);
-        }
-        if let Ok(content) = std::fs::read_to_string(".kissconfig") { config.merge_from_toml(&content); }
+        if let Some(home) = std::env::var_os("HOME") && let Ok(c) = std::fs::read_to_string(Path::new(&home).join(".kissconfig")) { config.merge_from_toml(&c); }
+        if let Ok(c) = std::fs::read_to_string(".kissconfig") { config.merge_from_toml(&c); }
         config
     }
-
     pub fn load_from(path: &Path) -> Self {
         let mut config = Self::default();
-        if let Ok(content) = std::fs::read_to_string(path) { config.merge_from_toml(&content); }
+        if let Ok(c) = std::fs::read_to_string(path) { config.merge_from_toml(&c); }
         config
     }
-
     fn merge_from_toml(&mut self, toml_str: &str) {
         let Ok(value) = toml_str.parse::<toml::Table>() else { return };
         if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
-            const VALID: &[&str] = &["test_coverage_threshold", "min_similarity"];
-            check_unknown_keys(gate, VALID, "gate");
-            if let Some(thresh) = get_usize(gate, "test_coverage_threshold") {
-                self.test_coverage_threshold = thresh.min(100);
-            }
-            if let Some(sim) = get_f64(gate, "min_similarity") {
-                self.min_similarity = sim.clamp(0.0, 1.0);
-            }
+            check_unknown_keys(gate, &["test_coverage_threshold", "min_similarity"], "gate");
+            if let Some(t) = get_usize(gate, "test_coverage_threshold") { self.test_coverage_threshold = t.min(100); }
+            if let Some(s) = get_f64(gate, "min_similarity") { self.min_similarity = s.clamp(0.0, 1.0); }
         }
     }
 }
@@ -284,3 +289,5 @@ fn get_f64(table: &toml::Table, key: &str) -> Option<f64> {
         None
     })
 }
+
+pub fn is_similar(a: &str, b: &str) -> bool { similar(a, b) }
