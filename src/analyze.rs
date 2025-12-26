@@ -7,6 +7,7 @@ use kiss::{
     build_dependency_graph, build_rust_dependency_graph, cluster_duplicates,
     detect_duplicates, detect_duplicates_from_chunks, extract_chunks_for_duplication,
     extract_rust_chunks_for_duplication, find_source_files_with_ignore, parse_files, parse_rust_files,
+    extract_code_units, extract_rust_code_units, is_test_file, is_rust_test_file,
     Config, DependencyGraph, DuplicateCluster, DuplicationConfig, GateConfig, Language,
     ParsedFile, ParsedRustFile, Violation,
 };
@@ -37,28 +38,32 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
     }
 
     let focus_set = build_focus_set(opts.focus_paths, opts.lang_filter, opts.ignore_prefixes);
-    let (py_parsed, rs_parsed, mut viols) = parse_all(&py_files, &rs_files, opts.py_config, opts.rs_config);
+    let result = parse_all(&py_files, &rs_files, opts.py_config, opts.rs_config);
+    let mut viols = result.violations;
     viols.retain(|v| is_focus_file(&v.file, &focus_set));
 
-    if !opts.bypass_gate && !check_coverage_gate(&py_parsed, &rs_parsed, opts.gate_config, &focus_set) {
+    if !opts.bypass_gate && !check_coverage_gate(&result.py_parsed, &result.rs_parsed, opts.gate_config, &focus_set) {
         return false;
     }
 
-    let (py_graph, rs_graph) = build_graphs(&py_parsed, &rs_parsed);
+    let (py_graph, rs_graph) = build_graphs(&result.py_parsed, &result.rs_parsed);
+    print_analysis_summary(result.py_parsed.len() + result.rs_parsed.len(), result.code_unit_count, py_graph.as_ref(), rs_graph.as_ref());
+
     let mut graph_viols = analyze_graphs(py_graph.as_ref(), rs_graph.as_ref(), opts.py_config, opts.rs_config);
     graph_viols.retain(|v| is_focus_file(&v.file, &focus_set));
     viols.extend(graph_viols);
 
-    print_all_results(&viols, &py_parsed, &rs_parsed, opts.show_warnings, opts.gate_config.min_similarity, &focus_set)
+    print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.show_warnings, opts.gate_config.min_similarity, &focus_set)
 }
 
 pub fn gather_files(root: &Path, lang: Option<Language>, ignore_prefixes: &[String]) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let all = find_source_files_with_ignore(root, ignore_prefixes);
     let (mut py, mut rs) = (Vec::new(), Vec::new());
     for sf in all {
+        let path = sf.path.canonicalize().unwrap_or(sf.path);
         match (sf.language, lang) {
-            (Language::Python, None | Some(Language::Python)) => py.push(sf.path),
-            (Language::Rust, None | Some(Language::Rust)) => rs.push(sf.path),
+            (Language::Python, None | Some(Language::Python)) => py.push(path),
+            (Language::Rust, None | Some(Language::Rust)) => rs.push(path),
             _ => {}
         }
     }
@@ -75,60 +80,65 @@ pub fn build_focus_set(focus_paths: &[String], lang: Option<Language>, ignore_pr
             }
         } else {
             let (py, rs) = gather_files(path, lang, ignore_prefixes);
-            for f in py.into_iter().chain(rs) {
-                if let Ok(canonical) = f.canonicalize() {
-                    focus_set.insert(canonical);
-                }
-            }
+            focus_set.extend(py);
+            focus_set.extend(rs);
         }
     }
     focus_set
 }
 
 pub fn is_focus_file(file: &Path, focus_set: &HashSet<PathBuf>) -> bool {
-    if focus_set.is_empty() {
-        return true;
-    }
-    file.canonicalize().is_ok_and(|canonical| focus_set.contains(&canonical))
+    focus_set.is_empty() || focus_set.contains(file)
 }
 
-pub fn parse_all(
-    py_files: &[PathBuf], rs_files: &[PathBuf], py_config: &Config, rs_config: &Config,
-) -> (Vec<ParsedFile>, Vec<ParsedRustFile>, Vec<Violation>) {
-    let (py_parsed, mut viols) = parse_and_analyze_py(py_files, py_config);
-    let (rs_parsed, rs_viols) = parse_and_analyze_rs(rs_files, rs_config);
+pub struct ParseResult {
+    pub py_parsed: Vec<ParsedFile>,
+    pub rs_parsed: Vec<ParsedRustFile>,
+    pub violations: Vec<Violation>,
+    pub code_unit_count: usize,
+}
+
+pub fn parse_all(py_files: &[PathBuf], rs_files: &[PathBuf], py_config: &Config, rs_config: &Config) -> ParseResult {
+    let (py_parsed, mut viols, py_units) = parse_and_analyze_py(py_files, py_config);
+    let (rs_parsed, rs_viols, rs_units) = parse_and_analyze_rs(rs_files, rs_config);
     viols.extend(rs_viols);
-    (py_parsed, rs_parsed, viols)
+    ParseResult { py_parsed, rs_parsed, violations: viols, code_unit_count: py_units + rs_units }
 }
 
-pub fn parse_and_analyze_py(files: &[PathBuf], config: &Config) -> (Vec<ParsedFile>, Vec<Violation>) {
-    if files.is_empty() { return (Vec::new(), Vec::new()); }
+pub fn parse_and_analyze_py(files: &[PathBuf], config: &Config) -> (Vec<ParsedFile>, Vec<Violation>, usize) {
+    if files.is_empty() { return (Vec::new(), Vec::new(), 0); }
     let results = match parse_files(files) {
         Ok(r) => r,
-        Err(e) => { eprintln!("Failed to initialize Python parser: {e}"); return (Vec::new(), Vec::new()); }
+        Err(e) => { eprintln!("Failed to initialize Python parser: {e}"); return (Vec::new(), Vec::new(), 0); }
     };
-    let mut parsed = Vec::new();
-    let mut viols = Vec::new();
+    let (mut parsed, mut viols, mut unit_count) = (Vec::new(), Vec::new(), 0);
     for result in results {
         match result {
-            Ok(p) => { viols.extend(analyze_file(&p, config)); parsed.push(p); }
+            Ok(p) => {
+                unit_count += extract_code_units(&p).len();
+                if !is_test_file(&p.path) { viols.extend(analyze_file(&p, config)); }
+                parsed.push(p);
+            }
             Err(e) => eprintln!("Error parsing Python: {e}"),
         }
     }
-    (parsed, viols)
+    (parsed, viols, unit_count)
 }
 
-pub fn parse_and_analyze_rs(files: &[PathBuf], config: &Config) -> (Vec<ParsedRustFile>, Vec<Violation>) {
-    if files.is_empty() { return (Vec::new(), Vec::new()); }
-    let mut parsed = Vec::new();
-    let mut viols = Vec::new();
+pub fn parse_and_analyze_rs(files: &[PathBuf], config: &Config) -> (Vec<ParsedRustFile>, Vec<Violation>, usize) {
+    if files.is_empty() { return (Vec::new(), Vec::new(), 0); }
+    let (mut parsed, mut viols, mut unit_count) = (Vec::new(), Vec::new(), 0);
     for result in parse_rust_files(files) {
         match result {
-            Ok(p) => { viols.extend(analyze_rust_file(&p, config)); parsed.push(p); }
+            Ok(p) => {
+                unit_count += extract_rust_code_units(&p).len();
+                if !is_rust_test_file(&p.path) { viols.extend(analyze_rust_file(&p, config)); }
+                parsed.push(p);
+            }
             Err(e) => eprintln!("Error parsing Rust: {e}"),
         }
     }
-    (parsed, viols)
+    (parsed, viols, unit_count)
 }
 
 pub fn build_graphs(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (Option<DependencyGraph>, Option<DependencyGraph>) {
@@ -139,6 +149,18 @@ pub fn build_graphs(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (
         Some(build_rust_dependency_graph(&rs_parsed.iter().collect::<Vec<_>>()))
     };
     (py_graph, rs_graph)
+}
+
+fn print_analysis_summary(file_count: usize, unit_count: usize, py_g: Option<&DependencyGraph>, rs_g: Option<&DependencyGraph>) {
+    let (nodes, edges) = graph_stats(py_g, rs_g);
+    println!("Analyzed: {file_count} files, {unit_count} code units, {nodes} graph nodes, {edges} graph edges");
+}
+
+fn graph_stats(py_g: Option<&DependencyGraph>, rs_g: Option<&DependencyGraph>) -> (usize, usize) {
+    let (mut nodes, mut edges) = (0, 0);
+    if let Some(g) = py_g { nodes += g.graph.node_count(); edges += g.graph.edge_count(); }
+    if let Some(g) = rs_g { nodes += g.graph.node_count(); edges += g.graph.edge_count(); }
+    (nodes, edges)
 }
 
 pub fn analyze_graphs(py_graph: Option<&DependencyGraph>, rs_graph: Option<&DependencyGraph>, py_config: &Config, rs_config: &Config) -> Vec<Violation> {
