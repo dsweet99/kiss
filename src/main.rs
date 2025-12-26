@@ -287,4 +287,30 @@ mod tests {
     fn test_ensure_default_config_exists() {
         ensure_default_config_exists();
     }
+
+    #[test]
+    fn test_gather_files_by_lang() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (py, rs) = gather_files_by_lang(&[tmp.path().to_string_lossy().to_string()], None, &[]);
+        assert!(py.is_empty() && rs.is_empty());
+        std::fs::write(tmp.path().join("test.py"), "x = 1").unwrap();
+        std::fs::write(tmp.path().join("test.rs"), "fn main() {}").unwrap();
+        let (py2, rs2) = gather_files_by_lang(&[tmp.path().to_string_lossy().to_string()], None, &[]);
+        assert_eq!(py2.len(), 1);
+        assert_eq!(rs2.len(), 1);
+    }
+
+    #[test]
+    fn test_run_stats_summary_with_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("test.py"), "def foo(): pass").unwrap();
+        run_stats_summary(&[tmp.path().to_string_lossy().to_string()], Some(Language::Python), &[]);
+    }
+
+    #[test]
+    fn test_run_stats_detailed_with_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("test.rs"), "fn main() {}").unwrap();
+        run_stats_detailed(&[tmp.path().to_string_lossy().to_string()], Some(Language::Rust), &[]);
+    }
 }

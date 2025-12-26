@@ -120,3 +120,52 @@ pub fn format_detailed_table(units: &[UnitMetrics]) -> String {
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max { s.to_string() } else { format!("...{}", &s[s.len() - max + 3..]) }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate() {
+        assert_eq!(truncate("short", 10), "short");
+        assert_eq!(truncate("this_is_a_very_long_string", 10), "..._string");
+    }
+
+    #[test]
+    fn test_format_detailed_table() {
+        let units = vec![UnitMetrics {
+            file: "test.rs".to_string(), name: "foo".to_string(), kind: "function",
+            line: 1, statements: Some(5), arguments: Some(2), indentation: Some(1),
+            branches: Some(0), returns: Some(1), locals: Some(3), methods: None,
+            lines: None, imports: None, fan_in: None, fan_out: None,
+        }];
+        let table = format_detailed_table(&units);
+        assert!(table.contains("test.rs"));
+        assert!(table.contains("foo"));
+    }
+
+    #[test]
+    fn test_get_impl_name() {
+        let code: syn::ItemImpl = syn::parse_quote! { impl Foo { fn bar() {} } };
+        assert_eq!(get_impl_name(&code), "Foo");
+    }
+
+    #[test]
+    fn test_module_name_from_path() {
+        use std::path::Path;
+        assert_eq!(module_name_from_path(Path::new("src/foo.rs")), "foo");
+        assert_eq!(module_name_from_path(Path::new("bar.py")), "bar");
+    }
+
+    #[test]
+    fn test_collect_detailed_py_empty() {
+        let units = collect_detailed_py(&[], None);
+        assert!(units.is_empty());
+    }
+
+    #[test]
+    fn test_collect_detailed_rs_empty() {
+        let units = collect_detailed_rs(&[], None);
+        assert!(units.is_empty());
+    }
+}

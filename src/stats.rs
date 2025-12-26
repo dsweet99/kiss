@@ -267,4 +267,17 @@ mod tests {
         let ast: syn::File = syn::parse_str("fn bar() { let y = 2; }").unwrap();
         collect_rust_from_items(&ast.items, &mut stats);
     }
+
+    #[test]
+    fn test_graph_metrics() {
+        let mut stats = MetricStats::default();
+        let mut graph = crate::graph::DependencyGraph::new();
+        graph.add_dependency("a", "b");
+        graph.add_dependency("b", "c");
+        stats.collect_graph_metrics(&graph);
+        assert!(!stats.fan_in.is_empty());
+        assert!(!stats.fan_out.is_empty());
+        assert!(!stats.dependency_depth.is_empty());
+        assert!(stats.max_depth() > 0);
+    }
 }

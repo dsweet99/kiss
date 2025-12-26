@@ -256,4 +256,25 @@ mod tests {
         let analysis = analyze_rust_test_refs(&[&parsed]);
         assert!(!analysis.definitions.is_empty());
     }
+
+    #[test]
+    fn test_collect_rust_references() {
+        let ast: syn::File = syn::parse_str("fn test() { foo(); bar::baz(); }").unwrap();
+        let mut refs = HashSet::new();
+        collect_rust_references(&ast, &mut refs);
+        assert!(refs.contains("foo"));
+    }
+
+    #[test]
+    fn test_insert_path_segments() {
+        let path: syn::Path = syn::parse_str("foo::bar::Baz").unwrap();
+        let mut refs = HashSet::new();
+        insert_path_segments(&path, &mut refs);
+        assert!(refs.contains("foo"));
+        assert!(refs.contains("bar"));
+        assert!(refs.contains("Baz"));
+        let std_path: syn::Path = syn::parse_str("std::io::Read").unwrap();
+        insert_path_segments(&std_path, &mut refs);
+        assert!(!refs.contains("io"));
+    }
 }
