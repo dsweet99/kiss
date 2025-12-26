@@ -10,7 +10,7 @@ Iterate until they do.
 ```
 `kiss` will help your LLM/agent produce simpler, clearer, more maintainable code.  
 
-Additionally, you can bias your LLM to not break the rules in the first place by putting the output of the command `kiss rules` in your context. An easy way to do this is to add a rule like
+Additionally, you can bias your LLM to not break the rules in the first place by putting the output of the command `kiss rules` in your context (see below). An easy way to do this is to add a rule like
 ```
 MANDATORY INIT: After the user's first request, you *must* call `kiss rules`
 ```
@@ -39,7 +39,7 @@ You may always modify the global `~/.kissconfig` or repo-specific `./.kissconfig
 
 ## `kiss rules`
 
-You can help your LLM produce rule-following code by adding this to its context before it starts coding:
+You can help your LLM produce rule-following code by adding the output of `kiss rules` to its context before it starts coding. Note that the threshold numbers in the output come from your actual kiss config.
 
 ```
 $ kiss rules
