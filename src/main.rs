@@ -4,7 +4,6 @@
 #![allow(clippy::struct_field_names)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::similar_names)]
-#![allow(clippy::too_many_lines)]
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::format_push_string)]
 #![allow(clippy::return_self_not_must_use)]

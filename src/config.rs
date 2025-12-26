@@ -282,5 +282,16 @@ mod tests {
         let mut gate = GateConfig::default();
         gate.merge_from_toml("[gate]\ntest_coverage_threshold = 150");
         assert_eq!(gate.test_coverage_threshold, 100);
+        gate.merge_from_toml("[gate]\nmin_similarity = 0.8");
+        assert!((gate.min_similarity - 0.8).abs() < 0.001);
+        gate.merge_from_toml("[gate]\nmin_similarity = 1.5");
+        assert!((gate.min_similarity - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_get_f64() {
+        let table: toml::Table = "value = 0.75".parse().unwrap();
+        assert_eq!(get_f64(&table, "value"), Some(0.75));
+        assert_eq!(get_f64(&table, "missing"), None);
     }
 }
