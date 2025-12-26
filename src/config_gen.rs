@@ -1,6 +1,8 @@
 
 use crate::discovery::{find_source_files_with_ignore, Language};
+use crate::graph::build_dependency_graph;
 use crate::parsing::{parse_files, ParsedFile};
+use crate::rust_graph::build_rust_dependency_graph;
 use crate::rust_parsing::{parse_rust_files, ParsedRustFile};
 use crate::stats::{compute_summaries, MetricStats, PercentileSummary};
 use std::path::Path;
@@ -20,7 +22,8 @@ pub fn collect_py_stats_with_ignore(root: &Path, ignore: &[String]) -> (MetricSt
     let parsed: Vec<ParsedFile> = results.into_iter().filter_map(std::result::Result::ok).collect();
     let cnt = parsed.len();
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
-    let stats = MetricStats::collect(&refs);
+    let mut stats = MetricStats::collect(&refs);
+    stats.collect_graph_metrics(&build_dependency_graph(&refs));
     (stats, cnt)
 }
 
@@ -38,7 +41,8 @@ pub fn collect_rs_stats_with_ignore(root: &Path, ignore: &[String]) -> (MetricSt
     let parsed: Vec<ParsedRustFile> = parse_rust_files(&rs_files).into_iter().filter_map(std::result::Result::ok).collect();
     let cnt = parsed.len();
     let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-    let stats = MetricStats::collect_rust(&refs);
+    let mut stats = MetricStats::collect_rust(&refs);
+    stats.collect_graph_metrics(&build_rust_dependency_graph(&refs));
     (stats, cnt)
 }
 

@@ -36,7 +36,7 @@ pub fn run_analyze(
     let (py_graph, rs_graph) = build_graphs(&py_parsed, &rs_parsed);
     viols.extend(analyze_graphs(py_graph.as_ref(), rs_graph.as_ref(), py_config, rs_config));
 
-    print_all_results(&viols, &py_parsed, &rs_parsed, show_warnings)
+    print_all_results(&viols, &py_parsed, &rs_parsed, show_warnings, gate_config.min_similarity)
 }
 
 pub fn gather_files(root: &Path, lang: Option<Language>, ignore_prefixes: &[String]) -> (Vec<PathBuf>, Vec<PathBuf>) {
@@ -143,9 +143,9 @@ pub fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFi
     (coverage, tested, total, unreferenced)
 }
 
-fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], show_warnings: bool) -> bool {
-    let py_dups = detect_py_duplicates(py_parsed);
-    let rs_dups = detect_rs_duplicates(rs_parsed);
+fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], show_warnings: bool, min_similarity: f64) -> bool {
+    let py_dups = detect_py_duplicates(py_parsed, min_similarity);
+    let rs_dups = detect_rs_duplicates(rs_parsed, min_similarity);
     let dup_count = py_dups.len() + rs_dups.len();
     let has_violations = !viols.is_empty() || dup_count > 0;
     
@@ -162,16 +162,18 @@ fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &
     !has_violations
 }
 
-pub fn detect_py_duplicates(parsed: &[ParsedFile]) -> Vec<DuplicateCluster> {
+pub fn detect_py_duplicates(parsed: &[ParsedFile], min_similarity: f64) -> Vec<DuplicateCluster> {
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
     let chunks = extract_chunks_for_duplication(&refs);
-    cluster_duplicates(&detect_duplicates(&refs, &DuplicationConfig::default()), &chunks)
+    let config = DuplicationConfig { min_similarity, ..Default::default() };
+    cluster_duplicates(&detect_duplicates(&refs, &config), &chunks)
 }
 
-pub fn detect_rs_duplicates(parsed: &[ParsedRustFile]) -> Vec<DuplicateCluster> {
+pub fn detect_rs_duplicates(parsed: &[ParsedRustFile], min_similarity: f64) -> Vec<DuplicateCluster> {
     let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
     let chunks = extract_rust_chunks_for_duplication(&refs);
-    cluster_duplicates(&detect_duplicates_from_chunks(&chunks, &DuplicationConfig::default()), &chunks)
+    let config = DuplicationConfig { min_similarity, ..Default::default() };
+    cluster_duplicates(&detect_duplicates_from_chunks(&chunks, &config), &chunks)
 }
 
 #[cfg(test)]
@@ -198,7 +200,7 @@ mod tests {
         let (cov, tested, total, unref) = compute_test_coverage(&[], &[]);
         assert_eq!((tested, total, cov), (0, 0, 100));
         assert!(unref.is_empty());
-        assert!(check_coverage_gate(&[], &[], &GateConfig { test_coverage_threshold: 0 }));
+        assert!(check_coverage_gate(&[], &[], &GateConfig { test_coverage_threshold: 0, min_similarity: 0.7 }));
     }
 
     #[test]
@@ -210,8 +212,8 @@ mod tests {
 
     #[test]
     fn test_duplicates_empty() {
-        assert!(detect_py_duplicates(&[]).is_empty());
-        assert!(detect_rs_duplicates(&[]).is_empty());
+        assert!(detect_py_duplicates(&[], 0.7).is_empty());
+        assert!(detect_rs_duplicates(&[], 0.7).is_empty());
     }
 
     #[test]
@@ -223,6 +225,6 @@ mod tests {
 
     #[test]
     fn test_print_all_results() {
-        print_all_results(&[], &[], &[], false);
+        print_all_results(&[], &[], &[], false, 0.7);
     }
 }

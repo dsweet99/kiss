@@ -194,6 +194,7 @@ fn gather_files_by_lang(paths: &[String], lang_filter: Option<Language>, ignore:
 
 fn run_stats_detailed(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
     use kiss::{collect_detailed_py, collect_detailed_rs, format_detailed_table};
+    use kiss::{build_dependency_graph, rust_graph::build_rust_dependency_graph};
     use kiss::parsing::parse_files;
     use kiss::rust_parsing::parse_rust_files;
 
@@ -206,13 +207,15 @@ fn run_stats_detailed(paths: &[String], lang_filter: Option<Language>, ignore: &
     if !py_files.is_empty() {
         let results = parse_files(&py_files).expect("parse files");
         let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-        let units = collect_detailed_py(&parsed);
+        let graph = build_dependency_graph(&parsed);
+        let units = collect_detailed_py(&parsed, Some(&graph));
         println!("=== Python ({} files, {} units) ===\n{}", py_files.len(), units.len(), format_detailed_table(&units));
     }
     if !rs_files.is_empty() {
         let results = parse_rust_files(&rs_files);
         let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-        let units = collect_detailed_rs(&parsed);
+        let graph = build_rust_dependency_graph(&parsed);
+        let units = collect_detailed_rs(&parsed, Some(&graph));
         println!("=== Rust ({} files, {} units) ===\n{}", rs_files.len(), units.len(), format_detailed_table(&units));
     }
 }

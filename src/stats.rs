@@ -1,4 +1,5 @@
 
+use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
 use crate::py_metrics::{compute_class_metrics_with_source, compute_file_metrics, compute_function_metrics};
 use crate::rust_fn_metrics::{compute_rust_file_metrics, compute_rust_function_metrics};
@@ -21,6 +22,8 @@ pub struct MetricStats {
     pub lines_per_file: Vec<usize>,
     pub classes_per_file: Vec<usize>,
     pub imports_per_file: Vec<usize>,
+    pub fan_in: Vec<usize>,
+    pub fan_out: Vec<usize>,
 }
 
 impl MetricStats {
@@ -50,8 +53,17 @@ impl MetricStats {
         self.lines_per_file.extend(other.lines_per_file);
         self.classes_per_file.extend(other.classes_per_file);
         self.imports_per_file.extend(other.imports_per_file);
+        self.fan_in.extend(other.fan_in);
+        self.fan_out.extend(other.fan_out);
     }
 
+    pub fn collect_graph_metrics(&mut self, graph: &DependencyGraph) {
+        for name in graph.nodes.keys() {
+            let m = graph.module_metrics(name);
+            self.fan_in.push(m.fan_in);
+            self.fan_out.push(m.fan_out);
+        }
+    }
 
     pub fn collect_rust(parsed_files: &[&ParsedRustFile]) -> Self {
         let mut stats = Self::default();
@@ -159,6 +171,8 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         PercentileSummary::from_values("Lines per file", &stats.lines_per_file),
         PercentileSummary::from_values("Classes per file", &stats.classes_per_file),
         PercentileSummary::from_values("Imports per file", &stats.imports_per_file),
+        PercentileSummary::from_values("Fan-in (per module)", &stats.fan_in),
+        PercentileSummary::from_values("Fan-out (per module)", &stats.fan_out),
     ]
 }
 

@@ -1,6 +1,6 @@
 # kiss
 
-Code-quality feedback for LLM coding agents.
+Code-quality feedback for LLM coding agents
 
 ## tl;dr
 `kiss` provides feedback to LLMs about code complexity, duplication, and coverage. Add an AI coder rule (e.g., a Cursor rule) like

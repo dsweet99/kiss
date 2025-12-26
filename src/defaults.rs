@@ -38,6 +38,10 @@ pub mod graph {
     pub const DEPENDENCY_DEPTH: usize = 6;
 }
 
+pub mod duplication {
+    pub const MIN_SIMILARITY: f64 = 0.7;
+}
+
 pub mod gate {
     pub const TEST_COVERAGE_THRESHOLD: usize = 90;
 }
@@ -45,6 +49,7 @@ pub mod gate {
 pub fn default_config_toml() -> String {
     format!(r"[gate]
 test_coverage_threshold = {gate_coverage}
+min_similarity = {min_sim}
 
 [python]
 imports_per_file = {py_imports}
@@ -83,6 +88,7 @@ bool_parameters = {rs_bool_params}
 attributes_per_function = {rs_attrs}
 ",
         gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
+        min_sim = duplication::MIN_SIMILARITY,
         py_imports = python::IMPORTS_PER_FILE,
         py_lines = python::LINES_PER_FILE,
         py_types = python::TYPES_PER_FILE,

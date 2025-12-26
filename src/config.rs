@@ -181,10 +181,16 @@ fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
 #[derive(Debug, Clone)]
 pub struct GateConfig {
     pub test_coverage_threshold: usize,
+    pub min_similarity: f64,
 }
 
 impl Default for GateConfig {
-    fn default() -> Self { Self { test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD } }
+    fn default() -> Self {
+        Self {
+            test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD,
+            min_similarity: defaults::duplication::MIN_SIMILARITY,
+        }
+    }
 }
 
 impl GateConfig {
@@ -207,11 +213,19 @@ impl GateConfig {
 
     fn merge_from_toml(&mut self, toml_str: &str) {
         let Ok(value) = toml_str.parse::<toml::Table>() else { return };
-        if let Some(gate) = value.get("gate").and_then(|v| v.as_table())
-            && let Some(thresh) = get_usize(gate, "test_coverage_threshold") {
+        if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
+            if let Some(thresh) = get_usize(gate, "test_coverage_threshold") {
                 self.test_coverage_threshold = thresh.min(100);
             }
+            if let Some(sim) = get_f64(gate, "min_similarity") {
+                self.min_similarity = sim.clamp(0.0, 1.0);
+            }
+        }
     }
+}
+
+fn get_f64(table: &toml::Table, key: &str) -> Option<f64> {
+    table.get(key).and_then(toml::Value::as_float)
 }
 
 #[cfg(test)]
