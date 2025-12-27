@@ -31,7 +31,7 @@ pub use config::{is_similar, Config, ConfigLanguage, GateConfig};
 pub use defaults::default_config_toml;
 pub use counts::analyze_file;
 pub use py_metrics::{
-    compute_class_metrics, compute_class_metrics_with_source, compute_file_metrics,
+    compute_class_metrics, compute_file_metrics,
     compute_function_metrics, ClassMetrics, FileMetrics, FunctionMetrics,
 };
 pub use violation::{Violation, ViolationBuilder};

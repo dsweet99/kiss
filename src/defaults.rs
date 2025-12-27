@@ -3,6 +3,7 @@ pub mod python {
     pub const LINES_PER_FILE: usize = 300;
     pub const TYPES_PER_FILE: usize = 10;
     pub const STATEMENTS_PER_FUNCTION: usize = 35;
+    pub const ARGUMENTS_PER_FUNCTION: usize = 7;
     pub const POSITIONAL_ARGS: usize = 5;
     pub const KEYWORD_ONLY_ARGS: usize = 6;
     pub const MAX_INDENTATION: usize = 4;

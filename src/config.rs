@@ -44,7 +44,7 @@ impl Config {
             statements_per_function: defaults::python::STATEMENTS_PER_FUNCTION,
             methods_per_class: defaults::python::METHODS_PER_CLASS,
             lines_per_file: defaults::python::LINES_PER_FILE,
-            arguments_per_function: 7,
+            arguments_per_function: defaults::python::ARGUMENTS_PER_FUNCTION,
             arguments_positional: defaults::python::POSITIONAL_ARGS,
             arguments_keyword_only: defaults::python::KEYWORD_ONLY_ARGS,
             max_indentation_depth: defaults::python::MAX_INDENTATION,

@@ -1,10 +1,7 @@
 
 use crate::config::Config;
 use crate::parsing::ParsedFile;
-use crate::py_metrics::{
-    compute_class_metrics_with_source, compute_file_metrics, compute_function_metrics,
-    FileMetrics, FunctionMetrics,
-};
+use crate::py_metrics::{compute_file_metrics, compute_function_metrics, FileMetrics, FunctionMetrics};
 use crate::violation::{Violation, ViolationBuilder};
 use std::path::Path;
 use tree_sitter::Node;
@@ -108,7 +105,7 @@ fn analyze_class_node(node: Node, source: &str, file: &Path, violations: &mut Ve
         .and_then(|n| n.utf8_text(source.as_bytes()).ok())
         .unwrap_or("<anonymous>");
     let line = node.start_position().row + 1;
-    let m = compute_class_metrics_with_source(node, source);
+    let m = compute_class_metrics(node);
 
     if m.methods > config.methods_per_class {
         violations.push(violation(file, line, name).metric("methods_per_class").value(m.methods).threshold(config.methods_per_class)

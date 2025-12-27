@@ -91,7 +91,7 @@ impl Default for DependencyGraph {
 }
 
 fn is_entry_point(name: &str) -> bool {
-    matches!(name, "main" | "lib" | "build" | "__main__" | "__init__" | "tests")
+    matches!(name, "main" | "lib" | "build" | "__main__" | "__init__" | "tests" | "conftest" | "setup")
         || name.starts_with("test_") || name.ends_with("_test")
         || name.contains("_integration") || name.contains("_bench")
 }

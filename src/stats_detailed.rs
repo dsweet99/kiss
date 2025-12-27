@@ -1,7 +1,7 @@
 
 use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
-use crate::py_metrics::{compute_class_metrics_with_source, compute_file_metrics, compute_function_metrics};
+use crate::py_metrics::{compute_class_metrics, compute_file_metrics, compute_function_metrics};
 use crate::rust_fn_metrics::{compute_rust_file_metrics, compute_rust_function_metrics};
 use crate::rust_parsing::ParsedRustFile;
 use syn::{ImplItem, Item};
@@ -64,7 +64,7 @@ fn collect_detailed_from_node(node: Node, source: &str, file: &str, units: &mut 
         }
         "class_definition" => {
             let name = node.child_by_field_name("name").and_then(|n| n.utf8_text(source.as_bytes()).ok()).unwrap_or("?");
-            let m = compute_class_metrics_with_source(node, source);
+            let m = compute_class_metrics(node);
             units.push(UnitMetrics { file: file.to_string(), name: name.to_string(), kind: "class", line: node.start_position().row + 1, statements: None, arguments: None, indentation: None, branches: None, returns: None, locals: None, methods: Some(m.methods), lines: None, imports: None, fan_in: None, fan_out: None });
         }
         _ => {}

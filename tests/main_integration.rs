@@ -3,7 +3,7 @@ use kiss::cli_output::{
     print_coverage_gate_failure, print_duplicates, print_final_status, print_no_files_message,
     print_py_test_refs, print_rs_test_refs, print_violations,
 };
-use kiss::config_gen::{collect_py_stats, collect_rs_stats, merge_config_toml};
+use kiss::config_gen::{collect_py_stats, collect_rs_stats, merge_config_toml, write_mimic_config};
 use kiss::{
     analyze_file, analyze_graph, analyze_test_refs, build_dependency_graph,
     cluster_duplicates, detect_duplicates, extract_chunks_for_duplication, find_source_files,
@@ -136,6 +136,14 @@ fn test_config_merge() {
     writeln!(tmp, "[python]\nstatements_per_function = 10").unwrap();
     let merged = merge_config_toml(tmp.path(), "[rust]\nstatements_per_function = 20", false, true);
     assert!(merged.contains("[python]") || merged.contains("[rust]"));
+}
+
+#[test]
+fn test_write_mimic_config() {
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("out.toml");
+    write_mimic_config(&path, "[python]\nx = 1", 1, 0);
+    assert!(path.exists());
 }
 
 #[test]

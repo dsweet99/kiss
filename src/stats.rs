@@ -1,7 +1,7 @@
 
 use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
-use crate::py_metrics::{compute_class_metrics_with_source, compute_file_metrics, compute_function_metrics};
+use crate::py_metrics::{compute_class_metrics, compute_file_metrics, compute_function_metrics};
 use crate::rust_fn_metrics::{compute_rust_file_metrics, compute_rust_function_metrics};
 use crate::rust_parsing::ParsedRustFile;
 use syn::{ImplItem, Item};
@@ -103,7 +103,7 @@ fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_c
             for child in node.children(&mut c) { collect_from_node(child, source, stats, false); }
         }
         "class_definition" => {
-            let m = compute_class_metrics_with_source(node, source);
+            let m = compute_class_metrics(node);
             stats.methods_per_class.push(m.methods);
             let mut c = node.walk();
             for child in node.children(&mut c) { collect_from_node(child, source, stats, true); }

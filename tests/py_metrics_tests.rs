@@ -1,7 +1,7 @@
 use kiss::parsing::{create_parser, parse_file, ParsedFile};
 use kiss::py_metrics::{
-    compute_class_metrics, compute_class_metrics_with_source, compute_file_metrics,
-    compute_function_metrics, count_node_kind, ClassMetrics,
+    compute_class_metrics, compute_file_metrics, compute_function_metrics,
+    count_node_kind, ClassMetrics,
 };
 use std::io::Write;
 
@@ -34,9 +34,9 @@ fn test_class_metrics() {
 }
 
 #[test]
-fn test_class_metrics_with_source() {
+fn test_class_metrics_two_methods() {
     let p = parse("class C:\n    def a(self): self.x = 1\n    def b(self): self.x = 2");
-    let m = compute_class_metrics_with_source(get_class_node(&p), &p.source);
+    let m = compute_class_metrics(get_class_node(&p));
     assert_eq!(m.methods, 2);
 }
 

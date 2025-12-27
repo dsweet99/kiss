@@ -44,13 +44,6 @@ pub fn compute_class_metrics(node: Node) -> ClassMetrics {
 }
 
 #[must_use]
-pub fn compute_class_metrics_with_source(node: Node, source: &str) -> ClassMetrics {
-    let _ = source;
-    let Some(body) = node.child_by_field_name("body") else { return ClassMetrics::default() };
-    ClassMetrics { methods: count_node_kind(body, "function_definition") }
-}
-
-#[must_use]
 pub fn compute_file_metrics(parsed: &ParsedFile) -> FileMetrics {
     let root = parsed.tree.root_node();
     FileMetrics { lines: parsed.source.lines().count(), classes: count_node_kind(root, "class_definition"), imports: count_imports(root) }
