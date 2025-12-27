@@ -89,7 +89,7 @@ You may always modify the global `~/.kissconfig` or repo-specific `./.kissconfig
 
 You can help your LLM produce rule-following code by adding the output of `kiss rules` to its context before it starts coding. These are the same rules that kiss will enforce when you run `kiss check`. Note that the threshold numbers in the output come from your actual kiss config.
 
-```bash
+```
 $ kiss rules
 RULE: [Python] Keep functions ≤ 35 statements
 RULE: [Python] Use ≤ 5 positional arguments; prefer keyword-only args after that
