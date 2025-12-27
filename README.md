@@ -45,7 +45,7 @@ kiss stats
 ```
 to see the distribution of metrics for your codebase. For example
 
-```bash
+```
 $ kiss stats
 kiss stats - Summary Statistics
 Analyzed from: .
