@@ -1,11 +1,12 @@
 
+use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use kiss::{
     analyze_file, analyze_graph, analyze_rust_file, analyze_rust_test_refs, analyze_test_refs,
     build_dependency_graph, build_rust_dependency_graph, cluster_duplicates,
-    detect_duplicates, detect_duplicates_from_chunks, extract_chunks_for_duplication,
+    detect_duplicates_from_chunks, extract_chunks_for_duplication,
     extract_rust_chunks_for_duplication, find_source_files_with_ignore, parse_files, parse_rust_files,
     extract_code_units, extract_rust_code_units, is_test_file, is_rust_test_file,
     Config, DependencyGraph, DuplicateCluster, DuplicationConfig, GateConfig, Language,
@@ -40,8 +41,9 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
     }
 
     let focus_set = build_focus_set(opts.focus_paths, opts.lang_filter, opts.ignore_prefixes);
-    let result = parse_all(&py_files, &rs_files, opts.py_config, opts.rs_config);
+    let (result, parse_timing) = parse_all_timed(&py_files, &rs_files, opts.py_config, opts.rs_config, opts.show_timing);
     let t2 = std::time::Instant::now();
+    log_parse_timing(opts.show_timing, &parse_timing);
     let mut viols = filter_viols_by_focus(result.violations, &focus_set);
 
     if !opts.bypass_gate && !check_coverage_gate(&result.py_parsed, &result.rs_parsed, opts.gate_config, &focus_set, opts.show_timing) {
@@ -57,9 +59,15 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
     let t4 = std::time::Instant::now();
 
     if opts.bypass_gate { viols.extend(collect_coverage_viols(&result.py_parsed, &result.rs_parsed, &focus_set, opts.show_timing)); }
-    if opts.show_timing { eprintln!("[TIMING] graph_analysis={:.2}s, test_refs={:.2}s", t4.duration_since(t3).as_secs_f64(), std::time::Instant::now().duration_since(t4).as_secs_f64()); }
+    log_timing_phase2(opts.show_timing, t3, t4);
 
     print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.gate_config.min_similarity, &focus_set, opts.show_timing)
+}
+
+fn log_parse_timing(show: bool, timing: &str) { if show && !timing.is_empty() { eprintln!("[TIMING] {timing}"); } }
+
+fn log_timing_phase2(show: bool, t3: std::time::Instant, t4: std::time::Instant) {
+    if show { eprintln!("[TIMING] graph_analysis={:.2}s, test_refs={:.2}s", t4.duration_since(t3).as_secs_f64(), std::time::Instant::now().duration_since(t4).as_secs_f64()); }
 }
 
 fn filter_viols_by_focus(mut viols: Vec<Violation>, focus_set: &HashSet<PathBuf>) -> Vec<Violation> {
@@ -130,31 +138,51 @@ pub struct ParseResult {
     pub code_unit_count: usize,
 }
 
+#[cfg(test)]
 pub fn parse_all(py_files: &[PathBuf], rs_files: &[PathBuf], py_config: &Config, rs_config: &Config) -> ParseResult {
-    let (py_parsed, mut viols, py_units) = parse_and_analyze_py(py_files, py_config);
-    let (rs_parsed, rs_viols, rs_units) = parse_and_analyze_rs(rs_files, rs_config);
-    viols.extend(rs_viols);
-    ParseResult { py_parsed, rs_parsed, violations: viols, code_unit_count: py_units + rs_units }
+    parse_all_timed(py_files, rs_files, py_config, rs_config, false).0
 }
 
-pub fn parse_and_analyze_py(files: &[PathBuf], config: &Config) -> (Vec<ParsedFile>, Vec<Violation>, usize) {
-    if files.is_empty() { return (Vec::new(), Vec::new(), 0); }
+fn parse_all_timed(py_files: &[PathBuf], rs_files: &[PathBuf], py_config: &Config, rs_config: &Config, show_timing: bool) -> (ParseResult, String) {
+    let ((py_parsed, mut viols, py_units), py_timing) = parse_and_analyze_py_timed(py_files, py_config, show_timing);
+    let (rs_parsed, rs_viols, rs_units) = parse_and_analyze_rs(rs_files, rs_config);
+    viols.extend(rs_viols);
+    (ParseResult { py_parsed, rs_parsed, violations: viols, code_unit_count: py_units + rs_units }, py_timing)
+}
+
+fn parse_and_analyze_py_timed(files: &[PathBuf], config: &Config, show_timing: bool) -> ((Vec<ParsedFile>, Vec<Violation>, usize), String) {
+    if files.is_empty() { return ((Vec::new(), Vec::new(), 0), String::new()); }
+    let t0 = std::time::Instant::now();
     let results = match parse_files(files) {
         Ok(r) => r,
-        Err(e) => { eprintln!("Failed to initialize Python parser: {e}"); return (Vec::new(), Vec::new(), 0); }
+        Err(e) => { eprintln!("Failed to initialize Python parser: {e}"); return ((Vec::new(), Vec::new(), 0), String::new()); }
     };
-    let (mut parsed, mut viols, mut unit_count) = (Vec::new(), Vec::new(), 0);
-    for result in results {
-        match result {
-            Ok(p) => {
-                unit_count += extract_code_units(&p).len();
-                if !is_test_file(&p.path) { viols.extend(analyze_file(&p, config)); }
-                parsed.push(p);
-            }
-            Err(e) => eprintln!("Error parsing Python: {e}"),
-        }
-    }
-    (parsed, viols, unit_count)
+    let t1 = std::time::Instant::now();
+    
+    // Collect successful parses, report errors
+    let parsed: Vec<ParsedFile> = results.into_iter().filter_map(|r| match r {
+        Ok(p) => Some(p),
+        Err(e) => { eprintln!("Error parsing Python: {e}"); None }
+    }).collect();
+    
+    // Parallel analysis: compute unit counts and violations
+    let analysis: Vec<(usize, Vec<Violation>)> = parsed.par_iter().map(|p| {
+        let units = extract_code_units(p).len();
+        let viols = if is_test_file(&p.path) { Vec::new() } else { analyze_file(p, config) };
+        (units, viols)
+    }).collect();
+    
+    let (unit_count, viols) = analysis.into_iter().fold((0, Vec::new()), |(mut u, mut v), (units, file_viols)| {
+        u += units;
+        v.extend(file_viols);
+        (u, v)
+    });
+    
+    let t2 = std::time::Instant::now();
+    let timing = if show_timing {
+        format!("py: parse={:.2}s, analyze={:.2}s", t1.duration_since(t0).as_secs_f64(), t2.duration_since(t1).as_secs_f64())
+    } else { String::new() };
+    ((parsed, viols, unit_count), timing)
 }
 
 pub fn parse_and_analyze_rs(files: &[PathBuf], config: &Config) -> (Vec<ParsedRustFile>, Vec<Violation>, usize) {
@@ -276,7 +304,7 @@ pub fn detect_py_duplicates(parsed: &[ParsedFile], min_similarity: f64) -> Vec<D
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
     let chunks = extract_chunks_for_duplication(&refs);
     let config = DuplicationConfig { min_similarity, ..Default::default() };
-    cluster_duplicates(&detect_duplicates(&refs, &config), &chunks)
+    cluster_duplicates(&detect_duplicates_from_chunks(&chunks, &config), &chunks)
 }
 
 pub fn detect_rs_duplicates(parsed: &[ParsedRustFile], min_similarity: f64) -> Vec<DuplicateCluster> {
