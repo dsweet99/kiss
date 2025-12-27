@@ -13,7 +13,7 @@ use kiss::{
 };
 use kiss::cli_output::{
     print_coverage_gate_failure, print_duplicates, print_final_status, print_no_files_message,
-    print_py_test_refs, print_rs_test_refs, print_violations,
+    print_violations,
 };
 
 pub struct AnalyzeOptions<'a> {
@@ -224,9 +224,7 @@ fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &
     print_duplicates("Python", &py_dups);
     print_duplicates("Rust", &rs_dups);
     
-    let warning_count = print_py_test_refs(py_parsed) + print_rs_test_refs(rs_parsed);
-    
-    let has_violations = !viols.is_empty() || dup_count > 0 || warning_count > 0;
+    let has_violations = !viols.is_empty() || dup_count > 0;
     print_final_status(has_violations);
     
     !has_violations

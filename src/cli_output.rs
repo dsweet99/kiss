@@ -58,18 +58,12 @@ pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
 pub fn print_py_test_refs(parsed: &[ParsedFile]) -> usize {
     if parsed.is_empty() { return 0; }
     let analysis = analyze_test_refs(&parsed.iter().collect::<Vec<_>>());
-    for d in &analysis.unreferenced { 
-        println!("WARNING:test_coverage:{}:{}:{}: Code unit may lack test coverage.", d.file.display(), d.line, d.name); 
-    }
     analysis.unreferenced.len()
 }
 
 pub fn print_rs_test_refs(parsed: &[ParsedRustFile]) -> usize {
     if parsed.is_empty() { return 0; }
     let analysis = analyze_rust_test_refs(&parsed.iter().collect::<Vec<_>>());
-    for d in &analysis.unreferenced { 
-        println!("WARNING:test_coverage:{}:{}:{}: Code unit may lack test coverage.", d.file.display(), d.line, d.name); 
-    }
     analysis.unreferenced.len()
 }
 
