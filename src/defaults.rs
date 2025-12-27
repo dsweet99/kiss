@@ -52,7 +52,7 @@ test_coverage_threshold = {gate_coverage}
 min_similarity = {min_sim}
 
 [python]
-imports_per_file = {py_imports}
+imported_names_per_file = {py_imports}
 lines_per_file = {py_lines}
 types_per_file = {py_types}
 statements_per_function = {py_statements}
@@ -73,7 +73,7 @@ transitive_dependencies = {transitive_deps}
 dependency_depth = {dep_depth}
 
 [rust]
-imports_per_file = {rs_imports}
+imported_names_per_file = {rs_imports}
 lines_per_file = {rs_lines}
 types_per_file = {rs_types}
 statements_per_function = {rs_statements}

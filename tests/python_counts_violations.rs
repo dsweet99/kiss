@@ -3,7 +3,7 @@ use kiss::config::Config;
 use kiss::parsing::{create_parser, parse_file};
 use std::io::Write;
 
-fn parse_source(code: &str) -> kiss::ParsedFile {
+fn parse_python_source(code: &str) -> kiss::ParsedFile {
     let mut tmp = tempfile::NamedTempFile::new().unwrap();
     write!(tmp, "{code}").unwrap();
     let mut parser = create_parser().unwrap();
@@ -21,7 +21,7 @@ class BigClass:
     def m5(self): pass
     def m6(self): pass
 ";
-    let parsed = parse_source(code);
+    let parsed = parse_python_source(code);
     let config = Config { methods_per_class: 3, ..Default::default() };
 
     let violations = analyze_file(&parsed, &config);
@@ -47,7 +47,7 @@ def risky_function():
     except Exception:
         pass
 ";
-    let parsed = parse_source(code);
+    let parsed = parse_python_source(code);
     let config = Config { statements_per_try_block: 3, ..Default::default() };
 
     let violations = analyze_file(&parsed, &config);

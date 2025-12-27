@@ -27,8 +27,13 @@ fn extract_rust_imports(ast: &syn::File) -> Vec<String> {
     let mut imports = Vec::new();
 
     for item in &ast.items {
-        if let Item::Use(use_item) = item {
-            collect_use_paths(&use_item.tree, &mut imports);
+        match item {
+            Item::Use(use_item) => collect_use_paths(&use_item.tree, &mut imports),
+            // mod foo; (external file reference) creates a dependency edge
+            Item::Mod(mod_item) if mod_item.content.is_none() => {
+                imports.push(mod_item.ident.to_string());
+            }
+            _ => {}
         }
     }
 

@@ -51,20 +51,22 @@ LLMs work locally but need global awareness. **Pattern:** Local action → Globa
 - **Struct init syntax** — `Config { field: val, ..Default::default() }` not field reassignment
 - **`Option<&T>` over `&Option<T>`** in function signatures
 - **`writeln!` over `format!` + `push_str`** for string building
-- Max 300 lines/file; consolidate tests or extract to `tests/*.rs` when approaching limit
+- Max 300 lines/file; extract to `tests/*.rs` when approaching limit
 - Self-documenting names; no comments (code should be clear)
 - `tests/fake_*` are test fixtures (intentionally bad) — use `--ignore fake_`
+- `src/test_utils.rs` for shared library test helpers (`#[cfg(test)]` modules can't import from `tests/`)
 
 ## Key Algorithms
 
-**MinHash/LSH:** Normalize → 3-gram shingles → 100 MinHash → 20 bands → Jaccard ≥ `min_similarity` (default 0.7)
+**Duplication (MinHash/LSH):** Normalize → 3-gram shingles → 100 MinHash → 20 bands → Jaccard ≥ 0.7. Skip functions <5 lines (filters builder patterns).
 
-**Graph:** Tarjan's SCC for cycles. Module-level (file = module). External crates excluded from violations.
+**Graph:** Tarjan's SCC for cycles. Module-level (file = module). Rust `mod foo;` declarations are dependency edges. External crates excluded.
 
-**Test References:**
-- Capture ALL path segments: `Foo::bar()` → both `Foo` and `bar`
-- Auto-mark trait impl methods when type is referenced
-- Traverse `#[cfg(test)]` inline modules; filter external crates
+**Test References:** Capture ALL path segments (`Foo::bar()` → both). Auto-mark trait impl methods. Traverse `#[cfg(test)]` inline modules.
+
+**Metric Counting:**
+- `imported_names_per_file`: counts each name (`from X import a, b` = 2), not statements
+- `attributes_per_function`: excludes `#[doc]` (doc comments aren't real attributes)
 
 ## Violation Advice
 
@@ -77,6 +79,8 @@ LLMs work locally but need global awareness. **Pattern:** Local action → Globa
 ## Configuration
 
 Precedence: `defaults.rs` → `~/.kissconfig` → `./.kissconfig` → `--config`
+
+**No backwards compatibility** — new software; rename/remove freely. Descriptive metric names over terse.
 
 **Reference codebases for mimic:** ripgrep, fd, bat (Rust); rich, click, attrs (Python)
 

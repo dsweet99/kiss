@@ -25,7 +25,7 @@ pub struct Config {
     pub returns_per_function: usize,
     pub branches_per_function: usize,
     pub local_variables_per_function: usize,
-    pub imports_per_file: usize,
+    pub imported_names_per_file: usize,
     pub statements_per_try_block: usize,
     pub boolean_parameters: usize,
     pub decorators_per_function: usize,
@@ -53,7 +53,7 @@ impl Config {
             returns_per_function: defaults::python::RETURNS_PER_FUNCTION,
             branches_per_function: defaults::python::BRANCHES_PER_FUNCTION,
             local_variables_per_function: defaults::python::LOCAL_VARIABLES,
-            imports_per_file: defaults::python::IMPORTS_PER_FILE,
+            imported_names_per_file: defaults::python::IMPORTS_PER_FILE,
             statements_per_try_block: defaults::python::STATEMENTS_PER_TRY_BLOCK,
             boolean_parameters: defaults::python::BOOLEAN_PARAMETERS,
             decorators_per_function: defaults::python::DECORATORS_PER_FUNCTION,
@@ -77,7 +77,7 @@ impl Config {
             returns_per_function: defaults::rust::RETURNS_PER_FUNCTION,
             branches_per_function: defaults::rust::BRANCHES_PER_FUNCTION,
             local_variables_per_function: defaults::rust::LOCAL_VARIABLES,
-            imports_per_file: defaults::rust::IMPORTS_PER_FILE,
+            imported_names_per_file: defaults::rust::IMPORTS_PER_FILE,
             statements_per_try_block: usize::MAX,
             boolean_parameters: defaults::rust::BOOLEAN_PARAMETERS,
             decorators_per_function: defaults::rust::ATTRIBUTES_PER_FUNCTION,
@@ -158,7 +158,7 @@ impl Config {
         const VALID: &[&str] = &["statements_per_function", "methods_per_class", "lines_per_file",
             "arguments_per_function", "arguments_positional", "arguments_keyword_only",
             "max_indentation_depth", "classes_per_file", "nested_function_depth", "returns_per_function",
-            "branches_per_function", "local_variables_per_function", "imports_per_file"];
+            "branches_per_function", "local_variables_per_function", "imported_names_per_file"];
         check_unknown_keys(table, VALID, "thresholds");
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "methods_per_class" => methods_per_class,
@@ -167,15 +167,15 @@ impl Config {
             "max_indentation_depth" => max_indentation_depth, "classes_per_file" => classes_per_file,
             "nested_function_depth" => nested_function_depth, "returns_per_function" => returns_per_function,
             "branches_per_function" => branches_per_function, "local_variables_per_function" => local_variables_per_function,
-            "imports_per_file" => imports_per_file);
+            "imported_names_per_file" => imported_names_per_file);
     }
 
     fn apply_shared(&mut self, table: &toml::Table) {
-        const VALID: &[&str] = &["lines_per_file", "types_per_file", "imports_per_file",
+        const VALID: &[&str] = &["lines_per_file", "types_per_file", "imported_names_per_file",
             "cycle_size", "transitive_dependencies", "dependency_depth"];
         check_unknown_keys(table, VALID, "shared");
         apply_config!(self, table, "lines_per_file" => lines_per_file, "types_per_file" => classes_per_file, 
-            "imports_per_file" => imports_per_file, "cycle_size" => cycle_size,
+            "imported_names_per_file" => imported_names_per_file, "cycle_size" => cycle_size,
             "transitive_dependencies" => transitive_dependencies, "dependency_depth" => dependency_depth);
     }
 
@@ -183,7 +183,7 @@ impl Config {
         const VALID: &[&str] = &["statements_per_function", "positional_args", "keyword_only_args",
             "max_indentation", "branches_per_function", "local_variables", "methods_per_class",
             "returns_per_function", "nested_function_depth", "statements_per_try_block",
-            "boolean_parameters", "decorators_per_function", "imports_per_file", "lines_per_file",
+            "boolean_parameters", "decorators_per_function", "imported_names_per_file", "lines_per_file",
             "types_per_file", "cycle_size", "transitive_dependencies", "dependency_depth"];
         check_unknown_keys(table, VALID, "python");
         apply_config!(self, table,
@@ -199,7 +199,7 @@ impl Config {
         const VALID: &[&str] = &["statements_per_function", "arguments", "max_indentation",
             "branches_per_function", "local_variables", "methods_per_class", "lines_per_file",
             "types_per_file", "returns_per_function", "nested_function_depth",
-            "boolean_parameters", "attributes_per_function", "imports_per_file",
+            "boolean_parameters", "attributes_per_function", "imported_names_per_file",
             "cycle_size", "transitive_dependencies", "dependency_depth", "nested_closure_depth"];
         check_unknown_keys(table, VALID, "rust");
         apply_config!(self, table,

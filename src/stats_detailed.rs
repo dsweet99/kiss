@@ -30,15 +30,27 @@ fn module_name_from_path(path: &std::path::Path) -> String {
     path.file_stem().map_or_else(String::new, |s| s.to_str().unwrap_or("").to_string())
 }
 
+fn file_unit_metrics(path: &std::path::Path, lines: usize, imports: usize, graph: Option<&DependencyGraph>) -> UnitMetrics {
+    let module_name = module_name_from_path(path);
+    let (fan_in, fan_out) = graph.map_or((None, None), |g| {
+        let m = g.module_metrics(&module_name);
+        (Some(m.fan_in), Some(m.fan_out))
+    });
+    UnitMetrics {
+        file: path.display().to_string(),
+        name: path.file_name().map_or("", |n| n.to_str().unwrap_or("")).to_string(),
+        kind: "file", line: 1, statements: None, arguments: None, indentation: None,
+        branches: None, returns: None, locals: None, methods: None,
+        lines: Some(lines), imports: Some(imports), fan_in, fan_out,
+    }
+}
+
 pub fn collect_detailed_py(parsed_files: &[&ParsedFile], graph: Option<&DependencyGraph>) -> Vec<UnitMetrics> {
     let mut units = Vec::new();
     for parsed in parsed_files {
-        let file = parsed.path.display().to_string();
         let fm = compute_file_metrics(parsed);
-        let module_name = module_name_from_path(&parsed.path);
-        let (fan_in, fan_out) = graph.map_or((None, None), |g| { let m = g.module_metrics(&module_name); (Some(m.fan_in), Some(m.fan_out)) });
-        units.push(UnitMetrics { file: file.clone(), name: parsed.path.file_name().map_or("", |n| n.to_str().unwrap_or("")).to_string(), kind: "file", line: 1, statements: None, arguments: None, indentation: None, branches: None, returns: None, locals: None, methods: None, lines: Some(fm.lines), imports: Some(fm.imports), fan_in, fan_out });
-        collect_detailed_from_node(parsed.tree.root_node(), &parsed.source, &file, &mut units);
+        units.push(file_unit_metrics(&parsed.path, fm.lines, fm.imports, graph));
+        collect_detailed_from_node(parsed.tree.root_node(), &parsed.source, &parsed.path.display().to_string(), &mut units);
     }
     units
 }
@@ -64,12 +76,9 @@ fn collect_detailed_from_node(node: Node, source: &str, file: &str, units: &mut 
 pub fn collect_detailed_rs(parsed_files: &[&ParsedRustFile], graph: Option<&DependencyGraph>) -> Vec<UnitMetrics> {
     let mut units = Vec::new();
     for parsed in parsed_files {
-        let file = parsed.path.display().to_string();
         let fm = compute_rust_file_metrics(parsed);
-        let module_name = module_name_from_path(&parsed.path);
-        let (fan_in, fan_out) = graph.map_or((None, None), |g| { let m = g.module_metrics(&module_name); (Some(m.fan_in), Some(m.fan_out)) });
-        units.push(UnitMetrics { file: file.clone(), name: parsed.path.file_name().map_or("", |n| n.to_str().unwrap_or("")).to_string(), kind: "file", line: 1, statements: None, arguments: None, indentation: None, branches: None, returns: None, locals: None, methods: None, lines: Some(fm.lines), imports: Some(fm.imports), fan_in, fan_out });
-        collect_detailed_from_items(&parsed.ast.items, &file, &mut units);
+        units.push(file_unit_metrics(&parsed.path, fm.lines, fm.imports, graph));
+        collect_detailed_from_items(&parsed.ast.items, &parsed.path.display().to_string(), &mut units);
     }
     units
 }
@@ -162,6 +171,9 @@ mod tests {
     fn test_collect_detailed_py_empty() {
         let units = collect_detailed_py(&[], None);
         assert!(units.is_empty());
+        let m = file_unit_metrics(std::path::Path::new("src/foo.py"), 100, 5, None);
+        assert_eq!(m.name, "foo.py");
+        assert_eq!(m.lines, Some(100));
     }
 
     #[test]

@@ -17,7 +17,7 @@ use crate::rules::{run_config, run_rules};
 
 #[derive(Parser, Debug)]
 #[command(name = "kiss", version, about = "Code-quality metrics tool for Python and Rust")]
-#[command(after_help = "EXAMPLES:\n  kiss .                    Analyze current directory\n  kiss . src/module/        Analyze module against full codebase (focus mode)\n  kiss --lang rust src/     Analyze only Rust files in src/\n  kiss mimic . --out .kissconfig   Generate config from codebase")]
+#[command(after_help = "EXAMPLES:\n  kiss check .                 Analyze current directory\n  kiss check . src/module/     Analyze module against full codebase (focus mode)\n  kiss check --lang rust src/  Analyze only Rust files in src/\n  kiss mimic . --out .kissconfig   Generate config from codebase")]
 struct Cli {
     /// Path to custom config file (default: .kissconfig or ~/.kissconfig)
     #[arg(long, global = true, value_name = "FILE")]
@@ -44,13 +44,7 @@ struct Cli {
     warnings: bool,
 
     #[command(subcommand)]
-    command: Option<Commands>,
-
-    /// Paths to analyze: [UNIVERSE] [FOCUS...]. UNIVERSE defines scope for graph
-    /// and test discovery. FOCUS paths (if provided) restrict where violations
-    /// are reported and coverage is enforced. Use focus mode for gradual adoption.
-    #[arg(default_value = ".")]
-    paths: Vec<String>,
+    command: Commands,
 }
 
 fn parse_language(s: &str) -> Result<Language, String> {
@@ -63,6 +57,12 @@ fn parse_language(s: &str) -> Result<Language, String> {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Analyze code for violations
+    Check {
+        /// Paths: [UNIVERSE] [FOCUS...]. UNIVERSE for graph/test scope, FOCUS for reporting.
+        #[arg(default_value = ".")]
+        paths: Vec<String>,
+    },
     /// Show metric statistics for codebase (summary by default, --all for details)
     Stats {
         /// Paths to analyze
@@ -92,23 +92,21 @@ fn main() {
     let ignore = normalize_ignore_prefixes(&cli.ignore);
 
     match cli.command {
-        Some(Commands::Stats { paths }) => run_stats(&paths, cli.lang, &ignore, cli.all),
-        Some(Commands::Mimic { paths, out }) => run_mimic(&paths, out.as_deref(), cli.lang, &ignore),
-        Some(Commands::Rules) => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
-        Some(Commands::Config) => run_config(&py_config, &rs_config, &gate_config, cli.config.as_ref(), cli.defaults),
-        None => {
-            let universe = &cli.paths[0];
-            let focus = if cli.paths.len() > 1 { &cli.paths[1..] } else { &cli.paths[..] };
-            validate_paths(&cli.paths);
+        Commands::Check { paths } => {
+            let universe = &paths[0];
+            let focus = if paths.len() > 1 { &paths[1..] } else { &paths[..] };
+            validate_paths(&paths);
             let opts = analyze::AnalyzeOptions {
                 universe, focus_paths: focus, py_config: &py_config, rs_config: &rs_config,
                 lang_filter: cli.lang, bypass_gate: cli.all, gate_config: &gate_config,
                 ignore_prefixes: &ignore, show_warnings: cli.warnings,
             };
-            if !run_analyze(&opts) {
-                std::process::exit(1);
-            }
+            if !run_analyze(&opts) { std::process::exit(1); }
         }
+        Commands::Stats { paths } => run_stats(&paths, cli.lang, &ignore, cli.all),
+        Commands::Mimic { paths, out } => run_mimic(&paths, out.as_deref(), cli.lang, &ignore),
+        Commands::Rules => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
+        Commands::Config => run_config(&py_config, &rs_config, &gate_config, cli.config.as_ref(), cli.defaults),
     }
 }
 
@@ -278,9 +276,9 @@ mod tests {
     #[test]
     fn test_cli_and_commands() {
         use clap::Parser;
-        assert_eq!(Cli::try_parse_from(["kiss", "."]).unwrap().paths, vec!["."]);
-        assert!(matches!(Cli::try_parse_from(["kiss", "rules"]).unwrap().command, Some(Commands::Rules)));
-        assert_eq!(Cli::try_parse_from(["kiss", ".", "src/", "lib/"]).unwrap().paths, vec![".", "src/", "lib/"]);
+        assert!(matches!(Cli::try_parse_from(["kiss", "check", "."]).unwrap().command, Commands::Check { .. }));
+        assert!(matches!(Cli::try_parse_from(["kiss", "rules"]).unwrap().command, Commands::Rules));
+        assert!(matches!(Cli::try_parse_from(["kiss", "stats"]).unwrap().command, Commands::Stats { .. }));
         ensure_default_config_exists();
     }
     #[test]

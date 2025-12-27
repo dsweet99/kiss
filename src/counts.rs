@@ -40,9 +40,9 @@ fn check_file_metrics(m: &FileMetrics, file: &Path, fname: &str, cfg: &Config, v
             .message(format!("File has {} classes (threshold: {})", m.classes, cfg.classes_per_file))
             .suggestion("Consider splitting into separate modules.").build());
     }
-    if m.imports > cfg.imports_per_file {
-        v.push(violation(file, 1, fname).metric("imports_per_file").value(m.imports).threshold(cfg.imports_per_file)
-            .message(format!("File has {} imports (threshold: {})", m.imports, cfg.imports_per_file))
+    if m.imports > cfg.imported_names_per_file {
+        v.push(violation(file, 1, fname).metric("imported_names_per_file").value(m.imports).threshold(cfg.imported_names_per_file)
+            .message(format!("File has {} imports (threshold: {})", m.imports, cfg.imported_names_per_file))
             .suggestion("Consider reducing dependencies or splitting the module.").build());
     }
 }
@@ -126,27 +126,19 @@ fn analyze_class_node(node: Node, source: &str, file: &Path, violations: &mut Ve
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parsing::{create_parser, parse_file};
-    use std::io::Write;
+    use crate::test_utils::parse_python_source;
     use std::path::PathBuf;
-
-    fn parse_source(code: &str) -> ParsedFile {
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        write!(tmp, "{code}").unwrap();
-        let mut parser = create_parser().unwrap();
-        parse_file(&mut parser, tmp.path()).unwrap()
-    }
 
     #[test]
     fn test_analyze_file_no_violations() {
-        let parsed = parse_source("def f(): pass");
+        let parsed = parse_python_source("def f(): pass");
         let violations = analyze_file(&parsed, &Config::default());
         assert!(violations.is_empty());
     }
 
     #[test]
     fn test_analyze_file_with_violation() {
-        let parsed = parse_source("def f(a,b,c,d,e,f,g,h,i,j): pass");
+        let parsed = parse_python_source("def f(a,b,c,d,e,f,g,h,i,j): pass");
         let config = Config { arguments_positional: 5, ..Default::default() };
         let violations = analyze_file(&parsed, &config);
         assert!(!violations.is_empty());
@@ -162,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_analyze_node() {
-        let parsed = parse_source("def f(): pass\nclass C: pass");
+        let parsed = parse_python_source("def f(): pass\nclass C: pass");
         let mut viols = Vec::new();
         analyze_node(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut viols, false, &Config::default());
         assert!(viols.is_empty());
@@ -170,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_analyze_class_node() {
-        let parsed = parse_source("class C:\n    def m(self): pass");
+        let parsed = parse_python_source("class C:\n    def m(self): pass");
         let mut viols = Vec::new();
         let cls = parsed.tree.root_node().child(0).unwrap();
         analyze_class_node(cls, &parsed.source, &parsed.path, &mut viols, &Config::default());
@@ -180,7 +172,7 @@ mod tests {
     #[test]
     fn test_check_file_metrics() {
         let m = FileMetrics { lines: 1000, classes: 20, imports: 50 };
-        let cfg = Config { lines_per_file: 500, classes_per_file: 10, imports_per_file: 30, ..Default::default() };
+        let cfg = Config { lines_per_file: 500, classes_per_file: 10, imported_names_per_file: 30, ..Default::default() };
         let mut viols = Vec::new();
         check_file_metrics(&m, Path::new("t.py"), "t.py", &cfg, &mut viols);
         assert_eq!(viols.len(), 3);
@@ -188,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_analyze_node_function() {
-        let parsed = parse_source("def f(a): x = 1");
+        let parsed = parse_python_source("def f(a): x = 1");
         let func = parsed.tree.root_node().child(0).unwrap();
         let mut viols = Vec::new();
         analyze_node(func, &parsed.source, &parsed.path, &mut viols, false, &Config::default());

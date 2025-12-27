@@ -9,6 +9,7 @@ use syn::{ImplItem, Item};
 use tree_sitter::Node;
 
 const MIN_CHUNK_TOKENS: usize = 10;
+const MIN_CHUNK_LINES: usize = 5;
 
 pub struct DuplicationConfig {
     pub minhash_size: usize,
@@ -127,11 +128,17 @@ fn extract_rust_function_chunks(ast: &syn::File, source: &str, file: &Path, chun
 
 fn extract_chunks_from_item(item: &Item, source: &str, file: &Path, chunks: &mut Vec<CodeChunk>) {
     match item {
-        Item::Fn(func) => add_rust_function_chunk(&func.sig.ident.to_string(), func.sig.ident.span(), source, file, chunks),
+        Item::Fn(func) => {
+            let start = func.sig.fn_token.span.start().line;
+            let end = func.block.brace_token.span.close().end().line;
+            add_rust_function_chunk(&func.sig.ident.to_string(), start, end, source, file, chunks);
+        }
         Item::Impl(impl_block) => {
             for impl_item in &impl_block.items {
                 if let ImplItem::Fn(method) = impl_item {
-                    add_rust_function_chunk(&method.sig.ident.to_string(), method.sig.ident.span(), source, file, chunks);
+                    let start = method.sig.fn_token.span.start().line;
+                    let end = method.block.brace_token.span.close().end().line;
+                    add_rust_function_chunk(&method.sig.ident.to_string(), start, end, source, file, chunks);
                 }
             }
         }
@@ -140,15 +147,17 @@ fn extract_chunks_from_item(item: &Item, source: &str, file: &Path, chunks: &mut
     }
 }
 
-fn is_nontrivial_chunk(normalized: &str) -> bool { normalized.split_whitespace().count() >= MIN_CHUNK_TOKENS }
+fn is_nontrivial_chunk(normalized: &str, line_count: usize) -> bool {
+    line_count >= MIN_CHUNK_LINES && normalized.split_whitespace().count() >= MIN_CHUNK_TOKENS
+}
 
-fn add_rust_function_chunk(name: &str, span: proc_macro2::Span, source: &str, file: &Path, chunks: &mut Vec<CodeChunk>) {
-    let (start_line, end_line) = (span.start().line, span.end().line);
+fn add_rust_function_chunk(name: &str, start_line: usize, end_line: usize, source: &str, file: &Path, chunks: &mut Vec<CodeChunk>) {
+    let line_count = end_line.saturating_sub(start_line) + 1;
     let lines: Vec<&str> = source.lines().collect();
     if start_line > 0 && end_line <= lines.len() {
         let body_text: String = lines[start_line - 1..end_line].join("\n");
         let normalized = normalize_code(&body_text);
-        if is_nontrivial_chunk(&normalized) {
+        if is_nontrivial_chunk(&normalized, line_count) {
             chunks.push(CodeChunk { file: file.to_path_buf(), name: name.to_string(), start_line, end_line, normalized });
         }
     }
@@ -159,9 +168,10 @@ fn extract_function_chunks(node: Node, source: &str, file: &Path, chunks: &mut V
         "function_definition" | "async_function_definition" => {
             let name = get_child_by_field(node, "name", source).unwrap_or_default();
             let (start_line, end_line) = (node.start_position().row + 1, node.end_position().row + 1);
+            let line_count = end_line.saturating_sub(start_line) + 1;
             if let Some(body) = node.child_by_field_name("body") {
                 let normalized = normalize_code(&source[body.start_byte()..body.end_byte()]);
-                if is_nontrivial_chunk(&normalized) {
+                if is_nontrivial_chunk(&normalized, line_count) {
                     chunks.push(CodeChunk { file: file.to_path_buf(), name, start_line, end_line, normalized });
                 }
             }
@@ -214,13 +224,15 @@ mod tests {
         let mut ps = HashMap::new();
         ps.insert((0, 1), 0.8);
         assert!(compute_cluster_similarity(&[0, 1], &ps) > 0.0);
-        assert!(is_nontrivial_chunk("a b c d e f g h i j k"));
-        assert!(!is_nontrivial_chunk("a b c"));
+        assert!(is_nontrivial_chunk("a b c d e f g h i j k", 10));
+        assert!(!is_nontrivial_chunk("a b c", 10));
+        assert!(!is_nontrivial_chunk("a b c d e f g h i j k", 3)); // too few lines
     }
 
     #[test]
     fn test_python_duplication() {
-        let code = r"def foo(): x = 1; y = 2; z = 3; a = 4; b = 5; return x + y + z + a + b";
+        // Multi-line function (>= 5 lines) to pass MIN_CHUNK_LINES filter
+        let code = "def foo():\n    x = 1\n    y = 2\n    z = 3\n    a = 4\n    b = 5\n    return x + y + z + a + b";
         let mut tmp1 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
         let mut tmp2 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
         write!(tmp1, "{code}").unwrap(); write!(tmp2, "{code}").unwrap();
@@ -245,17 +257,20 @@ mod tests {
 
     #[test]
     fn test_rust_duplication() {
+        // Multi-line function (>= 5 lines) to pass MIN_CHUNK_LINES filter
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-        write!(tmp, "fn foo() {{ let x = 1; let y = 2; let z = 3; let a = 4; let b = 5; }}").unwrap();
+        write!(tmp, "fn foo() {{\n    let x = 1;\n    let y = 2;\n    let z = 3;\n    let a = 4;\n    let b = 5;\n}}").unwrap();
         let parsed = parse_rust_file(tmp.path()).unwrap();
         assert!(!extract_rust_chunks_for_duplication(&[&parsed]).is_empty());
-        let source = "fn bar() { let x = 1; let y = 2; let z = 3; let a = 4; let b = 5; }";
+        let source = "fn bar() {\n    let x = 1;\n    let y = 2;\n    let z = 3;\n    let a = 4;\n    let b = 5;\n}";
         let ast: syn::File = syn::parse_str(source).unwrap();
         let mut chunks = Vec::new();
         extract_rust_function_chunks(&ast, source, Path::new("test.rs"), &mut chunks);
         extract_chunks_from_item(&ast.items[0], source, Path::new("test.rs"), &mut chunks);
         if let syn::Item::Fn(f) = &ast.items[0] {
-            add_rust_function_chunk("bar", f.sig.ident.span(), source, Path::new("test.rs"), &mut chunks);
+            let start = f.sig.fn_token.span.start().line;
+            let end = f.block.brace_token.span.close().end().line;
+            add_rust_function_chunk("bar", start, end, source, Path::new("test.rs"), &mut chunks);
         }
     }
 }

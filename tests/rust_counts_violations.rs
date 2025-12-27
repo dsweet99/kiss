@@ -29,14 +29,14 @@ fn test_types_per_file_violation() {
 }
 
 #[test]
-fn test_imports_per_file_violation() {
+fn test_imported_names_per_file_violation() {
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(tmp, "use std::io;\nuse std::fs;\nuse std::path;\nuse std::env;\nuse std::collections;").unwrap();
     let parsed = parse_rust_file(tmp.path()).unwrap();
-    let config = Config { imports_per_file: 2, ..Default::default() };
+    let config = Config { imported_names_per_file: 2, ..Default::default() };
     let violations = analyze_rust_file(&parsed, &config);
-    let has_violation = violations.iter().any(|v| v.metric == "imports_per_file");
-    assert!(has_violation, "should trigger imports_per_file violation");
+    let has_violation = violations.iter().any(|v| v.metric == "imported_names_per_file");
+    assert!(has_violation, "should trigger imported_names_per_file violation");
 }
 
 #[test]

@@ -164,6 +164,7 @@ mod tests {
         assert!(should_ignore(Path::new("mock_data/test.rs"), &["mock_".to_string()]));
         assert!(!should_ignore(Path::new("src/main.rs"), &["fake_".to_string()]));
         assert!(!should_ignore(Path::new("tests/real.py"), &["fake_".to_string()]));
+        assert!(is_always_ignored("node_modules") && is_always_ignored("__pycache__") && !is_always_ignored("src"));
     }
 
     #[test]

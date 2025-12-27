@@ -180,7 +180,7 @@ pub fn shared_config_key(name: &str) -> Option<&'static str> {
     match name {
         "Lines per file" => Some("lines_per_file"),
         "Classes per file" => Some("types_per_file"),
-        "Imports per file" => Some("imports_per_file"),
+        "Imported names per file" => Some("imported_names_per_file"),
         _ => None,
     }
 }

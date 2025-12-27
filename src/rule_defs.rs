@@ -162,8 +162,8 @@ pub static RULES: &[Rule] = &[
     },
     Rule {
         category: RuleCategory::Files,
-        template: "Keep imports ≤ {} per file",
-        get_threshold: |c, _| c.imports_per_file,
+        template: "Keep imported names ≤ {} per file",
+        get_threshold: |c, _| c.imported_names_per_file,
         applicability: Applicability::Both,
     },
     Rule {

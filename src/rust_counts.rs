@@ -62,13 +62,13 @@ impl<'a> RustAnalyzer<'a> {
                     .build(),
             );
         }
-        if m.imports > c.imports_per_file {
+        if m.imports > c.imported_names_per_file {
             self.violations.push(
                 self.violation(1, &fname)
-                    .metric("imports_per_file")
+                    .metric("imported_names_per_file")
                     .value(m.imports)
-                    .threshold(c.imports_per_file)
-                    .message(format!("File has {} use statements (threshold: {})", m.imports, c.imports_per_file))
+                    .threshold(c.imported_names_per_file)
+                    .message(format!("File has {} use statements (threshold: {})", m.imports, c.imported_names_per_file))
                     .suggestion("Module may have too many responsibilities. Consider splitting.")
                     .build(),
             );
@@ -80,7 +80,7 @@ impl<'a> RustAnalyzer<'a> {
             Item::Fn(func) => {
                 let name = func.sig.ident.to_string();
                 let line = func.sig.ident.span().start().line;
-                self.analyze_function(&name, line, &func.sig.inputs, &func.block, func.attrs.len(), "Function");
+                self.analyze_function(&name, line, &func.sig.inputs, &func.block, count_non_doc_attrs(&func.attrs), "Function");
             }
             Item::Impl(impl_block) => self.analyze_impl_block(impl_block),
             Item::Mod(m) => {
@@ -106,7 +106,7 @@ impl<'a> RustAnalyzer<'a> {
             if let ImplItem::Fn(method) = impl_item {
                 let mname = method.sig.ident.to_string();
                 let mline = method.sig.ident.span().start().line;
-                self.analyze_function(&mname, mline, &method.sig.inputs, &method.block, method.attrs.len(), "Method");
+                self.analyze_function(&mname, mline, &method.sig.inputs, &method.block, count_non_doc_attrs(&method.attrs), "Method");
             }
         }
     }
@@ -181,6 +181,11 @@ impl<'a> RustAnalyzer<'a> {
     }
 }
 
+/// Count attributes excluding doc comments (#[doc = "..."])
+fn count_non_doc_attrs(attrs: &[syn::Attribute]) -> usize {
+    attrs.iter().filter(|a| !a.path().is_ident("doc")).count()
+}
+
 fn count_impl_methods(impl_block: &syn::ItemImpl) -> usize {
     impl_block.items.iter().filter(|item| matches!(item, ImplItem::Fn(_))).count()
 }
@@ -232,6 +237,6 @@ mod tests {
         let fi: syn::File = syn::parse_str("impl Foo { fn bar(&self) { let x = 1; } }").unwrap();
         if let syn::Item::Impl(i) = &fi.items[0] { let mut v = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_impl_block(i); }
         let ff: syn::File = syn::parse_str("fn foo(x: i32) { let y = x + 1; }").unwrap();
-        if let syn::Item::Fn(func) = &ff.items[0] { let mut v = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_function("foo", 1, &func.sig.inputs, &func.block, func.attrs.len(), "Function"); }
+        if let syn::Item::Fn(func) = &ff.items[0] { let mut v = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_function("foo", 1, &func.sig.inputs, &func.block, count_non_doc_attrs(&func.attrs), "Function"); }
     }
 }

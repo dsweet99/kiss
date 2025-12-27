@@ -21,7 +21,7 @@ pub struct MetricStats {
     pub methods_per_class: Vec<usize>,
     pub lines_per_file: Vec<usize>,
     pub classes_per_file: Vec<usize>,
-    pub imports_per_file: Vec<usize>,
+    pub imported_names_per_file: Vec<usize>,
     pub fan_in: Vec<usize>,
     pub fan_out: Vec<usize>,
     pub dependency_depth: Vec<usize>,
@@ -34,7 +34,7 @@ impl MetricStats {
             let fm = compute_file_metrics(parsed);
             stats.lines_per_file.push(fm.lines);
             stats.classes_per_file.push(fm.classes);
-            stats.imports_per_file.push(fm.imports);
+            stats.imported_names_per_file.push(fm.imports);
             collect_from_node(parsed.tree.root_node(), &parsed.source, &mut stats, false);
         }
         stats
@@ -53,7 +53,7 @@ impl MetricStats {
         self.methods_per_class.extend(other.methods_per_class);
         self.lines_per_file.extend(other.lines_per_file);
         self.classes_per_file.extend(other.classes_per_file);
-        self.imports_per_file.extend(other.imports_per_file);
+        self.imported_names_per_file.extend(other.imported_names_per_file);
         self.fan_in.extend(other.fan_in);
         self.fan_out.extend(other.fan_out);
         self.dependency_depth.extend(other.dependency_depth);
@@ -78,7 +78,7 @@ impl MetricStats {
             let fm = compute_rust_file_metrics(parsed);
             stats.lines_per_file.push(fm.lines);
             stats.classes_per_file.push(fm.types);
-            stats.imports_per_file.push(fm.imports);
+            stats.imported_names_per_file.push(fm.imports);
             collect_rust_from_items(&parsed.ast.items, &mut stats);
         }
         stats
@@ -180,7 +180,7 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         PercentileSummary::from_values("Methods per class", &stats.methods_per_class),
         PercentileSummary::from_values("Lines per file", &stats.lines_per_file),
         PercentileSummary::from_values("Classes per file", &stats.classes_per_file),
-        PercentileSummary::from_values("Imports per file", &stats.imports_per_file),
+        PercentileSummary::from_values("Imported names per file", &stats.imported_names_per_file),
         PercentileSummary::from_values("Fan-in (per module)", &stats.fan_in),
         PercentileSummary::from_values("Fan-out (per module)", &stats.fan_out),
         PercentileSummary::from_values("Dependency depth (per module)", &stats.dependency_depth),
@@ -212,7 +212,7 @@ fn config_key_for(name: &str) -> Option<&'static str> {
         "Methods per class" => "methods_per_class",
         "Lines per file" => "lines_per_file",
         "Classes per file" => "classes_per_file",
-        "Imports per file" => "imports_per_file",
+        "Imported names per file" => "imported_names_per_file",
         _ => return None,
     })
 }

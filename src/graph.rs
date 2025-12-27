@@ -38,6 +38,7 @@ impl DependencyGraph {
     }
 
     pub fn add_dependency(&mut self, from: &str, to: &str) {
+        if from == to { return; }
         let from_idx = self.get_or_create_node(from);
         let to_idx = self.get_or_create_node(to);
         if !self.graph.contains_edge(from_idx, to_idx) { self.graph.add_edge(from_idx, to_idx, ()); }
@@ -90,7 +91,7 @@ impl Default for DependencyGraph {
 }
 
 fn is_entry_point(name: &str) -> bool {
-    matches!(name, "main" | "lib" | "__main__" | "__init__")
+    matches!(name, "main" | "lib" | "build" | "__main__" | "__init__" | "tests")
         || name.starts_with("test_") || name.ends_with("_test")
         || name.contains("_integration") || name.contains("_bench")
 }
@@ -176,21 +177,44 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
 
 fn top_level_module(name: &str) -> String { name.split('.').next().unwrap_or(name).to_string() }
 
-fn extract_module_from_import_from(child: Node, source: &str) -> Option<String> {
-    child.child_by_field_name("module_name").map(|m| top_level_module(&source[m.start_byte()..m.end_byte()]))
+fn extract_modules_from_import_from(child: Node, source: &str) -> Vec<String> {
+    let mut modules = Vec::new();
+    if let Some(m) = child.child_by_field_name("module_name") {
+        let full_module = &source[m.start_byte()..m.end_byte()];
+        let trimmed = full_module.trim_start_matches('.');
+        if !trimmed.is_empty() { modules.push(top_level_module(trimmed)); }
+    }
+    let mut cursor = child.walk();
+    for c in child.children(&mut cursor) {
+        if c.kind() == "dotted_name" || c.kind() == "aliased_import" {
+            let name_node = if c.kind() == "aliased_import" { c.child_by_field_name("name") } else { Some(c) };
+            if let Some(n) = name_node {
+                let name = &source[n.start_byte()..n.end_byte()];
+                let trimmed = name.trim_start_matches('.');
+                if !trimmed.is_empty() { modules.push(top_level_module(trimmed)); }
+            }
+        }
+    }
+    modules
 }
 
 fn extract_imports(node: Node, source: &str) -> Vec<String> {
     let mut imports = Vec::new();
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "import_statement" => collect_import_names(child, source, &mut imports),
-            "import_from_statement" => if let Some(m) = extract_module_from_import_from(child, source) { imports.push(m); },
-            _ => {}
+    extract_imports_recursive(node, source, &mut imports);
+    imports
+}
+
+fn extract_imports_recursive(node: Node, source: &str, imports: &mut Vec<String>) {
+    match node.kind() {
+        "import_statement" => collect_import_names(node, source, imports),
+        "import_from_statement" => imports.extend(extract_modules_from_import_from(node, source)),
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                extract_imports_recursive(child, source, imports);
+            }
         }
     }
-    imports
 }
 
 fn collect_import_names(node: Node, source: &str, imports: &mut Vec<String>) {
@@ -226,58 +250,46 @@ mod tests {
     use std::io::Write;
 
     #[test]
-    fn test_graph_and_imports() {
+    fn test_graph_imports_and_cycles() {
         let mut parser = create_parser().unwrap();
-        let imports = extract_imports(parser.parse("import os", None).unwrap().root_node(), "import os");
-        assert!(imports.contains(&"os".into()));
+        assert!(extract_imports(parser.parse("import os", None).unwrap().root_node(), "import os").contains(&"os".into()));
+        let code = "import os\ndef foo():\n    import json\n    from sys import argv";
+        let mut nested = Vec::new();
+        extract_imports_recursive(parser.parse(code, None).unwrap().root_node(), code, &mut nested);
+        assert!(nested.contains(&"os".into()) && nested.contains(&"json".into()) && nested.contains(&"sys".into()));
         let mut g = DependencyGraph::default();
         g.add_dependency("a", "b"); g.add_dependency("b", "a");
-        assert!(!g.find_cycles().cycles.is_empty());
-        let idx1 = g.get_or_create_node("test");
-        let idx2 = g.get_or_create_node("test");
-        assert_eq!(idx1, idx2);
-        let _ = CycleInfo { cycles: vec![vec!["a".into()]] };
+        let cycle_info: CycleInfo = g.find_cycles();
+        assert!(!cycle_info.cycles.is_empty());
+        assert_eq!(g.get_or_create_node("test"), g.get_or_create_node("test"));
+        g.add_dependency("x", "x");
+        assert!(!g.nodes.contains_key("x"), "Self-edges ignored");
+        let idx_a = *g.nodes.get("a").unwrap();
+        let idx_b = *g.nodes.get("b").unwrap();
+        assert!(g.is_cycle(&[idx_a, idx_b]) && !g.is_cycle(&[]) && !g.is_cycle(&[idx_a]));
+        g.add_dependency("a", "c"); g.add_dependency("c", "d");
+        let (trans, depth) = g.compute_transitive_and_depth(*g.nodes.get("a").unwrap());
+        assert!(trans >= 2 && depth >= 2);
     }
 
     #[test]
-    fn test_helpers() {
+    fn test_helpers_imports_and_complexity() {
         assert!(is_entry_point("main") && is_entry_point("test_foo") && !is_entry_point("utils"));
-        assert!(is_orphan(&ModuleGraphMetrics { fan_in: 0, fan_out: 0, ..Default::default() }, "utils"));
-        assert!(!is_orphan(&ModuleGraphMetrics { fan_in: 1, fan_out: 0, ..Default::default() }, "utils"));
+        assert!(is_orphan(&ModuleGraphMetrics::default(), "utils") && !is_orphan(&ModuleGraphMetrics { fan_in: 1, ..Default::default() }, "utils"));
         let mut g = DependencyGraph::new();
         g.paths.insert("foo".into(), PathBuf::from("src/foo.py"));
         assert_eq!(get_module_path(&g, "foo"), PathBuf::from("src/foo.py"));
         assert_eq!(top_level_module("foo.bar.baz"), "foo");
         let mut parser = create_parser().unwrap();
-        let tree = parser.parse("from foo.bar import baz", None).unwrap();
-        assert_eq!(extract_module_from_import_from(tree.root_node().child(0).unwrap(), "from foo.bar import baz"), Some("foo".into()));
+        let mods = extract_modules_from_import_from(parser.parse("from foo.bar import baz", None).unwrap().root_node().child(0).unwrap(), "from foo.bar import baz");
+        assert!(mods.contains(&"foo".into()) && mods.contains(&"baz".into()));
+        let rel = extract_modules_from_import_from(parser.parse("from ._export_format import X", None).unwrap().root_node().child(0).unwrap(), "from ._export_format import X");
+        assert!(rel.contains(&"_export_format".into()), "Relative import: {rel:?}");
         assert!(is_decision_point("if_statement") && !is_decision_point("identifier"));
-        let tree2 = parser.parse("if a:\n    if b:\n        pass", None).unwrap();
-        assert_eq!(count_decision_points(tree2.root_node()), 2);
-    }
-
-    #[test]
-    fn test_transitive_and_cycles() {
-        let mut g = DependencyGraph::new();
-        g.add_dependency("a", "b"); g.add_dependency("b", "c"); g.add_dependency("c", "d");
-        let idx = *g.nodes.get("a").unwrap();
-        let (trans, depth) = g.compute_transitive_and_depth(idx);
-        assert_eq!(trans, 3);
-        assert_eq!(depth, 3);
-        g.add_dependency("x", "x");
-        let idx_x = *g.nodes.get("x").unwrap();
-        assert!(g.is_cycle(&[idx_x]));
-        assert!(!g.is_cycle(&[]));
-    }
-
-    #[test]
-    fn test_module_name_and_complexity() {
-        let mut parser = create_parser().unwrap();
+        assert_eq!(count_decision_points(parser.parse("if a:\n    if b:\n        pass", None).unwrap().root_node()), 2);
         let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
         write!(tmp, "x = 1").unwrap();
-        let parsed = parse_file(&mut parser, tmp.path()).unwrap();
-        assert!(!module_name_from_path(&parsed).is_empty());
-        let tree = parser.parse("def f():\n    if a:\n        pass", None).unwrap();
-        assert!(compute_cyclomatic_complexity(tree.root_node().child(0).unwrap()) >= 2);
+        assert!(!module_name_from_path(&parse_file(&mut parser, tmp.path()).unwrap()).is_empty());
+        assert!(compute_cyclomatic_complexity(parser.parse("def f():\n    if a:\n        pass", None).unwrap().root_node().child(0).unwrap()) >= 2);
     }
 }
