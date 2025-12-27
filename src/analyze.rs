@@ -214,16 +214,26 @@ pub fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFi
     let (mut tested, mut total, mut unreferenced) = (0, 0, Vec::new());
 
     if !py_parsed.is_empty() {
+        let t0 = std::time::Instant::now();
         let a = analyze_test_refs(&py_parsed.iter().collect::<Vec<_>>());
+        let t1 = std::time::Instant::now();
         let defs: Vec<_> = a.definitions.iter().map(|d| (&d.file, &d.name, d.line)).collect();
         let unref: Vec<_> = a.unreferenced.iter().map(|d| (&d.file, &d.name, d.line)).collect();
         tally_coverage(&defs, &unref, focus_set, &mut tested, &mut total, &mut unreferenced);
+        let t2 = std::time::Instant::now();
+        eprintln!("[TIMING] py: analyze_test_refs={:.2}s, tally={:.2}s (defs={}, unref={})",
+            t1.duration_since(t0).as_secs_f64(), t2.duration_since(t1).as_secs_f64(), defs.len(), unref.len());
     }
     if !rs_parsed.is_empty() {
+        let t0 = std::time::Instant::now();
         let a = analyze_rust_test_refs(&rs_parsed.iter().collect::<Vec<_>>());
+        let t1 = std::time::Instant::now();
         let defs: Vec<_> = a.definitions.iter().map(|d| (&d.file, &d.name, d.line)).collect();
         let unref: Vec<_> = a.unreferenced.iter().map(|d| (&d.file, &d.name, d.line)).collect();
         tally_coverage(&defs, &unref, focus_set, &mut tested, &mut total, &mut unreferenced);
+        let t2 = std::time::Instant::now();
+        eprintln!("[TIMING] rs: analyze_rust_test_refs={:.2}s, tally={:.2}s (defs={}, unref={})",
+            t1.duration_since(t0).as_secs_f64(), t2.duration_since(t1).as_secs_f64(), defs.len(), unref.len());
     }
 
     unreferenced.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
@@ -233,10 +243,11 @@ pub fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFi
 }
 
 fn tally_coverage(defs: &[(&PathBuf, &String, usize)], unref: &[(&PathBuf, &String, usize)], focus_set: &HashSet<PathBuf>, tested: &mut usize, total: &mut usize, unreferenced: &mut Vec<(PathBuf, String, usize)>) {
+    let unref_set: HashSet<_> = unref.iter().copied().collect();
     for (file, name, line) in defs {
         if !is_focus_file(file, focus_set) { continue; }
         *total += 1;
-        if !unref.iter().any(|(f, n, l)| f == file && n == name && l == line) { *tested += 1; }
+        if !unref_set.contains(&(file, name, *line)) { *tested += 1; }
     }
     for (file, name, line) in unref {
         if is_focus_file(file, focus_set) { unreferenced.push(((*file).clone(), (*name).clone(), *line)); }
