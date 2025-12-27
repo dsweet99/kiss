@@ -61,13 +61,13 @@ RULE: [Python] Keep try blocks narrow (≤ 5 statements)
 RULE: [Python] Limit boolean parameters to ≤ 1 per function
 RULE: [Python] Use ≤ 3 decorators per function
 RULE: [Python] Keep methods per class/type ≤ 20
-RULE: [Python] Keep files ≤ 300 lines
+RULE: [Python] Keep files ≤ 400 statements
 RULE: [Python] Limit to ≤ 10 classes/types per file
-RULE: [Python] Keep imports ≤ 20 per file
+RULE: [Python] Keep imported names ≤ 20 per file
 RULE: [Python] Avoid circular dependencies
 RULE: [Python] Keep cycles small (≤ 3 modules)
-RULE: [Python] Limit transitive dependencies to ≤ 30
-RULE: [Python] Keep dependency depth ≤ 6
+RULE: [Python] Limit transitive dependencies to ≤ 100
+RULE: [Python] Keep dependency depth ≤ 7
 RULE: [Python] Every function/class/type should be referenced by tests
 RULE: [Python] Maintain ≥ 90% test reference coverage
 RULE: [Python] Avoid copy-pasted code blocks
@@ -82,13 +82,13 @@ RULE: [Rust] Avoid deeply nested functions/closures (max depth: 2)
 RULE: [Rust] Limit boolean parameters to ≤ 2 per function
 RULE: [Rust] Use ≤ 4 attributes per function
 RULE: [Rust] Keep methods per class/type ≤ 15
-RULE: [Rust] Keep files ≤ 300 lines
+RULE: [Rust] Keep files ≤ 300 statements
 RULE: [Rust] Limit to ≤ 8 classes/types per file
-RULE: [Rust] Keep imports ≤ 20 per file
+RULE: [Rust] Keep imported names ≤ 20 per file
 RULE: [Rust] Avoid circular dependencies
 RULE: [Rust] Keep cycles small (≤ 3 modules)
-RULE: [Rust] Limit transitive dependencies to ≤ 30
-RULE: [Rust] Keep dependency depth ≤ 6
+RULE: [Rust] Limit transitive dependencies to ≤ 50
+RULE: [Rust] Keep dependency depth ≤ 4
 RULE: [Rust] Every function/class/type should be referenced by tests
 RULE: [Rust] Maintain ≥ 90% test reference coverage
 RULE: [Rust] Avoid copy-pasted code blocks
