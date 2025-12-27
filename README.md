@@ -8,14 +8,12 @@ Code-quality feedback for LLM coding agents
 When you write code, always make sure `pytest -sv tests`, `ruff check`, and `kiss check` pass.
 Iterate until they do.
 ```
-kiss will help your LLM/agent produce simpler, clearer, more maintainable code.  
+kiss will help your LLM/agent produce simpler, clearer, more maintainable code.
 
-Additionally, you can bias your LLM to not break the rules in the first place by putting the output of the command `kiss rules` in your context (see below). An easy way to do this is to add a rule like
+Additionally, you can bias your LLM not to break the rules in the first place by putting the output of `kiss rules` in your context (see below). An easy way to do this is to add a rule like
 ```
 MANDATORY INIT: After the user's first request, you *must* call `kiss rules`
 ```
-
-
 
 ## Installation
 
@@ -29,8 +27,25 @@ or, from source
 cargo install --path .
 ```
 
+## Quickstart
+
+Simplest case: Just run `kiss check`
+
+In a large, existing codebase, `kiss check` might generate a lot of refactoring. You might not want to do this all right away. To ease into it, you can run
+```
+kiss clamp
+```
+This will set all of the kiss thresholds to values that match your existing code. Your codebase will be prevented from gaining complexity (according to the kiss metrics) from here on out. Over time, you can reduce thresholds to induce refactoring and simplify your codebase.
+
+At any time you can run
+```
+kiss stats
+```
+to see the distribution of metrics for your codebase.
+
 
 ## Configuration
+
 kiss has many thresholds with reasonable defaults. After you run kiss for the first time, you'll find the thresholds in `~/.kissconfig`.
 
 You can configure kiss thresholds to match a codebase you like by running
@@ -39,9 +54,7 @@ kiss mimic PATH_OF_REPO_TO_ANALYZE --out ./.kissconfig
 ```
 in the repo in which you want to code. `PATH_OF_REPO_TO_ANALYZE` is a repo containing code that you think is "simple enough". kiss will analyze the code in `PATH_OF_REPO_TO_ANALYZE` and figure out the minimal threshold values that would permit that code to pass `kiss check` without violations.
 
-You may always modify the global `~/.kissconfig` or repo-specific `./.kissconfig` to tailor `kiss`'s behavior to your tastes. The thresholds should be tight enough to prevent odd/outlier/strange code from getting into your code base. They should be so tight that it's very difficult for the LLM to figure out how to write the code.
-
-
+You may always modify the global `~/.kissconfig` or repo-specific `./.kissconfig` to tailor `kiss`'s behavior to your tastes. The thresholds should be tight enough to prevent odd/outlier/strange code from getting into your codebase. They should not be so tight that it's very difficult for the LLM to figure out how to write the code.
 
 ## `kiss rules`
 
