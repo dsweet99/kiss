@@ -32,16 +32,45 @@ cargo install --path .
 Simplest case: Just run `kiss check`
 
 In a large, existing codebase, `kiss check` might generate a lot of refactoring. You might not want to do this all right away. To ease into it, you can run
-```
+
+```bash
 kiss clamp
 ```
+
 This will set all of the kiss thresholds to values that match your existing code. Your codebase will be prevented from gaining complexity (according to the kiss metrics) from here on out. Over time, you can reduce thresholds to induce refactoring and simplify your codebase.
 
 At any time you can run
-```
+```bash
 kiss stats
 ```
-to see the distribution of metrics for your codebase.
+to see the distribution of metrics for your codebase. For example
+
+```bash
+$ kiss stats
+kiss stats - Summary Statistics
+Analyzed from: .
+
+=== Rust (36 files) ===
+Metric                            Count    50%    90%    95%    99%    Max
+--------------------------------------------------------------------------
+Statements per function             562      4     12     16     21     25
+Arguments (total)                   562      1      3      4      6      7
+Arguments (positional)              562      1      3      4      6      7
+Arguments (keyword-only)            562      0      0      0      0      0
+Max indentation depth               562      0      2      2      4      4
+Nested function depth               562      0      1      1      2      2
+Returns per function                562      0      0      1      2      4
+Branches per function               562      0      2      2      4      7
+Local variables per function        562      1      5      5      8     12
+Methods per class                    31      1      7      9     14     14
+Statements per file                  36     56    116    134    148    148
+Classes per file                     36      1      4      4      5      5
+Imported names per file              36      3      8      8     20     20
+Fan-in (per module)                  44      1      3      9     26     26
+Fan-out (per module)                 44      2      3      3     24     24
+Transitive deps (per module)         44      2      3      3     29     29
+Dependency depth (per module)        44      1      1      1      2      2
+```
 
 
 ## Configuration
@@ -56,11 +85,11 @@ in the repo in which you want to code. `PATH_OF_REPO_TO_ANALYZE` is a repo conta
 
 You may always modify the global `~/.kissconfig` or repo-specific `./.kissconfig` to tailor `kiss`'s behavior to your tastes. The thresholds should be tight enough to prevent odd/outlier/strange code from getting into your codebase. They should not be so tight that it's very difficult for the LLM to figure out how to write the code.
 
-## `kiss rules`
+## kiss rules
 
 You can help your LLM produce rule-following code by adding the output of `kiss rules` to its context before it starts coding. These are the same rules that kiss will enforce when you run `kiss check`. Note that the threshold numbers in the output come from your actual kiss config.
 
-```
+```bash
 $ kiss rules
 RULE: [Python] Keep functions ≤ 35 statements
 RULE: [Python] Use ≤ 5 positional arguments; prefer keyword-only args after that
