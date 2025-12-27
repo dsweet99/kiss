@@ -21,6 +21,9 @@ path = "src/lib.rs"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
+# Parallel iteration
+rayon = "1.10"
+
 # File traversal with gitignore support
 ignore = "0.4"
 

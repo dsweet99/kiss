@@ -1,4 +1,5 @@
 
+use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use tree_sitter::{Parser, Tree};
 
@@ -56,11 +57,12 @@ pub fn parse_file(parser: &mut Parser, path: &Path) -> Result<ParsedFile, ParseE
 pub fn parse_files(
     paths: &[PathBuf],
 ) -> Result<Vec<Result<ParsedFile, ParseError>>, ParseError> {
-    let mut parser = create_parser()?;
-
     Ok(paths
-        .iter()
-        .map(|path| parse_file(&mut parser, path))
+        .par_iter()
+        .map(|path| {
+            let mut parser = create_parser()?;
+            parse_file(&mut parser, path)
+        })
         .collect())
 }
 
