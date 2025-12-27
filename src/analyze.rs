@@ -56,6 +56,19 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
         viols.extend(graph_viols);
     }
 
+    // When --all is passed, include test coverage violations
+    if opts.bypass_gate {
+        let (_, _, _, unreferenced) = compute_test_coverage(&result.py_parsed, &result.rs_parsed, &focus_set);
+        for (file, name, line) in unreferenced {
+            viols.push(Violation {
+                file, line, unit_name: name,
+                metric: "test_coverage".to_string(), value: 0, threshold: 0,
+                message: "Add test coverage for this code unit.".to_string(),
+                suggestion: String::new(),
+            });
+        }
+    }
+
     print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.gate_config.min_similarity, &focus_set)
 }
 
