@@ -188,17 +188,25 @@ pub fn detect_duplicates(parsed_files: &[&ParsedFile], config: &DuplicationConfi
 
 pub fn detect_duplicates_from_chunks(chunks: &[CodeChunk], config: &DuplicationConfig) -> Vec<DuplicatePair> {
     if chunks.len() < 2 { return Vec::new(); }
+    let t0 = std::time::Instant::now();
     let signatures: Vec<MinHashSignature> = chunks.iter()
         .map(|c| compute_minhash(&generate_shingles(&c.normalized, config.shingle_size), config.minhash_size))
         .collect();
+    let t1 = std::time::Instant::now();
     let candidates = find_lsh_candidates(&signatures, config.lsh_bands);
+    let candidate_count = candidates.len();
+    let t2 = std::time::Instant::now();
     let mut duplicates: Vec<DuplicatePair> = candidates.into_iter()
         .filter_map(|(i, j)| {
             let similarity = estimate_similarity(&signatures[i], &signatures[j]);
             (similarity >= config.min_similarity).then(|| DuplicatePair { chunk1: chunks[i].clone(), chunk2: chunks[j].clone(), similarity })
         })
         .collect();
+    let t3 = std::time::Instant::now();
     duplicates.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap());
+    eprintln!("[TIMING] duplication: {} chunks, minhash={:.2}s, lsh={:.2}s ({} candidates), verify={:.2}s",
+        chunks.len(), t1.duration_since(t0).as_secs_f64(), t2.duration_since(t1).as_secs_f64(),
+        candidate_count, t3.duration_since(t2).as_secs_f64());
     duplicates
 }
 

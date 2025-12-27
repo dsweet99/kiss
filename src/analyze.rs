@@ -28,8 +28,10 @@ pub struct AnalyzeOptions<'a> {
 }
 
 pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
+    let t0 = std::time::Instant::now();
     let universe_root = Path::new(opts.universe);
     let (py_files, rs_files) = gather_files(universe_root, opts.lang_filter, opts.ignore_prefixes);
+    let t1 = std::time::Instant::now();
 
     if py_files.is_empty() && rs_files.is_empty() {
         print_no_files_message(opts.lang_filter, universe_root);
@@ -38,38 +40,51 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
 
     let focus_set = build_focus_set(opts.focus_paths, opts.lang_filter, opts.ignore_prefixes);
     let result = parse_all(&py_files, &rs_files, opts.py_config, opts.rs_config);
-    let mut viols = result.violations;
-    viols.retain(|v| is_focus_file(&v.file, &focus_set));
+    let t2 = std::time::Instant::now();
+    let mut viols = filter_viols_by_focus(result.violations, &focus_set);
 
     if !opts.bypass_gate && !check_coverage_gate(&result.py_parsed, &result.rs_parsed, opts.gate_config, &focus_set) {
         return false;
     }
 
     let (py_graph, rs_graph) = build_graphs(&result.py_parsed, &result.rs_parsed);
-    let file_count = result.py_parsed.len() + result.rs_parsed.len();
-    print_analysis_summary(file_count, result.code_unit_count, py_graph.as_ref(), rs_graph.as_ref());
+    let t3 = std::time::Instant::now();
+    log_timing_phase1(t0, t1, t2, t3);
+    print_analysis_summary(result.py_parsed.len() + result.rs_parsed.len(), result.code_unit_count, py_graph.as_ref(), rs_graph.as_ref());
 
-    // Skip graph violations for single-file analysis (orphan_module is meaningless)
-    if file_count > 1 {
-        let mut graph_viols = analyze_graphs(py_graph.as_ref(), rs_graph.as_ref(), opts.py_config, opts.rs_config);
-        graph_viols.retain(|v| is_focus_file(&v.file, &focus_set));
-        viols.extend(graph_viols);
-    }
+    viols.extend(collect_graph_viols(py_graph.as_ref(), rs_graph.as_ref(), opts.py_config, opts.rs_config, &focus_set, result.py_parsed.len() + result.rs_parsed.len()));
+    let t4 = std::time::Instant::now();
 
-    // When --all is passed, include test coverage violations
-    if opts.bypass_gate {
-        let (_, _, _, unreferenced) = compute_test_coverage(&result.py_parsed, &result.rs_parsed, &focus_set);
-        for (file, name, line) in unreferenced {
-            viols.push(Violation {
-                file, line, unit_name: name,
-                metric: "test_coverage".to_string(), value: 0, threshold: 0,
-                message: "Add test coverage for this code unit.".to_string(),
-                suggestion: String::new(),
-            });
-        }
-    }
+    if opts.bypass_gate { viols.extend(collect_coverage_viols(&result.py_parsed, &result.rs_parsed, &focus_set)); }
+    eprintln!("[TIMING] graph_analysis={:.2}s, test_refs={:.2}s", t4.duration_since(t3).as_secs_f64(), std::time::Instant::now().duration_since(t4).as_secs_f64());
 
     print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.gate_config.min_similarity, &focus_set)
+}
+
+fn filter_viols_by_focus(mut viols: Vec<Violation>, focus_set: &HashSet<PathBuf>) -> Vec<Violation> {
+    viols.retain(|v| is_focus_file(&v.file, focus_set));
+    viols
+}
+
+fn log_timing_phase1(t0: std::time::Instant, t1: std::time::Instant, t2: std::time::Instant, t3: std::time::Instant) {
+    eprintln!("[TIMING] discovery={:.2}s, parse+analyze={:.2}s, coverage=0.00s, graph={:.2}s",
+        t1.duration_since(t0).as_secs_f64(), t2.duration_since(t1).as_secs_f64(), t3.duration_since(t2).as_secs_f64());
+}
+
+fn collect_graph_viols(py_graph: Option<&DependencyGraph>, rs_graph: Option<&DependencyGraph>, py_config: &Config, rs_config: &Config, focus_set: &HashSet<PathBuf>, file_count: usize) -> Vec<Violation> {
+    if file_count <= 1 { return Vec::new(); }
+    let mut viols = analyze_graphs(py_graph, rs_graph, py_config, rs_config);
+    viols.retain(|v| is_focus_file(&v.file, focus_set));
+    viols
+}
+
+fn collect_coverage_viols(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], focus_set: &HashSet<PathBuf>) -> Vec<Violation> {
+    compute_test_coverage(py_parsed, rs_parsed, focus_set).3.into_iter()
+        .map(|(file, name, line)| Violation {
+            file, line, unit_name: name, metric: "test_coverage".to_string(), value: 0, threshold: 0,
+            message: "Add test coverage for this code unit.".to_string(), suggestion: String::new(),
+        })
+        .collect()
 }
 
 pub fn gather_files(root: &Path, lang: Option<Language>, ignore_prefixes: &[String]) -> (Vec<PathBuf>, Vec<PathBuf>) {
@@ -229,13 +244,17 @@ fn tally_coverage(defs: &[(&PathBuf, &String, usize)], unref: &[(&PathBuf, &Stri
 }
 
 fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], min_similarity: f64, focus_set: &HashSet<PathBuf>) -> bool {
+    let t0 = std::time::Instant::now();
     let py_dups = filter_duplicates_by_focus(detect_py_duplicates(py_parsed, min_similarity), focus_set);
     let rs_dups = filter_duplicates_by_focus(detect_rs_duplicates(rs_parsed, min_similarity), focus_set);
+    let t1 = std::time::Instant::now();
     let dup_count = py_dups.len() + rs_dups.len();
     
     print_violations(viols);
     print_duplicates("Python", &py_dups);
     print_duplicates("Rust", &rs_dups);
+    let t2 = std::time::Instant::now();
+    eprintln!("[TIMING] dup_detect={:.2}s, output={:.2}s", t1.duration_since(t0).as_secs_f64(), t2.duration_since(t1).as_secs_f64());
     
     let has_violations = !viols.is_empty() || dup_count > 0;
     print_final_status(has_violations);
