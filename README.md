@@ -31,13 +31,13 @@ cargo install --path .
 
 
 ## Configuration
-`kiss` has many thresholds with reasonable defaults. After you run kiss for the first time, you'll find the thresholds in `~/.kissconfig`.
+kiss has many thresholds with reasonable defaults. After you run kiss for the first time, you'll find the thresholds in `~/.kissconfig`.
 
-You can configure `kiss` thresholds to match a codebase you like by running
+You can configure kiss thresholds to match a codebase you like by running
 ```
 kiss mimic PATH_OF_REPO_TO_ANALYZE --out ./.kissconfig
 ```
-in the repo in which you want to code. `PATH_OF_REPO_TO_ANALYZE` is a repo containing code that you think is "simple enough". `kiss` will analyze the code in `PATH_OF_REPO_TO_ANALYZE` and figure out the minimal threshold values that would permit that code to pass `kiss` without violations.
+in the repo in which you want to code. `PATH_OF_REPO_TO_ANALYZE` is a repo containing code that you think is "simple enough". kiss will analyze the code in `PATH_OF_REPO_TO_ANALYZE` and figure out the minimal threshold values that would permit that code to pass `kiss check` without violations.
 
 You may always modify the global `~/.kissconfig` or repo-specific `./.kissconfig` to tailor `kiss`'s behavior to your tastes. The thresholds should be tight enough to prevent odd/outlier/strange code from getting into your code base. They should be so tight that it's very difficult for the LLM to figure out how to write the code.
 
@@ -45,7 +45,7 @@ You may always modify the global `~/.kissconfig` or repo-specific `./.kissconfig
 
 ## `kiss rules`
 
-You can help your LLM produce rule-following code by adding the output of `kiss rules` to its context before it starts coding. These are the same rules that kiss will enforce when you run `kiss`. Note that the threshold numbers in the output come from your actual kiss config.
+You can help your LLM produce rule-following code by adding the output of `kiss rules` to its context before it starts coding. These are the same rules that kiss will enforce when you run `kiss check`. Note that the threshold numbers in the output come from your actual kiss config.
 
 ```
 $ kiss rules

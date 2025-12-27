@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**kiss** is a code-quality metrics tool for Python and Rust, written in Rust. LLM coder feedback alongside linters/test runners. **Primary consumer is the LLM** — output controls LLM behavior. Strict-by-default.
+**kiss** (`kiss-ai` on crates.io) is a code-quality metrics tool for Python and Rust, written in Rust (edition 2024, stable since Rust 1.85). LLM coder feedback alongside linters/test runners. **Primary consumer is the LLM** — output controls LLM behavior. Strict-by-default. Self-hosting: `kiss check . --ignore fake_` must pass.
 
 **Analysis types:** Count metrics, Graph analysis (fan-in/out, cycles, depth), Duplication (MinHash/LSH), Test references (static), Coverage gate (90% default).
 
@@ -86,6 +86,6 @@ Precedence: `defaults.rs` → `~/.kissconfig` → `./.kissconfig` → `--config`
 
 ## CLI
 
-`kiss [PATH]` analyze | `kiss rules` show rules | `kiss stats [--all]` summary | `kiss mimic --out FILE`
+`kiss check [PATH]` | `kiss rules` | `kiss stats [--all]` | `kiss mimic --out FILE` | `kiss config`
 
-Options: `--lang`, `--config`, `--defaults`, `--ignore PREFIX`, `--warnings`
+Options: `--lang`, `--config`, `--defaults`, `--ignore PREFIX`, `--all`

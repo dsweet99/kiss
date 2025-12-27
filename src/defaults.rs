@@ -15,6 +15,8 @@ pub mod python {
     pub const STATEMENTS_PER_TRY_BLOCK: usize = 5;
     pub const BOOLEAN_PARAMETERS: usize = 1;
     pub const DECORATORS_PER_FUNCTION: usize = 3;
+    pub const TRANSITIVE_DEPENDENCIES: usize = 100;
+    pub const DEPENDENCY_DEPTH: usize = 7;
 }
 
 pub mod rust {
@@ -31,12 +33,12 @@ pub mod rust {
     pub const NESTED_FUNCTION_DEPTH: usize = 2;
     pub const BOOLEAN_PARAMETERS: usize = 2;
     pub const ATTRIBUTES_PER_FUNCTION: usize = 4;
+    pub const TRANSITIVE_DEPENDENCIES: usize = 50;
+    pub const DEPENDENCY_DEPTH: usize = 4;
 }
 
 pub mod graph {
     pub const CYCLE_SIZE: usize = 3;
-    pub const TRANSITIVE_DEPENDENCIES: usize = 30;
-    pub const DEPENDENCY_DEPTH: usize = 4;
 }
 
 pub mod duplication {
@@ -68,10 +70,9 @@ nested_function_depth = {py_nested}
 statements_per_try_block = {py_try_stmts}
 boolean_parameters = {py_bool_params}
 decorators_per_function = {py_decorators}
-
 cycle_size = {cycle_size}
-transitive_dependencies = {transitive_deps}
-dependency_depth = {dep_depth}
+transitive_dependencies = {py_transitive_deps}
+dependency_depth = {py_dep_depth}
 
 [rust]
 imported_names_per_file = {rs_imports}
@@ -87,6 +88,9 @@ returns_per_function = {rs_returns}
 nested_function_depth = {rs_nested}
 boolean_parameters = {rs_bool_params}
 attributes_per_function = {rs_attrs}
+cycle_size = {cycle_size}
+transitive_dependencies = {rs_transitive_deps}
+dependency_depth = {rs_dep_depth}
 ",
         gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
         min_sim = duplication::MIN_SIMILARITY,
@@ -106,8 +110,8 @@ attributes_per_function = {rs_attrs}
         py_bool_params = python::BOOLEAN_PARAMETERS,
         py_decorators = python::DECORATORS_PER_FUNCTION,
         cycle_size = graph::CYCLE_SIZE,
-        transitive_deps = graph::TRANSITIVE_DEPENDENCIES,
-        dep_depth = graph::DEPENDENCY_DEPTH,
+        py_transitive_deps = python::TRANSITIVE_DEPENDENCIES,
+        py_dep_depth = python::DEPENDENCY_DEPTH,
         rs_imports = rust::IMPORTS_PER_FILE,
         rs_statements_file = rust::STATEMENTS_PER_FILE,
         rs_types = rust::TYPES_PER_FILE,
@@ -121,6 +125,8 @@ attributes_per_function = {rs_attrs}
         rs_nested = rust::NESTED_FUNCTION_DEPTH,
         rs_bool_params = rust::BOOLEAN_PARAMETERS,
         rs_attrs = rust::ATTRIBUTES_PER_FUNCTION,
+        rs_transitive_deps = rust::TRANSITIVE_DEPENDENCIES,
+        rs_dep_depth = rust::DEPENDENCY_DEPTH,
     )
 }
 

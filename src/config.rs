@@ -58,8 +58,8 @@ impl Config {
             boolean_parameters: defaults::python::BOOLEAN_PARAMETERS,
             decorators_per_function: defaults::python::DECORATORS_PER_FUNCTION,
             cycle_size: defaults::graph::CYCLE_SIZE,
-            transitive_dependencies: defaults::graph::TRANSITIVE_DEPENDENCIES,
-            dependency_depth: defaults::graph::DEPENDENCY_DEPTH,
+            transitive_dependencies: defaults::python::TRANSITIVE_DEPENDENCIES,
+            dependency_depth: defaults::python::DEPENDENCY_DEPTH,
         }
     }
 
@@ -82,8 +82,8 @@ impl Config {
             boolean_parameters: defaults::rust::BOOLEAN_PARAMETERS,
             decorators_per_function: defaults::rust::ATTRIBUTES_PER_FUNCTION,
             cycle_size: defaults::graph::CYCLE_SIZE,
-            transitive_dependencies: defaults::graph::TRANSITIVE_DEPENDENCIES,
-            dependency_depth: defaults::graph::DEPENDENCY_DEPTH,
+            transitive_dependencies: defaults::rust::TRANSITIVE_DEPENDENCIES,
+            dependency_depth: defaults::rust::DEPENDENCY_DEPTH,
         }
     }
 
@@ -192,7 +192,8 @@ impl Config {
             "branches_per_function" => branches_per_function, "local_variables" => local_variables_per_function,
             "methods_per_class" => methods_per_class, "returns_per_function" => returns_per_function, "nested_function_depth" => nested_function_depth,
             "statements_per_try_block" => statements_per_try_block, "boolean_parameters" => boolean_parameters,
-            "decorators_per_function" => decorators_per_function, "statements_per_file" => statements_per_file);
+            "decorators_per_function" => decorators_per_function, "statements_per_file" => statements_per_file,
+            "cycle_size" => cycle_size, "transitive_dependencies" => transitive_dependencies, "dependency_depth" => dependency_depth);
     }
 
     fn apply_rust(&mut self, table: &toml::Table) {
@@ -209,7 +210,8 @@ impl Config {
             "statements_per_file" => statements_per_file,
             "types_per_file" => classes_per_file, "returns_per_function" => returns_per_function,
             "nested_function_depth" => nested_function_depth, "boolean_parameters" => boolean_parameters,
-            "attributes_per_function" => decorators_per_function);
+            "attributes_per_function" => decorators_per_function,
+            "cycle_size" => cycle_size, "transitive_dependencies" => transitive_dependencies, "dependency_depth" => dependency_depth);
     }
 }
 

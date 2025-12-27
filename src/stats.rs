@@ -24,6 +24,7 @@ pub struct MetricStats {
     pub imported_names_per_file: Vec<usize>,
     pub fan_in: Vec<usize>,
     pub fan_out: Vec<usize>,
+    pub transitive_dependencies: Vec<usize>,
     pub dependency_depth: Vec<usize>,
 }
 
@@ -56,6 +57,7 @@ impl MetricStats {
         self.imported_names_per_file.extend(other.imported_names_per_file);
         self.fan_in.extend(other.fan_in);
         self.fan_out.extend(other.fan_out);
+        self.transitive_dependencies.extend(other.transitive_dependencies);
         self.dependency_depth.extend(other.dependency_depth);
     }
 
@@ -64,6 +66,7 @@ impl MetricStats {
             let m = graph.module_metrics(name);
             self.fan_in.push(m.fan_in);
             self.fan_out.push(m.fan_out);
+            self.transitive_dependencies.push(m.transitive_dependencies);
             self.dependency_depth.push(m.dependency_depth);
         }
     }
@@ -183,6 +186,7 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         PercentileSummary::from_values("Imported names per file", &stats.imported_names_per_file),
         PercentileSummary::from_values("Fan-in (per module)", &stats.fan_in),
         PercentileSummary::from_values("Fan-out (per module)", &stats.fan_out),
+        PercentileSummary::from_values("Transitive deps (per module)", &stats.transitive_dependencies),
         PercentileSummary::from_values("Dependency depth (per module)", &stats.dependency_depth),
     ]
 }
@@ -281,6 +285,7 @@ mod tests {
         stats.collect_graph_metrics(&graph);
         assert!(!stats.fan_in.is_empty());
         assert!(!stats.fan_out.is_empty());
+        assert!(!stats.transitive_dependencies.is_empty());
         assert!(!stats.dependency_depth.is_empty());
         assert!(stats.max_depth() > 0);
     }
