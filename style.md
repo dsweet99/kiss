@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**kiss** (`kiss-ai` on crates.io) is a code-quality metrics tool for Python and Rust, written in Rust (edition 2024, stable since Rust 1.85). LLM coder feedback alongside linters/test runners. **Primary consumer is the LLM** — output controls LLM behavior. Strict-by-default. Self-hosting: `kiss check . --ignore fake_` must pass.
+**kiss** (`kiss-ai` on crates.io) is a code-quality metrics tool for Python and Rust, written in Rust (edition 2024, stable since Rust 1.85). LLM coder feedback alongside linters/test runners. **Primary consumer is the LLM** — output controls LLM behavior. Strict-by-default. Self-hosting: `kiss check .` must pass.
 
 **Analysis types:** Count metrics, Graph analysis (fan-in/out, cycles, depth), Duplication (MinHash/LSH), Test references (static), Coverage gate (90% default).
 
@@ -53,7 +53,7 @@ LLMs work locally but need global awareness. **Pattern:** Local action → Globa
 - **`writeln!` over `format!` + `push_str`** for string building
 - Max 300 lines/file; extract to `tests/*.rs` when approaching limit
 - Self-documenting names; no comments (code should be clear)
-- `tests/fake_*` are test fixtures (intentionally bad) — use `--ignore fake_`
+- `tests/fake_*` are test fixtures (intentionally bad) — excluded via `.kissignore`
 - `src/test_utils.rs` for shared library test helpers (`#[cfg(test)]` modules can't import from `tests/`)
 
 ## Key Algorithms
@@ -86,6 +86,6 @@ Precedence: `defaults.rs` → `~/.kissconfig` → `./.kissconfig` → `--config`
 
 ## CLI
 
-`kiss check [PATH]` | `kiss rules` | `kiss stats [--all]` | `kiss mimic --out FILE` | `kiss config`
+`kiss check [PATH]` | `kiss rules` | `kiss stats [--all]` | `kiss mimic --out FILE` | `kiss clamp` | `kiss config`
 
 Options: `--lang`, `--config`, `--defaults`, `--ignore PREFIX`, `--all`

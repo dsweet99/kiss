@@ -74,6 +74,8 @@ enum Commands {
         #[arg(long, short, value_name = "FILE")]
         out: Option<PathBuf>,
     },
+    /// Shortcut: generate .kissconfig from current directory (same as: mimic . --out .kissconfig)
+    Clamp,
     /// Display all available rules and their current thresholds
     Rules,
     /// Show effective configuration (merged from all sources)
@@ -101,6 +103,7 @@ fn main() {
         }
         Commands::Stats { paths } => run_stats(&paths, cli.lang, &ignore, cli.all),
         Commands::Mimic { paths, out } => run_mimic(&paths, out.as_deref(), cli.lang, &ignore),
+        Commands::Clamp => run_mimic(&[".".to_string()], Some(Path::new(".kissconfig")), cli.lang, &ignore),
         Commands::Rules => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
         Commands::Config => run_config(&py_config, &rs_config, &gate_config, cli.config.as_ref(), cli.defaults),
     }
@@ -275,6 +278,7 @@ mod tests {
         assert!(matches!(Cli::try_parse_from(["kiss", "check", "."]).unwrap().command, Commands::Check { .. }));
         assert!(matches!(Cli::try_parse_from(["kiss", "rules"]).unwrap().command, Commands::Rules));
         assert!(matches!(Cli::try_parse_from(["kiss", "stats"]).unwrap().command, Commands::Stats { .. }));
+        assert!(matches!(Cli::try_parse_from(["kiss", "clamp"]).unwrap().command, Commands::Clamp));
         ensure_default_config_exists();
     }
     #[test]
