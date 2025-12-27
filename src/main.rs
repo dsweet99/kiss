@@ -27,21 +27,9 @@ struct Cli {
     #[arg(long, global = true, value_parser = parse_language, value_name = "LANG")]
     lang: Option<Language>,
 
-    /// Bypass coverage gate and show all results (for exploration)
-    #[arg(long, global = true)]
-    all: bool,
-
     /// Use built-in defaults, ignoring config files
     #[arg(long, global = true)]
     defaults: bool,
-
-    /// Ignore files/directories starting with PREFIX (repeatable)
-    #[arg(long, global = true, value_name = "PREFIX")]
-    ignore: Vec<String>,
-
-    /// Show timing breakdown for performance analysis
-    #[arg(long, global = true)]
-    timing: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -59,15 +47,30 @@ fn parse_language(s: &str) -> Result<Language, String> {
 enum Commands {
     /// Analyze code for violations
     Check {
-        /// Paths: [UNIVERSE] [FOCUS...]. UNIVERSE for graph/test scope, FOCUS for reporting.
+        /// First path is UNIVERSE (analysis scope), additional paths are FOCUS (report only these)
         #[arg(default_value = ".")]
         paths: Vec<String>,
+        /// Bypass coverage gate and show all violations
+        #[arg(long)]
+        all: bool,
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
+        /// Show timing breakdown for performance analysis
+        #[arg(long)]
+        timing: bool,
     },
-    /// Show metric statistics for codebase (summary by default, --all for details)
+    /// Show metric statistics for codebase
     Stats {
         /// Paths to analyze
         #[arg(default_value = ".")]
         paths: Vec<String>,
+        /// Show detailed per-unit metrics instead of summary
+        #[arg(long)]
+        all: bool,
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
     },
     /// Generate .kissconfig thresholds from an existing codebase
     Mimic {
@@ -77,6 +80,9 @@ enum Commands {
         /// Output file (prints to stdout if not specified)
         #[arg(long, short, value_name = "FILE")]
         out: Option<PathBuf>,
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
     },
     /// Shortcut: generate .kissconfig from current directory (same as: mimic . --out .kissconfig)
     Clamp,
@@ -91,23 +97,29 @@ fn main() {
     ensure_default_config_exists();
     let (py_config, rs_config) = load_configs(cli.config.as_ref(), cli.defaults);
     let gate_config = load_gate_config(cli.config.as_ref(), cli.defaults);
-    let ignore = normalize_ignore_prefixes(&cli.ignore);
 
     match cli.command {
-        Commands::Check { paths } => {
+        Commands::Check { paths, all, ignore, timing } => {
+            let ignore = normalize_ignore_prefixes(&ignore);
             let universe = &paths[0];
             let focus = if paths.len() > 1 { &paths[1..] } else { &paths[..] };
             validate_paths(&paths);
             let opts = analyze::AnalyzeOptions {
                 universe, focus_paths: focus, py_config: &py_config, rs_config: &rs_config,
-                lang_filter: cli.lang, bypass_gate: cli.all, gate_config: &gate_config,
-                ignore_prefixes: &ignore, show_timing: cli.timing,
+                lang_filter: cli.lang, bypass_gate: all, gate_config: &gate_config,
+                ignore_prefixes: &ignore, show_timing: timing,
             };
             if !run_analyze(&opts) { std::process::exit(1); }
         }
-        Commands::Stats { paths } => run_stats(&paths, cli.lang, &ignore, cli.all),
-        Commands::Mimic { paths, out } => run_mimic(&paths, out.as_deref(), cli.lang, &ignore),
-        Commands::Clamp => run_mimic(&[".".to_string()], Some(Path::new(".kissconfig")), cli.lang, &ignore),
+        Commands::Stats { paths, all, ignore } => {
+            let ignore = normalize_ignore_prefixes(&ignore);
+            run_stats(&paths, cli.lang, &ignore, all);
+        }
+        Commands::Mimic { paths, out, ignore } => {
+            let ignore = normalize_ignore_prefixes(&ignore);
+            run_mimic(&paths, out.as_deref(), cli.lang, &ignore);
+        }
+        Commands::Clamp => run_mimic(&[".".to_string()], Some(Path::new(".kissconfig")), cli.lang, &[]),
         Commands::Rules => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
         Commands::Config => run_config(&py_config, &rs_config, &gate_config, cli.config.as_ref(), cli.defaults),
     }
