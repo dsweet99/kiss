@@ -31,7 +31,7 @@ cargo install --path .
 
 Simplest case: Just run `kiss check`
 
-In a large, existing codebase, `kiss check` might generate a lot of refactoring. You might not want to do this all right away. To ease into it, you can run
+In a large, existing codebase `kiss check` might generate a lot of refactoring. You might not want to do this all right away. To ease into it, you can run
 
 ```bash
 kiss clamp
