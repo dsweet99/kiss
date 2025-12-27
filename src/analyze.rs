@@ -25,6 +25,7 @@ pub struct AnalyzeOptions<'a> {
     pub bypass_gate: bool,
     pub gate_config: &'a GateConfig,
     pub ignore_prefixes: &'a [String],
+    pub show_timing: bool,
 }
 
 pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
@@ -43,22 +44,22 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
     let t2 = std::time::Instant::now();
     let mut viols = filter_viols_by_focus(result.violations, &focus_set);
 
-    if !opts.bypass_gate && !check_coverage_gate(&result.py_parsed, &result.rs_parsed, opts.gate_config, &focus_set) {
+    if !opts.bypass_gate && !check_coverage_gate(&result.py_parsed, &result.rs_parsed, opts.gate_config, &focus_set, opts.show_timing) {
         return false;
     }
 
     let (py_graph, rs_graph) = build_graphs(&result.py_parsed, &result.rs_parsed);
     let t3 = std::time::Instant::now();
-    log_timing_phase1(t0, t1, t2, t3);
+    if opts.show_timing { log_timing_phase1(t0, t1, t2, t3); }
     print_analysis_summary(result.py_parsed.len() + result.rs_parsed.len(), result.code_unit_count, py_graph.as_ref(), rs_graph.as_ref());
 
     viols.extend(collect_graph_viols(py_graph.as_ref(), rs_graph.as_ref(), opts.py_config, opts.rs_config, &focus_set, result.py_parsed.len() + result.rs_parsed.len()));
     let t4 = std::time::Instant::now();
 
-    if opts.bypass_gate { viols.extend(collect_coverage_viols(&result.py_parsed, &result.rs_parsed, &focus_set)); }
-    eprintln!("[TIMING] graph_analysis={:.2}s, test_refs={:.2}s", t4.duration_since(t3).as_secs_f64(), std::time::Instant::now().duration_since(t4).as_secs_f64());
+    if opts.bypass_gate { viols.extend(collect_coverage_viols(&result.py_parsed, &result.rs_parsed, &focus_set, opts.show_timing)); }
+    if opts.show_timing { eprintln!("[TIMING] graph_analysis={:.2}s, test_refs={:.2}s", t4.duration_since(t3).as_secs_f64(), std::time::Instant::now().duration_since(t4).as_secs_f64()); }
 
-    print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.gate_config.min_similarity, &focus_set)
+    print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.gate_config.min_similarity, &focus_set, opts.show_timing)
 }
 
 fn filter_viols_by_focus(mut viols: Vec<Violation>, focus_set: &HashSet<PathBuf>) -> Vec<Violation> {
@@ -78,8 +79,8 @@ fn collect_graph_viols(py_graph: Option<&DependencyGraph>, rs_graph: Option<&Dep
     viols
 }
 
-fn collect_coverage_viols(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], focus_set: &HashSet<PathBuf>) -> Vec<Violation> {
-    compute_test_coverage(py_parsed, rs_parsed, focus_set).3.into_iter()
+fn collect_coverage_viols(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], focus_set: &HashSet<PathBuf>, show_timing: bool) -> Vec<Violation> {
+    compute_test_coverage(py_parsed, rs_parsed, focus_set, show_timing).3.into_iter()
         .map(|(file, name, line)| Violation {
             file, line, unit_name: name, metric: "test_coverage".to_string(), value: 0, threshold: 0,
             message: "Add test coverage for this code unit.".to_string(), suggestion: String::new(),
@@ -201,8 +202,8 @@ pub fn analyze_graphs(py_graph: Option<&DependencyGraph>, rs_graph: Option<&Depe
     viols
 }
 
-pub fn check_coverage_gate(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], gate_config: &GateConfig, focus_set: &HashSet<PathBuf>) -> bool {
-    let (coverage, tested, total, unreferenced) = compute_test_coverage(py_parsed, rs_parsed, focus_set);
+pub fn check_coverage_gate(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], gate_config: &GateConfig, focus_set: &HashSet<PathBuf>, show_timing: bool) -> bool {
+    let (coverage, tested, total, unreferenced) = compute_test_coverage(py_parsed, rs_parsed, focus_set, show_timing);
     if coverage < gate_config.test_coverage_threshold {
         print_coverage_gate_failure(coverage, gate_config.test_coverage_threshold, tested, total, &unreferenced);
         return false;
@@ -210,30 +211,20 @@ pub fn check_coverage_gate(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile
     true
 }
 
-pub fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], focus_set: &HashSet<PathBuf>) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
+pub fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], focus_set: &HashSet<PathBuf>, _show_timing: bool) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
     let (mut tested, mut total, mut unreferenced) = (0, 0, Vec::new());
 
     if !py_parsed.is_empty() {
-        let t0 = std::time::Instant::now();
         let a = analyze_test_refs(&py_parsed.iter().collect::<Vec<_>>());
-        let t1 = std::time::Instant::now();
         let defs: Vec<_> = a.definitions.iter().map(|d| (&d.file, &d.name, d.line)).collect();
         let unref: Vec<_> = a.unreferenced.iter().map(|d| (&d.file, &d.name, d.line)).collect();
         tally_coverage(&defs, &unref, focus_set, &mut tested, &mut total, &mut unreferenced);
-        let t2 = std::time::Instant::now();
-        eprintln!("[TIMING] py: analyze_test_refs={:.2}s, tally={:.2}s (defs={}, unref={})",
-            t1.duration_since(t0).as_secs_f64(), t2.duration_since(t1).as_secs_f64(), defs.len(), unref.len());
     }
     if !rs_parsed.is_empty() {
-        let t0 = std::time::Instant::now();
         let a = analyze_rust_test_refs(&rs_parsed.iter().collect::<Vec<_>>());
-        let t1 = std::time::Instant::now();
         let defs: Vec<_> = a.definitions.iter().map(|d| (&d.file, &d.name, d.line)).collect();
         let unref: Vec<_> = a.unreferenced.iter().map(|d| (&d.file, &d.name, d.line)).collect();
         tally_coverage(&defs, &unref, focus_set, &mut tested, &mut total, &mut unreferenced);
-        let t2 = std::time::Instant::now();
-        eprintln!("[TIMING] rs: analyze_rust_test_refs={:.2}s, tally={:.2}s (defs={}, unref={})",
-            t1.duration_since(t0).as_secs_f64(), t2.duration_since(t1).as_secs_f64(), defs.len(), unref.len());
     }
 
     unreferenced.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
@@ -254,7 +245,7 @@ fn tally_coverage(defs: &[(&PathBuf, &String, usize)], unref: &[(&PathBuf, &Stri
     }
 }
 
-fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], min_similarity: f64, focus_set: &HashSet<PathBuf>) -> bool {
+fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], min_similarity: f64, focus_set: &HashSet<PathBuf>, show_timing: bool) -> bool {
     let t0 = std::time::Instant::now();
     let py_dups = filter_duplicates_by_focus(detect_py_duplicates(py_parsed, min_similarity), focus_set);
     let rs_dups = filter_duplicates_by_focus(detect_rs_duplicates(rs_parsed, min_similarity), focus_set);
@@ -264,8 +255,10 @@ fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &
     print_violations(viols);
     print_duplicates("Python", &py_dups);
     print_duplicates("Rust", &rs_dups);
-    let t2 = std::time::Instant::now();
-    eprintln!("[TIMING] dup_detect={:.2}s, output={:.2}s", t1.duration_since(t0).as_secs_f64(), t2.duration_since(t1).as_secs_f64());
+    if show_timing {
+        let t2 = std::time::Instant::now();
+        eprintln!("[TIMING] dup_detect={:.2}s, output={:.2}s", t1.duration_since(t0).as_secs_f64(), t2.duration_since(t1).as_secs_f64());
+    }
     
     let has_violations = !viols.is_empty() || dup_count > 0;
     print_final_status(has_violations);
@@ -306,7 +299,7 @@ mod tests {
         let _ = AnalyzeOptions {
             universe: ".", focus_paths: &[], py_config: &py_cfg, rs_config: &rs_cfg,
             lang_filter: None, bypass_gate: false, gate_config: &gate_cfg,
-            ignore_prefixes: &[],
+            ignore_prefixes: &[], show_timing: false,
         };
     }
 
@@ -356,8 +349,8 @@ mod tests {
     fn test_coverage_gate_and_tally() {
         let gate = GateConfig { test_coverage_threshold: 0, ..Default::default() };
         let focus = HashSet::new();
-        assert!(check_coverage_gate(&[], &[], &gate, &focus));
-        let (cov, tested, total, unref) = compute_test_coverage(&[], &[], &focus);
+        assert!(check_coverage_gate(&[], &[], &gate, &focus, false));
+        let (cov, tested, total, unref) = compute_test_coverage(&[], &[], &focus, false);
         assert_eq!(cov, 100);
         assert_eq!(tested, 0);
         assert_eq!(total, 0);
@@ -389,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_print_all_results() {
-        let result = print_all_results(&[], &[], &[], 0.7, &HashSet::new());
+        let result = print_all_results(&[], &[], &[], 0.7, &HashSet::new(), false);
         assert!(result); // no violations = true
     }
 
@@ -402,7 +395,7 @@ mod tests {
         let opts = AnalyzeOptions {
             universe: tmp.path().to_str().unwrap(), focus_paths: &[],
             py_config: &py_cfg, rs_config: &rs_cfg, lang_filter: None,
-            bypass_gate: true, gate_config: &gate_cfg, ignore_prefixes: &[],
+            bypass_gate: true, gate_config: &gate_cfg, ignore_prefixes: &[], show_timing: false,
         };
         assert!(run_analyze(&opts)); // no files = success
     }

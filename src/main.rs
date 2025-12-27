@@ -39,6 +39,10 @@ struct Cli {
     #[arg(long, global = true, value_name = "PREFIX")]
     ignore: Vec<String>,
 
+    /// Show timing breakdown for performance analysis
+    #[arg(long, global = true)]
+    timing: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -97,7 +101,7 @@ fn main() {
             let opts = analyze::AnalyzeOptions {
                 universe, focus_paths: focus, py_config: &py_config, rs_config: &rs_config,
                 lang_filter: cli.lang, bypass_gate: cli.all, gate_config: &gate_config,
-                ignore_prefixes: &ignore,
+                ignore_prefixes: &ignore, show_timing: cli.timing,
             };
             if !run_analyze(&opts) { std::process::exit(1); }
         }
