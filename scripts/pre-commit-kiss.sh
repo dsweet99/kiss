@@ -1,5 +1,5 @@
 #!/bin/bash
 set -e
 
-kiss check --ignore fake_ --warnings
+kiss check --ignore fake_
 

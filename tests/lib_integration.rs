@@ -70,7 +70,7 @@ fn computes_file_metrics_for_god_class() {
     let mut parser = create_parser().expect("parser should initialize");
     let parsed = parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
     let metrics = compute_file_metrics(&parsed);
-    assert!(metrics.lines > 200, "Expected >200 lines, got {}", metrics.lines);
+    assert!(metrics.statements > 100, "Expected >100 statements, got {}", metrics.statements);
     assert_eq!(metrics.classes, 1);
     assert!(metrics.imports > 5, "Expected >5 imports, got {}", metrics.imports);
 }
@@ -152,7 +152,7 @@ fn handles_empty_python_file() {
     let units = extract_code_units(&parsed);
     assert!(units.len() <= 1);
     let file_metrics = compute_file_metrics(&parsed);
-    assert_eq!(file_metrics.lines, 0);
+    assert_eq!(file_metrics.statements, 0);
 }
 
 #[test]

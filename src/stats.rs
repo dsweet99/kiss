@@ -19,7 +19,7 @@ pub struct MetricStats {
     pub branches_per_function: Vec<usize>,
     pub local_variables_per_function: Vec<usize>,
     pub methods_per_class: Vec<usize>,
-    pub lines_per_file: Vec<usize>,
+    pub statements_per_file: Vec<usize>,
     pub classes_per_file: Vec<usize>,
     pub imported_names_per_file: Vec<usize>,
     pub fan_in: Vec<usize>,
@@ -32,7 +32,7 @@ impl MetricStats {
         let mut stats = Self::default();
         for parsed in parsed_files {
             let fm = compute_file_metrics(parsed);
-            stats.lines_per_file.push(fm.lines);
+            stats.statements_per_file.push(fm.statements);
             stats.classes_per_file.push(fm.classes);
             stats.imported_names_per_file.push(fm.imports);
             collect_from_node(parsed.tree.root_node(), &parsed.source, &mut stats, false);
@@ -51,7 +51,7 @@ impl MetricStats {
         self.branches_per_function.extend(other.branches_per_function);
         self.local_variables_per_function.extend(other.local_variables_per_function);
         self.methods_per_class.extend(other.methods_per_class);
-        self.lines_per_file.extend(other.lines_per_file);
+        self.statements_per_file.extend(other.statements_per_file);
         self.classes_per_file.extend(other.classes_per_file);
         self.imported_names_per_file.extend(other.imported_names_per_file);
         self.fan_in.extend(other.fan_in);
@@ -76,7 +76,7 @@ impl MetricStats {
         let mut stats = Self::default();
         for parsed in parsed_files {
             let fm = compute_rust_file_metrics(parsed);
-            stats.lines_per_file.push(fm.lines);
+            stats.statements_per_file.push(fm.statements);
             stats.classes_per_file.push(fm.types);
             stats.imported_names_per_file.push(fm.imports);
             collect_rust_from_items(&parsed.ast.items, &mut stats);
@@ -178,7 +178,7 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         PercentileSummary::from_values("Branches per function", &stats.branches_per_function),
         PercentileSummary::from_values("Local variables per function", &stats.local_variables_per_function),
         PercentileSummary::from_values("Methods per class", &stats.methods_per_class),
-        PercentileSummary::from_values("Lines per file", &stats.lines_per_file),
+        PercentileSummary::from_values("Statements per file", &stats.statements_per_file),
         PercentileSummary::from_values("Classes per file", &stats.classes_per_file),
         PercentileSummary::from_values("Imported names per file", &stats.imported_names_per_file),
         PercentileSummary::from_values("Fan-in (per module)", &stats.fan_in),
@@ -210,7 +210,7 @@ fn config_key_for(name: &str) -> Option<&'static str> {
         "Branches per function" => "branches_per_function",
         "Local variables per function" => "local_variables_per_function",
         "Methods per class" => "methods_per_class",
-        "Lines per file" => "lines_per_file",
+        "Statements per file" => "statements_per_file",
         "Classes per file" => "classes_per_file",
         "Imported names per file" => "imported_names_per_file",
         _ => return None,
@@ -259,7 +259,7 @@ mod tests {
         let mut tmp_rs = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
         write!(tmp_rs, "fn foo() {{ let x = 1; }}").unwrap();
         let parsed_rs = parse_rust_file(tmp_rs.path()).unwrap();
-        assert!(!MetricStats::collect_rust(&[&parsed_rs]).lines_per_file.is_empty());
+        assert!(!MetricStats::collect_rust(&[&parsed_rs]).statements_per_file.is_empty());
         let mut tmp_py = tempfile::NamedTempFile::with_suffix(".py").unwrap();
         write!(tmp_py, "def foo():\n    x = 1").unwrap();
         let parsed_py = parse_file(&mut create_parser().unwrap(), tmp_py.path()).unwrap();

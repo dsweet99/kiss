@@ -212,4 +212,26 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert!(files[0].path.ends_with("a.py"));
     }
+
+    #[test]
+    fn test_process_source_entry_and_ext_entry() {
+        use std::sync::Mutex;
+        // Test process_source_entry with a valid file
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("test.py"), "").unwrap();
+        let results = Mutex::new(Vec::new());
+        for entry in ignore::WalkBuilder::new(tmp.path()).build() {
+            let state = process_source_entry(entry, &[], &results);
+            assert!(matches!(state, WalkState::Continue));
+        }
+        assert!(!results.into_inner().unwrap().is_empty());
+
+        // Test process_ext_entry
+        let results2 = Mutex::new(Vec::new());
+        for entry in ignore::WalkBuilder::new(tmp.path()).build() {
+            let state = process_ext_entry(entry, "py", &results2);
+            assert!(matches!(state, WalkState::Continue));
+        }
+        assert!(!results2.into_inner().unwrap().is_empty());
+    }
 }

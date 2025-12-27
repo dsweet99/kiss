@@ -24,7 +24,7 @@ pub struct RustTypeMetrics {
 
 #[derive(Debug, Default)]
 pub struct RustFileMetrics {
-    pub lines: usize,
+    pub statements: usize,
     pub types: usize,
     pub imports: usize,
 }
@@ -33,17 +33,32 @@ pub struct RustFileMetrics {
 pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
     let mut types = 0;
     let mut imports = 0;
+    let mut statements = 0;
 
     for item in &parsed.ast.items {
         match item {
             syn::Item::Struct(_) | syn::Item::Enum(_) => types += 1,
             syn::Item::Use(_) => imports += 1,
+            syn::Item::Fn(f) => {
+                let mut visitor = FunctionMetricsVisitor::default();
+                visitor.visit_block(&f.block);
+                statements += visitor.statements;
+            }
+            syn::Item::Impl(imp) => {
+                for item in &imp.items {
+                    if let syn::ImplItem::Fn(f) = item {
+                        let mut visitor = FunctionMetricsVisitor::default();
+                        visitor.visit_block(&f.block);
+                        statements += visitor.statements;
+                    }
+                }
+            }
             _ => {}
         }
     }
 
     RustFileMetrics {
-        lines: parsed.source.lines().count(),
+        statements,
         types,
         imports,
     }
@@ -269,7 +284,7 @@ mod tests {
         let _ = (
             RustTypeMetrics { methods: 5 },
             RustFileMetrics {
-                lines: 100,
+                statements: 100,
                 types: 3,
                 imports: 5,
             },
@@ -280,10 +295,10 @@ mod tests {
     fn test_file_metrics() {
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-        writeln!(tmp, "use std::io;\nstruct A {{}}\nstruct B {{}}").unwrap();
+        writeln!(tmp, "use std::io;\nfn foo() {{ let x = 1; }}\nstruct A {{}}\nstruct B {{}}").unwrap();
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let m = compute_rust_file_metrics(&parsed);
-        assert!(m.lines >= 3 && m.types == 2 && m.imports == 1);
+        assert!(m.statements >= 1 && m.types == 2 && m.imports == 1);
     }
 }
 

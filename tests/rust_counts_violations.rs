@@ -5,16 +5,19 @@ use std::fmt::Write as _;
 use std::io::Write;
 
 #[test]
-fn test_lines_per_file_violation() {
+fn test_statements_per_file_violation() {
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    let mut code = String::from("fn big_fn() {\n");
     for i in 0..50 {
-        writeln!(tmp, "// line {i}").unwrap();
+        let _ = writeln!(code, "    let x{i} = {i};");
     }
+    code.push_str("}\n");
+    write!(tmp, "{code}").unwrap();
     let parsed = parse_rust_file(tmp.path()).unwrap();
-    let config = Config { lines_per_file: 10, ..Default::default() };
+    let config = Config { statements_per_file: 10, ..Default::default() };
     let violations = analyze_rust_file(&parsed, &config);
-    let has_violation = violations.iter().any(|v| v.metric == "lines_per_file");
-    assert!(has_violation, "should trigger lines_per_file violation");
+    let has_violation = violations.iter().any(|v| v.metric == "statements_per_file");
+    assert!(has_violation, "should trigger statements_per_file violation");
 }
 
 #[test]

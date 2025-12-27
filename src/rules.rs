@@ -47,7 +47,7 @@ pub fn run_config(py: &Config, rs: &Config, gate: &GateConfig, config_path: Opti
 
 fn print_python_config(c: &Config) {
     println!("statements_per_function = {}", c.statements_per_function);
-    println!("lines_per_file = {}", c.lines_per_file);
+    println!("statements_per_file = {}", c.statements_per_file);
     println!("positional_args = {}", c.arguments_positional);
     println!("keyword_only_args = {}", c.arguments_keyword_only);
     println!("methods_per_class = {}", c.methods_per_class);
@@ -64,7 +64,7 @@ fn print_python_config(c: &Config) {
 
 fn print_rust_config(c: &Config) {
     println!("statements_per_function = {}", c.statements_per_function);
-    println!("lines_per_file = {}", c.lines_per_file);
+    println!("statements_per_file = {}", c.statements_per_file);
     println!("arguments = {}", c.arguments_per_function);
     println!("methods_per_class = {}", c.methods_per_class);
     println!("types_per_file = {}", c.classes_per_file);

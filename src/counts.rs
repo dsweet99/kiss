@@ -27,9 +27,9 @@ pub fn analyze_file(parsed: &ParsedFile, config: &Config) -> Vec<Violation> {
 }
 
 fn check_file_metrics(m: &FileMetrics, file: &Path, fname: &str, cfg: &Config, v: &mut Vec<Violation>) {
-    if m.lines > cfg.lines_per_file {
-        v.push(violation(file, 1, fname).metric("lines_per_file").value(m.lines).threshold(cfg.lines_per_file)
-            .message(format!("File has {} lines (threshold: {})", m.lines, cfg.lines_per_file))
+    if m.statements > cfg.statements_per_file {
+        v.push(violation(file, 1, fname).metric("statements_per_file").value(m.statements).threshold(cfg.statements_per_file)
+            .message(format!("File has {} statements (threshold: {})", m.statements, cfg.statements_per_file))
             .suggestion("Split into multiple modules with focused responsibilities.").build());
     }
     if m.classes > cfg.classes_per_file {
@@ -168,8 +168,8 @@ mod tests {
 
     #[test]
     fn test_check_file_metrics() {
-        let m = FileMetrics { lines: 1000, classes: 20, imports: 50 };
-        let cfg = Config { lines_per_file: 500, classes_per_file: 10, imported_names_per_file: 30, ..Default::default() };
+        let m = FileMetrics { statements: 1000, classes: 20, imports: 50 };
+        let cfg = Config { statements_per_file: 500, classes_per_file: 10, imported_names_per_file: 30, ..Default::default() };
         let mut viols = Vec::new();
         check_file_metrics(&m, Path::new("t.py"), "t.py", &cfg, &mut viols);
         assert_eq!(viols.len(), 3);

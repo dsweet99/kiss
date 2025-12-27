@@ -25,7 +25,6 @@ pub struct AnalyzeOptions<'a> {
     pub bypass_gate: bool,
     pub gate_config: &'a GateConfig,
     pub ignore_prefixes: &'a [String],
-    pub show_warnings: bool,
 }
 
 pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
@@ -57,7 +56,7 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
         viols.extend(graph_viols);
     }
 
-    print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.show_warnings, opts.gate_config.min_similarity, &focus_set)
+    print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.gate_config.min_similarity, &focus_set)
 }
 
 pub fn gather_files(root: &Path, lang: Option<Language>, ignore_prefixes: &[String]) -> (Vec<PathBuf>, Vec<PathBuf>) {
@@ -216,20 +215,18 @@ fn tally_coverage(defs: &[(&PathBuf, &String, usize)], unref: &[(&PathBuf, &Stri
     }
 }
 
-fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], show_warnings: bool, min_similarity: f64, focus_set: &HashSet<PathBuf>) -> bool {
+fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], min_similarity: f64, focus_set: &HashSet<PathBuf>) -> bool {
     let py_dups = filter_duplicates_by_focus(detect_py_duplicates(py_parsed, min_similarity), focus_set);
     let rs_dups = filter_duplicates_by_focus(detect_rs_duplicates(rs_parsed, min_similarity), focus_set);
     let dup_count = py_dups.len() + rs_dups.len();
-    let has_violations = !viols.is_empty() || dup_count > 0;
     
     print_violations(viols);
     print_duplicates("Python", &py_dups);
     print_duplicates("Rust", &rs_dups);
     
-    if show_warnings {
-        let _ = print_py_test_refs(py_parsed) + print_rs_test_refs(rs_parsed);
-    }
+    let warning_count = print_py_test_refs(py_parsed) + print_rs_test_refs(rs_parsed);
     
+    let has_violations = !viols.is_empty() || dup_count > 0 || warning_count > 0;
     print_final_status(has_violations);
     
     !has_violations
@@ -253,4 +250,130 @@ pub fn detect_rs_duplicates(parsed: &[ParsedRustFile], min_similarity: f64) -> V
     let chunks = extract_rust_chunks_for_duplication(&refs);
     let config = DuplicationConfig { min_similarity, ..Default::default() };
     cluster_duplicates(&detect_duplicates_from_chunks(&chunks, &config), &chunks)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_analyze_options_struct() {
+        let py_cfg = Config::python_defaults();
+        let rs_cfg = Config::rust_defaults();
+        let gate_cfg = GateConfig::default();
+        let _ = AnalyzeOptions {
+            universe: ".", focus_paths: &[], py_config: &py_cfg, rs_config: &rs_cfg,
+            lang_filter: None, bypass_gate: false, gate_config: &gate_cfg,
+            ignore_prefixes: &[],
+        };
+    }
+
+    #[test]
+    fn test_parse_result_struct() {
+        let _ = ParseResult { py_parsed: vec![], rs_parsed: vec![], violations: vec![], code_unit_count: 0 };
+    }
+
+    #[test]
+    fn test_gather_files_and_build_focus_set() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("test.py"), "x=1").unwrap();
+        let (py, rs) = gather_files(tmp.path(), None, &[]);
+        assert_eq!(py.len(), 1);
+        assert!(rs.is_empty());
+        let focus = build_focus_set(&[tmp.path().to_string_lossy().to_string()], None, &[]);
+        assert!(!focus.is_empty());
+    }
+
+    #[test]
+    fn test_parse_all_and_analyze() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("a.py"), "def f(): pass").unwrap();
+        std::fs::write(tmp.path().join("b.rs"), "fn main() {}").unwrap();
+        let py = vec![tmp.path().join("a.py")];
+        let rs = vec![tmp.path().join("b.rs")];
+        let result = parse_all(&py, &rs, &Config::python_defaults(), &Config::rust_defaults());
+        assert_eq!(result.py_parsed.len(), 1);
+        assert_eq!(result.rs_parsed.len(), 1);
+    }
+
+    #[test]
+    fn test_build_graphs_and_analyze() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("a.py"), "import b\ndef f(): pass").unwrap();
+        std::fs::write(tmp.path().join("b.py"), "x=1").unwrap();
+        let py = vec![tmp.path().join("a.py"), tmp.path().join("b.py")];
+        let result = parse_all(&py, &[], &Config::python_defaults(), &Config::rust_defaults());
+        let (py_g, rs_g) = build_graphs(&result.py_parsed, &result.rs_parsed);
+        assert!(py_g.is_some());
+        assert!(rs_g.is_none());
+        let viols = analyze_graphs(py_g.as_ref(), rs_g.as_ref(), &Config::python_defaults(), &Config::rust_defaults());
+        let _ = viols; // may or may not have violations
+    }
+
+    #[test]
+    fn test_coverage_gate_and_tally() {
+        let gate = GateConfig { test_coverage_threshold: 0, ..Default::default() };
+        let focus = HashSet::new();
+        assert!(check_coverage_gate(&[], &[], &gate, &focus));
+        let (cov, tested, total, unref) = compute_test_coverage(&[], &[], &focus);
+        assert_eq!(cov, 100);
+        assert_eq!(tested, 0);
+        assert_eq!(total, 0);
+        assert!(unref.is_empty());
+        // tally_coverage
+        let mut t = 0; let mut tot = 0; let mut u = vec![];
+        tally_coverage(&[], &[], &HashSet::new(), &mut t, &mut tot, &mut u);
+        assert_eq!(t, 0);
+    }
+
+    #[test]
+    fn test_print_functions_and_helpers() {
+        print_analysis_summary(0, 0, None, None);
+        let (n, e) = graph_stats(None, None);
+        assert_eq!(n, 0);
+        assert_eq!(e, 0);
+        assert!(is_focus_file(Path::new("any.py"), &HashSet::new())); // empty focus = all
+        let dups = filter_duplicates_by_focus(vec![], &HashSet::new());
+        assert!(dups.is_empty());
+    }
+
+    #[test]
+    fn test_detect_duplicates() {
+        let py_dups = detect_py_duplicates(&[], 0.7);
+        assert!(py_dups.is_empty());
+        let rs_dups = detect_rs_duplicates(&[], 0.7);
+        assert!(rs_dups.is_empty());
+    }
+
+    #[test]
+    fn test_print_all_results() {
+        let result = print_all_results(&[], &[], &[], 0.7, &HashSet::new());
+        assert!(result); // no violations = true
+    }
+
+    #[test]
+    fn test_run_analyze_no_files() {
+        let tmp = TempDir::new().unwrap();
+        let py_cfg = Config::python_defaults();
+        let rs_cfg = Config::rust_defaults();
+        let gate_cfg = GateConfig::default();
+        let opts = AnalyzeOptions {
+            universe: tmp.path().to_str().unwrap(), focus_paths: &[],
+            py_config: &py_cfg, rs_config: &rs_cfg, lang_filter: None,
+            bypass_gate: true, gate_config: &gate_cfg, ignore_prefixes: &[],
+        };
+        assert!(run_analyze(&opts)); // no files = success
+    }
+
+    #[test]
+    fn test_parse_and_analyze_rs_directly() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("lib.rs"), "fn foo() { let x = 1; }").unwrap();
+        let files = vec![tmp.path().join("lib.rs")];
+        let (parsed, viols, units) = parse_and_analyze_rs(&files, &Config::rust_defaults());
+        assert_eq!(parsed.len(), 1);
+        assert!(viols.is_empty()); // simple code should have no violations
+        assert!(units > 0);
+    }
 }

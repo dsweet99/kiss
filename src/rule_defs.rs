@@ -150,8 +150,8 @@ pub static RULES: &[Rule] = &[
     },
     Rule {
         category: RuleCategory::Files,
-        template: "Keep files ≤ {} lines",
-        get_threshold: |c, _| c.lines_per_file,
+        template: "Keep files ≤ {} statements",
+        get_threshold: |c, _| c.statements_per_file,
         applicability: Applicability::Both,
     },
     Rule {

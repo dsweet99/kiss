@@ -1,6 +1,6 @@
 pub mod python {
     pub const IMPORTS_PER_FILE: usize = 20;
-    pub const LINES_PER_FILE: usize = 300;
+    pub const STATEMENTS_PER_FILE: usize = 400;
     pub const TYPES_PER_FILE: usize = 10;
     pub const STATEMENTS_PER_FUNCTION: usize = 35;
     pub const ARGUMENTS_PER_FUNCTION: usize = 7;
@@ -19,7 +19,7 @@ pub mod python {
 
 pub mod rust {
     pub const IMPORTS_PER_FILE: usize = 20;
-    pub const LINES_PER_FILE: usize = 300;
+    pub const STATEMENTS_PER_FILE: usize = 300;
     pub const TYPES_PER_FILE: usize = 8;
     pub const STATEMENTS_PER_FUNCTION: usize = 25;
     pub const ARGUMENTS: usize = 8;
@@ -54,7 +54,7 @@ min_similarity = {min_sim}
 
 [python]
 imported_names_per_file = {py_imports}
-lines_per_file = {py_lines}
+statements_per_file = {py_statements_file}
 types_per_file = {py_types}
 statements_per_function = {py_statements}
 positional_args = {py_pos_args}
@@ -75,7 +75,7 @@ dependency_depth = {dep_depth}
 
 [rust]
 imported_names_per_file = {rs_imports}
-lines_per_file = {rs_lines}
+statements_per_file = {rs_statements_file}
 types_per_file = {rs_types}
 statements_per_function = {rs_statements}
 arguments = {rs_args}
@@ -91,7 +91,7 @@ attributes_per_function = {rs_attrs}
         gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
         min_sim = duplication::MIN_SIMILARITY,
         py_imports = python::IMPORTS_PER_FILE,
-        py_lines = python::LINES_PER_FILE,
+        py_statements_file = python::STATEMENTS_PER_FILE,
         py_types = python::TYPES_PER_FILE,
         py_statements = python::STATEMENTS_PER_FUNCTION,
         py_pos_args = python::POSITIONAL_ARGS,
@@ -109,7 +109,7 @@ attributes_per_function = {rs_attrs}
         transitive_deps = graph::TRANSITIVE_DEPENDENCIES,
         dep_depth = graph::DEPENDENCY_DEPTH,
         rs_imports = rust::IMPORTS_PER_FILE,
-        rs_lines = rust::LINES_PER_FILE,
+        rs_statements_file = rust::STATEMENTS_PER_FILE,
         rs_types = rust::TYPES_PER_FILE,
         rs_statements = rust::STATEMENTS_PER_FUNCTION,
         rs_args = rust::ARGUMENTS,

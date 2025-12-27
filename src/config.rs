@@ -15,7 +15,7 @@ pub enum ConfigLanguage { Python, Rust }
 pub struct Config {
     pub statements_per_function: usize,
     pub methods_per_class: usize,
-    pub lines_per_file: usize,
+    pub statements_per_file: usize,
     pub arguments_per_function: usize,
     pub arguments_positional: usize,
     pub arguments_keyword_only: usize,
@@ -43,7 +43,7 @@ impl Config {
         Self {
             statements_per_function: defaults::python::STATEMENTS_PER_FUNCTION,
             methods_per_class: defaults::python::METHODS_PER_CLASS,
-            lines_per_file: defaults::python::LINES_PER_FILE,
+            statements_per_file: defaults::python::STATEMENTS_PER_FILE,
             arguments_per_function: defaults::python::ARGUMENTS_PER_FUNCTION,
             arguments_positional: defaults::python::POSITIONAL_ARGS,
             arguments_keyword_only: defaults::python::KEYWORD_ONLY_ARGS,
@@ -67,7 +67,7 @@ impl Config {
         Self {
             statements_per_function: defaults::rust::STATEMENTS_PER_FUNCTION,
             methods_per_class: defaults::rust::METHODS_PER_TYPE,
-            lines_per_file: defaults::rust::LINES_PER_FILE,
+            statements_per_file: defaults::rust::STATEMENTS_PER_FILE,
             arguments_per_function: defaults::rust::ARGUMENTS,
             arguments_positional: 5,
             arguments_keyword_only: 6,
@@ -155,14 +155,14 @@ impl Config {
     }
 
     fn apply_thresholds(&mut self, table: &toml::Table) {
-        const VALID: &[&str] = &["statements_per_function", "methods_per_class", "lines_per_file",
+        const VALID: &[&str] = &["statements_per_function", "methods_per_class", "statements_per_file",
             "arguments_per_function", "arguments_positional", "arguments_keyword_only",
             "max_indentation_depth", "classes_per_file", "nested_function_depth", "returns_per_function",
             "branches_per_function", "local_variables_per_function", "imported_names_per_file"];
         check_unknown_keys(table, VALID, "thresholds");
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "methods_per_class" => methods_per_class,
-            "lines_per_file" => lines_per_file, "arguments_per_function" => arguments_per_function,
+            "statements_per_file" => statements_per_file, "arguments_per_function" => arguments_per_function,
             "arguments_positional" => arguments_positional, "arguments_keyword_only" => arguments_keyword_only,
             "max_indentation_depth" => max_indentation_depth, "classes_per_file" => classes_per_file,
             "nested_function_depth" => nested_function_depth, "returns_per_function" => returns_per_function,
@@ -171,10 +171,10 @@ impl Config {
     }
 
     fn apply_shared(&mut self, table: &toml::Table) {
-        const VALID: &[&str] = &["lines_per_file", "types_per_file", "imported_names_per_file",
+        const VALID: &[&str] = &["statements_per_file", "types_per_file", "imported_names_per_file",
             "cycle_size", "transitive_dependencies", "dependency_depth"];
         check_unknown_keys(table, VALID, "shared");
-        apply_config!(self, table, "lines_per_file" => lines_per_file, "types_per_file" => classes_per_file, 
+        apply_config!(self, table, "statements_per_file" => statements_per_file, "types_per_file" => classes_per_file, 
             "imported_names_per_file" => imported_names_per_file, "cycle_size" => cycle_size,
             "transitive_dependencies" => transitive_dependencies, "dependency_depth" => dependency_depth);
     }
@@ -183,7 +183,7 @@ impl Config {
         const VALID: &[&str] = &["statements_per_function", "positional_args", "keyword_only_args",
             "max_indentation", "branches_per_function", "local_variables", "methods_per_class",
             "returns_per_function", "nested_function_depth", "statements_per_try_block",
-            "boolean_parameters", "decorators_per_function", "imported_names_per_file", "lines_per_file",
+            "boolean_parameters", "decorators_per_function", "imported_names_per_file", "statements_per_file",
             "types_per_file", "cycle_size", "transitive_dependencies", "dependency_depth"];
         check_unknown_keys(table, VALID, "python");
         apply_config!(self, table,
@@ -192,12 +192,12 @@ impl Config {
             "branches_per_function" => branches_per_function, "local_variables" => local_variables_per_function,
             "methods_per_class" => methods_per_class, "returns_per_function" => returns_per_function, "nested_function_depth" => nested_function_depth,
             "statements_per_try_block" => statements_per_try_block, "boolean_parameters" => boolean_parameters,
-            "decorators_per_function" => decorators_per_function);
+            "decorators_per_function" => decorators_per_function, "statements_per_file" => statements_per_file);
     }
 
     fn apply_rust(&mut self, table: &toml::Table) {
         const VALID: &[&str] = &["statements_per_function", "arguments", "max_indentation",
-            "branches_per_function", "local_variables", "methods_per_class", "lines_per_file",
+            "branches_per_function", "local_variables", "methods_per_class", "statements_per_file",
             "types_per_file", "returns_per_function", "nested_function_depth",
             "boolean_parameters", "attributes_per_function", "imported_names_per_file",
             "cycle_size", "transitive_dependencies", "dependency_depth", "nested_closure_depth"];
@@ -206,7 +206,7 @@ impl Config {
             "statements_per_function" => statements_per_function, "arguments" => arguments_per_function,
             "max_indentation" => max_indentation_depth, "branches_per_function" => branches_per_function,
             "local_variables" => local_variables_per_function, "methods_per_class" => methods_per_class,
-            "lines_per_file" => lines_per_file,
+            "statements_per_file" => statements_per_file,
             "types_per_file" => classes_per_file, "returns_per_function" => returns_per_function,
             "nested_function_depth" => nested_function_depth, "boolean_parameters" => boolean_parameters,
             "attributes_per_function" => decorators_per_function);
@@ -297,3 +297,124 @@ fn get_f64(table: &toml::Table, key: &str) -> Option<f64> {
 }
 
 pub fn is_similar(a: &str, b: &str) -> bool { similar(a, b) }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_load_config_chain() {
+        // Test with no config files - just verify it doesn't panic
+        let config = Config::load_config_chain(Config::python_defaults(), Some(ConfigLanguage::Python));
+        assert!(config.statements_per_function > 0);
+    }
+
+    #[test]
+    fn test_merge_from_toml() {
+        let mut config = Config::python_defaults();
+        config.merge_from_toml("[python]\nstatements_per_function = 99", Some(ConfigLanguage::Python));
+        assert_eq!(config.statements_per_function, 99);
+    }
+
+    #[test]
+    fn test_merge_from_toml_with_path() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("test.toml");
+        std::fs::write(&path, "[python]\nstatements_per_function = 88").unwrap();
+        let mut config = Config::python_defaults();
+        let content = std::fs::read_to_string(&path).unwrap();
+        config.merge_from_toml_with_path(&content, Some(ConfigLanguage::Python), Some(&path));
+        assert_eq!(config.statements_per_function, 88);
+    }
+
+    #[test]
+    fn test_apply_thresholds() {
+        let mut config = Config::python_defaults();
+        let mut table = toml::Table::new();
+        table.insert("statements_per_function".into(), toml::Value::Integer(42));
+        config.apply_thresholds(&table);
+        assert_eq!(config.statements_per_function, 42);
+    }
+
+    #[test]
+    fn test_apply_shared() {
+        let mut config = Config::python_defaults();
+        let mut table = toml::Table::new();
+        table.insert("statements_per_file".into(), toml::Value::Integer(999));
+        config.apply_shared(&table);
+        assert_eq!(config.statements_per_file, 999);
+    }
+
+    #[test]
+    fn test_apply_python() {
+        let mut config = Config::python_defaults();
+        let mut table = toml::Table::new();
+        table.insert("positional_args".into(), toml::Value::Integer(3));
+        config.apply_python(&table);
+        assert_eq!(config.arguments_positional, 3);
+    }
+
+    #[test]
+    fn test_apply_rust() {
+        let mut config = Config::rust_defaults();
+        let mut table = toml::Table::new();
+        table.insert("arguments".into(), toml::Value::Integer(5));
+        config.apply_rust(&table);
+        assert_eq!(config.arguments_per_function, 5);
+    }
+
+    #[test]
+    fn test_similar() {
+        assert!(similar("python", "pytohn"));
+        assert!(similar("rust", "ruts"));
+        assert!(!similar("python", "xyz"));
+    }
+
+    #[test]
+    fn test_get_usize() {
+        let mut table = toml::Table::new();
+        table.insert("valid".into(), toml::Value::Integer(42));
+        assert_eq!(get_usize(&table, "valid"), Some(42));
+        assert_eq!(get_usize(&table, "missing"), None);
+        table.insert("negative".into(), toml::Value::Integer(-1));
+        assert_eq!(get_usize(&table, "negative"), None);
+        table.insert("wrong_type".into(), toml::Value::String("hi".into()));
+        assert_eq!(get_usize(&table, "wrong_type"), None);
+    }
+
+    #[test]
+    fn test_get_f64() {
+        let mut table = toml::Table::new();
+        table.insert("valid".into(), toml::Value::Float(0.5));
+        assert_eq!(get_f64(&table, "valid"), Some(0.5));
+        assert_eq!(get_f64(&table, "missing"), None);
+        table.insert("wrong_type".into(), toml::Value::Integer(1));
+        assert_eq!(get_f64(&table, "wrong_type"), None);
+    }
+
+    #[test]
+    fn test_gate_config_merge_from_toml() {
+        let mut gate = GateConfig::default();
+        gate.merge_from_toml("[gate]\ntest_coverage_threshold = 50\nmin_similarity = 0.8");
+        assert_eq!(gate.test_coverage_threshold, 50);
+        assert!((gate.min_similarity - 0.8).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_check_unknown_keys_valid() {
+        let mut table = toml::Table::new();
+        table.insert("statements_per_function".into(), toml::Value::Integer(30));
+        // Should not panic for valid keys
+        check_unknown_keys(&table, &["statements_per_function"], "test");
+    }
+
+    #[test]
+    fn test_check_unknown_sections_valid() {
+        let mut table = toml::Table::new();
+        table.insert("python".into(), toml::Value::Table(toml::Table::new()));
+        table.insert("rust".into(), toml::Value::Table(toml::Table::new()));
+        // Should not panic for valid sections
+        check_unknown_sections(&table);
+    }
+}

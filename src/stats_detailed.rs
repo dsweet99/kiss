@@ -49,7 +49,8 @@ pub fn collect_detailed_py(parsed_files: &[&ParsedFile], graph: Option<&Dependen
     let mut units = Vec::new();
     for parsed in parsed_files {
         let fm = compute_file_metrics(parsed);
-        units.push(file_unit_metrics(&parsed.path, fm.lines, fm.imports, graph));
+        let lines = parsed.source.lines().count();
+        units.push(file_unit_metrics(&parsed.path, lines, fm.imports, graph));
         collect_detailed_from_node(parsed.tree.root_node(), &parsed.source, &parsed.path.display().to_string(), &mut units);
     }
     units
@@ -77,7 +78,8 @@ pub fn collect_detailed_rs(parsed_files: &[&ParsedRustFile], graph: Option<&Depe
     let mut units = Vec::new();
     for parsed in parsed_files {
         let fm = compute_rust_file_metrics(parsed);
-        units.push(file_unit_metrics(&parsed.path, fm.lines, fm.imports, graph));
+        let lines = parsed.source.lines().count();
+        units.push(file_unit_metrics(&parsed.path, lines, fm.imports, graph));
         collect_detailed_from_items(&parsed.ast.items, &parsed.path.display().to_string(), &mut units);
     }
     units

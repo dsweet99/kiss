@@ -40,13 +40,13 @@ impl<'a> RustAnalyzer<'a> {
         let fname = self.file.file_name().unwrap_or_default().to_string_lossy().into_owned();
         let c = self.config;
 
-        if m.lines > c.lines_per_file {
+        if m.statements > c.statements_per_file {
             self.violations.push(
                 self.violation(1, &fname)
-                    .metric("lines_per_file")
-                    .value(m.lines)
-                    .threshold(c.lines_per_file)
-                    .message(format!("File has {} lines (threshold: {})", m.lines, c.lines_per_file))
+                    .metric("statements_per_file")
+                    .value(m.statements)
+                    .threshold(c.statements_per_file)
+                    .message(format!("File has {} statements (threshold: {})", m.statements, c.statements_per_file))
                     .suggestion("Split into multiple modules with focused responsibilities.")
                     .build(),
             );

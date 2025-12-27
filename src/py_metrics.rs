@@ -14,7 +14,7 @@ pub struct FunctionMetrics {
 pub struct ClassMetrics { pub methods: usize }
 
 #[derive(Debug, Default)]
-pub struct FileMetrics { pub lines: usize, pub classes: usize, pub imports: usize }
+pub struct FileMetrics { pub statements: usize, pub classes: usize, pub imports: usize }
 
 #[must_use]
 pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
@@ -46,7 +46,7 @@ pub fn compute_class_metrics(node: Node) -> ClassMetrics {
 #[must_use]
 pub fn compute_file_metrics(parsed: &ParsedFile) -> FileMetrics {
     let root = parsed.tree.root_node();
-    FileMetrics { lines: parsed.source.lines().count(), classes: count_node_kind(root, "class_definition"), imports: count_imports(root) }
+    FileMetrics { statements: count_statements(root), classes: count_node_kind(root, "class_definition"), imports: count_imports(root) }
 }
 
 struct ParameterCounts { positional: usize, keyword_only: usize, total: usize, boolean_params: usize }

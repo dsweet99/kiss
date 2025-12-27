@@ -6,10 +6,10 @@ fn default_config_has_reasonable_values() {
     let rs_config = Config::rust_defaults();
     assert_eq!(py_config.statements_per_function, 35);
     assert_eq!(py_config.methods_per_class, 20);
-    assert_eq!(py_config.lines_per_file, 300);
+    assert_eq!(py_config.statements_per_file, 400);
     assert_eq!(rs_config.statements_per_function, 25);
     assert_eq!(rs_config.methods_per_class, 15);
-    assert_eq!(rs_config.lines_per_file, 300);
+    assert_eq!(rs_config.statements_per_file, 300);
 }
 
 #[test]
@@ -20,7 +20,7 @@ fn test_config_language_enum() {
 #[test]
 fn test_config_struct_fields() {
     let c = Config::default();
-    assert!(c.statements_per_function > 0 && c.lines_per_file > 0);
+    assert!(c.statements_per_function > 0 && c.statements_per_file > 0);
 }
 
 #[test]
