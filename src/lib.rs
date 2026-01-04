@@ -2,6 +2,8 @@ pub mod cli_output;
 pub mod config;
 pub mod config_gen;
 pub mod defaults;
+pub mod gate_config;
+pub mod py_imports;
 pub mod py_metrics;
 pub mod rule_defs;
 pub mod violation;
@@ -27,7 +29,8 @@ pub mod rust_units;
 #[cfg(test)]
 pub mod test_utils;
 
-pub use config::{is_similar, Config, ConfigLanguage, GateConfig};
+pub use config::{is_similar, Config, ConfigLanguage};
+pub use gate_config::GateConfig;
 pub use defaults::default_config_toml;
 pub use counts::analyze_file;
 pub use py_metrics::{

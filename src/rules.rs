@@ -59,7 +59,7 @@ fn print_python_config(c: &Config) {
     println!("imported_names_per_file = {}", c.imported_names_per_file);
     println!("statements_per_try_block = {}", c.statements_per_try_block);
     println!("boolean_parameters = {}", c.boolean_parameters);
-    println!("decorators_per_function = {}", c.decorators_per_function);
+    println!("decorators_per_function = {}", c.annotations_per_function);
     println!("cycle_size = {}", c.cycle_size);
     println!("transitive_dependencies = {}", c.transitive_dependencies);
     println!("dependency_depth = {}", c.dependency_depth);
@@ -78,7 +78,7 @@ fn print_rust_config(c: &Config) {
     println!("nested_function_depth = {}", c.nested_function_depth);
     println!("imported_names_per_file = {}", c.imported_names_per_file);
     println!("boolean_parameters = {}", c.boolean_parameters);
-    println!("attributes_per_function = {}", c.decorators_per_function);
+    println!("attributes_per_function = {}", c.annotations_per_function);
     println!("cycle_size = {}", c.cycle_size);
     println!("transitive_dependencies = {}", c.transitive_dependencies);
     println!("dependency_depth = {}", c.dependency_depth);

@@ -1,3 +1,6 @@
+/// Threshold value that effectively disables a check (for N/A metrics in a language)
+pub const NOT_APPLICABLE: usize = usize::MAX;
+
 pub mod python {
     pub const IMPORTS_PER_FILE: usize = 20;
     pub const STATEMENTS_PER_FILE: usize = 400;
@@ -11,6 +14,7 @@ pub mod python {
     pub const LOCAL_VARIABLES: usize = 20;
     pub const METHODS_PER_CLASS: usize = 20;
     pub const RETURNS_PER_FUNCTION: usize = 5;
+    pub const RETURN_VALUES_PER_FUNCTION: usize = 3;
     pub const NESTED_FUNCTION_DEPTH: usize = 2;
     pub const STATEMENTS_PER_TRY_BLOCK: usize = 5;
     pub const BOOLEAN_PARAMETERS: usize = 1;
@@ -66,6 +70,7 @@ branches_per_function = {py_branches}
 local_variables = {py_locals}
 methods_per_class = {py_methods}
 returns_per_function = {py_returns}
+return_values_per_function = {py_return_values}
 nested_function_depth = {py_nested}
 statements_per_try_block = {py_try_stmts}
 boolean_parameters = {py_bool_params}
@@ -105,6 +110,7 @@ dependency_depth = {rs_dep_depth}
         py_locals = python::LOCAL_VARIABLES,
         py_methods = python::METHODS_PER_CLASS,
         py_returns = python::RETURNS_PER_FUNCTION,
+        py_return_values = python::RETURN_VALUES_PER_FUNCTION,
         py_nested = python::NESTED_FUNCTION_DEPTH,
         py_try_stmts = python::STATEMENTS_PER_TRY_BLOCK,
         py_bool_params = python::BOOLEAN_PARAMETERS,

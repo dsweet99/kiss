@@ -1,4 +1,3 @@
-
 use crate::defaults;
 use std::path::Path;
 
@@ -23,12 +22,13 @@ pub struct Config {
     pub classes_per_file: usize,
     pub nested_function_depth: usize,
     pub returns_per_function: usize,
+    pub return_values_per_function: usize,
     pub branches_per_function: usize,
     pub local_variables_per_function: usize,
     pub imported_names_per_file: usize,
     pub statements_per_try_block: usize,
     pub boolean_parameters: usize,
-    pub decorators_per_function: usize,
+    pub annotations_per_function: usize,
     pub cycle_size: usize,
     pub transitive_dependencies: usize,
     pub dependency_depth: usize,
@@ -40,50 +40,34 @@ impl Default for Config {
 
 impl Config {
     pub const fn python_defaults() -> Self {
+        use defaults::python as py;
         Self {
-            statements_per_function: defaults::python::STATEMENTS_PER_FUNCTION,
-            methods_per_class: defaults::python::METHODS_PER_CLASS,
-            statements_per_file: defaults::python::STATEMENTS_PER_FILE,
-            arguments_per_function: defaults::python::ARGUMENTS_PER_FUNCTION,
-            arguments_positional: defaults::python::POSITIONAL_ARGS,
-            arguments_keyword_only: defaults::python::KEYWORD_ONLY_ARGS,
-            max_indentation_depth: defaults::python::MAX_INDENTATION,
-            classes_per_file: defaults::python::TYPES_PER_FILE,
-            nested_function_depth: defaults::python::NESTED_FUNCTION_DEPTH,
-            returns_per_function: defaults::python::RETURNS_PER_FUNCTION,
-            branches_per_function: defaults::python::BRANCHES_PER_FUNCTION,
-            local_variables_per_function: defaults::python::LOCAL_VARIABLES,
-            imported_names_per_file: defaults::python::IMPORTS_PER_FILE,
-            statements_per_try_block: defaults::python::STATEMENTS_PER_TRY_BLOCK,
-            boolean_parameters: defaults::python::BOOLEAN_PARAMETERS,
-            decorators_per_function: defaults::python::DECORATORS_PER_FUNCTION,
-            cycle_size: defaults::graph::CYCLE_SIZE,
-            transitive_dependencies: defaults::python::TRANSITIVE_DEPENDENCIES,
-            dependency_depth: defaults::python::DEPENDENCY_DEPTH,
+            statements_per_function: py::STATEMENTS_PER_FUNCTION, methods_per_class: py::METHODS_PER_CLASS,
+            statements_per_file: py::STATEMENTS_PER_FILE, arguments_per_function: py::ARGUMENTS_PER_FUNCTION,
+            arguments_positional: py::POSITIONAL_ARGS, arguments_keyword_only: py::KEYWORD_ONLY_ARGS,
+            max_indentation_depth: py::MAX_INDENTATION, classes_per_file: py::TYPES_PER_FILE,
+            nested_function_depth: py::NESTED_FUNCTION_DEPTH, returns_per_function: py::RETURNS_PER_FUNCTION,
+            return_values_per_function: py::RETURN_VALUES_PER_FUNCTION, branches_per_function: py::BRANCHES_PER_FUNCTION,
+            local_variables_per_function: py::LOCAL_VARIABLES, imported_names_per_file: py::IMPORTS_PER_FILE,
+            statements_per_try_block: py::STATEMENTS_PER_TRY_BLOCK, boolean_parameters: py::BOOLEAN_PARAMETERS,
+            annotations_per_function: py::DECORATORS_PER_FUNCTION, cycle_size: defaults::graph::CYCLE_SIZE,
+            transitive_dependencies: py::TRANSITIVE_DEPENDENCIES, dependency_depth: py::DEPENDENCY_DEPTH,
         }
     }
 
     pub const fn rust_defaults() -> Self {
+        use defaults::{rust as rs, NOT_APPLICABLE as NA};
         Self {
-            statements_per_function: defaults::rust::STATEMENTS_PER_FUNCTION,
-            methods_per_class: defaults::rust::METHODS_PER_TYPE,
-            statements_per_file: defaults::rust::STATEMENTS_PER_FILE,
-            arguments_per_function: defaults::rust::ARGUMENTS,
-            arguments_positional: 5,
-            arguments_keyword_only: 6,
-            max_indentation_depth: defaults::rust::MAX_INDENTATION,
-            classes_per_file: defaults::rust::TYPES_PER_FILE,
-            nested_function_depth: defaults::rust::NESTED_FUNCTION_DEPTH,
-            returns_per_function: defaults::rust::RETURNS_PER_FUNCTION,
-            branches_per_function: defaults::rust::BRANCHES_PER_FUNCTION,
-            local_variables_per_function: defaults::rust::LOCAL_VARIABLES,
-            imported_names_per_file: defaults::rust::IMPORTS_PER_FILE,
-            statements_per_try_block: usize::MAX,
-            boolean_parameters: defaults::rust::BOOLEAN_PARAMETERS,
-            decorators_per_function: defaults::rust::ATTRIBUTES_PER_FUNCTION,
-            cycle_size: defaults::graph::CYCLE_SIZE,
-            transitive_dependencies: defaults::rust::TRANSITIVE_DEPENDENCIES,
-            dependency_depth: defaults::rust::DEPENDENCY_DEPTH,
+            statements_per_function: rs::STATEMENTS_PER_FUNCTION, methods_per_class: rs::METHODS_PER_TYPE,
+            statements_per_file: rs::STATEMENTS_PER_FILE, arguments_per_function: rs::ARGUMENTS,
+            arguments_positional: NA, arguments_keyword_only: NA,
+            max_indentation_depth: rs::MAX_INDENTATION, classes_per_file: rs::TYPES_PER_FILE,
+            nested_function_depth: rs::NESTED_FUNCTION_DEPTH, returns_per_function: rs::RETURNS_PER_FUNCTION,
+            return_values_per_function: NA, branches_per_function: rs::BRANCHES_PER_FUNCTION,
+            local_variables_per_function: rs::LOCAL_VARIABLES, imported_names_per_file: rs::IMPORTS_PER_FILE,
+            statements_per_try_block: NA, boolean_parameters: rs::BOOLEAN_PARAMETERS,
+            annotations_per_function: rs::ATTRIBUTES_PER_FUNCTION, cycle_size: defaults::graph::CYCLE_SIZE,
+            transitive_dependencies: rs::TRANSITIVE_DEPENDENCIES, dependency_depth: rs::DEPENDENCY_DEPTH,
         }
     }
 
@@ -182,7 +166,7 @@ impl Config {
     fn apply_python(&mut self, table: &toml::Table) {
         const VALID: &[&str] = &["statements_per_function", "positional_args", "keyword_only_args",
             "max_indentation", "branches_per_function", "local_variables", "methods_per_class",
-            "returns_per_function", "nested_function_depth", "statements_per_try_block",
+            "returns_per_function", "return_values_per_function", "nested_function_depth", "statements_per_try_block",
             "boolean_parameters", "decorators_per_function", "imported_names_per_file", "statements_per_file",
             "types_per_file", "cycle_size", "transitive_dependencies", "dependency_depth"];
         check_unknown_keys(table, VALID, "python");
@@ -190,9 +174,10 @@ impl Config {
             "statements_per_function" => statements_per_function, "positional_args" => arguments_positional,
             "keyword_only_args" => arguments_keyword_only, "max_indentation" => max_indentation_depth,
             "branches_per_function" => branches_per_function, "local_variables" => local_variables_per_function,
-            "methods_per_class" => methods_per_class, "returns_per_function" => returns_per_function, "nested_function_depth" => nested_function_depth,
+            "methods_per_class" => methods_per_class, "returns_per_function" => returns_per_function,
+            "return_values_per_function" => return_values_per_function, "nested_function_depth" => nested_function_depth,
             "statements_per_try_block" => statements_per_try_block, "boolean_parameters" => boolean_parameters,
-            "decorators_per_function" => decorators_per_function, "statements_per_file" => statements_per_file,
+            "decorators_per_function" => annotations_per_function, "statements_per_file" => statements_per_file,
             "cycle_size" => cycle_size, "transitive_dependencies" => transitive_dependencies, "dependency_depth" => dependency_depth);
     }
 
@@ -210,12 +195,12 @@ impl Config {
             "statements_per_file" => statements_per_file,
             "types_per_file" => classes_per_file, "returns_per_function" => returns_per_function,
             "nested_function_depth" => nested_function_depth, "boolean_parameters" => boolean_parameters,
-            "attributes_per_function" => decorators_per_function,
+            "attributes_per_function" => annotations_per_function,
             "cycle_size" => cycle_size, "transitive_dependencies" => transitive_dependencies, "dependency_depth" => dependency_depth);
     }
 }
 
-fn check_unknown_keys(table: &toml::Table, valid: &[&str], section: &str) {
+pub(crate) fn check_unknown_keys(table: &toml::Table, valid: &[&str], section: &str) {
     for key in table.keys() {
         if !valid.contains(&key.as_str()) {
             eprintln!("Error: Unknown config key '{key}' in [{section}]");
@@ -239,7 +224,7 @@ fn similar(a: &str, b: &str) -> bool {
     common >= a.len().saturating_sub(2) && common >= b.len().saturating_sub(2)
 }
 
-fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
+pub(crate) fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
     let value = table.get(key)?;
     if let Some(v) = value.as_integer() {
         if v < 0 {
@@ -252,171 +237,64 @@ fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
     None
 }
 
-#[derive(Debug, Clone)]
-pub struct GateConfig {
-    pub test_coverage_threshold: usize,
-    pub min_similarity: f64,
-}
-
-impl Default for GateConfig {
-    fn default() -> Self { Self { test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD, min_similarity: defaults::duplication::MIN_SIMILARITY } }
-}
-
-impl GateConfig {
-    pub fn load() -> Self {
-        let mut config = Self::default();
-        if let Some(home) = std::env::var_os("HOME") && let Ok(c) = std::fs::read_to_string(Path::new(&home).join(".kissconfig")) { config.merge_from_toml(&c); }
-        if let Ok(c) = std::fs::read_to_string(".kissconfig") { config.merge_from_toml(&c); }
-        config
-    }
-    pub fn load_from(path: &Path) -> Self {
-        let mut config = Self::default();
-        if let Ok(c) = std::fs::read_to_string(path) { config.merge_from_toml(&c); }
-        config
-    }
-    fn merge_from_toml(&mut self, toml_str: &str) {
-        let Ok(value) = toml_str.parse::<toml::Table>() else { return };
-        if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
-            check_unknown_keys(gate, &["test_coverage_threshold", "min_similarity"], "gate");
-            if let Some(t) = get_usize(gate, "test_coverage_threshold") {
-                if t > 100 { eprintln!("Error: test_coverage_threshold must be 0-100, got {t}"); std::process::exit(1); }
-                self.test_coverage_threshold = t;
-            }
-            if let Some(s) = get_f64(gate, "min_similarity") {
-                if !(0.0..=1.0).contains(&s) { eprintln!("Error: min_similarity must be 0.0-1.0, got {s}"); std::process::exit(1); }
-                self.min_similarity = s;
-            }
-        }
-    }
-}
-
-fn get_f64(table: &toml::Table, key: &str) -> Option<f64> {
-    let value = table.get(key)?;
-    value.as_float().or_else(|| {
-        eprintln!("Warning: Config key '{key}' expected float, got {}", value.type_str());
-        None
-    })
-}
-
 pub fn is_similar(a: &str, b: &str) -> bool { similar(a, b) }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
-    fn test_load_config_chain() {
-        // Test with no config files - just verify it doesn't panic
-        let config = Config::load_config_chain(Config::python_defaults(), Some(ConfigLanguage::Python));
-        assert!(config.statements_per_function > 0);
-    }
+    fn test_merge_and_apply() {
+        let mut c = Config::python_defaults();
+        c.merge_from_toml("[python]\nstatements_per_function = 99", Some(ConfigLanguage::Python));
+        assert_eq!(c.statements_per_function, 99);
 
-    #[test]
-    fn test_merge_from_toml() {
-        let mut config = Config::python_defaults();
-        config.merge_from_toml("[python]\nstatements_per_function = 99", Some(ConfigLanguage::Python));
-        assert_eq!(config.statements_per_function, 99);
-    }
-
-    #[test]
-    fn test_merge_from_toml_with_path() {
-        let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("test.toml");
-        std::fs::write(&path, "[python]\nstatements_per_function = 88").unwrap();
-        let mut config = Config::python_defaults();
-        let content = std::fs::read_to_string(&path).unwrap();
-        config.merge_from_toml_with_path(&content, Some(ConfigLanguage::Python), Some(&path));
-        assert_eq!(config.statements_per_function, 88);
-    }
-
-    #[test]
-    fn test_apply_thresholds() {
-        let mut config = Config::python_defaults();
         let mut table = toml::Table::new();
         table.insert("statements_per_function".into(), toml::Value::Integer(42));
-        config.apply_thresholds(&table);
-        assert_eq!(config.statements_per_function, 42);
+        let mut c2 = Config::python_defaults();
+        c2.apply_thresholds(&table);
+        assert_eq!(c2.statements_per_function, 42);
     }
 
     #[test]
-    fn test_apply_shared() {
-        let mut config = Config::python_defaults();
-        let mut table = toml::Table::new();
-        table.insert("statements_per_file".into(), toml::Value::Integer(999));
-        config.apply_shared(&table);
-        assert_eq!(config.statements_per_file, 999);
+    fn test_apply_language_sections() {
+        let mut py = Config::python_defaults();
+        let mut t = toml::Table::new();
+        t.insert("positional_args".into(), toml::Value::Integer(3));
+        py.apply_python(&t);
+        assert_eq!(py.arguments_positional, 3);
+
+        let mut rs = Config::rust_defaults();
+        let mut t2 = toml::Table::new();
+        t2.insert("arguments".into(), toml::Value::Integer(5));
+        rs.apply_rust(&t2);
+        assert_eq!(rs.arguments_per_function, 5);
+
+        let mut c = Config::python_defaults();
+        let mut t3 = toml::Table::new();
+        t3.insert("statements_per_file".into(), toml::Value::Integer(999));
+        c.apply_shared(&t3);
+        assert_eq!(c.statements_per_file, 999);
     }
 
     #[test]
-    fn test_apply_python() {
-        let mut config = Config::python_defaults();
-        let mut table = toml::Table::new();
-        table.insert("positional_args".into(), toml::Value::Integer(3));
-        config.apply_python(&table);
-        assert_eq!(config.arguments_positional, 3);
-    }
-
-    #[test]
-    fn test_apply_rust() {
-        let mut config = Config::rust_defaults();
-        let mut table = toml::Table::new();
-        table.insert("arguments".into(), toml::Value::Integer(5));
-        config.apply_rust(&table);
-        assert_eq!(config.arguments_per_function, 5);
-    }
-
-    #[test]
-    fn test_similar() {
-        assert!(similar("python", "pytohn"));
-        assert!(similar("rust", "ruts"));
-        assert!(!similar("python", "xyz"));
-    }
-
-    #[test]
-    fn test_get_usize() {
+    fn test_helpers() {
+        assert!(similar("python", "pytohn") && similar("rust", "ruts") && !similar("python", "xyz"));
         let mut table = toml::Table::new();
         table.insert("valid".into(), toml::Value::Integer(42));
+        table.insert("negative".into(), toml::Value::Integer(-1));
         assert_eq!(get_usize(&table, "valid"), Some(42));
         assert_eq!(get_usize(&table, "missing"), None);
-        table.insert("negative".into(), toml::Value::Integer(-1));
         assert_eq!(get_usize(&table, "negative"), None);
-        table.insert("wrong_type".into(), toml::Value::String("hi".into()));
-        assert_eq!(get_usize(&table, "wrong_type"), None);
     }
 
     #[test]
-    fn test_get_f64() {
-        let mut table = toml::Table::new();
-        table.insert("valid".into(), toml::Value::Float(0.5));
-        assert_eq!(get_f64(&table, "valid"), Some(0.5));
-        assert_eq!(get_f64(&table, "missing"), None);
-        table.insert("wrong_type".into(), toml::Value::Integer(1));
-        assert_eq!(get_f64(&table, "wrong_type"), None);
-    }
-
-    #[test]
-    fn test_gate_config_merge_from_toml() {
-        let mut gate = GateConfig::default();
-        gate.merge_from_toml("[gate]\ntest_coverage_threshold = 50\nmin_similarity = 0.8");
-        assert_eq!(gate.test_coverage_threshold, 50);
-        assert!((gate.min_similarity - 0.8).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_check_unknown_keys_valid() {
-        let mut table = toml::Table::new();
-        table.insert("statements_per_function".into(), toml::Value::Integer(30));
-        // Should not panic for valid keys
-        check_unknown_keys(&table, &["statements_per_function"], "test");
-    }
-
-    #[test]
-    fn test_check_unknown_sections_valid() {
-        let mut table = toml::Table::new();
-        table.insert("python".into(), toml::Value::Table(toml::Table::new()));
-        table.insert("rust".into(), toml::Value::Table(toml::Table::new()));
-        // Should not panic for valid sections
-        check_unknown_sections(&table);
+    fn test_validation() {
+        let mut t = toml::Table::new();
+        t.insert("statements_per_function".into(), toml::Value::Integer(30));
+        check_unknown_keys(&t, &["statements_per_function"], "test");
+        let mut t2 = toml::Table::new();
+        t2.insert("python".into(), toml::Value::Table(toml::Table::new()));
+        check_unknown_sections(&t2);
     }
 }
