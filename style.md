@@ -12,6 +12,7 @@
 - **Component checks, not composites** — avoid derived metrics (God Class, LCOM, Cyclomatic); components catch the issue
 - **Empirical over arbitrary** — use `mimic` on respected codebases; max values, not percentiles
 - **Distinguish coupling from API surface** — count internal `use`, not `pub use` re-exports; exempt module definition files
+- **Structural properties over name patterns** — prefer graph invariants (e.g., `fan_in == 0`) over string matching for exemptions
 - **Semantic consistency** — equivalent metrics should measure the same thing across Python and Rust
 
 ## Global Metrics (LLM Peripheral Vision)
@@ -59,7 +60,7 @@ LLMs work locally but need global awareness. **Pattern:** Local action → Globa
 
 **Duplication (MinHash/LSH):** Normalize → 3-gram shingles → 100 MinHash → 20 bands → Jaccard ≥ 0.7. Skip functions <5 lines (filters builder patterns).
 
-**Graph:** Tarjan's SCC for cycles. Module-level (file = module). Rust `mod foo;` declarations are dependency edges. External crates excluded. **Import scope:** Both Python and Rust extract imports from ALL scopes (including function bodies, closures, impl blocks) for consistent dependency analysis.
+**Graph:** Tarjan's SCC for cycles. Module-level (file = module). Rust `mod foo;` declarations are dependency edges. External crates excluded. **Import scope:** Both Python and Rust extract imports from ALL scopes (including function bodies, closures, impl blocks) for consistent dependency analysis. **Python `TYPE_CHECKING` exclusion:** Imports inside `if TYPE_CHECKING:` blocks are excluded from both import counts and dependency graph — they're type hints only, not runtime dependencies.
 
 **Test References:** Capture ALL path segments (`Foo::bar()` → both). Auto-mark trait impl methods. Traverse `#[cfg(test)]` inline modules.
 
@@ -69,6 +70,7 @@ LLMs work locally but need global awareness. **Pattern:** Local action → Globa
 - Module definition files (`__init__.py`, `lib.rs`, `mod.rs`) exempt from import limits — they aggregate by design
 - `attributes_per_function`: excludes `#[doc]` (doc comments aren't real attributes)
 - `branches_per_function`: Python counts `if/elif/case_clause`; Rust counts only `if` (match arms are exhaustive, not optional branches)
+- `transitive_dependencies`: only flagged when `fan_in > 0` — entry points (fan_in=0) don't propagate coupling, so high counts are acceptable there (composition roots, factories)
 
 ## Violation Advice
 
@@ -91,3 +93,5 @@ Precedence: `defaults.rs` → `~/.kissconfig` → `./.kissconfig` → `--config`
 `kiss check [PATH]` | `kiss rules` | `kiss stats [--all]` | `kiss mimic --out FILE` | `kiss clamp` | `kiss config`
 
 Options: `--lang`, `--config`, `--defaults`, `--ignore PREFIX`, `--all`
+
+**Benchmarking:** `../kiss_perf/` contains `generate_repo.py` (30k files, 3k Python sources). Run: `time cargo run --release -- check ../kiss_perf/repo`

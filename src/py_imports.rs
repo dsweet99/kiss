@@ -8,9 +8,31 @@ pub fn count_imports(node: Node, source: &str) -> usize {
     names.len()
 }
 
+pub fn is_type_checking_block(node: Node, source: &str) -> bool {
+    if node.kind() != "if_statement" {
+        return false;
+    }
+    let Some(condition) = node.child_by_field_name("condition") else {
+        return false;
+    };
+    match condition.kind() {
+        "identifier" => {
+            condition.utf8_text(source.as_bytes()).is_ok_and(|s| s == "TYPE_CHECKING")
+        }
+        "attribute" => {
+            condition.child_by_field_name("attribute")
+                .is_some_and(|attr| attr.utf8_text(source.as_bytes()).is_ok_and(|s| s == "TYPE_CHECKING"))
+        }
+        _ => false,
+    }
+}
+
 fn collect_import_names(node: Node, source: &str, names: &mut HashSet<String>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
+        if is_type_checking_block(child, source) {
+            continue;
+        }
         match child.kind() {
             "import_statement" => collect_import_statement_names(child, source, names),
             "import_from_statement" => collect_import_from_names(child, source, names),
@@ -24,7 +46,6 @@ fn collect_import_statement_names(node: Node, source: &str, names: &mut HashSet<
     for child in node.children(&mut cursor) {
         match child.kind() {
             "dotted_name" => {
-                // `import torch.nn` binds `torch` locally
                 if let Some(first) = child.child(0)
                     && let Ok(name) = first.utf8_text(source.as_bytes())
                 {
@@ -32,7 +53,6 @@ fn collect_import_statement_names(node: Node, source: &str, names: &mut HashSet<
                 }
             }
             "aliased_import" => {
-                // `import foo as bar` binds `bar`
                 if let Some(alias) = child.child_by_field_name("alias")
                     && let Ok(name) = alias.utf8_text(source.as_bytes())
                 {
@@ -87,9 +107,19 @@ mod tests {
         assert_eq!(count_imports(p1.tree.root_node(), &p1.source), 1);
         let p2 = parse("from typing import Any, List");
         assert_eq!(count_imports(p2.tree.root_node(), &p2.source), 2);
-        // Unique counting: duplicate imports count as 1
         let p3 = parse("def f():\n    import torch\ndef g():\n    import torch");
         assert_eq!(count_imports(p3.tree.root_node(), &p3.source), 1);
+    }
+
+    #[test]
+    fn test_type_checking_imports_excluded() {
+        let code = "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from some_module import SomeClass\nimport os";
+        let p = parse(code);
+        assert_eq!(count_imports(p.tree.root_node(), &p.source), 2);
+
+        let code2 = "import typing\nif typing.TYPE_CHECKING:\n    from foo import Bar";
+        let p2 = parse(code2);
+        assert_eq!(count_imports(p2.tree.root_node(), &p2.source), 1);
     }
 }
 
