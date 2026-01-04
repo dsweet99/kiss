@@ -38,7 +38,7 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
     for item in &parsed.ast.items {
         match item {
             syn::Item::Struct(_) | syn::Item::Enum(_) => types += 1,
-            syn::Item::Use(_) => imports += 1,
+            syn::Item::Use(u) if matches!(u.vis, syn::Visibility::Inherited) => imports += 1,
             syn::Item::Fn(f) => {
                 let mut visitor = FunctionMetricsVisitor::default();
                 visitor.visit_block(&f.block);
@@ -64,6 +64,7 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
     }
 }
 
+// Allow: metrics are computed incrementally from different sources (args, visitor, attr_count)
 #[allow(clippy::field_reassign_with_default)]
 pub fn compute_rust_function_metrics(
     inputs: &syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
@@ -105,7 +106,6 @@ pub struct FunctionMetricsVisitor {
     pub returns: usize,
     pub branches: usize,
     pub local_variables: usize,
-    pub complexity: usize,
     pub max_closure_depth: usize,
     pub current_closure_depth: usize,
 }
@@ -152,26 +152,21 @@ impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
         syn::visit::visit_stmt(self, stmt);
     }
 
+    // Note: Rust match arms are NOT counted as branches (unlike Python case clauses).
+    // Rust match is exhaustive pattern matching; Python match/case is optional branching.
+    // This preserves semantic consistency: we count optional code paths, not exhaustive coverage.
+
     fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::If(_) => {
                 self.branches += 1;
-                self.complexity += 1;
                 self.enter_block();
             }
-            Expr::Match(m) => {
-                self.complexity += m.arms.len().saturating_sub(1);
-                self.enter_block();
-            }
-            Expr::While(_) | Expr::ForLoop(_) | Expr::Loop(_) => {
-                self.complexity += 1;
+            Expr::Match(_) | Expr::While(_) | Expr::ForLoop(_) | Expr::Loop(_) => {
                 self.enter_block();
             }
             Expr::Return(_) => {
                 self.returns += 1;
-            }
-            Expr::Binary(bin) if matches!(bin.op, syn::BinOp::And(_) | syn::BinOp::Or(_)) => {
-                self.complexity += 1;
             }
             Expr::Closure(_) => {
                 self.current_closure_depth += 1;

@@ -8,11 +8,12 @@
 
 ## Design Philosophy
 
-- **KISS is the ethos** — simplicity over sophistication in all choices
-- **Component checks, not composites** — avoid derived metrics (God Class, LCOM, Cyclomatic) when components already catch the issue; derived metrics prove "finicky"
+- **KISS is the ethos** — simplicity over sophistication; local macros beat parameterized shared ones
+- **Component checks, not composites** — avoid derived metrics (God Class, LCOM, Cyclomatic); components catch the issue
 - **Empirical over arbitrary** — use `mimic` on respected codebases; max values, not percentiles
-- **Redundancy aversion** — if two metrics overlap significantly, keep only one
-- **Informational vs thresholded** — some metrics (fan-in/out) are useful for detection (orphans) but not for direct thresholds
+- **Distinguish coupling from API surface** — count internal `use`, not `pub use` re-exports; exempt module definition files
+- **Structural properties over name patterns** — prefer graph invariants (e.g., `fan_in == 0`) over string matching for exemptions
+- **Semantic consistency** — equivalent metrics should measure the same thing across Python and Rust
 
 ## Global Metrics (LLM Peripheral Vision)
 
@@ -30,12 +31,12 @@ LLMs work locally but need global awareness. **Pattern:** Local action → Globa
 
 | Module | Purpose |
 |--------|---------|
-| `counts.rs` / `rust_counts.rs` | Metrics and violations |
+| `py_metrics.rs` / `rust_fn_metrics.rs` | Metric computation (tree-sitter / syn) |
+| `counts.rs` / `rust_counts.rs` | Violation checking against thresholds |
 | `graph.rs` | Dependencies, cycles (Tarjan), module-level graph |
-| `rule_defs.rs` | Self-documenting rule registry (auto-included in `kiss rules`) |
-| `test_refs.rs` / `rust_test_refs.rs` | Test reference analysis |
+| `config.rs` / `gate_config.rs` | Thresholds config; gate config (coverage, similarity) |
 
-**Dependency graph is module-level** (not code-unit level): matches import semantics, provides actionable refactoring units, keeps graph tractable.
+**Dependency graph is module-level** (file = module): matches import semantics, actionable refactoring units.
 
 ## Output Format
 
@@ -47,26 +48,29 @@ LLMs work locally but need global awareness. **Pattern:** Local action → Globa
 
 ## Rust Conventions
 
-- **No file-level lint suppression** — `#![allow(clippy::...)]` is cheating; fix properly or allow at specific line with justification
+- **No file-level lint suppression** — fix properly or allow at specific line with justification comment
 - **Struct init syntax** — `Config { field: val, ..Default::default() }` not field reassignment
-- **`Option<&T>` over `&Option<T>`** in function signatures
-- **`writeln!` over `format!` + `push_str`** for string building
-- Max 300 lines/file; extract to `tests/*.rs` when approaching limit
-- Self-documenting names; no comments (code should be clear)
-- `tests/fake_*` are test fixtures (intentionally bad) — excluded via `.kissignore`
-- `src/test_utils.rs` for shared library test helpers (`#[cfg(test)]` modules can't import from `tests/`)
+- **`Option<&T>` over `&Option<T>`** in function signatures; `writeln!` over `format!` + `push_str`
+- Max 300 lines/file; extract to `tests/*.rs` or submodules when approaching limit
+- `NOT_APPLICABLE` constant for cross-language config fields that don't apply (e.g., `statements_per_try_block` for Rust)
+- Neutral internal names (`annotations_per_function`) with language-specific external keys (`decorators_per_function`, `attributes_per_function`)
+- `src/test_utils.rs` for shared test helpers; `tests/fake_*` are intentionally-bad fixtures (`.kissignore`)
 
 ## Key Algorithms
 
 **Duplication (MinHash/LSH):** Normalize → 3-gram shingles → 100 MinHash → 20 bands → Jaccard ≥ 0.7. Skip functions <5 lines (filters builder patterns).
 
-**Graph:** Tarjan's SCC for cycles. Module-level (file = module). Rust `mod foo;` declarations are dependency edges. External crates excluded.
+**Graph:** Tarjan's SCC for cycles. Module-level (file = module). Rust `mod foo;` declarations are dependency edges. External crates excluded. **Import scope:** Both Python and Rust extract imports from ALL scopes (including function bodies, closures, impl blocks) for consistent dependency analysis. **Python `TYPE_CHECKING` exclusion:** Imports inside `if TYPE_CHECKING:` blocks are excluded from both import counts and dependency graph — they're type hints only, not runtime dependencies.
 
 **Test References:** Capture ALL path segments (`Foo::bar()` → both). Auto-mark trait impl methods. Traverse `#[cfg(test)]` inline modules.
 
 **Metric Counting:**
-- `imported_names_per_file`: counts each name (`from X import a, b` = 2), not statements
+- `statements_per_file`: counts statements **inside function/method bodies only** — not imports, class/function signatures
+- `imported_names_per_file`: counts **unique** names (`import torch` twice = 1); Rust counts only non-`pub use`
+- Module definition files (`__init__.py`, `lib.rs`, `mod.rs`) exempt from import limits — they aggregate by design
 - `attributes_per_function`: excludes `#[doc]` (doc comments aren't real attributes)
+- `branches_per_function`: Python counts `if/elif/case_clause`; Rust counts only `if` (match arms are exhaustive, not optional branches)
+- `transitive_dependencies`: only flagged when `fan_in > 0` — entry points (fan_in=0) don't propagate coupling, so high counts are acceptable there (composition roots, factories)
 
 ## Violation Advice
 
@@ -89,3 +93,5 @@ Precedence: `defaults.rs` → `~/.kissconfig` → `./.kissconfig` → `--config`
 `kiss check [PATH]` | `kiss rules` | `kiss stats [--all]` | `kiss mimic --out FILE` | `kiss clamp` | `kiss config`
 
 Options: `--lang`, `--config`, `--defaults`, `--ignore PREFIX`, `--all`
+
+**Benchmarking:** `../kiss_perf/` contains `generate_repo.py` (30k files, 3k Python sources). Run: `time cargo run --release -- check ../kiss_perf/repo`

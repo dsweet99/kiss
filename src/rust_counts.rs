@@ -62,7 +62,8 @@ impl<'a> RustAnalyzer<'a> {
                     .build(),
             );
         }
-        if m.imports > c.imported_names_per_file {
+        // Skip lib.rs and mod.rs - they're module definition files that naturally aggregate re-exports
+        if m.imports > c.imported_names_per_file && fname != "lib.rs" && fname != "mod.rs" {
             self.violations.push(
                 self.violation(1, &fname)
                     .metric("imported_names_per_file")
@@ -176,7 +177,7 @@ impl<'a> RustAnalyzer<'a> {
              "Extract nested closures into separate functions.");
         chk!(bool_parameters, boolean_parameters, "bool_parameters", "bool parameters", 
              "Use an enum or a struct with named fields instead of multiple bools.");
-        chk!(attributes, decorators_per_function, "attributes_per_function", "attributes", 
+        chk!(attributes, annotations_per_function, "attributes_per_function", "attributes", 
              "Consider consolidating attributes or simplifying the function's responsibilities.");
     }
 }

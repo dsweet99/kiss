@@ -1,7 +1,7 @@
 use crate::config::Config;
-use crate::GateConfig;
+use crate::gate_config::GateConfig;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RuleCategory {
     Functions,
     Classes,
@@ -114,6 +114,12 @@ pub static RULES: &[Rule] = &[
     },
     Rule {
         category: RuleCategory::Functions,
+        template: "Return ≤ {} values per return statement",
+        get_threshold: |c, _| c.return_values_per_function,
+        applicability: Applicability::Python,
+    },
+    Rule {
+        category: RuleCategory::Functions,
         template: "Avoid deeply nested functions/closures (max depth: {})",
         get_threshold: |c, _| c.nested_function_depth,
         applicability: Applicability::Both,
@@ -133,13 +139,13 @@ pub static RULES: &[Rule] = &[
     Rule {
         category: RuleCategory::Functions,
         template: "Use ≤ {} decorators per function",
-        get_threshold: |c, _| c.decorators_per_function,
+        get_threshold: |c, _| c.annotations_per_function,
         applicability: Applicability::Python,
     },
     Rule {
         category: RuleCategory::Functions,
         template: "Use ≤ {} attributes per function",
-        get_threshold: |c, _| c.decorators_per_function,
+        get_threshold: |c, _| c.annotations_per_function,
         applicability: Applicability::Rust,
     },
     Rule {
@@ -229,7 +235,7 @@ fn rules_grouped(config: &Config, gate: &GateConfig, python: bool) -> Vec<(RuleC
     let categories = [Functions, Classes, Files, Dependencies, Testing, Duplication];
     categories.iter().filter_map(|&cat| {
         let rules: Vec<String> = RULES.iter()
-            .filter(|r| r.category as u8 == cat as u8)
+            .filter(|r| r.category == cat)
             .filter(|r| if python { r.applies_to_python() } else { r.applies_to_rust() })
             .map(|r| r.format(config, gate))
             .collect();

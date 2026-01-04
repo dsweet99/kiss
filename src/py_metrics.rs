@@ -1,5 +1,6 @@
 
 use crate::parsing::ParsedFile;
+use crate::py_imports::count_imports;
 use std::collections::HashSet;
 use tree_sitter::Node;
 
@@ -7,7 +8,7 @@ use tree_sitter::Node;
 pub struct FunctionMetrics {
     pub statements: usize, pub arguments: usize, pub arguments_positional: usize, pub arguments_keyword_only: usize,
     pub max_indentation: usize, pub nested_function_depth: usize, pub returns: usize, pub branches: usize, pub local_variables: usize,
-    pub max_try_block_statements: usize, pub boolean_parameters: usize, pub decorators: usize,
+    pub max_try_block_statements: usize, pub boolean_parameters: usize, pub decorators: usize, pub max_return_values: usize,
 }
 
 #[derive(Debug, Default)]
@@ -31,6 +32,7 @@ pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
         m.local_variables = count_local_variables(body, source);
         m.returns = count_node_kind(body, "return_statement");
         m.max_try_block_statements = compute_max_try_block_statements(body);
+        m.max_return_values = compute_max_return_values(body);
     }
     m.nested_function_depth = compute_nested_function_depth(node, 0);
     m.decorators = count_decorators(node);
@@ -46,7 +48,54 @@ pub fn compute_class_metrics(node: Node) -> ClassMetrics {
 #[must_use]
 pub fn compute_file_metrics(parsed: &ParsedFile) -> FileMetrics {
     let root = parsed.tree.root_node();
-    FileMetrics { statements: count_statements(root), classes: count_node_kind(root, "class_definition"), imports: count_imports(root) }
+    FileMetrics {
+        statements: count_file_statements(root),
+        classes: count_node_kind(root, "class_definition"),
+        imports: count_imports(root, &parsed.source),
+    }
+}
+
+fn count_file_statements(node: Node) -> usize {
+    let mut total = 0;
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "function_definition" | "async_function_definition" => {
+                if let Some(body) = child.child_by_field_name("body") {
+                    total += count_statements(body);
+                }
+            }
+            "class_definition" => {
+                if let Some(body) = child.child_by_field_name("body") {
+                    total += count_class_statements(body);
+                }
+            }
+            "decorated_definition" => {
+                total += count_file_statements(child);
+            }
+            _ => {}
+        }
+    }
+    total
+}
+
+fn count_class_statements(body: Node) -> usize {
+    let mut total = 0;
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        match child.kind() {
+            "function_definition" | "async_function_definition" => {
+                if let Some(fn_body) = child.child_by_field_name("body") {
+                    total += count_statements(fn_body);
+                }
+            }
+            "decorated_definition" => {
+                total += count_class_statements(child);
+            }
+            _ => {}
+        }
+    }
+    total
 }
 
 struct ParameterCounts { positional: usize, keyword_only: usize, total: usize, boolean_params: usize }
@@ -106,7 +155,8 @@ fn compute_max_indentation(node: Node, current_depth: usize) -> usize {
 
 fn count_branches(node: Node) -> usize {
     let mut cursor = node.walk();
-    node.children(&mut cursor).map(|c| usize::from(matches!(c.kind(), "if_statement" | "elif_clause")) + count_branches(c)).sum()
+    // Count if/elif and match case clauses as branches (Python 3.10+ match/case support)
+    node.children(&mut cursor).map(|c| usize::from(matches!(c.kind(), "if_statement" | "elif_clause" | "case_clause")) + count_branches(c)).sum()
 }
 
 fn compute_max_try_block_statements(node: Node) -> usize {
@@ -121,6 +171,28 @@ fn compute_max_try_block_statements(node: Node) -> usize {
         max = max.max(compute_max_try_block_statements(child));
     }
     max
+}
+
+fn compute_max_return_values(node: Node) -> usize {
+    let mut max = if node.kind() == "return_statement" { count_return_values(node) } else { 0 };
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        max = max.max(compute_max_return_values(child));
+    }
+    max
+}
+
+fn count_return_values(node: Node) -> usize {
+    // return statement child is the expression being returned
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "return" { continue; } // skip the 'return' keyword
+        return match child.kind() {
+            "expression_list" => child.named_child_count(),
+            _ => 1, // single value
+        };
+    }
+    0 // bare return
 }
 
 fn count_local_variables(node: Node, source: &str) -> usize {
@@ -152,28 +224,6 @@ fn compute_nested_function_depth(node: Node, current_depth: usize) -> usize {
     if is_fn && current_depth == 0 { max.saturating_sub(1) } else { max }
 }
 
-fn count_imports(node: Node) -> usize {
-    let mut cursor = node.walk();
-    node.children(&mut cursor).map(|c| match c.kind() {
-        "import_statement" => 1,
-        "import_from_statement" => count_import_names(c).max(1),
-        _ => count_imports(c)
-    }).sum()
-}
-
-fn count_import_names(node: Node) -> usize {
-    let (mut count, mut seen_import) = (0, false);
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "import" => seen_import = true,
-            "dotted_name" | "aliased_import" if seen_import => count += 1,
-            _ => {}
-        }
-    }
-    count
-}
-
 pub fn count_node_kind(node: Node, kind: &str) -> usize {
     let mut cursor = node.walk();
     usize::from(node.kind() == kind) + node.children(&mut cursor).map(|c| count_node_kind(c, kind)).sum::<usize>()
@@ -182,14 +232,7 @@ pub fn count_node_kind(node: Node, kind: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parsing::{create_parser, parse_file};
-    use std::io::Write;
-
-    fn parse(code: &str) -> crate::parsing::ParsedFile {
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        write!(tmp, "{code}").unwrap();
-        parse_file(&mut create_parser().unwrap(), tmp.path()).unwrap()
-    }
+    use crate::test_utils::parse_python_source as parse;
 
     fn get_func_node(p: &crate::parsing::ParsedFile) -> Node<'_> { p.tree.root_node().child(0).unwrap() }
 
@@ -218,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn test_variables_and_imports() {
+    fn test_variables_and_nesting() {
         let p = parse("def f():\n    x = 1\n    y = 2");
         let body = get_func_node(&p).child_by_field_name("body").unwrap();
         assert_eq!(count_local_variables(body, &p.source), 2);
@@ -228,7 +271,21 @@ mod tests {
         let mut v2 = HashSet::new();
         collect_assigned_names(p2.tree.root_node().child(0).unwrap().child(0).unwrap().child_by_field_name("left").unwrap(), &p2.source, &mut v2);
         assert_eq!(compute_nested_function_depth(get_func_node(&parse("def f():\n    def g(): pass")), 0), 1);
-        assert_eq!(count_imports(parse("import os").tree.root_node()), 1);
-        assert_eq!(count_import_names(parse("from typing import Any, List").tree.root_node().child(0).unwrap()), 2);
+    }
+
+    #[test]
+    fn test_return_values() {
+        // Single value
+        let p1 = parse("def f():\n    return x");
+        assert_eq!(compute_function_metrics(get_func_node(&p1), &p1.source).max_return_values, 1);
+        // Multiple values (tuple)
+        let p2 = parse("def f():\n    return a, b, c");
+        assert_eq!(compute_function_metrics(get_func_node(&p2), &p2.source).max_return_values, 3);
+        // Bare return
+        let p3 = parse("def f():\n    return");
+        assert_eq!(compute_function_metrics(get_func_node(&p3), &p3.source).max_return_values, 0);
+        // Max across multiple returns
+        let p4 = parse("def f():\n    if x:\n        return a, b\n    return a, b, c, d");
+        assert_eq!(compute_function_metrics(get_func_node(&p4), &p4.source).max_return_values, 4);
     }
 }

@@ -1,6 +1,7 @@
 
 use crate::config::Config;
 use crate::parsing::ParsedFile;
+use crate::py_imports::is_type_checking_block;
 use crate::violation::Violation;
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -119,7 +120,8 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
                 suggestion: "This may be dead code. Remove it, or integrate it into the codebase.".to_string(),
             });
         }
-        if metrics.transitive_dependencies > config.transitive_dependencies {
+        // Only flag transitive deps if fan_in > 0; entry points (fan_in=0) don't propagate coupling
+        if metrics.transitive_dependencies > config.transitive_dependencies && metrics.fan_in > 0 {
             violations.push(Violation {
                 file: get_module_path(graph, module_name), line: 1, unit_name: module_name.clone(),
                 metric: "transitive_dependencies".to_string(), value: metrics.transitive_dependencies, threshold: config.transitive_dependencies,
@@ -205,6 +207,9 @@ fn extract_imports(node: Node, source: &str) -> Vec<String> {
 }
 
 fn extract_imports_recursive(node: Node, source: &str, imports: &mut Vec<String>) {
+    if is_type_checking_block(node, source) {
+        return;
+    }
     match node.kind() {
         "import_statement" => collect_import_names(node, source, imports),
         "import_from_statement" => imports.extend(extract_modules_from_import_from(node, source)),
@@ -263,7 +268,8 @@ mod tests {
         assert!(!cycle_info.cycles.is_empty());
         assert_eq!(g.get_or_create_node("test"), g.get_or_create_node("test"));
         g.add_dependency("x", "x");
-        assert!(!g.nodes.contains_key("x"), "Self-edges ignored");
+        // Self-dependencies are rejected: neither node nor edge is created
+        assert!(!g.nodes.contains_key("x"), "Self-dependency should not create node");
         let idx_a = *g.nodes.get("a").unwrap();
         let idx_b = *g.nodes.get("b").unwrap();
         assert!(g.is_cycle(&[idx_a, idx_b]) && !g.is_cycle(&[]) && !g.is_cycle(&[idx_a]));
@@ -291,5 +297,21 @@ mod tests {
         write!(tmp, "x = 1").unwrap();
         assert!(!module_name_from_path(&parse_file(&mut parser, tmp.path()).unwrap()).is_empty());
         assert!(compute_cyclomatic_complexity(parser.parse("def f():\n    if a:\n        pass", None).unwrap().root_node().child(0).unwrap()) >= 2);
+    }
+
+    #[test]
+    fn test_type_checking_imports_excluded_from_graph() {
+        let mut parser = create_parser().unwrap();
+        let code = "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from some_module import SomeClass\nimport os";
+        let imports = extract_imports(parser.parse(code, None).unwrap().root_node(), code);
+        assert!(imports.contains(&"typing".into()));
+        assert!(imports.contains(&"os".into()));
+        assert!(!imports.contains(&"some_module".into()));
+
+        let code2 = "import typing\nif typing.TYPE_CHECKING:\n    from foo import Bar\nimport json";
+        let imports2 = extract_imports(parser.parse(code2, None).unwrap().root_node(), code2);
+        assert!(imports2.contains(&"typing".into()));
+        assert!(imports2.contains(&"json".into()));
+        assert!(!imports2.contains(&"foo".into()));
     }
 }

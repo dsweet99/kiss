@@ -47,6 +47,8 @@ pub fn parse_rust_file(path: &Path) -> Result<ParsedRustFile, RustParseError> {
     })
 }
 
+// Note: Cannot use par_iter() here because syn::File contains proc_macro2 types
+// which are not Send. Parallelism is applied during analysis instead.
 pub fn parse_rust_files(paths: &[PathBuf]) -> Vec<Result<ParsedRustFile, RustParseError>> {
     paths.iter().map(|path| parse_rust_file(path)).collect()
 }
