@@ -71,16 +71,16 @@ fn build_chunk_index(chunks: &[CodeChunk]) -> HashMap<ChunkKey, usize> {
 }
 
 fn compute_cluster_similarity(indices: &[usize], pair_sims: &HashMap<(usize, usize), f64>) -> f64 {
-    // Average similarity of pairs that actually exist in this cluster
-    // Rather than O(k²) iteration, use O(pairs) by iterating pair_sims directly
-    use std::collections::HashSet;
-    let index_set: HashSet<usize> = indices.iter().copied().collect();
+    // Iterate O(k²) pairs within cluster instead of O(all_pairs) - faster for small clusters
     let mut total = 0.0;
     let mut count = 0;
-    for (&(i, j), &sim) in pair_sims {
-        if index_set.contains(&i) && index_set.contains(&j) {
-            total += sim;
-            count += 1;
+    for i in 0..indices.len() {
+        for j in (i + 1)..indices.len() {
+            let key = (indices[i].min(indices[j]), indices[i].max(indices[j]));
+            if let Some(&sim) = pair_sims.get(&key) {
+                total += sim;
+                count += 1;
+            }
         }
     }
     if count > 0 { total / f64::from(count) } else { 0.0 }

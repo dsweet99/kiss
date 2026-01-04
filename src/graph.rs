@@ -119,7 +119,8 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
                 suggestion: "This may be dead code. Remove it, or integrate it into the codebase.".to_string(),
             });
         }
-        if metrics.transitive_dependencies > config.transitive_dependencies {
+        // Only flag transitive deps if fan_in > 0; entry points (fan_in=0) don't propagate coupling
+        if metrics.transitive_dependencies > config.transitive_dependencies && metrics.fan_in > 0 {
             violations.push(Violation {
                 file: get_module_path(graph, module_name), line: 1, unit_name: module_name.clone(),
                 metric: "transitive_dependencies".to_string(), value: metrics.transitive_dependencies, threshold: config.transitive_dependencies,
@@ -263,7 +264,8 @@ mod tests {
         assert!(!cycle_info.cycles.is_empty());
         assert_eq!(g.get_or_create_node("test"), g.get_or_create_node("test"));
         g.add_dependency("x", "x");
-        assert!(!g.nodes.contains_key("x"), "Self-edges ignored");
+        // Self-dependencies are rejected: neither node nor edge is created
+        assert!(!g.nodes.contains_key("x"), "Self-dependency should not create node");
         let idx_a = *g.nodes.get("a").unwrap();
         let idx_b = *g.nodes.get("b").unwrap();
         assert!(g.is_cycle(&[idx_a, idx_b]) && !g.is_cycle(&[]) && !g.is_cycle(&[idx_a]));

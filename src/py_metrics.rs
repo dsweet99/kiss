@@ -155,7 +155,8 @@ fn compute_max_indentation(node: Node, current_depth: usize) -> usize {
 
 fn count_branches(node: Node) -> usize {
     let mut cursor = node.walk();
-    node.children(&mut cursor).map(|c| usize::from(matches!(c.kind(), "if_statement" | "elif_clause")) + count_branches(c)).sum()
+    // Count if/elif and match case clauses as branches (Python 3.10+ match/case support)
+    node.children(&mut cursor).map(|c| usize::from(matches!(c.kind(), "if_statement" | "elif_clause" | "case_clause")) + count_branches(c)).sum()
 }
 
 fn compute_max_try_block_statements(node: Node) -> usize {

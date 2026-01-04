@@ -152,6 +152,10 @@ impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
         syn::visit::visit_stmt(self, stmt);
     }
 
+    // Note: Rust match arms are NOT counted as branches (unlike Python case clauses).
+    // Rust match is exhaustive pattern matching; Python match/case is optional branching.
+    // This preserves semantic consistency: we count optional code paths, not exhaustive coverage.
+
     fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::If(_) => {

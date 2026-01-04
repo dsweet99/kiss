@@ -88,6 +88,7 @@ impl MetricStats {
     }
 }
 
+// inside_class tracks context for method counting; passed through recursion to nested scopes
 #[allow(clippy::only_used_in_recursion)]
 fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_class: bool) {
     match node.kind() {

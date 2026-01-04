@@ -1,5 +1,21 @@
 
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
+
+// Default MinHash size - precompute coefficients for common case
+const DEFAULT_MINHASH_SIZE: usize = 100;
+
+// Precomputed coefficients for universal hash family (avoids regeneration per chunk)
+static DEFAULT_COEFFICIENTS: LazyLock<[(u64, u64); DEFAULT_MINHASH_SIZE]> = LazyLock::new(|| {
+    let mut coeffs = [(0u64, 0u64); DEFAULT_MINHASH_SIZE];
+    for (i, coeff) in coeffs.iter_mut().enumerate() {
+        let seed = 0x9E37_79B9_7F4A_7C15_u64.wrapping_add(i as u64);
+        let a = seed.wrapping_mul(0xBF58_476D_1CE4_E5B9) | 1;
+        let b = seed.wrapping_mul(0x94D0_49BB_1331_11EB);
+        *coeff = (a, b);
+    }
+    coeffs
+});
 
 #[derive(Debug, Clone)]
 pub struct MinHashSignature {
@@ -50,20 +66,34 @@ pub fn generate_shingles(text: &str, shingle_size: usize) -> HashSet<u64> {
 
 pub fn compute_minhash<S: std::hash::BuildHasher>(shingles: &HashSet<u64, S>, size: usize) -> MinHashSignature {
     let mut hashes = vec![u64::MAX; size];
-    let coefficients: Vec<(u64, u64)> = (0..size)
-        .map(|i| {
-            let seed = 0x9E37_79B9_7F4A_7C15_u64.wrapping_add(i as u64);
-            let a = seed.wrapping_mul(0xBF58_476D_1CE4_E5B9) | 1;
-            let b = seed.wrapping_mul(0x94D0_49BB_1331_11EB);
-            (a, b)
-        })
-        .collect();
-
-    for &shingle in shingles {
-        for (i, &(a, b)) in coefficients.iter().enumerate() {
-            let h = a.wrapping_mul(shingle).wrapping_add(b);
-            if h < hashes[i] {
-                hashes[i] = h;
+    
+    // Use precomputed coefficients for default size, compute dynamically for custom sizes
+    // Coefficients for universal hash family: h(x) = (a*x + b)
+    // Constants from SplitMix64/xxHash with good avalanche properties
+    if size == DEFAULT_MINHASH_SIZE {
+        for &shingle in shingles {
+            for (i, &(a, b)) in DEFAULT_COEFFICIENTS.iter().enumerate() {
+                let h = a.wrapping_mul(shingle).wrapping_add(b);
+                if h < hashes[i] {
+                    hashes[i] = h;
+                }
+            }
+        }
+    } else {
+        let coefficients: Vec<(u64, u64)> = (0..size)
+            .map(|i| {
+                let seed = 0x9E37_79B9_7F4A_7C15_u64.wrapping_add(i as u64);
+                let a = seed.wrapping_mul(0xBF58_476D_1CE4_E5B9) | 1;
+                let b = seed.wrapping_mul(0x94D0_49BB_1331_11EB);
+                (a, b)
+            })
+            .collect();
+        for &shingle in shingles {
+            for (i, &(a, b)) in coefficients.iter().enumerate() {
+                let h = a.wrapping_mul(shingle).wrapping_add(b);
+                if h < hashes[i] {
+                    hashes[i] = h;
+                }
             }
         }
     }
@@ -81,6 +111,7 @@ pub fn estimate_similarity(sig1: &MinHashSignature, sig2: &MinHashSignature) -> 
         .zip(&sig2.hashes)
         .filter(|(a, b)| a == b)
         .count();
+    // Safe: matching <= hashes.len() which is typically 100, result is 0.0-1.0
     #[allow(clippy::cast_precision_loss)]
     let sim = matching as f64 / sig1.hashes.len() as f64;
     sim

@@ -185,6 +185,9 @@ fn parse_and_analyze_py_timed(files: &[PathBuf], config: &Config, show_timing: b
     ((parsed, viols, unit_count), timing)
 }
 
+// Note: Rust parsing/analysis is sequential because syn::File contains proc_macro2 types
+// which are not Send. Python uses tree-sitter which is Send-safe. This is a limitation
+// of the syn crate, not an oversight.
 pub fn parse_and_analyze_rs(files: &[PathBuf], config: &Config) -> (Vec<ParsedRustFile>, Vec<Violation>, usize) {
     if files.is_empty() { return (Vec::new(), Vec::new(), 0); }
     let (mut parsed, mut viols, mut unit_count) = (Vec::new(), Vec::new(), 0);
@@ -256,6 +259,7 @@ pub fn compute_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFi
     }
 
     unreferenced.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
+    // Safe: tested <= total (counts are small), result is 0-100 percentage
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let coverage = if total > 0 { ((tested as f64 / total as f64) * 100.0).round() as usize } else { 100 };
     (coverage, tested, total, unreferenced)
