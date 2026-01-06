@@ -145,7 +145,15 @@ fn insert_identifier(node: Node, source: &str, refs: &mut HashSet<String>) {
     refs.insert(source[node.start_byte()..node.end_byte()].to_string());
 }
 
-fn collect_references(node: Node, source: &str, refs: &mut HashSet<String>) {
+fn is_test_function(node: Node, source: &str) -> bool {
+    get_child_by_field(node, "name", source).is_some_and(|n| n.starts_with("test_"))
+}
+
+fn is_test_class(node: Node, source: &str) -> bool {
+    get_child_by_field(node, "name", source).is_some_and(|n| n.starts_with("Test"))
+}
+
+fn collect_refs_from_node(node: Node, source: &str, refs: &mut HashSet<String>) {
     match node.kind() {
         "call" => if let Some(func) = node.child_by_field_name("function") {
             collect_call_target(func, source, refs);
@@ -156,7 +164,24 @@ fn collect_references(node: Node, source: &str, refs: &mut HashSet<String>) {
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_references(child, source, refs);
+        collect_refs_from_node(child, source, refs);
+    }
+}
+
+fn collect_references(node: Node, source: &str, refs: &mut HashSet<String>) {
+    match node.kind() {
+        "function_definition" | "async_function_definition" if is_test_function(node, source) => {
+            collect_refs_from_node(node, source, refs);
+        }
+        "class_definition" if is_test_class(node, source) => {
+            collect_refs_from_node(node, source, refs);
+        }
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_references(child, source, refs);
+            }
+        }
     }
 }
 
