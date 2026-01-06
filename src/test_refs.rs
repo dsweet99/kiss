@@ -118,22 +118,26 @@ fn try_add_def(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinit
 }
 
 fn collect_definitions(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, inside_class: bool, class_name: Option<&str>) {
-    let (next_inside, next_class_name) = match node.kind() {
+    match node.kind() {
         "function_definition" | "async_function_definition" => {
             let kind = if inside_class { CodeUnitKind::Method } else { CodeUnitKind::Function };
             try_add_def(node, source, file, defs, kind, class_name.map(String::from));
-            (false, None)
+            // Don't recurse into function body - inner functions are not counted for coverage
         }
         "class_definition" => {
             try_add_def(node, source, file, defs, CodeUnitKind::Class, None);
             let name = get_child_by_field(node, "name", source);
-            (true, name)
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_definitions(child, source, file, defs, true, name.as_deref());
+            }
         }
-        _ => (inside_class, class_name.map(String::from).as_deref().map(std::string::ToString::to_string)),
-    };
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_definitions(child, source, file, defs, next_inside, next_class_name.as_deref());
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_definitions(child, source, file, defs, inside_class, class_name);
+            }
+        }
     }
 }
 
