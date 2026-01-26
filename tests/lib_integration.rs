@@ -71,7 +71,8 @@ fn computes_file_metrics_for_god_class() {
     let parsed = parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
     let metrics = compute_file_metrics(&parsed);
     assert!(metrics.statements > 100, "Expected >100 statements, got {}", metrics.statements);
-    assert_eq!(metrics.classes, 1);
+    assert_eq!(metrics.interface_types, 0);
+    assert_eq!(metrics.concrete_types, 1);
     assert!(metrics.imports > 5, "Expected >5 imports, got {}", metrics.imports);
 }
 

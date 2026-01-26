@@ -50,7 +50,8 @@ fn test_class_metrics_struct() {
 fn test_file_metrics() {
     let p = parse("import os\nclass A: pass");
     let m = compute_file_metrics(&p);
-    assert_eq!(m.classes, 1);
+    assert_eq!(m.interface_types, 0);
+    assert_eq!(m.concrete_types, 1);
     assert!(m.imports >= 1);
 }
 

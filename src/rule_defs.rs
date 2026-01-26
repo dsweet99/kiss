@@ -162,8 +162,8 @@ pub static RULES: &[Rule] = &[
     },
     Rule {
         category: RuleCategory::Files,
-        template: "Limit to ≤ {} classes/types per file",
-        get_threshold: |c, _| c.classes_per_file,
+        template: "Limit to ≤ {} concrete types per file",
+        get_threshold: |c, _| c.concrete_types_per_file,
         applicability: Applicability::Both,
     },
     Rule {

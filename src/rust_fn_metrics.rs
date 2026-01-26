@@ -25,19 +25,22 @@ pub struct RustTypeMetrics {
 #[derive(Debug, Default)]
 pub struct RustFileMetrics {
     pub statements: usize,
-    pub types: usize,
+    pub interface_types: usize,
+    pub concrete_types: usize,
     pub imports: usize,
 }
 
 #[must_use]
 pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
-    let mut types = 0;
+    let mut interface_types = 0;
+    let mut concrete_types = 0;
     let mut imports = 0;
     let mut statements = 0;
 
     for item in &parsed.ast.items {
         match item {
-            syn::Item::Struct(_) | syn::Item::Enum(_) => types += 1,
+            syn::Item::Trait(_) => interface_types += 1,
+            syn::Item::Struct(_) | syn::Item::Enum(_) | syn::Item::Union(_) => concrete_types += 1,
             syn::Item::Use(u) if matches!(u.vis, syn::Visibility::Inherited) => imports += 1,
             syn::Item::Fn(f) => {
                 let mut visitor = FunctionMetricsVisitor::default();
@@ -59,7 +62,8 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
 
     RustFileMetrics {
         statements,
-        types,
+        interface_types,
+        concrete_types,
         imports,
     }
 }
@@ -280,7 +284,8 @@ mod tests {
             RustTypeMetrics { methods: 5 },
             RustFileMetrics {
                 statements: 100,
-                types: 3,
+                interface_types: 1,
+                concrete_types: 2,
                 imports: 5,
             },
         );
@@ -290,10 +295,10 @@ mod tests {
     fn test_file_metrics() {
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-        writeln!(tmp, "use std::io;\nfn foo() {{ let x = 1; }}\nstruct A {{}}\nstruct B {{}}").unwrap();
+        writeln!(tmp, "use std::io;\nfn foo() {{ let x = 1; }}\ntrait T {{ fn x(&self) {{}} }}\nstruct A {{}}\nstruct B {{}}").unwrap();
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let m = compute_rust_file_metrics(&parsed);
-        assert!(m.statements >= 1 && m.types == 2 && m.imports == 1);
+        assert!(m.statements >= 1 && m.interface_types == 1 && m.concrete_types == 2 && m.imports == 1);
     }
 }
 

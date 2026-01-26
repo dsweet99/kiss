@@ -11,6 +11,7 @@ fn cli_rules_command_runs() {
     let output = kiss_binary().arg("rules").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success(), "kiss rules should succeed. stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(stdout.contains("DEFINITION:"), "Should output definitions. stdout: {stdout}");
     assert!(stdout.contains("RULE:"), "Should output rules. stdout: {stdout}");
 }
 
@@ -27,6 +28,7 @@ fn cli_rules_with_defaults_flag() {
     let output = kiss_binary().arg("rules").arg("--defaults").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
+    assert!(stdout.contains("DEFINITION:"), "Should output definitions with --defaults. stdout: {stdout}");
     assert!(stdout.contains("RULE:"), "Should output rules with --defaults. stdout: {stdout}");
     assert!(stdout.contains("35"), "Python defaults should have 35 statements. stdout: {stdout}");
     assert!(stdout.contains("25"), "Rust defaults should have 25 statements. stdout: {stdout}");
@@ -123,7 +125,8 @@ fn cli_config_shows_rust_specific_settings() {
     let output = kiss_binary().arg("config").arg("--defaults").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("arguments = 8"), "Should show Rust arguments. stdout: {stdout}");
-    assert!(stdout.contains("types_per_file"), "Should show types_per_file. stdout: {stdout}");
+    assert!(stdout.contains("interface_types_per_file"), "Should show interface_types_per_file. stdout: {stdout}");
+    assert!(stdout.contains("concrete_types_per_file"), "Should show concrete_types_per_file. stdout: {stdout}");
     assert!(stdout.contains("attributes_per_function"), "Should show attributes_per_function. stdout: {stdout}");
 }
 

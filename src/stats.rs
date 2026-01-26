@@ -20,7 +20,8 @@ pub struct MetricStats {
     pub local_variables_per_function: Vec<usize>,
     pub methods_per_class: Vec<usize>,
     pub statements_per_file: Vec<usize>,
-    pub classes_per_file: Vec<usize>,
+    pub interface_types_per_file: Vec<usize>,
+    pub concrete_types_per_file: Vec<usize>,
     pub imported_names_per_file: Vec<usize>,
     pub fan_in: Vec<usize>,
     pub fan_out: Vec<usize>,
@@ -34,7 +35,8 @@ impl MetricStats {
         for parsed in parsed_files {
             let fm = compute_file_metrics(parsed);
             stats.statements_per_file.push(fm.statements);
-            stats.classes_per_file.push(fm.classes);
+            stats.interface_types_per_file.push(fm.interface_types);
+            stats.concrete_types_per_file.push(fm.concrete_types);
             stats.imported_names_per_file.push(fm.imports);
             collect_from_node(parsed.tree.root_node(), &parsed.source, &mut stats, false);
         }
@@ -53,7 +55,8 @@ impl MetricStats {
         self.local_variables_per_function.extend(other.local_variables_per_function);
         self.methods_per_class.extend(other.methods_per_class);
         self.statements_per_file.extend(other.statements_per_file);
-        self.classes_per_file.extend(other.classes_per_file);
+        self.interface_types_per_file.extend(other.interface_types_per_file);
+        self.concrete_types_per_file.extend(other.concrete_types_per_file);
         self.imported_names_per_file.extend(other.imported_names_per_file);
         self.fan_in.extend(other.fan_in);
         self.fan_out.extend(other.fan_out);
@@ -80,7 +83,8 @@ impl MetricStats {
         for parsed in parsed_files {
             let fm = compute_rust_file_metrics(parsed);
             stats.statements_per_file.push(fm.statements);
-            stats.classes_per_file.push(fm.types);
+            stats.interface_types_per_file.push(fm.interface_types);
+            stats.concrete_types_per_file.push(fm.concrete_types);
             stats.imported_names_per_file.push(fm.imports);
             collect_rust_from_items(&parsed.ast.items, &mut stats);
         }
@@ -183,7 +187,8 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         PercentileSummary::from_values("Local variables per function", &stats.local_variables_per_function),
         PercentileSummary::from_values("Methods per class", &stats.methods_per_class),
         PercentileSummary::from_values("Statements per file", &stats.statements_per_file),
-        PercentileSummary::from_values("Classes per file", &stats.classes_per_file),
+        PercentileSummary::from_values("Interface types per file", &stats.interface_types_per_file),
+        PercentileSummary::from_values("Concrete types per file", &stats.concrete_types_per_file),
         PercentileSummary::from_values("Imported names per file", &stats.imported_names_per_file),
         PercentileSummary::from_values("Fan-in (per module)", &stats.fan_in),
         PercentileSummary::from_values("Fan-out (per module)", &stats.fan_out),
@@ -216,7 +221,8 @@ fn config_key_for(name: &str) -> Option<&'static str> {
         "Local variables per function" => "local_variables_per_function",
         "Methods per class" => "methods_per_class",
         "Statements per file" => "statements_per_file",
-        "Classes per file" => "classes_per_file",
+        "Interface types per file" => "interface_types_per_file",
+        "Concrete types per file" => "concrete_types_per_file",
         "Imported names per file" => "imported_names_per_file",
         _ => return None,
     })

@@ -32,10 +32,15 @@ fn check_file_metrics(m: &FileMetrics, file: &Path, fname: &str, cfg: &Config, v
             .message(format!("File has {} statements (threshold: {})", m.statements, cfg.statements_per_file))
             .suggestion("Split into multiple modules with focused responsibilities.").build());
     }
-    if m.classes > cfg.classes_per_file {
-        v.push(violation(file, 1, fname).metric("classes_per_file").value(m.classes).threshold(cfg.classes_per_file)
-            .message(format!("File has {} classes (threshold: {})", m.classes, cfg.classes_per_file))
-            .suggestion("Consider splitting into separate modules.").build());
+    if m.interface_types > cfg.interface_types_per_file {
+        v.push(violation(file, 1, fname).metric("interface_types_per_file").value(m.interface_types).threshold(cfg.interface_types_per_file)
+            .message(format!("File has {} interface types (threshold: {})", m.interface_types, cfg.interface_types_per_file))
+            .suggestion("Move interfaces (Protocols/ABCs) into a dedicated module.").build());
+    }
+    if m.concrete_types > cfg.concrete_types_per_file {
+        v.push(violation(file, 1, fname).metric("concrete_types_per_file").value(m.concrete_types).threshold(cfg.concrete_types_per_file)
+            .message(format!("File has {} concrete types (threshold: {})", m.concrete_types, cfg.concrete_types_per_file))
+            .suggestion("Consider splitting types into separate modules by responsibility.").build());
     }
     // Skip __init__.py - it's a module definition file that naturally aggregates imports
     if m.imports > cfg.imported_names_per_file && fname != "__init__.py" {
@@ -170,11 +175,11 @@ mod tests {
 
     #[test]
     fn test_check_file_metrics() {
-        let m = FileMetrics { statements: 1000, classes: 20, imports: 50 };
-        let cfg = Config { statements_per_file: 500, classes_per_file: 10, imported_names_per_file: 30, ..Default::default() };
+        let m = FileMetrics { statements: 1000, interface_types: 20, concrete_types: 20, imports: 50 };
+        let cfg = Config { statements_per_file: 500, interface_types_per_file: 10, concrete_types_per_file: 10, imported_names_per_file: 30, ..Default::default() };
         let mut viols = Vec::new();
         check_file_metrics(&m, Path::new("t.py"), "t.py", &cfg, &mut viols);
-        assert_eq!(viols.len(), 3);
+        assert_eq!(viols.len(), 4);
     }
 
     #[test]
