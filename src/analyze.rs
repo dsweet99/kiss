@@ -53,7 +53,7 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
     let (py_graph, rs_graph) = build_graphs(&result.py_parsed, &result.rs_parsed);
     let t3 = std::time::Instant::now();
     if opts.show_timing { log_timing_phase1(t0, t1, t2, t3); }
-    print_analysis_summary(result.py_parsed.len() + result.rs_parsed.len(), result.code_unit_count, py_graph.as_ref(), rs_graph.as_ref());
+    print_analysis_summary(result.py_parsed.len() + result.rs_parsed.len(), result.code_unit_count, result.statement_count, py_graph.as_ref(), rs_graph.as_ref());
 
     viols.extend(collect_graph_viols(py_graph.as_ref(), rs_graph.as_ref(), opts.py_config, opts.rs_config, &focus_set, result.py_parsed.len() + result.rs_parsed.len()));
     let t4 = std::time::Instant::now();
@@ -136,6 +136,7 @@ pub struct ParseResult {
     pub rs_parsed: Vec<ParsedRustFile>,
     pub violations: Vec<Violation>,
     pub code_unit_count: usize,
+    pub statement_count: usize,
 }
 
 #[cfg(test)]
@@ -144,64 +145,79 @@ pub fn parse_all(py_files: &[PathBuf], rs_files: &[PathBuf], py_config: &Config,
 }
 
 fn parse_all_timed(py_files: &[PathBuf], rs_files: &[PathBuf], py_config: &Config, rs_config: &Config, show_timing: bool) -> (ParseResult, String) {
-    let ((py_parsed, mut viols, py_units), py_timing) = parse_and_analyze_py_timed(py_files, py_config, show_timing);
-    let (rs_parsed, rs_viols, rs_units) = parse_and_analyze_rs(rs_files, rs_config);
+    let ((py_parsed, mut viols, py_units, py_stmts), py_timing) = parse_and_analyze_py_timed(py_files, py_config, show_timing);
+    let (rs_parsed, rs_viols, rs_units, rs_stmts) = parse_and_analyze_rs(rs_files, rs_config);
     viols.extend(rs_viols);
-    (ParseResult { py_parsed, rs_parsed, violations: viols, code_unit_count: py_units + rs_units }, py_timing)
+    (ParseResult { py_parsed, rs_parsed, violations: viols, code_unit_count: py_units + rs_units, statement_count: py_stmts + rs_stmts }, py_timing)
 }
 
-fn parse_and_analyze_py_timed(files: &[PathBuf], config: &Config, show_timing: bool) -> ((Vec<ParsedFile>, Vec<Violation>, usize), String) {
-    if files.is_empty() { return ((Vec::new(), Vec::new(), 0), String::new()); }
+type PyAgg = (usize, usize, Vec<Violation>);
+
+fn py_parsed_or_log(r: Result<ParsedFile, kiss::ParseError>) -> Option<ParsedFile> {
+    match r {
+        Ok(p) => Some(p),
+        Err(e) => { eprintln!("Error parsing Python: {e}"); None }
+    }
+}
+
+fn py_file_agg(p: &ParsedFile, config: &Config) -> PyAgg {
+    let units = extract_code_units(p).len();
+    let stmts = kiss::compute_file_metrics(p).statements;
+    let viols = if is_test_file(&p.path) { Vec::new() } else { analyze_file(p, config) };
+    (units, stmts, viols)
+}
+
+const fn py_agg_empty() -> PyAgg { (0, 0, Vec::new()) }
+
+fn py_agg_merge(mut a: PyAgg, b: PyAgg) -> PyAgg {
+    a.0 += b.0;
+    a.1 += b.1;
+    a.2.extend(b.2);
+    a
+}
+
+fn parse_and_analyze_py_timed(files: &[PathBuf], config: &Config, show_timing: bool) -> ((Vec<ParsedFile>, Vec<Violation>, usize, usize), String) {
+    if files.is_empty() { return ((Vec::new(), Vec::new(), 0, 0), String::new()); }
     let t0 = std::time::Instant::now();
     let results = match parse_files(files) {
         Ok(r) => r,
-        Err(e) => { eprintln!("Failed to initialize Python parser: {e}"); return ((Vec::new(), Vec::new(), 0), String::new()); }
+        Err(e) => { eprintln!("Failed to initialize Python parser: {e}"); return ((Vec::new(), Vec::new(), 0, 0), String::new()); }
     };
     let t1 = std::time::Instant::now();
     
     // Collect successful parses, report errors
-    let parsed: Vec<ParsedFile> = results.into_iter().filter_map(|r| match r {
-        Ok(p) => Some(p),
-        Err(e) => { eprintln!("Error parsing Python: {e}"); None }
-    }).collect();
+    let parsed: Vec<ParsedFile> = results.into_iter().filter_map(py_parsed_or_log).collect();
     
-    // Parallel analysis: compute unit counts and violations
-    let analysis: Vec<(usize, Vec<Violation>)> = parsed.par_iter().map(|p| {
-        let units = extract_code_units(p).len();
-        let viols = if is_test_file(&p.path) { Vec::new() } else { analyze_file(p, config) };
-        (units, viols)
-    }).collect();
-    
-    let (unit_count, viols) = analysis.into_iter().fold((0, Vec::new()), |(mut u, mut v), (units, file_viols)| {
-        u += units;
-        v.extend(file_viols);
-        (u, v)
-    });
+    // Parallel analysis: compute unit counts, statement counts and violations
+    let (unit_count, stmt_count, viols) = parsed.par_iter()
+        .map(|p| py_file_agg(p, config))
+        .reduce(py_agg_empty, py_agg_merge);
     
     let t2 = std::time::Instant::now();
     let timing = if show_timing {
         format!("py: parse={:.2}s, analyze={:.2}s", t1.duration_since(t0).as_secs_f64(), t2.duration_since(t1).as_secs_f64())
     } else { String::new() };
-    ((parsed, viols, unit_count), timing)
+    ((parsed, viols, unit_count, stmt_count), timing)
 }
 
 // Note: Rust parsing/analysis is sequential because syn::File contains proc_macro2 types
 // which are not Send. Python uses tree-sitter which is Send-safe. This is a limitation
 // of the syn crate, not an oversight.
-pub fn parse_and_analyze_rs(files: &[PathBuf], config: &Config) -> (Vec<ParsedRustFile>, Vec<Violation>, usize) {
-    if files.is_empty() { return (Vec::new(), Vec::new(), 0); }
-    let (mut parsed, mut viols, mut unit_count) = (Vec::new(), Vec::new(), 0);
+pub fn parse_and_analyze_rs(files: &[PathBuf], config: &Config) -> (Vec<ParsedRustFile>, Vec<Violation>, usize, usize) {
+    if files.is_empty() { return (Vec::new(), Vec::new(), 0, 0); }
+    let (mut parsed, mut viols, mut unit_count, mut stmt_count) = (Vec::new(), Vec::new(), 0, 0);
     for result in parse_rust_files(files) {
         match result {
             Ok(p) => {
                 unit_count += extract_rust_code_units(&p).len();
+                stmt_count += kiss::compute_rust_file_metrics(&p).statements;
                 if !is_rust_test_file(&p.path) { viols.extend(analyze_rust_file(&p, config)); }
                 parsed.push(p);
             }
             Err(e) => eprintln!("Error parsing Rust: {e}"),
         }
     }
-    (parsed, viols, unit_count)
+    (parsed, viols, unit_count, stmt_count)
 }
 
 pub fn build_graphs(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (Option<DependencyGraph>, Option<DependencyGraph>) {
@@ -214,9 +230,9 @@ pub fn build_graphs(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> (
     (py_graph, rs_graph)
 }
 
-fn print_analysis_summary(file_count: usize, unit_count: usize, py_g: Option<&DependencyGraph>, rs_g: Option<&DependencyGraph>) {
+fn print_analysis_summary(file_count: usize, unit_count: usize, stmt_count: usize, py_g: Option<&DependencyGraph>, rs_g: Option<&DependencyGraph>) {
     let (nodes, edges) = graph_stats(py_g, rs_g);
-    println!("Analyzed: {file_count} files, {unit_count} code units, {nodes} graph nodes, {edges} graph edges");
+    println!("Analyzed: {file_count} files, {unit_count} code units, {stmt_count} statements, {nodes} graph nodes, {edges} graph edges");
 }
 
 fn graph_stats(py_g: Option<&DependencyGraph>, rs_g: Option<&DependencyGraph>) -> (usize, usize) {
@@ -337,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_parse_result_struct() {
-        let _ = ParseResult { py_parsed: vec![], rs_parsed: vec![], violations: vec![], code_unit_count: 0 };
+        let _ = ParseResult { py_parsed: vec![], rs_parsed: vec![], violations: vec![], code_unit_count: 0, statement_count: 0 };
     }
 
     #[test]
@@ -395,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_print_functions_and_helpers() {
-        print_analysis_summary(0, 0, None, None);
+        print_analysis_summary(0, 0, 0, None, None);
         let (n, e) = graph_stats(None, None);
         assert_eq!(n, 0);
         assert_eq!(e, 0);
@@ -437,7 +453,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         std::fs::write(tmp.path().join("lib.rs"), "fn foo() { let x = 1; }").unwrap();
         let files = vec![tmp.path().join("lib.rs")];
-        let (parsed, viols, units) = parse_and_analyze_rs(&files, &Config::rust_defaults());
+        let (parsed, viols, units, _) = parse_and_analyze_rs(&files, &Config::rust_defaults());
         assert_eq!(parsed.len(), 1);
         assert!(viols.is_empty()); // simple code should have no violations
         assert!(units > 0);

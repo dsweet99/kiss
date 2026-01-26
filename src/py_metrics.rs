@@ -15,7 +15,12 @@ pub struct FunctionMetrics {
 pub struct ClassMetrics { pub methods: usize }
 
 #[derive(Debug, Default)]
-pub struct FileMetrics { pub statements: usize, pub classes: usize, pub imports: usize }
+pub struct FileMetrics {
+    pub statements: usize,
+    pub interface_types: usize,
+    pub concrete_types: usize,
+    pub imports: usize,
+}
 
 #[must_use]
 pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
@@ -48,11 +53,63 @@ pub fn compute_class_metrics(node: Node) -> ClassMetrics {
 #[must_use]
 pub fn compute_file_metrics(parsed: &ParsedFile) -> FileMetrics {
     let root = parsed.tree.root_node();
+    let (interface_types, concrete_types) = count_types(root, &parsed.source);
     FileMetrics {
         statements: count_file_statements(root),
-        classes: count_node_kind(root, "class_definition"),
+        interface_types,
+        concrete_types,
         imports: count_imports(root, &parsed.source),
     }
+}
+
+fn count_types(node: Node, source: &str) -> (usize, usize) {
+    let mut interface_types = 0;
+    let mut concrete_types = 0;
+
+    if node.kind() == "class_definition" {
+        if is_interface_type(node, source) {
+            interface_types += 1;
+        } else {
+            concrete_types += 1;
+        }
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let (i, c) = count_types(child, source);
+        interface_types += i;
+        concrete_types += c;
+    }
+    (interface_types, concrete_types)
+}
+
+fn is_interface_type(class_node: Node, source: &str) -> bool {
+    // tree-sitter-python has historically used "superclasses" as a field name, but to be robust we
+    // also fall back to finding an argument_list child directly.
+    let supers = class_node
+        .child_by_field_name("superclasses")
+        .or_else(|| {
+            let mut c = class_node.walk();
+            class_node.children(&mut c).find(|n| n.kind() == "argument_list")
+        });
+
+    let Some(supers) = supers else { return false; };
+    let Ok(text) = supers.utf8_text(source.as_bytes()) else { return false; };
+
+    let mut token = String::new();
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            token.push(ch);
+        } else {
+            if is_interface_token(&token) { return true; }
+            token.clear();
+        }
+    }
+    is_interface_token(&token)
+}
+
+fn is_interface_token(token: &str) -> bool {
+    matches!(token, "Protocol" | "ABC" | "ABCMeta")
 }
 
 fn count_file_statements(node: Node) -> usize {
@@ -258,6 +315,14 @@ mod tests {
         assert_eq!(compute_max_indentation(body, 0), 0);
         assert_eq!(count_branches(get_func_node(&parse("def f():\n    if a: pass")).child_by_field_name("body").unwrap()), 1);
         assert_eq!(compute_max_try_block_statements(get_func_node(&parse("def f():\n    try:\n        x=1\n    except: pass")).child_by_field_name("body").unwrap()), 1);
+    }
+
+    #[test]
+    fn test_file_types_split() {
+        let p = parse("from typing import Protocol\nfrom abc import ABC\n\nclass P(Protocol):\n    pass\n\nclass A(ABC):\n    pass\n\nclass C:\n    pass\n");
+        let m = compute_file_metrics(&p);
+        assert_eq!(m.interface_types, 2);
+        assert_eq!(m.concrete_types, 1);
     }
 
     #[test]

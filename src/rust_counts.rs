@@ -51,13 +51,24 @@ impl<'a> RustAnalyzer<'a> {
                     .build(),
             );
         }
-        if m.types > c.classes_per_file {
+        if m.interface_types > c.interface_types_per_file {
             self.violations.push(
                 self.violation(1, &fname)
-                    .metric("types_per_file")
-                    .value(m.types)
-                    .threshold(c.classes_per_file)
-                    .message(format!("File has {} types (threshold: {})", m.types, c.classes_per_file))
+                    .metric("interface_types_per_file")
+                    .value(m.interface_types)
+                    .threshold(c.interface_types_per_file)
+                    .message(format!("File has {} interface types (threshold: {})", m.interface_types, c.interface_types_per_file))
+                    .suggestion("Move traits into a dedicated module.")
+                    .build(),
+            );
+        }
+        if m.concrete_types > c.concrete_types_per_file {
+            self.violations.push(
+                self.violation(1, &fname)
+                    .metric("concrete_types_per_file")
+                    .value(m.concrete_types)
+                    .threshold(c.concrete_types_per_file)
+                    .message(format!("File has {} concrete types (threshold: {})", m.concrete_types, c.concrete_types_per_file))
                     .suggestion("Move types to separate files.")
                     .build(),
             );

@@ -156,7 +156,8 @@ fn append_python_defaults(out: &mut String) {
     let _ = writeln!(out, "nested_function_depth = {}", python::NESTED_FUNCTION_DEPTH);
     let _ = writeln!(out, "returns_per_function = {}", python::RETURNS_PER_FUNCTION);
     let _ = writeln!(out, "statements_per_file = {}", python::STATEMENTS_PER_FILE);
-    let _ = writeln!(out, "types_per_file = {}", python::TYPES_PER_FILE);
+    let _ = writeln!(out, "interface_types_per_file = {}", python::INTERFACE_TYPES_PER_FILE);
+    let _ = writeln!(out, "concrete_types_per_file = {}", python::CONCRETE_TYPES_PER_FILE);
     let _ = writeln!(out, "imported_names_per_file = {}", python::IMPORTS_PER_FILE);
     let _ = writeln!(out, "transitive_dependencies = {}", python::TRANSITIVE_DEPENDENCIES);
     let _ = writeln!(out, "dependency_depth = {}", python::DEPENDENCY_DEPTH);
@@ -179,7 +180,8 @@ fn append_rust_defaults(out: &mut String) {
     let _ = writeln!(out, "nested_function_depth = {}", rust::NESTED_FUNCTION_DEPTH);
     let _ = writeln!(out, "returns_per_function = {}", rust::RETURNS_PER_FUNCTION);
     let _ = writeln!(out, "statements_per_file = {}", rust::STATEMENTS_PER_FILE);
-    let _ = writeln!(out, "types_per_file = {}", rust::TYPES_PER_FILE);
+    let _ = writeln!(out, "interface_types_per_file = {}", rust::INTERFACE_TYPES_PER_FILE);
+    let _ = writeln!(out, "concrete_types_per_file = {}", rust::CONCRETE_TYPES_PER_FILE);
     let _ = writeln!(out, "imported_names_per_file = {}", rust::IMPORTS_PER_FILE);
     let _ = writeln!(out, "transitive_dependencies = {}", rust::TRANSITIVE_DEPENDENCIES);
     let _ = writeln!(out, "dependency_depth = {}", rust::DEPENDENCY_DEPTH);
@@ -227,7 +229,8 @@ fn common_config_key(name: &str) -> Option<&'static str> {
         "Nested function depth" => Some("nested_function_depth"),
         "Returns per function" => Some("returns_per_function"),
         "Statements per file" => Some("statements_per_file"),
-        "Classes per file" => Some("types_per_file"),
+        "Interface types per file" => Some("interface_types_per_file"),
+        "Concrete types per file" => Some("concrete_types_per_file"),
         "Imported names per file" => Some("imported_names_per_file"),
         "Transitive deps (per module)" => Some("transitive_dependencies"),
         "Dependency depth (per module)" => Some("dependency_depth"),

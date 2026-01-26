@@ -25,10 +25,10 @@ fn test_types_per_file_violation() {
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(tmp, "struct A {{}}\nstruct B {{}}\nstruct C {{}}\nstruct D {{}}\nstruct E {{}}").unwrap();
     let parsed = parse_rust_file(tmp.path()).unwrap();
-    let config = Config { classes_per_file: 2, ..Default::default() };
+    let config = Config { concrete_types_per_file: 2, ..Default::default() };
     let violations = analyze_rust_file(&parsed, &config);
-    let has_violation = violations.iter().any(|v| v.metric == "types_per_file");
-    assert!(has_violation, "should trigger types_per_file violation");
+    let has_violation = violations.iter().any(|v| v.metric == "concrete_types_per_file");
+    assert!(has_violation, "should trigger concrete_types_per_file violation");
 }
 
 #[test]
