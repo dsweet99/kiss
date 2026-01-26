@@ -1,11 +1,21 @@
 use crate::discovery::Language;
-use crate::duplication::DuplicateCluster;
+use crate::duplication::{DuplicateCluster, DuplicatePair};
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
 use crate::rust_test_refs::analyze_rust_test_refs;
 use crate::test_refs::analyze_test_refs;
 use crate::violation::Violation;
 use std::path::Path;
+
+pub fn print_dry_results(pairs: &[DuplicatePair]) {
+    for p in pairs {
+        println!("{:.3}  {}:{}-{}  {}:{}-{}",
+            p.similarity,
+            p.chunk1.file.display(), p.chunk1.start_line, p.chunk1.end_line,
+            p.chunk2.file.display(), p.chunk2.start_line, p.chunk2.end_line
+        );
+    }
+}
 
 pub fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
     let msg = match lang_filter {

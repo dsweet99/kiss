@@ -86,6 +86,33 @@ enum Commands {
     },
     /// Shortcut: generate .kissconfig from current directory (same as: mimic . --out .kissconfig)
     Clamp,
+    /// Detect duplicate code blocks (similar to dryer)
+    Dry {
+        /// Path to scan for duplicates
+        #[arg(default_value = ".")]
+        path: String,
+        /// Optional file paths to filter results (only report duplicates involving these files)
+        #[arg(value_name = "FILTER_FILES")]
+        filter_files: Vec<String>,
+        /// Number of lines per chunk
+        #[arg(long, default_value = "10")]
+        chunk_lines: usize,
+        /// Character n-gram size for shingling
+        #[arg(long, default_value = "5")]
+        shingle_size: usize,
+        /// Number of `MinHash` functions
+        #[arg(long, default_value = "128")]
+        minhash_size: usize,
+        /// Number of LSH bands
+        #[arg(long, default_value = "32")]
+        lsh_bands: usize,
+        /// Minimum similarity threshold [0.0-1.0]
+        #[arg(long, default_value = "0.7")]
+        min_similarity: f64,
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
+    },
     /// Display all available rules and their current thresholds
     Rules,
     /// Show effective configuration (merged from all sources)
@@ -120,6 +147,16 @@ fn main() {
             run_mimic(&paths, out.as_deref(), cli.lang, &ignore);
         }
         Commands::Clamp => run_mimic(&[".".to_string()], Some(Path::new(".kissconfig")), cli.lang, &[]),
+        Commands::Dry { path, filter_files, chunk_lines, shingle_size, minhash_size, lsh_bands, min_similarity, ignore } => {
+            let ignore = normalize_ignore_prefixes(&ignore);
+            let config = kiss::DuplicationConfig {
+                shingle_size,
+                minhash_size,
+                lsh_bands,
+                min_similarity,
+            };
+            analyze::run_dry(&path, &filter_files, chunk_lines, &config, &ignore, cli.lang);
+        }
         Commands::Rules => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
         Commands::Config => run_config(&py_config, &rs_config, &gate_config, cli.config.as_ref(), cli.defaults),
     }

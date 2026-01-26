@@ -13,8 +13,8 @@ use kiss::{
     ParsedFile, ParsedRustFile, Violation,
 };
 use kiss::cli_output::{
-    print_coverage_gate_failure, print_duplicates, print_final_status, print_no_files_message,
-    print_violations,
+    print_coverage_gate_failure, print_dry_results, print_duplicates, print_final_status,
+    print_no_files_message, print_violations,
 };
 
 pub struct AnalyzeOptions<'a> {
@@ -62,6 +62,46 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
     log_timing_phase2(opts.show_timing, t3, t4);
 
     print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.gate_config.min_similarity, &focus_set, opts.show_timing)
+}
+
+pub fn run_dry(
+    path: &str,
+    filter_files: &[String],
+    _chunk_lines: usize,
+    config: &DuplicationConfig,
+    ignore_prefixes: &[String],
+    lang_filter: Option<Language>,
+) {
+    let root = Path::new(path);
+    let (py_files, rs_files) = gather_files(root, lang_filter, ignore_prefixes);
+    
+    if py_files.is_empty() && rs_files.is_empty() {
+        print_no_files_message(lang_filter, root);
+        return;
+    }
+
+    let py_parsed = if py_files.is_empty() {
+        Vec::new()
+    } else {
+        parse_files(&py_files).unwrap_or_default().into_iter().filter_map(py_parsed_or_log).collect()
+    };
+    let rs_parsed = if rs_files.is_empty() {
+        Vec::new()
+    } else {
+        parse_rust_files(&rs_files).into_iter().filter_map(Result::ok).collect()
+    };
+
+    let mut chunks = extract_chunks_for_duplication(&py_parsed.iter().collect::<Vec<_>>());
+    chunks.extend(extract_rust_chunks_for_duplication(&rs_parsed.iter().collect::<Vec<_>>()));
+
+    let mut pairs = detect_duplicates_from_chunks(&chunks, config);
+
+    if !filter_files.is_empty() {
+        let filters: HashSet<PathBuf> = filter_files.iter().map(PathBuf::from).collect();
+        pairs.retain(|p| filters.contains(&p.chunk1.file) || filters.contains(&p.chunk2.file));
+    }
+
+    print_dry_results(&pairs);
 }
 
 fn log_parse_timing(show: bool, timing: &str) { if show && !timing.is_empty() { eprintln!("[TIMING] {timing}"); } }

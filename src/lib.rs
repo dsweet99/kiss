@@ -44,6 +44,7 @@ pub use duplication::{
     extract_chunks_for_duplication, extract_rust_chunks_for_duplication, CodeChunk,
     DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
 };
+pub use cli_output::print_dry_results;
 pub use graph::{
     analyze_graph, build_dependency_graph,
     compute_cyclomatic_complexity, CycleInfo, DependencyGraph,

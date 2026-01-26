@@ -85,6 +85,8 @@ in the repo in which you want to code. `PATH_OF_REPO_TO_ANALYZE` is a repo conta
 
 You may always modify the global `~/.kissconfig` or repo-specific `./.kissconfig` to tailor `kiss`'s behavior to your tastes. The thresholds should be tight enough to prevent odd/outlier/strange code from getting into your codebase. They should not be so tight that it's very difficult for the LLM to figure out how to write the code.
 
+DEFINITION: [statement] Any statement within a function body that is not an import or a signature.
+
 ## kiss rules
 
 You can help your LLM produce rule-following code by adding the output of `kiss rules` to its context before it starts coding. These are the same rules that kiss will enforce when you run `kiss check`. Note that the threshold numbers in the output come from your actual kiss config.
