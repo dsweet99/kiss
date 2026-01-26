@@ -107,7 +107,7 @@ enum Commands {
         #[arg(long, default_value = "32")]
         lsh_bands: usize,
         /// Minimum similarity threshold [0.0-1.0]
-        #[arg(long, default_value = "0.7")]
+        #[arg(long, default_value = "0.5")]
         min_similarity: f64,
         /// Ignore files/directories starting with PREFIX (repeatable)
         #[arg(long, value_name = "PREFIX")]
