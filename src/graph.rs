@@ -177,27 +177,53 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
     graph
 }
 
-fn top_level_module(name: &str) -> String { name.split('.').next().unwrap_or(name).to_string() }
+fn push_dotted_segments(raw: &str, modules: &mut Vec<String>) {
+    let trimmed = raw.trim_start_matches('.');
+    if trimmed.is_empty() {
+        return;
+    }
+    for segment in trimmed.split('.') {
+        if !segment.is_empty() {
+            modules.push(segment.to_string());
+        }
+    }
+}
 
 fn extract_modules_from_import_from(child: Node, source: &str) -> Vec<String> {
     let mut modules = Vec::new();
     if let Some(m) = child.child_by_field_name("module_name") {
         let full_module = &source[m.start_byte()..m.end_byte()];
-        let trimmed = full_module.trim_start_matches('.');
-        if !trimmed.is_empty() { modules.push(top_level_module(trimmed)); }
+        push_dotted_segments(full_module, &mut modules);
     }
     let mut cursor = child.walk();
     for c in child.children(&mut cursor) {
-        if c.kind() == "dotted_name" || c.kind() == "aliased_import" {
-            let name_node = if c.kind() == "aliased_import" { c.child_by_field_name("name") } else { Some(c) };
-            if let Some(n) = name_node {
-                let name = &source[n.start_byte()..n.end_byte()];
-                let trimmed = name.trim_start_matches('.');
-                if !trimmed.is_empty() { modules.push(top_level_module(trimmed)); }
-            }
+        if c.kind() != "dotted_name" && c.kind() != "aliased_import" {
+            continue;
         }
+        let name_node = if c.kind() == "aliased_import" { c.child_by_field_name("name") } else { Some(c) };
+        let Some(n) = name_node else { continue; };
+        let name = &source[n.start_byte()..n.end_byte()];
+        push_dotted_segments(name, &mut modules);
     }
     modules
+}
+
+fn push_import_name_segments(node: Node, source: &str, imports: &mut Vec<String>) {
+    let name = &source[node.start_byte()..node.end_byte()];
+    push_dotted_segments(name, imports);
+}
+
+fn collect_import_names(node: Node, source: &str, imports: &mut Vec<String>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "dotted_name" => push_import_name_segments(child, source, imports),
+            "aliased_import" => if let Some(n) = child.child_by_field_name("name") {
+                push_import_name_segments(n, source, imports);
+            },
+            _ => {}
+        }
+    }
 }
 
 fn extract_imports(node: Node, source: &str) -> Vec<String> {
@@ -218,19 +244,6 @@ fn extract_imports_recursive(node: Node, source: &str, imports: &mut Vec<String>
             for child in node.children(&mut cursor) {
                 extract_imports_recursive(child, source, imports);
             }
-        }
-    }
-}
-
-fn collect_import_names(node: Node, source: &str, imports: &mut Vec<String>) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "dotted_name" => imports.push(top_level_module(&source[child.start_byte()..child.end_byte()])),
-            "aliased_import" => if let Some(n) = child.child_by_field_name("name") {
-                imports.push(top_level_module(&source[n.start_byte()..n.end_byte()]));
-            },
-            _ => {}
         }
     }
 }
@@ -285,7 +298,6 @@ mod tests {
         let mut g = DependencyGraph::new();
         g.paths.insert("foo".into(), PathBuf::from("src/foo.py"));
         assert_eq!(get_module_path(&g, "foo"), PathBuf::from("src/foo.py"));
-        assert_eq!(top_level_module("foo.bar.baz"), "foo");
         let mut parser = create_parser().unwrap();
         let mods = extract_modules_from_import_from(parser.parse("from foo.bar import baz", None).unwrap().root_node().child(0).unwrap(), "from foo.bar import baz");
         assert!(mods.contains(&"foo".into()) && mods.contains(&"baz".into()));
