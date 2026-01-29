@@ -61,7 +61,7 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
     if opts.bypass_gate { viols.extend(collect_coverage_viols(&result.py_parsed, &result.rs_parsed, &focus_set, opts.show_timing)); }
     log_timing_phase2(opts.show_timing, t3, t4);
 
-    print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.gate_config.min_similarity, &focus_set, opts.show_timing)
+    print_all_results(&viols, &result.py_parsed, &result.rs_parsed, opts.gate_config, &focus_set, opts.show_timing)
 }
 
 pub fn run_dry(
@@ -333,10 +333,23 @@ fn tally_coverage(defs: &[(&PathBuf, &String, usize)], unref: &[(&PathBuf, &Stri
     }
 }
 
-fn print_all_results(viols: &[Violation], py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile], min_similarity: f64, focus_set: &HashSet<PathBuf>, show_timing: bool) -> bool {
+fn print_all_results(
+    viols: &[Violation],
+    py_parsed: &[ParsedFile],
+    rs_parsed: &[ParsedRustFile],
+    gate_config: &GateConfig,
+    focus_set: &HashSet<PathBuf>,
+    show_timing: bool,
+) -> bool {
     let t0 = std::time::Instant::now();
-    let py_dups = filter_duplicates_by_focus(detect_py_duplicates(py_parsed, min_similarity), focus_set);
-    let rs_dups = filter_duplicates_by_focus(detect_rs_duplicates(rs_parsed, min_similarity), focus_set);
+    let (py_dups, rs_dups) = if gate_config.duplication_enabled {
+        (
+            filter_duplicates_by_focus(detect_py_duplicates(py_parsed, gate_config.min_similarity), focus_set),
+            filter_duplicates_by_focus(detect_rs_duplicates(rs_parsed, gate_config.min_similarity), focus_set),
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let t1 = std::time::Instant::now();
     let dup_count = py_dups.len() + rs_dups.len();
     
@@ -470,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_print_all_results() {
-        let result = print_all_results(&[], &[], &[], 0.7, &HashSet::new(), false);
+        let result = print_all_results(&[], &[], &[], &GateConfig::default(), &HashSet::new(), false);
         assert!(result); // no violations = true
     }
 

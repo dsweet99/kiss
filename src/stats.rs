@@ -16,8 +16,12 @@ pub struct MetricStats {
     pub max_indentation: Vec<usize>,
     pub nested_function_depth: Vec<usize>,
     pub returns_per_function: Vec<usize>,
+    pub return_values_per_function: Vec<usize>,
     pub branches_per_function: Vec<usize>,
     pub local_variables_per_function: Vec<usize>,
+    pub statements_per_try_block: Vec<usize>,
+    pub boolean_parameters: Vec<usize>,
+    pub annotations_per_function: Vec<usize>,
     pub methods_per_class: Vec<usize>,
     pub statements_per_file: Vec<usize>,
     pub interface_types_per_file: Vec<usize>,
@@ -25,6 +29,7 @@ pub struct MetricStats {
     pub imported_names_per_file: Vec<usize>,
     pub fan_in: Vec<usize>,
     pub fan_out: Vec<usize>,
+    pub cycle_size: Vec<usize>,
     pub transitive_dependencies: Vec<usize>,
     pub dependency_depth: Vec<usize>,
 }
@@ -51,8 +56,12 @@ impl MetricStats {
         self.max_indentation.extend(other.max_indentation);
         self.nested_function_depth.extend(other.nested_function_depth);
         self.returns_per_function.extend(other.returns_per_function);
+        self.return_values_per_function.extend(other.return_values_per_function);
         self.branches_per_function.extend(other.branches_per_function);
         self.local_variables_per_function.extend(other.local_variables_per_function);
+        self.statements_per_try_block.extend(other.statements_per_try_block);
+        self.boolean_parameters.extend(other.boolean_parameters);
+        self.annotations_per_function.extend(other.annotations_per_function);
         self.methods_per_class.extend(other.methods_per_class);
         self.statements_per_file.extend(other.statements_per_file);
         self.interface_types_per_file.extend(other.interface_types_per_file);
@@ -60,6 +69,7 @@ impl MetricStats {
         self.imported_names_per_file.extend(other.imported_names_per_file);
         self.fan_in.extend(other.fan_in);
         self.fan_out.extend(other.fan_out);
+        self.cycle_size.extend(other.cycle_size);
         self.transitive_dependencies.extend(other.transitive_dependencies);
         self.dependency_depth.extend(other.dependency_depth);
     }
@@ -72,6 +82,8 @@ impl MetricStats {
             self.transitive_dependencies.push(m.transitive_dependencies);
             self.dependency_depth.push(m.dependency_depth);
         }
+        let max_cycle = graph.find_cycles().cycles.iter().map(Vec::len).max().unwrap_or(0);
+        self.cycle_size.push(max_cycle);
     }
 
     pub fn max_depth(&self) -> usize {
@@ -97,16 +109,7 @@ impl MetricStats {
 fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_class: bool) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {
-            let m = compute_function_metrics(node, source);
-            stats.statements_per_function.push(m.statements);
-            stats.arguments_per_function.push(m.arguments);
-            stats.arguments_positional.push(m.arguments_positional);
-            stats.arguments_keyword_only.push(m.arguments_keyword_only);
-            stats.max_indentation.push(m.max_indentation);
-            stats.nested_function_depth.push(m.nested_function_depth);
-            stats.returns_per_function.push(m.returns);
-            stats.branches_per_function.push(m.branches);
-            stats.local_variables_per_function.push(m.local_variables);
+            push_py_fn_metrics(stats, &compute_function_metrics(node, source));
             let mut c = node.walk();
             for child in node.children(&mut c) { collect_from_node(child, source, stats, false); }
         }
@@ -123,6 +126,22 @@ fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_c
     }
 }
 
+fn push_py_fn_metrics(stats: &mut MetricStats, m: &crate::py_metrics::FunctionMetrics) {
+    stats.statements_per_function.push(m.statements);
+    stats.arguments_per_function.push(m.arguments);
+    stats.arguments_positional.push(m.arguments_positional);
+    stats.arguments_keyword_only.push(m.arguments_keyword_only);
+    stats.max_indentation.push(m.max_indentation);
+    stats.nested_function_depth.push(m.nested_function_depth);
+    stats.returns_per_function.push(m.returns);
+    stats.return_values_per_function.push(m.max_return_values);
+    stats.branches_per_function.push(m.branches);
+    stats.local_variables_per_function.push(m.local_variables);
+    stats.statements_per_try_block.push(m.max_try_block_statements);
+    stats.boolean_parameters.push(m.boolean_parameters);
+    stats.annotations_per_function.push(m.decorators);
+}
+
 fn push_rust_fn_metrics(stats: &mut MetricStats, m: &crate::rust_counts::RustFunctionMetrics) {
     stats.statements_per_function.push(m.statements);
     stats.arguments_per_function.push(m.arguments);
@@ -131,8 +150,14 @@ fn push_rust_fn_metrics(stats: &mut MetricStats, m: &crate::rust_counts::RustFun
     stats.max_indentation.push(m.max_indentation);
     stats.nested_function_depth.push(m.nested_function_depth);
     stats.returns_per_function.push(m.returns);
+    // N/A: Rust doesn't have multiple-return-value tuples in the same sense as Python
+    stats.return_values_per_function.push(0);
     stats.branches_per_function.push(m.branches);
     stats.local_variables_per_function.push(m.local_variables);
+    // N/A: try-block size is Python-only
+    stats.statements_per_try_block.push(0);
+    stats.boolean_parameters.push(m.bool_parameters);
+    stats.annotations_per_function.push(m.attributes);
 }
 
 fn collect_rust_from_items(items: &[Item], stats: &mut MetricStats) {
@@ -183,8 +208,12 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         PercentileSummary::from_values("Max indentation depth", &stats.max_indentation),
         PercentileSummary::from_values("Nested function depth", &stats.nested_function_depth),
         PercentileSummary::from_values("Returns per function", &stats.returns_per_function),
+        PercentileSummary::from_values("Return values per return", &stats.return_values_per_function),
         PercentileSummary::from_values("Branches per function", &stats.branches_per_function),
         PercentileSummary::from_values("Local variables per function", &stats.local_variables_per_function),
+        PercentileSummary::from_values("Statements per try block", &stats.statements_per_try_block),
+        PercentileSummary::from_values("Boolean parameters", &stats.boolean_parameters),
+        PercentileSummary::from_values("Annotations per function", &stats.annotations_per_function),
         PercentileSummary::from_values("Methods per class", &stats.methods_per_class),
         PercentileSummary::from_values("Statements per file", &stats.statements_per_file),
         PercentileSummary::from_values("Interface types per file", &stats.interface_types_per_file),
@@ -192,6 +221,7 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         PercentileSummary::from_values("Imported names per file", &stats.imported_names_per_file),
         PercentileSummary::from_values("Fan-in (per module)", &stats.fan_in),
         PercentileSummary::from_values("Fan-out (per module)", &stats.fan_out),
+        PercentileSummary::from_values("Cycle size (modules)", &stats.cycle_size),
         PercentileSummary::from_values("Transitive deps (per module)", &stats.transitive_dependencies),
         PercentileSummary::from_values("Dependency depth (per module)", &stats.dependency_depth),
     ]

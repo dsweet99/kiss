@@ -8,7 +8,7 @@ use kiss::{
 };
 use kiss::config_gen::{
     collect_all_stats_with_ignore, collect_py_stats_with_ignore, collect_rs_stats_with_ignore,
-    generate_config_toml_by_language, write_mimic_config,
+    generate_config_toml_by_language, infer_gate_config_for_paths, write_mimic_config,
 };
 use std::path::{Path, PathBuf};
 
@@ -300,7 +300,8 @@ fn run_mimic(paths: &[String], out: Option<&Path>, lang_filter: Option<Language>
         eprintln!("No source files found.");
         std::process::exit(1);
     }
-    let toml = generate_config_toml_by_language(&py_stats, &rs_stats, py_cnt, rs_cnt);
+    let gate = infer_gate_config_for_paths(paths, lang_filter, ignore);
+    let toml = generate_config_toml_by_language(&py_stats, &rs_stats, py_cnt, rs_cnt, &gate);
     match out {
         Some(p) => write_mimic_config(p, &toml, py_cnt, rs_cnt),
         None => print!("{toml}"),

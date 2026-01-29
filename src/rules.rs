@@ -44,7 +44,7 @@ const PY_RULE_SPECS: &[RuleSpec] = &[
     RuleSpec { metric: "transitive_dependencies", op: "<", threshold: ThresholdValue::Usize(|c, _| c.transitive_dependencies), description: "transitive_dependencies is the maximum number of downstream modules reachable from a module in the dependency graph." },
     RuleSpec { metric: "dependency_depth", op: "<", threshold: ThresholdValue::Usize(|c, _| c.dependency_depth), description: "dependency_depth is the maximum length of an import chain in the dependency graph." },
     RuleSpec { metric: "test_coverage_threshold", op: ">=", threshold: ThresholdValue::Usize(|_, g| g.test_coverage_threshold), description: "test_coverage_threshold is the minimum percent of code units whose names must appear in a test file (static check)." },
-    RuleSpec { metric: "min_similarity", op: ">=", threshold: ThresholdValue::F64(|_, g| g.min_similarity), description: "min_similarity is the minimum similarity required to report duplicate code." },
+    RuleSpec { metric: "min_similarity", op: ">=", threshold: ThresholdValue::F64(|_, g| g.min_similarity), description: "min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true)." },
 ];
 
 const RS_RULE_SPECS: &[RuleSpec] = &[
@@ -66,7 +66,7 @@ const RS_RULE_SPECS: &[RuleSpec] = &[
     RuleSpec { metric: "transitive_dependencies", op: "<", threshold: ThresholdValue::Usize(|c, _| c.transitive_dependencies), description: "transitive_dependencies is the maximum number of downstream modules reachable from a module in the dependency graph." },
     RuleSpec { metric: "dependency_depth", op: "<", threshold: ThresholdValue::Usize(|c, _| c.dependency_depth), description: "dependency_depth is the maximum length of a module dependency chain in the dependency graph." },
     RuleSpec { metric: "test_coverage_threshold", op: ">=", threshold: ThresholdValue::Usize(|_, g| g.test_coverage_threshold), description: "test_coverage_threshold is the minimum percent of code units whose names must appear in a test file (static check)." },
-    RuleSpec { metric: "min_similarity", op: ">=", threshold: ThresholdValue::F64(|_, g| g.min_similarity), description: "min_similarity is the minimum similarity required to report duplicate code." },
+    RuleSpec { metric: "min_similarity", op: ">=", threshold: ThresholdValue::F64(|_, g| g.min_similarity), description: "min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true)." },
 ];
 
 pub fn run_rules(
@@ -120,6 +120,7 @@ pub fn run_config(py: &Config, rs: &Config, gate: &GateConfig, config_path: Opti
     println!("\n[gate]");
     println!("test_coverage_threshold = {}", gate.test_coverage_threshold);
     println!("min_similarity = {:.2}", gate.min_similarity);
+    println!("duplication_enabled = {}", gate.duplication_enabled);
     println!("\n[python]");
     print_python_config(py);
     println!("\n[rust]");

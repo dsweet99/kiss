@@ -141,17 +141,11 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
     for cycle in graph.find_cycles().cycles {
         let cycle_str = cycle.join(" → ");
         let first_module = cycle.first().cloned().unwrap_or_default();
-        violations.push(Violation {
-            file: get_module_path(graph, &first_module), line: 1, unit_name: first_module.clone(),
-            metric: "dependency_cycle".to_string(), value: cycle.len(), threshold: 0,
-            message: format!("Circular dependency detected: {} → {}", cycle_str, cycle.first().unwrap_or(&String::new())),
-            suggestion: "Break the cycle by introducing an interface or restructuring dependencies.".to_string(),
-        });
         if cycle.len() > config.cycle_size {
             violations.push(Violation {
                 file: get_module_path(graph, &first_module), line: 1, unit_name: first_module,
                 metric: "cycle_size".to_string(), value: cycle.len(), threshold: config.cycle_size,
-                message: format!("Dependency cycle has {} modules (threshold: {})", cycle.len(), config.cycle_size),
+                message: format!("Circular dependency detected ({} modules, threshold: {}): {} → {}", cycle.len(), config.cycle_size, cycle_str, cycle.first().unwrap_or(&String::new())),
                 suggestion: "Large cycles are harder to untangle. Prioritize breaking this cycle into smaller pieces.".to_string(),
             });
         }
