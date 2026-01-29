@@ -198,13 +198,13 @@ pub static RULES: &[Rule] = &[
     },
     Rule {
         category: RuleCategory::Testing,
-        template: "Every function/class/type should be referenced by tests",
+        template: "Every function/class/type should be mentioned in a test file",
         get_threshold: |_, _| 0,
         applicability: Applicability::Both,
     },
     Rule {
         category: RuleCategory::Testing,
-        template: "Maintain ≥ {}% test reference coverage",
+        template: "Maintain ≥ {}% test reference coverage (static check: name must appear in a test file)",
         get_threshold: |_, g| g.test_coverage_threshold,
         applicability: Applicability::Both,
     },

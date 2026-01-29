@@ -86,7 +86,7 @@ enum Commands {
     },
     /// Shortcut: generate .kissconfig from current directory (same as: mimic . --out .kissconfig)
     Clamp,
-    /// Detect duplicate code blocks (similar to dryer)
+    /// Detect duplicate code blocks
     Dry {
         /// Path to scan for duplicates
         #[arg(default_value = ".")]
