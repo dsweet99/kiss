@@ -149,7 +149,12 @@ impl FunctionMetricsVisitor {
 
 impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-        self.statements += 1;
+        // Per style.md: statements exclude imports and signatures
+        // Skip use statements inside function bodies
+        let is_use_item = matches!(stmt, Stmt::Item(syn::Item::Use(_)));
+        if !is_use_item {
+            self.statements += 1;
+        }
         if let Stmt::Local(local) = stmt {
             self.count_pattern_bindings(&local.pat);
         }
@@ -299,6 +304,16 @@ mod tests {
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let m = compute_rust_file_metrics(&parsed);
         assert!(m.statements >= 1 && m.interface_types == 1 && m.concrete_types == 2 && m.imports == 1);
+    }
+
+    #[test]
+    fn test_use_statements_in_function_not_counted() {
+        // Per style.md: "[statement] Any statement within a function body that is not an import or a signature"
+        // use statements inside function bodies should NOT be counted as statements
+        let (_, b) = parse_fn("fn f() { use std::io::Write; let x = 1; println!(\"{}\", x); }");
+        let m = compute_rust_function_metrics(&syn::punctuated::Punctuated::new(), &b, 0);
+        // Should be 2 statements (let + println), not 3 (use + let + println)
+        assert_eq!(m.statements, 2, "use statements inside functions should not be counted");
     }
 }
 

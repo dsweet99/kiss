@@ -193,9 +193,11 @@ fn count_statements(node: Node) -> usize {
 }
 
 fn is_statement(kind: &str) -> bool {
+    // Per style.md: "[statement] Any statement within a function body that is not an import or a signature"
+    // Excludes: import_statement, import_from_statement, future_import_statement
     matches!(kind, "expression_statement" | "return_statement" | "pass_statement" | "break_statement" | "continue_statement" 
-        | "raise_statement" | "assert_statement" | "global_statement" | "nonlocal_statement" | "import_statement" 
-        | "import_from_statement" | "future_import_statement" | "if_statement" | "for_statement" | "while_statement" 
+        | "raise_statement" | "assert_statement" | "global_statement" | "nonlocal_statement"
+        | "if_statement" | "for_statement" | "while_statement" 
         | "try_statement" | "with_statement" | "match_statement" | "function_definition" | "class_definition" 
         | "decorated_definition" | "async_function_definition" | "async_for_statement" | "async_with_statement" 
         | "delete_statement" | "exec_statement" | "print_statement" | "type_alias_statement")
@@ -307,6 +309,26 @@ mod tests {
     }
 
     #[test]
+    fn test_boolean_params_count() {
+        // Test that boolean_params counts parameters with True/False defaults
+        let p = parse("def f(a=True, b=False): pass");
+        let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
+        let counts = count_parameters(params, &p.source);
+        assert_eq!(counts.boolean_params, 2, "Should count 2 boolean parameters (a=True, b=False)");
+        
+        // Also test typed parameters
+        let p2 = parse("def f(a: bool = True, b: int = 5): pass");
+        let params2 = get_func_node(&p2).child_by_field_name("parameters").unwrap();
+        let counts2 = count_parameters(params2, &p2.source);
+        assert_eq!(counts2.boolean_params, 1, "Should count 1 boolean parameter (a: bool = True)");
+        
+        // Test compute_function_metrics returns correct boolean_parameters
+        let p3 = parse("def f(a=True, b=False): x = 1");
+        let m = compute_function_metrics(get_func_node(&p3), &p3.source);
+        assert_eq!(m.boolean_parameters, 2, "compute_function_metrics should report 2 boolean params");
+    }
+
+    #[test]
     fn test_statements_and_branches() {
         let p = parse("def f():\n    x = 1\n    y = 2");
         let body = get_func_node(&p).child_by_field_name("body").unwrap();
@@ -315,6 +337,25 @@ mod tests {
         assert_eq!(compute_max_indentation(body, 0), 0);
         assert_eq!(count_branches(get_func_node(&parse("def f():\n    if a: pass")).child_by_field_name("body").unwrap()), 1);
         assert_eq!(compute_max_try_block_statements(get_func_node(&parse("def f():\n    try:\n        x=1\n    except: pass")).child_by_field_name("body").unwrap()), 1);
+    }
+
+    #[test]
+    fn test_import_statements_not_counted() {
+        // Per style.md: "[statement] Any statement within a function body that is not an import or a signature"
+        // import statements inside function bodies should NOT be counted
+        let p = parse("def f():\n    import os\n    x = 1\n    print(x)");
+        let body = get_func_node(&p).child_by_field_name("body").unwrap();
+        // Should be 2 statements (assignment + expression), not 3
+        assert_eq!(count_statements(body), 2, "import statements should not be counted");
+        
+        // Also test from imports
+        let p2 = parse("def f():\n    from os import path\n    y = 2");
+        let body2 = get_func_node(&p2).child_by_field_name("body").unwrap();
+        assert_eq!(count_statements(body2), 1, "from imports should not be counted");
+        
+        // Verify import_statement and import_from_statement are not statements
+        assert!(!is_statement("import_statement"), "import_statement should not be a statement");
+        assert!(!is_statement("import_from_statement"), "import_from_statement should not be a statement");
     }
 
     #[test]

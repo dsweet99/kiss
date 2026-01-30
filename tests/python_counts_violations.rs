@@ -59,3 +59,21 @@ def risky_function():
     );
 }
 
+#[test]
+fn test_boolean_parameters_violation() {
+    let code = r"
+def func_with_flags(a=True, b=False):
+    x = 1
+";
+    let parsed = parse_python_source(code);
+    let config = Config { boolean_parameters: 1, ..Default::default() };
+
+    let violations = analyze_file(&parsed, &config);
+
+    let has_violation = violations.iter().any(|v| v.metric == "boolean_parameters");
+    assert!(
+        has_violation,
+        "should trigger boolean_parameters violation when function has 2 boolean params > threshold 1"
+    );
+}
+
