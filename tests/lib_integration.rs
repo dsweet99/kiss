@@ -114,8 +114,9 @@ fn builds_dependency_graph() {
     let parsed_files: Vec<&ParsedFile> = vec![&parsed_god];
     let graph = build_dependency_graph(&parsed_files);
     assert!(graph.nodes.len() > 1, "Should have multiple nodes in graph");
-    assert!(graph.nodes.contains_key("god_class"));
-    let metrics = graph.module_metrics("god_class");
+    // Module names are now qualified with parent directory: "fake_python.god_class"
+    assert!(graph.nodes.contains_key("fake_python.god_class"), "Expected fake_python.god_class in nodes: {:?}", graph.nodes.keys().collect::<Vec<_>>());
+    let metrics = graph.module_metrics("fake_python.god_class");
     assert!(metrics.fan_out > 3, "Expected fan_out > 3, got {}", metrics.fan_out);
 }
 

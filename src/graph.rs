@@ -92,9 +92,11 @@ impl Default for DependencyGraph {
 }
 
 fn is_entry_point(name: &str) -> bool {
-    matches!(name, "main" | "lib" | "build" | "__main__" | "__init__" | "tests" | "conftest" | "setup")
-        || name.starts_with("test_") || name.ends_with("_test")
-        || name.contains("_integration") || name.contains("_bench")
+    // Extract bare name from qualified name (e.g., "attr.main" → "main")
+    let bare = name.rsplit('.').next().unwrap_or(name);
+    matches!(bare, "main" | "lib" | "build" | "__main__" | "__init__" | "tests" | "conftest" | "setup")
+        || bare.starts_with("test_") || bare.ends_with("_test")
+        || bare.contains("_integration") || bare.contains("_bench")
 }
 
 fn get_module_path(graph: &DependencyGraph, module_name: &str) -> PathBuf {
@@ -153,22 +155,88 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
     violations
 }
 
-fn module_name_from_path(parsed: &ParsedFile) -> String {
-    parsed.path.file_stem().map_or_else(|| "unknown".to_string(), |s| s.to_string_lossy().into_owned())
+/// Extract qualified module name: includes parent directory to avoid collisions.
+/// Example: "src/attr/exceptions.py" → "attr.exceptions"
+fn qualified_module_name(path: &std::path::Path) -> String {
+    let stem = path.file_stem().map_or("unknown", |s| s.to_str().unwrap_or("unknown"));
+    let parent = path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str());
+    match parent {
+        Some(p) if !p.is_empty() && p != "." => format!("{p}.{stem}"),
+        _ => stem.to_string(),
+    }
+}
+
+/// Extract just the bare module name (filename without extension)
+fn bare_module_name(path: &std::path::Path) -> String {
+    path.file_stem().map_or_else(|| "unknown".to_string(), |s| s.to_string_lossy().into_owned())
 }
 
 #[must_use]
 pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
     let mut graph = DependencyGraph::new();
+    
+    // Build mapping from bare names to qualified names for import resolution
+    // Also track if a bare name is ambiguous (maps to multiple qualified names)
+    let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
+    
+    // First pass: register all modules with qualified names
     for parsed in parsed_files {
-        let module_name = module_name_from_path(parsed);
-        graph.paths.insert(module_name.clone(), parsed.path.clone());
-        graph.get_or_create_node(&module_name);
+        let qualified = qualified_module_name(&parsed.path);
+        let bare = bare_module_name(&parsed.path);
+        graph.paths.insert(qualified.clone(), parsed.path.clone());
+        graph.get_or_create_node(&qualified);
+        bare_to_qualified.entry(bare).or_default().push(qualified);
+    }
+    
+    // Second pass: add dependency edges, resolving imports to qualified names
+    for parsed in parsed_files {
+        let from_qualified = qualified_module_name(&parsed.path);
+        let from_bare = bare_module_name(&parsed.path);
+        let from_parent = parsed.path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str());
+        
         for import in extract_imports(parsed.tree.root_node(), &parsed.source) {
-            graph.add_dependency(&module_name, &import);
+            // Try to resolve import to a qualified module name
+            if let Some(resolved) = resolve_import(&import, from_parent, &bare_to_qualified) {
+                graph.add_dependency(&from_qualified, &resolved);
+            } else {
+                // External import (not in analyzed codebase) - create node but no path
+                graph.add_dependency(&from_qualified, &import);
+            }
+        }
+        
+        // Also add edge from bare name to qualified name for backwards compatibility
+        // This ensures that if something imports "exceptions", it finds "attr.exceptions"
+        if from_bare != from_qualified
+            && let Some(candidates) = bare_to_qualified.get(&from_bare)
+            && candidates.len() == 1
+        {
+            graph.add_dependency(&from_bare, &from_qualified);
         }
     }
     graph
+}
+
+/// Resolve an import name to a qualified module name.
+/// Prefers modules in the same package (same parent directory).
+fn resolve_import(import: &str, from_parent: Option<&str>, bare_to_qualified: &HashMap<String, Vec<String>>) -> Option<String> {
+    let candidates = bare_to_qualified.get(import)?;
+    
+    if candidates.len() == 1 {
+        return Some(candidates[0].clone());
+    }
+    
+    // Multiple candidates - prefer one in the same package
+    if let Some(parent) = from_parent {
+        let prefix = format!("{parent}.");
+        for candidate in candidates {
+            if candidate.starts_with(&prefix) {
+                return Some(candidate.clone());
+            }
+        }
+    }
+    
+    // Ambiguous import - don't create edge to avoid false connections
+    None
 }
 
 fn push_dotted_segments(raw: &str, modules: &mut Vec<String>) {
@@ -258,7 +326,7 @@ fn count_decision_points(node: Node) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parsing::{create_parser, parse_file};
+    use crate::parsing::create_parser;
     use std::io::Write;
 
     #[test]
@@ -301,7 +369,7 @@ mod tests {
         assert_eq!(count_decision_points(parser.parse("if a:\n    if b:\n        pass", None).unwrap().root_node()), 2);
         let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
         write!(tmp, "x = 1").unwrap();
-        assert!(!module_name_from_path(&parse_file(&mut parser, tmp.path()).unwrap()).is_empty());
+        assert!(!qualified_module_name(tmp.path()).is_empty());
         assert!(compute_cyclomatic_complexity(parser.parse("def f():\n    if a:\n        pass", None).unwrap().root_node().child(0).unwrap()) >= 2);
     }
 
@@ -319,5 +387,54 @@ mod tests {
         assert!(imports2.contains(&"typing".into()));
         assert!(imports2.contains(&"json".into()));
         assert!(!imports2.contains(&"foo".into()));
+    }
+
+    #[test]
+    fn test_qualified_and_bare_module_names() {
+        use std::path::Path;
+        // qualified_module_name includes parent directory
+        assert_eq!(qualified_module_name(Path::new("src/attr/exceptions.py")), "attr.exceptions");
+        assert_eq!(qualified_module_name(Path::new("click/utils.py")), "click.utils");
+        assert_eq!(qualified_module_name(Path::new("utils.py")), "utils");
+        assert_eq!(qualified_module_name(Path::new("./foo.py")), "foo");
+        
+        // bare_module_name is just the filename without extension
+        assert_eq!(bare_module_name(Path::new("src/attr/exceptions.py")), "exceptions");
+        assert_eq!(bare_module_name(Path::new("click/utils.py")), "utils");
+    }
+
+    #[test]
+    fn test_resolve_import() {
+        let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
+        bare_to_qualified.insert("exceptions".into(), vec!["attr.exceptions".into(), "click.exceptions".into()]);
+        bare_to_qualified.insert("utils".into(), vec!["click.utils".into()]);
+        
+        // Unambiguous: single match
+        assert_eq!(resolve_import("utils", Some("click"), &bare_to_qualified), Some("click.utils".into()));
+        
+        // Ambiguous: multiple matches, prefer same package
+        assert_eq!(resolve_import("exceptions", Some("attr"), &bare_to_qualified), Some("attr.exceptions".into()));
+        assert_eq!(resolve_import("exceptions", Some("click"), &bare_to_qualified), Some("click.exceptions".into()));
+        
+        // Ambiguous: no matching package, returns None
+        assert_eq!(resolve_import("exceptions", Some("httpx"), &bare_to_qualified), None);
+        
+        // Unknown import: returns None
+        assert_eq!(resolve_import("unknown", Some("attr"), &bare_to_qualified), None);
+    }
+
+    #[test]
+    fn test_push_dotted_segments() {
+        let mut modules = Vec::new();
+        push_dotted_segments("foo.bar.baz", &mut modules);
+        assert_eq!(modules, vec!["foo", "bar", "baz"]);
+        
+        modules.clear();
+        push_dotted_segments("..relative", &mut modules);
+        assert_eq!(modules, vec!["relative"]);
+        
+        modules.clear();
+        push_dotted_segments("single", &mut modules);
+        assert_eq!(modules, vec!["single"]);
     }
 }
