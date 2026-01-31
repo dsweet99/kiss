@@ -230,6 +230,7 @@ fn append_python_defaults(out: &mut String) {
     let _ = writeln!(out, "nested_function_depth = {}", python::NESTED_FUNCTION_DEPTH);
     let _ = writeln!(out, "returns_per_function = {}", python::RETURNS_PER_FUNCTION);
     let _ = writeln!(out, "statements_per_file = {}", python::STATEMENTS_PER_FILE);
+    let _ = writeln!(out, "functions_per_file = {}", python::FUNCTIONS_PER_FILE);
     let _ = writeln!(out, "interface_types_per_file = {}", python::INTERFACE_TYPES_PER_FILE);
     let _ = writeln!(out, "concrete_types_per_file = {}", python::CONCRETE_TYPES_PER_FILE);
     let _ = writeln!(out, "imported_names_per_file = {}", python::IMPORTS_PER_FILE);
@@ -238,6 +239,7 @@ fn append_python_defaults(out: &mut String) {
     let _ = writeln!(out, "statements_per_try_block = {}", python::STATEMENTS_PER_TRY_BLOCK);
     let _ = writeln!(out, "boolean_parameters = {}", python::BOOLEAN_PARAMETERS);
     let _ = writeln!(out, "decorators_per_function = {}", python::DECORATORS_PER_FUNCTION);
+    let _ = writeln!(out, "calls_per_function = {}", python::CALLS_PER_FUNCTION);
     let _ = writeln!(out, "cycle_size = {}\n", graph::CYCLE_SIZE);
 }
 
@@ -254,6 +256,7 @@ fn append_rust_defaults(out: &mut String) {
     let _ = writeln!(out, "nested_function_depth = {}", rust::NESTED_FUNCTION_DEPTH);
     let _ = writeln!(out, "returns_per_function = {}", rust::RETURNS_PER_FUNCTION);
     let _ = writeln!(out, "statements_per_file = {}", rust::STATEMENTS_PER_FILE);
+    let _ = writeln!(out, "functions_per_file = {}", rust::FUNCTIONS_PER_FILE);
     let _ = writeln!(out, "interface_types_per_file = {}", rust::INTERFACE_TYPES_PER_FILE);
     let _ = writeln!(out, "concrete_types_per_file = {}", rust::CONCRETE_TYPES_PER_FILE);
     let _ = writeln!(out, "imported_names_per_file = {}", rust::IMPORTS_PER_FILE);
@@ -261,6 +264,7 @@ fn append_rust_defaults(out: &mut String) {
     let _ = writeln!(out, "dependency_depth = {}", rust::DEPENDENCY_DEPTH);
     let _ = writeln!(out, "boolean_parameters = {}", rust::BOOLEAN_PARAMETERS);
     let _ = writeln!(out, "attributes_per_function = {}", rust::ATTRIBUTES_PER_FUNCTION);
+    let _ = writeln!(out, "calls_per_function = {}", rust::CALLS_PER_FUNCTION);
     let _ = writeln!(out, "cycle_size = {}\n", graph::CYCLE_SIZE);
 }
 
@@ -269,51 +273,54 @@ fn append_section(out: &mut String, header: &str, sums: &[PercentileSummary], ke
     out.push_str(header); 
     out.push('\n');
     for s in sums { 
-        if let Some(k) = key_fn(s.name) { 
+        if let Some(k) = key_fn(s.metric_id) { 
             let _ = writeln!(out, "{k} = {}", s.max); 
         } 
     }
     out.push('\n');
 }
 
-fn common_config_key(name: &str) -> Option<&'static str> {
-    match name {
-        "Statements per function" => Some("statements_per_function"),
-        "Max indentation depth" => Some("max_indentation"),
-        "Branches per function" => Some("branches_per_function"),
-        "Local variables per function" => Some("local_variables"),
-        "Cycle size (modules)" => Some("cycle_size"),
-        "Methods per class" => Some("methods_per_class"),
-        "Nested function depth" => Some("nested_function_depth"),
-        "Returns per function" => Some("returns_per_function"),
-        "Statements per file" => Some("statements_per_file"),
-        "Interface types per file" => Some("interface_types_per_file"),
-        "Concrete types per file" => Some("concrete_types_per_file"),
-        "Imported names per file" => Some("imported_names_per_file"),
-        "Transitive deps (per module)" => Some("transitive_dependencies"),
-        "Dependency depth (per module)" => Some("dependency_depth"),
+/// Map `metric_id` to config key (common keys shared by Python and Rust)
+fn common_config_key(metric_id: &str) -> Option<&'static str> {
+    match metric_id {
+        "statements_per_function" => Some("statements_per_function"),
+        "max_indentation_depth" => Some("max_indentation"),
+        "branches_per_function" => Some("branches_per_function"),
+        "local_variables_per_function" => Some("local_variables"),
+        "cycle_size" => Some("cycle_size"),
+        "methods_per_type" => Some("methods_per_class"),
+        "nested_function_depth" => Some("nested_function_depth"),
+        "returns_per_function" => Some("returns_per_function"),
+        "calls_per_function" => Some("calls_per_function"),
+        "statements_per_file" => Some("statements_per_file"),
+        "functions_per_file" => Some("functions_per_file"),
+        "interface_types_per_file" => Some("interface_types_per_file"),
+        "concrete_types_per_file" => Some("concrete_types_per_file"),
+        "imported_names_per_file" => Some("imported_names_per_file"),
+        "transitive_deps" => Some("transitive_dependencies"),
+        "dependency_depth" => Some("dependency_depth"),
         _ => None,
     }
 }
 
-pub fn python_config_key(name: &str) -> Option<&'static str> {
-    match name {
-        "Arguments (positional)" => Some("positional_args"),
-        "Arguments (keyword-only)" => Some("keyword_only_args"),
-        "Return values per return" => Some("return_values_per_function"),
-        "Statements per try block" => Some("statements_per_try_block"),
-        "Boolean parameters" => Some("boolean_parameters"),
-        "Annotations per function" => Some("decorators_per_function"),
-        _ => common_config_key(name),
+pub fn python_config_key(metric_id: &str) -> Option<&'static str> {
+    match metric_id {
+        "args_positional" => Some("positional_args"),
+        "args_keyword_only" => Some("keyword_only_args"),
+        "return_values_per_return" => Some("return_values_per_function"),
+        "statements_per_try_block" => Some("statements_per_try_block"),
+        "boolean_parameters" => Some("boolean_parameters"),
+        "annotations_per_function" => Some("decorators_per_function"),
+        _ => common_config_key(metric_id),
     }
 }
 
-pub fn rust_config_key(name: &str) -> Option<&'static str> {
-    match name {
-        "Arguments (total)" => Some("arguments"),
-        "Boolean parameters" => Some("boolean_parameters"),
-        "Annotations per function" => Some("attributes_per_function"),
-        _ => common_config_key(name),
+pub fn rust_config_key(metric_id: &str) -> Option<&'static str> {
+    match metric_id {
+        "args_total" => Some("arguments"),
+        "boolean_parameters" => Some("boolean_parameters"),
+        "annotations_per_function" => Some("attributes_per_function"),
+        _ => common_config_key(metric_id),
     }
 }
 
@@ -336,10 +343,10 @@ mod tests {
 
     #[test]
     fn test_config_keys() {
-        assert_eq!(python_config_key("Statements per function"), Some("statements_per_function"));
-        assert_eq!(rust_config_key("Statements per function"), Some("statements_per_function"));
-        assert_eq!(python_config_key("Statements per file"), Some("statements_per_file"));
-        assert_eq!(common_config_key("Branches per function"), Some("branches_per_function"));
+        assert_eq!(python_config_key("statements_per_function"), Some("statements_per_function"));
+        assert_eq!(rust_config_key("statements_per_function"), Some("statements_per_function"));
+        assert_eq!(python_config_key("statements_per_file"), Some("statements_per_file"));
+        assert_eq!(common_config_key("branches_per_function"), Some("branches_per_function"));
     }
 
     #[test]
@@ -353,7 +360,7 @@ mod tests {
         format_section(&mut out, "test", Some(&toml::Value::Table(table)));
         assert!(out.contains("[test]") && out.contains("key = 42"));
         let mut out2 = String::new();
-        append_section(&mut out2, "[python]", &[PercentileSummary { name: "Statements per function", count: 10, max: 50, p50: 5, p90: 10, p95: 15, p99: 20 }], python_config_key);
+        append_section(&mut out2, "[python]", &[PercentileSummary { metric_id: "statements_per_function", display_name: "Statements per function", count: 10, max: 50, p50: 5, p90: 10, p95: 15, p99: 20 }], python_config_key);
         assert!(out2.contains("statements_per_function = 50"));
     }
 

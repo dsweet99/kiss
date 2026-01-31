@@ -15,6 +15,7 @@ pub struct RustFunctionMetrics {
     pub local_variables: usize,
     pub bool_parameters: usize,
     pub attributes: usize,
+    pub calls: usize,
 }
 
 #[derive(Debug, Default)]
@@ -28,6 +29,7 @@ pub struct RustFileMetrics {
     pub interface_types: usize,
     pub concrete_types: usize,
     pub imports: usize,
+    pub functions: usize,
 }
 
 #[must_use]
@@ -36,6 +38,7 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
     let mut concrete_types = 0;
     let mut imports = 0;
     let mut statements = 0;
+    let mut functions = 0;
 
     for item in &parsed.ast.items {
         match item {
@@ -43,6 +46,7 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
             syn::Item::Struct(_) | syn::Item::Enum(_) | syn::Item::Union(_) => concrete_types += 1,
             syn::Item::Use(u) if matches!(u.vis, syn::Visibility::Inherited) => imports += 1,
             syn::Item::Fn(f) => {
+                functions += 1;
                 let mut visitor = FunctionMetricsVisitor::default();
                 visitor.visit_block(&f.block);
                 statements += visitor.statements;
@@ -50,6 +54,7 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
             syn::Item::Impl(imp) => {
                 for item in &imp.items {
                     if let syn::ImplItem::Fn(f) = item {
+                        functions += 1;
                         let mut visitor = FunctionMetricsVisitor::default();
                         visitor.visit_block(&f.block);
                         statements += visitor.statements;
@@ -65,6 +70,7 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
         interface_types,
         concrete_types,
         imports,
+        functions,
     }
 }
 
@@ -94,6 +100,7 @@ pub fn compute_rust_function_metrics(
     metrics.branches = visitor.branches;
     metrics.local_variables = visitor.local_variables;
     metrics.nested_function_depth = visitor.max_closure_depth;
+    metrics.calls = visitor.calls;
 
     metrics
 }
@@ -112,6 +119,7 @@ pub struct FunctionMetricsVisitor {
     pub local_variables: usize,
     pub max_closure_depth: usize,
     pub current_closure_depth: usize,
+    pub calls: usize,
 }
 
 impl FunctionMetricsVisitor {
@@ -180,6 +188,9 @@ impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
             Expr::Closure(_) => {
                 self.current_closure_depth += 1;
                 self.max_closure_depth = self.max_closure_depth.max(self.current_closure_depth);
+            }
+            Expr::Call(_) | Expr::MethodCall(_) => {
+                self.calls += 1;
             }
             _ => {}
         }
@@ -284,6 +295,7 @@ mod tests {
             nested_function_depth: 8,
             bool_parameters: 0,
             attributes: 0,
+            calls: 2,
         };
         let _ = (
             RustTypeMetrics { methods: 5 },
@@ -292,6 +304,7 @@ mod tests {
                 interface_types: 1,
                 concrete_types: 2,
                 imports: 5,
+                functions: 10,
             },
         );
     }

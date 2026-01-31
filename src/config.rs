@@ -15,6 +15,7 @@ pub struct Config {
     pub statements_per_function: usize,
     pub methods_per_class: usize,
     pub statements_per_file: usize,
+    pub functions_per_file: usize,
     pub arguments_per_function: usize,
     pub arguments_positional: usize,
     pub arguments_keyword_only: usize,
@@ -30,6 +31,7 @@ pub struct Config {
     pub statements_per_try_block: usize,
     pub boolean_parameters: usize,
     pub annotations_per_function: usize,
+    pub calls_per_function: usize,
     pub cycle_size: usize,
     pub transitive_dependencies: usize,
     pub dependency_depth: usize,
@@ -44,7 +46,8 @@ impl Config {
         use defaults::python as py;
         Self {
             statements_per_function: py::STATEMENTS_PER_FUNCTION, methods_per_class: py::METHODS_PER_CLASS,
-            statements_per_file: py::STATEMENTS_PER_FILE, arguments_per_function: py::ARGUMENTS_PER_FUNCTION,
+            statements_per_file: py::STATEMENTS_PER_FILE, functions_per_file: py::FUNCTIONS_PER_FILE,
+            arguments_per_function: py::ARGUMENTS_PER_FUNCTION,
             arguments_positional: py::POSITIONAL_ARGS, arguments_keyword_only: py::KEYWORD_ONLY_ARGS,
             max_indentation_depth: py::MAX_INDENTATION,
             interface_types_per_file: py::INTERFACE_TYPES_PER_FILE,
@@ -53,7 +56,8 @@ impl Config {
             return_values_per_function: py::RETURN_VALUES_PER_FUNCTION, branches_per_function: py::BRANCHES_PER_FUNCTION,
             local_variables_per_function: py::LOCAL_VARIABLES, imported_names_per_file: py::IMPORTS_PER_FILE,
             statements_per_try_block: py::STATEMENTS_PER_TRY_BLOCK, boolean_parameters: py::BOOLEAN_PARAMETERS,
-            annotations_per_function: py::DECORATORS_PER_FUNCTION, cycle_size: defaults::graph::CYCLE_SIZE,
+            annotations_per_function: py::DECORATORS_PER_FUNCTION, calls_per_function: py::CALLS_PER_FUNCTION,
+            cycle_size: defaults::graph::CYCLE_SIZE,
             transitive_dependencies: py::TRANSITIVE_DEPENDENCIES, dependency_depth: py::DEPENDENCY_DEPTH,
         }
     }
@@ -62,7 +66,8 @@ impl Config {
         use defaults::{rust as rs, NOT_APPLICABLE as NA};
         Self {
             statements_per_function: rs::STATEMENTS_PER_FUNCTION, methods_per_class: rs::METHODS_PER_TYPE,
-            statements_per_file: rs::STATEMENTS_PER_FILE, arguments_per_function: rs::ARGUMENTS,
+            statements_per_file: rs::STATEMENTS_PER_FILE, functions_per_file: rs::FUNCTIONS_PER_FILE,
+            arguments_per_function: rs::ARGUMENTS,
             arguments_positional: NA, arguments_keyword_only: NA,
             max_indentation_depth: rs::MAX_INDENTATION,
             interface_types_per_file: rs::INTERFACE_TYPES_PER_FILE,
@@ -71,7 +76,8 @@ impl Config {
             return_values_per_function: NA, branches_per_function: rs::BRANCHES_PER_FUNCTION,
             local_variables_per_function: rs::LOCAL_VARIABLES, imported_names_per_file: rs::IMPORTS_PER_FILE,
             statements_per_try_block: NA, boolean_parameters: rs::BOOLEAN_PARAMETERS,
-            annotations_per_function: rs::ATTRIBUTES_PER_FUNCTION, cycle_size: defaults::graph::CYCLE_SIZE,
+            annotations_per_function: rs::ATTRIBUTES_PER_FUNCTION, calls_per_function: rs::CALLS_PER_FUNCTION,
+            cycle_size: defaults::graph::CYCLE_SIZE,
             transitive_dependencies: rs::TRANSITIVE_DEPENDENCIES, dependency_depth: rs::DEPENDENCY_DEPTH,
         }
     }
@@ -145,7 +151,7 @@ impl Config {
 
     fn apply_thresholds(&mut self, table: &toml::Table) {
         const VALID: &[&str] = &["statements_per_function", "methods_per_class", "statements_per_file",
-            "arguments_per_function", "arguments_positional", "arguments_keyword_only",
+            "functions_per_file", "arguments_per_function", "arguments_positional", "arguments_keyword_only",
             "max_indentation_depth", "interface_types_per_file", "concrete_types_per_file",
             // Back-compat: older configs used classes_per_file for types-per-file.
             "classes_per_file",
@@ -154,7 +160,8 @@ impl Config {
         check_unknown_keys(table, VALID, "thresholds");
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "methods_per_class" => methods_per_class,
-            "statements_per_file" => statements_per_file, "arguments_per_function" => arguments_per_function,
+            "statements_per_file" => statements_per_file, "functions_per_file" => functions_per_file,
+            "arguments_per_function" => arguments_per_function,
             "arguments_positional" => arguments_positional, "arguments_keyword_only" => arguments_keyword_only,
             "max_indentation_depth" => max_indentation_depth,
             "interface_types_per_file" => interface_types_per_file,
@@ -167,7 +174,8 @@ impl Config {
     }
 
     fn apply_shared(&mut self, table: &toml::Table) {
-        const VALID: &[&str] = &["statements_per_file", "interface_types_per_file", "concrete_types_per_file",
+        const VALID: &[&str] = &["statements_per_file", "functions_per_file",
+            "interface_types_per_file", "concrete_types_per_file",
             // Back-compat: older configs used types_per_file for concrete types.
             "types_per_file",
             "imported_names_per_file",
@@ -175,6 +183,7 @@ impl Config {
         check_unknown_keys(table, VALID, "shared");
         apply_config!(self, table,
             "statements_per_file" => statements_per_file,
+            "functions_per_file" => functions_per_file,
             "interface_types_per_file" => interface_types_per_file,
             "concrete_types_per_file" => concrete_types_per_file,
             // Back-compat alias.
@@ -189,8 +198,9 @@ impl Config {
         const VALID: &[&str] = &["statements_per_function", "positional_args", "keyword_only_args",
             "max_indentation", "branches_per_function", "local_variables", "methods_per_class",
             "returns_per_function", "return_values_per_function", "nested_function_depth", "statements_per_try_block",
-            "boolean_parameters", "decorators_per_function", "imported_names_per_file", "statements_per_file",
-            "interface_types_per_file", "concrete_types_per_file",
+            "boolean_parameters", "decorators_per_function", "calls_per_function",
+            "imported_names_per_file", "statements_per_file",
+            "functions_per_file", "interface_types_per_file", "concrete_types_per_file",
             // Back-compat alias.
             "types_per_file",
             "cycle_size", "transitive_dependencies", "dependency_depth"];
@@ -202,8 +212,9 @@ impl Config {
             "methods_per_class" => methods_per_class, "returns_per_function" => returns_per_function,
             "return_values_per_function" => return_values_per_function, "nested_function_depth" => nested_function_depth,
             "statements_per_try_block" => statements_per_try_block, "boolean_parameters" => boolean_parameters,
-            "decorators_per_function" => annotations_per_function, "imported_names_per_file" => imported_names_per_file,
-            "statements_per_file" => statements_per_file,
+            "decorators_per_function" => annotations_per_function, "calls_per_function" => calls_per_function,
+            "imported_names_per_file" => imported_names_per_file,
+            "statements_per_file" => statements_per_file, "functions_per_file" => functions_per_file,
             "interface_types_per_file" => interface_types_per_file,
             "concrete_types_per_file" => concrete_types_per_file,
             // Back-compat alias.
@@ -214,25 +225,27 @@ impl Config {
     fn apply_rust(&mut self, table: &toml::Table) {
         const VALID: &[&str] = &["statements_per_function", "arguments", "max_indentation",
             "branches_per_function", "local_variables", "methods_per_class", "statements_per_file",
-            "interface_types_per_file", "concrete_types_per_file",
+            "functions_per_file", "interface_types_per_file", "concrete_types_per_file",
             // Back-compat alias.
             "types_per_file",
             "returns_per_function", "nested_function_depth",
-            "boolean_parameters", "attributes_per_function", "imported_names_per_file",
+            "boolean_parameters", "attributes_per_function", "calls_per_function",
+            "imported_names_per_file",
             "cycle_size", "transitive_dependencies", "dependency_depth", "nested_closure_depth"];
         check_unknown_keys(table, VALID, "rust");
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "arguments" => arguments_per_function,
             "max_indentation" => max_indentation_depth, "branches_per_function" => branches_per_function,
             "local_variables" => local_variables_per_function, "methods_per_class" => methods_per_class,
-            "statements_per_file" => statements_per_file,
+            "statements_per_file" => statements_per_file, "functions_per_file" => functions_per_file,
             "interface_types_per_file" => interface_types_per_file,
             "concrete_types_per_file" => concrete_types_per_file,
             // Back-compat alias.
             "types_per_file" => concrete_types_per_file,
             "returns_per_function" => returns_per_function,
             "nested_function_depth" => nested_function_depth, "boolean_parameters" => boolean_parameters,
-            "attributes_per_function" => annotations_per_function, "imported_names_per_file" => imported_names_per_file,
+            "attributes_per_function" => annotations_per_function, "calls_per_function" => calls_per_function,
+            "imported_names_per_file" => imported_names_per_file,
             "cycle_size" => cycle_size, "transitive_dependencies" => transitive_dependencies, "dependency_depth" => dependency_depth);
     }
 }

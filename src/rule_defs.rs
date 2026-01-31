@@ -149,6 +149,12 @@ pub static RULES: &[Rule] = &[
         applicability: Applicability::Rust,
     },
     Rule {
+        category: RuleCategory::Functions,
+        template: "Keep calls per function ≤ {}",
+        get_threshold: |c, _| c.calls_per_function,
+        applicability: Applicability::Both,
+    },
+    Rule {
         category: RuleCategory::Classes,
         template: "Keep methods per class/type ≤ {}",
         get_threshold: |c, _| c.methods_per_class,
@@ -158,6 +164,12 @@ pub static RULES: &[Rule] = &[
         category: RuleCategory::Files,
         template: "Keep files ≤ {} statements",
         get_threshold: |c, _| c.statements_per_file,
+        applicability: Applicability::Both,
+    },
+    Rule {
+        category: RuleCategory::Files,
+        template: "Keep files ≤ {} functions",
+        get_threshold: |c, _| c.functions_per_file,
         applicability: Applicability::Both,
     },
     Rule {

@@ -48,6 +48,11 @@ fn check_file_metrics(m: &FileMetrics, file: &Path, fname: &str, cfg: &Config, v
             .message(format!("File has {} imports (threshold: {})", m.imports, cfg.imported_names_per_file))
             .suggestion("Consider reducing dependencies or splitting the module.").build());
     }
+    if m.functions > cfg.functions_per_file {
+        v.push(violation(file, 1, fname).metric("functions_per_file").value(m.functions).threshold(cfg.functions_per_file)
+            .message(format!("File has {} functions (threshold: {})", m.functions, cfg.functions_per_file))
+            .suggestion("Split into multiple modules with focused responsibilities.").build());
+    }
 }
 
 fn violation(file: &Path, line: usize, name: &str) -> ViolationBuilder {
@@ -105,6 +110,7 @@ fn check_function_metrics(m: &FunctionMetrics, file: &Path, line: usize, name: &
     chk!(boolean_parameters, boolean_parameters, "boolean_parameters", "boolean parameters", "Use keyword-only arguments, an enum, or separate functions instead of boolean flags.");
     chk!(decorators, annotations_per_function, "decorators_per_function", "decorators", "Consider consolidating decorators or simplifying the function's responsibilities.");
     chk!(max_return_values, return_values_per_function, "return_values_per_function", "return values", "Consider returning a named tuple, dataclass, or structured object instead of multiple values.");
+    chk!(calls, calls_per_function, "calls_per_function", "calls", "Extract some calls into helper functions to reduce coordination complexity.");
 }
 
 fn analyze_class_node(node: Node, source: &str, file: &Path, violations: &mut Vec<Violation>, config: &Config) {
@@ -175,11 +181,11 @@ mod tests {
 
     #[test]
     fn test_check_file_metrics() {
-        let m = FileMetrics { statements: 1000, interface_types: 20, concrete_types: 20, imports: 50 };
-        let cfg = Config { statements_per_file: 500, interface_types_per_file: 10, concrete_types_per_file: 10, imported_names_per_file: 30, ..Default::default() };
+        let m = FileMetrics { statements: 1000, interface_types: 20, concrete_types: 20, imports: 50, functions: 40 };
+        let cfg = Config { statements_per_file: 500, interface_types_per_file: 10, concrete_types_per_file: 10, imported_names_per_file: 30, functions_per_file: 30, ..Default::default() };
         let mut viols = Vec::new();
         check_file_metrics(&m, Path::new("t.py"), "t.py", &cfg, &mut viols);
-        assert_eq!(viols.len(), 4);
+        assert_eq!(viols.len(), 5);
     }
 
     #[test]
@@ -193,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_check_function_metrics() {
-        let m = FunctionMetrics { statements: 100, arguments: 0, arguments_positional: 10, arguments_keyword_only: 10, max_indentation: 10, nested_function_depth: 5, returns: 0, branches: 20, local_variables: 30, max_try_block_statements: 0, boolean_parameters: 0, decorators: 0, max_return_values: 0 };
+        let m = FunctionMetrics { statements: 100, arguments: 0, arguments_positional: 10, arguments_keyword_only: 10, max_indentation: 10, nested_function_depth: 5, returns: 0, branches: 20, local_variables: 30, max_try_block_statements: 0, boolean_parameters: 0, decorators: 0, max_return_values: 0, calls: 5 };
         let cfg = Config { statements_per_function: 50, arguments_positional: 5, arguments_keyword_only: 5, max_indentation_depth: 5, nested_function_depth: 2, branches_per_function: 10, local_variables_per_function: 15, ..Default::default() };
         let mut viols = Vec::new();
         check_function_metrics(&m, Path::new("t.py"), 1, "f", false, &cfg, &mut viols);

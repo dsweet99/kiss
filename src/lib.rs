@@ -51,7 +51,7 @@ pub use graph::{
     ModuleGraphMetrics,
 };
 pub use parsing::{create_parser, parse_file, parse_files, ParseError, ParsedFile};
-pub use stats::{compute_summaries, format_stats_table, generate_config_toml, MetricStats, PercentileSummary};
+pub use stats::{compute_summaries, format_stats_table, generate_config_toml, get_metric_def, MetricDef, MetricScope, MetricStats, PercentileSummary, METRICS};
 pub use stats_detailed::{collect_detailed_py, collect_detailed_rs, format_detailed_table, UnitMetrics};
 pub use test_refs::{analyze_test_refs, is_test_file, CodeDefinition, TestRefAnalysis};
 pub use units::{extract_code_units, CodeUnit, CodeUnitKind};

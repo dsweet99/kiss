@@ -62,6 +62,42 @@ fn cli_stats_command_runs() {
 }
 
 #[test]
+fn cli_stats_all_uses_metric_registry_display_names() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("mod.py"), "def foo(a, b):\n    return a + b\n").unwrap();
+    let output = kiss_binary().arg("stats").arg(tmp.path()).arg("--all").output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Regression: `--all` should use the same display names as the summary registry.
+    assert!(stdout.contains("args_total  (Arguments (total))"), "Expected args_total display name to match summary. stdout:\n{stdout}");
+    assert!(stdout.contains("imported_names_per_file  (Imported names per file)"), "Expected imported_names_per_file display name to match summary. stdout:\n{stdout}");
+}
+
+#[test]
+fn cli_stats_all_does_not_consume_path_as_n() {
+    // Regression: `--all` takes an optional N, but it must not steal the first PATH argument.
+    // Users should be able to run: `kiss stats --all <path>` without needing `--`.
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("mod.py"), "def foo():\n    return 1\n").unwrap();
+    let output = kiss_binary().arg("stats").arg("--all").arg(tmp.path()).output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "Expected success. stderr:\n{stderr}\nstdout:\n{stdout}");
+    assert!(stdout.contains("kiss stats --all"), "Expected --all header. stdout:\n{stdout}");
+}
+
+#[test]
+fn cli_stats_summary_includes_lines_per_file() {
+    // Regression: `--all` already reports `lines_per_file`; the summary should include it too
+    // so that users see the same metric set across views.
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("mod.py"), "def foo():\n    return 1\n").unwrap();
+    let output = kiss_binary().arg("stats").arg(tmp.path()).output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("lines_per_file"), "Expected summary to include lines_per_file. stdout:\n{stdout}");
+}
+
+#[test]
 fn cli_with_lang_filter_python() {
     let tmp = TempDir::new().unwrap();
     create_god_class_file(tmp.path());

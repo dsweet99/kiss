@@ -15,7 +15,10 @@ pub struct UnitMetrics {
     pub line: usize,
     pub statements: Option<usize>,
     pub arguments: Option<usize>,
+    pub args_positional: Option<usize>,
+    pub args_keyword_only: Option<usize>,
     pub indentation: Option<usize>,
+    pub nested_depth: Option<usize>,
     pub branches: Option<usize>,
     pub returns: Option<usize>,
     pub locals: Option<usize>,
@@ -24,6 +27,8 @@ pub struct UnitMetrics {
     pub imports: Option<usize>,
     pub fan_in: Option<usize>,
     pub fan_out: Option<usize>,
+    pub transitive_deps: Option<usize>,
+    pub dependency_depth: Option<usize>,
 }
 
 fn module_name_from_path(path: &std::path::Path) -> String {
@@ -32,16 +37,16 @@ fn module_name_from_path(path: &std::path::Path) -> String {
 
 fn file_unit_metrics(path: &std::path::Path, lines: usize, imports: usize, graph: Option<&DependencyGraph>) -> UnitMetrics {
     let module_name = module_name_from_path(path);
-    let (fan_in, fan_out) = graph.map_or((None, None), |g| {
+    let (fan_in, fan_out, transitive_deps, dependency_depth) = graph.map_or((None, None, None, None), |g| {
         let m = g.module_metrics(&module_name);
-        (Some(m.fan_in), Some(m.fan_out))
+        (Some(m.fan_in), Some(m.fan_out), Some(m.transitive_dependencies), Some(m.dependency_depth))
     });
     UnitMetrics {
         file: path.display().to_string(),
         name: path.file_name().map_or("", |n| n.to_str().unwrap_or("")).to_string(),
-        kind: "file", line: 1, statements: None, arguments: None, indentation: None,
-        branches: None, returns: None, locals: None, methods: None,
-        lines: Some(lines), imports: Some(imports), fan_in, fan_out,
+        kind: "file", line: 1, statements: None, arguments: None, args_positional: None, args_keyword_only: None,
+        indentation: None, nested_depth: None, branches: None, returns: None, locals: None, methods: None,
+        lines: Some(lines), imports: Some(imports), fan_in, fan_out, transitive_deps, dependency_depth,
     }
 }
 
@@ -61,12 +66,12 @@ fn collect_detailed_from_node(node: Node, source: &str, file: &str, units: &mut 
         "function_definition" | "async_function_definition" => {
             let name = node.child_by_field_name("name").and_then(|n| n.utf8_text(source.as_bytes()).ok()).unwrap_or("?");
             let m = compute_function_metrics(node, source);
-            units.push(UnitMetrics { file: file.to_string(), name: name.to_string(), kind: "function", line: node.start_position().row + 1, statements: Some(m.statements), arguments: Some(m.arguments), indentation: Some(m.max_indentation), branches: Some(m.branches), returns: Some(m.returns), locals: Some(m.local_variables), methods: None, lines: None, imports: None, fan_in: None, fan_out: None });
+            units.push(UnitMetrics { file: file.to_string(), name: name.to_string(), kind: "function", line: node.start_position().row + 1, statements: Some(m.statements), arguments: Some(m.arguments), args_positional: Some(m.arguments_positional), args_keyword_only: Some(m.arguments_keyword_only), indentation: Some(m.max_indentation), nested_depth: Some(m.nested_function_depth), branches: Some(m.branches), returns: Some(m.returns), locals: Some(m.local_variables), methods: None, lines: None, imports: None, fan_in: None, fan_out: None, transitive_deps: None, dependency_depth: None });
         }
         "class_definition" => {
             let name = node.child_by_field_name("name").and_then(|n| n.utf8_text(source.as_bytes()).ok()).unwrap_or("?");
             let m = compute_class_metrics(node);
-            units.push(UnitMetrics { file: file.to_string(), name: name.to_string(), kind: "class", line: node.start_position().row + 1, statements: None, arguments: None, indentation: None, branches: None, returns: None, locals: None, methods: Some(m.methods), lines: None, imports: None, fan_in: None, fan_out: None });
+            units.push(UnitMetrics { file: file.to_string(), name: name.to_string(), kind: "class", line: node.start_position().row + 1, statements: None, arguments: None, args_positional: None, args_keyword_only: None, indentation: None, nested_depth: None, branches: None, returns: None, locals: None, methods: Some(m.methods), lines: None, imports: None, fan_in: None, fan_out: None, transitive_deps: None, dependency_depth: None });
         }
         _ => {}
     }
@@ -90,16 +95,16 @@ fn collect_detailed_from_items(items: &[Item], file: &str, units: &mut Vec<UnitM
         match item {
             Item::Fn(f) => {
                 let m = compute_rust_function_metrics(&f.sig.inputs, &f.block, f.attrs.len());
-                units.push(UnitMetrics { file: file.to_string(), name: f.sig.ident.to_string(), kind: "function", line: f.sig.ident.span().start().line, statements: Some(m.statements), arguments: Some(m.arguments), indentation: Some(m.max_indentation), branches: Some(m.branches), returns: Some(m.returns), locals: Some(m.local_variables), methods: None, lines: None, imports: None, fan_in: None, fan_out: None });
+                units.push(UnitMetrics { file: file.to_string(), name: f.sig.ident.to_string(), kind: "function", line: f.sig.ident.span().start().line, statements: Some(m.statements), arguments: Some(m.arguments), args_positional: Some(m.arguments), args_keyword_only: Some(0), indentation: Some(m.max_indentation), nested_depth: Some(m.nested_function_depth), branches: Some(m.branches), returns: Some(m.returns), locals: Some(m.local_variables), methods: None, lines: None, imports: None, fan_in: None, fan_out: None, transitive_deps: None, dependency_depth: None });
             }
             Item::Impl(i) => {
                 let name = get_impl_name(i);
                 let mcnt = i.items.iter().filter(|ii| matches!(ii, ImplItem::Fn(_))).count();
-                units.push(UnitMetrics { file: file.to_string(), name, kind: "impl", line: i.impl_token.span.start().line, statements: None, arguments: None, indentation: None, branches: None, returns: None, locals: None, methods: Some(mcnt), lines: None, imports: None, fan_in: None, fan_out: None });
+                units.push(UnitMetrics { file: file.to_string(), name, kind: "impl", line: i.impl_token.span.start().line, statements: None, arguments: None, args_positional: None, args_keyword_only: None, indentation: None, nested_depth: None, branches: None, returns: None, locals: None, methods: Some(mcnt), lines: None, imports: None, fan_in: None, fan_out: None, transitive_deps: None, dependency_depth: None });
                 for ii in &i.items {
                     if let ImplItem::Fn(m) = ii {
                         let metrics = compute_rust_function_metrics(&m.sig.inputs, &m.block, m.attrs.len());
-                        units.push(UnitMetrics { file: file.to_string(), name: m.sig.ident.to_string(), kind: "method", line: m.sig.ident.span().start().line, statements: Some(metrics.statements), arguments: Some(metrics.arguments), indentation: Some(metrics.max_indentation), branches: Some(metrics.branches), returns: Some(metrics.returns), locals: Some(metrics.local_variables), methods: None, lines: None, imports: None, fan_in: None, fan_out: None });
+                        units.push(UnitMetrics { file: file.to_string(), name: m.sig.ident.to_string(), kind: "method", line: m.sig.ident.span().start().line, statements: Some(metrics.statements), arguments: Some(metrics.arguments), args_positional: Some(metrics.arguments), args_keyword_only: Some(0), indentation: Some(metrics.max_indentation), nested_depth: Some(metrics.nested_function_depth), branches: Some(metrics.branches), returns: Some(metrics.returns), locals: Some(metrics.local_variables), methods: None, lines: None, imports: None, fan_in: None, fan_out: None, transitive_deps: None, dependency_depth: None });
                     }
                 }
             }
@@ -147,9 +152,9 @@ mod tests {
     fn test_format_detailed_table() {
         let units = vec![UnitMetrics {
             file: "test.rs".to_string(), name: "foo".to_string(), kind: "function",
-            line: 1, statements: Some(5), arguments: Some(2), indentation: Some(1),
-            branches: Some(0), returns: Some(1), locals: Some(3), methods: None,
-            lines: None, imports: None, fan_in: None, fan_out: None,
+            line: 1, statements: Some(5), arguments: Some(2), args_positional: Some(2), args_keyword_only: Some(0),
+            indentation: Some(1), nested_depth: Some(0), branches: Some(0), returns: Some(1), locals: Some(3), methods: None,
+            lines: None, imports: None, fan_in: None, fan_out: None, transitive_deps: None, dependency_depth: None,
         }];
         let table = format_detailed_table(&units);
         assert!(table.contains("test.rs"));

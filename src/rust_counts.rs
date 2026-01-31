@@ -85,6 +85,17 @@ impl<'a> RustAnalyzer<'a> {
                     .build(),
             );
         }
+        if m.functions > c.functions_per_file {
+            self.violations.push(
+                self.violation(1, &fname)
+                    .metric("functions_per_file")
+                    .value(m.functions)
+                    .threshold(c.functions_per_file)
+                    .message(format!("File has {} functions (threshold: {})", m.functions, c.functions_per_file))
+                    .suggestion("Split into multiple modules with focused responsibilities.")
+                    .build(),
+            );
+        }
     }
 
     fn analyze_item(&mut self, item: &Item) {
@@ -190,6 +201,8 @@ impl<'a> RustAnalyzer<'a> {
              "Use an enum or a struct with named fields instead of multiple bools.");
         chk!(attributes, annotations_per_function, "attributes_per_function", "attributes", 
              "Consider consolidating attributes or simplifying the function's responsibilities.");
+        chk!(calls, calls_per_function, "calls_per_function", "calls", 
+             "Extract some calls into helper functions to reduce coordination complexity.");
     }
 }
 

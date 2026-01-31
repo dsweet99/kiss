@@ -9,6 +9,7 @@ pub struct FunctionMetrics {
     pub statements: usize, pub arguments: usize, pub arguments_positional: usize, pub arguments_keyword_only: usize,
     pub max_indentation: usize, pub nested_function_depth: usize, pub returns: usize, pub branches: usize, pub local_variables: usize,
     pub max_try_block_statements: usize, pub boolean_parameters: usize, pub decorators: usize, pub max_return_values: usize,
+    pub calls: usize,
 }
 
 #[derive(Debug, Default)]
@@ -20,6 +21,7 @@ pub struct FileMetrics {
     pub interface_types: usize,
     pub concrete_types: usize,
     pub imports: usize,
+    pub functions: usize,
 }
 
 #[must_use]
@@ -38,6 +40,7 @@ pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
         m.returns = count_node_kind(body, "return_statement");
         m.max_try_block_statements = compute_max_try_block_statements(body);
         m.max_return_values = compute_max_return_values(body);
+        m.calls = count_node_kind(body, "call");
     }
     m.nested_function_depth = compute_nested_function_depth(node, 0);
     m.decorators = count_decorators(node);
@@ -59,7 +62,21 @@ pub fn compute_file_metrics(parsed: &ParsedFile) -> FileMetrics {
         interface_types,
         concrete_types,
         imports: count_imports(root, &parsed.source),
+        functions: count_all_functions(root),
     }
+}
+
+fn count_all_functions(node: Node) -> usize {
+    let mut count = 0;
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "function_definition" | "async_function_definition" => count += 1,
+            _ => {}
+        }
+        count += count_all_functions(child);
+    }
+    count
 }
 
 fn count_types(node: Node, source: &str) -> (usize, usize) {

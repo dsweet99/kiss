@@ -4,7 +4,7 @@ mod rules;
 use clap::{Parser, Subcommand};
 use kiss::{
     compute_summaries, format_stats_table, Config, ConfigLanguage, GateConfig, Language,
-    MetricStats,
+    get_metric_def, MetricStats,
 };
 use kiss::config_gen::{
     collect_all_stats_with_ignore, collect_py_stats_with_ignore, collect_rs_stats_with_ignore,
@@ -65,9 +65,12 @@ enum Commands {
         /// Paths to analyze
         #[arg(default_value = ".")]
         paths: Vec<String>,
-        /// Show detailed per-unit metrics instead of summary
+        /// Show top N outliers for each metric (default: 10)
+        #[arg(long, value_name = "N", default_missing_value = "10", num_args = 0..=1, require_equals = true)]
+        all: Option<usize>,
+        /// Show full per-unit table (wide format)
         #[arg(long)]
-        all: bool,
+        table: bool,
         /// Ignore files/directories starting with PREFIX (repeatable)
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
@@ -138,9 +141,9 @@ fn main() {
             };
             if !run_analyze(&opts) { std::process::exit(1); }
         }
-        Commands::Stats { paths, all, ignore } => {
+        Commands::Stats { paths, all, table, ignore } => {
             let ignore = normalize_ignore_prefixes(&ignore);
-            run_stats(&paths, cli.lang, &ignore, all);
+            run_stats(&paths, cli.lang, &ignore, all, table);
         }
         Commands::Mimic { paths, out, ignore } => {
             let ignore = normalize_ignore_prefixes(&ignore);
@@ -214,9 +217,21 @@ fn load_configs(config_path: Option<&PathBuf>, use_defaults: bool) -> (Config, C
     (Config::load_from_content(&content, ConfigLanguage::Python), Config::load_from_content(&content, ConfigLanguage::Rust))
 }
 
-fn run_stats(paths: &[String], lang_filter: Option<Language>, ignore: &[String], show_all: bool) {
-    if show_all {
-        run_stats_detailed(paths, lang_filter, ignore);
+fn config_provenance() -> String {
+    let local = Path::new(".kissconfig");
+    let home = std::env::var_os("HOME")
+        .map(|h| Path::new(&h).join(".kissconfig"))
+        .filter(|p| p.exists());
+    let local_status = if local.exists() { "found" } else { "not found" };
+    let home_status = home.as_ref().map_or_else(|| "not found".to_string(), |p| format!("found: {}", p.display()));
+    format!("Config: defaults + ~/.kissconfig ({home_status}) + ./.kissconfig ({local_status})")
+}
+
+fn run_stats(paths: &[String], lang_filter: Option<Language>, ignore: &[String], all: Option<usize>, table: bool) {
+    if table {
+        run_stats_table(paths, lang_filter, ignore);
+    } else if let Some(n) = all {
+        run_stats_top(paths, lang_filter, ignore, n);
     } else {
         run_stats_summary(paths, lang_filter, ignore);
     }
@@ -242,13 +257,97 @@ fn run_stats_summary(paths: &[String], lang_filter: Option<Language>, ignore: &[
         eprintln!("No source files found.");
         std::process::exit(1);
     }
-    println!("kiss stats - Summary Statistics\nAnalyzed from: {}\n", paths.join(", "));
+    println!("kiss stats - Summary Statistics\nAnalyzed from: {}\n{}\n", paths.join(", "), config_provenance());
     if py_cnt > 0 {
         println!("=== Python ({py_cnt} files) ===\n{}\n", format_stats_table(&compute_summaries(&py_stats)));
     }
     if rs_cnt > 0 {
         println!("=== Rust ({rs_cnt} files) ===\n{}", format_stats_table(&compute_summaries(&rs_stats)));
     }
+}
+
+fn run_stats_top(paths: &[String], lang_filter: Option<Language>, ignore: &[String], n: usize) {
+    let (py_files, rs_files) = gather_files_by_lang(paths, lang_filter, ignore);
+    if py_files.is_empty() && rs_files.is_empty() {
+        eprintln!("No source files found.");
+        std::process::exit(1);
+    }
+    println!("kiss stats --all {n} - Top Outliers\nAnalyzed from: {}\n{}\n", paths.join(", "), config_provenance());
+    let all_units = collect_all_units(&py_files, &rs_files);
+    print_all_top_metrics(&all_units, n);
+}
+
+fn collect_all_units(py_files: &[PathBuf], rs_files: &[PathBuf]) -> Vec<kiss::UnitMetrics> {
+    use kiss::{collect_detailed_py, collect_detailed_rs};
+    use kiss::{build_dependency_graph, rust_graph::build_rust_dependency_graph};
+    use kiss::parsing::parse_files;
+    use kiss::rust_parsing::parse_rust_files;
+
+    let mut all_units = Vec::new();
+    if !py_files.is_empty() {
+        let results = parse_files(py_files).expect("parse files");
+        let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+        let graph = build_dependency_graph(&parsed);
+        all_units.extend(collect_detailed_py(&parsed, Some(&graph)));
+    }
+    if !rs_files.is_empty() {
+        let results = parse_rust_files(rs_files);
+        let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+        let graph = build_rust_dependency_graph(&parsed);
+        all_units.extend(collect_detailed_rs(&parsed, Some(&graph)));
+    }
+    all_units
+}
+
+fn print_all_top_metrics(units: &[kiss::UnitMetrics], n: usize) {
+    fn name(metric_id: &'static str, fallback: &'static str) -> &'static str {
+        get_metric_def(metric_id).map_or(fallback, |d| d.display_name)
+    }
+
+    // Function metrics
+    print_top_for_metric(units, n, "statements_per_function", name("statements_per_function", "Statements per function"), |u| u.statements);
+    print_top_for_metric(units, n, "args_total", name("args_total", "Arguments (total)"), |u| u.arguments);
+    print_top_for_metric(units, n, "args_positional", name("args_positional", "Arguments (positional)"), |u| u.args_positional);
+    print_top_for_metric(units, n, "args_keyword_only", name("args_keyword_only", "Arguments (keyword-only)"), |u| u.args_keyword_only);
+    print_top_for_metric(units, n, "max_indentation_depth", name("max_indentation_depth", "Max indentation depth"), |u| u.indentation);
+    print_top_for_metric(units, n, "nested_function_depth", name("nested_function_depth", "Nested function depth"), |u| u.nested_depth);
+    print_top_for_metric(units, n, "branches_per_function", name("branches_per_function", "Branches per function"), |u| u.branches);
+    print_top_for_metric(units, n, "returns_per_function", name("returns_per_function", "Returns per function"), |u| u.returns);
+    print_top_for_metric(units, n, "local_variables_per_function", name("local_variables_per_function", "Local variables per function"), |u| u.locals);
+    // Type metrics
+    print_top_for_metric(units, n, "methods_per_type", name("methods_per_type", "Methods per type"), |u| u.methods);
+    // File metrics
+    print_top_for_metric(units, n, "lines_per_file", name("lines_per_file", "Lines per file"), |u| u.lines);
+    print_top_for_metric(units, n, "imported_names_per_file", name("imported_names_per_file", "Imported names per file"), |u| u.imports);
+    // Module/graph metrics
+    print_top_for_metric(units, n, "fan_in", name("fan_in", "Fan-in (per module)"), |u| u.fan_in);
+    print_top_for_metric(units, n, "fan_out", name("fan_out", "Fan-out (per module)"), |u| u.fan_out);
+    print_top_for_metric(units, n, "transitive_deps", name("transitive_deps", "Transitive deps (per module)"), |u| u.transitive_deps);
+    print_top_for_metric(units, n, "dependency_depth", name("dependency_depth", "Dependency depth (per module)"), |u| u.dependency_depth);
+}
+
+fn print_top_for_metric<F>(units: &[kiss::UnitMetrics], n: usize, metric_id: &str, display_name: &str, extractor: F)
+where
+    F: Fn(&kiss::UnitMetrics) -> Option<usize>,
+{
+    let mut with_values: Vec<_> = units.iter()
+        .filter_map(|u| extractor(u).map(|v| (v, u)))
+        .collect();
+    if with_values.is_empty() {
+        return;
+    }
+    with_values.sort_by(|a, b| b.0.cmp(&a.0));
+    println!("{metric_id}  ({display_name})  top {n}");
+    println!("{:>5}  {:<40}  {:>5}  name", "value", "file", "line");
+    println!("{}", "-".repeat(70));
+    for (val, u) in with_values.into_iter().take(n) {
+        println!("{:>5}  {:<40}  {:>5}  {}", val, truncate_path(&u.file, 40), u.line, u.name);
+    }
+    println!();
+}
+
+fn truncate_path(s: &str, max: usize) -> String {
+    if s.len() <= max { s.to_string() } else { format!("...{}", &s[s.len() - max + 3..]) }
 }
 
 fn gather_files_by_lang(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) -> (Vec<std::path::PathBuf>, Vec<std::path::PathBuf>) {
@@ -266,7 +365,7 @@ fn gather_files_by_lang(paths: &[String], lang_filter: Option<Language>, ignore:
     (py_files, rs_files)
 }
 
-fn run_stats_detailed(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
+fn run_stats_table(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
     use kiss::{collect_detailed_py, collect_detailed_rs, format_detailed_table};
     use kiss::{build_dependency_graph, rust_graph::build_rust_dependency_graph};
     use kiss::parsing::parse_files;
@@ -277,7 +376,7 @@ fn run_stats_detailed(paths: &[String], lang_filter: Option<Language>, ignore: &
         eprintln!("No source files found.");
         std::process::exit(1);
     }
-    println!("kiss stats --all - Detailed Metrics\nAnalyzed from: {}\n", paths.join(", "));
+    println!("kiss stats --table - Per-Unit Metrics\nAnalyzed from: {}\n{}\n", paths.join(", "), config_provenance());
     if !py_files.is_empty() {
         let results = parse_files(&py_files).expect("parse files");
         let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
@@ -344,7 +443,7 @@ mod tests {
         std::fs::write(tmp.path().join("test.rs"), "fn main() {}").unwrap();
         assert_eq!(gather_files_by_lang(std::slice::from_ref(&p), None, &[]).0.len(), 1);
         run_stats_summary(std::slice::from_ref(&p), Some(Language::Python), &[]);
-        run_stats_detailed(std::slice::from_ref(&p), Some(Language::Rust), &[]);
+        run_stats_table(std::slice::from_ref(&p), Some(Language::Rust), &[]);
         assert_eq!(normalize_ignore_prefixes(&["src/".to_string(), String::new()]), vec!["src"]);
         validate_paths(&[p]); // tests valid path doesn't panic/exit
     }
@@ -353,13 +452,35 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let p = tmp.path().to_string_lossy().to_string();
         std::fs::write(tmp.path().join("test.py"), "def foo(): pass").unwrap();
-        run_stats(std::slice::from_ref(&p), Some(Language::Python), &[], false);
-        run_stats(std::slice::from_ref(&p), Some(Language::Python), &[], true);
+        run_stats(std::slice::from_ref(&p), Some(Language::Python), &[], None, false);
+        run_stats(std::slice::from_ref(&p), Some(Language::Python), &[], Some(10), false);
+        run_stats(std::slice::from_ref(&p), Some(Language::Python), &[], None, true);
         run_mimic(std::slice::from_ref(&p), None, Some(Language::Python), &[]);
+    }
+    #[test]
+    fn test_stats_top_helpers() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("a.py"), "def foo():\n    x = 1\n    y = 2").unwrap();
+        std::fs::write(tmp.path().join("b.rs"), "fn bar() { let z = 3; }").unwrap();
+        let py_files = vec![tmp.path().join("a.py")];
+        let rs_files = vec![tmp.path().join("b.rs")];
+        let units = collect_all_units(&py_files, &rs_files);
+        assert!(!units.is_empty());
+        print_all_top_metrics(&units, 2);
+        print_top_for_metric(&units, 1, "test_metric", "Test Metric", |u| u.statements);
+        assert_eq!(truncate_path("short.rs", 20), "short.rs");
+        assert!(truncate_path("this/is/a/very/long/path.rs", 20).starts_with("..."));
     }
     #[test]
     fn test_main_exists() {
         // Reference main to ensure test coverage
         let _ = main as fn();
+    }
+    #[test]
+    fn test_config_provenance() {
+        let prov = config_provenance();
+        assert!(prov.contains("Config:"));
+        assert!(prov.contains("defaults"));
+        assert!(prov.contains(".kissconfig"));
     }
 }

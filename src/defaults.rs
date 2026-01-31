@@ -4,6 +4,7 @@ pub const NOT_APPLICABLE: usize = usize::MAX;
 pub mod python {
     pub const IMPORTS_PER_FILE: usize = 20;
     pub const STATEMENTS_PER_FILE: usize = 400;
+    pub const FUNCTIONS_PER_FILE: usize = 30;
     pub const INTERFACE_TYPES_PER_FILE: usize = 3;
     pub const CONCRETE_TYPES_PER_FILE: usize = 10;
     pub const STATEMENTS_PER_FUNCTION: usize = 35;
@@ -20,6 +21,7 @@ pub mod python {
     pub const STATEMENTS_PER_TRY_BLOCK: usize = 5;
     pub const BOOLEAN_PARAMETERS: usize = 1;
     pub const DECORATORS_PER_FUNCTION: usize = 3;
+    pub const CALLS_PER_FUNCTION: usize = 50;
     pub const TRANSITIVE_DEPENDENCIES: usize = 100;
     pub const DEPENDENCY_DEPTH: usize = 7;
 }
@@ -27,6 +29,7 @@ pub mod python {
 pub mod rust {
     pub const IMPORTS_PER_FILE: usize = 20;
     pub const STATEMENTS_PER_FILE: usize = 300;
+    pub const FUNCTIONS_PER_FILE: usize = 35;
     pub const INTERFACE_TYPES_PER_FILE: usize = 3;
     pub const CONCRETE_TYPES_PER_FILE: usize = 8;
     pub const STATEMENTS_PER_FUNCTION: usize = 25;
@@ -39,6 +42,7 @@ pub mod rust {
     pub const NESTED_FUNCTION_DEPTH: usize = 2;
     pub const BOOLEAN_PARAMETERS: usize = 2;
     pub const ATTRIBUTES_PER_FUNCTION: usize = 4;
+    pub const CALLS_PER_FUNCTION: usize = 50;
     pub const TRANSITIVE_DEPENDENCIES: usize = 50;
     pub const DEPENDENCY_DEPTH: usize = 4;
 }
@@ -64,6 +68,7 @@ duplication_enabled = true
 [python]
 imported_names_per_file = {py_imports}
 statements_per_file = {py_statements_file}
+functions_per_file = {py_functions_file}
 interface_types_per_file = {py_interface_types}
 concrete_types_per_file = {py_concrete_types}
 statements_per_function = {py_statements}
@@ -79,6 +84,7 @@ nested_function_depth = {py_nested}
 statements_per_try_block = {py_try_stmts}
 boolean_parameters = {py_bool_params}
 decorators_per_function = {py_decorators}
+calls_per_function = {py_calls}
 cycle_size = {cycle_size}
 transitive_dependencies = {py_transitive_deps}
 dependency_depth = {py_dep_depth}
@@ -86,6 +92,7 @@ dependency_depth = {py_dep_depth}
 [rust]
 imported_names_per_file = {rs_imports}
 statements_per_file = {rs_statements_file}
+functions_per_file = {rs_functions_file}
 interface_types_per_file = {rs_interface_types}
 concrete_types_per_file = {rs_concrete_types}
 statements_per_function = {rs_statements}
@@ -98,6 +105,7 @@ returns_per_function = {rs_returns}
 nested_function_depth = {rs_nested}
 boolean_parameters = {rs_bool_params}
 attributes_per_function = {rs_attrs}
+calls_per_function = {rs_calls}
 cycle_size = {cycle_size}
 transitive_dependencies = {rs_transitive_deps}
 dependency_depth = {rs_dep_depth}
@@ -106,6 +114,7 @@ dependency_depth = {rs_dep_depth}
         min_sim = duplication::MIN_SIMILARITY,
         py_imports = python::IMPORTS_PER_FILE,
         py_statements_file = python::STATEMENTS_PER_FILE,
+        py_functions_file = python::FUNCTIONS_PER_FILE,
         py_interface_types = python::INTERFACE_TYPES_PER_FILE,
         py_concrete_types = python::CONCRETE_TYPES_PER_FILE,
         py_statements = python::STATEMENTS_PER_FUNCTION,
@@ -121,11 +130,13 @@ dependency_depth = {rs_dep_depth}
         py_try_stmts = python::STATEMENTS_PER_TRY_BLOCK,
         py_bool_params = python::BOOLEAN_PARAMETERS,
         py_decorators = python::DECORATORS_PER_FUNCTION,
+        py_calls = python::CALLS_PER_FUNCTION,
         cycle_size = graph::CYCLE_SIZE,
         py_transitive_deps = python::TRANSITIVE_DEPENDENCIES,
         py_dep_depth = python::DEPENDENCY_DEPTH,
         rs_imports = rust::IMPORTS_PER_FILE,
         rs_statements_file = rust::STATEMENTS_PER_FILE,
+        rs_functions_file = rust::FUNCTIONS_PER_FILE,
         rs_interface_types = rust::INTERFACE_TYPES_PER_FILE,
         rs_concrete_types = rust::CONCRETE_TYPES_PER_FILE,
         rs_statements = rust::STATEMENTS_PER_FUNCTION,
@@ -138,6 +149,7 @@ dependency_depth = {rs_dep_depth}
         rs_nested = rust::NESTED_FUNCTION_DEPTH,
         rs_bool_params = rust::BOOLEAN_PARAMETERS,
         rs_attrs = rust::ATTRIBUTES_PER_FUNCTION,
+        rs_calls = rust::CALLS_PER_FUNCTION,
         rs_transitive_deps = rust::TRANSITIVE_DEPENDENCIES,
         rs_dep_depth = rust::DEPENDENCY_DEPTH,
     )
