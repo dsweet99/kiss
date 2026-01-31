@@ -1,6 +1,7 @@
 # Rust build artifacts
 target/
 review.md
+.cursor
 .cursorrules
 *~
 __pycache__
