@@ -492,7 +492,7 @@ fn print_top_for_metric<F>(
     if with_values.is_empty() {
         return;
     }
-    with_values.sort_by(|a, b| b.0.cmp(&a.0));
+    with_values.sort_by_key(|b| std::cmp::Reverse(b.0));
     println!("{metric_id}  ({display_name})  top {n}");
     println!("{:>5}  {:<40}  {:>5}  name", "value", "file", "line");
     println!("{}", "-".repeat(70));
