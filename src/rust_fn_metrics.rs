@@ -1,4 +1,3 @@
-
 use syn::visit::Visit;
 use syn::{Block, Expr, Pat, Stmt};
 
@@ -15,6 +14,7 @@ pub struct RustFunctionMetrics {
     pub local_variables: usize,
     pub bool_parameters: usize,
     pub attributes: usize,
+    pub calls: usize,
 }
 
 #[derive(Debug, Default)]
@@ -28,6 +28,7 @@ pub struct RustFileMetrics {
     pub interface_types: usize,
     pub concrete_types: usize,
     pub imports: usize,
+    pub functions: usize,
 }
 
 #[must_use]
@@ -36,6 +37,7 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
     let mut concrete_types = 0;
     let mut imports = 0;
     let mut statements = 0;
+    let mut functions = 0;
 
     for item in &parsed.ast.items {
         match item {
@@ -43,6 +45,7 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
             syn::Item::Struct(_) | syn::Item::Enum(_) | syn::Item::Union(_) => concrete_types += 1,
             syn::Item::Use(u) if matches!(u.vis, syn::Visibility::Inherited) => imports += 1,
             syn::Item::Fn(f) => {
+                functions += 1;
                 let mut visitor = FunctionMetricsVisitor::default();
                 visitor.visit_block(&f.block);
                 statements += visitor.statements;
@@ -50,6 +53,7 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
             syn::Item::Impl(imp) => {
                 for item in &imp.items {
                     if let syn::ImplItem::Fn(f) = item {
+                        functions += 1;
                         let mut visitor = FunctionMetricsVisitor::default();
                         visitor.visit_block(&f.block);
                         statements += visitor.statements;
@@ -65,6 +69,7 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
         interface_types,
         concrete_types,
         imports,
+        functions,
     }
 }
 
@@ -82,7 +87,10 @@ pub fn compute_rust_function_metrics(
         .filter(|arg| !matches!(arg, syn::FnArg::Receiver(_)))
         .collect();
     metrics.arguments = non_self_args.len();
-    metrics.bool_parameters = non_self_args.iter().filter(|arg| is_bool_param(arg)).count();
+    metrics.bool_parameters = non_self_args
+        .iter()
+        .filter(|arg| is_bool_param(arg))
+        .count();
     metrics.attributes = attr_count;
 
     let mut visitor = FunctionMetricsVisitor::default();
@@ -94,6 +102,7 @@ pub fn compute_rust_function_metrics(
     metrics.branches = visitor.branches;
     metrics.local_variables = visitor.local_variables;
     metrics.nested_function_depth = visitor.max_closure_depth;
+    metrics.calls = visitor.calls;
 
     metrics
 }
@@ -112,6 +121,7 @@ pub struct FunctionMetricsVisitor {
     pub local_variables: usize,
     pub max_closure_depth: usize,
     pub current_closure_depth: usize,
+    pub calls: usize,
 }
 
 impl FunctionMetricsVisitor {
@@ -149,7 +159,12 @@ impl FunctionMetricsVisitor {
 
 impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-        self.statements += 1;
+        // Per style.md: statements exclude imports and signatures
+        // Skip use statements inside function bodies
+        let is_use_item = matches!(stmt, Stmt::Item(syn::Item::Use(_)));
+        if !is_use_item {
+            self.statements += 1;
+        }
         if let Stmt::Local(local) = stmt {
             self.count_pattern_bindings(&local.pat);
         }
@@ -175,6 +190,9 @@ impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
             Expr::Closure(_) => {
                 self.current_closure_depth += 1;
                 self.max_closure_depth = self.max_closure_depth.max(self.current_closure_depth);
+            }
+            Expr::Call(_) | Expr::MethodCall(_) => {
+                self.calls += 1;
             }
             _ => {}
         }
@@ -222,7 +240,10 @@ mod tests {
         assert!(compute_rust_function_metrics(&i3, &b3, 0).branches >= 2);
 
         let (i4, b4) = parse_fn("fn f() { let a=1; let b=2; let (c,d)=(3,4); }");
-        assert_eq!(compute_rust_function_metrics(&i4, &b4, 0).local_variables, 4);
+        assert_eq!(
+            compute_rust_function_metrics(&i4, &b4, 0).local_variables,
+            4
+        );
 
         let (i5, b5) = parse_fn("fn f() {}");
         assert_eq!(compute_rust_function_metrics(&i5, &b5, 3).attributes, 3);
@@ -279,6 +300,7 @@ mod tests {
             nested_function_depth: 8,
             bool_parameters: 0,
             attributes: 0,
+            calls: 2,
         };
         let _ = (
             RustTypeMetrics { methods: 5 },
@@ -287,6 +309,7 @@ mod tests {
                 interface_types: 1,
                 concrete_types: 2,
                 imports: 5,
+                functions: 10,
             },
         );
     }
@@ -298,7 +321,21 @@ mod tests {
         writeln!(tmp, "use std::io;\nfn foo() {{ let x = 1; }}\ntrait T {{ fn x(&self) {{}} }}\nstruct A {{}}\nstruct B {{}}").unwrap();
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let m = compute_rust_file_metrics(&parsed);
-        assert!(m.statements >= 1 && m.interface_types == 1 && m.concrete_types == 2 && m.imports == 1);
+        assert!(
+            m.statements >= 1 && m.interface_types == 1 && m.concrete_types == 2 && m.imports == 1
+        );
+    }
+
+    #[test]
+    fn test_use_statements_in_function_not_counted() {
+        // Per style.md: "[statement] Any statement within a function body that is not an import or a signature"
+        // use statements inside function bodies should NOT be counted as statements
+        let (_, b) = parse_fn("fn f() { use std::io::Write; let x = 1; println!(\"{}\", x); }");
+        let m = compute_rust_function_metrics(&syn::punctuated::Punctuated::new(), &b, 0);
+        // Should be 2 statements (let + println), not 3 (use + let + println)
+        assert_eq!(
+            m.statements, 2,
+            "use statements inside functions should not be counted"
+        );
     }
 }
-

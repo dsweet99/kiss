@@ -11,14 +11,21 @@ pub enum Language {
 impl Language {
     pub fn from_path(path: &Path) -> Option<Self> {
         path.extension().and_then(|ext| {
-            if ext == "py" { Some(Self::Python) }
-            else if ext == "rs" { Some(Self::Rust) }
-            else { None }
+            if ext == "py" {
+                Some(Self::Python)
+            } else if ext == "rs" {
+                Some(Self::Rust)
+            } else {
+                None
+            }
         })
     }
 
     pub const fn extension(&self) -> &'static str {
-        match self { Self::Python => "py", Self::Rust => "rs" }
+        match self {
+            Self::Python => "py",
+            Self::Rust => "rs",
+        }
     }
 }
 
@@ -28,8 +35,12 @@ pub struct SourceFile {
     pub language: Language,
 }
 
-pub fn find_python_files(root: &Path) -> Vec<PathBuf> { find_files_by_extension(root, "py") }
-pub fn find_rust_files(root: &Path) -> Vec<PathBuf> { find_files_by_extension(root, "rs") }
+pub fn find_python_files(root: &Path) -> Vec<PathBuf> {
+    find_files_by_extension(root, "py")
+}
+pub fn find_rust_files(root: &Path) -> Vec<PathBuf> {
+    find_files_by_extension(root, "rs")
+}
 
 const ALWAYS_IGNORED: &[&str] = &["__pycache__", "node_modules", ".venv", "venv"];
 
@@ -43,7 +54,9 @@ fn is_always_ignored(name: &str) -> bool {
 
 fn should_ignore(path: &Path, ignore_prefixes: &[String]) -> bool {
     path.components().any(|c| {
-        c.as_os_str().to_str().is_some_and(|s| has_ignored_prefix(s, ignore_prefixes) || is_always_ignored(s))
+        c.as_os_str()
+            .to_str()
+            .is_some_and(|s| has_ignored_prefix(s, ignore_prefixes) || is_always_ignored(s))
     })
 }
 
@@ -55,18 +68,30 @@ pub fn find_source_files_with_ignore(root: &Path, ignore_prefixes: &[String]) ->
     let results = Mutex::new(Vec::new());
     WalkBuilder::new(root)
         .hidden(true)
-        .git_ignore(true).git_global(true).git_exclude(true)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
         .add_custom_ignore_filename(".kissignore")
         .build_parallel()
         .run(|| Box::new(|entry| process_source_entry(entry, ignore_prefixes, &results)));
     results.into_inner().unwrap()
 }
 
-fn process_source_entry(entry: Result<ignore::DirEntry, ignore::Error>, ignore_prefixes: &[String], results: &Mutex<Vec<SourceFile>>) -> WalkState {
-    let Ok(entry) = entry else { return WalkState::Continue };
-    if !entry.file_type().is_some_and(|ft| ft.is_file()) { return WalkState::Continue; }
+fn process_source_entry(
+    entry: Result<ignore::DirEntry, ignore::Error>,
+    ignore_prefixes: &[String],
+    results: &Mutex<Vec<SourceFile>>,
+) -> WalkState {
+    let Ok(entry) = entry else {
+        return WalkState::Continue;
+    };
+    if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+        return WalkState::Continue;
+    }
     let path = entry.into_path();
-    if should_ignore(&path, ignore_prefixes) { return WalkState::Continue; }
+    if should_ignore(&path, ignore_prefixes) {
+        return WalkState::Continue;
+    }
     if let Some(language) = Language::from_path(&path) {
         results.lock().unwrap().push(SourceFile { path, language });
     }
@@ -77,16 +102,26 @@ fn find_files_by_extension(root: &Path, ext: &str) -> Vec<PathBuf> {
     let results = Mutex::new(Vec::new());
     WalkBuilder::new(root)
         .hidden(true)
-        .git_ignore(true).git_global(true).git_exclude(true)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
         .add_custom_ignore_filename(".kissignore")
         .build_parallel()
         .run(|| Box::new(|entry| process_ext_entry(entry, ext, &results)));
     results.into_inner().unwrap()
 }
 
-fn process_ext_entry(entry: Result<ignore::DirEntry, ignore::Error>, ext: &str, results: &Mutex<Vec<PathBuf>>) -> WalkState {
-    let Ok(entry) = entry else { return WalkState::Continue };
-    if !entry.file_type().is_some_and(|ft| ft.is_file()) { return WalkState::Continue; }
+fn process_ext_entry(
+    entry: Result<ignore::DirEntry, ignore::Error>,
+    ext: &str,
+    results: &Mutex<Vec<PathBuf>>,
+) -> WalkState {
+    let Ok(entry) = entry else {
+        return WalkState::Continue;
+    };
+    if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+        return WalkState::Continue;
+    }
     if entry.path().extension().is_some_and(|e| e == ext) {
         results.lock().unwrap().push(entry.into_path());
     }
@@ -101,8 +136,14 @@ mod tests {
 
     #[test]
     fn test_language_from_path() {
-        assert_eq!(Language::from_path(Path::new("foo.py")), Some(Language::Python));
-        assert_eq!(Language::from_path(Path::new("bar.rs")), Some(Language::Rust));
+        assert_eq!(
+            Language::from_path(Path::new("foo.py")),
+            Some(Language::Python)
+        );
+        assert_eq!(
+            Language::from_path(Path::new("bar.rs")),
+            Some(Language::Rust)
+        );
         assert_eq!(Language::from_path(Path::new("file.txt")), None);
     }
 
@@ -114,7 +155,10 @@ mod tests {
 
     #[test]
     fn test_source_file_struct() {
-        let sf = SourceFile { path: PathBuf::from("test.py"), language: Language::Python };
+        let sf = SourceFile {
+            path: PathBuf::from("test.py"),
+            language: Language::Python,
+        };
         assert_eq!(sf.language, Language::Python);
     }
 
@@ -160,11 +204,27 @@ mod tests {
 
     #[test]
     fn test_should_ignore() {
-        assert!(should_ignore(Path::new("tests/fake_python/foo.py"), &["fake_".to_string()]));
-        assert!(should_ignore(Path::new("mock_data/test.rs"), &["mock_".to_string()]));
-        assert!(!should_ignore(Path::new("src/main.rs"), &["fake_".to_string()]));
-        assert!(!should_ignore(Path::new("tests/real.py"), &["fake_".to_string()]));
-        assert!(is_always_ignored("node_modules") && is_always_ignored("__pycache__") && !is_always_ignored("src"));
+        assert!(should_ignore(
+            Path::new("tests/fake_python/foo.py"),
+            &["fake_".to_string()]
+        ));
+        assert!(should_ignore(
+            Path::new("mock_data/test.rs"),
+            &["mock_".to_string()]
+        ));
+        assert!(!should_ignore(
+            Path::new("src/main.rs"),
+            &["fake_".to_string()]
+        ));
+        assert!(!should_ignore(
+            Path::new("tests/real.py"),
+            &["fake_".to_string()]
+        ));
+        assert!(
+            is_always_ignored("node_modules")
+                && is_always_ignored("__pycache__")
+                && !is_always_ignored("src")
+        );
     }
 
     #[test]

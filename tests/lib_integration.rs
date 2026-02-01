@@ -6,7 +6,10 @@ fn finds_python_files_in_test_directory() {
     let root = Path::new("tests/fake_python");
     let files = find_python_files(root);
     assert!(!files.is_empty(), "Should find Python files");
-    assert!(files.iter().all(|p| p.extension().unwrap() == "py"), "All files should be .py");
+    assert!(
+        files.iter().all(|p| p.extension().unwrap() == "py"),
+        "All files should be .py"
+    );
 }
 
 #[test]
@@ -32,20 +35,37 @@ fn parses_all_test_files_without_errors() {
     let results = parse_files(&files).expect("parser should initialize");
     for result in &results {
         let parsed = result.as_ref().expect("all files should parse");
-        assert!(!parsed.tree.root_node().has_error(), "Parse errors in {}", parsed.path.display());
+        assert!(
+            !parsed.tree.root_node().has_error(),
+            "Parse errors in {}",
+            parsed.path.display()
+        );
     }
 }
 
 #[test]
 fn extracts_code_units_from_clean_utils() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/clean_utils.py")).expect("should parse");
+    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/clean_utils.py"))
+        .expect("should parse");
     let units = extract_code_units(&parsed);
 
-    let modules: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Module).collect();
-    let functions: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Function).collect();
-    let classes: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Class).collect();
-    let method_count = units.iter().filter(|u| u.kind == CodeUnitKind::Method).count();
+    let modules: Vec<_> = units
+        .iter()
+        .filter(|u| u.kind == CodeUnitKind::Module)
+        .collect();
+    let functions: Vec<_> = units
+        .iter()
+        .filter(|u| u.kind == CodeUnitKind::Function)
+        .collect();
+    let classes: Vec<_> = units
+        .iter()
+        .filter(|u| u.kind == CodeUnitKind::Class)
+        .collect();
+    let method_count = units
+        .iter()
+        .filter(|u| u.kind == CodeUnitKind::Method)
+        .count();
 
     assert_eq!(modules.len(), 1);
     assert_eq!(modules[0].name, "clean_utils");
@@ -59,45 +79,74 @@ fn extracts_code_units_from_clean_utils() {
 #[test]
 fn extracts_many_methods_from_god_class() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
+    let parsed =
+        parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
     let units = extract_code_units(&parsed);
-    let methods: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Method).collect();
-    assert!(methods.len() > 20, "Expected >20 methods, got {}", methods.len());
+    let methods: Vec<_> = units
+        .iter()
+        .filter(|u| u.kind == CodeUnitKind::Method)
+        .collect();
+    assert!(
+        methods.len() > 20,
+        "Expected >20 methods, got {}",
+        methods.len()
+    );
 }
 
 #[test]
 fn computes_file_metrics_for_god_class() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
+    let parsed =
+        parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
     let metrics = compute_file_metrics(&parsed);
-    assert!(metrics.statements > 100, "Expected >100 statements, got {}", metrics.statements);
+    assert!(
+        metrics.statements > 100,
+        "Expected >100 statements, got {}",
+        metrics.statements
+    );
     assert_eq!(metrics.interface_types, 0);
     assert_eq!(metrics.concrete_types, 1);
-    assert!(metrics.imports > 5, "Expected >5 imports, got {}", metrics.imports);
+    assert!(
+        metrics.imports > 5,
+        "Expected >5 imports, got {}",
+        metrics.imports
+    );
 }
 
 #[test]
 fn computes_class_metrics_for_god_class() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
-    let class_node = find_first_node_of_kind(parsed.tree.root_node(), "class_definition").expect("should find class");
+    let parsed =
+        parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
+    let class_node = find_first_node_of_kind(parsed.tree.root_node(), "class_definition")
+        .expect("should find class");
     let metrics = compute_class_metrics(class_node);
-    assert!(metrics.methods > 20, "God class should have more than 20 methods");
+    assert!(
+        metrics.methods > 20,
+        "God class should have more than 20 methods"
+    );
 }
 
 #[test]
 fn computes_function_metrics() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/clean_utils.py")).expect("should parse");
-    let func_node = find_first_node_of_kind(parsed.tree.root_node(), "function_definition").expect("should find function");
+    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/clean_utils.py"))
+        .expect("should parse");
+    let func_node = find_first_node_of_kind(parsed.tree.root_node(), "function_definition")
+        .expect("should find function");
     let metrics = compute_function_metrics(func_node, &parsed.source);
     assert_eq!(metrics.arguments, 1);
     assert!(metrics.statements >= 2);
     assert!(metrics.returns >= 1);
 }
 
-fn find_first_node_of_kind<'a>(node: tree_sitter::Node<'a>, kind: &str) -> Option<tree_sitter::Node<'a>> {
-    if node.kind() == kind { return Some(node); }
+fn find_first_node_of_kind<'a>(
+    node: tree_sitter::Node<'a>,
+    kind: &str,
+) -> Option<tree_sitter::Node<'a>> {
+    if node.kind() == kind {
+        return Some(node);
+    }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if let Some(found) = find_first_node_of_kind(child, kind) {
@@ -110,20 +159,32 @@ fn find_first_node_of_kind<'a>(node: tree_sitter::Node<'a>, kind: &str) -> Optio
 #[test]
 fn builds_dependency_graph() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed_god = parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
+    let parsed_god =
+        parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
     let parsed_files: Vec<&ParsedFile> = vec![&parsed_god];
     let graph = build_dependency_graph(&parsed_files);
     assert!(graph.nodes.len() > 1, "Should have multiple nodes in graph");
-    assert!(graph.nodes.contains_key("god_class"));
-    let metrics = graph.module_metrics("god_class");
-    assert!(metrics.fan_out > 3, "Expected fan_out > 3, got {}", metrics.fan_out);
+    // Module names are now qualified with parent directory: "fake_python.god_class"
+    assert!(
+        graph.nodes.contains_key("fake_python.god_class"),
+        "Expected fake_python.god_class in nodes: {:?}",
+        graph.nodes.keys().collect::<Vec<_>>()
+    );
+    let metrics = graph.module_metrics("fake_python.god_class");
+    assert!(
+        metrics.fan_out > 3,
+        "Expected fan_out > 3, got {}",
+        metrics.fan_out
+    );
 }
 
 #[test]
 fn computes_cyclomatic_complexity() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/deeply_nested.py")).expect("should parse");
-    let func_node = find_first_node_of_kind(parsed.tree.root_node(), "function_definition").expect("should find function");
+    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/deeply_nested.py"))
+        .expect("should parse");
+    let func_node = find_first_node_of_kind(parsed.tree.root_node(), "function_definition")
+        .expect("should find function");
     let complexity = compute_cyclomatic_complexity(func_node);
     assert!(complexity > 5, "Expected complexity > 5, got {complexity}");
 }
@@ -131,17 +192,25 @@ fn computes_cyclomatic_complexity() {
 #[test]
 fn detects_duplicate_code() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/user_service.py")).expect("should parse");
+    let parsed = parse_file(&mut parser, Path::new("tests/fake_python/user_service.py"))
+        .expect("should parse");
     let parsed_files: Vec<&ParsedFile> = vec![&parsed];
     let duplicates = detect_duplicates(&parsed_files, &DuplicationConfig::default());
-    assert!(!duplicates.is_empty(), "Should detect duplicates in user_service.py");
-    assert!(duplicates[0].similarity > 0.7, "Expected similarity > 0.7, got {}", duplicates[0].similarity);
+    assert!(
+        !duplicates.is_empty(),
+        "Should detect duplicates in user_service.py"
+    );
+    assert!(
+        duplicates[0].similarity > 0.7,
+        "Expected similarity > 0.7, got {}",
+        duplicates[0].similarity
+    );
 }
 
 #[test]
 fn handles_empty_python_file() {
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     let tmp = TempDir::new().unwrap();
     let empty_py = tmp.path().join("empty.py");
@@ -158,8 +227,8 @@ fn handles_empty_python_file() {
 
 #[test]
 fn handles_empty_rust_file() {
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     let mut tmp = NamedTempFile::with_suffix(".rs").unwrap();
     write!(tmp, "").unwrap();
@@ -170,8 +239,8 @@ fn handles_empty_rust_file() {
 
 #[test]
 fn analyze_empty_python_file_no_violations() {
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     let tmp = TempDir::new().unwrap();
     let empty_py = tmp.path().join("empty.py");
@@ -185,8 +254,8 @@ fn analyze_empty_python_file_no_violations() {
 
 #[test]
 fn analyze_empty_rust_file_no_violations() {
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     let mut tmp = NamedTempFile::with_suffix(".rs").unwrap();
     write!(tmp, "").unwrap();
@@ -194,4 +263,3 @@ fn analyze_empty_rust_file_no_violations() {
     let violations = analyze_rust_file(&parsed, &Config::default());
     assert!(violations.is_empty());
 }
-

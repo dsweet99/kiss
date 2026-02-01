@@ -1,4 +1,3 @@
-
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
@@ -64,9 +63,12 @@ pub fn generate_shingles(text: &str, shingle_size: usize) -> HashSet<u64> {
     shingles
 }
 
-pub fn compute_minhash<S: std::hash::BuildHasher>(shingles: &HashSet<u64, S>, size: usize) -> MinHashSignature {
+pub fn compute_minhash<S: std::hash::BuildHasher>(
+    shingles: &HashSet<u64, S>,
+    size: usize,
+) -> MinHashSignature {
     let mut hashes = vec![u64::MAX; size];
-    
+
     // Use precomputed coefficients for default size, compute dynamically for custom sizes
     // Coefficients for universal hash family: h(x) = (a*x + b)
     // Constants from SplitMix64/xxHash with good avalanche properties
@@ -136,7 +138,10 @@ fn add_bucket_pairs(indices: &[usize], candidates: &mut HashSet<(usize, usize)>)
     }
 }
 
-pub fn find_lsh_candidates(signatures: &[MinHashSignature], num_bands: usize) -> HashSet<(usize, usize)> {
+pub fn find_lsh_candidates(
+    signatures: &[MinHashSignature],
+    num_bands: usize,
+) -> HashSet<(usize, usize)> {
     let mut candidates = HashSet::new();
     if signatures.is_empty() {
         return candidates;
@@ -213,7 +218,9 @@ mod tests {
 
     #[test]
     fn test_minhash_signature_struct() {
-        let sig = MinHashSignature { hashes: vec![1, 2, 3] };
+        let sig = MinHashSignature {
+            hashes: vec![1, 2, 3],
+        };
         assert_eq!(sig.hashes.len(), 3);
     }
 
@@ -243,4 +250,3 @@ mod tests {
         assert!(candidates.is_empty());
     }
 }
-

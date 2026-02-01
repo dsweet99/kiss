@@ -1,5 +1,7 @@
 # kiss Style Guide
 
+DEFINITION: [statement] Any statement within a function body that is not an import or a signature.
+
 ## Project Overview
 
 **kiss** (`kiss-ai` on crates.io) is a code-quality metrics tool for Python and Rust, written in Rust (edition 2024, stable since Rust 1.85). LLM coder feedback alongside linters/test runners. **Primary consumer is the LLM** — output controls LLM behavior. Strict-by-default. Self-hosting: `kiss check .` must pass.

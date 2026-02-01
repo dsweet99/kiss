@@ -1,6 +1,7 @@
 # Rust build artifacts
 target/
 review.md
+.cursor
 .cursorrules
 *~
 __pycache__
@@ -8,3 +9,7 @@ check
 .vscode/
 Cargo.lock
 .kissconfig
+.cursor/
+a.html
+bugs.md
+plan.md

@@ -43,13 +43,41 @@ impl ViolationBuilder {
         }
     }
 
-    #[must_use] pub const fn line(mut self, line: usize) -> Self { self.line = line; self }
-    #[must_use] pub fn unit_name(mut self, name: impl Into<String>) -> Self { self.unit_name = name.into(); self }
-    #[must_use] pub fn metric(mut self, metric: impl Into<String>) -> Self { self.metric = metric.into(); self }
-    #[must_use] pub const fn value(mut self, value: usize) -> Self { self.value = value; self }
-    #[must_use] pub const fn threshold(mut self, threshold: usize) -> Self { self.threshold = threshold; self }
-    #[must_use] pub fn message(mut self, message: impl Into<String>) -> Self { self.message = message.into(); self }
-    #[must_use] pub fn suggestion(mut self, suggestion: impl Into<String>) -> Self { self.suggestion = suggestion.into(); self }
+    #[must_use]
+    pub const fn line(mut self, line: usize) -> Self {
+        self.line = line;
+        self
+    }
+    #[must_use]
+    pub fn unit_name(mut self, name: impl Into<String>) -> Self {
+        self.unit_name = name.into();
+        self
+    }
+    #[must_use]
+    pub fn metric(mut self, metric: impl Into<String>) -> Self {
+        self.metric = metric.into();
+        self
+    }
+    #[must_use]
+    pub const fn value(mut self, value: usize) -> Self {
+        self.value = value;
+        self
+    }
+    #[must_use]
+    pub const fn threshold(mut self, threshold: usize) -> Self {
+        self.threshold = threshold;
+        self
+    }
+    #[must_use]
+    pub fn message(mut self, message: impl Into<String>) -> Self {
+        self.message = message.into();
+        self
+    }
+    #[must_use]
+    pub fn suggestion(mut self, suggestion: impl Into<String>) -> Self {
+        self.suggestion = suggestion.into();
+        self
+    }
 
     pub fn build(self) -> Violation {
         Violation {
@@ -80,7 +108,7 @@ mod tests {
             .message("Too many statements")
             .suggestion("Break it up")
             .build();
-        
+
         assert_eq!(v.file.to_str().unwrap(), "test.py");
         assert_eq!(v.line, 10);
         assert_eq!(v.unit_name, "foo");
@@ -108,12 +136,15 @@ mod tests {
             .message("Function has 75 statements (threshold: 50)")
             .suggestion("Break into smaller, focused functions.")
             .build();
-        
+
         assert!(!v.file.to_string_lossy().is_empty(), "file must be set");
         assert!(v.line > 0, "line must be positive");
         assert!(!v.unit_name.is_empty(), "unit_name must be set");
         assert!(!v.metric.is_empty(), "metric must be set");
-        assert!(v.value > v.threshold, "violation should have value > threshold");
+        assert!(
+            v.value > v.threshold,
+            "violation should have value > threshold"
+        );
         assert!(!v.message.is_empty(), "message must be set");
         assert!(!v.suggestion.is_empty(), "suggestion must be set");
     }
@@ -123,17 +154,17 @@ mod tests {
         let v = Violation::builder("test.py")
             .suggestion("Break into smaller, focused functions.")
             .build();
-        
+
         let suggestion = v.suggestion.to_lowercase();
-        let has_action_word = suggestion.contains("break") 
-            || suggestion.contains("extract") 
+        let has_action_word = suggestion.contains("break")
+            || suggestion.contains("extract")
             || suggestion.contains("split")
             || suggestion.contains("reduce")
             || suggestion.contains("move")
             || suggestion.contains("use")
             || suggestion.contains("consider")
             || suggestion.contains("introduce");
-        
+
         assert!(has_action_word, "suggestion should contain actionable verb");
     }
 }

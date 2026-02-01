@@ -1,4 +1,3 @@
-
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
@@ -63,9 +62,9 @@ mod tests {
     fn parses_simple_rust_file() {
         let mut file = NamedTempFile::with_suffix(".rs").unwrap();
         writeln!(file, "fn main() {{ println!(\"hello\"); }}").unwrap();
-        
+
         let parsed = parse_rust_file(file.path()).expect("should parse");
-        
+
         assert_eq!(parsed.path, file.path());
         assert!(!parsed.source.is_empty());
         assert!(!parsed.ast.items.is_empty());
@@ -74,17 +73,21 @@ mod tests {
     #[test]
     fn parses_rust_file_with_struct_and_impl() {
         let mut file = NamedTempFile::with_suffix(".rs").unwrap();
-        writeln!(file, r"
+        writeln!(
+            file,
+            r"
 struct Counter {{ value: i32 }}
 
 impl Counter {{
     fn new() -> Self {{ Counter {{ value: 0 }} }}
     fn increment(&mut self) {{ self.value += 1; }}
 }}
-").unwrap();
-        
+"
+        )
+        .unwrap();
+
         let parsed = parse_rust_file(file.path()).expect("should parse");
-        
+
         assert!(parsed.ast.items.len() >= 2);
     }
 
@@ -92,7 +95,7 @@ impl Counter {{
     fn returns_error_for_invalid_rust() {
         let mut file = NamedTempFile::with_suffix(".rs").unwrap();
         writeln!(file, "fn broken {{ }}").unwrap();
-        
+
         let result = parse_rust_file(file.path());
         assert!(result.is_err());
     }
@@ -105,14 +108,16 @@ impl Counter {{
 
     #[test]
     fn test_rust_parse_error_enum() {
-        let io_err = RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
+        let io_err =
+            RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
         assert!(matches!(io_err, RustParseError::IoError(_)));
     }
 
     #[test]
     fn test_rust_parse_error_display_fmt() {
         use std::fmt::Write;
-        let err = RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
+        let err =
+            RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
         let mut s = String::new();
         write!(&mut s, "{err}").unwrap();
         assert!(s.contains("IO error"));
@@ -139,4 +144,3 @@ impl Counter {{
         assert!(results.iter().all(std::result::Result::is_ok));
     }
 }
-

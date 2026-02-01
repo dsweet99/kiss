@@ -1,4 +1,3 @@
-
 use crate::parsing::ParsedFile;
 use tree_sitter::Node;
 
@@ -49,9 +48,10 @@ pub fn extract_code_units(parsed: &ParsedFile) -> Vec<CodeUnit> {
 
     units.push(CodeUnit {
         kind: CodeUnitKind::Module,
-        name: parsed
-            .path
-            .file_stem().map_or_else(|| "unknown".to_string(), |s| s.to_string_lossy().into_owned()),
+        name: parsed.path.file_stem().map_or_else(
+            || "unknown".to_string(),
+            |s| s.to_string_lossy().into_owned(),
+        ),
         start_line: 1,
         end_line: root.end_position().row + 1,
         start_byte: 0,
@@ -137,28 +137,44 @@ mod tests {
     fn test_extract_function() {
         let parsed = parse_python_source("def foo(): pass");
         let units = extract_code_units(&parsed);
-        assert!(units.iter().any(|u| u.kind == CodeUnitKind::Function && u.name == "foo"));
+        assert!(
+            units
+                .iter()
+                .any(|u| u.kind == CodeUnitKind::Function && u.name == "foo")
+        );
     }
 
     #[test]
     fn test_extract_async_function() {
         let parsed = parse_python_source("async def bar(): pass");
         let units = extract_code_units(&parsed);
-        assert!(units.iter().any(|u| u.kind == CodeUnitKind::Function && u.name == "bar"));
+        assert!(
+            units
+                .iter()
+                .any(|u| u.kind == CodeUnitKind::Function && u.name == "bar")
+        );
     }
 
     #[test]
     fn test_extract_class() {
         let parsed = parse_python_source("class MyClass: pass");
         let units = extract_code_units(&parsed);
-        assert!(units.iter().any(|u| u.kind == CodeUnitKind::Class && u.name == "MyClass"));
+        assert!(
+            units
+                .iter()
+                .any(|u| u.kind == CodeUnitKind::Class && u.name == "MyClass")
+        );
     }
 
     #[test]
     fn test_extract_method() {
         let parsed = parse_python_source("class C:\n    def method(self): pass");
         let units = extract_code_units(&parsed);
-        assert!(units.iter().any(|u| u.kind == CodeUnitKind::Method && u.name == "method"));
+        assert!(
+            units
+                .iter()
+                .any(|u| u.kind == CodeUnitKind::Method && u.name == "method")
+        );
     }
 
     #[test]
@@ -193,18 +209,34 @@ mod tests {
         let units = extract_code_units(&parsed);
         assert!(units.iter().any(|u| u.name == "A"));
         assert!(units.iter().any(|u| u.name == "B"));
-        assert!(units.iter().any(|u| u.name == "m" && u.kind == CodeUnitKind::Method));
+        assert!(
+            units
+                .iter()
+                .any(|u| u.name == "m" && u.kind == CodeUnitKind::Method)
+        );
     }
 
     #[test]
     fn test_code_unit_kind_all_variants() {
-        let kinds = [CodeUnitKind::Function, CodeUnitKind::Method, CodeUnitKind::Class, CodeUnitKind::Module];
+        let kinds = [
+            CodeUnitKind::Function,
+            CodeUnitKind::Method,
+            CodeUnitKind::Class,
+            CodeUnitKind::Module,
+        ];
         assert_eq!(kinds.len(), 4);
     }
 
     #[test]
     fn test_code_unit_struct() {
-        let unit = CodeUnit { kind: CodeUnitKind::Function, name: "foo".into(), start_line: 1, end_line: 5, start_byte: 0, end_byte: 50 };
+        let unit = CodeUnit {
+            kind: CodeUnitKind::Function,
+            name: "foo".into(),
+            start_line: 1,
+            end_line: 5,
+            start_byte: 0,
+            end_byte: 50,
+        };
         assert_eq!(unit.name, "foo");
         assert_eq!(unit.kind, CodeUnitKind::Function);
     }
@@ -228,4 +260,3 @@ mod tests {
         assert_eq!(CodeUnitKind::TraitImplMethod.as_str(), "trait_impl_method");
     }
 }
-

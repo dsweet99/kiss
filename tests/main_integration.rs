@@ -1,14 +1,12 @@
-
 use kiss::cli_output::{
     print_coverage_gate_failure, print_duplicates, print_final_status, print_no_files_message,
     print_py_test_refs, print_rs_test_refs, print_violations,
 };
 use kiss::config_gen::{collect_py_stats, collect_rs_stats, merge_config_toml, write_mimic_config};
 use kiss::{
-    analyze_file, analyze_graph, analyze_test_refs, build_dependency_graph,
-    cluster_duplicates, detect_duplicates, extract_chunks_for_duplication, find_source_files,
-    parse_files, Config, DependencyGraph, DuplicationConfig, Language, ParsedFile,
-    ParsedRustFile,
+    Config, DependencyGraph, DuplicationConfig, Language, ParsedFile, ParsedRustFile, analyze_file,
+    analyze_graph, analyze_test_refs, build_dependency_graph, cluster_duplicates,
+    detect_duplicates, extract_chunks_for_duplication, find_source_files, parse_files,
 };
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -26,7 +24,10 @@ fn gather_files(root: &std::path::Path, lang: Option<Language>) -> (Vec<PathBuf>
     (py, rs)
 }
 
-fn parse_and_analyze_py(files: &[PathBuf], config: &Config) -> (Vec<ParsedFile>, Vec<kiss::Violation>) {
+fn parse_and_analyze_py(
+    files: &[PathBuf],
+    config: &Config,
+) -> (Vec<ParsedFile>, Vec<kiss::Violation>) {
     if files.is_empty() {
         return (Vec::new(), Vec::new());
     }
@@ -40,7 +41,9 @@ fn parse_and_analyze_py(files: &[PathBuf], config: &Config) -> (Vec<ParsedFile>,
     (parsed, viols)
 }
 
-fn compute_test_coverage(py_parsed: &[ParsedFile]) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
+fn compute_test_coverage(
+    py_parsed: &[ParsedFile],
+) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
     let mut tested = 0;
     let mut total = 0;
     let mut unreferenced = Vec::new();
@@ -55,7 +58,11 @@ fn compute_test_coverage(py_parsed: &[ParsedFile]) -> (usize, usize, usize, Vec<
         }
     }
 
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
     let coverage = if total > 0 {
         ((tested as f64 / total as f64) * 100.0).round() as usize
     } else {
@@ -80,7 +87,11 @@ fn test_gather_files_all_and_filtered() {
 #[test]
 fn test_coverage_gate_blocks_untested_code() {
     let tmp = TempDir::new().unwrap();
-    std::fs::write(tmp.path().join("utils.py"), "def my_function():\n    pass\n").unwrap();
+    std::fs::write(
+        tmp.path().join("utils.py"),
+        "def my_function():\n    pass\n",
+    )
+    .unwrap();
     let (py_files, _) = gather_files(tmp.path(), Some(Language::Python));
     let (py_parsed, _) = parse_and_analyze_py(&py_files, &Config::default());
     let (coverage, _, total, unreferenced) = compute_test_coverage(&py_parsed);
@@ -92,7 +103,11 @@ fn test_coverage_gate_blocks_untested_code() {
 #[test]
 fn test_coverage_gate_passes_with_tests() {
     let tmp = TempDir::new().unwrap();
-    std::fs::write(tmp.path().join("utils.py"), "def my_function():\n    pass\n").unwrap();
+    std::fs::write(
+        tmp.path().join("utils.py"),
+        "def my_function():\n    pass\n",
+    )
+    .unwrap();
     std::fs::write(
         tmp.path().join("test_utils.py"),
         "from utils import my_function\ndef test_it():\n    my_function()\n",
@@ -134,7 +149,12 @@ fn test_config_merge() {
     use std::io::Write;
     let mut tmp = tempfile::NamedTempFile::new().unwrap();
     writeln!(tmp, "[python]\nstatements_per_function = 10").unwrap();
-    let merged = merge_config_toml(tmp.path(), "[rust]\nstatements_per_function = 20", false, true);
+    let merged = merge_config_toml(
+        tmp.path(),
+        "[rust]\nstatements_per_function = 20",
+        false,
+        true,
+    );
     assert!(merged.contains("[python]") || merged.contains("[rust]"));
 }
 
@@ -155,8 +175,16 @@ fn test_analyze_graph_empty() {
 fn test_build_graphs_empty() {
     let py: Vec<ParsedFile> = vec![];
     let rs: Vec<ParsedRustFile> = vec![];
-    let py_graph = if py.is_empty() { None } else { Some(build_dependency_graph(&py.iter().collect::<Vec<_>>())) };
-    let rs_graph: Option<DependencyGraph> = if rs.is_empty() { None } else { Some(build_dependency_graph(&[]))  };
+    let py_graph = if py.is_empty() {
+        None
+    } else {
+        Some(build_dependency_graph(&py.iter().collect::<Vec<_>>()))
+    };
+    let rs_graph: Option<DependencyGraph> = if rs.is_empty() {
+        None
+    } else {
+        Some(build_dependency_graph(&[]))
+    };
     assert!(py_graph.is_none() && rs_graph.is_none());
 }
 
@@ -165,7 +193,10 @@ fn test_detect_duplicates_empty() {
     let parsed: Vec<ParsedFile> = vec![];
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
     let chunks = extract_chunks_for_duplication(&refs);
-    let dups = cluster_duplicates(&detect_duplicates(&refs, &DuplicationConfig::default()), &chunks);
+    let dups = cluster_duplicates(
+        &detect_duplicates(&refs, &DuplicationConfig::default()),
+        &chunks,
+    );
     assert!(dups.is_empty());
 }
 
@@ -181,15 +212,23 @@ fn test_build_focus_set() {
     use kiss::discovery::find_source_files_with_ignore;
     use std::collections::HashSet;
 
-    fn build_focus_set(focus_paths: &[String], lang: Option<Language>, ignore_prefixes: &[String]) -> HashSet<PathBuf> {
+    fn build_focus_set(
+        focus_paths: &[String],
+        lang: Option<Language>,
+        ignore_prefixes: &[String],
+    ) -> HashSet<PathBuf> {
         let mut focus_set = HashSet::new();
         for focus_path in focus_paths {
             let path = std::path::Path::new(focus_path);
             if path.is_file() {
-                if let Ok(canonical) = path.canonicalize() { focus_set.insert(canonical); }
+                if let Ok(canonical) = path.canonicalize() {
+                    focus_set.insert(canonical);
+                }
             } else {
                 for sf in find_source_files_with_ignore(path, ignore_prefixes) {
-                    if (lang.is_none() || lang == Some(sf.language)) && let Ok(canonical) = sf.path.canonicalize() {
+                    if (lang.is_none() || lang == Some(sf.language))
+                        && let Ok(canonical) = sf.path.canonicalize()
+                    {
                         focus_set.insert(canonical);
                     }
                 }
@@ -211,7 +250,11 @@ fn test_build_focus_set() {
     let focus_sub = build_focus_set(&[subdir.to_string_lossy().to_string()], None, &[]);
     assert_eq!(focus_sub.len(), 1);
 
-    let focus_file = build_focus_set(&[tmp.path().join("a.py").to_string_lossy().to_string()], None, &[]);
+    let focus_file = build_focus_set(
+        &[tmp.path().join("a.py").to_string_lossy().to_string()],
+        None,
+        &[],
+    );
     assert_eq!(focus_file.len(), 1);
 }
 
@@ -220,8 +263,11 @@ fn test_is_focus_file() {
     use std::collections::HashSet;
 
     fn is_focus_file(file: &std::path::Path, focus_set: &HashSet<PathBuf>) -> bool {
-        if focus_set.is_empty() { return true; }
-        file.canonicalize().is_ok_and(|canonical| focus_set.contains(&canonical))
+        if focus_set.is_empty() {
+            return true;
+        }
+        file.canonicalize()
+            .is_ok_and(|canonical| focus_set.contains(&canonical))
     }
 
     let tmp = TempDir::new().unwrap();
@@ -240,4 +286,3 @@ fn test_is_focus_file() {
     assert!(is_focus_file(&file_a, &empty_set));
     assert!(is_focus_file(&file_b, &empty_set));
 }
-

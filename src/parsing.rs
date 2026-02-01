@@ -1,4 +1,3 @@
-
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use tree_sitter::{Parser, Tree};
@@ -54,9 +53,7 @@ pub fn parse_file(parser: &mut Parser, path: &Path) -> Result<ParsedFile, ParseE
     })
 }
 
-pub fn parse_files(
-    paths: &[PathBuf],
-) -> Result<Vec<Result<ParsedFile, ParseError>>, ParseError> {
+pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseError>>, ParseError> {
     Ok(paths
         .par_iter()
         .map(|path| {
@@ -79,10 +76,19 @@ mod tests {
 
     #[test]
     fn test_parse_error_display() {
-        let io_err = ParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"));
+        let io_err = ParseError::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "file not found",
+        ));
         assert!(io_err.to_string().contains("IO error"));
-        assert_eq!(ParseError::ParserInitError.to_string(), "Failed to initialize Python parser");
-        assert_eq!(ParseError::ParseFailed.to_string(), "Failed to parse Python code");
+        assert_eq!(
+            ParseError::ParserInitError.to_string(),
+            "Failed to initialize Python parser"
+        );
+        assert_eq!(
+            ParseError::ParseFailed.to_string(),
+            "Failed to parse Python code"
+        );
     }
 
     #[test]
@@ -142,4 +148,3 @@ mod tests {
         assert!(!s.is_empty());
     }
 }
-

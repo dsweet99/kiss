@@ -1,4 +1,3 @@
-
 use crate::rust_parsing::ParsedRustFile;
 use crate::units::CodeUnitKind;
 use syn::visit::Visit;
@@ -35,7 +34,7 @@ impl<'ast> Visit<'ast> for CodeUnitVisitor {
             Item::Fn(func) => {
                 let start_line = func.sig.ident.span().start().line;
                 let end_line = start_line + estimate_block_lines(&func.block);
-                
+
                 self.units.push(RustCodeUnit {
                     kind: CodeUnitKind::Function,
                     name: func.sig.ident.to_string(),
@@ -67,21 +66,17 @@ impl<'ast> Visit<'ast> for CodeUnitVisitor {
             }
             Item::Impl(impl_block) => {
                 let type_name = if let syn::Type::Path(type_path) = impl_block.self_ty.as_ref() {
-                    type_path
-                        .path
-                        .segments
-                        .last()
-                        .map(|s| s.ident.to_string())
+                    type_path.path.segments.last().map(|s| s.ident.to_string())
                 } else {
                     None
                 };
-                
+
                 self.current_impl_type = type_name;
                 for impl_item in &impl_block.items {
                     if let ImplItem::Fn(method) = impl_item {
                         let start_line = method.sig.ident.span().start().line;
                         let end_line = start_line + estimate_block_lines(&method.block);
-                        
+
                         self.units.push(RustCodeUnit {
                             kind: CodeUnitKind::Method,
                             name: method.sig.ident.to_string(),
@@ -91,7 +86,7 @@ impl<'ast> Visit<'ast> for CodeUnitVisitor {
                         });
                     }
                 }
-                
+
                 self.current_impl_type = None;
             }
             Item::Mod(m) => {
@@ -120,7 +115,7 @@ fn estimate_block_lines(block: &syn::Block) -> usize {
     }
     let start = block.brace_token.span.open().start().line;
     let end = block.brace_token.span.close().end().line;
-    
+
     if end >= start {
         end - start + 1
     } else {
@@ -132,9 +127,10 @@ pub fn extract_rust_code_units(parsed: &ParsedRustFile) -> Vec<RustCodeUnit> {
     let mut visitor = CodeUnitVisitor::new(&parsed.source);
     visitor.units.push(RustCodeUnit {
         kind: CodeUnitKind::Module,
-        name: parsed
-            .path
-            .file_stem().map_or_else(|| "unknown".to_string(), |s| s.to_string_lossy().into_owned()),
+        name: parsed.path.file_stem().map_or_else(
+            || "unknown".to_string(),
+            |s| s.to_string_lossy().into_owned(),
+        ),
         start_line: 1,
         end_line: visitor.source_lines,
         parent_type: None,
@@ -142,7 +138,7 @@ pub fn extract_rust_code_units(parsed: &ParsedRustFile) -> Vec<RustCodeUnit> {
     for item in &parsed.ast.items {
         visitor.visit_item(item);
     }
-    
+
     visitor.units
 }
 
@@ -163,29 +159,40 @@ mod tests {
     #[test]
     fn extracts_function() {
         let units = parse_and_extract("fn hello() {}");
-        
-        let functions: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Function).collect();
+
+        let functions: Vec<_> = units
+            .iter()
+            .filter(|u| u.kind == CodeUnitKind::Function)
+            .collect();
         assert_eq!(functions.len(), 1);
         assert_eq!(functions[0].name, "hello");
     }
 
     #[test]
     fn extracts_struct_and_methods() {
-        let units = parse_and_extract(r"
+        let units = parse_and_extract(
+            r"
 struct Counter { value: i32 }
 
 impl Counter {
     fn new() -> Self { Counter { value: 0 } }
     fn get(&self) -> i32 { self.value }
 }
-");
-        
-        let structs: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Class).collect();
-        let methods: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Method).collect();
-        
+",
+        );
+
+        let structs: Vec<_> = units
+            .iter()
+            .filter(|u| u.kind == CodeUnitKind::Class)
+            .collect();
+        let methods: Vec<_> = units
+            .iter()
+            .filter(|u| u.kind == CodeUnitKind::Method)
+            .collect();
+
         assert_eq!(structs.len(), 1);
         assert_eq!(structs[0].name, "Counter");
-        
+
         assert_eq!(methods.len(), 2);
         assert!(methods.iter().any(|m| m.name == "new"));
         assert!(methods.iter().any(|m| m.name == "get"));
@@ -194,8 +201,11 @@ impl Counter {
     #[test]
     fn extracts_enum() {
         let units = parse_and_extract("enum Color { Red, Green, Blue }");
-        
-        let enums: Vec<_> = units.iter().filter(|u| u.kind == CodeUnitKind::Class).collect();
+
+        let enums: Vec<_> = units
+            .iter()
+            .filter(|u| u.kind == CodeUnitKind::Class)
+            .collect();
         assert_eq!(enums.len(), 1);
         assert_eq!(enums[0].name, "Color");
     }
@@ -203,7 +213,7 @@ impl Counter {
     #[test]
     fn includes_module_for_file() {
         let units = parse_and_extract("fn foo() {}");
-        
+
         let has_module = units.iter().any(|u| u.kind == CodeUnitKind::Module);
         assert!(has_module, "Should have at least one module (the file)");
     }
@@ -232,4 +242,3 @@ impl Counter {
         }
     }
 }
-
