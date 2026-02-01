@@ -466,7 +466,10 @@ mod tests {
         let g = GateConfig::default();
         let usize_tv = ThresholdValue::Usize(|c, _| c.statements_per_function);
         let f64_tv = ThresholdValue::F64(|_, g| g.min_similarity);
-        assert_eq!(usize_tv.format(&c, &g), c.statements_per_function.to_string());
+        assert_eq!(
+            usize_tv.format(&c, &g),
+            c.statements_per_function.to_string()
+        );
         assert!(f64_tv.format(&c, &g).contains('.'));
     }
 

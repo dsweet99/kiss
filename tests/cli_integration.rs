@@ -147,6 +147,32 @@ fn cli_stats_summary_includes_lines_per_file() {
 }
 
 #[test]
+fn cli_viz_writes_dot_file() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.py"), "import b\n").unwrap();
+    fs::write(tmp.path().join("b.py"), "def f():\n    return 1\n").unwrap();
+
+    let out_path = tmp.path().join("graph.dot");
+    let output = kiss_binary()
+        .arg("viz")
+        .arg(&out_path)
+        .arg(tmp.path())
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "viz should succeed. stderr: {stderr}"
+    );
+
+    let dot = fs::read_to_string(&out_path).unwrap();
+    assert!(dot.contains("digraph kiss"), "dot:\n{dot}");
+    // At least one edge should exist.
+    assert!(dot.contains("->"), "dot:\n{dot}");
+}
+
+#[test]
 fn cli_with_lang_filter_python() {
     let tmp = TempDir::new().unwrap();
     create_god_class_file(tmp.path());

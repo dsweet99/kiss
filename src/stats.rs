@@ -688,7 +688,10 @@ mod tests {
         stats.statements_per_function.push(10);
         stats.arguments_per_function.push(3);
         stats.fan_in.push(2);
-        assert_eq!(super::metric_values(&stats, "statements_per_function"), Some(&[10][..]));
+        assert_eq!(
+            super::metric_values(&stats, "statements_per_function"),
+            Some(&[10][..])
+        );
         assert_eq!(super::metric_values(&stats, "args_total"), Some(&[3][..]));
         assert_eq!(super::metric_values(&stats, "fan_in"), Some(&[2][..]));
         assert_eq!(super::metric_values(&stats, "unknown_metric"), None);

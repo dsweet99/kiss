@@ -77,6 +77,24 @@ pub fn find_source_files_with_ignore(root: &Path, ignore_prefixes: &[String]) ->
     results.into_inner().unwrap()
 }
 
+pub fn gather_files_by_lang(
+    paths: &[String],
+    lang_filter: Option<Language>,
+    ignore_prefixes: &[String],
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let (mut py_files, mut rs_files) = (Vec::new(), Vec::new());
+    for path in paths {
+        for sf in find_source_files_with_ignore(Path::new(path), ignore_prefixes) {
+            match (sf.language, lang_filter) {
+                (Language::Python, None | Some(Language::Python)) => py_files.push(sf.path),
+                (Language::Rust, None | Some(Language::Rust)) => rs_files.push(sf.path),
+                _ => {}
+            }
+        }
+    }
+    (py_files, rs_files)
+}
+
 fn process_source_entry(
     entry: Result<ignore::DirEntry, ignore::Error>,
     ignore_prefixes: &[String],
@@ -257,6 +275,13 @@ mod tests {
 
         let ignore = vec!["fake_".to_string()];
         assert_eq!(find_source_files_with_ignore(tmp.path(), &ignore).len(), 1);
+    }
+
+    #[test]
+    fn test_gather_files_by_lang_empty_input() {
+        let (py, rs) = gather_files_by_lang(&[], None, &[]);
+        assert!(py.is_empty());
+        assert!(rs.is_empty());
     }
 
     #[test]

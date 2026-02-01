@@ -35,7 +35,7 @@ pub use counts::analyze_file;
 pub use defaults::default_config_toml;
 pub use discovery::{
     Language, SourceFile, find_python_files, find_rust_files, find_source_files,
-    find_source_files_with_ignore,
+    find_source_files_with_ignore, gather_files_by_lang,
 };
 pub use duplication::{
     CodeChunk, DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
