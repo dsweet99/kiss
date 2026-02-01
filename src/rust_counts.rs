@@ -1,4 +1,3 @@
-
 use std::path::Path;
 use syn::{Block, ImplItem, Item};
 
@@ -27,17 +26,22 @@ struct RustAnalyzer<'a> {
 }
 
 impl<'a> RustAnalyzer<'a> {
-    const fn new(
-        file: &'a Path,
-        config: &'a Config,
-        violations: &'a mut Vec<Violation>,
-    ) -> Self {
-        Self { file, config, violations }
+    const fn new(file: &'a Path, config: &'a Config, violations: &'a mut Vec<Violation>) -> Self {
+        Self {
+            file,
+            config,
+            violations,
+        }
     }
 
     fn check_file_metrics(&mut self, parsed: &ParsedRustFile) {
         let m = compute_rust_file_metrics(parsed);
-        let fname = self.file.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let fname = self
+            .file
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         let c = self.config;
 
         if m.statements > c.statements_per_file {
@@ -46,7 +50,10 @@ impl<'a> RustAnalyzer<'a> {
                     .metric("statements_per_file")
                     .value(m.statements)
                     .threshold(c.statements_per_file)
-                    .message(format!("File has {} statements (threshold: {})", m.statements, c.statements_per_file))
+                    .message(format!(
+                        "File has {} statements (threshold: {})",
+                        m.statements, c.statements_per_file
+                    ))
                     .suggestion("Split into multiple modules with focused responsibilities.")
                     .build(),
             );
@@ -57,7 +64,10 @@ impl<'a> RustAnalyzer<'a> {
                     .metric("interface_types_per_file")
                     .value(m.interface_types)
                     .threshold(c.interface_types_per_file)
-                    .message(format!("File has {} interface types (threshold: {})", m.interface_types, c.interface_types_per_file))
+                    .message(format!(
+                        "File has {} interface types (threshold: {})",
+                        m.interface_types, c.interface_types_per_file
+                    ))
                     .suggestion("Move traits into a dedicated module.")
                     .build(),
             );
@@ -68,7 +78,10 @@ impl<'a> RustAnalyzer<'a> {
                     .metric("concrete_types_per_file")
                     .value(m.concrete_types)
                     .threshold(c.concrete_types_per_file)
-                    .message(format!("File has {} concrete types (threshold: {})", m.concrete_types, c.concrete_types_per_file))
+                    .message(format!(
+                        "File has {} concrete types (threshold: {})",
+                        m.concrete_types, c.concrete_types_per_file
+                    ))
                     .suggestion("Move types to separate files.")
                     .build(),
             );
@@ -80,7 +93,10 @@ impl<'a> RustAnalyzer<'a> {
                     .metric("imported_names_per_file")
                     .value(m.imports)
                     .threshold(c.imported_names_per_file)
-                    .message(format!("File has {} use statements (threshold: {})", m.imports, c.imported_names_per_file))
+                    .message(format!(
+                        "File has {} use statements (threshold: {})",
+                        m.imports, c.imported_names_per_file
+                    ))
                     .suggestion("Module may have too many responsibilities. Consider splitting.")
                     .build(),
             );
@@ -91,7 +107,10 @@ impl<'a> RustAnalyzer<'a> {
                     .metric("functions_per_file")
                     .value(m.functions)
                     .threshold(c.functions_per_file)
-                    .message(format!("File has {} functions (threshold: {})", m.functions, c.functions_per_file))
+                    .message(format!(
+                        "File has {} functions (threshold: {})",
+                        m.functions, c.functions_per_file
+                    ))
                     .suggestion("Split into multiple modules with focused responsibilities.")
                     .build(),
             );
@@ -103,7 +122,14 @@ impl<'a> RustAnalyzer<'a> {
             Item::Fn(func) => {
                 let name = func.sig.ident.to_string();
                 let line = func.sig.ident.span().start().line;
-                self.analyze_function(&name, line, &func.sig.inputs, &func.block, count_non_doc_attrs(&func.attrs), "Function");
+                self.analyze_function(
+                    &name,
+                    line,
+                    &func.sig.inputs,
+                    &func.block,
+                    count_non_doc_attrs(&func.attrs),
+                    "Function",
+                );
             }
             Item::Impl(impl_block) => self.analyze_impl_block(impl_block),
             Item::Mod(m) => {
@@ -129,7 +155,14 @@ impl<'a> RustAnalyzer<'a> {
             if let ImplItem::Fn(method) = impl_item {
                 let mname = method.sig.ident.to_string();
                 let mline = method.sig.ident.span().start().line;
-                self.analyze_function(&mname, mline, &method.sig.inputs, &method.block, count_non_doc_attrs(&method.attrs), "Method");
+                self.analyze_function(
+                    &mname,
+                    mline,
+                    &method.sig.inputs,
+                    &method.block,
+                    count_non_doc_attrs(&method.attrs),
+                    "Method",
+                );
             }
         }
     }
@@ -175,7 +208,10 @@ impl<'a> RustAnalyzer<'a> {
                             .metric($metric)
                             .value(m.$mf)
                             .threshold(c.$cf)
-                            .message(format!("{} '{}' has {} {} (threshold: {})", ut, name, m.$mf, $label, c.$cf))
+                            .message(format!(
+                                "{} '{}' has {} {} (threshold: {})",
+                                ut, name, m.$mf, $label, c.$cf
+                            ))
                             .suggestion($sug)
                             .build(),
                     );
@@ -183,26 +219,76 @@ impl<'a> RustAnalyzer<'a> {
             };
         }
 
-        chk!(statements, statements_per_function, "statements_per_function", "statements", 
-             "Break into smaller, focused functions.");
-        chk!(arguments, arguments_per_function, "arguments_per_function", "arguments", 
-             "Group related arguments into a struct.");
-        chk!(max_indentation, max_indentation_depth, "max_indentation_depth", "indentation depth", 
-             "Use early returns, guard clauses, or extract helper functions.");
-        chk!(returns, returns_per_function, "returns_per_function", "return statements", 
-             "Use early guard returns at the top, then a single main return path.");
-        chk!(branches, branches_per_function, "branches_per_function", "branches", 
-             "Consider using match guards, early returns, or extracting logic.");
-        chk!(local_variables, local_variables_per_function, "local_variables_per_function", "local variables", 
-             "Extract logic into helper functions with fewer variables each.");
-        chk!(nested_function_depth, nested_function_depth, "nested_closure_depth", "nested closure depth", 
-             "Extract nested closures into separate functions.");
-        chk!(bool_parameters, boolean_parameters, "bool_parameters", "bool parameters", 
-             "Use an enum or a struct with named fields instead of multiple bools.");
-        chk!(attributes, annotations_per_function, "attributes_per_function", "attributes", 
-             "Consider consolidating attributes or simplifying the function's responsibilities.");
-        chk!(calls, calls_per_function, "calls_per_function", "calls", 
-             "Extract some calls into helper functions to reduce coordination complexity.");
+        chk!(
+            statements,
+            statements_per_function,
+            "statements_per_function",
+            "statements",
+            "Break into smaller, focused functions."
+        );
+        chk!(
+            arguments,
+            arguments_per_function,
+            "arguments_per_function",
+            "arguments",
+            "Group related arguments into a struct."
+        );
+        chk!(
+            max_indentation,
+            max_indentation_depth,
+            "max_indentation_depth",
+            "indentation depth",
+            "Use early returns, guard clauses, or extract helper functions."
+        );
+        chk!(
+            returns,
+            returns_per_function,
+            "returns_per_function",
+            "return statements",
+            "Use early guard returns at the top, then a single main return path."
+        );
+        chk!(
+            branches,
+            branches_per_function,
+            "branches_per_function",
+            "branches",
+            "Consider using match guards, early returns, or extracting logic."
+        );
+        chk!(
+            local_variables,
+            local_variables_per_function,
+            "local_variables_per_function",
+            "local variables",
+            "Extract logic into helper functions with fewer variables each."
+        );
+        chk!(
+            nested_function_depth,
+            nested_function_depth,
+            "nested_closure_depth",
+            "nested closure depth",
+            "Extract nested closures into separate functions."
+        );
+        chk!(
+            bool_parameters,
+            boolean_parameters,
+            "bool_parameters",
+            "bool parameters",
+            "Use an enum or a struct with named fields instead of multiple bools."
+        );
+        chk!(
+            attributes,
+            annotations_per_function,
+            "attributes_per_function",
+            "attributes",
+            "Consider consolidating attributes or simplifying the function's responsibilities."
+        );
+        chk!(
+            calls,
+            calls_per_function,
+            "calls_per_function",
+            "calls",
+            "Extract some calls into helper functions to reduce coordination complexity."
+        );
     }
 }
 
@@ -212,7 +298,11 @@ fn count_non_doc_attrs(attrs: &[syn::Attribute]) -> usize {
 }
 
 fn count_impl_methods(impl_block: &syn::ItemImpl) -> usize {
-    impl_block.items.iter().filter(|item| matches!(item, ImplItem::Fn(_))).count()
+    impl_block
+        .items
+        .iter()
+        .filter(|item| matches!(item, ImplItem::Fn(_)))
+        .count()
 }
 
 fn get_impl_type_name(impl_block: &syn::ItemImpl) -> Option<String> {
@@ -231,9 +321,13 @@ mod tests {
     #[test]
     fn test_helpers() {
         let f: syn::File = syn::parse_str("impl Foo { fn a(&self) {} fn b(&self) {} }").unwrap();
-        if let syn::Item::Impl(i) = &f.items[0] { assert_eq!(count_impl_methods(i), 2); }
+        if let syn::Item::Impl(i) = &f.items[0] {
+            assert_eq!(count_impl_methods(i), 2);
+        }
         let f2: syn::File = syn::parse_str("impl MyStruct { fn a(&self) {} }").unwrap();
-        if let syn::Item::Impl(i) = &f2.items[0] { assert_eq!(get_impl_type_name(i), Some("MyStruct".to_string())); }
+        if let syn::Item::Impl(i) = &f2.items[0] {
+            assert_eq!(get_impl_type_name(i), Some("MyStruct".to_string()));
+        }
     }
 
     #[test]
@@ -244,13 +338,17 @@ mod tests {
         assert!(analyze_rust_file(&parsed, &Config::default()).is_empty());
         let p = std::path::PathBuf::from("t.rs");
         let mut v = Vec::new();
-        RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_item(&syn::parse_str::<syn::File>("fn foo() {}").unwrap().items[0]);
+        RustAnalyzer::new(&p, &Config::default(), &mut v)
+            .analyze_item(&syn::parse_str::<syn::File>("fn foo() {}").unwrap().items[0]);
     }
 
     #[test]
     fn test_analyzer_checks() {
         let p = std::path::PathBuf::from("t.rs");
-        let cfg = Config { methods_per_class: 5, ..Default::default() };
+        let cfg = Config {
+            methods_per_class: 5,
+            ..Default::default()
+        };
         let mut v = Vec::new();
         RustAnalyzer::new(&p, &cfg, &mut v).check_methods_per_type(1, "S", 10);
         assert_eq!(v.len(), 1);
@@ -260,8 +358,21 @@ mod tests {
     fn test_analyzer_impl_and_fn() {
         let p = std::path::PathBuf::from("t.rs");
         let fi: syn::File = syn::parse_str("impl Foo { fn bar(&self) { let x = 1; } }").unwrap();
-        if let syn::Item::Impl(i) = &fi.items[0] { let mut v = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_impl_block(i); }
+        if let syn::Item::Impl(i) = &fi.items[0] {
+            let mut v = Vec::new();
+            RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_impl_block(i);
+        }
         let ff: syn::File = syn::parse_str("fn foo(x: i32) { let y = x + 1; }").unwrap();
-        if let syn::Item::Fn(func) = &ff.items[0] { let mut v = Vec::new(); RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_function("foo", 1, &func.sig.inputs, &func.block, count_non_doc_attrs(&func.attrs), "Function"); }
+        if let syn::Item::Fn(func) = &ff.items[0] {
+            let mut v = Vec::new();
+            RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_function(
+                "foo",
+                1,
+                &func.sig.inputs,
+                &func.block,
+                count_non_doc_attrs(&func.attrs),
+                "Function",
+            );
+        }
     }
 }

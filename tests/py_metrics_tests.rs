@@ -1,7 +1,7 @@
-use kiss::parsing::{create_parser, parse_file, ParsedFile};
+use kiss::parsing::{ParsedFile, create_parser, parse_file};
 use kiss::py_metrics::{
-    compute_class_metrics, compute_file_metrics, compute_function_metrics,
-    count_node_kind, ClassMetrics,
+    ClassMetrics, compute_class_metrics, compute_file_metrics, compute_function_metrics,
+    count_node_kind,
 };
 use std::io::Write;
 
@@ -78,29 +78,46 @@ fn test_lazy_imports() {
 #[test]
 fn test_try_block_statements() {
     let p = parse("def f():\n    try:\n        x=1;y=2;z=3\n    except: pass");
-    assert_eq!(compute_function_metrics(get_func_node(&p), &p.source).max_try_block_statements, 3);
+    assert_eq!(
+        compute_function_metrics(get_func_node(&p), &p.source).max_try_block_statements,
+        3
+    );
 }
 
 #[test]
 fn test_nested_try_blocks() {
-    let p = parse("def f():\n    try:\n        a=1\n    except: pass\n    try:\n        b=1;c=2;d=3;e=4\n    except: pass");
-    assert_eq!(compute_function_metrics(get_func_node(&p), &p.source).max_try_block_statements, 4);
+    let p = parse(
+        "def f():\n    try:\n        a=1\n    except: pass\n    try:\n        b=1;c=2;d=3;e=4\n    except: pass",
+    );
+    assert_eq!(
+        compute_function_metrics(get_func_node(&p), &p.source).max_try_block_statements,
+        4
+    );
 }
 
 #[test]
 fn test_boolean_parameters() {
     let p = parse("def f(a=True, b=False, c=None): pass");
-    assert_eq!(compute_function_metrics(get_func_node(&p), &p.source).boolean_parameters, 2);
+    assert_eq!(
+        compute_function_metrics(get_func_node(&p), &p.source).boolean_parameters,
+        2
+    );
 }
 
 #[test]
 fn test_decorators() {
     let p = parse("@a\n@b\n@c\ndef f(): pass");
-    assert_eq!(compute_function_metrics(get_func_node(&p).child(3).unwrap(), &p.source).decorators, 3);
+    assert_eq!(
+        compute_function_metrics(get_func_node(&p).child(3).unwrap(), &p.source).decorators,
+        3
+    );
 }
 
 #[test]
 fn test_count_node_kind() {
     let p = parse("def f(): pass\ndef g(): pass");
-    assert_eq!(count_node_kind(p.tree.root_node(), "function_definition"), 2);
+    assert_eq!(
+        count_node_kind(p.tree.root_node(), "function_definition"),
+        2
+    );
 }

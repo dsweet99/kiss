@@ -1,4 +1,3 @@
-
 use syn::visit::Visit;
 use syn::{Block, Expr, Pat, Stmt};
 
@@ -88,7 +87,10 @@ pub fn compute_rust_function_metrics(
         .filter(|arg| !matches!(arg, syn::FnArg::Receiver(_)))
         .collect();
     metrics.arguments = non_self_args.len();
-    metrics.bool_parameters = non_self_args.iter().filter(|arg| is_bool_param(arg)).count();
+    metrics.bool_parameters = non_self_args
+        .iter()
+        .filter(|arg| is_bool_param(arg))
+        .count();
     metrics.attributes = attr_count;
 
     let mut visitor = FunctionMetricsVisitor::default();
@@ -238,7 +240,10 @@ mod tests {
         assert!(compute_rust_function_metrics(&i3, &b3, 0).branches >= 2);
 
         let (i4, b4) = parse_fn("fn f() { let a=1; let b=2; let (c,d)=(3,4); }");
-        assert_eq!(compute_rust_function_metrics(&i4, &b4, 0).local_variables, 4);
+        assert_eq!(
+            compute_rust_function_metrics(&i4, &b4, 0).local_variables,
+            4
+        );
 
         let (i5, b5) = parse_fn("fn f() {}");
         assert_eq!(compute_rust_function_metrics(&i5, &b5, 3).attributes, 3);
@@ -316,7 +321,9 @@ mod tests {
         writeln!(tmp, "use std::io;\nfn foo() {{ let x = 1; }}\ntrait T {{ fn x(&self) {{}} }}\nstruct A {{}}\nstruct B {{}}").unwrap();
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let m = compute_rust_file_metrics(&parsed);
-        assert!(m.statements >= 1 && m.interface_types == 1 && m.concrete_types == 2 && m.imports == 1);
+        assert!(
+            m.statements >= 1 && m.interface_types == 1 && m.concrete_types == 2 && m.imports == 1
+        );
     }
 
     #[test]
@@ -326,7 +333,9 @@ mod tests {
         let (_, b) = parse_fn("fn f() { use std::io::Write; let x = 1; println!(\"{}\", x); }");
         let m = compute_rust_function_metrics(&syn::punctuated::Punctuated::new(), &b, 0);
         // Should be 2 statements (let + println), not 3 (use + let + println)
-        assert_eq!(m.statements, 2, "use statements inside functions should not be counted");
+        assert_eq!(
+            m.statements, 2,
+            "use statements inside functions should not be counted"
+        );
     }
 }
-

@@ -8,7 +8,10 @@ macro_rules! apply_config {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfigLanguage { Python, Rust }
+pub enum ConfigLanguage {
+    Python,
+    Rust,
+}
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -38,47 +41,67 @@ pub struct Config {
 }
 
 impl Default for Config {
-    fn default() -> Self { Self::python_defaults() }
+    fn default() -> Self {
+        Self::python_defaults()
+    }
 }
 
 impl Config {
     pub const fn python_defaults() -> Self {
         use defaults::python as py;
         Self {
-            statements_per_function: py::STATEMENTS_PER_FUNCTION, methods_per_class: py::METHODS_PER_CLASS,
-            statements_per_file: py::STATEMENTS_PER_FILE, functions_per_file: py::FUNCTIONS_PER_FILE,
+            statements_per_function: py::STATEMENTS_PER_FUNCTION,
+            methods_per_class: py::METHODS_PER_CLASS,
+            statements_per_file: py::STATEMENTS_PER_FILE,
+            functions_per_file: py::FUNCTIONS_PER_FILE,
             arguments_per_function: py::ARGUMENTS_PER_FUNCTION,
-            arguments_positional: py::POSITIONAL_ARGS, arguments_keyword_only: py::KEYWORD_ONLY_ARGS,
+            arguments_positional: py::POSITIONAL_ARGS,
+            arguments_keyword_only: py::KEYWORD_ONLY_ARGS,
             max_indentation_depth: py::MAX_INDENTATION,
             interface_types_per_file: py::INTERFACE_TYPES_PER_FILE,
             concrete_types_per_file: py::CONCRETE_TYPES_PER_FILE,
-            nested_function_depth: py::NESTED_FUNCTION_DEPTH, returns_per_function: py::RETURNS_PER_FUNCTION,
-            return_values_per_function: py::RETURN_VALUES_PER_FUNCTION, branches_per_function: py::BRANCHES_PER_FUNCTION,
-            local_variables_per_function: py::LOCAL_VARIABLES, imported_names_per_file: py::IMPORTS_PER_FILE,
-            statements_per_try_block: py::STATEMENTS_PER_TRY_BLOCK, boolean_parameters: py::BOOLEAN_PARAMETERS,
-            annotations_per_function: py::DECORATORS_PER_FUNCTION, calls_per_function: py::CALLS_PER_FUNCTION,
+            nested_function_depth: py::NESTED_FUNCTION_DEPTH,
+            returns_per_function: py::RETURNS_PER_FUNCTION,
+            return_values_per_function: py::RETURN_VALUES_PER_FUNCTION,
+            branches_per_function: py::BRANCHES_PER_FUNCTION,
+            local_variables_per_function: py::LOCAL_VARIABLES,
+            imported_names_per_file: py::IMPORTS_PER_FILE,
+            statements_per_try_block: py::STATEMENTS_PER_TRY_BLOCK,
+            boolean_parameters: py::BOOLEAN_PARAMETERS,
+            annotations_per_function: py::DECORATORS_PER_FUNCTION,
+            calls_per_function: py::CALLS_PER_FUNCTION,
             cycle_size: defaults::graph::CYCLE_SIZE,
-            transitive_dependencies: py::TRANSITIVE_DEPENDENCIES, dependency_depth: py::DEPENDENCY_DEPTH,
+            transitive_dependencies: py::TRANSITIVE_DEPENDENCIES,
+            dependency_depth: py::DEPENDENCY_DEPTH,
         }
     }
 
     pub const fn rust_defaults() -> Self {
-        use defaults::{rust as rs, NOT_APPLICABLE as NA};
+        use defaults::{NOT_APPLICABLE as NA, rust as rs};
         Self {
-            statements_per_function: rs::STATEMENTS_PER_FUNCTION, methods_per_class: rs::METHODS_PER_TYPE,
-            statements_per_file: rs::STATEMENTS_PER_FILE, functions_per_file: rs::FUNCTIONS_PER_FILE,
+            statements_per_function: rs::STATEMENTS_PER_FUNCTION,
+            methods_per_class: rs::METHODS_PER_TYPE,
+            statements_per_file: rs::STATEMENTS_PER_FILE,
+            functions_per_file: rs::FUNCTIONS_PER_FILE,
             arguments_per_function: rs::ARGUMENTS,
-            arguments_positional: NA, arguments_keyword_only: NA,
+            arguments_positional: NA,
+            arguments_keyword_only: NA,
             max_indentation_depth: rs::MAX_INDENTATION,
             interface_types_per_file: rs::INTERFACE_TYPES_PER_FILE,
             concrete_types_per_file: rs::CONCRETE_TYPES_PER_FILE,
-            nested_function_depth: rs::NESTED_FUNCTION_DEPTH, returns_per_function: rs::RETURNS_PER_FUNCTION,
-            return_values_per_function: NA, branches_per_function: rs::BRANCHES_PER_FUNCTION,
-            local_variables_per_function: rs::LOCAL_VARIABLES, imported_names_per_file: rs::IMPORTS_PER_FILE,
-            statements_per_try_block: NA, boolean_parameters: rs::BOOLEAN_PARAMETERS,
-            annotations_per_function: rs::ATTRIBUTES_PER_FUNCTION, calls_per_function: rs::CALLS_PER_FUNCTION,
+            nested_function_depth: rs::NESTED_FUNCTION_DEPTH,
+            returns_per_function: rs::RETURNS_PER_FUNCTION,
+            return_values_per_function: NA,
+            branches_per_function: rs::BRANCHES_PER_FUNCTION,
+            local_variables_per_function: rs::LOCAL_VARIABLES,
+            imported_names_per_file: rs::IMPORTS_PER_FILE,
+            statements_per_try_block: NA,
+            boolean_parameters: rs::BOOLEAN_PARAMETERS,
+            annotations_per_function: rs::ATTRIBUTES_PER_FUNCTION,
+            calls_per_function: rs::CALLS_PER_FUNCTION,
             cycle_size: defaults::graph::CYCLE_SIZE,
-            transitive_dependencies: rs::TRANSITIVE_DEPENDENCIES, dependency_depth: rs::DEPENDENCY_DEPTH,
+            transitive_dependencies: rs::TRANSITIVE_DEPENDENCIES,
+            dependency_depth: rs::DEPENDENCY_DEPTH,
         }
     }
 
@@ -95,29 +118,46 @@ impl Config {
         config
     }
 
-    pub fn load() -> Self { Self::load_config_chain(Self::default(), None) }
+    pub fn load() -> Self {
+        Self::load_config_chain(Self::default(), None)
+    }
 
     pub fn load_for_language(lang: ConfigLanguage) -> Self {
-        let base = match lang { ConfigLanguage::Python => Self::python_defaults(), ConfigLanguage::Rust => Self::rust_defaults() };
+        let base = match lang {
+            ConfigLanguage::Python => Self::python_defaults(),
+            ConfigLanguage::Rust => Self::rust_defaults(),
+        };
         Self::load_config_chain(base, Some(lang))
     }
 
     pub fn load_from(path: &Path) -> Self {
         let mut config = Self::default();
-        if let Ok(content) = std::fs::read_to_string(path) { config.merge_from_toml(&content, None); }
-        else { eprintln!("Warning: Could not read config file: {}", path.display()); }
+        if let Ok(content) = std::fs::read_to_string(path) {
+            config.merge_from_toml(&content, None);
+        } else {
+            eprintln!("Warning: Could not read config file: {}", path.display());
+        }
         config
     }
 
     pub fn load_from_for_language(path: &Path, lang: ConfigLanguage) -> Self {
-        let mut config = match lang { ConfigLanguage::Python => Self::python_defaults(), ConfigLanguage::Rust => Self::rust_defaults() };
-        if let Ok(content) = std::fs::read_to_string(path) { config.merge_from_toml_with_path(&content, Some(lang), Some(path)); }
-        else { eprintln!("Warning: Could not read config file: {}", path.display()); }
+        let mut config = match lang {
+            ConfigLanguage::Python => Self::python_defaults(),
+            ConfigLanguage::Rust => Self::rust_defaults(),
+        };
+        if let Ok(content) = std::fs::read_to_string(path) {
+            config.merge_from_toml_with_path(&content, Some(lang), Some(path));
+        } else {
+            eprintln!("Warning: Could not read config file: {}", path.display());
+        }
         config
     }
 
     pub fn load_from_content(content: &str, lang: ConfigLanguage) -> Self {
-        let mut config = match lang { ConfigLanguage::Python => Self::python_defaults(), ConfigLanguage::Rust => Self::rust_defaults() };
+        let mut config = match lang {
+            ConfigLanguage::Python => Self::python_defaults(),
+            ConfigLanguage::Rust => Self::rust_defaults(),
+        };
         config.merge_from_toml(content, Some(lang));
         config
     }
@@ -126,7 +166,12 @@ impl Config {
         self.merge_from_toml_with_path(content, lang, None);
     }
 
-    fn merge_from_toml_with_path(&mut self, content: &str, lang: Option<ConfigLanguage>, path: Option<&Path>) {
+    fn merge_from_toml_with_path(
+        &mut self,
+        content: &str,
+        lang: Option<ConfigLanguage>,
+        path: Option<&Path>,
+    ) {
         let table = match content.parse::<toml::Table>() {
             Ok(t) => t,
             Err(e) => {
@@ -137,26 +182,54 @@ impl Config {
             }
         };
         check_unknown_sections(&table);
-        if let Some(t) = table.get("thresholds").and_then(|v| v.as_table()) { self.apply_thresholds(t); }
-        if let Some(t) = table.get("shared").and_then(|v| v.as_table()) { self.apply_shared(t); }
+        if let Some(t) = table.get("thresholds").and_then(|v| v.as_table()) {
+            self.apply_thresholds(t);
+        }
+        if let Some(t) = table.get("shared").and_then(|v| v.as_table()) {
+            self.apply_shared(t);
+        }
         match lang {
-            Some(ConfigLanguage::Python) => if let Some(t) = table.get("python").and_then(|v| v.as_table()) { self.apply_python(t); },
-            Some(ConfigLanguage::Rust) => if let Some(t) = table.get("rust").and_then(|v| v.as_table()) { self.apply_rust(t); },
+            Some(ConfigLanguage::Python) => {
+                if let Some(t) = table.get("python").and_then(|v| v.as_table()) {
+                    self.apply_python(t);
+                }
+            }
+            Some(ConfigLanguage::Rust) => {
+                if let Some(t) = table.get("rust").and_then(|v| v.as_table()) {
+                    self.apply_rust(t);
+                }
+            }
             None => {
-                if let Some(t) = table.get("python").and_then(|v| v.as_table()) { self.apply_python(t); }
-                if let Some(t) = table.get("rust").and_then(|v| v.as_table()) { self.apply_rust(t); }
+                if let Some(t) = table.get("python").and_then(|v| v.as_table()) {
+                    self.apply_python(t);
+                }
+                if let Some(t) = table.get("rust").and_then(|v| v.as_table()) {
+                    self.apply_rust(t);
+                }
             }
         }
     }
 
     fn apply_thresholds(&mut self, table: &toml::Table) {
-        const VALID: &[&str] = &["statements_per_function", "methods_per_class", "statements_per_file",
-            "functions_per_file", "arguments_per_function", "arguments_positional", "arguments_keyword_only",
-            "max_indentation_depth", "interface_types_per_file", "concrete_types_per_file",
+        const VALID: &[&str] = &[
+            "statements_per_function",
+            "methods_per_class",
+            "statements_per_file",
+            "functions_per_file",
+            "arguments_per_function",
+            "arguments_positional",
+            "arguments_keyword_only",
+            "max_indentation_depth",
+            "interface_types_per_file",
+            "concrete_types_per_file",
             // Back-compat: older configs used classes_per_file for types-per-file.
             "classes_per_file",
-            "nested_function_depth", "returns_per_function",
-            "branches_per_function", "local_variables_per_function", "imported_names_per_file"];
+            "nested_function_depth",
+            "returns_per_function",
+            "branches_per_function",
+            "local_variables_per_function",
+            "imported_names_per_file",
+        ];
         check_unknown_keys(table, VALID, "thresholds");
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "methods_per_class" => methods_per_class,
@@ -174,12 +247,18 @@ impl Config {
     }
 
     fn apply_shared(&mut self, table: &toml::Table) {
-        const VALID: &[&str] = &["statements_per_file", "functions_per_file",
-            "interface_types_per_file", "concrete_types_per_file",
+        const VALID: &[&str] = &[
+            "statements_per_file",
+            "functions_per_file",
+            "interface_types_per_file",
+            "concrete_types_per_file",
             // Back-compat: older configs used types_per_file for concrete types.
             "types_per_file",
             "imported_names_per_file",
-            "cycle_size", "transitive_dependencies", "dependency_depth"];
+            "cycle_size",
+            "transitive_dependencies",
+            "dependency_depth",
+        ];
         check_unknown_keys(table, VALID, "shared");
         apply_config!(self, table,
             "statements_per_file" => statements_per_file,
@@ -195,15 +274,32 @@ impl Config {
     }
 
     fn apply_python(&mut self, table: &toml::Table) {
-        const VALID: &[&str] = &["statements_per_function", "positional_args", "keyword_only_args",
-            "max_indentation", "branches_per_function", "local_variables", "methods_per_class",
-            "returns_per_function", "return_values_per_function", "nested_function_depth", "statements_per_try_block",
-            "boolean_parameters", "decorators_per_function", "calls_per_function",
-            "imported_names_per_file", "statements_per_file",
-            "functions_per_file", "interface_types_per_file", "concrete_types_per_file",
+        const VALID: &[&str] = &[
+            "statements_per_function",
+            "positional_args",
+            "keyword_only_args",
+            "max_indentation",
+            "branches_per_function",
+            "local_variables",
+            "methods_per_class",
+            "returns_per_function",
+            "return_values_per_function",
+            "nested_function_depth",
+            "statements_per_try_block",
+            "boolean_parameters",
+            "decorators_per_function",
+            "calls_per_function",
+            "imported_names_per_file",
+            "statements_per_file",
+            "functions_per_file",
+            "interface_types_per_file",
+            "concrete_types_per_file",
             // Back-compat alias.
             "types_per_file",
-            "cycle_size", "transitive_dependencies", "dependency_depth"];
+            "cycle_size",
+            "transitive_dependencies",
+            "dependency_depth",
+        ];
         check_unknown_keys(table, VALID, "python");
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "positional_args" => arguments_positional,
@@ -223,15 +319,30 @@ impl Config {
     }
 
     fn apply_rust(&mut self, table: &toml::Table) {
-        const VALID: &[&str] = &["statements_per_function", "arguments", "max_indentation",
-            "branches_per_function", "local_variables", "methods_per_class", "statements_per_file",
-            "functions_per_file", "interface_types_per_file", "concrete_types_per_file",
+        const VALID: &[&str] = &[
+            "statements_per_function",
+            "arguments",
+            "max_indentation",
+            "branches_per_function",
+            "local_variables",
+            "methods_per_class",
+            "statements_per_file",
+            "functions_per_file",
+            "interface_types_per_file",
+            "concrete_types_per_file",
             // Back-compat alias.
             "types_per_file",
-            "returns_per_function", "nested_function_depth",
-            "boolean_parameters", "attributes_per_function", "calls_per_function",
+            "returns_per_function",
+            "nested_function_depth",
+            "boolean_parameters",
+            "attributes_per_function",
+            "calls_per_function",
             "imported_names_per_file",
-            "cycle_size", "transitive_dependencies", "dependency_depth", "nested_closure_depth"];
+            "cycle_size",
+            "transitive_dependencies",
+            "dependency_depth",
+            "nested_closure_depth",
+        ];
         check_unknown_keys(table, VALID, "rust");
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "arguments" => arguments_per_function,
@@ -262,14 +373,23 @@ pub(crate) fn check_unknown_keys(table: &toml::Table, valid: &[&str], section: &
 fn check_unknown_sections(table: &toml::Table) {
     const VALID: &[&str] = &["python", "rust", "shared", "thresholds", "gate"];
     for key in table.keys() {
-        if VALID.contains(&key.as_str()) { continue; }
-        let hint = VALID.iter().find(|v| similar(key, v)).map(|s| format!(" - did you mean '[{s}]'?")).unwrap_or_default();
-        eprintln!("Error: Unknown config section '[{key}]'{hint}"); std::process::exit(1);
+        if VALID.contains(&key.as_str()) {
+            continue;
+        }
+        let hint = VALID
+            .iter()
+            .find(|v| similar(key, v))
+            .map(|s| format!(" - did you mean '[{s}]'?"))
+            .unwrap_or_default();
+        eprintln!("Error: Unknown config section '[{key}]'{hint}");
+        std::process::exit(1);
     }
 }
 
 fn similar(a: &str, b: &str) -> bool {
-    if a.len().abs_diff(b.len()) > 2 { return false; }
+    if a.len().abs_diff(b.len()) > 2 {
+        return false;
+    }
     let common = a.chars().filter(|c| b.contains(*c)).count();
     common >= a.len().saturating_sub(2) && common >= b.len().saturating_sub(2)
 }
@@ -283,11 +403,16 @@ pub(crate) fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
         }
         return usize::try_from(v).ok();
     }
-    eprintln!("Warning: Config key '{key}' expected integer, got {}", value.type_str());
+    eprintln!(
+        "Warning: Config key '{key}' expected integer, got {}",
+        value.type_str()
+    );
     None
 }
 
-pub fn is_similar(a: &str, b: &str) -> bool { similar(a, b) }
+pub fn is_similar(a: &str, b: &str) -> bool {
+    similar(a, b)
+}
 
 #[cfg(test)]
 mod tests {
@@ -296,7 +421,10 @@ mod tests {
     #[test]
     fn test_merge_and_apply() {
         let mut c = Config::python_defaults();
-        c.merge_from_toml("[python]\nstatements_per_function = 99", Some(ConfigLanguage::Python));
+        c.merge_from_toml(
+            "[python]\nstatements_per_function = 99",
+            Some(ConfigLanguage::Python),
+        );
         assert_eq!(c.statements_per_function, 99);
 
         let mut table = toml::Table::new();
@@ -329,7 +457,9 @@ mod tests {
 
     #[test]
     fn test_helpers() {
-        assert!(similar("python", "pytohn") && similar("rust", "ruts") && !similar("python", "xyz"));
+        assert!(
+            similar("python", "pytohn") && similar("rust", "ruts") && !similar("python", "xyz")
+        );
         let mut table = toml::Table::new();
         table.insert("valid".into(), toml::Value::Integer(42));
         table.insert("negative".into(), toml::Value::Integer(-1));

@@ -1,4 +1,3 @@
-
 use crate::graph::DependencyGraph;
 use crate::rust_parsing::ParsedRustFile;
 use syn::Item;
@@ -7,9 +6,10 @@ pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> Dependen
     let mut graph = DependencyGraph::new();
 
     for parsed in parsed_files {
-        let module_name = parsed
-            .path
-            .file_stem().map_or_else(|| String::from("unknown"), |s| s.to_string_lossy().into_owned());
+        let module_name = parsed.path.file_stem().map_or_else(
+            || String::from("unknown"),
+            |s| s.to_string_lossy().into_owned(),
+        );
 
         graph.paths.insert(module_name.clone(), parsed.path.clone());
         graph.get_or_create_node(&module_name);
@@ -72,9 +72,13 @@ fn extract_imports_from_items(items: &[Item], imports: &mut Vec<String>) {
 fn extract_imports_from_block(block: &syn::Block, imports: &mut Vec<String>) {
     for stmt in &block.stmts {
         match stmt {
-            syn::Stmt::Item(item) => extract_imports_from_items(std::slice::from_ref(item), imports),
+            syn::Stmt::Item(item) => {
+                extract_imports_from_items(std::slice::from_ref(item), imports);
+            }
             syn::Stmt::Expr(expr, _) => extract_imports_from_expr(expr, imports),
-            syn::Stmt::Local(syn::Local { init: Some(init), .. }) => {
+            syn::Stmt::Local(syn::Local {
+                init: Some(init), ..
+            }) => {
                 extract_imports_from_expr(&init.expr, imports);
             }
             _ => {}
@@ -152,14 +156,20 @@ mod tests {
     fn extracts_simple_use() {
         let ast = parse_rust_code("use std;");
         let imports = extract_rust_imports(&ast);
-        assert!(imports.contains(&String::from("std")), "imports: {imports:?}");
+        assert!(
+            imports.contains(&String::from("std")),
+            "imports: {imports:?}"
+        );
     }
 
     #[test]
     fn extracts_path_use() {
         let ast = parse_rust_code("use std::collections::HashMap;");
         let imports = extract_rust_imports(&ast);
-        assert!(imports.contains(&String::from("std")), "imports: {imports:?}");
+        assert!(
+            imports.contains(&String::from("std")),
+            "imports: {imports:?}"
+        );
     }
 
     #[test]
@@ -172,16 +182,28 @@ use crate::module;
 ",
         );
         let imports = extract_rust_imports(&ast);
-        assert!(imports.contains(&String::from("std")), "imports: {imports:?}");
-        assert!(imports.contains(&String::from("serde")), "imports: {imports:?}");
-        assert!(!imports.contains(&String::from("crate")), "crate:: should be excluded");
+        assert!(
+            imports.contains(&String::from("std")),
+            "imports: {imports:?}"
+        );
+        assert!(
+            imports.contains(&String::from("serde")),
+            "imports: {imports:?}"
+        );
+        assert!(
+            !imports.contains(&String::from("crate")),
+            "crate:: should be excluded"
+        );
     }
 
     #[test]
     fn handles_grouped_uses() {
         let ast = parse_rust_code("use std::{io, collections::HashMap};");
         let imports = extract_rust_imports(&ast);
-        assert!(imports.contains(&String::from("std")), "imports: {imports:?}");
+        assert!(
+            imports.contains(&String::from("std")),
+            "imports: {imports:?}"
+        );
     }
 
     #[test]
@@ -208,40 +230,57 @@ use crate::module;
     #[test]
     fn extracts_function_scoped_use() {
         // Function-scoped imports should be captured (matching Python behavior)
-        let ast = parse_rust_code(r"
+        let ast = parse_rust_code(
+            r"
 fn foo() {
     use std::fs;
     use serde::Serialize;
 }
-");
+",
+        );
         let imports = extract_rust_imports(&ast);
-        assert!(imports.contains(&String::from("std")), "function-scoped use not found: {imports:?}");
-        assert!(imports.contains(&String::from("serde")), "function-scoped use not found: {imports:?}");
+        assert!(
+            imports.contains(&String::from("std")),
+            "function-scoped use not found: {imports:?}"
+        );
+        assert!(
+            imports.contains(&String::from("serde")),
+            "function-scoped use not found: {imports:?}"
+        );
     }
 
     #[test]
     fn extracts_impl_method_scoped_use() {
-        let ast = parse_rust_code(r"
+        let ast = parse_rust_code(
+            r"
 struct Foo;
 impl Foo {
     fn bar() {
         use std::io;
     }
 }
-");
+",
+        );
         let imports = extract_rust_imports(&ast);
-        assert!(imports.contains(&String::from("std")), "impl method use not found: {imports:?}");
+        assert!(
+            imports.contains(&String::from("std")),
+            "impl method use not found: {imports:?}"
+        );
     }
 
     #[test]
     fn extracts_inline_module_use() {
-        let ast = parse_rust_code(r"
+        let ast = parse_rust_code(
+            r"
 mod inner {
     use tokio::runtime;
 }
-");
+",
+        );
         let imports = extract_rust_imports(&ast);
-        assert!(imports.contains(&String::from("tokio")), "inline module use not found: {imports:?}");
+        assert!(
+            imports.contains(&String::from("tokio")),
+            "inline module use not found: {imports:?}"
+        );
     }
 }
-

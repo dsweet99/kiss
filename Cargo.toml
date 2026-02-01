@@ -21,6 +21,9 @@ path = "src/lib.rs"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
+# Ignore BrokenPipe panics on Unix by restoring SIGPIPE default behavior
+libc = "0.2"
+
 # Parallel iteration
 rayon = "1.10"
 

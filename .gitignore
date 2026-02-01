@@ -9,3 +9,7 @@ check
 .vscode/
 Cargo.lock
 .kissconfig
+.cursor/
+a.html
+bugs.md
+plan.md

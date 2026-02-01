@@ -60,7 +60,8 @@ pub mod gate {
 }
 
 pub fn default_config_toml() -> String {
-    format!(r"[gate]
+    format!(
+        r"[gate]
 test_coverage_threshold = {gate_coverage}
 min_similarity = {min_sim}
 duplication_enabled = true

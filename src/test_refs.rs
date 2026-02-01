@@ -1,6 +1,5 @@
-
 use crate::parsing::ParsedFile;
-use crate::units::{get_child_by_field, CodeUnitKind};
+use crate::units::{CodeUnitKind, get_child_by_field};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tree_sitter::Node;
@@ -22,12 +21,14 @@ pub struct TestRefAnalysis {
 }
 
 fn has_python_test_naming(path: &Path) -> bool {
-    let is_py = path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("py"));
+    let is_py = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("py"));
     path.file_name()
         .and_then(|n| n.to_str())
         .is_some_and(|name| {
             (name.starts_with("test_") && is_py)
-                || (name.len() > 8 && name[..name.len()-3].ends_with("_test") && is_py)
+                || (name.len() > 8 && name[..name.len() - 3].ends_with("_test") && is_py)
                 || name == "conftest.py"
         })
 }
@@ -38,11 +39,15 @@ pub fn is_test_file(path: &std::path::Path) -> bool {
 }
 
 fn is_test_framework(name: &str) -> bool {
-    name == "pytest" || name == "unittest" || name.starts_with("pytest.") || name.starts_with("unittest.")
+    name == "pytest"
+        || name == "unittest"
+        || name.starts_with("pytest.")
+        || name.starts_with("unittest.")
 }
 
 fn is_test_framework_import_from(child: Node, source: &str) -> bool {
-    child.child_by_field_name("module_name")
+    child
+        .child_by_field_name("module_name")
         .map(|m| &source[m.start_byte()..m.end_byte()])
         .is_some_and(is_test_framework)
 }
@@ -52,10 +57,14 @@ fn contains_test_module_name(node: Node, source: &str) -> bool {
     for child in node.children(&mut cursor) {
         let name = match child.kind() {
             "dotted_name" => Some(&source[child.start_byte()..child.end_byte()]),
-            "aliased_import" => child.child_by_field_name("name").map(|n| &source[n.start_byte()..n.end_byte()]),
+            "aliased_import" => child
+                .child_by_field_name("name")
+                .map(|n| &source[n.start_byte()..n.end_byte()]),
             _ => None,
         };
-        if name.is_some_and(|n| n == "pytest" || n == "unittest") { return true; }
+        if name.is_some_and(|n| n == "pytest" || n == "unittest") {
+            return true;
+        }
     }
     false
 }
@@ -82,45 +91,88 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
 
     for parsed in parsed_files {
         if is_python_test_file(parsed) {
-            collect_references(parsed.tree.root_node(), &parsed.source, &mut test_references);
+            collect_references(
+                parsed.tree.root_node(),
+                &parsed.source,
+                &mut test_references,
+            );
         } else {
-            collect_definitions(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut definitions, false, None);
+            collect_definitions(
+                parsed.tree.root_node(),
+                &parsed.source,
+                &parsed.path,
+                &mut definitions,
+                false,
+                None,
+            );
         }
     }
 
-    let class_names: HashSet<_> = definitions.iter()
+    let class_names: HashSet<_> = definitions
+        .iter()
         .filter(|d| d.kind == CodeUnitKind::Class && test_references.contains(&d.name))
         .map(|d| d.name.clone())
         .collect();
-    
-    let unreferenced = definitions.iter()
+
+    let unreferenced = definitions
+        .iter()
         .filter(|def| {
             if test_references.contains(&def.name) {
                 return false;
             }
             if def.name == "__init__"
-                && let Some(ref class_name) = def.containing_class {
-                    return !class_names.contains(class_name);
-                }
+                && let Some(ref class_name) = def.containing_class
+            {
+                return !class_names.contains(class_name);
+            }
             true
         })
         .cloned()
         .collect();
-    
-    TestRefAnalysis { definitions, test_references, unreferenced }
+
+    TestRefAnalysis {
+        definitions,
+        test_references,
+        unreferenced,
+    }
 }
 
-fn try_add_def(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, kind: CodeUnitKind, containing_class: Option<String>) {
+fn try_add_def(
+    node: Node,
+    source: &str,
+    file: &Path,
+    defs: &mut Vec<CodeDefinition>,
+    kind: CodeUnitKind,
+    containing_class: Option<String>,
+) {
     if let Some(name) = get_child_by_field(node, "name", source)
-        && (!name.starts_with('_') || name == "__init__") {
-            defs.push(CodeDefinition { name, kind, file: file.to_path_buf(), line: node.start_position().row + 1, containing_class });
-        }
+        && (!name.starts_with('_') || name == "__init__")
+    {
+        defs.push(CodeDefinition {
+            name,
+            kind,
+            file: file.to_path_buf(),
+            line: node.start_position().row + 1,
+            containing_class,
+        });
+    }
 }
 
-fn collect_definitions(node: Node, source: &str, file: &Path, defs: &mut Vec<CodeDefinition>, inside_class: bool, class_name: Option<&str>) {
+fn collect_definitions(
+    node: Node,
+    source: &str,
+    file: &Path,
+    defs: &mut Vec<CodeDefinition>,
+    inside_class: bool,
+    class_name: Option<&str>,
+) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {
-            let kind = if inside_class { CodeUnitKind::Method } else { CodeUnitKind::Function };
+            let kind = if inside_class {
+                CodeUnitKind::Method
+            } else {
+                CodeUnitKind::Function
+            };
             try_add_def(node, source, file, defs, kind, class_name.map(String::from));
             // Don't recurse into function body - inner functions are not counted for coverage
         }
@@ -155,9 +207,11 @@ fn is_test_class(node: Node, source: &str) -> bool {
 
 fn collect_refs_from_node(node: Node, source: &str, refs: &mut HashSet<String>) {
     match node.kind() {
-        "call" => if let Some(func) = node.child_by_field_name("function") {
-            collect_call_target(func, source, refs);
-        },
+        "call" => {
+            if let Some(func) = node.child_by_field_name("function") {
+                collect_call_target(func, source, refs);
+            }
+        }
         "import_statement" | "import_from_statement" => collect_import_names(node, source, refs),
         "identifier" => insert_identifier(node, source, refs),
         _ => {}
@@ -189,8 +243,12 @@ fn collect_call_target(node: Node, source: &str, refs: &mut HashSet<String>) {
     match node.kind() {
         "identifier" => insert_identifier(node, source, refs),
         "attribute" => {
-            if let Some(attr) = node.child_by_field_name("attribute") { insert_identifier(attr, source, refs); }
-            if let Some(obj) = node.child_by_field_name("object") { collect_call_target(obj, source, refs); }
+            if let Some(attr) = node.child_by_field_name("attribute") {
+                insert_identifier(attr, source, refs);
+            }
+            if let Some(obj) = node.child_by_field_name("object") {
+                collect_call_target(obj, source, refs);
+            }
         }
         _ => {}
     }
@@ -203,7 +261,9 @@ fn collect_import_names(node: Node, source: &str, refs: &mut HashSet<String>) {
             "dotted_name" | "aliased_import" => {
                 let mut inner_cursor = child.walk();
                 for inner in child.children(&mut inner_cursor) {
-                    if inner.kind() == "identifier" { insert_identifier(inner, source, refs); }
+                    if inner.kind() == "identifier" {
+                        insert_identifier(inner, source, refs);
+                    }
                 }
             }
             "identifier" => insert_identifier(child, source, refs),
@@ -225,8 +285,14 @@ mod tests {
         assert!(!is_test_file(Path::new("foo.py")));
         assert!(!is_test_file(Path::new("testing.py")));
         assert!(!is_test_file(Path::new("my_test_helper.py")));
-        assert!(!is_test_file(Path::new("test_foo.txt")), "non-.py should not match");
-        assert!(!is_test_file(Path::new("test_data.json")), "non-.py should not match");
+        assert!(
+            !is_test_file(Path::new("test_foo.txt")),
+            "non-.py should not match"
+        );
+        assert!(
+            !is_test_file(Path::new("test_data.json")),
+            "non-.py should not match"
+        );
     }
 
     #[test]
@@ -234,8 +300,14 @@ mod tests {
         assert!(is_test_file(Path::new("test_utils.py")));
         assert!(is_test_file(Path::new("utils_test.py")));
         assert!(is_test_file(Path::new("/project/tests/unit/test_utils.py")));
-        assert!(is_test_file(Path::new("tests/conftest.py")), "conftest.py is pytest infrastructure");
-        assert!(is_test_file(Path::new("conftest.py")), "conftest.py at any level");
+        assert!(
+            is_test_file(Path::new("tests/conftest.py")),
+            "conftest.py is pytest infrastructure"
+        );
+        assert!(
+            is_test_file(Path::new("conftest.py")),
+            "conftest.py at any level"
+        );
         assert!(!is_test_file(Path::new("tests/helpers.py")));
         assert!(!is_test_file(Path::new("src/utils.py")));
         assert!(!is_test_file(Path::new("myproject/testing_utils.py")));
@@ -245,17 +317,20 @@ mod tests {
     fn test_has_test_framework_import() {
         use crate::parsing::create_parser;
         let mut parser = create_parser().unwrap();
-        
+
         let mut check = |src: &str| {
             let tree = parser.parse(src, None).unwrap();
             has_test_framework_import(tree.root_node(), src)
         };
-        
+
         assert!(check("import pytest\n\ndef test_foo():\n    pass\n"));
-        assert!(check("import unittest\n\nclass TestCase(unittest.TestCase):\n    pass\n"));
-        assert!(check("from pytest import fixture\n\n@fixture\ndef my_fixture():\n    pass\n"));
+        assert!(check(
+            "import unittest\n\nclass TestCase(unittest.TestCase):\n    pass\n"
+        ));
+        assert!(check(
+            "from pytest import fixture\n\n@fixture\ndef my_fixture():\n    pass\n"
+        ));
         assert!(check("import pytest as pt\n"));
         assert!(!check("import os\nimport sys\n\ndef main():\n    pass\n"));
     }
 }
-

@@ -9,10 +9,15 @@ use std::path::Path;
 
 pub fn print_dry_results(pairs: &[DuplicatePair]) {
     for p in pairs {
-        println!("{:.3}  {}:{}-{}  {}:{}-{}",
+        println!(
+            "{:.3}  {}:{}-{}  {}:{}-{}",
             p.similarity,
-            p.chunk1.file.display(), p.chunk1.start_line, p.chunk1.end_line,
-            p.chunk2.file.display(), p.chunk2.start_line, p.chunk2.end_line
+            p.chunk1.file.display(),
+            p.chunk1.start_line,
+            p.chunk1.end_line,
+            p.chunk2.file.display(),
+            p.chunk2.start_line,
+            p.chunk2.end_line
         );
     }
 }
@@ -26,18 +31,38 @@ pub fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
     println!("{} in {}", msg, root.display());
 }
 
-pub fn print_coverage_gate_failure(coverage: usize, threshold: usize, tested: usize, total: usize, unreferenced: &[(std::path::PathBuf, String, usize)]) {
-    println!("GATE_FAILED:test_coverage: {coverage}% coverage (threshold: {threshold}%, {tested}/{total} units tested)");
+pub fn print_coverage_gate_failure(
+    coverage: usize,
+    threshold: usize,
+    tested: usize,
+    total: usize,
+    unreferenced: &[(std::path::PathBuf, String, usize)],
+) {
+    println!(
+        "GATE_FAILED:test_coverage: {coverage}% coverage (threshold: {threshold}%, {tested}/{total} units tested)"
+    );
     println!("Hint: Use --all to bypass coverage gate for exploration");
     for (file, name, line) in unreferenced {
-        println!("VIOLATION:test_coverage:{}:{}:{}: Add test coverage for this code unit.", file.display(), line, name);
+        println!(
+            "VIOLATION:test_coverage:{}:{}:{}: Add test coverage for this code unit.",
+            file.display(),
+            line,
+            name
+        );
     }
 }
 
 pub fn print_violations(viols: &[Violation]) {
-    for v in viols { 
-        println!("VIOLATION:{}:{}:{}:{}: {} {}", 
-            v.metric, v.file.display(), v.line, v.unit_name, v.message, v.suggestion); 
+    for v in viols {
+        println!(
+            "VIOLATION:{}:{}:{}:{}: {} {}",
+            v.metric,
+            v.file.display(),
+            v.line,
+            v.unit_name,
+            v.message,
+            v.suggestion
+        );
     }
 }
 
@@ -55,24 +80,37 @@ pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
     };
     for c in clusters {
         if let Some(first) = c.chunks.first() {
-            let locations: Vec<String> = c.chunks.iter()
+            let locations: Vec<String> = c
+                .chunks
+                .iter()
                 .map(|ch| format!("{}:{}-{}", ch.file.display(), ch.start_line, ch.end_line))
                 .collect();
-            println!("VIOLATION:duplication:{}:{}:{}: {:.0}% similar, {} copies: [{}]. {}",
-                first.file.display(), first.start_line, first.name,
-                c.avg_similarity * 100.0, c.chunks.len(), locations.join(", "), suggestion);
+            println!(
+                "VIOLATION:duplication:{}:{}:{}: {:.0}% similar, {} copies: [{}]. {}",
+                first.file.display(),
+                first.start_line,
+                first.name,
+                c.avg_similarity * 100.0,
+                c.chunks.len(),
+                locations.join(", "),
+                suggestion
+            );
         }
     }
 }
 
 pub fn print_py_test_refs(parsed: &[ParsedFile]) -> usize {
-    if parsed.is_empty() { return 0; }
+    if parsed.is_empty() {
+        return 0;
+    }
     let analysis = analyze_test_refs(&parsed.iter().collect::<Vec<_>>());
     analysis.unreferenced.len()
 }
 
 pub fn print_rs_test_refs(parsed: &[ParsedRustFile]) -> usize {
-    if parsed.is_empty() { return 0; }
+    if parsed.is_empty() {
+        return 0;
+    }
     let analysis = analyze_rust_test_refs(&parsed.iter().collect::<Vec<_>>());
     analysis.unreferenced.len()
 }
@@ -91,7 +129,13 @@ mod tests {
 
     #[test]
     fn test_print_coverage_gate_failure_no_panic() {
-        print_coverage_gate_failure(50, 80, 5, 10, &[(std::path::PathBuf::from("foo.py"), "bar".to_string(), 10)]);
+        print_coverage_gate_failure(
+            50,
+            80,
+            5,
+            10,
+            &[(std::path::PathBuf::from("foo.py"), "bar".to_string(), 10)],
+        );
     }
 
     #[test]

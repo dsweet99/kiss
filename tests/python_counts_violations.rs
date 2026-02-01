@@ -22,7 +22,10 @@ class BigClass:
     def m6(self): pass
 ";
     let parsed = parse_python_source(code);
-    let config = Config { methods_per_class: 3, ..Default::default() };
+    let config = Config {
+        methods_per_class: 3,
+        ..Default::default()
+    };
 
     let violations = analyze_file(&parsed, &config);
 
@@ -48,11 +51,16 @@ def risky_function():
         pass
 ";
     let parsed = parse_python_source(code);
-    let config = Config { statements_per_try_block: 3, ..Default::default() };
+    let config = Config {
+        statements_per_try_block: 3,
+        ..Default::default()
+    };
 
     let violations = analyze_file(&parsed, &config);
 
-    let has_violation = violations.iter().any(|v| v.metric == "statements_per_try_block");
+    let has_violation = violations
+        .iter()
+        .any(|v| v.metric == "statements_per_try_block");
     assert!(
         has_violation,
         "should trigger statements_per_try_block violation when try block has 6 statements > threshold 3"
@@ -66,7 +74,10 @@ def func_with_flags(a=True, b=False):
     x = 1
 ";
     let parsed = parse_python_source(code);
-    let config = Config { boolean_parameters: 1, ..Default::default() };
+    let config = Config {
+        boolean_parameters: 1,
+        ..Default::default()
+    };
 
     let violations = analyze_file(&parsed, &config);
 
@@ -76,4 +87,3 @@ def func_with_flags(a=True, b=False):
         "should trigger boolean_parameters violation when function has 2 boolean params > threshold 1"
     );
 }
-

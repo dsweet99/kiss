@@ -1,4 +1,3 @@
-
 use crate::config::Config;
 use crate::parsing::ParsedFile;
 use crate::py_imports::is_type_checking_block;
@@ -30,27 +29,48 @@ pub struct CycleInfo {
 
 impl DependencyGraph {
     pub fn new() -> Self {
-        Self { graph: DiGraph::new(), nodes: HashMap::new(), paths: HashMap::new() }
+        Self {
+            graph: DiGraph::new(),
+            nodes: HashMap::new(),
+            paths: HashMap::new(),
+        }
     }
 
     pub fn get_or_create_node(&mut self, name: &str) -> NodeIndex {
-        if let Some(&idx) = self.nodes.get(name) { idx }
-        else { let idx = self.graph.add_node(name.to_string()); self.nodes.insert(name.to_string(), idx); idx }
+        if let Some(&idx) = self.nodes.get(name) {
+            idx
+        } else {
+            let idx = self.graph.add_node(name.to_string());
+            self.nodes.insert(name.to_string(), idx);
+            idx
+        }
     }
 
     pub fn add_dependency(&mut self, from: &str, to: &str) {
-        if from == to { return; }
+        if from == to {
+            return;
+        }
         let from_idx = self.get_or_create_node(from);
         let to_idx = self.get_or_create_node(to);
-        if !self.graph.contains_edge(from_idx, to_idx) { self.graph.add_edge(from_idx, to_idx, ()); }
+        if !self.graph.contains_edge(from_idx, to_idx) {
+            self.graph.add_edge(from_idx, to_idx, ());
+        }
     }
 
     pub fn module_metrics(&self, module: &str) -> ModuleGraphMetrics {
-        let Some(&idx) = self.nodes.get(module) else { return ModuleGraphMetrics::default(); };
+        let Some(&idx) = self.nodes.get(module) else {
+            return ModuleGraphMetrics::default();
+        };
         let (transitive, depth) = self.compute_transitive_and_depth(idx);
         ModuleGraphMetrics {
-            fan_in: self.graph.neighbors_directed(idx, petgraph::Direction::Incoming).count(),
-            fan_out: self.graph.neighbors_directed(idx, petgraph::Direction::Outgoing).count(),
+            fan_in: self
+                .graph
+                .neighbors_directed(idx, petgraph::Direction::Incoming)
+                .count(),
+            fan_out: self
+                .graph
+                .neighbors_directed(idx, petgraph::Direction::Outgoing)
+                .count(),
             transitive_dependencies: transitive,
             dependency_depth: depth,
         }
@@ -63,7 +83,10 @@ impl DependencyGraph {
         let mut max_depth = 0;
         queue.push_back((start, 0));
         while let Some((node, depth)) = queue.pop_front() {
-            for neighbor in self.graph.neighbors_directed(node, petgraph::Direction::Outgoing) {
+            for neighbor in self
+                .graph
+                .neighbors_directed(node, petgraph::Direction::Outgoing)
+            {
                 if visited.insert(neighbor) {
                     max_depth = max_depth.max(depth + 1);
                     queue.push_back((neighbor, depth + 1));
@@ -74,12 +97,17 @@ impl DependencyGraph {
     }
 
     fn is_cycle(&self, scc: &[NodeIndex]) -> bool {
-        match scc.len() { 0 => false, 1 => self.graph.contains_edge(scc[0], scc[0]), _ => true }
+        match scc.len() {
+            0 => false,
+            1 => self.graph.contains_edge(scc[0], scc[0]),
+            _ => true,
+        }
     }
 
     pub fn find_cycles(&self) -> CycleInfo {
         CycleInfo {
-            cycles: tarjan_scc(&self.graph).into_iter()
+            cycles: tarjan_scc(&self.graph)
+                .into_iter()
                 .filter(|scc| self.is_cycle(scc))
                 .map(|scc| scc.into_iter().map(|idx| self.graph[idx].clone()).collect())
                 .collect(),
@@ -88,19 +116,29 @@ impl DependencyGraph {
 }
 
 impl Default for DependencyGraph {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 fn is_entry_point(name: &str) -> bool {
     // Extract bare name from qualified name (e.g., "attr.main" → "main")
     let bare = name.rsplit('.').next().unwrap_or(name);
-    matches!(bare, "main" | "lib" | "build" | "__main__" | "__init__" | "tests" | "conftest" | "setup")
-        || bare.starts_with("test_") || bare.ends_with("_test")
-        || bare.contains("_integration") || bare.contains("_bench")
+    matches!(
+        bare,
+        "main" | "lib" | "build" | "__main__" | "__init__" | "tests" | "conftest" | "setup"
+    ) || bare.starts_with("test_")
+        || bare.ends_with("_test")
+        || bare.contains("_integration")
+        || bare.contains("_bench")
 }
 
 fn get_module_path(graph: &DependencyGraph, module_name: &str) -> PathBuf {
-    graph.paths.get(module_name).cloned().unwrap_or_else(|| PathBuf::from(format!("{module_name}.py")))
+    graph
+        .paths
+        .get(module_name)
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from(format!("{module_name}.py")))
 }
 
 fn is_orphan(metrics: &ModuleGraphMetrics, module_name: &str) -> bool {
@@ -111,15 +149,24 @@ fn is_orphan(metrics: &ModuleGraphMetrics, module_name: &str) -> bool {
 pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation> {
     let mut violations = Vec::new();
     for module_name in graph.nodes.keys() {
-        if !graph.paths.contains_key(module_name) { continue; }
+        if !graph.paths.contains_key(module_name) {
+            continue;
+        }
         let metrics = graph.module_metrics(module_name);
 
         if is_orphan(&metrics, module_name) {
             violations.push(Violation {
-                file: get_module_path(graph, module_name), line: 1, unit_name: module_name.clone(),
-                metric: "orphan_module".to_string(), value: 0, threshold: 0,
-                message: format!("Module '{module_name}' has no dependencies and nothing depends on it"),
-                suggestion: "This may be dead code. Remove it, or integrate it into the codebase.".to_string(),
+                file: get_module_path(graph, module_name),
+                line: 1,
+                unit_name: module_name.clone(),
+                metric: "orphan_module".to_string(),
+                value: 0,
+                threshold: 0,
+                message: format!(
+                    "Module '{module_name}' has no dependencies and nothing depends on it"
+                ),
+                suggestion: "This may be dead code. Remove it, or integrate it into the codebase."
+                    .to_string(),
             });
         }
         // Only flag transitive deps if fan_in > 0; entry points (fan_in=0) don't propagate coupling
@@ -133,10 +180,19 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
         }
         if metrics.dependency_depth > config.dependency_depth {
             violations.push(Violation {
-                file: get_module_path(graph, module_name), line: 1, unit_name: module_name.clone(),
-                metric: "dependency_depth".to_string(), value: metrics.dependency_depth, threshold: config.dependency_depth,
-                message: format!("Module '{}' has dependency depth {} (threshold: {})", module_name, metrics.dependency_depth, config.dependency_depth),
-                suggestion: "Flatten the dependency chain by moving shared logic to a common base layer.".to_string(),
+                file: get_module_path(graph, module_name),
+                line: 1,
+                unit_name: module_name.clone(),
+                metric: "dependency_depth".to_string(),
+                value: metrics.dependency_depth,
+                threshold: config.dependency_depth,
+                message: format!(
+                    "Module '{}' has dependency depth {} (threshold: {})",
+                    module_name, metrics.dependency_depth, config.dependency_depth
+                ),
+                suggestion:
+                    "Flatten the dependency chain by moving shared logic to a common base layer."
+                        .to_string(),
             });
         }
     }
@@ -158,8 +214,13 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
 /// Extract qualified module name: includes parent directory to avoid collisions.
 /// Example: "src/attr/exceptions.py" → "attr.exceptions"
 fn qualified_module_name(path: &std::path::Path) -> String {
-    let stem = path.file_stem().map_or("unknown", |s| s.to_str().unwrap_or("unknown"));
-    let parent = path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str());
+    let stem = path
+        .file_stem()
+        .map_or("unknown", |s| s.to_str().unwrap_or("unknown"));
+    let parent = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str());
     match parent {
         Some(p) if !p.is_empty() && p != "." => format!("{p}.{stem}"),
         _ => stem.to_string(),
@@ -168,17 +229,20 @@ fn qualified_module_name(path: &std::path::Path) -> String {
 
 /// Extract just the bare module name (filename without extension)
 fn bare_module_name(path: &std::path::Path) -> String {
-    path.file_stem().map_or_else(|| "unknown".to_string(), |s| s.to_string_lossy().into_owned())
+    path.file_stem().map_or_else(
+        || "unknown".to_string(),
+        |s| s.to_string_lossy().into_owned(),
+    )
 }
 
 #[must_use]
 pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
     let mut graph = DependencyGraph::new();
-    
+
     // Build mapping from bare names to qualified names for import resolution
     // Also track if a bare name is ambiguous (maps to multiple qualified names)
     let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
-    
+
     // First pass: register all modules with qualified names
     for parsed in parsed_files {
         let qualified = qualified_module_name(&parsed.path);
@@ -187,13 +251,17 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
         graph.get_or_create_node(&qualified);
         bare_to_qualified.entry(bare).or_default().push(qualified);
     }
-    
+
     // Second pass: add dependency edges, resolving imports to qualified names
     for parsed in parsed_files {
         let from_qualified = qualified_module_name(&parsed.path);
         let from_bare = bare_module_name(&parsed.path);
-        let from_parent = parsed.path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str());
-        
+        let from_parent = parsed
+            .path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str());
+
         for import in extract_imports(parsed.tree.root_node(), &parsed.source) {
             // Try to resolve import to a qualified module name
             if let Some(resolved) = resolve_import(&import, from_parent, &bare_to_qualified) {
@@ -203,7 +271,7 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
                 graph.add_dependency(&from_qualified, &import);
             }
         }
-        
+
         // Also add edge from bare name to qualified name for backwards compatibility
         // This ensures that if something imports "exceptions", it finds "attr.exceptions"
         if from_bare != from_qualified
@@ -218,13 +286,17 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
 
 /// Resolve an import name to a qualified module name.
 /// Prefers modules in the same package (same parent directory).
-fn resolve_import(import: &str, from_parent: Option<&str>, bare_to_qualified: &HashMap<String, Vec<String>>) -> Option<String> {
+fn resolve_import(
+    import: &str,
+    from_parent: Option<&str>,
+    bare_to_qualified: &HashMap<String, Vec<String>>,
+) -> Option<String> {
     let candidates = bare_to_qualified.get(import)?;
-    
+
     if candidates.len() == 1 {
         return Some(candidates[0].clone());
     }
-    
+
     // Multiple candidates - prefer one in the same package
     if let Some(parent) = from_parent {
         let prefix = format!("{parent}.");
@@ -234,7 +306,7 @@ fn resolve_import(import: &str, from_parent: Option<&str>, bare_to_qualified: &H
             }
         }
     }
-    
+
     // Ambiguous import - don't create edge to avoid false connections
     None
 }
@@ -262,8 +334,14 @@ fn extract_modules_from_import_from(child: Node, source: &str) -> Vec<String> {
         if c.kind() != "dotted_name" && c.kind() != "aliased_import" {
             continue;
         }
-        let name_node = if c.kind() == "aliased_import" { c.child_by_field_name("name") } else { Some(c) };
-        let Some(n) = name_node else { continue; };
+        let name_node = if c.kind() == "aliased_import" {
+            c.child_by_field_name("name")
+        } else {
+            Some(c)
+        };
+        let Some(n) = name_node else {
+            continue;
+        };
         let name = &source[n.start_byte()..n.end_byte()];
         push_dotted_segments(name, &mut modules);
     }
@@ -280,9 +358,11 @@ fn collect_import_names(node: Node, source: &str, imports: &mut Vec<String>) {
     for child in node.children(&mut cursor) {
         match child.kind() {
             "dotted_name" => push_import_name_segments(child, source, imports),
-            "aliased_import" => if let Some(n) = child.child_by_field_name("name") {
-                push_import_name_segments(n, source, imports);
-            },
+            "aliased_import" => {
+                if let Some(n) = child.child_by_field_name("name") {
+                    push_import_name_segments(n, source, imports);
+                }
+            }
             _ => {}
         }
     }
@@ -310,17 +390,31 @@ fn extract_imports_recursive(node: Node, source: &str, imports: &mut Vec<String>
     }
 }
 
-pub fn compute_cyclomatic_complexity(node: Node) -> usize { 1 + count_decision_points(node) }
+pub fn compute_cyclomatic_complexity(node: Node) -> usize {
+    1 + count_decision_points(node)
+}
 
 fn is_decision_point(kind: &str) -> bool {
-    matches!(kind, "if_statement" | "elif_clause" | "for_statement" | "while_statement"
-        | "except_clause" | "with_statement" | "match_statement" | "case_clause"
-        | "boolean_operator" | "conditional_expression")
+    matches!(
+        kind,
+        "if_statement"
+            | "elif_clause"
+            | "for_statement"
+            | "while_statement"
+            | "except_clause"
+            | "with_statement"
+            | "match_statement"
+            | "case_clause"
+            | "boolean_operator"
+            | "conditional_expression"
+    )
 }
 
 fn count_decision_points(node: Node) -> usize {
     let mut cursor = node.walk();
-    node.children(&mut cursor).map(|c| usize::from(is_decision_point(c.kind())) + count_decision_points(c)).sum()
+    node.children(&mut cursor)
+        .map(|c| usize::from(is_decision_point(c.kind())) + count_decision_points(c))
+        .sum()
 }
 
 #[cfg(test)]
@@ -332,23 +426,42 @@ mod tests {
     #[test]
     fn test_graph_imports_and_cycles() {
         let mut parser = create_parser().unwrap();
-        assert!(extract_imports(parser.parse("import os", None).unwrap().root_node(), "import os").contains(&"os".into()));
+        assert!(
+            extract_imports(
+                parser.parse("import os", None).unwrap().root_node(),
+                "import os"
+            )
+            .contains(&"os".into())
+        );
         let code = "import os\ndef foo():\n    import json\n    from sys import argv";
         let mut nested = Vec::new();
-        extract_imports_recursive(parser.parse(code, None).unwrap().root_node(), code, &mut nested);
-        assert!(nested.contains(&"os".into()) && nested.contains(&"json".into()) && nested.contains(&"sys".into()));
+        extract_imports_recursive(
+            parser.parse(code, None).unwrap().root_node(),
+            code,
+            &mut nested,
+        );
+        assert!(
+            nested.contains(&"os".into())
+                && nested.contains(&"json".into())
+                && nested.contains(&"sys".into())
+        );
         let mut g = DependencyGraph::default();
-        g.add_dependency("a", "b"); g.add_dependency("b", "a");
+        g.add_dependency("a", "b");
+        g.add_dependency("b", "a");
         let cycle_info: CycleInfo = g.find_cycles();
         assert!(!cycle_info.cycles.is_empty());
         assert_eq!(g.get_or_create_node("test"), g.get_or_create_node("test"));
         g.add_dependency("x", "x");
         // Self-dependencies are rejected: neither node nor edge is created
-        assert!(!g.nodes.contains_key("x"), "Self-dependency should not create node");
+        assert!(
+            !g.nodes.contains_key("x"),
+            "Self-dependency should not create node"
+        );
         let idx_a = *g.nodes.get("a").unwrap();
         let idx_b = *g.nodes.get("b").unwrap();
         assert!(g.is_cycle(&[idx_a, idx_b]) && !g.is_cycle(&[]) && !g.is_cycle(&[idx_a]));
-        g.add_dependency("a", "c"); g.add_dependency("c", "d");
+        g.add_dependency("a", "c");
+        g.add_dependency("c", "d");
         let (trans, depth) = g.compute_transitive_and_depth(*g.nodes.get("a").unwrap());
         assert!(trans >= 2 && depth >= 2);
     }
@@ -356,21 +469,66 @@ mod tests {
     #[test]
     fn test_helpers_imports_and_complexity() {
         assert!(is_entry_point("main") && is_entry_point("test_foo") && !is_entry_point("utils"));
-        assert!(is_orphan(&ModuleGraphMetrics::default(), "utils") && !is_orphan(&ModuleGraphMetrics { fan_in: 1, ..Default::default() }, "utils"));
+        assert!(
+            is_orphan(&ModuleGraphMetrics::default(), "utils")
+                && !is_orphan(
+                    &ModuleGraphMetrics {
+                        fan_in: 1,
+                        ..Default::default()
+                    },
+                    "utils"
+                )
+        );
         let mut g = DependencyGraph::new();
         g.paths.insert("foo".into(), PathBuf::from("src/foo.py"));
         assert_eq!(get_module_path(&g, "foo"), PathBuf::from("src/foo.py"));
         let mut parser = create_parser().unwrap();
-        let mods = extract_modules_from_import_from(parser.parse("from foo.bar import baz", None).unwrap().root_node().child(0).unwrap(), "from foo.bar import baz");
+        let mods = extract_modules_from_import_from(
+            parser
+                .parse("from foo.bar import baz", None)
+                .unwrap()
+                .root_node()
+                .child(0)
+                .unwrap(),
+            "from foo.bar import baz",
+        );
         assert!(mods.contains(&"foo".into()) && mods.contains(&"baz".into()));
-        let rel = extract_modules_from_import_from(parser.parse("from ._export_format import X", None).unwrap().root_node().child(0).unwrap(), "from ._export_format import X");
-        assert!(rel.contains(&"_export_format".into()), "Relative import: {rel:?}");
+        let rel = extract_modules_from_import_from(
+            parser
+                .parse("from ._export_format import X", None)
+                .unwrap()
+                .root_node()
+                .child(0)
+                .unwrap(),
+            "from ._export_format import X",
+        );
+        assert!(
+            rel.contains(&"_export_format".into()),
+            "Relative import: {rel:?}"
+        );
         assert!(is_decision_point("if_statement") && !is_decision_point("identifier"));
-        assert_eq!(count_decision_points(parser.parse("if a:\n    if b:\n        pass", None).unwrap().root_node()), 2);
+        assert_eq!(
+            count_decision_points(
+                parser
+                    .parse("if a:\n    if b:\n        pass", None)
+                    .unwrap()
+                    .root_node()
+            ),
+            2
+        );
         let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
         write!(tmp, "x = 1").unwrap();
         assert!(!qualified_module_name(tmp.path()).is_empty());
-        assert!(compute_cyclomatic_complexity(parser.parse("def f():\n    if a:\n        pass", None).unwrap().root_node().child(0).unwrap()) >= 2);
+        assert!(
+            compute_cyclomatic_complexity(
+                parser
+                    .parse("def f():\n    if a:\n        pass", None)
+                    .unwrap()
+                    .root_node()
+                    .child(0)
+                    .unwrap()
+            ) >= 2
+        );
     }
 
     #[test]
@@ -393,34 +551,61 @@ mod tests {
     fn test_qualified_and_bare_module_names() {
         use std::path::Path;
         // qualified_module_name includes parent directory
-        assert_eq!(qualified_module_name(Path::new("src/attr/exceptions.py")), "attr.exceptions");
-        assert_eq!(qualified_module_name(Path::new("click/utils.py")), "click.utils");
+        assert_eq!(
+            qualified_module_name(Path::new("src/attr/exceptions.py")),
+            "attr.exceptions"
+        );
+        assert_eq!(
+            qualified_module_name(Path::new("click/utils.py")),
+            "click.utils"
+        );
         assert_eq!(qualified_module_name(Path::new("utils.py")), "utils");
         assert_eq!(qualified_module_name(Path::new("./foo.py")), "foo");
-        
+
         // bare_module_name is just the filename without extension
-        assert_eq!(bare_module_name(Path::new("src/attr/exceptions.py")), "exceptions");
+        assert_eq!(
+            bare_module_name(Path::new("src/attr/exceptions.py")),
+            "exceptions"
+        );
         assert_eq!(bare_module_name(Path::new("click/utils.py")), "utils");
     }
 
     #[test]
     fn test_resolve_import() {
         let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
-        bare_to_qualified.insert("exceptions".into(), vec!["attr.exceptions".into(), "click.exceptions".into()]);
+        bare_to_qualified.insert(
+            "exceptions".into(),
+            vec!["attr.exceptions".into(), "click.exceptions".into()],
+        );
         bare_to_qualified.insert("utils".into(), vec!["click.utils".into()]);
-        
+
         // Unambiguous: single match
-        assert_eq!(resolve_import("utils", Some("click"), &bare_to_qualified), Some("click.utils".into()));
-        
+        assert_eq!(
+            resolve_import("utils", Some("click"), &bare_to_qualified),
+            Some("click.utils".into())
+        );
+
         // Ambiguous: multiple matches, prefer same package
-        assert_eq!(resolve_import("exceptions", Some("attr"), &bare_to_qualified), Some("attr.exceptions".into()));
-        assert_eq!(resolve_import("exceptions", Some("click"), &bare_to_qualified), Some("click.exceptions".into()));
-        
+        assert_eq!(
+            resolve_import("exceptions", Some("attr"), &bare_to_qualified),
+            Some("attr.exceptions".into())
+        );
+        assert_eq!(
+            resolve_import("exceptions", Some("click"), &bare_to_qualified),
+            Some("click.exceptions".into())
+        );
+
         // Ambiguous: no matching package, returns None
-        assert_eq!(resolve_import("exceptions", Some("httpx"), &bare_to_qualified), None);
-        
+        assert_eq!(
+            resolve_import("exceptions", Some("httpx"), &bare_to_qualified),
+            None
+        );
+
         // Unknown import: returns None
-        assert_eq!(resolve_import("unknown", Some("attr"), &bare_to_qualified), None);
+        assert_eq!(
+            resolve_import("unknown", Some("attr"), &bare_to_qualified),
+            None
+        );
     }
 
     #[test]
@@ -428,11 +613,11 @@ mod tests {
         let mut modules = Vec::new();
         push_dotted_segments("foo.bar.baz", &mut modules);
         assert_eq!(modules, vec!["foo", "bar", "baz"]);
-        
+
         modules.clear();
         push_dotted_segments("..relative", &mut modules);
         assert_eq!(modules, vec!["relative"]);
-        
+
         modules.clear();
         push_dotted_segments("single", &mut modules);
         assert_eq!(modules, vec!["single"]);

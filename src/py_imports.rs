@@ -1,4 +1,3 @@
-
 use std::collections::HashSet;
 use tree_sitter::Node;
 
@@ -16,13 +15,15 @@ pub fn is_type_checking_block(node: Node, source: &str) -> bool {
         return false;
     };
     match condition.kind() {
-        "identifier" => {
-            condition.utf8_text(source.as_bytes()).is_ok_and(|s| s == "TYPE_CHECKING")
-        }
-        "attribute" => {
-            condition.child_by_field_name("attribute")
-                .is_some_and(|attr| attr.utf8_text(source.as_bytes()).is_ok_and(|s| s == "TYPE_CHECKING"))
-        }
+        "identifier" => condition
+            .utf8_text(source.as_bytes())
+            .is_ok_and(|s| s == "TYPE_CHECKING"),
+        "attribute" => condition
+            .child_by_field_name("attribute")
+            .is_some_and(|attr| {
+                attr.utf8_text(source.as_bytes())
+                    .is_ok_and(|s| s == "TYPE_CHECKING")
+            }),
         _ => false,
     }
 }
@@ -122,4 +123,3 @@ mod tests {
         assert_eq!(count_imports(p2.tree.root_node(), &p2.source), 1);
     }
 }
-
