@@ -1,5 +1,6 @@
 mod analyze;
 mod rules;
+mod viz;
 
 use clap::{Parser, Subcommand};
 use kiss::config_gen::{
@@ -14,6 +15,7 @@ use std::path::{Path, PathBuf};
 
 use crate::analyze::run_analyze;
 use crate::rules::{run_config, run_rules};
+use crate::viz::run_viz;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -126,6 +128,20 @@ enum Commands {
     Rules,
     /// Show effective configuration (merged from all sources)
     Config,
+    /// Write Graphviz DOT dependency graph
+    Viz {
+        /// Output .dot file path
+        out: PathBuf,
+        /// Paths to analyze
+        #[arg(default_value = ".")]
+        paths: Vec<String>,
+        /// Coarsen the graph [0,1]. 0 collapses to one node; 1 shows all nodes (default: 1).
+        #[arg(long, value_name = "Z", default_value = "1.0")]
+        zoom: f64,
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
+    },
 }
 
 fn main() {
@@ -142,27 +158,19 @@ fn main() {
             ignore,
             timing,
         } => {
-            let ignore = normalize_ignore_prefixes(&ignore);
-            let universe = &paths[0];
-            let focus = if paths.len() > 1 {
-                &paths[1..]
-            } else {
-                &paths[..]
-            };
-            validate_paths(&paths);
-            let opts = analyze::AnalyzeOptions {
-                universe,
-                focus_paths: focus,
+            let args = CheckCommandArgs {
+                paths: &paths,
+                lang_filter: cli.lang,
                 py_config: &py_config,
                 rs_config: &rs_config,
-                lang_filter: cli.lang,
-                bypass_gate: all,
                 gate_config: &gate_config,
-                ignore_prefixes: &ignore,
-                show_timing: timing,
+                bypass_gate: all,
+                ignore: &ignore,
+                timing,
             };
-            if !run_analyze(&opts) {
-                std::process::exit(1);
+            let exit_code = run_check_command(&args);
+            if exit_code != 0 {
+                std::process::exit(exit_code);
             }
         }
         Commands::Stats {
@@ -218,6 +226,19 @@ fn main() {
             cli.config.as_ref(),
             cli.defaults,
         ),
+        Commands::Viz {
+            out,
+            paths,
+            zoom,
+            ignore,
+        } => {
+            let ignore = normalize_ignore_prefixes(&ignore);
+            validate_paths(&paths);
+            if let Err(e) = run_viz(&out, &paths, cli.lang, &ignore, zoom) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 
@@ -378,7 +399,7 @@ fn run_stats_summary(paths: &[String], lang_filter: Option<Language>, ignore: &[
 }
 
 fn run_stats_top(paths: &[String], lang_filter: Option<Language>, ignore: &[String], n: usize) {
-    let (py_files, rs_files) = gather_files_by_lang(paths, lang_filter, ignore);
+    let (py_files, rs_files) = kiss::discovery::gather_files_by_lang(paths, lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         eprintln!("No source files found.");
         std::process::exit(1);
@@ -508,33 +529,13 @@ fn print_top_for_metric<F>(
     println!();
 }
 
-
-fn gather_files_by_lang(
-    paths: &[String],
-    lang_filter: Option<Language>,
-    ignore: &[String],
-) -> (Vec<std::path::PathBuf>, Vec<std::path::PathBuf>) {
-    use kiss::discovery::find_source_files_with_ignore;
-    let (mut py_files, mut rs_files) = (Vec::new(), Vec::new());
-    for path in paths {
-        for sf in find_source_files_with_ignore(Path::new(path), ignore) {
-            match (sf.language, lang_filter) {
-                (Language::Python, None | Some(Language::Python)) => py_files.push(sf.path),
-                (Language::Rust, None | Some(Language::Rust)) => rs_files.push(sf.path),
-                _ => {}
-            }
-        }
-    }
-    (py_files, rs_files)
-}
-
 fn run_stats_table(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
     use kiss::parsing::parse_files;
     use kiss::rust_parsing::parse_rust_files;
     use kiss::{build_dependency_graph, rust_graph::build_rust_dependency_graph};
     use kiss::{collect_detailed_py, collect_detailed_rs, format_detailed_table};
 
-    let (py_files, rs_files) = gather_files_by_lang(paths, lang_filter, ignore);
+    let (py_files, rs_files) = kiss::discovery::gather_files_by_lang(paths, lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         eprintln!("No source files found.");
         std::process::exit(1);
@@ -590,6 +591,40 @@ fn run_mimic(
     }
 }
 
+struct CheckCommandArgs<'a> {
+    paths: &'a [String],
+    lang_filter: Option<Language>,
+    py_config: &'a kiss::Config,
+    rs_config: &'a kiss::Config,
+    gate_config: &'a kiss::GateConfig,
+    bypass_gate: bool,
+    ignore: &'a [String],
+    timing: bool,
+}
+
+fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
+    let ignore = normalize_ignore_prefixes(args.ignore);
+    validate_paths(args.paths);
+    let universe = &args.paths[0];
+    let focus = if args.paths.len() > 1 {
+        &args.paths[1..]
+    } else {
+        args.paths
+    };
+    let opts = analyze::AnalyzeOptions {
+        universe,
+        focus_paths: focus,
+        py_config: args.py_config,
+        rs_config: args.rs_config,
+        lang_filter: args.lang_filter,
+        bypass_gate: args.bypass_gate,
+        gate_config: args.gate_config,
+        ignore_prefixes: &ignore,
+        show_timing: args.timing,
+    };
+    i32::from(!run_analyze(&opts))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -643,14 +678,14 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let p = tmp.path().to_string_lossy().to_string();
         assert!(
-            gather_files_by_lang(std::slice::from_ref(&p), None, &[])
+            kiss::discovery::gather_files_by_lang(std::slice::from_ref(&p), None, &[])
                 .0
                 .is_empty()
         );
         std::fs::write(tmp.path().join("test.py"), "def foo(): pass").unwrap();
         std::fs::write(tmp.path().join("test.rs"), "fn main() {}").unwrap();
         assert_eq!(
-            gather_files_by_lang(std::slice::from_ref(&p), None, &[])
+            kiss::discovery::gather_files_by_lang(std::slice::from_ref(&p), None, &[])
                 .0
                 .len(),
             1

@@ -1,4 +1,4 @@
-use crate::discovery::{Language, find_source_files_with_ignore};
+use crate::discovery::{Language, find_source_files_with_ignore, gather_files_by_lang};
 use crate::duplication::{
     DuplicationConfig, cluster_duplicates, detect_duplicates_from_chunks,
     extract_chunks_for_duplication, extract_rust_chunks_for_duplication,
@@ -11,7 +11,7 @@ use crate::rust_parsing::{ParsedRustFile, parse_rust_files};
 use crate::rust_test_refs::analyze_rust_test_refs;
 use crate::stats::{MetricStats, PercentileSummary, compute_summaries};
 use crate::test_refs::analyze_test_refs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub fn collect_py_stats(root: &Path) -> (MetricStats, usize) {
     collect_py_stats_with_ignore(root, &[])
@@ -236,24 +236,6 @@ pub fn infer_gate_config_for_paths(
     gate.duplication_enabled =
         !has_reportable_duplicates(&py_parsed, &rs_parsed, gate.min_similarity);
     gate
-}
-
-fn gather_files_by_lang(
-    paths: &[String],
-    lang: Option<Language>,
-    ignore: &[String],
-) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let (mut py_files, mut rs_files) = (Vec::new(), Vec::new());
-    for path in paths {
-        for sf in find_source_files_with_ignore(Path::new(path), ignore) {
-            match (sf.language, lang) {
-                (Language::Python, None | Some(Language::Python)) => py_files.push(sf.path),
-                (Language::Rust, None | Some(Language::Rust)) => rs_files.push(sf.path),
-                _ => {}
-            }
-        }
-    }
-    (py_files, rs_files)
 }
 
 fn compute_static_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> usize {

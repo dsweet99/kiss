@@ -4,13 +4,13 @@ DEFINITION: [statement] Any statement within a function body that is not an impo
 
 ## Project Overview
 
-**kiss** (`kiss-ai` on crates.io) is a code-quality metrics tool for Python and Rust, written in Rust (edition 2024, stable since Rust 1.85). LLM coder feedback alongside linters/test runners. **Primary consumer is the LLM** — output controls LLM behavior. Strict-by-default. Self-hosting: `kiss check .` must pass.
+**kiss** (`kiss-ai` on crates.io) is a code-quality metrics tool for Python and Rust, written in Rust (edition 2024, stable since Rust 1.85). LLM coder feedback alongside linters/test runners. **Primary consumer is the LLM** — output controls LLM behavior. **Inner-loop fast**: intended to run frequently during agent iterations. Strict-by-default. Self-hosting: `kiss check .` must pass.
 
 **Analysis types:** Count metrics, Graph analysis (fan-in/out, cycles, depth), Duplication (MinHash/LSH), Test references (static), Coverage gate (90% default).
 
 ## Design Philosophy
 
-- **KISS is the ethos** — simplicity over sophistication; local macros beat parameterized shared ones
+- **KISS is the ethos** — simplicity over sophistication; local macros beat parameterized shared ones; prefer fast, local checks suitable for the inner loop
 - **Component checks, not composites** — avoid derived metrics (God Class, LCOM, Cyclomatic); components catch the issue
 - **Empirical over arbitrary** — use `mimic` on respected codebases; max values, not percentiles
 - **Distinguish coupling from API surface** — count internal `use`, not `pub use` re-exports; exempt module definition files
@@ -92,7 +92,7 @@ Precedence: `defaults.rs` → `~/.kissconfig` → `./.kissconfig` → `--config`
 
 ## CLI
 
-`kiss check [PATH]` | `kiss rules` | `kiss stats [--all]` | `kiss mimic --out FILE` | `kiss clamp` | `kiss config`
+`kiss check [PATH]` | `kiss rules` | `kiss stats [--all]` | `kiss mimic --out FILE` | `kiss clamp` | `kiss config` | (check scoping: first path = universe, additional paths = focus)
 
 Options: `--lang`, `--config`, `--defaults`, `--ignore PREFIX`, `--all`
 

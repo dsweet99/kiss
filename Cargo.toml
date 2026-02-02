@@ -1,6 +1,6 @@
 [package]
 name = "kiss-ai"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 description = "Code-quality metrics tool for Python and Rust"
 license = "MIT"
@@ -43,6 +43,7 @@ petgraph = "0.7"
 
 # Configuration file parsing
 toml = "0.8"
+fa-leiden-cd = "0.1.0"
 
 [dev-dependencies]
 tempfile = "3"
