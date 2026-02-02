@@ -389,7 +389,7 @@ fn build_cluster_labels(
                 if i > 0 { label.push('\n'); }
                 label.push_str(&s);
             }
-            let _ = write!(label, "\n[... {} more]", total - 3);
+            let _ = write!(label, "\n[{} more]", total - 3);
         }
         labels.push(label);
     }
