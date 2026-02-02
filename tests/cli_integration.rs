@@ -173,6 +173,143 @@ fn cli_viz_writes_dot_file() {
 }
 
 #[test]
+fn cli_viz_writes_mermaid_file() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.py"), "import b\n").unwrap();
+    fs::write(tmp.path().join("b.py"), "def f():\n    return 1\n").unwrap();
+
+    let out_path = tmp.path().join("graph.mmd");
+    let output = kiss_binary()
+        .arg("viz")
+        .arg(&out_path)
+        .arg(tmp.path())
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "viz should succeed. stderr: {stderr}"
+    );
+
+    let mmd = fs::read_to_string(&out_path).unwrap();
+    assert!(mmd.starts_with("graph "), "mmd:\n{mmd}");
+    assert!(mmd.contains("-->"), "mmd:\n{mmd}");
+}
+
+#[test]
+fn cli_viz_writes_markdown_file() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.py"), "import b\n").unwrap();
+    fs::write(tmp.path().join("b.py"), "def f():\n    return 1\n").unwrap();
+
+    let out_path = tmp.path().join("graph.md");
+    let output = kiss_binary()
+        .arg("viz")
+        .arg(&out_path)
+        .arg(tmp.path())
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "viz should succeed. stderr: {stderr}"
+    );
+
+    let md = fs::read_to_string(&out_path).unwrap();
+    assert!(md.starts_with("```mermaid\n"), "md:\n{md}");
+    assert!(md.contains("\n```"), "md:\n{md}");
+    assert!(md.contains("-->"), "md:\n{md}");
+}
+
+#[test]
+fn cli_viz_rejects_unknown_output_extension() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.py"), "import b\n").unwrap();
+    fs::write(tmp.path().join("b.py"), "def f():\n    return 1\n").unwrap();
+
+    let out_path = tmp.path().join("graph.txt");
+    let output = kiss_binary()
+        .arg("viz")
+        .arg(&out_path)
+        .arg(tmp.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success(), "viz should fail on .txt");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Unsupported output file extension"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn cli_viz_zoom_zero_collapses_to_one_node() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.py"), "import b\n").unwrap();
+    fs::write(tmp.path().join("b.py"), "def f():\n    return 1\n").unwrap();
+
+    let out_path = tmp.path().join("graph.mmd");
+    let output = kiss_binary()
+        .arg("viz")
+        .arg(&out_path)
+        .arg(tmp.path())
+        .arg("--zoom=0")
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "viz should succeed. stderr: {stderr}"
+    );
+
+    let mmd = fs::read_to_string(&out_path).unwrap();
+    // One node, no edges.
+    let node_lines = mmd
+        .lines()
+        .filter(|l| l.trim_start().starts_with('c') && l.contains('['))
+        .count();
+    let edge_lines = mmd.lines().filter(|l| l.contains("-->")).count();
+    assert_eq!(node_lines, 1, "mmd:\n{mmd}");
+    assert_eq!(edge_lines, 0, "mmd:\n{mmd}");
+}
+
+#[test]
+fn cli_viz_zoom_near_one_is_not_collapsed() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.py"), "import b\n").unwrap();
+    fs::write(tmp.path().join("b.py"), "def f():\n    return 1\n").unwrap();
+
+    let out_path = tmp.path().join("graph.mmd");
+    let output = kiss_binary()
+        .arg("viz")
+        .arg(&out_path)
+        .arg(tmp.path())
+        .arg("--zoom=0.99")
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "viz should succeed. stderr: {stderr}"
+    );
+
+    let mmd = fs::read_to_string(&out_path).unwrap();
+    let node_lines = mmd
+        .lines()
+        .filter(|l| l.trim_start().starts_with('c') && l.contains('['))
+        .count();
+    assert!(
+        node_lines >= 2,
+        "expected zoom=0.99 to keep at least 2 nodes. mmd:\n{mmd}"
+    );
+}
+
+#[test]
 fn cli_with_lang_filter_python() {
     let tmp = TempDir::new().unwrap();
     create_god_class_file(tmp.path());

@@ -135,6 +135,9 @@ enum Commands {
         /// Paths to analyze
         #[arg(default_value = ".")]
         paths: Vec<String>,
+        /// Coarsen the graph [0,1]. 0 collapses to one node; 1 shows all nodes (default: 1).
+        #[arg(long, value_name = "Z", default_value = "1.0")]
+        zoom: f64,
         /// Ignore files/directories starting with PREFIX (repeatable)
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
@@ -223,10 +226,15 @@ fn main() {
             cli.config.as_ref(),
             cli.defaults,
         ),
-        Commands::Viz { out, paths, ignore } => {
+        Commands::Viz {
+            out,
+            paths,
+            zoom,
+            ignore,
+        } => {
             let ignore = normalize_ignore_prefixes(&ignore);
             validate_paths(&paths);
-            if let Err(e) = run_viz(&out, &paths, cli.lang, &ignore) {
+            if let Err(e) = run_viz(&out, &paths, cli.lang, &ignore, zoom) {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
