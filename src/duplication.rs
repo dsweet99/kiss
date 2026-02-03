@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use syn::{ImplItem, Item};
 use tree_sitter::Node;
+use std::cmp::Ordering;
 
 const MIN_CHUNK_TOKENS: usize = 10;
 const MIN_CHUNK_LINES: usize = 5;
@@ -111,6 +112,35 @@ fn compute_cluster_similarity(indices: &[usize], pair_sims: &HashMap<(usize, usi
     }
 }
 
+fn cmp_chunk_key(a: &CodeChunk, b: &CodeChunk) -> Ordering {
+    a.file
+        .to_string_lossy()
+        .cmp(&b.file.to_string_lossy())
+        .then(a.start_line.cmp(&b.start_line))
+        .then(a.end_line.cmp(&b.end_line))
+        .then(a.name.cmp(&b.name))
+}
+
+fn min_chunk_in_cluster(cluster: &DuplicateCluster) -> Option<&CodeChunk> {
+    cluster.chunks.iter().min_by(|a, b| cmp_chunk_key(a, b))
+}
+
+fn sort_clusters_deterministic(clusters: &mut [DuplicateCluster]) {
+    clusters.sort_by(|a, b| {
+        b.chunks.len().cmp(&a.chunks.len()).then_with(|| {
+            b.avg_similarity
+                .partial_cmp(&a.avg_similarity)
+                .unwrap_or(Ordering::Equal)
+        }).then_with(|| {
+            // Deterministic tie-breaker: ensure stable ordering when size + avg_similarity tie.
+            match (min_chunk_in_cluster(a), min_chunk_in_cluster(b)) {
+                (Some(ca), Some(cb)) => cmp_chunk_key(ca, cb),
+                _ => Ordering::Equal,
+            }
+        })
+    });
+}
+
 pub fn cluster_duplicates(pairs: &[DuplicatePair], chunks: &[CodeChunk]) -> Vec<DuplicateCluster> {
     if pairs.is_empty() || chunks.len() < 2 {
         return Vec::new();
@@ -139,13 +169,7 @@ pub fn cluster_duplicates(pairs: &[DuplicatePair], chunks: &[CodeChunk]) -> Vec<
             chunks: indices.into_iter().map(|i| chunks[i].clone()).collect(),
         })
         .collect();
-    clusters.sort_by(|a, b| {
-        b.chunks.len().cmp(&a.chunks.len()).then_with(|| {
-            b.avg_similarity
-                .partial_cmp(&a.avg_similarity)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-    });
+    sort_clusters_deterministic(&mut clusters);
     clusters
 }
 
@@ -339,7 +363,13 @@ pub fn detect_duplicates_from_chunks(
             })
         })
         .collect();
-    duplicates.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap());
+    duplicates.sort_by(|a, b| {
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| cmp_chunk_key(&a.chunk1, &b.chunk1))
+            .then_with(|| cmp_chunk_key(&a.chunk2, &b.chunk2))
+    });
     duplicates
 }
 
@@ -406,13 +436,7 @@ pub fn cluster_duplicates_from_chunks(
         })
         .collect();
 
-    clusters.sort_by(|a, b| {
-        b.chunks.len().cmp(&a.chunks.len()).then_with(|| {
-            b.avg_similarity
-                .partial_cmp(&a.avg_similarity)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-    });
+    sort_clusters_deterministic(&mut clusters);
     clusters
 }
 

@@ -418,7 +418,7 @@ fn count_statements(node: Node) -> usize {
 }
 
 fn is_statement(kind: &str) -> bool {
-    // Per style.md: "[statement] Any statement within a function body that is not an import or a signature"
+    // Statement definition: any statement within a function body that is not an import or signature.
     // Excludes: import_statement, import_from_statement, future_import_statement
     matches!(
         kind,
@@ -713,7 +713,7 @@ mod tests {
 
     #[test]
     fn test_import_statements_not_counted() {
-        // Per style.md: "[statement] Any statement within a function body that is not an import or a signature"
+        // Statement definition: any statement within a function body that is not an import or signature.
         // import statements inside function bodies should NOT be counted
         let p = parse("def f():\n    import os\n    x = 1\n    print(x)");
         let body = get_func_node(&p).child_by_field_name("body").unwrap();

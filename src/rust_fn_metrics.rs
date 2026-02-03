@@ -159,7 +159,7 @@ impl FunctionMetricsVisitor {
 
 impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-        // Per style.md: statements exclude imports and signatures
+        // Statement definition: statements exclude imports and signatures.
         // Skip use statements inside function bodies
         let is_use_item = matches!(stmt, Stmt::Item(syn::Item::Use(_)));
         if !is_use_item {
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn test_use_statements_in_function_not_counted() {
-        // Per style.md: "[statement] Any statement within a function body that is not an import or a signature"
+        // Statement definition: any statement within a function body that is not an import or signature.
         // use statements inside function bodies should NOT be counted as statements
         let (_, b) = parse_fn("fn f() { use std::io::Write; let x = 1; println!(\"{}\", x); }");
         let m = compute_rust_function_metrics(&syn::punctuated::Punctuated::new(), &b, 0);

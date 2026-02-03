@@ -32,6 +32,7 @@ Current speed-oriented choices include:
 
 `kiss check` emits **one line per item** with stable prefixes so an agent can parse it reliably:
 
+- `Analyzed: ...` (a stable summary line; intended to be safe to ignore for parsers)
 - `VIOLATION:<metric>:<file>:<line>:<name>: <message> <suggestion>`
 - `GATE_FAILED:test_coverage: ...` (a hard stop unless you bypass)
 - `NO VIOLATIONS` (final success sentinel)
