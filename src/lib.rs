@@ -12,6 +12,8 @@ pub mod counts;
 pub mod discovery;
 pub mod duplication;
 pub mod graph;
+pub mod check_cache;
+pub mod check_universe_cache;
 pub mod minhash;
 pub mod parsing;
 pub mod stats;

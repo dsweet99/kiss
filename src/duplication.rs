@@ -49,7 +49,7 @@ pub struct DuplicatePair {
     pub similarity: f64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DuplicateCluster {
     pub chunks: Vec<CodeChunk>,
     pub avg_similarity: f64,

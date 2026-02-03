@@ -17,6 +17,8 @@ use kiss::{
 };
 use kiss::counts::analyze_file_with_statement_count;
 use kiss::units::count_code_units;
+use crate::analyze_cache;
+use kiss::check_universe_cache::CachedCoverageItem;
 
 pub struct AnalyzeOptions<'a> {
     pub universe: &'a str,
@@ -30,35 +32,51 @@ pub struct AnalyzeOptions<'a> {
     pub show_timing: bool,
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
     let t0 = std::time::Instant::now();
     let universe_root = Path::new(opts.universe);
     let (py_files, rs_files) = gather_files(universe_root, opts.lang_filter, opts.ignore_prefixes);
-    let t1 = std::time::Instant::now();
-
     if py_files.is_empty() && rs_files.is_empty() {
         print_no_files_message(opts.lang_filter, universe_root);
         return true;
     }
-
     let focus_set = build_focus_set(opts.focus_paths, opts.lang_filter, opts.ignore_prefixes);
+    if opts.bypass_gate && !opts.show_timing
+        && let Some(ok) = analyze_cache::try_run_cached_all(opts, &py_files, &rs_files, &focus_set)
+    {
+        return ok;
+    }
+    let t1 = std::time::Instant::now();
+    run_analyze_uncached(opts, &py_files, &rs_files, &focus_set, t0, t1)
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_analyze_uncached(
+    opts: &AnalyzeOptions<'_>,
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+    focus_set: &HashSet<PathBuf>,
+    t0: std::time::Instant,
+    t1: std::time::Instant,
+) -> bool {
     let (result, parse_timing) = parse_all_timed(
-        &py_files,
-        &rs_files,
+        py_files,
+        rs_files,
         opts.py_config,
         opts.rs_config,
         opts.show_timing,
     );
     let t2 = std::time::Instant::now();
     log_parse_timing(opts.show_timing, &parse_timing);
-    let mut viols = filter_viols_by_focus(result.violations, &focus_set);
+    let mut viols = filter_viols_by_focus(result.violations.clone(), focus_set);
 
     if !opts.bypass_gate
         && !check_coverage_gate(
             &result.py_parsed,
             &result.rs_parsed,
             opts.gate_config,
-            &focus_set,
+            focus_set,
             opts.show_timing,
         )
     {
@@ -78,34 +96,142 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
         rs_graph.as_ref(),
     );
 
-    viols.extend(collect_graph_viols(
-        py_graph.as_ref(),
-        rs_graph.as_ref(),
-        opts.py_config,
-        opts.rs_config,
-        &focus_set,
-        result.py_parsed.len() + result.rs_parsed.len(),
-    ));
+    let file_count = result.py_parsed.len() + result.rs_parsed.len();
+    let graph_viols_all = if file_count <= 1 {
+        Vec::new()
+    } else {
+        analyze_graphs(py_graph.as_ref(), rs_graph.as_ref(), opts.py_config, opts.rs_config)
+    };
+    viols.extend(filter_viols_by_focus(graph_viols_all.clone(), focus_set));
     let t4 = std::time::Instant::now();
 
-    if opts.bypass_gate {
+    let coverage_cache_lists =
+        add_coverage_viols(opts, &result, focus_set, &mut viols);
+    log_timing_phase2(opts.show_timing, t3, t4);
+
+    let (py_dups_all, rs_dups_all, py_dups, rs_dups, t_dup0) =
+        compute_duplicates(opts, &result, focus_set);
+    maybe_store_full_cache(CacheStoreCall {
+        opts,
+        py_files,
+        rs_files,
+        result: &result,
+        graph_viols_all: &graph_viols_all,
+        py_graph: py_graph.as_ref(),
+        rs_graph: rs_graph.as_ref(),
+        py_dups_all: &py_dups_all,
+        rs_dups_all: &rs_dups_all,
+        coverage_cache_lists,
+    });
+    print_all_results_with_dups(&viols, &py_dups, &rs_dups, opts.show_timing, Some(t_dup0))
+}
+
+fn add_coverage_viols(
+    opts: &AnalyzeOptions<'_>,
+    result: &ParseResult,
+    focus_set: &HashSet<PathBuf>,
+    viols: &mut Vec<Violation>,
+) -> Option<(Vec<CachedCoverageItem>, Vec<CachedCoverageItem>)> {
+    if !opts.bypass_gate {
+        return None;
+    }
+    if opts.show_timing {
         viols.extend(collect_coverage_viols(
             &result.py_parsed,
             &result.rs_parsed,
-            &focus_set,
+            focus_set,
             opts.show_timing,
         ));
+        return None;
     }
-    log_timing_phase2(opts.show_timing, t3, t4);
+    let (definitions, unreferenced) =
+        analyze_cache::coverage_lists(&result.py_parsed, &result.rs_parsed);
+    let defs: Vec<_> = definitions
+        .iter()
+        .cloned()
+        .map(CachedCoverageItem::into_tuple)
+        .collect();
+    let unref: Vec<_> = unreferenced
+        .iter()
+        .cloned()
+        .map(CachedCoverageItem::into_tuple)
+        .collect();
+    let (_, _, _, unreferenced_focus) = compute_test_coverage_from_lists(&defs, &unref, focus_set);
+    viols.extend(
+        unreferenced_focus
+            .into_iter()
+            .map(|(file, name, line)| analyze_cache::coverage_violation(file, name, line)),
+    );
+    Some((definitions, unreferenced))
+}
 
-    print_all_results(
-        &viols,
-        &result.py_parsed,
-        &result.rs_parsed,
-        opts.gate_config,
-        &focus_set,
-        opts.show_timing,
-    )
+fn compute_duplicates(
+    opts: &AnalyzeOptions<'_>,
+    result: &ParseResult,
+    focus_set: &HashSet<PathBuf>,
+) -> (
+    Vec<DuplicateCluster>,
+    Vec<DuplicateCluster>,
+    Vec<DuplicateCluster>,
+    Vec<DuplicateCluster>,
+    std::time::Instant,
+) {
+    let t0 = std::time::Instant::now();
+    let (py_dups_all, rs_dups_all) = if opts.gate_config.duplication_enabled {
+        (
+            detect_py_duplicates(&result.py_parsed, opts.gate_config.min_similarity),
+            detect_rs_duplicates(&result.rs_parsed, opts.gate_config.min_similarity),
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let py_dups = filter_duplicates_by_focus(py_dups_all.clone(), focus_set);
+    let rs_dups = filter_duplicates_by_focus(rs_dups_all.clone(), focus_set);
+    (py_dups_all, rs_dups_all, py_dups, rs_dups, t0)
+}
+
+struct CacheStoreCall<'a> {
+    opts: &'a AnalyzeOptions<'a>,
+    py_files: &'a [PathBuf],
+    rs_files: &'a [PathBuf],
+    result: &'a ParseResult,
+    graph_viols_all: &'a [Violation],
+    py_graph: Option<&'a DependencyGraph>,
+    rs_graph: Option<&'a DependencyGraph>,
+    py_dups_all: &'a [DuplicateCluster],
+    rs_dups_all: &'a [DuplicateCluster],
+    coverage_cache_lists: Option<(Vec<CachedCoverageItem>, Vec<CachedCoverageItem>)>,
+}
+
+fn maybe_store_full_cache(call: CacheStoreCall<'_>) {
+    if !call.opts.bypass_gate || call.opts.show_timing {
+        return;
+    }
+    let Some((definitions, unreferenced)) = call.coverage_cache_lists else {
+        return;
+    };
+    let fp = analyze_cache::fingerprint_for_check(
+        call.py_files,
+        call.rs_files,
+        call.opts.py_config,
+        call.opts.rs_config,
+        call.opts.gate_config,
+    );
+    analyze_cache::store_full_cache_from_run(analyze_cache::FullCacheInputs {
+        fingerprint: fp,
+        py_file_count: call.result.py_parsed.len(),
+        rs_file_count: call.result.rs_parsed.len(),
+        code_unit_count: call.result.code_unit_count,
+        statement_count: call.result.statement_count,
+        violations: &call.result.violations,
+        graph_viols_all: call.graph_viols_all,
+        py_graph: call.py_graph,
+        rs_graph: call.rs_graph,
+        py_dups_all: call.py_dups_all,
+        rs_dups_all: call.rs_dups_all,
+        definitions,
+        unreferenced,
+    });
 }
 
 pub fn run_dry(
@@ -173,7 +299,7 @@ fn log_timing_phase2(show: bool, t3: std::time::Instant, t4: std::time::Instant)
     }
 }
 
-fn filter_viols_by_focus(
+pub fn filter_viols_by_focus(
     mut viols: Vec<Violation>,
     focus_set: &HashSet<PathBuf>,
 ) -> Vec<Violation> {
@@ -193,22 +319,6 @@ fn log_timing_phase1(
         t2.duration_since(t1).as_secs_f64(),
         t3.duration_since(t2).as_secs_f64()
     );
-}
-
-fn collect_graph_viols(
-    py_graph: Option<&DependencyGraph>,
-    rs_graph: Option<&DependencyGraph>,
-    py_config: &Config,
-    rs_config: &Config,
-    focus_set: &HashSet<PathBuf>,
-    file_count: usize,
-) -> Vec<Violation> {
-    if file_count <= 1 {
-        return Vec::new();
-    }
-    let mut viols = analyze_graphs(py_graph, rs_graph, py_config, rs_config);
-    viols.retain(|v| is_focus_file(&v.file, focus_set));
-    viols
 }
 
 fn collect_coverage_viols(
@@ -555,36 +665,57 @@ pub fn compute_test_coverage(
     (coverage, tested, total, unreferenced)
 }
 
-fn print_all_results(
-    viols: &[Violation],
-    py_parsed: &[ParsedFile],
-    rs_parsed: &[ParsedRustFile],
-    gate_config: &GateConfig,
+pub fn compute_test_coverage_from_lists(
+    defs: &[(PathBuf, String, usize)],
+    unref: &[(PathBuf, String, usize)],
     focus_set: &HashSet<PathBuf>,
-    show_timing: bool,
-) -> bool {
-    let t0 = std::time::Instant::now();
-    let (py_dups, rs_dups) = if gate_config.duplication_enabled {
-        (
-            filter_duplicates_by_focus(
-                detect_py_duplicates(py_parsed, gate_config.min_similarity),
-                focus_set,
-            ),
-            filter_duplicates_by_focus(
-                detect_rs_duplicates(rs_parsed, gate_config.min_similarity),
-                focus_set,
-            ),
-        )
+) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
+    let mut total = 0usize;
+    let mut untested = 0usize;
+    let mut unreferenced = Vec::new();
+
+    for (file, _, _) in defs {
+        if is_focus_file(file, focus_set) {
+            total += 1;
+        }
+    }
+    for (file, name, line) in unref {
+        if is_focus_file(file, focus_set) {
+            untested += 1;
+            unreferenced.push((file.clone(), name.clone(), *line));
+        }
+    }
+    unreferenced.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
+    let tested = total.saturating_sub(untested);
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    let coverage = if total > 0 {
+        ((tested as f64 / total as f64) * 100.0).round() as usize
     } else {
-        (Vec::new(), Vec::new())
+        100
     };
+    (coverage, tested, total, unreferenced)
+}
+
+fn print_all_results_with_dups(
+    viols: &[Violation],
+    py_dups: &[DuplicateCluster],
+    rs_dups: &[DuplicateCluster],
+    show_timing: bool,
+    t0: Option<std::time::Instant>,
+) -> bool {
     let t1 = std::time::Instant::now();
     let dup_count = py_dups.len() + rs_dups.len();
 
     print_violations(viols);
-    print_duplicates("Python", &py_dups);
-    print_duplicates("Rust", &rs_dups);
-    if show_timing {
+    print_duplicates("Python", py_dups);
+    print_duplicates("Rust", rs_dups);
+    if show_timing
+        && let Some(t0) = t0
+    {
         let t2 = std::time::Instant::now();
         eprintln!(
             "[TIMING] dup_detect={:.2}s, output={:.2}s",
@@ -599,7 +730,7 @@ fn print_all_results(
     !has_violations
 }
 
-fn filter_duplicates_by_focus(
+pub fn filter_duplicates_by_focus(
     dups: Vec<DuplicateCluster>,
     focus_set: &HashSet<PathBuf>,
 ) -> Vec<DuplicateCluster> {
@@ -758,14 +889,7 @@ mod tests {
 
     #[test]
     fn test_print_all_results() {
-        let result = print_all_results(
-            &[],
-            &[],
-            &[],
-            &GateConfig::default(),
-            &HashSet::new(),
-            false,
-        );
+        let result = print_all_results_with_dups(&[], &[], &[], false, None);
         assert!(result); // no violations = true
     }
 
@@ -811,7 +935,6 @@ mod tests {
         touch(log_timing_phase2);
         touch(filter_viols_by_focus);
         touch(log_timing_phase1);
-        touch(collect_graph_viols);
         touch(collect_coverage_viols);
         touch(parse_all_timed);
         touch(py_parsed_or_log);
@@ -819,5 +942,18 @@ mod tests {
         touch(py_agg_empty);
         touch(py_agg_merge);
         touch(parse_and_analyze_py_timed);
+        touch(analyze_cache::fingerprint_for_check);
+        touch(analyze_cache::try_run_cached_all);
+        touch(analyze_cache::store_full_cache);
+        touch(analyze_cache::coverage_lists);
+        touch(analyze_cache::store_full_cache_from_run);
+        touch(compute_test_coverage_from_lists);
+
+        // Newly extracted helpers
+        touch(run_analyze_uncached);
+        touch(add_coverage_viols);
+        touch(compute_duplicates);
+        touch(maybe_store_full_cache);
+        let _ = std::mem::size_of::<CacheStoreCall>();
     }
 }

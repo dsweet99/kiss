@@ -272,7 +272,7 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
                 .and_then(|p| p.file_name())
                 .and_then(|s| s.to_str())
                 .map(std::string::ToString::to_string),
-            imports: extract_imports(parsed.tree.root_node(), &parsed.source),
+            imports: extract_imports_for_cache(parsed.tree.root_node(), &parsed.source),
         })
         .collect();
 
@@ -297,6 +297,46 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
             && candidates.len() == 1
         {
             graph.add_dependency(&info.from_bare, &info.from_qualified);
+        }
+    }
+    graph
+}
+
+#[must_use]
+pub fn build_dependency_graph_from_import_lists(files: &[(PathBuf, Vec<String>)]) -> DependencyGraph {
+    let mut graph = DependencyGraph::new();
+
+    let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
+
+    for (path, _) in files {
+        let qualified = qualified_module_name(path);
+        let bare = bare_module_name(path);
+        graph.paths.insert(qualified.clone(), path.clone());
+        graph.get_or_create_node(&qualified);
+        bare_to_qualified.entry(bare).or_default().push(qualified);
+    }
+
+    for (path, imports) in files {
+        let from_qualified = qualified_module_name(path);
+        let from_bare = bare_module_name(path);
+        let from_parent = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str());
+
+        for import in imports {
+            if let Some(resolved) = resolve_import(import, from_parent, &bare_to_qualified) {
+                graph.add_dependency(&from_qualified, &resolved);
+            } else {
+                graph.add_dependency(&from_qualified, import);
+            }
+        }
+
+        if from_bare != from_qualified
+            && let Some(candidates) = bare_to_qualified.get(&from_bare)
+            && candidates.len() == 1
+        {
+            graph.add_dependency(&from_bare, &from_qualified);
         }
     }
     graph
@@ -386,7 +426,7 @@ fn collect_import_names(node: Node, source: &str, imports: &mut Vec<String>) {
     }
 }
 
-fn extract_imports(node: Node, source: &str) -> Vec<String> {
+pub(crate) fn extract_imports_for_cache(node: Node, source: &str) -> Vec<String> {
     let mut imports = Vec::new();
     extract_imports_recursive(node, source, &mut imports);
     imports
@@ -445,7 +485,7 @@ mod tests {
     fn test_graph_imports_and_cycles() {
         let mut parser = create_parser().unwrap();
         assert!(
-            extract_imports(
+            extract_imports_for_cache(
                 parser.parse("import os", None).unwrap().root_node(),
                 "import os"
             )
@@ -553,13 +593,14 @@ mod tests {
     fn test_type_checking_imports_excluded_from_graph() {
         let mut parser = create_parser().unwrap();
         let code = "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from some_module import SomeClass\nimport os";
-        let imports = extract_imports(parser.parse(code, None).unwrap().root_node(), code);
+        let imports = extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);
         assert!(imports.contains(&"typing".into()));
         assert!(imports.contains(&"os".into()));
         assert!(!imports.contains(&"some_module".into()));
 
         let code2 = "import typing\nif typing.TYPE_CHECKING:\n    from foo import Bar\nimport json";
-        let imports2 = extract_imports(parser.parse(code2, None).unwrap().root_node(), code2);
+        let imports2 =
+            extract_imports_for_cache(parser.parse(code2, None).unwrap().root_node(), code2);
         assert!(imports2.contains(&"typing".into()));
         assert!(imports2.contains(&"json".into()));
         assert!(!imports2.contains(&"foo".into()));
