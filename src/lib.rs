@@ -12,6 +12,8 @@ pub mod counts;
 pub mod discovery;
 pub mod duplication;
 pub mod graph;
+pub mod check_cache;
+pub mod check_universe_cache;
 pub mod minhash;
 pub mod parsing;
 pub mod stats;
@@ -32,6 +34,7 @@ pub mod test_utils;
 pub use cli_output::print_dry_results;
 pub use config::{Config, ConfigLanguage, is_similar};
 pub use counts::analyze_file;
+pub use counts::analyze_file_with_statement_count;
 pub use defaults::default_config_toml;
 pub use discovery::{
     Language, SourceFile, find_python_files, find_rust_files, find_source_files,
@@ -39,7 +42,7 @@ pub use discovery::{
 };
 pub use duplication::{
     CodeChunk, DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
-    cluster_duplicates, detect_duplicates, detect_duplicates_from_chunks,
+    cluster_duplicates, cluster_duplicates_from_chunks, detect_duplicates, detect_duplicates_from_chunks,
     extract_chunks_for_duplication, extract_rust_chunks_for_duplication,
 };
 pub use gate_config::GateConfig;
@@ -61,6 +64,7 @@ pub use stats_detailed::{
 };
 pub use test_refs::{CodeDefinition, TestRefAnalysis, analyze_test_refs, is_test_file};
 pub use units::{CodeUnit, CodeUnitKind, extract_code_units};
+pub use units::count_code_units;
 pub use violation::{Violation, ViolationBuilder};
 
 pub use rust_counts::analyze_rust_file;

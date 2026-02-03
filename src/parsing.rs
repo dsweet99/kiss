@@ -54,12 +54,22 @@ pub fn parse_file(parser: &mut Parser, path: &Path) -> Result<ParsedFile, ParseE
 }
 
 pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseError>>, ParseError> {
+    enum ParserSlot {
+        Ready(Parser),
+        Failed,
+    }
+
     Ok(paths
         .par_iter()
-        .map(|path| {
-            let mut parser = create_parser()?;
-            parse_file(&mut parser, path)
-        })
+        // Creating a tree-sitter parser + setting the language is relatively expensive.
+        // Reuse one parser per Rayon worker thread instead of per file.
+        .map_init(
+            || create_parser().map_or_else(|_| ParserSlot::Failed, ParserSlot::Ready),
+            |slot, path| match slot {
+                ParserSlot::Ready(parser) => parse_file(parser, path),
+                ParserSlot::Failed => Err(ParseError::ParserInitError),
+            },
+        )
         .collect())
 }
 

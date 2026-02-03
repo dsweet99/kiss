@@ -4,10 +4,12 @@ use crate::minhash::{
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
 use crate::units::get_child_by_field;
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use syn::{ImplItem, Item};
 use tree_sitter::Node;
+use std::cmp::Ordering;
 
 const MIN_CHUNK_TOKENS: usize = 10;
 const MIN_CHUNK_LINES: usize = 5;
@@ -48,7 +50,7 @@ pub struct DuplicatePair {
     pub similarity: f64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DuplicateCluster {
     pub chunks: Vec<CodeChunk>,
     pub avg_similarity: f64,
@@ -110,6 +112,35 @@ fn compute_cluster_similarity(indices: &[usize], pair_sims: &HashMap<(usize, usi
     }
 }
 
+fn cmp_chunk_key(a: &CodeChunk, b: &CodeChunk) -> Ordering {
+    a.file
+        .to_string_lossy()
+        .cmp(&b.file.to_string_lossy())
+        .then(a.start_line.cmp(&b.start_line))
+        .then(a.end_line.cmp(&b.end_line))
+        .then(a.name.cmp(&b.name))
+}
+
+fn min_chunk_in_cluster(cluster: &DuplicateCluster) -> Option<&CodeChunk> {
+    cluster.chunks.iter().min_by(|a, b| cmp_chunk_key(a, b))
+}
+
+fn sort_clusters_deterministic(clusters: &mut [DuplicateCluster]) {
+    clusters.sort_by(|a, b| {
+        b.chunks.len().cmp(&a.chunks.len()).then_with(|| {
+            b.avg_similarity
+                .partial_cmp(&a.avg_similarity)
+                .unwrap_or(Ordering::Equal)
+        }).then_with(|| {
+            // Deterministic tie-breaker: ensure stable ordering when size + avg_similarity tie.
+            match (min_chunk_in_cluster(a), min_chunk_in_cluster(b)) {
+                (Some(ca), Some(cb)) => cmp_chunk_key(ca, cb),
+                _ => Ordering::Equal,
+            }
+        })
+    });
+}
+
 pub fn cluster_duplicates(pairs: &[DuplicatePair], chunks: &[CodeChunk]) -> Vec<DuplicateCluster> {
     if pairs.is_empty() || chunks.len() < 2 {
         return Vec::new();
@@ -138,32 +169,42 @@ pub fn cluster_duplicates(pairs: &[DuplicatePair], chunks: &[CodeChunk]) -> Vec<
             chunks: indices.into_iter().map(|i| chunks[i].clone()).collect(),
         })
         .collect();
-    clusters.sort_by(|a, b| {
-        b.chunks.len().cmp(&a.chunks.len()).then_with(|| {
-            b.avg_similarity
-                .partial_cmp(&a.avg_similarity)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-    });
+    sort_clusters_deterministic(&mut clusters);
     clusters
 }
 
 #[must_use]
 pub fn extract_chunks_for_duplication(parsed_files: &[&ParsedFile]) -> Vec<CodeChunk> {
-    let mut chunks = Vec::new();
-    for parsed in parsed_files {
-        extract_function_chunks(
-            parsed.tree.root_node(),
-            &parsed.source,
-            &parsed.path,
-            &mut chunks,
-        );
+    // Parallelize per-file extraction but preserve deterministic ordering:
+    // - files in input order
+    // - within each file, traversal order from `extract_function_chunks`
+    let mut per_file: Vec<(usize, Vec<CodeChunk>)> = parsed_files
+        .par_iter()
+        .enumerate()
+        .map(|(idx, parsed)| {
+            let mut chunks = Vec::new();
+            extract_function_chunks(
+                parsed.tree.root_node(),
+                &parsed.source,
+                &parsed.path,
+                &mut chunks,
+            );
+            (idx, chunks)
+        })
+        .collect();
+    per_file.sort_by_key(|(idx, _)| *idx);
+    let total: usize = per_file.iter().map(|(_, v)| v.len()).sum();
+    let mut out = Vec::with_capacity(total);
+    for (_, mut v) in per_file {
+        out.append(&mut v);
     }
-    chunks
+    out
 }
 
 #[must_use]
 pub fn extract_rust_chunks_for_duplication(parsed_files: &[&ParsedRustFile]) -> Vec<CodeChunk> {
+    // Rust AST (`syn::File`) is not Send/Sync, so we keep this sequential.
+    // Ordering is naturally stable by input order.
     let mut chunks = Vec::new();
     for parsed in parsed_files {
         extract_rust_function_chunks(&parsed.ast, &parsed.source, &parsed.path, &mut chunks);
@@ -299,8 +340,10 @@ pub fn detect_duplicates_from_chunks(
     if chunks.len() < 2 {
         return Vec::new();
     }
+    // Hot path: computing shingles + MinHash per chunk. Parallelize, but keep a stable
+    // signature ordering (par_iter() over slices is indexed, so Vec preserves order).
     let signatures: Vec<MinHashSignature> = chunks
-        .iter()
+        .par_iter()
         .map(|c| {
             compute_minhash(
                 &generate_shingles(&c.normalized, config.shingle_size),
@@ -320,8 +363,81 @@ pub fn detect_duplicates_from_chunks(
             })
         })
         .collect();
-    duplicates.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap());
+    duplicates.sort_by(|a, b| {
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| cmp_chunk_key(&a.chunk1, &b.chunk1))
+            .then_with(|| cmp_chunk_key(&a.chunk2, &b.chunk2))
+    });
     duplicates
+}
+
+/// Optimized duplication pipeline used by `kiss check`.
+///
+/// This produces the same `DuplicateCluster` output as
+/// `cluster_duplicates(&detect_duplicates_from_chunks(chunks, config), chunks)` but avoids
+/// cloning `CodeChunk` values for intermediate pairs/candidates.
+#[must_use]
+pub fn cluster_duplicates_from_chunks(
+    chunks: &[CodeChunk],
+    config: &DuplicationConfig,
+) -> Vec<DuplicateCluster> {
+    if chunks.len() < 2 {
+        return Vec::new();
+    }
+
+    let signatures: Vec<MinHashSignature> = chunks
+        .par_iter()
+        .map(|c| {
+            compute_minhash(
+                &generate_shingles(&c.normalized, config.shingle_size),
+                config.minhash_size,
+            )
+        })
+        .collect();
+
+    let candidates: Vec<(usize, usize)> = find_lsh_candidates(&signatures, config.lsh_bands)
+        .into_iter()
+        .collect();
+
+    // Compute similarity in parallel; only keep pairs that pass threshold.
+    let good_pairs: Vec<(usize, usize, f64)> = candidates
+        .par_iter()
+        .filter_map(|&(i, j)| {
+            let similarity = estimate_similarity(&signatures[i], &signatures[j]);
+            (similarity >= config.min_similarity).then_some((i, j, similarity))
+        })
+        .collect();
+
+    if good_pairs.is_empty() {
+        return Vec::new();
+    }
+
+    // Cluster in serial (union-find), but store only indices + similarity.
+    let mut uf = UnionFind::new(chunks.len());
+    let mut pair_similarities: HashMap<(usize, usize), f64> = HashMap::with_capacity(good_pairs.len());
+    for (i, j, sim) in good_pairs {
+        uf.union(i, j);
+        pair_similarities.insert((i.min(j), i.max(j)), sim);
+    }
+
+    let mut clusters_map: HashMap<usize, Vec<usize>> = HashMap::new();
+    for idx in 0..chunks.len() {
+        clusters_map.entry(uf.find(idx)).or_default().push(idx);
+    }
+
+    let mut clusters: Vec<DuplicateCluster> = clusters_map
+        .into_values()
+        .filter(|indices| indices.len() > 1)
+        .map(|indices| DuplicateCluster {
+            avg_similarity: compute_cluster_similarity(&indices, &pair_similarities),
+            chunks: indices.into_iter().map(|i| chunks[i].clone()).collect(),
+        })
+        .collect();
+
+    sort_clusters_deterministic(&mut clusters);
+    clusters
 }
 
 #[cfg(test)]
@@ -434,6 +550,28 @@ mod tests {
             &mut chunks,
         );
         assert!(!chunks.is_empty());
+    }
+
+    #[test]
+    fn test_cluster_duplicates_from_chunks_smoke() {
+        let chunks = vec![
+            CodeChunk {
+                file: "a.py".into(),
+                name: "f1".into(),
+                start_line: 1,
+                end_line: 10,
+                normalized: "x y z a b c d e f g".into(),
+            },
+            CodeChunk {
+                file: "b.py".into(),
+                name: "f2".into(),
+                start_line: 1,
+                end_line: 10,
+                normalized: "x y z a b c d e f g".into(),
+            },
+        ];
+        let clusters = cluster_duplicates_from_chunks(&chunks, &DuplicationConfig::default());
+        assert!(!clusters.is_empty());
     }
 
     #[test]

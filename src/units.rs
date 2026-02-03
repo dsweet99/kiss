@@ -63,6 +63,37 @@ pub fn extract_code_units(parsed: &ParsedFile) -> Vec<CodeUnit> {
     units
 }
 
+/// Fast-path for callers that only need the *count* of units.
+///
+/// This matches `extract_code_units(parsed).len()` but avoids allocations and string copies.
+#[must_use]
+pub fn count_code_units(parsed: &ParsedFile) -> usize {
+    let root = parsed.tree.root_node();
+    // Always include the synthetic module unit.
+    1 + count_from_node(root)
+}
+
+fn count_from_node(node: Node) -> usize {
+    match node.kind() {
+        "function_definition" | "async_function_definition" | "class_definition" => {
+            let mut count = usize::from(node.child_by_field_name("name").is_some());
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                count += count_from_node(child);
+            }
+            count
+        }
+        _ => {
+            let mut count = 0;
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                count += count_from_node(child);
+            }
+            count
+        }
+    }
+}
+
 fn extract_from_node(node: Node, source: &str, units: &mut Vec<CodeUnit>, inside_class: bool) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {
@@ -142,6 +173,14 @@ mod tests {
                 .iter()
                 .any(|u| u.kind == CodeUnitKind::Function && u.name == "foo")
         );
+    }
+
+    #[test]
+    fn test_count_matches_extract_len() {
+        let parsed = parse_python_source(
+            "def outer():\n    def inner(): pass\nclass C:\n    def m(self): pass",
+        );
+        assert_eq!(count_code_units(&parsed), extract_code_units(&parsed).len());
     }
 
     #[test]

@@ -3,6 +3,7 @@ use crate::parsing::ParsedFile;
 use crate::py_metrics::{compute_class_metrics, compute_file_metrics, compute_function_metrics};
 use crate::rust_fn_metrics::{compute_rust_file_metrics, compute_rust_function_metrics};
 use crate::rust_parsing::ParsedRustFile;
+use rayon::prelude::*;
 use syn::{ImplItem, Item};
 use tree_sitter::Node;
 
@@ -38,18 +39,26 @@ pub struct MetricStats {
 
 impl MetricStats {
     pub fn collect(parsed_files: &[&ParsedFile]) -> Self {
-        let mut stats = Self::default();
-        for parsed in parsed_files {
-            let fm = compute_file_metrics(parsed);
-            stats.statements_per_file.push(fm.statements);
-            stats.lines_per_file.push(parsed.source.lines().count());
-            stats.functions_per_file.push(fm.functions);
-            stats.interface_types_per_file.push(fm.interface_types);
-            stats.concrete_types_per_file.push(fm.concrete_types);
-            stats.imported_names_per_file.push(fm.imports);
-            collect_from_node(parsed.tree.root_node(), &parsed.source, &mut stats, false);
-        }
-        stats
+        // This is the hot path for `kiss stats`: per-file tree walks and per-function metric
+        // extraction. Parallelize at the file level and merge the per-thread aggregates.
+        parsed_files
+            .par_iter()
+            .map(|parsed| {
+                let mut stats = Self::default();
+                let fm = compute_file_metrics(parsed);
+                stats.statements_per_file.push(fm.statements);
+                stats.lines_per_file.push(parsed.source.lines().count());
+                stats.functions_per_file.push(fm.functions);
+                stats.interface_types_per_file.push(fm.interface_types);
+                stats.concrete_types_per_file.push(fm.concrete_types);
+                stats.imported_names_per_file.push(fm.imports);
+                collect_from_node(parsed.tree.root_node(), &parsed.source, &mut stats, false);
+                stats
+            })
+            .reduce(Self::default, |mut a, b| {
+                a.merge(b);
+                a
+            })
     }
 
     pub fn merge(&mut self, o: Self) {
