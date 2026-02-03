@@ -42,7 +42,7 @@ fn collect_import_names(node: Node, source: &str, names: &mut HashSet<String>) {
     }
 }
 
-fn collect_import_statement_names(node: Node, source: &str, names: &mut HashSet<String>) {
+pub(crate) fn collect_import_statement_names(node: Node, source: &str, names: &mut HashSet<String>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -70,7 +70,7 @@ fn collect_import_statement_names(node: Node, source: &str, names: &mut HashSet<
     }
 }
 
-fn collect_import_from_names(node: Node, source: &str, names: &mut HashSet<String>) {
+pub(crate) fn collect_import_from_names(node: Node, source: &str, names: &mut HashSet<String>) {
     let mut seen_import = false;
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -121,5 +121,13 @@ mod tests {
         let code2 = "import typing\nif typing.TYPE_CHECKING:\n    from foo import Bar";
         let p2 = parse(code2);
         assert_eq!(count_imports(p2.tree.root_node(), &p2.source), 1);
+    }
+
+    #[test]
+    fn test_is_type_checking_block_direct() {
+        let p = parse("if TYPE_CHECKING:\n    import os\nx = 1");
+        // root child 0 is the if statement
+        let if_node = p.tree.root_node().child(0).unwrap();
+        assert!(is_type_checking_block(if_node, &p.source));
     }
 }

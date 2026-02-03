@@ -16,6 +16,19 @@ pub use crate::violation::{Violation as PyViolation, ViolationBuilder as PyViola
 
 #[must_use]
 pub fn analyze_file(parsed: &ParsedFile, config: &Config) -> Vec<Violation> {
+    analyze_file_with_statement_count(parsed, config).1
+}
+
+/// Analyze a parsed Python file and return both:
+/// - its statement count (for summary reporting), and
+/// - the violations emitted by the standard checks.
+///
+/// This exists to avoid recomputing file metrics in hot paths like `kiss check`.
+#[must_use]
+pub fn analyze_file_with_statement_count(
+    parsed: &ParsedFile,
+    config: &Config,
+) -> (usize, Vec<Violation>) {
     let mut violations = Vec::new();
     let file = &parsed.path;
     let fname = file
@@ -34,7 +47,7 @@ pub fn analyze_file(parsed: &ParsedFile, config: &Config) -> Vec<Violation> {
         false,
         config,
     );
-    violations
+    (file_metrics.statements, violations)
 }
 
 fn check_file_metrics(
@@ -359,6 +372,31 @@ mod tests {
         };
         let violations = analyze_file(&parsed, &config);
         assert!(!violations.is_empty());
+    }
+
+    #[test]
+    fn test_analyze_file_with_statement_count_helper() {
+        let parsed = parse_python_source("def f():\n    x = 1\n    y = 2\n    return x + y");
+        let (stmts, viols) = analyze_file_with_statement_count(&parsed, &Config::default());
+        assert!(stmts > 0);
+        let _ = viols;
+    }
+
+    #[test]
+    fn test_check_function_metrics_tail_smoke() {
+        let m = FunctionMetrics {
+            calls: 999,
+            max_return_values: 3,
+            ..Default::default()
+        };
+        let cfg = Config {
+            calls_per_function: 10,
+            return_values_per_function: 1,
+            ..Default::default()
+        };
+        let mut v = Vec::new();
+        check_function_metrics_tail(&m, Path::new("t.py"), 1, "f", &cfg, &mut v, "Function");
+        assert!(!v.is_empty());
     }
 
     #[test]

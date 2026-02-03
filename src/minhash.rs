@@ -50,7 +50,9 @@ pub fn generate_shingles(text: &str, shingle_size: usize) -> HashSet<u64> {
     use std::hash::{Hash, Hasher};
 
     let tokens: Vec<&str> = text.split_whitespace().collect();
-    let mut shingles = HashSet::new();
+    // Upper bound: one shingle per token window.
+    let approx = tokens.len().saturating_sub(shingle_size).saturating_add(1);
+    let mut shingles = HashSet::with_capacity(approx);
 
     if tokens.len() >= shingle_size {
         for window in tokens.windows(shingle_size) {
