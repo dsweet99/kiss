@@ -2,6 +2,8 @@ mod analyze;
 mod analyze_cache;
 mod rules;
 mod viz;
+mod viz_coarsen;
+mod viz_py_scan;
 
 use clap::{Parser, Subcommand};
 use kiss::config_gen::{

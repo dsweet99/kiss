@@ -94,21 +94,26 @@ impl MetricStats {
     }
 
     pub fn collect_graph_metrics(&mut self, graph: &DependencyGraph) {
+        use std::collections::HashMap;
+
+        let cycles = graph.find_cycles().cycles;
+        let mut cycle_size_by_module: HashMap<&str, usize> = HashMap::new();
+        for cycle in &cycles {
+            let size = cycle.len();
+            for m in cycle {
+                cycle_size_by_module.insert(m.as_str(), size);
+            }
+        }
+
         for name in graph.nodes.keys() {
             let m = graph.module_metrics(name);
             self.fan_in.push(m.fan_in);
             self.fan_out.push(m.fan_out);
             self.transitive_dependencies.push(m.transitive_dependencies);
             self.dependency_depth.push(m.dependency_depth);
+            self.cycle_size
+                .push(*cycle_size_by_module.get(name.as_str()).unwrap_or(&0));
         }
-        let max_cycle = graph
-            .find_cycles()
-            .cycles
-            .iter()
-            .map(Vec::len)
-            .max()
-            .unwrap_or(0);
-        self.cycle_size.push(max_cycle);
     }
 
     pub fn max_depth(&self) -> usize {
@@ -689,6 +694,38 @@ mod tests {
         assert!(!stats.transitive_dependencies.is_empty());
         assert!(!stats.dependency_depth.is_empty());
         assert!(stats.max_depth() > 0);
+    }
+
+    #[test]
+    fn test_cycle_size_is_per_module_distribution() {
+        // Regression guard: module-scoped metrics should collect one value per module.
+        // `cycle_size` should behave like fan_in/fan_out: for modules in a cycle, record the size
+        // of their cycle (SCC); for modules not in any cycle, record 0.
+        let mut stats = MetricStats::default();
+        let mut graph = crate::graph::DependencyGraph::new();
+
+        // a <-> b forms a 2-module cycle; c is acyclic.
+        graph.add_dependency("a", "b");
+        graph.add_dependency("b", "a");
+        graph.get_or_create_node("c");
+
+        stats.collect_graph_metrics(&graph);
+
+        assert_eq!(
+            stats.cycle_size.len(),
+            graph.nodes.len(),
+            "Expected cycle_size to have one entry per module (got {:?} for {} modules)",
+            stats.cycle_size,
+            graph.nodes.len()
+        );
+
+        let mut got = stats.cycle_size.clone();
+        got.sort_unstable();
+        assert_eq!(
+            got,
+            vec![0, 2, 2],
+            "Expected modules in the cycle to record 2, and the acyclic module to record 0"
+        );
     }
 
     #[test]
