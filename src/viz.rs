@@ -1,5 +1,6 @@
 use crate::viz_coarsen::{coarsen_with_zoom, CoarsenedGraph};
-use crate::viz_py_scan::extract_py_imports_fast;
+use kiss::parsing::parse_files;
+use kiss::build_dependency_graph;
 use kiss::rust_parsing::parse_rust_files;
 use kiss::{DependencyGraph, Language, rust_graph::build_rust_dependency_graph};
 use petgraph::visit::EdgeRef;
@@ -255,15 +256,11 @@ fn write_coarsened_for_format(
     }
 }
 
-fn build_py_graph(py_files: &[PathBuf]) -> DependencyGraph {
-    let imports: Vec<(PathBuf, Vec<String>)> = py_files
-        .iter()
-        .filter_map(|path| {
-            let src = std::fs::read_to_string(path).ok()?;
-            Some((path.clone(), extract_py_imports_fast(&src)))
-        })
-        .collect();
-    kiss::graph::build_dependency_graph_from_import_lists(&imports)
+fn build_py_graph(py_files: &[PathBuf]) -> std::io::Result<DependencyGraph> {
+    // Use the same Python parser pipeline as `kiss check` for consistency.
+    let results = parse_files(py_files).map_err(|e| std::io::Error::other(e.to_string()))?;
+    let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+    Ok(build_dependency_graph(&parsed))
 }
 
 fn build_rs_graph(rs_files: &[PathBuf]) -> DependencyGraph {
@@ -272,13 +269,17 @@ fn build_rs_graph(rs_files: &[PathBuf]) -> DependencyGraph {
     build_rust_dependency_graph(&parsed)
 }
 
-fn build_coarsened_graph(py_files: &[PathBuf], rs_files: &[PathBuf], zoom: f64) -> CoarsenedGraph {
+fn build_coarsened_graph(
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+    zoom: f64,
+) -> std::io::Result<CoarsenedGraph> {
     let mut all_nodes: BTreeSet<String> = BTreeSet::new();
     let mut all_edges: BTreeSet<(String, String)> = BTreeSet::new();
     let mut all_paths: BTreeMap<String, PathBuf> = BTreeMap::new();
 
     if !py_files.is_empty() {
-        let (n, e, p) = collect_graph_nodes_and_edges(&build_py_graph(py_files), "py");
+        let (n, e, p) = collect_graph_nodes_and_edges(&build_py_graph(py_files)?, "py");
         all_nodes.extend(n);
         all_edges.extend(e);
         all_paths.extend(p);
@@ -291,7 +292,7 @@ fn build_coarsened_graph(py_files: &[PathBuf], rs_files: &[PathBuf], zoom: f64) 
     }
 
     let nodes_vec: Vec<String> = all_nodes.into_iter().collect();
-    coarsen_with_zoom(&nodes_vec, &all_edges, &all_paths, zoom)
+    Ok(coarsen_with_zoom(&nodes_vec, &all_edges, &all_paths, zoom))
 }
 
 pub fn run_viz(
@@ -316,7 +317,7 @@ pub fn run_viz(
 
     if zoom >= 1.0 {
         if !py_files.is_empty() {
-            write_graph_for_format(&mut buf, &build_py_graph(&py_files), "py", format)?;
+            write_graph_for_format(&mut buf, &build_py_graph(&py_files)?, "py", format)?;
         }
         if !rs_files.is_empty() {
             write_graph_for_format(&mut buf, &build_rs_graph(&rs_files), "rs", format)?;
@@ -324,7 +325,7 @@ pub fn run_viz(
     } else {
         write_coarsened_for_format(
             &mut buf,
-            &build_coarsened_graph(&py_files, &rs_files, zoom),
+            &build_coarsened_graph(&py_files, &rs_files, zoom)?,
             format,
         )?;
     }
@@ -476,7 +477,7 @@ mod tests {
 
     #[test]
     fn test_build_py_graph_empty() {
-        let graph = build_py_graph(&[]);
+        let graph = build_py_graph(&[]).unwrap();
         assert!(graph.nodes.is_empty());
     }
 
@@ -497,7 +498,7 @@ mod tests {
         out.clear();
         write_coarsened_mermaid(&mut out, &cg).unwrap();
 
-        let coarse = build_coarsened_graph(&[], &[], 0.2);
+        let coarse = build_coarsened_graph(&[], &[], 0.2).unwrap();
         assert!(!coarse.labels.is_empty());
     }
 }
