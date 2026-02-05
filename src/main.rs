@@ -142,26 +142,11 @@ enum Commands {
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
     },
-    /// Constrained minimization of codebase metrics
-    #[command(subcommand)]
-    Shrink(ShrinkCommand),
-}
-
-#[derive(Subcommand, Debug)]
-enum ShrinkCommand {
-    /// Start shrink mode: set target and save baseline constraints
-    Start {
+    /// Constrained minimization: `kiss shrink METRIC=VALUE` to start, `kiss shrink` to check
+    Shrink {
+        /// Omit to check against saved constraints.
         #[arg(value_name = "METRIC=VALUE", help = "Target metric and value (metrics: files, code_units, statements, graph_nodes, graph_edges)")]
-        target: String,
-        /// Paths to analyze for baseline
-        #[arg(default_value = ".")]
-        paths: Vec<String>,
-        /// Ignore files/directories starting with PREFIX (repeatable)
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-    },
-    /// Check current metrics against shrink constraints
-    Check {
+        target: Option<String>,
         /// Paths to analyze
         #[arg(default_value = ".")]
         paths: Vec<String>,
@@ -258,8 +243,13 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Shrink(cmd) => {
-            let exit_code = run_shrink(cmd, cli.lang, &py_config, &rs_config, &gate_config);
+        Commands::Shrink {
+            target,
+            paths,
+            ignore,
+        } => {
+            let exit_code =
+                run_shrink(target, &paths, &ignore, cli.lang, &py_config, &rs_config, &gate_config);
             if exit_code != 0 {
                 std::process::exit(exit_code);
             }
@@ -641,22 +631,18 @@ fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
 }
 
 fn run_shrink(
-    cmd: ShrinkCommand,
+    target: Option<String>,
+    paths: &[String],
+    ignore: &[String],
     lang_filter: Option<Language>,
     py_config: &Config,
     rs_config: &Config,
     gate_config: &GateConfig,
 ) -> i32 {
-    match cmd {
-        ShrinkCommand::Start {
-            target,
-            paths,
-            ignore,
-        } => run_shrink_start(&target, &paths, &ignore, lang_filter, py_config, rs_config),
-        ShrinkCommand::Check { paths, ignore } => {
-            run_shrink_check(&paths, &ignore, lang_filter, py_config, rs_config, gate_config)
-        }
-    }
+    target.map_or_else(
+        || run_shrink_check(paths, ignore, lang_filter, py_config, rs_config, gate_config),
+        |t| run_shrink_start(&t, paths, ignore, lang_filter, py_config, rs_config),
+    )
 }
 
 fn run_shrink_start(
@@ -738,7 +724,7 @@ fn run_shrink_check(
         return 1;
     };
 
-    // Run normal check first (with bypass_gate=true to get all violations)
+    // Run normal check first
     let universe = &paths[0];
     let focus = if paths.len() > 1 { &paths[1..] } else { paths };
     let opts = analyze::AnalyzeOptions {
@@ -747,7 +733,7 @@ fn run_shrink_check(
         py_config,
         rs_config,
         lang_filter,
-        bypass_gate: true,
+        bypass_gate: false,
         gate_config,
         ignore_prefixes: &ignore,
         show_timing: false,
@@ -948,13 +934,18 @@ mod tests {
     }
     #[test]
     fn test_shrink_commands_parse() {
+        // With target: start mode
+        let cli = Cli::try_parse_from(["kiss", "shrink", "statements=100"]).unwrap();
         assert!(matches!(
-            Cli::try_parse_from(["kiss", "shrink", "start", "statements=100"]).unwrap().command,
-            Commands::Shrink(ShrinkCommand::Start { .. })
+            cli.command,
+            Commands::Shrink { target: Some(_), .. }
         ));
+
+        // Without target: check mode
+        let cli = Cli::try_parse_from(["kiss", "shrink"]).unwrap();
         assert!(matches!(
-            Cli::try_parse_from(["kiss", "shrink", "check"]).unwrap().command,
-            Commands::Shrink(ShrinkCommand::Check { .. })
+            cli.command,
+            Commands::Shrink { target: None, .. }
         ));
     }
     #[test]
@@ -983,22 +974,21 @@ mod tests {
         let orig_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
 
-        // Test run_shrink with ShrinkCommand::Start
+        // Test run_shrink with target (start mode)
         let gate_cfg = GateConfig::default();
-        let cmd = ShrinkCommand::Start {
-            target: "statements=1".to_string(),
-            paths: vec![p.clone()],
-            ignore: vec![],
-        };
-        let exit = run_shrink(cmd, None, &py_cfg, &rs_cfg, &gate_cfg);
+        let exit = run_shrink(
+            Some("statements=1".to_string()),
+            std::slice::from_ref(&p),
+            &[],
+            None,
+            &py_cfg,
+            &rs_cfg,
+            &gate_cfg,
+        );
         assert_eq!(exit, 0);
 
-        // Test run_shrink with ShrinkCommand::Check
-        let cmd = ShrinkCommand::Check {
-            paths: vec![p],
-            ignore: vec![],
-        };
-        let _exit = run_shrink(cmd, None, &py_cfg, &rs_cfg, &gate_cfg);
+        // Test run_shrink without target (check mode)
+        let _exit = run_shrink(None, std::slice::from_ref(&p), &[], None, &py_cfg, &rs_cfg, &gate_cfg);
         // exit code depends on whether target is met
 
         std::env::set_current_dir(orig_dir).unwrap();
