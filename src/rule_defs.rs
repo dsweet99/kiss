@@ -1,3 +1,11 @@
+//! Human-friendly rule definitions for library consumers.
+//!
+//! This module provides categorized rules with sentence-style templates suitable
+//! for display in documentation or UIs. For machine-readable rule output (RULE: lines),
+//! see the `rules` module in the binary crate which outputs structured specs for LLM consumption.
+//!
+//! Both modules now use canonical metric IDs to ensure consistency.
+
 use crate::config::Config;
 use crate::gate_config::GateConfig;
 

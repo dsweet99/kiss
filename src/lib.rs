@@ -32,7 +32,7 @@ pub mod rust_units;
 pub mod test_utils;
 
 pub use cli_output::print_dry_results;
-pub use config::{Config, ConfigLanguage, is_similar};
+pub use config::{Config, ConfigError, ConfigLanguage, is_similar};
 pub use counts::analyze_file;
 pub use counts::analyze_file_with_statement_count;
 pub use defaults::default_config_toml;

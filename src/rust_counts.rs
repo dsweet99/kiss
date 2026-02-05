@@ -264,14 +264,14 @@ impl<'a> RustAnalyzer<'a> {
         chk!(
             nested_function_depth,
             nested_function_depth,
-            "nested_closure_depth",
+            "nested_function_depth",
             "nested closure depth",
             "Extract nested closures into separate functions."
         );
         chk!(
             bool_parameters,
             boolean_parameters,
-            "bool_parameters",
+            "boolean_parameters",
             "bool parameters",
             "Use an enum or a struct with named fields instead of multiple bools."
         );

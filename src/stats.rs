@@ -94,21 +94,28 @@ impl MetricStats {
     }
 
     pub fn collect_graph_metrics(&mut self, graph: &DependencyGraph) {
-        for name in graph.nodes.keys() {
+        use std::collections::HashMap;
+
+        let cycles = graph.find_cycles().cycles;
+        let mut cycle_size_by_module: HashMap<&str, usize> = HashMap::new();
+        for cycle in &cycles {
+            let size = cycle.len();
+            for m in cycle {
+                cycle_size_by_module.insert(m.as_str(), size);
+            }
+        }
+
+        // Only include internal modules (those with a known path). External imports create nodes
+        // but should not skew per-module distributions in `stats`.
+        for name in graph.paths.keys() {
             let m = graph.module_metrics(name);
             self.fan_in.push(m.fan_in);
             self.fan_out.push(m.fan_out);
             self.transitive_dependencies.push(m.transitive_dependencies);
             self.dependency_depth.push(m.dependency_depth);
+            self.cycle_size
+                .push(*cycle_size_by_module.get(name.as_str()).unwrap_or(&0));
         }
-        let max_cycle = graph
-            .find_cycles()
-            .cycles
-            .iter()
-            .map(Vec::len)
-            .max()
-            .unwrap_or(0);
-        self.cycle_size.push(max_cycle);
     }
 
     pub fn max_depth(&self) -> usize {
@@ -268,17 +275,17 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::Function,
     },
     MetricDef {
-        metric_id: "args_total",
+        metric_id: "arguments_per_function",
         display_name: "Arguments (total)",
         scope: MetricScope::Function,
     },
     MetricDef {
-        metric_id: "args_positional",
+        metric_id: "positional_args",
         display_name: "Arguments (positional)",
         scope: MetricScope::Function,
     },
     MetricDef {
-        metric_id: "args_keyword_only",
+        metric_id: "keyword_only_args",
         display_name: "Arguments (keyword-only)",
         scope: MetricScope::Function,
     },
@@ -298,8 +305,8 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::Function,
     },
     MetricDef {
-        metric_id: "return_values_per_return",
-        display_name: "Return values per return",
+        metric_id: "return_values_per_function",
+        display_name: "Return values per function",
         scope: MetricScope::Function,
     },
     MetricDef {
@@ -383,7 +390,7 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::Module,
     },
     MetricDef {
-        metric_id: "transitive_deps",
+        metric_id: "transitive_dependencies",
         display_name: "Transitive deps (per module)",
         scope: MetricScope::Module,
     },
@@ -446,13 +453,13 @@ impl PercentileSummary {
 fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usize]> {
     Some(match metric_id {
         "statements_per_function" => &stats.statements_per_function,
-        "args_total" => &stats.arguments_per_function,
-        "args_positional" => &stats.arguments_positional,
-        "args_keyword_only" => &stats.arguments_keyword_only,
+        "arguments_per_function" => &stats.arguments_per_function,
+        "positional_args" => &stats.arguments_positional,
+        "keyword_only_args" => &stats.arguments_keyword_only,
         "max_indentation_depth" => &stats.max_indentation,
         "nested_function_depth" => &stats.nested_function_depth,
         "returns_per_function" => &stats.returns_per_function,
-        "return_values_per_return" => &stats.return_values_per_function,
+        "return_values_per_function" => &stats.return_values_per_function,
         "branches_per_function" => &stats.branches_per_function,
         "local_variables_per_function" => &stats.local_variables_per_function,
         "statements_per_try_block" => &stats.statements_per_try_block,
@@ -469,7 +476,7 @@ fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usi
         "fan_in" => &stats.fan_in,
         "fan_out" => &stats.fan_out,
         "cycle_size" => &stats.cycle_size,
-        "transitive_deps" => &stats.transitive_dependencies,
+        "transitive_dependencies" => &stats.transitive_dependencies,
         "dependency_depth" => &stats.dependency_depth,
         _ => return None,
     })
@@ -515,9 +522,9 @@ pub fn format_stats_table(summaries: &[PercentileSummary]) -> String {
 fn config_key_for(metric_id: &str) -> Option<&'static str> {
     Some(match metric_id {
         "statements_per_function" => "statements_per_function",
-        "args_total" => "arguments_per_function",
-        "args_positional" => "arguments_positional",
-        "args_keyword_only" => "arguments_keyword_only",
+        "arguments_per_function" => "arguments_per_function",
+        "positional_args" => "arguments_positional",
+        "keyword_only_args" => "arguments_keyword_only",
         "max_indentation_depth" => "max_indentation_depth",
         "nested_function_depth" => "nested_function_depth",
         "returns_per_function" => "returns_per_function",
@@ -683,12 +690,67 @@ mod tests {
         let mut graph = crate::graph::DependencyGraph::new();
         graph.add_dependency("a", "b");
         graph.add_dependency("b", "c");
+        graph.paths.insert("a".into(), std::path::PathBuf::from("a.py"));
+        graph.paths.insert("b".into(), std::path::PathBuf::from("b.py"));
+        graph.paths.insert("c".into(), std::path::PathBuf::from("c.py"));
         stats.collect_graph_metrics(&graph);
         assert!(!stats.fan_in.is_empty());
         assert!(!stats.fan_out.is_empty());
         assert!(!stats.transitive_dependencies.is_empty());
         assert!(!stats.dependency_depth.is_empty());
         assert!(stats.max_depth() > 0);
+    }
+
+    #[test]
+    fn test_graph_metrics_exclude_external_nodes_from_distributions() {
+        // Regression: `stats` distributions should only include internal modules (those with paths).
+        let mut stats = MetricStats::default();
+        let mut graph = crate::graph::DependencyGraph::new();
+
+        // Internal module a imports an external node "os".
+        graph.get_or_create_node("a");
+        graph.paths
+            .insert("a".into(), std::path::PathBuf::from("a.py"));
+        graph.add_dependency("a", "os");
+
+        stats.collect_graph_metrics(&graph);
+        assert_eq!(stats.fan_out.len(), 1, "fan_out should only include internal modules");
+        assert_eq!(stats.fan_out[0], 1, "a should have one outgoing edge (to external os)");
+    }
+
+    #[test]
+    fn test_cycle_size_is_per_module_distribution() {
+        // Regression guard: module-scoped metrics should collect one value per module.
+        // `cycle_size` should behave like fan_in/fan_out: for modules in a cycle, record the size
+        // of their cycle (SCC); for modules not in any cycle, record 0.
+        let mut stats = MetricStats::default();
+        let mut graph = crate::graph::DependencyGraph::new();
+
+        // a <-> b forms a 2-module cycle; c is acyclic.
+        graph.add_dependency("a", "b");
+        graph.add_dependency("b", "a");
+        graph.get_or_create_node("c");
+        graph.paths.insert("a".into(), std::path::PathBuf::from("a.py"));
+        graph.paths.insert("b".into(), std::path::PathBuf::from("b.py"));
+        graph.paths.insert("c".into(), std::path::PathBuf::from("c.py"));
+
+        stats.collect_graph_metrics(&graph);
+
+        assert_eq!(
+            stats.cycle_size.len(),
+            graph.paths.len(),
+            "Expected cycle_size to have one entry per internal module (got {:?} for {} modules)",
+            stats.cycle_size,
+            graph.paths.len()
+        );
+
+        let mut got = stats.cycle_size.clone();
+        got.sort_unstable();
+        assert_eq!(
+            got,
+            vec![0, 2, 2],
+            "Expected modules in the cycle to record 2, and the acyclic module to record 0"
+        );
     }
 
     #[test]
@@ -701,7 +763,10 @@ mod tests {
             super::metric_values(&stats, "statements_per_function"),
             Some(&[10][..])
         );
-        assert_eq!(super::metric_values(&stats, "args_total"), Some(&[3][..]));
+        assert_eq!(
+            super::metric_values(&stats, "arguments_per_function"),
+            Some(&[3][..])
+        );
         assert_eq!(super::metric_values(&stats, "fan_in"), Some(&[2][..]));
         assert_eq!(super::metric_values(&stats, "unknown_metric"), None);
     }

@@ -222,16 +222,43 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
 /// Extract qualified module name: includes parent directory to avoid collisions.
 /// Example: "src/attr/exceptions.py" → "attr.exceptions"
 fn qualified_module_name(path: &std::path::Path) -> String {
+    use std::path::Component;
+
     let stem = path
         .file_stem()
         .map_or("unknown", |s| s.to_str().unwrap_or("unknown"));
-    let parent = path
+
+    let mut dirs: Vec<String> = path
         .parent()
-        .and_then(|p| p.file_name())
-        .and_then(|s| s.to_str());
-    match parent {
-        Some(p) if !p.is_empty() && p != "." => format!("{p}.{stem}"),
-        _ => stem.to_string(),
+        .map(|p| {
+            p.components()
+                .filter_map(|c| match c {
+                    Component::Normal(os) => os.to_str().map(std::string::ToString::to_string),
+                    Component::CurDir => Some(".".to_string()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    // Prefer paths relative to a source root, if present.
+    // Keep components after the *last* "src" (handles absolute paths that include repo prefix).
+    if let Some(pos) = dirs.iter().rposition(|d| d == "src") {
+        dirs = dirs[(pos + 1)..].to_vec();
+    }
+
+    // Drop "." segments.
+    dirs.retain(|d| d != ".");
+
+    // For absolute paths without a known source root, avoid huge prefixes by using a short tail.
+    if path.is_absolute() && dirs.len() > 2 {
+        dirs = dirs[(dirs.len() - 2)..].to_vec();
+    }
+
+    if dirs.is_empty() {
+        stem.to_string()
+    } else {
+        format!("{}.{}", dirs.join("."), stem)
     }
 }
 
@@ -280,7 +307,10 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
     for info in &per_file {
         for import in &info.imports {
             // Try to resolve import to a qualified module name
-            if let Some(resolved) =
+            if graph.nodes.contains_key(import) {
+                // Already a qualified internal module name.
+                graph.add_dependency(&info.from_qualified, import);
+            } else if let Some(resolved) =
                 resolve_import(import, info.from_parent.as_deref(), &bare_to_qualified)
             {
                 graph.add_dependency(&info.from_qualified, &resolved);
@@ -325,7 +355,9 @@ pub fn build_dependency_graph_from_import_lists(files: &[(PathBuf, Vec<String>)]
             .and_then(|s| s.to_str());
 
         for import in imports {
-            if let Some(resolved) = resolve_import(import, from_parent, &bare_to_qualified) {
+            if graph.nodes.contains_key(import) {
+                graph.add_dependency(&from_qualified, import);
+            } else if let Some(resolved) = resolve_import(import, from_parent, &bare_to_qualified) {
                 graph.add_dependency(&from_qualified, &resolved);
             } else {
                 graph.add_dependency(&from_qualified, import);
@@ -370,15 +402,14 @@ fn resolve_import(
 }
 
 fn push_dotted_segments(raw: &str, modules: &mut Vec<String>) {
-    let trimmed = raw.trim_start_matches('.');
+    // Treat dotted module paths as a single import target (e.g., "foo.bar", not ["foo", "bar"]).
+    // Splitting creates spurious edges to unrelated local modules named like common segments
+    // ("utils", "types", "errors", etc.), which can inflate SCC cycles dramatically.
+    let trimmed = raw.trim().trim_start_matches('.');
     if trimmed.is_empty() {
         return;
     }
-    for segment in trimmed.split('.') {
-        if !segment.is_empty() {
-            modules.push(segment.to_string());
-        }
-    }
+    modules.push(trimmed.to_string());
 }
 
 fn extract_modules_from_import_from(child: Node, source: &str) -> Vec<String> {
@@ -387,22 +418,9 @@ fn extract_modules_from_import_from(child: Node, source: &str) -> Vec<String> {
         let full_module = &source[m.start_byte()..m.end_byte()];
         push_dotted_segments(full_module, &mut modules);
     }
-    let mut cursor = child.walk();
-    for c in child.children(&mut cursor) {
-        if c.kind() != "dotted_name" && c.kind() != "aliased_import" {
-            continue;
-        }
-        let name_node = if c.kind() == "aliased_import" {
-            c.child_by_field_name("name")
-        } else {
-            Some(c)
-        };
-        let Some(n) = name_node else {
-            continue;
-        };
-        let name = &source[n.start_byte()..n.end_byte()];
-        push_dotted_segments(name, &mut modules);
-    }
+    // Important: do NOT treat imported names (e.g., `from X import Y`) as module dependencies.
+    // `Y` is a symbol imported from module `X`, not necessarily a module itself. Treating it as
+    // a module creates many spurious edges and huge fake SCC cycles.
     modules
 }
 
@@ -525,6 +543,89 @@ mod tests {
     }
 
     #[test]
+    fn test_from_import_does_not_create_edges_to_imported_names() {
+        // Hypothesis 1 repro: `from X import Y` currently adds both `X` and `Y` as dependencies.
+        // That can create huge, fake SCC cycles when `Y` happens to match some other module name.
+        //
+        // This fixture is *acyclic* under real Python import semantics:
+        // - a imports b (and name c from b)
+        // - b imports c (and name a from c)
+        // - c imports nothing
+        //
+        // There is no module-level cycle unless we incorrectly treat imported names as modules.
+        let mut parser = create_parser().unwrap();
+        let files: Vec<(PathBuf, Vec<String>)> = vec![
+            (
+                PathBuf::from("a.py"),
+                extract_imports_for_cache(
+                    parser.parse("from b import c\n", None).unwrap().root_node(),
+                    "from b import c\n",
+                ),
+            ),
+            (
+                PathBuf::from("b.py"),
+                extract_imports_for_cache(
+                    parser.parse("from c import a\n", None).unwrap().root_node(),
+                    "from c import a\n",
+                ),
+            ),
+            (
+                PathBuf::from("c.py"),
+                extract_imports_for_cache(parser.parse("\n", None).unwrap().root_node(), "\n"),
+            ),
+        ];
+
+        let graph = build_dependency_graph_from_import_lists(&files);
+        let cycles = graph.find_cycles().cycles;
+        assert!(
+            cycles.is_empty(),
+            "Expected no module cycle; got cycles: {cycles:?}"
+        );
+    }
+
+    #[test]
+    fn test_dotted_import_does_not_create_edges_to_middle_segments() {
+        // Hypothesis 2 repro: `import foo.bar` is currently split into segments `foo` and `bar`,
+        // which can spuriously create an edge to a local `bar.py` module.
+        let mut parser = create_parser().unwrap();
+        let files: Vec<(PathBuf, Vec<String>)> = vec![
+            (
+                PathBuf::from("a.py"),
+                extract_imports_for_cache(
+                    parser.parse("import foo.bar\n", None).unwrap().root_node(),
+                    "import foo.bar\n",
+                ),
+            ),
+            // Local module named `bar` should NOT be considered imported by `import foo.bar`.
+            (PathBuf::from("bar.py"), Vec::new()),
+        ];
+
+        let graph = build_dependency_graph_from_import_lists(&files);
+        let a = qualified_module_name(&PathBuf::from("a.py"));
+        let bar = qualified_module_name(&PathBuf::from("bar.py"));
+        let a_idx = *graph.nodes.get(&a).expect("a node");
+        let bar_idx = *graph.nodes.get(&bar).expect("bar node");
+
+        assert!(
+            !graph.graph.contains_edge(a_idx, bar_idx),
+            "Expected no edge {a} -> {bar} from `import foo.bar`"
+        );
+    }
+
+    #[test]
+    fn test_qualified_module_name_includes_full_package_path() {
+        // Hypothesis 3 repro: qualified_module_name currently only includes the leaf parent dir,
+        // so deep paths can collide (e.g., pkg1/sub/utils.py and pkg2/sub/utils.py).
+        use std::path::Path;
+        let a = qualified_module_name(Path::new("pkg1/sub/utils.py"));
+        let b = qualified_module_name(Path::new("pkg2/sub/utils.py"));
+        assert_ne!(
+            a, b,
+            "Qualified module names should not collide for distinct deep package paths"
+        );
+    }
+
+    #[test]
     fn test_helpers_imports_and_complexity() {
         assert!(is_entry_point("main") && is_entry_point("test_foo") && !is_entry_point("utils"));
         assert!(
@@ -550,7 +651,10 @@ mod tests {
                 .unwrap(),
             "from foo.bar import baz",
         );
-        assert!(mods.contains(&"foo".into()) && mods.contains(&"baz".into()));
+        assert!(
+            mods.contains(&"foo.bar".into()),
+            "Expected base module for from-import; got {mods:?}"
+        );
         let rel = extract_modules_from_import_from(
             parser
                 .parse("from ._export_format import X", None)
@@ -671,7 +775,7 @@ mod tests {
     fn test_push_dotted_segments() {
         let mut modules = Vec::new();
         push_dotted_segments("foo.bar.baz", &mut modules);
-        assert_eq!(modules, vec!["foo", "bar", "baz"]);
+        assert_eq!(modules, vec!["foo.bar.baz"]);
 
         modules.clear();
         push_dotted_segments("..relative", &mut modules);
