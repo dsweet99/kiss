@@ -121,13 +121,13 @@ impl std::fmt::Display for ShrinkViolation {
         if self.is_target {
             write!(
                 f,
-                "VIOLATION:shrink:{}: {} > {} (target)",
+                "GATE_FAILED:shrink: {} {} > {} (target not met)",
                 self.metric, self.current, self.limit
             )
         } else {
             write!(
                 f,
-                "VIOLATION:shrink:{}: {} > {} (constraint)",
+                "GATE_FAILED:shrink: {} {} > {} (constraint exceeded baseline)",
                 self.metric, self.current, self.limit
             )
         }
@@ -331,7 +331,7 @@ mod tests {
         };
         assert_eq!(
             target_viol.to_string(),
-            "VIOLATION:shrink:graph_edges: 110 > 100 (target)"
+            "GATE_FAILED:shrink: graph_edges 110 > 100 (target not met)"
         );
 
         let constraint_viol = ShrinkViolation {
@@ -342,7 +342,7 @@ mod tests {
         };
         assert_eq!(
             constraint_viol.to_string(),
-            "VIOLATION:shrink:code_units: 960 > 950 (constraint)"
+            "GATE_FAILED:shrink: code_units 960 > 950 (constraint exceeded baseline)"
         );
     }
 }
