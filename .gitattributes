@@ -1,1 +1,2 @@
 tests/fake_code/** filter=lfs diff=lfs merge=lfs -text
+images/graph.png filter=lfs diff=lfs merge=lfs -text
