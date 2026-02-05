@@ -237,7 +237,6 @@ fn maybe_store_full_cache(call: CacheStoreCall<'_>) {
 pub fn run_dry(
     path: &str,
     filter_files: &[String],
-    _chunk_lines: usize,
     config: &DuplicationConfig,
     ignore_prefixes: &[String],
     lang_filter: Option<Language>,

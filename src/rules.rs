@@ -1,3 +1,11 @@
+//! Machine-readable rule output for LLM consumption.
+//!
+//! This module generates structured RULE: lines with metric IDs, operators, thresholds, and
+//! descriptions suitable for parsing by automation/LLMs. For human-friendly sentence templates,
+//! see `kiss::rule_defs` in the library crate.
+//!
+//! Both modules now use canonical metric IDs to ensure consistency.
+
 use kiss::{Config, GateConfig, Language};
 use std::path::PathBuf;
 
@@ -42,10 +50,10 @@ const PY_RULE_SPECS: &[RuleSpec] = &[
         description: "keyword_only_args is the maximum number of keyword-only parameters in a Python function definition.",
     },
     RuleSpec {
-        metric: "max_indentation",
+        metric: "max_indentation_depth",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.max_indentation_depth),
-        description: "max_indentation is the maximum indentation depth within a Python function/method body.",
+        description: "max_indentation_depth is the maximum indentation depth within a Python function/method body.",
     },
     RuleSpec {
         metric: "branches_per_function",
@@ -54,10 +62,10 @@ const PY_RULE_SPECS: &[RuleSpec] = &[
         description: "branches_per_function is the number of if/elif/case_clause branches in a Python function.",
     },
     RuleSpec {
-        metric: "local_variables",
+        metric: "local_variables_per_function",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.local_variables_per_function),
-        description: "local_variables is the number of distinct local variables assigned in a Python function.",
+        description: "local_variables_per_function is the number of distinct local variables assigned in a Python function.",
     },
     RuleSpec {
         metric: "returns_per_function",
@@ -177,16 +185,16 @@ const RS_RULE_SPECS: &[RuleSpec] = &[
         description: "statements_per_function is the maximum number of statements in a Rust function/method body.",
     },
     RuleSpec {
-        metric: "arguments",
+        metric: "arguments_per_function",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.arguments_per_function),
-        description: "arguments is the maximum number of non-self parameters in a Rust function/method signature.",
+        description: "arguments_per_function is the maximum number of non-self parameters in a Rust function/method signature.",
     },
     RuleSpec {
-        metric: "max_indentation",
+        metric: "max_indentation_depth",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.max_indentation_depth),
-        description: "max_indentation is the maximum indentation depth within a Rust function/method body.",
+        description: "max_indentation_depth is the maximum indentation depth within a Rust function/method body.",
     },
     RuleSpec {
         metric: "branches_per_function",
@@ -195,10 +203,10 @@ const RS_RULE_SPECS: &[RuleSpec] = &[
         description: "branches_per_function is the number of `if` expressions in a Rust function.",
     },
     RuleSpec {
-        metric: "local_variables",
+        metric: "local_variables_per_function",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.local_variables_per_function),
-        description: "local_variables is the maximum number of local bindings introduced in a Rust function.",
+        description: "local_variables_per_function is the maximum number of local bindings introduced in a Rust function.",
     },
     RuleSpec {
         metric: "returns_per_function",
@@ -378,17 +386,17 @@ fn print_python_config(c: &Config) {
     println!("positional_args = {}", c.arguments_positional);
     println!("keyword_only_args = {}", c.arguments_keyword_only);
     println!("methods_per_class = {}", c.methods_per_class);
-    println!("max_indentation = {}", c.max_indentation_depth);
+    println!("max_indentation_depth = {}", c.max_indentation_depth);
     println!("branches_per_function = {}", c.branches_per_function);
     println!("returns_per_function = {}", c.returns_per_function);
-    println!("local_variables = {}", c.local_variables_per_function);
+    println!("local_variables_per_function = {}", c.local_variables_per_function);
     println!("nested_function_depth = {}", c.nested_function_depth);
     println!("interface_types_per_file = {}", c.interface_types_per_file);
     println!("concrete_types_per_file = {}", c.concrete_types_per_file);
     println!("imported_names_per_file = {}", c.imported_names_per_file);
     println!("statements_per_try_block = {}", c.statements_per_try_block);
     println!("boolean_parameters = {}", c.boolean_parameters);
-    println!("decorators_per_function = {}", c.annotations_per_function);
+    println!("annotations_per_function = {}", c.annotations_per_function);
     println!("cycle_size = {}", c.cycle_size);
     println!("transitive_dependencies = {}", c.transitive_dependencies);
     println!("dependency_depth = {}", c.dependency_depth);
@@ -397,18 +405,18 @@ fn print_python_config(c: &Config) {
 fn print_rust_config(c: &Config) {
     println!("statements_per_function = {}", c.statements_per_function);
     println!("statements_per_file = {}", c.statements_per_file);
-    println!("arguments = {}", c.arguments_per_function);
+    println!("arguments_per_function = {}", c.arguments_per_function);
     println!("methods_per_class = {}", c.methods_per_class);
     println!("interface_types_per_file = {}", c.interface_types_per_file);
     println!("concrete_types_per_file = {}", c.concrete_types_per_file);
-    println!("max_indentation = {}", c.max_indentation_depth);
+    println!("max_indentation_depth = {}", c.max_indentation_depth);
     println!("branches_per_function = {}", c.branches_per_function);
     println!("returns_per_function = {}", c.returns_per_function);
-    println!("local_variables = {}", c.local_variables_per_function);
+    println!("local_variables_per_function = {}", c.local_variables_per_function);
     println!("nested_function_depth = {}", c.nested_function_depth);
     println!("imported_names_per_file = {}", c.imported_names_per_file);
     println!("boolean_parameters = {}", c.boolean_parameters);
-    println!("attributes_per_function = {}", c.annotations_per_function);
+    println!("annotations_per_function = {}", c.annotations_per_function);
     println!("cycle_size = {}", c.cycle_size);
     println!("transitive_dependencies = {}", c.transitive_dependencies);
     println!("dependency_depth = {}", c.dependency_depth);

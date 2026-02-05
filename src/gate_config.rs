@@ -46,7 +46,7 @@ impl GateConfig {
             return;
         };
         if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
-            check_unknown_keys(
+            if let Err(e) = check_unknown_keys(
                 gate,
                 &[
                     "test_coverage_threshold",
@@ -54,18 +54,21 @@ impl GateConfig {
                     "duplication_enabled",
                 ],
                 "gate",
-            );
+            ) {
+                eprintln!("Error: {e}");
+                return;
+            }
             if let Some(t) = get_usize(gate, "test_coverage_threshold") {
                 if t > 100 {
                     eprintln!("Error: test_coverage_threshold must be 0-100, got {t}");
-                    std::process::exit(1);
+                    return;
                 }
                 self.test_coverage_threshold = t;
             }
             if let Some(s) = get_f64(gate, "min_similarity") {
                 if !(0.0..=1.0).contains(&s) {
                     eprintln!("Error: min_similarity must be 0.0-1.0, got {s}");
-                    std::process::exit(1);
+                    return;
                 }
                 self.min_similarity = s;
             }

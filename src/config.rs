@@ -1,6 +1,39 @@
 use crate::defaults;
 use std::path::Path;
 
+/// Error type for configuration validation
+#[derive(Debug, Clone)]
+pub enum ConfigError {
+    /// Unknown key in a config section
+    UnknownKey { key: String, section: String },
+    /// Unknown section in the config file
+    UnknownSection { section: String, hint: Option<String> },
+    /// Invalid value for a config key
+    InvalidValue { key: String, message: String },
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownKey { key, section } => {
+                write!(f, "Unknown config key '{key}' in [{section}]")
+            }
+            Self::UnknownSection { section, hint } => {
+                write!(f, "Unknown config section '[{section}]'")?;
+                if let Some(h) = hint {
+                    write!(f, " - did you mean '[{h}]'?")?;
+                }
+                Ok(())
+            }
+            Self::InvalidValue { key, message } => {
+                write!(f, "Invalid value for '{key}': {message}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {}
+
 macro_rules! apply_config {
     ($self:ident, $table:ident, $($key:literal => $field:ident),+ $(,)?) => {
         $( if let Some(v) = get_usize($table, $key) { $self.$field = v; } )+
@@ -181,7 +214,10 @@ impl Config {
                 return;
             }
         };
-        check_unknown_sections(&table);
+        if let Err(e) = check_unknown_sections(&table) {
+            eprintln!("Error: {e}");
+            return;
+        }
         if let Some(t) = table.get("thresholds").and_then(|v| v.as_table()) {
             self.apply_thresholds(t);
         }
@@ -230,7 +266,10 @@ impl Config {
             "local_variables_per_function",
             "imported_names_per_file",
         ];
-        check_unknown_keys(table, VALID, "thresholds");
+        if let Err(e) = check_unknown_keys(table, VALID, "thresholds") {
+            eprintln!("Error: {e}");
+            return;
+        }
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "methods_per_class" => methods_per_class,
             "statements_per_file" => statements_per_file, "functions_per_file" => functions_per_file,
@@ -259,7 +298,10 @@ impl Config {
             "transitive_dependencies",
             "dependency_depth",
         ];
-        check_unknown_keys(table, VALID, "shared");
+        if let Err(e) = check_unknown_keys(table, VALID, "shared") {
+            eprintln!("Error: {e}");
+            return;
+        }
         apply_config!(self, table,
             "statements_per_file" => statements_per_file,
             "functions_per_file" => functions_per_file,
@@ -300,7 +342,10 @@ impl Config {
             "transitive_dependencies",
             "dependency_depth",
         ];
-        check_unknown_keys(table, VALID, "python");
+        if let Err(e) = check_unknown_keys(table, VALID, "python") {
+            eprintln!("Error: {e}");
+            return;
+        }
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "positional_args" => arguments_positional,
             "keyword_only_args" => arguments_keyword_only, "max_indentation" => max_indentation_depth,
@@ -343,7 +388,10 @@ impl Config {
             "dependency_depth",
             "nested_closure_depth",
         ];
-        check_unknown_keys(table, VALID, "rust");
+        if let Err(e) = check_unknown_keys(table, VALID, "rust") {
+            eprintln!("Error: {e}");
+            return;
+        }
         apply_config!(self, table,
             "statements_per_function" => statements_per_function, "arguments" => arguments_per_function,
             "max_indentation" => max_indentation_depth, "branches_per_function" => branches_per_function,
@@ -361,29 +409,35 @@ impl Config {
     }
 }
 
-pub(crate) fn check_unknown_keys(table: &toml::Table, valid: &[&str], section: &str) {
+pub(crate) fn check_unknown_keys(
+    table: &toml::Table,
+    valid: &[&str],
+    section: &str,
+) -> Result<(), ConfigError> {
     for key in table.keys() {
         if !valid.contains(&key.as_str()) {
-            eprintln!("Error: Unknown config key '{key}' in [{section}]");
-            std::process::exit(1);
+            return Err(ConfigError::UnknownKey {
+                key: key.clone(),
+                section: section.to_string(),
+            });
         }
     }
+    Ok(())
 }
 
-fn check_unknown_sections(table: &toml::Table) {
+fn check_unknown_sections(table: &toml::Table) -> Result<(), ConfigError> {
     const VALID: &[&str] = &["python", "rust", "shared", "thresholds", "gate"];
     for key in table.keys() {
         if VALID.contains(&key.as_str()) {
             continue;
         }
-        let hint = VALID
-            .iter()
-            .find(|v| similar(key, v))
-            .map(|s| format!(" - did you mean '[{s}]'?"))
-            .unwrap_or_default();
-        eprintln!("Error: Unknown config section '[{key}]'{hint}");
-        std::process::exit(1);
+        let hint = VALID.iter().find(|v| similar(key, v)).map(|s| (*s).to_string());
+        return Err(ConfigError::UnknownSection {
+            section: key.clone(),
+            hint,
+        });
     }
+    Ok(())
 }
 
 fn similar(a: &str, b: &str) -> bool {
@@ -472,9 +526,48 @@ mod tests {
     fn test_validation() {
         let mut t = toml::Table::new();
         t.insert("statements_per_function".into(), toml::Value::Integer(30));
-        check_unknown_keys(&t, &["statements_per_function"], "test");
+        check_unknown_keys(&t, &["statements_per_function"], "test").unwrap();
         let mut t2 = toml::Table::new();
         t2.insert("python".into(), toml::Value::Table(toml::Table::new()));
-        check_unknown_sections(&t2);
+        check_unknown_sections(&t2).unwrap();
+    }
+
+    #[test]
+    fn test_config_error_display() {
+        let e = ConfigError::UnknownKey {
+            key: "foo".into(),
+            section: "bar".into(),
+        };
+        assert!(e.to_string().contains("foo"));
+        assert!(e.to_string().contains("bar"));
+
+        let e2 = ConfigError::UnknownSection {
+            section: "baz".into(),
+            hint: Some("shared".into()),
+        };
+        assert!(e2.to_string().contains("baz"));
+        assert!(e2.to_string().contains("shared"));
+
+        let e3 = ConfigError::InvalidValue {
+            key: "x".into(),
+            message: "must be positive".into(),
+        };
+        assert!(e3.to_string().contains("positive"));
+    }
+
+    #[test]
+    fn test_unknown_key_returns_error() {
+        let mut t = toml::Table::new();
+        t.insert("unknown_key".into(), toml::Value::Integer(1));
+        let result = check_unknown_keys(&t, &["valid_key"], "test");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unknown_section_returns_error() {
+        let mut t = toml::Table::new();
+        t.insert("unknown_section".into(), toml::Value::Table(toml::Table::new()));
+        let result = check_unknown_sections(&t);
+        assert!(result.is_err());
     }
 }

@@ -99,7 +99,7 @@ enum Commands {
     },
     /// Shortcut: generate .kissconfig from current directory (same as: mimic . --out .kissconfig)
     Clamp,
-    /// Detect duplicate code blocks
+    /// Detect duplicate code blocks (uses function-level chunks)
     Dry {
         /// Path to scan for duplicates
         #[arg(default_value = ".")]
@@ -107,9 +107,6 @@ enum Commands {
         /// Optional file paths to filter results (only report duplicates involving these files)
         #[arg(value_name = "FILTER_FILES")]
         filter_files: Vec<String>,
-        /// Number of lines per chunk
-        #[arg(long, default_value = "10")]
-        chunk_lines: usize,
         /// Character n-gram size for shingling
         #[arg(long, default_value = "5")]
         shingle_size: usize,
@@ -197,7 +194,6 @@ fn main() {
         Commands::Dry {
             path,
             filter_files,
-            chunk_lines,
             shingle_size,
             minhash_size,
             lsh_bands,
@@ -211,14 +207,7 @@ fn main() {
                 lsh_bands,
                 min_similarity,
             };
-            analyze::run_dry(
-                &path,
-                &filter_files,
-                chunk_lines,
-                &config,
-                &ignore,
-                cli.lang,
-            );
+            analyze::run_dry(&path, &filter_files, &config, &ignore, cli.lang);
         }
         Commands::Rules => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
         Commands::Config => run_config(

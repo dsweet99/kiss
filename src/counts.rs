@@ -222,7 +222,7 @@ fn check_function_metrics(
     chk!(
         max_indentation,
         max_indentation_depth,
-        "max_indentation",
+        "max_indentation_depth",
         "indentation depth",
         "Extract nested logic into helper functions or use early returns."
     );
@@ -243,7 +243,7 @@ fn check_function_metrics(
     chk!(
         local_variables,
         local_variables_per_function,
-        "local_variables",
+        "local_variables_per_function",
         "local variables",
         "Extract related variables into a data class or split the function."
     );

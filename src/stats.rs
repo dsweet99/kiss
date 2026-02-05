@@ -275,17 +275,17 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::Function,
     },
     MetricDef {
-        metric_id: "args_total",
+        metric_id: "arguments_per_function",
         display_name: "Arguments (total)",
         scope: MetricScope::Function,
     },
     MetricDef {
-        metric_id: "args_positional",
+        metric_id: "positional_args",
         display_name: "Arguments (positional)",
         scope: MetricScope::Function,
     },
     MetricDef {
-        metric_id: "args_keyword_only",
+        metric_id: "keyword_only_args",
         display_name: "Arguments (keyword-only)",
         scope: MetricScope::Function,
     },
@@ -305,8 +305,8 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::Function,
     },
     MetricDef {
-        metric_id: "return_values_per_return",
-        display_name: "Return values per return",
+        metric_id: "return_values_per_function",
+        display_name: "Return values per function",
         scope: MetricScope::Function,
     },
     MetricDef {
@@ -390,7 +390,7 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::Module,
     },
     MetricDef {
-        metric_id: "transitive_deps",
+        metric_id: "transitive_dependencies",
         display_name: "Transitive deps (per module)",
         scope: MetricScope::Module,
     },
@@ -453,13 +453,13 @@ impl PercentileSummary {
 fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usize]> {
     Some(match metric_id {
         "statements_per_function" => &stats.statements_per_function,
-        "args_total" => &stats.arguments_per_function,
-        "args_positional" => &stats.arguments_positional,
-        "args_keyword_only" => &stats.arguments_keyword_only,
+        "arguments_per_function" => &stats.arguments_per_function,
+        "positional_args" => &stats.arguments_positional,
+        "keyword_only_args" => &stats.arguments_keyword_only,
         "max_indentation_depth" => &stats.max_indentation,
         "nested_function_depth" => &stats.nested_function_depth,
         "returns_per_function" => &stats.returns_per_function,
-        "return_values_per_return" => &stats.return_values_per_function,
+        "return_values_per_function" => &stats.return_values_per_function,
         "branches_per_function" => &stats.branches_per_function,
         "local_variables_per_function" => &stats.local_variables_per_function,
         "statements_per_try_block" => &stats.statements_per_try_block,
@@ -476,7 +476,7 @@ fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usi
         "fan_in" => &stats.fan_in,
         "fan_out" => &stats.fan_out,
         "cycle_size" => &stats.cycle_size,
-        "transitive_deps" => &stats.transitive_dependencies,
+        "transitive_dependencies" => &stats.transitive_dependencies,
         "dependency_depth" => &stats.dependency_depth,
         _ => return None,
     })
@@ -522,9 +522,9 @@ pub fn format_stats_table(summaries: &[PercentileSummary]) -> String {
 fn config_key_for(metric_id: &str) -> Option<&'static str> {
     Some(match metric_id {
         "statements_per_function" => "statements_per_function",
-        "args_total" => "arguments_per_function",
-        "args_positional" => "arguments_positional",
-        "args_keyword_only" => "arguments_keyword_only",
+        "arguments_per_function" => "arguments_per_function",
+        "positional_args" => "arguments_positional",
+        "keyword_only_args" => "arguments_keyword_only",
         "max_indentation_depth" => "max_indentation_depth",
         "nested_function_depth" => "nested_function_depth",
         "returns_per_function" => "returns_per_function",
@@ -763,7 +763,10 @@ mod tests {
             super::metric_values(&stats, "statements_per_function"),
             Some(&[10][..])
         );
-        assert_eq!(super::metric_values(&stats, "args_total"), Some(&[3][..]));
+        assert_eq!(
+            super::metric_values(&stats, "arguments_per_function"),
+            Some(&[3][..])
+        );
         assert_eq!(super::metric_values(&stats, "fan_in"), Some(&[2][..]));
         assert_eq!(super::metric_values(&stats, "unknown_metric"), None);
     }
