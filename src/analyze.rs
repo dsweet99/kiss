@@ -393,7 +393,6 @@ pub struct ParseResult {
     pub statement_count: usize,
 }
 
-#[cfg(test)]
 pub fn parse_all(
     py_files: &[PathBuf],
     rs_files: &[PathBuf],

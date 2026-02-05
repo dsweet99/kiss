@@ -247,8 +247,8 @@ fn cli_config_shows_python_specific_settings() {
         "Should show keyword_only_args. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("decorators_per_function"),
-        "Should show decorators_per_function. stdout: {stdout}"
+        stdout.contains("annotations_per_function"),
+        "Should show annotations_per_function. stdout: {stdout}"
     );
     assert!(
         stdout.contains("statements_per_try_block"),
@@ -265,8 +265,8 @@ fn cli_config_shows_rust_specific_settings() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("arguments = 8"),
-        "Should show Rust arguments. stdout: {stdout}"
+        stdout.contains("arguments_per_function = 8"),
+        "Should show Rust arguments_per_function. stdout: {stdout}"
     );
     assert!(
         stdout.contains("interface_types_per_file"),
@@ -277,8 +277,8 @@ fn cli_config_shows_rust_specific_settings() {
         "Should show concrete_types_per_file. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("attributes_per_function"),
-        "Should show attributes_per_function. stdout: {stdout}"
+        stdout.contains("annotations_per_function"),
+        "Should show annotations_per_function. stdout: {stdout}"
     );
 }
 

@@ -10,8 +10,9 @@ use kiss::config_gen::{
     generate_config_toml_by_language, infer_gate_config_for_paths, write_mimic_config,
 };
 use kiss::{
-    Config, ConfigLanguage, GateConfig, Language, MetricStats, compute_summaries,
-    format_stats_table, get_metric_def,
+    Config, ConfigLanguage, GateConfig, GlobalMetrics, Language, MetricStats, ShrinkState,
+    check_shrink_constraints, compute_summaries, format_stats_table, get_metric_def,
+    parse_target_arg,
 };
 use std::path::{Path, PathBuf};
 
@@ -141,6 +142,34 @@ enum Commands {
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
     },
+    /// Constrained minimization of codebase metrics
+    #[command(subcommand)]
+    Shrink(ShrinkCommand),
+}
+
+#[derive(Subcommand, Debug)]
+enum ShrinkCommand {
+    /// Start shrink mode: set target and save baseline constraints
+    Start {
+        /// Target metric and value, e.g., `graph_edges=100`
+        #[arg(value_name = "METRIC=VALUE")]
+        target: String,
+        /// Paths to analyze for baseline
+        #[arg(default_value = ".")]
+        paths: Vec<String>,
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
+    },
+    /// Check current metrics against shrink constraints
+    Check {
+        /// Paths to analyze
+        #[arg(default_value = ".")]
+        paths: Vec<String>,
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
+    },
 }
 
 fn main() {
@@ -228,6 +257,12 @@ fn main() {
             if let Err(e) = run_viz(&out, &paths, cli.lang, &ignore, zoom) {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
+            }
+        }
+        Commands::Shrink(cmd) => {
+            let exit_code = run_shrink(cmd, cli.lang, &py_config, &rs_config, &gate_config);
+            if exit_code != 0 {
+                std::process::exit(exit_code);
             }
         }
     }
@@ -606,6 +641,184 @@ fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
     i32::from(!run_analyze(&opts))
 }
 
+fn run_shrink(
+    cmd: ShrinkCommand,
+    lang_filter: Option<Language>,
+    py_config: &Config,
+    rs_config: &Config,
+    gate_config: &GateConfig,
+) -> i32 {
+    match cmd {
+        ShrinkCommand::Start {
+            target,
+            paths,
+            ignore,
+        } => run_shrink_start(&target, &paths, &ignore, lang_filter, py_config, rs_config),
+        ShrinkCommand::Check { paths, ignore } => {
+            run_shrink_check(&paths, &ignore, lang_filter, py_config, rs_config, gate_config)
+        }
+    }
+}
+
+fn run_shrink_start(
+    target_arg: &str,
+    paths: &[String],
+    ignore: &[String],
+    lang_filter: Option<Language>,
+    py_config: &Config,
+    rs_config: &Config,
+) -> i32 {
+    let ignore = normalize_ignore_prefixes(ignore);
+    validate_paths(paths);
+
+    // Parse target argument
+    let (target, target_value) = match parse_target_arg(target_arg) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return 1;
+        }
+    };
+
+    // Compute current metrics
+    let Some(current) = compute_global_metrics(paths, &ignore, lang_filter, py_config, rs_config) else {
+        eprintln!("Error: No source files found.");
+        return 1;
+    };
+
+    // Validate target value <= current value
+    let current_target_value = target.get(&current);
+    if target_value > current_target_value {
+        eprintln!(
+            "Error: Target value {} exceeds current value {} for {}. Can only shrink, not grow.",
+            target_value, current_target_value, target.as_str()
+        );
+        return 1;
+    }
+
+    // Save state
+    let state = ShrinkState {
+        baseline: current,
+        target,
+        target_value,
+    };
+    if let Err(e) = state.save() {
+        eprintln!("Error saving .kiss_shrink: {e}");
+        return 1;
+    }
+
+    // Print confirmation
+    println!(
+        "Shrink target: {} ≤ {} (current: {})",
+        target.as_str(),
+        target_value,
+        current_target_value
+    );
+    println!(
+        "Constraints: files ≤ {}, code_units ≤ {}, statements ≤ {}, graph_nodes ≤ {}, graph_edges ≤ {}",
+        current.files, current.code_units, current.statements, current.graph_nodes, current.graph_edges
+    );
+    println!("Saved to .kiss_shrink");
+    0
+}
+
+fn run_shrink_check(
+    paths: &[String],
+    ignore: &[String],
+    lang_filter: Option<Language>,
+    py_config: &Config,
+    rs_config: &Config,
+    gate_config: &GateConfig,
+) -> i32 {
+    let ignore = normalize_ignore_prefixes(ignore);
+    validate_paths(paths);
+
+    // Load shrink state
+    let Some(state) = ShrinkState::load() else {
+        eprintln!("Error: No .kiss_shrink file found. Run 'kiss shrink start' first.");
+        return 1;
+    };
+
+    // Run normal check first (with bypass_gate=true to get all violations)
+    let universe = &paths[0];
+    let focus = if paths.len() > 1 { &paths[1..] } else { paths };
+    let opts = analyze::AnalyzeOptions {
+        universe,
+        focus_paths: focus,
+        py_config,
+        rs_config,
+        lang_filter,
+        bypass_gate: true,
+        gate_config,
+        ignore_prefixes: &ignore,
+        show_timing: false,
+    };
+    let check_ok = run_analyze(&opts);
+
+    // Compute current metrics
+    let Some(current) = compute_global_metrics(paths, &ignore, lang_filter, py_config, rs_config) else {
+        eprintln!("Error: No source files found.");
+        return 1;
+    };
+
+    // Check shrink constraints
+    let shrink_result = check_shrink_constraints(&state, &current);
+    for v in &shrink_result.violations {
+        println!("{v}");
+    }
+
+    // Print progress
+    let baseline_target = state.target.get(&state.baseline);
+    let current_target = state.target.get(&current);
+    println!(
+        "Shrink progress: {} {} → {} (target: {})",
+        state.target.as_str(),
+        baseline_target,
+        current_target,
+        state.target_value
+    );
+
+    i32::from(!check_ok || !shrink_result.violations.is_empty())
+}
+
+fn compute_global_metrics(
+    paths: &[String],
+    ignore: &[String],
+    lang_filter: Option<Language>,
+    py_config: &Config,
+    rs_config: &Config,
+) -> Option<GlobalMetrics> {
+    use kiss::discovery::gather_files_by_lang;
+
+    let (py_files, rs_files) = gather_files_by_lang(paths, lang_filter, ignore);
+    if py_files.is_empty() && rs_files.is_empty() {
+        return None;
+    }
+
+    // We need to parse and analyze to get the metrics
+    // This duplicates some work from run_analyze but we need the raw numbers
+    let result = analyze::parse_all(&py_files, &rs_files, py_config, rs_config);
+    let (py_graph, rs_graph) = analyze::build_graphs(&result.py_parsed, &result.rs_parsed);
+
+    let (mut nodes, mut edges) = (0, 0);
+    if let Some(g) = &py_graph {
+        nodes += g.graph.node_count();
+        edges += g.graph.edge_count();
+    }
+    if let Some(g) = &rs_graph {
+        nodes += g.graph.node_count();
+        edges += g.graph.edge_count();
+    }
+
+    Some(GlobalMetrics {
+        files: result.py_parsed.len() + result.rs_parsed.len(),
+        code_units: result.code_unit_count,
+        statements: result.statement_count,
+        graph_nodes: nodes,
+        graph_edges: edges,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -733,5 +946,74 @@ mod tests {
         assert!(prov.contains("Config:"));
         assert!(prov.contains("defaults"));
         assert!(prov.contains(".kissconfig"));
+    }
+    #[test]
+    fn test_shrink_commands_parse() {
+        assert!(matches!(
+            Cli::try_parse_from(["kiss", "shrink", "start", "statements=100"]).unwrap().command,
+            Commands::Shrink(ShrinkCommand::Start { .. })
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["kiss", "shrink", "check"]).unwrap().command,
+            Commands::Shrink(ShrinkCommand::Check { .. })
+        ));
+    }
+    #[test]
+    fn test_shrink_start_and_check() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("test.py"), "def foo(): pass").unwrap();
+        let p = tmp.path().to_string_lossy().to_string();
+        let py_cfg = Config::python_defaults();
+        let rs_cfg = Config::rust_defaults();
+
+        // Test compute_global_metrics
+        let metrics = compute_global_metrics(std::slice::from_ref(&p), &[], None, &py_cfg, &rs_cfg);
+        assert!(metrics.is_some());
+        let m = metrics.unwrap();
+        assert!(m.files > 0);
+
+        // Test run_shrink_start with target > current (should fail)
+        let exit = run_shrink_start("statements=999999", std::slice::from_ref(&p), &[], None, &py_cfg, &rs_cfg);
+        assert_eq!(exit, 1);
+
+        // Test run_shrink_start with invalid target
+        let exit = run_shrink_start("invalid=100", std::slice::from_ref(&p), &[], None, &py_cfg, &rs_cfg);
+        assert_eq!(exit, 1);
+
+        // Test run_shrink with ShrinkCommand::Start
+        let gate_cfg = GateConfig::default();
+        let cmd = ShrinkCommand::Start {
+            target: "statements=1".to_string(),
+            paths: vec![p.clone()],
+            ignore: vec![],
+        };
+        let exit = run_shrink(cmd, None, &py_cfg, &rs_cfg, &gate_cfg);
+        assert_eq!(exit, 0);
+
+        // Test run_shrink with ShrinkCommand::Check
+        let cmd = ShrinkCommand::Check {
+            paths: vec![p],
+            ignore: vec![],
+        };
+        let _exit = run_shrink(cmd, None, &py_cfg, &rs_cfg, &gate_cfg);
+        // exit code depends on whether target is met
+    }
+    #[test]
+    fn test_shrink_check_without_state() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("test.py"), "def foo(): pass").unwrap();
+        let p = tmp.path().to_string_lossy().to_string();
+        let py_cfg = Config::python_defaults();
+        let rs_cfg = Config::rust_defaults();
+        let gate_cfg = GateConfig::default();
+
+        // Run in tmp dir to avoid finding any existing .kiss_shrink
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let exit = run_shrink_check(&[p], &[], None, &py_cfg, &rs_cfg, &gate_cfg);
+        assert_eq!(exit, 1); // Should fail without .kiss_shrink
+
+        std::env::set_current_dir(orig_dir).unwrap();
     }
 }
