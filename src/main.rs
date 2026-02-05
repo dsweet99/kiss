@@ -128,9 +128,12 @@ enum Commands {
     Rules,
     /// Show effective configuration (merged from all sources)
     Config,
-    /// Write Graphviz DOT dependency graph
+    /// Write dependency graph (Mermaid or Graphviz DOT based on output extension)
     Viz {
-        /// Output .dot file path
+        /// Output file path. Format is inferred from extension:
+        /// - `.md`: Markdown with a Mermaid code fence
+        /// - `.mmd` / `.mermaid`: Mermaid diagram text
+        /// - `.dot`: Graphviz DOT
         out: PathBuf,
         /// Paths to analyze
         #[arg(default_value = ".")]

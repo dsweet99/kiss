@@ -36,7 +36,7 @@ VIOLATION:positional_args:/Users/dsweet2/Projects/kiss/tests/fake_python/deeply_
 ```
 Too many arguments is a [code smell](https://stackoverflow.com/questions/68069305/how-to-avoid-code-smell-too-many-parameters). kiss tells exactly where to find the problem and suggests solutions.
 
-LLMs like to write long try/except block, which is terrible practice as it can hide errors and frustrate debugging.
+LLMs like to write long try/except blocks, which is terrible practice as it can hide errors and frustrate debugging.
 ```
 VIOLATION:statements_per_try_block:/Users/dsweet2/Projects/kiss/tests/fake_python/api_handler.py:238:process_batch_operations: Function 'process_batch_operations' has 49 statements in try block (threshold: 5) Keep try blocks narrow: wrap only the code that can raise the specific exception.
 ```
@@ -96,7 +96,7 @@ This will create a Mermaid plot inside the markdown file graph.md (viewable in V
 
 ## kiss rules
 
-You can help your LLM produce rule-following code by adding the output of `kiss rules` (see below) to its context before it starts coding. For example, you might put this is `.cursorrules` (or maybe `AGENTS.md`):
+You can help your LLM produce rule-following code by adding the output of `kiss rules` (see below) to its context before it starts coding. For example, you might put this in `.cursorrules` (or maybe `AGENTS.md`):
 ```
 FIRST STEP: After the user's first request, before doing anything else, call `kiss rules`
 ```
@@ -175,7 +175,7 @@ Next, ask your LLM to iterate until
 ```
 kiss shrink
 ```
-passes.  `kiss shrink` will flag `graph_edges>120` as a violation, trigger your LLM to refactor, reducing the number of connections between different code units withtout increasing any other global measure or any of the usual `kiss check` measures. This would tend to make your code more cohesive.
+passes.  `kiss shrink` will flag `graph_edges>120` as a violation, trigger your LLM to refactor, reducing the number of connections between different code units without increasing any other global measure or any of the usual `kiss check` measures. This would tend to make your code more cohesive.
 
 Choosing to constrain different global metrics will have different effects:
 
