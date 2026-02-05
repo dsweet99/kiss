@@ -28,6 +28,8 @@ pub mod rust_parsing;
 pub mod rust_test_refs;
 pub mod rust_units;
 
+pub mod shrink;
+
 #[cfg(test)]
 pub mod test_utils;
 
@@ -80,3 +82,8 @@ pub use rust_test_refs::{
 pub use rust_units::{RustCodeUnit, extract_rust_code_units};
 
 pub use rule_defs::{Applicability, RULES, Rule, RuleCategory, rules_for_python, rules_for_rust};
+
+pub use shrink::{
+    GlobalMetrics, ShrinkState, ShrinkTarget, ShrinkViolation, ShrinkViolations,
+    check_shrink_constraints, parse_target_arg,
+};

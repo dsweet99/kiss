@@ -275,9 +275,9 @@ fn nested_closures() {{
     let violations = analyze_rust_file(&parsed, &config);
     let has_violation = violations
         .iter()
-        .any(|v| v.metric == "nested_closure_depth");
+        .any(|v| v.metric == "nested_function_depth");
     assert!(
         has_violation,
-        "should trigger nested_closure_depth violation"
+        "should trigger nested_function_depth violation"
     );
 }

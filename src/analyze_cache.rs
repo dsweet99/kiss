@@ -180,7 +180,7 @@ pub fn try_run_cached_all(
     viols.extend(cached_coverage_viols(&cache, focus_set));
 
     println!(
-        "Analyzed: {} files, {} code units, {} statements, {} graph nodes, {} graph edges",
+        "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
         cache.py_file_count + cache.rs_file_count,
         cache.code_unit_count,
         cache.statement_count,

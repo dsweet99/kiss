@@ -97,14 +97,15 @@ fn cli_stats_all_uses_metric_registry_display_names() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Regression: `--all` should use the same display names as the summary registry.
+    // `--all` outputs machine-readable STAT lines with metric_id as the key.
+    // Format: STAT:<metric_id>:<value>:<file>:<line>:<name>
     assert!(
-        stdout.contains("args_total  (Arguments (total))"),
-        "Expected args_total display name to match summary. stdout:\n{stdout}"
+        stdout.contains("STAT:args_total:"),
+        "Expected STAT:args_total line in output. stdout:\n{stdout}"
     );
     assert!(
-        stdout.contains("imported_names_per_file  (Imported names per file)"),
-        "Expected imported_names_per_file display name to match summary. stdout:\n{stdout}"
+        stdout.contains("STAT:imported_names_per_file:"),
+        "Expected STAT:imported_names_per_file line in output. stdout:\n{stdout}"
     );
 }
 
