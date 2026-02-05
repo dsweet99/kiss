@@ -151,8 +151,7 @@ enum Commands {
 enum ShrinkCommand {
     /// Start shrink mode: set target and save baseline constraints
     Start {
-        /// Target metric and value, e.g., `graph_edges=100`
-        #[arg(value_name = "METRIC=VALUE")]
+        #[arg(value_name = "METRIC=VALUE", help = "Target metric and value (metrics: files, code_units, statements, graph_nodes, graph_edges)")]
         target: String,
         /// Paths to analyze for baseline
         #[arg(default_value = ".")]
@@ -980,6 +979,10 @@ mod tests {
         let exit = run_shrink_start("invalid=100", std::slice::from_ref(&p), &[], None, &py_cfg, &rs_cfg);
         assert_eq!(exit, 1);
 
+        // Run in tmp dir to avoid overwriting any existing .kiss_shrink
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
         // Test run_shrink with ShrinkCommand::Start
         let gate_cfg = GateConfig::default();
         let cmd = ShrinkCommand::Start {
@@ -997,6 +1000,8 @@ mod tests {
         };
         let _exit = run_shrink(cmd, None, &py_cfg, &rs_cfg, &gate_cfg);
         // exit code depends on whether target is met
+
+        std::env::set_current_dir(orig_dir).unwrap();
     }
     #[test]
     fn test_shrink_check_without_state() {

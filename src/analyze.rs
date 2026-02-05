@@ -555,7 +555,7 @@ fn print_analysis_summary(
 ) {
     let (nodes, edges) = graph_stats(py_g, rs_g);
     println!(
-        "Analyzed: {file_count} files, {unit_count} code units, {stmt_count} statements, {nodes} graph nodes, {edges} graph edges"
+        "Analyzed: {file_count} files, {unit_count} code_units, {stmt_count} statements, {nodes} graph_nodes, {edges} graph_edges"
     );
 }
 
