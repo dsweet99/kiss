@@ -11,7 +11,7 @@ use kiss::config_gen::{
 };
 use kiss::{
     Config, ConfigLanguage, GateConfig, Language, MetricStats, compute_summaries,
-    format_stats_table, get_metric_def, truncate,
+    format_stats_table, get_metric_def,
 };
 use std::path::{Path, PathBuf};
 
@@ -107,17 +107,17 @@ enum Commands {
         /// Optional file paths to filter results (only report duplicates involving these files)
         #[arg(value_name = "FILTER_FILES")]
         filter_files: Vec<String>,
-        /// Character n-gram size for shingling
-        #[arg(long, default_value = "5")]
+        /// Character n-gram size for shingling (default matches `kiss check`)
+        #[arg(long, default_value = "3")]
         shingle_size: usize,
-        /// Number of `MinHash` functions
-        #[arg(long, default_value = "128")]
+        /// Number of `MinHash` functions (default matches `kiss check`)
+        #[arg(long, default_value = "100")]
         minhash_size: usize,
-        /// Number of LSH bands
-        #[arg(long, default_value = "32")]
+        /// Number of LSH bands (default matches `kiss check`)
+        #[arg(long, default_value = "20")]
         lsh_bands: usize,
-        /// Minimum similarity threshold [0.0-1.0]
-        #[arg(long, default_value = "0.5")]
+        /// Minimum similarity threshold [0.0-1.0] (default matches `kiss check`)
+        #[arg(long, default_value = "0.7")]
         min_similarity: f64,
         /// Ignore files/directories starting with PREFIX (repeatable)
         #[arg(long, value_name = "PREFIX")]
@@ -492,7 +492,7 @@ fn print_top_for_metric<F>(
     units: &[kiss::UnitMetrics],
     n: usize,
     metric_id: &str,
-    display_name: &str,
+    _display_name: &str,
     extractor: F,
 ) where
     F: Fn(&kiss::UnitMetrics) -> Option<usize>,
@@ -505,19 +505,9 @@ fn print_top_for_metric<F>(
         return;
     }
     with_values.sort_by(|a, b| b.0.cmp(&a.0));
-    println!("{metric_id}  ({display_name})  top {n}");
-    println!("{:>5}  {:<40}  {:>5}  name", "value", "file", "line");
-    println!("{}", "-".repeat(70));
     for (val, u) in with_values.into_iter().take(n) {
-        println!(
-            "{:>5}  {:<40}  {:>5}  {}",
-            val,
-            truncate(&u.file, 40),
-            u.line,
-            u.name
-        );
+        println!("STAT:{metric_id}:{val}:{file}:{line}:{name}", file = u.file, line = u.line, name = u.name);
     }
-    println!();
 }
 
 fn run_stats_table(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
@@ -619,6 +609,7 @@ fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kiss::truncate;
     #[test]
     fn test_language_and_config() {
         assert_eq!(parse_language("python"), Ok(Language::Python));
