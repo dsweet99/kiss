@@ -433,6 +433,11 @@ fn leiden_or_merge_to_target(
     merge_communities_to_target(nodes, edges, initial, target)
 }
 
+const fn should_use_fast_coarsen(node_count: usize, edge_count: usize, target: usize) -> bool {
+    let aggressive_coarsen = target.saturating_mul(2) < node_count;
+    aggressive_coarsen || node_count >= 1_500 || edge_count >= 7_500
+}
+
 #[must_use]
 pub fn coarsen_with_zoom(
     nodes: &[String],
@@ -452,8 +457,7 @@ pub fn coarsen_with_zoom(
 
     let target = target_node_count(nodes.len(), zoom);
 
-    let aggressive_coarsen = target.saturating_mul(2) < nodes.len();
-    let use_fast = aggressive_coarsen || nodes.len() >= 1_500 || edges.len() >= 7_500;
+    let use_fast = should_use_fast_coarsen(nodes.len(), edges.len(), target);
 
     let communities = if use_fast {
         fast_communities_from_paths(nodes, paths, target)
@@ -484,6 +488,15 @@ mod tests {
         all.sort_unstable();
         all.dedup();
         assert_eq!(all, (0..10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_should_use_fast_coarsen_regressions() {
+        // Guard against regressions that re-enable the slow Leiden path for aggressive zoom values.
+        assert!(should_use_fast_coarsen(2_000, 0, 10)); // node threshold
+        assert!(should_use_fast_coarsen(100, 10_000, 50)); // edge threshold
+        assert!(should_use_fast_coarsen(1_000, 0, 100)); // aggressive coarsen (target << nodes)
+        assert!(!should_use_fast_coarsen(100, 0, 90)); // not aggressive, small graph
     }
 
     #[test]

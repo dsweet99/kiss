@@ -35,15 +35,28 @@ fn module_name_from_path(path: &std::path::Path) -> String {
         .map_or_else(String::new, |s| s.to_str().unwrap_or("").to_string())
 }
 
+fn module_id_for_path(path: &std::path::Path, graph: &DependencyGraph) -> String {
+    // `DependencyGraph` keys are language-specific:
+    // - Python uses qualified module ids (e.g. `pkg.foo`) stored as keys in `graph.paths`
+    // - Rust uses the bare file stem
+    //
+    // For per-file rows, prefer the exact module id used by the graph for this path.
+    graph
+        .paths
+        .iter()
+        .find_map(|(k, v)| (v == path).then(|| k.clone()))
+        .unwrap_or_else(|| module_name_from_path(path))
+}
+
 fn file_unit_metrics(
     path: &std::path::Path,
     lines: usize,
     imports: usize,
     graph: Option<&DependencyGraph>,
 ) -> UnitMetrics {
-    let module_name = module_name_from_path(path);
     let (fan_in, fan_out, transitive_deps, dependency_depth) =
         graph.map_or((None, None, None, None), |g| {
+            let module_name = module_id_for_path(path, g);
             let m = g.module_metrics(&module_name);
             (
                 Some(m.fan_in),
@@ -405,6 +418,21 @@ mod tests {
         let m = file_unit_metrics(std::path::Path::new("src/foo.py"), 100, 5, None);
         assert_eq!(m.name, "foo.py");
         assert_eq!(m.lines, Some(100));
+    }
+
+    #[test]
+    fn test_file_unit_metrics_uses_graph_module_id_for_path() {
+        // Regression: Python graph module ids are qualified (e.g. `pkg.foo`), not file stems.
+        // The per-file row should look up module metrics using the same id that `DependencyGraph`
+        // uses as its key for that file.
+        let mut g = DependencyGraph::new();
+        let p = std::path::PathBuf::from("src/pkg/foo.py");
+        g.paths.insert("pkg.foo".to_string(), p.clone());
+        g.get_or_create_node("pkg.foo");
+        g.add_dependency("pkg.foo", "bar"); // fan_out=1
+
+        let m = file_unit_metrics(&p, 10, 0, Some(&g));
+        assert_eq!(m.fan_out, Some(1), "expected metrics from pkg.foo node");
     }
 
     #[test]

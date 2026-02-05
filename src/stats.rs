@@ -105,7 +105,9 @@ impl MetricStats {
             }
         }
 
-        for name in graph.nodes.keys() {
+        // Only include internal modules (those with a known path). External imports create nodes
+        // but should not skew per-module distributions in `stats`.
+        for name in graph.paths.keys() {
             let m = graph.module_metrics(name);
             self.fan_in.push(m.fan_in);
             self.fan_out.push(m.fan_out);
@@ -688,12 +690,32 @@ mod tests {
         let mut graph = crate::graph::DependencyGraph::new();
         graph.add_dependency("a", "b");
         graph.add_dependency("b", "c");
+        graph.paths.insert("a".into(), std::path::PathBuf::from("a.py"));
+        graph.paths.insert("b".into(), std::path::PathBuf::from("b.py"));
+        graph.paths.insert("c".into(), std::path::PathBuf::from("c.py"));
         stats.collect_graph_metrics(&graph);
         assert!(!stats.fan_in.is_empty());
         assert!(!stats.fan_out.is_empty());
         assert!(!stats.transitive_dependencies.is_empty());
         assert!(!stats.dependency_depth.is_empty());
         assert!(stats.max_depth() > 0);
+    }
+
+    #[test]
+    fn test_graph_metrics_exclude_external_nodes_from_distributions() {
+        // Regression: `stats` distributions should only include internal modules (those with paths).
+        let mut stats = MetricStats::default();
+        let mut graph = crate::graph::DependencyGraph::new();
+
+        // Internal module a imports an external node "os".
+        graph.get_or_create_node("a");
+        graph.paths
+            .insert("a".into(), std::path::PathBuf::from("a.py"));
+        graph.add_dependency("a", "os");
+
+        stats.collect_graph_metrics(&graph);
+        assert_eq!(stats.fan_out.len(), 1, "fan_out should only include internal modules");
+        assert_eq!(stats.fan_out[0], 1, "a should have one outgoing edge (to external os)");
     }
 
     #[test]
@@ -708,15 +730,18 @@ mod tests {
         graph.add_dependency("a", "b");
         graph.add_dependency("b", "a");
         graph.get_or_create_node("c");
+        graph.paths.insert("a".into(), std::path::PathBuf::from("a.py"));
+        graph.paths.insert("b".into(), std::path::PathBuf::from("b.py"));
+        graph.paths.insert("c".into(), std::path::PathBuf::from("c.py"));
 
         stats.collect_graph_metrics(&graph);
 
         assert_eq!(
             stats.cycle_size.len(),
-            graph.nodes.len(),
-            "Expected cycle_size to have one entry per module (got {:?} for {} modules)",
+            graph.paths.len(),
+            "Expected cycle_size to have one entry per internal module (got {:?} for {} modules)",
             stats.cycle_size,
-            graph.nodes.len()
+            graph.paths.len()
         );
 
         let mut got = stats.cycle_size.clone();
