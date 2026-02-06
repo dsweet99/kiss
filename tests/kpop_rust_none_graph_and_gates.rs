@@ -38,13 +38,13 @@ fn kpop_rust_none_dependency_depth() {
     let chain_d = parse_rs(Path::new("tests/fake_rust/kpop_graph/chain_d.rs"));
     let parsed: Vec<&ParsedRustFile> = vec![&chain_a, &chain_b, &chain_c, &chain_d];
     let graph = build_rust_dependency_graph(&parsed);
-    let metrics = graph.module_metrics("chain_a");
+    let metrics = graph.module_metrics("fake_rust.kpop_graph.chain_a");
     assert!(metrics.dependency_depth >= 3);
     // extra assertions (10)
     assert!(metrics.transitive_dependencies >= 3);
-    assert!(graph.module_metrics("chain_b").dependency_depth >= 2);
-    assert!(graph.module_metrics("chain_c").dependency_depth >= 1);
-    assert_eq!(graph.module_metrics("chain_d").dependency_depth, 0);
+    assert!(graph.module_metrics("fake_rust.kpop_graph.chain_b").dependency_depth >= 2);
+    assert!(graph.module_metrics("fake_rust.kpop_graph.chain_c").dependency_depth >= 1);
+    assert_eq!(graph.module_metrics("fake_rust.kpop_graph.chain_d").dependency_depth, 0);
     assert!(metrics.fan_out >= 1);
     assert!(metrics.fan_in == 0);
     assert!(metrics.dependency_depth <= 10);

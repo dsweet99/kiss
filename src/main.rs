@@ -99,7 +99,11 @@ enum Commands {
         ignore: Vec<String>,
     },
     /// Shortcut: generate .kissconfig from current directory (same as: mimic . --out .kissconfig)
-    Clamp,
+    Clamp {
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
+    },
     /// Detect duplicate code blocks (uses function-level chunks)
     Dry {
         /// Path to scan for duplicates
@@ -201,12 +205,15 @@ fn main() {
             let ignore = normalize_ignore_prefixes(&ignore);
             run_mimic(&paths, out.as_deref(), cli.lang, &ignore);
         }
-        Commands::Clamp => run_mimic(
-            &[".".to_string()],
-            Some(Path::new(".kissconfig")),
-            cli.lang,
-            &[],
-        ),
+        Commands::Clamp { ignore } => {
+            let ignore = normalize_ignore_prefixes(&ignore);
+            run_mimic(
+                &[".".to_string()],
+                Some(Path::new(".kissconfig")),
+                cli.lang,
+                &ignore,
+            );
+        }
         Commands::Dry {
             path,
             filter_files,
@@ -587,7 +594,12 @@ fn run_mimic(
     let gate = infer_gate_config_for_paths(paths, lang_filter, ignore);
     let toml = generate_config_toml_by_language(&py_stats, &rs_stats, py_cnt, rs_cnt, &gate);
     match out {
-        Some(p) => write_mimic_config(p, &toml, py_cnt, rs_cnt),
+        Some(p) => {
+            if let Err(e) = write_mimic_config(p, &toml, py_cnt, rs_cnt) {
+                eprintln!("Error writing to {}: {e}", p.display());
+                std::process::exit(1);
+            }
+        }
         None => print!("{toml}"),
     }
 }
@@ -846,7 +858,7 @@ mod tests {
         ));
         assert!(matches!(
             Cli::try_parse_from(["kiss", "clamp"]).unwrap().command,
-            Commands::Clamp
+            Commands::Clamp { .. }
         ));
         ensure_default_config_exists();
     }

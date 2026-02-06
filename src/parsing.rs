@@ -105,7 +105,7 @@ mod tests {
     fn test_parse_error_from_io_error() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "test");
         let parse_err: ParseError = io_err.into();
-        matches!(parse_err, ParseError::IoError(_));
+        assert!(matches!(parse_err, ParseError::IoError(_)));
     }
 
     #[test]

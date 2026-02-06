@@ -1,32 +1,32 @@
 ## `kiss` grounding: design + intent
 
-`kiss` is a **code-quality metrics tool for Python and Rust** whose primary consumer is an **LLM coding agent**, not a human. It exists to turn “this code feels too complex/coupled/duplicated/undertested” into **simple, actionable, machine-readable feedback** that nudges an agent toward smaller units, clearer boundaries, less duplication, and better test coverage.
+`kiss` is a **code-quality metrics tool for Python and Rust** whose primary consumer is an **LLM coding agent**, not a human. It exists to turn "this code feels too complex/coupled/duplicated/undertested" into **simple, actionable, machine-readable feedback** that nudges an agent toward smaller units, clearer boundaries, less duplication, and better test coverage.
 
 ### What problem `kiss` is trying to solve
 
-- **LLMs have strong local focus**: they can produce a correct patch in the file they’re editing, while accidentally making the *whole codebase* harder to maintain (more coupling, deeper dependency chains, larger units).
+- **LLMs have strong local focus**: they can produce a correct patch in the file they're editing, while accidentally making the *whole codebase* harder to maintain (more coupling, deeper dependency chains, larger units).
 - Traditional linters often target stylistic or language-specific issues; `kiss` targets **structural maintainability** and **global consequences**.
-- The goal is not “perfect code”, it’s **keeping code easy for agents (and humans) to change** by preventing complexity growth and spotlighting outliers.
+- The goal is not "perfect code", it's **keeping code easy for agents (and humans) to change** by preventing complexity growth and spotlighting outliers.
 
 ### Performance is a first-class goal (inner-loop feedback)
 
-`kiss` is intended to run **in the inner LLM coding loop**, so it aims to be **fast enough to run frequently** (alongside tests/linters) without feeling “expensive”.
+`kiss` is intended to run **in the inner LLM coding loop**, so it aims to be **fast enough to run frequently** (alongside tests/linters) without feeling "expensive".
 
 Current speed-oriented choices include:
 
 - **Parallelism**: file-level work is parallelized (e.g., parsing/analysis over many files).
 - **Module-level dependency graph**: coupling is measured at the file/module boundary (file = module), which is far cheaper and more actionable than building full symbol graphs.
 - **Fast cycle detection**: cycles are found via SCC (Tarjan) on the module graph.
-- **Approximate duplication detection**: duplication uses **MinHash + LSH** to cheaply find “likely similar” code blocks without comparing every pair.
-- **Static test-reference coverage**: “coverage” is a fast static reference check (names referenced by tests), not runtime coverage instrumentation.
+- **Approximate duplication detection**: duplication uses **MinHash + LSH** to cheaply find "likely similar" code blocks without comparing every pair.
+- **Static test-reference coverage**: "coverage" is a fast static reference check (names referenced by tests), not runtime coverage instrumentation.
 - **Early exit gates**: `kiss check` can stop early on gate failure unless explicitly bypassed.
 
 ### Core philosophy
 
 - **KISS is the ethos**: prefer straightforward refactors and simple abstractions over clever designs.
-- **Component checks, not composite scores**: avoid derived “mega-metrics” (e.g., God Class / LCOM). Instead, measure the components that cause them (size, depth, branching, coupling, duplication).
+- **Component checks, not composite scores**: avoid derived "mega-metrics" (e.g., God Class / LCOM). Instead, measure the components that cause them (size, depth, branching, coupling, duplication).
 - **Empirical over arbitrary**: thresholds can be derived from real codebases you respect via `kiss mimic`, rather than invented.
-- **Cross-language consistency**: “the same metric name should mean the same thing” across Python and Rust wherever possible.
+- **Cross-language consistency**: "the same metric name should mean the same thing" across Python and Rust wherever possible.
 
 ### The contract: output is for tooling
 
@@ -59,33 +59,33 @@ The intent is that a runner/agent can:
 - **Duplication detection (approximate)**:
   - MinHash/LSH-based similarity to flag copy/paste blocks and encourage extraction.
 - **Test-reference coverage (static)**:
-  - treat “is referenced by tests” as a gateable property to keep changes grounded in tests.
+  - treat "is referenced by tests" as a gateable property to keep changes grounded in tests.
 
-### “Universe vs focus” (how `check` scopes work)
+### "Universe vs focus" (how `check` scopes work)
 
-`kiss check` supports a “global analysis, local reporting” workflow:
+`kiss check` supports a "global analysis, local reporting" workflow:
 
 - The **first path** is the **universe**: everything used to compute graphs/coverage and find context.
 - Additional paths are **focus paths**: only violations from these files are reported.
 
-This matches how an agent works: compute global consequences, but report only what’s relevant to the current edit.
+This matches how an agent works: compute global consequences, but report only what's relevant to the current edit.
 
 ### Gates: fail fast unless bypassed
 
-Some feedback is treated as a **gate** (not just “more violations”):
+Some feedback is treated as a **gate** (not just "more violations"):
 
 - By default, `kiss check` can **stop early** on insufficient test-reference coverage and print `GATE_FAILED:test_coverage: ...`.
 - `--all` bypasses the gate so you can explore and see all violations anyway.
 
-The intention is to make “working without tests” a deliberate choice, not an accident.
+The intention is to make "working without tests" a deliberate choice, not an accident.
 
 ### Configuration model (tight defaults, easy adoption)
 
 `kiss` is meant to be **strict-by-default** but adoptable on existing repos:
 
 - **Config precedence**: built-in defaults → `~/.kissconfig` → `./.kissconfig` → `--config`.
-- `kiss clamp`: generate a repo-local `.kissconfig` that matches today’s code, preventing further complexity growth.
-- `kiss mimic PATH --out FILE`: infer thresholds from another “good” codebase to encode a taste/standard.
+- `kiss clamp`: generate a repo-local `.kissconfig` that matches today's code, preventing further complexity growth.
+- `kiss mimic PATH --out FILE`: infer thresholds from another "good" codebase to encode a taste/standard.
 
 This supports a gradual workflow: clamp now, ratchet down later.
 
@@ -97,10 +97,36 @@ This supports a gradual workflow: clamp now, ratchet down later.
 - a natural unit of refactoring (move/split modules),
 - and easier for an agent to act on than fine-grained symbol graphs.
 
+### `kiss shrink`: constrained minimization
+
+`kiss check` enforces per-unit thresholds but does not constrain **global** metrics (total files, code_units, statements, graph_nodes, graph_edges). It can't — constraining globals would prevent adding new features.
+
+`kiss shrink` fills that gap with a separate workflow:
+
+- `kiss shrink graph_edges=120` records a baseline snapshot plus a target constraint.
+- `kiss shrink` (no argument) re-measures globals and fails if the target metric exceeds the constraint **or** if any other global metric grew beyond its baseline.
+
+The design intent is **constrained minimization**: reduce one chosen dimension of complexity without letting anything else grow. This drives the agent toward cohesion (fewer edges), simplicity (fewer statements), or consolidation (fewer units/nodes), depending on which metric is targeted.
+
+`kiss shrink` also runs the full `kiss check` pipeline, so per-unit thresholds remain enforced during shrink.
+
+### `kiss` is a CLI tool, not a library
+
+`kiss` is designed as a **command-line tool**. The `[lib]` target in `Cargo.toml` exists for internal code organization (the binary crate depends on the library crate), not for external consumption. The public API surface in `lib.rs` is not a supported library interface.
+
+### Exit code contract
+
+`kiss` uses exit codes to communicate success/failure to the calling agent:
+
+- **`kiss check`**: exits **0** on no violations, **1** on any violation or gate failure.
+- **`kiss shrink`**: exits **0** when all constraints are met, **1** on any shrink violation or check violation.
+- **All commands**: exit **1** on errors (invalid paths, no source files found, bad config, write failures).
+
+An agent should treat exit code 0 as "nothing to fix" and non-zero as "read stdout/stderr for what to fix."
+
 ### Intended workflow (how an agent should use it)
 
-- Put `kiss rules` output in the agent’s context to bias generation toward compliant code.
+- Put `kiss rules` output in the agent's context to bias generation toward compliant code.
 - Run `kiss check` as part of the loop with tests and formatters/linters.
 - When onboarding an existing codebase, run `kiss clamp`, then gradually tighten.
-- When you want a “style target”, run `kiss mimic` on a codebase you consider simple/clean.
-
+- When you want a "style target", run `kiss mimic` on a codebase you consider simple/clean.

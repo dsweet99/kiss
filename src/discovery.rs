@@ -85,9 +85,10 @@ pub fn gather_files_by_lang(
     let (mut py_files, mut rs_files) = (Vec::new(), Vec::new());
     for path in paths {
         for sf in find_source_files_with_ignore(Path::new(path), ignore_prefixes) {
+            let canonical = sf.path.canonicalize().unwrap_or(sf.path);
             match (sf.language, lang_filter) {
-                (Language::Python, None | Some(Language::Python)) => py_files.push(sf.path),
-                (Language::Rust, None | Some(Language::Rust)) => rs_files.push(sf.path),
+                (Language::Python, None | Some(Language::Python)) => py_files.push(canonical),
+                (Language::Rust, None | Some(Language::Rust)) => rs_files.push(canonical),
                 _ => {}
             }
         }

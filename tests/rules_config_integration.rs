@@ -247,8 +247,8 @@ fn cli_config_shows_python_specific_settings() {
         "Should show keyword_only_args. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("annotations_per_function"),
-        "Should show annotations_per_function. stdout: {stdout}"
+        stdout.contains("decorators_per_function"),
+        "Should show decorators_per_function. stdout: {stdout}"
     );
     assert!(
         stdout.contains("statements_per_try_block"),
@@ -277,8 +277,8 @@ fn cli_config_shows_rust_specific_settings() {
         "Should show concrete_types_per_file. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("annotations_per_function"),
-        "Should show annotations_per_function. stdout: {stdout}"
+        stdout.contains("attributes_per_function"),
+        "Should show attributes_per_function. stdout: {stdout}"
     );
 }
 

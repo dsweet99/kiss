@@ -17,7 +17,7 @@ fn bug_rust_transitive_dependencies_should_not_count_external_imports() {
     let parsed: Vec<&ParsedRustFile> = vec![&a, &b];
     let g = build_rust_dependency_graph(&parsed);
 
-    let m = g.module_metrics("rust_graph_ext_a");
+    let m = g.module_metrics("fake_rust.rust_graph_ext_a");
     assert_eq!(m.transitive_dependencies, 1);
 }
 

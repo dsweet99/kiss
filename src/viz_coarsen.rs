@@ -1,3 +1,4 @@
+use crate::analyze_cache::fnv1a64;
 use fa_leiden_cd::{Graph as LeidenGraph, TrivialModularityOptimizer};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
@@ -9,12 +10,7 @@ pub struct CoarsenedGraph {
 }
 
 fn stable_fnv1a_64(s: &str) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in s.as_bytes() {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0100_0000_01b3);
-    }
-    h
+    fnv1a64(0xcbf2_9ce4_8422_2325, s.as_bytes())
 }
 
 fn target_node_count(node_count: usize, zoom: f64) -> usize {

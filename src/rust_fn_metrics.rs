@@ -43,7 +43,9 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
         match item {
             syn::Item::Trait(_) => interface_types += 1,
             syn::Item::Struct(_) | syn::Item::Enum(_) | syn::Item::Union(_) => concrete_types += 1,
-            syn::Item::Use(u) if matches!(u.vis, syn::Visibility::Inherited) => imports += 1,
+            syn::Item::Use(u) if matches!(u.vis, syn::Visibility::Inherited) => {
+                imports += count_use_names(&u.tree);
+            }
             syn::Item::Fn(f) => {
                 functions += 1;
                 let mut visitor = FunctionMetricsVisitor::default();
@@ -70,6 +72,16 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
         concrete_types,
         imports,
         functions,
+    }
+}
+
+/// Count the number of individual names imported by a `use` tree.
+/// `use foo::bar;` → 1, `use foo::{bar, baz};` → 2, `use foo::*;` → 1 (glob counts as 1).
+fn count_use_names(tree: &syn::UseTree) -> usize {
+    match tree {
+        syn::UseTree::Path(p) => count_use_names(&p.tree),
+        syn::UseTree::Name(_) | syn::UseTree::Rename(_) | syn::UseTree::Glob(_) => 1,
+        syn::UseTree::Group(g) => g.items.iter().map(count_use_names).sum(),
     }
 }
 
@@ -338,5 +350,37 @@ mod tests {
             m.statements, 2,
             "use statements inside functions should not be counted"
         );
+    }
+
+    #[test]
+    fn test_count_use_names() {
+        use std::io::Write;
+
+        // Single name: `use foo::bar;`
+        let u: syn::ItemUse = syn::parse_str("use foo::bar;").unwrap();
+        assert_eq!(count_use_names(&u.tree), 1);
+
+        // Grouped names: `use foo::{bar, baz};`
+        let u2: syn::ItemUse = syn::parse_str("use foo::{bar, baz};").unwrap();
+        assert_eq!(count_use_names(&u2.tree), 2);
+
+        // Glob: `use foo::*;`
+        let u3: syn::ItemUse = syn::parse_str("use foo::*;").unwrap();
+        assert_eq!(count_use_names(&u3.tree), 1);
+
+        // Rename: `use foo::bar as b;`
+        let u4: syn::ItemUse = syn::parse_str("use foo::bar as b;").unwrap();
+        assert_eq!(count_use_names(&u4.tree), 1);
+
+        // Nested groups: `use foo::{bar, baz::{qux, quux}};`
+        let u5: syn::ItemUse = syn::parse_str("use foo::{bar, baz::{qux, quux}};").unwrap();
+        assert_eq!(count_use_names(&u5.tree), 3);
+
+        // File-level counting: use items count imported names
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "use std::io::{{Read, Write}};\nuse std::path::Path;\nfn main() {{}}").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let m = compute_rust_file_metrics(&parsed);
+        assert_eq!(m.imports, 3, "should count 3 imported names: Read, Write, Path");
     }
 }

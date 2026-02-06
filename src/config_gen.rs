@@ -93,21 +93,24 @@ pub fn collect_all_stats_with_ignore(
     (py, rs)
 }
 
-pub fn write_mimic_config(out: &Path, toml: &str, py_cnt: usize, rs_cnt: usize) {
+pub fn write_mimic_config(
+    out: &Path,
+    toml: &str,
+    py_cnt: usize,
+    rs_cnt: usize,
+) -> Result<(), std::io::Error> {
     let content = if out.exists() {
         merge_config_toml(out, toml, py_cnt > 0, rs_cnt > 0)
     } else {
         toml.to_string()
     };
-    if let Err(e) = std::fs::write(out, &content) {
-        eprintln!("Error writing to {}: {}", out.display(), e);
-        std::process::exit(1);
-    }
+    std::fs::write(out, &content)?;
     eprintln!(
         "Generated config from {} files → {}",
         py_cnt + rs_cnt,
         out.display()
     );
+    Ok(())
 }
 
 fn format_section(out: &mut String, name: &str, section: Option<&toml::Value>) {

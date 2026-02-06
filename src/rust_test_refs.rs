@@ -163,7 +163,7 @@ fn collect_definitions_from_item(item: &Item, file: &Path, defs: &mut Vec<RustCo
         Item::Struct(s) => try_add_def(
             defs,
             &s.ident.to_string(),
-            CodeUnitKind::Struct,
+            CodeUnitKind::Class,
             file,
             s.ident.span().start().line,
             None,
@@ -171,7 +171,7 @@ fn collect_definitions_from_item(item: &Item, file: &Path, defs: &mut Vec<RustCo
         Item::Enum(e) => try_add_def(
             defs,
             &e.ident.to_string(),
-            CodeUnitKind::Enum,
+            CodeUnitKind::Class,
             file,
             e.ident.span().start().line,
             None,

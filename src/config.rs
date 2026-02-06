@@ -299,27 +299,92 @@ impl Config {
 
 }
 
+const THRESHOLDS_KEYS: &[&str] = &[
+    "statements_per_function",
+    "methods_per_class",
+    "statements_per_file",
+    "functions_per_file",
+    "arguments_per_function",
+    "arguments_positional",
+    "arguments_keyword_only",
+    "max_indentation_depth",
+    "interface_types_per_file",
+    "concrete_types_per_file",
+    // Back-compat: older configs used classes_per_file for types-per-file.
+    "classes_per_file",
+    "nested_function_depth",
+    "returns_per_function",
+    "branches_per_function",
+    "local_variables_per_function",
+    "imported_names_per_file",
+];
+
+const SHARED_KEYS: &[&str] = &[
+    "statements_per_file",
+    "functions_per_file",
+    "interface_types_per_file",
+    "concrete_types_per_file",
+    // Back-compat: older configs used types_per_file for concrete types.
+    "types_per_file",
+    "imported_names_per_file",
+    "cycle_size",
+    "transitive_dependencies",
+    "dependency_depth",
+];
+
+const PYTHON_KEYS: &[&str] = &[
+    "statements_per_function",
+    "positional_args",
+    "keyword_only_args",
+    "max_indentation",
+    "branches_per_function",
+    "local_variables",
+    "methods_per_class",
+    "returns_per_function",
+    "return_values_per_function",
+    "nested_function_depth",
+    "statements_per_try_block",
+    "boolean_parameters",
+    "decorators_per_function",
+    "calls_per_function",
+    "imported_names_per_file",
+    "statements_per_file",
+    "functions_per_file",
+    "interface_types_per_file",
+    "concrete_types_per_file",
+    // Back-compat alias.
+    "types_per_file",
+    "cycle_size",
+    "transitive_dependencies",
+    "dependency_depth",
+];
+
+const RUST_KEYS: &[&str] = &[
+    "statements_per_function",
+    "arguments",
+    "max_indentation",
+    "branches_per_function",
+    "local_variables",
+    "methods_per_class",
+    "statements_per_file",
+    "functions_per_file",
+    "interface_types_per_file",
+    "concrete_types_per_file",
+    // Back-compat alias.
+    "types_per_file",
+    "returns_per_function",
+    "nested_function_depth",
+    "boolean_parameters",
+    "attributes_per_function",
+    "calls_per_function",
+    "imported_names_per_file",
+    "cycle_size",
+    "transitive_dependencies",
+    "dependency_depth",
+];
+
 fn apply_thresholds(config: &mut Config, table: &toml::Table) {
-    const VALID: &[&str] = &[
-        "statements_per_function",
-        "methods_per_class",
-        "statements_per_file",
-        "functions_per_file",
-        "arguments_per_function",
-        "arguments_positional",
-        "arguments_keyword_only",
-        "max_indentation_depth",
-        "interface_types_per_file",
-        "concrete_types_per_file",
-        // Back-compat: older configs used classes_per_file for types-per-file.
-        "classes_per_file",
-        "nested_function_depth",
-        "returns_per_function",
-        "branches_per_function",
-        "local_variables_per_function",
-        "imported_names_per_file",
-    ];
-    if let Err(e) = check_unknown_keys(table, VALID, "thresholds") {
+    if let Err(e) = check_unknown_keys(table, THRESHOLDS_KEYS, "thresholds") {
         eprintln!("Error: {e}");
         return;
     }
@@ -339,19 +404,7 @@ fn apply_thresholds(config: &mut Config, table: &toml::Table) {
 }
 
 fn apply_shared(config: &mut Config, table: &toml::Table) {
-    const VALID: &[&str] = &[
-        "statements_per_file",
-        "functions_per_file",
-        "interface_types_per_file",
-        "concrete_types_per_file",
-        // Back-compat: older configs used types_per_file for concrete types.
-        "types_per_file",
-        "imported_names_per_file",
-        "cycle_size",
-        "transitive_dependencies",
-        "dependency_depth",
-    ];
-    if let Err(e) = check_unknown_keys(table, VALID, "shared") {
+    if let Err(e) = check_unknown_keys(table, SHARED_KEYS, "shared") {
         eprintln!("Error: {e}");
         return;
     }
@@ -369,33 +422,7 @@ fn apply_shared(config: &mut Config, table: &toml::Table) {
 }
 
 fn apply_python(config: &mut Config, table: &toml::Table) {
-    const VALID: &[&str] = &[
-        "statements_per_function",
-        "positional_args",
-        "keyword_only_args",
-        "max_indentation",
-        "branches_per_function",
-        "local_variables",
-        "methods_per_class",
-        "returns_per_function",
-        "return_values_per_function",
-        "nested_function_depth",
-        "statements_per_try_block",
-        "boolean_parameters",
-        "decorators_per_function",
-        "calls_per_function",
-        "imported_names_per_file",
-        "statements_per_file",
-        "functions_per_file",
-        "interface_types_per_file",
-        "concrete_types_per_file",
-        // Back-compat alias.
-        "types_per_file",
-        "cycle_size",
-        "transitive_dependencies",
-        "dependency_depth",
-    ];
-    if let Err(e) = check_unknown_keys(table, VALID, "python") {
+    if let Err(e) = check_unknown_keys(table, PYTHON_KEYS, "python") {
         eprintln!("Error: {e}");
         return;
     }
@@ -417,31 +444,7 @@ fn apply_python(config: &mut Config, table: &toml::Table) {
 }
 
 fn apply_rust(config: &mut Config, table: &toml::Table) {
-    const VALID: &[&str] = &[
-        "statements_per_function",
-        "arguments",
-        "max_indentation",
-        "branches_per_function",
-        "local_variables",
-        "methods_per_class",
-        "statements_per_file",
-        "functions_per_file",
-        "interface_types_per_file",
-        "concrete_types_per_file",
-        // Back-compat alias.
-        "types_per_file",
-        "returns_per_function",
-        "nested_function_depth",
-        "boolean_parameters",
-        "attributes_per_function",
-        "calls_per_function",
-        "imported_names_per_file",
-        "cycle_size",
-        "transitive_dependencies",
-        "dependency_depth",
-        "nested_closure_depth",
-    ];
-    if let Err(e) = check_unknown_keys(table, VALID, "rust") {
+    if let Err(e) = check_unknown_keys(table, RUST_KEYS, "rust") {
         eprintln!("Error: {e}");
         return;
     }
@@ -513,49 +516,19 @@ fn validate_config_keys(table: &toml::Table, lang: Option<ConfigLanguage>) -> Re
 }
 
 fn validate_thresholds_keys(table: &toml::Table) -> Result<(), ConfigError> {
-    const VALID: &[&str] = &[
-        "statements_per_function", "methods_per_class", "statements_per_file",
-        "functions_per_file", "arguments_per_function", "arguments_positional",
-        "arguments_keyword_only", "max_indentation_depth", "interface_types_per_file",
-        "concrete_types_per_file", "classes_per_file", "nested_function_depth",
-        "returns_per_function", "branches_per_function", "local_variables_per_function",
-        "imported_names_per_file",
-    ];
-    check_unknown_keys(table, VALID, "thresholds")
+    check_unknown_keys(table, THRESHOLDS_KEYS, "thresholds")
 }
 
 fn validate_shared_keys(table: &toml::Table) -> Result<(), ConfigError> {
-    const VALID: &[&str] = &[
-        "statements_per_file", "functions_per_file", "interface_types_per_file",
-        "concrete_types_per_file", "types_per_file", "imported_names_per_file",
-        "cycle_size", "transitive_dependencies", "dependency_depth",
-    ];
-    check_unknown_keys(table, VALID, "shared")
+    check_unknown_keys(table, SHARED_KEYS, "shared")
 }
 
 fn validate_python_keys(table: &toml::Table) -> Result<(), ConfigError> {
-    const VALID: &[&str] = &[
-        "statements_per_function", "positional_args", "keyword_only_args", "max_indentation",
-        "branches_per_function", "local_variables", "methods_per_class", "returns_per_function",
-        "return_values_per_function", "nested_function_depth", "statements_per_try_block",
-        "boolean_parameters", "decorators_per_function", "calls_per_function",
-        "imported_names_per_file", "statements_per_file", "functions_per_file",
-        "interface_types_per_file", "concrete_types_per_file", "types_per_file",
-        "cycle_size", "transitive_dependencies", "dependency_depth",
-    ];
-    check_unknown_keys(table, VALID, "python")
+    check_unknown_keys(table, PYTHON_KEYS, "python")
 }
 
 fn validate_rust_keys(table: &toml::Table) -> Result<(), ConfigError> {
-    const VALID: &[&str] = &[
-        "statements_per_function", "arguments", "max_indentation", "branches_per_function",
-        "local_variables", "methods_per_class", "statements_per_file", "functions_per_file",
-        "interface_types_per_file", "concrete_types_per_file", "types_per_file",
-        "returns_per_function", "nested_function_depth", "boolean_parameters",
-        "attributes_per_function", "calls_per_function", "imported_names_per_file",
-        "cycle_size", "transitive_dependencies", "dependency_depth", "nested_closure_depth",
-    ];
-    check_unknown_keys(table, VALID, "rust")
+    check_unknown_keys(table, RUST_KEYS, "rust")
 }
 
 fn similar(a: &str, b: &str) -> bool {

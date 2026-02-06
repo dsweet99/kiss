@@ -1,6 +1,6 @@
 use kiss::cli_output::{
     print_coverage_gate_failure, print_duplicates, print_final_status, print_no_files_message,
-    print_py_test_refs, print_rs_test_refs, print_violations,
+    count_py_unreferenced, count_rs_unreferenced, print_violations,
 };
 use kiss::config_gen::{collect_py_stats, collect_rs_stats, merge_config_toml, write_mimic_config};
 use kiss::{
@@ -124,8 +124,8 @@ fn test_print_functions_no_panic() {
     print_violations(&[]);
     print_final_status(false);
     print_duplicates("Python", &[]);
-    assert_eq!(print_py_test_refs(&[]), 0);
-    assert_eq!(print_rs_test_refs(&[]), 0);
+    assert_eq!(count_py_unreferenced(&[]), 0);
+    assert_eq!(count_rs_unreferenced(&[]), 0);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn test_config_merge() {
 fn test_write_mimic_config() {
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("out.toml");
-    write_mimic_config(&path, "[python]\nx = 1", 1, 0);
+    write_mimic_config(&path, "[python]\nx = 1", 1, 0).unwrap();
     assert!(path.exists());
 }
 

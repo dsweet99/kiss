@@ -188,17 +188,14 @@ fn push_py_fn_metrics(stats: &mut MetricStats, m: &crate::py_metrics::FunctionMe
 fn push_rust_fn_metrics(stats: &mut MetricStats, m: &crate::rust_counts::RustFunctionMetrics) {
     stats.statements_per_function.push(m.statements);
     stats.arguments_per_function.push(m.arguments);
-    stats.arguments_positional.push(m.arguments);
-    stats.arguments_keyword_only.push(0);
+    // N/A: Rust has no positional/keyword distinction; don't push to avoid skewing distributions
     stats.max_indentation.push(m.max_indentation);
     stats.nested_function_depth.push(m.nested_function_depth);
     stats.returns_per_function.push(m.returns);
     // N/A: Rust doesn't have multiple-return-value tuples in the same sense as Python
-    stats.return_values_per_function.push(0);
     stats.branches_per_function.push(m.branches);
     stats.local_variables_per_function.push(m.local_variables);
-    // N/A: try-block size is Python-only
-    stats.statements_per_try_block.push(0);
+    // N/A: try-block size is Python-only; don't push to avoid skewing distributions
     stats.boolean_parameters.push(m.bool_parameters);
     stats.annotations_per_function.push(m.attributes);
     stats.calls_per_function.push(m.calls);

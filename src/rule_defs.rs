@@ -189,6 +189,12 @@ pub static RULES: &[Rule] = &[
     },
     Rule {
         category: RuleCategory::Files,
+        template: "Limit to ≤ {} interface types (traits/ABCs) per file",
+        get_threshold: |c, _| c.interface_types_per_file,
+        applicability: Applicability::Both,
+    },
+    Rule {
+        category: RuleCategory::Files,
         template: "Limit to ≤ {} concrete types per file",
         get_threshold: |c, _| c.concrete_types_per_file,
         applicability: Applicability::Both,

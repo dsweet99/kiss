@@ -352,10 +352,12 @@ pub fn format_detailed_table(units: &[UnitMetrics]) -> String {
 }
 
 pub fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    let char_count = s.chars().count();
+    if char_count <= max {
         s.to_string()
     } else {
-        format!("...{}", &s[s.len() - max + 3..])
+        let skip = char_count - (max - 3);
+        format!("...{}", s.chars().skip(skip).collect::<String>())
     }
 }
 
