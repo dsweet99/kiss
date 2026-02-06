@@ -489,7 +489,7 @@ fn print_all_top_metrics(units: &[kiss::UnitMetrics], n: usize) {
             "Local variables per function",
             |u| u.locals,
         ),
-        ("methods_per_type", "Methods per type", |u| u.methods),
+        ("methods_per_class", "Methods per class", |u| u.methods),
         ("lines_per_file", "Lines per file", |u| u.lines),
         ("imported_names_per_file", "Imported names per file", |u| {
             u.imports

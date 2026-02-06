@@ -428,7 +428,7 @@ fn common_config_key(metric_id: &str) -> Option<&'static str> {
         "branches_per_function" => Some("branches_per_function"),
         "local_variables_per_function" => Some("local_variables"),
         "cycle_size" => Some("cycle_size"),
-        "methods_per_type" => Some("methods_per_class"),
+        "methods_per_class" => Some("methods_per_class"),
         "nested_function_depth" => Some("nested_function_depth"),
         "returns_per_function" => Some("returns_per_function"),
         "calls_per_function" => Some("calls_per_function"),

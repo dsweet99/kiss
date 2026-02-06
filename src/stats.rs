@@ -340,8 +340,8 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::Function,
     },
     MetricDef {
-        metric_id: "methods_per_type",
-        display_name: "Methods per type",
+        metric_id: "methods_per_class",
+        display_name: "Methods per class",
         scope: MetricScope::Type,
     },
     MetricDef {
@@ -466,7 +466,7 @@ fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usi
         "boolean_parameters" => &stats.boolean_parameters,
         "annotations_per_function" => &stats.annotations_per_function,
         "calls_per_function" => &stats.calls_per_function,
-        "methods_per_type" => &stats.methods_per_class,
+        "methods_per_class" => &stats.methods_per_class,
         "statements_per_file" => &stats.statements_per_file,
         "lines_per_file" => &stats.lines_per_file,
         "functions_per_file" => &stats.functions_per_file,
@@ -530,7 +530,7 @@ fn config_key_for(metric_id: &str) -> Option<&'static str> {
         "returns_per_function" => "returns_per_function",
         "branches_per_function" => "branches_per_function",
         "local_variables_per_function" => "local_variables_per_function",
-        "methods_per_type" => "methods_per_class",
+        "methods_per_class" => "methods_per_class",
         "statements_per_file" => "statements_per_file",
         "functions_per_file" => "functions_per_file",
         "interface_types_per_file" => "interface_types_per_file",

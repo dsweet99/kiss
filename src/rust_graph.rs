@@ -1,22 +1,33 @@
 use crate::graph::DependencyGraph;
 use crate::rust_parsing::ParsedRustFile;
+use std::collections::HashSet;
 use syn::Item;
 
 pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> DependencyGraph {
     let mut graph = DependencyGraph::new();
+    let mut internal_modules = HashSet::new();
 
     for parsed in parsed_files {
         let module_name = parsed.path.file_stem().map_or_else(
             || String::from("unknown"),
             |s| s.to_string_lossy().into_owned(),
         );
-
+        internal_modules.insert(module_name.clone());
         graph.paths.insert(module_name.clone(), parsed.path.clone());
         graph.get_or_create_node(&module_name);
+    }
+
+    for parsed in parsed_files {
+        let module_name = parsed.path.file_stem().map_or_else(
+            || String::from("unknown"),
+            |s| s.to_string_lossy().into_owned(),
+        );
         let imports = extract_rust_imports(&parsed.ast);
 
         for import in imports {
-            graph.add_dependency(&module_name, &import);
+            if internal_modules.contains(&import) {
+                graph.add_dependency(&module_name, &import);
+            }
         }
     }
 

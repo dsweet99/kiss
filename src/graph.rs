@@ -11,7 +11,6 @@ use tree_sitter::Node;
 
 struct ImportInfo {
     from_qualified: String,
-    from_bare: String,
     from_parent: Option<String>,
     imports: Vec<String>,
 }
@@ -292,7 +291,6 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
         .par_iter()
         .map(|parsed| ImportInfo {
             from_qualified: qualified_module_name(&parsed.path),
-            from_bare: bare_module_name(&parsed.path),
             from_parent: parsed
                 .path
                 .parent()
@@ -315,19 +313,10 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
             {
                 graph.add_dependency(&info.from_qualified, &resolved);
             } else {
-                // External import (not in analyzed codebase) - create node but no path
-                graph.add_dependency(&info.from_qualified, import);
+                // External import (not in analyzed codebase) - skip
             }
         }
 
-        // Also add edge from bare name to qualified name for backwards compatibility
-        // This ensures that if something imports "exceptions", it finds "attr.exceptions"
-        if info.from_bare != info.from_qualified
-            && let Some(candidates) = bare_to_qualified.get(&info.from_bare)
-            && candidates.len() == 1
-        {
-            graph.add_dependency(&info.from_bare, &info.from_qualified);
-        }
     }
     graph
 }
@@ -348,7 +337,6 @@ pub fn build_dependency_graph_from_import_lists(files: &[(PathBuf, Vec<String>)]
 
     for (path, imports) in files {
         let from_qualified = qualified_module_name(path);
-        let from_bare = bare_module_name(path);
         let from_parent = path
             .parent()
             .and_then(|p| p.file_name())
@@ -360,16 +348,10 @@ pub fn build_dependency_graph_from_import_lists(files: &[(PathBuf, Vec<String>)]
             } else if let Some(resolved) = resolve_import(import, from_parent, &bare_to_qualified) {
                 graph.add_dependency(&from_qualified, &resolved);
             } else {
-                graph.add_dependency(&from_qualified, import);
+                // External import (not in analyzed codebase) - skip
             }
         }
 
-        if from_bare != from_qualified
-            && let Some(candidates) = bare_to_qualified.get(&from_bare)
-            && candidates.len() == 1
-        {
-            graph.add_dependency(&from_bare, &from_qualified);
-        }
     }
     graph
 }
@@ -381,23 +363,47 @@ fn resolve_import(
     from_parent: Option<&str>,
     bare_to_qualified: &HashMap<String, Vec<String>>,
 ) -> Option<String> {
-    let candidates = bare_to_qualified.get(import)?;
+    if let Some(candidates) = bare_to_qualified.get(import) {
+        if candidates.len() == 1 {
+            return Some(candidates[0].clone());
+        }
 
-    if candidates.len() == 1 {
-        return Some(candidates[0].clone());
-    }
-
-    // Multiple candidates - prefer one in the same package
-    if let Some(parent) = from_parent {
-        let prefix = format!("{parent}.");
-        for candidate in candidates {
-            if candidate.starts_with(&prefix) {
-                return Some(candidate.clone());
+        // Multiple candidates - prefer one in the same package
+        if let Some(parent) = from_parent {
+            let prefix = format!("{parent}.");
+            for candidate in candidates {
+                if candidate.starts_with(&prefix) {
+                    return Some(candidate.clone());
+                }
+            }
+        }
+    } else if let Some((_, last)) = import.rsplit_once('.')
+        && let Some(candidates) = bare_to_qualified.get(last)
+    {
+        let mut matches: Vec<String> = candidates
+            .iter()
+            .filter(|c| c.ends_with(import))
+            .cloned()
+            .collect();
+        if matches.len() == 1 {
+            return matches.pop();
+        }
+        if matches.is_empty()
+            && let Some(parent) = from_parent
+        {
+            let prefix = format!("{parent}.");
+            matches = candidates
+                .iter()
+                .filter(|c| c.starts_with(&prefix))
+                .cloned()
+                .collect();
+            if matches.len() == 1 {
+                return matches.pop();
             }
         }
     }
 
-    // Ambiguous import - don't create edge to avoid false connections
+    // Ambiguous or external import - don't create edge
     None
 }
 
@@ -791,7 +797,6 @@ mod tests {
         // Touch private helpers/structs so static test-ref coverage includes them.
         let _ = ImportInfo {
             from_qualified: "a.b".into(),
-            from_bare: "b".into(),
             from_parent: Some("a".into()),
             imports: vec!["os".into()],
         };

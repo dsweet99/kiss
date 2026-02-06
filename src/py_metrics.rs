@@ -88,8 +88,8 @@ struct BodySummary {
 
 fn analyze_body(body: Node, source: &str) -> BodySummary {
     let mut agg = BodyAgg::default();
-    // Start at indentation depth 0 (matches previous compute_max_indentation(body, 0)).
-    let _ = walk_body(body, source, 0, &mut agg);
+    // Start at indentation depth 1 (function body baseline).
+    let _ = walk_body(body, source, 1, &mut agg);
     BodySummary {
         statements: agg.statements,
         max_indentation: agg.max_indentation,
@@ -104,7 +104,13 @@ fn analyze_body(body: Node, source: &str) -> BodySummary {
 
 // Returns statement count for this subtree (including this node if it is a statement).
 fn walk_body(node: Node, source: &str, current_depth: usize, agg: &mut BodyAgg) -> usize {
-    let new_depth = next_indent_depth(node.kind(), current_depth);
+    let kind = node.kind();
+    let is_nested_scope = is_nested_scope_boundary(kind);
+    let new_depth = if is_nested_scope {
+        current_depth
+    } else {
+        next_indent_depth(kind, current_depth)
+    };
     agg.max_indentation = agg.max_indentation.max(new_depth);
 
     update_local_vars(node, source, &mut agg.local_vars);
@@ -113,7 +119,10 @@ fn walk_body(node: Node, source: &str, current_depth: usize, agg: &mut BodyAgg) 
 
     let try_body_range = try_body_byte_range(node);
 
-    let mut subtree_stmt_count = usize::from(is_statement(node.kind()));
+    let mut subtree_stmt_count = usize::from(is_statement(kind));
+    if is_nested_scope {
+        return subtree_stmt_count;
+    }
     let mut try_body_stmt_count: Option<usize> = None;
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -154,6 +163,16 @@ fn is_indent_increasing(kind: &str) -> bool {
             | "except_clause"
             | "finally_clause"
             | "case_clause"
+    )
+}
+
+fn is_nested_scope_boundary(kind: &str) -> bool {
+    matches!(
+        kind,
+        "function_definition"
+            | "async_function_definition"
+            | "class_definition"
+            | "decorated_definition"
     )
 }
 
@@ -379,9 +398,11 @@ fn count_parameters(params: Node, source: &str) -> ParameterCounts {
                     boolean_params += 1;
                 }
             }
-            "list_splat_pattern" | "dictionary_splat_pattern" | "*" | "keyword_separator" => {
+            "list_splat_pattern" => {
+                positional += 1;
                 after_star = true;
             }
+            "dictionary_splat_pattern" | "*" | "keyword_separator" => after_star = true,
             _ => {}
         }
     }
@@ -413,7 +434,14 @@ fn count_decorators(node: Node) -> usize {
 fn count_statements(node: Node) -> usize {
     let mut cursor = node.walk();
     node.children(&mut cursor)
-        .map(|c| usize::from(is_statement(c.kind())) + count_statements(c))
+        .map(|c| {
+            let stmt = usize::from(is_statement(c.kind()));
+            if is_nested_scope_boundary(c.kind()) {
+                stmt
+            } else {
+                stmt + count_statements(c)
+            }
+        })
         .sum()
 }
 
@@ -437,10 +465,6 @@ fn is_statement(kind: &str) -> bool {
             | "try_statement"
             | "with_statement"
             | "match_statement"
-            | "function_definition"
-            | "class_definition"
-            | "decorated_definition"
-            | "async_function_definition"
             | "async_for_statement"
             | "async_with_statement"
             | "delete_statement"
@@ -540,7 +564,11 @@ fn count_return_values(node: Node) -> usize {
             continue;
         } // skip the 'return' keyword
         return match child.kind() {
-            "expression_list" => child.named_child_count(),
+            "expression_list" | "tuple" => child.named_child_count(),
+            "parenthesized_expression" => child
+                .named_child(0)
+                .filter(|inner| matches!(inner.kind(), "expression_list" | "tuple"))
+                .map_or(1, |inner| inner.named_child_count()),
             _ => 1, // single value
         };
     }

@@ -137,6 +137,7 @@ impl FunctionMetricsVisitor {
     pub fn count_pattern_bindings(&mut self, pat: &Pat) {
         match pat {
             Pat::Ident(_) => self.local_variables += 1,
+            Pat::Type(typed) => self.count_pattern_bindings(&typed.pat),
             Pat::Tuple(tuple) => {
                 for elem in &tuple.elems {
                     self.count_pattern_bindings(elem);
