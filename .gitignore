@@ -8,7 +8,6 @@ __pycache__
 check
 .vscode/
 Cargo.lock
-.kissconfig
 .cursor/
 a.html
 bugs.md
