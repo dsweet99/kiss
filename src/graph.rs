@@ -88,6 +88,8 @@ impl DependencyGraph {
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
         let mut max_depth = 0;
+        // Seed visited with start so it is never counted as its own transitive dependency.
+        visited.insert(start);
         queue.push_back((start, 0));
         while let Some((node, depth)) = queue.pop_front() {
             for neighbor in self
@@ -100,7 +102,8 @@ impl DependencyGraph {
                 }
             }
         }
-        (visited.len(), max_depth)
+        // Subtract 1 for the start node itself.
+        (visited.len() - 1, max_depth)
     }
 
     fn is_cycle(&self, scc: &[NodeIndex]) -> bool {
@@ -158,7 +161,8 @@ fn is_test_module(graph: &DependencyGraph, module_name: &str) -> bool {
     let Some(p) = graph.paths.get(module_name) else {
         return false;
     };
-    p.components().any(|c| c.as_os_str() == OsStr::new("tests"))
+    p.components()
+        .any(|c| c.as_os_str() == OsStr::new("tests") || c.as_os_str() == OsStr::new("test"))
 }
 
 fn is_orphan(metrics: &ModuleGraphMetrics, module_name: &str) -> bool {
@@ -803,6 +807,37 @@ mod tests {
         modules.clear();
         push_dotted_segments("single", &mut modules);
         assert_eq!(modules, vec!["single"]);
+    }
+
+    // === Bug-hunting tests ===
+
+    #[test]
+    fn test_transitive_deps_excludes_self_in_cycle() {
+        // In a 2-node cycle A→B→A, A's transitive dependencies should be {B},
+        // not {A, B}. A module shouldn't be its own transitive dependency.
+        let mut g = DependencyGraph::new();
+        g.add_dependency("a", "b");
+        g.add_dependency("b", "a");
+        let metrics = g.module_metrics("a");
+        assert_eq!(
+            metrics.transitive_dependencies, 1,
+            "Module 'a' should have 1 transitive dep (b), not count itself (got {})",
+            metrics.transitive_dependencies
+        );
+    }
+
+    #[test]
+    fn test_is_test_module_singular_test_dir() {
+        // is_test_module should also recognize "test/" (singular) directories
+        let mut g = DependencyGraph::new();
+        g.paths.insert(
+            "test.helpers".into(),
+            std::path::PathBuf::from("test/helpers.py"),
+        );
+        assert!(
+            is_test_module(&g, "test.helpers"),
+            "Modules under test/ (singular) should be recognized as test modules"
+        );
     }
 
     #[test]

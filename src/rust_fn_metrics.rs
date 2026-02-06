@@ -175,13 +175,18 @@ impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
         // Statement definition: statements exclude imports and signatures.
         // Skip use statements inside function bodies
         let is_use_item = matches!(stmt, Stmt::Item(syn::Item::Use(_)));
+        // Skip inner fn items: they are separate scopes whose body metrics
+        // should not be attributed to the enclosing function.
+        let is_inner_fn = matches!(stmt, Stmt::Item(syn::Item::Fn(_)));
         if !is_use_item {
             self.statements += 1;
         }
         if let Stmt::Local(local) = stmt {
             self.count_pattern_bindings(&local.pat);
         }
-        syn::visit::visit_stmt(self, stmt);
+        if !is_inner_fn {
+            syn::visit::visit_stmt(self, stmt);
+        }
     }
 
     // Note: Rust match arms are NOT counted as branches (unlike Python case clauses).
@@ -299,6 +304,53 @@ mod tests {
             assert!(is_bool_param(&func.sig.inputs[0]));
             assert!(!is_bool_param(&func.sig.inputs[1]));
         }
+    }
+
+    // === Bug-hunting tests ===
+
+    #[test]
+    fn test_inner_fn_statements_not_counted_in_outer() {
+        // Inner named functions are separate scopes. Their body statements should NOT
+        // be counted in the outer function's statement count (matching Python behavior).
+        let (inputs, block) = parse_fn(
+            "fn outer() { let x = 1; fn inner() { let y = 2; let z = 3; } }",
+        );
+        let m = compute_rust_function_metrics(&inputs, &block, 0);
+        // Expected: 2 statements (let x + fn inner as an item)
+        // Bug: recursion counts inner's body too → 4
+        assert_eq!(
+            m.statements, 2,
+            "Inner fn body statements should not count in outer fn (got {})",
+            m.statements
+        );
+    }
+
+    #[test]
+    fn test_inner_fn_locals_not_counted_in_outer() {
+        // Inner fn's local variables should not be attributed to the outer function.
+        let (inputs, block) = parse_fn(
+            "fn outer() { let a = 1; fn inner() { let b = 2; let c = 3; } }",
+        );
+        let m = compute_rust_function_metrics(&inputs, &block, 0);
+        assert_eq!(
+            m.local_variables, 1,
+            "Inner fn locals should not count in outer fn (got {})",
+            m.local_variables
+        );
+    }
+
+    #[test]
+    fn test_inner_fn_branches_not_counted_in_outer() {
+        // Branches inside inner functions should not inflate outer function's branch count.
+        let (inputs, block) = parse_fn(
+            "fn outer() { fn inner(x: i32) { if x > 0 {} if x < 0 {} } }",
+        );
+        let m = compute_rust_function_metrics(&inputs, &block, 0);
+        assert_eq!(
+            m.branches, 0,
+            "Inner fn branches should not count in outer fn (got {})",
+            m.branches
+        );
     }
 
     #[test]

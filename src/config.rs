@@ -314,9 +314,17 @@ const THRESHOLDS_KEYS: &[&str] = &[
     "classes_per_file",
     "nested_function_depth",
     "returns_per_function",
+    "return_values_per_function",
     "branches_per_function",
     "local_variables_per_function",
     "imported_names_per_file",
+    "statements_per_try_block",
+    "boolean_parameters",
+    "annotations_per_function",
+    "calls_per_function",
+    "cycle_size",
+    "transitive_dependencies",
+    "dependency_depth",
 ];
 
 const SHARED_KEYS: &[&str] = &[
@@ -399,8 +407,16 @@ fn apply_thresholds(config: &mut Config, table: &toml::Table) {
         // Back-compat alias.
         "classes_per_file" => concrete_types_per_file,
         "nested_function_depth" => nested_function_depth, "returns_per_function" => returns_per_function,
+        "return_values_per_function" => return_values_per_function,
         "branches_per_function" => branches_per_function, "local_variables_per_function" => local_variables_per_function,
-        "imported_names_per_file" => imported_names_per_file);
+        "imported_names_per_file" => imported_names_per_file,
+        "statements_per_try_block" => statements_per_try_block,
+        "boolean_parameters" => boolean_parameters,
+        "annotations_per_function" => annotations_per_function,
+        "calls_per_function" => calls_per_function,
+        "cycle_size" => cycle_size,
+        "transitive_dependencies" => transitive_dependencies,
+        "dependency_depth" => dependency_depth);
 }
 
 fn apply_shared(config: &mut Config, table: &toml::Table) {
@@ -652,6 +668,21 @@ mod tests {
         t.insert("unknown_key".into(), toml::Value::Integer(1));
         let result = check_unknown_keys(&t, &["valid_key"], "test");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_thresholds_section_accepts_boolean_parameters() {
+        // Users may put `boolean_parameters` in [thresholds] (the catch-all section).
+        // But THRESHOLDS_KEYS doesn't include it, so it's rejected as unknown.
+        let result = Config::try_load_from_content(
+            "[thresholds]\nboolean_parameters = 2",
+            ConfigLanguage::Python,
+        );
+        assert!(
+            result.is_ok(),
+            "boolean_parameters should be accepted in [thresholds]: {:?}",
+            result.err()
+        );
     }
 
     #[test]

@@ -489,14 +489,24 @@ fn config_key_for(metric_id: &str) -> Option<&'static str> {
         "max_indentation_depth" => "max_indentation_depth",
         "nested_function_depth" => "nested_function_depth",
         "returns_per_function" => "returns_per_function",
+        "return_values_per_function" => "return_values_per_function",
         "branches_per_function" => "branches_per_function",
         "local_variables_per_function" => "local_variables_per_function",
+        "statements_per_try_block" => "statements_per_try_block",
+        "boolean_parameters" => "boolean_parameters",
+        "annotations_per_function" => "annotations_per_function",
+        "calls_per_function" => "calls_per_function",
         "methods_per_class" => "methods_per_class",
         "statements_per_file" => "statements_per_file",
         "functions_per_file" => "functions_per_file",
         "interface_types_per_file" => "interface_types_per_file",
         "concrete_types_per_file" => "concrete_types_per_file",
         "imported_names_per_file" => "imported_names_per_file",
+        "fan_in" => "fan_in",
+        "fan_out" => "fan_out",
+        "cycle_size" => "cycle_size",
+        "transitive_dependencies" => "transitive_dependencies",
+        "dependency_depth" => "dependency_depth",
         _ => return None,
     })
 }
@@ -705,6 +715,27 @@ mod tests {
             got,
             vec![0, 2, 2],
             "Expected modules in the cycle to record 2, and the acyclic module to record 0"
+        );
+    }
+
+    // === Bug-hunting tests ===
+
+    #[test]
+    fn test_generate_config_toml_includes_boolean_parameters() {
+        // generate_config_toml should include newer metrics like boolean_parameters
+        let summaries = vec![PercentileSummary {
+            metric_id: "boolean_parameters",
+            count: 10,
+            p50: 0,
+            p90: 1,
+            p95: 1,
+            p99: 2,
+            max: 3,
+        }];
+        let toml = generate_config_toml(&summaries);
+        assert!(
+            toml.contains("boolean_parameters"),
+            "Generated config should include boolean_parameters threshold"
         );
     }
 

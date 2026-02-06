@@ -377,10 +377,24 @@ struct ParameterCounts {
 }
 
 fn count_parameters(params: Node, source: &str) -> ParameterCounts {
+    let is_self_or_cls = |n: Node| {
+        let text = n.utf8_text(source.as_bytes()).unwrap_or("");
+        matches!(text, "self" | "cls")
+    };
     let (mut positional, mut keyword_only, mut after_star, mut boolean_params) = (0, 0, false, 0);
     let mut cursor = params.walk();
     for child in params.children(&mut cursor) {
         match child.kind() {
+            "identifier" if is_self_or_cls(child) => {
+                // Skip self/cls - they are not real parameters
+            }
+            "typed_parameter"
+                if child
+                    .child_by_field_name("name")
+                    .is_some_and(|n| is_self_or_cls(n)) =>
+            {
+                // Skip typed self/cls parameters (e.g., self: SomeType)
+            }
             "identifier" | "typed_parameter" => {
                 if after_star {
                     keyword_only += 1;
@@ -881,6 +895,23 @@ mod tests {
         assert!(count_file_statements(root2) > 0);
         let class_body = root2.child(0).unwrap().child_by_field_name("body").unwrap();
         assert!(count_class_statements(class_body) > 0);
+    }
+
+    // === Bug-hunting tests ===
+
+    #[test]
+    fn test_compute_function_metrics_self_not_counted() {
+        // `self` should not be counted as a positional argument for methods.
+        let p = parse("class C:\n    def method(self, a, b): pass");
+        let cls = p.tree.root_node().child(0).unwrap();
+        let body = cls.child_by_field_name("body").unwrap();
+        let method = body.child(0).unwrap();
+        let m = compute_function_metrics(method, &p.source);
+        assert_eq!(
+            m.arguments_positional, 2,
+            "self should not be counted as positional arg (got {})",
+            m.arguments_positional
+        );
     }
 
     #[test]

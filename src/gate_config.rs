@@ -157,21 +157,28 @@ fn try_get_f64(table: &toml::Table, key: &str) -> Result<Option<f64>, ConfigErro
     let Some(value) = table.get(key) else {
         return Ok(None);
     };
-    value.as_float().map(Some).ok_or_else(|| ConfigError::InvalidValue {
-        key: key.into(),
-        message: format!("expected float, got {}", value.type_str()),
-    })
+    value
+        .as_float()
+        .or_else(|| value.as_integer().map(|i| i as f64))
+        .map(Some)
+        .ok_or_else(|| ConfigError::InvalidValue {
+            key: key.into(),
+            message: format!("expected float, got {}", value.type_str()),
+        })
 }
 
 fn get_f64(table: &toml::Table, key: &str) -> Option<f64> {
     let value = table.get(key)?;
-    value.as_float().or_else(|| {
-        eprintln!(
-            "Warning: Config key '{key}' expected float, got {}",
-            value.type_str()
-        );
-        None
-    })
+    value
+        .as_float()
+        .or_else(|| value.as_integer().map(|i| i as f64))
+        .or_else(|| {
+            eprintln!(
+                "Warning: Config key '{key}' expected float, got {}",
+                value.type_str()
+            );
+            None
+        })
 }
 
 #[cfg(test)]
@@ -195,6 +202,21 @@ mod tests {
         assert_eq!(get_usize(&table, "missing"), None);
         table.insert("negative".into(), toml::Value::Integer(-1));
         assert_eq!(get_usize(&table, "negative"), None);
+    }
+
+    // === Bug-hunting tests ===
+
+    #[test]
+    fn test_min_similarity_integer_accepted() {
+        // TOML treats `min_similarity = 1` as an integer, not float.
+        // The config should accept integer values and coerce to float.
+        let mut gate = GateConfig::default();
+        gate.merge_from_toml("[gate]\nmin_similarity = 1");
+        assert!(
+            (gate.min_similarity - 1.0).abs() < f64::EPSILON,
+            "min_similarity = 1 (integer) should be treated as 1.0 (got {})",
+            gate.min_similarity
+        );
     }
 
     #[test]

@@ -230,6 +230,7 @@ fn is_external_crate(name: &str) -> bool {
             | "proc_macro2"
             | "quote"
             | "serde"
+            | "serde_json"
             | "tokio"
             | "async_std"
             | "futures"
@@ -257,6 +258,8 @@ fn is_external_crate(name: &str) -> bool {
             | "ignore"
             | "tree_sitter"
             | "tree_sitter_python"
+            | "rayon"
+            | "itertools"
     )
 }
 
@@ -480,6 +483,25 @@ mod tests {
         let mut refs = HashSet::new();
         collect_rust_references(&ast, &mut refs);
         assert!(refs.contains("foo"));
+    }
+
+    // === Bug-hunting tests ===
+
+    #[test]
+    fn test_is_external_crate_common_deps() {
+        // Common Rust ecosystem crates should be recognized as external.
+        assert!(
+            is_external_crate("rayon"),
+            "rayon should be recognized as external crate"
+        );
+        assert!(
+            is_external_crate("serde_json"),
+            "serde_json should be recognized as external crate"
+        );
+        assert!(
+            is_external_crate("itertools"),
+            "itertools should be recognized as external crate"
+        );
     }
 
     #[test]
