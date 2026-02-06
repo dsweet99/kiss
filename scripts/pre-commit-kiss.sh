@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
 
-kiss check --ignore fake_
+# Use the repo-local `kiss` binary (not a globally installed one).
+cargo run --quiet -- check --ignore fake_
 

@@ -537,7 +537,6 @@ mod tests {
             "[python]",
             &[PercentileSummary {
                 metric_id: "statements_per_function",
-                display_name: "Statements per function",
                 count: 10,
                 max: 50,
                 p50: 5,

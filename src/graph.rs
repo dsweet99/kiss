@@ -131,6 +131,11 @@ impl Default for DependencyGraph {
 fn is_entry_point(name: &str) -> bool {
     // Extract bare name from qualified name (e.g., "attr.main" → "main")
     let bare = name.rsplit('.').next().unwrap_or(name);
+    // Treat anything under a `tests/` directory as an entry point. Integration tests are
+    // intentionally standalone modules with no incoming/outgoing dependencies.
+    if name == "tests" || name.starts_with("tests.") || name.contains(".tests.") {
+        return true;
+    }
     matches!(
         bare,
         "main" | "lib" | "build" | "__main__" | "__init__" | "tests" | "conftest" | "setup"
@@ -148,6 +153,14 @@ fn get_module_path(graph: &DependencyGraph, module_name: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(format!("{module_name}.py")))
 }
 
+fn is_test_module(graph: &DependencyGraph, module_name: &str) -> bool {
+    use std::ffi::OsStr;
+    let Some(p) = graph.paths.get(module_name) else {
+        return false;
+    };
+    p.components().any(|c| c.as_os_str() == OsStr::new("tests"))
+}
+
 fn is_orphan(metrics: &ModuleGraphMetrics, module_name: &str) -> bool {
     metrics.fan_in == 0 && metrics.fan_out == 0 && !is_entry_point(module_name)
 }
@@ -161,7 +174,7 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
         }
         let metrics = graph.module_metrics(module_name);
 
-        if is_orphan(&metrics, module_name) {
+        if !is_test_module(graph, module_name) && is_orphan(&metrics, module_name) {
             violations.push(Violation {
                 file: get_module_path(graph, module_name),
                 line: 1,
