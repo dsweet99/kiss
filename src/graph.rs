@@ -11,7 +11,6 @@ use tree_sitter::Node;
 
 struct ImportInfo {
     from_qualified: String,
-    from_bare: String,
     from_parent: Option<String>,
     imports: Vec<String>,
 }
@@ -89,6 +88,8 @@ impl DependencyGraph {
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
         let mut max_depth = 0;
+        // Seed visited with start so it is never counted as its own transitive dependency.
+        visited.insert(start);
         queue.push_back((start, 0));
         while let Some((node, depth)) = queue.pop_front() {
             for neighbor in self
@@ -101,7 +102,8 @@ impl DependencyGraph {
                 }
             }
         }
-        (visited.len(), max_depth)
+        // Subtract 1 for the start node itself.
+        (visited.len() - 1, max_depth)
     }
 
     fn is_cycle(&self, scc: &[NodeIndex]) -> bool {
@@ -132,6 +134,11 @@ impl Default for DependencyGraph {
 fn is_entry_point(name: &str) -> bool {
     // Extract bare name from qualified name (e.g., "attr.main" → "main")
     let bare = name.rsplit('.').next().unwrap_or(name);
+    // Treat anything under a `tests/` directory as an entry point. Integration tests are
+    // intentionally standalone modules with no incoming/outgoing dependencies.
+    if name == "tests" || name.starts_with("tests.") || name.contains(".tests.") {
+        return true;
+    }
     matches!(
         bare,
         "main" | "lib" | "build" | "__main__" | "__init__" | "tests" | "conftest" | "setup"
@@ -149,6 +156,15 @@ fn get_module_path(graph: &DependencyGraph, module_name: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(format!("{module_name}.py")))
 }
 
+fn is_test_module(graph: &DependencyGraph, module_name: &str) -> bool {
+    use std::ffi::OsStr;
+    let Some(p) = graph.paths.get(module_name) else {
+        return false;
+    };
+    p.components()
+        .any(|c| c.as_os_str() == OsStr::new("tests") || c.as_os_str() == OsStr::new("test"))
+}
+
 fn is_orphan(metrics: &ModuleGraphMetrics, module_name: &str) -> bool {
     metrics.fan_in == 0 && metrics.fan_out == 0 && !is_entry_point(module_name)
 }
@@ -162,7 +178,7 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
         }
         let metrics = graph.module_metrics(module_name);
 
-        if is_orphan(&metrics, module_name) {
+        if !is_test_module(graph, module_name) && is_orphan(&metrics, module_name) {
             violations.push(Violation {
                 file: get_module_path(graph, module_name),
                 line: 1,
@@ -292,7 +308,6 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
         .par_iter()
         .map(|parsed| ImportInfo {
             from_qualified: qualified_module_name(&parsed.path),
-            from_bare: bare_module_name(&parsed.path),
             from_parent: parsed
                 .path
                 .parent()
@@ -315,19 +330,10 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
             {
                 graph.add_dependency(&info.from_qualified, &resolved);
             } else {
-                // External import (not in analyzed codebase) - create node but no path
-                graph.add_dependency(&info.from_qualified, import);
+                // External import (not in analyzed codebase) - skip
             }
         }
 
-        // Also add edge from bare name to qualified name for backwards compatibility
-        // This ensures that if something imports "exceptions", it finds "attr.exceptions"
-        if info.from_bare != info.from_qualified
-            && let Some(candidates) = bare_to_qualified.get(&info.from_bare)
-            && candidates.len() == 1
-        {
-            graph.add_dependency(&info.from_bare, &info.from_qualified);
-        }
     }
     graph
 }
@@ -348,7 +354,6 @@ pub fn build_dependency_graph_from_import_lists(files: &[(PathBuf, Vec<String>)]
 
     for (path, imports) in files {
         let from_qualified = qualified_module_name(path);
-        let from_bare = bare_module_name(path);
         let from_parent = path
             .parent()
             .and_then(|p| p.file_name())
@@ -360,16 +365,10 @@ pub fn build_dependency_graph_from_import_lists(files: &[(PathBuf, Vec<String>)]
             } else if let Some(resolved) = resolve_import(import, from_parent, &bare_to_qualified) {
                 graph.add_dependency(&from_qualified, &resolved);
             } else {
-                graph.add_dependency(&from_qualified, import);
+                // External import (not in analyzed codebase) - skip
             }
         }
 
-        if from_bare != from_qualified
-            && let Some(candidates) = bare_to_qualified.get(&from_bare)
-            && candidates.len() == 1
-        {
-            graph.add_dependency(&from_bare, &from_qualified);
-        }
     }
     graph
 }
@@ -381,23 +380,47 @@ fn resolve_import(
     from_parent: Option<&str>,
     bare_to_qualified: &HashMap<String, Vec<String>>,
 ) -> Option<String> {
-    let candidates = bare_to_qualified.get(import)?;
+    if let Some(candidates) = bare_to_qualified.get(import) {
+        if candidates.len() == 1 {
+            return Some(candidates[0].clone());
+        }
 
-    if candidates.len() == 1 {
-        return Some(candidates[0].clone());
-    }
-
-    // Multiple candidates - prefer one in the same package
-    if let Some(parent) = from_parent {
-        let prefix = format!("{parent}.");
-        for candidate in candidates {
-            if candidate.starts_with(&prefix) {
-                return Some(candidate.clone());
+        // Multiple candidates - prefer one in the same package
+        if let Some(parent) = from_parent {
+            let prefix = format!("{parent}.");
+            for candidate in candidates {
+                if candidate.starts_with(&prefix) {
+                    return Some(candidate.clone());
+                }
+            }
+        }
+    } else if let Some((_, last)) = import.rsplit_once('.')
+        && let Some(candidates) = bare_to_qualified.get(last)
+    {
+        let mut matches: Vec<String> = candidates
+            .iter()
+            .filter(|c| c.ends_with(import))
+            .cloned()
+            .collect();
+        if matches.len() == 1 {
+            return matches.pop();
+        }
+        if matches.is_empty()
+            && let Some(parent) = from_parent
+        {
+            let prefix = format!("{parent}.");
+            matches = candidates
+                .iter()
+                .filter(|c| c.starts_with(&prefix))
+                .cloned()
+                .collect();
+            if matches.len() == 1 {
+                return matches.pop();
             }
         }
     }
 
-    // Ambiguous import - don't create edge to avoid false connections
+    // Ambiguous or external import - don't create edge
     None
 }
 
@@ -786,12 +809,42 @@ mod tests {
         assert_eq!(modules, vec!["single"]);
     }
 
+    // === Bug-hunting tests ===
+
+    #[test]
+    fn test_transitive_deps_excludes_self_in_cycle() {
+        // In a 2-node cycle A→B→A, A's transitive dependencies should be {B},
+        // not {A, B}. A module shouldn't be its own transitive dependency.
+        let mut g = DependencyGraph::new();
+        g.add_dependency("a", "b");
+        g.add_dependency("b", "a");
+        let metrics = g.module_metrics("a");
+        assert_eq!(
+            metrics.transitive_dependencies, 1,
+            "Module 'a' should have 1 transitive dep (b), not count itself (got {})",
+            metrics.transitive_dependencies
+        );
+    }
+
+    #[test]
+    fn test_is_test_module_singular_test_dir() {
+        // is_test_module should also recognize "test/" (singular) directories
+        let mut g = DependencyGraph::new();
+        g.paths.insert(
+            "test.helpers".into(),
+            std::path::PathBuf::from("test/helpers.py"),
+        );
+        assert!(
+            is_test_module(&g, "test.helpers"),
+            "Modules under test/ (singular) should be recognized as test modules"
+        );
+    }
+
     #[test]
     fn test_touch_importinfo_and_push_import_name_segments() {
         // Touch private helpers/structs so static test-ref coverage includes them.
         let _ = ImportInfo {
             from_qualified: "a.b".into(),
-            from_bare: "b".into(),
             from_parent: Some("a".into()),
             imports: vec!["os".into()],
         };

@@ -1,26 +1,118 @@
 use crate::graph::DependencyGraph;
 use crate::rust_parsing::ParsedRustFile;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use syn::Item;
+
+/// Compute a qualified Rust module name from a file path.
+///
+/// Mirrors the Python `qualified_module_name` to avoid collisions
+/// when two files in different directories share the same stem
+/// (e.g. `foo/utils.rs` and `bar/utils.rs`).
+///
+/// - `src/foo.rs`       → `"foo"`
+/// - `src/foo/bar.rs`   → `"foo.bar"`
+/// - `src/foo/mod.rs`   → `"foo"`   (mod.rs represents its parent)
+fn qualified_rust_module_name(path: &Path) -> String {
+    use std::path::Component;
+
+    let stem = path
+        .file_stem()
+        .map_or("unknown", |s| s.to_str().unwrap_or("unknown"));
+
+    let mut dirs: Vec<String> = path
+        .parent()
+        .map(|p| {
+            p.components()
+                .filter_map(|c| match c {
+                    Component::Normal(os) => os.to_str().map(std::string::ToString::to_string),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    // Strip everything up to and including the last "src" or "tests" segment
+    // (both are standard Rust source roots).
+    if let Some(pos) = dirs.iter().rposition(|d| d == "src" || d == "tests") {
+        dirs = dirs[(pos + 1)..].to_vec();
+    }
+
+    // For absolute paths without a known source root, keep a short tail.
+    if path.is_absolute() && dirs.len() > 2 {
+        dirs = dirs[(dirs.len() - 2)..].to_vec();
+    }
+
+    // mod.rs represents the parent directory, not itself.
+    if stem == "mod" {
+        if dirs.is_empty() {
+            return "mod".to_string();
+        }
+        return dirs.join(".");
+    }
+
+    if dirs.is_empty() {
+        stem.to_string()
+    } else {
+        format!("{}.{}", dirs.join("."), stem)
+    }
+}
 
 pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> DependencyGraph {
     let mut graph = DependencyGraph::new();
+    let mut internal_modules = HashSet::new();
+    // Map bare module stems to qualified names for import resolution.
+    // Rust `use` statements reference crate-level names, so imports
+    // appear as bare stems (e.g. `utils`) that we need to map to the
+    // qualified graph key (e.g. `foo.utils`).
+    let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
 
     for parsed in parsed_files {
-        let module_name = parsed.path.file_stem().map_or_else(
+        let qualified = qualified_rust_module_name(&parsed.path);
+        let bare = parsed.path.file_stem().map_or_else(
             || String::from("unknown"),
             |s| s.to_string_lossy().into_owned(),
         );
+        internal_modules.insert(qualified.clone());
+        bare_to_qualified
+            .entry(bare)
+            .or_default()
+            .push(qualified.clone());
+        graph.paths.insert(qualified.clone(), parsed.path.clone());
+        graph.get_or_create_node(&qualified);
+    }
 
-        graph.paths.insert(module_name.clone(), parsed.path.clone());
-        graph.get_or_create_node(&module_name);
+    for parsed in parsed_files {
+        let module_name = qualified_rust_module_name(&parsed.path);
         let imports = extract_rust_imports(&parsed.ast);
 
         for import in imports {
-            graph.add_dependency(&module_name, &import);
+            resolve_import(&import, &module_name, &internal_modules, &bare_to_qualified, &mut graph);
         }
     }
 
     graph
+}
+
+fn resolve_import(
+    import: &str,
+    module_name: &str,
+    internal_modules: &HashSet<String>,
+    bare_to_qualified: &HashMap<String, Vec<String>>,
+    graph: &mut DependencyGraph,
+) {
+    if internal_modules.contains(import) {
+        graph.add_dependency(module_name, import);
+        return;
+    }
+    let Some(qualified_names) = bare_to_qualified.get(import) else {
+        return;
+    };
+    for qualified in qualified_names {
+        if qualified != module_name {
+            graph.add_dependency(module_name, qualified);
+        }
+    }
 }
 
 fn extract_rust_imports(ast: &syn::File) -> Vec<String> {
@@ -281,6 +373,62 @@ mod inner {
         assert!(
             imports.contains(&String::from("tokio")),
             "inline module use not found: {imports:?}"
+        );
+    }
+
+    #[test]
+    fn test_qualified_rust_module_name() {
+        assert_eq!(
+            qualified_rust_module_name(Path::new("src/foo.rs")),
+            "foo"
+        );
+        assert_eq!(
+            qualified_rust_module_name(Path::new("src/foo/bar.rs")),
+            "foo.bar"
+        );
+        assert_eq!(
+            qualified_rust_module_name(Path::new("src/foo/mod.rs")),
+            "foo"
+        );
+        assert_eq!(
+            qualified_rust_module_name(Path::new("utils.rs")),
+            "utils"
+        );
+        assert_eq!(
+            qualified_rust_module_name(Path::new("tests/integration/helpers.rs")),
+            "integration.helpers"
+        );
+    }
+
+    #[test]
+    fn test_same_stem_different_dirs_no_collision() {
+        use std::io::Write;
+        // Two files with the same stem in different directories should have
+        // distinct module identities in the graph.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dir_a = tmp.path().join("src").join("foo");
+        let dir_b = tmp.path().join("src").join("bar");
+        std::fs::create_dir_all(&dir_a).unwrap();
+        std::fs::create_dir_all(&dir_b).unwrap();
+
+        let path_a = dir_a.join("utils.rs");
+        let path_b = dir_b.join("utils.rs");
+        let mut fa = std::fs::File::create(&path_a).unwrap();
+        let mut fb = std::fs::File::create(&path_b).unwrap();
+        writeln!(fa, "pub fn a() {{}}").unwrap();
+        writeln!(fb, "pub fn b() {{}}").unwrap();
+
+        let pa = crate::rust_parsing::parse_rust_file(&path_a).unwrap();
+        let pb = crate::rust_parsing::parse_rust_file(&path_b).unwrap();
+        let refs: Vec<&crate::rust_parsing::ParsedRustFile> = vec![&pa, &pb];
+        let graph = build_rust_dependency_graph(&refs);
+
+        // Should have 2 distinct nodes, not 1 collapsed node
+        assert_eq!(
+            graph.nodes.len(),
+            2,
+            "Two files named utils.rs in different dirs should produce 2 graph nodes, got: {:?}",
+            graph.nodes.keys().collect::<Vec<_>>()
         );
     }
 }

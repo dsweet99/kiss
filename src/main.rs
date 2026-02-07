@@ -11,7 +11,7 @@ use kiss::config_gen::{
 };
 use kiss::{
     Config, ConfigLanguage, GateConfig, Language, MetricStats, ShrinkState,
-    check_shrink_constraints, compute_summaries, format_stats_table, get_metric_def,
+    check_shrink_constraints, compute_summaries, format_stats_table,
     parse_target_arg,
 };
 use std::path::{Path, PathBuf};
@@ -99,7 +99,11 @@ enum Commands {
         ignore: Vec<String>,
     },
     /// Shortcut: generate .kissconfig from current directory (same as: mimic . --out .kissconfig)
-    Clamp,
+    Clamp {
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
+    },
     /// Detect duplicate code blocks (uses function-level chunks)
     Dry {
         /// Path to scan for duplicates
@@ -201,12 +205,15 @@ fn main() {
             let ignore = normalize_ignore_prefixes(&ignore);
             run_mimic(&paths, out.as_deref(), cli.lang, &ignore);
         }
-        Commands::Clamp => run_mimic(
-            &[".".to_string()],
-            Some(Path::new(".kissconfig")),
-            cli.lang,
-            &[],
-        ),
+        Commands::Clamp { ignore } => {
+            let ignore = normalize_ignore_prefixes(&ignore);
+            run_mimic(
+                &[".".to_string()],
+                Some(Path::new(".kissconfig")),
+                cli.lang,
+                &ignore,
+            );
+        }
         Commands::Dry {
             path,
             filter_files,
@@ -454,62 +461,56 @@ fn collect_all_units(py_files: &[PathBuf], rs_files: &[PathBuf]) -> Vec<kiss::Un
 }
 
 type UnitMetricExtractor = fn(&kiss::UnitMetrics) -> Option<usize>;
-type MetricSpec = (&'static str, &'static str, UnitMetricExtractor);
+type MetricSpec = (&'static str, UnitMetricExtractor);
 
 fn print_all_top_metrics(units: &[kiss::UnitMetrics], n: usize) {
-    fn name(metric_id: &'static str, fallback: &'static str) -> &'static str {
-        get_metric_def(metric_id).map_or(fallback, |d| d.display_name)
-    }
-
     let metrics: &[MetricSpec] = &[
-        ("statements_per_function", "Statements per function", |u| {
+        ("statements_per_function", |u| {
             u.statements
         }),
-        ("args_total", "Arguments (total)", |u| u.arguments),
-        ("args_positional", "Arguments (positional)", |u| {
+        ("args_total", |u| u.arguments),
+        ("args_positional", |u| {
             u.args_positional
         }),
-        ("args_keyword_only", "Arguments (keyword-only)", |u| {
+        ("args_keyword_only", |u| {
             u.args_keyword_only
         }),
-        ("max_indentation_depth", "Max indentation depth", |u| {
+        ("max_indentation_depth", |u| {
             u.indentation
         }),
-        ("nested_function_depth", "Nested function depth", |u| {
+        ("nested_function_depth", |u| {
             u.nested_depth
         }),
-        ("branches_per_function", "Branches per function", |u| {
+        ("branches_per_function", |u| {
             u.branches
         }),
-        ("returns_per_function", "Returns per function", |u| {
+        ("returns_per_function", |u| {
             u.returns
         }),
         (
             "local_variables_per_function",
-            "Local variables per function",
             |u| u.locals,
         ),
-        ("methods_per_type", "Methods per type", |u| u.methods),
-        ("lines_per_file", "Lines per file", |u| u.lines),
-        ("imported_names_per_file", "Imported names per file", |u| {
+        ("methods_per_class", |u| u.methods),
+        ("lines_per_file", |u| u.lines),
+        ("imported_names_per_file", |u| {
             u.imports
         }),
-        ("fan_in", "Fan-in (per module)", |u| u.fan_in),
-        ("fan_out", "Fan-out (per module)", |u| u.fan_out),
-        ("transitive_deps", "Transitive deps (per module)", |u| {
+        ("fan_in", |u| u.fan_in),
+        ("fan_out", |u| u.fan_out),
+        ("transitive_deps", |u| {
             u.transitive_deps
         }),
-        ("dependency_depth", "Dependency depth (per module)", |u| {
+        ("dependency_depth", |u| {
             u.dependency_depth
         }),
     ];
 
-    for (metric_id, fallback_display_name, extractor) in metrics {
+    for (metric_id, extractor) in metrics {
         print_top_for_metric(
             units,
             n,
             metric_id,
-            name(metric_id, fallback_display_name),
             *extractor,
         );
     }
@@ -519,7 +520,6 @@ fn print_top_for_metric<F>(
     units: &[kiss::UnitMetrics],
     n: usize,
     metric_id: &str,
-    _display_name: &str,
     extractor: F,
 ) where
     F: Fn(&kiss::UnitMetrics) -> Option<usize>,
@@ -594,7 +594,12 @@ fn run_mimic(
     let gate = infer_gate_config_for_paths(paths, lang_filter, ignore);
     let toml = generate_config_toml_by_language(&py_stats, &rs_stats, py_cnt, rs_cnt, &gate);
     match out {
-        Some(p) => write_mimic_config(p, &toml, py_cnt, rs_cnt),
+        Some(p) => {
+            if let Err(e) = write_mimic_config(p, &toml, py_cnt, rs_cnt) {
+                eprintln!("Error writing to {}: {e}", p.display());
+                std::process::exit(1);
+            }
+        }
         None => print!("{toml}"),
     }
 }
@@ -853,7 +858,7 @@ mod tests {
         ));
         assert!(matches!(
             Cli::try_parse_from(["kiss", "clamp"]).unwrap().command,
-            Commands::Clamp
+            Commands::Clamp { .. }
         ));
         ensure_default_config_exists();
     }
@@ -920,7 +925,7 @@ mod tests {
         let units = collect_all_units(&py_files, &rs_files);
         assert!(!units.is_empty());
         print_all_top_metrics(&units, 2);
-        print_top_for_metric(&units, 1, "test_metric", "Test Metric", |u| u.statements);
+        print_top_for_metric(&units, 1, "test_metric", |u| u.statements);
         assert_eq!(truncate("short.rs", 20), "short.rs");
         assert!(truncate("this/is/a/very/long/path.rs", 20).starts_with("..."));
     }

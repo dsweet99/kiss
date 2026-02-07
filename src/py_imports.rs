@@ -92,6 +92,10 @@ pub(crate) fn collect_import_from_names(node: Node, source: &str, names: &mut Ha
                     names.insert(name.to_string());
                 }
             }
+            "wildcard_import" if seen_import => {
+                // `from foo import *` — count as one imported name
+                names.insert("*".to_string());
+            }
             _ => {}
         }
     }
@@ -121,6 +125,18 @@ mod tests {
         let code2 = "import typing\nif typing.TYPE_CHECKING:\n    from foo import Bar";
         let p2 = parse(code2);
         assert_eq!(count_imports(p2.tree.root_node(), &p2.source), 1);
+    }
+
+    #[test]
+    fn test_wildcard_import_counted() {
+        // `from foo import *` should count as at least 1 imported name,
+        // since it pulls names into the namespace.
+        let p = parse("from foo import *");
+        assert!(
+            count_imports(p.tree.root_node(), &p.source) >= 1,
+            "Wildcard import should count as at least 1 imported name (got {})",
+            count_imports(p.tree.root_node(), &p.source)
+        );
     }
 
     #[test]

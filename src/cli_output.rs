@@ -99,7 +99,7 @@ pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
     }
 }
 
-pub fn print_py_test_refs(parsed: &[ParsedFile]) -> usize {
+pub fn count_py_unreferenced(parsed: &[ParsedFile]) -> usize {
     if parsed.is_empty() {
         return 0;
     }
@@ -107,7 +107,7 @@ pub fn print_py_test_refs(parsed: &[ParsedFile]) -> usize {
     analysis.unreferenced.len()
 }
 
-pub fn print_rs_test_refs(parsed: &[ParsedRustFile]) -> usize {
+pub fn count_rs_unreferenced(parsed: &[ParsedRustFile]) -> usize {
     if parsed.is_empty() {
         return 0;
     }

@@ -43,7 +43,9 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
         match item {
             syn::Item::Trait(_) => interface_types += 1,
             syn::Item::Struct(_) | syn::Item::Enum(_) | syn::Item::Union(_) => concrete_types += 1,
-            syn::Item::Use(u) if matches!(u.vis, syn::Visibility::Inherited) => imports += 1,
+            syn::Item::Use(u) if matches!(u.vis, syn::Visibility::Inherited) => {
+                imports += count_use_names(&u.tree);
+            }
             syn::Item::Fn(f) => {
                 functions += 1;
                 let mut visitor = FunctionMetricsVisitor::default();
@@ -70,6 +72,16 @@ pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
         concrete_types,
         imports,
         functions,
+    }
+}
+
+/// Count the number of individual names imported by a `use` tree.
+/// `use foo::bar;` → 1, `use foo::{bar, baz};` → 2, `use foo::*;` → 1 (glob counts as 1).
+fn count_use_names(tree: &syn::UseTree) -> usize {
+    match tree {
+        syn::UseTree::Path(p) => count_use_names(&p.tree),
+        syn::UseTree::Name(_) | syn::UseTree::Rename(_) | syn::UseTree::Glob(_) => 1,
+        syn::UseTree::Group(g) => g.items.iter().map(count_use_names).sum(),
     }
 }
 
@@ -137,6 +149,7 @@ impl FunctionMetricsVisitor {
     pub fn count_pattern_bindings(&mut self, pat: &Pat) {
         match pat {
             Pat::Ident(_) => self.local_variables += 1,
+            Pat::Type(typed) => self.count_pattern_bindings(&typed.pat),
             Pat::Tuple(tuple) => {
                 for elem in &tuple.elems {
                     self.count_pattern_bindings(elem);
@@ -162,13 +175,18 @@ impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
         // Statement definition: statements exclude imports and signatures.
         // Skip use statements inside function bodies
         let is_use_item = matches!(stmt, Stmt::Item(syn::Item::Use(_)));
+        // Skip inner fn items: they are separate scopes whose body metrics
+        // should not be attributed to the enclosing function.
+        let is_inner_fn = matches!(stmt, Stmt::Item(syn::Item::Fn(_)));
         if !is_use_item {
             self.statements += 1;
         }
         if let Stmt::Local(local) = stmt {
             self.count_pattern_bindings(&local.pat);
         }
-        syn::visit::visit_stmt(self, stmt);
+        if !is_inner_fn {
+            syn::visit::visit_stmt(self, stmt);
+        }
     }
 
     // Note: Rust match arms are NOT counted as branches (unlike Python case clauses).
@@ -288,6 +306,53 @@ mod tests {
         }
     }
 
+    // === Bug-hunting tests ===
+
+    #[test]
+    fn test_inner_fn_statements_not_counted_in_outer() {
+        // Inner named functions are separate scopes. Their body statements should NOT
+        // be counted in the outer function's statement count (matching Python behavior).
+        let (inputs, block) = parse_fn(
+            "fn outer() { let x = 1; fn inner() { let y = 2; let z = 3; } }",
+        );
+        let m = compute_rust_function_metrics(&inputs, &block, 0);
+        // Expected: 2 statements (let x + fn inner as an item)
+        // Bug: recursion counts inner's body too → 4
+        assert_eq!(
+            m.statements, 2,
+            "Inner fn body statements should not count in outer fn (got {})",
+            m.statements
+        );
+    }
+
+    #[test]
+    fn test_inner_fn_locals_not_counted_in_outer() {
+        // Inner fn's local variables should not be attributed to the outer function.
+        let (inputs, block) = parse_fn(
+            "fn outer() { let a = 1; fn inner() { let b = 2; let c = 3; } }",
+        );
+        let m = compute_rust_function_metrics(&inputs, &block, 0);
+        assert_eq!(
+            m.local_variables, 1,
+            "Inner fn locals should not count in outer fn (got {})",
+            m.local_variables
+        );
+    }
+
+    #[test]
+    fn test_inner_fn_branches_not_counted_in_outer() {
+        // Branches inside inner functions should not inflate outer function's branch count.
+        let (inputs, block) = parse_fn(
+            "fn outer() { fn inner(x: i32) { if x > 0 {} if x < 0 {} } }",
+        );
+        let m = compute_rust_function_metrics(&inputs, &block, 0);
+        assert_eq!(
+            m.branches, 0,
+            "Inner fn branches should not count in outer fn (got {})",
+            m.branches
+        );
+    }
+
     #[test]
     fn test_structs() {
         let _ = RustFunctionMetrics {
@@ -337,5 +402,37 @@ mod tests {
             m.statements, 2,
             "use statements inside functions should not be counted"
         );
+    }
+
+    #[test]
+    fn test_count_use_names() {
+        use std::io::Write;
+
+        // Single name: `use foo::bar;`
+        let u: syn::ItemUse = syn::parse_str("use foo::bar;").unwrap();
+        assert_eq!(count_use_names(&u.tree), 1);
+
+        // Grouped names: `use foo::{bar, baz};`
+        let u2: syn::ItemUse = syn::parse_str("use foo::{bar, baz};").unwrap();
+        assert_eq!(count_use_names(&u2.tree), 2);
+
+        // Glob: `use foo::*;`
+        let u3: syn::ItemUse = syn::parse_str("use foo::*;").unwrap();
+        assert_eq!(count_use_names(&u3.tree), 1);
+
+        // Rename: `use foo::bar as b;`
+        let u4: syn::ItemUse = syn::parse_str("use foo::bar as b;").unwrap();
+        assert_eq!(count_use_names(&u4.tree), 1);
+
+        // Nested groups: `use foo::{bar, baz::{qux, quux}};`
+        let u5: syn::ItemUse = syn::parse_str("use foo::{bar, baz::{qux, quux}};").unwrap();
+        assert_eq!(count_use_names(&u5.tree), 3);
+
+        // File-level counting: use items count imported names
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "use std::io::{{Read, Write}};\nuse std::path::Path;\nfn main() {{}}").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let m = compute_rust_file_metrics(&parsed);
+        assert_eq!(m.imports, 3, "should count 3 imported names: Read, Write, Path");
     }
 }

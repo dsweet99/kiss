@@ -93,21 +93,24 @@ pub fn collect_all_stats_with_ignore(
     (py, rs)
 }
 
-pub fn write_mimic_config(out: &Path, toml: &str, py_cnt: usize, rs_cnt: usize) {
+pub fn write_mimic_config(
+    out: &Path,
+    toml: &str,
+    py_cnt: usize,
+    rs_cnt: usize,
+) -> Result<(), std::io::Error> {
     let content = if out.exists() {
         merge_config_toml(out, toml, py_cnt > 0, rs_cnt > 0)
     } else {
         toml.to_string()
     };
-    if let Err(e) = std::fs::write(out, &content) {
-        eprintln!("Error writing to {}: {}", out.display(), e);
-        std::process::exit(1);
-    }
+    std::fs::write(out, &content)?;
     eprintln!(
         "Generated config from {} files → {}",
         py_cnt + rs_cnt,
         out.display()
     );
+    Ok(())
 }
 
 fn format_section(out: &mut String, name: &str, section: Option<&toml::Value>) {
@@ -428,7 +431,7 @@ fn common_config_key(metric_id: &str) -> Option<&'static str> {
         "branches_per_function" => Some("branches_per_function"),
         "local_variables_per_function" => Some("local_variables"),
         "cycle_size" => Some("cycle_size"),
-        "methods_per_type" => Some("methods_per_class"),
+        "methods_per_class" => Some("methods_per_class"),
         "nested_function_depth" => Some("nested_function_depth"),
         "returns_per_function" => Some("returns_per_function"),
         "calls_per_function" => Some("calls_per_function"),
@@ -537,7 +540,6 @@ mod tests {
             "[python]",
             &[PercentileSummary {
                 metric_id: "statements_per_function",
-                display_name: "Statements per function",
                 count: 10,
                 max: 50,
                 p50: 5,

@@ -149,7 +149,7 @@ impl<'a> RustAnalyzer<'a> {
         let line = impl_block.impl_token.span.start().line;
         let name = type_name.as_deref().unwrap_or("<impl>");
 
-        self.check_methods_per_type(line, name, method_count);
+        self.check_methods_per_class(line, name, method_count);
 
         for impl_item in &impl_block.items {
             if let ImplItem::Fn(method) = impl_item {
@@ -171,11 +171,11 @@ impl<'a> RustAnalyzer<'a> {
         Violation::builder(self.file).line(line).unit_name(name)
     }
 
-    fn check_methods_per_type(&mut self, line: usize, name: &str, count: usize) {
+    fn check_methods_per_class(&mut self, line: usize, name: &str, count: usize) {
         if count > self.config.methods_per_class {
             self.violations.push(
                 self.violation(line, name)
-                    .metric("methods_per_type")
+                    .metric("methods_per_class")
                     .value(count)
                     .threshold(self.config.methods_per_class)
                     .message(format!(
@@ -350,7 +350,7 @@ mod tests {
             ..Default::default()
         };
         let mut v = Vec::new();
-        RustAnalyzer::new(&p, &cfg, &mut v).check_methods_per_type(1, "S", 10);
+        RustAnalyzer::new(&p, &cfg, &mut v).check_methods_per_class(1, "S", 10);
         assert_eq!(v.len(), 1);
     }
 

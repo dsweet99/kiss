@@ -213,12 +213,39 @@ fn collect_refs_from_node(node: Node, source: &str, refs: &mut HashSet<String>) 
             }
         }
         "import_statement" | "import_from_statement" => collect_import_names(node, source, refs),
-        "identifier" => insert_identifier(node, source, refs),
+        // Collect type annotations (e.g., `def test_foo(x: MyClass)`, `-> ReturnType`)
+        "type" => collect_type_refs(node, source, refs),
+        // Collect decorator references (e.g., `@my_fixture`)
+        "decorator" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "identifier" || child.kind() == "attribute" || child.kind() == "call" {
+                    collect_call_target(child, source, refs);
+                }
+            }
+        }
         _ => {}
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         collect_refs_from_node(child, source, refs);
+    }
+}
+
+fn collect_type_refs(node: Node, source: &str, refs: &mut HashSet<String>) {
+    match node.kind() {
+        "identifier" => insert_identifier(node, source, refs),
+        "attribute" => {
+            if let Some(attr) = node.child_by_field_name("attribute") {
+                insert_identifier(attr, source, refs);
+            }
+        }
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_type_refs(child, source, refs);
+            }
+        }
     }
 }
 

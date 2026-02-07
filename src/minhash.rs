@@ -49,6 +49,10 @@ pub fn generate_shingles(text: &str, shingle_size: usize) -> HashSet<u64> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
+    if shingle_size == 0 {
+        return HashSet::new();
+    }
+
     let tokens: Vec<&str> = text.split_whitespace().collect();
     // Upper bound: one shingle per token window.
     let approx = tokens.len().saturating_sub(shingle_size).saturating_add(1);
@@ -106,7 +110,8 @@ pub fn compute_minhash<S: std::hash::BuildHasher>(
 }
 
 pub fn estimate_similarity(sig1: &MinHashSignature, sig2: &MinHashSignature) -> f64 {
-    if sig1.hashes.is_empty() {
+    let max_len = sig1.hashes.len().max(sig2.hashes.len());
+    if max_len == 0 {
         return 0.0;
     }
     let matching = sig1
@@ -115,9 +120,9 @@ pub fn estimate_similarity(sig1: &MinHashSignature, sig2: &MinHashSignature) -> 
         .zip(&sig2.hashes)
         .filter(|(a, b)| a == b)
         .count();
-    // Safe: matching <= hashes.len() which is typically 100, result is 0.0-1.0
+    // Safe: matching <= max_len which is typically 100, result is 0.0-1.0
     #[allow(clippy::cast_precision_loss)]
-    let sim = matching as f64 / sig1.hashes.len() as f64;
+    let sim = matching as f64 / max_len as f64;
     sim
 }
 
@@ -251,4 +256,28 @@ mod tests {
         add_bucket_pairs(&indices, &mut candidates);
         assert!(candidates.is_empty());
     }
+
+    // === Bug-hunting tests ===
+
+    #[test]
+    fn test_generate_shingles_zero_size_returns_empty() {
+        // shingle_size=0 is degenerate; should return empty set, not panic.
+        // windows(0) panics in Rust, so this exposes a missing guard.
+        let shingles = generate_shingles("hello world test", 0);
+        assert!(shingles.is_empty());
+    }
+
+    #[test]
+    fn test_estimate_similarity_is_symmetric() {
+        // Similarity should be the same regardless of argument order.
+        let sig1 = MinHashSignature { hashes: vec![1, 2, 3, 4, 5] };
+        let sig2 = MinHashSignature { hashes: vec![1, 2, 3] };
+        let sim_ab = estimate_similarity(&sig1, &sig2);
+        let sim_ba = estimate_similarity(&sig2, &sig1);
+        assert!(
+            (sim_ab - sim_ba).abs() < f64::EPSILON,
+            "Similarity should be symmetric: {sim_ab} vs {sim_ba}"
+        );
+    }
+
 }

@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
-fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
+pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
         h ^= u64::from(b);
         h = h.wrapping_mul(0x0100_0000_01b3);
@@ -27,6 +27,8 @@ pub fn fingerprint_for_check(
     gate_config: &GateConfig,
 ) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    // Include binary version so cache is invalidated on upgrade
+    h = fnv1a64(h, env!("CARGO_PKG_VERSION").as_bytes());
     h = fnv1a64(h, format!("{py_config:?}").as_bytes());
     h = fnv1a64(h, format!("{rs_config:?}").as_bytes());
     h = fnv1a64(h, format!("{gate_config:?}").as_bytes());

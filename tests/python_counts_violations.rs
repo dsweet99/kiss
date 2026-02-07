@@ -1,14 +1,7 @@
+use common::parse_python_source;
 use kiss::analyze_file;
 use kiss::config::Config;
-use kiss::parsing::{create_parser, parse_file};
-use std::io::Write;
-
-fn parse_python_source(code: &str) -> kiss::ParsedFile {
-    let mut tmp = tempfile::NamedTempFile::new().unwrap();
-    write!(tmp, "{code}").unwrap();
-    let mut parser = create_parser().unwrap();
-    parse_file(&mut parser, tmp.path()).unwrap()
-}
+mod common;
 
 #[test]
 fn test_methods_per_class_violation() {

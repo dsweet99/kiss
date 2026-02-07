@@ -188,17 +188,14 @@ fn push_py_fn_metrics(stats: &mut MetricStats, m: &crate::py_metrics::FunctionMe
 fn push_rust_fn_metrics(stats: &mut MetricStats, m: &crate::rust_counts::RustFunctionMetrics) {
     stats.statements_per_function.push(m.statements);
     stats.arguments_per_function.push(m.arguments);
-    stats.arguments_positional.push(m.arguments);
-    stats.arguments_keyword_only.push(0);
+    // N/A: Rust has no positional/keyword distinction; don't push to avoid skewing distributions
     stats.max_indentation.push(m.max_indentation);
     stats.nested_function_depth.push(m.nested_function_depth);
     stats.returns_per_function.push(m.returns);
     // N/A: Rust doesn't have multiple-return-value tuples in the same sense as Python
-    stats.return_values_per_function.push(0);
     stats.branches_per_function.push(m.branches);
     stats.local_variables_per_function.push(m.local_variables);
-    // N/A: try-block size is Python-only
-    stats.statements_per_try_block.push(0);
+    // N/A: try-block size is Python-only; don't push to avoid skewing distributions
     stats.boolean_parameters.push(m.bool_parameters);
     stats.annotations_per_function.push(m.attributes);
     stats.calls_per_function.push(m.calls);
@@ -263,7 +260,6 @@ pub enum MetricScope {
 #[derive(Debug, Clone, Copy)]
 pub struct MetricDef {
     pub metric_id: &'static str,
-    pub display_name: &'static str,
     pub scope: MetricScope,
 }
 
@@ -271,132 +267,106 @@ pub struct MetricDef {
 pub const METRICS: &[MetricDef] = &[
     MetricDef {
         metric_id: "statements_per_function",
-        display_name: "Statements per function",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "arguments_per_function",
-        display_name: "Arguments (total)",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "positional_args",
-        display_name: "Arguments (positional)",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "keyword_only_args",
-        display_name: "Arguments (keyword-only)",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "max_indentation_depth",
-        display_name: "Max indentation depth",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "nested_function_depth",
-        display_name: "Nested function depth",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "returns_per_function",
-        display_name: "Returns per function",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "return_values_per_function",
-        display_name: "Return values per function",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "branches_per_function",
-        display_name: "Branches per function",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "local_variables_per_function",
-        display_name: "Local variables per function",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "statements_per_try_block",
-        display_name: "Statements per try block",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "boolean_parameters",
-        display_name: "Boolean parameters",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "annotations_per_function",
-        display_name: "Annotations per function",
         scope: MetricScope::Function,
     },
     MetricDef {
         metric_id: "calls_per_function",
-        display_name: "Calls per function",
         scope: MetricScope::Function,
     },
     MetricDef {
-        metric_id: "methods_per_type",
-        display_name: "Methods per type",
+        metric_id: "methods_per_class",
         scope: MetricScope::Type,
     },
     MetricDef {
         metric_id: "statements_per_file",
-        display_name: "Statements per file",
         scope: MetricScope::File,
     },
     MetricDef {
         metric_id: "lines_per_file",
-        display_name: "Lines per file",
         scope: MetricScope::File,
     },
     MetricDef {
         metric_id: "functions_per_file",
-        display_name: "Functions per file",
         scope: MetricScope::File,
     },
     MetricDef {
         metric_id: "interface_types_per_file",
-        display_name: "Interface types per file",
         scope: MetricScope::File,
     },
     MetricDef {
         metric_id: "concrete_types_per_file",
-        display_name: "Concrete types per file",
         scope: MetricScope::File,
     },
     MetricDef {
         metric_id: "imported_names_per_file",
-        display_name: "Imported names per file",
         scope: MetricScope::File,
     },
     MetricDef {
         metric_id: "fan_in",
-        display_name: "Fan-in (per module)",
         scope: MetricScope::Module,
     },
     MetricDef {
         metric_id: "fan_out",
-        display_name: "Fan-out (per module)",
         scope: MetricScope::Module,
     },
     MetricDef {
         metric_id: "cycle_size",
-        display_name: "Cycle size (modules)",
         scope: MetricScope::Module,
     },
     MetricDef {
         metric_id: "transitive_dependencies",
-        display_name: "Transitive deps (per module)",
         scope: MetricScope::Module,
     },
     MetricDef {
         metric_id: "dependency_depth",
-        display_name: "Dependency depth (per module)",
         scope: MetricScope::Module,
     },
 ];
@@ -408,7 +378,6 @@ pub fn get_metric_def(metric_id: &str) -> Option<&'static MetricDef> {
 #[derive(Debug)]
 pub struct PercentileSummary {
     pub metric_id: &'static str,
-    pub display_name: &'static str,
     pub count: usize,
     pub p50: usize,
     pub p90: usize,
@@ -418,15 +387,10 @@ pub struct PercentileSummary {
 }
 
 impl PercentileSummary {
-    pub fn from_values(
-        metric_id: &'static str,
-        display_name: &'static str,
-        values: &[usize],
-    ) -> Self {
+    pub fn from_values(metric_id: &'static str, values: &[usize]) -> Self {
         if values.is_empty() {
             return Self {
                 metric_id,
-                display_name,
                 count: 0,
                 p50: 0,
                 p90: 0,
@@ -439,7 +403,6 @@ impl PercentileSummary {
         sorted.sort_unstable();
         Self {
             metric_id,
-            display_name,
             count: sorted.len(),
             p50: percentile(&sorted, 50.0),
             p90: percentile(&sorted, 90.0),
@@ -466,7 +429,7 @@ fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usi
         "boolean_parameters" => &stats.boolean_parameters,
         "annotations_per_function" => &stats.annotations_per_function,
         "calls_per_function" => &stats.calls_per_function,
-        "methods_per_type" => &stats.methods_per_class,
+        "methods_per_class" => &stats.methods_per_class,
         "statements_per_file" => &stats.statements_per_file,
         "lines_per_file" => &stats.lines_per_file,
         "functions_per_file" => &stats.functions_per_file,
@@ -490,11 +453,7 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
             if values.is_empty() {
                 None
             } else {
-                Some(PercentileSummary::from_values(
-                    m.metric_id,
-                    m.display_name,
-                    values,
-                ))
+                Some(PercentileSummary::from_values(m.metric_id, values))
             }
         })
         .collect()
@@ -502,17 +461,19 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
 
 pub fn format_stats_table(summaries: &[PercentileSummary]) -> String {
     use std::fmt::Write;
-    let mut out = format!(
-        "{:<28} {:<32} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}\n",
-        "metric_id", "display_name", "N", "p50", "p90", "p95", "p99", "max"
+    let header = format!(
+        "{:<28} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}",
+        "metric_id", "N", "p50", "p90", "p95", "p99", "max"
     );
-    out.push_str(&"-".repeat(100));
+    let mut out = header;
+    out.push('\n');
+    out.push_str(&"-".repeat(out.trim_end_matches('\n').len()));
     out.push('\n');
     for s in summaries.iter().filter(|s| s.count > 0) {
         let _ = writeln!(
             out,
-            "{:<28} {:<32} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}",
-            s.metric_id, s.display_name, s.count, s.p50, s.p90, s.p95, s.p99, s.max
+            "{:<28} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5}",
+            s.metric_id, s.count, s.p50, s.p90, s.p95, s.p99, s.max
         );
     }
     out
@@ -528,14 +489,24 @@ fn config_key_for(metric_id: &str) -> Option<&'static str> {
         "max_indentation_depth" => "max_indentation_depth",
         "nested_function_depth" => "nested_function_depth",
         "returns_per_function" => "returns_per_function",
+        "return_values_per_function" => "return_values_per_function",
         "branches_per_function" => "branches_per_function",
         "local_variables_per_function" => "local_variables_per_function",
-        "methods_per_type" => "methods_per_class",
+        "statements_per_try_block" => "statements_per_try_block",
+        "boolean_parameters" => "boolean_parameters",
+        "annotations_per_function" => "annotations_per_function",
+        "calls_per_function" => "calls_per_function",
+        "methods_per_class" => "methods_per_class",
         "statements_per_file" => "statements_per_file",
         "functions_per_file" => "functions_per_file",
         "interface_types_per_file" => "interface_types_per_file",
         "concrete_types_per_file" => "concrete_types_per_file",
         "imported_names_per_file" => "imported_names_per_file",
+        "fan_in" => "fan_in",
+        "fan_out" => "fan_out",
+        "cycle_size" => "cycle_size",
+        "transitive_dependencies" => "transitive_dependencies",
+        "dependency_depth" => "dependency_depth",
         _ => return None,
     })
 }
@@ -564,13 +535,10 @@ mod tests {
     fn test_stats_helpers() {
         assert_eq!(percentile(&[], 50.0), 0);
         assert_eq!(percentile(&[42], 50.0), 42);
-        let s = PercentileSummary::from_values("test_id", "Test Name", &[]);
+        let s = PercentileSummary::from_values("test_id", &[]);
         assert_eq!(s.count, 0);
         let vals: Vec<usize> = (1..=100).collect();
-        assert_eq!(
-            PercentileSummary::from_values("test_id", "Test Name", &vals).max,
-            100
-        );
+        assert_eq!(PercentileSummary::from_values("test_id", &vals).max, 100);
         let mut a = MetricStats::default();
         a.statements_per_function.push(5);
         let mut b = MetricStats::default();
@@ -584,7 +552,6 @@ mod tests {
         assert!(!compute_summaries(&s2).is_empty());
         let toml = generate_config_toml(&[PercentileSummary {
             metric_id: "statements_per_function",
-            display_name: "Statements per function",
             count: 10,
             p50: 5,
             p90: 9,
@@ -600,7 +567,6 @@ mod tests {
         assert!(
             format_stats_table(&[PercentileSummary {
                 metric_id: "test_id",
-                display_name: "Test Name",
                 count: 10,
                 p50: 5,
                 p90: 8,
@@ -608,7 +574,7 @@ mod tests {
                 p99: 10,
                 max: 12
             }])
-            .contains("Test Name")
+            .contains("test_id")
         );
     }
 
@@ -626,7 +592,6 @@ mod tests {
         // Test MetricDef struct fields
         let def = MetricDef {
             metric_id: "test",
-            display_name: "Test",
             scope: MetricScope::Function,
         };
         assert_eq!(def.metric_id, "test");
@@ -750,6 +715,27 @@ mod tests {
             got,
             vec![0, 2, 2],
             "Expected modules in the cycle to record 2, and the acyclic module to record 0"
+        );
+    }
+
+    // === Bug-hunting tests ===
+
+    #[test]
+    fn test_generate_config_toml_includes_boolean_parameters() {
+        // generate_config_toml should include newer metrics like boolean_parameters
+        let summaries = vec![PercentileSummary {
+            metric_id: "boolean_parameters",
+            count: 10,
+            p50: 0,
+            p90: 1,
+            p95: 1,
+            p99: 2,
+            max: 3,
+        }];
+        let toml = generate_config_toml(&summaries);
+        assert!(
+            toml.contains("boolean_parameters"),
+            "Generated config should include boolean_parameters threshold"
         );
     }
 
