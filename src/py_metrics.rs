@@ -391,7 +391,7 @@ fn count_parameters(params: Node, source: &str) -> ParameterCounts {
             "typed_parameter"
                 if child
                     .child_by_field_name("name")
-                    .is_some_and(|n| is_self_or_cls(n)) =>
+                    .is_some_and(&is_self_or_cls) =>
             {
                 // Skip typed self/cls parameters (e.g., self: SomeType)
             }

@@ -153,13 +153,18 @@ impl GateConfig {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
+const fn int_to_f64(i: i64) -> f64 {
+    i as f64
+}
+
 fn try_get_f64(table: &toml::Table, key: &str) -> Result<Option<f64>, ConfigError> {
     let Some(value) = table.get(key) else {
         return Ok(None);
     };
     value
         .as_float()
-        .or_else(|| value.as_integer().map(|i| i as f64))
+        .or_else(|| value.as_integer().map(int_to_f64))
         .map(Some)
         .ok_or_else(|| ConfigError::InvalidValue {
             key: key.into(),
@@ -171,7 +176,7 @@ fn get_f64(table: &toml::Table, key: &str) -> Option<f64> {
     let value = table.get(key)?;
     value
         .as_float()
-        .or_else(|| value.as_integer().map(|i| i as f64))
+        .or_else(|| value.as_integer().map(int_to_f64))
         .or_else(|| {
             eprintln!(
                 "Warning: Config key '{key}' expected float, got {}",
