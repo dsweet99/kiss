@@ -440,7 +440,7 @@ fn common_config_key(metric_id: &str) -> Option<&'static str> {
         "interface_types_per_file" => Some("interface_types_per_file"),
         "concrete_types_per_file" => Some("concrete_types_per_file"),
         "imported_names_per_file" => Some("imported_names_per_file"),
-        "transitive_deps" => Some("transitive_dependencies"),
+        "transitive_dependencies" => Some("transitive_dependencies"),
         "dependency_depth" => Some("dependency_depth"),
         _ => None,
     }
@@ -448,9 +448,9 @@ fn common_config_key(metric_id: &str) -> Option<&'static str> {
 
 pub fn python_config_key(metric_id: &str) -> Option<&'static str> {
     match metric_id {
-        "args_positional" => Some("positional_args"),
-        "args_keyword_only" => Some("keyword_only_args"),
-        "return_values_per_return" => Some("return_values_per_function"),
+        "positional_args" => Some("positional_args"),
+        "keyword_only_args" => Some("keyword_only_args"),
+        "return_values_per_function" => Some("return_values_per_function"),
         "statements_per_try_block" => Some("statements_per_try_block"),
         "boolean_parameters" => Some("boolean_parameters"),
         "annotations_per_function" => Some("decorators_per_function"),
@@ -460,7 +460,7 @@ pub fn python_config_key(metric_id: &str) -> Option<&'static str> {
 
 pub fn rust_config_key(metric_id: &str) -> Option<&'static str> {
     match metric_id {
-        "args_total" => Some("arguments"),
+        "arguments_per_function" => Some("arguments"),
         "boolean_parameters" => Some("boolean_parameters"),
         "annotations_per_function" => Some("attributes_per_function"),
         _ => common_config_key(metric_id),
