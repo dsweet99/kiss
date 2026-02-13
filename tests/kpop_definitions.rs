@@ -13,6 +13,30 @@ fn parse_py(path: &Path) -> ParsedFile {
     parse_file(&mut parser, path).expect("should parse fixture")
 }
 
+fn orphan_viols_for_temp_pkg(importer_code: &str) -> Vec<kiss::Violation> {
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Important: orphan_module is skipped for paths containing a `tests/` component.
+    // So we generate fixtures in a temp directory with a `src/` root.
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    let pkg = src.join("pkg");
+    fs::create_dir_all(&pkg).unwrap();
+
+    fs::write(pkg.join("__init__.py"), "").unwrap();
+    fs::write(pkg.join("target.py"), "def do_work():\n    return 42\n").unwrap();
+    fs::write(pkg.join("importer.py"), importer_code).unwrap();
+
+    let importer = parse_py(&pkg.join("importer.py"));
+    let target = parse_py(&pkg.join("target.py"));
+    let init = parse_py(&pkg.join("__init__.py"));
+
+    let parsed_files: Vec<&ParsedFile> = vec![&importer, &target, &init];
+    let graph = build_dependency_graph(&parsed_files);
+    analyze_graph(&graph, &Config::python_defaults())
+}
+
 fn h1_module_code_unit_exists() {
     use std::io::Write;
     let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
@@ -160,6 +184,32 @@ fn file_h9_and_h10_parsing(tmp: &tempfile::TempDir) {
 }
 
 #[test]
+fn bug_lazy_import_should_create_graph_edge_and_prevent_orphan() {
+    // DEFINITION: [graph_edge] A dependency between two modules.
+    //
+    // Hypothesis: When module A imports module B inside a function body (lazy import),
+    // the dependency graph misses this edge. Module B then appears to have fan_in=0
+    // and fan_out=0, so it is incorrectly flagged as orphan.
+    //
+    // Prediction: `lazy_target` should have fan_in >= 1 (imported by `lazy_importer`)
+    // and should NOT be flagged as orphan_module.
+    //
+    // Test: Build a graph from two fixture files where the import is inside a function body.
+    let importer = parse_py(Path::new("tests/fake_python/lazy_importer.py"));
+    let target = parse_py(Path::new("tests/fake_python/lazy_target.py"));
+
+    let parsed_files: Vec<&ParsedFile> = vec![&importer, &target];
+    let graph = build_dependency_graph(&parsed_files);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
+
+    let orphan_viols: Vec<_> = viols.iter().filter(|v| v.metric == "orphan_module").collect();
+    assert!(
+        orphan_viols.is_empty(),
+        "lazy_target should not be orphan when imported inside a function; got:\n{orphan_viols:#?}"
+    );
+}
+
+#[test]
 fn bug_graph_edge_dotted_import_should_create_internal_edge() {
     // DEFINITION: [graph_edge] A dependency between two modules.
     //
@@ -299,5 +349,120 @@ fn kpop_file_definition_no_bug_found_in_10_hypotheses() {
     file_h7_rust_files_discovered(&tmp);
     file_h8_missing_dir_is_empty();
     file_h9_and_h10_parsing(&tmp);
+}
+
+#[test]
+fn kpop_orphan_module_lazy_imports_try_to_break_it_in_10_ways() {
+    // DEFINITION: [orphan_module] A non-test module with fan_in=0 and fan_out=0 (excluding entry points).
+    //
+    // Restated problem: `kiss check` sometimes flags Python modules as orphan even though they *are*
+    // imported, especially when imports are "lazy" (inside function bodies).
+    //
+    // We'll run up to 10 falsifying attempts (KPOP-style). We stop as soon as we find a repro that
+    // produces an orphan violation for `pkg.target` even though the importer code imports it.
+
+    // KPOP: 10 attempts. Each case should NOT produce an orphan for `pkg.target`.
+    let cases: [(&str, &str); 10] = [
+        (
+            "attempt 1: from . import target",
+            "def f():\n    from . import target\n    return target.do_work()\n",
+        ),
+        (
+            "attempt 2: import pkg.target",
+            "def f():\n    import pkg.target\n    return pkg.target.do_work()\n",
+        ),
+        (
+            "attempt 3: from pkg import target",
+            "def f():\n    from pkg import target\n    return target.do_work()\n",
+        ),
+        (
+            "attempt 4: from pkg.target import do_work",
+            "def f():\n    from pkg.target import do_work\n    return do_work()\n",
+        ),
+        (
+            "attempt 5: try/except from pkg import target",
+            "def f():\n    try:\n        from pkg import target\n    except ImportError:\n        return 0\n    return target.do_work()\n",
+        ),
+        (
+            "attempt 6: conditional from pkg import target",
+            "def f(flag: bool):\n    if flag:\n        from pkg import target\n        return target.do_work()\n    return 0\n",
+        ),
+        (
+            "attempt 7: import pkg.target as t",
+            "def f():\n    import pkg.target as t\n    return t.do_work()\n",
+        ),
+        (
+            "attempt 8: parenthesized from pkg.target import (do_work)",
+            "def f():\n    from pkg.target import (do_work)\n    return do_work()\n",
+        ),
+        (
+            "attempt 9: from pkg import target as t",
+            "def f():\n    from pkg import target as t\n    return t.do_work()\n",
+        ),
+        (
+            "attempt 10: from .target import do_work",
+            "def f():\n    from .target import do_work\n    return do_work()\n",
+        ),
+    ];
+
+    for (name, code) in cases {
+        let viols = orphan_viols_for_temp_pkg(code);
+        assert!(
+            !viols
+                .iter()
+                .any(|v| v.metric == "orphan_module" && v.unit_name == "pkg.target"),
+            "REPRO FOUND ({name}): got orphan_module for pkg.target:\n{viols:#?}"
+        );
+    }
+}
+
+#[test]
+fn kpop_orphan_module_ambiguous_bare_name_relative_import_should_resolve_to_same_package() {
+    // Restated problem: orphan detection can false-positive if the dependency graph misses edges.
+    //
+    // Hypothesis: If two internal modules share the same bare name (e.g., `a.pkg.target` and
+    // `b.pkg.target`), a relative import `from . import target` inside `a.pkg.importer` will not
+    // resolve to `a.pkg.target` because resolution only uses the leaf directory name ("pkg") and
+    // cannot disambiguate. The edge is dropped, so `a.pkg.target` is incorrectly flagged orphan.
+    //
+    // Prediction: With two `target.py` modules, `a.pkg.target` should still NOT be orphan.
+    //
+    // Test: Create a temp `src/` tree with both packages and analyze the graph.
+    use std::fs;
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+
+    for root in ["a", "b"] {
+        let pkg = src.join(root).join("pkg");
+        fs::create_dir_all(&pkg).unwrap();
+        fs::write(pkg.join("__init__.py"), "").unwrap();
+        fs::write(pkg.join("target.py"), "def do_work():\n    return 42\n").unwrap();
+    }
+    // Importer only in a/
+    let a_pkg = src.join("a").join("pkg");
+    fs::write(
+        a_pkg.join("importer.py"),
+        "def f():\n    from . import target\n    return target.do_work()\n",
+    )
+    .unwrap();
+
+    let a_importer = parse_py(&a_pkg.join("importer.py"));
+    let a_target = parse_py(&a_pkg.join("target.py"));
+    let a_init = parse_py(&a_pkg.join("__init__.py"));
+    let b_target = parse_py(&src.join("b").join("pkg").join("target.py"));
+    let b_init = parse_py(&src.join("b").join("pkg").join("__init__.py"));
+
+    let parsed_files: Vec<&ParsedFile> = vec![&a_importer, &a_target, &a_init, &b_target, &b_init];
+    let graph = build_dependency_graph(&parsed_files);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
+
+    assert!(
+        !viols
+            .iter()
+            .any(|v| v.metric == "orphan_module" && v.unit_name == "a.pkg.target"),
+        "Expected `a.pkg.target` not to be orphan (it is imported relatively). Got:\n{viols:#?}"
+    );
 }
 
