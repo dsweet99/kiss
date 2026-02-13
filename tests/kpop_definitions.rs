@@ -466,3 +466,88 @@ fn kpop_orphan_module_ambiguous_bare_name_relative_import_should_resolve_to_same
     );
 }
 
+#[test]
+fn kpop_orphan_module_relative_import_two_dots_should_resolve_parent_package() {
+    // Restated problem: orphan detection false-positives when relative imports don't create edges.
+    //
+    // Hypothesis: `from .. import target` is treated like importing bare `target`, and resolution
+    // doesn't walk up parent packages. So the edge to `a.pkg.target` is missed and it's flagged orphan.
+    //
+    // Prediction: In a package `a.pkg.sub`, `from .. import target` should prevent `a.pkg.target`
+    // from being orphan.
+    use std::fs;
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+
+    let a_pkg = src.join("a").join("pkg");
+    let a_sub = a_pkg.join("sub");
+    fs::create_dir_all(&a_sub).unwrap();
+
+    fs::write(a_pkg.join("__init__.py"), "").unwrap();
+    fs::write(a_sub.join("__init__.py"), "").unwrap();
+    fs::write(a_pkg.join("target.py"), "def do_work():\n    return 42\n").unwrap();
+    fs::write(
+        a_sub.join("importer.py"),
+        "def f():\n    from .. import target\n    return target.do_work()\n",
+    )
+    .unwrap();
+
+    let importer = parse_py(&a_sub.join("importer.py"));
+    let sub_init = parse_py(&a_sub.join("__init__.py"));
+    let pkg_init = parse_py(&a_pkg.join("__init__.py"));
+    let target = parse_py(&a_pkg.join("target.py"));
+
+    let parsed_files: Vec<&ParsedFile> = vec![&importer, &sub_init, &pkg_init, &target];
+    let graph = build_dependency_graph(&parsed_files);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
+
+    assert!(
+        !viols
+            .iter()
+            .any(|v| v.metric == "orphan_module" && v.unit_name == "a.pkg.target"),
+        "Expected `a.pkg.target` not to be orphan under `from .. import target`. Got:\n{viols:#?}"
+    );
+}
+
+#[test]
+fn kpop_orphan_module_dynamic_import_importlib_import_module_string_literal() {
+    // Restated problem: orphan detection can be wrong if dynamic imports aren't treated as dependencies.
+    //
+    // Hypothesis: `importlib.import_module("pkg.target")` is not recognized as an import edge,
+    // so `pkg.target` is incorrectly flagged orphan.
+    //
+    // Prediction: With a string-literal dynamic import, `pkg.target` should NOT be orphan.
+    use std::fs;
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    let pkg = src.join("pkg");
+    fs::create_dir_all(&pkg).unwrap();
+
+    fs::write(pkg.join("__init__.py"), "").unwrap();
+    fs::write(pkg.join("target.py"), "def do_work():\n    return 42\n").unwrap();
+    fs::write(
+        pkg.join("importer.py"),
+        "def f():\n    import importlib\n    m = importlib.import_module(\"pkg.target\")\n    return m.do_work()\n",
+    )
+    .unwrap();
+
+    let importer = parse_py(&pkg.join("importer.py"));
+    let target = parse_py(&pkg.join("target.py"));
+    let init = parse_py(&pkg.join("__init__.py"));
+
+    let parsed_files: Vec<&ParsedFile> = vec![&importer, &target, &init];
+    let graph = build_dependency_graph(&parsed_files);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
+
+    assert!(
+        !viols
+            .iter()
+            .any(|v| v.metric == "orphan_module" && v.unit_name == "pkg.target"),
+        "Expected `pkg.target` not to be orphan when dynamically imported via importlib.import_module(\"pkg.target\"). Got:\n{viols:#?}"
+    );
+}
+
