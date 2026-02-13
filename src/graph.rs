@@ -11,7 +11,7 @@ use tree_sitter::Node;
 
 struct ImportInfo {
     from_qualified: String,
-    from_parent: Option<String>,
+    from_parent_module: Option<String>,
     imports: Vec<String>,
 }
 
@@ -271,7 +271,15 @@ fn qualified_module_name(path: &std::path::Path) -> String {
         dirs = dirs[(dirs.len() - 2)..].to_vec();
     }
 
-    if dirs.is_empty() {
+    // Special-case packages: `pkg/__init__.py` should represent the `pkg` module, not `pkg.__init__`.
+    // This makes `import pkg` resolvable to an internal module and avoids false orphan violations.
+    if stem == "__init__" {
+        if dirs.is_empty() {
+            stem.to_string()
+        } else {
+            dirs.join(".")
+        }
+    } else if dirs.is_empty() {
         stem.to_string()
     } else {
         format!("{}.{}", dirs.join("."), stem)
@@ -280,10 +288,17 @@ fn qualified_module_name(path: &std::path::Path) -> String {
 
 /// Extract just the bare module name (filename without extension)
 fn bare_module_name(path: &std::path::Path) -> String {
-    path.file_stem().map_or_else(
+    let stem = path.file_stem().map_or_else(
         || "unknown".to_string(),
         |s| s.to_string_lossy().into_owned(),
-    )
+    );
+    if stem == "__init__" {
+        path.parent()
+            .and_then(|p| p.file_name())
+            .map_or(stem, |p| p.to_string_lossy().into_owned())
+    } else {
+        stem
+    }
 }
 
 #[must_use]
@@ -308,12 +323,9 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
         .par_iter()
         .map(|parsed| ImportInfo {
             from_qualified: qualified_module_name(&parsed.path),
-            from_parent: parsed
-                .path
-                .parent()
-                .and_then(|p| p.file_name())
-                .and_then(|s| s.to_str())
-                .map(std::string::ToString::to_string),
+            from_parent_module: qualified_module_name(&parsed.path)
+                .rsplit_once('.')
+                .map(|(p, _)| p.to_string()),
             imports: extract_imports_for_cache(parsed.tree.root_node(), &parsed.source),
         })
         .collect();
@@ -326,7 +338,7 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
                 // Already a qualified internal module name.
                 graph.add_dependency(&info.from_qualified, import);
             } else if let Some(resolved) =
-                resolve_import(import, info.from_parent.as_deref(), &bare_to_qualified)
+                resolve_import(import, info.from_parent_module.as_deref(), &bare_to_qualified)
             {
                 graph.add_dependency(&info.from_qualified, &resolved);
             } else {
@@ -354,15 +366,12 @@ pub fn build_dependency_graph_from_import_lists(files: &[(PathBuf, Vec<String>)]
 
     for (path, imports) in files {
         let from_qualified = qualified_module_name(path);
-        let from_parent = path
-            .parent()
-            .and_then(|p| p.file_name())
-            .and_then(|s| s.to_str());
+        let from_parent_module = from_qualified.rsplit_once('.').map(|(p, _)| p);
 
         for import in imports {
             if graph.nodes.contains_key(import) {
                 graph.add_dependency(&from_qualified, import);
-            } else if let Some(resolved) = resolve_import(import, from_parent, &bare_to_qualified) {
+            } else if let Some(resolved) = resolve_import(import, from_parent_module, &bare_to_qualified) {
                 graph.add_dependency(&from_qualified, &resolved);
             } else {
                 // External import (not in analyzed codebase) - skip
@@ -377,7 +386,7 @@ pub fn build_dependency_graph_from_import_lists(files: &[(PathBuf, Vec<String>)]
 /// Prefers modules in the same package (same parent directory).
 fn resolve_import(
     import: &str,
-    from_parent: Option<&str>,
+    from_parent_module: Option<&str>,
     bare_to_qualified: &HashMap<String, Vec<String>>,
 ) -> Option<String> {
     if let Some(candidates) = bare_to_qualified.get(import) {
@@ -385,8 +394,9 @@ fn resolve_import(
             return Some(candidates[0].clone());
         }
 
-        // Multiple candidates - prefer one in the same package
-        if let Some(parent) = from_parent {
+        // Multiple candidates - prefer one in the same parent module (full prefix),
+        // not just the leaf directory name (which is often shared across different roots).
+        if let Some(parent) = from_parent_module {
             let prefix = format!("{parent}.");
             for candidate in candidates {
                 if candidate.starts_with(&prefix) {
@@ -406,7 +416,7 @@ fn resolve_import(
             return matches.pop();
         }
         if matches.is_empty()
-            && let Some(parent) = from_parent
+            && let Some(parent) = from_parent_module
         {
             let prefix = format!("{parent}.");
             matches = candidates
@@ -437,13 +447,53 @@ fn push_dotted_segments(raw: &str, modules: &mut Vec<String>) {
 
 fn extract_modules_from_import_from(child: Node, source: &str) -> Vec<String> {
     let mut modules = Vec::new();
+    let mut base_module: Option<String> = None;
     if let Some(m) = child.child_by_field_name("module_name") {
         let full_module = &source[m.start_byte()..m.end_byte()];
-        push_dotted_segments(full_module, &mut modules);
+        let trimmed = full_module.trim().trim_start_matches('.');
+        if !trimmed.is_empty() {
+            base_module = Some(trimmed.to_string());
+            modules.push(trimmed.to_string());
+        }
     }
     // Important: do NOT treat imported names (e.g., `from X import Y`) as module dependencies.
     // `Y` is a symbol imported from module `X`, not necessarily a module itself. Treating it as
     // a module creates many spurious edges and huge fake SCC cycles.
+    //
+    // Exception: there are common cases where imported names *do* correspond to internal modules:
+    //
+    // - `from . import target` (no base module name; imported name is the only clue)
+    // - `from pkg import target` (often imports the `pkg.target` submodule)
+    //
+    // We treat these as *module candidates* (only become edges if they resolve to internal modules).
+    let mut imported_names = Vec::new();
+    let mut seen_import = false;
+    let mut cursor = child.walk();
+    for c in child.children(&mut cursor) {
+        match c.kind() {
+            "import" => seen_import = true,
+            "dotted_name" if seen_import => {
+                push_import_name_segments(c, source, &mut imported_names);
+            }
+            "aliased_import" if seen_import => {
+                if let Some(n) = c.child_by_field_name("name") {
+                    push_import_name_segments(n, source, &mut imported_names);
+                }
+            }
+            // `from X import *` doesn't identify a specific module dependency.
+            _ => {}
+        }
+    }
+
+    if let Some(base) = base_module {
+        // `from base import name` → add candidate `base.name` in addition to `base`
+        for name in imported_names {
+            modules.push(format!("{base}.{name}"));
+        }
+    } else if modules.is_empty() {
+        // `from . import name` → candidates are the imported names themselves
+        modules.extend(imported_names);
+    }
     modules
 }
 
@@ -480,12 +530,91 @@ fn extract_imports_recursive(node: Node, source: &str, imports: &mut Vec<String>
     match node.kind() {
         "import_statement" => collect_import_names(node, source, imports),
         "import_from_statement" => imports.extend(extract_modules_from_import_from(node, source)),
+        "call" => {
+            if let Some(m) = extract_dynamic_import_module(node, source) {
+                push_dotted_segments(&m, imports);
+            }
+            // Continue walking children to find nested import statements.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                extract_imports_recursive(child, source, imports);
+            }
+        }
         _ => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 extract_imports_recursive(child, source, imports);
             }
         }
+    }
+}
+
+fn extract_dynamic_import_module(call: Node, source: &str) -> Option<String> {
+    // Recognize a tiny subset of dynamic imports that are still statically knowable:
+    // - importlib.import_module("pkg.mod")
+    // - __import__("pkg.mod")
+    let func = call.child_by_field_name("function")?;
+
+    let is_importlib_import_module = if func.kind() == "attribute" {
+        let obj = func.child_by_field_name("object")?;
+        let attr = func.child_by_field_name("attribute")?;
+        let obj_txt = obj.utf8_text(source.as_bytes()).ok()?;
+        let attr_txt = attr.utf8_text(source.as_bytes()).ok()?;
+        obj.kind() == "identifier" && obj_txt == "importlib" && attr_txt == "import_module"
+    } else {
+        false
+    };
+
+    let is_dunder_import = if func.kind() == "identifier" {
+        func.utf8_text(source.as_bytes())
+            .is_ok_and(|s| s == "__import__")
+    } else {
+        false
+    };
+
+    if !is_importlib_import_module && !is_dunder_import {
+        return None;
+    }
+
+    let args = call.child_by_field_name("arguments")?;
+    let mut cursor = args.walk();
+    for child in args.children(&mut cursor) {
+        if child.kind() == "string" {
+            return parse_python_string_literal(child, source);
+        }
+    }
+    None
+}
+
+fn parse_python_string_literal(node: Node, source: &str) -> Option<String> {
+    // Best-effort parser for simple string literals.
+    // Reject f-strings and non-literals (we only want static module names).
+    let raw = node.utf8_text(source.as_bytes()).ok()?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    // Strip common prefixes (r, u, b). If we see an f-string prefix, bail.
+    let mut i = 0;
+    for ch in raw.chars() {
+        match ch {
+            'r' | 'R' | 'u' | 'U' | 'b' | 'B' => i += ch.len_utf8(),
+            'f' | 'F' => return None,
+            _ => break,
+        }
+    }
+    let s = raw.get(i..)?.trim();
+    let quote = s.chars().next()?;
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
+    let q3 = format!("{quote}{quote}{quote}");
+    let triple = s.starts_with(&q3);
+
+    if triple {
+        (s.ends_with(&q3) && s.len() >= q3.len() * 2)
+            .then(|| s[q3.len()..(s.len() - q3.len())].to_string())
+    } else {
+        (s.len() >= 2 && s.ends_with(quote)).then(|| s[1..(s.len() - 1)].to_string())
     }
 }
 
@@ -521,6 +650,26 @@ mod tests {
     use super::*;
     use crate::parsing::create_parser;
     use std::io::Write;
+
+    #[test]
+    fn test_touch_dynamic_import_helpers_for_static_coverage() {
+        // Touch private helpers so static test-ref coverage includes them.
+        let mut parser = create_parser().unwrap();
+        let code = "def f():\n    import importlib\n    importlib.import_module(\"pkg.target\")\n    __import__(\"pkg.other\")\n";
+        let tree = parser.parse(code, None).unwrap();
+        let root = tree.root_node();
+
+        // Ensure extract_imports_for_cache sees the dynamic imports.
+        let imports = extract_imports_for_cache(root, code);
+        assert!(imports.contains(&"pkg.target".into()));
+        assert!(imports.contains(&"pkg.other".into()));
+
+        // Directly touch helper fns with a best-effort call node.
+        let call_node = root
+            .descendant_for_byte_range(code.find("importlib.import_module").unwrap(), code.len())
+            .unwrap();
+        let _ = extract_dynamic_import_module(call_node, code);
+    }
 
     #[test]
     fn test_graph_imports_and_cycles() {
@@ -691,6 +840,19 @@ mod tests {
             rel.contains(&"_export_format".into()),
             "Relative import: {rel:?}"
         );
+        let rel2 = extract_modules_from_import_from(
+            parser
+                .parse("from . import target", None)
+                .unwrap()
+                .root_node()
+                .child(0)
+                .unwrap(),
+            "from . import target",
+        );
+        assert!(
+            rel2.contains(&"target".into()),
+            "Expected imported module candidate for `from . import target`; got {rel2:?}"
+        );
         assert!(is_decision_point("if_statement") && !is_decision_point("identifier"));
         assert_eq!(
             count_decision_points(
@@ -734,12 +896,86 @@ mod tests {
     }
 
     #[test]
+    fn test_from_dot_import_name_is_dependency_candidate() {
+        // Regression for orphan false-positives:
+        // `from . import target` has no explicit module name, so the imported name needs to be
+        // treated as a module candidate for dependency graph purposes.
+        let mut parser = create_parser().unwrap();
+        let code = "def f():\n    from . import target\n    return 0\n";
+        let imports = extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);
+        assert!(
+            imports.contains(&"target".into()),
+            "Expected `target` in import list for `from . import target`; got {imports:?}"
+        );
+    }
+
+    fn build_temp_pkg_graph(importer_code: &str) -> DependencyGraph {
+        use crate::parsing::parse_file;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        let pkg = src.join("pkg");
+        fs::create_dir_all(&pkg).unwrap();
+
+        fs::write(pkg.join("__init__.py"), "").unwrap();
+        fs::write(pkg.join("target.py"), "def do_work():\n    return 42\n").unwrap();
+        fs::write(pkg.join("importer.py"), importer_code).unwrap();
+
+        let importer = {
+            let mut parser = create_parser().unwrap();
+            parse_file(&mut parser, &pkg.join("importer.py")).unwrap()
+        };
+        let target = {
+            let mut parser = create_parser().unwrap();
+            parse_file(&mut parser, &pkg.join("target.py")).unwrap()
+        };
+        let init = {
+            let mut parser = create_parser().unwrap();
+            parse_file(&mut parser, &pkg.join("__init__.py")).unwrap()
+        };
+
+        let parsed_files: Vec<&ParsedFile> = vec![&importer, &target, &init];
+        build_dependency_graph(&parsed_files)
+    }
+
+    #[test]
+    fn test_build_dependency_graph_creates_edge_for_from_dot_import() {
+        let g = build_temp_pkg_graph("def f():\n    from . import target\n    return target.do_work()\n");
+
+        let m_importer = g.module_metrics("pkg.importer");
+        let m_target = g.module_metrics("pkg.target");
+        assert!(
+            m_importer.fan_out >= 1 && m_target.fan_in >= 1,
+            "Expected edge pkg.importer -> pkg.target (fan_out/fan_in >= 1); got importer={m_importer:?} target={m_target:?}"
+        );
+    }
+
+    #[test]
+    fn test_from_import_adds_submodule_candidate_when_internal() {
+        let g = build_temp_pkg_graph("def f():\n    from pkg import target\n    return target.do_work()\n");
+
+        let m_importer = g.module_metrics("pkg.importer");
+        let m_target = g.module_metrics("pkg.target");
+        assert!(
+            m_importer.fan_out >= 1 && m_target.fan_in >= 1,
+            "Expected `from pkg import target` to create an internal edge to pkg.target; got importer={m_importer:?} target={m_target:?}"
+        );
+    }
+
+    #[test]
     fn test_qualified_and_bare_module_names() {
         use std::path::Path;
         // qualified_module_name includes parent directory
         assert_eq!(
             qualified_module_name(Path::new("src/attr/exceptions.py")),
             "attr.exceptions"
+        );
+        assert_eq!(
+            qualified_module_name(Path::new("src/pkg/__init__.py")),
+            "pkg",
+            "__init__.py should map to the package module name"
         );
         assert_eq!(
             qualified_module_name(Path::new("click/utils.py")),
@@ -752,6 +988,11 @@ mod tests {
         assert_eq!(
             bare_module_name(Path::new("src/attr/exceptions.py")),
             "exceptions"
+        );
+        assert_eq!(
+            bare_module_name(Path::new("src/pkg/__init__.py")),
+            "pkg",
+            "__init__.py should use the containing directory as bare name"
         );
         assert_eq!(bare_module_name(Path::new("click/utils.py")), "utils");
     }
@@ -845,7 +1086,7 @@ mod tests {
         // Touch private helpers/structs so static test-ref coverage includes them.
         let _ = ImportInfo {
             from_qualified: "a.b".into(),
-            from_parent: Some("a".into()),
+            from_parent_module: Some("a".into()),
             imports: vec!["os".into()],
         };
         let mut parser = create_parser().unwrap();
