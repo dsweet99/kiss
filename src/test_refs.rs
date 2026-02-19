@@ -1,6 +1,6 @@
 use crate::parsing::ParsedFile;
 use crate::units::{CodeUnitKind, get_child_by_field};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tree_sitter::Node;
 
@@ -81,8 +81,56 @@ pub fn has_test_framework_import(node: Node, source: &str) -> bool {
     false
 }
 
+fn has_test_function_or_class(node: Node, source: &str) -> bool {
+    match node.kind() {
+        "function_definition" | "async_function_definition" if is_test_function(node, source) => {
+            true
+        }
+        "class_definition" if is_test_class(node, source) => true,
+        _ => {
+            let mut cursor = node.walk();
+            node.children(&mut cursor)
+                .any(|child| has_test_function_or_class(child, source))
+        }
+    }
+}
+
 fn is_python_test_file(parsed: &ParsedFile) -> bool {
-    is_test_file(&parsed.path) || has_test_framework_import(parsed.tree.root_node(), &parsed.source)
+    if is_test_file(&parsed.path) {
+        return true;
+    }
+    let root = parsed.tree.root_node();
+    has_test_framework_import(root, &parsed.source)
+        && has_test_function_or_class(root, &parsed.source)
+}
+
+fn build_name_file_map(definitions: &[CodeDefinition]) -> HashMap<String, HashSet<PathBuf>> {
+    let mut map: HashMap<String, HashSet<PathBuf>> = HashMap::new();
+    for def in definitions {
+        map.entry(def.name.clone())
+            .or_default()
+            .insert(def.file.clone());
+    }
+    map
+}
+
+fn is_definition_covered(
+    def: &CodeDefinition,
+    refs: &HashSet<String>,
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+) -> bool {
+    if refs.contains(&def.name) {
+        let unique = name_files
+            .get(&def.name)
+            .is_none_or(|f| f.len() <= 1);
+        if unique {
+            return true;
+        }
+    }
+    if let Some(ref cls) = def.containing_class {
+        return refs.contains(cls);
+    }
+    false
 }
 
 pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
@@ -108,25 +156,11 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
         }
     }
 
-    let class_names: HashSet<_> = definitions
-        .iter()
-        .filter(|d| d.kind == CodeUnitKind::Class && test_references.contains(&d.name))
-        .map(|d| d.name.clone())
-        .collect();
+    let name_files = build_name_file_map(&definitions);
 
     let unreferenced = definitions
         .iter()
-        .filter(|def| {
-            if test_references.contains(&def.name) {
-                return false;
-            }
-            if def.name == "__init__"
-                && let Some(ref class_name) = def.containing_class
-            {
-                return !class_names.contains(class_name);
-            }
-            true
-        })
+        .filter(|def| !is_definition_covered(def, &test_references, &name_files))
         .cloned()
         .collect();
 
@@ -174,7 +208,10 @@ fn collect_definitions(
                 CodeUnitKind::Function
             };
             try_add_def(node, source, file, defs, kind, class_name.map(String::from));
-            // Don't recurse into function body - inner functions are not counted for coverage
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_definitions(child, source, file, defs, false, None);
+            }
         }
         "class_definition" => {
             try_add_def(node, source, file, defs, CodeUnitKind::Class, None);
@@ -250,20 +287,7 @@ fn collect_type_refs(node: Node, source: &str, refs: &mut HashSet<String>) {
 }
 
 fn collect_references(node: Node, source: &str, refs: &mut HashSet<String>) {
-    match node.kind() {
-        "function_definition" | "async_function_definition" if is_test_function(node, source) => {
-            collect_refs_from_node(node, source, refs);
-        }
-        "class_definition" if is_test_class(node, source) => {
-            collect_refs_from_node(node, source, refs);
-        }
-        _ => {
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                collect_references(child, source, refs);
-            }
-        }
-    }
+    collect_refs_from_node(node, source, refs);
 }
 
 fn collect_call_target(node: Node, source: &str, refs: &mut HashSet<String>) {

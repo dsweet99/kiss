@@ -42,9 +42,41 @@ fn has_test_attribute(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|a| a.path().is_ident("test"))
 }
 
+fn cfg_contains_test(tokens: proc_macro2::TokenStream) -> bool {
+    let mut iter = tokens.into_iter();
+    while let Some(token) = iter.next() {
+        match &token {
+            proc_macro2::TokenTree::Ident(ident) if ident == "test" => return true,
+            proc_macro2::TokenTree::Ident(ident) if ident == "not" => {
+                let _ = iter.next();
+            }
+            proc_macro2::TokenTree::Ident(ident) if *ident == "all" || *ident == "any" => {
+                if let Some(proc_macro2::TokenTree::Group(group)) = iter.next()
+                    && cfg_contains_test(group.stream())
+                {
+                    return true;
+                }
+            }
+            proc_macro2::TokenTree::Group(group) => {
+                if cfg_contains_test(group.stream()) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 fn has_cfg_test_attribute(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|a| {
-        a.path().is_ident("cfg") && a.parse_args::<syn::Ident>().is_ok_and(|i| i == "test")
+        if !a.path().is_ident("cfg") {
+            return false;
+        }
+        if let syn::Meta::List(ref list) = a.meta {
+            return cfg_contains_test(list.tokens.clone());
+        }
+        false
     })
 }
 
