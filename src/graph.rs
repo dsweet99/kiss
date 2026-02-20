@@ -1,6 +1,5 @@
 use crate::config::Config;
 use crate::parsing::ParsedFile;
-use crate::py_imports::is_type_checking_block;
 use crate::violation::Violation;
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -165,6 +164,14 @@ fn is_test_module(graph: &DependencyGraph, module_name: &str) -> bool {
         .any(|c| c.as_os_str() == OsStr::new("tests") || c.as_os_str() == OsStr::new("test"))
 }
 
+fn is_init_module(graph: &DependencyGraph, module_name: &str) -> bool {
+    graph
+        .paths
+        .get(module_name)
+        .and_then(|p| p.file_stem())
+        .is_some_and(|s| s == "__init__")
+}
+
 fn is_orphan(metrics: &ModuleGraphMetrics, module_name: &str) -> bool {
     metrics.fan_in == 0 && metrics.fan_out == 0 && !is_entry_point(module_name)
 }
@@ -178,7 +185,10 @@ pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation>
         }
         let metrics = graph.module_metrics(module_name);
 
-        if !is_test_module(graph, module_name) && is_orphan(&metrics, module_name) {
+        if !is_test_module(graph, module_name)
+            && !is_init_module(graph, module_name)
+            && is_orphan(&metrics, module_name)
+        {
             violations.push(Violation {
                 file: get_module_path(graph, module_name),
                 line: 1,
@@ -266,11 +276,6 @@ fn qualified_module_name(path: &std::path::Path) -> String {
     // Drop "." segments.
     dirs.retain(|d| d != ".");
 
-    // For absolute paths without a known source root, avoid huge prefixes by using a short tail.
-    if path.is_absolute() && dirs.len() > 2 {
-        dirs = dirs[(dirs.len() - 2)..].to_vec();
-    }
-
     // Special-case packages: `pkg/__init__.py` should represent the `pkg` module, not `pkg.__init__`.
     // This makes `import pkg` resolvable to an internal module and avoids false orphan violations.
     if stem == "__init__" {
@@ -333,19 +338,16 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
     // Second pass: add dependency edges, resolving imports to qualified names
     for info in &per_file {
         for import in &info.imports {
-            // Try to resolve import to a qualified module name
             if graph.nodes.contains_key(import) {
-                // Already a qualified internal module name.
                 graph.add_dependency(&info.from_qualified, import);
-            } else if let Some(resolved) =
-                resolve_import(import, info.from_parent_module.as_deref(), &bare_to_qualified)
-            {
-                graph.add_dependency(&info.from_qualified, &resolved);
             } else {
-                // External import (not in analyzed codebase) - skip
+                for resolved in
+                    resolve_import(import, info.from_parent_module.as_deref(), &bare_to_qualified)
+                {
+                    graph.add_dependency(&info.from_qualified, &resolved);
+                }
             }
         }
-
     }
     graph
 }
@@ -371,67 +373,85 @@ pub fn build_dependency_graph_from_import_lists(files: &[(PathBuf, Vec<String>)]
         for import in imports {
             if graph.nodes.contains_key(import) {
                 graph.add_dependency(&from_qualified, import);
-            } else if let Some(resolved) = resolve_import(import, from_parent_module, &bare_to_qualified) {
-                graph.add_dependency(&from_qualified, &resolved);
             } else {
-                // External import (not in analyzed codebase) - skip
+                for resolved in
+                    resolve_import(import, from_parent_module, &bare_to_qualified)
+                {
+                    graph.add_dependency(&from_qualified, &resolved);
+                }
             }
         }
-
     }
     graph
 }
 
-/// Resolve an import name to a qualified module name.
-/// Prefers modules in the same package (same parent directory).
+/// Filter candidates by parent-module prefix, returning the match only if unambiguous.
+fn parent_prefix_match(candidates: &[String], parent: Option<&str>) -> Option<String> {
+    let prefix = format!("{}.", parent?);
+    let mut hits = candidates.iter().filter(|c| c.starts_with(&prefix));
+    let first = hits.next()?.clone();
+    if hits.next().is_some() {
+        return None;
+    }
+    Some(first)
+}
+
+/// Resolve an ambiguous bare name (e.g. `import utils`).
+/// Conservative: returns empty if still ambiguous after parent fallback.
+fn resolve_bare(candidates: &[String], parent: Option<&str>) -> Vec<String> {
+    let mut deduped = candidates.to_vec();
+    deduped.sort();
+    deduped.dedup();
+    if deduped.len() == 1 {
+        return deduped;
+    }
+    parent_prefix_match(&deduped, parent).into_iter().collect()
+}
+
+/// Resolve a dotted import (e.g. `from core.registry import X`).
+/// Returns all suffix matches when still ambiguous (prevents false orphans).
+fn resolve_dotted(
+    import: &str,
+    parent: Option<&str>,
+    bare_to_qualified: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let Some((_, last)) = import.rsplit_once('.') else {
+        return Vec::new();
+    };
+    let Some(candidates) = bare_to_qualified.get(last) else {
+        return Vec::new();
+    };
+    let mut matches: Vec<String> = candidates
+        .iter()
+        .filter(|c| c.ends_with(import))
+        .cloned()
+        .collect();
+    if matches.len() == 1 {
+        return matches;
+    }
+    let pool = if matches.is_empty() {
+        candidates.as_slice()
+    } else {
+        matches.as_slice()
+    };
+    if let Some(hit) = parent_prefix_match(pool, parent) {
+        return vec![hit];
+    }
+    matches.sort();
+    matches.dedup();
+    matches
+}
+
+/// Resolve an import name to qualified module name(s).
 fn resolve_import(
     import: &str,
     from_parent_module: Option<&str>,
     bare_to_qualified: &HashMap<String, Vec<String>>,
-) -> Option<String> {
+) -> Vec<String> {
     if let Some(candidates) = bare_to_qualified.get(import) {
-        if candidates.len() == 1 {
-            return Some(candidates[0].clone());
-        }
-
-        // Multiple candidates - prefer one in the same parent module (full prefix),
-        // not just the leaf directory name (which is often shared across different roots).
-        if let Some(parent) = from_parent_module {
-            let prefix = format!("{parent}.");
-            for candidate in candidates {
-                if candidate.starts_with(&prefix) {
-                    return Some(candidate.clone());
-                }
-            }
-        }
-    } else if let Some((_, last)) = import.rsplit_once('.')
-        && let Some(candidates) = bare_to_qualified.get(last)
-    {
-        let mut matches: Vec<String> = candidates
-            .iter()
-            .filter(|c| c.ends_with(import))
-            .cloned()
-            .collect();
-        if matches.len() == 1 {
-            return matches.pop();
-        }
-        if matches.is_empty()
-            && let Some(parent) = from_parent_module
-        {
-            let prefix = format!("{parent}.");
-            matches = candidates
-                .iter()
-                .filter(|c| c.starts_with(&prefix))
-                .cloned()
-                .collect();
-            if matches.len() == 1 {
-                return matches.pop();
-            }
-        }
+        return resolve_bare(candidates, from_parent_module);
     }
-
-    // Ambiguous or external import - don't create edge
-    None
+    resolve_dotted(import, from_parent_module, bare_to_qualified)
 }
 
 fn push_dotted_segments(raw: &str, modules: &mut Vec<String>) {
@@ -524,9 +544,6 @@ pub(crate) fn extract_imports_for_cache(node: Node, source: &str) -> Vec<String>
 }
 
 fn extract_imports_recursive(node: Node, source: &str, imports: &mut Vec<String>) {
-    if is_type_checking_block(node, source) {
-        return;
-    }
     match node.kind() {
         "import_statement" => collect_import_names(node, source, imports),
         "import_from_statement" => imports.extend(extract_modules_from_import_from(node, source)),
@@ -879,20 +896,20 @@ mod tests {
     }
 
     #[test]
-    fn test_type_checking_imports_excluded_from_graph() {
+    fn test_type_checking_imports_included_in_graph() {
         let mut parser = create_parser().unwrap();
         let code = "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from some_module import SomeClass\nimport os";
         let imports = extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);
         assert!(imports.contains(&"typing".into()));
         assert!(imports.contains(&"os".into()));
-        assert!(!imports.contains(&"some_module".into()));
+        assert!(imports.contains(&"some_module".into()));
 
         let code2 = "import typing\nif typing.TYPE_CHECKING:\n    from foo import Bar\nimport json";
         let imports2 =
             extract_imports_for_cache(parser.parse(code2, None).unwrap().root_node(), code2);
         assert!(imports2.contains(&"typing".into()));
         assert!(imports2.contains(&"json".into()));
-        assert!(!imports2.contains(&"foo".into()));
+        assert!(imports2.contains(&"foo".into()));
     }
 
     #[test]
@@ -1009,30 +1026,24 @@ mod tests {
         // Unambiguous: single match
         assert_eq!(
             resolve_import("utils", Some("click"), &bare_to_qualified),
-            Some("click.utils".into())
+            vec!["click.utils".to_string()]
         );
 
         // Ambiguous: multiple matches, prefer same package
         assert_eq!(
             resolve_import("exceptions", Some("attr"), &bare_to_qualified),
-            Some("attr.exceptions".into())
+            vec!["attr.exceptions".to_string()]
         );
         assert_eq!(
             resolve_import("exceptions", Some("click"), &bare_to_qualified),
-            Some("click.exceptions".into())
+            vec!["click.exceptions".to_string()]
         );
 
-        // Ambiguous: no matching package, returns None
-        assert_eq!(
-            resolve_import("exceptions", Some("httpx"), &bare_to_qualified),
-            None
-        );
+        // Ambiguous: no matching package, returns empty (bare names stay conservative)
+        assert!(resolve_import("exceptions", Some("httpx"), &bare_to_qualified).is_empty());
 
-        // Unknown import: returns None
-        assert_eq!(
-            resolve_import("unknown", Some("attr"), &bare_to_qualified),
-            None
-        );
+        // Unknown import: returns empty
+        assert!(resolve_import("unknown", Some("attr"), &bare_to_qualified).is_empty());
     }
 
     #[test]
