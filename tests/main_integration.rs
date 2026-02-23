@@ -47,7 +47,6 @@ fn compute_test_coverage(
     let mut tested = 0;
     let mut total = 0;
     let mut unreferenced = Vec::new();
-
     if !py_parsed.is_empty() {
         let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
         let analysis = analyze_test_refs(&refs);
@@ -132,7 +131,7 @@ fn test_print_functions_no_panic() {
 fn test_print_helpers_no_panic() {
     let tmp = TempDir::new().unwrap();
     print_no_files_message(None, tmp.path());
-    print_coverage_gate_failure(50, 80, 5, 10, &[]);
+    print_coverage_gate_failure(50, 80, 5, 10, &[], &std::collections::HashMap::new());
 }
 
 #[test]

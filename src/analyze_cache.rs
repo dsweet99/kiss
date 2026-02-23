@@ -73,7 +73,7 @@ pub fn store_full_cache(cache: &FullCheckCache) {
     let _ = std::fs::write(cache_path_full(&cache.fingerprint), bytes);
 }
 
-pub fn coverage_violation(file: PathBuf, name: String, line: usize) -> Violation {
+pub fn coverage_violation(file: PathBuf, name: String, line: usize, file_pct: usize) -> Violation {
     Violation {
         file,
         line,
@@ -81,7 +81,7 @@ pub fn coverage_violation(file: PathBuf, name: String, line: usize) -> Violation
         metric: "test_coverage".to_string(),
         value: 0,
         threshold: 0,
-        message: "Add test coverage for this code unit.".to_string(),
+        message: format!("{file_pct}% covered. Add test coverage for this code unit."),
         suggestion: String::new(),
     }
 }
@@ -158,9 +158,13 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus_set: &HashSet<PathBuf>) -
         .map(CachedCoverageItem::into_tuple)
         .collect();
     let (_, _, _, unreferenced) = compute_test_coverage_from_lists(&defs, &unref, focus_set);
+    let file_pcts = kiss::cli_output::file_coverage_map(&defs, &unreferenced);
     unreferenced
         .into_iter()
-        .map(|(file, name, line)| coverage_violation(file, name, line))
+        .map(|(file, name, line)| {
+            let pct = file_pcts.get(&file).copied().unwrap_or(0);
+            coverage_violation(file, name, line, pct)
+        })
         .collect()
 }
 
