@@ -95,14 +95,13 @@ fn is_directly_referenced(
     if unique {
         return true;
     }
-    let stem_matches = |f: &Path| {
-        f.file_stem()
-            .and_then(|s| s.to_str())
-            .is_some_and(|stem| refs.contains(stem))
-    };
     if let Some(files) = files {
-        let matching = files.iter().filter(|f| stem_matches(f)).count();
-        return matching == 1 && stem_matches(&def.file);
+        let disambiguated = files
+            .iter()
+            .filter(|f| crate::test_refs::has_disambiguating_ref(f, refs, files))
+            .count();
+        return disambiguated == 1
+            && crate::test_refs::has_disambiguating_ref(&def.file, refs, files);
     }
     false
 }
