@@ -181,12 +181,51 @@ pub(crate) fn build_disambiguation_map(
         .collect()
 }
 
+fn file_to_module_suffix(file: &Path) -> String {
+    let mut parts = Vec::new();
+    if let Some(parent) = file.parent() {
+        for component in parent.components() {
+            if let std::path::Component::Normal(os) = component
+                && let Some(s) = os.to_str()
+            {
+                parts.push(s);
+            }
+        }
+    }
+    if let Some(stem) = file.file_stem().and_then(|s| s.to_str()) {
+        parts.push(stem);
+    }
+    parts.join(".")
+}
+
+fn module_suffix_matches(def_suffix: &str, import_module: &str) -> bool {
+    def_suffix == import_module || def_suffix.ends_with(&format!(".{import_module}"))
+}
+
+fn is_covered_by_import(
+    def: &CodeDefinition,
+    import_bindings: &HashMap<String, HashSet<String>>,
+    module_suffixes: &HashMap<PathBuf, String>,
+) -> bool {
+    let Some(def_suffix) = module_suffixes.get(&def.file) else {
+        return false;
+    };
+    import_bindings.iter().any(|(import_module, names)| {
+        names.contains(&def.name) && module_suffix_matches(def_suffix, import_module)
+    })
+}
+
 fn is_definition_covered(
     def: &CodeDefinition,
     refs: &HashSet<String>,
     name_files: &HashMap<String, HashSet<PathBuf>>,
     disambiguation: &HashMap<String, PathBuf>,
+    import_bindings: &HashMap<String, HashSet<String>>,
+    module_suffixes: &HashMap<PathBuf, String>,
 ) -> bool {
+    if is_covered_by_import(def, import_bindings, module_suffixes) {
+        return true;
+    }
     if refs.contains(&def.name) {
         let unique = name_files
             .get(&def.name)
@@ -209,6 +248,7 @@ fn is_definition_covered(
 pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
     let mut definitions = Vec::new();
     let mut test_references = HashSet::new();
+    let mut import_bindings: HashMap<String, HashSet<String>> = HashMap::new();
 
     for parsed in parsed_files {
         if is_python_test_file(parsed) {
@@ -216,6 +256,11 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
                 parsed.tree.root_node(),
                 &parsed.source,
                 &mut test_references,
+            );
+            collect_import_bindings(
+                parsed.tree.root_node(),
+                &parsed.source,
+                &mut import_bindings,
             );
         } else {
             collect_definitions(
@@ -233,10 +278,23 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
         definitions.iter().map(|d| (d.name.as_str(), d.file.as_path())),
     );
     let disambiguation = build_disambiguation_map(&name_files, &test_references);
+    let module_suffixes: HashMap<PathBuf, String> = definitions
+        .iter()
+        .map(|d| (d.file.clone(), file_to_module_suffix(&d.file)))
+        .collect();
 
     let unreferenced = definitions
         .iter()
-        .filter(|def| !is_definition_covered(def, &test_references, &name_files, &disambiguation))
+        .filter(|def| {
+            !is_definition_covered(
+                def,
+                &test_references,
+                &name_files,
+                &disambiguation,
+                &import_bindings,
+                &module_suffixes,
+            )
+        })
         .cloned()
         .collect();
 
@@ -375,6 +433,62 @@ fn collect_call_target(node: Node, source: &str, refs: &mut HashSet<String>) {
             }
         }
         _ => {}
+    }
+}
+
+fn collect_import_bindings(
+    node: Node,
+    source: &str,
+    bindings: &mut HashMap<String, HashSet<String>>,
+) {
+    if node.kind() == "import_from_statement" {
+        extract_import_from_binding(node, source, bindings);
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_import_bindings(child, source, bindings);
+    }
+}
+
+fn extract_import_from_binding(
+    node: Node,
+    source: &str,
+    bindings: &mut HashMap<String, HashSet<String>>,
+) {
+    let Some(module_node) = node.child_by_field_name("module_name") else {
+        return;
+    };
+    let module_path = &source[module_node.start_byte()..module_node.end_byte()];
+    if module_path.starts_with('.') {
+        return;
+    }
+
+    let names = bindings.entry(module_path.to_string()).or_default();
+    let module_id = module_node.id();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.id() == module_id {
+            continue;
+        }
+        match child.kind() {
+            "identifier" => {
+                names.insert(source[child.start_byte()..child.end_byte()].to_string());
+            }
+            "aliased_import" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    names.insert(
+                        source[name_node.start_byte()..name_node.end_byte()].to_string(),
+                    );
+                }
+            }
+            "dotted_name" => {
+                let text = &source[child.start_byte()..child.end_byte()];
+                if let Some(last) = text.rsplit('.').next() {
+                    names.insert(last.to_string());
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -602,6 +716,82 @@ mod tests {
         assert!(
             unref.contains(&"sub_dir_2/some_name.py"),
             "sub_dir_2/some_name::some_name should be uncovered: unreferenced={unref:?}"
+        );
+    }
+
+    #[test]
+    fn test_import_module_without_from_falls_back() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src = "def func():\n    pass\n";
+
+        let tree_1 = parser.parse(src, None).unwrap();
+        let file_1 = ParsedFile {
+            path: PathBuf::from("alpha.py"),
+            source: src.to_string(),
+            tree: tree_1,
+        };
+
+        let tree_2 = parser.parse(src, None).unwrap();
+        let file_2 = ParsedFile {
+            path: PathBuf::from("beta.py"),
+            source: src.to_string(),
+            tree: tree_2,
+        };
+
+        let src_test = "import alpha\ndef test_it():\n    alpha.func()\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_stuff.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file_1, &file_2, &file_test]);
+
+        let unref: Vec<_> = analysis
+            .unreferenced
+            .iter()
+            .map(|d| d.file.to_str().unwrap())
+            .collect();
+        assert!(
+            !unref.contains(&"alpha.py"),
+            "`import alpha; alpha.func()` should cover alpha.func via fallback: unreferenced={unref:?}"
+        );
+        assert!(
+            unref.contains(&"beta.py"),
+            "beta.func should be uncovered: unreferenced={unref:?}"
+        );
+    }
+
+    #[test]
+    fn test_relative_import_falls_back_to_flat_refs() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src = "def helper():\n    pass\n";
+        let tree = parser.parse(src, None).unwrap();
+        let file = ParsedFile {
+            path: PathBuf::from("mymod.py"),
+            source: src.to_string(),
+            tree,
+        };
+
+        let src_test = "from . import mymod\ndef test_it():\n    mymod.helper()\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_mymod.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file, &file_test]);
+
+        assert!(
+            analysis.unreferenced.is_empty(),
+            "relative import should fall back to flat refs and cover helper: unreferenced={:?}",
+            analysis.unreferenced.iter().map(|d| &d.name).collect::<Vec<_>>()
         );
     }
 
