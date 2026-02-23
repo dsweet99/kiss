@@ -35,7 +35,9 @@ fn has_test_naming_pattern(path: &Path) -> bool {
 
 #[must_use]
 pub fn is_rust_test_file(path: &Path) -> bool {
-    is_rs_file(path) && has_test_naming_pattern(path)
+    is_rs_file(path)
+        && (has_test_naming_pattern(path)
+            || crate::test_refs::is_in_test_directory(path))
 }
 
 fn has_test_attribute(attrs: &[Attribute]) -> bool {

@@ -95,8 +95,14 @@ fn has_test_function_or_class(node: Node, source: &str) -> bool {
     }
 }
 
+pub fn is_in_test_directory(path: &Path) -> bool {
+    use std::ffi::OsStr;
+    path.components()
+        .any(|c| c.as_os_str() == OsStr::new("tests") || c.as_os_str() == OsStr::new("test"))
+}
+
 fn is_python_test_file(parsed: &ParsedFile) -> bool {
-    if is_test_file(&parsed.path) {
+    if is_test_file(&parsed.path) || is_in_test_directory(&parsed.path) {
         return true;
     }
     let root = parsed.tree.root_node();
@@ -384,6 +390,16 @@ mod tests {
         ));
         assert!(check("import pytest as pt\n"));
         assert!(!check("import os\nimport sys\n\ndef main():\n    pass\n"));
+    }
+
+    #[test]
+    fn test_is_in_test_directory() {
+        assert!(is_in_test_directory(Path::new("tests/helpers.py")));
+        assert!(is_in_test_directory(Path::new("tests/unit/helpers.py")));
+        assert!(is_in_test_directory(Path::new("test/helpers.py")));
+        assert!(is_in_test_directory(Path::new("/project/tests/conftest.py")));
+        assert!(!is_in_test_directory(Path::new("src/utils.py")));
+        assert!(!is_in_test_directory(Path::new("testing/utils.py")));
     }
 
     #[test]
