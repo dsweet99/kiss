@@ -122,11 +122,36 @@ pub fn build_name_file_map<'a>(
     map
 }
 
-fn file_stem_referenced(def_file: &Path, refs: &HashSet<String>) -> bool {
-    def_file
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .is_some_and(|stem| refs.contains(stem))
+fn path_identifiers(file: &Path) -> Vec<String> {
+    let mut ids = Vec::new();
+    if let Some(parent) = file.parent() {
+        for component in parent.components() {
+            if let std::path::Component::Normal(os) = component
+                && let Some(s) = os.to_str()
+            {
+                ids.push(s.to_string());
+            }
+        }
+    }
+    if let Some(stem) = file.file_stem().and_then(|s| s.to_str()) {
+        ids.push(stem.to_string());
+    }
+    ids
+}
+
+pub(crate) fn has_disambiguating_ref(
+    def_file: &Path,
+    refs: &HashSet<String>,
+    ambiguous_files: &HashSet<PathBuf>,
+) -> bool {
+    let other_ids: HashSet<String> = ambiguous_files
+        .iter()
+        .filter(|f| f.as_path() != def_file)
+        .flat_map(|f| path_identifiers(f))
+        .collect();
+    path_identifiers(def_file)
+        .iter()
+        .any(|id| refs.contains(id) && !other_ids.contains(id))
 }
 
 fn is_definition_covered(
@@ -141,8 +166,11 @@ fn is_definition_covered(
             return true;
         }
         if let Some(files) = files {
-            let stems_matching = files.iter().filter(|f| file_stem_referenced(f, refs)).count();
-            if stems_matching == 1 && file_stem_referenced(&def.file, refs) {
+            let disambiguated = files
+                .iter()
+                .filter(|f| has_disambiguating_ref(f, refs, files))
+                .count();
+            if disambiguated == 1 && has_disambiguating_ref(&def.file, refs, files) {
                 return true;
             }
         }
@@ -502,6 +530,52 @@ mod tests {
         assert!(
             unref_files.contains(&"helpers.py"),
             "helpers.parse should be uncovered (test doesn't exercise it): unreferenced={unref_files:?}"
+        );
+    }
+
+    #[test]
+    fn test_same_stem_as_function_name_different_dirs() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src = "def some_name():\n    pass\n";
+
+        let tree_1 = parser.parse(src, None).unwrap();
+        let file_1 = ParsedFile {
+            path: PathBuf::from("sub_dir_1/some_name.py"),
+            source: src.to_string(),
+            tree: tree_1,
+        };
+
+        let tree_2 = parser.parse(src, None).unwrap();
+        let file_2 = ParsedFile {
+            path: PathBuf::from("sub_dir_2/some_name.py"),
+            source: src.to_string(),
+            tree: tree_2,
+        };
+
+        let src_test = "from sub_dir_1.some_name import some_name\ndef test_it():\n    some_name()\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_stuff.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file_1, &file_2, &file_test]);
+
+        let unref: Vec<_> = analysis
+            .unreferenced
+            .iter()
+            .map(|d| d.file.to_str().unwrap())
+            .collect();
+        assert!(
+            !unref.contains(&"sub_dir_1/some_name.py"),
+            "sub_dir_1/some_name::some_name should be covered (explicitly imported and called): unreferenced={unref:?}"
+        );
+        assert!(
+            unref.contains(&"sub_dir_2/some_name.py"),
+            "sub_dir_2/some_name::some_name should be uncovered: unreferenced={unref:?}"
         );
     }
 
