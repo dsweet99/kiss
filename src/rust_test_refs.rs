@@ -86,22 +86,19 @@ fn is_directly_referenced(
     def: &RustCodeDefinition,
     refs: &HashSet<String>,
     name_files: &HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &HashMap<String, PathBuf>,
 ) -> bool {
     if !refs.contains(&def.name) {
         return false;
     }
-    let files = name_files.get(&def.name);
-    let unique = files.is_none_or(|f| f.len() <= 1);
+    let unique = name_files
+        .get(&def.name)
+        .is_none_or(|f| f.len() <= 1);
     if unique {
         return true;
     }
-    if let Some(files) = files {
-        let disambiguated = files
-            .iter()
-            .filter(|f| crate::test_refs::has_disambiguating_ref(f, refs, files))
-            .count();
-        return disambiguated == 1
-            && crate::test_refs::has_disambiguating_ref(&def.file, refs, files);
+    if let Some(winner) = disambiguation.get(&def.name) {
+        return *winner == def.file;
     }
     false
 }
@@ -115,8 +112,9 @@ fn is_covered_by_tests(
     def: &RustCodeDefinition,
     refs: &HashSet<String>,
     name_files: &HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &HashMap<String, PathBuf>,
 ) -> bool {
-    is_directly_referenced(def, refs, name_files)
+    is_directly_referenced(def, refs, name_files, disambiguation)
         || is_impl_with_referenced_type(def, refs)
 }
 
@@ -134,9 +132,11 @@ pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAn
     let name_files = crate::test_refs::build_name_file_map(
         definitions.iter().map(|d| (d.name.as_str(), d.file.as_path())),
     );
+    let disambiguation =
+        crate::test_refs::build_disambiguation_map(&name_files, &test_references);
     let unreferenced = definitions
         .iter()
-        .filter(|d| !is_covered_by_tests(d, &test_references, &name_files))
+        .filter(|d| !is_covered_by_tests(d, &test_references, &name_files, &disambiguation))
         .cloned()
         .collect();
     RustTestRefAnalysis {
@@ -502,8 +502,10 @@ mod tests {
         let name_files = crate::test_refs::build_name_file_map(
             all_definitions.iter().map(|d| (d.name.as_str(), d.file.as_path())),
         );
-        assert!(is_directly_referenced(&def2, &refs, &name_files));
-        assert!(is_covered_by_tests(&def, &refs, &name_files));
+        let disambiguation =
+            crate::test_refs::build_disambiguation_map(&name_files, &refs);
+        assert!(is_directly_referenced(&def2, &refs, &name_files, &disambiguation));
+        assert!(is_covered_by_tests(&def, &refs, &name_files, &disambiguation));
         assert!(is_external_crate("std") && !is_external_crate("my_module"));
         let p: syn::Path = syn::parse_str("std::io").unwrap();
         assert!(starts_with_external_crate(&p));

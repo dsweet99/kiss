@@ -139,40 +139,65 @@ fn path_identifiers(file: &Path) -> Vec<String> {
     ids
 }
 
-pub(crate) fn has_disambiguating_ref(
-    def_file: &Path,
+pub(crate) fn disambiguate_files(
+    files: &HashSet<PathBuf>,
     refs: &HashSet<String>,
-    ambiguous_files: &HashSet<PathBuf>,
-) -> bool {
-    let other_ids: HashSet<String> = ambiguous_files
+) -> Option<PathBuf> {
+    let file_ids: Vec<(&PathBuf, Vec<String>)> =
+        files.iter().map(|f| (f, path_identifiers(f))).collect();
+
+    let mut id_file_count: HashMap<&str, usize> = HashMap::new();
+    for (_, ids) in &file_ids {
+        for id in ids {
+            *id_file_count.entry(id.as_str()).or_default() += 1;
+        }
+    }
+
+    let mut winner: Option<&PathBuf> = None;
+    for (file, ids) in &file_ids {
+        let has_unique = ids
+            .iter()
+            .any(|id| refs.contains(id) && id_file_count.get(id.as_str()).copied() == Some(1));
+        if has_unique {
+            if winner.is_some() {
+                return None;
+            }
+            winner = Some(file);
+        }
+    }
+    winner.cloned()
+}
+
+pub(crate) fn build_disambiguation_map(
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    refs: &HashSet<String>,
+) -> HashMap<String, PathBuf> {
+    name_files
         .iter()
-        .filter(|f| f.as_path() != def_file)
-        .flat_map(|f| path_identifiers(f))
-        .collect();
-    path_identifiers(def_file)
-        .iter()
-        .any(|id| refs.contains(id) && !other_ids.contains(id))
+        .filter(|(_, files)| files.len() > 1)
+        .filter_map(|(name, files)| {
+            disambiguate_files(files, refs).map(|f| (name.clone(), f))
+        })
+        .collect()
 }
 
 fn is_definition_covered(
     def: &CodeDefinition,
     refs: &HashSet<String>,
     name_files: &HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &HashMap<String, PathBuf>,
 ) -> bool {
     if refs.contains(&def.name) {
-        let files = name_files.get(&def.name);
-        let unique = files.is_none_or(|f| f.len() <= 1);
+        let unique = name_files
+            .get(&def.name)
+            .is_none_or(|f| f.len() <= 1);
         if unique {
             return true;
         }
-        if let Some(files) = files {
-            let disambiguated = files
-                .iter()
-                .filter(|f| has_disambiguating_ref(f, refs, files))
-                .count();
-            if disambiguated == 1 && has_disambiguating_ref(&def.file, refs, files) {
-                return true;
-            }
+        if let Some(winner) = disambiguation.get(&def.name)
+            && *winner == def.file
+        {
+            return true;
         }
     }
     if let Some(ref cls) = def.containing_class {
@@ -207,10 +232,11 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
     let name_files = build_name_file_map(
         definitions.iter().map(|d| (d.name.as_str(), d.file.as_path())),
     );
+    let disambiguation = build_disambiguation_map(&name_files, &test_references);
 
     let unreferenced = definitions
         .iter()
-        .filter(|def| !is_definition_covered(def, &test_references, &name_files))
+        .filter(|def| !is_definition_covered(def, &test_references, &name_files, &disambiguation))
         .cloned()
         .collect();
 
