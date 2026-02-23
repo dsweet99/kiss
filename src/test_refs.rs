@@ -181,6 +181,7 @@ fn try_add_def(
 ) {
     if let Some(name) = get_child_by_field(node, "name", source)
         && (!name.starts_with('_') || name == "__init__")
+        && !name.starts_with("test_")
     {
         defs.push(CodeDefinition {
             name,
@@ -383,5 +384,24 @@ mod tests {
         ));
         assert!(check("import pytest as pt\n"));
         assert!(!check("import os\nimport sys\n\ndef main():\n    pass\n"));
+    }
+
+    #[test]
+    fn test_collect_definitions_skips_test_functions() {
+        use crate::parsing::create_parser;
+        let mut parser = create_parser().unwrap();
+        let src = "def helper():\n    pass\n\ndef test_helper():\n    pass\n";
+        let tree = parser.parse(src, None).unwrap();
+        let mut defs = Vec::new();
+        collect_definitions(
+            tree.root_node(),
+            src,
+            Path::new("utils.py"),
+            &mut defs,
+            false,
+            None,
+        );
+        let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, vec!["helper"]);
     }
 }

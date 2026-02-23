@@ -5,7 +5,36 @@ use crate::rust_parsing::ParsedRustFile;
 use crate::rust_test_refs::analyze_rust_test_refs;
 use crate::test_refs::analyze_test_refs;
 use crate::violation::Violation;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+pub fn file_coverage_map(
+    definitions: &[(PathBuf, String, usize)],
+    unreferenced: &[(PathBuf, String, usize)],
+) -> HashMap<PathBuf, usize> {
+    let mut defs_per_file: HashMap<PathBuf, usize> = HashMap::new();
+    let mut unref_per_file: HashMap<PathBuf, usize> = HashMap::new();
+    for (file, _, _) in definitions {
+        *defs_per_file.entry(file.clone()).or_default() += 1;
+    }
+    for (file, _, _) in unreferenced {
+        *unref_per_file.entry(file.clone()).or_default() += 1;
+    }
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    defs_per_file
+        .into_iter()
+        .map(|(file, total)| {
+            let unref = unref_per_file.get(&file).copied().unwrap_or(0);
+            let tested = total.saturating_sub(unref);
+            let pct = ((tested as f64 / total as f64) * 100.0).round() as usize;
+            (file, pct)
+        })
+        .collect()
+}
 
 pub fn print_dry_results(pairs: &[DuplicatePair]) {
     for p in pairs {
@@ -31,20 +60,23 @@ pub fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
     println!("{} in {}", msg, root.display());
 }
 
+#[allow(clippy::implicit_hasher)]
 pub fn print_coverage_gate_failure(
     coverage: usize,
     threshold: usize,
     tested: usize,
     total: usize,
     unreferenced: &[(std::path::PathBuf, String, usize)],
+    file_pcts: &HashMap<std::path::PathBuf, usize>,
 ) {
     println!(
         "GATE_FAILED:test_coverage: {coverage}% coverage (threshold: {threshold}%, {tested}/{total} units tested)"
     );
     println!("Hint: Use --all to bypass coverage gate for exploration");
     for (file, name, line) in unreferenced {
+        let pct = file_pcts.get(file).copied().unwrap_or(0);
         println!(
-            "VIOLATION:test_coverage:{}:{}:{}: Add test coverage for this code unit.",
+            "VIOLATION:test_coverage:{}:{}:{}: {pct}% covered. Add test coverage for this code unit.",
             file.display(),
             line,
             name
@@ -129,12 +161,15 @@ mod tests {
 
     #[test]
     fn test_print_coverage_gate_failure_no_panic() {
+        let file_pcts: HashMap<std::path::PathBuf, usize> =
+            [(std::path::PathBuf::from("foo.py"), 50)].into();
         print_coverage_gate_failure(
             50,
             80,
             5,
             10,
             &[(std::path::PathBuf::from("foo.py"), "bar".to_string(), 10)],
+            &file_pcts,
         );
     }
 
@@ -148,5 +183,18 @@ mod tests {
     #[test]
     fn test_print_duplicates_empty() {
         print_duplicates("Test", &[]);
+    }
+
+    #[test]
+    fn test_file_coverage_map_computes_per_file_pct() {
+        let defs = vec![
+            (PathBuf::from("a.py"), "f1".into(), 1),
+            (PathBuf::from("a.py"), "f2".into(), 5),
+            (PathBuf::from("b.py"), "g1".into(), 1),
+        ];
+        let unref = vec![(PathBuf::from("a.py"), "f2".into(), 5)];
+        let map = file_coverage_map(&defs, &unref);
+        assert_eq!(map[&PathBuf::from("a.py")], 50);
+        assert_eq!(map[&PathBuf::from("b.py")], 100);
     }
 }

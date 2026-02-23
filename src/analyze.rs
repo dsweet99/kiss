@@ -3,13 +3,13 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use kiss::cli_output::{
-    print_coverage_gate_failure, print_dry_results, print_duplicates, print_final_status,
-    print_no_files_message, print_violations,
+    file_coverage_map, print_coverage_gate_failure, print_dry_results, print_duplicates,
+    print_final_status, print_no_files_message, print_violations,
 };
 use kiss::{
     Config, DependencyGraph, DuplicateCluster, DuplicationConfig, GateConfig, Language, ParsedFile,
-    ParsedRustFile, Violation, analyze_graph, analyze_rust_file, analyze_rust_test_refs,
-    analyze_test_refs, build_dependency_graph, build_rust_dependency_graph,
+    ParsedRustFile, Violation, analyze_graph, analyze_rust_file,
+    build_dependency_graph, build_rust_dependency_graph,
     cluster_duplicates_from_chunks, detect_duplicates_from_chunks, extract_chunks_for_duplication,
     extract_rust_chunks_for_duplication,
     extract_rust_code_units, find_source_files_with_ignore, is_rust_test_file, is_test_file,
@@ -212,12 +212,13 @@ fn add_coverage_viols(
         .cloned()
         .map(CachedCoverageItem::into_tuple)
         .collect();
-    let (_, _, _, unreferenced_focus) = compute_test_coverage_from_lists(&defs, &unref, focus_set);
-    viols.extend(
-        unreferenced_focus
-            .into_iter()
-            .map(|(file, name, line)| analyze_cache::coverage_violation(file, name, line)),
-    );
+    let (_, _, _, unreferenced_focus) =
+        compute_test_coverage_from_lists(&defs, &unref, focus_set);
+    let file_pcts = file_coverage_map(&defs, &unreferenced_focus);
+    viols.extend(unreferenced_focus.into_iter().map(|(file, name, line)| {
+        let pct = file_pcts.get(&file).copied().unwrap_or(0);
+        analyze_cache::coverage_violation(file, name, line, pct)
+    }));
     Some((definitions, unreferenced))
 }
 
@@ -380,20 +381,28 @@ fn collect_coverage_viols(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],
     focus_set: &HashSet<PathBuf>,
-    show_timing: bool,
+    _show_timing: bool,
 ) -> Vec<Violation> {
-    compute_test_coverage(py_parsed, rs_parsed, focus_set, show_timing)
-        .3
+    let (defs_cached, unrefs_cached) = analyze_cache::coverage_lists(py_parsed, rs_parsed);
+    let defs_t: Vec<_> = defs_cached.into_iter().map(CachedCoverageItem::into_tuple).collect();
+    let unrefs_t: Vec<_> = unrefs_cached.into_iter().map(CachedCoverageItem::into_tuple).collect();
+    let (_, _, _, unreferenced) =
+        compute_test_coverage_from_lists(&defs_t, &unrefs_t, focus_set);
+    let file_pcts = file_coverage_map(&defs_t, &unreferenced);
+    unreferenced
         .into_iter()
-        .map(|(file, name, line)| Violation {
-            file,
-            line,
-            unit_name: name,
-            metric: "test_coverage".to_string(),
-            value: 0,
-            threshold: 0,
-            message: "Add test coverage for this code unit.".to_string(),
-            suggestion: String::new(),
+        .map(|(file, name, line)| {
+            let pct = file_pcts.get(&file).copied().unwrap_or(0);
+            Violation {
+                file,
+                line,
+                unit_name: name,
+                metric: "test_coverage".to_string(),
+                value: 0,
+                threshold: 0,
+                message: format!("{pct}% covered. Add test coverage for this code unit."),
+                suggestion: String::new(),
+            }
         })
         .collect()
 }
@@ -649,74 +658,26 @@ pub fn check_coverage_gate(
     rs_parsed: &[ParsedRustFile],
     gate_config: &GateConfig,
     focus_set: &HashSet<PathBuf>,
-    show_timing: bool,
+    _show_timing: bool,
 ) -> bool {
+    let (defs_cached, unrefs_cached) = analyze_cache::coverage_lists(py_parsed, rs_parsed);
+    let defs_t: Vec<_> = defs_cached.into_iter().map(CachedCoverageItem::into_tuple).collect();
+    let unrefs_t: Vec<_> = unrefs_cached.into_iter().map(CachedCoverageItem::into_tuple).collect();
     let (coverage, tested, total, unreferenced) =
-        compute_test_coverage(py_parsed, rs_parsed, focus_set, show_timing);
+        compute_test_coverage_from_lists(&defs_t, &unrefs_t, focus_set);
     if coverage < gate_config.test_coverage_threshold {
+        let file_pcts = file_coverage_map(&defs_t, &unreferenced);
         print_coverage_gate_failure(
             coverage,
             gate_config.test_coverage_threshold,
             tested,
             total,
             &unreferenced,
+            &file_pcts,
         );
         return false;
     }
     true
-}
-
-pub fn compute_test_coverage(
-    py_parsed: &[ParsedFile],
-    rs_parsed: &[ParsedRustFile],
-    focus_set: &HashSet<PathBuf>,
-    _show_timing: bool,
-) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
-    let (mut total, mut untested, mut unreferenced) = (0usize, 0usize, Vec::new());
-
-    if !py_parsed.is_empty() {
-        let a = analyze_test_refs(&py_parsed.iter().collect::<Vec<_>>());
-        for d in &a.definitions {
-            if is_focus_file(&d.file, focus_set) {
-                total += 1;
-            }
-        }
-        for d in a.unreferenced {
-            if is_focus_file(&d.file, focus_set) {
-                untested += 1;
-                unreferenced.push((d.file, d.name, d.line));
-            }
-        }
-    }
-    if !rs_parsed.is_empty() {
-        let a = analyze_rust_test_refs(&rs_parsed.iter().collect::<Vec<_>>());
-        for d in &a.definitions {
-            if is_focus_file(&d.file, focus_set) {
-                total += 1;
-            }
-        }
-        for d in a.unreferenced {
-            if is_focus_file(&d.file, focus_set) {
-                untested += 1;
-                unreferenced.push((d.file, d.name, d.line));
-            }
-        }
-    }
-
-    unreferenced.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
-    let tested = total.saturating_sub(untested);
-    // Safe: tested <= total (counts are small), result is 0-100 percentage
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
-    )]
-    let coverage = if total > 0 {
-        ((tested as f64 / total as f64) * 100.0).round() as usize
-    } else {
-        100
-    };
-    (coverage, tested, total, unreferenced)
 }
 
 pub fn compute_test_coverage_from_lists(
@@ -949,7 +910,8 @@ mod tests {
         };
         let focus = HashSet::new();
         assert!(check_coverage_gate(&[], &[], &gate, &focus, false));
-        let (cov, tested, total, unref) = compute_test_coverage(&[], &[], &focus, false);
+        let (cov, tested, total, unref) =
+            compute_test_coverage_from_lists(&[], &[], &focus);
         assert_eq!(cov, 100);
         assert_eq!(tested, 0);
         assert_eq!(total, 0);
