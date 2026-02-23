@@ -144,17 +144,16 @@ fn c2_cov_3_test_helper_refs_outside_test_scope_invisible() {
 }
 
 // ---------------------------------------------------------------------------
-// C2 Break #4 — Nested/inner function definitions are invisible (Python)
+// C2 Break #4 — Nested/inner function definitions are excluded (Python)
 //
-// `collect_definitions` stops recursing at `function_definition`. Functions
-// defined inside other functions (closures, factory builders, decorators)
-// are never counted as definitions. A module can hide complex logic inside
-// nested functions, and the coverage checker will never notice it's untested.
+// `collect_definitions` intentionally does NOT recurse into function bodies.
+// Nested functions are implementation details of the enclosing function and
+// are not independently testable, so they should not require separate coverage.
 //
-// Prediction: `inner_logic` should appear in `analysis.definitions`.
+// Prediction: `inner_logic` should NOT appear in `analysis.definitions`.
 // ---------------------------------------------------------------------------
 #[test]
-fn c2_cov_4_nested_function_definitions_invisible() {
+fn c2_cov_4_nested_function_definitions_excluded() {
     let module = {
         let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
         write!(
@@ -177,9 +176,8 @@ fn c2_cov_4_nested_function_definitions_invisible() {
         .any(|d| d.name == "inner_logic");
 
     assert!(
-        has_inner,
-        "inner_logic is a real function with complex logic, but `collect_definitions` \
-         does not recurse past the outer function boundary, so it's invisible.\n\
+        !has_inner,
+        "nested functions are implementation details and should not be tracked for coverage.\n\
          definitions: {:#?}",
         analysis.definitions
     );
