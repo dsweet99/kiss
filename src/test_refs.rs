@@ -206,7 +206,11 @@ fn is_covered_by_import(
     def: &CodeDefinition,
     import_bindings: &HashMap<String, HashSet<String>>,
     module_suffixes: &HashMap<PathBuf, String>,
+    usage_refs: &HashSet<String>,
 ) -> bool {
+    if !usage_refs.contains(&def.name) {
+        return false;
+    }
     let Some(def_suffix) = module_suffixes.get(&def.file) else {
         return false;
     };
@@ -217,16 +221,16 @@ fn is_covered_by_import(
 
 fn is_definition_covered(
     def: &CodeDefinition,
-    refs: &HashSet<String>,
     name_files: &HashMap<String, HashSet<PathBuf>>,
     disambiguation: &HashMap<String, PathBuf>,
     import_bindings: &HashMap<String, HashSet<String>>,
     module_suffixes: &HashMap<PathBuf, String>,
+    usage_refs: &HashSet<String>,
 ) -> bool {
-    if is_covered_by_import(def, import_bindings, module_suffixes) {
+    if is_covered_by_import(def, import_bindings, module_suffixes, usage_refs) {
         return true;
     }
-    if refs.contains(&def.name) {
+    if usage_refs.contains(&def.name) {
         let unique = name_files
             .get(&def.name)
             .is_none_or(|f| f.len() <= 1);
@@ -240,7 +244,7 @@ fn is_definition_covered(
         }
     }
     if let Some(ref cls) = def.containing_class {
-        return refs.contains(cls);
+        return usage_refs.contains(cls);
     }
     false
 }
@@ -248,6 +252,7 @@ fn is_definition_covered(
 pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
     let mut definitions = Vec::new();
     let mut test_references = HashSet::new();
+    let mut usage_references = HashSet::new();
     let mut import_bindings: HashMap<String, HashSet<String>> = HashMap::new();
 
     for parsed in parsed_files {
@@ -256,6 +261,11 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
                 parsed.tree.root_node(),
                 &parsed.source,
                 &mut test_references,
+            );
+            collect_usage_references(
+                parsed.tree.root_node(),
+                &parsed.source,
+                &mut usage_references,
             );
             collect_import_bindings(
                 parsed.tree.root_node(),
@@ -288,11 +298,11 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
         .filter(|def| {
             !is_definition_covered(
                 def,
-                &test_references,
                 &name_files,
                 &disambiguation,
                 &import_bindings,
                 &module_suffixes,
+                &usage_references,
             )
         })
         .cloned()
@@ -373,21 +383,29 @@ fn is_test_class(node: Node, source: &str) -> bool {
     get_child_by_field(node, "name", source).is_some_and(|n| n.starts_with("Test"))
 }
 
-fn collect_refs_from_node(node: Node, source: &str, refs: &mut HashSet<String>) {
+fn collect_refs_from_node(
+    node: Node,
+    source: &str,
+    refs: &mut HashSet<String>,
+    include_imports: bool,
+) {
     match node.kind() {
         "call" => {
             if let Some(func) = node.child_by_field_name("function") {
                 collect_call_target(func, source, refs);
             }
         }
-        "import_statement" | "import_from_statement" => collect_import_names(node, source, refs),
-        // Collect type annotations (e.g., `def test_foo(x: MyClass)`, `-> ReturnType`)
+        "import_statement" | "import_from_statement" if include_imports => {
+            collect_import_names(node, source, refs);
+        }
         "type" => collect_type_refs(node, source, refs),
-        // Collect decorator references (e.g., `@my_fixture`)
         "decorator" => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                if child.kind() == "identifier" || child.kind() == "attribute" || child.kind() == "call" {
+                if child.kind() == "identifier"
+                    || child.kind() == "attribute"
+                    || child.kind() == "call"
+                {
                     collect_call_target(child, source, refs);
                 }
             }
@@ -396,7 +414,7 @@ fn collect_refs_from_node(node: Node, source: &str, refs: &mut HashSet<String>) 
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_refs_from_node(child, source, refs);
+        collect_refs_from_node(child, source, refs, include_imports);
     }
 }
 
@@ -418,7 +436,11 @@ fn collect_type_refs(node: Node, source: &str, refs: &mut HashSet<String>) {
 }
 
 fn collect_references(node: Node, source: &str, refs: &mut HashSet<String>) {
-    collect_refs_from_node(node, source, refs);
+    collect_refs_from_node(node, source, refs, true);
+}
+
+fn collect_usage_references(node: Node, source: &str, refs: &mut HashSet<String>) {
+    collect_refs_from_node(node, source, refs, false);
 }
 
 fn collect_call_target(node: Node, source: &str, refs: &mut HashSet<String>) {
@@ -792,6 +814,34 @@ mod tests {
             analysis.unreferenced.is_empty(),
             "relative import should fall back to flat refs and cover helper: unreferenced={:?}",
             analysis.unreferenced.iter().map(|d| &d.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_import_without_call_not_covered() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src = "def some_func():\n    pass\n";
+        let tree = parser.parse(src, None).unwrap();
+        let file = ParsedFile {
+            path: PathBuf::from("mymod.py"),
+            source: src.to_string(),
+            tree,
+        };
+
+        let src_test = "from mymod import some_func\ndef test_it():\n    pass\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_mymod.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file, &file_test]);
+        assert!(
+            !analysis.unreferenced.is_empty(),
+            "some_func should be uncovered (imported but never called)"
         );
     }
 
