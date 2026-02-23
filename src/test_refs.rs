@@ -95,8 +95,14 @@ fn has_test_function_or_class(node: Node, source: &str) -> bool {
     }
 }
 
+pub fn is_in_test_directory(path: &Path) -> bool {
+    use std::ffi::OsStr;
+    path.components()
+        .any(|c| c.as_os_str() == OsStr::new("tests") || c.as_os_str() == OsStr::new("test"))
+}
+
 fn is_python_test_file(parsed: &ParsedFile) -> bool {
-    if is_test_file(&parsed.path) {
+    if is_test_file(&parsed.path) || is_in_test_directory(&parsed.path) {
         return true;
     }
     let root = parsed.tree.root_node();
@@ -104,14 +110,23 @@ fn is_python_test_file(parsed: &ParsedFile) -> bool {
         && has_test_function_or_class(root, &parsed.source)
 }
 
-fn build_name_file_map(definitions: &[CodeDefinition]) -> HashMap<String, HashSet<PathBuf>> {
+pub fn build_name_file_map<'a>(
+    items: impl Iterator<Item = (&'a str, &'a Path)>,
+) -> HashMap<String, HashSet<PathBuf>> {
     let mut map: HashMap<String, HashSet<PathBuf>> = HashMap::new();
-    for def in definitions {
-        map.entry(def.name.clone())
+    for (name, file) in items {
+        map.entry(name.to_string())
             .or_default()
-            .insert(def.file.clone());
+            .insert(file.to_path_buf());
     }
     map
+}
+
+fn file_stem_referenced(def_file: &Path, refs: &HashSet<String>) -> bool {
+    def_file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .is_some_and(|stem| refs.contains(stem))
 }
 
 fn is_definition_covered(
@@ -120,11 +135,16 @@ fn is_definition_covered(
     name_files: &HashMap<String, HashSet<PathBuf>>,
 ) -> bool {
     if refs.contains(&def.name) {
-        let unique = name_files
-            .get(&def.name)
-            .is_none_or(|f| f.len() <= 1);
+        let files = name_files.get(&def.name);
+        let unique = files.is_none_or(|f| f.len() <= 1);
         if unique {
             return true;
+        }
+        if let Some(files) = files {
+            let stems_matching = files.iter().filter(|f| file_stem_referenced(f, refs)).count();
+            if stems_matching == 1 && file_stem_referenced(&def.file, refs) {
+                return true;
+            }
         }
     }
     if let Some(ref cls) = def.containing_class {
@@ -156,7 +176,9 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
         }
     }
 
-    let name_files = build_name_file_map(&definitions);
+    let name_files = build_name_file_map(
+        definitions.iter().map(|d| (d.name.as_str(), d.file.as_path())),
+    );
 
     let unreferenced = definitions
         .iter()
@@ -209,10 +231,6 @@ fn collect_definitions(
                 CodeUnitKind::Function
             };
             try_add_def(node, source, file, defs, kind, class_name.map(String::from));
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                collect_definitions(child, source, file, defs, false, None);
-            }
         }
         "class_definition" => {
             try_add_def(node, source, file, defs, CodeUnitKind::Class, None);
@@ -387,6 +405,16 @@ mod tests {
     }
 
     #[test]
+    fn test_is_in_test_directory() {
+        assert!(is_in_test_directory(Path::new("tests/helpers.py")));
+        assert!(is_in_test_directory(Path::new("tests/unit/helpers.py")));
+        assert!(is_in_test_directory(Path::new("test/helpers.py")));
+        assert!(is_in_test_directory(Path::new("/project/tests/conftest.py")));
+        assert!(!is_in_test_directory(Path::new("src/utils.py")));
+        assert!(!is_in_test_directory(Path::new("testing/utils.py")));
+    }
+
+    #[test]
     fn test_collect_definitions_skips_test_functions() {
         use crate::parsing::create_parser;
         let mut parser = create_parser().unwrap();
@@ -403,5 +431,125 @@ mod tests {
         );
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(names, vec!["helper"]);
+    }
+
+    #[test]
+    fn test_nested_functions_not_tracked_for_coverage() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src = "def outer():\n    def nested_helper():\n        return 42\n    return nested_helper()\n";
+        let tree = parser.parse(src, None).unwrap();
+        let file = ParsedFile {
+            path: PathBuf::from("mymodule.py"),
+            source: src.to_string(),
+            tree,
+        };
+
+        let src_test = "from mymodule import outer\ndef test_outer():\n    outer()\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_mymodule.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file, &file_test]);
+
+        let def_names: Vec<&str> = analysis.definitions.iter().map(|d| d.name.as_str()).collect();
+        assert!(
+            !def_names.contains(&"nested_helper"),
+            "Nested function should not be tracked for coverage, but found: {def_names:?}"
+        );
+    }
+
+    #[test]
+    fn test_file_stem_collision_no_false_positive() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src_utils = "def parse():\n    pass\n";
+        let tree_utils = parser.parse(src_utils, None).unwrap();
+        let file_utils = ParsedFile {
+            path: PathBuf::from("utils.py"),
+            source: src_utils.to_string(),
+            tree: tree_utils,
+        };
+
+        let src_helpers = "def parse():\n    pass\n";
+        let tree_helpers = parser.parse(src_helpers, None).unwrap();
+        let file_helpers = ParsedFile {
+            path: PathBuf::from("helpers.py"),
+            source: src_helpers.to_string(),
+            tree: tree_helpers,
+        };
+
+        let src_test = "from utils import parse\nimport helpers\ndef test_it():\n    parse()\n    helpers.do_stuff()\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_stuff.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file_utils, &file_helpers, &file_test]);
+
+        let unref_files: Vec<&str> = analysis
+            .unreferenced
+            .iter()
+            .map(|d| d.file.to_str().unwrap())
+            .collect();
+        assert!(
+            unref_files.contains(&"helpers.py"),
+            "helpers.parse should be uncovered (test doesn't exercise it): unreferenced={unref_files:?}"
+        );
+    }
+
+    #[test]
+    fn test_same_name_different_files_disambiguated_by_module() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src_a = "def helper():\n    pass\n";
+        let tree_a = parser.parse(src_a, None).unwrap();
+        let file_a = ParsedFile {
+            path: PathBuf::from("alpha.py"),
+            source: src_a.to_string(),
+            tree: tree_a,
+        };
+
+        let src_b = "def helper():\n    pass\n";
+        let tree_b = parser.parse(src_b, None).unwrap();
+        let file_b = ParsedFile {
+            path: PathBuf::from("beta.py"),
+            source: src_b.to_string(),
+            tree: tree_b,
+        };
+
+        let src_test = "from alpha import helper\ndef test_it():\n    helper()\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_alpha.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file_a, &file_b, &file_test]);
+
+        assert_eq!(analysis.definitions.len(), 2, "both files define helper()");
+
+        let unref_files: Vec<&str> = analysis
+            .unreferenced
+            .iter()
+            .map(|d| d.file.to_str().unwrap())
+            .collect();
+        assert!(
+            !unref_files.contains(&"alpha.py"),
+            "alpha.helper should be covered (test imports from alpha)"
+        );
+        assert!(
+            unref_files.contains(&"beta.py"),
+            "beta.helper should be uncovered (no test references beta)"
+        );
     }
 }

@@ -1,6 +1,6 @@
 use crate::rust_parsing::ParsedRustFile;
 use crate::units::CodeUnitKind;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use syn::visit::Visit;
 use syn::{Attribute, Expr, ImplItem, Item};
@@ -35,7 +35,9 @@ fn has_test_naming_pattern(path: &Path) -> bool {
 
 #[must_use]
 pub fn is_rust_test_file(path: &Path) -> bool {
-    is_rs_file(path) && has_test_naming_pattern(path)
+    is_rs_file(path)
+        && (has_test_naming_pattern(path)
+            || crate::test_refs::is_in_test_directory(path))
 }
 
 fn has_test_attribute(attrs: &[Attribute]) -> bool {
@@ -80,17 +82,43 @@ fn has_cfg_test_attribute(attrs: &[Attribute]) -> bool {
     })
 }
 
-fn is_directly_referenced(def: &RustCodeDefinition, refs: &HashSet<String>) -> bool {
-    refs.contains(&def.name)
+fn is_directly_referenced(
+    def: &RustCodeDefinition,
+    refs: &HashSet<String>,
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+) -> bool {
+    if !refs.contains(&def.name) {
+        return false;
+    }
+    let files = name_files.get(&def.name);
+    let unique = files.is_none_or(|f| f.len() <= 1);
+    if unique {
+        return true;
+    }
+    let stem_matches = |f: &Path| {
+        f.file_stem()
+            .and_then(|s| s.to_str())
+            .is_some_and(|stem| refs.contains(stem))
+    };
+    if let Some(files) = files {
+        let matching = files.iter().filter(|f| stem_matches(f)).count();
+        return matching == 1 && stem_matches(&def.file);
+    }
+    false
 }
 
-fn is_trait_impl_with_referenced_type(def: &RustCodeDefinition, refs: &HashSet<String>) -> bool {
-    def.kind == CodeUnitKind::TraitImplMethod
+fn is_impl_with_referenced_type(def: &RustCodeDefinition, refs: &HashSet<String>) -> bool {
+    matches!(def.kind, CodeUnitKind::TraitImplMethod | CodeUnitKind::Method)
         && def.impl_for_type.as_ref().is_some_and(|t| refs.contains(t))
 }
 
-fn is_covered_by_tests(def: &RustCodeDefinition, refs: &HashSet<String>) -> bool {
-    is_directly_referenced(def, refs) || is_trait_impl_with_referenced_type(def, refs)
+fn is_covered_by_tests(
+    def: &RustCodeDefinition,
+    refs: &HashSet<String>,
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+) -> bool {
+    is_directly_referenced(def, refs, name_files)
+        || is_impl_with_referenced_type(def, refs)
 }
 
 pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAnalysis {
@@ -104,9 +132,12 @@ pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAn
             collect_test_module_references(&parsed.ast, &mut test_references);
         }
     }
+    let name_files = crate::test_refs::build_name_file_map(
+        definitions.iter().map(|d| (d.name.as_str(), d.file.as_path())),
+    );
     let unreferenced = definitions
         .iter()
-        .filter(|d| !is_covered_by_tests(d, &test_references))
+        .filter(|d| !is_covered_by_tests(d, &test_references, &name_files))
         .cloned()
         .collect();
     RustTestRefAnalysis {
@@ -168,7 +199,7 @@ fn collect_impl_methods(
             let (kind, impl_for) = if is_trait_impl {
                 (CodeUnitKind::TraitImplMethod, impl_type_name.clone())
             } else {
-                (CodeUnitKind::Method, None)
+                (CodeUnitKind::Method, impl_type_name.clone())
             };
             try_add_def(
                 defs,
@@ -460,7 +491,7 @@ mod tests {
             impl_for_type: Some("MyType".into()),
         };
         let refs: HashSet<String> = ["MyType", "foo"].into_iter().map(String::from).collect();
-        assert!(is_trait_impl_with_referenced_type(&def, &refs));
+        assert!(is_impl_with_referenced_type(&def, &refs));
         let def2 = RustCodeDefinition {
             name: "foo".into(),
             kind: CodeUnitKind::Function,
@@ -468,8 +499,12 @@ mod tests {
             line: 1,
             impl_for_type: None,
         };
-        assert!(is_directly_referenced(&def2, &refs));
-        assert!(is_covered_by_tests(&def, &refs));
+        let all_definitions = [def.clone(), def2.clone()];
+        let name_files = crate::test_refs::build_name_file_map(
+            all_definitions.iter().map(|d| (d.name.as_str(), d.file.as_path())),
+        );
+        assert!(is_directly_referenced(&def2, &refs, &name_files));
+        assert!(is_covered_by_tests(&def, &refs, &name_files));
         assert!(is_external_crate("std") && !is_external_crate("my_module"));
         let p: syn::Path = syn::parse_str("std::io").unwrap();
         assert!(starts_with_external_crate(&p));
@@ -533,6 +568,92 @@ mod tests {
         assert!(
             is_external_crate("itertools"),
             "itertools should be recognized as external crate"
+        );
+    }
+
+    #[test]
+    fn test_same_name_different_files_disambiguated_by_module() {
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        let alpha_path = tmp.path().join("alpha.rs");
+        std::fs::write(&alpha_path, "pub fn helper() {}").unwrap();
+
+        let beta_path = tmp.path().join("beta.rs");
+        std::fs::write(&beta_path, "pub fn helper() {}").unwrap();
+
+        let test_path = tmp.path().join("test_alpha.rs");
+        std::fs::write(&test_path, "fn t() { alpha::helper(); }").unwrap();
+
+        let parsed_alpha = parse_rust_file(&alpha_path).unwrap();
+        let parsed_beta = parse_rust_file(&beta_path).unwrap();
+        let parsed_test = parse_rust_file(&test_path).unwrap();
+
+        let analysis =
+            analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test]);
+
+        assert_eq!(
+            analysis.definitions.len(),
+            2,
+            "both files define helper()"
+        );
+
+        let alpha_uncovered = analysis
+            .unreferenced
+            .iter()
+            .any(|d| d.file == alpha_path);
+        assert!(
+            !alpha_uncovered,
+            "alpha::helper should be covered (test imports from alpha)"
+        );
+
+        let beta_uncovered = analysis
+            .unreferenced
+            .iter()
+            .any(|d| d.file == beta_path);
+        assert!(
+            beta_uncovered,
+            "beta::helper should be uncovered (no test references beta)"
+        );
+    }
+
+    #[test]
+    fn test_impl_method_covered_when_type_referenced() {
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        let alpha_path = tmp.path().join("alpha.rs");
+        std::fs::write(
+            &alpha_path,
+            "pub struct Foo {}\nimpl Foo {\n    pub fn new() -> Self { Foo {} }\n}\n",
+        )
+        .unwrap();
+
+        let beta_path = tmp.path().join("beta.rs");
+        std::fs::write(
+            &beta_path,
+            "pub struct Bar {}\nimpl Bar {\n    pub fn new() -> Self { Bar {} }\n}\n",
+        )
+        .unwrap();
+
+        let test_path = tmp.path().join("test_alpha.rs");
+        std::fs::write(&test_path, "fn t() { let _f = Foo::new(); }").unwrap();
+
+        let parsed_alpha = parse_rust_file(&alpha_path).unwrap();
+        let parsed_beta = parse_rust_file(&beta_path).unwrap();
+        let parsed_test = parse_rust_file(&test_path).unwrap();
+
+        let analysis = analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test]);
+
+        let uncovered: Vec<_> = analysis
+            .unreferenced
+            .iter()
+            .map(|d| (d.name.as_str(), d.file.to_str().unwrap()))
+            .collect();
+        assert!(
+            !analysis
+                .unreferenced
+                .iter()
+                .any(|d| d.name == "new" && d.file == alpha_path),
+            "Foo::new should be covered (test calls Foo::new()), but unreferenced: {uncovered:?}"
         );
     }
 
