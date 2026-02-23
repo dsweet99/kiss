@@ -337,6 +337,34 @@ fn try_add_def(
     }
 }
 
+fn is_protocol_class(node: Node, source: &str) -> bool {
+    let Some(superclasses) = node.child_by_field_name("superclasses") else {
+        return false;
+    };
+    let mut cursor = superclasses.walk();
+    for child in superclasses.children(&mut cursor) {
+        let text = &source[child.start_byte()..child.end_byte()];
+        if text == "Protocol" || text == "typing.Protocol" {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_abstract_method(node: Node, source: &str) -> bool {
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+    if parent.kind() != "decorated_definition" {
+        return false;
+    }
+    let mut cursor = parent.walk();
+    parent.children(&mut cursor).any(|child| {
+        child.kind() == "decorator"
+            && source[child.start_byte()..child.end_byte()].ends_with("abstractmethod")
+    })
+}
+
 fn collect_definitions(
     node: Node,
     source: &str,
@@ -346,6 +374,8 @@ fn collect_definitions(
     class_name: Option<&str>,
 ) {
     match node.kind() {
+        "function_definition" | "async_function_definition"
+            if is_abstract_method(node, source) => {}
         "function_definition" | "async_function_definition" => {
             let kind = if inside_class {
                 CodeUnitKind::Method
@@ -354,6 +384,7 @@ fn collect_definitions(
             };
             try_add_def(node, source, file, defs, kind, class_name.map(String::from));
         }
+        "class_definition" if is_protocol_class(node, source) => {}
         "class_definition" => {
             try_add_def(node, source, file, defs, CodeUnitKind::Class, None);
             let name = get_child_by_field(node, "name", source);
@@ -395,8 +426,12 @@ fn collect_refs_from_node(
                 collect_call_target(func, source, refs);
             }
         }
-        "import_statement" | "import_from_statement" if include_imports => {
-            collect_import_names(node, source, refs);
+        "import_statement" | "import_from_statement" => {
+            if include_imports {
+                collect_import_names(node, source, refs);
+            } else {
+                return;
+            }
         }
         "type" => collect_type_refs(node, source, refs),
         "decorator" => {
@@ -409,6 +444,9 @@ fn collect_refs_from_node(
                     collect_call_target(child, source, refs);
                 }
             }
+        }
+        "identifier" if !include_imports => {
+            insert_identifier(node, source, refs);
         }
         _ => {}
     }
@@ -842,6 +880,138 @@ mod tests {
         assert!(
             !analysis.unreferenced.is_empty(),
             "some_func should be uncovered (imported but never called)"
+        );
+    }
+
+    #[test]
+    fn test_import_with_call_is_covered() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src = "def some_func():\n    pass\n";
+        let tree = parser.parse(src, None).unwrap();
+        let file = ParsedFile {
+            path: PathBuf::from("mymod.py"),
+            source: src.to_string(),
+            tree,
+        };
+
+        let src_test = "from mymod import some_func\ndef test_it():\n    some_func()\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_mymod.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file, &file_test]);
+        assert!(
+            analysis.unreferenced.is_empty(),
+            "some_func should be covered (imported AND called): unreferenced={:?}",
+            analysis.unreferenced.iter().map(|d| &d.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_class_import_without_use_not_covered() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src = "class MyClass:\n    def __init__(self):\n        pass\n    def process(self):\n        pass\n";
+        let tree = parser.parse(src, None).unwrap();
+        let file = ParsedFile {
+            path: PathBuf::from("mymod.py"),
+            source: src.to_string(),
+            tree,
+        };
+
+        let src_test = "from mymod import MyClass\ndef test_it():\n    pass\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_mymod.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let unref_names: Vec<&str> = analysis
+            .unreferenced
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
+        assert!(
+            unref_names.contains(&"__init__"),
+            "MyClass.__init__ should be uncovered (class imported but never used): unreferenced={unref_names:?}"
+        );
+        assert!(
+            unref_names.contains(&"process"),
+            "MyClass.process should be uncovered (class imported but never used): unreferenced={unref_names:?}"
+        );
+    }
+
+    #[test]
+    fn test_protocol_class_excluded_from_coverage() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src = "from typing import Protocol\n\nclass Readable(Protocol):\n    def read(self) -> str: ...\n";
+        let tree = parser.parse(src, None).unwrap();
+        let file = ParsedFile {
+            path: PathBuf::from("interfaces.py"),
+            source: src.to_string(),
+            tree,
+        };
+
+        let src_test = "def test_placeholder():\n    pass\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_interfaces.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let def_names: Vec<&str> = analysis.definitions.iter().map(|d| d.name.as_str()).collect();
+        assert!(
+            !def_names.contains(&"Readable"),
+            "Protocol class should not be tracked for coverage: definitions={def_names:?}"
+        );
+        assert!(
+            !def_names.contains(&"read"),
+            "Protocol method should not be tracked for coverage: definitions={def_names:?}"
+        );
+    }
+
+    #[test]
+    fn test_abstract_methods_excluded_from_coverage() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src = "from abc import ABC, abstractmethod\n\nclass MyBase(ABC):\n    @abstractmethod\n    def process(self):\n        pass\n\n    def concrete(self):\n        return 42\n";
+        let tree = parser.parse(src, None).unwrap();
+        let file = ParsedFile {
+            path: PathBuf::from("base.py"),
+            source: src.to_string(),
+            tree,
+        };
+
+        let src_test = "def test_placeholder():\n    pass\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_base.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let def_names: Vec<&str> = analysis.definitions.iter().map(|d| d.name.as_str()).collect();
+        assert!(
+            !def_names.contains(&"process"),
+            "Abstract method should not be tracked for coverage: definitions={def_names:?}"
+        );
+        assert!(
+            def_names.contains(&"concrete"),
+            "Concrete method should still be tracked: definitions={def_names:?}"
         );
     }
 
