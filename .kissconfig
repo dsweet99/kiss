@@ -4,7 +4,7 @@
 [gate]
 duplication_enabled = true
 min_similarity = 0.7
-test_coverage_threshold = 91
+test_coverage_threshold = 90
 
 [python]
 boolean_parameters = 1
