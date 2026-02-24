@@ -121,6 +121,14 @@ fn collect_detailed_from_node(node: Node, source: &str, file: &str, units: &mut 
                 .and_then(|n| n.utf8_text(source.as_bytes()).ok())
                 .unwrap_or("?");
             let m = compute_function_metrics(node, source);
+            if m.has_error {
+                // Skip functions with parse errors — metrics are unreliable
+                let mut c = node.walk();
+                for child in node.children(&mut c) {
+                    collect_detailed_from_node(child, source, file, units);
+                }
+                return;
+            }
             units.push(UnitMetrics {
                 file: file.to_string(),
                 name: name.to_string(),

@@ -59,7 +59,7 @@ fn bug_orphan_module_should_not_flag_crate_use_imports_in_rust() {
 
     let parsed: Vec<&ParsedRustFile> = vec![&lib, &importer, &target];
     let g = build_rust_dependency_graph(&parsed);
-    let viols = analyze_graph(&g, &Config::rust_defaults());
+    let viols = analyze_graph(&g, &Config::rust_defaults(), true);
 
     assert!(
         !viols.iter().any(|v| v.metric == "orphan_module" && v.unit_name == "orphan_crate_use_target"),
@@ -95,7 +95,7 @@ fn bug_orphan_module_should_not_flag_include_macro_in_rust() {
 
     let parsed: Vec<&ParsedRustFile> = vec![&lib, &target];
     let g = build_rust_dependency_graph(&parsed);
-    let viols = analyze_graph(&g, &Config::rust_defaults());
+    let viols = analyze_graph(&g, &Config::rust_defaults(), true);
 
     assert!(
         !viols.iter().any(|v| v.metric == "orphan_module" && v.unit_name == "orphan_include_target"),

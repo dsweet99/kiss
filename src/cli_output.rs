@@ -85,8 +85,12 @@ pub fn print_coverage_gate_failure(
 }
 
 pub fn print_violations(viols: &[Violation]) {
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut w = std::io::BufWriter::new(stdout.lock());
     for v in viols {
-        println!(
+        let _ = writeln!(
+            w,
             "VIOLATION:{}:{}:{}:{}: {} {}",
             v.metric,
             v.file.display(),
@@ -105,11 +109,14 @@ pub fn print_final_status(has_violations: bool) {
 }
 
 pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
+    use std::io::Write;
     let suggestion = if lang == "Rust" {
         "Extract into a shared function, or use traits/generics."
     } else {
         "Extract common code into a shared function."
     };
+    let stdout = std::io::stdout();
+    let mut w = std::io::BufWriter::new(stdout.lock());
     for c in clusters {
         if let Some(first) = c.chunks.first() {
             let locations: Vec<String> = c
@@ -117,7 +124,8 @@ pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
                 .iter()
                 .map(|ch| format!("{}:{}-{}", ch.file.display(), ch.start_line, ch.end_line))
                 .collect();
-            println!(
+            let _ = writeln!(
+                w,
                 "VIOLATION:duplication:{}:{}:{}: {:.0}% similar, {} copies: [{}]. {}",
                 first.file.display(),
                 first.start_line,

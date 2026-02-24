@@ -176,18 +176,56 @@ fn is_orphan(metrics: &ModuleGraphMetrics, module_name: &str) -> bool {
     metrics.fan_in == 0 && metrics.fan_out == 0 && !is_entry_point(module_name)
 }
 
+/// Build a map from path → list of module names that share that path.
+/// Used to suppress phantom orphans when the same file has multiple module names.
+fn path_dedup_set(graph: &DependencyGraph) -> HashMap<PathBuf, Vec<String>> {
+    let mut map: HashMap<PathBuf, Vec<String>> = HashMap::new();
+    for (name, path) in &graph.paths {
+        map.entry(path.clone()).or_default().push(name.clone());
+    }
+    map
+}
+
+/// Returns true if another module name sharing the same path has edges (non-orphan).
+fn is_path_covered_by_another(
+    graph: &DependencyGraph,
+    module_name: &str,
+    path_groups: &HashMap<PathBuf, Vec<String>>,
+) -> bool {
+    let Some(path) = graph.paths.get(module_name) else {
+        return false;
+    };
+    let Some(siblings) = path_groups.get(path) else {
+        return false;
+    };
+    siblings.len() > 1
+        && siblings.iter().any(|sibling| {
+            sibling != module_name && {
+                let m = graph.module_metrics(sibling);
+                m.fan_in > 0 || m.fan_out > 0
+            }
+        })
+}
+
 #[must_use]
-pub fn analyze_graph(graph: &DependencyGraph, config: &Config) -> Vec<Violation> {
+pub fn analyze_graph(
+    graph: &DependencyGraph,
+    config: &Config,
+    orphan_module_enabled: bool,
+) -> Vec<Violation> {
     let mut violations = Vec::new();
+    let seen_paths = path_dedup_set(graph);
     for module_name in graph.nodes.keys() {
         if !graph.paths.contains_key(module_name) {
             continue;
         }
         let metrics = graph.module_metrics(module_name);
 
-        if !is_test_module(graph, module_name)
+        if orphan_module_enabled
+            && !is_test_module(graph, module_name)
             && !is_init_module(graph, module_name)
             && is_orphan(&metrics, module_name)
+            && !is_path_covered_by_another(graph, module_name, &seen_paths)
         {
             violations.push(Violation {
                 file: get_module_path(graph, module_name),

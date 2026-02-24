@@ -1,5 +1,6 @@
 use crate::parsing::ParsedFile;
 use crate::units::{CodeUnitKind, get_child_by_field};
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tree_sitter::Node;
@@ -250,39 +251,67 @@ fn is_definition_covered(
 }
 
 pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
-    let mut definitions = Vec::new();
-    let mut test_references = HashSet::new();
-    let mut usage_references = HashSet::new();
-    let mut import_bindings: HashMap<String, HashSet<String>> = HashMap::new();
-
-    for parsed in parsed_files {
-        if is_python_test_file(parsed) {
-            collect_references(
-                parsed.tree.root_node(),
-                &parsed.source,
-                &mut test_references,
-            );
-            collect_usage_references(
-                parsed.tree.root_node(),
-                &parsed.source,
-                &mut usage_references,
-            );
-            collect_import_bindings(
-                parsed.tree.root_node(),
-                &parsed.source,
-                &mut import_bindings,
-            );
-        } else {
-            collect_definitions(
-                parsed.tree.root_node(),
-                &parsed.source,
-                &parsed.path,
-                &mut definitions,
-                false,
-                None,
-            );
-        }
+    struct PerFileResult {
+        definitions: Vec<CodeDefinition>,
+        test_references: HashSet<String>,
+        usage_references: HashSet<String>,
+        import_bindings: HashMap<String, HashSet<String>>,
     }
+
+    let (definitions, test_references, usage_references, import_bindings) = parsed_files
+        .par_iter()
+        .map(|parsed| {
+            let mut r = PerFileResult {
+                definitions: Vec::new(),
+                test_references: HashSet::new(),
+                usage_references: HashSet::new(),
+                import_bindings: HashMap::new(),
+            };
+            if is_python_test_file(parsed) {
+                collect_all_test_file_data(parsed.tree.root_node(), &parsed.source, &mut r.test_references, &mut r.usage_references, &mut r.import_bindings);
+            } else {
+                collect_definitions(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut r.definitions, false, None);
+            }
+            r
+        })
+        .fold(
+            || {
+                (
+                    Vec::<CodeDefinition>::new(),
+                    HashSet::<String>::new(),
+                    HashSet::<String>::new(),
+                    HashMap::<String, HashSet<String>>::new(),
+                )
+            },
+            |(mut defs, mut t_refs, mut u_refs, mut i_binds), r| {
+                defs.extend(r.definitions);
+                t_refs.extend(r.test_references);
+                u_refs.extend(r.usage_references);
+                for (module, names) in r.import_bindings {
+                    i_binds.entry(module).or_default().extend(names);
+                }
+                (defs, t_refs, u_refs, i_binds)
+            },
+        )
+        .reduce(
+            || {
+                (
+                    Vec::<CodeDefinition>::new(),
+                    HashSet::<String>::new(),
+                    HashSet::<String>::new(),
+                    HashMap::<String, HashSet<String>>::new(),
+                )
+            },
+            |(mut defs, mut t_refs, mut u_refs, mut i_binds), (defs2, t_refs2, u_refs2, i_binds2)| {
+                defs.extend(defs2);
+                t_refs.extend(t_refs2);
+                u_refs.extend(u_refs2);
+                for (module, names) in i_binds2 {
+                    i_binds.entry(module).or_default().extend(names);
+                }
+                (defs, t_refs, u_refs, i_binds)
+            },
+        );
 
     let name_files = build_name_file_map(
         definitions.iter().map(|d| (d.name.as_str(), d.file.as_path())),
@@ -414,26 +443,34 @@ fn is_test_class(node: Node, source: &str) -> bool {
     get_child_by_field(node, "name", source).is_some_and(|n| n.starts_with("Test"))
 }
 
-fn collect_refs_from_node(
+fn collect_all_test_file_data(
     node: Node,
     source: &str,
-    refs: &mut HashSet<String>,
-    include_imports: bool,
+    test_refs: &mut HashSet<String>,
+    usage_refs: &mut HashSet<String>,
+    import_bindings: &mut HashMap<String, HashSet<String>>,
 ) {
     match node.kind() {
         "call" => {
             if let Some(func) = node.child_by_field_name("function") {
-                collect_call_target(func, source, refs);
+                collect_call_target(func, source, test_refs);
+                collect_call_target(func, source, usage_refs);
             }
         }
-        "import_statement" | "import_from_statement" => {
-            if include_imports {
-                collect_import_names(node, source, refs);
-            } else {
-                return;
-            }
+        "import_from_statement" => {
+            collect_import_names(node, source, test_refs);
+            extract_import_from_binding(node, source, import_bindings);
+            return;
         }
-        "type" => collect_type_refs(node, source, refs),
+        "import_statement" => {
+            collect_import_names(node, source, test_refs);
+            return;
+        }
+        "type" => {
+            collect_type_refs(node, source, test_refs);
+            collect_type_refs(node, source, usage_refs);
+            return;
+        }
         "decorator" => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
@@ -441,18 +478,19 @@ fn collect_refs_from_node(
                     || child.kind() == "attribute"
                     || child.kind() == "call"
                 {
-                    collect_call_target(child, source, refs);
+                    collect_call_target(child, source, test_refs);
+                    collect_call_target(child, source, usage_refs);
                 }
             }
         }
-        "identifier" if !include_imports => {
-            insert_identifier(node, source, refs);
+        "identifier" => {
+            insert_identifier(node, source, usage_refs);
         }
         _ => {}
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_refs_from_node(child, source, refs, include_imports);
+        collect_all_test_file_data(child, source, test_refs, usage_refs, import_bindings);
     }
 }
 
@@ -473,13 +511,6 @@ fn collect_type_refs(node: Node, source: &str, refs: &mut HashSet<String>) {
     }
 }
 
-fn collect_references(node: Node, source: &str, refs: &mut HashSet<String>) {
-    collect_refs_from_node(node, source, refs, true);
-}
-
-fn collect_usage_references(node: Node, source: &str, refs: &mut HashSet<String>) {
-    collect_refs_from_node(node, source, refs, false);
-}
 
 fn collect_call_target(node: Node, source: &str, refs: &mut HashSet<String>) {
     match node.kind() {
@@ -493,20 +524,6 @@ fn collect_call_target(node: Node, source: &str, refs: &mut HashSet<String>) {
             }
         }
         _ => {}
-    }
-}
-
-fn collect_import_bindings(
-    node: Node,
-    source: &str,
-    bindings: &mut HashMap<String, HashSet<String>>,
-) {
-    if node.kind() == "import_from_statement" {
-        extract_import_from_binding(node, source, bindings);
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_import_bindings(child, source, bindings);
     }
 }
 

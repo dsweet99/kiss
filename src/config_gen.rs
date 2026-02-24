@@ -189,7 +189,8 @@ pub fn generate_config_toml_by_language(
         gate.test_coverage_threshold
     );
     let _ = writeln!(out, "min_similarity = {}", gate.min_similarity);
-    let _ = writeln!(out, "duplication_enabled = {}\n", gate.duplication_enabled);
+    let _ = writeln!(out, "duplication_enabled = {}", gate.duplication_enabled);
+    let _ = writeln!(out, "orphan_module_enabled = {}\n", gate.orphan_module_enabled);
     if py_n > 0 {
         append_section(
             &mut out,

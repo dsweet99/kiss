@@ -21,6 +21,8 @@ pub struct FunctionMetrics {
     pub decorators: usize,
     pub max_return_values: usize,
     pub calls: usize,
+    /// True if the function's AST contains ERROR or MISSING nodes from parse recovery
+    pub has_error: bool,
 }
 
 #[derive(Debug, Default)]
@@ -60,6 +62,7 @@ pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
     }
     m.nested_function_depth = compute_nested_function_depth(node, 0);
     m.decorators = count_decorators(node);
+    m.has_error = node.has_error();
     m
 }
 
