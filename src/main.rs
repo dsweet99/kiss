@@ -487,6 +487,9 @@ fn print_all_top_metrics(units: &[kiss::UnitMetrics], n: usize) {
         ("returns_per_function", |u| {
             u.returns
         }),
+        ("return_values_per_function", |u| {
+            u.return_values
+        }),
         (
             "local_variables_per_function",
             |u| u.locals,
