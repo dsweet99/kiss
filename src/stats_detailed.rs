@@ -370,6 +370,8 @@ pub fn truncate(s: &str, max: usize) -> String {
     let char_count = s.chars().count();
     if char_count <= max {
         s.to_string()
+    } else if max < 3 {
+        s.chars().take(max).collect()
     } else {
         let skip = char_count - (max - 3);
         format!("...{}", s.chars().skip(skip).collect::<String>())

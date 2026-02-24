@@ -354,7 +354,10 @@ pub fn run_dry(
     let mut pairs = detect_duplicates_from_chunks(&chunks, config);
 
     if !filter_files.is_empty() {
-        let filters: HashSet<PathBuf> = filter_files.iter().map(PathBuf::from).collect();
+        let filters: HashSet<PathBuf> = filter_files
+            .iter()
+            .map(|f| Path::new(f).canonicalize().unwrap_or_else(|_| PathBuf::from(f)))
+            .collect();
         pairs.retain(|p| filters.contains(&p.chunk1.file) || filters.contains(&p.chunk2.file));
     }
 

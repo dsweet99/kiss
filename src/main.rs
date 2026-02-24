@@ -470,10 +470,14 @@ fn collect_all_units(py_files: &[PathBuf], rs_files: &[PathBuf]) -> Vec<kiss::Un
 
     let mut all_units = Vec::new();
     if !py_files.is_empty() {
-        let results = parse_files(py_files).expect("parse files");
-        let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-        let graph = build_dependency_graph(&parsed);
-        all_units.extend(collect_detailed_py(&parsed, Some(&graph)));
+        match parse_files(py_files) {
+            Ok(results) => {
+                let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+                let graph = build_dependency_graph(&parsed);
+                all_units.extend(collect_detailed_py(&parsed, Some(&graph)));
+            }
+            Err(e) => eprintln!("error: failed to parse Python files: {e}"),
+        }
     }
     if !rs_files.is_empty() {
         let results = parse_rust_files(rs_files);
@@ -581,16 +585,20 @@ fn run_stats_table(paths: &[String], lang_filter: Option<Language>, ignore: &[St
         config_provenance()
     );
     if !py_files.is_empty() {
-        let results = parse_files(&py_files).expect("parse files");
-        let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-        let graph = build_dependency_graph(&parsed);
-        let units = collect_detailed_py(&parsed, Some(&graph));
-        println!(
-            "=== Python ({} files, {} units) ===\n{}",
-            py_files.len(),
-            units.len(),
-            format_detailed_table(&units)
-        );
+        match parse_files(&py_files) {
+            Ok(results) => {
+                let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+                let graph = build_dependency_graph(&parsed);
+                let units = collect_detailed_py(&parsed, Some(&graph));
+                println!(
+                    "=== Python ({} files, {} units) ===\n{}",
+                    py_files.len(),
+                    units.len(),
+                    format_detailed_table(&units)
+                );
+            }
+            Err(e) => eprintln!("error: failed to parse Python files: {e}"),
+        }
     }
     if !rs_files.is_empty() {
         let results = parse_rust_files(&rs_files);
