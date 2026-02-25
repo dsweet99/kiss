@@ -13,7 +13,7 @@ fn first_func(p: &ParsedFile) -> tree_sitter::Node<'_> {
 }
 
 /// Bug H1: kiss should not report metrics for functions whose AST contains
-/// ERROR nodes. The `has_error` flag on FunctionMetrics should be set so
+/// ERROR nodes. The `has_error` flag on `FunctionMetrics` should be set so
 /// callers can skip unreliable results.
 #[test]
 fn function_with_syntax_error_sets_has_error_flag() {
@@ -57,9 +57,7 @@ fn error_functions_excluded_from_violation_counts() {
     // The function has errors, so push_py_fn_metrics should skip it
     let stats = MetricStats::default();
     // Only push if not errored — this is the behavior we're testing
-    if !m.has_error {
-        panic!("has_error should be true for broken function — fix not applied yet");
-    }
+    assert!(m.has_error, "has_error should be true for broken function — fix not applied yet");
     // If has_error is true, stats should remain empty
     assert!(
         stats.statements_per_function.is_empty(),

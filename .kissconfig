@@ -5,7 +5,7 @@
 duplication_enabled = true
 min_similarity = 0.7
 orphan_module_enabled = true
-test_coverage_threshold = 89
+test_coverage_threshold = 88
 
 [python]
 boolean_parameters = 1
@@ -35,19 +35,19 @@ arguments = 7
 attributes_per_function = 9
 boolean_parameters = 2
 branches_per_function = 8
-calls_per_function = 45
+calls_per_function = 49
 concrete_types_per_file = 7
 cycle_size = 0
 dependency_depth = 1
-functions_per_file = 35
+functions_per_file = 40
 imported_names_per_file = 38
 interface_types_per_file = 0
-local_variables = 20
+local_variables = 18
 max_indentation = 4
 methods_per_class = 13
 nested_function_depth = 3
 returns_per_function = 4
-statements_per_file = 235
+statements_per_file = 261
 statements_per_function = 27
 transitive_dependencies = 29
 

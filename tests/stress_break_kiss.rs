@@ -5,6 +5,7 @@ use kiss::minhash::{
 use kiss::parsing::{create_parser, parse_file};
 use kiss::py_metrics::{compute_function_metrics, compute_file_metrics};
 use kiss::{extract_chunks_for_duplication, Config};
+use std::fmt::Write as _;
 use std::io::Write;
 
 fn parse(code: &str) -> kiss::ParsedFile {
@@ -155,7 +156,7 @@ fn h2_single_variable_rename_drops_similarity() {
 fn h3_function_with_1000_statements() {
     let mut code = String::from("def mega():\n");
     for i in 0..1000 {
-        code.push_str(&format!("    x_{i} = {i}\n"));
+        let _ = writeln!(code, "    x_{i} = {i}");
     }
     code.push_str("    return x_0\n");
 
@@ -177,10 +178,10 @@ fn h3_deeply_nested_indentation() {
     let mut code = String::from("def deep():\n");
     let mut indent = String::from("    ");
     for i in 0..50 {
-        code.push_str(&format!("{indent}if x_{i}:\n"));
+        let _ = writeln!(code, "{indent}if x_{i}:");
         indent.push_str("    ");
     }
-    code.push_str(&format!("{indent}return 1\n"));
+    let _ = writeln!(code, "{indent}return 1");
 
     let p = parse(&code);
     let func = get_func_node(&p);
@@ -196,7 +197,7 @@ fn h3_deeply_nested_indentation() {
 fn h3_function_with_100_return_statements() {
     let mut code = String::from("def many_returns(x):\n");
     for i in 0..100 {
-        code.push_str(&format!("    if x == {i}:\n        return {i}\n"));
+        let _ = writeln!(code, "    if x == {i}:\n        return {i}");
     }
 
     let p = parse(&code);
@@ -210,7 +211,7 @@ fn h3_function_with_100_return_statements() {
 fn h3_file_with_500_functions() {
     let mut code = String::new();
     for i in 0..500 {
-        code.push_str(&format!("def f_{i}():\n    return {i}\n\n"));
+        let _ = write!(code, "def f_{i}():\n    return {i}\n\n");
     }
 
     let p = parse(&code);
@@ -261,9 +262,8 @@ fn h4_fully_connected_graph_100_nodes() {
     );
 
     // Should produce cycle violations (one giant SCC)
-    let cycle_viols: Vec<_> = viols.iter().filter(|v| v.metric == "cycle_size").collect();
     assert!(
-        !cycle_viols.is_empty(),
+        viols.iter().any(|v| v.metric == "cycle_size"),
         "Fully connected graph should have cycle violations"
     );
 }
@@ -403,9 +403,10 @@ fn h2_duplication_pipeline_with_near_identical_functions() {
     // 20 functions that differ only by a number — all should cluster together
     let mut code = String::new();
     for i in 0..20 {
-        code.push_str(&format!(
+        let _ = write!(
+            code,
             "def func_{i}(data):\n    result = process(data, {i})\n    validated = check(result)\n    transformed = convert(validated)\n    output = finalize(transformed)\n    return output\n\n"
-        ));
+        );
     }
 
     let p = parse(&code);
