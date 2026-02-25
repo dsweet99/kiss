@@ -164,12 +164,32 @@ enum Commands {
 }
 
 fn main() {
+    let t0 = std::time::Instant::now();
     set_sigpipe_default();
+    let exit_code = run();
+    let d = t0.elapsed();
+    if d.as_secs() >= 1 {
+        eprintln!("kiss: {:.2}s", d.as_secs_f64());
+    } else {
+        eprintln!("kiss: {}ms", d.as_millis());
+    }
+    std::process::exit(exit_code);
+}
+
+fn run() -> i32 {
     let cli = Cli::parse();
     ensure_default_config_exists();
     let (py_config, rs_config) = load_configs(cli.config.as_ref(), cli.defaults);
     let gate_config = load_gate_config(cli.config.as_ref(), cli.defaults);
+    dispatch(cli, &py_config, &rs_config, &gate_config)
+}
 
+fn dispatch(
+    cli: Cli,
+    py_config: &kiss::Config,
+    rs_config: &kiss::Config,
+    gate_config: &kiss::GateConfig,
+) -> i32 {
     match cli.command {
         Commands::Check {
             paths,
@@ -180,17 +200,14 @@ fn main() {
             let args = CheckCommandArgs {
                 paths: &paths,
                 lang_filter: cli.lang,
-                py_config: &py_config,
-                rs_config: &rs_config,
-                gate_config: &gate_config,
+                py_config,
+                rs_config,
+                gate_config,
                 bypass_gate: all,
                 ignore: &ignore,
                 timing,
             };
-            let exit_code = run_check_command(&args);
-            if exit_code != 0 {
-                std::process::exit(exit_code);
-            }
+            run_check_command(&args)
         }
         Commands::Stats {
             paths,
@@ -200,10 +217,12 @@ fn main() {
         } => {
             let ignore = normalize_ignore_prefixes(&ignore);
             run_stats(&paths, cli.lang, &ignore, all, table);
+            0
         }
         Commands::Mimic { paths, out, ignore } => {
             let ignore = normalize_ignore_prefixes(&ignore);
             run_mimic(&paths, out.as_deref(), cli.lang, &ignore);
+            0
         }
         Commands::Clamp { ignore } => {
             let ignore = normalize_ignore_prefixes(&ignore);
@@ -213,6 +232,7 @@ fn main() {
                 cli.lang,
                 &ignore,
             );
+            0
         }
         Commands::Dry {
             path,
@@ -231,15 +251,22 @@ fn main() {
                 min_similarity,
             };
             analyze::run_dry(&path, &filter_files, &config, &ignore, cli.lang);
+            0
         }
-        Commands::Rules => run_rules(&py_config, &rs_config, &gate_config, cli.lang, cli.defaults),
-        Commands::Config => run_config(
-            &py_config,
-            &rs_config,
-            &gate_config,
-            cli.config.as_ref(),
-            cli.defaults,
-        ),
+        Commands::Rules => {
+            run_rules(py_config, rs_config, gate_config, cli.lang, cli.defaults);
+            0
+        }
+        Commands::Config => {
+            run_config(
+                py_config,
+                rs_config,
+                gate_config,
+                cli.config.as_ref(),
+                cli.defaults,
+            );
+            0
+        }
         Commands::Viz {
             out,
             paths,
@@ -250,19 +277,16 @@ fn main() {
             validate_paths(&paths);
             if let Err(e) = run_viz(&out, &paths, cli.lang, &ignore, zoom) {
                 eprintln!("Error: {e}");
-                std::process::exit(1);
+                return 1;
             }
+            0
         }
         Commands::Shrink {
             target,
             paths,
             ignore,
         } => {
-            let exit_code =
-                run_shrink(target, &paths, &ignore, cli.lang, &py_config, &rs_config, &gate_config);
-            if exit_code != 0 {
-                std::process::exit(exit_code);
-            }
+            run_shrink(target, &paths, &ignore, cli.lang, py_config, rs_config, gate_config)
         }
     }
 }
@@ -446,10 +470,14 @@ fn collect_all_units(py_files: &[PathBuf], rs_files: &[PathBuf]) -> Vec<kiss::Un
 
     let mut all_units = Vec::new();
     if !py_files.is_empty() {
-        let results = parse_files(py_files).expect("parse files");
-        let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-        let graph = build_dependency_graph(&parsed);
-        all_units.extend(collect_detailed_py(&parsed, Some(&graph)));
+        match parse_files(py_files) {
+            Ok(results) => {
+                let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+                let graph = build_dependency_graph(&parsed);
+                all_units.extend(collect_detailed_py(&parsed, Some(&graph)));
+            }
+            Err(e) => eprintln!("error: failed to parse Python files: {e}"),
+        }
     }
     if !rs_files.is_empty() {
         let results = parse_rust_files(rs_files);
@@ -486,6 +514,9 @@ fn print_all_top_metrics(units: &[kiss::UnitMetrics], n: usize) {
         }),
         ("returns_per_function", |u| {
             u.returns
+        }),
+        ("return_values_per_function", |u| {
+            u.return_values
         }),
         (
             "local_variables_per_function",
@@ -554,16 +585,20 @@ fn run_stats_table(paths: &[String], lang_filter: Option<Language>, ignore: &[St
         config_provenance()
     );
     if !py_files.is_empty() {
-        let results = parse_files(&py_files).expect("parse files");
-        let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-        let graph = build_dependency_graph(&parsed);
-        let units = collect_detailed_py(&parsed, Some(&graph));
-        println!(
-            "=== Python ({} files, {} units) ===\n{}",
-            py_files.len(),
-            units.len(),
-            format_detailed_table(&units)
-        );
+        match parse_files(&py_files) {
+            Ok(results) => {
+                let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+                let graph = build_dependency_graph(&parsed);
+                let units = collect_detailed_py(&parsed, Some(&graph));
+                println!(
+                    "=== Python ({} files, {} units) ===\n{}",
+                    py_files.len(),
+                    units.len(),
+                    format_detailed_table(&units)
+                );
+            }
+            Err(e) => eprintln!("error: failed to parse Python files: {e}"),
+        }
     }
     if !rs_files.is_empty() {
         let results = parse_rust_files(&rs_files);

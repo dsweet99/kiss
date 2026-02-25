@@ -21,6 +21,8 @@ pub struct FunctionMetrics {
     pub decorators: usize,
     pub max_return_values: usize,
     pub calls: usize,
+    /// True if the function's AST contains ERROR or MISSING nodes from parse recovery
+    pub has_error: bool,
 }
 
 #[derive(Debug, Default)]
@@ -60,6 +62,7 @@ pub fn compute_function_metrics(node: Node, source: &str) -> FunctionMetrics {
     }
     m.nested_function_depth = compute_nested_function_depth(node, 0);
     m.decorators = count_decorators(node);
+    m.has_error = node.has_error();
     m
 }
 
@@ -394,6 +397,19 @@ fn count_parameters(params: Node, source: &str) -> ParameterCounts {
                     .is_some_and(&is_self_or_cls) =>
             {
                 // Skip typed self/cls parameters (e.g., self: SomeType)
+            }
+            "typed_parameter"
+                if child.child(0).is_some_and(|c| c.kind() == "list_splat_pattern") =>
+            {
+                positional += 1;
+                after_star = true;
+            }
+            "typed_parameter"
+                if child
+                    .child(0)
+                    .is_some_and(|c| c.kind() == "dictionary_splat_pattern") =>
+            {
+                after_star = true;
             }
             "identifier" | "typed_parameter" => {
                 if after_star {
@@ -921,5 +937,44 @@ mod tests {
         assert!(super::is_interface_token("ABCMeta"));
         assert!(!super::is_interface_token("BaseClass"));
         assert!(!super::is_interface_token("object"));
+    }
+
+    #[test]
+    fn test_typed_star_args_counts_correctly() {
+        // Typed *args (`*args: object`) is parsed by tree-sitter as a
+        // typed_parameter wrapping a list_splat_pattern. Params after it
+        // must be keyword-only; *args itself counts as 1 positional.
+        let p = parse("def f(*args: object, a: bool = True, b: int = 0): pass");
+        let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
+        let counts = count_parameters(params, &p.source);
+        assert_eq!(counts.positional, 1, "typed *args should count as 1 positional");
+        assert_eq!(counts.keyword_only, 2, "params after typed *args should be keyword-only");
+    }
+
+    #[test]
+    fn test_untyped_star_args_counts_correctly() {
+        let p = parse("def f(*args, a=True, b=0): pass");
+        let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
+        let counts = count_parameters(params, &p.source);
+        assert_eq!(counts.positional, 1, "untyped *args should count as 1 positional");
+        assert_eq!(counts.keyword_only, 2, "params after untyped *args should be keyword-only");
+    }
+
+    #[test]
+    fn test_typed_star_args_with_leading_positional() {
+        let p = parse("def f(x, y, *args: tuple, kw: int = 0): pass");
+        let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
+        let counts = count_parameters(params, &p.source);
+        assert_eq!(counts.positional, 3, "x, y, *args = 3 positional");
+        assert_eq!(counts.keyword_only, 1, "kw after *args should be keyword-only");
+    }
+
+    #[test]
+    fn test_typed_kwargs_not_counted() {
+        let p = parse("def f(a, **kwargs: dict): pass");
+        let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
+        let counts = count_parameters(params, &p.source);
+        assert_eq!(counts.positional, 1, "only a is positional");
+        assert_eq!(counts.keyword_only, 0, "**kwargs should not be counted");
     }
 }

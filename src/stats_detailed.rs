@@ -20,6 +20,7 @@ pub struct UnitMetrics {
     pub nested_depth: Option<usize>,
     pub branches: Option<usize>,
     pub returns: Option<usize>,
+    pub return_values: Option<usize>,
     pub locals: Option<usize>,
     pub methods: Option<usize>,
     pub lines: Option<usize>,
@@ -81,6 +82,7 @@ fn file_unit_metrics(
         nested_depth: None,
         branches: None,
         returns: None,
+        return_values: None,
         locals: None,
         methods: None,
         lines: Some(lines),
@@ -119,6 +121,14 @@ fn collect_detailed_from_node(node: Node, source: &str, file: &str, units: &mut 
                 .and_then(|n| n.utf8_text(source.as_bytes()).ok())
                 .unwrap_or("?");
             let m = compute_function_metrics(node, source);
+            if m.has_error {
+                // Skip functions with parse errors — metrics are unreliable
+                let mut c = node.walk();
+                for child in node.children(&mut c) {
+                    collect_detailed_from_node(child, source, file, units);
+                }
+                return;
+            }
             units.push(UnitMetrics {
                 file: file.to_string(),
                 name: name.to_string(),
@@ -132,6 +142,7 @@ fn collect_detailed_from_node(node: Node, source: &str, file: &str, units: &mut 
                 nested_depth: Some(m.nested_function_depth),
                 branches: Some(m.branches),
                 returns: Some(m.returns),
+                return_values: Some(m.max_return_values),
                 locals: Some(m.local_variables),
                 methods: None,
                 lines: None,
@@ -161,6 +172,7 @@ fn collect_detailed_from_node(node: Node, source: &str, file: &str, units: &mut 
                 nested_depth: None,
                 branches: None,
                 returns: None,
+                return_values: None,
                 locals: None,
                 methods: Some(m.methods),
                 lines: None,
@@ -215,6 +227,7 @@ fn collect_detailed_from_items(items: &[Item], file: &str, units: &mut Vec<UnitM
                     nested_depth: Some(m.nested_function_depth),
                     branches: Some(m.branches),
                     returns: Some(m.returns),
+                    return_values: None,
                     locals: Some(m.local_variables),
                     methods: None,
                     lines: None,
@@ -245,6 +258,7 @@ fn collect_detailed_from_items(items: &[Item], file: &str, units: &mut Vec<UnitM
                     nested_depth: None,
                     branches: None,
                     returns: None,
+                    return_values: None,
                     locals: None,
                     methods: Some(mcnt),
                     lines: None,
@@ -271,6 +285,7 @@ fn collect_detailed_from_items(items: &[Item], file: &str, units: &mut Vec<UnitM
                             nested_depth: Some(metrics.nested_function_depth),
                             branches: Some(metrics.branches),
                             returns: Some(metrics.returns),
+                            return_values: None,
                             locals: Some(metrics.local_variables),
                             methods: None,
                             lines: None,
@@ -355,6 +370,8 @@ pub fn truncate(s: &str, max: usize) -> String {
     let char_count = s.chars().count();
     if char_count <= max {
         s.to_string()
+    } else if max < 3 {
+        s.chars().take(max).collect()
     } else {
         let skip = char_count - (max - 3);
         format!("...{}", s.chars().skip(skip).collect::<String>())
@@ -386,6 +403,7 @@ mod tests {
             nested_depth: Some(0),
             branches: Some(0),
             returns: Some(1),
+            return_values: None,
             locals: Some(3),
             methods: None,
             lines: None,

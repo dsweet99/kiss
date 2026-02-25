@@ -155,7 +155,9 @@ fn analyze_node(
                 .unwrap_or("<anonymous>");
             let line = node.start_position().row + 1;
             let m = compute_function_metrics(node, source);
-            check_function_metrics(&m, file, line, name, inside_class, config, violations);
+            if !m.has_error {
+                check_function_metrics(&m, file, line, name, inside_class, config, violations);
+            }
             Recursion::Skip
         }
         "class_definition" => {
@@ -387,6 +389,7 @@ mod tests {
         let m = FunctionMetrics {
             calls: 999,
             max_return_values: 3,
+            has_error: false,
             ..Default::default()
         };
         let cfg = Config {
@@ -497,6 +500,7 @@ mod tests {
             decorators: 0,
             max_return_values: 0,
             calls: 5,
+            has_error: false,
         };
         let cfg = Config {
             statements_per_function: 50,

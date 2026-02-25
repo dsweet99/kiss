@@ -167,7 +167,7 @@ fn test_write_mimic_config() {
 
 #[test]
 fn test_analyze_graph_empty() {
-    assert!(analyze_graph(&DependencyGraph::new(), &Config::default()).is_empty());
+    assert!(analyze_graph(&DependencyGraph::new(), &Config::default(), true).is_empty());
 }
 
 #[test]

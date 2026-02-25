@@ -143,7 +143,10 @@ impl MetricStats {
 fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_class: bool) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {
-            push_py_fn_metrics(stats, &compute_function_metrics(node, source));
+            let m = compute_function_metrics(node, source);
+            if !m.has_error {
+                push_py_fn_metrics(stats, &m);
+            }
             let mut c = node.walk();
             for child in node.children(&mut c) {
                 collect_from_node(child, source, stats, false);
@@ -603,6 +606,7 @@ mod tests {
         let m = crate::py_metrics::FunctionMetrics {
             statements: 3,
             arguments: 2,
+            has_error: false,
             ..Default::default()
         };
         push_py_fn_metrics(&mut stats, &m);

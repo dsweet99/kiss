@@ -208,7 +208,7 @@ fn repro_orphan_module_with_dotted_import_and_ambiguous_bare_name() {
         &importer2,
     ];
     let graph = build_dependency_graph(&parsed_files);
-    let viols = analyze_graph(&graph, &Config::python_defaults());
+    let viols = analyze_graph(&graph, &Config::python_defaults(), true);
 
     assert!(
         !viols.iter().any(|v| v.metric == "orphan_module"),

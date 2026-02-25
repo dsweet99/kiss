@@ -7,6 +7,7 @@ pub struct GateConfig {
     pub test_coverage_threshold: usize,
     pub min_similarity: f64,
     pub duplication_enabled: bool,
+    pub orphan_module_enabled: bool,
 }
 
 impl Default for GateConfig {
@@ -15,6 +16,7 @@ impl Default for GateConfig {
             test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD,
             min_similarity: defaults::duplication::MIN_SIMILARITY,
             duplication_enabled: true,
+            orphan_module_enabled: true,
         }
     }
 }
@@ -80,6 +82,7 @@ impl GateConfig {
                     "test_coverage_threshold",
                     "min_similarity",
                     "duplication_enabled",
+                    "orphan_module_enabled",
                 ],
                 "gate",
             ) {
@@ -100,13 +103,11 @@ impl GateConfig {
                 }
                 self.min_similarity = s;
             }
-            if let Some(v) = gate
-                .get("duplication_enabled")
-                .and_then(toml::Value::as_bool)
-            {
+            if let Some(v) = get_bool(gate, "duplication_enabled") {
                 self.duplication_enabled = v;
-            } else if gate.contains_key("duplication_enabled") {
-                eprintln!("Warning: Config key 'duplication_enabled' expected bool");
+            }
+            if let Some(v) = get_bool(gate, "orphan_module_enabled") {
+                self.orphan_module_enabled = v;
             }
         }
     }
@@ -119,7 +120,7 @@ impl GateConfig {
         if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
             check_unknown_keys(
                 gate,
-                &["test_coverage_threshold", "min_similarity", "duplication_enabled"],
+                &["test_coverage_threshold", "min_similarity", "duplication_enabled", "orphan_module_enabled"],
                 "gate",
             )?;
             if let Some(t) = get_usize(gate, "test_coverage_threshold") {
@@ -140,14 +141,8 @@ impl GateConfig {
                 }
                 self.min_similarity = s;
             }
-            if let Some(v) = gate.get("duplication_enabled").and_then(toml::Value::as_bool) {
-                self.duplication_enabled = v;
-            } else if gate.contains_key("duplication_enabled") {
-                return Err(ConfigError::InvalidValue {
-                    key: "duplication_enabled".into(),
-                    message: "expected bool".into(),
-                });
-            }
+            self.duplication_enabled = try_get_bool(gate, "duplication_enabled", self.duplication_enabled)?;
+            self.orphan_module_enabled = try_get_bool(gate, "orphan_module_enabled", self.orphan_module_enabled)?;
         }
         Ok(())
     }
@@ -170,6 +165,26 @@ fn try_get_f64(table: &toml::Table, key: &str) -> Result<Option<f64>, ConfigErro
             key: key.into(),
             message: format!("expected float, got {}", value.type_str()),
         })
+}
+
+fn get_bool(table: &toml::Table, key: &str) -> Option<bool> {
+    if let Some(v) = table.get(key) {
+        if let Some(b) = v.as_bool() {
+            return Some(b);
+        }
+        eprintln!("Warning: Config key '{key}' expected bool");
+    }
+    None
+}
+
+fn try_get_bool(table: &toml::Table, key: &str, default: bool) -> Result<bool, ConfigError> {
+    let Some(value) = table.get(key) else {
+        return Ok(default);
+    };
+    value.as_bool().ok_or_else(|| ConfigError::InvalidValue {
+        key: key.into(),
+        message: "expected bool".into(),
+    })
 }
 
 fn get_f64(table: &toml::Table, key: &str) -> Option<f64> {

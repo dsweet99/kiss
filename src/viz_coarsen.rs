@@ -337,6 +337,7 @@ fn group_nodes(
 }
 
 fn merge_overflow(mut communities: Vec<Vec<usize>>, target: usize) -> Vec<Vec<usize>> {
+    assert!(target >= 1, "merge_overflow requires target >= 1");
     if communities.len() <= target {
         return communities;
     }

@@ -268,6 +268,12 @@ fn is_nontrivial_chunk(normalized: &str, line_count: usize) -> bool {
     line_count >= MIN_CHUNK_LINES && normalized.split_whitespace().count() >= MIN_CHUNK_TOKENS
 }
 
+fn chunks_are_nested(a: &CodeChunk, b: &CodeChunk) -> bool {
+    a.file == b.file
+        && ((a.start_line <= b.start_line && b.end_line <= a.end_line)
+            || (b.start_line <= a.start_line && a.end_line <= b.end_line))
+}
+
 fn add_rust_function_chunk(
     name: &str,
     start_line: usize,
@@ -354,6 +360,7 @@ pub fn detect_duplicates_from_chunks(
     let candidates = find_lsh_candidates(&signatures, config.lsh_bands);
     let mut duplicates: Vec<DuplicatePair> = candidates
         .into_iter()
+        .filter(|&(i, j)| !chunks_are_nested(&chunks[i], &chunks[j]))
         .filter_map(|(i, j)| {
             let similarity = estimate_similarity(&signatures[i], &signatures[j]);
             (similarity >= config.min_similarity).then(|| DuplicatePair {
@@ -402,8 +409,10 @@ pub fn cluster_duplicates_from_chunks(
         .collect();
 
     // Compute similarity in parallel; only keep pairs that pass threshold.
+    // Skip nested pairs (parent function vs its inner closure in the same file).
     let good_pairs: Vec<(usize, usize, f64)> = candidates
         .par_iter()
+        .filter(|&&(i, j)| !chunks_are_nested(&chunks[i], &chunks[j]))
         .filter_map(|&(i, j)| {
             let similarity = estimate_similarity(&signatures[i], &signatures[j]);
             (similarity >= config.min_similarity).then_some((i, j, similarity))
