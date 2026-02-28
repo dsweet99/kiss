@@ -104,7 +104,13 @@ pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> Dependen
         }
 
         for import in imports.use_roots {
-            resolve_import(&import, &module_name, &internal_modules, &bare_to_qualified, &mut graph);
+            resolve_import(
+                &import,
+                &module_name,
+                &internal_modules,
+                &bare_to_qualified,
+                &mut graph,
+            );
         }
     }
 
@@ -151,11 +157,18 @@ fn extract_rust_imports(ast: &syn::File) -> RustImports {
     let mut use_roots = Vec::new();
     let mut mod_decls = Vec::new();
     extract_imports_from_items(&ast.items, &mut use_roots, &mut mod_decls);
-    RustImports { use_roots, mod_decls }
+    RustImports {
+        use_roots,
+        mod_decls,
+    }
 }
 
 // Recursively extract imports from all scopes (matching Python behavior)
-fn extract_imports_from_items(items: &[Item], use_roots: &mut Vec<String>, mod_decls: &mut Vec<String>) {
+fn extract_imports_from_items(
+    items: &[Item],
+    use_roots: &mut Vec<String>,
+    mod_decls: &mut Vec<String>,
+) {
     for item in items {
         match item {
             Item::Use(use_item) => collect_use_paths(&use_item.tree, use_roots),
@@ -200,7 +213,11 @@ fn extract_imports_from_items(items: &[Item], use_roots: &mut Vec<String>, mod_d
     }
 }
 
-fn extract_imports_from_block(block: &syn::Block, use_roots: &mut Vec<String>, mod_decls: &mut Vec<String>) {
+fn extract_imports_from_block(
+    block: &syn::Block,
+    use_roots: &mut Vec<String>,
+    mod_decls: &mut Vec<String>,
+) {
     for stmt in &block.stmts {
         match stmt {
             syn::Stmt::Item(item) => {
@@ -217,11 +234,17 @@ fn extract_imports_from_block(block: &syn::Block, use_roots: &mut Vec<String>, m
     }
 }
 
-fn extract_imports_from_expr(expr: &syn::Expr, use_roots: &mut Vec<String>, mod_decls: &mut Vec<String>) {
+fn extract_imports_from_expr(
+    expr: &syn::Expr,
+    use_roots: &mut Vec<String>,
+    mod_decls: &mut Vec<String>,
+) {
     // Handle closures and async blocks that can contain use statements
     match expr {
         syn::Expr::Block(block) => extract_imports_from_block(&block.block, use_roots, mod_decls),
-        syn::Expr::Async(async_block) => extract_imports_from_block(&async_block.block, use_roots, mod_decls),
+        syn::Expr::Async(async_block) => {
+            extract_imports_from_block(&async_block.block, use_roots, mod_decls);
+        }
         syn::Expr::Macro(m) => {
             if let Some(stem) = extract_include_rs_stem(&m.mac) {
                 mod_decls.push(stem);
@@ -238,15 +261,23 @@ fn extract_imports_from_expr(expr: &syn::Expr, use_roots: &mut Vec<String>, mod_
                 extract_imports_from_expr(else_branch, use_roots, mod_decls);
             }
         }
-        syn::Expr::Loop(loop_expr) => extract_imports_from_block(&loop_expr.body, use_roots, mod_decls),
-        syn::Expr::While(while_expr) => extract_imports_from_block(&while_expr.body, use_roots, mod_decls),
-        syn::Expr::ForLoop(for_expr) => extract_imports_from_block(&for_expr.body, use_roots, mod_decls),
+        syn::Expr::Loop(loop_expr) => {
+            extract_imports_from_block(&loop_expr.body, use_roots, mod_decls);
+        }
+        syn::Expr::While(while_expr) => {
+            extract_imports_from_block(&while_expr.body, use_roots, mod_decls);
+        }
+        syn::Expr::ForLoop(for_expr) => {
+            extract_imports_from_block(&for_expr.body, use_roots, mod_decls);
+        }
         syn::Expr::Match(match_expr) => {
             for arm in &match_expr.arms {
                 extract_imports_from_expr(&arm.body, use_roots, mod_decls);
             }
         }
-        syn::Expr::Unsafe(unsafe_expr) => extract_imports_from_block(&unsafe_expr.block, use_roots, mod_decls),
+        syn::Expr::Unsafe(unsafe_expr) => {
+            extract_imports_from_block(&unsafe_expr.block, use_roots, mod_decls);
+        }
         _ => {}
     }
 }
@@ -338,7 +369,12 @@ fn f() {
             extract_imports_from_block(&f.block, &mut use_roots2, &mut mod_decls2);
             assert!(!use_roots2.is_empty() || !mod_decls2.is_empty());
 
-            if let Some(syn::Stmt::Expr(expr, _)) = f.block.stmts.iter().find(|s| matches!(s, syn::Stmt::Expr(_, _))) {
+            if let Some(syn::Stmt::Expr(expr, _)) = f
+                .block
+                .stmts
+                .iter()
+                .find(|s| matches!(s, syn::Stmt::Expr(_, _)))
+            {
                 let mut use_roots3 = Vec::new();
                 let mut mod_decls3 = Vec::new();
                 extract_imports_from_expr(expr, &mut use_roots3, &mut mod_decls3);
@@ -521,10 +557,7 @@ mod inner {
 
     #[test]
     fn test_qualified_rust_module_name() {
-        assert_eq!(
-            qualified_rust_module_name(Path::new("src/foo.rs")),
-            "foo"
-        );
+        assert_eq!(qualified_rust_module_name(Path::new("src/foo.rs")), "foo");
         assert_eq!(
             qualified_rust_module_name(Path::new("src/foo/bar.rs")),
             "foo.bar"
@@ -533,10 +566,7 @@ mod inner {
             qualified_rust_module_name(Path::new("src/foo/mod.rs")),
             "foo"
         );
-        assert_eq!(
-            qualified_rust_module_name(Path::new("utils.rs")),
-            "utils"
-        );
+        assert_eq!(qualified_rust_module_name(Path::new("utils.rs")), "utils");
         assert_eq!(
             qualified_rust_module_name(Path::new("tests/integration/helpers.rs")),
             "integration.helpers"

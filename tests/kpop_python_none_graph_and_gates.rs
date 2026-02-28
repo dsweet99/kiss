@@ -25,9 +25,21 @@ fn kpop_python_none_cycle_size() {
     assert!(graph.graph.node_count() >= 3);
     assert!(graph.graph.edge_count() >= 3);
     assert!(cycles.iter().all(|cyc| cyc.len() >= 2));
-    assert!(cycles.iter().any(|cyc| cyc.iter().any(|n| n.contains("cycle_a"))));
-    assert!(cycles.iter().any(|cyc| cyc.iter().any(|n| n.contains("cycle_b"))));
-    assert!(cycles.iter().any(|cyc| cyc.iter().any(|n| n.contains("cycle_c"))));
+    assert!(
+        cycles
+            .iter()
+            .any(|cyc| cyc.iter().any(|n| n.contains("cycle_a")))
+    );
+    assert!(
+        cycles
+            .iter()
+            .any(|cyc| cyc.iter().any(|n| n.contains("cycle_b")))
+    );
+    assert!(
+        cycles
+            .iter()
+            .any(|cyc| cyc.iter().any(|n| n.contains("cycle_c")))
+    );
     assert!(cycles.iter().any(|cyc| cyc.len() <= 10));
     assert!(any3);
 }
@@ -50,7 +62,7 @@ fn kpop_python_none_dependency_depth() {
     );
 
     // extra assertions (10)
-    assert!(metrics.transitive_dependencies >= 3);
+    assert!(metrics.indirect_dependencies >= 2);
     let mb = graph.module_metrics("tests.fake_python.kpop_graph.chain_b");
     assert!(mb.dependency_depth >= 2);
     let mc = graph.module_metrics("tests.fake_python.kpop_graph.chain_c");
@@ -102,8 +114,16 @@ fn kpop_python_none_test_coverage_threshold() {
     assert!(!refs.unreferenced.is_empty());
     assert!(refs.definitions.iter().all(|d| d.line >= 1));
     assert!(refs.unreferenced.iter().all(|d| d.line >= 1));
-    assert!(refs.definitions.iter().any(|d| d.file.extension().is_some()));
-    assert!(refs.unreferenced.iter().any(|d| d.file.extension().is_some()));
+    assert!(
+        refs.definitions
+            .iter()
+            .any(|d| d.file.extension().is_some())
+    );
+    assert!(
+        refs.unreferenced
+            .iter()
+            .any(|d| d.file.extension().is_some())
+    );
 }
 
 #[test]
@@ -123,9 +143,14 @@ fn kpop_python_none_min_similarity() {
     assert!(GateConfig::default().min_similarity <= 1.0);
     assert!(dups.iter().all(|d| d.similarity <= 1.0));
     assert!(dups.iter().all(|d| d.similarity >= 0.0));
-    assert!(dups.iter().any(|d| d.chunk1.file.ends_with("user_service.py")));
-    assert!(dups.iter().any(|d| d.chunk2.file.ends_with("user_service.py")));
+    assert!(
+        dups.iter()
+            .any(|d| d.chunk1.file.ends_with("user_service.py"))
+    );
+    assert!(
+        dups.iter()
+            .any(|d| d.chunk2.file.ends_with("user_service.py"))
+    );
     assert!(dups.len() < 1000);
     assert!(kiss::DuplicationConfig::default().min_similarity >= 0.0);
 }
-

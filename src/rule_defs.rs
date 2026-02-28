@@ -219,8 +219,8 @@ pub static RULES: &[Rule] = &[
     },
     Rule {
         category: RuleCategory::Dependencies,
-        template: "Limit transitive dependencies to ≤ {}",
-        get_threshold: |c, _| c.transitive_dependencies,
+        template: "Limit indirect dependencies to ≤ {}",
+        get_threshold: |c, _| c.indirect_dependencies,
         applicability: Applicability::Both,
     },
     Rule {

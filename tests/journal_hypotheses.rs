@@ -134,4 +134,3 @@ fn hypothesis_10_parenthesized_tuple_return_counts_elements() {
         "expected parenthesized tuple to count as 3 return values"
     );
 }
-

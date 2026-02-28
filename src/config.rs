@@ -7,7 +7,10 @@ pub enum ConfigError {
     /// Unknown key in a config section
     UnknownKey { key: String, section: String },
     /// Unknown section in the config file
-    UnknownSection { section: String, hint: Option<String> },
+    UnknownSection {
+        section: String,
+        hint: Option<String>,
+    },
     /// Invalid value for a config key
     InvalidValue { key: String, message: String },
     /// Failed to parse TOML content
@@ -79,7 +82,7 @@ pub struct Config {
     pub annotations_per_function: usize,
     pub calls_per_function: usize,
     pub cycle_size: usize,
-    pub transitive_dependencies: usize,
+    pub indirect_dependencies: usize,
     pub dependency_depth: usize,
 }
 
@@ -114,7 +117,7 @@ impl Config {
             annotations_per_function: py::DECORATORS_PER_FUNCTION,
             calls_per_function: py::CALLS_PER_FUNCTION,
             cycle_size: defaults::graph::CYCLE_SIZE,
-            transitive_dependencies: py::TRANSITIVE_DEPENDENCIES,
+            indirect_dependencies: py::INDIRECT_DEPENDENCIES,
             dependency_depth: py::DEPENDENCY_DEPTH,
         }
     }
@@ -143,7 +146,7 @@ impl Config {
             annotations_per_function: rs::ATTRIBUTES_PER_FUNCTION,
             calls_per_function: rs::CALLS_PER_FUNCTION,
             cycle_size: defaults::graph::CYCLE_SIZE,
-            transitive_dependencies: rs::TRANSITIVE_DEPENDENCIES,
+            indirect_dependencies: rs::INDIRECT_DEPENDENCIES,
             dependency_depth: rs::DEPENDENCY_DEPTH,
         }
     }
@@ -240,9 +243,11 @@ impl Config {
         content: &str,
         lang: Option<ConfigLanguage>,
     ) -> Result<(), ConfigError> {
-        let table = content.parse::<toml::Table>().map_err(|e| ConfigError::ParseError {
-            message: e.to_string(),
-        })?;
+        let table = content
+            .parse::<toml::Table>()
+            .map_err(|e| ConfigError::ParseError {
+                message: e.to_string(),
+            })?;
         check_unknown_sections(&table)?;
         validate_config_keys(&table, lang)?;
         // All validations passed, apply using the regular merge (which won't print errors)
@@ -296,7 +301,6 @@ impl Config {
             }
         }
     }
-
 }
 
 const THRESHOLDS_KEYS: &[&str] = &[
@@ -323,7 +327,7 @@ const THRESHOLDS_KEYS: &[&str] = &[
     "annotations_per_function",
     "calls_per_function",
     "cycle_size",
-    "transitive_dependencies",
+    "indirect_dependencies",
     "dependency_depth",
 ];
 
@@ -336,7 +340,7 @@ const SHARED_KEYS: &[&str] = &[
     "types_per_file",
     "imported_names_per_file",
     "cycle_size",
-    "transitive_dependencies",
+    "indirect_dependencies",
     "dependency_depth",
 ];
 
@@ -363,7 +367,7 @@ const PYTHON_KEYS: &[&str] = &[
     // Back-compat alias.
     "types_per_file",
     "cycle_size",
-    "transitive_dependencies",
+    "indirect_dependencies",
     "dependency_depth",
 ];
 
@@ -387,7 +391,7 @@ const RUST_KEYS: &[&str] = &[
     "calls_per_function",
     "imported_names_per_file",
     "cycle_size",
-    "transitive_dependencies",
+    "indirect_dependencies",
     "dependency_depth",
 ];
 
@@ -415,7 +419,7 @@ fn apply_thresholds(config: &mut Config, table: &toml::Table) {
         "annotations_per_function" => annotations_per_function,
         "calls_per_function" => calls_per_function,
         "cycle_size" => cycle_size,
-        "transitive_dependencies" => transitive_dependencies,
+        "indirect_dependencies" => indirect_dependencies,
         "dependency_depth" => dependency_depth);
 }
 
@@ -433,7 +437,7 @@ fn apply_shared(config: &mut Config, table: &toml::Table) {
         "types_per_file" => concrete_types_per_file,
         "imported_names_per_file" => imported_names_per_file,
         "cycle_size" => cycle_size,
-        "transitive_dependencies" => transitive_dependencies,
+        "indirect_dependencies" => indirect_dependencies,
         "dependency_depth" => dependency_depth);
 }
 
@@ -456,7 +460,7 @@ fn apply_python(config: &mut Config, table: &toml::Table) {
         "concrete_types_per_file" => concrete_types_per_file,
         // Back-compat alias.
         "types_per_file" => concrete_types_per_file,
-        "cycle_size" => cycle_size, "transitive_dependencies" => transitive_dependencies, "dependency_depth" => dependency_depth);
+        "cycle_size" => cycle_size, "indirect_dependencies" => indirect_dependencies, "dependency_depth" => dependency_depth);
 }
 
 fn apply_rust(config: &mut Config, table: &toml::Table) {
@@ -477,7 +481,7 @@ fn apply_rust(config: &mut Config, table: &toml::Table) {
         "nested_function_depth" => nested_function_depth, "boolean_parameters" => boolean_parameters,
         "attributes_per_function" => annotations_per_function, "calls_per_function" => calls_per_function,
         "imported_names_per_file" => imported_names_per_file,
-        "cycle_size" => cycle_size, "transitive_dependencies" => transitive_dependencies, "dependency_depth" => dependency_depth);
+        "cycle_size" => cycle_size, "indirect_dependencies" => indirect_dependencies, "dependency_depth" => dependency_depth);
 }
 
 pub(crate) fn check_unknown_keys(
@@ -502,14 +506,23 @@ fn check_unknown_sections(table: &toml::Table) -> Result<(), ConfigError> {
         if VALID.contains(&key.as_str()) {
             continue;
         }
-        let hint = VALID.iter().find(|v| similar(key, v)).map(|s| (*s).to_string());
-        return Err(ConfigError::UnknownSection { section: key.clone(), hint });
+        let hint = VALID
+            .iter()
+            .find(|v| similar(key, v))
+            .map(|s| (*s).to_string());
+        return Err(ConfigError::UnknownSection {
+            section: key.clone(),
+            hint,
+        });
     }
     Ok(())
 }
 
 // Validation functions for try_merge_from_toml
-fn validate_config_keys(table: &toml::Table, lang: Option<ConfigLanguage>) -> Result<(), ConfigError> {
+fn validate_config_keys(
+    table: &toml::Table,
+    lang: Option<ConfigLanguage>,
+) -> Result<(), ConfigError> {
     if let Some(t) = table.get("thresholds").and_then(|v| v.as_table()) {
         validate_thresholds_keys(t)?;
     }
@@ -518,14 +531,10 @@ fn validate_config_keys(table: &toml::Table, lang: Option<ConfigLanguage>) -> Re
     }
     let check_py = lang.is_none() || matches!(lang, Some(ConfigLanguage::Python));
     let check_rs = lang.is_none() || matches!(lang, Some(ConfigLanguage::Rust));
-    if check_py
-        && let Some(t) = table.get("python").and_then(|v| v.as_table())
-    {
+    if check_py && let Some(t) = table.get("python").and_then(|v| v.as_table()) {
         validate_python_keys(t)?;
     }
-    if check_rs
-        && let Some(t) = table.get("rust").and_then(|v| v.as_table())
-    {
+    if check_rs && let Some(t) = table.get("rust").and_then(|v| v.as_table()) {
         validate_rust_keys(t)?;
     }
     Ok(())
@@ -688,7 +697,10 @@ mod tests {
     #[test]
     fn test_unknown_section_returns_error() {
         let mut t = toml::Table::new();
-        t.insert("unknown_section".into(), toml::Value::Table(toml::Table::new()));
+        t.insert(
+            "unknown_section".into(),
+            toml::Value::Table(toml::Table::new()),
+        );
         let result = check_unknown_sections(&t);
         assert!(result.is_err());
     }

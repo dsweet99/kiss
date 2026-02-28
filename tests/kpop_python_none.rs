@@ -5,24 +5,18 @@ mod common;
 fn kpop_python_none_keyword_only_args() {
     // RULE: keyword_only_args
     let p1 = parse_python_source("def f(*, a):\n    return a\n");
-    let m1 = kiss::py_metrics::compute_function_metrics(
-        first_function_or_async_node(&p1),
-        &p1.source,
-    );
+    let m1 =
+        kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p1), &p1.source);
     assert_eq!(m1.arguments_keyword_only, 1);
 
     let p2 = parse_python_source("def f(a, *, b, c):\n    return a\n");
-    let m2 = kiss::py_metrics::compute_function_metrics(
-        first_function_or_async_node(&p2),
-        &p2.source,
-    );
+    let m2 =
+        kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p2), &p2.source);
     assert_eq!(m2.arguments_keyword_only, 2);
 
     let p3 = parse_python_source("def f(a, b, c):\n    return a\n");
-    let m3 = kiss::py_metrics::compute_function_metrics(
-        first_function_or_async_node(&p3),
-        &p3.source,
-    );
+    let m3 =
+        kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p3), &p3.source);
     assert_eq!(m3.arguments_keyword_only, 0);
 
     // extra “hypotheses” (10 total assertions)
@@ -39,24 +33,20 @@ fn kpop_python_none_keyword_only_args() {
 fn kpop_python_none_nested_function_depth() {
     // RULE: nested_function_depth
     let p0 = parse_python_source("def f():\n    return 1\n");
-    let m0 = kiss::py_metrics::compute_function_metrics(
-        first_function_or_async_node(&p0),
-        &p0.source,
-    );
+    let m0 =
+        kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p0), &p0.source);
     assert_eq!(m0.nested_function_depth, 0);
 
     let p1 = parse_python_source("def f():\n    def g():\n        return 1\n    return 2\n");
-    let m1 = kiss::py_metrics::compute_function_metrics(
-        first_function_or_async_node(&p1),
-        &p1.source,
-    );
+    let m1 =
+        kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p1), &p1.source);
     assert_eq!(m1.nested_function_depth, 1);
 
-    let p2 = parse_python_source("def f():\n    def g():\n        def h():\n            return 1\n        return 2\n    return 3\n");
-    let m2 = kiss::py_metrics::compute_function_metrics(
-        first_function_or_async_node(&p2),
-        &p2.source,
+    let p2 = parse_python_source(
+        "def f():\n    def g():\n        def h():\n            return 1\n        return 2\n    return 3\n",
     );
+    let m2 =
+        kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p2), &p2.source);
     assert!(m2.nested_function_depth >= 2);
 
     assert!(m2.nested_function_depth >= m1.nested_function_depth);
@@ -74,10 +64,7 @@ fn kpop_python_none_statements_per_try_block() {
     let p = parse_python_source(
         "def f():\n    try:\n        a = 1\n        b = 2\n    except Exception:\n        c = 3\n    return 0\n",
     );
-    let m = kiss::py_metrics::compute_function_metrics(
-        first_function_or_async_node(&p),
-        &p.source,
-    );
+    let m = kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p), &p.source);
     assert_eq!(m.max_try_block_statements, 2);
     assert!(m.statements >= 1);
     assert!(m.returns >= 1);
@@ -95,17 +82,13 @@ fn kpop_python_none_statements_per_try_block() {
 fn kpop_python_none_boolean_parameters() {
     // RULE: boolean_parameters
     let p1 = parse_python_source("def f(a=True, b=False, c=None):\n    return 1\n");
-    let m1 = kiss::py_metrics::compute_function_metrics(
-        first_function_or_async_node(&p1),
-        &p1.source,
-    );
+    let m1 =
+        kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p1), &p1.source);
     assert_eq!(m1.boolean_parameters, 2);
 
     let p2 = parse_python_source("def f(a: bool = True, b: int = 1):\n    return 1\n");
-    let m2 = kiss::py_metrics::compute_function_metrics(
-        first_function_or_async_node(&p2),
-        &p2.source,
-    );
+    let m2 =
+        kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p2), &p2.source);
     assert_eq!(m2.boolean_parameters, 1);
 
     // extra assertions
@@ -264,4 +247,3 @@ fn kpop_python_none_imported_names_per_file() {
     assert!(fm.imports == 4);
     assert!(fm.imports != 3);
 }
-

@@ -17,14 +17,29 @@ fn kpop_rust_none_cycle_size() {
     let graph = build_rust_dependency_graph(&parsed);
     let cycles = graph.find_cycles().cycles;
     assert!(!cycles.is_empty());
-    assert!(cycles.iter().any(|cyc| cyc.len() == 3), "cycles: {cycles:?}");
+    assert!(
+        cycles.iter().any(|cyc| cyc.len() == 3),
+        "cycles: {cycles:?}"
+    );
     // extra assertions (10)
     assert!(graph.graph.node_count() >= 3);
     assert!(graph.graph.edge_count() >= 3);
     assert!(cycles.iter().all(|cyc| cyc.len() >= 2));
-    assert!(cycles.iter().any(|cyc| cyc.iter().any(|n| n.contains("cycle_a"))));
-    assert!(cycles.iter().any(|cyc| cyc.iter().any(|n| n.contains("cycle_b"))));
-    assert!(cycles.iter().any(|cyc| cyc.iter().any(|n| n.contains("cycle_c"))));
+    assert!(
+        cycles
+            .iter()
+            .any(|cyc| cyc.iter().any(|n| n.contains("cycle_a")))
+    );
+    assert!(
+        cycles
+            .iter()
+            .any(|cyc| cyc.iter().any(|n| n.contains("cycle_b")))
+    );
+    assert!(
+        cycles
+            .iter()
+            .any(|cyc| cyc.iter().any(|n| n.contains("cycle_c")))
+    );
     assert!(cycles.iter().any(|cyc| cyc.len() <= 10));
     assert!(GateConfig::default().test_coverage_threshold <= 100);
 }
@@ -41,14 +56,29 @@ fn kpop_rust_none_dependency_depth() {
     let metrics = graph.module_metrics("fake_rust.kpop_graph.chain_a");
     assert!(metrics.dependency_depth >= 3);
     // extra assertions (10)
-    assert!(metrics.transitive_dependencies >= 3);
-    assert!(graph.module_metrics("fake_rust.kpop_graph.chain_b").dependency_depth >= 2);
-    assert!(graph.module_metrics("fake_rust.kpop_graph.chain_c").dependency_depth >= 1);
-    assert_eq!(graph.module_metrics("fake_rust.kpop_graph.chain_d").dependency_depth, 0);
+    assert!(metrics.indirect_dependencies >= 2);
+    assert!(
+        graph
+            .module_metrics("fake_rust.kpop_graph.chain_b")
+            .dependency_depth
+            >= 2
+    );
+    assert!(
+        graph
+            .module_metrics("fake_rust.kpop_graph.chain_c")
+            .dependency_depth
+            >= 1
+    );
+    assert_eq!(
+        graph
+            .module_metrics("fake_rust.kpop_graph.chain_d")
+            .dependency_depth,
+        0
+    );
     assert!(metrics.fan_out >= 1);
     assert!(metrics.fan_in == 0);
     assert!(metrics.dependency_depth <= 10);
-    assert!(metrics.transitive_dependencies <= 10);
+    assert!(metrics.indirect_dependencies <= 10);
 }
 
 #[test]
@@ -98,8 +128,15 @@ fn kpop_rust_none_min_similarity() {
     assert!(GateConfig::default().min_similarity >= 0.0);
     assert!(clusters.iter().all(|c| c.avg_similarity <= 1.0));
     assert!(clusters.iter().all(|c| c.avg_similarity >= 0.0));
-    assert!(clusters.iter().any(|c| c.chunks.iter().any(|ch| ch.file.ends_with("duplicate1.rs"))));
-    assert!(clusters.iter().any(|c| c.chunks.iter().any(|ch| ch.file.ends_with("duplicate2.rs"))));
+    assert!(
+        clusters
+            .iter()
+            .any(|c| c.chunks.iter().any(|ch| ch.file.ends_with("duplicate1.rs")))
+    );
+    assert!(
+        clusters
+            .iter()
+            .any(|c| c.chunks.iter().any(|ch| ch.file.ends_with("duplicate2.rs")))
+    );
     assert!(kiss::DuplicationConfig::default().min_similarity >= 0.0);
 }
-

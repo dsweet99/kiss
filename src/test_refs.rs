@@ -176,9 +176,7 @@ pub(crate) fn build_disambiguation_map(
     name_files
         .iter()
         .filter(|(_, files)| files.len() > 1)
-        .filter_map(|(name, files)| {
-            disambiguate_files(files, refs).map(|f| (name.clone(), f))
-        })
+        .filter_map(|(name, files)| disambiguate_files(files, refs).map(|f| (name.clone(), f)))
         .collect()
 }
 
@@ -232,9 +230,7 @@ fn is_definition_covered(
         return true;
     }
     if usage_refs.contains(&def.name) {
-        let unique = name_files
-            .get(&def.name)
-            .is_none_or(|f| f.len() <= 1);
+        let unique = name_files.get(&def.name).is_none_or(|f| f.len() <= 1);
         if unique {
             return true;
         }
@@ -250,6 +246,7 @@ fn is_definition_covered(
     false
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
     struct PerFileResult {
         definitions: Vec<CodeDefinition>,
@@ -268,9 +265,22 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
                 import_bindings: HashMap::new(),
             };
             if is_python_test_file(parsed) {
-                collect_all_test_file_data(parsed.tree.root_node(), &parsed.source, &mut r.test_references, &mut r.usage_references, &mut r.import_bindings);
+                collect_all_test_file_data(
+                    parsed.tree.root_node(),
+                    &parsed.source,
+                    &mut r.test_references,
+                    &mut r.usage_references,
+                    &mut r.import_bindings,
+                );
             } else {
-                collect_definitions(parsed.tree.root_node(), &parsed.source, &parsed.path, &mut r.definitions, false, None);
+                collect_definitions(
+                    parsed.tree.root_node(),
+                    &parsed.source,
+                    &parsed.path,
+                    &mut r.definitions,
+                    false,
+                    None,
+                );
             }
             r
         })
@@ -302,7 +312,8 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
                     HashMap::<String, HashSet<String>>::new(),
                 )
             },
-            |(mut defs, mut t_refs, mut u_refs, mut i_binds), (defs2, t_refs2, u_refs2, i_binds2)| {
+            |(mut defs, mut t_refs, mut u_refs, mut i_binds),
+             (defs2, t_refs2, u_refs2, i_binds2)| {
                 defs.extend(defs2);
                 t_refs.extend(t_refs2);
                 u_refs.extend(u_refs2);
@@ -314,7 +325,9 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
         );
 
     let name_files = build_name_file_map(
-        definitions.iter().map(|d| (d.name.as_str(), d.file.as_path())),
+        definitions
+            .iter()
+            .map(|d| (d.name.as_str(), d.file.as_path())),
     );
     let disambiguation = build_disambiguation_map(&name_files, &test_references);
     let module_suffixes: HashMap<PathBuf, String> = definitions
@@ -403,8 +416,8 @@ fn collect_definitions(
     class_name: Option<&str>,
 ) {
     match node.kind() {
-        "function_definition" | "async_function_definition"
-            if is_abstract_method(node, source) => {}
+        "function_definition" | "async_function_definition" if is_abstract_method(node, source) => {
+        }
         "function_definition" | "async_function_definition" => {
             let kind = if inside_class {
                 CodeUnitKind::Method
@@ -511,7 +524,6 @@ fn collect_type_refs(node: Node, source: &str, refs: &mut HashSet<String>) {
     }
 }
 
-
 fn collect_call_target(node: Node, source: &str, refs: &mut HashSet<String>) {
     match node.kind() {
         "identifier" => insert_identifier(node, source, refs),
@@ -553,9 +565,7 @@ fn extract_import_from_binding(
             }
             "aliased_import" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
-                    names.insert(
-                        source[name_node.start_byte()..name_node.end_byte()].to_string(),
-                    );
+                    names.insert(source[name_node.start_byte()..name_node.end_byte()].to_string());
                 }
             }
             "dotted_name" => {
@@ -654,7 +664,9 @@ mod tests {
         assert!(is_in_test_directory(Path::new("tests/helpers.py")));
         assert!(is_in_test_directory(Path::new("tests/unit/helpers.py")));
         assert!(is_in_test_directory(Path::new("test/helpers.py")));
-        assert!(is_in_test_directory(Path::new("/project/tests/conftest.py")));
+        assert!(is_in_test_directory(Path::new(
+            "/project/tests/conftest.py"
+        )));
         assert!(!is_in_test_directory(Path::new("src/utils.py")));
         assert!(!is_in_test_directory(Path::new("testing/utils.py")));
     }
@@ -701,7 +713,11 @@ mod tests {
 
         let analysis = analyze_test_refs(&[&file, &file_test]);
 
-        let def_names: Vec<&str> = analysis.definitions.iter().map(|d| d.name.as_str()).collect();
+        let def_names: Vec<&str> = analysis
+            .definitions
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
         assert!(
             !def_names.contains(&"nested_helper"),
             "Nested function should not be tracked for coverage, but found: {def_names:?}"
@@ -771,7 +787,8 @@ mod tests {
             tree: tree_2,
         };
 
-        let src_test = "from sub_dir_1.some_name import some_name\ndef test_it():\n    some_name()\n";
+        let src_test =
+            "from sub_dir_1.some_name import some_name\ndef test_it():\n    some_name()\n";
         let tree_test = parser.parse(src_test, None).unwrap();
         let file_test = ParsedFile {
             path: PathBuf::from("test_stuff.py"),
@@ -868,7 +885,11 @@ mod tests {
         assert!(
             analysis.unreferenced.is_empty(),
             "relative import should fall back to flat refs and cover helper: unreferenced={:?}",
-            analysis.unreferenced.iter().map(|d| &d.name).collect::<Vec<_>>()
+            analysis
+                .unreferenced
+                .iter()
+                .map(|d| &d.name)
+                .collect::<Vec<_>>()
         );
     }
 
@@ -925,7 +946,11 @@ mod tests {
         assert!(
             analysis.unreferenced.is_empty(),
             "some_func should be covered (imported AND called): unreferenced={:?}",
-            analysis.unreferenced.iter().map(|d| &d.name).collect::<Vec<_>>()
+            analysis
+                .unreferenced
+                .iter()
+                .map(|d| &d.name)
+                .collect::<Vec<_>>()
         );
     }
 
@@ -988,7 +1013,11 @@ mod tests {
         };
 
         let analysis = analyze_test_refs(&[&file, &file_test]);
-        let def_names: Vec<&str> = analysis.definitions.iter().map(|d| d.name.as_str()).collect();
+        let def_names: Vec<&str> = analysis
+            .definitions
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
         assert!(
             !def_names.contains(&"Readable"),
             "Protocol class should not be tracked for coverage: definitions={def_names:?}"
@@ -1021,7 +1050,11 @@ mod tests {
         };
 
         let analysis = analyze_test_refs(&[&file, &file_test]);
-        let def_names: Vec<&str> = analysis.definitions.iter().map(|d| d.name.as_str()).collect();
+        let def_names: Vec<&str> = analysis
+            .definitions
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
         assert!(
             !def_names.contains(&"process"),
             "Abstract method should not be tracked for coverage: definitions={def_names:?}"

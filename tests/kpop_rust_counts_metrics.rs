@@ -26,4 +26,3 @@ fn bug_rust_methods_per_class_violation_metric_id_mismatch() {
         "expected methods_per_class metric id, got: {method_viols:#?}"
     );
 }
-

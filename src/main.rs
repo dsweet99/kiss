@@ -11,8 +11,7 @@ use kiss::config_gen::{
 };
 use kiss::{
     Config, ConfigLanguage, GateConfig, Language, MetricStats, ShrinkState,
-    check_shrink_constraints, compute_summaries, format_stats_table,
-    parse_target_arg,
+    check_shrink_constraints, compute_summaries, format_stats_table, parse_target_arg,
 };
 use std::path::{Path, PathBuf};
 
@@ -152,7 +151,10 @@ enum Commands {
     /// Constrained minimization: `kiss shrink METRIC=VALUE` to start, `kiss shrink` to check
     Shrink {
         /// Omit to check against saved constraints.
-        #[arg(value_name = "METRIC=VALUE", help = "Target metric and value (metrics: files, code_units, statements, graph_nodes, graph_edges)")]
+        #[arg(
+            value_name = "METRIC=VALUE",
+            help = "Target metric and value (metrics: files, code_units, statements, graph_nodes, graph_edges)"
+        )]
         target: Option<String>,
         /// Paths to analyze
         #[arg(default_value = ".")]
@@ -184,6 +186,7 @@ fn run() -> i32 {
     dispatch(cli, &py_config, &rs_config, &gate_config)
 }
 
+#[allow(clippy::too_many_lines)]
 fn dispatch(
     cli: Cli,
     py_config: &kiss::Config,
@@ -285,9 +288,15 @@ fn dispatch(
             target,
             paths,
             ignore,
-        } => {
-            run_shrink(target, &paths, &ignore, cli.lang, py_config, rs_config, gate_config)
-        }
+        } => run_shrink(
+            target,
+            &paths,
+            &ignore,
+            cli.lang,
+            py_config,
+            rs_config,
+            gate_config,
+        ),
     }
 }
 
@@ -493,66 +502,32 @@ type MetricSpec = (&'static str, UnitMetricExtractor);
 
 fn print_all_top_metrics(units: &[kiss::UnitMetrics], n: usize) {
     let metrics: &[MetricSpec] = &[
-        ("statements_per_function", |u| {
-            u.statements
-        }),
+        ("statements_per_function", |u| u.statements),
         ("args_total", |u| u.arguments),
-        ("args_positional", |u| {
-            u.args_positional
-        }),
-        ("args_keyword_only", |u| {
-            u.args_keyword_only
-        }),
-        ("max_indentation_depth", |u| {
-            u.indentation
-        }),
-        ("nested_function_depth", |u| {
-            u.nested_depth
-        }),
-        ("branches_per_function", |u| {
-            u.branches
-        }),
-        ("returns_per_function", |u| {
-            u.returns
-        }),
-        ("return_values_per_function", |u| {
-            u.return_values
-        }),
-        (
-            "local_variables_per_function",
-            |u| u.locals,
-        ),
+        ("args_positional", |u| u.args_positional),
+        ("args_keyword_only", |u| u.args_keyword_only),
+        ("max_indentation_depth", |u| u.indentation),
+        ("nested_function_depth", |u| u.nested_depth),
+        ("branches_per_function", |u| u.branches),
+        ("returns_per_function", |u| u.returns),
+        ("return_values_per_function", |u| u.return_values),
+        ("local_variables_per_function", |u| u.locals),
         ("methods_per_class", |u| u.methods),
         ("lines_per_file", |u| u.lines),
-        ("imported_names_per_file", |u| {
-            u.imports
-        }),
+        ("imported_names_per_file", |u| u.imports),
         ("fan_in", |u| u.fan_in),
         ("fan_out", |u| u.fan_out),
-        ("transitive_deps", |u| {
-            u.transitive_deps
-        }),
-        ("dependency_depth", |u| {
-            u.dependency_depth
-        }),
+        ("indirect_deps", |u| u.indirect_deps),
+        ("dependency_depth", |u| u.dependency_depth),
     ];
 
     for (metric_id, extractor) in metrics {
-        print_top_for_metric(
-            units,
-            n,
-            metric_id,
-            *extractor,
-        );
+        print_top_for_metric(units, n, metric_id, *extractor);
     }
 }
 
-fn print_top_for_metric<F>(
-    units: &[kiss::UnitMetrics],
-    n: usize,
-    metric_id: &str,
-    extractor: F,
-) where
+fn print_top_for_metric<F>(units: &[kiss::UnitMetrics], n: usize, metric_id: &str, extractor: F)
+where
     F: Fn(&kiss::UnitMetrics) -> Option<usize>,
 {
     let mut with_values: Vec<_> = units
@@ -564,7 +539,12 @@ fn print_top_for_metric<F>(
     }
     with_values.sort_by(|a, b| b.0.cmp(&a.0));
     for (val, u) in with_values.into_iter().take(n) {
-        println!("STAT:{metric_id}:{val}:{file}:{line}:{name}", file = u.file, line = u.line, name = u.name);
+        println!(
+            "STAT:{metric_id}:{val}:{file}:{line}:{name}",
+            file = u.file,
+            line = u.line,
+            name = u.name
+        );
     }
 }
 
@@ -684,7 +664,16 @@ fn run_shrink(
     gate_config: &GateConfig,
 ) -> i32 {
     target.map_or_else(
-        || run_shrink_check(paths, ignore, lang_filter, py_config, rs_config, gate_config),
+        || {
+            run_shrink_check(
+                paths,
+                ignore,
+                lang_filter,
+                py_config,
+                rs_config,
+                gate_config,
+            )
+        },
         |t| run_shrink_start(&t, paths, ignore, lang_filter, py_config, rs_config),
     )
 }
@@ -710,7 +699,9 @@ fn run_shrink_start(
     };
 
     // Compute current metrics
-    let Some(current) = analyze::compute_global_metrics(paths, &ignore, lang_filter, py_config, rs_config) else {
+    let Some(current) =
+        analyze::compute_global_metrics(paths, &ignore, lang_filter, py_config, rs_config)
+    else {
         eprintln!("Error: No source files found.");
         return 1;
     };
@@ -720,7 +711,9 @@ fn run_shrink_start(
     if target_value > current_target_value {
         eprintln!(
             "Error: Target value {} exceeds current value {} for {}. Can only shrink, not grow.",
-            target_value, current_target_value, target.as_str()
+            target_value,
+            current_target_value,
+            target.as_str()
         );
         return 1;
     }
@@ -745,7 +738,11 @@ fn run_shrink_start(
     );
     println!(
         "SHRINK_CONSTRAINTS: files<={} code_units<={} statements<={} graph_nodes<={} graph_edges<={}",
-        current.files, current.code_units, current.statements, current.graph_nodes, current.graph_edges
+        current.files,
+        current.code_units,
+        current.statements,
+        current.graph_nodes,
+        current.graph_edges
     );
     println!("SHRINK_SAVED: .kiss_shrink");
     0
@@ -767,7 +764,14 @@ fn run_shrink_check(
         return 1;
     };
 
-    let result = run_shrink_analysis(paths, &ignore, lang_filter, py_config, rs_config, gate_config);
+    let result = run_shrink_analysis(
+        paths,
+        &ignore,
+        lang_filter,
+        py_config,
+        rs_config,
+        gate_config,
+    );
     let current = get_shrink_metrics(&result, paths, &ignore, lang_filter, py_config, rs_config);
     let Some(current) = current else { return 1 };
 
@@ -846,7 +850,6 @@ fn emit_shrink_final_status(check_ok: bool, shrink_result: &kiss::ShrinkViolatio
     }
     i32::from(has_failures)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -982,15 +985,15 @@ mod tests {
         let cli = Cli::try_parse_from(["kiss", "shrink", "statements=100"]).unwrap();
         assert!(matches!(
             cli.command,
-            Commands::Shrink { target: Some(_), .. }
+            Commands::Shrink {
+                target: Some(_),
+                ..
+            }
         ));
 
         // Without target: check mode
         let cli = Cli::try_parse_from(["kiss", "shrink"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Commands::Shrink { target: None, .. }
-        ));
+        assert!(matches!(cli.command, Commands::Shrink { target: None, .. }));
     }
     #[test]
     fn test_shrink_start_and_check() {
@@ -1001,17 +1004,32 @@ mod tests {
         let rs_cfg = Config::rust_defaults();
 
         // Test analyze::compute_global_metrics
-        let metrics = analyze::compute_global_metrics(std::slice::from_ref(&p), &[], None, &py_cfg, &rs_cfg);
+        let metrics =
+            analyze::compute_global_metrics(std::slice::from_ref(&p), &[], None, &py_cfg, &rs_cfg);
         assert!(metrics.is_some());
         let m = metrics.unwrap();
         assert!(m.files > 0);
 
         // Test run_shrink_start with target > current (should fail)
-        let exit = run_shrink_start("statements=999999", std::slice::from_ref(&p), &[], None, &py_cfg, &rs_cfg);
+        let exit = run_shrink_start(
+            "statements=999999",
+            std::slice::from_ref(&p),
+            &[],
+            None,
+            &py_cfg,
+            &rs_cfg,
+        );
         assert_eq!(exit, 1);
 
         // Test run_shrink_start with invalid target
-        let exit = run_shrink_start("invalid=100", std::slice::from_ref(&p), &[], None, &py_cfg, &rs_cfg);
+        let exit = run_shrink_start(
+            "invalid=100",
+            std::slice::from_ref(&p),
+            &[],
+            None,
+            &py_cfg,
+            &rs_cfg,
+        );
         assert_eq!(exit, 1);
 
         // Run in tmp dir to avoid overwriting any existing .kiss_shrink
@@ -1032,7 +1050,15 @@ mod tests {
         assert_eq!(exit, 0);
 
         // Test run_shrink without target (check mode)
-        let _exit = run_shrink(None, std::slice::from_ref(&p), &[], None, &py_cfg, &rs_cfg, &gate_cfg);
+        let _exit = run_shrink(
+            None,
+            std::slice::from_ref(&p),
+            &[],
+            None,
+            &py_cfg,
+            &rs_cfg,
+            &gate_cfg,
+        );
         // exit code depends on whether target is met
 
         std::env::set_current_dir(orig_dir).unwrap();

@@ -399,7 +399,9 @@ fn count_parameters(params: Node, source: &str) -> ParameterCounts {
                 // Skip typed self/cls parameters (e.g., self: SomeType)
             }
             "typed_parameter"
-                if child.child(0).is_some_and(|c| c.kind() == "list_splat_pattern") =>
+                if child
+                    .child(0)
+                    .is_some_and(|c| c.kind() == "list_splat_pattern") =>
             {
                 positional += 1;
                 after_star = true;
@@ -947,8 +949,14 @@ mod tests {
         let p = parse("def f(*args: object, a: bool = True, b: int = 0): pass");
         let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
         let counts = count_parameters(params, &p.source);
-        assert_eq!(counts.positional, 1, "typed *args should count as 1 positional");
-        assert_eq!(counts.keyword_only, 2, "params after typed *args should be keyword-only");
+        assert_eq!(
+            counts.positional, 1,
+            "typed *args should count as 1 positional"
+        );
+        assert_eq!(
+            counts.keyword_only, 2,
+            "params after typed *args should be keyword-only"
+        );
     }
 
     #[test]
@@ -956,8 +964,14 @@ mod tests {
         let p = parse("def f(*args, a=True, b=0): pass");
         let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
         let counts = count_parameters(params, &p.source);
-        assert_eq!(counts.positional, 1, "untyped *args should count as 1 positional");
-        assert_eq!(counts.keyword_only, 2, "params after untyped *args should be keyword-only");
+        assert_eq!(
+            counts.positional, 1,
+            "untyped *args should count as 1 positional"
+        );
+        assert_eq!(
+            counts.keyword_only, 2,
+            "params after untyped *args should be keyword-only"
+        );
     }
 
     #[test]
@@ -966,7 +980,10 @@ mod tests {
         let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
         let counts = count_parameters(params, &p.source);
         assert_eq!(counts.positional, 3, "x, y, *args = 3 positional");
-        assert_eq!(counts.keyword_only, 1, "kw after *args should be keyword-only");
+        assert_eq!(
+            counts.keyword_only, 1,
+            "kw after *args should be keyword-only"
+        );
     }
 
     #[test]

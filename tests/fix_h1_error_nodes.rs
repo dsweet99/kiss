@@ -1,4 +1,4 @@
-use kiss::parsing::{create_parser, ParsedFile};
+use kiss::parsing::{ParsedFile, create_parser};
 use kiss::py_metrics::compute_function_metrics;
 
 fn parse_py(code: &str) -> ParsedFile {
@@ -57,7 +57,10 @@ fn error_functions_excluded_from_violation_counts() {
     // The function has errors, so push_py_fn_metrics should skip it
     let stats = MetricStats::default();
     // Only push if not errored — this is the behavior we're testing
-    assert!(m.has_error, "has_error should be true for broken function — fix not applied yet");
+    assert!(
+        m.has_error,
+        "has_error should be true for broken function — fix not applied yet"
+    );
     // If has_error is true, stats should remain empty
     assert!(
         stats.statements_per_function.is_empty(),

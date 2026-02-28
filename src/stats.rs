@@ -33,7 +33,7 @@ pub struct MetricStats {
     pub fan_in: Vec<usize>,
     pub fan_out: Vec<usize>,
     pub cycle_size: Vec<usize>,
-    pub transitive_dependencies: Vec<usize>,
+    pub indirect_dependencies: Vec<usize>,
     pub dependency_depth: Vec<usize>,
 }
 
@@ -88,7 +88,7 @@ impl MetricStats {
             fan_in,
             fan_out,
             cycle_size,
-            transitive_dependencies,
+            indirect_dependencies,
             dependency_depth
         );
     }
@@ -111,7 +111,7 @@ impl MetricStats {
             let m = graph.module_metrics(name);
             self.fan_in.push(m.fan_in);
             self.fan_out.push(m.fan_out);
-            self.transitive_dependencies.push(m.transitive_dependencies);
+            self.indirect_dependencies.push(m.indirect_dependencies);
             self.dependency_depth.push(m.dependency_depth);
             self.cycle_size
                 .push(*cycle_size_by_module.get(name.as_str()).unwrap_or(&0));
@@ -365,7 +365,7 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::Module,
     },
     MetricDef {
-        metric_id: "transitive_dependencies",
+        metric_id: "indirect_dependencies",
         scope: MetricScope::Module,
     },
     MetricDef {
@@ -442,7 +442,7 @@ fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usi
         "fan_in" => &stats.fan_in,
         "fan_out" => &stats.fan_out,
         "cycle_size" => &stats.cycle_size,
-        "transitive_dependencies" => &stats.transitive_dependencies,
+        "indirect_dependencies" => &stats.indirect_dependencies,
         "dependency_depth" => &stats.dependency_depth,
         _ => return None,
     })
@@ -508,7 +508,7 @@ fn config_key_for(metric_id: &str) -> Option<&'static str> {
         "fan_in" => "fan_in",
         "fan_out" => "fan_out",
         "cycle_size" => "cycle_size",
-        "transitive_dependencies" => "transitive_dependencies",
+        "indirect_dependencies" => "indirect_dependencies",
         "dependency_depth" => "dependency_depth",
         _ => return None,
     })
@@ -659,13 +659,19 @@ mod tests {
         let mut graph = crate::graph::DependencyGraph::new();
         graph.add_dependency("a", "b");
         graph.add_dependency("b", "c");
-        graph.paths.insert("a".into(), std::path::PathBuf::from("a.py"));
-        graph.paths.insert("b".into(), std::path::PathBuf::from("b.py"));
-        graph.paths.insert("c".into(), std::path::PathBuf::from("c.py"));
+        graph
+            .paths
+            .insert("a".into(), std::path::PathBuf::from("a.py"));
+        graph
+            .paths
+            .insert("b".into(), std::path::PathBuf::from("b.py"));
+        graph
+            .paths
+            .insert("c".into(), std::path::PathBuf::from("c.py"));
         stats.collect_graph_metrics(&graph);
         assert!(!stats.fan_in.is_empty());
         assert!(!stats.fan_out.is_empty());
-        assert!(!stats.transitive_dependencies.is_empty());
+        assert!(!stats.indirect_dependencies.is_empty());
         assert!(!stats.dependency_depth.is_empty());
         assert!(stats.max_depth() > 0);
     }
@@ -678,13 +684,21 @@ mod tests {
 
         // Internal module a imports an external node "os".
         graph.get_or_create_node("a");
-        graph.paths
+        graph
+            .paths
             .insert("a".into(), std::path::PathBuf::from("a.py"));
         graph.add_dependency("a", "os");
 
         stats.collect_graph_metrics(&graph);
-        assert_eq!(stats.fan_out.len(), 1, "fan_out should only include internal modules");
-        assert_eq!(stats.fan_out[0], 1, "a should have one outgoing edge (to external os)");
+        assert_eq!(
+            stats.fan_out.len(),
+            1,
+            "fan_out should only include internal modules"
+        );
+        assert_eq!(
+            stats.fan_out[0], 1,
+            "a should have one outgoing edge (to external os)"
+        );
     }
 
     #[test]
@@ -699,9 +713,15 @@ mod tests {
         graph.add_dependency("a", "b");
         graph.add_dependency("b", "a");
         graph.get_or_create_node("c");
-        graph.paths.insert("a".into(), std::path::PathBuf::from("a.py"));
-        graph.paths.insert("b".into(), std::path::PathBuf::from("b.py"));
-        graph.paths.insert("c".into(), std::path::PathBuf::from("c.py"));
+        graph
+            .paths
+            .insert("a".into(), std::path::PathBuf::from("a.py"));
+        graph
+            .paths
+            .insert("b".into(), std::path::PathBuf::from("b.py"));
+        graph
+            .paths
+            .insert("c".into(), std::path::PathBuf::from("c.py"));
 
         stats.collect_graph_metrics(&graph);
 

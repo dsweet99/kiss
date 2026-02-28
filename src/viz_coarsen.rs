@@ -183,7 +183,10 @@ fn rebuild_intercommunity_weights(
     weights
 }
 
-fn find_best_merge_target(weights: &BTreeMap<(usize, usize), usize>, small_i: usize) -> Option<usize> {
+fn find_best_merge_target(
+    weights: &BTreeMap<(usize, usize), usize>,
+    small_i: usize,
+) -> Option<usize> {
     let mut best: Option<(usize, usize)> = None;
     for ((a, b), w) in weights {
         let other = if *a == small_i {
@@ -376,7 +379,11 @@ fn split_largest_once(nodes: &[String], community: &[usize]) -> (Vec<usize>, Vec
     (a, b)
 }
 
-fn split_until_target(nodes: &[String], mut communities: Vec<Vec<usize>>, target: usize) -> Vec<Vec<usize>> {
+fn split_until_target(
+    nodes: &[String],
+    mut communities: Vec<Vec<usize>>,
+    target: usize,
+) -> Vec<Vec<usize>> {
     while communities.len() < target {
         let (idx, _) = communities
             .iter()
@@ -464,7 +471,10 @@ pub fn coarsen_with_zoom(
 
     let labels = build_cluster_labels(nodes, paths, &communities);
     let co_edges = build_cluster_edges(nodes, edges, &communities);
-    CoarsenedGraph { labels, edges: co_edges }
+    CoarsenedGraph {
+        labels,
+        edges: co_edges,
+    }
 }
 
 #[cfg(test)]
@@ -551,4 +561,3 @@ mod tests {
         let _ = coarsen_with_zoom(&nodes, &edges, &paths, 0.3);
     }
 }
-

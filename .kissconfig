@@ -17,6 +17,7 @@ decorators_per_function = 3
 dependency_depth = 7
 functions_per_file = 30
 imported_names_per_file = 20
+indirect_dependencies = 100
 interface_types_per_file = 3
 keyword_only_args = 6
 local_variables = 20
@@ -28,7 +29,6 @@ returns_per_function = 5
 statements_per_file = 400
 statements_per_function = 35
 statements_per_try_block = 5
-transitive_dependencies = 100
 
 [rust]
 arguments = 7
@@ -41,13 +41,13 @@ cycle_size = 0
 dependency_depth = 1
 functions_per_file = 40
 imported_names_per_file = 38
+indirect_dependencies = 0
 interface_types_per_file = 0
 local_variables = 18
 max_indentation = 4
 methods_per_class = 13
 nested_function_depth = 3
 returns_per_function = 4
-statements_per_file = 261
+statements_per_file = 262
 statements_per_function = 27
-transitive_dependencies = 29
 

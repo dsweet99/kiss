@@ -1,4 +1,4 @@
-use crate::config::{check_unknown_keys, get_usize, ConfigError};
+use crate::config::{ConfigError, check_unknown_keys, get_usize};
 use crate::defaults;
 use std::path::Path;
 
@@ -114,13 +114,20 @@ impl GateConfig {
 
     /// Result-based merge that returns errors instead of printing to stderr.
     fn try_merge_from_toml(&mut self, toml_str: &str) -> Result<(), ConfigError> {
-        let value = toml_str.parse::<toml::Table>().map_err(|e| ConfigError::ParseError {
-            message: e.to_string(),
-        })?;
+        let value = toml_str
+            .parse::<toml::Table>()
+            .map_err(|e| ConfigError::ParseError {
+                message: e.to_string(),
+            })?;
         if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
             check_unknown_keys(
                 gate,
-                &["test_coverage_threshold", "min_similarity", "duplication_enabled", "orphan_module_enabled"],
+                &[
+                    "test_coverage_threshold",
+                    "min_similarity",
+                    "duplication_enabled",
+                    "orphan_module_enabled",
+                ],
                 "gate",
             )?;
             if let Some(t) = get_usize(gate, "test_coverage_threshold") {
@@ -141,8 +148,10 @@ impl GateConfig {
                 }
                 self.min_similarity = s;
             }
-            self.duplication_enabled = try_get_bool(gate, "duplication_enabled", self.duplication_enabled)?;
-            self.orphan_module_enabled = try_get_bool(gate, "orphan_module_enabled", self.orphan_module_enabled)?;
+            self.duplication_enabled =
+                try_get_bool(gate, "duplication_enabled", self.duplication_enabled)?;
+            self.orphan_module_enabled =
+                try_get_bool(gate, "orphan_module_enabled", self.orphan_module_enabled)?;
         }
         Ok(())
     }

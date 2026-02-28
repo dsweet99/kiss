@@ -314,10 +314,7 @@ mod tests {
         // A file named "test_utils.py" under "src/" should NOT be ignored
         // just because its name starts with "test_".
         assert!(
-            !should_ignore(
-                Path::new("src/test_utils.py"),
-                &["test_".to_string()]
-            ),
+            !should_ignore(Path::new("src/test_utils.py"), &["test_".to_string()]),
             "should_ignore should not match filename prefixes, only directory components"
         );
     }

@@ -190,7 +190,11 @@ pub fn generate_config_toml_by_language(
     );
     let _ = writeln!(out, "min_similarity = {}", gate.min_similarity);
     let _ = writeln!(out, "duplication_enabled = {}", gate.duplication_enabled);
-    let _ = writeln!(out, "orphan_module_enabled = {}\n", gate.orphan_module_enabled);
+    let _ = writeln!(
+        out,
+        "orphan_module_enabled = {}\n",
+        gate.orphan_module_enabled
+    );
     if py_n > 0 {
         append_section(
             &mut out,
@@ -335,8 +339,8 @@ fn append_python_defaults(out: &mut String) {
     );
     let _ = writeln!(
         out,
-        "transitive_dependencies = {}",
-        python::TRANSITIVE_DEPENDENCIES
+        "indirect_dependencies = {}",
+        python::INDIRECT_DEPENDENCIES
     );
     let _ = writeln!(out, "dependency_depth = {}", python::DEPENDENCY_DEPTH);
     let _ = writeln!(
@@ -393,8 +397,8 @@ fn append_rust_defaults(out: &mut String) {
     let _ = writeln!(out, "imported_names_per_file = {}", rust::IMPORTS_PER_FILE);
     let _ = writeln!(
         out,
-        "transitive_dependencies = {}",
-        rust::TRANSITIVE_DEPENDENCIES
+        "indirect_dependencies = {}",
+        rust::INDIRECT_DEPENDENCIES
     );
     let _ = writeln!(out, "dependency_depth = {}", rust::DEPENDENCY_DEPTH);
     let _ = writeln!(out, "boolean_parameters = {}", rust::BOOLEAN_PARAMETERS);
@@ -441,7 +445,7 @@ fn common_config_key(metric_id: &str) -> Option<&'static str> {
         "interface_types_per_file" => Some("interface_types_per_file"),
         "concrete_types_per_file" => Some("concrete_types_per_file"),
         "imported_names_per_file" => Some("imported_names_per_file"),
-        "transitive_dependencies" => Some("transitive_dependencies"),
+        "indirect_dependencies" => Some("indirect_dependencies"),
         "dependency_depth" => Some("dependency_depth"),
         _ => None,
     }

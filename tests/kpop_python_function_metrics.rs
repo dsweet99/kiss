@@ -101,4 +101,3 @@ fn bug_positional_args_should_count_varargs_parameter() {
     let m = compute_function_metrics(func, &p.source);
     assert_eq!(m.arguments_positional, 1);
 }
-

@@ -312,9 +312,8 @@ mod tests {
     fn test_inner_fn_statements_not_counted_in_outer() {
         // Inner named functions are separate scopes. Their body statements should NOT
         // be counted in the outer function's statement count (matching Python behavior).
-        let (inputs, block) = parse_fn(
-            "fn outer() { let x = 1; fn inner() { let y = 2; let z = 3; } }",
-        );
+        let (inputs, block) =
+            parse_fn("fn outer() { let x = 1; fn inner() { let y = 2; let z = 3; } }");
         let m = compute_rust_function_metrics(&inputs, &block, 0);
         // Expected: 2 statements (let x + fn inner as an item)
         // Bug: recursion counts inner's body too → 4
@@ -328,9 +327,8 @@ mod tests {
     #[test]
     fn test_inner_fn_locals_not_counted_in_outer() {
         // Inner fn's local variables should not be attributed to the outer function.
-        let (inputs, block) = parse_fn(
-            "fn outer() { let a = 1; fn inner() { let b = 2; let c = 3; } }",
-        );
+        let (inputs, block) =
+            parse_fn("fn outer() { let a = 1; fn inner() { let b = 2; let c = 3; } }");
         let m = compute_rust_function_metrics(&inputs, &block, 0);
         assert_eq!(
             m.local_variables, 1,
@@ -342,9 +340,8 @@ mod tests {
     #[test]
     fn test_inner_fn_branches_not_counted_in_outer() {
         // Branches inside inner functions should not inflate outer function's branch count.
-        let (inputs, block) = parse_fn(
-            "fn outer() { fn inner(x: i32) { if x > 0 {} if x < 0 {} } }",
-        );
+        let (inputs, block) =
+            parse_fn("fn outer() { fn inner(x: i32) { if x > 0 {} if x < 0 {} } }");
         let m = compute_rust_function_metrics(&inputs, &block, 0);
         assert_eq!(
             m.branches, 0,
@@ -430,9 +427,16 @@ mod tests {
 
         // File-level counting: use items count imported names
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-        writeln!(tmp, "use std::io::{{Read, Write}};\nuse std::path::Path;\nfn main() {{}}").unwrap();
+        writeln!(
+            tmp,
+            "use std::io::{{Read, Write}};\nuse std::path::Path;\nfn main() {{}}"
+        )
+        .unwrap();
         let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
         let m = compute_rust_file_metrics(&parsed);
-        assert_eq!(m.imports, 3, "should count 3 imported names: Read, Write, Path");
+        assert_eq!(
+            m.imports, 3,
+            "should count 3 imported names: Read, Write, Path"
+        );
     }
 }
