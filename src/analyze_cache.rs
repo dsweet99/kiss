@@ -1,12 +1,12 @@
 use crate::analyze::{
     compute_test_coverage_from_lists, filter_duplicates_by_focus, filter_viols_by_focus,
 };
-use kiss::cli_output::{print_duplicates, print_final_status, print_violations};
-use kiss::{Config, DuplicateCluster, GateConfig, Violation};
-use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use kiss::check_cache;
 use kiss::check_cache::{CachedCodeChunk, CachedViolation};
 use kiss::check_universe_cache::{CachedCoverageItem, CachedDuplicateCluster, FullCheckCache};
+use kiss::cli_output::{print_duplicates, print_final_status, print_violations};
+use kiss::{Config, DuplicateCluster, GateConfig, Violation};
+use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
@@ -90,7 +90,12 @@ fn cached_duplicates(
     cache: FullCheckCache,
     gate_config: &GateConfig,
     focus_set: &HashSet<PathBuf>,
-) -> (Vec<Violation>, Vec<DuplicateCluster>, Vec<DuplicateCluster>, FullCheckCache) {
+) -> (
+    Vec<Violation>,
+    Vec<DuplicateCluster>,
+    Vec<DuplicateCluster>,
+    FullCheckCache,
+) {
     let mut viols: Vec<Violation> = cache
         .base_violations
         .iter()
@@ -112,11 +117,7 @@ fn cached_duplicates(
                     .iter()
                     .map(|c| DuplicateCluster {
                         avg_similarity: c.avg_similarity,
-                        chunks: c
-                            .chunks
-                            .iter()
-                            .map(|cc| cc.clone().into_chunk())
-                            .collect(),
+                        chunks: c.chunks.iter().map(|cc| cc.clone().into_chunk()).collect(),
                     })
                     .collect(),
                 focus_set,
@@ -127,11 +128,7 @@ fn cached_duplicates(
                     .iter()
                     .map(|c| DuplicateCluster {
                         avg_similarity: c.avg_similarity,
-                        chunks: c
-                            .chunks
-                            .iter()
-                            .map(|cc| cc.clone().into_chunk())
-                            .collect(),
+                        chunks: c.chunks.iter().map(|cc| cc.clone().into_chunk()).collect(),
                     })
                     .collect(),
                 focus_set,
@@ -182,7 +179,8 @@ pub fn try_run_cached_all(
         opts.gate_config,
     );
     let cache = load_full_cache(&fp)?;
-    let (mut viols, py_dups, rs_dups, cache) = cached_duplicates(cache, opts.gate_config, focus_set);
+    let (mut viols, py_dups, rs_dups, cache) =
+        cached_duplicates(cache, opts.gate_config, focus_set);
     viols.extend(cached_coverage_viols(&cache, focus_set));
 
     println!(
@@ -279,7 +277,11 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
         statement_count: inputs.statement_count,
         graph_nodes,
         graph_edges,
-        base_violations: inputs.violations.iter().map(CachedViolation::from).collect(),
+        base_violations: inputs
+            .violations
+            .iter()
+            .map(CachedViolation::from)
+            .collect(),
         graph_violations: inputs
             .graph_viols_all
             .iter()
@@ -343,11 +345,11 @@ mod tests {
             unreferenced: Vec::new(),
         };
         let focus = HashSet::new();
-        let (_viols, py_dups, rs_dups, cache) = cached_duplicates(empty, &GateConfig::default(), &focus);
+        let (_viols, py_dups, rs_dups, cache) =
+            cached_duplicates(empty, &GateConfig::default(), &focus);
         assert!(py_dups.is_empty());
         assert!(rs_dups.is_empty());
         let cov = cached_coverage_viols(&cache, &focus);
         assert!(cov.is_empty());
     }
 }
-

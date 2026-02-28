@@ -1,10 +1,10 @@
 use common::first_function_node;
 use kiss::config::Config;
+use kiss::discovery::{find_python_files, find_source_files_with_ignore};
 use kiss::graph::{analyze_graph, build_dependency_graph};
 use kiss::parsing::{ParsedFile, create_parser, parse_file};
 use kiss::py_metrics::compute_function_metrics;
 use kiss::units::{CodeUnitKind, count_code_units, extract_code_units};
-use kiss::discovery::{find_python_files, find_source_files_with_ignore};
 use std::path::Path;
 mod common;
 
@@ -52,7 +52,11 @@ fn h2_async_function_is_code_unit() {
     write!(tmp, "async def af():\n    return 1\n").unwrap();
     let p = parse_py(tmp.path());
     let units = extract_code_units(&p);
-    assert!(units.iter().any(|u| u.kind == CodeUnitKind::Function && u.name == "af"));
+    assert!(
+        units
+            .iter()
+            .any(|u| u.kind == CodeUnitKind::Function && u.name == "af")
+    );
 }
 
 fn h3_decorated_function_is_code_unit() {
@@ -61,7 +65,11 @@ fn h3_decorated_function_is_code_unit() {
     write!(tmp, "@dec\ndef df():\n    return 1\n").unwrap();
     let p = parse_py(tmp.path());
     let units = extract_code_units(&p);
-    assert!(units.iter().any(|u| u.kind == CodeUnitKind::Function && u.name == "df"));
+    assert!(
+        units
+            .iter()
+            .any(|u| u.kind == CodeUnitKind::Function && u.name == "df")
+    );
 }
 
 fn h4_class_is_code_unit() {
@@ -70,7 +78,11 @@ fn h4_class_is_code_unit() {
     write!(tmp, "class C:\n    pass\n").unwrap();
     let p = parse_py(tmp.path());
     let units = extract_code_units(&p);
-    assert!(units.iter().any(|u| u.kind == CodeUnitKind::Class && u.name == "C"));
+    assert!(
+        units
+            .iter()
+            .any(|u| u.kind == CodeUnitKind::Class && u.name == "C")
+    );
 }
 
 fn h5_method_is_code_unit() {
@@ -79,7 +91,11 @@ fn h5_method_is_code_unit() {
     write!(tmp, "class C:\n    def m(self):\n        return 1\n").unwrap();
     let p = parse_py(tmp.path());
     let units = extract_code_units(&p);
-    assert!(units.iter().any(|u| u.kind == CodeUnitKind::Method && u.name == "m"));
+    assert!(
+        units
+            .iter()
+            .any(|u| u.kind == CodeUnitKind::Method && u.name == "m")
+    );
 }
 
 fn h6_nested_function_is_code_unit() {
@@ -92,7 +108,11 @@ fn h6_nested_function_is_code_unit() {
     .unwrap();
     let p = parse_py(tmp.path());
     let units = extract_code_units(&p);
-    assert!(units.iter().any(|u| u.kind == CodeUnitKind::Function && u.name == "inner"));
+    assert!(
+        units
+            .iter()
+            .any(|u| u.kind == CodeUnitKind::Function && u.name == "inner")
+    );
 }
 
 fn h7_nested_class_is_code_unit() {
@@ -101,13 +121,21 @@ fn h7_nested_class_is_code_unit() {
     write!(tmp, "class A:\n    class B:\n        pass\n").unwrap();
     let p = parse_py(tmp.path());
     let units = extract_code_units(&p);
-    assert!(units.iter().any(|u| u.kind == CodeUnitKind::Class && u.name == "B"));
+    assert!(
+        units
+            .iter()
+            .any(|u| u.kind == CodeUnitKind::Class && u.name == "B")
+    );
 }
 
 fn h8_decorated_method_is_code_unit() -> ParsedFile {
     use std::io::Write;
     let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
-    write!(tmp, "class C:\n    @dec\n    def m(self):\n        return 1\n").unwrap();
+    write!(
+        tmp,
+        "class C:\n    @dec\n    def m(self):\n        return 1\n"
+    )
+    .unwrap();
     parse_py(tmp.path())
 }
 
@@ -202,7 +230,10 @@ fn bug_lazy_import_should_create_graph_edge_and_prevent_orphan() {
     let graph = build_dependency_graph(&parsed_files);
     let viols = analyze_graph(&graph, &Config::python_defaults(), true);
 
-    let orphan_viols: Vec<_> = viols.iter().filter(|v| v.metric == "orphan_module").collect();
+    let orphan_viols: Vec<_> = viols
+        .iter()
+        .filter(|v| v.metric == "orphan_module")
+        .collect();
     assert!(
         orphan_viols.is_empty(),
         "lazy_target should not be orphan when imported inside a function; got:\n{orphan_viols:#?}"
@@ -231,12 +262,7 @@ fn bug_graph_edge_dotted_import_should_create_internal_edge() {
     let importer2 = parse_py(Path::new("tests/fake_python/imports_pkg2_submod.py"));
 
     let parsed_files: Vec<&ParsedFile> = vec![
-        &pkg1_sub,
-        &pkg1_init,
-        &pkg2_sub,
-        &pkg2_init,
-        &importer1,
-        &importer2,
+        &pkg1_sub, &pkg1_init, &pkg2_sub, &pkg2_init, &importer1, &importer2,
     ];
     let graph = build_dependency_graph(&parsed_files);
     let viols = analyze_graph(&graph, &Config::python_defaults(), true);
@@ -261,7 +287,8 @@ fn bug_statement_definition_should_exclude_nested_function_bodies() {
     // Test: compute metrics for outer function and assert statements == 1.
     let p = {
         use std::io::Write;
-        let code = "def outer():\n    def inner():\n        x = 1\n        return x\n    return 1\n";
+        let code =
+            "def outer():\n    def inner():\n        x = 1\n        return x\n    return 1\n";
         let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
         write!(tmp, "{code}").unwrap();
         parse_py(tmp.path())
@@ -550,5 +577,3 @@ fn kpop_orphan_module_dynamic_import_importlib_import_module_string_literal() {
         "Expected `pkg.target` not to be orphan when dynamically imported via importlib.import_module(\"pkg.target\"). Got:\n{viols:#?}"
     );
 }
-
-

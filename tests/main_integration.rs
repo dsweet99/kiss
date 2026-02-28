@@ -1,6 +1,6 @@
 use kiss::cli_output::{
-    print_coverage_gate_failure, print_duplicates, print_final_status, print_no_files_message,
-    count_py_unreferenced, count_rs_unreferenced, print_violations,
+    count_py_unreferenced, count_rs_unreferenced, print_coverage_gate_failure, print_duplicates,
+    print_final_status, print_no_files_message, print_violations,
 };
 use kiss::config_gen::{collect_py_stats, collect_rs_stats, merge_config_toml, write_mimic_config};
 use kiss::{

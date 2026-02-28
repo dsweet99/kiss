@@ -2,7 +2,13 @@ use kiss::rust_fn_metrics::compute_rust_function_metrics;
 use kiss::rust_parsing::{ParsedRustFile, parse_rust_file};
 use std::io::Write;
 
-fn parse_first_fn(code: &str) -> (syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>, syn::Block, usize) {
+fn parse_first_fn(
+    code: &str,
+) -> (
+    syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
+    syn::Block,
+    usize,
+) {
     let file = syn::parse_file(code).expect("parse rust file");
     for item in file.items {
         if let syn::Item::Fn(f) = item {
@@ -39,7 +45,8 @@ fn kpop_rust_none_statements_per_function() {
 #[test]
 fn kpop_rust_none_arguments_per_function() {
     // RULE: arguments_per_function
-    let (inputs, block, attr_count) = parse_first_fn("fn f(self_: i32, a:i32, b:bool){ let _=a+b; }");
+    let (inputs, block, attr_count) =
+        parse_first_fn("fn f(self_: i32, a:i32, b:bool){ let _=a+b; }");
     let m = compute_rust_function_metrics(&inputs, &block, attr_count);
     assert_eq!(m.arguments, 3);
     // extra assertions
@@ -57,9 +64,8 @@ fn kpop_rust_none_arguments_per_function() {
 #[test]
 fn kpop_rust_none_max_indentation_depth_and_branches() {
     // RULE: max_indentation_depth, branches_per_function
-    let (inputs, block, attr_count) = parse_first_fn(
-        "fn f(x:i32){ if x>0 { if x>1 { let _=x; } } }",
-    );
+    let (inputs, block, attr_count) =
+        parse_first_fn("fn f(x:i32){ if x>0 { if x>1 { let _=x; } } }");
     let m = compute_rust_function_metrics(&inputs, &block, attr_count);
     assert!(m.branches >= 2);
     assert!(m.max_indentation >= 2);
@@ -78,9 +84,8 @@ fn kpop_rust_none_max_indentation_depth_and_branches() {
 #[test]
 fn kpop_rust_none_returns_per_function() {
     // RULE: returns_per_function counts explicit `return`.
-    let (inputs, block, attr_count) = parse_first_fn(
-        "fn f(x:i32)->i32{ if x>0 { return 1; } return 2; }",
-    );
+    let (inputs, block, attr_count) =
+        parse_first_fn("fn f(x:i32)->i32{ if x>0 { return 1; } return 2; }");
     let m = compute_rust_function_metrics(&inputs, &block, attr_count);
     assert_eq!(m.returns, 2);
     // extra assertions
@@ -98,9 +103,8 @@ fn kpop_rust_none_returns_per_function() {
 #[test]
 fn kpop_rust_none_nested_function_depth() {
     // RULE: nested_function_depth counts closures nesting
-    let (inputs, block, attr_count) = parse_first_fn(
-        "fn f(){ let _ = || { let _ = || { 1 }; 2 }; }",
-    );
+    let (inputs, block, attr_count) =
+        parse_first_fn("fn f(){ let _ = || { let _ = || { 1 }; 2 }; }");
     let m = compute_rust_function_metrics(&inputs, &block, attr_count);
     assert!(m.nested_function_depth >= 2);
     // extra assertions
@@ -189,4 +193,3 @@ fn kpop_rust_none_file_metrics_counts() {
     assert!(fm.interface_types <= 3);
     assert!(fm.concrete_types <= 8);
 }
-

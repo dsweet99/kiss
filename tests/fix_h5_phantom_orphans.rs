@@ -1,5 +1,5 @@
-use kiss::graph::{analyze_graph, DependencyGraph};
 use kiss::Config;
+use kiss::graph::{DependencyGraph, analyze_graph};
 
 /// Bug H5: If the same file path appears under two different module names
 /// in the dependency graph, `analyze_graph` should deduplicate by path
@@ -60,9 +60,7 @@ fn different_paths_still_flags_real_orphan() {
         .filter(|v| v.metric == "orphan_module")
         .collect();
     assert!(
-        orphan_viols
-            .iter()
-            .any(|v| v.unit_name == "orphan"),
+        orphan_viols.iter().any(|v| v.unit_name == "orphan"),
         "Real orphan should still be flagged"
     );
 }

@@ -27,7 +27,7 @@ pub struct UnitMetrics {
     pub imports: Option<usize>,
     pub fan_in: Option<usize>,
     pub fan_out: Option<usize>,
-    pub transitive_deps: Option<usize>,
+    pub indirect_deps: Option<usize>,
     pub dependency_depth: Option<usize>,
 }
 
@@ -55,14 +55,14 @@ fn file_unit_metrics(
     imports: usize,
     graph: Option<&DependencyGraph>,
 ) -> UnitMetrics {
-    let (fan_in, fan_out, transitive_deps, dependency_depth) =
+    let (fan_in, fan_out, indirect_deps, dependency_depth) =
         graph.map_or((None, None, None, None), |g| {
             let module_name = module_id_for_path(path, g);
             let m = g.module_metrics(&module_name);
             (
                 Some(m.fan_in),
                 Some(m.fan_out),
-                Some(m.transitive_dependencies),
+                Some(m.indirect_dependencies),
                 Some(m.dependency_depth),
             )
         });
@@ -89,7 +89,7 @@ fn file_unit_metrics(
         imports: Some(imports),
         fan_in,
         fan_out,
-        transitive_deps,
+        indirect_deps,
         dependency_depth,
     }
 }
@@ -149,7 +149,7 @@ fn collect_detailed_from_node(node: Node, source: &str, file: &str, units: &mut 
                 imports: None,
                 fan_in: None,
                 fan_out: None,
-                transitive_deps: None,
+                indirect_deps: None,
                 dependency_depth: None,
             });
         }
@@ -179,7 +179,7 @@ fn collect_detailed_from_node(node: Node, source: &str, file: &str, units: &mut 
                 imports: None,
                 fan_in: None,
                 fan_out: None,
-                transitive_deps: None,
+                indirect_deps: None,
                 dependency_depth: None,
             });
         }
@@ -234,7 +234,7 @@ fn collect_detailed_from_items(items: &[Item], file: &str, units: &mut Vec<UnitM
                     imports: None,
                     fan_in: None,
                     fan_out: None,
-                    transitive_deps: None,
+                    indirect_deps: None,
                     dependency_depth: None,
                 });
             }
@@ -265,7 +265,7 @@ fn collect_detailed_from_items(items: &[Item], file: &str, units: &mut Vec<UnitM
                     imports: None,
                     fan_in: None,
                     fan_out: None,
-                    transitive_deps: None,
+                    indirect_deps: None,
                     dependency_depth: None,
                 });
                 for ii in &i.items {
@@ -292,7 +292,7 @@ fn collect_detailed_from_items(items: &[Item], file: &str, units: &mut Vec<UnitM
                             imports: None,
                             fan_in: None,
                             fan_out: None,
-                            transitive_deps: None,
+                            indirect_deps: None,
                             dependency_depth: None,
                         });
                     }
@@ -410,7 +410,7 @@ mod tests {
             imports: None,
             fan_in: None,
             fan_out: None,
-            transitive_deps: None,
+            indirect_deps: None,
             dependency_depth: None,
         }];
         let table = format_detailed_table(&units);

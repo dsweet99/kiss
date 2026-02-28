@@ -1,7 +1,7 @@
 use kiss::parsing::{ParsedFile, create_parser, parse_file};
 use kiss::rust_parsing::{ParsedRustFile, parse_rust_file};
-use kiss::test_refs::analyze_test_refs;
 use kiss::rust_test_refs::analyze_rust_test_refs;
+use kiss::test_refs::analyze_test_refs;
 use std::io::Write;
 use std::path::Path;
 
@@ -33,7 +33,11 @@ fn c2_cov_1_bare_name_collision_inflates_coverage() {
         parse_py(tmp.path())
     };
     let test_file = {
-        let mut tmp = tempfile::Builder::new().prefix("test_").suffix(".py").tempfile().unwrap();
+        let mut tmp = tempfile::Builder::new()
+            .prefix("test_")
+            .suffix(".py")
+            .tempfile()
+            .unwrap();
         write!(
             tmp,
             "from auth import process\n\ndef test_auth():\n    process()\n"
@@ -111,11 +115,19 @@ fn c2_cov_2_framework_import_reclassifies_production_as_test() {
 fn c2_cov_3_test_helper_refs_outside_test_scope_invisible() {
     let service = {
         let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
-        write!(tmp, "class MyService:\n    def run(self):\n        return 42\n").unwrap();
+        write!(
+            tmp,
+            "class MyService:\n    def run(self):\n        return 42\n"
+        )
+        .unwrap();
         parse_py(tmp.path())
     };
     let test_file = {
-        let mut tmp = tempfile::Builder::new().prefix("test_").suffix(".py").tempfile().unwrap();
+        let mut tmp = tempfile::Builder::new()
+            .prefix("test_")
+            .suffix(".py")
+            .tempfile()
+            .unwrap();
         write!(
             tmp,
             "from service import MyService\n\n\
@@ -139,7 +151,8 @@ fn c2_cov_3_test_helper_refs_outside_test_scope_invisible() {
          inside it are invisible.\n\
          unreferenced: {:#?}\n\
          test_references: {:?}",
-        analysis.unreferenced, analysis.test_references
+        analysis.unreferenced,
+        analysis.test_references
     );
 }
 
@@ -170,10 +183,7 @@ fn c2_cov_4_nested_function_definitions_excluded() {
     let files: Vec<&ParsedFile> = vec![&module];
     let analysis = analyze_test_refs(&files);
 
-    let has_inner = analysis
-        .definitions
-        .iter()
-        .any(|d| d.name == "inner_logic");
+    let has_inner = analysis.definitions.iter().any(|d| d.name == "inner_logic");
 
     assert!(
         !has_inner,

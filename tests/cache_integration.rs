@@ -20,14 +20,12 @@ fn list_full_check_cache_files(home: &std::path::Path) -> Vec<std::path::PathBuf
         .filter_map(std::result::Result::ok)
         .map(|e| e.path())
         .filter(|p| {
-            p.file_name()
-                .and_then(|s| s.to_str())
-                .is_some_and(|s| {
-                    s.starts_with("check_full_")
-                        && std::path::Path::new(s)
-                            .extension()
-                            .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
-                })
+            p.file_name().and_then(|s| s.to_str()).is_some_and(|s| {
+                s.starts_with("check_full_")
+                    && std::path::Path::new(s)
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
+            })
         })
         .collect();
     out.sort();
@@ -142,4 +140,3 @@ fn check_all_cache_invalidates_on_mtime_or_size_change() {
         "after source change, cached output must not be replayed.\n--stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
     );
 }
-

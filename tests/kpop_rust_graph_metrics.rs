@@ -1,7 +1,7 @@
+use kiss::config::Config;
+use kiss::graph::analyze_graph;
 use kiss::rust_graph::build_rust_dependency_graph;
 use kiss::rust_parsing::{ParsedRustFile, parse_rust_file};
-use kiss::graph::analyze_graph;
-use kiss::config::Config;
 use std::path::Path;
 
 fn parse_rs(path: &Path) -> ParsedRustFile {
@@ -9,18 +9,19 @@ fn parse_rs(path: &Path) -> ParsedRustFile {
 }
 
 #[test]
-fn bug_rust_transitive_dependencies_should_not_count_external_imports() {
-    // RULE: [Rust] [transitive_dependencies]
+fn bug_rust_indirect_dependencies_should_not_count_external_imports() {
+    // RULE: [Rust] [indirect_dependencies]
     //
-    // Hypothesis: transitive dependency counts include external crates/stdlib paths, inflating coupling.
-    // Prediction: rust_graph_ext_a has exactly 1 internal transitive dependency (rust_graph_ext_b).
+    // Hypothesis: dependency counts include external crates/stdlib paths, inflating coupling.
+    // Prediction: rust_graph_ext_a has exactly 1 direct dep (rust_graph_ext_b), 0 indirect.
     let a = parse_rs(Path::new("tests/fake_rust/rust_graph_ext_a.rs"));
     let b = parse_rs(Path::new("tests/fake_rust/rust_graph_ext_b.rs"));
     let parsed: Vec<&ParsedRustFile> = vec![&a, &b];
     let g = build_rust_dependency_graph(&parsed);
 
     let m = g.module_metrics("fake_rust.rust_graph_ext_a");
-    assert_eq!(m.transitive_dependencies, 1);
+    assert_eq!(m.fan_out, 1);
+    assert_eq!(m.indirect_dependencies, 0);
 }
 
 #[test]
@@ -37,7 +38,8 @@ fn bug_orphan_module_should_not_flag_crate_use_imports_in_rust() {
     use std::fs;
     use tempfile::TempDir;
 
-    let importer_fixture = fs::read_to_string("tests/fake_rust/orphan_crate_use_importer.rs").unwrap();
+    let importer_fixture =
+        fs::read_to_string("tests/fake_rust/orphan_crate_use_importer.rs").unwrap();
     let target_fixture = fs::read_to_string("tests/fake_rust/orphan_crate_use_target.rs").unwrap();
 
     let tmp = TempDir::new().unwrap();
@@ -62,7 +64,9 @@ fn bug_orphan_module_should_not_flag_crate_use_imports_in_rust() {
     let viols = analyze_graph(&g, &Config::rust_defaults(), true);
 
     assert!(
-        !viols.iter().any(|v| v.metric == "orphan_module" && v.unit_name == "orphan_crate_use_target"),
+        !viols
+            .iter()
+            .any(|v| v.metric == "orphan_module" && v.unit_name == "orphan_crate_use_target"),
         "Expected orphan_crate_use_target not to be orphan when imported via crate::; got:\n{viols:#?}"
     );
 }
@@ -98,8 +102,9 @@ fn bug_orphan_module_should_not_flag_include_macro_in_rust() {
     let viols = analyze_graph(&g, &Config::rust_defaults(), true);
 
     assert!(
-        !viols.iter().any(|v| v.metric == "orphan_module" && v.unit_name == "orphan_include_target"),
+        !viols
+            .iter()
+            .any(|v| v.metric == "orphan_module" && v.unit_name == "orphan_include_target"),
         "Expected orphan_include_target not to be orphan when included via include!; got:\n{viols:#?}"
     );
 }
-

@@ -1,10 +1,10 @@
-use kiss::graph::{analyze_graph, DependencyGraph};
+use kiss::graph::{DependencyGraph, analyze_graph};
 use kiss::minhash::{
-    compute_minhash, estimate_similarity, generate_shingles, normalize_code, MinHashSignature,
+    MinHashSignature, compute_minhash, estimate_similarity, generate_shingles, normalize_code,
 };
 use kiss::parsing::{create_parser, parse_file};
-use kiss::py_metrics::{compute_function_metrics, compute_file_metrics};
-use kiss::{extract_chunks_for_duplication, Config};
+use kiss::py_metrics::{compute_file_metrics, compute_function_metrics};
+use kiss::{Config, extract_chunks_for_duplication};
 use std::fmt::Write as _;
 use std::io::Write;
 
@@ -129,7 +129,8 @@ fn h2_single_variable_rename_drops_similarity() {
     // With shingle_size=3, each renamed token poisons 3 shingles.
     let code_a =
         "x = get_data()\ny = transform(x)\nz = validate(y)\nresult = process(z)\nreturn result\n";
-    let code_b = "x = get_data()\ny = transform(x)\nz = validate(y)\noutput = process(z)\nreturn output\n";
+    let code_b =
+        "x = get_data()\ny = transform(x)\nz = validate(y)\noutput = process(z)\nreturn output\n";
 
     let norm_a = normalize_code(code_a);
     let norm_b = normalize_code(code_b);
@@ -164,7 +165,10 @@ fn h3_function_with_1000_statements() {
     let func = get_func_node(&p);
     let m = compute_function_metrics(func, &p.source);
 
-    assert_eq!(m.statements, 1001, "Should count 1000 assignments + 1 return");
+    assert_eq!(
+        m.statements, 1001,
+        "Should count 1000 assignments + 1 return"
+    );
     assert!(
         m.local_variables >= 1000,
         "Should track at least 1000 local variables, got {}",
@@ -244,7 +248,6 @@ fn h4_fully_connected_graph_100_nodes() {
     let config = Config::python_defaults();
     let viols = analyze_graph(&g, &config, true);
 
-    // Every node should have transitive_deps = n-1 (can reach all others)
     let metrics = g.module_metrics("mod_0");
     assert_eq!(
         metrics.fan_out,
@@ -253,12 +256,11 @@ fn h4_fully_connected_graph_100_nodes() {
         n - 1,
         metrics.fan_out
     );
+    // Fully connected: every node is a direct neighbor, so indirect = 0
     assert_eq!(
-        metrics.transitive_dependencies,
-        n - 1,
-        "mod_0 should have transitive_deps = {}, got {}",
-        n - 1,
-        metrics.transitive_dependencies
+        metrics.indirect_dependencies, 0,
+        "mod_0: all deps are direct (fan_out = total_reachable), indirect should be 0 (got {})",
+        metrics.indirect_dependencies
     );
 
     // Should produce cycle violations (one giant SCC)
@@ -285,11 +287,14 @@ fn h4_long_chain_graph_200_deep() {
     }
 
     let metrics = g.module_metrics("mod_0");
+    // Linear chain: fan_out=1, total_reachable=n-1, indirect = n-2
     assert_eq!(
-        metrics.transitive_dependencies,
+        metrics.indirect_dependencies,
+        n - 2,
+        "Head of chain has fan_out=1 and reaches {} nodes, indirect should be {} (got {})",
         n - 1,
-        "Head of chain should reach all {} downstream nodes",
-        n - 1
+        n - 2,
+        metrics.indirect_dependencies
     );
     assert_eq!(
         metrics.dependency_depth,
@@ -298,9 +303,8 @@ fn h4_long_chain_graph_200_deep() {
         n - 1
     );
 
-    // Tail node should have 0 transitive deps
     let tail = g.module_metrics(&format!("mod_{}", n - 1));
-    assert_eq!(tail.transitive_dependencies, 0);
+    assert_eq!(tail.indirect_dependencies, 0);
     assert_eq!(tail.fan_in, 1);
 }
 
@@ -337,9 +341,7 @@ fn h5_same_file_two_paths_in_graph() {
         .collect();
 
     assert!(
-        !orphan_viols
-            .iter()
-            .any(|v| v.unit_name == "pkg.utils"),
+        !orphan_viols.iter().any(|v| v.unit_name == "pkg.utils"),
         "Phantom orphan for 'pkg.utils' should be suppressed (same path as connected 'utils')"
     );
 }
@@ -389,7 +391,11 @@ def mk_mk_likelihood(noise_transform_type, mk_covar_module):
         clusters.len(),
         clusters
             .iter()
-            .map(|c| c.chunks.iter().map(|ch| format!("{}:{}-{}", ch.name, ch.start_line, ch.end_line)).collect::<Vec<_>>())
+            .map(|c| c
+                .chunks
+                .iter()
+                .map(|ch| format!("{}:{}-{}", ch.name, ch.start_line, ch.end_line))
+                .collect::<Vec<_>>())
             .collect::<Vec<_>>()
     );
 }

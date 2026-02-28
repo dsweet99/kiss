@@ -5,11 +5,11 @@ use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
 use crate::units::get_child_by_field;
 use rayon::prelude::*;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use syn::{ImplItem, Item};
 use tree_sitter::Node;
-use std::cmp::Ordering;
 
 const MIN_CHUNK_TOKENS: usize = 10;
 const MIN_CHUNK_LINES: usize = 5;
@@ -127,17 +127,21 @@ fn min_chunk_in_cluster(cluster: &DuplicateCluster) -> Option<&CodeChunk> {
 
 fn sort_clusters_deterministic(clusters: &mut [DuplicateCluster]) {
     clusters.sort_by(|a, b| {
-        b.chunks.len().cmp(&a.chunks.len()).then_with(|| {
-            b.avg_similarity
-                .partial_cmp(&a.avg_similarity)
-                .unwrap_or(Ordering::Equal)
-        }).then_with(|| {
-            // Deterministic tie-breaker: ensure stable ordering when size + avg_similarity tie.
-            match (min_chunk_in_cluster(a), min_chunk_in_cluster(b)) {
-                (Some(ca), Some(cb)) => cmp_chunk_key(ca, cb),
-                _ => Ordering::Equal,
-            }
-        })
+        b.chunks
+            .len()
+            .cmp(&a.chunks.len())
+            .then_with(|| {
+                b.avg_similarity
+                    .partial_cmp(&a.avg_similarity)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .then_with(|| {
+                // Deterministic tie-breaker: ensure stable ordering when size + avg_similarity tie.
+                match (min_chunk_in_cluster(a), min_chunk_in_cluster(b)) {
+                    (Some(ca), Some(cb)) => cmp_chunk_key(ca, cb),
+                    _ => Ordering::Equal,
+                }
+            })
     });
 }
 
@@ -425,7 +429,8 @@ pub fn cluster_duplicates_from_chunks(
 
     // Cluster in serial (union-find), but store only indices + similarity.
     let mut uf = UnionFind::new(chunks.len());
-    let mut pair_similarities: HashMap<(usize, usize), f64> = HashMap::with_capacity(good_pairs.len());
+    let mut pair_similarities: HashMap<(usize, usize), f64> =
+        HashMap::with_capacity(good_pairs.len());
     for (i, j, sim) in good_pairs {
         uf.union(i, j);
         pair_similarities.insert((i.min(j), i.max(j)), sim);

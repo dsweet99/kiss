@@ -111,7 +111,11 @@ fn build_cross_pkg_registry_fixture() -> (tempfile::TempDir, Vec<std::path::Path
     fs::write(app_core.join("__init__.py"), "").unwrap();
     fs::write(app_core.join("registry.py"), "class Registry:\n    pass\n").unwrap();
     fs::write(ext_core.join("__init__.py"), "").unwrap();
-    fs::write(ext_core.join("registry.py"), "class ExtRegistry:\n    pass\n").unwrap();
+    fs::write(
+        ext_core.join("registry.py"),
+        "class ExtRegistry:\n    pass\n",
+    )
+    .unwrap();
 
     let import_code = "def f():\n    from core.registry import Registry\n    return Registry()\n";
     fs::write(src.join("api").join("endpoint.py"), import_code).unwrap();

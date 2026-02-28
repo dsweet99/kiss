@@ -208,4 +208,3 @@ mod tests {
         let _ = kind_from_str("class");
     }
 }
-

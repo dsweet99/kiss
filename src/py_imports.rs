@@ -42,7 +42,11 @@ fn collect_import_names(node: Node, source: &str, names: &mut HashSet<String>) {
     }
 }
 
-pub(crate) fn collect_import_statement_names(node: Node, source: &str, names: &mut HashSet<String>) {
+pub(crate) fn collect_import_statement_names(
+    node: Node,
+    source: &str,
+    names: &mut HashSet<String>,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {

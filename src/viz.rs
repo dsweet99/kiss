@@ -1,6 +1,6 @@
-use crate::viz_coarsen::{coarsen_with_zoom, CoarsenedGraph};
-use kiss::parsing::parse_files;
+use crate::viz_coarsen::{CoarsenedGraph, coarsen_with_zoom};
 use kiss::build_dependency_graph;
+use kiss::parsing::parse_files;
 use kiss::rust_parsing::parse_rust_files;
 use kiss::{DependencyGraph, Language, rust_graph::build_rust_dependency_graph};
 use petgraph::visit::EdgeRef;
@@ -45,7 +45,11 @@ fn node_label(name: &str, path: Option<&PathBuf>) -> String {
     )
 }
 
-fn write_graph_dot(out: &mut dyn Write, graph: &DependencyGraph, prefix: &str) -> std::io::Result<()> {
+fn write_graph_dot(
+    out: &mut dyn Write,
+    graph: &DependencyGraph,
+    prefix: &str,
+) -> std::io::Result<()> {
     // Keep output stable for diffs: sort nodes/edges.
     let mut nodes: BTreeSet<String> = BTreeSet::new();
     for name in graph.nodes.keys() {
@@ -158,9 +162,7 @@ fn viz_format_for_path(path: &Path) -> std::io::Result<VizFormat> {
         "md" | "markdown" => Ok(VizFormat::MarkdownMermaid),
         _ => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!(
-                "Unsupported output file extension '.{ext}'. Use .dot, .mmd/.mermaid, or .md"
-            ),
+            format!("Unsupported output file extension '.{ext}'. Use .dot, .mmd/.mermaid, or .md"),
         )),
     }
 }
@@ -354,8 +356,14 @@ mod tests {
 
     #[test]
     fn test_viz_format_for_path() {
-        assert_eq!(viz_format_for_path(Path::new("a.dot")).unwrap(), VizFormat::Dot);
-        assert_eq!(viz_format_for_path(Path::new("a.mmd")).unwrap(), VizFormat::Mermaid);
+        assert_eq!(
+            viz_format_for_path(Path::new("a.dot")).unwrap(),
+            VizFormat::Dot
+        );
+        assert_eq!(
+            viz_format_for_path(Path::new("a.mmd")).unwrap(),
+            VizFormat::Mermaid
+        );
         assert_eq!(
             viz_format_for_path(Path::new("a.mermaid")).unwrap(),
             VizFormat::Mermaid
@@ -367,7 +375,10 @@ mod tests {
 
         let err = viz_format_for_path(Path::new("a.txt")).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
-        assert!(err.to_string().contains("Unsupported output file extension"));
+        assert!(
+            err.to_string()
+                .contains("Unsupported output file extension")
+        );
 
         let err2 = viz_format_for_path(Path::new("a")).unwrap_err();
         assert_eq!(err2.kind(), std::io::ErrorKind::InvalidInput);
@@ -469,7 +480,10 @@ mod tests {
 
     #[test]
     fn test_write_coarsened_for_format() {
-        let cg = CoarsenedGraph { labels: vec!["x".into()], edges: BTreeSet::new() };
+        let cg = CoarsenedGraph {
+            labels: vec!["x".into()],
+            edges: BTreeSet::new(),
+        };
         let mut buf = Vec::new();
         write_coarsened_for_format(&mut buf, &cg, VizFormat::Mermaid).unwrap();
         assert!(!buf.is_empty());
@@ -502,4 +516,3 @@ mod tests {
         assert!(!coarse.labels.is_empty());
     }
 }
-

@@ -135,10 +135,7 @@ impl std::fmt::Display for ShrinkViolation {
 }
 
 /// Check current metrics against shrink state constraints.
-pub fn check_shrink_constraints(
-    state: &ShrinkState,
-    current: &GlobalMetrics,
-) -> ShrinkViolations {
+pub fn check_shrink_constraints(state: &ShrinkState, current: &GlobalMetrics) -> ShrinkViolations {
     let mut violations = Vec::new();
 
     // Check all metrics as constraints (except target uses target_value)

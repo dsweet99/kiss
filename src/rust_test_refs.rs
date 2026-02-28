@@ -36,8 +36,7 @@ fn has_test_naming_pattern(path: &Path) -> bool {
 #[must_use]
 pub fn is_rust_test_file(path: &Path) -> bool {
     is_rs_file(path)
-        && (has_test_naming_pattern(path)
-            || crate::test_refs::is_in_test_directory(path))
+        && (has_test_naming_pattern(path) || crate::test_refs::is_in_test_directory(path))
 }
 
 fn has_test_attribute(attrs: &[Attribute]) -> bool {
@@ -91,9 +90,7 @@ fn is_directly_referenced(
     if !refs.contains(&def.name) {
         return false;
     }
-    let unique = name_files
-        .get(&def.name)
-        .is_none_or(|f| f.len() <= 1);
+    let unique = name_files.get(&def.name).is_none_or(|f| f.len() <= 1);
     if unique {
         return true;
     }
@@ -104,8 +101,10 @@ fn is_directly_referenced(
 }
 
 fn is_impl_with_referenced_type(def: &RustCodeDefinition, refs: &HashSet<String>) -> bool {
-    matches!(def.kind, CodeUnitKind::TraitImplMethod | CodeUnitKind::Method)
-        && def.impl_for_type.as_ref().is_some_and(|t| refs.contains(t))
+    matches!(
+        def.kind,
+        CodeUnitKind::TraitImplMethod | CodeUnitKind::Method
+    ) && def.impl_for_type.as_ref().is_some_and(|t| refs.contains(t))
 }
 
 fn is_covered_by_tests(
@@ -130,10 +129,11 @@ pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAn
         }
     }
     let name_files = crate::test_refs::build_name_file_map(
-        definitions.iter().map(|d| (d.name.as_str(), d.file.as_path())),
+        definitions
+            .iter()
+            .map(|d| (d.name.as_str(), d.file.as_path())),
     );
-    let disambiguation =
-        crate::test_refs::build_disambiguation_map(&name_files, &test_references);
+    let disambiguation = crate::test_refs::build_disambiguation_map(&name_files, &test_references);
     let unreferenced = definitions
         .iter()
         .filter(|d| !is_covered_by_tests(d, &test_references, &name_files, &disambiguation))
@@ -500,12 +500,23 @@ mod tests {
         };
         let all_definitions = [def.clone(), def2.clone()];
         let name_files = crate::test_refs::build_name_file_map(
-            all_definitions.iter().map(|d| (d.name.as_str(), d.file.as_path())),
+            all_definitions
+                .iter()
+                .map(|d| (d.name.as_str(), d.file.as_path())),
         );
-        let disambiguation =
-            crate::test_refs::build_disambiguation_map(&name_files, &refs);
-        assert!(is_directly_referenced(&def2, &refs, &name_files, &disambiguation));
-        assert!(is_covered_by_tests(&def, &refs, &name_files, &disambiguation));
+        let disambiguation = crate::test_refs::build_disambiguation_map(&name_files, &refs);
+        assert!(is_directly_referenced(
+            &def2,
+            &refs,
+            &name_files,
+            &disambiguation
+        ));
+        assert!(is_covered_by_tests(
+            &def,
+            &refs,
+            &name_files,
+            &disambiguation
+        ));
         assert!(is_external_crate("std") && !is_external_crate("my_module"));
         let p: syn::Path = syn::parse_str("std::io").unwrap();
         assert!(starts_with_external_crate(&p));
@@ -589,28 +600,17 @@ mod tests {
         let parsed_beta = parse_rust_file(&beta_path).unwrap();
         let parsed_test = parse_rust_file(&test_path).unwrap();
 
-        let analysis =
-            analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test]);
+        let analysis = analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test]);
 
-        assert_eq!(
-            analysis.definitions.len(),
-            2,
-            "both files define helper()"
-        );
+        assert_eq!(analysis.definitions.len(), 2, "both files define helper()");
 
-        let alpha_uncovered = analysis
-            .unreferenced
-            .iter()
-            .any(|d| d.file == alpha_path);
+        let alpha_uncovered = analysis.unreferenced.iter().any(|d| d.file == alpha_path);
         assert!(
             !alpha_uncovered,
             "alpha::helper should be covered (test imports from alpha)"
         );
 
-        let beta_uncovered = analysis
-            .unreferenced
-            .iter()
-            .any(|d| d.file == beta_path);
+        let beta_uncovered = analysis.unreferenced.iter().any(|d| d.file == beta_path);
         assert!(
             beta_uncovered,
             "beta::helper should be uncovered (no test references beta)"

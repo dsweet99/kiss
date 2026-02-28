@@ -24,7 +24,7 @@ pub struct DependencyGraph {
 pub struct ModuleGraphMetrics {
     pub fan_in: usize,
     pub fan_out: usize,
-    pub transitive_dependencies: usize,
+    pub indirect_dependencies: usize,
     pub dependency_depth: usize,
 }
 
@@ -67,27 +67,29 @@ impl DependencyGraph {
         let Some(&idx) = self.nodes.get(module) else {
             return ModuleGraphMetrics::default();
         };
-        let (transitive, depth) = self.compute_transitive_and_depth(idx);
+        let fan_out = self
+            .graph
+            .neighbors_directed(idx, petgraph::Direction::Outgoing)
+            .count();
+        let (total_reachable, depth) = self.compute_reachable_and_depth(idx);
         ModuleGraphMetrics {
             fan_in: self
                 .graph
                 .neighbors_directed(idx, petgraph::Direction::Incoming)
                 .count(),
-            fan_out: self
-                .graph
-                .neighbors_directed(idx, petgraph::Direction::Outgoing)
-                .count(),
-            transitive_dependencies: transitive,
+            fan_out,
+            indirect_dependencies: total_reachable.saturating_sub(fan_out),
             dependency_depth: depth,
         }
     }
 
-    fn compute_transitive_and_depth(&self, start: NodeIndex) -> (usize, usize) {
+    /// BFS from `start`, returning (`total_reachable`, `max_depth`).
+    /// `total_reachable` counts all nodes reachable at depth >= 1 (excludes start itself).
+    fn compute_reachable_and_depth(&self, start: NodeIndex) -> (usize, usize) {
         use std::collections::{HashSet, VecDeque};
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
         let mut max_depth = 0;
-        // Seed visited with start so it is never counted as its own transitive dependency.
         visited.insert(start);
         queue.push_back((start, 0));
         while let Some((node, depth)) = queue.pop_front() {
@@ -101,7 +103,6 @@ impl DependencyGraph {
                 }
             }
         }
-        // Subtract 1 for the start node itself.
         (visited.len() - 1, max_depth)
     }
 
@@ -131,11 +132,12 @@ impl Default for DependencyGraph {
 }
 
 fn is_entry_point(name: &str) -> bool {
-    // Extract bare name from qualified name (e.g., "attr.main" → "main")
     let bare = name.rsplit('.').next().unwrap_or(name);
-    // Treat anything under a `tests/` directory as an entry point. Integration tests are
-    // intentionally standalone modules with no incoming/outgoing dependencies.
     if name == "tests" || name.starts_with("tests.") || name.contains(".tests.") {
+        return true;
+    }
+    // Rust `src/bin/*.rs` files are binary entry points (qualified as "bin.xxx").
+    if name == "bin" || name.starts_with("bin.") || name.contains(".bin.") {
         return true;
     }
     matches!(
@@ -241,12 +243,11 @@ pub fn analyze_graph(
                     .to_string(),
             });
         }
-        // Only flag transitive deps if fan_in > 0; entry points (fan_in=0) don't propagate coupling
-        if metrics.transitive_dependencies > config.transitive_dependencies && metrics.fan_in > 0 {
+        if metrics.indirect_dependencies > config.indirect_dependencies && metrics.fan_in > 0 {
             violations.push(Violation {
                 file: get_module_path(graph, module_name), line: 1, unit_name: module_name.clone(),
-                metric: "transitive_dependencies".to_string(), value: metrics.transitive_dependencies, threshold: config.transitive_dependencies,
-                message: format!("Module '{}' has {} transitive dependencies (threshold: {})", module_name, metrics.transitive_dependencies, config.transitive_dependencies),
+                metric: "indirect_dependencies".to_string(), value: metrics.indirect_dependencies, threshold: config.indirect_dependencies,
+                message: format!("Module '{}' has {} indirect dependencies (threshold: {})", module_name, metrics.indirect_dependencies, config.indirect_dependencies),
                 suggestion: "Reduce coupling by introducing abstraction layers or splitting responsibilities.".to_string(),
             });
         }
@@ -379,9 +380,11 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
             if graph.nodes.contains_key(import) {
                 graph.add_dependency(&info.from_qualified, import);
             } else {
-                for resolved in
-                    resolve_import(import, info.from_parent_module.as_deref(), &bare_to_qualified)
-                {
+                for resolved in resolve_import(
+                    import,
+                    info.from_parent_module.as_deref(),
+                    &bare_to_qualified,
+                ) {
                     graph.add_dependency(&info.from_qualified, &resolved);
                 }
             }
@@ -391,7 +394,9 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
 }
 
 #[must_use]
-pub fn build_dependency_graph_from_import_lists(files: &[(PathBuf, Vec<String>)]) -> DependencyGraph {
+pub fn build_dependency_graph_from_import_lists(
+    files: &[(PathBuf, Vec<String>)],
+) -> DependencyGraph {
     let mut graph = DependencyGraph::new();
 
     let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
@@ -412,9 +417,7 @@ pub fn build_dependency_graph_from_import_lists(files: &[(PathBuf, Vec<String>)]
             if graph.nodes.contains_key(import) {
                 graph.add_dependency(&from_qualified, import);
             } else {
-                for resolved in
-                    resolve_import(import, from_parent_module, &bare_to_qualified)
-                {
+                for resolved in resolve_import(import, from_parent_module, &bare_to_qualified) {
                     graph.add_dependency(&from_qualified, &resolved);
                 }
             }
@@ -765,8 +768,8 @@ mod tests {
         assert!(g.is_cycle(&[idx_a, idx_b]) && !g.is_cycle(&[]) && !g.is_cycle(&[idx_a]));
         g.add_dependency("a", "c");
         g.add_dependency("c", "d");
-        let (trans, depth) = g.compute_transitive_and_depth(*g.nodes.get("a").unwrap());
-        assert!(trans >= 2 && depth >= 2);
+        let (reachable, depth) = g.compute_reachable_and_depth(*g.nodes.get("a").unwrap());
+        assert!(reachable >= 2 && depth >= 2);
     }
 
     #[test]
@@ -856,6 +859,15 @@ mod tests {
     fn test_helpers_imports_and_complexity() {
         assert!(is_entry_point("main") && is_entry_point("test_foo") && !is_entry_point("utils"));
         assert!(
+            is_entry_point("bin.lock_server"),
+            "Rust src/bin/*.rs should be entry points"
+        );
+        assert!(is_entry_point("bin"), "bare bin dir is an entry point");
+        assert!(
+            is_entry_point("crate.bin.foo"),
+            "nested bin path is an entry point"
+        );
+        assert!(
             is_orphan(&ModuleGraphMetrics::default(), "utils")
                 && !is_orphan(
                     &ModuleGraphMetrics {
@@ -937,7 +949,8 @@ mod tests {
     fn test_type_checking_imports_included_in_graph() {
         let mut parser = create_parser().unwrap();
         let code = "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from some_module import SomeClass\nimport os";
-        let imports = extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);
+        let imports =
+            extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);
         assert!(imports.contains(&"typing".into()));
         assert!(imports.contains(&"os".into()));
         assert!(imports.contains(&"some_module".into()));
@@ -957,7 +970,8 @@ mod tests {
         // treated as a module candidate for dependency graph purposes.
         let mut parser = create_parser().unwrap();
         let code = "def f():\n    from . import target\n    return 0\n";
-        let imports = extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);
+        let imports =
+            extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);
         assert!(
             imports.contains(&"target".into()),
             "Expected `target` in import list for `from . import target`; got {imports:?}"
@@ -997,7 +1011,9 @@ mod tests {
 
     #[test]
     fn test_build_dependency_graph_creates_edge_for_from_dot_import() {
-        let g = build_temp_pkg_graph("def f():\n    from . import target\n    return target.do_work()\n");
+        let g = build_temp_pkg_graph(
+            "def f():\n    from . import target\n    return target.do_work()\n",
+        );
 
         let m_importer = g.module_metrics("pkg.importer");
         let m_target = g.module_metrics("pkg.target");
@@ -1009,7 +1025,9 @@ mod tests {
 
     #[test]
     fn test_from_import_adds_submodule_candidate_when_internal() {
-        let g = build_temp_pkg_graph("def f():\n    from pkg import target\n    return target.do_work()\n");
+        let g = build_temp_pkg_graph(
+            "def f():\n    from pkg import target\n    return target.do_work()\n",
+        );
 
         let m_importer = g.module_metrics("pkg.importer");
         let m_target = g.module_metrics("pkg.target");
@@ -1102,17 +1120,17 @@ mod tests {
     // === Bug-hunting tests ===
 
     #[test]
-    fn test_transitive_deps_excludes_self_in_cycle() {
-        // In a 2-node cycle A→B→A, A's transitive dependencies should be {B},
-        // not {A, B}. A module shouldn't be its own transitive dependency.
+    fn test_indirect_deps_in_cycle() {
+        // In a 2-node cycle A→B→A, fan_out=1 (B), total_reachable=1, indirect=0.
+        // The only reachable node is B, which is a direct neighbor.
         let mut g = DependencyGraph::new();
         g.add_dependency("a", "b");
         g.add_dependency("b", "a");
         let metrics = g.module_metrics("a");
         assert_eq!(
-            metrics.transitive_dependencies, 1,
-            "Module 'a' should have 1 transitive dep (b), not count itself (got {})",
-            metrics.transitive_dependencies
+            metrics.indirect_dependencies, 0,
+            "Module 'a' has fan_out=1 and total_reachable=1, so indirect should be 0 (got {})",
+            metrics.indirect_dependencies
         );
     }
 

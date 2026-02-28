@@ -8,12 +8,12 @@ pub mod py_metrics;
 pub mod rule_defs;
 pub mod violation;
 
+pub mod check_cache;
+pub mod check_universe_cache;
 pub mod counts;
 pub mod discovery;
 pub mod duplication;
 pub mod graph;
-pub mod check_cache;
-pub mod check_universe_cache;
 pub mod minhash;
 pub mod parsing;
 pub mod stats;
@@ -44,8 +44,9 @@ pub use discovery::{
 };
 pub use duplication::{
     CodeChunk, DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
-    cluster_duplicates, cluster_duplicates_from_chunks, detect_duplicates, detect_duplicates_from_chunks,
-    extract_chunks_for_duplication, extract_rust_chunks_for_duplication,
+    cluster_duplicates, cluster_duplicates_from_chunks, detect_duplicates,
+    detect_duplicates_from_chunks, extract_chunks_for_duplication,
+    extract_rust_chunks_for_duplication,
 };
 pub use gate_config::GateConfig;
 pub use graph::{
@@ -64,9 +65,12 @@ pub use stats::{
 pub use stats_detailed::{
     UnitMetrics, collect_detailed_py, collect_detailed_rs, format_detailed_table, truncate,
 };
-pub use test_refs::{CodeDefinition, TestRefAnalysis, analyze_test_refs, build_name_file_map, is_in_test_directory, is_test_file};
-pub use units::{CodeUnit, CodeUnitKind, extract_code_units};
+pub use test_refs::{
+    CodeDefinition, TestRefAnalysis, analyze_test_refs, build_name_file_map, is_in_test_directory,
+    is_test_file,
+};
 pub use units::count_code_units;
+pub use units::{CodeUnit, CodeUnitKind, extract_code_units};
 pub use violation::{Violation, ViolationBuilder};
 
 pub use rust_counts::analyze_rust_file;

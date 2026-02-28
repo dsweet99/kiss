@@ -22,7 +22,7 @@ pub mod python {
     pub const BOOLEAN_PARAMETERS: usize = 1;
     pub const DECORATORS_PER_FUNCTION: usize = 3;
     pub const CALLS_PER_FUNCTION: usize = 50;
-    pub const TRANSITIVE_DEPENDENCIES: usize = 100;
+    pub const INDIRECT_DEPENDENCIES: usize = 100;
     pub const DEPENDENCY_DEPTH: usize = 7;
 }
 
@@ -43,7 +43,7 @@ pub mod rust {
     pub const BOOLEAN_PARAMETERS: usize = 2;
     pub const ATTRIBUTES_PER_FUNCTION: usize = 4;
     pub const CALLS_PER_FUNCTION: usize = 50;
-    pub const TRANSITIVE_DEPENDENCIES: usize = 50;
+    pub const INDIRECT_DEPENDENCIES: usize = 50;
     pub const DEPENDENCY_DEPTH: usize = 4;
 }
 
@@ -87,7 +87,7 @@ boolean_parameters = {py_bool_params}
 decorators_per_function = {py_decorators}
 calls_per_function = {py_calls}
 cycle_size = {cycle_size}
-transitive_dependencies = {py_transitive_deps}
+indirect_dependencies = {py_indirect_deps}
 dependency_depth = {py_dep_depth}
 
 [rust]
@@ -108,7 +108,7 @@ boolean_parameters = {rs_bool_params}
 attributes_per_function = {rs_attrs}
 calls_per_function = {rs_calls}
 cycle_size = {cycle_size}
-transitive_dependencies = {rs_transitive_deps}
+indirect_dependencies = {rs_indirect_deps}
 dependency_depth = {rs_dep_depth}
 ",
         gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
@@ -133,7 +133,7 @@ dependency_depth = {rs_dep_depth}
         py_decorators = python::DECORATORS_PER_FUNCTION,
         py_calls = python::CALLS_PER_FUNCTION,
         cycle_size = graph::CYCLE_SIZE,
-        py_transitive_deps = python::TRANSITIVE_DEPENDENCIES,
+        py_indirect_deps = python::INDIRECT_DEPENDENCIES,
         py_dep_depth = python::DEPENDENCY_DEPTH,
         rs_imports = rust::IMPORTS_PER_FILE,
         rs_statements_file = rust::STATEMENTS_PER_FILE,
@@ -151,7 +151,7 @@ dependency_depth = {rs_dep_depth}
         rs_bool_params = rust::BOOLEAN_PARAMETERS,
         rs_attrs = rust::ATTRIBUTES_PER_FUNCTION,
         rs_calls = rust::CALLS_PER_FUNCTION,
-        rs_transitive_deps = rust::TRANSITIVE_DEPENDENCIES,
+        rs_indirect_deps = rust::INDIRECT_DEPENDENCIES,
         rs_dep_depth = rust::DEPENDENCY_DEPTH,
     )
 }

@@ -270,8 +270,12 @@ mod tests {
     #[test]
     fn test_estimate_similarity_is_symmetric() {
         // Similarity should be the same regardless of argument order.
-        let sig1 = MinHashSignature { hashes: vec![1, 2, 3, 4, 5] };
-        let sig2 = MinHashSignature { hashes: vec![1, 2, 3] };
+        let sig1 = MinHashSignature {
+            hashes: vec![1, 2, 3, 4, 5],
+        };
+        let sig2 = MinHashSignature {
+            hashes: vec![1, 2, 3],
+        };
         let sim_ab = estimate_similarity(&sig1, &sig2);
         let sim_ba = estimate_similarity(&sig2, &sig1);
         assert!(
@@ -279,5 +283,4 @@ mod tests {
             "Similarity should be symmetric: {sim_ab} vs {sim_ba}"
         );
     }
-
 }

@@ -152,10 +152,10 @@ const PY_RULE_SPECS: &[RuleSpec] = &[
         description: "cycle_size is the maximum allowed number of modules participating in an import cycle.",
     },
     RuleSpec {
-        metric: "transitive_dependencies",
+        metric: "indirect_dependencies",
         op: "<",
-        threshold: ThresholdValue::Usize(|c, _| c.transitive_dependencies),
-        description: "transitive_dependencies is the maximum number of downstream modules reachable from a module in the dependency graph.",
+        threshold: ThresholdValue::Usize(|c, _| c.indirect_dependencies),
+        description: "indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).",
     },
     RuleSpec {
         metric: "dependency_depth",
@@ -281,10 +281,10 @@ const RS_RULE_SPECS: &[RuleSpec] = &[
         description: "cycle_size is the maximum allowed number of modules participating in a dependency cycle.",
     },
     RuleSpec {
-        metric: "transitive_dependencies",
+        metric: "indirect_dependencies",
         op: "<",
-        threshold: ThresholdValue::Usize(|c, _| c.transitive_dependencies),
-        description: "transitive_dependencies is the maximum number of downstream modules reachable from a module in the dependency graph.",
+        threshold: ThresholdValue::Usize(|c, _| c.indirect_dependencies),
+        description: "indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).",
     },
     RuleSpec {
         metric: "dependency_depth",
@@ -389,7 +389,10 @@ fn print_python_config(c: &Config) {
     println!("max_indentation_depth = {}", c.max_indentation_depth);
     println!("branches_per_function = {}", c.branches_per_function);
     println!("returns_per_function = {}", c.returns_per_function);
-    println!("local_variables_per_function = {}", c.local_variables_per_function);
+    println!(
+        "local_variables_per_function = {}",
+        c.local_variables_per_function
+    );
     println!("nested_function_depth = {}", c.nested_function_depth);
     println!("interface_types_per_file = {}", c.interface_types_per_file);
     println!("concrete_types_per_file = {}", c.concrete_types_per_file);
@@ -398,7 +401,7 @@ fn print_python_config(c: &Config) {
     println!("boolean_parameters = {}", c.boolean_parameters);
     println!("decorators_per_function = {}", c.annotations_per_function);
     println!("cycle_size = {}", c.cycle_size);
-    println!("transitive_dependencies = {}", c.transitive_dependencies);
+    println!("indirect_dependencies = {}", c.indirect_dependencies);
     println!("dependency_depth = {}", c.dependency_depth);
 }
 
@@ -412,13 +415,16 @@ fn print_rust_config(c: &Config) {
     println!("max_indentation_depth = {}", c.max_indentation_depth);
     println!("branches_per_function = {}", c.branches_per_function);
     println!("returns_per_function = {}", c.returns_per_function);
-    println!("local_variables_per_function = {}", c.local_variables_per_function);
+    println!(
+        "local_variables_per_function = {}",
+        c.local_variables_per_function
+    );
     println!("nested_function_depth = {}", c.nested_function_depth);
     println!("imported_names_per_file = {}", c.imported_names_per_file);
     println!("boolean_parameters = {}", c.boolean_parameters);
     println!("attributes_per_function = {}", c.annotations_per_function);
     println!("cycle_size = {}", c.cycle_size);
-    println!("transitive_dependencies = {}", c.transitive_dependencies);
+    println!("indirect_dependencies = {}", c.indirect_dependencies);
     println!("dependency_depth = {}", c.dependency_depth);
 }
 
