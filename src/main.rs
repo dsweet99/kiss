@@ -1,6 +1,7 @@
 mod analyze;
 mod analyze_cache;
 mod rules;
+mod show_tests;
 mod viz;
 mod viz_coarsen;
 
@@ -163,6 +164,19 @@ enum Commands {
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
     },
+    /// Show which tests kiss detects for specified source files
+    #[command(alias = "st")]
+    ShowTests {
+        /// Source file paths to inspect
+        #[arg(required = true)]
+        paths: Vec<String>,
+        /// Also show untested definitions
+        #[arg(long)]
+        untested: bool,
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
+    },
 }
 
 fn main() {
@@ -297,6 +311,11 @@ fn dispatch(
             rs_config,
             gate_config,
         ),
+        Commands::ShowTests {
+            paths,
+            untested,
+            ignore,
+        } => run_show_tests(".", &paths, cli.lang, &ignore, untested),
     }
 }
 
@@ -652,6 +671,25 @@ fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
         suppress_final_status: false,
     };
     i32::from(!run_analyze(&opts))
+}
+
+fn run_show_tests(
+    universe: &str,
+    paths: &[String],
+    lang_filter: Option<Language>,
+    ignore: &[String],
+    show_untested: bool,
+) -> i32 {
+    let ignore = normalize_ignore_prefixes(ignore);
+    validate_paths(paths);
+    show_tests::run_show_tests_to(
+        &mut std::io::stdout(),
+        universe,
+        paths,
+        lang_filter,
+        &ignore,
+        show_untested,
+    )
 }
 
 fn run_shrink(
@@ -1083,7 +1121,6 @@ mod tests {
     }
     #[test]
     fn test_shrink_helper_functions() {
-        // Touch helper functions for test coverage
         fn touch<T>(_: T) {}
         touch(run_shrink_analysis);
         touch(get_shrink_metrics);
@@ -1092,5 +1129,26 @@ mod tests {
         touch(run_stats_top);
         let _ = std::mem::size_of::<CheckCommandArgs>();
         let _ = run_check_command as fn(&CheckCommandArgs) -> i32;
+        touch(run_show_tests);
+    }
+    #[test]
+    fn test_show_tests_cli_parse() {
+        let cli = Cli::try_parse_from(["kiss", "show-tests", "src/foo.rs"]).unwrap();
+        assert!(matches!(cli.command, Commands::ShowTests { .. }));
+
+        let cli = Cli::try_parse_from(["kiss", "st", "src/foo.rs", "src/bar.rs"]).unwrap();
+        assert!(matches!(cli.command, Commands::ShowTests { .. }));
+
+        assert!(
+            Cli::try_parse_from(["kiss", "show-tests"]).is_err(),
+            "show-tests requires at least one path"
+        );
+
+        let cli =
+            Cli::try_parse_from(["kiss", "show-tests", "--untested", "src/foo.rs"]).unwrap();
+        match cli.command {
+            Commands::ShowTests { untested, .. } => assert!(untested),
+            _ => panic!("expected ShowTests"),
+        }
     }
 }
