@@ -10,6 +10,38 @@ use std::path::{Path, PathBuf};
 
 type DefEntry = (PathBuf, String, usize, Option<Vec<CoveringTest>>);
 
+fn gather_files_with_path_expansion(
+    universe: &str,
+    paths: &[String],
+    lang_filter: Option<Language>,
+    ignore: &[String],
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let universe_root = Path::new(universe);
+    let (py_files, rs_files) = analyze::gather_files(universe_root, lang_filter, ignore);
+    let mut all_py: HashSet<PathBuf> = py_files.into_iter().collect();
+    let mut all_rs: HashSet<PathBuf> = rs_files.into_iter().collect();
+    for path_str in paths {
+        let path = Path::new(path_str);
+        let Ok(canonical) = path.canonicalize() else { continue };
+        let root = if canonical.is_dir() {
+            canonical
+        } else {
+            match canonical.parent() {
+                Some(p) => p.to_path_buf(),
+                None => continue,
+            }
+        };
+        let (py, rs) = analyze::gather_files(&root, lang_filter, ignore);
+        all_py.extend(py);
+        all_rs.extend(rs);
+    }
+    let mut py_files: Vec<PathBuf> = all_py.into_iter().collect();
+    let mut rs_files: Vec<PathBuf> = all_rs.into_iter().collect();
+    py_files.sort();
+    rs_files.sort();
+    (py_files, rs_files)
+}
+
 pub fn run_show_tests_to(
     out: &mut dyn std::io::Write,
     universe: &str,
@@ -18,8 +50,9 @@ pub fn run_show_tests_to(
     ignore: &[String],
     show_untested: bool,
 ) -> i32 {
-    let universe_root = Path::new(universe);
-    let (py_files, rs_files) = analyze::gather_files(universe_root, lang_filter, ignore);
+    let (py_files, rs_files) =
+        gather_files_with_path_expansion(universe, paths, lang_filter, ignore);
+
     if py_files.is_empty() && rs_files.is_empty() {
         eprintln!("No source files found.");
         return 1;
@@ -430,5 +463,32 @@ mod tests {
         touch(collect_py_test_defs);
         touch(collect_rs_test_defs);
         touch(emit_show_tests_output);
+    }
+
+    /// Path outside universe: `universe=dir_a`, `path=dir_b/mod2.py`. Expansion should gather mod2.py.
+    #[test]
+    fn test_show_tests_path_outside_universe() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dir_a = tmp.path().join("a");
+        let dir_b = tmp.path().join("b");
+        std::fs::create_dir_all(&dir_a).unwrap();
+        std::fs::create_dir_all(&dir_b).unwrap();
+
+        std::fs::write(dir_a.join("mod.py"), "def foo(): pass\n").unwrap();
+        std::fs::write(dir_a.join("test_mod.py"), "from mod import foo\ndef test_foo(): foo()\n").unwrap();
+        std::fs::write(dir_b.join("mod2.py"), "def bar(): pass\n").unwrap();
+
+        let universe = dir_a.to_string_lossy().to_string();
+        let path_outside = dir_b.join("mod2.py").canonicalize().unwrap().to_string_lossy().to_string();
+
+        let mut buf = Vec::new();
+        let exit = run_show_tests_to(&mut buf, &universe, &[path_outside], None, &[], true);
+        let output = String::from_utf8(buf).unwrap();
+
+        assert_eq!(exit, 0);
+        assert!(
+            output.contains("UNTESTED:") && output.contains("bar"),
+            "expected UNTESTED line for bar, got: {output}"
+        );
     }
 }
