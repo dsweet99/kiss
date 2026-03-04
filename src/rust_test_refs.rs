@@ -1,3 +1,4 @@
+use crate::graph::DependencyGraph;
 use crate::rust_parsing::ParsedRustFile;
 use crate::units::CodeUnitKind;
 use std::collections::{HashMap, HashSet};
@@ -14,11 +15,17 @@ pub struct RustCodeDefinition {
     pub impl_for_type: Option<String>,
 }
 
+use crate::test_refs::CoveringTest;
+
+type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
+
 #[derive(Debug)]
 pub struct RustTestRefAnalysis {
     pub definitions: Vec<RustCodeDefinition>,
     pub test_references: HashSet<String>,
     pub unreferenced: Vec<RustCodeDefinition>,
+    /// For each covered definition (file, name), the list of tests that reference it.
+    pub coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>>,
 }
 
 fn is_rs_file(path: &Path) -> bool {
@@ -117,9 +124,13 @@ fn is_covered_by_tests(
         || is_impl_with_referenced_type(def, refs)
 }
 
-pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAnalysis {
+pub fn analyze_rust_test_refs(
+    parsed_files: &[&ParsedRustFile],
+    graph: Option<&DependencyGraph>,
+) -> RustTestRefAnalysis {
     let mut definitions = Vec::new();
     let mut test_references = HashSet::new();
+    let mut per_test_usage: PerTestUsage = Vec::new();
     for parsed in parsed_files {
         if is_rust_test_file(&parsed.path) {
             collect_rust_references(&parsed.ast, &mut test_references);
@@ -127,22 +138,87 @@ pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAn
             collect_rust_definitions(&parsed.ast, &parsed.path, &mut definitions);
             collect_test_module_references(&parsed.ast, &mut test_references);
         }
+        let test_funcs = collect_per_test_usage(&parsed.ast);
+        if !test_funcs.is_empty() {
+            per_test_usage.push((parsed.path.clone(), test_funcs));
+        }
     }
     let name_files = crate::test_refs::build_name_file_map(
         definitions
             .iter()
             .map(|d| (d.name.as_str(), d.file.as_path())),
     );
-    let disambiguation = crate::test_refs::build_disambiguation_map(&name_files, &test_references);
+    let disambiguation = crate::test_refs::build_disambiguation_map(
+        &name_files,
+        &test_references,
+        &per_test_usage,
+        graph,
+    );
     let unreferenced = definitions
         .iter()
         .filter(|d| !is_covered_by_tests(d, &test_references, &name_files, &disambiguation))
         .cloned()
         .collect();
+    let coverage_map = build_rust_coverage_map(
+        &definitions,
+        &per_test_usage,
+        &name_files,
+        &disambiguation,
+    );
     RustTestRefAnalysis {
         definitions,
         test_references,
         unreferenced,
+        coverage_map,
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn build_rust_coverage_map(
+    definitions: &[RustCodeDefinition],
+    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &HashMap<String, PathBuf>,
+) -> HashMap<(PathBuf, String), Vec<CoveringTest>> {
+    let mut coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>> = HashMap::new();
+    for (test_path, test_funcs) in per_test_usage {
+        for (test_id, usage_refs) in test_funcs {
+            if test_id.is_empty() {
+                continue;
+            }
+            add_covered_defs_for_test(
+                &mut coverage_map,
+                definitions,
+                test_path,
+                test_id,
+                usage_refs,
+                name_files,
+                disambiguation,
+            );
+        }
+    }
+    coverage_map
+}
+
+fn add_covered_defs_for_test(
+    coverage_map: &mut HashMap<(PathBuf, String), Vec<CoveringTest>>,
+    definitions: &[RustCodeDefinition],
+    test_path: &Path,
+    test_id: &str,
+    usage_refs: &HashSet<String>,
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &HashMap<String, PathBuf>,
+) {
+    for def in definitions {
+        if !is_covered_by_tests(def, usage_refs, name_files, disambiguation) {
+            continue;
+        }
+        let key = (def.file.clone(), def.name.clone());
+        let entry = (test_path.to_path_buf(), test_id.to_string());
+        let list = coverage_map.entry(key).or_default();
+        if !list.contains(&entry) {
+            list.push(entry);
+        }
     }
 }
 
@@ -252,6 +328,54 @@ fn collect_definitions_from_item(item: &Item, file: &Path, defs: &mut Vec<RustCo
 
 fn collect_rust_references(ast: &syn::File, refs: &mut HashSet<String>) {
     ReferenceVisitor { refs }.visit_file(ast);
+}
+
+/// Collects references from a single function body. Returns the set of referenced names.
+fn collect_rust_references_for_fn(f: &syn::ItemFn) -> HashSet<String> {
+    let mut refs = HashSet::new();
+    ReferenceVisitor { refs: &mut refs }.visit_item_fn(f);
+    refs
+}
+
+/// Collects per-test (`test_id`, `usage_refs`) from a file.
+/// `test_id` format: `fn_name` for top-level `#[test]` fn, `mod_name::fn_name` for `#[cfg(test)]` mod.
+fn collect_per_test_usage(ast: &syn::File) -> Vec<(String, HashSet<String>)> {
+    let mut out = Vec::new();
+    collect_per_test_usage_from_items(&ast.items, "", &mut out);
+    out
+}
+
+fn collect_per_test_usage_from_items(
+    items: &[syn::Item],
+    prefix: &str,
+    out: &mut Vec<(String, HashSet<String>)>,
+) {
+    for item in items {
+        match item {
+            Item::Mod(m) if has_cfg_test_attribute(&m.attrs) => {
+                let mod_name = m.ident.to_string();
+                let mod_prefix = if prefix.is_empty() {
+                    mod_name.clone()
+                } else {
+                    format!("{prefix}::{mod_name}")
+                };
+                if let Some((_, mod_items)) = &m.content {
+                    collect_per_test_usage_from_items(mod_items, &mod_prefix, out);
+                }
+            }
+            Item::Fn(f) if has_test_attribute(&f.attrs) => {
+                let fn_name = f.sig.ident.to_string();
+                let refs = collect_rust_references_for_fn(f);
+                let test_id = if prefix.is_empty() {
+                    fn_name
+                } else {
+                    format!("{prefix}::{fn_name}")
+                };
+                out.push((test_id, refs));
+            }
+            _ => {}
+        }
+    }
 }
 
 fn collect_test_module_references(ast: &syn::File, refs: &mut HashSet<String>) {
@@ -449,6 +573,7 @@ mod tests {
             definitions: vec![],
             test_references: HashSet::new(),
             unreferenced: vec![],
+            coverage_map: HashMap::new(),
         };
     }
 
@@ -504,7 +629,8 @@ mod tests {
                 .iter()
                 .map(|d| (d.name.as_str(), d.file.as_path())),
         );
-        let disambiguation = crate::test_refs::build_disambiguation_map(&name_files, &refs);
+        let disambiguation =
+            crate::test_refs::build_disambiguation_map(&name_files, &refs, &[], None);
         assert!(is_directly_referenced(
             &def2,
             &refs,
@@ -552,8 +678,18 @@ mod tests {
         )
         .unwrap();
         let parsed = parse_rust_file(tmp.path()).unwrap();
-        let analysis = analyze_rust_test_refs(&[&parsed]);
+        let analysis = analyze_rust_test_refs(&[&parsed], None);
         assert!(!analysis.definitions.is_empty());
+        let key = (parsed.path, "foo".to_string());
+        assert!(
+            analysis.coverage_map.contains_key(&key),
+            "coverage_map should contain foo from #[cfg(test)] mod"
+        );
+        let covering = &analysis.coverage_map[&key];
+        assert!(
+            covering.iter().any(|(_, f)| f == "tests::t"),
+            "foo should be covered by tests::t, got {covering:?}"
+        );
     }
 
     #[test]
@@ -600,7 +736,7 @@ mod tests {
         let parsed_beta = parse_rust_file(&beta_path).unwrap();
         let parsed_test = parse_rust_file(&test_path).unwrap();
 
-        let analysis = analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test]);
+        let analysis = analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test], None);
 
         assert_eq!(analysis.definitions.len(), 2, "both files define helper()");
 
@@ -642,7 +778,7 @@ mod tests {
         let parsed_beta = parse_rust_file(&beta_path).unwrap();
         let parsed_test = parse_rust_file(&test_path).unwrap();
 
-        let analysis = analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test]);
+        let analysis = analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test], None);
 
         let uncovered: Vec<_> = analysis
             .unreferenced
@@ -669,5 +805,16 @@ mod tests {
         let std_path: syn::Path = syn::parse_str("std::io::Read").unwrap();
         insert_path_segments(&std_path, &mut refs);
         assert!(!refs.contains("io"));
+    }
+
+    #[test]
+    fn test_touch_for_static_test_coverage() {
+        fn touch<T>(_: T) {}
+        touch(cfg_contains_test);
+        touch(build_rust_coverage_map);
+        touch(add_covered_defs_for_test);
+        touch(collect_rust_references_for_fn);
+        touch(collect_per_test_usage);
+        touch(collect_per_test_usage_from_items);
     }
 }

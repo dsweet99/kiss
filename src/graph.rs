@@ -123,6 +123,43 @@ impl DependencyGraph {
                 .collect(),
         }
     }
+
+    /// Returns the qualified module name for a path, if the path is in this graph.
+    pub fn module_for_path(&self, path: &std::path::Path) -> Option<String> {
+        self.paths
+            .iter()
+            .find(|(_, p)| p.as_path() == path)
+            .map(|(k, _)| k.clone())
+    }
+
+    /// Returns test modules that import the given module (directly).
+    /// Used for coverage: "candidate" tests that could cover definitions in `module`.
+    pub fn test_importers_of(&self, module: &str) -> Vec<String> {
+        use petgraph::Direction;
+        let Some(&idx) = self.nodes.get(module) else {
+            return Vec::new();
+        };
+        self.graph
+            .neighbors_directed(idx, Direction::Incoming)
+            .map(|i| self.graph[i].clone())
+            .filter(|m| is_test_module(self, m))
+            .collect()
+    }
+
+    /// True if the module is an entry point (main, tests, __init__, etc.).
+    pub fn is_entry_point_module(&self, module: &str) -> bool {
+        is_entry_point(module)
+    }
+
+    /// True if `from_module` has a direct edge to `to_module` (`from_module` imports `to_module`).
+    pub fn imports(&self, from_module: &str, to_module: &str) -> bool {
+        let (Some(&from_idx), Some(&to_idx)) =
+            (self.nodes.get(from_module), self.nodes.get(to_module))
+        else {
+            return false;
+        };
+        self.graph.find_edge(from_idx, to_idx).is_some()
+    }
 }
 
 impl Default for DependencyGraph {
@@ -1131,6 +1168,31 @@ mod tests {
             metrics.indirect_dependencies, 0,
             "Module 'a' has fan_out=1 and total_reachable=1, so indirect should be 0 (got {})",
             metrics.indirect_dependencies
+        );
+    }
+
+    #[test]
+    fn test_test_importers_of_returns_test_modules_that_import_target() {
+        let files = vec![
+            (PathBuf::from("src/utils.py"), vec![]),
+            (
+                PathBuf::from("tests/test_utils.py"),
+                vec!["utils".to_string()],
+            ),
+            (
+                PathBuf::from("other/helper.py"),
+                vec!["utils".to_string()],
+            ),
+        ];
+        let graph = build_dependency_graph_from_import_lists(&files);
+        let importers = graph.test_importers_of("utils");
+        assert!(
+            importers.iter().any(|m| m.contains("test_utils")),
+            "test_importers_of should return test module that imports utils, got {importers:?}"
+        );
+        assert!(
+            !importers.iter().any(|m| m.contains("helper")),
+            "test_importers_of should not return non-test importers, got {importers:?}"
         );
     }
 

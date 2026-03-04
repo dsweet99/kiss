@@ -8,6 +8,15 @@ use crate::violation::Violation;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// Format a candidate list for display, truncating to `max` items with ellipsis.
+pub fn format_candidate_list(candidates: &[String], max: usize) -> String {
+    if candidates.len() > max {
+        format!("{}…", candidates[..max].join(", "))
+    } else {
+        candidates.join(", ")
+    }
+}
+
 pub fn file_coverage_map(
     definitions: &[(PathBuf, String, usize)],
     unreferenced: &[(PathBuf, String, usize)],
@@ -143,7 +152,7 @@ pub fn count_py_unreferenced(parsed: &[ParsedFile]) -> usize {
     if parsed.is_empty() {
         return 0;
     }
-    let analysis = analyze_test_refs(&parsed.iter().collect::<Vec<_>>());
+    let analysis = analyze_test_refs(&parsed.iter().collect::<Vec<_>>(), None);
     analysis.unreferenced.len()
 }
 
@@ -151,7 +160,7 @@ pub fn count_rs_unreferenced(parsed: &[ParsedRustFile]) -> usize {
     if parsed.is_empty() {
         return 0;
     }
-    let analysis = analyze_rust_test_refs(&parsed.iter().collect::<Vec<_>>());
+    let analysis = analyze_rust_test_refs(&parsed.iter().collect::<Vec<_>>(), None);
     analysis.unreferenced.len()
 }
 

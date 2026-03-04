@@ -43,6 +43,15 @@ The intent is that a runner/agent can:
 - turn each violation into a to-do,
 - and iterate until `NO VIOLATIONS`.
 
+### `kiss show-tests` output format
+
+`kiss show-tests` emits one line per definition with stable prefixes for agent parsing:
+
+- **`TEST:<file>:<name> <covering_tests>`** — Definition is covered. `<covering_tests>` is a comma-separated list of `path::function` (e.g. `test_utils.py::test_parse_empty` or `test_widget.py::TestWidget::test_render`). May be empty when coverage is from module-level or fixture references only.
+- **`UNTESTED:<file>:<line>:<name>`** — Definition has no test references. Emitted only with the `--untested` flag.
+
+`SHOW_TESTS_SUMMARY` was removed; the output consists solely of `TEST:` and optionally `UNTESTED:` lines.
+
 ### How `kiss check` works (pipeline)
 
 `kiss check` runs a pipeline over discovered source files (optionally filtered by language) and emits violations from several analysis types:

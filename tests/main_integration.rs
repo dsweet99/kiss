@@ -49,7 +49,7 @@ fn compute_test_coverage(
     let mut unreferenced = Vec::new();
     if !py_parsed.is_empty() {
         let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-        let analysis = analyze_test_refs(&refs);
+        let analysis = analyze_test_refs(&refs, None);
         total += analysis.definitions.len();
         tested += analysis.definitions.len() - analysis.unreferenced.len();
         for def in analysis.unreferenced {

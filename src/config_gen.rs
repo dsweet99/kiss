@@ -250,13 +250,13 @@ fn compute_static_test_coverage(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRus
     let (mut tested, mut total) = (0usize, 0usize);
     if !py_parsed.is_empty() {
         let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-        let a = analyze_test_refs(&refs);
+        let a = analyze_test_refs(&refs, None);
         total += a.definitions.len();
         tested += a.definitions.len().saturating_sub(a.unreferenced.len());
     }
     if !rs_parsed.is_empty() {
         let refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-        let a = analyze_rust_test_refs(&refs);
+        let a = analyze_rust_test_refs(&refs, None);
         total += a.definitions.len();
         tested += a.definitions.len().saturating_sub(a.unreferenced.len());
     }

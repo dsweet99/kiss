@@ -1,3 +1,6 @@
+use crate::graph::DependencyGraph;
+#[cfg(test)]
+use crate::graph::build_dependency_graph;
 use crate::parsing::ParsedFile;
 use crate::units::{CodeUnitKind, get_child_by_field};
 use rayon::prelude::*;
@@ -14,11 +17,18 @@ pub struct CodeDefinition {
     pub containing_class: Option<String>,
 }
 
+/// (`test_file_path`, `test_function_name`) — e.g. (`"tests/test_utils.py"`, `"test_parse_empty"`)
+pub type CoveringTest = (PathBuf, String);
+
+type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
+
 #[derive(Debug)]
 pub struct TestRefAnalysis {
     pub definitions: Vec<CodeDefinition>,
     pub test_references: HashSet<String>,
     pub unreferenced: Vec<CodeDefinition>,
+    /// For each covered definition (file, name), the list of tests that reference it.
+    pub coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>>,
 }
 
 fn has_python_test_naming(path: &Path) -> bool {
@@ -169,14 +179,65 @@ pub(crate) fn disambiguate_files(
     winner.cloned()
 }
 
+#[allow(clippy::type_complexity)]
+fn disambiguate_files_graph_fallback(
+    name: &str,
+    files: &HashSet<PathBuf>,
+    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
+    graph: &DependencyGraph,
+) -> Option<PathBuf> {
+    let test_files_using_name: Vec<PathBuf> = per_test_usage
+        .iter()
+        .filter(|(_, test_funcs)| {
+            test_funcs
+                .iter()
+                .any(|(_, usage_refs)| usage_refs.contains(name))
+        })
+        .map(|(p, _)| p.clone())
+        .collect();
+    if test_files_using_name.is_empty() {
+        return None;
+    }
+    let candidate_modules: Vec<(PathBuf, String)> = files
+        .iter()
+        .filter_map(|f| graph.module_for_path(f).map(|m| (f.clone(), m)))
+        .collect();
+    if candidate_modules.is_empty() || candidate_modules.len() != files.len() {
+        return None;
+    }
+    let mut winner: Option<PathBuf> = None;
+    for (cand_path, cand_module) in &candidate_modules {
+        let has_importer = test_files_using_name.iter().any(|test_path| {
+            graph
+                .module_for_path(test_path)
+                .is_some_and(|test_mod| graph.imports(test_mod.as_str(), cand_module))
+        });
+        if has_importer {
+            if winner.is_some() {
+                return None;
+            }
+            winner = Some(cand_path.clone());
+        }
+    }
+    winner
+}
+
+#[allow(clippy::type_complexity)]
 pub(crate) fn build_disambiguation_map(
     name_files: &HashMap<String, HashSet<PathBuf>>,
     refs: &HashSet<String>,
+    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
+    graph: Option<&DependencyGraph>,
 ) -> HashMap<String, PathBuf> {
     name_files
         .iter()
         .filter(|(_, files)| files.len() > 1)
-        .filter_map(|(name, files)| disambiguate_files(files, refs).map(|f| (name.clone(), f)))
+        .filter_map(|(name, files)| {
+            disambiguate_files(files, refs).or_else(|| {
+                graph.and_then(|g| disambiguate_files_graph_fallback(name, files, per_test_usage, g))
+            })
+            .map(|f| (name.clone(), f))
+        })
         .collect()
 }
 
@@ -247,89 +308,113 @@ fn is_definition_covered(
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
+pub fn analyze_test_refs(
+    parsed_files: &[&ParsedFile],
+    graph: Option<&DependencyGraph>,
+) -> TestRefAnalysis {
     struct PerFileResult {
         definitions: Vec<CodeDefinition>,
         test_references: HashSet<String>,
         usage_references: HashSet<String>,
         import_bindings: HashMap<String, HashSet<String>>,
+        /// For test files: (`test_file_path`, [(`test_id`, `usage_refs`)])
+        per_test_usage: PerTestUsage,
     }
 
-    let (definitions, test_references, usage_references, import_bindings) = parsed_files
-        .par_iter()
-        .map(|parsed| {
-            let mut r = PerFileResult {
-                definitions: Vec::new(),
-                test_references: HashSet::new(),
-                usage_references: HashSet::new(),
-                import_bindings: HashMap::new(),
-            };
-            if is_python_test_file(parsed) {
-                collect_all_test_file_data(
-                    parsed.tree.root_node(),
-                    &parsed.source,
-                    &mut r.test_references,
-                    &mut r.usage_references,
-                    &mut r.import_bindings,
-                );
-            } else {
-                collect_definitions(
-                    parsed.tree.root_node(),
-                    &parsed.source,
-                    &parsed.path,
-                    &mut r.definitions,
-                    false,
-                    None,
-                );
-            }
-            r
-        })
-        .fold(
-            || {
-                (
-                    Vec::<CodeDefinition>::new(),
-                    HashSet::<String>::new(),
-                    HashSet::<String>::new(),
-                    HashMap::<String, HashSet<String>>::new(),
-                )
-            },
-            |(mut defs, mut t_refs, mut u_refs, mut i_binds), r| {
-                defs.extend(r.definitions);
-                t_refs.extend(r.test_references);
-                u_refs.extend(r.usage_references);
-                for (module, names) in r.import_bindings {
-                    i_binds.entry(module).or_default().extend(names);
+    let (definitions, test_references, usage_references, import_bindings, per_test_usage) =
+        parsed_files
+            .par_iter()
+            .map(|parsed| {
+                let mut r = PerFileResult {
+                    definitions: Vec::new(),
+                    test_references: HashSet::new(),
+                    usage_references: HashSet::new(),
+                    import_bindings: HashMap::new(),
+                    per_test_usage: Vec::new(),
+                };
+                if is_python_test_file(parsed) {
+                    collect_all_test_file_data(
+                        parsed.tree.root_node(),
+                        &parsed.source,
+                        &mut r.test_references,
+                        &mut r.usage_references,
+                        &mut r.import_bindings,
+                    );
+                    let mut test_funcs = Vec::new();
+                    collect_test_functions_with_refs(
+                        parsed.tree.root_node(),
+                        &parsed.source,
+                        "",
+                        &mut test_funcs,
+                    );
+                    r.per_test_usage = vec![(parsed.path.clone(), test_funcs)];
+                } else {
+                    collect_definitions(
+                        parsed.tree.root_node(),
+                        &parsed.source,
+                        &parsed.path,
+                        &mut r.definitions,
+                        false,
+                        None,
+                    );
                 }
-                (defs, t_refs, u_refs, i_binds)
-            },
-        )
-        .reduce(
-            || {
-                (
-                    Vec::<CodeDefinition>::new(),
-                    HashSet::<String>::new(),
-                    HashSet::<String>::new(),
-                    HashMap::<String, HashSet<String>>::new(),
-                )
-            },
-            |(mut defs, mut t_refs, mut u_refs, mut i_binds),
-             (defs2, t_refs2, u_refs2, i_binds2)| {
-                defs.extend(defs2);
-                t_refs.extend(t_refs2);
-                u_refs.extend(u_refs2);
-                for (module, names) in i_binds2 {
-                    i_binds.entry(module).or_default().extend(names);
-                }
-                (defs, t_refs, u_refs, i_binds)
-            },
-        );
+                r
+            })
+            .fold(
+                || {
+                    (
+                        Vec::<CodeDefinition>::new(),
+                        HashSet::<String>::new(),
+                        HashSet::<String>::new(),
+                        HashMap::<String, HashSet<String>>::new(),
+                        PerTestUsage::new(),
+                    )
+                },
+                |(mut defs, mut t_refs, mut u_refs, mut i_binds, mut pt), r| {
+                    defs.extend(r.definitions);
+                    t_refs.extend(r.test_references);
+                    u_refs.extend(r.usage_references);
+                    for (module, names) in r.import_bindings {
+                        i_binds.entry(module).or_default().extend(names);
+                    }
+                    pt.extend(r.per_test_usage);
+                    (defs, t_refs, u_refs, i_binds, pt)
+                },
+            )
+            .reduce(
+                || {
+                    (
+                        Vec::<CodeDefinition>::new(),
+                        HashSet::<String>::new(),
+                        HashSet::<String>::new(),
+                        HashMap::<String, HashSet<String>>::new(),
+                        PerTestUsage::new(),
+                    )
+                },
+                |(mut defs, mut t_refs, mut u_refs, mut i_binds, mut pt),
+                 (defs2, t_refs2, u_refs2, i_binds2, pt2)| {
+                    defs.extend(defs2);
+                    t_refs.extend(t_refs2);
+                    u_refs.extend(u_refs2);
+                    for (module, names) in i_binds2 {
+                        i_binds.entry(module).or_default().extend(names);
+                    }
+                    pt.extend(pt2);
+                    (defs, t_refs, u_refs, i_binds, pt)
+                },
+            );
 
     let name_files = build_name_file_map(
         definitions
             .iter()
             .map(|d| (d.name.as_str(), d.file.as_path())),
     );
-    let disambiguation = build_disambiguation_map(&name_files, &test_references);
+    let disambiguation = build_disambiguation_map(
+        &name_files,
+        &test_references,
+        &per_test_usage,
+        graph,
+    );
     let module_suffixes: HashMap<PathBuf, String> = definitions
         .iter()
         .map(|d| (d.file.clone(), file_to_module_suffix(&d.file)))
@@ -350,11 +435,55 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
         .cloned()
         .collect();
 
+    let coverage_map = build_py_coverage_map(
+        &definitions,
+        &per_test_usage,
+        &name_files,
+        &disambiguation,
+        &import_bindings,
+        &module_suffixes,
+    );
+
     TestRefAnalysis {
         definitions,
         test_references,
         unreferenced,
+        coverage_map,
     }
+}
+
+#[allow(clippy::type_complexity)]
+fn build_py_coverage_map(
+    definitions: &[CodeDefinition],
+    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &HashMap<String, PathBuf>,
+    import_bindings: &HashMap<String, HashSet<String>>,
+    module_suffixes: &HashMap<PathBuf, String>,
+) -> HashMap<(PathBuf, String), Vec<CoveringTest>> {
+    let mut coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>> = HashMap::new();
+    for (test_path, test_funcs) in per_test_usage {
+        for (test_id, usage_refs) in test_funcs {
+            for def in definitions {
+                if is_definition_covered(
+                    def,
+                    name_files,
+                    disambiguation,
+                    import_bindings,
+                    module_suffixes,
+                    usage_refs,
+                ) {
+                    let key = (def.file.clone(), def.name.clone());
+                    let entry = (test_path.clone(), test_id.clone());
+                    let list = coverage_map.entry(key).or_default();
+                    if !list.contains(&entry) {
+                        list.push(entry);
+                    }
+                }
+            }
+        }
+    }
+    coverage_map
 }
 
 fn try_add_def(
@@ -454,6 +583,102 @@ fn is_test_function(node: Node, source: &str) -> bool {
 
 fn is_test_class(node: Node, source: &str) -> bool {
     get_child_by_field(node, "name", source).is_some_and(|n| n.starts_with("Test"))
+}
+
+/// Collects usage references (identifiers, call targets, type refs) from within a node.
+/// Used to collect refs scoped to a single test function body.
+fn collect_usage_refs_in_scope(node: Node, source: &str, refs: &mut HashSet<String>) {
+    match node.kind() {
+        "call" => {
+            if let Some(func) = node.child_by_field_name("function") {
+                collect_call_target(func, source, refs);
+            }
+        }
+        "type" => {
+            collect_type_refs(node, source, refs);
+        }
+        "decorator" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "identifier"
+                    || child.kind() == "attribute"
+                    || child.kind() == "call"
+                {
+                    collect_call_target(child, source, refs);
+                }
+            }
+        }
+        "identifier" => {
+            insert_identifier(node, source, refs);
+        }
+        _ => {}
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_usage_refs_in_scope(child, source, refs);
+    }
+}
+
+/// Collects per-test (`test_id`, `usage_refs`) from a test file.
+/// `test_id` format: `test_func` for module-level, `TestClass::test_method` for class methods.
+fn collect_test_functions_with_refs(
+    node: Node,
+    source: &str,
+    prefix: &str,
+    out: &mut Vec<(String, HashSet<String>)>,
+) {
+    match node.kind() {
+        "function_definition" | "async_function_definition" => {
+            let name = get_child_by_field(node, "name", source).unwrap_or_default();
+            if name.starts_with("test_") {
+                let mut refs = HashSet::new();
+                if let Some(body) = node.child_by_field_name("body") {
+                    collect_usage_refs_in_scope(body, source, &mut refs);
+                }
+                let test_id = if prefix.is_empty() {
+                    name
+                } else {
+                    format!("{prefix}::{name}")
+                };
+                out.push((test_id, refs));
+            }
+        }
+        "class_definition" => {
+            let class_name = get_child_by_field(node, "name", source).unwrap_or_default();
+            if class_name.starts_with("Test") {
+                let class_prefix = if prefix.is_empty() {
+                    class_name
+                } else {
+                    format!("{prefix}::{class_name}")
+                };
+                if let Some(body) = node.child_by_field_name("body") {
+                    let mut cursor = body.walk();
+                    for child in body.children(&mut cursor) {
+                        if child.kind() == "function_definition"
+                            || child.kind() == "async_function_definition"
+                        {
+                            let meth_name =
+                                get_child_by_field(child, "name", source).unwrap_or_default();
+                            if meth_name.starts_with("test_") {
+                                let mut refs = HashSet::new();
+                                if let Some(meth_body) = child.child_by_field_name("body") {
+                                    collect_usage_refs_in_scope(meth_body, source, &mut refs);
+                                }
+                                let test_id = format!("{class_prefix}::{meth_name}");
+                                out.push((test_id, refs));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_test_functions_with_refs(child, source, prefix, out);
+            }
+        }
+    }
 }
 
 fn collect_all_test_file_data(
@@ -711,7 +936,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
 
         let def_names: Vec<&str> = analysis
             .definitions
@@ -753,7 +978,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file_utils, &file_helpers, &file_test]);
+        let analysis = analyze_test_refs(&[&file_utils, &file_helpers, &file_test], None);
 
         let unref_files: Vec<&str> = analysis
             .unreferenced
@@ -796,7 +1021,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file_1, &file_2, &file_test]);
+        let analysis = analyze_test_refs(&[&file_1, &file_2, &file_test], None);
 
         let unref: Vec<_> = analysis
             .unreferenced
@@ -842,7 +1067,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file_1, &file_2, &file_test]);
+        let analysis = analyze_test_refs(&[&file_1, &file_2, &file_test], None);
 
         let unref: Vec<_> = analysis
             .unreferenced
@@ -880,7 +1105,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
 
         assert!(
             analysis.unreferenced.is_empty(),
@@ -914,7 +1139,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
         assert!(
             !analysis.unreferenced.is_empty(),
             "some_func should be uncovered (imported but never called)"
@@ -942,7 +1167,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
         assert!(
             analysis.unreferenced.is_empty(),
             "some_func should be covered (imported AND called): unreferenced={:?}",
@@ -975,7 +1200,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
         let unref_names: Vec<&str> = analysis
             .unreferenced
             .iter()
@@ -1012,7 +1237,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
         let def_names: Vec<&str> = analysis
             .definitions
             .iter()
@@ -1049,7 +1274,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
         let def_names: Vec<&str> = analysis
             .definitions
             .iter()
@@ -1063,6 +1288,45 @@ mod tests {
             def_names.contains(&"concrete"),
             "Concrete method should still be tracked: definitions={def_names:?}"
         );
+    }
+
+    #[test]
+    fn test_coverage_map_one_function_covered_by_two_tests() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src = "def parse(x):\n    return int(x or 0)\n";
+        let tree = parser.parse(src, None).unwrap();
+        let file = ParsedFile {
+            path: PathBuf::from("utils.py"),
+            source: src.to_string(),
+            tree,
+        };
+
+        let src_test = "from utils import parse\n\ndef test_parse_empty():\n    assert parse('') == 0\n\ndef test_parse_valid():\n    assert parse('42') == 42\n";
+        let tree_test = parser.parse(src_test, None).unwrap();
+        let file_test = ParsedFile {
+            path: PathBuf::from("test_utils.py"),
+            source: src_test.to_string(),
+            tree: tree_test,
+        };
+
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
+        let key = (PathBuf::from("utils.py"), "parse".to_string());
+        let covering = analysis.coverage_map.get(&key).expect("coverage_map should have parse");
+        let test_ids: Vec<String> = covering
+            .iter()
+            .map(|(_, func)| func.clone())
+            .collect();
+        assert!(
+            test_ids.contains(&"test_parse_empty".to_string()),
+            "coverage_map should list test_parse_empty, got: {test_ids:?}"
+        );
+        assert!(
+            test_ids.contains(&"test_parse_valid".to_string()),
+            "coverage_map should list test_parse_valid, got: {test_ids:?}"
+        );
+        assert_eq!(covering.len(), 2);
     }
 
     #[test]
@@ -1094,7 +1358,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file_a, &file_b, &file_test]);
+        let analysis = analyze_test_refs(&[&file_a, &file_b, &file_test], None);
 
         assert_eq!(analysis.definitions.len(), 2, "both files define helper()");
 
@@ -1110,6 +1374,67 @@ mod tests {
         assert!(
             unref_files.contains(&"beta.py"),
             "beta.helper should be uncovered (no test references beta)"
+        );
+    }
+
+    /// Exercises `disambiguate_files_graph_fallback`: when ref-based disambiguation ties
+    /// (both alpha and beta appear in refs), the graph picks the module imported by the
+    /// test that uses the name.
+    #[test]
+    fn test_disambiguate_by_graph_when_refs_tie() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src_a = "def helper():\n    pass\n";
+        let tree_a = parser.parse(src_a, None).unwrap();
+        let file_a = ParsedFile {
+            path: PathBuf::from("alpha.py"),
+            source: src_a.to_string(),
+            tree: tree_a,
+        };
+
+        let src_b = "def helper():\n    pass\n";
+        let tree_b = parser.parse(src_b, None).unwrap();
+        let file_b = ParsedFile {
+            path: PathBuf::from("beta.py"),
+            source: src_b.to_string(),
+            tree: tree_b,
+        };
+
+        let src_test_a = "from alpha import helper\ndef test_a():\n    helper()\n";
+        let tree_test_a = parser.parse(src_test_a, None).unwrap();
+        let file_test_a = ParsedFile {
+            path: PathBuf::from("tests/test_a.py"),
+            source: src_test_a.to_string(),
+            tree: tree_test_a,
+        };
+
+        let src_test_b = "import beta\n";
+        let tree_test_b = parser.parse(src_test_b, None).unwrap();
+        let file_test_b = ParsedFile {
+            path: PathBuf::from("tests/test_b.py"),
+            source: src_test_b.to_string(),
+            tree: tree_test_b,
+        };
+
+        let parsed: Vec<&ParsedFile> = vec![&file_a, &file_b, &file_test_a, &file_test_b];
+        let graph = build_dependency_graph(&parsed);
+        let analysis = analyze_test_refs(&parsed, Some(&graph));
+
+        assert_eq!(analysis.definitions.len(), 2, "both files define helper()");
+
+        let unref_files: Vec<&str> = analysis
+            .unreferenced
+            .iter()
+            .map(|d| d.file.to_str().unwrap())
+            .collect();
+        assert!(
+            !unref_files.contains(&"alpha.py"),
+            "alpha.helper should be covered (graph fallback: test_a imports alpha)"
+        );
+        assert!(
+            unref_files.contains(&"beta.py"),
+            "beta.helper should be uncovered (no test imports and uses beta)"
         );
     }
 }
