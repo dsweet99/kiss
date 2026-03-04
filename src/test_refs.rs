@@ -312,34 +312,58 @@ pub fn analyze_test_refs(
     parsed_files: &[&ParsedFile],
     graph: Option<&DependencyGraph>,
 ) -> TestRefAnalysis {
+    analyze_test_refs_inner(parsed_files, graph, true)
+}
+
+pub fn analyze_test_refs_quick(
+    parsed_files: &[&ParsedFile],
+) -> TestRefAnalysis {
+    analyze_test_refs_inner(parsed_files, None, false)
+}
+
+pub fn analyze_test_refs_no_map(
+    parsed_files: &[&ParsedFile],
+    graph: Option<&DependencyGraph>,
+) -> TestRefAnalysis {
+    analyze_test_refs_inner(parsed_files, graph, false)
+}
+
+type CollectedRefs = (
+    Vec<CodeDefinition>,
+    HashSet<String>,
+    HashSet<String>,
+    HashMap<String, HashSet<String>>,
+    PerTestUsage,
+);
+
+fn collect_refs_parallel(parsed_files: &[&ParsedFile], need_coverage_map: bool) -> CollectedRefs {
     struct PerFileResult {
         definitions: Vec<CodeDefinition>,
         test_references: HashSet<String>,
         usage_references: HashSet<String>,
         import_bindings: HashMap<String, HashSet<String>>,
-        /// For test files: (`test_file_path`, [(`test_id`, `usage_refs`)])
         per_test_usage: PerTestUsage,
     }
 
-    let (definitions, test_references, usage_references, import_bindings, per_test_usage) =
-        parsed_files
-            .par_iter()
-            .map(|parsed| {
-                let mut r = PerFileResult {
-                    definitions: Vec::new(),
-                    test_references: HashSet::new(),
-                    usage_references: HashSet::new(),
-                    import_bindings: HashMap::new(),
-                    per_test_usage: Vec::new(),
-                };
-                if is_python_test_file(parsed) {
-                    collect_all_test_file_data(
-                        parsed.tree.root_node(),
-                        &parsed.source,
-                        &mut r.test_references,
-                        &mut r.usage_references,
-                        &mut r.import_bindings,
-                    );
+    parsed_files
+        .par_iter()
+        .map(|parsed| {
+            let mut r = PerFileResult {
+                definitions: Vec::new(),
+                test_references: HashSet::new(),
+                usage_references: HashSet::new(),
+                import_bindings: HashMap::new(),
+                per_test_usage: Vec::new(),
+            };
+            if is_python_test_file(parsed) {
+                collect_all_test_file_data(
+                    parsed.tree.root_node(),
+                    &parsed.source,
+                    &mut r.test_references,
+                    &mut r.usage_references,
+                    &mut r.import_bindings,
+                );
+                if need_coverage_map {
                     let mut test_funcs = Vec::new();
                     collect_test_functions_with_refs(
                         parsed.tree.root_node(),
@@ -348,61 +372,71 @@ pub fn analyze_test_refs(
                         &mut test_funcs,
                     );
                     r.per_test_usage = vec![(parsed.path.clone(), test_funcs)];
-                } else {
-                    collect_definitions(
-                        parsed.tree.root_node(),
-                        &parsed.source,
-                        &parsed.path,
-                        &mut r.definitions,
-                        false,
-                        None,
-                    );
                 }
-                r
-            })
-            .fold(
-                || {
-                    (
-                        Vec::<CodeDefinition>::new(),
-                        HashSet::<String>::new(),
-                        HashSet::<String>::new(),
-                        HashMap::<String, HashSet<String>>::new(),
-                        PerTestUsage::new(),
-                    )
-                },
-                |(mut defs, mut t_refs, mut u_refs, mut i_binds, mut pt), r| {
-                    defs.extend(r.definitions);
-                    t_refs.extend(r.test_references);
-                    u_refs.extend(r.usage_references);
-                    for (module, names) in r.import_bindings {
-                        i_binds.entry(module).or_default().extend(names);
-                    }
-                    pt.extend(r.per_test_usage);
-                    (defs, t_refs, u_refs, i_binds, pt)
-                },
-            )
-            .reduce(
-                || {
-                    (
-                        Vec::<CodeDefinition>::new(),
-                        HashSet::<String>::new(),
-                        HashSet::<String>::new(),
-                        HashMap::<String, HashSet<String>>::new(),
-                        PerTestUsage::new(),
-                    )
-                },
-                |(mut defs, mut t_refs, mut u_refs, mut i_binds, mut pt),
-                 (defs2, t_refs2, u_refs2, i_binds2, pt2)| {
-                    defs.extend(defs2);
-                    t_refs.extend(t_refs2);
-                    u_refs.extend(u_refs2);
-                    for (module, names) in i_binds2 {
-                        i_binds.entry(module).or_default().extend(names);
-                    }
-                    pt.extend(pt2);
-                    (defs, t_refs, u_refs, i_binds, pt)
-                },
-            );
+            } else {
+                collect_definitions(
+                    parsed.tree.root_node(),
+                    &parsed.source,
+                    &parsed.path,
+                    &mut r.definitions,
+                    false,
+                    None,
+                );
+            }
+            r
+        })
+        .fold(
+            || {
+                (
+                    Vec::<CodeDefinition>::new(),
+                    HashSet::<String>::new(),
+                    HashSet::<String>::new(),
+                    HashMap::<String, HashSet<String>>::new(),
+                    PerTestUsage::new(),
+                )
+            },
+            |(mut defs, mut t_refs, mut u_refs, mut i_binds, mut pt), r| {
+                defs.extend(r.definitions);
+                t_refs.extend(r.test_references);
+                u_refs.extend(r.usage_references);
+                for (module, names) in r.import_bindings {
+                    i_binds.entry(module).or_default().extend(names);
+                }
+                pt.extend(r.per_test_usage);
+                (defs, t_refs, u_refs, i_binds, pt)
+            },
+        )
+        .reduce(
+            || {
+                (
+                    Vec::<CodeDefinition>::new(),
+                    HashSet::<String>::new(),
+                    HashSet::<String>::new(),
+                    HashMap::<String, HashSet<String>>::new(),
+                    PerTestUsage::new(),
+                )
+            },
+            |(mut defs, mut t_refs, mut u_refs, mut i_binds, mut pt),
+             (defs2, t_refs2, u_refs2, i_binds2, pt2)| {
+                defs.extend(defs2);
+                t_refs.extend(t_refs2);
+                u_refs.extend(u_refs2);
+                for (module, names) in i_binds2 {
+                    i_binds.entry(module).or_default().extend(names);
+                }
+                pt.extend(pt2);
+                (defs, t_refs, u_refs, i_binds, pt)
+            },
+        )
+}
+
+fn analyze_test_refs_inner(
+    parsed_files: &[&ParsedFile],
+    graph: Option<&DependencyGraph>,
+    need_coverage_map: bool,
+) -> TestRefAnalysis {
+    let (definitions, test_references, usage_references, import_bindings, per_test_usage) =
+        collect_refs_parallel(parsed_files, need_coverage_map);
 
     let name_files = build_name_file_map(
         definitions
@@ -435,14 +469,18 @@ pub fn analyze_test_refs(
         .cloned()
         .collect();
 
-    let coverage_map = build_py_coverage_map(
-        &definitions,
-        &per_test_usage,
-        &name_files,
-        &disambiguation,
-        &import_bindings,
-        &module_suffixes,
-    );
+    let coverage_map = if need_coverage_map {
+        build_py_coverage_map(
+            &definitions,
+            &per_test_usage,
+            &name_files,
+            &disambiguation,
+            &import_bindings,
+            &module_suffixes,
+        )
+    } else {
+        HashMap::new()
+    };
 
     TestRefAnalysis {
         definitions,
