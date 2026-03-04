@@ -1,4 +1,6 @@
 use crate::graph::DependencyGraph;
+#[cfg(test)]
+use crate::graph::build_dependency_graph;
 use crate::parsing::ParsedFile;
 use crate::units::{CodeUnitKind, get_child_by_field};
 use rayon::prelude::*;
@@ -1372,6 +1374,67 @@ mod tests {
         assert!(
             unref_files.contains(&"beta.py"),
             "beta.helper should be uncovered (no test references beta)"
+        );
+    }
+
+    /// Exercises `disambiguate_files_graph_fallback`: when ref-based disambiguation ties
+    /// (both alpha and beta appear in refs), the graph picks the module imported by the
+    /// test that uses the name.
+    #[test]
+    fn test_disambiguate_by_graph_when_refs_tie() {
+        use crate::parsing::{ParsedFile, create_parser};
+        let mut parser = create_parser().unwrap();
+
+        let src_a = "def helper():\n    pass\n";
+        let tree_a = parser.parse(src_a, None).unwrap();
+        let file_a = ParsedFile {
+            path: PathBuf::from("alpha.py"),
+            source: src_a.to_string(),
+            tree: tree_a,
+        };
+
+        let src_b = "def helper():\n    pass\n";
+        let tree_b = parser.parse(src_b, None).unwrap();
+        let file_b = ParsedFile {
+            path: PathBuf::from("beta.py"),
+            source: src_b.to_string(),
+            tree: tree_b,
+        };
+
+        let src_test_a = "from alpha import helper\ndef test_a():\n    helper()\n";
+        let tree_test_a = parser.parse(src_test_a, None).unwrap();
+        let file_test_a = ParsedFile {
+            path: PathBuf::from("tests/test_a.py"),
+            source: src_test_a.to_string(),
+            tree: tree_test_a,
+        };
+
+        let src_test_b = "import beta\n";
+        let tree_test_b = parser.parse(src_test_b, None).unwrap();
+        let file_test_b = ParsedFile {
+            path: PathBuf::from("tests/test_b.py"),
+            source: src_test_b.to_string(),
+            tree: tree_test_b,
+        };
+
+        let parsed: Vec<&ParsedFile> = vec![&file_a, &file_b, &file_test_a, &file_test_b];
+        let graph = build_dependency_graph(&parsed);
+        let analysis = analyze_test_refs(&parsed, Some(&graph));
+
+        assert_eq!(analysis.definitions.len(), 2, "both files define helper()");
+
+        let unref_files: Vec<&str> = analysis
+            .unreferenced
+            .iter()
+            .map(|d| d.file.to_str().unwrap())
+            .collect();
+        assert!(
+            !unref_files.contains(&"alpha.py"),
+            "alpha.helper should be covered (graph fallback: test_a imports alpha)"
+        );
+        assert!(
+            unref_files.contains(&"beta.py"),
+            "beta.helper should be uncovered (no test imports and uses beta)"
         );
     }
 }

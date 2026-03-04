@@ -37,12 +37,9 @@ pub fn run_show_tests_to(
 
     if !py_files.is_empty() {
         match collect_py_test_defs(&py_files, &focus_set) {
-            Ok((defs, parsed)) => {
+            Ok((defs, graph)) => {
                 all_defs.extend(defs);
-                let refs: Vec<&ParsedFile> = parsed.iter().collect();
-                if !refs.is_empty() {
-                    py_graph = Some(build_dependency_graph(&refs));
-                }
+                py_graph = graph;
             }
             Err(e) => {
                 eprintln!("error: failed to parse Python files: {e}");
@@ -51,12 +48,9 @@ pub fn run_show_tests_to(
         }
     }
     if !rs_files.is_empty() {
-        let (defs, parsed) = collect_rs_test_defs(&rs_files, &focus_set);
+        let (defs, graph) = collect_rs_test_defs(&rs_files, &focus_set);
         all_defs.extend(defs);
-        let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-        if !refs.is_empty() {
-            rs_graph = Some(build_rust_dependency_graph(&refs));
-        }
+        rs_graph = graph;
     }
 
     all_defs.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
@@ -67,11 +61,16 @@ pub fn run_show_tests_to(
 fn collect_py_test_defs(
     py_files: &[PathBuf],
     focus_set: &HashSet<PathBuf>,
-) -> Result<(Vec<DefEntry>, Vec<ParsedFile>), String> {
+) -> Result<(Vec<DefEntry>, Option<DependencyGraph>), String> {
     let results = kiss::parse_files(py_files).map_err(|e| e.to_string())?;
     let parsed: Vec<_> = results.into_iter().filter_map(Result::ok).collect();
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
-    let analysis = kiss::analyze_test_refs(&refs, None);
+    let graph = if refs.is_empty() {
+        None
+    } else {
+        Some(build_dependency_graph(&refs))
+    };
+    let analysis = kiss::analyze_test_refs(&refs, graph.as_ref());
     let unref_set: HashSet<(&PathBuf, &str, usize)> = analysis
         .unreferenced
         .iter()
@@ -97,17 +96,22 @@ fn collect_py_test_defs(
             (d.file.clone(), d.name.clone(), d.line, covering)
         })
         .collect();
-    Ok((defs, parsed))
+    Ok((defs, graph))
 }
 
 fn collect_rs_test_defs(
     rs_files: &[PathBuf],
     focus_set: &HashSet<PathBuf>,
-) -> (Vec<DefEntry>, Vec<ParsedRustFile>) {
+) -> (Vec<DefEntry>, Option<DependencyGraph>) {
     let results = kiss::parse_rust_files(rs_files);
     let parsed: Vec<_> = results.into_iter().filter_map(Result::ok).collect();
     let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-    let analysis = kiss::analyze_rust_test_refs(&refs, None);
+    let graph = if refs.is_empty() {
+        None
+    } else {
+        Some(build_rust_dependency_graph(&refs))
+    };
+    let analysis = kiss::analyze_rust_test_refs(&refs, graph.as_ref());
     let unref_set: HashSet<(&PathBuf, &str, usize)> = analysis
         .unreferenced
         .iter()
@@ -133,7 +137,7 @@ fn collect_rs_test_defs(
             (d.file.clone(), d.name.clone(), d.line, covering)
         })
         .collect();
-    (defs, parsed)
+    (defs, graph)
 }
 
 fn format_covering_tests(covering: &[CoveringTest]) -> String {
@@ -161,32 +165,16 @@ fn emit_show_tests_output(
                 format_covering_tests(tests)
             );
         } else if show_untested {
-            let candidates_suffix = file
-                .extension()
-                .and_then(|e| e.to_str())
-                .and_then(|ext| {
-                    let graph = if ext == "py" {
-                        py_graph
-                    } else if ext == "rs" {
-                        rs_graph
+            let candidates_suffix = analyze::graph_for_path(file, py_graph, rs_graph)
+                .and_then(|g| g.module_for_path(file).map(|module| (g, module)))
+                .map(|(g, module)| {
+                    let candidates = g.test_importers_of(&module);
+                    if candidates.is_empty() {
+                        String::new()
                     } else {
-                        None
-                    };
-                    graph.and_then(|g| {
-                        g.module_for_path(file).map(|module| (g, module))
-                    }).map(|(g, module)| {
-                        let candidates = g.test_importers_of(&module);
-                        if candidates.is_empty() {
-                            String::new()
-                        } else {
-                            let truncated = if candidates.len() > 3 {
-                                format!("{}…", candidates[..3].join(", "))
-                            } else {
-                                candidates.join(", ")
-                            };
-                            format!(" (candidates: {truncated})")
-                        }
-                    })
+                        let truncated = kiss::cli_output::format_candidate_list(&candidates, 3);
+                        format!(" (candidates: {truncated})")
+                    }
                 });
             let suffix = candidates_suffix.as_deref().unwrap_or("");
             let _ = writeln!(out, "UNTESTED:{}:{}:{}{}", file.display(), line, name, suffix);

@@ -155,6 +155,24 @@ fn build_graph_violations(
 type CoverageCachePair = (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>);
 
 /// Ensures definitions in orphan modules (`fan_in`==0, `fan_out`==0) are in unreferenced.
+pub fn graph_for_path<'a>(
+    path: &Path,
+    py_graph: Option<&'a DependencyGraph>,
+    rs_graph: Option<&'a DependencyGraph>,
+) -> Option<&'a DependencyGraph> {
+    path.extension().and_then(|e| {
+        e.to_str().and_then(|ext| {
+            if ext == "py" {
+                py_graph
+            } else if ext == "rs" {
+                rs_graph
+            } else {
+                None
+            }
+        })
+    })
+}
+
 fn orphan_post_pass(
     definitions: &[CachedCoverageItem],
     unreferenced: Vec<CachedCoverageItem>,
@@ -168,11 +186,7 @@ fn orphan_post_pass(
     let mut out = unreferenced;
     for def in definitions {
         let path = std::path::Path::new(&def.file);
-        let graph = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .and_then(|ext| if ext == "py" { py_graph } else if ext == "rs" { rs_graph } else { None });
-        let Some(g) = graph else { continue };
+        let Some(g) = graph_for_path(path, py_graph, rs_graph) else { continue };
         let Some(module) = g.module_for_path(path) else { continue };
         let metrics = g.module_metrics(&module);
         let is_orphan = metrics.fan_in == 0
@@ -196,18 +210,7 @@ fn build_coverage_violation_with_graph(
     let mut message = format!("{file_pct}% covered. Add test coverage for this code unit.");
     let mut suggestion = String::new();
 
-    let graph = file
-        .extension()
-        .and_then(|e| e.to_str())
-        .and_then(|ext| {
-            if ext == "py" {
-                py_graph
-            } else if ext == "rs" {
-                rs_graph
-            } else {
-                None
-            }
-        });
+    let graph = graph_for_path(&file, py_graph, rs_graph);
 
     if let Some(g) = graph
         && let Some(module) = g.module_for_path(&file)
@@ -219,11 +222,7 @@ fn build_coverage_violation_with_graph(
         }
         let candidates = g.test_importers_of(&module);
         if !candidates.is_empty() {
-            let truncated = if candidates.len() > 3 {
-                format!("{}…", candidates[..3].join(", "))
-            } else {
-                candidates.join(", ")
-            };
+            let truncated = kiss::cli_output::format_candidate_list(&candidates, 3);
             let _ = std::fmt::Write::write_fmt(&mut message, format_args!(" (candidates: {truncated})"));
         }
     }
@@ -250,6 +249,8 @@ fn collect_coverage_viols(
     rs_graph: Option<&DependencyGraph>,
 ) -> (Vec<Violation>, Option<CoverageCachePair>) {
     let (definitions, mut unreferenced) = merge_coverage_results(py_cov, rs_cov);
+    // When the gate is not bypassed, per-definition coverage violations are intentionally
+    // not emitted; coverage is only checked at the gate level (pass/fail).
     if !bypass_gate {
         return (Vec::new(), None);
     }

@@ -8,6 +8,15 @@ use crate::violation::Violation;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// Format a candidate list for display, truncating to `max` items with ellipsis.
+pub fn format_candidate_list(candidates: &[String], max: usize) -> String {
+    if candidates.len() > max {
+        format!("{}…", candidates[..max].join(", "))
+    } else {
+        candidates.join(", ")
+    }
+}
+
 pub fn file_coverage_map(
     definitions: &[(PathBuf, String, usize)],
     unreferenced: &[(PathBuf, String, usize)],

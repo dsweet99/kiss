@@ -1172,6 +1172,31 @@ mod tests {
     }
 
     #[test]
+    fn test_test_importers_of_returns_test_modules_that_import_target() {
+        let files = vec![
+            (PathBuf::from("src/utils.py"), vec![]),
+            (
+                PathBuf::from("tests/test_utils.py"),
+                vec!["utils".to_string()],
+            ),
+            (
+                PathBuf::from("other/helper.py"),
+                vec!["utils".to_string()],
+            ),
+        ];
+        let graph = build_dependency_graph_from_import_lists(&files);
+        let importers = graph.test_importers_of("utils");
+        assert!(
+            importers.iter().any(|m| m.contains("test_utils")),
+            "test_importers_of should return test module that imports utils, got {importers:?}"
+        );
+        assert!(
+            !importers.iter().any(|m| m.contains("helper")),
+            "test_importers_of should not return non-test importers, got {importers:?}"
+        );
+    }
+
+    #[test]
     fn test_is_test_module_singular_test_dir() {
         // is_test_module should also recognize "test/" (singular) directories
         let mut g = DependencyGraph::new();
