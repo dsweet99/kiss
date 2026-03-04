@@ -115,20 +115,27 @@ fn run_parallel_py_analysis(
     let dup_enabled = opts.gate_config.duplication_enabled;
     let min_sim = opts.gate_config.min_similarity;
     let py_graph = build_py_graph(py_parsed);
-    let gv = build_graph_violations(
-        py_graph.as_ref(),
-        rs_graph,
-        opts,
-        file_count,
-        orphan_enabled,
+    let (gv, (py_cov, py_dups)) = rayon::join(
+        || {
+            build_graph_violations(
+                py_graph.as_ref(),
+                rs_graph,
+                opts,
+                file_count,
+                orphan_enabled,
+            )
+        },
+        || {
+            let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
+            let py_cov = kiss::analyze_test_refs_no_map(&py_refs, py_graph.as_ref());
+            let py_dups = if dup_enabled {
+                detect_py_duplicates(py_parsed, min_sim)
+            } else {
+                Vec::new()
+            };
+            (py_cov, py_dups)
+        },
     );
-    let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-    let py_cov = kiss::analyze_test_refs(&py_refs, py_graph.as_ref());
-    let py_dups = if dup_enabled {
-        detect_py_duplicates(py_parsed, min_sim)
-    } else {
-        Vec::new()
-    };
     ((py_graph, gv), (py_cov, py_dups))
 }
 

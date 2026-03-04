@@ -237,7 +237,7 @@ pub fn coverage_lists(
 ) -> (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>) {
     let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
     let rs_refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let py_cov = kiss::analyze_test_refs(&py_refs, None);
+    let py_cov = kiss::analyze_test_refs_quick(&py_refs);
     let rs_cov = kiss::analyze_rust_test_refs(&rs_refs, None);
 
     let mut definitions: Vec<CachedCoverageItem> = py_cov

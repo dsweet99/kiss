@@ -66,8 +66,8 @@ pub use stats_detailed::{
     UnitMetrics, collect_detailed_py, collect_detailed_rs, format_detailed_table, truncate,
 };
 pub use test_refs::{
-    CodeDefinition, TestRefAnalysis, analyze_test_refs, build_name_file_map, is_in_test_directory,
-    is_test_file,
+    CodeDefinition, TestRefAnalysis, analyze_test_refs, analyze_test_refs_no_map,
+    analyze_test_refs_quick, build_name_file_map, is_in_test_directory, is_test_file,
 };
 pub use units::count_code_units;
 pub use units::{CodeUnit, CodeUnitKind, extract_code_units};
