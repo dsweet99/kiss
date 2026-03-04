@@ -93,7 +93,7 @@ struct RustAnalysis {
 fn run_rust_analysis(rs_parsed: &[ParsedRustFile], gate_config: &GateConfig) -> RustAnalysis {
     let graph = build_rs_graph(rs_parsed);
     let rs_refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let cov = kiss::analyze_rust_test_refs(&rs_refs);
+    let cov = kiss::analyze_rust_test_refs(&rs_refs, graph.as_ref());
     let dups = if gate_config.duplication_enabled {
         detect_rs_duplicates(rs_parsed, gate_config.min_similarity)
     } else {
@@ -114,29 +114,22 @@ fn run_parallel_py_analysis(
     let orphan_enabled = opts.gate_config.orphan_module_enabled;
     let dup_enabled = opts.gate_config.duplication_enabled;
     let min_sim = opts.gate_config.min_similarity;
-    rayon::join(
-        || {
-            let py_graph = build_py_graph(py_parsed);
-            let gv = build_graph_violations(
-                py_graph.as_ref(),
-                rs_graph,
-                opts,
-                file_count,
-                orphan_enabled,
-            );
-            (py_graph, gv)
-        },
-        || {
-            let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-            let py_cov = kiss::analyze_test_refs(&py_refs);
-            let py_dups = if dup_enabled {
-                detect_py_duplicates(py_parsed, min_sim)
-            } else {
-                Vec::new()
-            };
-            (py_cov, py_dups)
-        },
-    )
+    let py_graph = build_py_graph(py_parsed);
+    let gv = build_graph_violations(
+        py_graph.as_ref(),
+        rs_graph,
+        opts,
+        file_count,
+        orphan_enabled,
+    );
+    let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
+    let py_cov = kiss::analyze_test_refs(&py_refs, py_graph.as_ref());
+    let py_dups = if dup_enabled {
+        detect_py_duplicates(py_parsed, min_sim)
+    } else {
+        Vec::new()
+    };
+    ((py_graph, gv), (py_cov, py_dups))
 }
 
 fn build_graph_violations(
@@ -161,17 +154,106 @@ fn build_graph_violations(
 
 type CoverageCachePair = (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>);
 
+/// Ensures definitions in orphan modules (fan_in==0, fan_out==0) are in unreferenced.
+fn orphan_post_pass(
+    definitions: &[CachedCoverageItem],
+    unreferenced: Vec<CachedCoverageItem>,
+    py_graph: Option<&DependencyGraph>,
+    rs_graph: Option<&DependencyGraph>,
+) -> Vec<CachedCoverageItem> {
+    let unref_set: HashSet<_> = unreferenced
+        .iter()
+        .map(|c| (c.file.clone(), c.name.clone(), c.line))
+        .collect();
+    let mut out = unreferenced;
+    for def in definitions {
+        let path = std::path::Path::new(&def.file);
+        let graph = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(|ext| if ext == "py" { py_graph } else if ext == "rs" { rs_graph } else { None });
+        let Some(g) = graph else { continue };
+        let Some(module) = g.module_for_path(path) else { continue };
+        let metrics = g.module_metrics(&module);
+        let is_orphan = metrics.fan_in == 0
+            && metrics.fan_out == 0
+            && !g.is_entry_point_module(&module);
+        if is_orphan && !unref_set.contains(&(def.file.clone(), def.name.clone(), def.line)) {
+            out.push(def.clone());
+        }
+    }
+    out
+}
+
+fn build_coverage_violation_with_graph(
+    file: PathBuf,
+    name: String,
+    line: usize,
+    file_pct: usize,
+    py_graph: Option<&DependencyGraph>,
+    rs_graph: Option<&DependencyGraph>,
+) -> Violation {
+    let mut message = format!("{file_pct}% covered. Add test coverage for this code unit.");
+    let mut suggestion = String::new();
+
+    let graph = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(|ext| {
+            if ext == "py" {
+                py_graph
+            } else if ext == "rs" {
+                rs_graph
+            } else {
+                None
+            }
+        });
+
+    if let Some(g) = graph
+        && let Some(module) = g.module_for_path(&file)
+    {
+        let metrics = g.module_metrics(&module);
+        if metrics.fan_in == 0 && !g.is_entry_point_module(&module) {
+            message.push_str(" No test module imports this module.");
+            suggestion = "Add an import in a test file, or remove if dead.".to_string();
+        }
+        let candidates = g.test_importers_of(&module);
+        if !candidates.is_empty() {
+            let truncated = if candidates.len() > 3 {
+                format!("{}…", candidates[..3].join(", "))
+            } else {
+                candidates.join(", ")
+            };
+            let _ = std::fmt::Write::write_fmt(&mut message, format_args!(" (candidates: {truncated})"));
+        }
+    }
+
+    Violation {
+        file,
+        line,
+        unit_name: name,
+        metric: "test_coverage".to_string(),
+        value: 0,
+        threshold: 0,
+        message,
+        suggestion,
+    }
+}
+
 fn collect_coverage_viols(
     py_cov: kiss::TestRefAnalysis,
     rs_cov: kiss::RustTestRefAnalysis,
     focus_set: &HashSet<PathBuf>,
     bypass_gate: bool,
     show_timing: bool,
+    py_graph: Option<&DependencyGraph>,
+    rs_graph: Option<&DependencyGraph>,
 ) -> (Vec<Violation>, Option<CoverageCachePair>) {
-    let (definitions, unreferenced) = merge_coverage_results(py_cov, rs_cov);
+    let (definitions, mut unreferenced) = merge_coverage_results(py_cov, rs_cov);
     if !bypass_gate {
         return (Vec::new(), None);
     }
+    unreferenced = orphan_post_pass(&definitions, unreferenced, py_graph, rs_graph);
     let defs: Vec<_> = definitions
         .iter()
         .cloned()
@@ -188,7 +270,7 @@ fn collect_coverage_viols(
         .into_iter()
         .map(|(file, name, line)| {
             let pct = file_pcts.get(&file).copied().unwrap_or(0);
-            analyze_cache::coverage_violation(file, name, line, pct)
+            build_coverage_violation_with_graph(file, name, line, pct, py_graph, rs_graph)
         })
         .collect();
     let cache_lists = if show_timing {
@@ -294,8 +376,10 @@ fn run_analyze_uncached(
         focus_set,
         opts.bypass_gate,
         opts.show_timing,
+        py_graph.as_ref(),
+        rs.graph.as_ref(),
     );
-    viols.extend(cov_viols);
+    viols.extend(cov_viols.iter().cloned());
 
     let py_dups = filter_duplicates_by_focus(py_dups_all.clone(), focus_set);
     let rs_dups = filter_duplicates_by_focus(rs.dups.clone(), focus_set);
@@ -307,6 +391,7 @@ fn run_analyze_uncached(
         rs_files,
         result: &result,
         graph_viols_all: &graph_viols_all,
+        coverage_violations: &cov_viols,
         py_graph: py_graph.as_ref(),
         rs_graph: rs.graph.as_ref(),
         py_dups_all: &py_dups_all,
@@ -377,6 +462,7 @@ struct CacheStoreCall<'a> {
     rs_files: &'a [PathBuf],
     result: &'a ParseResult,
     graph_viols_all: &'a [Violation],
+    coverage_violations: &'a [Violation],
     py_graph: Option<&'a DependencyGraph>,
     rs_graph: Option<&'a DependencyGraph>,
     py_dups_all: &'a [DuplicateCluster],
@@ -406,6 +492,7 @@ fn maybe_store_full_cache(call: CacheStoreCall<'_>) {
         statement_count: call.result.statement_count,
         violations: &call.result.violations,
         graph_viols_all: call.graph_viols_all,
+        coverage_violations: call.coverage_violations,
         py_graph: call.py_graph,
         rs_graph: call.rs_graph,
         py_dups_all: call.py_dups_all,

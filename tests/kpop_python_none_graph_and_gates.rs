@@ -100,7 +100,7 @@ fn kpop_python_none_test_coverage_threshold() {
     let mut parser = create_parser().unwrap();
     let parsed_code = parse_file(&mut parser, code.path()).unwrap();
     let parsed_test = parse_file(&mut parser, test_code.path()).unwrap();
-    let refs = kiss::analyze_test_refs(&[&parsed_code, &parsed_test]);
+    let refs = kiss::analyze_test_refs(&[&parsed_code, &parsed_test], None);
 
     // We expect at least one definition (foo) to not be unreferenced.
     assert!(refs.definitions.iter().any(|d| d.name == "foo"));

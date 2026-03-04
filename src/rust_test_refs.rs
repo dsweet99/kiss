@@ -1,3 +1,4 @@
+use crate::graph::DependencyGraph;
 use crate::rust_parsing::ParsedRustFile;
 use crate::units::CodeUnitKind;
 use std::collections::{HashMap, HashSet};
@@ -123,7 +124,10 @@ fn is_covered_by_tests(
         || is_impl_with_referenced_type(def, refs)
 }
 
-pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAnalysis {
+pub fn analyze_rust_test_refs(
+    parsed_files: &[&ParsedRustFile],
+    graph: Option<&DependencyGraph>,
+) -> RustTestRefAnalysis {
     let mut definitions = Vec::new();
     let mut test_references = HashSet::new();
     let mut per_test_usage: PerTestUsage = Vec::new();
@@ -144,7 +148,12 @@ pub fn analyze_rust_test_refs(parsed_files: &[&ParsedRustFile]) -> RustTestRefAn
             .iter()
             .map(|d| (d.name.as_str(), d.file.as_path())),
     );
-    let disambiguation = crate::test_refs::build_disambiguation_map(&name_files, &test_references);
+    let disambiguation = crate::test_refs::build_disambiguation_map(
+        &name_files,
+        &test_references,
+        &per_test_usage,
+        graph,
+    );
     let unreferenced = definitions
         .iter()
         .filter(|d| !is_covered_by_tests(d, &test_references, &name_files, &disambiguation))
@@ -620,7 +629,8 @@ mod tests {
                 .iter()
                 .map(|d| (d.name.as_str(), d.file.as_path())),
         );
-        let disambiguation = crate::test_refs::build_disambiguation_map(&name_files, &refs);
+        let disambiguation =
+            crate::test_refs::build_disambiguation_map(&name_files, &refs, &[], None);
         assert!(is_directly_referenced(
             &def2,
             &refs,
@@ -668,7 +678,7 @@ mod tests {
         )
         .unwrap();
         let parsed = parse_rust_file(tmp.path()).unwrap();
-        let analysis = analyze_rust_test_refs(&[&parsed]);
+        let analysis = analyze_rust_test_refs(&[&parsed], None);
         assert!(!analysis.definitions.is_empty());
         let key = (parsed.path, "foo".to_string());
         assert!(
@@ -726,7 +736,7 @@ mod tests {
         let parsed_beta = parse_rust_file(&beta_path).unwrap();
         let parsed_test = parse_rust_file(&test_path).unwrap();
 
-        let analysis = analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test]);
+        let analysis = analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test], None);
 
         assert_eq!(analysis.definitions.len(), 2, "both files define helper()");
 
@@ -768,7 +778,7 @@ mod tests {
         let parsed_beta = parse_rust_file(&beta_path).unwrap();
         let parsed_test = parse_rust_file(&test_path).unwrap();
 
-        let analysis = analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test]);
+        let analysis = analyze_rust_test_refs(&[&parsed_alpha, &parsed_beta, &parsed_test], None);
 
         let uncovered: Vec<_> = analysis
             .unreferenced

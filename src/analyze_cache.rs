@@ -155,6 +155,27 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus_set: &HashSet<PathBuf>) -
         .map(CachedCoverageItem::into_tuple)
         .collect();
     let (_, _, _, unreferenced) = compute_test_coverage_from_lists(&defs, &unref, focus_set);
+
+    if !cache.coverage_violations.is_empty() {
+        let lookup: std::collections::HashMap<(String, String, usize), Violation> = cache
+            .coverage_violations
+            .iter()
+            .map(|v| {
+                (
+                    (v.file.clone(), v.unit_name.clone(), v.line),
+                    v.clone().into_violation(),
+                )
+            })
+            .collect();
+        return unreferenced
+            .into_iter()
+            .filter_map(|(file, name, line)| {
+                let key = (file.to_string_lossy().to_string(), name, line);
+                lookup.get(&key).cloned()
+            })
+            .collect();
+    }
+
     let file_pcts = kiss::cli_output::file_coverage_map(&defs, &unreferenced);
     unreferenced
         .into_iter()
@@ -216,8 +237,8 @@ pub fn coverage_lists(
 ) -> (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>) {
     let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
     let rs_refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let py_cov = kiss::analyze_test_refs(&py_refs);
-    let rs_cov = kiss::analyze_rust_test_refs(&rs_refs);
+    let py_cov = kiss::analyze_test_refs(&py_refs, None);
+    let rs_cov = kiss::analyze_rust_test_refs(&rs_refs, None);
 
     let mut definitions: Vec<CachedCoverageItem> = py_cov
         .definitions
@@ -259,6 +280,7 @@ pub struct FullCacheInputs<'a> {
     pub statement_count: usize,
     pub violations: &'a [Violation],
     pub graph_viols_all: &'a [Violation],
+    pub coverage_violations: &'a [Violation],
     pub py_graph: Option<&'a DependencyGraph>,
     pub rs_graph: Option<&'a DependencyGraph>,
     pub py_dups_all: &'a [DuplicateCluster],
@@ -284,6 +306,11 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
             .collect(),
         graph_violations: inputs
             .graph_viols_all
+            .iter()
+            .map(CachedViolation::from)
+            .collect(),
+        coverage_violations: inputs
+            .coverage_violations
             .iter()
             .map(CachedViolation::from)
             .collect(),
@@ -339,6 +366,7 @@ mod tests {
             graph_edges: 0,
             base_violations: Vec::new(),
             graph_violations: Vec::new(),
+            coverage_violations: Vec::new(),
             py_duplicates: Vec::new(),
             rs_duplicates: Vec::new(),
             definitions: Vec::new(),

@@ -47,7 +47,7 @@ fn c2_cov_1_bare_name_collision_inflates_coverage() {
     };
 
     let files: Vec<&ParsedFile> = vec![&auth, &billing, &test_file];
-    let analysis = analyze_test_refs(&files);
+    let analysis = analyze_test_refs(&files, None);
 
     let billing_unreferenced = analysis
         .unreferenced
@@ -87,7 +87,7 @@ fn c2_cov_2_framework_import_reclassifies_production_as_test() {
     };
 
     let files: Vec<&ParsedFile> = vec![&validator];
-    let analysis = analyze_test_refs(&files);
+    let analysis = analyze_test_refs(&files, None);
 
     let has_validate_def = analysis.definitions.iter().any(|d| d.name == "validate");
 
@@ -142,7 +142,7 @@ fn c2_cov_3_test_helper_refs_outside_test_scope_invisible() {
     };
 
     let files: Vec<&ParsedFile> = vec![&service, &test_file];
-    let analysis = analyze_test_refs(&files);
+    let analysis = analyze_test_refs(&files, None);
 
     assert!(
         analysis.unreferenced.is_empty(),
@@ -181,7 +181,7 @@ fn c2_cov_4_nested_function_definitions_excluded() {
     };
 
     let files: Vec<&ParsedFile> = vec![&module];
-    let analysis = analyze_test_refs(&files);
+    let analysis = analyze_test_refs(&files, None);
 
     let has_inner = analysis.definitions.iter().any(|d| d.name == "inner_logic");
 
@@ -224,7 +224,7 @@ fn c2_cov_5_compound_cfg_test_bypasses_detection() {
     };
 
     let files: Vec<&ParsedRustFile> = vec![&rust_file];
-    let analysis = analyze_rust_test_refs(&files);
+    let analysis = analyze_rust_test_refs(&files, None);
 
     let has_production_fn_ref = analysis.test_references.contains("production_fn");
     let test_it_is_definition = analysis.definitions.iter().any(|d| d.name == "test_it");

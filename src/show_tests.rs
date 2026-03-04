@@ -1,6 +1,10 @@
 use crate::analyze;
+use kiss::graph::build_dependency_graph;
+use kiss::rust_graph::build_rust_dependency_graph;
 use kiss::test_refs::CoveringTest;
+use kiss::{ParsedFile, ParsedRustFile};
 use kiss::Language;
+use kiss::DependencyGraph;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -28,10 +32,18 @@ pub fn run_show_tests_to(
     }
 
     let mut all_defs: Vec<DefEntry> = Vec::new();
+    let mut py_graph: Option<DependencyGraph> = None;
+    let mut rs_graph: Option<DependencyGraph> = None;
 
     if !py_files.is_empty() {
         match collect_py_test_defs(&py_files, &focus_set) {
-            Ok(defs) => all_defs.extend(defs),
+            Ok((defs, parsed)) => {
+                all_defs.extend(defs);
+                let refs: Vec<&ParsedFile> = parsed.iter().collect();
+                if !refs.is_empty() {
+                    py_graph = Some(build_dependency_graph(&refs));
+                }
+            }
             Err(e) => {
                 eprintln!("error: failed to parse Python files: {e}");
                 return 1;
@@ -39,28 +51,33 @@ pub fn run_show_tests_to(
         }
     }
     if !rs_files.is_empty() {
-        all_defs.extend(collect_rs_test_defs(&rs_files, &focus_set));
+        let (defs, parsed) = collect_rs_test_defs(&rs_files, &focus_set);
+        all_defs.extend(defs);
+        let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
+        if !refs.is_empty() {
+            rs_graph = Some(build_rust_dependency_graph(&refs));
+        }
     }
 
     all_defs.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
-    emit_show_tests_output(out, &all_defs, show_untested);
+    emit_show_tests_output(out, &all_defs, show_untested, py_graph.as_ref(), rs_graph.as_ref());
     0
 }
 
 fn collect_py_test_defs(
     py_files: &[PathBuf],
     focus_set: &HashSet<PathBuf>,
-) -> Result<Vec<DefEntry>, String> {
+) -> Result<(Vec<DefEntry>, Vec<ParsedFile>), String> {
     let results = kiss::parse_files(py_files).map_err(|e| e.to_string())?;
     let parsed: Vec<_> = results.into_iter().filter_map(Result::ok).collect();
-    let refs: Vec<&kiss::ParsedFile> = parsed.iter().collect();
-    let analysis = kiss::analyze_test_refs(&refs);
+    let refs: Vec<&ParsedFile> = parsed.iter().collect();
+    let analysis = kiss::analyze_test_refs(&refs, None);
     let unref_set: HashSet<(&PathBuf, &str, usize)> = analysis
         .unreferenced
         .iter()
         .map(|d| (&d.file, d.name.as_str(), d.line))
         .collect();
-    Ok(analysis
+    let defs: Vec<DefEntry> = analysis
         .definitions
         .iter()
         .filter(|d| analyze::is_focus_file(&d.file, focus_set))
@@ -79,23 +96,24 @@ fn collect_py_test_defs(
             };
             (d.file.clone(), d.name.clone(), d.line, covering)
         })
-        .collect())
+        .collect();
+    Ok((defs, parsed))
 }
 
 fn collect_rs_test_defs(
     rs_files: &[PathBuf],
     focus_set: &HashSet<PathBuf>,
-) -> Vec<DefEntry> {
+) -> (Vec<DefEntry>, Vec<ParsedRustFile>) {
     let results = kiss::parse_rust_files(rs_files);
     let parsed: Vec<_> = results.into_iter().filter_map(Result::ok).collect();
-    let refs: Vec<&kiss::ParsedRustFile> = parsed.iter().collect();
-    let analysis = kiss::analyze_rust_test_refs(&refs);
+    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
+    let analysis = kiss::analyze_rust_test_refs(&refs, None);
     let unref_set: HashSet<(&PathBuf, &str, usize)> = analysis
         .unreferenced
         .iter()
         .map(|d| (&d.file, d.name.as_str(), d.line))
         .collect();
-    analysis
+    let defs: Vec<DefEntry> = analysis
         .definitions
         .iter()
         .filter(|d| analyze::is_focus_file(&d.file, focus_set))
@@ -114,7 +132,8 @@ fn collect_rs_test_defs(
             };
             (d.file.clone(), d.name.clone(), d.line, covering)
         })
-        .collect()
+        .collect();
+    (defs, parsed)
 }
 
 fn format_covering_tests(covering: &[CoveringTest]) -> String {
@@ -129,6 +148,8 @@ fn emit_show_tests_output(
     out: &mut dyn std::io::Write,
     all_defs: &[DefEntry],
     show_untested: bool,
+    py_graph: Option<&DependencyGraph>,
+    rs_graph: Option<&DependencyGraph>,
 ) {
     for (file, name, line, covering) in all_defs {
         if let Some(tests) = covering {
@@ -140,7 +161,35 @@ fn emit_show_tests_output(
                 format_covering_tests(tests)
             );
         } else if show_untested {
-            let _ = writeln!(out, "UNTESTED:{}:{}:{}", file.display(), line, name);
+            let candidates_suffix = file
+                .extension()
+                .and_then(|e| e.to_str())
+                .and_then(|ext| {
+                    let graph = if ext == "py" {
+                        py_graph
+                    } else if ext == "rs" {
+                        rs_graph
+                    } else {
+                        None
+                    };
+                    graph.and_then(|g| {
+                        g.module_for_path(file).map(|module| (g, module))
+                    }).map(|(g, module)| {
+                        let candidates = g.test_importers_of(&module);
+                        if candidates.is_empty() {
+                            String::new()
+                        } else {
+                            let truncated = if candidates.len() > 3 {
+                                format!("{}…", candidates[..3].join(", "))
+                            } else {
+                                candidates.join(", ")
+                            };
+                            format!(" (candidates: {truncated})")
+                        }
+                    })
+                });
+            let suffix = candidates_suffix.as_deref().unwrap_or("");
+            let _ = writeln!(out, "UNTESTED:{}:{}:{}{}", file.display(), line, name, suffix);
         }
     }
 }

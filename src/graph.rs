@@ -123,6 +123,43 @@ impl DependencyGraph {
                 .collect(),
         }
     }
+
+    /// Returns the qualified module name for a path, if the path is in this graph.
+    pub fn module_for_path(&self, path: &std::path::Path) -> Option<String> {
+        self.paths
+            .iter()
+            .find(|(_, p)| p.as_path() == path)
+            .map(|(k, _)| k.clone())
+    }
+
+    /// Returns test modules that import the given module (directly).
+    /// Used for coverage: "candidate" tests that could cover definitions in `module`.
+    pub fn test_importers_of(&self, module: &str) -> Vec<String> {
+        use petgraph::Direction;
+        let Some(&idx) = self.nodes.get(module) else {
+            return Vec::new();
+        };
+        self.graph
+            .neighbors_directed(idx, Direction::Incoming)
+            .map(|i| self.graph[i].clone())
+            .filter(|m| is_test_module(self, m))
+            .collect()
+    }
+
+    /// True if the module is an entry point (main, tests, __init__, etc.).
+    pub fn is_entry_point_module(&self, module: &str) -> bool {
+        is_entry_point(module)
+    }
+
+    /// True if `from_module` has a direct edge to `to_module` (from_module imports to_module).
+    pub fn imports(&self, from_module: &str, to_module: &str) -> bool {
+        let (Some(&from_idx), Some(&to_idx)) =
+            (self.nodes.get(from_module), self.nodes.get(to_module))
+        else {
+            return false;
+        };
+        self.graph.find_edge(from_idx, to_idx).is_some()
+    }
 }
 
 impl Default for DependencyGraph {

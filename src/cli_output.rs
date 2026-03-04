@@ -143,7 +143,7 @@ pub fn count_py_unreferenced(parsed: &[ParsedFile]) -> usize {
     if parsed.is_empty() {
         return 0;
     }
-    let analysis = analyze_test_refs(&parsed.iter().collect::<Vec<_>>());
+    let analysis = analyze_test_refs(&parsed.iter().collect::<Vec<_>>(), None);
     analysis.unreferenced.len()
 }
 
@@ -151,7 +151,7 @@ pub fn count_rs_unreferenced(parsed: &[ParsedRustFile]) -> usize {
     if parsed.is_empty() {
         return 0;
     }
-    let analysis = analyze_rust_test_refs(&parsed.iter().collect::<Vec<_>>());
+    let analysis = analyze_rust_test_refs(&parsed.iter().collect::<Vec<_>>(), None);
     analysis.unreferenced.len()
 }
 

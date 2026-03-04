@@ -1,3 +1,4 @@
+use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
 use crate::units::{CodeUnitKind, get_child_by_field};
 use rayon::prelude::*;
@@ -176,14 +177,65 @@ pub(crate) fn disambiguate_files(
     winner.cloned()
 }
 
+#[allow(clippy::type_complexity)]
+fn disambiguate_files_graph_fallback(
+    name: &str,
+    files: &HashSet<PathBuf>,
+    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
+    graph: &DependencyGraph,
+) -> Option<PathBuf> {
+    let test_files_using_name: Vec<PathBuf> = per_test_usage
+        .iter()
+        .filter(|(_, test_funcs)| {
+            test_funcs
+                .iter()
+                .any(|(_, usage_refs)| usage_refs.contains(name))
+        })
+        .map(|(p, _)| p.clone())
+        .collect();
+    if test_files_using_name.is_empty() {
+        return None;
+    }
+    let candidate_modules: Vec<(PathBuf, String)> = files
+        .iter()
+        .filter_map(|f| graph.module_for_path(f).map(|m| (f.clone(), m)))
+        .collect();
+    if candidate_modules.is_empty() || candidate_modules.len() != files.len() {
+        return None;
+    }
+    let mut winner: Option<PathBuf> = None;
+    for (cand_path, cand_module) in &candidate_modules {
+        let has_importer = test_files_using_name.iter().any(|test_path| {
+            graph
+                .module_for_path(test_path)
+                .is_some_and(|test_mod| graph.imports(test_mod.as_str(), cand_module))
+        });
+        if has_importer {
+            if winner.is_some() {
+                return None;
+            }
+            winner = Some(cand_path.clone());
+        }
+    }
+    winner
+}
+
+#[allow(clippy::type_complexity)]
 pub(crate) fn build_disambiguation_map(
     name_files: &HashMap<String, HashSet<PathBuf>>,
     refs: &HashSet<String>,
+    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
+    graph: Option<&DependencyGraph>,
 ) -> HashMap<String, PathBuf> {
     name_files
         .iter()
         .filter(|(_, files)| files.len() > 1)
-        .filter_map(|(name, files)| disambiguate_files(files, refs).map(|f| (name.clone(), f)))
+        .filter_map(|(name, files)| {
+            disambiguate_files(files, refs).or_else(|| {
+                graph.and_then(|g| disambiguate_files_graph_fallback(name, files, per_test_usage, g))
+            })
+            .map(|f| (name.clone(), f))
+        })
         .collect()
 }
 
@@ -254,7 +306,10 @@ fn is_definition_covered(
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
+pub fn analyze_test_refs(
+    parsed_files: &[&ParsedFile],
+    graph: Option<&DependencyGraph>,
+) -> TestRefAnalysis {
     struct PerFileResult {
         definitions: Vec<CodeDefinition>,
         test_references: HashSet<String>,
@@ -352,7 +407,12 @@ pub fn analyze_test_refs(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
             .iter()
             .map(|d| (d.name.as_str(), d.file.as_path())),
     );
-    let disambiguation = build_disambiguation_map(&name_files, &test_references);
+    let disambiguation = build_disambiguation_map(
+        &name_files,
+        &test_references,
+        &per_test_usage,
+        graph,
+    );
     let module_suffixes: HashMap<PathBuf, String> = definitions
         .iter()
         .map(|d| (d.file.clone(), file_to_module_suffix(&d.file)))
@@ -874,7 +934,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
 
         let def_names: Vec<&str> = analysis
             .definitions
@@ -916,7 +976,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file_utils, &file_helpers, &file_test]);
+        let analysis = analyze_test_refs(&[&file_utils, &file_helpers, &file_test], None);
 
         let unref_files: Vec<&str> = analysis
             .unreferenced
@@ -959,7 +1019,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file_1, &file_2, &file_test]);
+        let analysis = analyze_test_refs(&[&file_1, &file_2, &file_test], None);
 
         let unref: Vec<_> = analysis
             .unreferenced
@@ -1005,7 +1065,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file_1, &file_2, &file_test]);
+        let analysis = analyze_test_refs(&[&file_1, &file_2, &file_test], None);
 
         let unref: Vec<_> = analysis
             .unreferenced
@@ -1043,7 +1103,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
 
         assert!(
             analysis.unreferenced.is_empty(),
@@ -1077,7 +1137,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
         assert!(
             !analysis.unreferenced.is_empty(),
             "some_func should be uncovered (imported but never called)"
@@ -1105,7 +1165,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
         assert!(
             analysis.unreferenced.is_empty(),
             "some_func should be covered (imported AND called): unreferenced={:?}",
@@ -1138,7 +1198,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
         let unref_names: Vec<&str> = analysis
             .unreferenced
             .iter()
@@ -1175,7 +1235,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
         let def_names: Vec<&str> = analysis
             .definitions
             .iter()
@@ -1212,7 +1272,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
         let def_names: Vec<&str> = analysis
             .definitions
             .iter()
@@ -1249,7 +1309,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file, &file_test]);
+        let analysis = analyze_test_refs(&[&file, &file_test], None);
         let key = (PathBuf::from("utils.py"), "parse".to_string());
         let covering = analysis.coverage_map.get(&key).expect("coverage_map should have parse");
         let test_ids: Vec<String> = covering
@@ -1296,7 +1356,7 @@ mod tests {
             tree: tree_test,
         };
 
-        let analysis = analyze_test_refs(&[&file_a, &file_b, &file_test]);
+        let analysis = analyze_test_refs(&[&file_a, &file_b, &file_test], None);
 
         assert_eq!(analysis.definitions.len(), 2, "both files define helper()");
 

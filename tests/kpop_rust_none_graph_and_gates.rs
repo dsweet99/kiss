@@ -94,7 +94,7 @@ fn kpop_rust_none_test_coverage_threshold() {
 
     let parsed_src = parse_rust_file(src.path()).unwrap();
     let parsed_tst = parse_rust_file(tst.path()).unwrap();
-    let refs = kiss::analyze_rust_test_refs(&[&parsed_src, &parsed_tst]);
+    let refs = kiss::analyze_rust_test_refs(&[&parsed_src, &parsed_tst], None);
 
     assert!(refs.definitions.iter().any(|d| d.name == "foo"));
     assert!(!refs.unreferenced.iter().any(|d| d.name == "foo"));

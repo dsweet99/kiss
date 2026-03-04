@@ -27,6 +27,9 @@ pub struct FullCheckCache {
 
     pub base_violations: Vec<CachedViolation>,
     pub graph_violations: Vec<CachedViolation>,
+    /// Coverage violations with graph-enhanced messages (fan-in, candidates).
+    #[serde(default)]
+    pub coverage_violations: Vec<CachedViolation>,
 
     pub py_duplicates: Vec<CachedDuplicateCluster>,
     pub rs_duplicates: Vec<CachedDuplicateCluster>,
@@ -81,6 +84,7 @@ mod tests {
             graph_edges: 0,
             base_violations: Vec::new(),
             graph_violations: Vec::new(),
+            coverage_violations: Vec::new(),
             py_duplicates: Vec::new(),
             rs_duplicates: Vec::new(),
             definitions: Vec::new(),
