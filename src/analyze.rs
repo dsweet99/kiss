@@ -154,7 +154,7 @@ fn build_graph_violations(
 
 type CoverageCachePair = (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>);
 
-/// Ensures definitions in orphan modules (fan_in==0, fan_out==0) are in unreferenced.
+/// Ensures definitions in orphan modules (`fan_in`==0, `fan_out`==0) are in unreferenced.
 fn orphan_post_pass(
     definitions: &[CachedCoverageItem],
     unreferenced: Vec<CachedCoverageItem>,

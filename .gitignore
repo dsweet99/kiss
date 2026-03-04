@@ -16,3 +16,6 @@ style.md
 .kiss_shrink
 graph.md
 .style
+
+# Until tracked: KPOP graph coverage ideas test (run `git add tests/kpop_graph_coverage_ideas.rs` to track)
+tests/kpop_graph_coverage_ideas.rs

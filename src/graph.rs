@@ -151,7 +151,7 @@ impl DependencyGraph {
         is_entry_point(module)
     }
 
-    /// True if `from_module` has a direct edge to `to_module` (from_module imports to_module).
+    /// True if `from_module` has a direct edge to `to_module` (`from_module` imports `to_module`).
     pub fn imports(&self, from_module: &str, to_module: &str) -> bool {
         let (Some(&from_idx), Some(&to_idx)) =
             (self.nodes.get(from_module), self.nodes.get(to_module))
