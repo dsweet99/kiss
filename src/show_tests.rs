@@ -346,6 +346,47 @@ mod tests {
         );
     }
 
+    /// Asserts TEST line format: `TEST:path:name` `<path::func>[,path::func...]`
+    #[test]
+    fn test_test_line_format_stability() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("mymod.py"), "def helper():\n    pass\n").unwrap();
+        std::fs::write(
+            tmp.path().join("test_mymod.py"),
+            "from mymod import helper\ndef test_it():\n    helper()\n",
+        )
+        .unwrap();
+
+        let universe = tmp.path().to_string_lossy().to_string();
+        let p = tmp.path().join("mymod.py").to_string_lossy().to_string();
+        let mut buf = Vec::new();
+        let _ = run_show_tests_to(&mut buf, &universe, &[p], None, &[], false);
+        let output = String::from_utf8(buf).unwrap();
+        let line = output
+            .trim()
+            .lines()
+            .find(|l| l.contains("helper"))
+            .expect("expected a TEST line for helper");
+
+        assert!(line.starts_with("TEST:"), "line must start with TEST: got {line:?}");
+        let rest = line.strip_prefix("TEST:").unwrap();
+        let (path_name, covering) = rest
+            .split_once(' ')
+            .expect("TEST:path:name must be followed by space then covering list");
+        assert!(
+            path_name.contains(':'),
+            "path:name must contain colon, got {path_name:?}"
+        );
+        assert!(
+            covering.contains("::"),
+            "covering list must use path::func format, got {covering:?}"
+        );
+        assert!(
+            covering.contains("test_it"),
+            "expected test_it in covering list, got {covering:?}"
+        );
+    }
+
     #[test]
     fn test_helper_coverage() {
         fn touch<T>(_: T) {}
