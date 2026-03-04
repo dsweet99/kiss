@@ -1,9 +1,10 @@
 use crate::analyze;
+use kiss::test_refs::CoveringTest;
 use kiss::Language;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-type DefEntry = (PathBuf, String, usize, bool);
+type DefEntry = (PathBuf, String, usize, Option<Vec<CoveringTest>>);
 
 pub fn run_show_tests_to(
     out: &mut dyn std::io::Write,
@@ -64,8 +65,19 @@ fn collect_py_test_defs(
         .iter()
         .filter(|d| analyze::is_focus_file(&d.file, focus_set))
         .map(|d| {
-            let is_untested = unref_set.contains(&(&d.file, d.name.as_str(), d.line));
-            (d.file.clone(), d.name.clone(), d.line, is_untested)
+            let key = (d.file.clone(), d.name.clone());
+            let covering = if unref_set.contains(&(&d.file, d.name.as_str(), d.line)) {
+                None
+            } else {
+                Some(
+                    analysis
+                        .coverage_map
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_default(),
+                )
+            };
+            (d.file.clone(), d.name.clone(), d.line, covering)
         })
         .collect())
 }
@@ -88,10 +100,29 @@ fn collect_rs_test_defs(
         .iter()
         .filter(|d| analyze::is_focus_file(&d.file, focus_set))
         .map(|d| {
-            let is_untested = unref_set.contains(&(&d.file, d.name.as_str(), d.line));
-            (d.file.clone(), d.name.clone(), d.line, is_untested)
+            let key = (d.file.clone(), d.name.clone());
+            let covering = if unref_set.contains(&(&d.file, d.name.as_str(), d.line)) {
+                None
+            } else {
+                Some(
+                    analysis
+                        .coverage_map
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_default(),
+                )
+            };
+            (d.file.clone(), d.name.clone(), d.line, covering)
         })
         .collect()
+}
+
+fn format_covering_tests(covering: &[CoveringTest]) -> String {
+    covering
+        .iter()
+        .map(|(path, func)| format!("{}::{}", path.display(), func))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn emit_show_tests_output(
@@ -99,19 +130,19 @@ fn emit_show_tests_output(
     all_defs: &[DefEntry],
     show_untested: bool,
 ) {
-    let mut tested = 0usize;
-    let total = all_defs.len();
-    for (file, name, line, is_untested) in all_defs {
-        if *is_untested {
-            if show_untested {
-                let _ = writeln!(out, "UNTESTED:{file}:{line}:{name}", file = file.display());
-            }
-        } else {
-            let _ = writeln!(out, "TESTED:{file}:{line}:{name}", file = file.display());
-            tested += 1;
+    for (file, name, line, covering) in all_defs {
+        if let Some(tests) = covering {
+            let _ = writeln!(
+                out,
+                "TEST:{}:{} {}",
+                file.display(),
+                name,
+                format_covering_tests(tests)
+            );
+        } else if show_untested {
+            let _ = writeln!(out, "UNTESTED:{}:{}:{}", file.display(), line, name);
         }
     }
-    let _ = writeln!(out, "SHOW_TESTS_SUMMARY:{tested}/{total} tested");
 }
 
 #[cfg(test)]
@@ -135,12 +166,12 @@ mod tests {
         let output = String::from_utf8(buf).unwrap();
         assert_eq!(exit, 0);
         assert!(
-            output.contains("TESTED:"),
-            "expected TESTED lines in output, got: {output}"
+            output.contains("TEST:"),
+            "expected TEST lines in output, got: {output}"
         );
         assert!(
-            output.contains("SHOW_TESTS_SUMMARY:"),
-            "expected SHOW_TESTS_SUMMARY line in output, got: {output}"
+            output.contains("test_it"),
+            "expected test path::function in output, got: {output}"
         );
         assert!(
             !output.contains("UNTESTED:"),
@@ -172,10 +203,6 @@ mod tests {
             output.contains("UNTESTED:"),
             "expected UNTESTED lines with --untested flag, got: {output}"
         );
-        assert!(
-            output.contains("SHOW_TESTS_SUMMARY:"),
-            "expected SHOW_TESTS_SUMMARY line, got: {output}"
-        );
     }
 
     #[test]
@@ -184,7 +211,7 @@ mod tests {
         std::fs::write(tmp.path().join("mymod.rs"), "pub fn helper() {}\n").unwrap();
         std::fs::write(
             tmp.path().join("test_mymod.rs"),
-            "fn t() { helper(); }\n",
+            "#[test]\nfn t() { helper(); }\n",
         )
         .unwrap();
 
@@ -195,12 +222,127 @@ mod tests {
         let output = String::from_utf8(buf).unwrap();
         assert_eq!(exit, 0);
         assert!(
-            output.contains("SHOW_TESTS_SUMMARY:"),
-            "expected SHOW_TESTS_SUMMARY line in output, got: {output}"
+            output.contains("TEST:"),
+            "expected TEST line in output, got: {output}"
         );
         assert!(
             !output.contains("UNTESTED:"),
             "UNTESTED lines should not appear without --untested flag, got: {output}"
+        );
+    }
+
+    #[test]
+    fn test_one_function_covered_by_multiple_tests() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("utils.py"),
+            "def parse(x):\n    return int(x or 0)\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("test_utils.py"),
+            "from utils import parse\n\ndef test_parse_empty():\n    assert parse('') == 0\n\ndef test_parse_valid():\n    assert parse('42') == 42\n",
+        )
+        .unwrap();
+
+        let universe = tmp.path().to_string_lossy().to_string();
+        let p = tmp.path().join("utils.py").to_string_lossy().to_string();
+        let mut buf = Vec::new();
+        let _ = run_show_tests_to(&mut buf, &universe, &[p], None, &[], false);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(
+            output.contains("test_parse_empty"),
+            "expected test_parse_empty in output, got: {output}"
+        );
+        assert!(
+            output.contains("test_parse_valid"),
+            "expected test_parse_valid in output, got: {output}"
+        );
+    }
+
+    #[test]
+    fn test_python_test_class_format() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("widget.py"),
+            "def render(): return 'ok'\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("test_widget.py"),
+            "from widget import render\n\nclass TestWidget:\n    def test_render(self):\n        assert render() == 'ok'\n",
+        )
+        .unwrap();
+
+        let universe = tmp.path().to_string_lossy().to_string();
+        let p = tmp.path().join("widget.py").to_string_lossy().to_string();
+        let mut buf = Vec::new();
+        let _ = run_show_tests_to(&mut buf, &universe, &[p], None, &[], false);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(
+            output.contains("TestWidget::test_render"),
+            "expected TestWidget::test_render in output, got: {output}"
+        );
+    }
+
+    #[test]
+    fn test_one_test_covers_multiple_functions() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("lib.py"),
+            "def foo(): return 1\ndef bar(): return foo() + 1\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("test_lib.py"),
+            "from lib import foo, bar\ndef test_both():\n    assert foo() == 1\n    assert bar() == 2\n",
+        )
+        .unwrap();
+
+        let universe = tmp.path().to_string_lossy().to_string();
+        let p = tmp.path().join("lib.py").to_string_lossy().to_string();
+        let mut buf = Vec::new();
+        let _ = run_show_tests_to(&mut buf, &universe, &[p], None, &[], false);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(
+            output.contains("foo") && output.contains("bar"),
+            "expected both foo and bar covered, got: {output}"
+        );
+    }
+
+    #[test]
+    fn test_format_covering_tests_empty() {
+        let covering: Vec<CoveringTest> = vec![];
+        assert_eq!(format_covering_tests(&covering), "");
+    }
+
+    /// Definition covered only by a fixture (non-test function) body, not by any test function.
+    /// `coverage_map` is empty; output is TEST:path:name with a trailing space.
+    #[test]
+    fn test_covered_by_fixture_empty_covering_list() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("mymod.py"), "def helper():\n    return 42\n").unwrap();
+        std::fs::write(
+            tmp.path().join("test_mymod.py"),
+            "import pytest\nfrom mymod import helper\n\n@pytest.fixture\ndef my_fixture():\n    return helper()\n\ndef test_it(my_fixture):\n    pass\n",
+        )
+        .unwrap();
+
+        let universe = tmp.path().to_string_lossy().to_string();
+        let p = tmp.path().join("mymod.py").to_string_lossy().to_string();
+        let mut buf = Vec::new();
+        let exit = run_show_tests_to(&mut buf, &universe, &[p], None, &[], false);
+        let output = String::from_utf8(buf).unwrap();
+        assert_eq!(exit, 0);
+        // helper is covered by fixture body but no test function references it directly
+        let line = output
+            .trim()
+            .lines()
+            .find(|l| l.contains("helper"))
+            .expect("expected a line for helper");
+        assert!(
+            line.starts_with("TEST:") && line.ends_with(":helper"),
+            "expected TEST:...:helper (empty covering list, space not colon before list), got: {line:?}"
         );
     }
 
