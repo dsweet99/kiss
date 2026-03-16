@@ -167,7 +167,7 @@ const PY_RULE_SPECS: &[RuleSpec] = &[
         metric: "test_coverage_threshold",
         op: ">=",
         threshold: ThresholdValue::Usize(|_, g| g.test_coverage_threshold),
-        description: "test_coverage_threshold is the minimum percent of code units whose names must appear in a test file (static check).",
+        description: "test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).",
     },
     RuleSpec {
         metric: "min_similarity",
@@ -296,7 +296,7 @@ const RS_RULE_SPECS: &[RuleSpec] = &[
         metric: "test_coverage_threshold",
         op: ">=",
         threshold: ThresholdValue::Usize(|_, g| g.test_coverage_threshold),
-        description: "test_coverage_threshold is the minimum percent of code units whose names must appear in a test file (static check).",
+        description: "test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).",
     },
     RuleSpec {
         metric: "min_similarity",
