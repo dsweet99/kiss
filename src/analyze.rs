@@ -289,24 +289,6 @@ fn collect_coverage_viols(
     (cov_viols, cache_lists)
 }
 
-const fn leak_large_structures(
-    result: ParseResult,
-    py_graph: Option<DependencyGraph>,
-    rs_graph: Option<DependencyGraph>,
-    viols: Vec<Violation>,
-    graph_viols_all: Vec<Violation>,
-    py_dups_all: Vec<DuplicateCluster>,
-    rs_dups_all: Vec<DuplicateCluster>,
-) {
-    std::mem::forget(result);
-    std::mem::forget(py_graph);
-    std::mem::forget(rs_graph);
-    std::mem::forget(viols);
-    std::mem::forget(graph_viols_all);
-    std::mem::forget(py_dups_all);
-    std::mem::forget(rs_dups_all);
-}
-
 fn build_metrics(
     result: &ParseResult,
     file_count: usize,
@@ -413,15 +395,6 @@ fn run_analyze_uncached(
         opts.show_timing,
         Some(t4),
         opts.suppress_final_status,
-    );
-    leak_large_structures(
-        result,
-        py_graph,
-        rs.graph,
-        viols,
-        graph_viols_all,
-        py_dups_all,
-        rs.dups,
     );
     AnalyzeResult {
         success,
@@ -881,15 +854,26 @@ pub fn check_coverage_gate(
         .into_iter()
         .map(CachedCoverageItem::into_tuple)
         .collect();
-    let (coverage, tested, total, unreferenced) =
+    let (_, _, _, unreferenced) =
         compute_test_coverage_from_lists(&defs_t, &unrefs_t, focus_set);
-    if coverage < gate_config.test_coverage_threshold {
-        let file_pcts = file_coverage_map(&defs_t, &unreferenced);
+    let defs_focus: Vec<_> = defs_t
+        .iter()
+        .filter(|(f, _, _)| is_focus_file(f, focus_set))
+        .cloned()
+        .collect();
+    let file_pcts = file_coverage_map(&defs_focus, &unreferenced);
+    let threshold = gate_config.test_coverage_threshold;
+    let any_failing = file_pcts
+        .values()
+        .any(|&pct| pct < threshold);
+    if any_failing {
+        let total_defs_focus = defs_focus.len();
+        let tested_focus = total_defs_focus.saturating_sub(unreferenced.len());
         print_coverage_gate_failure(
-            coverage,
-            gate_config.test_coverage_threshold,
-            tested,
-            total,
+            0, // unused with per-file
+            threshold,
+            tested_focus,
+            total_defs_focus,
             &unreferenced,
             &file_pcts,
         );
@@ -1132,6 +1116,58 @@ mod tests {
         assert_eq!(tested, 0);
         assert_eq!(total, 0);
         assert!(unref.is_empty());
+    }
+
+    /// Regression: per-file enforcement must fail when one file is below threshold
+    /// even if overall coverage would pass. With overall enforcement this would incorrectly pass.
+    #[test]
+    fn test_coverage_gate_per_file_fails_when_one_file_below_threshold() {
+        let tmp = TempDir::new().unwrap();
+        let well = tmp.path().join("well_covered.py");
+        let poor = tmp.path().join("poorly_covered.py");
+        let test_file = tmp.path().join("test_well.py");
+
+        std::fs::write(
+            &well,
+            r"def f1(): pass
+def f2(): pass
+def f3(): pass
+def f4(): pass
+def f5(): pass
+def f6(): pass
+def f7(): pass
+def f8(): pass
+def f9(): pass
+",
+        )
+        .unwrap();
+        std::fs::write(&poor, "def orphan_func():\n    pass\n").unwrap();
+        std::fs::write(
+            &test_file,
+            r"from well_covered import f1, f2, f3, f4, f5, f6, f7, f8, f9
+def test_all():
+    f1(); f2(); f3(); f4(); f5(); f6(); f7(); f8(); f9()
+",
+        )
+        .unwrap();
+
+        let py_files = vec![well, poor, test_file];
+        let results = parse_files(&py_files).unwrap();
+        let py_parsed: Vec<ParsedFile> = results.into_iter().filter_map(Result::ok).collect();
+        assert_eq!(py_parsed.len(), 3, "all 3 files should parse");
+
+        let focus: HashSet<PathBuf> = py_parsed.iter().map(|p| p.path.clone()).collect();
+        let gate = GateConfig {
+            test_coverage_threshold: 90,
+            ..Default::default()
+        };
+
+        // Per-file: well_covered=100%, poorly_covered=0%. Gate must FAIL (poorly_covered < 90%).
+        // With overall enforcement, 9/10=90% would pass.
+        assert!(
+            !check_coverage_gate(&py_parsed, &[], &gate, &focus, false),
+            "per-file enforcement must fail when one file (poorly_covered) is below 90%"
+        );
     }
 
     #[test]
