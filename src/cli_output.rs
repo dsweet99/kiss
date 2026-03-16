@@ -104,7 +104,6 @@ pub fn print_coverage_gate_failure(
             file.display()
         );
     }
-    println!("Hint: Use --all to bypass coverage gate for exploration");
     for (file, name, line) in unreferenced {
         let pct = file_pcts.get(file).copied().unwrap_or(0);
         if pct < threshold {
