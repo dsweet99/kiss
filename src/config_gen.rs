@@ -354,6 +354,7 @@ fn append_python_defaults(out: &mut String) {
         python::RETURNS_PER_FUNCTION
     );
     let _ = writeln!(out, "statements_per_file = {}", python::STATEMENTS_PER_FILE);
+    let _ = writeln!(out, "lines_per_file = {}", python::LINES_PER_FILE);
     let _ = writeln!(out, "functions_per_file = {}", python::FUNCTIONS_PER_FILE);
     let _ = writeln!(
         out,
@@ -416,6 +417,7 @@ fn append_rust_defaults(out: &mut String) {
     );
     let _ = writeln!(out, "returns_per_function = {}", rust::RETURNS_PER_FUNCTION);
     let _ = writeln!(out, "statements_per_file = {}", rust::STATEMENTS_PER_FILE);
+    let _ = writeln!(out, "lines_per_file = {}", rust::LINES_PER_FILE);
     let _ = writeln!(out, "functions_per_file = {}", rust::FUNCTIONS_PER_FILE);
     let _ = writeln!(
         out,
@@ -474,6 +476,7 @@ fn common_config_key(metric_id: &str) -> Option<&'static str> {
         "returns_per_function" => Some("returns_per_function"),
         "calls_per_function" => Some("calls_per_function"),
         "statements_per_file" => Some("statements_per_file"),
+        "lines_per_file" => Some("lines_per_file"),
         "functions_per_file" => Some("functions_per_file"),
         "interface_types_per_file" => Some("interface_types_per_file"),
         "concrete_types_per_file" => Some("concrete_types_per_file"),

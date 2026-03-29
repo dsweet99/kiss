@@ -126,6 +126,7 @@ RULE: [Python] [decorators_per_function < 3] decorators_per_function is the maxi
 RULE: [Python] [calls_per_function < 50] calls_per_function is the maximum number of function/method calls in a Python function.
 RULE: [Python] [methods_per_class < 20] methods_per_class is the maximum number of methods defined on a Python class.
 RULE: [Python] [statements_per_file < 400] statements_per_file is the maximum number of statements inside function/method bodies in a Python file.
+RULE: [Python] [lines_per_file < 2000] lines_per_file is the maximum number of source lines in a Python file (including comments and blanks).
 RULE: [Python] [functions_per_file < 30] functions_per_file is the maximum number of functions/methods defined in a Python file.
 RULE: [Python] [interface_types_per_file < 3] interface_types_per_file is the maximum number of interface types (Protocol/ABC classes) defined in a Python file.
 RULE: [Python] [concrete_types_per_file < 10] concrete_types_per_file is the maximum number of concrete types (non-Protocol/ABC classes) defined in a Python file.
@@ -147,6 +148,7 @@ RULE: [Rust] [attributes_per_function < 4] attributes_per_function is the maximu
 RULE: [Rust] [calls_per_function < 50] calls_per_function is the maximum number of function/method calls in a Rust function.
 RULE: [Rust] [methods_per_class < 15] methods_per_class is the maximum number of methods in an `impl` block for a Rust type.
 RULE: [Rust] [statements_per_file < 300] statements_per_file is the maximum number of statements inside function/method bodies in a Rust file.
+RULE: [Rust] [lines_per_file < 2000] lines_per_file is the maximum number of source lines in a Rust file (including comments and blanks).
 RULE: [Rust] [functions_per_file < 35] functions_per_file is the maximum number of functions/methods defined in a Rust file.
 RULE: [Rust] [interface_types_per_file < 3] interface_types_per_file is the maximum number of trait definitions in a Rust file.
 RULE: [Rust] [concrete_types_per_file < 8] concrete_types_per_file is the maximum number of concrete type definitions (struct/enum/union) in a Rust file.

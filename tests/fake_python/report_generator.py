@@ -1,7 +1,6 @@
 """Report generator - copy-pasted formatting code across methods."""
 
 from datetime import datetime
-from typing import Any
 
 
 class ReportGenerator:
@@ -45,8 +44,8 @@ class ReportGenerator:
         # Footer - DUPLICATED BLOCK B
         lines.append("")
         lines.append("=" * 60)
-        lines.append(f"  End of Report")
-        lines.append(f"  Page 1 of 1")
+        lines.append("  End of Report")
+        lines.append("  Page 1 of 1")
         lines.append(f"  Confidential - {self.company_name}")
         lines.append("=" * 60)
         
@@ -94,8 +93,8 @@ class ReportGenerator:
         # Footer - DUPLICATED BLOCK B (copy-pasted!)
         lines.append("")
         lines.append("=" * 60)
-        lines.append(f"  End of Report")
-        lines.append(f"  Page 1 of 1")
+        lines.append("  End of Report")
+        lines.append("  Page 1 of 1")
         lines.append(f"  Confidential - {self.company_name}")
         lines.append("=" * 60)
         
@@ -134,15 +133,15 @@ class ReportGenerator:
         lines.append("")
         lines.append("-" * 60)
         lines.append(f"  TOTAL PAYROLL: ${total_salary:>10.2f}")
-        lines.append(f"  HEADCOUNT BY DEPARTMENT:")
+        lines.append("  HEADCOUNT BY DEPARTMENT:")
         for dept, count in sorted(departments.items()):
             lines.append(f"    {dept}: {count}")
         
         # Footer - DUPLICATED BLOCK B (third copy!)
         lines.append("")
         lines.append("=" * 60)
-        lines.append(f"  End of Report")
-        lines.append(f"  Page 1 of 1")
+        lines.append("  End of Report")
+        lines.append("  Page 1 of 1")
         lines.append(f"  Confidential - {self.company_name}")
         lines.append("=" * 60)
         
@@ -182,15 +181,15 @@ class ReportGenerator:
         lines.append("")
         lines.append("-" * 60)
         lines.append(f"  TOTAL EXPENSES: ${total_expenses:>10.2f}")
-        lines.append(f"  BY CATEGORY:")
+        lines.append("  BY CATEGORY:")
         for cat, total in sorted(categories.items(), key=lambda x: -x[1]):
             lines.append(f"    {cat}: ${total:.2f}")
         
         # Footer - DUPLICATED BLOCK B (fourth copy!)
         lines.append("")
         lines.append("=" * 60)
-        lines.append(f"  End of Report")
-        lines.append(f"  Page 1 of 1")
+        lines.append("  End of Report")
+        lines.append("  Page 1 of 1")
         lines.append(f"  Confidential - {self.company_name}")
         lines.append("=" * 60)
         

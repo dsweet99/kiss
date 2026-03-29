@@ -76,7 +76,7 @@ pub use violation::{Violation, ViolationBuilder};
 pub use rust_counts::analyze_rust_file;
 pub use rust_fn_metrics::{
     RustFileMetrics, RustFunctionMetrics, RustTypeMetrics, compute_rust_file_metrics,
-    compute_rust_function_metrics,
+    compute_rust_function_metrics, count_non_doc_attrs,
 };
 pub use rust_graph::build_rust_dependency_graph;
 pub use rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file, parse_rust_files};

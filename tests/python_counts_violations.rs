@@ -1,7 +1,26 @@
 use common::parse_python_source;
 use kiss::analyze_file;
 use kiss::config::Config;
+use std::fmt::Write as _;
 mod common;
+
+#[test]
+fn test_lines_per_file_violation() {
+    let mut lines = String::new();
+    for i in 0..35 {
+        let _ = writeln!(&mut lines, "# line {i}");
+    }
+    let parsed = parse_python_source(&lines);
+    let config = Config {
+        lines_per_file: 20,
+        ..Config::python_defaults()
+    };
+    let violations = analyze_file(&parsed, &config);
+    assert!(
+        violations.iter().any(|v| v.metric == "lines_per_file"),
+        "should trigger lines_per_file violation"
+    );
+}
 
 #[test]
 fn test_methods_per_class_violation() {

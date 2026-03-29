@@ -122,6 +122,12 @@ const PY_RULE_SPECS: &[RuleSpec] = &[
         description: "statements_per_file is the maximum number of statements inside function/method bodies in a Python file.",
     },
     RuleSpec {
+        metric: "lines_per_file",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.lines_per_file),
+        description: "lines_per_file is the maximum number of source lines in a Python file (including comments and blanks).",
+    },
+    RuleSpec {
         metric: "functions_per_file",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.functions_per_file),
@@ -249,6 +255,12 @@ const RS_RULE_SPECS: &[RuleSpec] = &[
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.statements_per_file),
         description: "statements_per_file is the maximum number of statements inside function/method bodies in a Rust file.",
+    },
+    RuleSpec {
+        metric: "lines_per_file",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.lines_per_file),
+        description: "lines_per_file is the maximum number of source lines in a Rust file (including comments and blanks).",
     },
     RuleSpec {
         metric: "functions_per_file",
@@ -383,6 +395,7 @@ pub fn run_config(
 fn print_python_config(c: &Config) {
     println!("statements_per_function = {}", c.statements_per_function);
     println!("statements_per_file = {}", c.statements_per_file);
+    println!("lines_per_file = {}", c.lines_per_file);
     println!("positional_args = {}", c.arguments_positional);
     println!("keyword_only_args = {}", c.arguments_keyword_only);
     println!("methods_per_class = {}", c.methods_per_class);
@@ -408,6 +421,7 @@ fn print_python_config(c: &Config) {
 fn print_rust_config(c: &Config) {
     println!("statements_per_function = {}", c.statements_per_function);
     println!("statements_per_file = {}", c.statements_per_file);
+    println!("lines_per_file = {}", c.lines_per_file);
     println!("arguments_per_function = {}", c.arguments_per_function);
     println!("methods_per_class = {}", c.methods_per_class);
     println!("interface_types_per_file = {}", c.interface_types_per_file);

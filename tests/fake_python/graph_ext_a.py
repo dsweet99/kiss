@@ -3,5 +3,7 @@
 import os
 import json
 
-import tests.fake_python.graph_ext_b  # intentionally odd to test internal resolution
+import tests.fake_python.graph_ext_b
+
+__all__ = ["os", "json", "tests"]
 
