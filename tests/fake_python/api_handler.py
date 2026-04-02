@@ -35,7 +35,7 @@ def handle_api_request(request):
         path = request.get("path", "/")
         headers = request.get("headers", {})
         body = request.get("body")
-        query_params = request.get("query_params", {})
+        _query_params = request.get("query_params", {})
         
         logger.info(f"[{request_id}] {method} {path}")
         
@@ -79,7 +79,7 @@ def handle_api_request(request):
                     }
         
         # Rate limiting (simplified)
-        client_ip = headers.get("X-Forwarded-For", "127.0.0.1")
+        _client_ip = headers.get("X-Forwarded-For", "127.0.0.1")
         # In real code, check rate limit here
         
         # Route to handler

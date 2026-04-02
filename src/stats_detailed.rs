@@ -1,7 +1,10 @@
 use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
 use crate::py_metrics::{compute_class_metrics, compute_file_metrics, compute_function_metrics};
-use crate::rust_fn_metrics::{compute_rust_file_metrics, compute_rust_function_metrics};
+use crate::rust_fn_metrics::{
+    compute_rust_file_metrics, compute_rust_function_metrics, count_non_doc_attrs, is_cfg_test_mod,
+    RustFunctionMetrics,
+};
 use crate::rust_parsing::ParsedRustFile;
 use syn::{ImplItem, Item};
 use tree_sitter::Node;
@@ -209,34 +212,56 @@ pub fn collect_detailed_rs(
     units
 }
 
+fn push_rust_fn_or_method_unit(
+    file: &str,
+    name: String,
+    line: usize,
+    kind: &'static str,
+    m: &RustFunctionMetrics,
+    units: &mut Vec<UnitMetrics>,
+) {
+    units.push(UnitMetrics {
+        file: file.to_string(),
+        name,
+        kind,
+        line,
+        statements: Some(m.statements),
+        arguments: Some(m.arguments),
+        args_positional: Some(m.arguments),
+        args_keyword_only: Some(0),
+        indentation: Some(m.max_indentation),
+        nested_depth: Some(m.nested_function_depth),
+        branches: Some(m.branches),
+        returns: Some(m.returns),
+        return_values: None,
+        locals: Some(m.local_variables),
+        methods: None,
+        lines: None,
+        imports: None,
+        fan_in: None,
+        fan_out: None,
+        indirect_deps: None,
+        dependency_depth: None,
+    });
+}
+
 fn collect_detailed_from_items(items: &[Item], file: &str, units: &mut Vec<UnitMetrics>) {
     for item in items {
         match item {
             Item::Fn(f) => {
-                let m = compute_rust_function_metrics(&f.sig.inputs, &f.block, f.attrs.len());
-                units.push(UnitMetrics {
-                    file: file.to_string(),
-                    name: f.sig.ident.to_string(),
-                    kind: "function",
-                    line: f.sig.ident.span().start().line,
-                    statements: Some(m.statements),
-                    arguments: Some(m.arguments),
-                    args_positional: Some(m.arguments),
-                    args_keyword_only: Some(0),
-                    indentation: Some(m.max_indentation),
-                    nested_depth: Some(m.nested_function_depth),
-                    branches: Some(m.branches),
-                    returns: Some(m.returns),
-                    return_values: None,
-                    locals: Some(m.local_variables),
-                    methods: None,
-                    lines: None,
-                    imports: None,
-                    fan_in: None,
-                    fan_out: None,
-                    indirect_deps: None,
-                    dependency_depth: None,
-                });
+                let m = compute_rust_function_metrics(
+                    &f.sig.inputs,
+                    &f.block,
+                    count_non_doc_attrs(&f.attrs),
+                );
+                push_rust_fn_or_method_unit(
+                    file,
+                    f.sig.ident.to_string(),
+                    f.sig.ident.span().start().line,
+                    "function",
+                    &m,
+                    units,
+                );
             }
             Item::Impl(i) => {
                 let name = get_impl_name(i);
@@ -270,36 +295,26 @@ fn collect_detailed_from_items(items: &[Item], file: &str, units: &mut Vec<UnitM
                 });
                 for ii in &i.items {
                     if let ImplItem::Fn(m) = ii {
-                        let metrics =
-                            compute_rust_function_metrics(&m.sig.inputs, &m.block, m.attrs.len());
-                        units.push(UnitMetrics {
-                            file: file.to_string(),
-                            name: m.sig.ident.to_string(),
-                            kind: "method",
-                            line: m.sig.ident.span().start().line,
-                            statements: Some(metrics.statements),
-                            arguments: Some(metrics.arguments),
-                            args_positional: Some(metrics.arguments),
-                            args_keyword_only: Some(0),
-                            indentation: Some(metrics.max_indentation),
-                            nested_depth: Some(metrics.nested_function_depth),
-                            branches: Some(metrics.branches),
-                            returns: Some(metrics.returns),
-                            return_values: None,
-                            locals: Some(metrics.local_variables),
-                            methods: None,
-                            lines: None,
-                            imports: None,
-                            fan_in: None,
-                            fan_out: None,
-                            indirect_deps: None,
-                            dependency_depth: None,
-                        });
+                        let metrics = compute_rust_function_metrics(
+                            &m.sig.inputs,
+                            &m.block,
+                            count_non_doc_attrs(&m.attrs),
+                        );
+                        push_rust_fn_or_method_unit(
+                            file,
+                            m.sig.ident.to_string(),
+                            m.sig.ident.span().start().line,
+                            "method",
+                            &metrics,
+                            units,
+                        );
                     }
                 }
             }
             Item::Mod(m) => {
-                if let Some((_, items)) = &m.content {
+                if !is_cfg_test_mod(m)
+                    && let Some((_, items)) = &m.content
+                {
                     collect_detailed_from_items(items, file, units);
                 }
             }

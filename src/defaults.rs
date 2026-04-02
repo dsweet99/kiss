@@ -4,6 +4,7 @@ pub const NOT_APPLICABLE: usize = usize::MAX;
 pub mod python {
     pub const IMPORTS_PER_FILE: usize = 20;
     pub const STATEMENTS_PER_FILE: usize = 400;
+    pub const LINES_PER_FILE: usize = 2000;
     pub const FUNCTIONS_PER_FILE: usize = 30;
     pub const INTERFACE_TYPES_PER_FILE: usize = 3;
     pub const CONCRETE_TYPES_PER_FILE: usize = 10;
@@ -29,6 +30,7 @@ pub mod python {
 pub mod rust {
     pub const IMPORTS_PER_FILE: usize = 20;
     pub const STATEMENTS_PER_FILE: usize = 300;
+    pub const LINES_PER_FILE: usize = 2000;
     pub const FUNCTIONS_PER_FILE: usize = 35;
     pub const INTERFACE_TYPES_PER_FILE: usize = 3;
     pub const CONCRETE_TYPES_PER_FILE: usize = 8;
@@ -69,6 +71,7 @@ duplication_enabled = true
 [python]
 imported_names_per_file = {py_imports}
 statements_per_file = {py_statements_file}
+lines_per_file = {py_lines_file}
 functions_per_file = {py_functions_file}
 interface_types_per_file = {py_interface_types}
 concrete_types_per_file = {py_concrete_types}
@@ -93,6 +96,7 @@ dependency_depth = {py_dep_depth}
 [rust]
 imported_names_per_file = {rs_imports}
 statements_per_file = {rs_statements_file}
+lines_per_file = {rs_lines_file}
 functions_per_file = {rs_functions_file}
 interface_types_per_file = {rs_interface_types}
 concrete_types_per_file = {rs_concrete_types}
@@ -115,6 +119,7 @@ dependency_depth = {rs_dep_depth}
         min_sim = duplication::MIN_SIMILARITY,
         py_imports = python::IMPORTS_PER_FILE,
         py_statements_file = python::STATEMENTS_PER_FILE,
+        py_lines_file = python::LINES_PER_FILE,
         py_functions_file = python::FUNCTIONS_PER_FILE,
         py_interface_types = python::INTERFACE_TYPES_PER_FILE,
         py_concrete_types = python::CONCRETE_TYPES_PER_FILE,
@@ -137,6 +142,7 @@ dependency_depth = {rs_dep_depth}
         py_dep_depth = python::DEPENDENCY_DEPTH,
         rs_imports = rust::IMPORTS_PER_FILE,
         rs_statements_file = rust::STATEMENTS_PER_FILE,
+        rs_lines_file = rust::LINES_PER_FILE,
         rs_functions_file = rust::FUNCTIONS_PER_FILE,
         rs_interface_types = rust::INTERFACE_TYPES_PER_FILE,
         rs_concrete_types = rust::CONCRETE_TYPES_PER_FILE,

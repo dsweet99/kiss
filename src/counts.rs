@@ -31,13 +31,16 @@ pub fn analyze_file_with_statement_count(
 ) -> (usize, Vec<Violation>) {
     let mut violations = Vec::new();
     let file = &parsed.path;
-    let fname = file
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
 
     let file_metrics = compute_file_metrics(parsed);
-    check_file_metrics(&file_metrics, file, &fname, config, &mut violations);
+    let line_count = parsed.source.lines().count();
+    check_file_metrics(
+        &file_metrics,
+        line_count,
+        file,
+        config,
+        &mut violations,
+    );
 
     analyze_node(
         parsed.tree.root_node(),
@@ -50,82 +53,119 @@ pub fn analyze_file_with_statement_count(
     (file_metrics.statements, violations)
 }
 
+fn push_py_file_threshold(
+    v: &mut Vec<Violation>,
+    file: &Path,
+    metric: &'static str,
+    value: usize,
+    threshold: usize,
+    message: String,
+    suggestion: &'static str,
+) {
+    let fname = file
+        .file_name()
+        .map_or("", |s| s.to_str().unwrap_or(""));
+    v.push(
+        violation(file, 1, fname)
+            .metric(metric)
+            .value(value)
+            .threshold(threshold)
+            .message(message)
+            .suggestion(suggestion)
+            .build(),
+    );
+}
+
 fn check_file_metrics(
     m: &FileMetrics,
+    lines: usize,
     file: &Path,
-    fname: &str,
     cfg: &Config,
     v: &mut Vec<Violation>,
 ) {
+    let fname = file
+        .file_name()
+        .map_or("", |s| s.to_str().unwrap_or(""));
+    if lines > cfg.lines_per_file {
+        push_py_file_threshold(
+            v,
+            file,
+            "lines_per_file",
+            lines,
+            cfg.lines_per_file,
+            format!("File has {lines} lines (threshold: {})", cfg.lines_per_file),
+            "Split into smaller modules or move code into submodules.",
+        );
+    }
     if m.statements > cfg.statements_per_file {
-        v.push(
-            violation(file, 1, fname)
-                .metric("statements_per_file")
-                .value(m.statements)
-                .threshold(cfg.statements_per_file)
-                .message(format!(
-                    "File has {} statements (threshold: {})",
-                    m.statements, cfg.statements_per_file
-                ))
-                .suggestion("Split into multiple modules with focused responsibilities.")
-                .build(),
+        push_py_file_threshold(
+            v,
+            file,
+            "statements_per_file",
+            m.statements,
+            cfg.statements_per_file,
+            format!(
+                "File has {} statements (threshold: {})",
+                m.statements, cfg.statements_per_file
+            ),
+            "Split into multiple modules with focused responsibilities.",
         );
     }
     if m.interface_types > cfg.interface_types_per_file {
-        v.push(
-            violation(file, 1, fname)
-                .metric("interface_types_per_file")
-                .value(m.interface_types)
-                .threshold(cfg.interface_types_per_file)
-                .message(format!(
-                    "File has {} interface types (threshold: {})",
-                    m.interface_types, cfg.interface_types_per_file
-                ))
-                .suggestion("Move interfaces (Protocols/ABCs) into a dedicated module.")
-                .build(),
+        push_py_file_threshold(
+            v,
+            file,
+            "interface_types_per_file",
+            m.interface_types,
+            cfg.interface_types_per_file,
+            format!(
+                "File has {} interface types (threshold: {})",
+                m.interface_types, cfg.interface_types_per_file
+            ),
+            "Move interfaces (Protocols/ABCs) into a dedicated module.",
         );
     }
     if m.concrete_types > cfg.concrete_types_per_file {
-        v.push(
-            violation(file, 1, fname)
-                .metric("concrete_types_per_file")
-                .value(m.concrete_types)
-                .threshold(cfg.concrete_types_per_file)
-                .message(format!(
-                    "File has {} concrete types (threshold: {})",
-                    m.concrete_types, cfg.concrete_types_per_file
-                ))
-                .suggestion("Consider splitting types into separate modules by responsibility.")
-                .build(),
+        push_py_file_threshold(
+            v,
+            file,
+            "concrete_types_per_file",
+            m.concrete_types,
+            cfg.concrete_types_per_file,
+            format!(
+                "File has {} concrete types (threshold: {})",
+                m.concrete_types, cfg.concrete_types_per_file
+            ),
+            "Consider splitting types into separate modules by responsibility.",
         );
     }
     // Skip __init__.py - it's a module definition file that naturally aggregates imports
     if m.imports > cfg.imported_names_per_file && fname != "__init__.py" {
-        v.push(
-            violation(file, 1, fname)
-                .metric("imported_names_per_file")
-                .value(m.imports)
-                .threshold(cfg.imported_names_per_file)
-                .message(format!(
-                    "File has {} imports (threshold: {})",
-                    m.imports, cfg.imported_names_per_file
-                ))
-                .suggestion("Consider reducing dependencies or splitting the module.")
-                .build(),
+        push_py_file_threshold(
+            v,
+            file,
+            "imported_names_per_file",
+            m.imports,
+            cfg.imported_names_per_file,
+            format!(
+                "File has {} imports (threshold: {})",
+                m.imports, cfg.imported_names_per_file
+            ),
+            "Consider reducing dependencies or splitting the module.",
         );
     }
     if m.functions > cfg.functions_per_file {
-        v.push(
-            violation(file, 1, fname)
-                .metric("functions_per_file")
-                .value(m.functions)
-                .threshold(cfg.functions_per_file)
-                .message(format!(
-                    "File has {} functions (threshold: {})",
-                    m.functions, cfg.functions_per_file
-                ))
-                .suggestion("Split into multiple modules with focused responsibilities.")
-                .build(),
+        push_py_file_threshold(
+            v,
+            file,
+            "functions_per_file",
+            m.functions,
+            cfg.functions_per_file,
+            format!(
+                "File has {} functions (threshold: {})",
+                m.functions, cfg.functions_per_file
+            ),
+            "Split into multiple modules with focused responsibilities.",
         );
     }
 }
@@ -456,6 +496,7 @@ mod tests {
         };
         let cfg = Config {
             statements_per_file: 500,
+            lines_per_file: 50,
             interface_types_per_file: 10,
             concrete_types_per_file: 10,
             imported_names_per_file: 30,
@@ -463,8 +504,8 @@ mod tests {
             ..Default::default()
         };
         let mut viols = Vec::new();
-        check_file_metrics(&m, Path::new("t.py"), "t.py", &cfg, &mut viols);
-        assert_eq!(viols.len(), 5);
+        check_file_metrics(&m, 100, Path::new("t.py"), &cfg, &mut viols);
+        assert_eq!(viols.len(), 6);
     }
 
     #[test]

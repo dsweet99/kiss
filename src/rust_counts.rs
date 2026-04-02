@@ -2,7 +2,10 @@ use std::path::Path;
 use syn::{Block, ImplItem, Item};
 
 use crate::config::Config;
-use crate::rust_fn_metrics::{compute_rust_file_metrics, compute_rust_function_metrics};
+use crate::rust_fn_metrics::{
+    compute_rust_file_metrics, compute_rust_function_metrics, count_non_doc_attrs,
+    is_cfg_test_mod,
+};
 use crate::rust_parsing::ParsedRustFile;
 use crate::violation::{Violation, ViolationBuilder};
 
@@ -34,6 +37,26 @@ impl<'a> RustAnalyzer<'a> {
         }
     }
 
+    fn push_file_threshold_violation(
+        &mut self,
+        fname: &str,
+        metric: &'static str,
+        value: usize,
+        threshold: usize,
+        message: String,
+        suggestion: &'static str,
+    ) {
+        self.violations.push(
+            self.violation(1, fname)
+                .metric(metric)
+                .value(value)
+                .threshold(threshold)
+                .message(message)
+                .suggestion(suggestion)
+                .build(),
+        );
+    }
+
     fn check_file_metrics(&mut self, parsed: &ParsedRustFile) {
         let m = compute_rust_file_metrics(parsed);
         let fname = self
@@ -44,75 +67,81 @@ impl<'a> RustAnalyzer<'a> {
             .into_owned();
         let c = self.config;
 
+        let lines = parsed.source.lines().count();
+        if lines > c.lines_per_file {
+            self.push_file_threshold_violation(
+                &fname,
+                "lines_per_file",
+                lines,
+                c.lines_per_file,
+                format!("File has {lines} lines (threshold: {})", c.lines_per_file),
+                "Split into smaller modules or move code into submodules.",
+            );
+        }
         if m.statements > c.statements_per_file {
-            self.violations.push(
-                self.violation(1, &fname)
-                    .metric("statements_per_file")
-                    .value(m.statements)
-                    .threshold(c.statements_per_file)
-                    .message(format!(
-                        "File has {} statements (threshold: {})",
-                        m.statements, c.statements_per_file
-                    ))
-                    .suggestion("Split into multiple modules with focused responsibilities.")
-                    .build(),
+            self.push_file_threshold_violation(
+                &fname,
+                "statements_per_file",
+                m.statements,
+                c.statements_per_file,
+                format!(
+                    "File has {} statements (threshold: {})",
+                    m.statements, c.statements_per_file
+                ),
+                "Split into multiple modules with focused responsibilities.",
             );
         }
         if m.interface_types > c.interface_types_per_file {
-            self.violations.push(
-                self.violation(1, &fname)
-                    .metric("interface_types_per_file")
-                    .value(m.interface_types)
-                    .threshold(c.interface_types_per_file)
-                    .message(format!(
-                        "File has {} interface types (threshold: {})",
-                        m.interface_types, c.interface_types_per_file
-                    ))
-                    .suggestion("Move traits into a dedicated module.")
-                    .build(),
+            self.push_file_threshold_violation(
+                &fname,
+                "interface_types_per_file",
+                m.interface_types,
+                c.interface_types_per_file,
+                format!(
+                    "File has {} interface types (threshold: {})",
+                    m.interface_types, c.interface_types_per_file
+                ),
+                "Move traits into a dedicated module.",
             );
         }
         if m.concrete_types > c.concrete_types_per_file {
-            self.violations.push(
-                self.violation(1, &fname)
-                    .metric("concrete_types_per_file")
-                    .value(m.concrete_types)
-                    .threshold(c.concrete_types_per_file)
-                    .message(format!(
-                        "File has {} concrete types (threshold: {})",
-                        m.concrete_types, c.concrete_types_per_file
-                    ))
-                    .suggestion("Move types to separate files.")
-                    .build(),
+            self.push_file_threshold_violation(
+                &fname,
+                "concrete_types_per_file",
+                m.concrete_types,
+                c.concrete_types_per_file,
+                format!(
+                    "File has {} concrete types (threshold: {})",
+                    m.concrete_types, c.concrete_types_per_file
+                ),
+                "Move types to separate files.",
             );
         }
         // Skip lib.rs and mod.rs - they're module definition files that naturally aggregate re-exports
         if m.imports > c.imported_names_per_file && fname != "lib.rs" && fname != "mod.rs" {
-            self.violations.push(
-                self.violation(1, &fname)
-                    .metric("imported_names_per_file")
-                    .value(m.imports)
-                    .threshold(c.imported_names_per_file)
-                    .message(format!(
-                        "File has {} use statements (threshold: {})",
-                        m.imports, c.imported_names_per_file
-                    ))
-                    .suggestion("Module may have too many responsibilities. Consider splitting.")
-                    .build(),
+            self.push_file_threshold_violation(
+                &fname,
+                "imported_names_per_file",
+                m.imports,
+                c.imported_names_per_file,
+                format!(
+                    "File has {} use statements (threshold: {})",
+                    m.imports, c.imported_names_per_file
+                ),
+                "Module may have too many responsibilities. Consider splitting.",
             );
         }
         if m.functions > c.functions_per_file {
-            self.violations.push(
-                self.violation(1, &fname)
-                    .metric("functions_per_file")
-                    .value(m.functions)
-                    .threshold(c.functions_per_file)
-                    .message(format!(
-                        "File has {} functions (threshold: {})",
-                        m.functions, c.functions_per_file
-                    ))
-                    .suggestion("Split into multiple modules with focused responsibilities.")
-                    .build(),
+            self.push_file_threshold_violation(
+                &fname,
+                "functions_per_file",
+                m.functions,
+                c.functions_per_file,
+                format!(
+                    "File has {} functions (threshold: {})",
+                    m.functions, c.functions_per_file
+                ),
+                "Split into multiple modules with focused responsibilities.",
             );
         }
     }
@@ -133,7 +162,9 @@ impl<'a> RustAnalyzer<'a> {
             }
             Item::Impl(impl_block) => self.analyze_impl_block(impl_block),
             Item::Mod(m) => {
-                if let Some((_, items)) = &m.content {
+                if !is_cfg_test_mod(m)
+                    && let Some((_, items)) = &m.content
+                {
                     for item in items {
                         self.analyze_item(item);
                     }
@@ -292,11 +323,6 @@ impl<'a> RustAnalyzer<'a> {
     }
 }
 
-/// Count attributes excluding doc comments (#[doc = "..."])
-fn count_non_doc_attrs(attrs: &[syn::Attribute]) -> usize {
-    attrs.iter().filter(|a| !a.path().is_ident("doc")).count()
-}
-
 fn count_impl_methods(impl_block: &syn::ItemImpl) -> usize {
     impl_block
         .items
@@ -352,6 +378,44 @@ mod tests {
         let mut v = Vec::new();
         RustAnalyzer::new(&p, &cfg, &mut v).check_methods_per_class(1, "S", 10);
         assert_eq!(v.len(), 1);
+    }
+
+    #[test]
+    fn analyze_skips_cfg_test_mod_for_per_function_rules() {
+        let body = (0..15).map(|_| "let _ = 1;").collect::<Vec<_>>().join("\n        ");
+        let src = format!(
+            "#[cfg(test)]\nmod t {{\n    fn bloated() {{\n        {body}\n    }}\n}}\n"
+        );
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "{src}").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let cfg = Config {
+            statements_per_function: 1,
+            ..Default::default()
+        };
+        let viols = analyze_rust_file(&parsed, &cfg);
+        assert!(
+            !viols.iter().any(|v| v.metric == "statements_per_function"),
+            "cfg(test) mod inner functions should not be checked: {viols:?}"
+        );
+    }
+
+    #[test]
+    fn analyze_nested_mod_without_cfg_still_checked() {
+        let body = (0..15).map(|_| "let _ = 1;").collect::<Vec<_>>().join("\n        ");
+        let src = format!("mod t {{\n    fn bloated() {{\n        {body}\n    }}\n}}\n");
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        writeln!(tmp, "{src}").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let cfg = Config {
+            statements_per_function: 1,
+            ..Default::default()
+        };
+        let viols = analyze_rust_file(&parsed, &cfg);
+        assert!(
+            viols.iter().any(|v| v.metric == "statements_per_function"),
+            "expected statements_per_function violation in nested mod, got {viols:?}"
+        );
     }
 
     #[test]

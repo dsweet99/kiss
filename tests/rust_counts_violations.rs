@@ -5,6 +5,24 @@ use std::fmt::Write as _;
 use std::io::Write;
 
 #[test]
+fn test_lines_per_file_violation() {
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    for i in 0..40 {
+        writeln!(tmp, "// line {i}").unwrap();
+    }
+    let parsed = parse_rust_file(tmp.path()).unwrap();
+    let config = Config {
+        lines_per_file: 20,
+        ..Config::rust_defaults()
+    };
+    let violations = analyze_rust_file(&parsed, &config);
+    assert!(
+        violations.iter().any(|v| v.metric == "lines_per_file"),
+        "should trigger lines_per_file violation"
+    );
+}
+
+#[test]
 fn test_statements_per_file_violation() {
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     let mut code = String::from("fn big_fn() {\n");
