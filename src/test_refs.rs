@@ -181,20 +181,10 @@ pub(crate) fn disambiguate_files(
 
 #[allow(clippy::type_complexity)]
 fn disambiguate_files_graph_fallback(
-    name: &str,
     files: &HashSet<PathBuf>,
-    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
+    test_files_using_name: &[PathBuf],
     graph: &DependencyGraph,
 ) -> Option<PathBuf> {
-    let test_files_using_name: Vec<PathBuf> = per_test_usage
-        .iter()
-        .filter(|(_, test_funcs)| {
-            test_funcs
-                .iter()
-                .any(|(_, usage_refs)| usage_refs.contains(name))
-        })
-        .map(|(p, _)| p.clone())
-        .collect();
     if test_files_using_name.is_empty() {
         return None;
     }
@@ -229,12 +219,35 @@ pub(crate) fn build_disambiguation_map(
     per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
     graph: Option<&DependencyGraph>,
 ) -> HashMap<String, PathBuf> {
+    let name_to_test_files: HashMap<&str, Vec<PathBuf>> = if graph.is_some() {
+        let mut map: HashMap<&str, Vec<PathBuf>> = HashMap::new();
+        for (test_path, test_funcs) in per_test_usage {
+            for (_, usage_refs) in test_funcs {
+                for ref_name in usage_refs {
+                    if name_files.get(ref_name).is_some_and(|f| f.len() > 1) {
+                        let entry = map.entry(ref_name.as_str()).or_default();
+                        if entry.last() != Some(test_path) {
+                            entry.push(test_path.clone());
+                        }
+                    }
+                }
+            }
+        }
+        map
+    } else {
+        HashMap::new()
+    };
+
     name_files
         .iter()
         .filter(|(_, files)| files.len() > 1)
         .filter_map(|(name, files)| {
             disambiguate_files(files, refs).or_else(|| {
-                graph.and_then(|g| disambiguate_files_graph_fallback(name, files, per_test_usage, g))
+                graph.and_then(|g| {
+                    let empty = Vec::new();
+                    let test_files = name_to_test_files.get(name.as_str()).unwrap_or(&empty);
+                    disambiguate_files_graph_fallback(files, test_files, g)
+                })
             })
             .map(|f| (name.clone(), f))
         })
@@ -490,6 +503,36 @@ fn analyze_test_refs_inner(
     }
 }
 
+fn build_ref_to_covered_def_indices(
+    definitions: &[CodeDefinition],
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &HashMap<String, PathBuf>,
+    import_bindings: &HashMap<String, HashSet<String>>,
+    module_suffixes: &HashMap<PathBuf, String>,
+) -> HashMap<String, Vec<usize>> {
+    let mut ref_to_defs: HashMap<String, Vec<usize>> = HashMap::new();
+
+    for (i, def) in definitions.iter().enumerate() {
+        let unique = name_files.get(&def.name).is_none_or(|f| f.len() <= 1);
+        let disambiguated = disambiguation.get(&def.name).is_some_and(|w| *w == def.file);
+        let import_matched = module_suffixes.get(&def.file).is_some_and(|def_suffix| {
+            import_bindings.iter().any(|(import_module, names)| {
+                names.contains(&def.name) && module_suffix_matches(def_suffix, import_module)
+            })
+        });
+
+        if unique || disambiguated || import_matched {
+            ref_to_defs.entry(def.name.clone()).or_default().push(i);
+        }
+
+        if let Some(ref cls) = def.containing_class {
+            ref_to_defs.entry(cls.clone()).or_default().push(i);
+        }
+    }
+
+    ref_to_defs
+}
+
 #[allow(clippy::type_complexity)]
 fn build_py_coverage_map(
     definitions: &[CodeDefinition],
@@ -499,29 +542,45 @@ fn build_py_coverage_map(
     import_bindings: &HashMap<String, HashSet<String>>,
     module_suffixes: &HashMap<PathBuf, String>,
 ) -> HashMap<(PathBuf, String), Vec<CoveringTest>> {
-    let mut coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>> = HashMap::new();
+    let ref_to_defs =
+        build_ref_to_covered_def_indices(definitions, name_files, disambiguation, import_bindings, module_suffixes);
+
+    let mut idx_map: HashMap<usize, Vec<usize>> = HashMap::new();
+
+    let mut test_entries: Vec<(PathBuf, String)> = Vec::new();
+    let mut test_idx = 0usize;
     for (test_path, test_funcs) in per_test_usage {
         for (test_id, usage_refs) in test_funcs {
-            for def in definitions {
-                if is_definition_covered(
-                    def,
-                    name_files,
-                    disambiguation,
-                    import_bindings,
-                    module_suffixes,
-                    usage_refs,
-                ) {
-                    let key = (def.file.clone(), def.name.clone());
-                    let entry = (test_path.clone(), test_id.clone());
-                    let list = coverage_map.entry(key).or_default();
-                    if !list.contains(&entry) {
-                        list.push(entry);
+            let ti = test_idx;
+            test_entries.push((test_path.clone(), test_id.clone()));
+            test_idx += 1;
+            let mut seen = HashSet::new();
+            for ref_name in usage_refs {
+                let Some(def_indices) = ref_to_defs.get(ref_name) else {
+                    continue;
+                };
+                for &di in def_indices {
+                    if !seen.insert(di) {
+                        continue;
                     }
+                    idx_map.entry(di).or_default().push(ti);
                 }
             }
         }
     }
-    coverage_map
+
+    idx_map
+        .into_iter()
+        .map(|(di, test_indices)| {
+            let def = &definitions[di];
+            let key = (def.file.clone(), def.name.clone());
+            let tests: Vec<CoveringTest> = test_indices
+                .into_iter()
+                .map(|ti| test_entries[ti].clone())
+                .collect();
+            (key, tests)
+        })
+        .collect()
 }
 
 fn try_add_def(
