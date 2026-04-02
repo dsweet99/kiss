@@ -294,24 +294,6 @@ fn collect_coverage_viols(
     (cov_viols, cache_lists)
 }
 
-const fn leak_large_structures(
-    result: ParseResult,
-    py_graph: Option<DependencyGraph>,
-    rs_graph: Option<DependencyGraph>,
-    viols: Vec<Violation>,
-    graph_viols_all: Vec<Violation>,
-    py_dups_all: Vec<DuplicateCluster>,
-    rs_dups_all: Vec<DuplicateCluster>,
-) {
-    std::mem::forget(result);
-    std::mem::forget(py_graph);
-    std::mem::forget(rs_graph);
-    std::mem::forget(viols);
-    std::mem::forget(graph_viols_all);
-    std::mem::forget(py_dups_all);
-    std::mem::forget(rs_dups_all);
-}
-
 fn build_metrics(
     result: &ParseResult,
     file_count: usize,
@@ -484,11 +466,10 @@ fn finalize_analysis(
         &viols, &py_dups, &rs_dups, opts.show_timing, Some(t_phase2),
         opts.suppress_final_status,
     );
-    leak_large_structures(
-        result, py_graph, rs.graph, viols, graph_viols_all,
-        py_dups_all, rs.dups,
-    );
-    AnalyzeResult { success, metrics: Some(metrics) }
+    AnalyzeResult {
+        success,
+        metrics: Some(metrics),
+    }
 }
 
 fn merge_coverage_results(
@@ -788,6 +769,50 @@ pub fn analyze_graphs(
     viols
 }
 
+#[allow(dead_code)]
+pub fn check_coverage_gate(
+    py_parsed: &[ParsedFile],
+    rs_parsed: &[ParsedRustFile],
+    gate_config: &GateConfig,
+    focus_set: &HashSet<PathBuf>,
+    _show_timing: bool,
+) -> bool {
+    let (defs_cached, unrefs_cached) = analyze_cache::coverage_lists(py_parsed, rs_parsed);
+    let defs_t: Vec<_> = defs_cached
+        .into_iter()
+        .map(CachedCoverageItem::into_tuple)
+        .collect();
+    let unrefs_t: Vec<_> = unrefs_cached
+        .into_iter()
+        .map(CachedCoverageItem::into_tuple)
+        .collect();
+    let (_, _, _, unreferenced) =
+        compute_test_coverage_from_lists(&defs_t, &unrefs_t, focus_set);
+    let defs_focus: Vec<_> = defs_t
+        .iter()
+        .filter(|(f, _, _)| is_focus_file(f, focus_set))
+        .cloned()
+        .collect();
+    let file_pcts = file_coverage_map(&defs_focus, &unreferenced);
+    let threshold = gate_config.test_coverage_threshold;
+    let any_failing = file_pcts
+        .values()
+        .any(|&pct| pct < threshold);
+    if any_failing {
+        let total_defs_focus = defs_focus.len();
+        let tested_focus = total_defs_focus.saturating_sub(unreferenced.len());
+        print_coverage_gate_failure(
+            0, // unused with per-file
+            threshold,
+            tested_focus,
+            total_defs_focus,
+            &unreferenced,
+            &file_pcts,
+        );
+        return false;
+    }
+    true
+}
 pub fn compute_test_coverage_from_lists(
     defs: &[(PathBuf, String, usize)],
     unref: &[(PathBuf, String, usize)],
@@ -937,35 +962,102 @@ mod tests {
     fn test_gate_helpers_and_empty_analysis() {
         let gate = GateConfig { test_coverage_threshold: 0, ..Default::default() };
         let focus = HashSet::new();
-        let py_cov = kiss::analyze_test_refs_quick(&[]);
-        let rs_cov = kiss::analyze_rust_test_refs(&[], None);
+        assert!(check_coverage_gate(&[], &[], &gate, &focus, false));
+        let (cov, tested, total, unref) = compute_test_coverage_from_lists(&[], &[], &focus);
+        assert_eq!(cov, 100);
+        assert_eq!(tested, 0);
+        assert_eq!(total, 0);
+        assert!(unref.is_empty());
+    }
+
+    /// Regression: per-file enforcement must fail when one file is below threshold
+    /// even if overall coverage would pass. With overall enforcement this would incorrectly pass.
+    #[test]
+    fn test_coverage_gate_per_file_fails_when_one_file_below_threshold() {
+        let tmp = TempDir::new().unwrap();
+        let well = tmp.path().join("well_covered.py");
+        let poor = tmp.path().join("poorly_covered.py");
+        let test_file = tmp.path().join("test_well.py");
+
+        std::fs::write(
+            &well,
+            r"def f1(): pass
+def f2(): pass
+def f3(): pass
+def f4(): pass
+def f5(): pass
+def f6(): pass
+def f7(): pass
+def f8(): pass
+def f9(): pass
+",
+        )
+        .unwrap();
+        std::fs::write(&poor, "def orphan_func():\n    pass\n").unwrap();
+        std::fs::write(
+            &test_file,
+            r"from well_covered import f1, f2, f3, f4, f5, f6, f7, f8, f9
+def test_all():
+    f1(); f2(); f3(); f4(); f5(); f6(); f7(); f8(); f9()
+",
+        )
+        .unwrap();
+
+        let py_files = vec![well, poor, test_file];
+        let results = parse_files(&py_files).unwrap();
+        let py_parsed: Vec<ParsedFile> = results.into_iter().filter_map(Result::ok).collect();
+        assert_eq!(py_parsed.len(), 3, "all 3 files should parse");
+
+        let focus: HashSet<PathBuf> = py_parsed.iter().map(|p| p.path.clone()).collect();
+        let gate = GateConfig {
+            test_coverage_threshold: 90,
+            ..Default::default()
+        };
+
+        assert!(
+            !check_coverage_gate(&py_parsed, &[], &gate, &focus, false),
+            "per-file enforcement must fail when one file (poorly_covered) is below 90%"
+        );
+    }
+
+    #[test]
+    fn test_print_functions_and_helpers() {
+        print_analysis_summary(0, 0, 0, None, None);
+        let (n, e) = graph_stats(None, None);
+        assert_eq!(n, 0);
+        assert_eq!(e, 0);
+        assert!(is_focus_file(Path::new("any.py"), &HashSet::new()));
+        let dups = filter_duplicates_by_focus(vec![], &HashSet::new());
+        assert!(dups.is_empty());
+    }
+
+    #[test]
+    fn test_detect_duplicates() {
+        let py_dups = detect_py_duplicates(&[], 0.7);
+        assert!(py_dups.is_empty());
+        let rs_dups = detect_rs_duplicates(&[], 0.7);
+        assert!(rs_dups.is_empty());
+    }
+
+    #[test]
+    fn test_print_all_results() {
+        let result = print_all_results_with_dups_opt(&[], &[], &[], false, None, false);
+        assert!(result);
+    }
+
+    #[test]
+    fn test_run_analyze_no_files() {
+        let tmp = TempDir::new().unwrap();
         let py_cfg = Config::python_defaults();
         let rs_cfg = Config::rust_defaults();
-        let opts = AnalyzeOptions {
-            universe: ".", focus_paths: &[], py_config: &py_cfg, rs_config: &rs_cfg,
-            lang_filter: None, bypass_gate: false, gate_config: &gate,
-            ignore_prefixes: &[], show_timing: false, suppress_final_status: false,
-        };
-        assert!(evaluate_gate(&py_cov, &rs_cov, &focus, &opts).is_none());
-        assert_eq!(compute_test_coverage_from_lists(&[], &[], &focus), (100, 0, 0, vec![]));
-
-        print_analysis_summary(0, 0, 0, None, None);
-        assert_eq!(graph_stats(None, None), (0, 0));
-        assert!(is_focus_file(Path::new("any.py"), &HashSet::new()));
-        assert!(filter_duplicates_by_focus(vec![], &HashSet::new()).is_empty());
-        assert!(detect_py_duplicates(&[], 0.7).is_empty());
-        assert!(detect_rs_duplicates(&[], 0.7).is_empty());
-        assert!(print_all_results_with_dups_opt(&[], &[], &[], false, None, false));
-
-        let tmp = TempDir::new().unwrap();
         let gate_cfg = GateConfig::default();
-        let opts2 = AnalyzeOptions {
+        let opts = AnalyzeOptions {
             universe: tmp.path().to_str().unwrap(), focus_paths: &[],
             py_config: &py_cfg, rs_config: &rs_cfg, lang_filter: None,
             bypass_gate: true, gate_config: &gate_cfg, ignore_prefixes: &[],
             show_timing: false, suppress_final_status: false,
         };
-        assert!(run_analyze(&opts2));
+        assert!(run_analyze(&opts));
 
         std::fs::write(tmp.path().join("lib.rs"), "fn foo() { let x = 1; }").unwrap();
         let (parsed, viols, units, _) = crate::analyze_parse::parse_and_analyze_rs(
@@ -989,7 +1081,7 @@ mod tests {
             touch(merge_coverage_results), touch(maybe_store_full_cache),
             touch(run_analyze_with_result), touch(print_all_results_with_dups_opt),
             touch(compute_global_metrics), touch(finalize_analysis),
-            touch(run_gated_analysis), touch(evaluate_gate),
+            touch(run_gated_analysis), touch(evaluate_gate), touch(check_coverage_gate),
         );
         let _ = (
             std::mem::size_of::<CacheStoreCall>(),

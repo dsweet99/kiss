@@ -17,6 +17,15 @@ pub fn format_candidate_list(candidates: &[String], max: usize) -> String {
     }
 }
 
+/// Returns the minimum per-file coverage percentage, or 100 if no files have definitions.
+pub fn min_per_file_coverage(
+    definitions: &[(PathBuf, String, usize)],
+    unreferenced: &[(PathBuf, String, usize)],
+) -> usize {
+    let map = file_coverage_map(definitions, unreferenced);
+    map.values().min().copied().unwrap_or(100)
+}
+
 pub fn file_coverage_map(
     definitions: &[(PathBuf, String, usize)],
     unreferenced: &[(PathBuf, String, usize)],
@@ -71,25 +80,41 @@ pub fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
 
 #[allow(clippy::implicit_hasher)]
 pub fn print_coverage_gate_failure(
-    coverage: usize,
+    _coverage: usize,
     threshold: usize,
-    tested: usize,
-    total: usize,
+    _tested: usize,
+    _total: usize,
     unreferenced: &[(std::path::PathBuf, String, usize)],
     file_pcts: &HashMap<std::path::PathBuf, usize>,
 ) {
+    // Per-file enforcement: list failing files first, then unreferenced units
+    let mut failing: Vec<_> = file_pcts
+        .iter()
+        .filter(|(_, pct)| **pct < threshold)
+        .map(|(f, p)| (f.clone(), *p))
+        .collect();
+    failing.sort_by(|a, b| a.0.cmp(&b.0));
     println!(
-        "GATE_FAILED:test_coverage: {coverage}% coverage (threshold: {threshold}%, {tested}/{total} units tested)"
+        "GATE_FAILED:test_coverage: {n} file(s) below {threshold}% threshold (per-file enforcement)",
+        n = failing.len()
     );
+    for (file, pct) in &failing {
+        println!(
+            "  {}: {pct}% ({threshold}% required)",
+            file.display()
+        );
+    }
     println!("Hint: Use --all to bypass coverage gate for exploration");
     for (file, name, line) in unreferenced {
         let pct = file_pcts.get(file).copied().unwrap_or(0);
-        println!(
-            "VIOLATION:test_coverage:{}:{}:{}: {pct}% covered. Add test coverage for this code unit.",
-            file.display(),
-            line,
-            name
-        );
+        if pct < threshold {
+            println!(
+                "VIOLATION:test_coverage:{}:{}:{}: {pct}% covered. Add test coverage for this code unit.",
+                file.display(),
+                line,
+                name
+            );
+        }
     }
 }
 

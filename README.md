@@ -133,7 +133,7 @@ RULE: [Python] [imported_names_per_file < 20] imported_names_per_file is the max
 RULE: [Python] [cycle_size < 3] cycle_size is the maximum allowed number of modules participating in an import cycle.
 RULE: [Python] [transitive_dependencies < 100] transitive_dependencies is the maximum number of downstream modules reachable from a module in the dependency graph.
 RULE: [Python] [dependency_depth < 7] dependency_depth is the maximum length of an import chain in the dependency graph.
-RULE: [Python] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of code units whose names must appear in a test file (static check).
+RULE: [Python] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).
 RULE: [Python] [min_similarity >= 0.70] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 RULE: [Rust] [statements_per_function < 25] statements_per_function is the maximum number of statements in a Rust function/method body.
 RULE: [Rust] [arguments_per_function < 8] arguments_per_function is the maximum number of non-self parameters in a Rust function/method signature.
@@ -154,7 +154,7 @@ RULE: [Rust] [imported_names_per_file < 20] imported_names_per_file is the maxim
 RULE: [Rust] [cycle_size < 3] cycle_size is the maximum allowed number of modules participating in a dependency cycle.
 RULE: [Rust] [transitive_dependencies < 50] transitive_dependencies is the maximum number of downstream modules reachable from a module in the dependency graph.
 RULE: [Rust] [dependency_depth < 4] dependency_depth is the maximum length of a module dependency chain in the dependency graph.
-RULE: [Rust] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of code units whose names must appear in a test file (static check).
+RULE: [Rust] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).
 RULE: [Rust] [min_similarity >= 0.70] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 ```
 
