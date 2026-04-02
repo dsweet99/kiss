@@ -1,5 +1,6 @@
 mod analyze;
 mod analyze_cache;
+mod analyze_parse;
 mod rules;
 mod show_tests;
 mod viz;

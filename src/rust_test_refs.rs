@@ -180,46 +180,44 @@ fn build_rust_coverage_map(
     name_files: &HashMap<String, HashSet<PathBuf>>,
     disambiguation: &HashMap<String, PathBuf>,
 ) -> HashMap<(PathBuf, String), Vec<CoveringTest>> {
+    let mut name_to_defs: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (i, def) in definitions.iter().enumerate() {
+        name_to_defs.entry(&def.name).or_default().push(i);
+        if let Some(ref t) = def.impl_for_type {
+            name_to_defs.entry(t.as_str()).or_default().push(i);
+        }
+    }
+
     let mut coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>> = HashMap::new();
     for (test_path, test_funcs) in per_test_usage {
         for (test_id, usage_refs) in test_funcs {
             if test_id.is_empty() {
                 continue;
             }
-            add_covered_defs_for_test(
-                &mut coverage_map,
-                definitions,
-                test_path,
-                test_id,
-                usage_refs,
-                name_files,
-                disambiguation,
-            );
+            let mut seen = HashSet::new();
+            for ref_name in usage_refs {
+                let Some(def_indices) = name_to_defs.get(ref_name.as_str()) else {
+                    continue;
+                };
+                for &idx in def_indices {
+                    if !seen.insert(idx) {
+                        continue;
+                    }
+                    let def = &definitions[idx];
+                    if !is_covered_by_tests(def, usage_refs, name_files, disambiguation) {
+                        continue;
+                    }
+                    let key = (def.file.clone(), def.name.clone());
+                    let entry = (test_path.clone(), test_id.clone());
+                    let list = coverage_map.entry(key).or_default();
+                    if !list.contains(&entry) {
+                        list.push(entry);
+                    }
+                }
+            }
         }
     }
     coverage_map
-}
-
-fn add_covered_defs_for_test(
-    coverage_map: &mut HashMap<(PathBuf, String), Vec<CoveringTest>>,
-    definitions: &[RustCodeDefinition],
-    test_path: &Path,
-    test_id: &str,
-    usage_refs: &HashSet<String>,
-    name_files: &HashMap<String, HashSet<PathBuf>>,
-    disambiguation: &HashMap<String, PathBuf>,
-) {
-    for def in definitions {
-        if !is_covered_by_tests(def, usage_refs, name_files, disambiguation) {
-            continue;
-        }
-        let key = (def.file.clone(), def.name.clone());
-        let entry = (test_path.to_path_buf(), test_id.to_string());
-        let list = coverage_map.entry(key).or_default();
-        if !list.contains(&entry) {
-            list.push(entry);
-        }
-    }
 }
 
 fn collect_rust_definitions(ast: &syn::File, file: &Path, defs: &mut Vec<RustCodeDefinition>) {
@@ -812,7 +810,6 @@ mod tests {
         fn touch<T>(_: T) {}
         touch(cfg_contains_test);
         touch(build_rust_coverage_map);
-        touch(add_covered_defs_for_test);
         touch(collect_rust_references_for_fn);
         touch(collect_per_test_usage);
         touch(collect_per_test_usage_from_items);

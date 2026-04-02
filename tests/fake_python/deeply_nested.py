@@ -13,7 +13,7 @@ def process_user_request(request, user, permissions, config):
                     if user.get("is_active"):
                         if permissions is not None:
                             if action in permissions:
-                                if permissions[action] == True:
+                                if permissions[action]:
                                     if config is not None:
                                         if config.get("feature_enabled"):
                                             if request.get("data") is not None:
@@ -145,7 +145,7 @@ def validate_form_submission(form_data, schema, rules, context, options):
                                                         if value > field_schema["max"]:
                                                             errors.append(f"{field_name} above maximum")
                                     else:
-                                        if field_schema.get("nullable") != True:
+                                        if not field_schema.get("nullable"):
                                             errors.append(f"{field_name} cannot be null")
     
     return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}

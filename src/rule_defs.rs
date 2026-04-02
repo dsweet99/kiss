@@ -183,6 +183,12 @@ pub static RULES: &[Rule] = &[
     },
     Rule {
         category: RuleCategory::Files,
+        template: "Keep files ≤ {} lines",
+        get_threshold: |c, _| c.lines_per_file,
+        applicability: Applicability::Both,
+    },
+    Rule {
+        category: RuleCategory::Files,
         template: "Keep files ≤ {} functions",
         get_threshold: |c, _| c.functions_per_file,
         applicability: Applicability::Both,

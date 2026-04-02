@@ -27,7 +27,6 @@ pub fn fingerprint_for_check(
     gate_config: &GateConfig,
 ) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    // Include binary version so cache is invalidated on upgrade
     h = fnv1a64(h, env!("CARGO_PKG_VERSION").as_bytes());
     h = fnv1a64(h, format!("{py_config:?}").as_bytes());
     h = fnv1a64(h, format!("{rs_config:?}").as_bytes());
@@ -36,7 +35,7 @@ pub fn fingerprint_for_check(
     let mut all_files: Vec<&PathBuf> = py_files.iter().chain(rs_files).collect();
     all_files.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
 
-    for p in all_files {
+    for p in &all_files {
         h = fnv1a64(h, p.to_string_lossy().as_bytes());
         if let Ok(meta) = std::fs::metadata(p) {
             h = fnv1a64(h, meta.len().to_le_bytes().as_slice());
@@ -231,6 +230,7 @@ pub fn graph_counts(
     (nodes, edges)
 }
 
+#[allow(dead_code)]
 pub fn coverage_lists(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],

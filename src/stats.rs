@@ -1,7 +1,9 @@
 use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
 use crate::py_metrics::{compute_class_metrics, compute_file_metrics, compute_function_metrics};
-use crate::rust_fn_metrics::{compute_rust_file_metrics, compute_rust_function_metrics};
+use crate::rust_fn_metrics::{
+    compute_rust_file_metrics, compute_rust_function_metrics, count_non_doc_attrs, is_cfg_test_mod,
+};
 use crate::rust_parsing::ParsedRustFile;
 use rayon::prelude::*;
 use syn::{ImplItem, Item};
@@ -209,7 +211,11 @@ fn collect_rust_from_items(items: &[Item], stats: &mut MetricStats) {
         match item {
             Item::Fn(f) => push_rust_fn_metrics(
                 stats,
-                &compute_rust_function_metrics(&f.sig.inputs, &f.block, f.attrs.len()),
+                &compute_rust_function_metrics(
+                    &f.sig.inputs,
+                    &f.block,
+                    count_non_doc_attrs(&f.attrs),
+                ),
             ),
             Item::Impl(i) => {
                 let mcnt = i
@@ -222,13 +228,19 @@ fn collect_rust_from_items(items: &[Item], stats: &mut MetricStats) {
                     if let ImplItem::Fn(m) = ii {
                         push_rust_fn_metrics(
                             stats,
-                            &compute_rust_function_metrics(&m.sig.inputs, &m.block, m.attrs.len()),
+                            &compute_rust_function_metrics(
+                                &m.sig.inputs,
+                                &m.block,
+                                count_non_doc_attrs(&m.attrs),
+                            ),
                         );
                     }
                 }
             }
             Item::Mod(m) => {
-                if let Some((_, items)) = &m.content {
+                if !is_cfg_test_mod(m)
+                    && let Some((_, items)) = &m.content
+                {
                     collect_rust_from_items(items, stats);
                 }
             }
@@ -501,6 +513,7 @@ fn config_key_for(metric_id: &str) -> Option<&'static str> {
         "calls_per_function" => "calls_per_function",
         "methods_per_class" => "methods_per_class",
         "statements_per_file" => "statements_per_file",
+        "lines_per_file" => "lines_per_file",
         "functions_per_file" => "functions_per_file",
         "interface_types_per_file" => "interface_types_per_file",
         "concrete_types_per_file" => "concrete_types_per_file",

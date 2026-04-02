@@ -18,6 +18,7 @@ pub struct DependencyGraph {
     pub graph: DiGraph<String, ()>,
     pub nodes: HashMap<String, NodeIndex>,
     pub paths: HashMap<String, PathBuf>,
+    pub path_to_module: HashMap<PathBuf, String>,
 }
 
 #[derive(Debug, Default)]
@@ -39,6 +40,7 @@ impl DependencyGraph {
             graph: DiGraph::new(),
             nodes: HashMap::new(),
             paths: HashMap::new(),
+            path_to_module: HashMap::new(),
         }
     }
 
@@ -126,10 +128,7 @@ impl DependencyGraph {
 
     /// Returns the qualified module name for a path, if the path is in this graph.
     pub fn module_for_path(&self, path: &std::path::Path) -> Option<String> {
-        self.paths
-            .iter()
-            .find(|(_, p)| p.as_path() == path)
-            .map(|(k, _)| k.clone())
+        self.path_to_module.get(path).cloned()
     }
 
     /// Returns test modules that import the given module (directly).
@@ -394,6 +393,7 @@ pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
     for parsed in parsed_files {
         let qualified = qualified_module_name(&parsed.path);
         let bare = bare_module_name(&parsed.path);
+        graph.path_to_module.insert(parsed.path.clone(), qualified.clone());
         graph.paths.insert(qualified.clone(), parsed.path.clone());
         graph.get_or_create_node(&qualified);
         bare_to_qualified.entry(bare).or_default().push(qualified);
@@ -441,6 +441,7 @@ pub fn build_dependency_graph_from_import_lists(
     for (path, _) in files {
         let qualified = qualified_module_name(path);
         let bare = bare_module_name(path);
+        graph.path_to_module.insert(path.clone(), qualified.clone());
         graph.paths.insert(qualified.clone(), path.clone());
         graph.get_or_create_node(&qualified);
         bare_to_qualified.entry(bare).or_default().push(qualified);
@@ -915,6 +916,7 @@ mod tests {
                 )
         );
         let mut g = DependencyGraph::new();
+        g.path_to_module.insert(PathBuf::from("src/foo.py"), "foo".into());
         g.paths.insert("foo".into(), PathBuf::from("src/foo.py"));
         assert_eq!(get_module_path(&g, "foo"), PathBuf::from("src/foo.py"));
         let mut parser = create_parser().unwrap();
@@ -1200,6 +1202,7 @@ mod tests {
     fn test_is_test_module_singular_test_dir() {
         // is_test_module should also recognize "test/" (singular) directories
         let mut g = DependencyGraph::new();
+        g.path_to_module.insert(std::path::PathBuf::from("test/helpers.py"), "test.helpers".into());
         g.paths.insert(
             "test.helpers".into(),
             std::path::PathBuf::from("test/helpers.py"),

@@ -226,6 +226,7 @@ class ApplicationManager:
     def create_session(self, user_id: int) -> str:
         import hashlib
         import secrets
+        _ = hashlib
         token = secrets.token_hex(32)
         self.sessions[token] = {
             "user_id": user_id,
