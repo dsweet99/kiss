@@ -185,6 +185,20 @@ pub fn graph_for_path<'a>(
     })
 }
 
+/// Build a Python dependency graph from a list of Python file paths.
+pub fn build_py_graph_from_files(py_files: &[PathBuf]) -> std::io::Result<DependencyGraph> {
+    let results = parse_files(py_files).map_err(|e| std::io::Error::other(e.to_string()))?;
+    let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+    Ok(build_dependency_graph(&parsed))
+}
+
+/// Build a Rust dependency graph from a list of Rust file paths.
+pub fn build_rs_graph_from_files(rs_files: &[PathBuf]) -> DependencyGraph {
+    let results = kiss::rust_parsing::parse_rust_files(rs_files);
+    let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+    build_rust_dependency_graph(&parsed)
+}
+
 fn orphan_post_pass(
     definitions: &[CachedCoverageItem],
     unreferenced: Vec<CachedCoverageItem>,
