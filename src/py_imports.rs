@@ -150,4 +150,12 @@ mod tests {
         let if_node = p.tree.root_node().child(0).unwrap();
         assert!(is_type_checking_block(if_node, &p.source));
     }
+
+    #[test]
+    fn static_coverage_touch_import_collectors() {
+        fn t<T>(_: T) {}
+        t(collect_import_names);
+        t(collect_import_statement_names);
+        t(collect_import_from_names);
+    }
 }

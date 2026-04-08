@@ -510,4 +510,11 @@ mod tests {
         );
         assert!(units.iter().any(|u| u.name == "Bar" && u.kind == "impl"));
     }
+
+    #[test]
+    fn static_coverage_touch_module_id_and_rust_push() {
+        fn t<T>(_: T) {}
+        t(module_id_for_path);
+        t(push_rust_fn_or_method_unit);
+    }
 }

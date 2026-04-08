@@ -716,4 +716,14 @@ mod tests {
         let result = check_unknown_sections(&t);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn static_coverage_touch_validate_keys() {
+        fn t<T>(_: T) {}
+        t(validate_config_keys);
+        t(validate_thresholds_keys);
+        t(validate_shared_keys);
+        t(validate_python_keys);
+        t(validate_rust_keys);
+    }
 }

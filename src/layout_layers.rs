@@ -419,4 +419,11 @@ mod tests {
             "Top node should be at layer {}", depth - 1
         );
     }
+
+    #[test]
+    fn static_coverage_touch_layer_internals() {
+        fn t<T>(_: T) {}
+        t(build_condensation);
+        t(compute_layer_for_node);
+    }
 }

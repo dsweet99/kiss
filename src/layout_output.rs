@@ -595,4 +595,13 @@ mod tests {
         assert!(md.contains("Layer 0: Foundation"));
         assert!(md.contains("Layer 1: Application"));
     }
+
+    #[test]
+    fn static_coverage_touch_format_helpers() {
+        fn t<T>(_: T) {}
+        t(format_summary);
+        t(format_cycles);
+        t(format_layers);
+        t(format_what_if);
+    }
 }

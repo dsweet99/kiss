@@ -5,7 +5,7 @@
 duplication_enabled = true
 min_similarity = 0.7
 orphan_module_enabled = true
-test_coverage_threshold = 40
+test_coverage_threshold = 90
 
 [python]
 boolean_parameters = 0

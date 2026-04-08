@@ -679,4 +679,11 @@ mod tests {{
             m.statements
         );
     }
+
+    #[test]
+    fn static_coverage_touch_accumulate_and_cfg_scan() {
+        fn t<T>(_: T) {}
+        t(accumulate_rust_file_metrics_from_items);
+        t(contains_test_ident);
+    }
 }

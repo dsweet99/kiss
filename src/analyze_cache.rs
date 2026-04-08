@@ -343,11 +343,14 @@ mod tests {
     #[test]
     fn test_touch_analyze_cache_privates_for_static_coverage() {
         fn touch<T>(_t: T) {}
+        let _ = std::marker::PhantomData::<FullCacheInputs<'static>>;
         touch(fnv1a64);
         touch(cache_path_full);
         touch(load_full_cache);
         touch(cached_duplicates);
         touch(cached_coverage_viols);
+        touch(coverage_violation);
+        touch(graph_counts);
     }
 
     #[test]

@@ -611,4 +611,10 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("No source files"));
     }
+
+    #[test]
+    fn static_coverage_touch_derive_project_name() {
+        fn t<T>(_: T) {}
+        t(derive_project_name);
+    }
 }

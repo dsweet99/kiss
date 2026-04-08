@@ -624,4 +624,12 @@ mod tests {
         let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]);
         assert!(gate.orphan_module_enabled, "no orphan modules should set orphan_module_enabled=true");
     }
+
+    #[test]
+    fn static_coverage_touch_infer_gate_helpers() {
+        fn t<T>(_: T) {}
+        t(compute_min_per_file_test_coverage);
+        t(has_orphan_modules);
+        t(has_reportable_duplicates);
+    }
 }

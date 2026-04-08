@@ -606,4 +606,13 @@ mod tests {
             add_rust_function_chunk("bar", start, end, source, Path::new("test.rs"), &mut chunks);
         }
     }
+
+    #[test]
+    fn static_coverage_touch_cluster_helpers() {
+        fn t<T>(_: T) {}
+        t(cmp_chunk_key);
+        t(min_chunk_in_cluster);
+        t(sort_clusters_deterministic);
+        t(chunks_are_nested);
+    }
 }

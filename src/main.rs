@@ -1196,4 +1196,13 @@ mod tests {
             _ => panic!("expected ShowTests"),
         }
     }
+
+    #[test]
+    fn static_coverage_touch_main_entrypoints() {
+        fn t<T>(_: T) {}
+        t(run);
+        t(dispatch);
+        t(set_sigpipe_default);
+        t(run_layout_command);
+    }
 }

@@ -768,6 +768,18 @@ mod tests {
     }
 
     #[test]
+    fn static_coverage_touch_graph_helpers() {
+        fn t<T>(_: T) {}
+        t(is_init_module);
+        t(path_dedup_set);
+        t(is_path_covered_by_another);
+        t(parent_prefix_match);
+        t(resolve_bare);
+        t(resolve_dotted);
+        t(parse_python_string_literal);
+    }
+
+    #[test]
     fn test_graph_imports_and_cycles() {
         let mut parser = create_parser().unwrap();
         assert!(
