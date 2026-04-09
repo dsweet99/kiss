@@ -408,3 +408,72 @@ fn cli_mimic_command_runs() {
         "kiss mimic should produce config. stdout: {stdout}"
     );
 }
+
+#[test]
+fn cli_mv_dry_run_emits_human_plan_lines() {
+    let tmp = TempDir::new().unwrap();
+    let source = tmp.path().join("mod.py");
+    fs::write(&source, "def foo():\n    return 1\nfoo()\n").unwrap();
+
+    let output = kiss_binary()
+        .arg("mv")
+        .arg(format!("{}::foo", source.display()))
+        .arg("bar")
+        .arg(tmp.path())
+        .arg("--dry-run")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "mv dry-run should succeed. stderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("foo -> bar"),
+        "expected rename plan line. stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn cli_mv_json_emits_stable_schema() {
+    let tmp = TempDir::new().unwrap();
+    let source = tmp.path().join("mod.py");
+    fs::write(&source, "def foo():\n    return foo()\n").unwrap();
+
+    let output = kiss_binary()
+        .arg("mv")
+        .arg(format!("{}::foo", source.display()))
+        .arg("bar")
+        .arg(tmp.path())
+        .arg("--dry-run")
+        .arg("--json")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "mv json should succeed. stderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+    assert!(stdout.contains("\"files\""), "stdout:\n{stdout}");
+    assert!(stdout.contains("\"edits\""), "stdout:\n{stdout}");
+    assert!(stdout.contains("\"old_snippet\""), "stdout:\n{stdout}");
+    assert!(stdout.contains("\"new_snippet\""), "stdout:\n{stdout}");
+}
+
+#[test]
+fn cli_mv_requires_query_shape() {
+    let output = kiss_binary()
+        .arg("mv")
+        .arg("bad_query")
+        .arg("bar")
+        .arg("--dry-run")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "mv should fail for bad query");
+    assert!(stderr.contains("query must contain '::'"), "stderr:\n{stderr}");
+}

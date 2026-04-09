@@ -19,6 +19,7 @@ pub mod minhash;
 pub mod parsing;
 pub mod stats;
 pub mod stats_detailed;
+pub mod symbol_mv;
 pub mod test_refs;
 pub mod units;
 

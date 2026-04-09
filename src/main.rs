@@ -194,6 +194,28 @@ enum Commands {
         #[arg(long, value_name = "NAME")]
         name: Option<String>,
     },
+    /// Semantic rename/move for Python and Rust symbols
+    Mv {
+        /// Symbol query (`path.py::name`, `path.py::Class.method`, `path.rs::name`, `path.rs::Type.method`)
+        query: String,
+        /// New symbol name
+        new_name: String,
+        /// Paths to analyze for references
+        #[arg(default_value = ".")]
+        paths: Vec<String>,
+        /// Destination file path for symbol moves
+        #[arg(long, value_name = "DEST_FILE")]
+        to: Option<PathBuf>,
+        /// Print planned edits without applying writes
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit machine-stable JSON output
+        #[arg(long)]
+        json: bool,
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
+    },
 }
 
 fn main() {
@@ -339,6 +361,28 @@ fn dispatch(
             ignore,
             name,
         } => run_layout_command(&paths, out.as_deref(), cli.lang, &ignore, name),
+        Commands::Mv {
+            query,
+            new_name,
+            paths,
+            to,
+            dry_run,
+            json,
+            ignore,
+        } => {
+            let ignore = normalize_ignore_prefixes(&ignore);
+            let opts = kiss::symbol_mv::MvOptions {
+                query,
+                new_name,
+                paths,
+                to,
+                dry_run,
+                json,
+                lang_filter: cli.lang,
+                ignore,
+            };
+            kiss::symbol_mv::run_mv_command(opts)
+        }
     }
 }
 
@@ -976,6 +1020,12 @@ mod tests {
         assert!(matches!(
             Cli::try_parse_from(["kiss", "stats"]).unwrap().command,
             Commands::Stats { .. }
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["kiss", "mv", "src/a.py::foo", "bar"])
+                .unwrap()
+                .command,
+            Commands::Mv { .. }
         ));
         assert!(matches!(
             Cli::try_parse_from(["kiss", "clamp"]).unwrap().command,
