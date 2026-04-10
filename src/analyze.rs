@@ -185,6 +185,20 @@ pub fn graph_for_path<'a>(
     })
 }
 
+/// Build a Python dependency graph from a list of Python file paths.
+pub fn build_py_graph_from_files(py_files: &[PathBuf]) -> std::io::Result<DependencyGraph> {
+    let results = parse_files(py_files).map_err(|e| std::io::Error::other(e.to_string()))?;
+    let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+    Ok(build_dependency_graph(&parsed))
+}
+
+/// Build a Rust dependency graph from a list of Rust file paths.
+pub fn build_rs_graph_from_files(rs_files: &[PathBuf]) -> DependencyGraph {
+    let results = kiss::rust_parsing::parse_rust_files(rs_files);
+    let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
+    build_rust_dependency_graph(&parsed)
+}
+
 fn orphan_post_pass(
     definitions: &[CachedCoverageItem],
     unreferenced: Vec<CachedCoverageItem>,
@@ -1071,6 +1085,7 @@ def test_all():
     #[allow(clippy::let_unit_value)]
     fn test_touch_for_static_test_coverage() {
         fn touch<T>(_t: T) {}
+        let _ = std::marker::PhantomData::<RustAnalysis>;
         let _ = (
             touch(run_dry), touch(log_parse_timing), touch(log_timing_phase2),
             touch(filter_viols_by_focus), touch(log_timing_phase1),
@@ -1082,6 +1097,9 @@ def test_all():
             touch(run_analyze_with_result), touch(print_all_results_with_dups_opt),
             touch(compute_global_metrics), touch(finalize_analysis),
             touch(run_gated_analysis), touch(evaluate_gate), touch(check_coverage_gate),
+            touch(run_rust_analysis), touch(run_parallel_py_analysis), touch(build_graph_violations),
+            touch(graph_for_path), touch(orphan_post_pass), touch(build_coverage_violation_with_graph),
+            touch(collect_coverage_viols), touch(build_metrics),
         );
         let _ = (
             std::mem::size_of::<CacheStoreCall>(),

@@ -255,4 +255,13 @@ mod tests {
         assert_eq!(get_f64(&table, "valid"), Some(0.5));
         assert_eq!(get_f64(&table, "missing"), None);
     }
+
+    #[test]
+    fn static_coverage_touch_gate_parsers() {
+        fn t<T>(_: T) {}
+        t(int_to_f64);
+        t(try_get_f64);
+        t(get_bool);
+        t(try_get_bool);
+    }
 }

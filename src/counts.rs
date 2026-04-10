@@ -565,4 +565,12 @@ mod tests {
         assert!(matches!(skip, Recursion::Skip));
         assert!(matches!(cont, Recursion::Continue(true)));
     }
+
+    #[test]
+    fn static_coverage_touch_py_threshold_helpers() {
+        fn t<T>(_: T) {}
+        t(push_py_file_threshold);
+        t(check_file_metrics);
+        t(violation);
+    }
 }

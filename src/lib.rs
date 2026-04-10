@@ -14,10 +14,12 @@ pub mod counts;
 pub mod discovery;
 pub mod duplication;
 pub mod graph;
+pub mod layout_cycles;
 pub mod minhash;
 pub mod parsing;
 pub mod stats;
 pub mod stats_detailed;
+pub mod symbol_mv;
 pub mod test_refs;
 pub mod units;
 
@@ -28,6 +30,8 @@ pub mod rust_parsing;
 pub mod rust_test_refs;
 pub mod rust_units;
 
+pub mod layout_layers;
+pub mod layout_output;
 pub mod shrink;
 
 #[cfg(test)]
@@ -53,6 +57,9 @@ pub use graph::{
     CycleInfo, DependencyGraph, ModuleGraphMetrics, analyze_graph, build_dependency_graph,
     compute_cyclomatic_complexity,
 };
+pub use layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis, analyze_cycles};
+pub use layout_layers::{LayerInfo, compute_layers};
+pub use layout_output::{LayoutAnalysis, LayoutMetrics, WhatIfAnalysis, format_markdown};
 pub use parsing::{ParseError, ParsedFile, create_parser, parse_file, parse_files};
 pub use py_metrics::{
     ClassMetrics, FileMetrics, FunctionMetrics, compute_class_metrics, compute_file_metrics,

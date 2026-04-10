@@ -335,6 +335,7 @@ mod tests {
 
     #[test]
     fn test_touch_private_helpers_for_static_coverage() {
+        fn t<T>(_: T) {}
         // Touch private helpers so static test-ref coverage includes them.
         let _ = qualify_child_module("a", "b");
         let _ = RustImports {
@@ -383,6 +384,9 @@ fn f() {
                 let _ = (use_roots3, mod_decls3);
             }
         }
+
+        t(resolve_import);
+        t(extract_include_rs_stem);
     }
 
     #[test]

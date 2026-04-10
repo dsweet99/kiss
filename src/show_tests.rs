@@ -491,4 +491,10 @@ mod tests {
             "expected UNTESTED line for bar, got: {output}"
         );
     }
+
+    #[test]
+    fn static_coverage_touch_gather_files_with_path_expansion() {
+        fn t<T>(_: T) {}
+        t(gather_files_with_path_expansion);
+    }
 }

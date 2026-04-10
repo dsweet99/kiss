@@ -1,8 +1,5 @@
 use crate::viz_coarsen::{CoarsenedGraph, coarsen_with_zoom};
-use kiss::build_dependency_graph;
-use kiss::parsing::parse_files;
-use kiss::rust_parsing::parse_rust_files;
-use kiss::{DependencyGraph, Language, rust_graph::build_rust_dependency_graph};
+use kiss::{DependencyGraph, Language};
 use petgraph::visit::EdgeRef;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -258,19 +255,6 @@ fn write_coarsened_for_format(
     }
 }
 
-fn build_py_graph(py_files: &[PathBuf]) -> std::io::Result<DependencyGraph> {
-    // Use the same Python parser pipeline as `kiss check` for consistency.
-    let results = parse_files(py_files).map_err(|e| std::io::Error::other(e.to_string()))?;
-    let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-    Ok(build_dependency_graph(&parsed))
-}
-
-fn build_rs_graph(rs_files: &[PathBuf]) -> DependencyGraph {
-    let results = parse_rust_files(rs_files);
-    let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-    build_rust_dependency_graph(&parsed)
-}
-
 fn build_coarsened_graph(
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
@@ -281,13 +265,15 @@ fn build_coarsened_graph(
     let mut all_paths: BTreeMap<String, PathBuf> = BTreeMap::new();
 
     if !py_files.is_empty() {
-        let (n, e, p) = collect_graph_nodes_and_edges(&build_py_graph(py_files)?, "py");
+        let py_graph = crate::analyze::build_py_graph_from_files(py_files)?;
+        let (n, e, p) = collect_graph_nodes_and_edges(&py_graph, "py");
         all_nodes.extend(n);
         all_edges.extend(e);
         all_paths.extend(p);
     }
     if !rs_files.is_empty() {
-        let (n, e, p) = collect_graph_nodes_and_edges(&build_rs_graph(rs_files), "rs");
+        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files);
+        let (n, e, p) = collect_graph_nodes_and_edges(&rs_graph, "rs");
         all_nodes.extend(n);
         all_edges.extend(e);
         all_paths.extend(p);
@@ -319,10 +305,12 @@ pub fn run_viz(
 
     if zoom >= 1.0 {
         if !py_files.is_empty() {
-            write_graph_for_format(&mut buf, &build_py_graph(&py_files)?, "py", format)?;
+            let py_graph = crate::analyze::build_py_graph_from_files(&py_files)?;
+            write_graph_for_format(&mut buf, &py_graph, "py", format)?;
         }
         if !rs_files.is_empty() {
-            write_graph_for_format(&mut buf, &build_rs_graph(&rs_files), "rs", format)?;
+            let rs_graph = crate::analyze::build_rs_graph_from_files(&rs_files);
+            write_graph_for_format(&mut buf, &rs_graph, "rs", format)?;
         }
     } else {
         write_coarsened_for_format(
@@ -491,13 +479,13 @@ mod tests {
 
     #[test]
     fn test_build_py_graph_empty() {
-        let graph = build_py_graph(&[]).unwrap();
+        let graph = crate::analyze::build_py_graph_from_files(&[]).unwrap();
         assert!(graph.nodes.is_empty());
     }
 
     #[test]
     fn test_build_rs_graph_empty() {
-        let graph = build_rs_graph(&[]);
+        let graph = crate::analyze::build_rs_graph_from_files(&[]);
         assert!(graph.nodes.is_empty());
     }
 
