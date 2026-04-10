@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::Language;
 
@@ -114,15 +114,11 @@ fn parse_symbol_shape(
 }
 
 fn is_valid_identifier(name: &str, _language: Language) -> bool {
-    if name.is_empty() {
-        return false;
-    }
     let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    let first_ok = first == '_' || first.is_ascii_alphabetic();
-    first_ok && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+    chars
+        .next()
+        .is_some_and(|c| c == '_' || c.is_ascii_alphabetic())
+        && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
 
 pub const fn language_name(language: Language) -> &'static str {
@@ -158,51 +154,383 @@ pub struct MvPlan {
 }
 
 pub fn plan_edits(req: &MvRequest) -> MvPlan {
-    let mut files = BTreeSet::new();
-    let mut edits = Vec::new();
     let old_name = req.query.old_name();
-    let candidates = match req.query.language {
-        Language::Python => python_candidates(&req.paths, &req.ignore),
-        Language::Rust => rust_candidates(&req.paths, &req.ignore),
+    let source_path = &req.query.path;
+    let source_canonical = source_path.canonicalize().unwrap_or_else(|_| source_path.clone());
+    let Ok(source_content) = fs::read_to_string(source_path) else {
+        return MvPlan { files: Vec::new(), edits: Vec::new() };
     };
 
+    let mut files = BTreeSet::new();
+    let owner = req.query.member.as_ref().map(|_| req.query.symbol.as_str());
+
+    let def_span = find_definition_span(&source_content, old_name, owner, req.query.language);
+
+    let mut edits = collect_source_rename_edits(
+        source_path, &source_content, (old_name, &req.new_name),
+        owner, req.query.language, def_span, req.to.is_some(),
+    );
+    files.insert(source_path.clone());
+
+    let candidates = gather_candidate_files(&req.paths, &req.ignore, req.query.language);
     for path in candidates {
-        let Ok(content) = fs::read_to_string(&path) else {
-            continue;
-        };
-        for (start_byte, end_byte, line) in find_identifier_occurrences(&content, old_name) {
-            files.insert(path.clone());
-            let kind = if path == req.query.path {
-                EditKind::Definition
-            } else {
-                EditKind::Reference
-            };
-            edits.push(PlannedEdit {
-                path: path.clone(),
-                start_byte,
-                end_byte,
-                line,
-                old_snippet: old_name.to_string(),
-                new_snippet: req.new_name.clone(),
-                kind,
-            });
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+        if canonical == source_canonical { continue }
+        let Ok(content) = fs::read_to_string(&path) else { continue };
+        let ref_edits = collect_reference_edits(
+            &path, &content, old_name, &req.new_name, owner, req.query.language,
+        );
+        if !ref_edits.is_empty() {
+            files.insert(path);
+            edits.extend(ref_edits);
         }
     }
 
-    edits.sort_by(|a, b| {
-        a.path
-            .cmp(&b.path)
-            .then_with(|| a.start_byte.cmp(&b.start_byte))
-    });
-
-    if let Some(dest) = &req.to {
-        files.insert(dest.clone());
+    if let Some((dest_path, remove_edit, insert_edit)) = build_move_edits(
+        source_path, &source_content, old_name, &req.new_name, def_span, req.to.as_ref(),
+    ) {
+        files.insert(dest_path);
+        edits.push(remove_edit);
+        edits.push(insert_edit);
     }
 
-    MvPlan {
-        files: files.into_iter().collect::<Vec<_>>(),
-        edits,
+    edits.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.start_byte.cmp(&b.start_byte)));
+    MvPlan { files: files.into_iter().collect(), edits }
+}
+
+fn gather_candidate_files(paths: &[String], ignore: &[String], language: Language) -> Vec<PathBuf> {
+    let (py_files, rs_files) = crate::discovery::gather_files_by_lang(paths, Some(language), ignore);
+    match language {
+        Language::Python => py_files,
+        Language::Rust => rs_files,
     }
+}
+
+fn collect_reference_edits(
+    path: &Path,
+    content: &str,
+    old_name: &str,
+    new_name: &str,
+    owner: Option<&str>,
+    language: Language,
+) -> Vec<PlannedEdit> {
+    let mut edits = Vec::new();
+    for (start, end, line) in find_identifier_occurrences(content, old_name) {
+        if is_supported_reference_site(content, start, old_name, owner, language) {
+            edits.push(PlannedEdit {
+                path: path.to_path_buf(), start_byte: start, end_byte: end, line,
+                old_snippet: old_name.to_string(), new_snippet: new_name.to_string(),
+                kind: EditKind::Reference,
+            });
+        }
+    }
+    edits
+}
+
+fn collect_source_rename_edits(
+    source_path: &Path,
+    source_content: &str,
+    names: (&str, &str),
+    owner: Option<&str>,
+    language: Language,
+    def_span: Option<DefinitionSpan>,
+    moving: bool,
+) -> Vec<PlannedEdit> {
+    let (old_name, new_name) = names;
+    let mut edits = Vec::new();
+    for (start_byte, end_byte, line) in find_identifier_occurrences(source_content, old_name) {
+        if !is_supported_reference_site(source_content, start_byte, old_name, owner, language) {
+            continue;
+        }
+        if moving && def_span.is_some_and(|span| span.contains(start_byte)) {
+            continue;
+        }
+        edits.push(PlannedEdit {
+            path: source_path.to_path_buf(),
+            start_byte,
+            end_byte,
+            line,
+            old_snippet: old_name.to_string(),
+            new_snippet: new_name.to_string(),
+            kind: if def_span.is_some_and(|span| span.contains(start_byte)) {
+                EditKind::Definition
+            } else {
+                EditKind::Reference
+            },
+        });
+    }
+    edits
+}
+
+fn build_move_edits(
+    source_path: &Path,
+    source_content: &str,
+    old_name: &str,
+    new_name: &str,
+    def_span: Option<DefinitionSpan>,
+    dest: Option<&PathBuf>,
+) -> Option<(PathBuf, PlannedEdit, PlannedEdit)> {
+    let span = def_span?;
+    let dest_path = dest?.clone();
+    let moved = rename_definition_text(&source_content[span.start..span.end], old_name, new_name);
+    let existing_dest = fs::read_to_string(&dest_path).unwrap_or_default();
+    let needs_newline = !existing_dest.is_empty() && !existing_dest.ends_with('\n');
+    let insertion = if needs_newline { format!("\n{moved}") } else { moved };
+    Some((
+        dest_path.clone(),
+        PlannedEdit {
+            path: source_path.to_path_buf(),
+            start_byte: span.start,
+            end_byte: span.end,
+            line: line_for_offset(source_content, span.start),
+            old_snippet: source_content[span.start..span.end].to_string(),
+            new_snippet: String::new(),
+            kind: EditKind::Definition,
+        },
+        PlannedEdit {
+            path: dest_path,
+            start_byte: existing_dest.len(),
+            end_byte: existing_dest.len(),
+            line: existing_dest.lines().count().max(1),
+            old_snippet: String::new(),
+            new_snippet: insertion,
+            kind: EditKind::Definition,
+        },
+    ))
+}
+
+fn rename_definition_text(definition: &str, old_name: &str, new_name: &str) -> String {
+    let is_safe = |off: usize| {
+        let before = &definition[..off];
+        let line_start = before.rfind('\n').map_or(0, |i| i + 1);
+        let prefix = &definition[line_start..off];
+        if prefix.contains('#') { return false }
+        let mut in_str: Option<char> = None;
+        for c in prefix.chars() {
+            match c {
+                '"' | '\'' if in_str == Some(c) => in_str = None,
+                '"' | '\'' if in_str.is_none() => in_str = Some(c),
+                _ => {}
+            }
+        }
+        in_str.is_none()
+    };
+    let occs: Vec<_> = find_identifier_occurrences(definition, old_name)
+        .into_iter()
+        .filter(|(s, _, _)| is_safe(*s))
+        .collect();
+    if occs.is_empty() { return definition.to_string() }
+    let mut out = String::with_capacity(definition.len());
+    let mut last = 0;
+    for (s, e, _) in occs { out.push_str(&definition[last..s]); out.push_str(new_name); last = e; }
+    out.push_str(&definition[last..]);
+    out
+}
+
+#[derive(Clone, Copy)]
+struct DefinitionSpan {
+    start: usize,
+    end: usize,
+}
+
+impl DefinitionSpan {
+    const fn contains(self, offset: usize) -> bool {
+        offset >= self.start && offset < self.end
+    }
+}
+
+fn find_definition_span(
+    content: &str,
+    method: &str,
+    owner: Option<&str>,
+    language: Language,
+) -> Option<DefinitionSpan> {
+    match language {
+        Language::Python => find_python_definition_span(content, method, owner),
+        Language::Rust => find_rust_definition_span(content, method, owner),
+    }
+}
+
+fn find_python_definition_span(content: &str, method: &str, owner: Option<&str>) -> Option<DefinitionSpan> {
+    let (range_start, range_end) = owner
+        .and_then(|o| find_python_class_block(content, o))
+        .unwrap_or((0, content.len()));
+    let scope = &content[range_start..range_end];
+    let needle = format!("def {method}(");
+    let mut def_start = None;
+    let mut def_indent = 0;
+    let mut offset = 0;
+    for line in scope.lines() {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        if def_start.is_none() && trimmed.starts_with(&needle) {
+            def_start = Some(range_start + offset);
+            def_indent = indent;
+        } else if let Some(start) = def_start
+            && !trimmed.is_empty() && !trimmed.starts_with('#') && indent <= def_indent
+        {
+            return Some(DefinitionSpan { start, end: range_start + offset });
+        }
+        offset += line.len() + 1;
+    }
+    def_start.map(|start| DefinitionSpan { start, end: range_end })
+}
+
+fn find_brace_block_end(content: &str, open_brace: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (i, ch) in content[open_brace..].char_indices() {
+        match ch { '{' => depth += 1, '}' => { depth = depth.saturating_sub(1); if depth == 0 { return Some(open_brace + i + 1) } }, _ => {} }
+    }
+    None
+}
+
+fn find_rust_definition_span(content: &str, method: &str, owner: Option<&str>) -> Option<DefinitionSpan> {
+    let (lo, hi) = owner.and_then(|o| find_impl_block(content, o)).unwrap_or((0, content.len()));
+    let scope = &content[lo..hi];
+    let start = [format!("fn {method}("), format!("pub fn {method}(")]
+        .iter().find_map(|c| scope.find(c)).map(|p| lo + p)?;
+    let open = start + content[start..].find('{')?;
+    find_brace_block_end(content, open).map(|end| DefinitionSpan { start, end })
+}
+
+fn find_impl_block(content: &str, owner: &str) -> Option<(usize, usize)> {
+    let start = content.find(&format!("impl {owner}"))?;
+    let open = start + content[start..].find('{')?;
+    find_brace_block_end(content, open).map(|end| (start, end))
+}
+
+fn is_supported_reference_site(
+    content: &str,
+    start: usize,
+    ident: &str,
+    owner: Option<&str>,
+    language: Language,
+) -> bool {
+    match language {
+        Language::Python => is_python_reference_site(content, start, ident, owner),
+        Language::Rust => is_rust_reference_site(content, start, ident, owner),
+    }
+}
+
+fn is_python_reference_site(content: &str, start: usize, ident: &str, owner: Option<&str>) -> bool {
+    let before = &content[..start];
+    let line_start = before.rfind('\n').map_or(0, |idx| idx + 1);
+    let line = &content[line_start..].lines().next().unwrap_or_default();
+    let is_def = line.trim_start().starts_with(&format!("def {ident}("));
+    if is_def {
+        return owner.map_or_else(
+            || !is_inside_any_class(content, start),
+            |o| find_python_class_block(content, o)
+                .is_some_and(|(cls_start, cls_end)| start >= cls_start && start < cls_end),
+        );
+    }
+    let is_import = before.ends_with("import ") || before.ends_with(", ");
+    if is_import && owner.is_none() {
+        return true;
+    }
+    let after = &content[(start + ident.len())..];
+    let is_method_call = before.ends_with('.');
+    match owner {
+        Some(_) if !is_method_call => false,
+        Some(o) => infer_python_receiver_type(content, &extract_receiver(before)).as_deref() == Some(o),
+        None => !is_method_call && after.trim_start().starts_with('('),
+    }
+}
+
+fn is_inside_any_class(content: &str, offset: usize) -> bool {
+    let mut class_indent: Option<usize> = None;
+    let mut pos = 0;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        if trimmed.starts_with("class ") && trimmed.contains(':') { class_indent = Some(indent) }
+        else if class_indent.is_some_and(|ci| indent <= ci && !trimmed.is_empty() && !trimmed.starts_with('#')) { class_indent = None }
+        if pos <= offset && offset <= pos + line.len() { return class_indent.is_some() }
+        pos += line.len() + 1;
+    }
+    false
+}
+
+fn find_python_class_block(content: &str, class_name: &str) -> Option<(usize, usize)> {
+    let prefix = format!("class {class_name}");
+    let mut offset = 0;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with(&prefix) && trimmed[prefix.len()..].starts_with([':', '(', ' ']) {
+            let base_indent = line.len() - trimmed.len();
+            let start = offset;
+            let mut end = offset + line.len() + 1;
+            for next_line in content[end..].lines() {
+                let next_trimmed = next_line.trim_start();
+                if !next_trimmed.is_empty() && !next_trimmed.starts_with('#') {
+                    let indent = next_line.len() - next_trimmed.len();
+                    if indent <= base_indent { break }
+                }
+                end += next_line.len() + 1;
+            }
+            return Some((start, end.min(content.len())));
+        }
+        offset += line.len() + 1;
+    }
+    None
+}
+
+fn infer_python_receiver_type(content: &str, receiver: &str) -> Option<String> {
+    let receiver = receiver.trim_end_matches("()");
+    if receiver.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+        return Some(receiver.to_string());
+    }
+    let pat = format!("{receiver} = ");
+    if let Some(pos) = content.find(&pat) {
+        let rest = &content[pos + pat.len()..];
+        if let Some(paren) = rest.find('(') {
+            let type_name = rest[..paren].trim();
+            if type_name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                return Some(type_name.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn is_rust_reference_site(content: &str, start: usize, ident: &str, owner: Option<&str>) -> bool {
+    let before = &content[..start];
+    let after = &content[(start + ident.len())..];
+
+    let line_start = before.rfind('\n').map_or(0, |idx| idx + 1);
+    let line = &content[line_start..].lines().next().unwrap_or_default();
+
+    let is_fn_def = line.contains(&format!("fn {ident}("));
+    if is_fn_def {
+        return owner.is_none_or(|o| {
+            find_impl_block(content, o)
+                .is_some_and(|impl_block| start >= impl_block.0 && start < impl_block.1)
+        });
+    }
+
+    match owner {
+        Some(_) if !before.ends_with('.') => false,
+        Some(o) => infer_receiver_type(content, &extract_receiver(before)).as_deref() == Some(o),
+        None => after.trim_start().starts_with('('),
+    }
+}
+
+fn extract_receiver(before: &str) -> String {
+    let trimmed = before.trim_end_matches('.').trim_end_matches("()");
+    let start = trimmed.rfind(|c: char| !c.is_ascii_alphanumeric() && c != '_').map_or(0, |i| i + 1);
+    trimmed[start..].to_string()
+}
+
+fn infer_receiver_type(content: &str, receiver: &str) -> Option<String> {
+    for pat in [format!("let {receiver}: "), format!("let {receiver} : "),
+                format!("{receiver}: &"), format!("{receiver}: ")] {
+        if let Some(pos) = content.find(&pat) {
+            let ty: String = content[pos + pat.len()..].chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
+            if !ty.is_empty() { return Some(ty) }
+        }
+    }
+    None
 }
 
 fn find_identifier_occurrences(content: &str, ident: &str) -> Vec<(usize, usize, usize)> {
@@ -226,22 +554,7 @@ const fn is_ident_char(c: char) -> bool {
 }
 
 fn line_for_offset(content: &str, offset: usize) -> usize {
-    content
-        .char_indices()
-        .take_while(|(idx, _)| *idx < offset)
-        .filter(|(_, c)| *c == '\n')
-        .count()
-        + 1
-}
-
-fn python_candidates(paths: &[String], ignore: &[String]) -> Vec<PathBuf> {
-    let (files, _) = crate::discovery::gather_files_by_lang(paths, Some(Language::Python), ignore);
-    files
-}
-
-fn rust_candidates(paths: &[String], ignore: &[String]) -> Vec<PathBuf> {
-    let (_, files) = crate::discovery::gather_files_by_lang(paths, Some(Language::Rust), ignore);
-    files
+    content[..offset].chars().filter(|&c| c == '\n').count() + 1
 }
 
 // --- Apply -------------------------------------------------------------------
@@ -325,10 +638,8 @@ pub fn run_mv_command(opts: MvOptions) -> i32 {
     i32::from(run_mv_inner(opts).is_err())
 }
 
-fn run_mv_inner(opts: MvOptions) -> Result<(), ()> {
-    let query = parse_mv_query(&opts.query).map_err(|e| {
-        eprintln!("Error: {e}");
-    })?;
+fn validate_mv_options(opts: &MvOptions) -> Result<ParsedQuery, ()> {
+    let query = parse_mv_query(&opts.query).map_err(|e| eprintln!("Error: {e}"))?;
     if let Some(lang_filter) = opts.lang_filter
         && lang_filter != query.language
     {
@@ -339,10 +650,19 @@ fn run_mv_inner(opts: MvOptions) -> Result<(), ()> {
         );
         return Err(());
     }
-    validate_new_name(&opts.new_name, query.language).map_err(|e| {
-        eprintln!("Error: {e}");
-    })?;
+    validate_new_name(&opts.new_name, query.language).map_err(|e| eprintln!("Error: {e}"))?;
+    if opts.to.is_some() && query.member.is_some() {
+        eprintln!(
+            "Error: --to moves are only supported for top-level functions, not methods (got {})",
+            query.raw
+        );
+        return Err(());
+    }
+    Ok(query)
+}
 
+fn run_mv_inner(opts: MvOptions) -> Result<(), ()> {
+    let query = validate_mv_options(&opts)?;
     let req = MvRequest {
         query,
         new_name: opts.new_name,
@@ -358,19 +678,14 @@ fn run_mv_inner(opts: MvOptions) -> Result<(), ()> {
     }
 
     if opts.json {
-        print_json_plan(&plan).map_err(|e| {
-            eprintln!("Error: failed to serialize plan: {e}");
-        })?;
-        return Ok(());
+        print_json_plan(&plan).map_err(|e| eprintln!("Error: failed to serialize plan: {e}"))?;
+    } else {
+        print_human_plan(&plan);
+        if !opts.dry_run {
+            apply_plan_transactional(&plan).map_err(|e| eprintln!("Error: {e}"))?;
+        }
     }
-    print_human_plan(&plan);
-    if opts.dry_run {
-        return Ok(());
-    }
-
-    apply_plan_transactional(&plan).map_err(|e| {
-        eprintln!("Error: {e}");
-    })
+    Ok(())
 }
 
 fn print_human_plan(plan: &MvPlan) {
@@ -543,5 +858,105 @@ mod tests {
             ],
         };
         assert!(apply_plan_transactional(&plan).is_err());
+    }
+
+    #[test]
+    fn regression_rust_method_query_should_not_rename_other_types() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let file = tmp.path().join("mod.rs");
+        fs::write(
+            &file,
+            "struct A;\nstruct B;\n\nimpl A {\n    fn foo(&self) {}\n}\n\nimpl B {\n    fn foo(&self) {}\n}\n\nfn call(a: &A, b: &B) {\n    a.foo();\n    b.foo();\n}\n",
+        )
+        .unwrap();
+
+        let opts = MvOptions {
+            query: format!("{}::A.foo", file.display()),
+            new_name: "bar".to_string(),
+            paths: vec![tmp.path().display().to_string()],
+            to: None,
+            dry_run: false,
+            json: false,
+            lang_filter: Some(Language::Rust),
+            ignore: vec![],
+        };
+
+        assert_eq!(run_mv_command(opts), 0);
+        let updated = fs::read_to_string(&file).unwrap();
+        assert!(updated.contains("impl A {\n    fn bar(&self) {}"));
+        assert!(updated.contains("a.bar();"));
+        assert!(
+            updated.contains("impl B {\n    fn foo(&self) {}"),
+            "unrelated type method should remain unchanged"
+        );
+        assert!(
+            updated.contains("b.foo();"),
+            "unrelated method call should remain unchanged"
+        );
+    }
+
+    #[test]
+    fn regression_move_to_destination_should_relocate_definition() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let src = tmp.path().join("source.py");
+        let dest = tmp.path().join("dest.py");
+        fs::write(&src, "def foo():\n    return 1\n\nvalue = foo()\n").unwrap();
+        fs::write(&dest, "def other():\n    return 2\n").unwrap();
+
+        let opts = MvOptions {
+            query: format!("{}::foo", src.display()),
+            new_name: "foo".to_string(),
+            paths: vec![tmp.path().display().to_string()],
+            to: Some(dest.clone()),
+            dry_run: false,
+            json: false,
+            lang_filter: Some(Language::Python),
+            ignore: vec![],
+        };
+
+        assert_eq!(run_mv_command(opts), 0);
+        let updated_src = fs::read_to_string(&src).unwrap();
+        let updated_dest = fs::read_to_string(&dest).unwrap();
+        assert!(
+            !updated_src.contains("def foo("),
+            "source definition should be removed after move"
+        );
+        assert!(
+            updated_dest.contains("def foo("),
+            "destination should contain moved definition"
+        );
+    }
+
+    #[test]
+    fn regression_python_method_should_scope_to_class() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let file = tmp.path().join("mod.py");
+        fs::write(
+            &file,
+"class A:\n    def foo(self):\n        pass\n\nclass B:\n    def foo(self):\n        pass\n\ndef use_them():\n    A().foo()\n    B().foo()\n",
+        )
+        .unwrap();
+
+        let opts = MvOptions {
+            query: format!("{}::A.foo", file.display()),
+            new_name: "bar".to_string(),
+            paths: vec![tmp.path().display().to_string()],
+            to: None,
+            dry_run: false,
+            json: false,
+            lang_filter: Some(Language::Python),
+            ignore: vec![],
+        };
+
+        assert_eq!(run_mv_command(opts), 0);
+        let updated = fs::read_to_string(&file).unwrap();
+        assert!(
+            updated.contains("def bar(self):"),
+            "A.foo should be renamed to bar"
+        );
+        assert!(
+            updated.contains("class B:\n    def foo(self):"),
+            "B.foo should remain unchanged"
+        );
     }
 }
