@@ -16,25 +16,34 @@ pub struct ParseResult {
     pub statement_count: usize,
 }
 
+pub struct ParseAllTimedParams<'a> {
+    pub py_files: &'a [PathBuf],
+    pub rs_files: &'a [PathBuf],
+    pub py_config: &'a Config,
+    pub rs_config: &'a Config,
+    pub show_timing: bool,
+}
+
 pub fn parse_all(
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
     py_config: &Config,
     rs_config: &Config,
 ) -> ParseResult {
-    parse_all_timed(py_files, rs_files, py_config, rs_config, false).0
+    parse_all_timed(ParseAllTimedParams {
+        py_files,
+        rs_files,
+        py_config,
+        rs_config,
+        show_timing: false,
+    })
+    .0
 }
 
-pub fn parse_all_timed(
-    py_files: &[PathBuf],
-    rs_files: &[PathBuf],
-    py_config: &Config,
-    rs_config: &Config,
-    show_timing: bool,
-) -> (ParseResult, String) {
+pub fn parse_all_timed(p: ParseAllTimedParams<'_>) -> (ParseResult, String) {
     let ((py_parsed, mut viols, py_units, py_stmts), py_timing) =
-        parse_and_analyze_py_timed(py_files, py_config, show_timing);
-    let (rs_parsed, rs_viols, rs_units, rs_stmts) = parse_and_analyze_rs(rs_files, rs_config);
+        parse_and_analyze_py_timed(p.py_files, p.py_config, p.show_timing);
+    let (rs_parsed, rs_viols, rs_units, rs_stmts) = parse_and_analyze_rs(p.rs_files, p.rs_config);
     viols.extend(rs_viols);
     (
         ParseResult {

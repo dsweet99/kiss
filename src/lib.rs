@@ -1,3 +1,8 @@
+//! Library crate for kiss metrics and analysis.
+// `pub(crate)` in non-`pub` submodules is clearer than `pub` for crate-internal APIs; pedantic
+// `redundant_pub_crate` disagrees.
+#![allow(clippy::redundant_pub_crate)]
+
 pub mod cli_output;
 pub mod config;
 pub mod config_gen;
@@ -33,6 +38,8 @@ pub mod rust_units;
 pub mod layout_layers;
 pub mod layout_output;
 pub mod shrink;
+
+pub(crate) mod symbol_mv_support;
 
 #[cfg(test)]
 pub mod test_utils;

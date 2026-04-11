@@ -201,7 +201,10 @@ pub fn try_run_cached_all(
     let cache = load_full_cache(&fp)?;
     let (mut viols, py_dups, rs_dups, cache) =
         cached_duplicates(cache, opts.gate_config, focus_set);
-    viols.extend(cached_coverage_viols(&cache, focus_set));
+    // Match `collect_coverage_viols`: the `--all` bypass path emits per-definition coverage.
+    if opts.bypass_gate {
+        viols.extend(cached_coverage_viols(&cache, focus_set));
+    }
 
     println!(
         "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
