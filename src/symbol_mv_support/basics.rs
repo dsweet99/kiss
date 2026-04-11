@@ -7,7 +7,7 @@ pub fn detect_language(path: &Path) -> Result<Language, String> {
     match path.extension().and_then(|ext| ext.to_str()) {
         Some("py") => Ok(Language::Python),
         Some("rs") => Ok(Language::Rust),
-        _ => Err("query path must end in .py or .rs".to_string()),
+        _ => Err("source path must end in .py or .rs".to_string()),
     }
 }
 
@@ -17,18 +17,18 @@ pub fn parse_symbol_shape(
 ) -> Result<(String, Option<String>), String> {
     if let Some((base, member)) = symbol_part.split_once('.') {
         if member.contains('.') {
-            return Err("only one member separator is supported in QUERY".to_string());
+            return Err("only one member separator is supported in SOURCE".to_string());
         }
         if !is_valid_identifier(base, language) || !is_valid_identifier(member, language) {
             return Err(format!(
-                "invalid {} symbol in query",
+                "invalid {} symbol in source",
                 symbol_mv::language_name(language)
             ));
         }
         Ok((base.to_string(), Some(member.to_string())))
     } else if !is_valid_identifier(symbol_part, language) {
         Err(format!(
-            "invalid {} symbol in query",
+            "invalid {} symbol in source",
             symbol_mv::language_name(language)
         ))
     } else {

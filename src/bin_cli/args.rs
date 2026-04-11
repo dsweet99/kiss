@@ -182,9 +182,11 @@ pub enum Commands {
     },
     /// Semantic rename/move for Python and Rust symbols
     Mv {
-        /// Symbol query (`path.py::name`, `path.py::Class.method`, `path.rs::name`, `path.rs::Type.method`)
+        /// Source symbol (`path.py::name`, `path.py::Class.method`, `path.rs::name`, `path.rs::Type.method`)
+        #[arg(value_name = "SOURCE")]
         query: String,
-        /// New symbol name
+        /// Target name (bare identifier for the renamed symbol)
+        #[arg(value_name = "TARGET")]
         new_name: String,
         /// Paths to analyze for references
         #[arg(default_value = ".")]

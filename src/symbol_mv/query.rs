@@ -26,9 +26,9 @@ impl ParsedQuery {
 pub fn parse_mv_query(raw: &str) -> Result<ParsedQuery, String> {
     let (path_part, symbol_part) = raw
         .split_once("::")
-        .ok_or_else(|| "query must contain '::' (e.g. path.py::name)".to_string())?;
+        .ok_or_else(|| "source must contain '::' (e.g. path.py::name)".to_string())?;
     if path_part.is_empty() || symbol_part.is_empty() {
-        return Err("query path and symbol must both be non-empty".to_string());
+        return Err("source path and symbol must both be non-empty".to_string());
     }
     let path = PathBuf::from(path_part);
     let language = crate::symbol_mv_support::detect_language(&path)?;
@@ -44,10 +44,10 @@ pub fn parse_mv_query(raw: &str) -> Result<ParsedQuery, String> {
 
 pub fn validate_new_name(new_name: &str, language: Language) -> Result<(), String> {
     if new_name.is_empty() {
-        return Err("new_name cannot be empty".to_string());
+        return Err("target name cannot be empty".to_string());
     }
     if new_name.contains('.') || new_name.contains("::") {
-        return Err("new_name must be a bare identifier".to_string());
+        return Err("target must be a bare identifier".to_string());
     }
     if !crate::symbol_mv_support::is_valid_identifier(new_name, language) {
         return Err(format!(

@@ -31,7 +31,7 @@ fn validate_mv_options(opts: &MvOptions) -> Result<ParsedQuery, ()> {
         && lang_filter != query.language
     {
         eprintln!(
-            "Error: query language ({}) does not match --lang ({})",
+            "Error: source language ({}) does not match --lang ({})",
             query.language_name(),
             symbol_mv::language_name(lang_filter)
         );
