@@ -5,8 +5,8 @@ use crate::Language;
 
 pub fn detect_language(path: &Path) -> Result<Language, String> {
     match path.extension().and_then(|ext| ext.to_str()) {
-        Some("py") => Ok(Language::Python),
-        Some("rs") => Ok(Language::Rust),
+        Some(ext) if ext.eq_ignore_ascii_case("py") => Ok(Language::Python),
+        Some(ext) if ext.eq_ignore_ascii_case("rs") => Ok(Language::Rust),
         _ => Err("source path must end in .py or .rs".to_string()),
     }
 }

@@ -14,6 +14,14 @@ fn test_language_from_path() {
         Language::from_path(std::path::Path::new("bar.rs")),
         Some(Language::Rust)
     );
+    assert_eq!(
+        Language::from_path(std::path::Path::new("Foo.PY")),
+        Some(Language::Python)
+    );
+    assert_eq!(
+        Language::from_path(std::path::Path::new("Bar.RS")),
+        Some(Language::Rust)
+    );
     assert_eq!(Language::from_path(std::path::Path::new("file.txt")), None);
 }
 
@@ -37,6 +45,13 @@ fn test_find_python_files() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("a.py"), "").unwrap();
     fs::write(tmp.path().join("b.rs"), "").unwrap();
+    assert_eq!(find_python_files(tmp.path()).len(), 1);
+}
+
+#[test]
+fn test_find_python_files_uppercase_extension() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("mod.PY"), "").unwrap();
     assert_eq!(find_python_files(tmp.path()).len(), 1);
 }
 

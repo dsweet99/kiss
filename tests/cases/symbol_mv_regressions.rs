@@ -61,6 +61,31 @@ fn mv_json_mode_is_valid_json() {
 }
 
 #[test]
+fn regression_mv_json_without_dry_run_applies_edits() {
+    let tmp = TempDir::new().unwrap();
+    let source = tmp.path().join("a.py");
+    fs::write(&source, "def foo():\n    return 1\nfoo()\n").unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::foo", source.display()),
+        new_name: "bar".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: true,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+    let updated = fs::read_to_string(&source).unwrap();
+    assert!(
+        updated.contains("def bar(") && updated.contains("bar()"),
+        "expected JSON mode without --dry-run to apply renames; got:\n{updated}"
+    );
+}
+
+#[test]
 fn plan_edits_builds_request_from_public_types() {
     let tmp = TempDir::new().unwrap();
     let source = tmp.path().join("a.py");

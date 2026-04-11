@@ -18,9 +18,9 @@ pub fn run_mv_inner(opts: MvOptions) -> Result<(), ()> {
         print_json_plan(&plan).map_err(|err| eprintln!("Error: failed to serialize plan: {err}"))?;
     } else {
         print_human_plan(&plan);
-        if !opts.dry_run {
-            symbol_mv::apply_plan_transactional(&plan).map_err(|err| eprintln!("Error: {err}"))?;
-        }
+    }
+    if !opts.dry_run {
+        symbol_mv::apply_plan_transactional(&plan).map_err(|err| eprintln!("Error: {err}"))?;
     }
     Ok(())
 }

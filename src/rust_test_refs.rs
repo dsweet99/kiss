@@ -29,7 +29,9 @@ pub struct RustTestRefAnalysis {
 }
 
 fn is_rs_file(path: &Path) -> bool {
-    path.extension().and_then(|e| e.to_str()) == Some("rs")
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
 }
 
 fn has_test_naming_pattern(path: &Path) -> bool {
@@ -559,6 +561,14 @@ mod tests {
         );
         assert!(!is_rust_test_file(Path::new("src/main.rs")));
         assert!(is_rs_file(Path::new("foo.rs")) && !is_rs_file(Path::new("foo.py")));
+        assert!(
+            is_rs_file(Path::new("foo.RS")),
+            ".RS extension must match Rust (Path::extension preserves case)"
+        );
+        assert!(
+            is_rust_test_file(Path::new("bar_test.RS")),
+            "Rust test file detection must accept uppercase .RS"
+        );
         assert!(
             has_test_naming_pattern(Path::new("test_foo.rs"))
                 && !has_test_naming_pattern(Path::new("foo.rs"))

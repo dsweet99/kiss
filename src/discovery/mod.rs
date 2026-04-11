@@ -11,13 +11,15 @@ pub enum Language {
 impl Language {
     pub fn from_path(path: &Path) -> Option<Self> {
         path.extension().and_then(|ext| {
-            if ext == "py" {
-                Some(Self::Python)
-            } else if ext == "rs" {
-                Some(Self::Rust)
-            } else {
-                None
-            }
+            ext.to_str().and_then(|s| {
+                if s.eq_ignore_ascii_case("py") {
+                    Some(Self::Python)
+                } else if s.eq_ignore_ascii_case("rs") {
+                    Some(Self::Rust)
+                } else {
+                    None
+                }
+            })
         })
     }
 
@@ -148,7 +150,7 @@ fn process_ext_entry(
     if !entry.file_type().is_some_and(|ft| ft.is_file()) {
         return WalkState::Continue;
     }
-    if entry.path().extension().is_some_and(|e| e == ext) {
+    if entry.path().extension().is_some_and(|e| e.eq_ignore_ascii_case(ext)) {
         results.lock().unwrap().push(entry.into_path());
     }
     WalkState::Continue

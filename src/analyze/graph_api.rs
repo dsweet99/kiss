@@ -27,9 +27,9 @@ pub fn graph_for_path<'a>(
 ) -> Option<&'a DependencyGraph> {
     path.extension().and_then(|e| {
         e.to_str().and_then(|ext| {
-            if ext == "py" {
+            if ext.eq_ignore_ascii_case("py") {
                 py_graph
-            } else if ext == "rs" {
+            } else if ext.eq_ignore_ascii_case("rs") {
                 rs_graph
             } else {
                 None
@@ -121,5 +121,22 @@ mod graph_api_touch {
     fn struct_sizes_for_gate() {
         let _ = std::mem::size_of::<GraphConfigs>();
         let _ = std::mem::size_of::<AnalyzeGraphsIn>();
+    }
+}
+
+#[cfg(test)]
+mod graph_for_path_extension_tests {
+    use super::graph_for_path;
+    use kiss::DependencyGraph;
+    use std::path::Path;
+
+    /// Regression: `Path::extension()` preserves casing (e.g. `.PY`); matching must be ASCII-insensitive.
+    #[test]
+    fn graph_for_path_accepts_uppercase_py_and_rs_extensions() {
+        let py = DependencyGraph::new();
+        let rs = DependencyGraph::new();
+        assert!(graph_for_path(Path::new("pkg/mod.PY"), Some(&py), None).is_some());
+        assert!(graph_for_path(Path::new("src/lib.RS"), None, Some(&rs)).is_some());
+        assert!(graph_for_path(Path::new("x.txt"), Some(&py), None).is_none());
     }
 }

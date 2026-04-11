@@ -20,6 +20,8 @@ fn basics_detect_and_parse() {
         Language::Python
     );
     assert_eq!(detect_language(Path::new("x.rs")).unwrap(), Language::Rust);
+    assert_eq!(detect_language(Path::new("x.PY")).unwrap(), Language::Python);
+    assert_eq!(detect_language(Path::new("x.RS")).unwrap(), Language::Rust);
     assert!(detect_language(Path::new("x.txt")).is_err());
 
     let (s, m) = parse_symbol_shape("Foo.bar", Language::Rust).unwrap();

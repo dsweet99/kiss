@@ -40,7 +40,7 @@ fn has_python_test_naming(path: &Path) -> bool {
         .is_some_and(|name| {
             (name.starts_with("test_") && is_py)
                 || (name.len() > 8 && name[..name.len() - 3].ends_with("_test") && is_py)
-                || name == "conftest.py"
+                || name.eq_ignore_ascii_case("conftest.py")
         })
 }
 
@@ -954,6 +954,10 @@ mod tests {
         assert!(
             is_test_file(Path::new("conftest.py")),
             "conftest.py at any level"
+        );
+        assert!(
+            is_test_file(Path::new("conftest.PY")),
+            "pytest conftest basename is case-insensitive on disk"
         );
         assert!(!is_test_file(Path::new("tests/helpers.py")));
         assert!(!is_test_file(Path::new("src/utils.py")));
