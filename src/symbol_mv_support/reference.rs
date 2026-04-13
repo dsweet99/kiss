@@ -29,7 +29,35 @@ fn is_python_reference_site(ctx: &RefSiteCtx<'_>) -> bool {
     if py_import_allows(before, ctx.owner) {
         return true;
     }
+    if py_from_clause_allows(before, ctx.owner) {
+        return true;
+    }
+    if py_binding_keyword_allows(before, ctx.owner) {
+        return true;
+    }
+    if py_await_allows(before, ctx.owner) {
+        return true;
+    }
     py_non_def_site(ctx, before)
+}
+
+/// `raise X from exc` — the exception name after `from` is a reference site.
+fn py_from_clause_allows(before: &str, owner: Option<&str>) -> bool {
+    owner.is_none() && before.ends_with(" from ")
+}
+
+/// `global x`, `nonlocal x`, `del x` — name after keyword is a reference site.
+fn py_binding_keyword_allows(before: &str, owner: Option<&str>) -> bool {
+    if owner.is_some() {
+        return false;
+    }
+    before.ends_with("global ")
+        || before.ends_with("nonlocal ")
+        || before.ends_with("del ")
+}
+
+fn py_await_allows(before: &str, owner: Option<&str>) -> bool {
+    owner.is_none() && before.ends_with("await ")
 }
 
 fn py_def_owner_ok(ctx: &RefSiteCtx<'_>) -> bool {
@@ -45,7 +73,27 @@ fn py_def_owner_ok(ctx: &RefSiteCtx<'_>) -> bool {
 }
 
 fn py_import_allows(before: &str, owner: Option<&str>) -> bool {
-    (before.ends_with("import ") || before.ends_with(", ")) && owner.is_none()
+    if owner.is_some() {
+        return false;
+    }
+    if before.ends_with("import ") || before.ends_with(", ") {
+        return true;
+    }
+    let line_start = before.rfind('\n').map_or(0, |idx| idx + 1);
+    let prefix_on_line = &before[line_start..];
+    if prefix_on_line.trim().is_empty() {
+        let prev = before.get(..line_start.saturating_sub(1)).unwrap_or("");
+        let prev_line_start = prev.rfind('\n').map_or(0, |idx| idx + 1);
+        let prev_line = &prev[prev_line_start..];
+        let t = prev_line.trim_end();
+        if t.ends_with("import (") || t.ends_with(", (") {
+            return true;
+        }
+        // `from pkg import \\n name` or `from pkg import (a, \\n name)` — line ends with `\`
+        return t.ends_with('\\') && t.contains("import");
+    }
+    let t = prefix_on_line.trim_end();
+    t.ends_with("import (") || t.ends_with(", (")
 }
 
 fn py_non_def_site(ctx: &RefSiteCtx<'_>, before: &str) -> bool {
@@ -177,6 +225,9 @@ mod reference_coverage {
         let _ = is_python_reference_site(&ctx);
         let _ = py_def_owner_ok(&ctx);
         let _ = py_import_allows("from m import ", None);
+        let _ = py_from_clause_allows("raise RuntimeError() from ", None);
+        let _ = py_binding_keyword_allows("nonlocal ", None);
+        let _ = py_await_allows("return await ", None);
         let _ = py_non_def_site(&ctx, "x");
         let _ = is_inside_any_class("class C:\n pass\n", 8);
         let _ = type_from_assignment_rhs("Bar()");

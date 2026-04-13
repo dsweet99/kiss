@@ -707,6 +707,277 @@ fn regression_move_rename_should_move_python_decorators_and_preserve_literals() 
 }
 
 #[test]
+fn regression_rename_updates_parenthesized_from_import() {
+    let tmp = TempDir::new().unwrap();
+    let def_file = tmp.path().join("a.py");
+    let caller_file = tmp.path().join("b.py");
+
+    fs::write(&def_file, "def foo():\n    return 1\n").unwrap();
+    fs::write(&caller_file, "from a import (foo)\n").unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::foo", def_file.display()),
+        new_name: "bar".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated_caller = fs::read_to_string(&caller_file).unwrap();
+    assert!(
+        updated_caller.contains("from a import (bar)"),
+        "parenthesized from-import should rename the symbol; got:\n{updated_caller}"
+    );
+}
+
+#[test]
+fn regression_rename_updates_backslash_continued_from_import() {
+    let tmp = TempDir::new().unwrap();
+    let def_file = tmp.path().join("a.py");
+    let caller_file = tmp.path().join("b.py");
+
+    fs::write(&def_file, "def foo():\n    return 1\n").unwrap();
+    fs::write(&caller_file, "from a import \\\n    foo\n").unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::foo", def_file.display()),
+        new_name: "bar".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated_caller = fs::read_to_string(&caller_file).unwrap();
+    assert!(
+        updated_caller.contains("from a import \\\n    bar"),
+        "backslash-continued from-import should rename; got:\n{updated_caller}"
+    );
+}
+
+#[test]
+fn regression_rename_nonlocal_binding() {
+    let tmp = TempDir::new().unwrap();
+    let def_file = tmp.path().join("a.py");
+    let caller_file = tmp.path().join("b.py");
+
+    fs::write(&def_file, "def spam():\n    return 1\n").unwrap();
+    fs::write(
+        &caller_file,
+        "def outer():\n    def spam():\n        return 2\n    def inner():\n        nonlocal spam\n        return spam()\n",
+    )
+    .unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::spam", def_file.display()),
+        new_name: "eggs".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated = fs::read_to_string(&caller_file).unwrap();
+    assert!(
+        updated.contains("nonlocal eggs"),
+        "`nonlocal` target should match nested def rename; got:\n{updated}"
+    );
+}
+
+#[test]
+fn regression_rename_global_binding_in_same_file() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("m.py");
+
+    fs::write(
+        &file,
+        "def spam():\n    return 1\n\ndef g():\n    global spam\n    return spam()\n",
+    )
+    .unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::spam", file.display()),
+        new_name: "eggs".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated = fs::read_to_string(&file).unwrap();
+    assert!(
+        updated.contains("global eggs"),
+        "`global` should rename with the symbol; got:\n{updated}"
+    );
+}
+
+#[test]
+fn regression_rename_await_expression() {
+    let tmp = TempDir::new().unwrap();
+    let def_file = tmp.path().join("a.py");
+    let caller_file = tmp.path().join("b.py");
+
+    fs::write(&def_file, "async def spam():\n    return 1\n").unwrap();
+    fs::write(&caller_file, "async def g():\n    return await spam\n").unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::spam", def_file.display()),
+        new_name: "eggs".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated = fs::read_to_string(&caller_file).unwrap();
+    assert!(
+        updated.contains("return await eggs"),
+        "`await` operand should rename; got:\n{updated}"
+    );
+}
+
+#[test]
+fn regression_rename_del_statement() {
+    let tmp = TempDir::new().unwrap();
+    let def_file = tmp.path().join("a.py");
+    let caller_file = tmp.path().join("b.py");
+
+    fs::write(&def_file, "def spam():\n    pass\n").unwrap();
+    fs::write(&caller_file, "def g():\n    del spam\n").unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::spam", def_file.display()),
+        new_name: "eggs".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated = fs::read_to_string(&caller_file).unwrap();
+    assert!(
+        updated.contains("del eggs"),
+        "`del` target should rename; got:\n{updated}"
+    );
+}
+
+#[test]
+fn regression_rename_raise_from_exception_cause() {
+    let tmp = TempDir::new().unwrap();
+    let def_file = tmp.path().join("a.py");
+    let caller_file = tmp.path().join("b.py");
+
+    fs::write(&def_file, "def foo():\n    pass\n").unwrap();
+    fs::write(
+        &caller_file,
+        "def g():\n    try:\n        1 / 0\n    except ZeroDivisionError as e:\n        raise RuntimeError('x') from foo\n",
+    )
+    .unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::foo", def_file.display()),
+        new_name: "bar".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated_caller = fs::read_to_string(&caller_file).unwrap();
+    assert!(
+        updated_caller.contains("raise RuntimeError('x') from bar"),
+        "`raise ... from <exc>` should rename the chained exception; got:\n{updated_caller}"
+    );
+}
+
+#[test]
+fn regression_rename_updates_backslash_inside_parenthesized_from_import() {
+    let tmp = TempDir::new().unwrap();
+    let def_file = tmp.path().join("a.py");
+    let caller_file = tmp.path().join("b.py");
+
+    fs::write(&def_file, "def bar():\n    return 1\n").unwrap();
+    fs::write(&caller_file, "from a import (foo, \\\n    bar)\n").unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::bar", def_file.display()),
+        new_name: "baz".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated_caller = fs::read_to_string(&caller_file).unwrap();
+    assert!(
+        updated_caller.contains("from a import (foo, \\\n    baz)"),
+        "backslash after comma in parenthesized import should rename; got:\n{updated_caller}"
+    );
+}
+
+#[test]
+fn regression_rename_updates_multiline_parenthesized_from_import() {
+    let tmp = TempDir::new().unwrap();
+    let def_file = tmp.path().join("a.py");
+    let caller_file = tmp.path().join("b.py");
+
+    fs::write(&def_file, "def foo():\n    return 1\n").unwrap();
+    fs::write(&caller_file, "from a import (\n    foo\n)\n").unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::foo", def_file.display()),
+        new_name: "bar".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated_caller = fs::read_to_string(&caller_file).unwrap();
+    assert!(
+        updated_caller.contains("from a import (\n    bar\n)"),
+        "multiline parenthesized from-import should rename the symbol; got:\n{updated_caller}"
+    );
+}
+
+#[test]
 fn regression_move_rename_should_keep_rust_attributes_visibility_and_comments() {
     let tmp = TempDir::new().unwrap();
     let src = tmp.path().join("source.rs");
