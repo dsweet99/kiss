@@ -1,6 +1,6 @@
 use crate::Language;
 
-use super::lex::rust_item_start;
+use super::lex::{rust_item_start, step_lex_state, LexScan, LexState, StringState};
 
 #[derive(Clone, Copy)]
 pub struct DefinitionSpan {
@@ -114,20 +114,37 @@ fn find_rust_definition_span(
 }
 
 pub(super) fn find_brace_block_end(content: &str, open_brace: usize) -> Option<usize> {
+    let bytes = content.as_bytes();
     let mut depth = 0usize;
-    for (idx, ch) in content[open_brace..].char_indices() {
-        match ch {
-            '{' => depth += 1,
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(open_brace + idx + 1);
+    let mut idx = open_brace;
+    let mut state = LexState::default();
+    while idx < bytes.len() {
+        if !rust_lexer_is_inside_non_code(&state) {
+            match bytes[idx] {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Some(idx + 1);
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
+        let mut scan = LexScan {
+            state: &mut state,
+            bytes,
+            idx,
+            target: bytes.len(),
+            language: Language::Rust,
+        };
+        idx += step_lex_state(&mut scan);
     }
     None
+}
+
+fn rust_lexer_is_inside_non_code(state: &LexState) -> bool {
+    state.line_comment || state.block_comment_depth > 0 || state.string_state != StringState::None
 }
 
 pub(super) fn find_impl_block(content: &str, owner: &str) -> Option<(usize, usize)> {
@@ -191,6 +208,12 @@ mod definition_coverage {
         let src = "{ a { b } }";
         let open = src.find('{').unwrap();
         assert_eq!(find_brace_block_end(src, open), Some(src.len()));
+        let src_with_string = "fn foo() { let s = \"}\"; foo(); }";
+        let open_with_string = src_with_string.find('{').unwrap();
+        assert_eq!(
+            find_brace_block_end(src_with_string, open_with_string),
+            Some(src_with_string.len())
+        );
         let impl_src = "impl Foo { fn x() {} }";
         let (lo, hi) = find_impl_block(impl_src, "Foo").unwrap();
         assert!(hi > lo);

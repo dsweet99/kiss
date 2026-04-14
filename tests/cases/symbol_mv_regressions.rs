@@ -1157,3 +1157,53 @@ fn regression_rust_char_literal_with_double_quote_should_not_break_lexer() {
         "recursive call after char literal should be renamed to foo; got:\n{updated_dest}",
     );
 }
+
+#[test]
+fn regression_rust_move_should_not_break_on_brace_inside_string_literal() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("source.rs");
+    let dest = tmp.path().join("dest.rs");
+
+    fs::write(
+        &src,
+        r#"fn foo() {
+    let s = "}";
+    foo();
+}
+"#,
+    )
+    .unwrap();
+    fs::write(&dest, "// destination\n").unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::foo", src.display()),
+        new_name: "bar".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: Some(dest.clone()),
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Rust),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated_src = fs::read_to_string(&src).unwrap();
+    let updated_dest = fs::read_to_string(&dest).unwrap();
+    assert!(
+        updated_dest.contains("fn bar()"),
+        "function definition should be renamed to bar"
+    );
+    assert!(
+        updated_dest.contains(r#"let s = "}";"#),
+        "string literal containing a closing brace should remain intact after move; got:\n{updated_dest}",
+    );
+    assert!(
+        updated_dest.contains("bar();"),
+        "recursive call after brace-containing string should be renamed to bar; got:\n{updated_dest}",
+    );
+    assert!(
+        !updated_src.contains("bar();"),
+        "moved recursive call should not be left stranded in the source file; got:\n{updated_src}",
+    );
+}
