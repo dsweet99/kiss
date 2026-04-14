@@ -3,13 +3,22 @@ use crate::Language;
 use super::identifiers::line_start_offset;
 use super::identifiers::previous_line_bounds;
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StringState {
+    #[default]
+    None,
+    Single,
+    Double,
+    TripleSingle,
+    TripleDouble,
+    RawString(usize),
+}
+
 #[derive(Default)]
 pub(super) struct LexState {
     pub line_comment: bool,
     pub block_comment_depth: usize,
-    pub in_single: bool,
-    pub in_double: bool,
-    pub raw_string_hashes: Option<usize>,
+    pub string_state: StringState,
 }
 
 pub(super) struct LexScan<'a> {
@@ -36,9 +45,7 @@ pub(super) fn is_code_offset(content: &str, target: usize, language: Language) -
     }
     !(state.line_comment
         || state.block_comment_depth > 0
-        || state.in_single
-        || state.in_double
-        || state.raw_string_hashes.is_some())
+        || state.string_state != StringState::None)
 }
 
 pub(super) fn step_lex_state(scan: &mut LexScan<'_>) -> usize {
@@ -55,11 +62,17 @@ pub(super) fn step_lex_state(scan: &mut LexScan<'_>) -> usize {
     if state.block_comment_depth > 0 {
         return step_block_comment(state, bytes, idx, target);
     }
-    if let Some(hash_count) = state.raw_string_hashes {
-        return step_raw_string_state(state, bytes, idx, target, hash_count);
-    }
-    if state.in_single || state.in_double {
-        return step_string_state(state, bytes, idx, target);
+    match state.string_state {
+        StringState::RawString(hash_count) => {
+            return step_raw_string_state(state, bytes, idx, target, hash_count);
+        }
+        StringState::TripleSingle | StringState::TripleDouble => {
+            return step_triple_string_state(state, bytes, idx, target);
+        }
+        StringState::Single | StringState::Double => {
+            return step_string_state(state, bytes, idx, target);
+        }
+        StringState::None => {}
     }
     step_code_state(scan)
 }
@@ -80,10 +93,27 @@ fn step_string_state(state: &mut LexState, bytes: &[u8], idx: usize, target: usi
     if bytes[idx] == b'\\' && idx + 1 < target {
         return 2;
     }
-    if state.in_single && bytes[idx] == b'\'' {
-        state.in_single = false;
-    } else if state.in_double && bytes[idx] == b'"' {
-        state.in_double = false;
+    match state.string_state {
+        StringState::Single if bytes[idx] == b'\'' => state.string_state = StringState::None,
+        StringState::Double if bytes[idx] == b'"' => state.string_state = StringState::None,
+        _ => {}
+    }
+    1
+}
+
+fn step_triple_string_state(state: &mut LexState, bytes: &[u8], idx: usize, target: usize) -> usize {
+    if bytes[idx] == b'\\' && idx + 1 < target {
+        return 2;
+    }
+    let quote = if state.string_state == StringState::TripleSingle {
+        b'\''
+    } else {
+        b'"'
+    };
+    if bytes[idx] == quote && idx + 2 < target && bytes[idx + 1] == quote && bytes[idx + 2] == quote
+    {
+        state.string_state = StringState::None;
+        return 3;
     }
     1
 }
@@ -105,6 +135,27 @@ fn try_parse_raw_string_start(bytes: &[u8], idx: usize, target: usize) -> Option
     }
 }
 
+fn try_parse_char_literal(bytes: &[u8], idx: usize, target: usize) -> Option<usize> {
+    if bytes[idx] != b'\'' || idx + 1 >= target {
+        return None;
+    }
+    let next = bytes[idx + 1];
+    if next == b'\\' {
+        // Escaped char: '\n', '\'', '\x41', '\u{...}', etc.
+        let mut end = idx + 2;
+        while end < target && bytes[end] != b'\'' {
+            end += 1;
+        }
+        if end < target && bytes[end] == b'\'' {
+            return Some(end - idx + 1);
+        }
+    } else if idx + 2 < target && bytes[idx + 2] == b'\'' {
+        // Simple char literal: 'a', '"', etc.
+        return Some(3);
+    }
+    None
+}
+
 fn step_raw_string_state(
     state: &mut LexState,
     bytes: &[u8],
@@ -122,7 +173,7 @@ fn step_raw_string_state(
         check_idx += 1;
     }
     if hashes_found == hash_count {
-        state.raw_string_hashes = None;
+        state.string_state = StringState::None;
         1 + hash_count
     } else {
         1
@@ -135,43 +186,65 @@ fn step_code_state(scan: &mut LexScan<'_>) -> usize {
     let idx = scan.idx;
     let target = scan.target;
     match scan.language {
-        Language::Python => match bytes[idx] {
-            b'#' => {
-                state.line_comment = true;
-                1
-            }
-            b'\'' => {
-                state.in_single = true;
-                1
-            }
-            b'"' => {
-                state.in_double = true;
-                1
-            }
-            _ => 1,
-        },
-        Language::Rust => {
-            if idx + 1 < target && bytes[idx] == b'/' && bytes[idx + 1] == b'/' {
-                state.line_comment = true;
-                2
-            } else if idx + 1 < target && bytes[idx] == b'/' && bytes[idx + 1] == b'*' {
-                state.block_comment_depth = 1;
-                2
-            } else if bytes[idx] == b'r' && idx + 1 < target {
-                if let Some((hash_count, consumed)) = try_parse_raw_string_start(bytes, idx, target)
-                {
-                    state.raw_string_hashes = Some(hash_count);
-                    return consumed;
-                }
-                1
-            } else if bytes[idx] == b'"' {
-                state.in_double = true;
-                1
-            } else {
-                1
-            }
-        }
+        Language::Python => step_python_code_state(state, bytes, idx, target),
+        Language::Rust => step_rust_code_state(state, bytes, idx, target),
     }
+}
+
+fn step_python_code_state(
+    state: &mut LexState,
+    bytes: &[u8],
+    idx: usize,
+    target: usize,
+) -> usize {
+    if bytes[idx] == b'#' {
+        state.line_comment = true;
+        return 1;
+    }
+    if bytes[idx] == b'\'' {
+        if idx + 2 < target && bytes[idx + 1] == b'\'' && bytes[idx + 2] == b'\'' {
+            state.string_state = StringState::TripleSingle;
+            return 3;
+        }
+        state.string_state = StringState::Single;
+        return 1;
+    }
+    if bytes[idx] == b'"' {
+        if idx + 2 < target && bytes[idx + 1] == b'"' && bytes[idx + 2] == b'"' {
+            state.string_state = StringState::TripleDouble;
+            return 3;
+        }
+        state.string_state = StringState::Double;
+        return 1;
+    }
+    1
+}
+
+fn step_rust_code_state(
+    state: &mut LexState,
+    bytes: &[u8],
+    idx: usize,
+    target: usize,
+) -> usize {
+    if idx + 1 < target && bytes[idx] == b'/' && bytes[idx + 1] == b'/' {
+        state.line_comment = true;
+        return 2;
+    }
+    if idx + 1 < target && bytes[idx] == b'/' && bytes[idx + 1] == b'*' {
+        state.block_comment_depth = 1;
+        return 2;
+    }
+    if let Some((hash_count, consumed)) = try_parse_raw_string_start(bytes, idx, target) {
+        state.string_state = StringState::RawString(hash_count);
+        return consumed;
+    }
+    if let Some(consumed) = try_parse_char_literal(bytes, idx, target) {
+        return consumed;
+    }
+    if bytes[idx] == b'"' {
+        state.string_state = StringState::Double;
+    }
+    1
 }
 
 pub(super) fn rust_item_start(content: &str, offset: usize) -> usize {
@@ -214,7 +287,7 @@ mod lex_coverage {
         let _ = step_code_state(&mut scan2);
         let _ = step_block_comment(&mut LexState::default(), b"/*", 0, 2);
         let mut st3 = LexState {
-            in_single: true,
+            string_state: StringState::Single,
             ..LexState::default()
         };
         let _ = step_string_state(&mut st3, b"'", 0, 1);

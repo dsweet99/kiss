@@ -1072,3 +1072,88 @@ fn regression_rust_raw_string_with_embedded_quotes_should_not_rename() {
         "raw string with embedded quotes should NOT be modified; got:\n{updated_dest}",
     );
 }
+
+#[test]
+fn regression_python_triple_quoted_string_with_embedded_quote_should_not_rename() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("source.py");
+    let dest = tmp.path().join("dest.py");
+
+    fs::write(
+        &src,
+        r#"def bar():
+    """This docstring mentions "bar" in quotes"""
+    return bar()
+"#,
+    )
+    .unwrap();
+    fs::write(&dest, "# destination\n").unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::bar", src.display()),
+        new_name: "foo".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: Some(dest.clone()),
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated_dest = fs::read_to_string(&dest).unwrap();
+    assert!(
+        updated_dest.contains("def foo():"),
+        "function definition should be renamed to foo"
+    );
+    assert!(
+        updated_dest.contains("return foo()"),
+        "recursive call should be renamed to foo"
+    );
+    assert!(
+        updated_dest.contains(r#"mentions "bar" in quotes"#),
+        "identifier inside triple-quoted string with embedded quotes should NOT be modified; got:\n{updated_dest}",
+    );
+}
+
+#[test]
+fn regression_rust_char_literal_with_double_quote_should_not_break_lexer() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("source.rs");
+    let dest = tmp.path().join("dest.rs");
+
+    fs::write(
+        &src,
+        r#"fn bar() {
+    let q = '"';
+    bar();
+}
+"#,
+    )
+    .unwrap();
+    fs::write(&dest, "// destination\n").unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::bar", src.display()),
+        new_name: "foo".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: Some(dest.clone()),
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Rust),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated_dest = fs::read_to_string(&dest).unwrap();
+    assert!(
+        updated_dest.contains("fn foo()"),
+        "function definition should be renamed to foo"
+    );
+    assert!(
+        updated_dest.contains("foo();"),
+        "recursive call after char literal should be renamed to foo; got:\n{updated_dest}",
+    );
+}
