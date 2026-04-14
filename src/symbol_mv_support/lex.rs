@@ -9,6 +9,7 @@ pub(super) struct LexState {
     pub block_comment_depth: usize,
     pub in_single: bool,
     pub in_double: bool,
+    pub raw_string_hashes: Option<usize>,
 }
 
 pub(super) struct LexScan<'a> {
@@ -33,7 +34,11 @@ pub(super) fn is_code_offset(content: &str, target: usize, language: Language) -
         };
         idx += step_lex_state(&mut scan);
     }
-    !(state.line_comment || state.block_comment_depth > 0 || state.in_single || state.in_double)
+    !(state.line_comment
+        || state.block_comment_depth > 0
+        || state.in_single
+        || state.in_double
+        || state.raw_string_hashes.is_some())
 }
 
 pub(super) fn step_lex_state(scan: &mut LexScan<'_>) -> usize {
@@ -49,6 +54,9 @@ pub(super) fn step_lex_state(scan: &mut LexScan<'_>) -> usize {
     }
     if state.block_comment_depth > 0 {
         return step_block_comment(state, bytes, idx, target);
+    }
+    if let Some(hash_count) = state.raw_string_hashes {
+        return step_raw_string_state(state, bytes, idx, target, hash_count);
     }
     if state.in_single || state.in_double {
         return step_string_state(state, bytes, idx, target);
@@ -80,6 +88,47 @@ fn step_string_state(state: &mut LexState, bytes: &[u8], idx: usize, target: usi
     1
 }
 
+fn try_parse_raw_string_start(bytes: &[u8], idx: usize, target: usize) -> Option<(usize, usize)> {
+    if bytes[idx] != b'r' {
+        return None;
+    }
+    let mut hash_count = 0;
+    let mut check_idx = idx + 1;
+    while check_idx < target && bytes[check_idx] == b'#' {
+        hash_count += 1;
+        check_idx += 1;
+    }
+    if check_idx < target && bytes[check_idx] == b'"' {
+        Some((hash_count, 1 + hash_count + 1))
+    } else {
+        None
+    }
+}
+
+fn step_raw_string_state(
+    state: &mut LexState,
+    bytes: &[u8],
+    idx: usize,
+    target: usize,
+    hash_count: usize,
+) -> usize {
+    if bytes[idx] != b'"' {
+        return 1;
+    }
+    let mut hashes_found = 0;
+    let mut check_idx = idx + 1;
+    while check_idx < target && bytes[check_idx] == b'#' && hashes_found < hash_count {
+        hashes_found += 1;
+        check_idx += 1;
+    }
+    if hashes_found == hash_count {
+        state.raw_string_hashes = None;
+        1 + hash_count
+    } else {
+        1
+    }
+}
+
 fn step_code_state(scan: &mut LexScan<'_>) -> usize {
     let state = &mut *scan.state;
     let bytes = scan.bytes;
@@ -108,6 +157,13 @@ fn step_code_state(scan: &mut LexScan<'_>) -> usize {
             } else if idx + 1 < target && bytes[idx] == b'/' && bytes[idx + 1] == b'*' {
                 state.block_comment_depth = 1;
                 2
+            } else if bytes[idx] == b'r' && idx + 1 < target {
+                if let Some((hash_count, consumed)) = try_parse_raw_string_start(bytes, idx, target)
+                {
+                    state.raw_string_hashes = Some(hash_count);
+                    return consumed;
+                }
+                1
             } else if bytes[idx] == b'"' {
                 state.in_double = true;
                 1

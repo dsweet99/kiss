@@ -1031,3 +1031,44 @@ fn regression_move_rename_should_keep_rust_attributes_visibility_and_comments() 
         "recursive Rust calls should still be renamed"
     );
 }
+
+#[test]
+fn regression_rust_raw_string_with_embedded_quotes_should_not_rename() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("source.rs");
+    let dest = tmp.path().join("dest.rs");
+
+    fs::write(
+        &src,
+        "fn foo() {\n    let s = r#\"has \"foo\" embedded\"#;\n    foo();\n}\n",
+    )
+    .unwrap();
+    fs::write(&dest, "// destination\n").unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::foo", src.display()),
+        new_name: "bar".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: Some(dest.clone()),
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Rust),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated_dest = fs::read_to_string(&dest).unwrap();
+    assert!(
+        updated_dest.contains("fn bar()"),
+        "function should be renamed to bar"
+    );
+    assert!(
+        updated_dest.contains("bar();"),
+        "recursive call should be renamed to bar"
+    );
+    assert!(
+        updated_dest.contains(r##"r#"has "foo" embedded"#"##),
+        "raw string with embedded quotes should NOT be modified; got:\n{updated_dest}",
+    );
+}
