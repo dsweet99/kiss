@@ -122,7 +122,7 @@ pub fn analyze_cycles(graph: &DependencyGraph) -> LayoutCycleAnalysis {
             let suggested_break = find_deterministic_break_edge(graph, &scc)?;
 
             let reason = format!(
-                "Edge '{}' -> '{}' selected (alphabetically first source in cycle)",
+                "Edge '{}' -> '{}' selected (alphabetically first). Consider min-cut analysis for optimal break point.",
                 suggested_break.0, suggested_break.1
             );
 
