@@ -290,3 +290,43 @@ fn test_visit_macro_tokens_direct() {
     references::visit_macro_tokens(&tokens, &mut refs);
     assert!(refs.contains("foo") || refs.contains("bar"));
 }
+
+#[test]
+fn test_is_binary_entry_point() {
+    assert!(definitions::is_binary_entry_point(Path::new("src/main.rs")));
+    assert!(definitions::is_binary_entry_point(Path::new("main.rs")));
+    assert!(definitions::is_binary_entry_point(Path::new("src/bin/foo.rs")));
+    assert!(!definitions::is_binary_entry_point(Path::new("src/lib.rs")));
+    assert!(!definitions::is_binary_entry_point(Path::new("tests/main.rs")));
+}
+
+#[test]
+fn test_trivial_binary_main_detection() {
+    fn check(code: &str, path: &str, expect_trivial: bool, msg: &str) {
+        let ast: syn::File = syn::parse_str(code).unwrap();
+        if let syn::Item::Fn(f) = &ast.items[0] {
+            assert_eq!(definitions::is_trivial_binary_main(f, Path::new(path)), expect_trivial, "{msg}");
+        }
+    }
+    check("fn main() { lib::run(); }", "src/main.rs", true, "qualified call");
+    check("fn main() -> Result<(), E> { lib::run()?; Ok(()) }", "main.rs", true, "? operator");
+    check("fn main() { if let Err(e) = lib::run() { std::process::exit(1); } }", "main.rs", true, "error handling");
+    check("fn main() { run(); }", "src/main.rs", false, "unqualified call");
+    check("fn main() { fn h() {} h(); }", "main.rs", false, "local fn");
+    check("fn main() { lib::run(); }", "src/lib.rs", false, "not entry point");
+}
+
+#[test]
+fn test_trivial_main_skipped_in_definitions() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let main_path = tmp.path().join("main.rs");
+    std::fs::write(&main_path, "fn main() { hello_world::run(); }").unwrap();
+    let parsed = parse_rust_file(&main_path).unwrap();
+    let analysis = analyze_rust_test_refs(&[&parsed], None);
+    assert!(!analysis.definitions.iter().any(|d| d.name == "main"), "trivial main excluded");
+
+    std::fs::write(&main_path, "fn main() { compute_stuff(); }").unwrap();
+    let parsed = parse_rust_file(&main_path).unwrap();
+    let analysis = analyze_rust_test_refs(&[&parsed], None);
+    assert!(analysis.definitions.iter().any(|d| d.name == "main"), "nontrivial main included");
+}
