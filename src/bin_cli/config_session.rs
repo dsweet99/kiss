@@ -98,3 +98,29 @@ pub fn config_provenance() -> String {
     );
     format!("Config: defaults + ~/.kissconfig ({home_status}) + ./.kissconfig ({local_status})")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_run_init_command_nonexistent_path() {
+        let result = run_init_command(Path::new("/nonexistent/path/xyz"));
+        assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn test_run_init_command_file_not_dir() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let result = run_init_command(tmp.path());
+        assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn test_run_init_command_existing_config() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join(".kissconfig"), "# existing").unwrap();
+        let result = run_init_command(tmp.path());
+        assert_eq!(result, 0);
+    }
+}

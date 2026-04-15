@@ -1,0 +1,136 @@
+use super::{RuleSpec, ThresholdValue};
+
+pub(super) const RS_RULE_SPECS: &[RuleSpec] = &[
+    RuleSpec {
+        metric: "statements_per_function",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.statements_per_function),
+        description: "statements_per_function is the maximum number of statements in a Rust function/method body.",
+    },
+    RuleSpec {
+        metric: "arguments_per_function",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.arguments_per_function),
+        description: "arguments_per_function is the maximum number of non-self parameters in a Rust function/method signature.",
+    },
+    RuleSpec {
+        metric: "max_indentation_depth",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.max_indentation_depth),
+        description: "max_indentation_depth is the maximum indentation depth within a Rust function/method body.",
+    },
+    RuleSpec {
+        metric: "branches_per_function",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.branches_per_function),
+        description: "branches_per_function is the number of `if` expressions in a Rust function.",
+    },
+    RuleSpec {
+        metric: "local_variables_per_function",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.local_variables_per_function),
+        description: "local_variables_per_function is the maximum number of local bindings introduced in a Rust function.",
+    },
+    RuleSpec {
+        metric: "returns_per_function",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.returns_per_function),
+        description: "returns_per_function is the maximum number of `return` expressions in a Rust function.",
+    },
+    RuleSpec {
+        metric: "nested_function_depth",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.nested_function_depth),
+        description: "nested_function_depth is the maximum nesting depth of closures within a Rust function.",
+    },
+    RuleSpec {
+        metric: "boolean_parameters",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.boolean_parameters),
+        description: "boolean_parameters is the maximum number of `bool` parameters in a Rust function signature.",
+    },
+    RuleSpec {
+        metric: "attributes_per_function",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.annotations_per_function),
+        description: "attributes_per_function is the maximum number of non-doc attributes on a Rust function.",
+    },
+    RuleSpec {
+        metric: "calls_per_function",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.calls_per_function),
+        description: "calls_per_function is the maximum number of function/method calls in a Rust function.",
+    },
+    RuleSpec {
+        metric: "methods_per_class",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.methods_per_class),
+        description: "methods_per_class is the maximum number of methods in an `impl` block for a Rust type.",
+    },
+    RuleSpec {
+        metric: "statements_per_file",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.statements_per_file),
+        description: "statements_per_file is the maximum number of statements inside function/method bodies in a Rust file.",
+    },
+    RuleSpec {
+        metric: "lines_per_file",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.lines_per_file),
+        description: "lines_per_file is the maximum number of source lines in a Rust file (including comments and blanks).",
+    },
+    RuleSpec {
+        metric: "functions_per_file",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.functions_per_file),
+        description: "functions_per_file is the maximum number of functions/methods defined in a Rust file.",
+    },
+    RuleSpec {
+        metric: "interface_types_per_file",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.interface_types_per_file),
+        description: "interface_types_per_file is the maximum number of trait definitions in a Rust file.",
+    },
+    RuleSpec {
+        metric: "concrete_types_per_file",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.concrete_types_per_file),
+        description: "concrete_types_per_file is the maximum number of concrete type definitions (struct/enum/union) in a Rust file.",
+    },
+    RuleSpec {
+        metric: "imported_names_per_file",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.imported_names_per_file),
+        description: "imported_names_per_file is the maximum number of internal `use` statements in a Rust file (excluding `pub use`).",
+    },
+    RuleSpec {
+        metric: "cycle_size",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.cycle_size),
+        description: "cycle_size is the maximum allowed number of modules participating in a dependency cycle.",
+    },
+    RuleSpec {
+        metric: "indirect_dependencies",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.indirect_dependencies),
+        description: "indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).",
+    },
+    RuleSpec {
+        metric: "dependency_depth",
+        op: "<",
+        threshold: ThresholdValue::Usize(|c, _| c.dependency_depth),
+        description: "dependency_depth is the maximum length of a module dependency chain in the dependency graph.",
+    },
+    RuleSpec {
+        metric: "test_coverage_threshold",
+        op: ">=",
+        threshold: ThresholdValue::Usize(|_, g| g.test_coverage_threshold),
+        description: "test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).",
+    },
+    RuleSpec {
+        metric: "min_similarity",
+        op: ">=",
+        threshold: ThresholdValue::F64(|_, g| g.min_similarity),
+        description: "min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).",
+    },
+];

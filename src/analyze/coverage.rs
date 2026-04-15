@@ -170,7 +170,7 @@ pub fn compute_test_coverage_from_lists(
     (coverage, tested, total, unreferenced)
 }
 
-fn build_viols_after_merge(
+pub(crate) fn build_viols_after_merge(
     definitions: Vec<CachedCoverageItem>,
     unreferenced: Vec<CachedCoverageItem>,
     focus_set: &HashSet<PathBuf>,
@@ -232,8 +232,11 @@ pub(crate) fn collect_coverage_viols(
 #[cfg(test)]
 mod coverage_touch {
     use crate::analyze::coverage_types::{CheckCoverageGateParams, CoverageViolationSpec, PyRsTestCoverage};
+    use kiss::check_universe_cache::CachedCoverageItem;
+    use std::collections::HashSet;
+    use std::path::PathBuf;
 
-    use super::{CoverageOutputOpts, GraphRefPair};
+    use super::{build_viols_after_merge, CoverageOutputOpts, GraphRefPair};
 
     #[test]
     fn struct_sizes_for_gate() {
@@ -242,5 +245,36 @@ mod coverage_touch {
         let _ = std::mem::size_of::<PyRsTestCoverage>();
         let _ = std::mem::size_of::<CoverageViolationSpec>();
         let _ = std::mem::size_of::<CheckCoverageGateParams>();
+    }
+
+    #[test]
+    fn test_build_viols_after_merge_empty() {
+        let definitions = vec![];
+        let unreferenced = vec![];
+        let focus_set: HashSet<PathBuf> = HashSet::new();
+        let graphs = GraphRefPair { py: None, rs: None };
+        let (viols, defs, unref) = build_viols_after_merge(definitions, unreferenced, &focus_set, graphs);
+        assert!(viols.is_empty());
+        assert!(defs.is_empty());
+        assert!(unref.is_empty());
+    }
+
+    #[test]
+    fn test_build_viols_after_merge_with_unreferenced() {
+        let definitions = vec![CachedCoverageItem {
+            file: "/tmp/test.py".to_string(),
+            name: "foo".to_string(),
+            line: 1,
+        }];
+        let unreferenced = vec![CachedCoverageItem {
+            file: "/tmp/test.py".to_string(),
+            name: "foo".to_string(),
+            line: 1,
+        }];
+        let focus_set: HashSet<PathBuf> = std::iter::once(PathBuf::from("/tmp/test.py")).collect();
+        let graphs = GraphRefPair { py: None, rs: None };
+        let (viols, _, _) = build_viols_after_merge(definitions, unreferenced, &focus_set, graphs);
+        assert_eq!(viols.len(), 1);
+        assert!(viols[0].message.contains("0% covered"));
     }
 }

@@ -378,3 +378,19 @@ fn static_coverage_touch_derive_project_name() {
     fn t<T>(_: T) {}
     t(derive_project_name);
 }
+
+#[test]
+fn test_project_name_from_paths() {
+    let paths = vec!["/tmp/myproject/src".to_string()];
+    // May return Some or None depending on whether /tmp/myproject/src exists
+    let _ = project_name_from_paths(&paths);
+    // Empty paths should return None
+    assert!(project_name_from_paths(&[]).is_none());
+}
+
+#[test]
+fn test_project_name_from_cwd() {
+    // Should return Some with the current directory name
+    let result = project_name_from_cwd();
+    assert!(result.is_some());
+}

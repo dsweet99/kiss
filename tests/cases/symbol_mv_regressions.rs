@@ -1207,3 +1207,46 @@ fn regression_rust_move_should_not_break_on_brace_inside_string_literal() {
         "moved recursive call should not be left stranded in the source file; got:\n{updated_src}",
     );
 }
+
+#[test]
+fn regression_rust_method_owner_scoping_should_use_exact_impl_match() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("mod.rs");
+
+    fs::write(
+        &file,
+        "struct A;\nstruct A2;\n\nimpl A2 {\n    fn foo(&self) {}\n}\n\nimpl A {\n    fn foo(&self) {}\n}\n\nfn call(a: &A, a2: &A2) {\n    a.foo();\n    a2.foo();\n}\n",
+    )
+    .unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::A.foo", file.display()),
+        new_name: "bar".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Rust),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0);
+
+    let updated = fs::read_to_string(&file).unwrap();
+    assert!(
+        updated.contains("impl A {\n    fn bar(&self) {}"),
+        "requested owner method should be renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("a.bar();"),
+        "call through the requested owner should be renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("impl A2 {\n    fn foo(&self) {}"),
+        "similarly named owner should remain unchanged; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("a2.foo();"),
+        "call through similarly named owner should remain unchanged; got:\n{updated}"
+    );
+}

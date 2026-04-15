@@ -91,8 +91,8 @@ fn filter_pairs_by_files(pairs: &mut Vec<DuplicatePair>, filter_files: &[String]
 
 #[cfg(test)]
 mod dry_helpers_test {
-    use super::{filter_pairs_by_files, parse_py_for_dry, parse_rs_for_dry};
-    use kiss::DuplicatePair;
+    use super::{filter_pairs_by_files, parse_py_for_dry, parse_rs_for_dry, DryRunParams};
+    use kiss::{DuplicatePair, DuplicationConfig};
 
     #[test]
     fn empty_inputs_smoke() {
@@ -101,5 +101,19 @@ mod dry_helpers_test {
         let mut pairs: Vec<DuplicatePair> = Vec::new();
         filter_pairs_by_files(&mut pairs, &[]);
         assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn test_dry_run_params_struct() {
+        let config = DuplicationConfig::default();
+        let params = DryRunParams {
+            path: "/tmp",
+            filter_files: &[],
+            config: &config,
+            ignore_prefixes: &[],
+            lang_filter: None,
+        };
+        assert_eq!(params.path, "/tmp");
+        assert!(params.filter_files.is_empty());
     }
 }

@@ -99,14 +99,14 @@ fn derive_project_name(paths: &[String]) -> String {
         .unwrap_or_else(|| "project".to_string())
 }
 
-fn project_name_from_paths(paths: &[String]) -> Option<String> {
+pub(crate) fn project_name_from_paths(paths: &[String]) -> Option<String> {
     let p = paths.first()?;
     let c = Path::new(p).canonicalize().ok()?;
     c.file_name()
         .map(|n| n.to_string_lossy().into_owned())
 }
 
-fn project_name_from_cwd() -> Option<String> {
+pub(crate) fn project_name_from_cwd() -> Option<String> {
     std::env::current_dir()
         .ok()
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))

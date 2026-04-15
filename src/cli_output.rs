@@ -244,4 +244,14 @@ mod tests {
         t(min_per_file_coverage);
         t(print_dry_results);
     }
+
+    #[test]
+    fn test_count_py_unreferenced_empty() {
+        assert_eq!(count_py_unreferenced(&[]), 0);
+    }
+
+    #[test]
+    fn test_count_rs_unreferenced_empty() {
+        assert_eq!(count_rs_unreferenced(&[]), 0);
+    }
 }

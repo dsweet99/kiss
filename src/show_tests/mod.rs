@@ -100,7 +100,7 @@ pub fn run_show_tests_to(a: args::RunShowTestsArgs<'_>) -> i32 {
     0
 }
 
-fn defs_from_analysis_rows(
+pub(crate) fn defs_from_analysis_rows(
     definitions: impl Iterator<Item = (PathBuf, String, usize)>,
     unreferenced: impl Iterator<Item = (PathBuf, String, usize)>,
     coverage_map: &HashMap<(PathBuf, String), Vec<CoveringTest>>,

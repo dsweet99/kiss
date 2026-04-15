@@ -294,3 +294,32 @@ fn static_coverage_touch_gather_files_with_path_expansion() {
     fn t<T>(_: T) {}
     t(gather_files_with_path_expansion);
 }
+
+#[test]
+fn test_defs_from_analysis_rows_direct() {
+    use kiss::test_refs::CoveringTest;
+    let defs = vec![
+        (PathBuf::from("/tmp/a.py"), "foo".to_string(), 1usize),
+        (PathBuf::from("/tmp/a.py"), "bar".to_string(), 5usize),
+    ];
+    let unreferenced = vec![(PathBuf::from("/tmp/a.py"), "bar".to_string(), 5usize)];
+    let mut coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>> = HashMap::new();
+    coverage_map.insert(
+        (PathBuf::from("/tmp/a.py"), "foo".to_string()),
+        vec![(PathBuf::from("/tmp/test_a.py"), "test_foo".to_string())],
+    );
+    let focus_set: HashSet<PathBuf> = std::iter::once(PathBuf::from("/tmp/a.py")).collect();
+    let result = defs_from_analysis_rows(
+        defs.into_iter(),
+        unreferenced.into_iter(),
+        &coverage_map,
+        &focus_set,
+    );
+    assert_eq!(result.len(), 2);
+    // foo is covered
+    let foo_entry = result.iter().find(|(_, name, _, _)| name == "foo").unwrap();
+    assert!(foo_entry.3.is_some());
+    // bar is unreferenced
+    let bar_entry = result.iter().find(|(_, name, _, _)| name == "bar").unwrap();
+    assert!(bar_entry.3.is_none());
+}

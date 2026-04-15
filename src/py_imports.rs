@@ -28,7 +28,7 @@ pub fn is_type_checking_block(node: Node, source: &str) -> bool {
     }
 }
 
-fn collect_import_names(node: Node, source: &str, names: &mut HashSet<String>) {
+pub(crate) fn collect_import_names(node: Node, source: &str, names: &mut HashSet<String>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if is_type_checking_block(child, source) {
@@ -157,5 +157,14 @@ mod tests {
         t(collect_import_names);
         t(collect_import_statement_names);
         t(collect_import_from_names);
+    }
+
+    #[test]
+    fn test_collect_import_names_direct() {
+        let p = parse("import os\nfrom sys import path");
+        let mut names = std::collections::HashSet::new();
+        collect_import_names(p.tree.root_node(), &p.source, &mut names);
+        assert!(names.contains("os"));
+        assert!(names.contains("path"));
     }
 }

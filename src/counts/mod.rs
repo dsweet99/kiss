@@ -14,6 +14,9 @@ pub use crate::py_metrics::{
 };
 pub use crate::violation::{Violation as PyViolation, ViolationBuilder as PyViolationBuilder};
 
+#[cfg(test)]
+mod tests;
+
 #[must_use]
 pub fn analyze_file(parsed: &ParsedFile, config: &Config) -> Vec<Violation> {
     analyze_file_with_statement_count(parsed, config).1
@@ -76,7 +79,7 @@ fn push_py_file_threshold(
     );
 }
 
-fn check_file_metrics(
+pub(crate) fn check_file_metrics(
     m: &FileMetrics,
     lines: usize,
     file: &Path,
@@ -170,16 +173,16 @@ fn check_file_metrics(
     }
 }
 
-fn violation(file: &Path, line: usize, name: &str) -> ViolationBuilder {
+pub(crate) fn violation(file: &Path, line: usize, name: &str) -> ViolationBuilder {
     Violation::builder(file).line(line).unit_name(name)
 }
 
-enum Recursion {
+pub(crate) enum Recursion {
     Skip,
     Continue(bool),
 }
 
-fn analyze_node(
+pub(crate) fn analyze_node(
     node: Node,
     source: &str,
     file: &Path,
@@ -214,7 +217,7 @@ fn analyze_node(
     }
 }
 
-fn check_function_metrics(
+pub(crate) fn check_function_metrics(
     m: &FunctionMetrics,
     file: &Path,
     line: usize,
@@ -313,7 +316,7 @@ fn check_function_metrics(
     check_function_metrics_tail(m, file, line, name, cfg, v, ut);
 }
 
-fn check_function_metrics_tail(
+pub(crate) fn check_function_metrics_tail(
     m: &FunctionMetrics,
     file: &Path,
     line: usize,
@@ -356,7 +359,7 @@ fn check_function_metrics_tail(
     }
 }
 
-fn analyze_class_node(
+pub(crate) fn analyze_class_node(
     node: Node,
     source: &str,
     file: &Path,
@@ -389,188 +392,5 @@ fn analyze_class_node(
         for child in body.children(&mut cursor) {
             analyze_node(child, source, file, violations, true, config);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_utils::parse_python_source;
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_analyze_file_no_violations() {
-        let parsed = parse_python_source("def f(): pass");
-        let violations = analyze_file(&parsed, &Config::default());
-        assert!(violations.is_empty());
-    }
-
-    #[test]
-    fn test_analyze_file_with_violation() {
-        let parsed = parse_python_source("def f(a,b,c,d,e,f,g,h,i,j): pass");
-        let config = Config {
-            arguments_positional: 5,
-            ..Default::default()
-        };
-        let violations = analyze_file(&parsed, &config);
-        assert!(!violations.is_empty());
-    }
-
-    #[test]
-    fn test_analyze_file_with_statement_count_helper() {
-        let parsed = parse_python_source("def f():\n    x = 1\n    y = 2\n    return x + y");
-        let (stmts, viols) = analyze_file_with_statement_count(&parsed, &Config::default());
-        assert!(stmts > 0);
-        let _ = viols;
-    }
-
-    #[test]
-    fn test_check_function_metrics_tail_smoke() {
-        let m = FunctionMetrics {
-            calls: 999,
-            max_return_values: 3,
-            has_error: false,
-            ..Default::default()
-        };
-        let cfg = Config {
-            calls_per_function: 10,
-            return_values_per_function: 1,
-            ..Default::default()
-        };
-        let mut v = Vec::new();
-        check_function_metrics_tail(&m, Path::new("t.py"), 1, "f", &cfg, &mut v, "Function");
-        assert!(!v.is_empty());
-    }
-
-    #[test]
-    fn test_violation_builder() {
-        let v = violation(&PathBuf::from("f.py"), 1, "n")
-            .metric("m")
-            .value(10)
-            .threshold(5)
-            .message("msg")
-            .suggestion("sug")
-            .build();
-        assert_eq!(v.value, 10);
-        assert_eq!(v.threshold, 5);
-    }
-
-    #[test]
-    fn test_analyze_node() {
-        let parsed = parse_python_source("def f(): pass\nclass C: pass");
-        let mut viols = Vec::new();
-        analyze_node(
-            parsed.tree.root_node(),
-            &parsed.source,
-            &parsed.path,
-            &mut viols,
-            false,
-            &Config::default(),
-        );
-        assert!(viols.is_empty());
-    }
-
-    #[test]
-    fn test_analyze_class_node() {
-        let parsed = parse_python_source("class C:\n    def m(self): pass");
-        let mut viols = Vec::new();
-        let cls = parsed.tree.root_node().child(0).unwrap();
-        analyze_class_node(
-            cls,
-            &parsed.source,
-            &parsed.path,
-            &mut viols,
-            &Config::default(),
-        );
-        assert!(viols.is_empty());
-    }
-
-    #[test]
-    fn test_check_file_metrics() {
-        let m = FileMetrics {
-            statements: 1000,
-            interface_types: 20,
-            concrete_types: 20,
-            imports: 50,
-            functions: 40,
-        };
-        let cfg = Config {
-            statements_per_file: 500,
-            lines_per_file: 50,
-            interface_types_per_file: 10,
-            concrete_types_per_file: 10,
-            imported_names_per_file: 30,
-            functions_per_file: 30,
-            ..Default::default()
-        };
-        let mut viols = Vec::new();
-        check_file_metrics(&m, 100, Path::new("t.py"), &cfg, &mut viols);
-        assert_eq!(viols.len(), 6);
-    }
-
-    #[test]
-    fn test_analyze_node_function() {
-        let parsed = parse_python_source("def f(a): x = 1");
-        let func = parsed.tree.root_node().child(0).unwrap();
-        let mut viols = Vec::new();
-        analyze_node(
-            func,
-            &parsed.source,
-            &parsed.path,
-            &mut viols,
-            false,
-            &Config::default(),
-        );
-        assert!(viols.is_empty());
-    }
-
-    #[test]
-    fn test_check_function_metrics() {
-        let m = FunctionMetrics {
-            statements: 100,
-            arguments: 0,
-            arguments_positional: 10,
-            arguments_keyword_only: 10,
-            max_indentation: 10,
-            nested_function_depth: 5,
-            returns: 0,
-            branches: 20,
-            local_variables: 30,
-            max_try_block_statements: 0,
-            boolean_parameters: 0,
-            decorators: 0,
-            max_return_values: 0,
-            calls: 5,
-            has_error: false,
-        };
-        let cfg = Config {
-            statements_per_function: 50,
-            arguments_positional: 5,
-            arguments_keyword_only: 5,
-            max_indentation_depth: 5,
-            nested_function_depth: 2,
-            branches_per_function: 10,
-            local_variables_per_function: 15,
-            ..Default::default()
-        };
-        let mut viols = Vec::new();
-        check_function_metrics(&m, Path::new("t.py"), 1, "f", false, &cfg, &mut viols);
-        assert!(viols.len() >= 5);
-    }
-
-    #[test]
-    fn test_recursion_enum() {
-        let skip = Recursion::Skip;
-        let cont = Recursion::Continue(true);
-        assert!(matches!(skip, Recursion::Skip));
-        assert!(matches!(cont, Recursion::Continue(true)));
-    }
-
-    #[test]
-    fn static_coverage_touch_py_threshold_helpers() {
-        fn t<T>(_: T) {}
-        t(push_py_file_threshold);
-        t(check_file_metrics);
-        t(violation);
     }
 }

@@ -148,9 +148,20 @@ fn rust_lexer_is_inside_non_code(state: &LexState) -> bool {
 }
 
 pub(super) fn find_impl_block(content: &str, owner: &str) -> Option<(usize, usize)> {
-    let start = content.find(&format!("impl {owner}"))?;
-    let open = start + content[start..].find('{')?;
-    find_brace_block_end(content, open).map(|end| (start, end))
+    let needle = format!("impl {owner}");
+    let mut search_start = 0;
+    while let Some(rel) = content[search_start..].find(&needle) {
+        let start = search_start + rel;
+        let after = start + needle.len();
+        let next_char = content[after..].chars().next();
+        let is_exact = next_char.is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        if is_exact {
+            let open = start + content[start..].find('{')?;
+            return find_brace_block_end(content, open).map(|end| (start, end));
+        }
+        search_start = after;
+    }
+    None
 }
 
 pub(super) fn find_python_class_block(content: &str, class_name: &str) -> Option<(usize, usize)> {
