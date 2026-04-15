@@ -78,17 +78,18 @@ pub fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
     println!("{} in {}", msg, root.display());
 }
 
+pub struct CoverageGateFailureCtx<'a> {
+    pub threshold: usize,
+    pub unreferenced: &'a [(std::path::PathBuf, String, usize)],
+    pub file_pcts: &'a HashMap<std::path::PathBuf, usize>,
+}
+
 #[allow(clippy::implicit_hasher)]
-pub fn print_coverage_gate_failure(
-    _coverage: usize,
-    threshold: usize,
-    _tested: usize,
-    _total: usize,
-    unreferenced: &[(std::path::PathBuf, String, usize)],
-    file_pcts: &HashMap<std::path::PathBuf, usize>,
-) {
+pub fn print_coverage_gate_failure(ctx: &CoverageGateFailureCtx<'_>) {
     // Per-file enforcement: list failing files first, then unreferenced units
-    let mut failing: Vec<_> = file_pcts
+    let threshold = ctx.threshold;
+    let mut failing: Vec<_> = ctx
+        .file_pcts
         .iter()
         .filter(|(_, pct)| **pct < threshold)
         .map(|(f, p)| (f.clone(), *p))
@@ -104,8 +105,8 @@ pub fn print_coverage_gate_failure(
             file.display()
         );
     }
-    for (file, name, line) in unreferenced {
-        let pct = file_pcts.get(file).copied().unwrap_or(0);
+    for (file, name, line) in ctx.unreferenced {
+        let pct = ctx.file_pcts.get(file).copied().unwrap_or(0);
         if pct < threshold {
             println!(
                 "VIOLATION:test_coverage:{}:{}:{}: {pct}% covered. Add test coverage for this code unit.",
@@ -204,14 +205,11 @@ mod tests {
     fn test_print_coverage_gate_failure_no_panic() {
         let file_pcts: HashMap<std::path::PathBuf, usize> =
             [(std::path::PathBuf::from("foo.py"), 50)].into();
-        print_coverage_gate_failure(
-            50,
-            80,
-            5,
-            10,
-            &[(std::path::PathBuf::from("foo.py"), "bar".to_string(), 10)],
-            &file_pcts,
-        );
+        print_coverage_gate_failure(&CoverageGateFailureCtx {
+            threshold: 80,
+            unreferenced: &[(std::path::PathBuf::from("foo.py"), "bar".to_string(), 10)],
+            file_pcts: &file_pcts,
+        });
     }
 
     #[test]
@@ -245,5 +243,15 @@ mod tests {
         t(format_candidate_list);
         t(min_per_file_coverage);
         t(print_dry_results);
+    }
+
+    #[test]
+    fn test_count_py_unreferenced_empty() {
+        assert_eq!(count_py_unreferenced(&[]), 0);
+    }
+
+    #[test]
+    fn test_count_rs_unreferenced_empty() {
+        assert_eq!(count_rs_unreferenced(&[]), 0);
     }
 }

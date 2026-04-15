@@ -1,0 +1,55 @@
+# Default kiss configuration
+
+[gate]
+test_coverage_threshold = 90
+min_similarity = 0.7
+duplication_enabled = true
+orphan_module_enabled = true
+
+[python]
+boolean_parameters = 1
+branches_per_function = 9
+calls_per_function = 20
+concrete_types_per_file = 1
+cycle_size = 0
+decorators_per_function = 5
+dependency_depth = 3
+functions_per_file = 10
+imported_names_per_file = 30
+indirect_dependencies = 10
+interface_types_per_file = 1
+local_variables = 15
+max_indentation = 4
+methods_per_class = 10
+nested_function_depth = 2
+positional_args = 3
+keyword_only_args = 3
+return_values_per_function = 3
+returns_per_function = 5
+statements_per_file = 200
+lines_per_file = 300
+statements_per_function = 35
+statements_per_try_block = 3
+
+[rust]
+statements_per_function = 35
+arguments = 4
+max_indentation = 4
+nested_function_depth = 2
+returns_per_function = 5
+branches_per_function = 9
+local_variables = 16
+boolean_parameters = 1
+attributes_per_function = 1
+calls_per_function = 20
+methods_per_class = 10
+statements_per_file = 200
+lines_per_file = 250
+functions_per_file = 23
+interface_types_per_file = 0
+concrete_types_per_file = 4
+imported_names_per_file = 50
+cycle_size = 0
+indirect_dependencies = 10
+dependency_depth = 3
+
