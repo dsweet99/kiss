@@ -1,7 +1,6 @@
 use crate::bin_cli::args::{Cli, Commands};
 use crate::bin_cli::check_cmd::{run_check_command, CheckCommandArgs};
 use crate::bin_cli::config_session::config_provenance;
-use crate::bin_cli::layout_cmd::run_layout_command;
 use crate::bin_cli::run::run;
 use crate::bin_cli::show_tests_cmd::run_show_tests;
 use crate::bin_cli::shrink::{
@@ -177,5 +176,5 @@ fn static_coverage_touch_main_entrypoints() {
     t(run);
     t(crate::bin_cli::dispatch::dispatch);
     t(set_sigpipe_default);
-    t(run_layout_command);
+    t(crate::layout::run_layout);
 }

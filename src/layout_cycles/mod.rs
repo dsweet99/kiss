@@ -1,4 +1,4 @@
-//! Cycle detection and breaking suggestions for the `kiss layout` command.
+//! Cycle detection and breaking suggestions for layout analysis.
 //!
 //! Uses Tarjan's SCC algorithm to find all strongly connected components (cycles),
 //! then suggests which edge to break based on heuristics.
@@ -122,7 +122,7 @@ pub fn analyze_cycles(graph: &DependencyGraph) -> LayoutCycleAnalysis {
             let suggested_break = find_deterministic_break_edge(graph, &scc)?;
 
             let reason = format!(
-                "Edge '{}' -> '{}' selected (alphabetically first). Consider min-cut analysis for optimal break point.",
+                "Edge '{}' -> '{}' selected (deterministic: alphabetically first edge in this cycle). Review remaining edges if this break is too disruptive.",
                 suggested_break.0, suggested_break.1
             );
 

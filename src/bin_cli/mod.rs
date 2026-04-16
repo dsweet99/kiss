@@ -4,7 +4,6 @@ mod args;
 mod check_cmd;
 mod config_session;
 pub mod dispatch;
-mod layout_cmd;
 mod mimic;
 mod run;
 mod show_tests_cmd;

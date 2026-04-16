@@ -1,10 +1,13 @@
-//! Main analysis pipeline for `kiss layout` command.
+//! Main analysis pipeline for layout structure reporting (unit tests; not a CLI subcommand).
 //!
 //! Coordinates cycle detection, layering, and output generation to
 //! recommend codebase structure improvements.
 //!
 //! TODO: Add clustering for cohesion analysis (Leiden/Louvain algorithm)
 //! once the core layering functionality is stable.
+
+// `kiss layout` CLI was removed; this module remains for unit tests and programmatic reuse.
+#![allow(dead_code)]
 
 use kiss::{DependencyGraph, Language, LayerInfo};
 use kiss::{analyze_cycles, compute_layers, format_markdown};

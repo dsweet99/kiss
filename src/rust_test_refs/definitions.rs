@@ -8,12 +8,17 @@ use super::references::{collect_rust_references, ReferenceVisitor};
 use syn::visit::Visit;
 
 /// Returns true if the file path is a Rust binary entry point.
-/// Matches `main.rs` files (not in tests/) and files under `src/bin/`.
+///
+/// Excludes paths that contain a **normal** path component named exactly `tests` (Cargo’s
+/// integration-test tree), not substring matches — so e.g. `legacy_tests/src/main.rs` is still
+/// treated as an entry point.
 pub(super) fn is_binary_entry_point(path: &Path) -> bool {
-    let path_str = path.to_string_lossy();
-    if path_str.contains("tests/") || path_str.contains("tests\\") {
+    if path.components().any(|c| {
+        matches!(c, std::path::Component::Normal(s) if s == "tests")
+    }) {
         return false;
     }
+    let path_str = path.to_string_lossy();
     if path.file_name().is_some_and(|n| n == "main.rs") {
         return true;
     }
@@ -27,21 +32,25 @@ fn is_well_known_constructor(name: &str) -> bool {
 }
 
 /// Returns true if the expression is a qualified call (has a module path)
-/// or a well-known constructor like `Ok`, `Err`, `Some`, `None`.
-/// Examples: `lib::run()`, `crate::foo()`, `std::process::exit(1)`, `Ok(())`
+/// or a well-known constructor like `Ok`, `Err`, `Some`, `None`, and every argument is
+/// structurally trivial (so work cannot hide in call arguments).
+/// Examples: `lib::run()`, `crate::foo()`, `Ok(())`
 fn is_qualified_or_known_call(expr: &Expr) -> bool {
     match expr {
         Expr::Call(c) => {
             if let Expr::Path(p) = c.func.as_ref() {
-                if p.path.segments.len() >= 2 {
-                    return true;
-                }
-                if p.path.segments.len() == 1 {
+                let callee_ok = if p.path.segments.len() >= 2 {
+                    true
+                } else if p.path.segments.len() == 1 {
                     let name = p.path.segments[0].ident.to_string();
-                    return is_well_known_constructor(&name);
-                }
+                    is_well_known_constructor(&name)
+                } else {
+                    false
+                };
+                callee_ok && c.args.iter().all(is_trivial_expr)
+            } else {
+                false
             }
-            false
         }
         _ => false,
     }
@@ -52,7 +61,8 @@ fn is_qualified_or_known_call(expr: &Expr) -> bool {
 fn is_trivial_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Call(_) => is_qualified_or_known_call(expr),
-        Expr::Macro(_) | Expr::Path(_) | Expr::Lit(_) => true,
+        // `Expr::Macro` and other unlisted shapes: not analyzed as delegation (see wildcard).
+        Expr::Path(_) | Expr::Lit(_) => true,
         Expr::Return(r) => r.expr.as_ref().is_none_or(|e| is_trivial_expr(e)),
         Expr::Try(t) => is_trivial_expr(&t.expr),
         Expr::Await(a) => is_trivial_expr(&a.base),
@@ -72,7 +82,9 @@ fn is_trivial_expr(expr: &Expr) -> bool {
                 })
         }
         Expr::Let(l) => is_trivial_expr(&l.expr),
-        Expr::MethodCall(m) => is_trivial_expr(&m.receiver),
+        Expr::MethodCall(m) => {
+            is_trivial_expr(&m.receiver) && m.args.iter().all(is_trivial_expr)
+        }
         Expr::Field(f) => is_trivial_expr(&f.base),
         Expr::Reference(r) => is_trivial_expr(&r.expr),
         Expr::Unary(u) => is_trivial_expr(&u.expr),
@@ -88,13 +100,12 @@ fn is_trivial_stmt(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Expr(e, _) => is_trivial_expr(e),
         Stmt::Local(l) => l.init.as_ref().is_none_or(|i| is_trivial_expr(&i.expr)),
-        Stmt::Item(_) => false,
-        Stmt::Macro(_) => true,
+        Stmt::Item(_) | Stmt::Macro(_) => false,
     }
 }
 
-/// Returns true if the block only contains delegation (qualified calls, macros, simple control flow).
-/// No local function/struct/enum definitions.
+/// Returns true if the block only contains delegation (qualified calls, simple control flow).
+/// Macro bodies are not analyzed and are not treated as delegation. No local function/struct/enum definitions.
 pub(super) fn is_delegation_only_block(block: &syn::Block) -> bool {
     block.stmts.iter().all(is_trivial_stmt)
 }

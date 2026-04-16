@@ -296,6 +296,9 @@ fn test_is_binary_entry_point() {
     assert!(definitions::is_binary_entry_point(Path::new("src/main.rs")));
     assert!(definitions::is_binary_entry_point(Path::new("main.rs")));
     assert!(definitions::is_binary_entry_point(Path::new("src/bin/foo.rs")));
+    assert!(definitions::is_binary_entry_point(Path::new(
+        "legacy_tests/src/main.rs",
+    )));
     assert!(!definitions::is_binary_entry_point(Path::new("src/lib.rs")));
     assert!(!definitions::is_binary_entry_point(Path::new("tests/main.rs")));
 }
@@ -314,6 +317,40 @@ fn test_trivial_binary_main_detection() {
     check("fn main() { run(); }", "src/main.rs", false, "unqualified call");
     check("fn main() { fn h() {} h(); }", "main.rs", false, "local fn");
     check("fn main() { lib::run(); }", "src/lib.rs", false, "not entry point");
+    // Macro bodies are not analyzed; a `main` that only contains macros is not necessarily
+    // a thin delegate and should still count as a definition for test-reference coverage.
+    check(
+        "fn main() { println!(\"hello\"); }",
+        "src/main.rs",
+        false,
+        "macro-only body",
+    );
+}
+
+/// Qualified calls with non-trivial arguments must not count as thin delegation.
+#[test]
+fn test_trivial_binary_main_rejects_qualified_call_with_unvetted_arguments() {
+    let ast: syn::File = syn::parse_str("fn main() { lib::run(compute()); }").unwrap();
+    let syn::Item::Fn(f) = &ast.items[0] else {
+        panic!("expected fn");
+    };
+    assert!(
+        !definitions::is_trivial_binary_main(f, Path::new("src/main.rs")),
+        "arguments to a qualified call must be analyzed; otherwise real work can hide under a qualified callee"
+    );
+}
+
+/// Method calls must vet arguments, not only the receiver.
+#[test]
+fn test_trivial_binary_main_rejects_method_call_with_unvetted_arguments() {
+    let ast: syn::File = syn::parse_str("fn main() { x.foo(bar()); }").unwrap();
+    let syn::Item::Fn(f) = &ast.items[0] else {
+        panic!("expected fn");
+    };
+    assert!(
+        !definitions::is_trivial_binary_main(f, Path::new("src/main.rs")),
+        "method call arguments must be analyzed for trivial-main classification"
+    );
 }
 
 #[test]

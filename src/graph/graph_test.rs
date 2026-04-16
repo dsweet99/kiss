@@ -517,3 +517,17 @@ fn test_touch_importinfo_and_push_import_name_segments() {
     push_import_name_segments(dotted, "import os", &mut imports);
     assert!(imports.contains(&"os".into()));
 }
+
+#[test]
+fn test_cycle_size_violation_suggestion_does_not_claim_unimplemented_min_cut() {
+    let mut g = DependencyGraph::new();
+    g.add_dependency("a", "b");
+    g.add_dependency("b", "c");
+    g.add_dependency("c", "a");
+    let v = cycle_size_violation(&g, &["a".to_string(), "b".to_string(), "c".to_string()], 1);
+    assert!(
+        !v.suggestion.to_lowercase().contains("min-cut"),
+        "suggestion should not reference min-cut without that analysis; got: {}",
+        v.suggestion
+    );
+}

@@ -165,21 +165,6 @@ pub enum Commands {
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
     },
-    /// Analyze codebase structure and suggest layout improvements
-    Layout {
-        /// Paths to analyze
-        #[arg(default_value = ".")]
-        paths: Vec<String>,
-        /// Output file path (prints to stdout if not specified)
-        #[arg(long, short, value_name = "FILE")]
-        out: Option<PathBuf>,
-        /// Ignore files/directories starting with PREFIX (repeatable)
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-        /// Project name (defaults to directory name)
-        #[arg(long, value_name = "NAME")]
-        name: Option<String>,
-    },
     /// Semantic rename/move for Python and Rust symbols
     Mv {
         /// Source symbol (`path.py::name`, `path.py::Class.method`, `path.rs::name`, `path.rs::Type.method`)

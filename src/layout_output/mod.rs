@@ -1,4 +1,4 @@
-//! Output generation for `kiss layout` command.
+//! Markdown output for layout analysis results.
 //! Produces Markdown with YAML blocks for structured layout analysis.
 
 use crate::layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis};

@@ -3,7 +3,6 @@ use std::path::Path;
 use crate::analyze;
 use crate::analyze::DryRunParams;
 use crate::bin_cli::check_cmd::{run_check_command, CheckCommandArgs};
-use crate::bin_cli::layout_cmd::{run_layout_command, LayoutCommandArgs};
 use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::show_tests_cmd::{run_show_tests, RunShowTestsCmdArgs};
 use crate::bin_cli::shrink::{run_shrink, RunShrinkArgs, ShrinkFullContext};
@@ -14,9 +13,9 @@ use crate::viz::run_viz;
 use kiss::Language;
 
 use super::options::{
-    CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, LayoutDispatchOptions,
-    MimicDispatchOptions, MvDispatchOptions, RulesDispatchOptions, ShrinkDispatchOptions,
-    ShowTestsDispatchOptions, StatsDispatchOptions, VizDispatchOptions,
+    CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
+    MvDispatchOptions, RulesDispatchOptions, ShrinkDispatchOptions, ShowTestsDispatchOptions,
+    StatsDispatchOptions, VizDispatchOptions,
 };
 
 pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) -> i32 {
@@ -132,16 +131,6 @@ pub(in crate::bin_cli::dispatch) fn dispatch_show_tests(o: ShowTestsDispatchOpti
         lang_filter: o.lang,
         ignore: &o.ignore,
         show_untested: o.untested,
-    })
-}
-
-pub(in crate::bin_cli::dispatch) fn dispatch_layout(o: LayoutDispatchOptions) -> i32 {
-    run_layout_command(LayoutCommandArgs {
-        paths: &o.paths,
-        out: o.out.as_deref(),
-        lang_filter: o.lang,
-        ignore: &o.ignore,
-        project_name: o.name,
     })
 }
 
