@@ -2,10 +2,129 @@ use super::{has_cfg_test_attribute, has_test_attribute};
 use crate::units::CodeUnitKind;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use syn::{ImplItem, Item};
+use syn::{Expr, ImplItem, Item, Stmt};
 
 use super::references::{collect_rust_references, ReferenceVisitor};
 use syn::visit::Visit;
+
+/// Returns true if the file path is a Rust binary entry point.
+///
+/// Excludes paths that contain a **normal** path component named exactly `tests` (Cargo’s
+/// integration-test tree), not substring matches — so e.g. `legacy_tests/src/main.rs` is still
+/// treated as an entry point.
+pub(super) fn is_binary_entry_point(path: &Path) -> bool {
+    if path.components().any(|c| {
+        matches!(c, std::path::Component::Normal(s) if s == "tests")
+    }) {
+        return false;
+    }
+    let path_str = path.to_string_lossy();
+    if path.file_name().is_some_and(|n| n == "main.rs") {
+        return true;
+    }
+    path_str.contains("src/bin/") || path_str.contains("src\\bin\\")
+}
+
+/// Well-known constructors that don't need qualification.
+/// These are standard library types used in typical main error handling.
+fn is_well_known_constructor(name: &str) -> bool {
+    matches!(name, "Ok" | "Err" | "Some" | "None" | "Box" | "Vec")
+}
+
+/// Returns true if the expression is a qualified call (has a module path)
+/// or a well-known constructor like `Ok`, `Err`, `Some`, `None`, and every argument is
+/// structurally trivial (so work cannot hide in call arguments).
+/// Examples: `lib::run()`, `crate::foo()`, `Ok(())`
+fn is_qualified_or_known_call(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call(c) => {
+            if let Expr::Path(p) = c.func.as_ref() {
+                let callee_ok = if p.path.segments.len() >= 2 {
+                    true
+                } else if p.path.segments.len() == 1 {
+                    let name = p.path.segments[0].ident.to_string();
+                    is_well_known_constructor(&name)
+                } else {
+                    false
+                };
+                callee_ok && c.args.iter().all(is_trivial_expr)
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+/// Returns true if the expression is structurally trivial (just delegation).
+/// Recursively checks if/match arms, blocks, etc.
+fn is_trivial_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call(_) => is_qualified_or_known_call(expr),
+        // `Expr::Macro` and other unlisted shapes: not analyzed as delegation (see wildcard).
+        Expr::Path(_) | Expr::Lit(_) => true,
+        Expr::Return(r) => r.expr.as_ref().is_none_or(|e| is_trivial_expr(e)),
+        Expr::Try(t) => is_trivial_expr(&t.expr),
+        Expr::Await(a) => is_trivial_expr(&a.base),
+        Expr::Block(b) => is_delegation_only_block(&b.block),
+        Expr::If(i) => {
+            is_trivial_expr(&i.cond)
+                && is_delegation_only_block(&i.then_branch)
+                && i.else_branch
+                    .as_ref()
+                    .is_none_or(|(_, e)| is_trivial_expr(e))
+        }
+        Expr::Match(m) => {
+            is_trivial_expr(&m.expr)
+                && m.arms.iter().all(|arm| {
+                    arm.guard.as_ref().is_none_or(|(_, g)| is_trivial_expr(g))
+                        && is_trivial_expr(&arm.body)
+                })
+        }
+        Expr::Let(l) => is_trivial_expr(&l.expr),
+        Expr::MethodCall(m) => {
+            is_trivial_expr(&m.receiver) && m.args.iter().all(is_trivial_expr)
+        }
+        Expr::Field(f) => is_trivial_expr(&f.base),
+        Expr::Reference(r) => is_trivial_expr(&r.expr),
+        Expr::Unary(u) => is_trivial_expr(&u.expr),
+        Expr::Binary(b) => is_trivial_expr(&b.left) && is_trivial_expr(&b.right),
+        Expr::Paren(p) => is_trivial_expr(&p.expr),
+        Expr::Tuple(t) => t.elems.iter().all(is_trivial_expr),
+        _ => false,
+    }
+}
+
+/// Returns true if the statement is trivial (delegation only, no local definitions).
+fn is_trivial_stmt(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Expr(e, _) => is_trivial_expr(e),
+        Stmt::Local(l) => l.init.as_ref().is_none_or(|i| is_trivial_expr(&i.expr)),
+        Stmt::Item(_) | Stmt::Macro(_) => false,
+    }
+}
+
+/// Returns true if the block only contains delegation (qualified calls, simple control flow).
+/// Macro bodies are not analyzed and are not treated as delegation. No local function/struct/enum definitions.
+pub(super) fn is_delegation_only_block(block: &syn::Block) -> bool {
+    block.stmts.iter().all(is_trivial_stmt)
+}
+
+/// Returns true if the function is a trivial binary entry point that only delegates.
+/// Such functions are excluded from coverage requirements since they cannot be
+/// directly tested (main cannot be called from tests) and contain no real logic.
+pub(super) fn is_trivial_binary_main(f: &syn::ItemFn, path: &Path) -> bool {
+    if f.sig.ident != "main" {
+        return false;
+    }
+    if !f.sig.inputs.is_empty() {
+        return false;
+    }
+    if !is_binary_entry_point(path) {
+        return false;
+    }
+    is_delegation_only_block(&f.block)
+}
 
 #[derive(Debug, Clone)]
 pub struct RustCodeDefinition {
@@ -92,14 +211,16 @@ pub(super) fn collect_definitions_from_item(
     defs: &mut Vec<RustCodeDefinition>,
 ) {
     match item {
-        Item::Fn(f) if !has_test_attribute(&f.attrs) => try_add_def(
-            defs,
-            &f.sig.ident.to_string(),
-            CodeUnitKind::Function,
-            file,
-            f.sig.ident.span().start().line,
-            None,
-        ),
+        Item::Fn(f) if !has_test_attribute(&f.attrs) && !is_trivial_binary_main(f, file) => {
+            try_add_def(
+                defs,
+                &f.sig.ident.to_string(),
+                CodeUnitKind::Function,
+                file,
+                f.sig.ident.span().start().line,
+                None,
+            );
+        }
         Item::Struct(s) => try_add_def(
             defs,
             &s.ident.to_string(),

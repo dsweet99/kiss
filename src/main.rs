@@ -6,6 +6,7 @@ mod analyze;
 mod analyze_cache;
 mod analyze_parse;
 mod bin_cli;
+#[cfg(test)]
 mod layout;
 mod rules;
 mod show_tests;

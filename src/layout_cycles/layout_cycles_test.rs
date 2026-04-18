@@ -92,6 +92,18 @@ fn test_analyze_cycles_returns_suggestions() {
     assert!(cycle.reason.contains("alphabetically first"));
 }
 
+/// Break selection is deterministic (alphabetically first edge), not a min-cut.
+#[test]
+fn test_cycle_break_reason_does_not_claim_unimplemented_min_cut() {
+    let g = make_graph_with_cycle();
+    let analysis = analyze_cycles(&g);
+    let reason = &analysis.cycles[0].reason;
+    assert!(
+        !reason.to_lowercase().contains("min-cut"),
+        "reason should describe the implemented heuristic only; got: {reason}"
+    );
+}
+
 #[test]
 fn test_analyze_cycles_no_cycles() {
     let g = make_graph_no_cycle();

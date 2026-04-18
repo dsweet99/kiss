@@ -16,11 +16,3 @@ pub(crate) struct ShowTestsDispatchOptions {
     pub untested: bool,
     pub ignore: Vec<String>,
 }
-
-pub(crate) struct LayoutDispatchOptions {
-    pub lang: Option<Language>,
-    pub paths: Vec<String>,
-    pub out: Option<std::path::PathBuf>,
-    pub ignore: Vec<String>,
-    pub name: Option<String>,
-}

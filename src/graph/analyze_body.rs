@@ -124,7 +124,7 @@ pub(crate) fn cycle_size_violation(
             cycle_str,
             cycle.first().unwrap_or(&String::new())
         ),
-        suggestion: "Large cycles are harder to untangle. Prioritize breaking this cycle into smaller pieces."
+        suggestion: "Large cycles are harder to untangle. Prefer breaking an edge that reduces coupling to the rest of the graph, or split a module on the cycle behind a smaller interface."
             .to_string(),
     }
 }

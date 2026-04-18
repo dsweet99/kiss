@@ -42,8 +42,6 @@ mod kpop_rust_none;
 mod kpop_rust_none_graph_and_gates;
 #[path = "cases/kpop_show_tests_bug.rs"]
 mod kpop_show_tests_bug;
-#[path = "cases/layout_integration.rs"]
-mod layout_integration;
 #[path = "cases/lib_integration.rs"]
 mod lib_integration;
 #[path = "cases/main_integration.rs"]
