@@ -7,7 +7,6 @@
 //! once the core layering functionality is stable.
 
 // `kiss layout` CLI was removed; this module remains for unit tests and programmatic reuse.
-#![allow(dead_code)]
 
 use kiss::{DependencyGraph, Language, LayerInfo};
 use kiss::{analyze_cycles, compute_layers, format_markdown};

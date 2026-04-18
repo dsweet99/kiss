@@ -165,7 +165,7 @@ pub enum Commands {
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
     },
-    /// Semantic rename/move for Python and Rust symbols
+    /// Semantic rename/move for Python and Rust symbols (beta)
     Mv {
         /// Source symbol (`path.py::name`, `path.py::Class.method`, `path.rs::name`, `path.rs::Type.method`)
         #[arg(value_name = "SOURCE")]
