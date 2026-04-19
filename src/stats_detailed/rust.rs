@@ -7,7 +7,7 @@ use crate::rust_parsing::ParsedRustFile;
 use syn::{ImplItem, Item};
 
 use super::types::UnitMetrics;
-use super::file_unit_metrics;
+use super::{FileScopeMetrics, file_unit_metrics};
 
 pub(crate) struct RustFnMethodPush<'a> {
     pub file: &'a str,
@@ -18,29 +18,20 @@ pub(crate) struct RustFnMethodPush<'a> {
 }
 
 pub(crate) fn push_rust_fn_or_method_unit(units: &mut Vec<UnitMetrics>, p: RustFnMethodPush<'_>) {
-    units.push(UnitMetrics {
-        file: p.file.to_string(),
-        name: p.name,
-        kind: p.kind,
-        line: p.line,
-        statements: Some(p.m.statements),
-        arguments: Some(p.m.arguments),
-        args_positional: Some(p.m.arguments),
-        args_keyword_only: Some(0),
-        indentation: Some(p.m.max_indentation),
-        nested_depth: Some(p.m.nested_function_depth),
-        branches: Some(p.m.branches),
-        returns: Some(p.m.returns),
-        return_values: None,
-        locals: Some(p.m.local_variables),
-        methods: None,
-        lines: None,
-        imports: None,
-        fan_in: None,
-        fan_out: None,
-        indirect_deps: None,
-        dependency_depth: None,
-    });
+    let mut u = UnitMetrics::new(p.file.to_string(), p.name, p.kind, p.line);
+    u.statements = Some(p.m.statements);
+    u.arguments = Some(p.m.arguments);
+    u.args_positional = Some(p.m.arguments);
+    u.args_keyword_only = Some(0);
+    u.indentation = Some(p.m.max_indentation);
+    u.nested_depth = Some(p.m.nested_function_depth);
+    u.branches = Some(p.m.branches);
+    u.returns = Some(p.m.returns);
+    u.locals = Some(p.m.local_variables);
+    u.boolean_parameters = Some(p.m.bool_parameters);
+    u.annotations = Some(p.m.attributes);
+    u.calls = Some(p.m.calls);
+    units.push(u);
 }
 
 pub fn collect_detailed_rs(
@@ -51,7 +42,18 @@ pub fn collect_detailed_rs(
     for parsed in parsed_files {
         let fm = compute_rust_file_metrics(parsed);
         let lines = parsed.source.lines().count();
-        units.push(file_unit_metrics(&parsed.path, lines, fm.imports, graph));
+        units.push(file_unit_metrics(
+            &parsed.path,
+            FileScopeMetrics {
+                lines,
+                imports: fm.imports,
+                statements: fm.statements,
+                functions: fm.functions,
+                interface_types: fm.interface_types,
+                concrete_types: fm.concrete_types,
+            },
+            graph,
+        ));
         collect_detailed_from_items(&parsed.ast.items, &parsed.path.display().to_string(), &mut units);
     }
     units
@@ -82,29 +84,9 @@ fn push_impl_block(i: &syn::ItemImpl, file: &str, units: &mut Vec<UnitMetrics>) 
         .iter()
         .filter(|ii| matches!(ii, ImplItem::Fn(_)))
         .count();
-    units.push(UnitMetrics {
-        file: file.to_string(),
-        name,
-        kind: "impl",
-        line: i.impl_token.span.start().line,
-        statements: None,
-        arguments: None,
-        args_positional: None,
-        args_keyword_only: None,
-        indentation: None,
-        nested_depth: None,
-        branches: None,
-        returns: None,
-        return_values: None,
-        locals: None,
-        methods: Some(mcnt),
-        lines: None,
-        imports: None,
-        fan_in: None,
-        fan_out: None,
-        indirect_deps: None,
-        dependency_depth: None,
-    });
+    let mut u = UnitMetrics::new(file.to_string(), name, "impl", i.impl_token.span.start().line);
+    u.methods = Some(mcnt);
+    units.push(u);
     for ii in &i.items {
         if let ImplItem::Fn(m) = ii {
             push_impl_method(m, file, units);

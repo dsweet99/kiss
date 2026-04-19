@@ -25,10 +25,24 @@ fn module_id_for_path(path: &std::path::Path, graph: &DependencyGraph) -> String
         .unwrap_or_else(|| module_name_from_path(path))
 }
 
+/// Aggregate file-scope metrics that aren't graph-derived.
+///
+/// All other File-scope `UnitMetrics` fields are filled in here so the caller
+/// only has to forward what the language-specific file-metrics struct already
+/// computed.
+#[derive(Clone, Copy)]
+pub(crate) struct FileScopeMetrics {
+    pub lines: usize,
+    pub imports: usize,
+    pub statements: usize,
+    pub functions: usize,
+    pub interface_types: usize,
+    pub concrete_types: usize,
+}
+
 fn file_unit_metrics(
     path: &std::path::Path,
-    lines: usize,
-    imports: usize,
+    fm: FileScopeMetrics,
     graph: Option<&DependencyGraph>,
 ) -> UnitMetrics {
     let (fan_in, fan_out, indirect_deps, dependency_depth) =
@@ -42,32 +56,22 @@ fn file_unit_metrics(
                 Some(m.dependency_depth),
             )
         });
-    UnitMetrics {
-        file: path.display().to_string(),
-        name: path
-            .file_name()
-            .map_or("", |n| n.to_str().unwrap_or(""))
-            .to_string(),
-        kind: "file",
-        line: 1,
-        statements: None,
-        arguments: None,
-        args_positional: None,
-        args_keyword_only: None,
-        indentation: None,
-        nested_depth: None,
-        branches: None,
-        returns: None,
-        return_values: None,
-        locals: None,
-        methods: None,
-        lines: Some(lines),
-        imports: Some(imports),
-        fan_in,
-        fan_out,
-        indirect_deps,
-        dependency_depth,
-    }
+    let name = path
+        .file_name()
+        .map_or("", |n| n.to_str().unwrap_or(""))
+        .to_string();
+    let mut u = UnitMetrics::new(path.display().to_string(), name, "file", 1);
+    u.lines = Some(fm.lines);
+    u.imports = Some(fm.imports);
+    u.file_statements = Some(fm.statements);
+    u.file_functions = Some(fm.functions);
+    u.interface_types = Some(fm.interface_types);
+    u.concrete_types = Some(fm.concrete_types);
+    u.fan_in = fan_in;
+    u.fan_out = fan_out;
+    u.indirect_deps = indirect_deps;
+    u.dependency_depth = dependency_depth;
+    u
 }
 
 pub fn truncate(s: &str, max: usize) -> String {
@@ -99,30 +103,17 @@ mod tests {
 
     #[test]
     fn test_format_detailed_table() {
-        let units = vec![UnitMetrics {
-            file: "test.rs".to_string(),
-            name: "foo".to_string(),
-            kind: "function",
-            line: 1,
-            statements: Some(5),
-            arguments: Some(2),
-            args_positional: Some(2),
-            args_keyword_only: Some(0),
-            indentation: Some(1),
-            nested_depth: Some(0),
-            branches: Some(0),
-            returns: Some(1),
-            return_values: None,
-            locals: Some(3),
-            methods: None,
-            lines: None,
-            imports: None,
-            fan_in: None,
-            fan_out: None,
-            indirect_deps: None,
-            dependency_depth: None,
-        }];
-        let table = format_detailed_table(&units);
+        let mut u = UnitMetrics::new("test.rs".to_string(), "foo".to_string(), "function", 1);
+        u.statements = Some(5);
+        u.arguments = Some(2);
+        u.args_positional = Some(2);
+        u.args_keyword_only = Some(0);
+        u.indentation = Some(1);
+        u.nested_depth = Some(0);
+        u.branches = Some(0);
+        u.returns = Some(1);
+        u.locals = Some(3);
+        let table = format_detailed_table(&[u]);
         assert!(table.contains("test.rs"));
         assert!(table.contains("foo"));
     }
@@ -144,7 +135,18 @@ mod tests {
     fn test_collect_detailed_py_empty() {
         let units = collect_detailed_py(&[], None);
         assert!(units.is_empty());
-        let m = super::file_unit_metrics(std::path::Path::new("src/foo.py"), 100, 5, None);
+        let m = super::file_unit_metrics(
+            std::path::Path::new("src/foo.py"),
+            super::FileScopeMetrics {
+                lines: 100,
+                imports: 5,
+                statements: 0,
+                functions: 0,
+                interface_types: 0,
+                concrete_types: 0,
+            },
+            None,
+        );
         assert_eq!(m.name, "foo.py");
         assert_eq!(m.lines, Some(100));
     }
@@ -157,7 +159,18 @@ mod tests {
         g.get_or_create_node("pkg.foo");
         g.add_dependency("pkg.foo", "bar");
 
-        let m = super::file_unit_metrics(&p, 10, 0, Some(&g));
+        let m = super::file_unit_metrics(
+            &p,
+            super::FileScopeMetrics {
+                lines: 10,
+                imports: 0,
+                statements: 0,
+                functions: 0,
+                interface_types: 0,
+                concrete_types: 0,
+            },
+            Some(&g),
+        );
         assert_eq!(m.fan_out, Some(1), "expected metrics from pkg.foo node");
     }
 

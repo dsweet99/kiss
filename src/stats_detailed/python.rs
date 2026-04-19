@@ -6,7 +6,7 @@ use crate::py_metrics::{
 use tree_sitter::Node;
 
 use super::types::UnitMetrics;
-use super::file_unit_metrics;
+use super::{FileScopeMetrics, file_unit_metrics};
 
 pub fn collect_detailed_py(
     parsed_files: &[&ParsedFile],
@@ -16,7 +16,18 @@ pub fn collect_detailed_py(
     for parsed in parsed_files {
         let fm = compute_file_metrics(parsed);
         let lines = parsed.source.lines().count();
-        units.push(file_unit_metrics(&parsed.path, lines, fm.imports, graph));
+        units.push(file_unit_metrics(
+            &parsed.path,
+            FileScopeMetrics {
+                lines,
+                imports: fm.imports,
+                statements: fm.statements,
+                functions: fm.functions,
+                interface_types: fm.interface_types,
+                concrete_types: fm.concrete_types,
+            },
+            graph,
+        ));
         collect_detailed_from_node(
             parsed.tree.root_node(),
             &parsed.source,
@@ -28,29 +39,22 @@ pub fn collect_detailed_py(
 }
 
 fn unit_metrics_from_py_function(file: &str, name: &str, line: usize, m: &FunctionMetrics) -> UnitMetrics {
-    UnitMetrics {
-        file: file.to_string(),
-        name: name.to_string(),
-        kind: "function",
-        line,
-        statements: Some(m.statements),
-        arguments: Some(m.arguments),
-        args_positional: Some(m.arguments_positional),
-        args_keyword_only: Some(m.arguments_keyword_only),
-        indentation: Some(m.max_indentation),
-        nested_depth: Some(m.nested_function_depth),
-        branches: Some(m.branches),
-        returns: Some(m.returns),
-        return_values: Some(m.max_return_values),
-        locals: Some(m.local_variables),
-        methods: None,
-        lines: None,
-        imports: None,
-        fan_in: None,
-        fan_out: None,
-        indirect_deps: None,
-        dependency_depth: None,
-    }
+    let mut u = UnitMetrics::new(file.to_string(), name.to_string(), "function", line);
+    u.statements = Some(m.statements);
+    u.arguments = Some(m.arguments);
+    u.args_positional = Some(m.arguments_positional);
+    u.args_keyword_only = Some(m.arguments_keyword_only);
+    u.indentation = Some(m.max_indentation);
+    u.nested_depth = Some(m.nested_function_depth);
+    u.branches = Some(m.branches);
+    u.returns = Some(m.returns);
+    u.return_values = Some(m.max_return_values);
+    u.locals = Some(m.local_variables);
+    u.try_block_statements = Some(m.max_try_block_statements);
+    u.boolean_parameters = Some(m.boolean_parameters);
+    u.annotations = Some(m.decorators);
+    u.calls = Some(m.calls);
+    u
 }
 
 fn walk_detailed_children(node: Node, source: &str, file: &str, units: &mut Vec<UnitMetrics>) {
@@ -82,29 +86,14 @@ fn push_py_class_unit(node: Node, source: &str, file: &str, units: &mut Vec<Unit
         .and_then(|n| n.utf8_text(source.as_bytes()).ok())
         .unwrap_or("?");
     let m = compute_class_metrics(node);
-    units.push(UnitMetrics {
-        file: file.to_string(),
-        name: name.to_string(),
-        kind: "class",
-        line: node.start_position().row + 1,
-        statements: None,
-        arguments: None,
-        args_positional: None,
-        args_keyword_only: None,
-        indentation: None,
-        nested_depth: None,
-        branches: None,
-        returns: None,
-        return_values: None,
-        locals: None,
-        methods: Some(m.methods),
-        lines: None,
-        imports: None,
-        fan_in: None,
-        fan_out: None,
-        indirect_deps: None,
-        dependency_depth: None,
-    });
+    let mut u = UnitMetrics::new(
+        file.to_string(),
+        name.to_string(),
+        "class",
+        node.start_position().row + 1,
+    );
+    u.methods = Some(m.methods);
+    units.push(u);
 }
 
 fn collect_detailed_from_node(node: Node, source: &str, file: &str, units: &mut Vec<UnitMetrics>) {

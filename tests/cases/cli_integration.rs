@@ -151,9 +151,12 @@ fn cli_stats_all_uses_metric_registry_display_names() {
 
     // `--all` outputs machine-readable STAT lines with metric_id as the key.
     // Format: STAT:<metric_id>:<value>:<file>:<line>:<name>
+    // Metric IDs MUST match the canonical registry in `kiss::METRICS`
+    // (`src/stats/definitions.rs`); downstream tooling (mimic, .kissconfig,
+    // summary tables) joins on those IDs.
     assert!(
-        stdout.contains("STAT:args_total:"),
-        "Expected STAT:args_total line in output. stdout:\n{stdout}"
+        stdout.contains("STAT:arguments_per_function:"),
+        "Expected STAT:arguments_per_function line in output. stdout:\n{stdout}"
     );
     assert!(
         stdout.contains("STAT:imported_names_per_file:"),
