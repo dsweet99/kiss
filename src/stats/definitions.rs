@@ -99,6 +99,10 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::File,
     },
     MetricDef {
+        metric_id: "test_coverage",
+        scope: MetricScope::File,
+    },
+    MetricDef {
         metric_id: "fan_in",
         scope: MetricScope::Module,
     },

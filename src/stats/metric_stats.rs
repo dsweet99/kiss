@@ -31,6 +31,14 @@ pub struct MetricStats {
     pub interface_types_per_file: Vec<usize>,
     pub concrete_types_per_file: Vec<usize>,
     pub imported_names_per_file: Vec<usize>,
+    /// Per-file test coverage as a percentage in `[0, 100]`.
+    ///
+    /// Populated separately from `MetricStats::collect{,_rust}` because computing
+    /// coverage requires a project-wide test-reference scan
+    /// (`analyze_test_refs` / `analyze_rust_test_refs`). The summary path in
+    /// `bin_cli/stats/summary.rs` runs that scan and pushes one entry per file
+    /// via `populate_test_coverage_pcts`.
+    pub test_coverage: Vec<usize>,
     pub fan_in: Vec<usize>,
     pub fan_out: Vec<usize>,
     pub cycle_size: Vec<usize>,
@@ -84,6 +92,7 @@ impl MetricStats {
             interface_types_per_file,
             concrete_types_per_file,
             imported_names_per_file,
+            test_coverage,
             fan_in,
             fan_out,
             cycle_size,
@@ -117,6 +126,14 @@ impl MetricStats {
 
     pub fn max_depth(&self) -> usize {
         self.dependency_depth.iter().copied().max().unwrap_or(0)
+    }
+
+    /// Push one `[0, 100]` coverage percentage for every entry in `pcts`.
+    ///
+    /// Caller is responsible for choosing what counts as a "file" (one entry
+    /// per parsed source file is the convention used by the summary command).
+    pub fn extend_test_coverage(&mut self, pcts: impl IntoIterator<Item = usize>) {
+        self.test_coverage.extend(pcts);
     }
 
     pub fn collect_rust(parsed_files: &[&ParsedRustFile]) -> Self {

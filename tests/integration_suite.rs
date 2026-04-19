@@ -54,6 +54,8 @@ mod python_counts_violations;
 mod regression_check_perf;
 #[path = "cases/regression_stats_all_metric_registry.rs"]
 mod regression_stats_all_metric_registry;
+#[path = "cases/regression_stats_summary_headers_and_coverage.rs"]
+mod regression_stats_summary_headers_and_coverage;
 #[path = "cases/rules_config_integration.rs"]
 mod rules_config_integration;
 #[path = "cases/rust_counts_violations.rs"]

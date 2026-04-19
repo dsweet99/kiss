@@ -82,6 +82,15 @@ const AGGREGATE_ONLY_METRICS: &[&str] = &[
     // so there is no UnitMetrics field to extract. Cycles surface in
     // `kiss check` violations, not in `--all` outliers.
     "cycle_size",
+    // `test_coverage` is computed only by the summary path
+    // (`bin_cli/stats/summary.rs`), which runs the project-wide test-reference
+    // analysis (`analyze_test_refs` / `analyze_rust_test_refs`) needed to derive
+    // per-file coverage percentages. The `--all` path is purely a per-unit
+    // outlier ranker over `UnitMetrics` and does not (currently) run that
+    // analysis, so it has no coverage value to rank. Wiring it up would require
+    // running the test-ref scan from `top.rs` and populating a new
+    // `UnitMetrics.test_coverage` field; left for a follow-up.
+    "test_coverage",
 ];
 
 /// Map a canonical registry metric ID (`kiss::METRICS`) to the `UnitMetrics`

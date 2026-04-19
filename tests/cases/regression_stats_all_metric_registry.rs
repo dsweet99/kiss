@@ -224,6 +224,14 @@ fn regression_stats_all_emits_every_file_scope_metric_with_data() {
         .iter()
         .filter(|m| matches!(m.scope, kiss::MetricScope::File))
         .map(|m| m.metric_id)
+        // `test_coverage` is File-scope in the registry but is intentionally
+        // NOT emitted by `kiss stats --all`: it requires a project-wide
+        // test-reference scan that only the summary path runs. It is documented
+        // in `AGGREGATE_ONLY_METRICS` in `src/bin_cli/stats/top.rs`. The strict
+        // registry-vs-extractor invariant is enforced by the unit tests in that
+        // module (`exhaustiveness_tests`); here we only check metrics that DO
+        // have a per-unit extractor.
+        .filter(|id| *id != "test_coverage")
         .collect();
 
     let missing: Vec<&str> = file_scope_metrics
