@@ -54,4 +54,61 @@ mod symbol_mv_coverage {
         };
         let _ = run_mv_command(opts);
     }
+
+    #[test]
+    fn language_name_returns_expected_strings() {
+        use crate::Language;
+        let py = language_name(Language::Python);
+        let rs = language_name(Language::Rust);
+        assert_eq!(py, "python");
+        assert_eq!(rs, "rust");
+    }
+
+    #[test]
+    fn apply_plan_transactional_empty_plan_succeeds() {
+        let plan = MvPlan {
+            files: vec![],
+            edits: vec![],
+        };
+        let result = apply_plan_transactional(&plan);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn mv_plan_and_planned_edit_construction() {
+        use super::{EditKind, PlannedEdit};
+        use std::path::PathBuf;
+        let edit = PlannedEdit {
+            path: PathBuf::from("test.rs"),
+            start_byte: 0,
+            end_byte: 3,
+            line: 1,
+            old_snippet: "foo".into(),
+            new_snippet: "bar".into(),
+            kind: EditKind::Reference,
+        };
+        let plan = MvPlan {
+            files: vec![PathBuf::from("test.rs")],
+            edits: vec![edit],
+        };
+        assert_eq!(plan.files.len(), 1);
+        assert_eq!(plan.edits.len(), 1);
+        assert!(matches!(plan.edits[0].kind, EditKind::Reference));
+    }
+
+    #[test]
+    fn run_mv_command_dry_run_returns_zero_or_one() {
+        let opts = MvOptions {
+            query: "nonexistent_symbol_xyz".into(),
+            new_name: "renamed".into(),
+            paths: vec![],
+            to: None,
+            dry_run: true,
+            json: false,
+            lang_filter: None,
+            ignore: vec![],
+        };
+        let code = run_mv_command(opts);
+        assert!(code == 0 || code == 1);
+    }
 }

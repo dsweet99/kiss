@@ -50,7 +50,7 @@ fn cli_help_flag_works() {
     let output = kiss_binary().arg("--help").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
-    assert!(stdout.contains("kiss") || stdout.contains("Code-quality"));
+    assert!(stdout.contains("kiss"), "help output should contain 'kiss'. stdout: {stdout}");
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn cli_version_flag_works() {
     let output = kiss_binary().arg("--version").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
-    assert!(stdout.contains("kiss") || stdout.contains("0."));
+    assert!(stdout.contains("kiss"), "version output should contain 'kiss'. stdout: {stdout}");
 }
 
 #[test]

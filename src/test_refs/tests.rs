@@ -130,161 +130,6 @@ fn test_nested_functions_not_tracked_for_coverage() {
 }
 
 #[test]
-fn test_touch_for_coverage_part_a() {
-    use crate::parsing::{ParsedFile, create_parser};
-    fn touch<T>(_t: T) {}
-
-    let _ = std::mem::size_of::<super::TestRefAnalysis>();
-
-    let _ = (
-        touch(super::has_python_test_naming as fn(&Path) -> bool),
-        touch(super::is_test_framework as fn(&str) -> bool),
-        touch(super::path_identifiers as fn(&Path) -> Vec<String>),
-        touch(super::file_to_module_suffix as fn(&Path) -> String),
-        touch(super::module_suffix_matches as fn(&str, &str) -> bool),
-        touch(super::analyze_test_refs_quick as fn(&[&ParsedFile]) -> super::TestRefAnalysis),
-    );
-
-    let mut parser = create_parser().unwrap();
-    let src = "def foo():\n    pass\n";
-    let tree = parser.parse(src, None).unwrap();
-    let root = tree.root_node();
-
-    let _ = (
-        super::is_test_framework_import_from(root, src),
-        super::contains_test_module_name(root, src),
-        super::has_test_function_or_class(root, src),
-        super::is_protocol_class(root, src),
-        super::is_abstract_method(root, src),
-        super::is_test_function(root, src),
-        super::is_test_class(root, src),
-    );
-
-    {
-        let mut refs = HashSet::new();
-        super::insert_identifier(root, src, &mut refs);
-        super::collect_usage_refs_in_scope(root, src, &mut refs);
-        super::collect_type_refs(root, src, &mut refs);
-        super::collect_call_target(root, src, &mut refs);
-        super::collect_import_names(root, src, &mut refs);
-    }
-}
-
-#[test]
-fn test_touch_for_coverage_part_b() {
-    use crate::parsing::{ParsedFile, create_parser};
-    fn touch<T>(_t: T) {}
-
-    let mut parser = create_parser().unwrap();
-    let src = "def foo():\n    pass\n";
-    let tree = parser.parse(src, None).unwrap();
-    let root = tree.root_node();
-
-    {
-        let mut test_refs = HashSet::new();
-        let mut usage_refs = HashSet::new();
-        let mut import_bindings = HashMap::new();
-        super::collect_all_test_file_data(
-            root,
-            src,
-            &mut test_refs,
-            &mut usage_refs,
-            &mut import_bindings,
-        );
-        super::extract_import_from_binding(root, src, &mut import_bindings);
-    }
-
-    {
-        let mut out = Vec::new();
-        super::collect_test_functions_with_refs(root, src, "", &mut out);
-        super::collect_class_test_methods(root, src, "", &mut out);
-    }
-
-    {
-        let mut defs = Vec::new();
-        super::try_add_def(
-            root,
-            src,
-            Path::new("dummy.py"),
-            &mut defs,
-            crate::units::CodeUnitKind::Function,
-            None,
-        );
-    }
-
-    let parsed = ParsedFile {
-        path: PathBuf::from("dummy.py"),
-        source: src.to_string(),
-        tree: parser.parse(src, None).unwrap(),
-    };
-    let _ = super::is_python_test_file(&parsed);
-
-    let _ = super::collect_refs_parallel(&[&parsed], false);
-
-    let _ = super::analyze_test_refs_inner(&[&parsed], None, false);
-
-    touch(());
-}
-
-#[test]
-fn test_touch_for_coverage_part_c() {
-    fn touch<T>(_t: T) {}
-
-    {
-        let name_files = super::build_name_file_map(std::iter::empty());
-        let disambiguation = HashMap::new();
-        let import_bindings = HashMap::new();
-        let module_suffixes = HashMap::new();
-        let usage_refs = HashSet::new();
-        let def = super::CodeDefinition {
-            name: "x".into(),
-            kind: crate::units::CodeUnitKind::Function,
-            file: PathBuf::from("dummy.py"),
-            line: 1,
-            containing_class: None,
-        };
-        let _ = super::is_covered_by_import(&def, &import_bindings, &module_suffixes, &usage_refs);
-        let _ = super::is_definition_covered(
-            &def,
-            &name_files,
-            &disambiguation,
-            &import_bindings,
-            &module_suffixes,
-            &usage_refs,
-        );
-        let _ = super::build_ref_to_covered_def_indices(
-            &[def],
-            &name_files,
-            &disambiguation,
-            &import_bindings,
-            &module_suffixes,
-        );
-        let _ = super::build_py_coverage_map(
-            &[],
-            &[],
-            &name_files,
-            &disambiguation,
-            &import_bindings,
-            &module_suffixes,
-        );
-    }
-
-    {
-        let files = HashSet::new();
-        let refs = HashSet::new();
-        let name_to_test_files = HashMap::new();
-        let _ = super::disambiguate_files(&files, &refs);
-        let _ = super::resolve_ambiguous_name("x", &files, &refs, &name_to_test_files, None);
-
-        let graph = build_dependency_graph(&[]);
-        let _ =
-            super::disambiguate_files_graph_fallback(&files, &[], &graph);
-    }
-
-    touch(());
-}
-
-#[test]
 fn test_same_name_different_files_disambiguated_by_module() {
     use crate::parsing::{ParsedFile, create_parser};
     let mut parser = create_parser().unwrap();
@@ -392,4 +237,145 @@ fn test_disambiguate_by_graph_when_refs_tie() {
         "beta.helper should be uncovered (no test imports and uses beta)"
     );
 }
+
+// ---------------------------------------------------------------------------
+// collect.rs: try_add_def
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_try_add_def_private_skipped() {
+    use crate::parsing::create_parser;
+    let mut parser = create_parser().unwrap();
+    let src = "def _private():\n    pass\ndef __init__(self):\n    pass\ndef test_foo():\n    pass\ndef normal():\n    pass\n";
+    let tree = parser.parse(src, None).unwrap();
+    let root = tree.root_node();
+    let mut defs = Vec::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() == "function_definition" {
+            super::collect::try_add_def(
+                child,
+                src,
+                Path::new("mod.py"),
+                &mut defs,
+                crate::units::CodeUnitKind::Function,
+                None,
+            );
+        }
+    }
+    let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
+    assert!(!names.contains(&"_private"), "private functions skipped");
+    assert!(names.contains(&"__init__"), "__init__ is allowed");
+    assert!(!names.contains(&"test_foo"), "test_ functions skipped");
+    assert!(names.contains(&"normal"), "normal functions included");
+}
+
+// ---------------------------------------------------------------------------
+// collect.rs: insert_identifier
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_insert_identifier_captures_name() {
+    use crate::parsing::create_parser;
+    let mut parser = create_parser().unwrap();
+    let src = "x\n";
+    let tree = parser.parse(src, None).unwrap();
+    let root = tree.root_node();
+    let expr_stmt = root.child(0).unwrap();
+    let ident = expr_stmt.child(0).unwrap();
+    assert_eq!(ident.kind(), "identifier");
+    let mut refs = std::collections::HashSet::new();
+    super::collect::insert_identifier(ident, src, &mut refs);
+    assert!(refs.contains("x"));
+}
+
+// ---------------------------------------------------------------------------
+// collect.rs: collect_usage_refs_in_scope
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_collect_usage_refs_in_scope_gathers_calls_and_identifiers() {
+    use crate::parsing::create_parser;
+    let mut parser = create_parser().unwrap();
+    let src = "def test_it():\n    foo()\n    bar.baz()\n    x = helper\n";
+    let tree = parser.parse(src, None).unwrap();
+    let root = tree.root_node();
+    let func_def = root.child(0).unwrap();
+    let body = func_def.child_by_field_name("body").unwrap();
+    let mut refs = std::collections::HashSet::new();
+    super::collect::collect_usage_refs_in_scope(body, src, &mut refs);
+    assert!(refs.contains("foo"), "direct call captured");
+    assert!(refs.contains("baz"), "attribute call captured");
+    assert!(refs.contains("helper"), "bare identifier captured");
+}
+
+// ---------------------------------------------------------------------------
+// collect.rs: collect_class_test_methods
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_collect_class_test_methods_extracts_test_methods() {
+    use crate::parsing::create_parser;
+    let mut parser = create_parser().unwrap();
+    let src = "class TestFoo:\n    def test_one(self):\n        run()\n    def helper(self):\n        pass\n    def test_two(self):\n        go()\n";
+    let tree = parser.parse(src, None).unwrap();
+    let class_node = tree.root_node().child(0).unwrap();
+    let body = class_node.child_by_field_name("body").unwrap();
+    let mut out = Vec::new();
+    super::collect::collect_class_test_methods(body, src, "TestFoo", &mut out);
+    let ids: Vec<&str> = out.iter().map(|(id, _)| id.as_str()).collect();
+    assert!(ids.contains(&"TestFoo::test_one"));
+    assert!(ids.contains(&"TestFoo::test_two"));
+    assert!(!ids.iter().any(|id| id.contains("helper")));
+    let (_, refs) = out.iter().find(|(id, _)| id == "TestFoo::test_one").unwrap();
+    assert!(refs.contains("run"));
+}
+
+// ---------------------------------------------------------------------------
+// collect.rs: collect_test_functions_with_refs
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_collect_test_functions_with_refs_top_level_and_class() {
+    use crate::parsing::create_parser;
+    let mut parser = create_parser().unwrap();
+    let src = "def test_alpha():\n    do_alpha()\n\nclass TestBeta:\n    def test_beta_one(self):\n        do_beta()\n";
+    let tree = parser.parse(src, None).unwrap();
+    let mut out = Vec::new();
+    super::collect::collect_test_functions_with_refs(tree.root_node(), src, "", &mut out);
+    let ids: Vec<&str> = out.iter().map(|(id, _)| id.as_str()).collect();
+    assert!(ids.contains(&"test_alpha"));
+    assert!(ids.contains(&"TestBeta::test_beta_one"));
+}
+
+// ---------------------------------------------------------------------------
+// collect.rs: collect_all_test_file_data
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_collect_all_test_file_data_imports_calls_decorators() {
+    use crate::parsing::create_parser;
+    let mut parser = create_parser().unwrap();
+    let src = "from mymod import helper\nimport pytest\n\n@pytest.mark.slow\ndef test_x():\n    helper()\n";
+    let tree = parser.parse(src, None).unwrap();
+    let mut test_refs = std::collections::HashSet::new();
+    let mut usage_refs = std::collections::HashSet::new();
+    let mut import_bindings = std::collections::HashMap::new();
+    super::collect::collect_all_test_file_data(
+        tree.root_node(),
+        src,
+        &mut test_refs,
+        &mut usage_refs,
+        &mut import_bindings,
+    );
+    assert!(test_refs.contains("helper"), "import name captured in test_refs");
+    assert!(test_refs.contains("mymod"), "module name captured in test_refs");
+    assert!(test_refs.contains("pytest"), "import captured in test_refs");
+    assert!(usage_refs.contains("helper"), "call captured in usage_refs");
+    assert!(
+        import_bindings.get("mymod").unwrap().contains("helper"),
+        "import binding recorded"
+    );
+}
+
 

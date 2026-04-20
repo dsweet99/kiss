@@ -290,13 +290,6 @@ fn test_show_tests_path_outside_universe() {
 }
 
 #[test]
-fn static_coverage_touch_gather_files_with_path_expansion() {
-    fn t<T>(_: T) {}
-    t(gather_files_with_path_expansion);
-    let _ = std::mem::size_of::<args::EmitShowTestsArgs>();
-}
-
-#[test]
 fn test_defs_from_analysis_rows_direct() {
     use kiss::test_refs::CoveringTest;
     let defs = vec![

@@ -230,18 +230,86 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::let_unit_value)]
-    fn test_touch_for_coverage() {
-        fn touch<T>(_: T) {}
-        let _ = (
-            touch(parse_all_timed),
-            touch(py_parsed_or_log),
-            touch(py_file_agg),
-            touch(py_agg_empty),
-            touch(py_agg_merge),
-            touch(parse_and_analyze_py_timed),
-            touch(parse_and_analyze_rs),
-        );
-        let _ = std::mem::size_of::<ParseResult>();
+    fn test_parse_all_timed_params_constructible() {
+        let py_cfg = Config::python_defaults();
+        let rs_cfg = Config::rust_defaults();
+        let params = ParseAllTimedParams {
+            py_files: &[],
+            rs_files: &[],
+            py_config: &py_cfg,
+            rs_config: &rs_cfg,
+            show_timing: false,
+        };
+        assert!(!params.show_timing);
+    }
+
+    #[test]
+    fn test_parse_all_timed_with_timing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("a.py"), "def f(): pass").unwrap();
+        let py_cfg = Config::python_defaults();
+        let rs_cfg = Config::rust_defaults();
+        let (result, timing) = parse_all_timed(ParseAllTimedParams {
+            py_files: &[tmp.path().join("a.py")],
+            rs_files: &[],
+            py_config: &py_cfg,
+            rs_config: &rs_cfg,
+            show_timing: true,
+        });
+        assert!(!timing.is_empty(), "timing string should be non-empty when show_timing=true");
+        assert_eq!(result.py_parsed.len(), 1);
+    }
+
+    #[test]
+    fn test_py_parsed_or_log_ok() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let p = tmp.path().join("ok.py");
+        std::fs::write(&p, "x = 1").unwrap();
+        let results = kiss::parse_files(&[p]).unwrap();
+        let first = results.into_iter().next().unwrap();
+        let out = py_parsed_or_log(first);
+        assert!(out.is_some());
+    }
+
+    #[test]
+    fn test_py_agg_empty_returns_zeros() {
+        let (units, stmts, viols) = py_agg_empty();
+        assert_eq!(units, 0);
+        assert_eq!(stmts, 0);
+        assert!(viols.is_empty());
+    }
+
+    #[test]
+    fn test_py_agg_merge_combines() {
+        let a: PyAgg = (2, 3, vec![]);
+        let b: PyAgg = (5, 7, vec![]);
+        let merged = py_agg_merge(a, b);
+        assert_eq!(merged.0, 7);
+        assert_eq!(merged.1, 10);
+    }
+
+    #[test]
+    fn test_parse_and_analyze_py_timed_empty() {
+        let cfg = Config::python_defaults();
+        let ((parsed, viols, units, stmts), timing) =
+            parse_and_analyze_py_timed(&[], &cfg, false);
+        assert!(parsed.is_empty());
+        assert!(viols.is_empty());
+        assert_eq!(units, 0);
+        assert_eq!(stmts, 0);
+        assert!(timing.is_empty());
+    }
+
+    #[test]
+    fn test_py_file_agg_smoke() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let p = tmp.path().join("agg.py");
+        std::fs::write(&p, "def g(): pass\ndef h(): pass\n").unwrap();
+        let results = kiss::parse_files(&[p]).unwrap();
+        let parsed: Vec<_> = results.into_iter().filter_map(Result::ok).collect();
+        assert!(!parsed.is_empty());
+        let cfg = Config::python_defaults();
+        let (units, stmts, viols) = py_file_agg(&parsed[0], &cfg);
+        assert!(units > 0 || stmts > 0 || viols.is_empty());
     }
 }

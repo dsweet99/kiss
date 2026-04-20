@@ -125,14 +125,118 @@ pub(crate) fn collect_detailed_from_node_for_test(
 #[cfg(test)]
 mod python_coverage {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn touch_for_coverage() {
-        fn touch<T>(_: T) {}
-        touch(unit_metrics_from_py_function as fn(&str, &str, usize, &FunctionMetrics) -> UnitMetrics);
-        touch(walk_detailed_children as fn(Node, &str, &str, &mut Vec<UnitMetrics>));
-        touch(push_py_function_unit as fn(Node, &str, &str, &mut Vec<UnitMetrics>) -> bool);
-        touch(push_py_class_unit as fn(Node, &str, &str, &mut Vec<UnitMetrics>));
-        touch(collect_detailed_from_node as fn(Node, &str, &str, &mut Vec<UnitMetrics>));
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
+        write!(tmp, "def foo(a, b):\n    return a + b\n\nclass C:\n    def m(self):\n        pass\n").unwrap();
+        let parsed = crate::parsing::parse_file(
+            &mut crate::parsing::create_parser().unwrap(),
+            tmp.path(),
+        )
+        .unwrap();
+        let refs: Vec<&crate::parsing::ParsedFile> = vec![&parsed];
+        let units = collect_detailed_py(&refs, None);
+        assert!(units.len() >= 3, "expected file + function + class units, got {}", units.len());
+        assert!(units.iter().any(|u| u.kind == "function"), "expected a function unit");
+        assert!(units.iter().any(|u| u.kind == "class"), "expected a class unit");
+    }
+
+    #[test]
+    fn collect_detailed_from_node_produces_function_metrics() {
+        let source = "def greet(name):\n    print(name)\n    return name\n";
+        let mut parser = crate::parsing::create_parser().unwrap();
+        parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let mut units = Vec::new();
+        collect_detailed_from_node_for_test(tree.root_node(), source, "test.py", &mut units);
+
+        assert_eq!(units.len(), 1);
+        let u = &units[0];
+        assert_eq!(u.kind, "function");
+        assert_eq!(u.name, "greet");
+        assert_eq!(u.file, "test.py");
+        assert!(u.statements.unwrap() >= 2);
+        assert_eq!(u.arguments.unwrap(), 1);
+        assert!(u.returns.is_some());
+    }
+
+    #[test]
+    fn collect_detailed_from_node_produces_class_metrics() {
+        let source = "class Dog:\n    def bark(self):\n        pass\n    def sit(self):\n        pass\n";
+        let mut parser = crate::parsing::create_parser().unwrap();
+        parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let mut units = Vec::new();
+        collect_detailed_from_node_for_test(tree.root_node(), source, "test.py", &mut units);
+
+        let class_units: Vec<_> = units.iter().filter(|u| u.kind == "class").collect();
+        assert_eq!(class_units.len(), 1);
+        assert_eq!(class_units[0].name, "Dog");
+        assert_eq!(class_units[0].methods.unwrap(), 2);
+
+        assert_eq!(units.iter().filter(|u| u.kind == "function").count(), 2);
+    }
+
+    #[test]
+    fn unit_metrics_from_py_function_fields() {
+        let source = "def add(a, b=0):\n    x = a + b\n    return x\n";
+        let mut parser = crate::parsing::create_parser().unwrap();
+        parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let mut units = Vec::new();
+        collect_detailed_from_node_for_test(tree.root_node(), source, "test.py", &mut units);
+
+        let u = &units[0];
+        assert_eq!(u.kind, "function");
+        assert!(u.locals.is_some());
+        assert!(u.branches.is_some());
+        assert!(u.calls.is_some());
+        assert!(u.indentation.is_some());
+        assert!(u.nested_depth.is_some());
+        assert!(u.boolean_parameters.is_some());
+        assert!(u.annotations.is_some());
+        assert!(u.try_block_statements.is_some());
+        assert!(u.return_values.is_some());
+    }
+
+    #[test]
+    fn walk_detailed_children_traverses_nested() {
+        let source = "if True:\n    def inner(x):\n        pass\n";
+        let mut parser = crate::parsing::create_parser().unwrap();
+        parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let mut units = Vec::new();
+        collect_detailed_from_node_for_test(tree.root_node(), source, "test.py", &mut units);
+        assert!(
+            units.iter().any(|u| u.name == "inner"),
+            "walk_detailed_children should find nested function"
+        );
+    }
+
+    #[test]
+    fn push_py_function_unit_and_push_py_class_unit_names() {
+        let source = "class Outer:\n    def method_a(self, flag: bool):\n        return 1\n\ndef standalone():\n    pass\n";
+        let mut parser = crate::parsing::create_parser().unwrap();
+        parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let mut units = Vec::new();
+        collect_detailed_from_node_for_test(tree.root_node(), source, "f.py", &mut units);
+
+        let names: Vec<&str> = units.iter().map(|u| u.name.as_str()).collect();
+        assert!(names.contains(&"Outer"), "push_py_class_unit should emit class");
+        assert!(names.contains(&"method_a"), "push_py_function_unit should emit method");
+        assert!(names.contains(&"standalone"), "push_py_function_unit should emit standalone fn");
     }
 }

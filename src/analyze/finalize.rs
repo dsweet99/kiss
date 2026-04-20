@@ -213,10 +213,49 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
 
 #[cfg(test)]
 mod finalize_touch {
+    use super::*;
     use crate::analyze::finalize_types::FinalizeAnalysisIn;
+    use crate::analyze_parse::ParseResult;
 
     #[test]
     fn struct_size_for_gate() {
         let _ = std::mem::size_of::<FinalizeAnalysisIn>();
+    }
+
+    fn make_parse_result(code_unit_count: usize, statement_count: usize) -> ParseResult {
+        ParseResult {
+            py_parsed: Vec::new(),
+            rs_parsed: Vec::new(),
+            violations: Vec::new(),
+            code_unit_count,
+            statement_count,
+        }
+    }
+
+    #[test]
+    fn test_build_metrics_empty() {
+        let result = make_parse_result(0, 0);
+        let metrics = build_metrics(&result, 0, None, None);
+        assert_eq!(metrics.files, 0);
+        assert_eq!(metrics.code_units, 0);
+        assert_eq!(metrics.statements, 0);
+        assert_eq!(metrics.graph_nodes, 0);
+        assert_eq!(metrics.graph_edges, 0);
+    }
+
+    #[test]
+    fn test_build_metrics_counts_files() {
+        let result = make_parse_result(10, 20);
+        let metrics = build_metrics(&result, 5, None, None);
+        assert_eq!(metrics.files, 5);
+        assert_eq!(metrics.code_units, 10);
+        assert_eq!(metrics.statements, 20);
+    }
+
+    #[test]
+    fn finalize_functions_exist() {
+        let _ = finalize_header as fn(HeaderPhase<'_>) -> kiss::GlobalMetrics;
+        let _ = finalize_coverage_and_dups as fn(CovDupPhase<'_>) -> CovDupOutcome;
+        let _ = finalize_store_and_print as fn(StorePrintPhase<'_>) -> bool;
     }
 }

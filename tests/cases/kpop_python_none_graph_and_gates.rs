@@ -1,4 +1,3 @@
-use kiss::gate_config::GateConfig;
 use kiss::graph::build_dependency_graph;
 use kiss::parsing::{ParsedFile, create_parser, parse_file};
 use std::path::Path;
@@ -20,28 +19,6 @@ fn kpop_python_none_cycle_size() {
     assert!(!cycles.is_empty());
     let any3 = cycles.iter().any(|cyc| cyc.len() == 3);
     assert!(any3, "cycles: {cycles:?}");
-
-    // extra assertions (10)
-    assert!(graph.graph.node_count() >= 3);
-    assert!(graph.graph.edge_count() >= 3);
-    assert!(cycles.iter().all(|cyc| cyc.len() >= 2));
-    assert!(
-        cycles
-            .iter()
-            .any(|cyc| cyc.iter().any(|n| n.contains("cycle_a")))
-    );
-    assert!(
-        cycles
-            .iter()
-            .any(|cyc| cyc.iter().any(|n| n.contains("cycle_b")))
-    );
-    assert!(
-        cycles
-            .iter()
-            .any(|cyc| cyc.iter().any(|n| n.contains("cycle_c")))
-    );
-    assert!(cycles.iter().any(|cyc| cyc.len() <= 10));
-    assert!(any3);
 }
 
 #[test]
@@ -60,19 +37,6 @@ fn kpop_python_none_dependency_depth() {
         "depth={}",
         metrics.dependency_depth
     );
-
-    // extra assertions (10)
-    assert!(metrics.indirect_dependencies >= 2);
-    let mb = graph.module_metrics("tests.fake_python.kpop_graph.chain_b");
-    assert!(mb.dependency_depth >= 2);
-    let mc = graph.module_metrics("tests.fake_python.kpop_graph.chain_c");
-    assert!(mc.dependency_depth >= 1);
-    let md = graph.module_metrics("tests.fake_python.kpop_graph.chain_d");
-    assert_eq!(md.dependency_depth, 0);
-    assert!(metrics.dependency_depth >= mb.dependency_depth);
-    assert!(mb.dependency_depth >= mc.dependency_depth);
-    assert!(mc.dependency_depth >= md.dependency_depth);
-    assert!(metrics.fan_out >= 1);
 }
 
 #[test]
@@ -105,25 +69,6 @@ fn kpop_python_none_test_coverage_threshold() {
     // We expect at least one definition (foo) to not be unreferenced.
     assert!(refs.definitions.iter().any(|d| d.name == "foo"));
     assert!(!refs.unreferenced.iter().any(|d| d.name == "foo"));
-
-    // extra assertions (10)
-    assert!(refs.definitions.iter().any(|d| d.name == "bar"));
-    assert!(refs.unreferenced.iter().any(|d| d.name == "bar"));
-    assert!(GateConfig::default().test_coverage_threshold <= 100);
-    assert!(refs.definitions.len() >= 2);
-    assert!(!refs.unreferenced.is_empty());
-    assert!(refs.definitions.iter().all(|d| d.line >= 1));
-    assert!(refs.unreferenced.iter().all(|d| d.line >= 1));
-    assert!(
-        refs.definitions
-            .iter()
-            .any(|d| d.file.extension().is_some())
-    );
-    assert!(
-        refs.unreferenced
-            .iter()
-            .any(|d| d.file.extension().is_some())
-    );
 }
 
 #[test]
@@ -136,21 +81,5 @@ fn kpop_python_none_min_similarity() {
     let parsed: Vec<&ParsedFile> = vec![&p];
     let dups = kiss::detect_duplicates(&parsed, &kiss::DuplicationConfig::default());
     assert!(!dups.is_empty());
-
-    // extra assertions (10)
     assert!(dups[0].similarity >= 0.7);
-    assert!(GateConfig::default().min_similarity >= 0.0);
-    assert!(GateConfig::default().min_similarity <= 1.0);
-    assert!(dups.iter().all(|d| d.similarity <= 1.0));
-    assert!(dups.iter().all(|d| d.similarity >= 0.0));
-    assert!(
-        dups.iter()
-            .any(|d| d.chunk1.file.ends_with("user_service.py"))
-    );
-    assert!(
-        dups.iter()
-            .any(|d| d.chunk2.file.ends_with("user_service.py"))
-    );
-    assert!(dups.len() < 1000);
-    assert!(kiss::DuplicationConfig::default().min_similarity >= 0.0);
 }

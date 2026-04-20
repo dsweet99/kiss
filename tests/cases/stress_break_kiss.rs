@@ -57,9 +57,7 @@ fn h1_error_node_in_return_corrupts_return_value_count() {
 
     let func = get_func_node(&p);
     let m = compute_function_metrics(func, &p.source);
-    // kiss should ideally report 0 or flag the error, not silently miscount.
-    // This test documents the current behavior.
-    let _ = m.max_return_values;
+    assert!(m.has_error, "function with syntax error in return should set has_error");
 }
 
 #[test]
@@ -69,9 +67,7 @@ fn h1_unclosed_string_corrupts_entire_function() {
     let p = parse(code);
     let fm = compute_file_metrics(&p);
 
-    // The unclosed string may swallow `bar` — file metrics may undercount functions
-    // This test documents the behavior rather than asserting correctness.
-    let _ = fm;
+    assert!(fm.functions >= 1, "should parse at least one function despite unclosed string, functions={}", fm.functions);
 }
 
 fn has_error_node(node: tree_sitter::Node) -> bool {

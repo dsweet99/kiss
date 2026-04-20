@@ -133,3 +133,72 @@ pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
         timings,
     })
 }
+
+#[cfg(test)]
+mod gated_tests {
+    use super::*;
+
+    struct TestFixture {
+        py_cfg: kiss::Config,
+        rs_cfg: kiss::Config,
+        gate: GateConfig,
+        focus: Vec<String>,
+    }
+
+    impl TestFixture {
+        fn new() -> Self {
+            Self {
+                py_cfg: kiss::Config::python_defaults(),
+                rs_cfg: kiss::Config::rust_defaults(),
+                gate: GateConfig::default(),
+                focus: vec![],
+            }
+        }
+
+        fn make_opts(&self) -> crate::analyze::options::AnalyzeOptions<'_> {
+            crate::analyze::options::AnalyzeOptions {
+                universe: "/tmp",
+                focus_paths: &self.focus,
+                py_config: &self.py_cfg,
+                rs_config: &self.rs_cfg,
+                lang_filter: None,
+                bypass_gate: false,
+                gate_config: &self.gate,
+                ignore_prefixes: &[],
+                show_timing: false,
+                suppress_final_status: false,
+            }
+        }
+
+        fn with_input<R>(&self, f: impl FnOnce(&GatedPyParallelIn<'_>) -> R) -> R {
+            let opts = self.make_opts();
+            let input = GatedPyParallelIn {
+                py_parsed: &[],
+                opts: &opts,
+                file_count: 0,
+                gate: &self.gate,
+            };
+            f(&input)
+        }
+    }
+
+    #[test]
+    fn test_gated_py_parallel_in_constructible() {
+        let fix = TestFixture::new();
+        fix.with_input(|input| {
+            assert_eq!(input.file_count, 0);
+        });
+    }
+
+    #[test]
+    fn test_gated_py_parallel_empty() {
+        let fix = TestFixture::new();
+        fix.with_input(|input| {
+            let (py_cov, py_graph, graph_viols, py_dups) = gated_py_parallel(input);
+            assert!(py_cov.definitions.is_empty());
+            assert!(py_graph.is_none());
+            assert!(graph_viols.is_empty());
+            assert!(py_dups.is_empty());
+        });
+    }
+}

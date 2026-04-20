@@ -257,14 +257,6 @@ fn test_insert_path_segments() {
 }
 
 #[test]
-fn test_touch_for_static_test_coverage() {
-    fn touch<T>(_: T) {}
-    touch(cfg_contains_test);
-    touch(build_rust_coverage_map);
-    touch(references::collect_per_test_usage);
-}
-
-#[test]
 fn test_collect_rust_references_for_fn_direct() {
     let code = "fn test_fn() { foo(); bar::baz(); }";
     let ast: syn::File = syn::parse_str(code).unwrap();

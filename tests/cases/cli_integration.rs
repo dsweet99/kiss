@@ -96,10 +96,7 @@ fn cli_analyze_runs_on_python() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        output.status.success() || !stdout.is_empty(),
-        "kiss should run. stdout: {stdout}"
-    );
+    assert!(!stdout.is_empty(), "kiss check should produce output. stdout: {stdout}");
 }
 
 #[test]
@@ -115,10 +112,7 @@ fn cli_analyze_reports_violations_on_god_class() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("VIOLATION") || stdout.contains("methods"),
-        "god_class should report violations. stdout: {stdout}"
-    );
+    assert!(stdout.contains("VIOLATION"), "god_class should report violations. stdout: {stdout}");
 }
 
 #[test]
@@ -127,10 +121,7 @@ fn cli_stats_command_runs() {
     fs::write(tmp.path().join("mod.py"), "def foo(): x = 1").unwrap();
     let output = kiss_binary().arg("stats").arg(tmp.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("stats") || stdout.contains("Python") || stdout.contains("files"),
-        "kiss stats should produce output. stdout: {stdout}"
-    );
+    assert!(stdout.contains("Python"), "kiss stats should mention Python. stdout: {stdout}");
 }
 
 #[test]

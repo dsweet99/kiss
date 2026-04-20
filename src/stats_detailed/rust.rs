@@ -144,13 +144,86 @@ pub(crate) fn get_impl_name(i: &syn::ItemImpl) -> String {
 #[cfg(test)]
 mod rust_coverage {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn touch_for_coverage() {
-        fn touch<T>(_: T) {}
-        let _ = std::mem::size_of::<RustFnMethodPush>();
-        touch(push_top_level_fn as fn(&syn::ItemFn, &str, &mut Vec<UnitMetrics>));
-        touch(push_impl_block as fn(&syn::ItemImpl, &str, &mut Vec<UnitMetrics>));
-        touch(push_impl_method as fn(&syn::ImplItemFn, &str, &mut Vec<UnitMetrics>));
+        let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+        write!(tmp, "fn foo() {{ let x = 1; }}\nstruct S;\nimpl S {{ fn m(&self) {{ let y = 2; }} }}").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+        let refs: Vec<&crate::rust_parsing::ParsedRustFile> = vec![&parsed];
+        let units = collect_detailed_rs(&refs, None);
+        assert!(units.len() >= 3, "expected file + function + impl units, got {}", units.len());
+        assert!(units.iter().any(|u| u.kind == "function"), "expected a function unit");
+        assert!(units.iter().any(|u| u.kind == "impl"), "expected an impl unit");
+    }
+
+    #[test]
+    fn push_top_level_fn_metrics() {
+        let code = "fn compute(a: i32, b: i32) -> i32 { let c = a + b; c }";
+        let ast: syn::File = syn::parse_str(code).unwrap();
+        let mut units = Vec::new();
+        collect_detailed_from_items(&ast.items, "test.rs", &mut units);
+
+        assert_eq!(units.len(), 1);
+        let u = &units[0];
+        assert_eq!(u.kind, "function");
+        assert_eq!(u.name, "compute");
+        assert_eq!(u.arguments.unwrap(), 2);
+        assert!(u.statements.is_some());
+        assert!(u.branches.is_some());
+        assert!(u.locals.is_some());
+        assert!(u.calls.is_some());
+    }
+
+    #[test]
+    fn push_impl_block_and_push_impl_method_metrics() {
+        let code = r"
+            struct Widget;
+            impl Widget {
+                fn new() -> Self { Widget }
+                fn update(&mut self, flag: bool) { let _ = flag; }
+            }
+        ";
+        let ast: syn::File = syn::parse_str(code).unwrap();
+        let mut units = Vec::new();
+        collect_detailed_from_items(&ast.items, "w.rs", &mut units);
+
+        let impl_units: Vec<_> = units.iter().filter(|u| u.kind == "impl").collect();
+        assert_eq!(impl_units.len(), 1);
+        assert_eq!(impl_units[0].name, "Widget");
+        assert_eq!(impl_units[0].methods.unwrap(), 2);
+
+        let method_units: Vec<_> = units.iter().filter(|u| u.kind == "method").collect();
+        assert_eq!(method_units.len(), 2);
+        let names: Vec<&str> = method_units.iter().map(|u| u.name.as_str()).collect();
+        assert!(names.contains(&"new"));
+        assert!(names.contains(&"update"));
+    }
+
+    #[test]
+    fn rust_fn_method_push_struct_used() {
+        let code = "fn solo() { let x = 1; }";
+        let ast: syn::File = syn::parse_str(code).unwrap();
+        let mut units = Vec::new();
+        collect_detailed_from_items(&ast.items, "test.rs", &mut units);
+        let u = &units[0];
+        assert!(u.indentation.is_some());
+        assert!(u.nested_depth.is_some());
+        assert!(u.boolean_parameters.is_some());
+        assert!(u.annotations.is_some());
+        assert!(u.args_positional.is_some());
+        assert_eq!(u.args_keyword_only.unwrap(), 0);
+        let _ = RustFnMethodPush {
+            file: "x.rs",
+            name: "f".to_string(),
+            line: 1,
+            kind: "function",
+            m: &crate::rust_fn_metrics::compute_rust_function_metrics(
+                &syn::punctuated::Punctuated::new(),
+                &syn::parse_str::<syn::Block>("{}").unwrap(),
+                0,
+            ),
+        };
     }
 }

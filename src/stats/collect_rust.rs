@@ -70,7 +70,64 @@ mod collect_rust_coverage {
 
     #[test]
     fn touch_for_coverage() {
-        fn touch<T>(_: T) {}
-        touch(collect_rust_impl as fn(&syn::ItemImpl, &mut MetricStats));
+        let code = "struct Foo;\nimpl Foo { fn bar(&self) { let x = 1; } }";
+        let ast: syn::File = syn::parse_str(code).unwrap();
+        let mut stats = MetricStats::default();
+        collect_rust_from_items(&ast.items, &mut stats);
+        assert!(!stats.methods_per_class.is_empty(), "impl block should populate methods_per_class");
+        assert!(!stats.statements_per_function.is_empty(), "impl method should populate statements");
+    }
+
+    #[test]
+    fn collect_rust_impl_populates_method_stats() {
+        let code = r"
+            struct Counter;
+            impl Counter {
+                fn inc(&mut self, by: usize) {
+                    let old = self.count;
+                    self.count = old + by;
+                }
+                fn reset(&mut self) {
+                    self.count = 0;
+                }
+            }
+        ";
+        let ast: syn::File = syn::parse_str(code).unwrap();
+        let mut stats = MetricStats::default();
+        collect_rust_from_items(&ast.items, &mut stats);
+
+        assert_eq!(stats.methods_per_class, vec![2], "collect_rust_impl should count 2 methods");
+        assert_eq!(
+            stats.statements_per_function.len(),
+            2,
+            "collect_rust_impl should push stats for each method"
+        );
+        assert_eq!(
+            stats.arguments_per_function.len(),
+            2,
+            "push_rust_fn_metrics should push arguments for each method"
+        );
+    }
+
+    #[test]
+    fn collect_rust_impl_with_top_level_fn() {
+        let code = r"
+            fn top(a: i32) -> i32 { a + 1 }
+            struct S;
+            impl S {
+                fn method(&self) { let _ = 1; }
+            }
+        ";
+        let ast: syn::File = syn::parse_str(code).unwrap();
+        let mut stats = MetricStats::default();
+        collect_rust_from_items(&ast.items, &mut stats);
+
+        assert_eq!(stats.methods_per_class, vec![1]);
+        assert_eq!(stats.statements_per_function.len(), 2);
+        assert!(stats.branches_per_function.len() == 2);
+        assert!(stats.local_variables_per_function.len() == 2);
+        assert!(stats.boolean_parameters.len() == 2);
+        assert!(stats.annotations_per_function.len() == 2);
+        assert!(stats.calls_per_function.len() == 2);
     }
 }

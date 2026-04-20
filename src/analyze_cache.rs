@@ -243,35 +243,20 @@ pub fn coverage_lists(
     let py_cov = kiss::analyze_test_refs_quick(&py_refs);
     let rs_cov = kiss::analyze_rust_test_refs(&rs_refs, None);
 
-    let mut definitions: Vec<CachedCoverageItem> = py_cov
-        .definitions
-        .into_iter()
-        .map(|d| CachedCoverageItem {
-            file: d.file.to_string_lossy().to_string(),
-            name: d.name,
-            line: d.line,
-        })
-        .collect();
-    definitions.extend(rs_cov.definitions.into_iter().map(|d| CachedCoverageItem {
-        file: d.file.to_string_lossy().to_string(),
-        name: d.name,
-        line: d.line,
-    }));
+    let to_cached = |file: PathBuf, name: String, line: usize| CachedCoverageItem {
+        file: file.to_string_lossy().to_string(),
+        name,
+        line,
+    };
 
-    let mut unreferenced: Vec<CachedCoverageItem> = py_cov
-        .unreferenced
-        .into_iter()
-        .map(|d| CachedCoverageItem {
-            file: d.file.to_string_lossy().to_string(),
-            name: d.name,
-            line: d.line,
-        })
-        .collect();
-    unreferenced.extend(rs_cov.unreferenced.into_iter().map(|d| CachedCoverageItem {
-        file: d.file.to_string_lossy().to_string(),
-        name: d.name,
-        line: d.line,
-    }));
+    let mut definitions: Vec<CachedCoverageItem> = py_cov.definitions.into_iter()
+        .map(|d| to_cached(d.file, d.name, d.line)).collect();
+    definitions.extend(rs_cov.definitions.into_iter()
+        .map(|d| to_cached(d.file, d.name, d.line)));
+    let mut unreferenced: Vec<CachedCoverageItem> = py_cov.unreferenced.into_iter()
+        .map(|d| to_cached(d.file, d.name, d.line)).collect();
+    unreferenced.extend(rs_cov.unreferenced.into_iter()
+        .map(|d| to_cached(d.file, d.name, d.line)));
     (definitions, unreferenced)
 }
 
@@ -343,26 +328,8 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_touch_analyze_cache_privates_for_static_coverage() {
-        fn touch<T>(_t: T) {}
-        let _ = std::marker::PhantomData::<FullCacheInputs<'static>>;
-        touch(fnv1a64);
-        touch(cache_path_full);
-        touch(load_full_cache);
-        touch(cached_duplicates);
-        touch(cached_coverage_viols);
-        touch(coverage_violation);
-        touch(graph_counts);
-    }
-
-    #[test]
-    fn test_cached_helpers_smoke() {
-        let fp = "deadbeef";
-        let _ = cache_path_full(fp);
-        let _ = load_full_cache(fp); // likely None
-
-        let empty = FullCheckCache {
+    fn empty_cache(fp: &str) -> FullCheckCache {
+        FullCheckCache {
             fingerprint: fp.to_string(),
             py_file_count: 0,
             rs_file_count: 0,
@@ -377,13 +344,57 @@ mod tests {
             rs_duplicates: Vec::new(),
             definitions: Vec::new(),
             unreferenced: Vec::new(),
-        };
+        }
+    }
+
+    fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
+        FullCacheInputs {
+            fingerprint: fp.to_string(),
+            py_file_count: 0, rs_file_count: 0,
+            code_unit_count: 0, statement_count: 0,
+            violations: &[], graph_viols_all: &[], coverage_violations: &[],
+            py_graph: None, rs_graph: None,
+            py_dups_all: &[], rs_dups_all: &[],
+            definitions: Vec::new(), unreferenced: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn cache_round_trip_and_helpers() {
+        let fp = fingerprint_for_check(
+            &[], &[], &Config::python_defaults(), &Config::rust_defaults(), &GateConfig::default(),
+        );
+        assert!(!fp.is_empty());
+
+        let v = coverage_violation(PathBuf::from("test.py"), "foo".into(), 1, 50);
+        assert_eq!(v.metric, "test_coverage");
+        assert!(v.message.contains("50%"));
+        assert_eq!(graph_counts(None, None), (0, 0));
+
+        cache_path_full("deadbeef");
+        assert!(load_full_cache("deadbeef").is_none());
+
         let focus = HashSet::new();
         let (_viols, py_dups, rs_dups, cache) =
-            cached_duplicates(empty, &GateConfig::default(), &focus);
-        assert!(py_dups.is_empty());
-        assert!(rs_dups.is_empty());
-        let cov = cached_coverage_viols(&cache, &focus);
-        assert!(cov.is_empty());
+            cached_duplicates(empty_cache("deadbeef"), &GateConfig::default(), &focus);
+        assert!(py_dups.is_empty() && rs_dups.is_empty());
+        assert!(cached_coverage_viols(&cache, &focus).is_empty());
+    }
+
+    #[test]
+    fn fnv1a64_properties() {
+        let h0 = 0xcbf2_9ce4_8422_2325_u64;
+        assert_eq!(fnv1a64(h0, b""), h0);
+        assert_eq!(fnv1a64(h0, b"hello"), fnv1a64(h0, b"hello"));
+        assert_ne!(fnv1a64(h0, b"hello"), fnv1a64(h0, b"world"));
+    }
+
+    #[test]
+    fn full_cache_inputs_and_store() {
+        let mut inputs = empty_inputs("test_fp");
+        inputs.py_file_count = 1;
+        assert_eq!(inputs.py_file_count, 1);
+
+        store_full_cache_from_run(empty_inputs("empty_run_test"));
     }
 }

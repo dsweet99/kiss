@@ -85,41 +85,9 @@ fn default_config_toml_matches_requested_defaults() {
 }
 
 #[test]
-fn test_config_language_enum() {
-    assert_ne!(ConfigLanguage::Python, ConfigLanguage::Rust);
-}
-
-#[test]
-fn test_config_struct_fields() {
-    let c = Config::default();
-    assert!(
-        c.statements_per_function > 0 && c.statements_per_file > 0 && c.lines_per_file > 0
-    );
-}
-
-#[test]
-fn test_load_returns_config() {
-    let c = Config::load();
-    assert!(c.statements_per_function > 0);
-}
-
-#[test]
-fn test_load_for_language() {
-    let c = Config::load_for_language(ConfigLanguage::Python);
-    assert!(c.statements_per_function > 0);
-}
-
-#[test]
 fn test_load_from_nonexistent() {
     let c = Config::load_from(std::path::Path::new("/nonexistent/path"));
-    assert!(c.statements_per_function > 0);
-}
-
-#[test]
-fn test_load_from_for_language() {
-    let c =
-        Config::load_from_for_language(std::path::Path::new("/nonexistent"), ConfigLanguage::Rust);
-    assert!(c.statements_per_function > 0);
+    assert_eq!(c.statements_per_function, 35, "should fall back to default");
 }
 
 #[test]

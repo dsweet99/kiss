@@ -18,24 +18,7 @@ pub(crate) use coverage::{build_py_coverage_map, is_definition_covered};
 pub(crate) use disambiguation::{build_disambiguation_map, file_to_module_suffix};
 
 #[cfg(test)]
-pub(crate) use collect::{
-    collect_all_test_file_data, collect_call_target, collect_class_test_methods,
-    collect_definitions, collect_import_names, collect_test_functions_with_refs, collect_type_refs,
-    collect_usage_refs_in_scope, extract_import_from_binding, insert_identifier, try_add_def,
-};
-#[cfg(test)]
-pub(crate) use coverage::{build_ref_to_covered_def_indices, is_covered_by_import};
-#[cfg(test)]
-pub(crate) use detection::{
-    contains_test_module_name, has_python_test_naming, has_test_function_or_class,
-    is_abstract_method, is_protocol_class, is_python_test_file, is_test_class, is_test_framework,
-    is_test_framework_import_from, is_test_function,
-};
-#[cfg(test)]
-pub(crate) use disambiguation::{
-    disambiguate_files, disambiguate_files_graph_fallback, module_suffix_matches, path_identifiers,
-    resolve_ambiguous_name,
-};
+pub(crate) use collect::collect_definitions;
 
 #[derive(Debug, Clone)]
 pub struct CodeDefinition {
@@ -145,3 +128,9 @@ fn analyze_test_refs_inner(
 mod tests;
 #[cfg(test)]
 mod tests_2;
+#[cfg(test)]
+mod tests_3;
+#[cfg(test)]
+mod tests_4;
+#[cfg(test)]
+mod tests_5;
