@@ -29,11 +29,7 @@ fn build_corpus(dir: &std::path::Path) {
         "import importee\n\ndef use():\n    return importee.value()\n",
     )
     .unwrap();
-    fs::write(
-        dir.join("importee.py"),
-        "def value():\n    return 42\n",
-    )
-    .unwrap();
+    fs::write(dir.join("importee.py"), "def value():\n    return 42\n").unwrap();
     fs::write(
         dir.join("lonely_orphan.py"),
         "def nobody_calls_me():\n    x = 1\n    y = 2\n    return x + y\n",
@@ -142,7 +138,9 @@ fn cli_stats_summary_table_includes_inv_test_coverage_row() {
         .lines()
         .find(|l| l.starts_with("inv_test_coverage"))
         .unwrap_or_else(|| {
-            panic!("summary table should include an `inv_test_coverage` row.\nfull stdout:\n{stdout}")
+            panic!(
+                "summary table should include an `inv_test_coverage` row.\nfull stdout:\n{stdout}"
+            )
         });
     assert!(
         !stdout.lines().any(|l| l.starts_with("test_coverage ")),

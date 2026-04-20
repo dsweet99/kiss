@@ -1,5 +1,12 @@
 use super::*;
 
+pub(super) fn empty_analysis(name: &str) -> LayoutAnalysis {
+    LayoutAnalysis {
+        project_name: name.into(),
+        ..Default::default()
+    }
+}
+
 #[test]
 fn test_format_markdown_empty_analysis() {
     let analysis = LayoutAnalysis {
@@ -378,30 +385,3 @@ fn test_format_what_if_empty_summary() {
     assert!(!after_yaml.contains("\n\n\n"));
 }
 
-#[test]
-fn test_default_layer_name_two_layers() {
-    // For 2 layers: Foundation (0) and Application (1)
-    // The top layer is always Application
-    assert_eq!(default_layer_name(0, 2), "Foundation");
-    assert_eq!(default_layer_name(1, 2), "Application");
-
-    let analysis = LayoutAnalysis {
-        project_name: "test".into(),
-        layer_info: LayerInfo {
-            layers: vec![vec!["base".into()], vec!["top".into()]],
-        },
-        ..Default::default()
-    };
-    let md = format_markdown(&analysis);
-    assert!(md.contains("Layer 0: Foundation"));
-    assert!(md.contains("Layer 1: Application"));
-}
-
-#[test]
-fn static_coverage_touch_format_helpers() {
-    fn t<T>(_: T) {}
-    t(format_summary);
-    t(format_cycles);
-    t(format_layers);
-    t(format_what_if);
-}

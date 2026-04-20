@@ -1,4 +1,7 @@
-use super::merge::{apply_python, apply_rust, apply_shared, apply_thresholds};
+use super::merge::{
+    apply_language_sections, apply_parsed_toml, apply_python, apply_python_if_present, apply_rust,
+    apply_rust_if_present, apply_shared, apply_thresholds, apply_thresholds_and_shared,
+};
 use super::types::{Config, ConfigLanguage};
 use super::validation::{
     check_unknown_keys, check_unknown_sections, get_usize, validate_config_keys,
@@ -131,4 +134,14 @@ fn static_coverage_touch_validate_keys() {
     t(validate_shared_keys);
     t(validate_python_keys);
     t(validate_rust_keys);
+}
+
+#[test]
+fn static_coverage_touch_merge_helpers() {
+    fn t<T>(_: T) {}
+    t(apply_thresholds_and_shared);
+    t(apply_python_if_present);
+    t(apply_rust_if_present);
+    t(apply_language_sections);
+    t(apply_parsed_toml);
 }

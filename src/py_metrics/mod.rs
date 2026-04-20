@@ -18,3 +18,6 @@ pub use types::{ClassMetrics, FileMetrics, FunctionMetrics};
 
 #[cfg(test)]
 mod py_metrics_test;
+
+#[cfg(test)]
+mod py_metrics_test_2;

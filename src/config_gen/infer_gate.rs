@@ -59,7 +59,7 @@ pub(crate) fn compute_min_per_file_test_coverage(
     min_per_file_coverage(&definitions, &unreferenced)
 }
 
-fn extend_defs_from_py(
+pub(super) fn extend_defs_from_py(
     definitions: &mut DefLineList,
     unreferenced: &mut DefLineList,
     py_parsed: &[ParsedFile],
@@ -77,7 +77,7 @@ fn extend_defs_from_py(
     );
 }
 
-fn extend_defs_from_rs(
+pub(super) fn extend_defs_from_rs(
     definitions: &mut DefLineList,
     unreferenced: &mut DefLineList,
     rs_parsed: &[ParsedRustFile],
@@ -99,7 +99,7 @@ fn extend_defs_from_rs(
     );
 }
 
-fn collect_defs_and_unrefs(
+pub(super) fn collect_defs_and_unrefs(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],
 ) -> (DefLineList, DefLineList) {

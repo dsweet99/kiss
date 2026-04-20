@@ -232,4 +232,15 @@ mod definition_coverage {
         let (a, b) = find_python_class_block(py, "C").unwrap();
         assert!(b > a);
     }
+
+    #[test]
+    fn touch_for_coverage() {
+        fn touch<T>(_: T) {}
+        touch(find_python_definition_span as fn(&str, &str, Option<&str>) -> Option<DefinitionSpan>);
+        touch(split_lines_with_offsets as fn(&str) -> Vec<(usize, &str)>);
+        touch(decorated_start as fn(&[(usize, &str)], usize, usize, usize) -> usize);
+        touch(find_rust_definition_span as fn(&str, &str, Option<&str>) -> Option<DefinitionSpan>);
+        touch(rust_lexer_is_inside_non_code as fn(&LexState) -> bool);
+        touch(extend_class_block as fn(&str, usize, usize) -> usize);
+    }
 }

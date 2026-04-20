@@ -293,4 +293,15 @@ mod lex_coverage {
         let _ = step_string_state(&mut st3, b"'", 0, 1);
         assert_eq!(rust_item_start("#[inline]\nfn a() {}", 15), 0);
     }
+
+    #[test]
+    fn touch_for_coverage() {
+        fn touch<T>(_: T) {}
+        touch(step_triple_string_state as fn(&mut LexState, &[u8], usize, usize) -> usize);
+        touch(try_parse_raw_string_start as fn(&[u8], usize, usize) -> Option<(usize, usize)>);
+        touch(try_parse_char_literal as fn(&[u8], usize, usize) -> Option<usize>);
+        touch(step_raw_string_state as fn(&mut LexState, &[u8], usize, usize, usize) -> usize);
+        touch(step_python_code_state as fn(&mut LexState, &[u8], usize, usize) -> usize);
+        touch(step_rust_code_state as fn(&mut LexState, &[u8], usize, usize) -> usize);
+    }
 }

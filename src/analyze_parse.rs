@@ -5,7 +5,7 @@ use kiss::counts::analyze_file_with_statement_count;
 use kiss::units::count_code_units;
 use kiss::{
     Config, ParsedFile, ParsedRustFile, Violation, analyze_rust_file, extract_rust_code_units,
-    is_rust_test_file, is_test_file, parse_files, parse_rust_files,
+    parse_files, parse_rust_files,
 };
 
 pub struct ParseResult {
@@ -71,11 +71,7 @@ pub fn py_parsed_or_log(r: Result<ParsedFile, kiss::ParseError>) -> Option<Parse
 
 fn py_file_agg(p: &ParsedFile, config: &Config) -> PyAgg {
     let units = count_code_units(p);
-    let (stmts, viols) = if is_test_file(&p.path) {
-        (kiss::compute_file_metrics(p).statements, Vec::new())
-    } else {
-        analyze_file_with_statement_count(p, config)
-    };
+    let (stmts, viols) = analyze_file_with_statement_count(p, config);
     (units, stmts, viols)
 }
 
@@ -141,9 +137,7 @@ pub fn parse_and_analyze_rs(
             Ok(p) => {
                 unit_count += extract_rust_code_units(&p).len();
                 stmt_count += kiss::compute_rust_file_metrics(&p).statements;
-                if !is_rust_test_file(&p.path) {
-                    viols.extend(analyze_rust_file(&p, config));
-                }
+                viols.extend(analyze_rust_file(&p, config));
                 parsed.push(p);
             }
             Err(e) => eprintln!("Error parsing Rust: {e}"),
@@ -168,6 +162,56 @@ mod tests {
     }
 
     #[test]
+    fn test_structural_thresholds_apply_to_python_test_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let test_path = tmp.path().join("test_big.py");
+        std::fs::write(
+            &test_path,
+            "def big():\n    x = 1\n    y = 2\n    z = 3\n    return x + y + z\n",
+        )
+        .unwrap();
+
+        let mut py_cfg = Config::python_defaults();
+        py_cfg.lines_per_file = 1;
+        py_cfg.statements_per_file = 1;
+        py_cfg.statements_per_function = 1;
+
+        let rs_cfg = Config::rust_defaults();
+
+        let result = parse_all(
+            std::slice::from_ref(&test_path),
+            &[],
+            &py_cfg,
+            &rs_cfg,
+        );
+        let fname = test_path.file_name().unwrap_or_default().to_string_lossy();
+
+        assert!(
+            result
+                .violations
+                .iter()
+                .any(|v| v.metric == "lines_per_file"
+                    && v.file.file_name().is_some_and(|n| n == fname.as_ref())),
+            "expected a lines_per_file violation for test file"
+        );
+        assert!(
+            result
+                .violations
+                .iter()
+                .any(|v| v.metric == "statements_per_file"
+                    && v.file.file_name().is_some_and(|n| n == fname.as_ref())),
+            "expected a statements_per_file violation for test file"
+        );
+        assert!(
+            result
+                .violations
+                .iter()
+                .any(|v| v.metric == "statements_per_function" && v.unit_name == "big"),
+            "expected a statements_per_function violation for function in test file"
+        );
+    }
+
+    #[test]
     fn test_parse_all_with_files() {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(tmp.path().join("a.py"), "def f(): pass").unwrap();
@@ -177,7 +221,8 @@ mod tests {
         let result = parse_all(
             &[tmp.path().join("a.py")],
             &[tmp.path().join("b.rs")],
-            &py_cfg, &rs_cfg,
+            &py_cfg,
+            &rs_cfg,
         );
         assert_eq!(result.py_parsed.len(), 1);
         assert_eq!(result.rs_parsed.len(), 1);

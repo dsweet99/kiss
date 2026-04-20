@@ -198,3 +198,7 @@ fn format_what_if(out: &mut String, what_if: Option<&WhatIfAnalysis>) {
 #[cfg(test)]
 #[path = "layout_output_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "layout_output_test_2.rs"]
+mod layout_output_test_2;

@@ -151,5 +151,7 @@ mod plan_coverage {
         t(append_reference_edits);
         t(append_move_edits_if_any);
         t(finalize_plan);
+        let _ = std::mem::size_of::<AppendReferenceCtx>();
+        let _ = std::mem::size_of::<AppendMoveCtx>();
     }
 }

@@ -11,6 +11,16 @@ fn cache_dir_under(home: &std::path::Path) -> std::path::PathBuf {
     home.join(".cache").join("kiss")
 }
 
+fn is_full_check_cache_file(path: &std::path::Path) -> bool {
+    let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    name.starts_with("check_full_")
+        && std::path::Path::new(name)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
+}
+
 fn list_full_check_cache_files(home: &std::path::Path) -> Vec<std::path::PathBuf> {
     let dir = cache_dir_under(home);
     let Ok(rd) = fs::read_dir(dir) else {
@@ -19,14 +29,7 @@ fn list_full_check_cache_files(home: &std::path::Path) -> Vec<std::path::PathBuf
     let mut out: Vec<_> = rd
         .filter_map(std::result::Result::ok)
         .map(|e| e.path())
-        .filter(|p| {
-            p.file_name().and_then(|s| s.to_str()).is_some_and(|s| {
-                s.starts_with("check_full_")
-                    && std::path::Path::new(s)
-                        .extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
-            })
-        })
+        .filter(|p| is_full_check_cache_file(p))
         .collect();
     out.sort();
     out

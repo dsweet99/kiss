@@ -10,6 +10,8 @@ mod break_c2_test_coverage;
 mod cache_integration;
 #[path = "cases/cli_integration.rs"]
 mod cli_integration;
+#[path = "cases/cli_integration_2.rs"]
+mod cli_integration_2;
 #[path = "cases/config_tests.rs"]
 mod config_tests;
 #[path = "cases/fix_h1_error_nodes.rs"]
@@ -20,6 +22,8 @@ mod fix_h5_phantom_orphans;
 mod journal_hypotheses;
 #[path = "cases/kpop_definitions.rs"]
 mod kpop_definitions;
+#[path = "cases/kpop_definitions_2.rs"]
+mod kpop_definitions_2;
 #[path = "cases/kpop_python_function_metrics.rs"]
 mod kpop_python_function_metrics;
 #[path = "cases/kpop_python_graph_metrics.rs"]
@@ -62,5 +66,13 @@ mod rules_config_integration;
 mod rust_counts_violations;
 #[path = "cases/stress_break_kiss.rs"]
 mod stress_break_kiss;
+#[path = "cases/stress_break_kiss_2.rs"]
+mod stress_break_kiss_2;
 #[path = "cases/symbol_mv_regressions.rs"]
 mod symbol_mv_regressions;
+#[path = "cases/symbol_mv_regressions_2.rs"]
+mod symbol_mv_regressions_2;
+#[path = "cases/symbol_mv_regressions_3.rs"]
+mod symbol_mv_regressions_3;
+#[path = "cases/symbol_mv_regressions_4.rs"]
+mod symbol_mv_regressions_4;
