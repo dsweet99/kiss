@@ -101,7 +101,7 @@ fn analyze_python(
         .iter()
         .map(|p| pcts.get(&p.path).copied().unwrap_or(100))
         .collect();
-    stats.extend_test_coverage(covs);
+    stats.extend_inv_test_coverage(covs);
 
     let (statement_count, code_unit_count) = file_totals_py(&parsed_refs);
     let duplicate_clusters = if gate.duplication_enabled {
@@ -164,7 +164,7 @@ fn analyze_rust(
         .iter()
         .map(|p| pcts.get(&p.path).copied().unwrap_or(100))
         .collect();
-    stats.extend_test_coverage(covs);
+    stats.extend_inv_test_coverage(covs);
 
     let (statement_count, code_unit_count) = file_totals_rs(&parsed_refs);
     let duplicate_clusters = if gate.duplication_enabled {

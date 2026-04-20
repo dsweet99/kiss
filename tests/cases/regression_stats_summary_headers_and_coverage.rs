@@ -129,15 +129,37 @@ fn cli_stats_summary_emits_violations_header_with_duplicate_and_orphan_counts() 
 }
 
 #[test]
-fn cli_stats_summary_table_includes_test_coverage_row() {
+fn cli_stats_summary_table_includes_inv_test_coverage_row() {
     let tmp = TempDir::new().unwrap();
     build_corpus(tmp.path());
     let output = kiss_binary().arg("stats").arg(tmp.path()).output().unwrap();
     assert!(output.status.success(), "kiss stats should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
 
+    // The metric stored is `inv_test_coverage` (= 100 - coverage) so that
+    // higher = worse, matching every other metric in the table.
+    let line = stdout
+        .lines()
+        .find(|l| l.starts_with("inv_test_coverage"))
+        .unwrap_or_else(|| {
+            panic!("summary table should include an `inv_test_coverage` row.\nfull stdout:\n{stdout}")
+        });
     assert!(
-        stdout.lines().any(|l| l.starts_with("test_coverage")),
-        "summary table should include a `test_coverage` row.\nfull stdout:\n{stdout}"
+        !stdout.lines().any(|l| l.starts_with("test_coverage ")),
+        "old `test_coverage` row must be gone (replaced by `inv_test_coverage`).\nfull stdout:\n{stdout}"
+    );
+
+    // The corpus contains `lonely_orphan.py`, which has 3 definitions and zero
+    // test references → 0% covered → 100% inv_test_coverage. So at least one
+    // file must surface a non-trivial inv_test_coverage value, ruling out the
+    // off-by-one regression where the metric is silently always 0.
+    let max_col: usize = line
+        .split_whitespace()
+        .next_back()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(|| panic!("could not parse `max` column from row: {line:?}"));
+    assert!(
+        max_col > 0,
+        "expected `inv_test_coverage` max > 0 (corpus has uncovered orphan); row: {line}\nstdout:\n{stdout}"
     );
 }
