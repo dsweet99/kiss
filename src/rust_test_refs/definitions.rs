@@ -271,3 +271,86 @@ pub(super) fn collect_test_module_references(ast: &syn::File, refs: &mut HashSet
         }
     }
 }
+
+#[cfg(test)]
+mod definitions_coverage {
+    use super::*;
+
+    #[test]
+    fn well_known_constructors_recognized() {
+        for name in ["Ok", "Err", "Some", "None"] {
+            assert!(is_well_known_constructor(name));
+        }
+        assert!(!is_well_known_constructor("MyType"));
+    }
+
+    #[test]
+    fn is_delegation_only_block_variants() {
+        assert!(is_delegation_only_block(&syn::parse_str("{}").unwrap()));
+        assert!(is_delegation_only_block(&syn::parse_str("{ crate::run() }").unwrap()));
+        assert!(!is_delegation_only_block(&syn::parse_str("{ struct Foo; }").unwrap()));
+    }
+
+    #[test]
+    fn is_trivial_expr_variants() {
+        assert!(is_trivial_expr(&syn::parse_str("42").unwrap()));
+        assert!(is_trivial_expr(&syn::parse_str("x").unwrap()));
+        assert!(is_trivial_expr(&syn::parse_str("lib::run()").unwrap()));
+        assert!(!is_trivial_expr(&syn::parse_str("|| {}").unwrap()));
+    }
+
+    #[test]
+    fn is_trivial_stmt_variants() {
+        assert!(is_trivial_stmt(&syn::parse_str::<syn::Stmt>("Ok(());").unwrap()));
+        let trivial: syn::Block = syn::parse_str("{ let x = 42; }").unwrap();
+        assert!(trivial.stmts.iter().all(is_trivial_stmt));
+        let non_trivial: syn::Block = syn::parse_str("{ fn inner() {} }").unwrap();
+        assert!(!non_trivial.stmts.iter().all(is_trivial_stmt));
+    }
+
+    #[test]
+    fn is_qualified_or_known_call_variants() {
+        assert!(is_qualified_or_known_call(&syn::parse_str("module::func()").unwrap()));
+        assert!(is_qualified_or_known_call(&syn::parse_str("Ok(())").unwrap()));
+        assert!(!is_qualified_or_known_call(&syn::parse_str("unknown_func()").unwrap()));
+    }
+
+    #[test]
+    fn try_add_def_public_and_private() {
+        let mut defs = Vec::new();
+        try_add_def(&mut defs, "my_func", CodeUnitKind::Function, Path::new("t.rs"), 1, None);
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].name, "my_func");
+        try_add_def(&mut defs, "_private", CodeUnitKind::Function, Path::new("t.rs"), 1, None);
+        assert_eq!(defs.len(), 1);
+    }
+
+    #[test]
+    fn collect_rust_definitions_on_file() {
+        let code = "fn public_fn() {}\nfn _private_fn() {}\nstruct MyStruct;";
+        let ast: syn::File = syn::parse_str(code).unwrap();
+        let mut defs = Vec::new();
+        collect_rust_definitions(&ast, Path::new("test.rs"), &mut defs);
+        let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
+        assert!(names.contains(&"public_fn"));
+        assert!(names.contains(&"MyStruct"));
+        assert!(!names.contains(&"_private_fn"));
+    }
+
+    #[test]
+    fn collect_test_module_references_finds_refs() {
+        let code = r"
+            fn production_fn() {}
+            #[cfg(test)]
+            mod tests {
+                use super::*;
+                #[test]
+                fn test_it() { production_fn(); }
+            }
+        ";
+        let ast: syn::File = syn::parse_str(code).unwrap();
+        let mut refs = HashSet::new();
+        collect_test_module_references(&ast, &mut refs);
+        assert!(refs.contains("production_fn"));
+    }
+}

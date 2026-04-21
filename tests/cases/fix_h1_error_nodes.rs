@@ -44,9 +44,6 @@ fn function_without_syntax_error_has_no_error_flag() {
 
 #[test]
 fn error_functions_excluded_from_violation_counts() {
-    // A function with a syntax error should not generate violations.
-    // We test this via the stats pipeline: a broken function with 100 "statements"
-    // should not appear in the stats because has_error = true.
     use kiss::stats::MetricStats;
 
     let code = "def broken():\n    if True\n        x = 1\n";
@@ -54,16 +51,14 @@ fn error_functions_excluded_from_violation_counts() {
     let func = first_func(&p);
     let m = compute_function_metrics(func, &p.source);
 
-    // The function has errors, so push_py_fn_metrics should skip it
-    let stats = MetricStats::default();
-    // Only push if not errored — this is the behavior we're testing
-    assert!(
-        m.has_error,
-        "has_error should be true for broken function — fix not applied yet"
-    );
-    // If has_error is true, stats should remain empty
+    assert!(m.has_error, "broken function should have has_error=true");
+
+    let mut stats = MetricStats::default();
+    if !m.has_error {
+        stats.statements_per_function.push(m.statements);
+    }
     assert!(
         stats.statements_per_function.is_empty(),
-        "Errored function should not contribute to stats"
+        "errored function should not contribute to stats"
     );
 }

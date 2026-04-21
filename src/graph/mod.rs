@@ -23,3 +23,7 @@ include!("analyze_body.rs");
 #[cfg(test)]
 #[path = "graph_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "graph_test_2.rs"]
+mod graph_test_2;

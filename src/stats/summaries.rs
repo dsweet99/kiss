@@ -39,6 +39,7 @@ pub(crate) fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Opti
         "interface_types_per_file" => &stats.interface_types_per_file,
         "concrete_types_per_file" => &stats.concrete_types_per_file,
         "imported_names_per_file" => &stats.imported_names_per_file,
+        "inv_test_coverage" => &stats.inv_test_coverage,
         "fan_in" => &stats.fan_in,
         "fan_out" => &stats.fan_out,
         "cycle_size" => &stats.cycle_size,

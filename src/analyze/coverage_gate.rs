@@ -94,3 +94,28 @@ pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
     }
     true
 }
+
+#[cfg(test)]
+mod coverage_gate_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_analysis_tuples_empty() {
+        let py_cov = kiss::TestRefAnalysis {
+            definitions: Vec::new(),
+            test_references: HashSet::new(),
+            unreferenced: Vec::new(),
+            coverage_map: HashMap::new(),
+        };
+        let rs_cov = kiss::RustTestRefAnalysis {
+            definitions: Vec::new(),
+            test_references: HashSet::new(),
+            unreferenced: Vec::new(),
+            coverage_map: HashMap::new(),
+        };
+        let (defs, unrefs) = analysis_tuples(&py_cov, &rs_cov);
+        assert!(defs.is_empty());
+        assert!(unrefs.is_empty());
+    }
+}

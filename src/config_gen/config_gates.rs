@@ -136,6 +136,19 @@ fn static_coverage_touch_infer_gate_helpers() {
     t(compute_min_per_file_test_coverage);
     t(has_orphan_modules);
     t(has_reportable_duplicates);
+    t(super::infer_gate::extend_defs_from_py);
+    t(super::infer_gate::extend_defs_from_rs);
+    t(super::infer_gate::collect_defs_and_unrefs);
+}
+
+#[test]
+fn static_coverage_touch_merge_helpers() {
+    fn t<T>(_: T) {}
+    t(super::merge::load_merge_tables);
+    t(super::merge::merge_gate);
+    t(super::merge::merge_lang_sections);
+    t(super::merge::merge_shared);
+    t(super::merge::merge_thresholds);
 }
 
 #[test]

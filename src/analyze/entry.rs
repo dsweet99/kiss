@@ -77,10 +77,86 @@ pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
 
 #[cfg(test)]
 mod entry_touch {
-    use super::empty_repo_metrics;
+    use super::*;
 
     #[test]
     fn empty_repo_matches_default_metrics() {
         assert_eq!(empty_repo_metrics(), kiss::GlobalMetrics::default());
+    }
+
+    #[test]
+    fn test_focus_set_for_opts_universe_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let universe = tmp.path().to_str().unwrap().to_string();
+        let focus = vec![universe.clone()];
+        let py_cfg = kiss::Config::python_defaults();
+        let rs_cfg = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let opts = AnalyzeOptions {
+            universe: &universe,
+            focus_paths: &focus,
+            py_config: &py_cfg,
+            rs_config: &rs_cfg,
+            lang_filter: None,
+            bypass_gate: false,
+            gate_config: &gate,
+            ignore_prefixes: &[],
+            show_timing: false,
+            suppress_final_status: false,
+        };
+        let py_files = vec![tmp.path().join("a.py")];
+        let rs_files = vec![tmp.path().join("b.rs")];
+        let fset = focus_set_for_opts(&opts, &py_files, &rs_files);
+        assert!(fset.contains(&tmp.path().join("a.py")));
+        assert!(fset.contains(&tmp.path().join("b.rs")));
+    }
+
+    #[test]
+    fn test_try_cache_hit_returns_none_when_not_bypass() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let universe = tmp.path().to_str().unwrap().to_string();
+        let focus = vec![universe.clone()];
+        let py_cfg = kiss::Config::python_defaults();
+        let rs_cfg = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let opts = AnalyzeOptions {
+            universe: &universe,
+            focus_paths: &focus,
+            py_config: &py_cfg,
+            rs_config: &rs_cfg,
+            lang_filter: None,
+            bypass_gate: false,
+            gate_config: &gate,
+            ignore_prefixes: &[],
+            show_timing: false,
+            suppress_final_status: false,
+        };
+        let focus_set = std::collections::HashSet::new();
+        let result = try_cache_hit(&opts, &[], &[], &focus_set);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_run_analyze_empty_dir() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let universe = tmp.path().to_str().unwrap().to_string();
+        let focus = vec![universe.clone()];
+        let py_cfg = kiss::Config::python_defaults();
+        let rs_cfg = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let opts = AnalyzeOptions {
+            universe: &universe,
+            focus_paths: &focus,
+            py_config: &py_cfg,
+            rs_config: &rs_cfg,
+            lang_filter: None,
+            bypass_gate: false,
+            gate_config: &gate,
+            ignore_prefixes: &[],
+            show_timing: false,
+            suppress_final_status: true,
+        };
+        let result = run_analyze_with_result(&opts);
+        assert!(result.success);
     }
 }

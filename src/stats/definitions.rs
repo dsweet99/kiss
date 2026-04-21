@@ -99,6 +99,15 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::File,
     },
     MetricDef {
+        // Per-file *un*covered percentage (100 - coverage). Stored inverted so
+        // it matches the convention of every other metric in this registry —
+        // higher = worse — and so the upper-percentile columns (`p90`/`p95`/
+        // `p99`/`max`) shown by `format_stats_table` highlight the *worst*-
+        // covered files instead of the best-covered ones.
+        metric_id: "inv_test_coverage",
+        scope: MetricScope::File,
+    },
+    MetricDef {
         metric_id: "fan_in",
         scope: MetricScope::Module,
     },

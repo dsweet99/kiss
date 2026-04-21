@@ -107,7 +107,7 @@ pub(crate) fn apply_rust(config: &mut Config, table: &toml::Table) {
         "cycle_size" => cycle_size, "indirect_dependencies" => indirect_dependencies, "dependency_depth" => dependency_depth);
 }
 
-fn apply_thresholds_and_shared(config: &mut Config, table: &toml::Table) {
+pub(super) fn apply_thresholds_and_shared(config: &mut Config, table: &toml::Table) {
     if let Some(t) = table.get("thresholds").and_then(|v| v.as_table()) {
         apply_thresholds(config, t);
     }
@@ -116,19 +116,19 @@ fn apply_thresholds_and_shared(config: &mut Config, table: &toml::Table) {
     }
 }
 
-fn apply_python_if_present(config: &mut Config, table: &toml::Table) {
+pub(super) fn apply_python_if_present(config: &mut Config, table: &toml::Table) {
     if let Some(t) = table.get("python").and_then(|v| v.as_table()) {
         apply_python(config, t);
     }
 }
 
-fn apply_rust_if_present(config: &mut Config, table: &toml::Table) {
+pub(super) fn apply_rust_if_present(config: &mut Config, table: &toml::Table) {
     if let Some(t) = table.get("rust").and_then(|v| v.as_table()) {
         apply_rust(config, t);
     }
 }
 
-fn apply_language_sections(config: &mut Config, table: &toml::Table, lang: Option<ConfigLanguage>) {
+pub(super) fn apply_language_sections(config: &mut Config, table: &toml::Table, lang: Option<ConfigLanguage>) {
     match lang {
         Some(ConfigLanguage::Python) => apply_python_if_present(config, table),
         Some(ConfigLanguage::Rust) => apply_rust_if_present(config, table),
@@ -139,7 +139,7 @@ fn apply_language_sections(config: &mut Config, table: &toml::Table, lang: Optio
     }
 }
 
-fn apply_parsed_toml(config: &mut Config, table: &toml::Table, lang: Option<ConfigLanguage>) {
+pub(super) fn apply_parsed_toml(config: &mut Config, table: &toml::Table, lang: Option<ConfigLanguage>) {
     apply_thresholds_and_shared(config, table);
     apply_language_sections(config, table, lang);
 }

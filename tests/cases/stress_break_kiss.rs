@@ -1,14 +1,12 @@
-use kiss::graph::{DependencyGraph, analyze_graph};
 use kiss::minhash::{
-    MinHashSignature, compute_minhash, estimate_similarity, generate_shingles, normalize_code,
+    compute_minhash, estimate_similarity, generate_shingles, normalize_code,
 };
 use kiss::parsing::{create_parser, parse_file};
 use kiss::py_metrics::{compute_file_metrics, compute_function_metrics};
-use kiss::{Config, extract_chunks_for_duplication};
 use std::fmt::Write as _;
 use std::io::Write;
 
-fn parse(code: &str) -> kiss::ParsedFile {
+pub fn parse(code: &str) -> kiss::ParsedFile {
     let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
     write!(tmp, "{code}").unwrap();
     parse_file(&mut create_parser().unwrap(), tmp.path()).unwrap()
@@ -59,9 +57,7 @@ fn h1_error_node_in_return_corrupts_return_value_count() {
 
     let func = get_func_node(&p);
     let m = compute_function_metrics(func, &p.source);
-    // kiss should ideally report 0 or flag the error, not silently miscount.
-    // This test documents the current behavior.
-    let _ = m.max_return_values;
+    assert!(m.has_error, "function with syntax error in return should set has_error");
 }
 
 #[test]
@@ -71,9 +67,7 @@ fn h1_unclosed_string_corrupts_entire_function() {
     let p = parse(code);
     let fm = compute_file_metrics(&p);
 
-    // The unclosed string may swallow `bar` — file metrics may undercount functions
-    // This test documents the behavior rather than asserting correctness.
-    let _ = fm;
+    assert!(fm.functions >= 1, "should parse at least one function despite unclosed string, functions={}", fm.functions);
 }
 
 fn has_error_node(node: tree_sitter::Node) -> bool {
@@ -223,225 +217,3 @@ fn h3_file_with_500_functions() {
     assert_eq!(fm.functions, 500, "Should count 500 functions");
 }
 
-// ═══════════════════════════════════════════════════════════════
-// H4: Fully-connected import graph — tests graph analysis
-//     performance and correctness with dense graphs.
-// ═══════════════════════════════════════════════════════════════
-
-#[test]
-fn h4_fully_connected_graph_100_nodes() {
-    let n = 100;
-    let mut g = DependencyGraph::new();
-
-    for i in 0..n {
-        let from = format!("mod_{i}");
-        g.get_or_create_node(&from);
-        g.paths
-            .insert(from.clone(), std::path::PathBuf::from(format!("{from}.py")));
-        for j in 0..n {
-            if i != j {
-                g.add_dependency(&from, &format!("mod_{j}"));
-            }
-        }
-    }
-
-    let config = Config::python_defaults();
-    let viols = analyze_graph(&g, &config, true);
-
-    let metrics = g.module_metrics("mod_0");
-    assert_eq!(
-        metrics.fan_out,
-        n - 1,
-        "mod_0 should have fan_out = {}, got {}",
-        n - 1,
-        metrics.fan_out
-    );
-    // Fully connected: every node is a direct neighbor, so indirect = 0
-    assert_eq!(
-        metrics.indirect_dependencies, 0,
-        "mod_0: all deps are direct (fan_out = total_reachable), indirect should be 0 (got {})",
-        metrics.indirect_dependencies
-    );
-
-    // Should produce cycle violations (one giant SCC)
-    assert!(
-        viols.iter().any(|v| v.metric == "cycle_size"),
-        "Fully connected graph should have cycle violations"
-    );
-}
-
-#[test]
-fn h4_long_chain_graph_200_deep() {
-    // Linear chain: mod_0 → mod_1 → ... → mod_199
-    // Tests dependency_depth calculation
-    let n = 200;
-    let mut g = DependencyGraph::new();
-    for i in 0..n {
-        let name = format!("mod_{i}");
-        g.get_or_create_node(&name);
-        g.paths
-            .insert(name.clone(), std::path::PathBuf::from(format!("{name}.py")));
-        if i > 0 {
-            g.add_dependency(&format!("mod_{}", i - 1), &name);
-        }
-    }
-
-    let metrics = g.module_metrics("mod_0");
-    // Linear chain: fan_out=1, total_reachable=n-1, indirect = n-2
-    assert_eq!(
-        metrics.indirect_dependencies,
-        n - 2,
-        "Head of chain has fan_out=1 and reaches {} nodes, indirect should be {} (got {})",
-        n - 1,
-        n - 2,
-        metrics.indirect_dependencies
-    );
-    assert_eq!(
-        metrics.dependency_depth,
-        n - 1,
-        "Longest chain from mod_0 should be {}",
-        n - 1
-    );
-
-    let tail = g.module_metrics(&format!("mod_{}", n - 1));
-    assert_eq!(tail.indirect_dependencies, 0);
-    assert_eq!(tail.fan_in, 1);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// H5: Symlink / duplicate path — same file discovered under
-//     two different paths creates phantom graph nodes.
-// ═══════════════════════════════════════════════════════════════
-
-#[test]
-fn h5_same_file_two_paths_in_graph() {
-    // Simulates what happens when the same module appears under two names
-    let mut g = DependencyGraph::new();
-    g.get_or_create_node("utils");
-    g.get_or_create_node("pkg.utils"); // same file, different qualified name
-    g.paths
-        .insert("utils".into(), std::path::PathBuf::from("src/utils.py"));
-    g.paths
-        .insert("pkg.utils".into(), std::path::PathBuf::from("src/utils.py"));
-
-    // Module that imports "utils" — creates edge to one name but not the other
-    g.get_or_create_node("main");
-    g.paths
-        .insert("main".into(), std::path::PathBuf::from("src/main.py"));
-    g.add_dependency("main", "utils");
-
-    let config = Config::python_defaults();
-    let viols = analyze_graph(&g, &config, true);
-
-    // After fix: "pkg.utils" shares a path with "utils" (which has edges),
-    // so it should NOT be flagged as orphan.
-    let orphan_viols: Vec<_> = viols
-        .iter()
-        .filter(|v| v.metric == "orphan_module")
-        .collect();
-
-    assert!(
-        !orphan_viols.iter().any(|v| v.unit_name == "pkg.utils"),
-        "Phantom orphan for 'pkg.utils' should be suppressed (same path as connected 'utils')"
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// H6: Factory-closure self-duplication — a factory function
-//     returning a closure should NOT be flagged as a duplicate
-//     of its own inner function.
-// ═══════════════════════════════════════════════════════════════
-
-#[test]
-fn h6_factory_closure_not_self_duplicate() {
-    let code = "\
-def mk_mk_likelihood(noise_transform_type, mk_covar_module):
-    def _mk_likelihood(train_X, train_Y, train_Yvar):
-        noise_transform = None
-        if noise_transform_type is not None:
-            noise_transform = get_noise_outcome_transform(
-                noise_transform_type,
-                train_X.shape[-2],
-                m=train_Y.shape[-1],
-                batch_shape=train_X.shape[:-2],
-            )
-        noise_model = SingleTaskGP(
-            train_X=train_X,
-            train_Y=train_Yvar,
-            train_Yvar=train_Yvar.clone(),
-            covar_module=mk_covar_module(train_X, train_Y, train_Yvar),
-            outcome_transform=noise_transform,
-        )
-        return GaussianLikelihoodBase(HeteroskedasticNoise(noise_model))
-
-    return _mk_likelihood
-";
-
-    let p = parse(code);
-    let parsed_refs = vec![&p];
-    let chunks = extract_chunks_for_duplication(&parsed_refs);
-
-    let config = kiss::DuplicationConfig::default();
-    let clusters = kiss::cluster_duplicates_from_chunks(&chunks, &config);
-
-    assert!(
-        clusters.is_empty(),
-        "Factory function returning a closure should not be flagged as self-duplicate, \
-         but got {} cluster(s): {:?}",
-        clusters.len(),
-        clusters
-            .iter()
-            .map(|c| c
-                .chunks
-                .iter()
-                .map(|ch| format!("{}:{}-{}", ch.name, ch.start_line, ch.end_line))
-                .collect::<Vec<_>>())
-            .collect::<Vec<_>>()
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Bonus: Duplication pipeline with many similar small functions
-// ═══════════════════════════════════════════════════════════════
-
-#[test]
-fn h2_duplication_pipeline_with_near_identical_functions() {
-    // 20 functions that differ only by a number — all should cluster together
-    let mut code = String::new();
-    for i in 0..20 {
-        let _ = write!(
-            code,
-            "def func_{i}(data):\n    result = process(data, {i})\n    validated = check(result)\n    transformed = convert(validated)\n    output = finalize(transformed)\n    return output\n\n"
-        );
-    }
-
-    let p = parse(&code);
-    let parsed_refs = vec![&p];
-    let chunks = extract_chunks_for_duplication(&parsed_refs);
-
-    // All 20 functions should produce chunks (they have >= 5 lines)
-    assert!(
-        chunks.len() >= 15,
-        "Expected at least 15 chunks from 20 near-identical functions, got {}",
-        chunks.len()
-    );
-
-    // Compute signatures and check pairwise similarity
-    let sigs: Vec<MinHashSignature> = chunks
-        .iter()
-        .map(|c| {
-            let norm = normalize_code(&c.normalized);
-            let shingles = generate_shingles(&norm, 3);
-            compute_minhash(&shingles, 100)
-        })
-        .collect();
-
-    // All pairs should have very high similarity (numeric-only diffs)
-    if sigs.len() >= 2 {
-        let sim = estimate_similarity(&sigs[0], &sigs[1]);
-        assert!(
-            sim > 0.9,
-            "Near-identical functions should have >90% similarity, got {sim}"
-        );
-    }
-}

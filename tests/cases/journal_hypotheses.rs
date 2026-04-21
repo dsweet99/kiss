@@ -123,13 +123,11 @@ fn hypothesis_09_interface_type_detection_protocol_in_args() {
 // Prediction: current implementation will report `max_return_values == 1` for a parenthesized tuple.
 // Test (run with `cargo test -- --ignored`): assert it should be 3; it will fail if the bug exists.
 #[test]
-#[ignore = "Documented historical bug; keep for reference"]
 fn hypothesis_10_parenthesized_tuple_return_counts_elements() {
+    // Documented historical bug; keep for reference (was #[ignore]).
+    // Parenthesized-tuple return is counted as 1, not 3.
     let p = parse_py(Path::new("tests/fake_python/return_parenthesized_tuple.py"));
     let func = first_function(&p);
     let m = compute_function_metrics(func, &p.source);
-    assert_eq!(
-        m.max_return_values, 3,
-        "expected parenthesized tuple to count as 3 return values"
-    );
+    assert_eq!(m.max_return_values, 3, "parenthesized tuple return should count elements");
 }

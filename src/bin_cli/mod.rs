@@ -22,3 +22,5 @@ mod gates_core;
 #[cfg(test)]
 #[path = "gates_shrink.rs"]
 mod gates_shrink;
+#[cfg(test)]
+mod tests_touch;

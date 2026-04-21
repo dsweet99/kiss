@@ -69,6 +69,24 @@ fn write_per_file_gate_fixture(tmp: &TempDir) -> (Vec<ParsedFile>, HashSet<PathB
     parse_gate_py(tmp.path())
 }
 
+#[test]
+fn test_write_gate_py_sources_creates_files() {
+    let tmp = TempDir::new().unwrap();
+    write_gate_py_sources(tmp.path());
+    assert!(tmp.path().join("well_covered.py").exists());
+    assert!(tmp.path().join("poorly_covered.py").exists());
+    assert!(tmp.path().join("test_well.py").exists());
+}
+
+#[test]
+fn test_parse_gate_py_returns_three_files() {
+    let tmp = TempDir::new().unwrap();
+    write_gate_py_sources(tmp.path());
+    let (parsed, focus) = parse_gate_py(tmp.path());
+    assert_eq!(parsed.len(), 3);
+    assert_eq!(focus.len(), 3);
+}
+
 /// Regression: per-file enforcement must fail when one file is below threshold
 /// even if overall coverage would pass. With overall enforcement this would incorrectly pass.
 #[test]

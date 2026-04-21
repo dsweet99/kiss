@@ -57,20 +57,20 @@ pub fn merge_config_toml(path: &Path, new: &str, lang: MergeLanguageUpdate) -> S
     build_merged_output(&merged)
 }
 
-fn load_merge_tables(path: &Path, new: &str) -> Option<(toml::Table, toml::Table)> {
+pub(super) fn load_merge_tables(path: &Path, new: &str) -> Option<(toml::Table, toml::Table)> {
     let ex_str = std::fs::read_to_string(path).ok()?;
     let ex = ex_str.parse::<toml::Table>().ok()?;
     let nw = new.parse::<toml::Table>().ok()?;
     Some((ex, nw))
 }
 
-fn merge_gate(merged: &mut toml::Table, ex: &toml::Table, nw: &toml::Table) {
+pub(super) fn merge_gate(merged: &mut toml::Table, ex: &toml::Table, nw: &toml::Table) {
     if let Some(v) = nw.get("gate").cloned().or_else(|| ex.get("gate").cloned()) {
         merged.insert("gate".to_string(), v);
     }
 }
 
-fn merge_lang_sections(
+pub(super) fn merge_lang_sections(
     merged: &mut toml::Table,
     ex: &toml::Table,
     nw: &toml::Table,
@@ -94,7 +94,7 @@ fn merge_lang_sections(
     }
 }
 
-fn merge_shared(
+pub(super) fn merge_shared(
     merged: &mut toml::Table,
     ex: &toml::Table,
     nw: &toml::Table,
@@ -111,7 +111,7 @@ fn merge_shared(
     }
 }
 
-fn merge_thresholds(merged: &mut toml::Table, ex: &toml::Table, lang: MergeLanguageUpdate) {
+pub(super) fn merge_thresholds(merged: &mut toml::Table, ex: &toml::Table, lang: MergeLanguageUpdate) {
     if !lang.update_both()
         && let Some(v) = ex.get("thresholds").cloned()
     {

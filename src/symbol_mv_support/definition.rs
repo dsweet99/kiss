@@ -232,4 +232,87 @@ mod definition_coverage {
         let (a, b) = find_python_class_block(py, "C").unwrap();
         assert!(b > a);
     }
+
+    #[test]
+    fn find_python_definition_span_standalone_function() {
+        let src = "x = 1\ndef foo(a):\n    return a\n\ny = 2\n";
+        let sp = find_python_definition_span(src, "foo", None).unwrap();
+        let extracted = &src[sp.start..sp.end];
+        assert!(extracted.starts_with("def foo("));
+        assert!(extracted.contains("return a"));
+        assert!(!extracted.contains("y = 2"));
+    }
+
+    #[test]
+    fn find_rust_definition_span_standalone_function() {
+        let src = "fn helper() { let x = 1; }\nfn main() { helper(); }\n";
+        let sp = find_rust_definition_span(src, "helper", None).unwrap();
+        let extracted = &src[sp.start..sp.end];
+        assert!(extracted.contains("fn helper()"));
+        assert!(extracted.contains("let x = 1"));
+    }
+
+    #[test]
+    fn split_lines_with_offsets_basic() {
+        let src = "aaa\nbbb\nccc\n";
+        let lines = split_lines_with_offsets(src);
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], (0, "aaa"));
+        assert_eq!(lines[1], (4, "bbb"));
+        assert_eq!(lines[2], (8, "ccc"));
+    }
+
+    #[test]
+    fn split_lines_with_offsets_no_trailing_newline() {
+        let src = "one\ntwo";
+        let lines = split_lines_with_offsets(src);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], (0, "one"));
+        assert_eq!(lines[1], (4, "two"));
+    }
+
+    #[test]
+    fn extend_class_block_multiline() {
+        let src = "class Foo:\n    a = 1\n    b = 2\n    c = 3\nbar = 4\n";
+        let (start, end) = find_python_class_block(src, "Foo").unwrap();
+        let block = &src[start..end];
+        assert!(block.contains("a = 1"));
+        assert!(block.contains("c = 3"));
+        assert!(!block.contains("bar = 4"), "extend_class_block should stop at dedent");
+    }
+
+    #[test]
+    fn decorated_start_with_decorators() {
+        let src = "@deco_a\n@deco_b\ndef decorated(x):\n    pass\n\ndef after():\n    pass\n";
+        let sp = find_python_definition_span(src, "decorated", None).unwrap();
+        let extracted = &src[sp.start..sp.end];
+        assert!(
+            extracted.starts_with("@deco_a"),
+            "decorated_start should include leading decorators, got: {extracted:?}"
+        );
+    }
+
+    #[test]
+    fn rust_lexer_is_inside_non_code_states() {
+        let st_default = LexState::default();
+        assert!(!rust_lexer_is_inside_non_code(&st_default));
+
+        let st_line = LexState {
+            line_comment: true,
+            ..LexState::default()
+        };
+        assert!(rust_lexer_is_inside_non_code(&st_line));
+
+        let st_block = LexState {
+            block_comment_depth: 1,
+            ..LexState::default()
+        };
+        assert!(rust_lexer_is_inside_non_code(&st_block));
+
+        let st_string = LexState {
+            string_state: StringState::Double,
+            ..LexState::default()
+        };
+        assert!(rust_lexer_is_inside_non_code(&st_string));
+    }
 }
