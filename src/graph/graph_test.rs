@@ -1,15 +1,15 @@
 use crate::graph::{
-    add_edges_for_import_info, build_dependency_graph_from_import_lists,
-    collect_imported_name_candidates, collect_module_violations, compute_cyclomatic_complexity,
-    count_decision_points, cycle_size_violation, dependency_depth_violation,
-    extract_dynamic_import_module, extract_imports_for_cache, extract_imports_recursive,
-    extract_modules_from_import_from, file_stem_str, get_module_path, indirect_deps_violation,
-    is_decision_point, is_dunder_import, is_entry_point, is_importlib_import_module,
-    is_init_module, is_orphan, is_path_covered_by_another, join_qualified_dirs_and_stem,
-    orphan_violation, parent_dir_strings, parent_prefix_match, parse_python_string_literal,
-    path_dedup_set, push_dotted_segments, qualified_module_name, read_base_module, resolve_bare,
-    resolve_dotted, strip_rbub_prefix, trim_src_suffix, unquote_single, unquote_triple, CycleInfo,
-    DependencyGraph, GraphBuildState, ImportListPass,
+    CycleInfo, DependencyGraph, GraphBuildState, ImportListPass, add_edges_for_import_info,
+    build_dependency_graph_from_import_lists, collect_imported_name_candidates,
+    collect_module_violations, compute_cyclomatic_complexity, count_decision_points,
+    cycle_size_violation, dependency_depth_violation, extract_dynamic_import_module,
+    extract_imports_for_cache, extract_imports_recursive, extract_modules_from_import_from,
+    file_stem_str, get_module_path, indirect_deps_violation, is_decision_point, is_dunder_import,
+    is_entry_point, is_importlib_import_module, is_init_module, is_orphan,
+    is_path_covered_by_another, join_qualified_dirs_and_stem, orphan_violation, parent_dir_strings,
+    parent_prefix_match, parse_python_string_literal, path_dedup_set, push_dotted_segments,
+    qualified_module_name, read_base_module, resolve_bare, resolve_dotted, strip_rbub_prefix,
+    trim_src_suffix, unquote_single, unquote_triple,
 };
 use crate::parsing::create_parser;
 use std::io::Write;
@@ -210,7 +210,8 @@ fn test_helpers_imports_and_complexity() {
     );
     assert!(is_orphan(0, 0, "utils") && !is_orphan(1, 0, "utils"));
     let mut g = DependencyGraph::new();
-    g.path_to_module.insert(PathBuf::from("src/foo.py"), "foo".into());
+    g.path_to_module
+        .insert(PathBuf::from("src/foo.py"), "foo".into());
     g.paths.insert("foo".into(), PathBuf::from("src/foo.py"));
     assert_eq!(get_module_path(&g, "foo"), PathBuf::from("src/foo.py"));
     let mut parser = create_parser().unwrap();

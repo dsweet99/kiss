@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use kiss::{GateConfig, ParsedFile};
 
-use crate::analyze::compute_test_coverage_from_lists;
 use crate::analyze::CheckCoverageGateParams;
+use crate::analyze::compute_test_coverage_from_lists;
 use tempfile::TempDir;
 
 #[test]
@@ -47,7 +47,11 @@ def test_all():
 
 fn write_gate_py_sources(dir: &Path) {
     std::fs::write(dir.join("well_covered.py"), WELL_PY).unwrap();
-    std::fs::write(dir.join("poorly_covered.py"), "def orphan_func():\n    pass\n").unwrap();
+    std::fs::write(
+        dir.join("poorly_covered.py"),
+        "def orphan_func():\n    pass\n",
+    )
+    .unwrap();
     std::fs::write(dir.join("test_well.py"), TEST_WELL_PY).unwrap();
 }
 

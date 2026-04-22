@@ -131,8 +131,14 @@ fn test_build_ref_to_covered_def_indices_unique_and_class() {
         },
     ];
     let mut name_files = HashMap::new();
-    name_files.entry("foo".to_string()).or_insert_with(HashSet::new).insert(PathBuf::from("mod.py"));
-    name_files.entry("bar".to_string()).or_insert_with(HashSet::new).insert(PathBuf::from("mod.py"));
+    name_files
+        .entry("foo".to_string())
+        .or_insert_with(HashSet::new)
+        .insert(PathBuf::from("mod.py"));
+    name_files
+        .entry("bar".to_string())
+        .or_insert_with(HashSet::new)
+        .insert(PathBuf::from("mod.py"));
     let disambiguation = HashMap::new();
     let import_bindings = HashMap::new();
     let module_suffixes = HashMap::new();
@@ -146,7 +152,10 @@ fn test_build_ref_to_covered_def_indices_unique_and_class() {
     );
     assert!(map.get("foo").unwrap().contains(&0));
     assert!(map.get("bar").unwrap().contains(&1));
-    assert!(map.get("Cls").unwrap().contains(&1), "class name maps to method index");
+    assert!(
+        map.get("Cls").unwrap().contains(&1),
+        "class name maps to method index"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -155,17 +164,18 @@ fn test_build_ref_to_covered_def_indices_unique_and_class() {
 
 #[test]
 fn test_build_py_coverage_map_per_test_tracking() {
-    let definitions = vec![
-        CodeDefinition {
-            name: "run".to_string(),
-            kind: crate::units::CodeUnitKind::Function,
-            file: PathBuf::from("engine.py"),
-            line: 1,
-            containing_class: None,
-        },
-    ];
+    let definitions = vec![CodeDefinition {
+        name: "run".to_string(),
+        kind: crate::units::CodeUnitKind::Function,
+        file: PathBuf::from("engine.py"),
+        line: 1,
+        containing_class: None,
+    }];
     let mut name_files: HashMap<String, HashSet<PathBuf>> = HashMap::new();
-    name_files.entry("run".to_string()).or_default().insert(PathBuf::from("engine.py"));
+    name_files
+        .entry("run".to_string())
+        .or_default()
+        .insert(PathBuf::from("engine.py"));
     let disambiguation = HashMap::new();
     let import_bindings = HashMap::new();
     let module_suffixes = HashMap::new();
@@ -321,10 +331,16 @@ fn test_is_python_test_file_in_tests_dir() {
 
 #[test]
 fn test_is_python_test_file_by_content() {
-    assert!(make_python_test_file_check("src/checker.py", "import pytest\ndef test_x():\n    pass\n"));
+    assert!(make_python_test_file_check(
+        "src/checker.py",
+        "import pytest\ndef test_x():\n    pass\n"
+    ));
 }
 
 #[test]
 fn test_is_python_test_file_regular_file() {
-    assert!(!make_python_test_file_check("src/utils.py", "def helper():\n    pass\n"));
+    assert!(!make_python_test_file_check(
+        "src/utils.py",
+        "def helper():\n    pass\n"
+    ));
 }

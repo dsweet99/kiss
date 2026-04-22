@@ -23,7 +23,10 @@ fn read_original_snapshots(files: &[PathBuf]) -> BTreeMap<PathBuf, String> {
 fn group_edits_by_path(plan: &MvPlan) -> BTreeMap<PathBuf, Vec<&PlannedEdit>> {
     let mut per_file_edits: BTreeMap<PathBuf, Vec<&PlannedEdit>> = BTreeMap::new();
     for edit in &plan.edits {
-        per_file_edits.entry(edit.path.clone()).or_default().push(edit);
+        per_file_edits
+            .entry(edit.path.clone())
+            .or_default()
+            .push(edit);
     }
     per_file_edits
 }
@@ -134,15 +137,18 @@ mod transaction_coverage {
         };
         let bad = MvPlan {
             files: vec![p.clone()],
-            edits: vec![e.clone(), PlannedEdit {
-                path: p,
-                start_byte: 0,
-                end_byte: 1,
-                line: 1,
-                old_snippet: "a".into(),
-                new_snippet: "b".into(),
-                kind: EditKind::Reference,
-            }],
+            edits: vec![
+                e.clone(),
+                PlannedEdit {
+                    path: p,
+                    start_byte: 0,
+                    end_byte: 1,
+                    line: 1,
+                    old_snippet: "a".into(),
+                    new_snippet: "b".into(),
+                    kind: EditKind::Reference,
+                },
+            ],
         };
         let _ = check_for_overlaps(&bad);
         let _ = rollback(&BTreeMap::new());

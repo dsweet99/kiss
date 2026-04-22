@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use crate::symbol_mv;
 use crate::Language;
+use crate::symbol_mv;
 
 pub fn detect_language(path: &Path) -> Result<Language, String> {
     match path.extension().and_then(|ext| ext.to_str()) {

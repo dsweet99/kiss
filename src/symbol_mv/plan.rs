@@ -8,8 +8,8 @@ use super::edit::{MvPlan, PlannedEdit};
 use super::opts::MvRequest;
 
 use crate::symbol_mv_support::{
-    build_move_edits, collect_reference_edits, collect_source_rename_edits, MoveEditsParams,
-    ReferenceRenameParams, SourceRenameParams,
+    MoveEditsParams, ReferenceRenameParams, SourceRenameParams, build_move_edits,
+    collect_reference_edits, collect_source_rename_edits,
 };
 
 const fn empty_plan() -> MvPlan {
@@ -32,7 +32,12 @@ struct AppendReferenceCtx<'a> {
 }
 
 fn append_reference_edits(ctx: &mut AppendReferenceCtx<'_>) {
-    let owner = ctx.req.query.member.as_ref().map(|_| ctx.req.query.symbol.as_str());
+    let owner = ctx
+        .req
+        .query
+        .member
+        .as_ref()
+        .map(|_| ctx.req.query.symbol.as_str());
     for path in crate::symbol_mv_support::gather_candidate_files(
         &ctx.req.paths,
         &ctx.req.ignore,
@@ -87,7 +92,11 @@ fn append_move_edits_if_any(ctx: &mut AppendMoveCtx<'_>) {
 }
 
 fn finalize_plan(files: BTreeSet<PathBuf>, mut edits: Vec<PlannedEdit>) -> MvPlan {
-    edits.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.start_byte.cmp(&b.start_byte)));
+    edits.sort_by(|a, b| {
+        a.path
+            .cmp(&b.path)
+            .then_with(|| a.start_byte.cmp(&b.start_byte))
+    });
     MvPlan {
         files: files.into_iter().collect(),
         edits,
@@ -104,8 +113,12 @@ pub fn plan_edits(req: &MvRequest) -> MvPlan {
 
     let mut files = BTreeSet::new();
     let owner = req.query.member.as_ref().map(|_| req.query.symbol.as_str());
-    let def_span =
-        crate::symbol_mv_support::find_definition_span(&source_content, old_name, owner, req.query.language);
+    let def_span = crate::symbol_mv_support::find_definition_span(
+        &source_content,
+        old_name,
+        owner,
+        req.query.language,
+    );
 
     let mut edits = collect_source_rename_edits(&SourceRenameParams {
         source_path,

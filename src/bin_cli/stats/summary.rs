@@ -4,10 +4,10 @@ use kiss::parsing::{ParsedFile, parse_files};
 use kiss::rust_parsing::{ParsedRustFile, parse_rust_files};
 use kiss::{
     Config, DependencyGraph, DuplicationConfig, GateConfig, Language, MetricStats, analyze_graph,
-    analyze_rust_test_refs, analyze_test_refs, build_dependency_graph,
-    build_rust_dependency_graph, cluster_duplicates_from_chunks, compute_file_metrics,
-    compute_rust_file_metrics, compute_summaries, extract_chunks_for_duplication,
-    extract_rust_chunks_for_duplication, find_source_files_with_ignore, format_stats_table,
+    analyze_rust_test_refs, analyze_test_refs, build_dependency_graph, build_rust_dependency_graph,
+    cluster_duplicates_from_chunks, compute_file_metrics, compute_rust_file_metrics,
+    compute_summaries, extract_chunks_for_duplication, extract_rust_chunks_for_duplication,
+    find_source_files_with_ignore, format_stats_table,
 };
 use std::path::{Path, PathBuf};
 
@@ -63,16 +63,14 @@ fn collect_files(
     (py_files, rs_files)
 }
 
-fn analyze_python(
-    files: &[PathBuf],
-    config: &Config,
-    gate: &GateConfig,
-) -> Option<LangAnalysis> {
+fn analyze_python(files: &[PathBuf], config: &Config, gate: &GateConfig) -> Option<LangAnalysis> {
     if files.is_empty() {
         return None;
     }
-    let parsed: Vec<ParsedFile> = parse_files(files)
-        .map_or_else(|_| Vec::new(), |rs| rs.into_iter().filter_map(Result::ok).collect());
+    let parsed: Vec<ParsedFile> = parse_files(files).map_or_else(
+        |_| Vec::new(),
+        |rs| rs.into_iter().filter_map(Result::ok).collect(),
+    );
     if parsed.is_empty() {
         return None;
     }
@@ -127,11 +125,7 @@ fn analyze_python(
     })
 }
 
-fn analyze_rust(
-    files: &[PathBuf],
-    config: &Config,
-    gate: &GateConfig,
-) -> Option<LangAnalysis> {
+fn analyze_rust(files: &[PathBuf], config: &Config, gate: &GateConfig) -> Option<LangAnalysis> {
     if files.is_empty() {
         return None;
     }

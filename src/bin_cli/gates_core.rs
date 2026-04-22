@@ -1,14 +1,16 @@
-use crate::bin_cli::args::{parse_language, Cli, Commands};
-use crate::bin_cli::config_session::{ensure_default_config_exists, load_configs, load_gate_config};
+use crate::bin_cli::args::{Cli, Commands, parse_language};
+use crate::bin_cli::config_session::{
+    ensure_default_config_exists, load_configs, load_gate_config,
+};
 use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::run::run;
 use crate::bin_cli::stats::{
-    collect_all_units, print_all_top_metrics, print_top_for_metric, run_stats, run_stats_summary,
-    run_stats_table, RunStatsArgs,
+    RunStatsArgs, collect_all_units, print_all_top_metrics, print_top_for_metric, run_stats,
+    run_stats_summary, run_stats_table,
 };
 use crate::bin_cli::util::{normalize_ignore_prefixes, validate_paths};
-use kiss::truncate;
 use kiss::Language;
+use kiss::truncate;
 
 #[test]
 fn test_language_and_config() {

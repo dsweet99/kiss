@@ -4,7 +4,7 @@
 def process_user_request(request, user, permissions, config):
     """This function has way too much nesting."""
     result = {"success": False, "data": None, "errors": []}
-    
+
     if request is not None:
         if request.get("action") is not None:
             action = request["action"]
@@ -52,14 +52,14 @@ def process_user_request(request, user, permissions, config):
             result["errors"].append("No action specified")
     else:
         result["errors"].append("No request provided")
-    
+
     return result
 
 
 def calculate_shipping(order, customer, warehouse, carrier_rates, promotions, settings):
     """Another deeply nested function."""
     shipping_cost = 0.0
-    
+
     if order:
         if order.get("items"):
             if len(order["items"]) > 0:
@@ -85,7 +85,7 @@ def calculate_shipping(order, customer, warehouse, carrier_rates, promotions, se
                                                                         for item in order["items"]
                                                                     )
                                                                     shipping_cost = base + (total_weight * per_kg)
-                                                                    
+
                                                                     if promotions:
                                                                         if "free_shipping" in promotions:
                                                                             promo = promotions["free_shipping"]
@@ -105,7 +105,7 @@ def validate_form_submission(form_data, schema, rules, context, options):
     """Yet another deeply nested validation function."""
     errors = []
     warnings = []
-    
+
     if form_data:
         if isinstance(form_data, dict):
             if schema:
@@ -147,6 +147,6 @@ def validate_form_submission(form_data, schema, rules, context, options):
                                     else:
                                         if not field_schema.get("nullable"):
                                             errors.append(f"{field_name} cannot be null")
-    
+
     return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
 

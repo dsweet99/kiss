@@ -1,3 +1,4 @@
+use super::ConfigError;
 use super::merge::{
     apply_language_sections, apply_parsed_toml, apply_python, apply_python_if_present, apply_rust,
     apply_rust_if_present, apply_shared, apply_thresholds, apply_thresholds_and_shared,
@@ -7,7 +8,6 @@ use super::validation::{
     check_unknown_keys, check_unknown_sections, get_usize, validate_config_keys,
     validate_python_keys, validate_rust_keys, validate_shared_keys, validate_thresholds_keys,
 };
-use super::ConfigError;
 
 #[test]
 fn test_merge_and_apply() {
@@ -48,9 +48,11 @@ fn test_apply_language_sections() {
 
 #[test]
 fn test_helpers() {
-    assert!(super::validation::is_similar("python", "pytohn")
-        && super::validation::is_similar("rust", "ruts")
-        && !super::validation::is_similar("python", "xyz"));
+    assert!(
+        super::validation::is_similar("python", "pytohn")
+            && super::validation::is_similar("rust", "ruts")
+            && !super::validation::is_similar("python", "xyz")
+    );
     let mut table = toml::Table::new();
     table.insert("valid".into(), toml::Value::Integer(42));
     table.insert("negative".into(), toml::Value::Integer(-1));

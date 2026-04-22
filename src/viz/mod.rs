@@ -126,7 +126,10 @@ pub(crate) fn write_coarsened_dot(out: &mut dyn Write, g: &CoarsenedGraph) -> st
     Ok(())
 }
 
-pub(crate) fn write_coarsened_mermaid(out: &mut dyn Write, g: &CoarsenedGraph) -> std::io::Result<()> {
+pub(crate) fn write_coarsened_mermaid(
+    out: &mut dyn Write,
+    g: &CoarsenedGraph,
+) -> std::io::Result<()> {
     for (i, label) in g.labels.iter().enumerate() {
         let label = mermaid_escape_label(label);
         writeln!(out, "  c{i}[\"{label}\"]")?;
@@ -177,7 +180,10 @@ type CombinedGraphParts = (
     BTreeMap<String, PathBuf>,
 );
 
-pub(crate) fn collect_graph_nodes_and_edges(graph: &DependencyGraph, prefix: &str) -> CombinedGraphParts {
+pub(crate) fn collect_graph_nodes_and_edges(
+    graph: &DependencyGraph,
+    prefix: &str,
+) -> CombinedGraphParts {
     let mut nodes: BTreeSet<String> = BTreeSet::new();
     let mut paths: BTreeMap<String, PathBuf> = BTreeMap::new();
     for (name, path) in &graph.paths {

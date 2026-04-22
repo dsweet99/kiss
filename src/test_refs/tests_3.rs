@@ -5,7 +5,11 @@ use std::path::Path;
 // collect.rs: collect_type_refs
 // ---------------------------------------------------------------------------
 
-fn walk_for_types(node: tree_sitter::Node, source: &str, refs: &mut std::collections::HashSet<String>) {
+fn walk_for_types(
+    node: tree_sitter::Node,
+    source: &str,
+    refs: &mut std::collections::HashSet<String>,
+) {
     if node.kind() == "type" {
         super::collect::collect_type_refs(node, source, refs);
     }
@@ -98,7 +102,10 @@ fn test_extract_import_from_binding_aliased() {
     let mut bindings = std::collections::HashMap::new();
     super::collect::extract_import_from_binding(import_node, src, &mut bindings);
     let names = bindings.get("mymod").expect("mymod entry");
-    assert!(names.contains("foo"), "aliased import captures original name");
+    assert!(
+        names.contains("foo"),
+        "aliased import captures original name"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -185,8 +192,7 @@ fn test_collect_refs_parallel_no_coverage_map() {
         tree: tree_test,
     };
 
-    let (_, _, _, _, per_test_usage) =
-        collect_refs_parallel(&[&file, &file_test], false);
+    let (_, _, _, _, per_test_usage) = collect_refs_parallel(&[&file, &file_test], false);
     assert!(
         per_test_usage.is_empty(),
         "per_test_usage empty when need_coverage_map=false"
@@ -215,7 +221,14 @@ def standalone():
 ";
     let tree = parser.parse(src, None).unwrap();
     let mut defs = Vec::new();
-    collect_definitions(tree.root_node(), src, Path::new("mod.py"), &mut defs, false, None);
+    collect_definitions(
+        tree.root_node(),
+        src,
+        Path::new("mod.py"),
+        &mut defs,
+        false,
+        None,
+    );
     let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
     assert!(names.contains(&"MyClass"));
     assert!(names.contains(&"__init__"));
@@ -246,7 +259,14 @@ class Base(ABC):
 ";
     let tree = parser.parse(src, None).unwrap();
     let mut defs = Vec::new();
-    collect_definitions(tree.root_node(), src, Path::new("base.py"), &mut defs, false, None);
+    collect_definitions(
+        tree.root_node(),
+        src,
+        Path::new("base.py"),
+        &mut defs,
+        false,
+        None,
+    );
     let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
     assert!(!names.contains(&"do_work"), "abstract methods excluded");
     assert!(names.contains(&"concrete"), "concrete methods included");
@@ -260,15 +280,30 @@ fn test_collect_definitions_protocol_class_excluded() {
     let src = "class Writable(Protocol):\n    def write(self, data: str) -> None: ...\n";
     let tree = parser.parse(src, None).unwrap();
     let mut defs = Vec::new();
-    collect_definitions(tree.root_node(), src, Path::new("ifaces.py"), &mut defs, false, None);
-    assert!(defs.is_empty(), "Protocol classes and their methods excluded");
+    collect_definitions(
+        tree.root_node(),
+        src,
+        Path::new("ifaces.py"),
+        &mut defs,
+        false,
+        None,
+    );
+    assert!(
+        defs.is_empty(),
+        "Protocol classes and their methods excluded"
+    );
 }
 
 // ---------------------------------------------------------------------------
 // coverage.rs: is_covered_by_import
 // ---------------------------------------------------------------------------
 
-type CovFixture = (CodeDefinition, std::collections::HashMap<String, HashSet<String>>, std::collections::HashMap<PathBuf, String>, HashSet<String>);
+type CovFixture = (
+    CodeDefinition,
+    std::collections::HashMap<String, HashSet<String>>,
+    std::collections::HashMap<PathBuf, String>,
+    HashSet<String>,
+);
 
 fn covered_by_import_fixture(usage: &[&str]) -> CovFixture {
     let def = CodeDefinition {
@@ -323,5 +358,10 @@ fn test_is_covered_by_import_wrong_module() {
     let mut usage_refs = HashSet::new();
     usage_refs.insert("foo".to_string());
 
-    assert!(!is_covered_by_import(&def, &import_bindings, &module_suffixes, &usage_refs));
+    assert!(!is_covered_by_import(
+        &def,
+        &import_bindings,
+        &module_suffixes,
+        &usage_refs
+    ));
 }

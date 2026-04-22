@@ -6,11 +6,76 @@ mod table;
 pub mod types;
 
 use crate::graph::DependencyGraph;
+use crate::parsing::ParsedFile;
+use crate::py_metrics::compute_file_metrics;
+use crate::rust_fn_metrics::compute_rust_file_metrics;
+use crate::rust_parsing::ParsedRustFile;
 
-pub use types::UnitMetrics;
-pub use python::collect_detailed_py;
-pub use rust::collect_detailed_rs;
 pub use table::format_detailed_table;
+pub use types::UnitMetrics;
+
+#[must_use]
+pub fn collect_detailed_py(
+    parsed_files: &[&ParsedFile],
+    graph: Option<&DependencyGraph>,
+) -> Vec<UnitMetrics> {
+    let mut units = Vec::new();
+    for &parsed in parsed_files {
+        let fm = compute_file_metrics(parsed);
+        let lines = parsed.source.lines().count();
+        push_file_scope_unit(
+            &parsed.path,
+            file_scope_from_fm(
+                lines,
+                fm.imports,
+                fm.statements,
+                fm.functions,
+                fm.interface_types,
+                fm.concrete_types,
+            ),
+            graph,
+            &mut units,
+        );
+        python::collect_detailed_from_node(
+            parsed.tree.root_node(),
+            &parsed.source,
+            &parsed.path.display().to_string(),
+            &mut units,
+        );
+    }
+    units
+}
+
+#[must_use]
+pub fn collect_detailed_rs(
+    parsed_files: &[&ParsedRustFile],
+    graph: Option<&DependencyGraph>,
+) -> Vec<UnitMetrics> {
+    let mut units = Vec::new();
+    for &parsed in parsed_files {
+        let fm = compute_rust_file_metrics(parsed);
+        let lines = parsed.source.lines().count();
+        push_file_scope_unit(
+            &parsed.path,
+            file_scope_from_fm(
+                lines,
+                fm.imports,
+                fm.statements,
+                fm.functions,
+                fm.interface_types,
+                fm.concrete_types,
+            ),
+            graph,
+            &mut units,
+        );
+        rust::collect_detailed_from_items(
+            &parsed.ast.items,
+            &parsed.path.display().to_string(),
+            &mut units,
+        );
+    }
+    units
+}
 
 fn module_name_from_path(path: &std::path::Path) -> String {
     path.file_stem()
@@ -74,6 +139,33 @@ fn file_unit_metrics(
     u
 }
 
+pub(crate) fn push_file_scope_unit(
+    path: &std::path::Path,
+    scope: FileScopeMetrics,
+    graph: Option<&DependencyGraph>,
+    units: &mut Vec<UnitMetrics>,
+) {
+    units.push(file_unit_metrics(path, scope, graph));
+}
+
+const fn file_scope_from_fm(
+    lines: usize,
+    imports: usize,
+    statements: usize,
+    functions: usize,
+    interface_types: usize,
+    concrete_types: usize,
+) -> FileScopeMetrics {
+    FileScopeMetrics {
+        lines,
+        imports,
+        statements,
+        functions,
+        interface_types,
+        concrete_types,
+    }
+}
+
 pub fn truncate(s: &str, max: usize) -> String {
     let char_count = s.chars().count();
     if char_count <= max {
@@ -92,7 +184,9 @@ mod tests {
     use crate::graph::DependencyGraph;
     use crate::parsing::{create_parser, parse_file};
     use crate::stats_detailed::python::collect_detailed_from_node_for_test;
-    use crate::stats_detailed::rust::{collect_detailed_from_items, get_impl_name, push_rust_fn_or_method_unit};
+    use crate::stats_detailed::rust::{
+        collect_detailed_from_items, get_impl_name, push_rust_fn_or_method_unit,
+    };
     use std::io::Write;
 
     #[test]
@@ -190,7 +284,12 @@ mod tests {
         .unwrap();
         let parsed = parse_file(&mut create_parser().unwrap(), tmp.path()).unwrap();
         let mut units = Vec::new();
-        collect_detailed_from_node_for_test(parsed.tree.root_node(), &parsed.source, "t.py", &mut units);
+        collect_detailed_from_node_for_test(
+            parsed.tree.root_node(),
+            &parsed.source,
+            "t.py",
+            &mut units,
+        );
         assert!(
             units
                 .iter()

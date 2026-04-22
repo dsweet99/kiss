@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use syn::{Expr, ImplItem, Item, Stmt};
 
-use super::references::{collect_rust_references, ReferenceVisitor};
+use super::references::{ReferenceVisitor, collect_rust_references};
 use syn::visit::Visit;
 
 /// Returns true if the file path is a Rust binary entry point.
@@ -13,9 +13,10 @@ use syn::visit::Visit;
 /// integration-test tree), not substring matches — so e.g. `legacy_tests/src/main.rs` is still
 /// treated as an entry point.
 pub(super) fn is_binary_entry_point(path: &Path) -> bool {
-    if path.components().any(|c| {
-        matches!(c, std::path::Component::Normal(s) if s == "tests")
-    }) {
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::Normal(s) if s == "tests"))
+    {
         return false;
     }
     let path_str = path.to_string_lossy();
@@ -82,9 +83,7 @@ fn is_trivial_expr(expr: &Expr) -> bool {
                 })
         }
         Expr::Let(l) => is_trivial_expr(&l.expr),
-        Expr::MethodCall(m) => {
-            is_trivial_expr(&m.receiver) && m.args.iter().all(is_trivial_expr)
-        }
+        Expr::MethodCall(m) => is_trivial_expr(&m.receiver) && m.args.iter().all(is_trivial_expr),
         Expr::Field(f) => is_trivial_expr(&f.base),
         Expr::Reference(r) => is_trivial_expr(&r.expr),
         Expr::Unary(u) => is_trivial_expr(&u.expr),
@@ -287,8 +286,12 @@ mod definitions_coverage {
     #[test]
     fn is_delegation_only_block_variants() {
         assert!(is_delegation_only_block(&syn::parse_str("{}").unwrap()));
-        assert!(is_delegation_only_block(&syn::parse_str("{ crate::run() }").unwrap()));
-        assert!(!is_delegation_only_block(&syn::parse_str("{ struct Foo; }").unwrap()));
+        assert!(is_delegation_only_block(
+            &syn::parse_str("{ crate::run() }").unwrap()
+        ));
+        assert!(!is_delegation_only_block(
+            &syn::parse_str("{ struct Foo; }").unwrap()
+        ));
     }
 
     #[test]
@@ -301,7 +304,9 @@ mod definitions_coverage {
 
     #[test]
     fn is_trivial_stmt_variants() {
-        assert!(is_trivial_stmt(&syn::parse_str::<syn::Stmt>("Ok(());").unwrap()));
+        assert!(is_trivial_stmt(
+            &syn::parse_str::<syn::Stmt>("Ok(());").unwrap()
+        ));
         let trivial: syn::Block = syn::parse_str("{ let x = 42; }").unwrap();
         assert!(trivial.stmts.iter().all(is_trivial_stmt));
         let non_trivial: syn::Block = syn::parse_str("{ fn inner() {} }").unwrap();
@@ -310,18 +315,38 @@ mod definitions_coverage {
 
     #[test]
     fn is_qualified_or_known_call_variants() {
-        assert!(is_qualified_or_known_call(&syn::parse_str("module::func()").unwrap()));
-        assert!(is_qualified_or_known_call(&syn::parse_str("Ok(())").unwrap()));
-        assert!(!is_qualified_or_known_call(&syn::parse_str("unknown_func()").unwrap()));
+        assert!(is_qualified_or_known_call(
+            &syn::parse_str("module::func()").unwrap()
+        ));
+        assert!(is_qualified_or_known_call(
+            &syn::parse_str("Ok(())").unwrap()
+        ));
+        assert!(!is_qualified_or_known_call(
+            &syn::parse_str("unknown_func()").unwrap()
+        ));
     }
 
     #[test]
     fn try_add_def_public_and_private() {
         let mut defs = Vec::new();
-        try_add_def(&mut defs, "my_func", CodeUnitKind::Function, Path::new("t.rs"), 1, None);
+        try_add_def(
+            &mut defs,
+            "my_func",
+            CodeUnitKind::Function,
+            Path::new("t.rs"),
+            1,
+            None,
+        );
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].name, "my_func");
-        try_add_def(&mut defs, "_private", CodeUnitKind::Function, Path::new("t.rs"), 1, None);
+        try_add_def(
+            &mut defs,
+            "_private",
+            CodeUnitKind::Function,
+            Path::new("t.rs"),
+            1,
+            None,
+        );
         assert_eq!(defs.len(), 1);
     }
 

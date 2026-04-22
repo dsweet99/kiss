@@ -1,4 +1,7 @@
-pub(super) fn find_identifier_occurrences(content: &str, ident: &str) -> Vec<(usize, usize, usize)> {
+pub(super) fn find_identifier_occurrences(
+    content: &str,
+    ident: &str,
+) -> Vec<(usize, usize, usize)> {
     let mut out = Vec::new();
     let mut search_from = 0;
     while let Some(found) = content[search_from..].find(ident) {

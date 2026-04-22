@@ -76,14 +76,7 @@ pub(super) fn merge_lang_sections(
     nw: &toml::Table,
     lang: MergeLanguageUpdate,
 ) {
-    let pick = |k: &str, upd: bool| {
-        if upd {
-            nw.get(k)
-        } else {
-            ex.get(k)
-        }
-        .cloned()
-    };
+    let pick = |k: &str, upd: bool| if upd { nw.get(k) } else { ex.get(k) }.cloned();
     for (k, upd) in [
         ("python", lang.update_python()),
         ("rust", lang.update_rust()),
@@ -111,7 +104,11 @@ pub(super) fn merge_shared(
     }
 }
 
-pub(super) fn merge_thresholds(merged: &mut toml::Table, ex: &toml::Table, lang: MergeLanguageUpdate) {
+pub(super) fn merge_thresholds(
+    merged: &mut toml::Table,
+    ex: &toml::Table,
+    lang: MergeLanguageUpdate,
+) {
     if !lang.update_both()
         && let Some(v) = ex.get("thresholds").cloned()
     {

@@ -178,12 +178,7 @@ mod tests {
 
         let rs_cfg = Config::rust_defaults();
 
-        let result = parse_all(
-            std::slice::from_ref(&test_path),
-            &[],
-            &py_cfg,
-            &rs_cfg,
-        );
+        let result = parse_all(std::slice::from_ref(&test_path), &[], &py_cfg, &rs_cfg);
         let fname = test_path.file_name().unwrap_or_default().to_string_lossy();
 
         assert!(
@@ -256,7 +251,10 @@ mod tests {
             rs_config: &rs_cfg,
             show_timing: true,
         });
-        assert!(!timing.is_empty(), "timing string should be non-empty when show_timing=true");
+        assert!(
+            !timing.is_empty(),
+            "timing string should be non-empty when show_timing=true"
+        );
         assert_eq!(result.py_parsed.len(), 1);
     }
 
@@ -291,8 +289,7 @@ mod tests {
     #[test]
     fn test_parse_and_analyze_py_timed_empty() {
         let cfg = Config::python_defaults();
-        let ((parsed, viols, units, stmts), timing) =
-            parse_and_analyze_py_timed(&[], &cfg, false);
+        let ((parsed, viols, units, stmts), timing) = parse_and_analyze_py_timed(&[], &cfg, false);
         assert!(parsed.is_empty());
         assert!(viols.is_empty());
         assert_eq!(units, 0);

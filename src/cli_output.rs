@@ -100,10 +100,7 @@ pub fn print_coverage_gate_failure(ctx: &CoverageGateFailureCtx<'_>) {
         n = failing.len()
     );
     for (file, pct) in &failing {
-        println!(
-            "  {}: {pct}% ({threshold}% required)",
-            file.display()
-        );
+        println!("  {}: {pct}% ({threshold}% required)", file.display());
     }
     for (file, name, line) in ctx.unreferenced {
         let pct = ctx.file_pcts.get(file).copied().unwrap_or(0);

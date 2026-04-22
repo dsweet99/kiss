@@ -7,9 +7,7 @@ pub use summary::run_stats_summary;
 #[cfg(test)]
 pub use table::run_stats_table;
 #[cfg(test)]
-pub use top::{
-    collect_all_units, print_all_top_metrics, print_top_for_metric, run_stats_top,
-};
+pub use top::{collect_all_units, print_all_top_metrics, print_top_for_metric, run_stats_top};
 
 use kiss::Language;
 

@@ -8,12 +8,12 @@ use crate::bin_cli::config_session::run_init_command;
 
 use handlers::{
     dispatch_check, dispatch_clamp, dispatch_config, dispatch_dry, dispatch_mimic, dispatch_mv,
-    dispatch_rules, dispatch_shrink, dispatch_show_tests, dispatch_stats, dispatch_viz,
+    dispatch_rules, dispatch_show_tests, dispatch_shrink, dispatch_stats, dispatch_viz,
 };
 use options::{
     CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-    MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShrinkDispatchOptions,
-    ShowTestsDispatchOptions, StatsDispatchOptions, TriConfig, VizDispatchOptions,
+    MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShowTestsDispatchOptions,
+    ShrinkDispatchOptions, StatsDispatchOptions, TriConfig, VizDispatchOptions,
 };
 
 use kiss::GateConfig;
@@ -154,14 +154,13 @@ pub fn dispatch(
 #[cfg(test)]
 mod dispatch_coverage {
     use super::handlers::{
-        dispatch_check, dispatch_clamp, dispatch_config, dispatch_dry, dispatch_mimic,
-        dispatch_mv, dispatch_rules, dispatch_shrink, dispatch_show_tests, dispatch_stats,
-        dispatch_viz,
+        dispatch_check, dispatch_clamp, dispatch_config, dispatch_dry, dispatch_mimic, dispatch_mv,
+        dispatch_rules, dispatch_show_tests, dispatch_shrink, dispatch_stats, dispatch_viz,
     };
     use super::{
         CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-        MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShrinkDispatchOptions,
-        ShowTestsDispatchOptions, StatsDispatchOptions, TriConfig, VizDispatchOptions,
+        MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShowTestsDispatchOptions,
+        ShrinkDispatchOptions, StatsDispatchOptions, TriConfig, VizDispatchOptions,
     };
     use kiss::GateConfig;
 

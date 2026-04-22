@@ -1,11 +1,10 @@
 use crate::config::Config;
 use crate::parsing::ParsedFile;
 use crate::py_metrics::{
-    FileMetrics, FunctionMetrics, compute_file_metrics, compute_function_metrics,
+    FileMetrics, FunctionMetrics, PyWalkAction, compute_file_metrics, walk_py_ast,
 };
 use crate::violation::{Violation, ViolationBuilder};
 use std::path::Path;
-use tree_sitter::Node;
 
 pub use crate::py_metrics::{
     ClassMetrics as PyClassMetrics, FileMetrics as PyFileMetrics,
@@ -16,6 +15,43 @@ pub use crate::violation::{Violation as PyViolation, ViolationBuilder as PyViola
 
 #[cfg(test)]
 mod tests;
+
+fn handle_py_walk_check(
+    action: PyWalkAction<'_>,
+    file: &Path,
+    config: &Config,
+    violations: &mut Vec<Violation>,
+) {
+    match action {
+        PyWalkAction::Function(visit) => check_function_metrics(
+            visit.metrics,
+            file,
+            visit.line,
+            visit.name,
+            visit.inside_class,
+            config,
+            violations,
+        ),
+        PyWalkAction::Class(visit) => {
+            if visit.metrics.methods > config.methods_per_class {
+                violations.push(
+                    violation(file, visit.line, visit.name)
+                        .metric("methods_per_class")
+                        .value(visit.metrics.methods)
+                        .threshold(config.methods_per_class)
+                        .message(format!(
+                            "Class '{}' has {} methods (threshold: {})",
+                            visit.name, visit.metrics.methods, config.methods_per_class
+                        ))
+                        .suggestion(
+                            "Consider extracting groups of related methods into separate classes.",
+                        )
+                        .build(),
+                );
+            }
+        }
+    }
+}
 
 #[must_use]
 pub fn analyze_file(parsed: &ParsedFile, config: &Config) -> Vec<Violation> {
@@ -37,21 +73,13 @@ pub fn analyze_file_with_statement_count(
 
     let file_metrics = compute_file_metrics(parsed);
     let line_count = parsed.source.lines().count();
-    check_file_metrics(
-        &file_metrics,
-        line_count,
-        file,
-        config,
-        &mut violations,
-    );
+    check_file_metrics(&file_metrics, line_count, file, config, &mut violations);
 
-    analyze_node(
+    walk_py_ast(
         parsed.tree.root_node(),
         &parsed.source,
-        file,
-        &mut violations,
+        &mut |action| handle_py_walk_check(action, file, config, &mut violations),
         false,
-        config,
     );
     (file_metrics.statements, violations)
 }
@@ -65,9 +93,7 @@ fn push_py_file_threshold(
     message: String,
     suggestion: &'static str,
 ) {
-    let fname = file
-        .file_name()
-        .map_or("", |s| s.to_str().unwrap_or(""));
+    let fname = file.file_name().map_or("", |s| s.to_str().unwrap_or(""));
     v.push(
         violation(file, 1, fname)
             .metric(metric)
@@ -86,9 +112,7 @@ pub(crate) fn check_file_metrics(
     cfg: &Config,
     v: &mut Vec<Violation>,
 ) {
-    let fname = file
-        .file_name()
-        .map_or("", |s| s.to_str().unwrap_or(""));
+    let fname = file.file_name().map_or("", |s| s.to_str().unwrap_or(""));
     if lines > cfg.lines_per_file {
         push_py_file_threshold(
             v,
@@ -175,46 +199,6 @@ pub(crate) fn check_file_metrics(
 
 pub(crate) fn violation(file: &Path, line: usize, name: &str) -> ViolationBuilder {
     Violation::builder(file).line(line).unit_name(name)
-}
-
-pub(crate) enum Recursion {
-    Skip,
-    Continue(bool),
-}
-
-pub(crate) fn analyze_node(
-    node: Node,
-    source: &str,
-    file: &Path,
-    violations: &mut Vec<Violation>,
-    inside_class: bool,
-    config: &Config,
-) {
-    let recursion = match node.kind() {
-        "function_definition" | "async_function_definition" => {
-            let name = node
-                .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(source.as_bytes()).ok())
-                .unwrap_or("<anonymous>");
-            let line = node.start_position().row + 1;
-            let m = compute_function_metrics(node, source);
-            if !m.has_error {
-                check_function_metrics(&m, file, line, name, inside_class, config, violations);
-            }
-            Recursion::Skip
-        }
-        "class_definition" => {
-            analyze_class_node(node, source, file, violations, config);
-            Recursion::Skip
-        }
-        _ => Recursion::Continue(inside_class),
-    };
-    if let Recursion::Continue(ctx) = recursion {
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            analyze_node(child, source, file, violations, ctx, config);
-        }
-    }
 }
 
 pub(crate) fn check_function_metrics(
@@ -356,41 +340,5 @@ pub(crate) fn check_function_metrics_tail(
                 )
                 .build(),
         );
-    }
-}
-
-pub(crate) fn analyze_class_node(
-    node: Node,
-    source: &str,
-    file: &Path,
-    violations: &mut Vec<Violation>,
-    config: &Config,
-) {
-    let name = node
-        .child_by_field_name("name")
-        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
-        .unwrap_or("<anonymous>");
-    let line = node.start_position().row + 1;
-    let m = compute_class_metrics(node);
-
-    if m.methods > config.methods_per_class {
-        violations.push(
-            violation(file, line, name)
-                .metric("methods_per_class")
-                .value(m.methods)
-                .threshold(config.methods_per_class)
-                .message(format!(
-                    "Class '{}' has {} methods (threshold: {})",
-                    name, m.methods, config.methods_per_class
-                ))
-                .suggestion("Consider extracting groups of related methods into separate classes.")
-                .build(),
-        );
-    }
-    if let Some(body) = node.child_by_field_name("body") {
-        let mut cursor = body.walk();
-        for child in body.children(&mut cursor) {
-            analyze_node(child, source, file, violations, true, config);
-        }
     }
 }

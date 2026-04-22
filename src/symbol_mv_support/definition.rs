@@ -1,6 +1,6 @@
 use crate::Language;
 
-use super::lex::{rust_item_start, step_lex_state, LexScan, LexState, StringState};
+use super::lex::{LexScan, LexState, StringState, rust_item_start, step_lex_state};
 
 #[derive(Clone, Copy)]
 pub struct DefinitionSpan {
@@ -278,7 +278,10 @@ mod definition_coverage {
         let block = &src[start..end];
         assert!(block.contains("a = 1"));
         assert!(block.contains("c = 3"));
-        assert!(!block.contains("bar = 4"), "extend_class_block should stop at dedent");
+        assert!(
+            !block.contains("bar = 4"),
+            "extend_class_block should stop at dedent"
+        );
     }
 
     #[test]

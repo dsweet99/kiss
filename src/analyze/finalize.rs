@@ -1,8 +1,8 @@
 use std::time::Instant;
 
-use crate::analyze::cache::{maybe_store_full_cache, FullCacheStoreInput};
+use crate::analyze::cache::{FullCacheStoreInput, maybe_store_full_cache};
 use crate::analyze::coverage::{
-    collect_coverage_viols, CoverageOutputOpts, GraphRefPair, PyRsTestCoverage,
+    CoverageOutputOpts, GraphRefPair, PyRsTestCoverage, collect_coverage_viols,
 };
 pub(crate) use crate::analyze::finalize_types::{
     AnalysisProducts, CovDupOutcome, CovDupPhase, FinalizeAnalysisIn, HeaderPhase, StorePrintPhase,
@@ -12,11 +12,10 @@ use crate::analyze::graph_api::graph_stats;
 use crate::analyze::options::AnalyzeResult;
 use crate::analyze::parallel::RustAnalysis;
 use crate::analyze::print::{
-    log_timing_phase1, log_timing_phase2, print_all_results_with_dups, print_analysis_summary,
-    PrintResultsCtx,
+    PrintResultsCtx, log_timing_phase1, log_timing_phase2, print_all_results_with_dups,
+    print_analysis_summary,
 };
 use crate::analyze_parse::ParseResult;
-
 
 pub(crate) fn build_metrics(
     result: &ParseResult,

@@ -101,7 +101,12 @@ fn step_string_state(state: &mut LexState, bytes: &[u8], idx: usize, target: usi
     1
 }
 
-fn step_triple_string_state(state: &mut LexState, bytes: &[u8], idx: usize, target: usize) -> usize {
+fn step_triple_string_state(
+    state: &mut LexState,
+    bytes: &[u8],
+    idx: usize,
+    target: usize,
+) -> usize {
     if bytes[idx] == b'\\' && idx + 1 < target {
         return 2;
     }
@@ -191,12 +196,7 @@ fn step_code_state(scan: &mut LexScan<'_>) -> usize {
     }
 }
 
-fn step_python_code_state(
-    state: &mut LexState,
-    bytes: &[u8],
-    idx: usize,
-    target: usize,
-) -> usize {
+fn step_python_code_state(state: &mut LexState, bytes: &[u8], idx: usize, target: usize) -> usize {
     if bytes[idx] == b'#' {
         state.line_comment = true;
         return 1;
@@ -220,12 +220,7 @@ fn step_python_code_state(
     1
 }
 
-fn step_rust_code_state(
-    state: &mut LexState,
-    bytes: &[u8],
-    idx: usize,
-    target: usize,
-) -> usize {
+fn step_rust_code_state(state: &mut LexState, bytes: &[u8], idx: usize, target: usize) -> usize {
     if idx + 1 < target && bytes[idx] == b'/' && bytes[idx + 1] == b'/' {
         state.line_comment = true;
         return 2;
@@ -277,12 +272,27 @@ mod lex_coverage {
 
         let mut st = LexState::default();
         let bytes = b"//\nx";
-        let mut scan = LexScan { state: &mut st, bytes, idx: 0, target: bytes.len(), language: Language::Rust };
+        let mut scan = LexScan {
+            state: &mut st,
+            bytes,
+            idx: 0,
+            target: bytes.len(),
+            language: Language::Rust,
+        };
         step_lex_state(&mut scan);
-        let mut scan2 = LexScan { state: &mut st, bytes: b"x", idx: 0, target: 1, language: Language::Python };
+        let mut scan2 = LexScan {
+            state: &mut st,
+            bytes: b"x",
+            idx: 0,
+            target: 1,
+            language: Language::Python,
+        };
         step_code_state(&mut scan2);
         step_block_comment(&mut LexState::default(), b"/*", 0, 2);
-        let mut st3 = LexState { string_state: StringState::Single, ..LexState::default() };
+        let mut st3 = LexState {
+            string_state: StringState::Single,
+            ..LexState::default()
+        };
         step_string_state(&mut st3, b"'", 0, 1);
         assert_eq!(rust_item_start("#[inline]\nfn a() {}", 15), 0);
     }
@@ -297,8 +307,14 @@ mod lex_coverage {
 
     #[test]
     fn try_parse_raw_string_start_variants() {
-        assert_eq!(try_parse_raw_string_start(b"r\"hello\"", 0, 8), Some((0, 2)));
-        assert_eq!(try_parse_raw_string_start(b"r##\"content\"##", 0, 14), Some((2, 4)));
+        assert_eq!(
+            try_parse_raw_string_start(b"r\"hello\"", 0, 8),
+            Some((0, 2))
+        );
+        assert_eq!(
+            try_parse_raw_string_start(b"r##\"content\"##", 0, 14),
+            Some((2, 4))
+        );
         assert_eq!(try_parse_raw_string_start(b"regular", 0, 7), None);
 
         let src = r##"let s = r#"inner"#;"##;
@@ -318,18 +334,30 @@ mod lex_coverage {
         let nested = "/* outer /* inner */ still comment */ code";
         assert!(!is_code_offset(nested, 10, Language::Rust));
         assert!(!is_code_offset(nested, 25, Language::Rust));
-        assert!(is_code_offset(nested, nested.find("code").unwrap(), Language::Rust));
+        assert!(is_code_offset(
+            nested,
+            nested.find("code").unwrap(),
+            Language::Rust
+        ));
 
         let py = "x = 1 # a comment\ny = 2";
         assert!(is_code_offset(py, 0, Language::Python));
         assert!(!is_code_offset(py, 8, Language::Python));
-        assert!(is_code_offset(py, py.find("y = 2").unwrap(), Language::Python));
+        assert!(is_code_offset(
+            py,
+            py.find("y = 2").unwrap(),
+            Language::Python
+        ));
 
         assert!(!is_code_offset("x = 'hello'", 6, Language::Python));
         assert!(!is_code_offset("let s = \"world\";", 10, Language::Rust));
 
         let line_cmt = "// line comment\ncode";
         assert!(!is_code_offset(line_cmt, 5, Language::Rust));
-        assert!(is_code_offset(line_cmt, line_cmt.find("code").unwrap(), Language::Rust));
+        assert!(is_code_offset(
+            line_cmt,
+            line_cmt.find("code").unwrap(),
+            Language::Rust
+        ));
     }
 }

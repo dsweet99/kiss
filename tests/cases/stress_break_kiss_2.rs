@@ -1,9 +1,9 @@
 use super::stress_break_kiss::parse;
+use kiss::Config;
 use kiss::graph::{DependencyGraph, analyze_graph};
 use kiss::minhash::{
     MinHashSignature, compute_minhash, estimate_similarity, generate_shingles, normalize_code,
 };
-use kiss::Config;
 use std::fmt::Write as _;
 
 // ═══════════════════════════════════════════════════════════════

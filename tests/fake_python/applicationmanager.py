@@ -1,12 +1,13 @@
 """A 'God Class' that does way too many unrelated things."""
 
-import json
-import os
 import smtplib
 import sqlite3
-from datetime import datetime
+import time
 from email.mime.text import MIMEText
 from typing import Any, Optional
+
+from common import serializer
+from common.sdatetime import now_isoformat
 
 
 class ApplicationManager:
@@ -32,18 +33,17 @@ class ApplicationManager:
         self.sessions = {}
         self.log_file = None
         self.smtp_connection = None
-        
+
         self._load_config()
         self._init_database()
         self._init_logging()
 
     # ========== Configuration Management ==========
-    
+
     def _load_config(self):
-        if os.path.exists(self.config_path):
-            with open(self.config_path, 'r') as f:
-                self.config = json.load(f)
-        else:
+        try:
+            self.config = serializer.load_file(self.config_path)
+        except OSError:
             self.config = self._default_config()
             self.save_config()
 
@@ -56,8 +56,7 @@ class ApplicationManager:
         }
 
     def save_config(self):
-        with open(self.config_path, 'w') as f:
-            json.dump(self.config, f, indent=2)
+        serializer.dump_file(self.config_path, self.config)
 
     def get_config(self, key: str, default: Any = None) -> Any:
         keys = key.split(".")
@@ -79,7 +78,7 @@ class ApplicationManager:
         config[keys[-1]] = value
 
     # ========== Database Operations ==========
-    
+
     def _init_database(self):
         db_path = self.get_config("database.path", "app.db")
         self.db_connection = sqlite3.connect(db_path)
@@ -138,7 +137,7 @@ class ApplicationManager:
         return cursor.rowcount
 
     # ========== Email Operations ==========
-    
+
     def _connect_smtp(self):
         if self.smtp_connection is None:
             host = self.get_config("email.host", "localhost")
@@ -165,27 +164,27 @@ class ApplicationManager:
         self.send_email(user_email, subject, body)
 
     # ========== Logging ==========
-    
+
     def _init_logging(self):
         log_file = self.get_config("logging.file", "app.log")
         self.log_file = open(log_file, "a")
 
     def log(self, level: str, message: str):
-        timestamp = datetime.now().isoformat()
+        timestamp = now_isoformat()
         log_entry = f"[{timestamp}] [{level}] {message}"
-        
+
         # Write to file
         if self.log_file:
             self.log_file.write(log_entry + "\n")
             self.log_file.flush()
-        
+
         # Write to database
         self.execute_insert("logs", {
             "timestamp": timestamp,
             "level": level,
             "message": message
         })
-        
+
         # Print to console
         print(log_entry)
 
@@ -199,13 +198,13 @@ class ApplicationManager:
         self.log("WARNING", message)
 
     # ========== Caching ==========
-    
+
     def cache_get(self, key: str) -> Optional[Any]:
         if not self.get_config("cache.enabled", True):
             return None
         if key in self.cache:
             entry = self.cache[key]
-            if datetime.now().timestamp() - entry["timestamp"] < self.get_config("cache.ttl", 300):
+            if time.time() - entry["timestamp"] < self.get_config("cache.ttl", 300):
                 return entry["value"]
             else:
                 del self.cache[key]
@@ -215,14 +214,14 @@ class ApplicationManager:
         if self.get_config("cache.enabled", True):
             self.cache[key] = {
                 "value": value,
-                "timestamp": datetime.now().timestamp()
+                "timestamp": time.time()
             }
 
     def cache_clear(self):
         self.cache = {}
 
     # ========== Session Management ==========
-    
+
     def create_session(self, user_id: int) -> str:
         import hashlib
         import secrets
@@ -230,8 +229,8 @@ class ApplicationManager:
         token = secrets.token_hex(32)
         self.sessions[token] = {
             "user_id": user_id,
-            "created_at": datetime.now().timestamp(),
-            "last_access": datetime.now().timestamp()
+            "created_at": time.time(),
+            "last_access": time.time()
         }
         self.log_info(f"Session created for user {user_id}")
         return token
@@ -239,7 +238,7 @@ class ApplicationManager:
     def validate_session(self, token: str) -> Optional[int]:
         if token in self.sessions:
             session = self.sessions[token]
-            session["last_access"] = datetime.now().timestamp()
+            session["last_access"] = time.time()
             return session["user_id"]
         return None
 
@@ -250,7 +249,7 @@ class ApplicationManager:
             self.log_info(f"Session destroyed for user {user_id}")
 
     # ========== User Management (yes, this too!) ==========
-    
+
     def create_user(self, username: str, email: str, password: str) -> int:
         import hashlib
         password_hash = hashlib.sha256(password.encode()).hexdigest()
@@ -258,7 +257,7 @@ class ApplicationManager:
             "username": username,
             "email": email,
             "password_hash": password_hash,
-            "created_at": datetime.now().isoformat()
+            "created_at": now_isoformat()
         })
         self.send_welcome_email(email, username)
         self.log_info(f"User created: {username}")
@@ -280,7 +279,7 @@ class ApplicationManager:
         return None
 
     # ========== Report Generation (why not!) ==========
-    
+
     def generate_user_report(self) -> str:
         users = self.execute_query("SELECT id, username, email, created_at FROM users")
         report = "USER REPORT\n" + "=" * 40 + "\n"
@@ -305,7 +304,7 @@ class ApplicationManager:
         return report
 
     # ========== Cleanup ==========
-    
+
     def close(self):
         if self.db_connection:
             self.db_connection.close()

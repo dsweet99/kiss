@@ -1,44 +1,14 @@
-use crate::graph::DependencyGraph;
-use crate::parsing::ParsedFile;
-use crate::py_metrics::{
-    compute_class_metrics, compute_file_metrics, compute_function_metrics, FunctionMetrics,
-};
+use crate::py_metrics::{FunctionMetrics, PyWalkAction, walk_py_ast};
 use tree_sitter::Node;
 
 use super::types::UnitMetrics;
-use super::{FileScopeMetrics, file_unit_metrics};
 
-pub fn collect_detailed_py(
-    parsed_files: &[&ParsedFile],
-    graph: Option<&DependencyGraph>,
-) -> Vec<UnitMetrics> {
-    let mut units = Vec::new();
-    for parsed in parsed_files {
-        let fm = compute_file_metrics(parsed);
-        let lines = parsed.source.lines().count();
-        units.push(file_unit_metrics(
-            &parsed.path,
-            FileScopeMetrics {
-                lines,
-                imports: fm.imports,
-                statements: fm.statements,
-                functions: fm.functions,
-                interface_types: fm.interface_types,
-                concrete_types: fm.concrete_types,
-            },
-            graph,
-        ));
-        collect_detailed_from_node(
-            parsed.tree.root_node(),
-            &parsed.source,
-            &parsed.path.display().to_string(),
-            &mut units,
-        );
-    }
-    units
-}
-
-fn unit_metrics_from_py_function(file: &str, name: &str, line: usize, m: &FunctionMetrics) -> UnitMetrics {
+fn unit_metrics_from_py_function(
+    file: &str,
+    name: &str,
+    line: usize,
+    m: &FunctionMetrics,
+) -> UnitMetrics {
     let mut u = UnitMetrics::new(file.to_string(), name.to_string(), "function", line);
     u.statements = Some(m.statements);
     u.arguments = Some(m.arguments);
@@ -57,59 +27,22 @@ fn unit_metrics_from_py_function(file: &str, name: &str, line: usize, m: &Functi
     u
 }
 
-fn walk_detailed_children(node: Node, source: &str, file: &str, units: &mut Vec<UnitMetrics>) {
-    let mut c = node.walk();
-    for child in node.children(&mut c) {
-        collect_detailed_from_node(child, source, file, units);
-    }
-}
-
-/// Returns `true` if children were already walked (parse-error function body).
-fn push_py_function_unit(node: Node, source: &str, file: &str, units: &mut Vec<UnitMetrics>) -> bool {
-    let name = node
-        .child_by_field_name("name")
-        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
-        .unwrap_or("?");
-    let m = compute_function_metrics(node, source);
-    if m.has_error {
-        walk_detailed_children(node, source, file, units);
-        return true;
-    }
-    let line = node.start_position().row + 1;
-    units.push(unit_metrics_from_py_function(file, name, line, &m));
-    false
-}
-
-fn push_py_class_unit(node: Node, source: &str, file: &str, units: &mut Vec<UnitMetrics>) {
-    let name = node
-        .child_by_field_name("name")
-        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
-        .unwrap_or("?");
-    let m = compute_class_metrics(node);
-    let mut u = UnitMetrics::new(
-        file.to_string(),
-        name.to_string(),
-        "class",
-        node.start_position().row + 1,
-    );
-    u.methods = Some(m.methods);
-    units.push(u);
-}
-
-fn collect_detailed_from_node(node: Node, source: &str, file: &str, units: &mut Vec<UnitMetrics>) {
-    let skip_walk = match node.kind() {
-        "function_definition" | "async_function_definition" => {
-            push_py_function_unit(node, source, file, units)
+pub(crate) fn collect_detailed_from_node(
+    node: Node,
+    source: &str,
+    file: &str,
+    units: &mut Vec<UnitMetrics>,
+) {
+    walk_py_ast(node, source, &mut |action| match action {
+        PyWalkAction::Function(v) => {
+            units.push(unit_metrics_from_py_function(file, v.name, v.line, v.metrics));
         }
-        "class_definition" => {
-            push_py_class_unit(node, source, file, units);
-            false
+        PyWalkAction::Class(v) => {
+            let mut u = UnitMetrics::new(file.to_string(), v.name.to_string(), "class", v.line);
+            u.methods = Some(v.metrics.methods);
+            units.push(u);
         }
-        _ => false,
-    };
-    if !skip_walk {
-        walk_detailed_children(node, source, file, units);
-    }
+    }, false);
 }
 
 #[cfg(test)]
@@ -124,23 +57,36 @@ pub(crate) fn collect_detailed_from_node_for_test(
 
 #[cfg(test)]
 mod python_coverage {
+    use super::super::collect_detailed_py;
     use super::*;
     use std::io::Write;
 
     #[test]
     fn touch_for_coverage() {
         let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
-        write!(tmp, "def foo(a, b):\n    return a + b\n\nclass C:\n    def m(self):\n        pass\n").unwrap();
-        let parsed = crate::parsing::parse_file(
-            &mut crate::parsing::create_parser().unwrap(),
-            tmp.path(),
+        write!(
+            tmp,
+            "def foo(a, b):\n    return a + b\n\nclass C:\n    def m(self):\n        pass\n"
         )
         .unwrap();
+        let parsed =
+            crate::parsing::parse_file(&mut crate::parsing::create_parser().unwrap(), tmp.path())
+                .unwrap();
         let refs: Vec<&crate::parsing::ParsedFile> = vec![&parsed];
         let units = collect_detailed_py(&refs, None);
-        assert!(units.len() >= 3, "expected file + function + class units, got {}", units.len());
-        assert!(units.iter().any(|u| u.kind == "function"), "expected a function unit");
-        assert!(units.iter().any(|u| u.kind == "class"), "expected a class unit");
+        assert!(
+            units.len() >= 3,
+            "expected file + function + class units, got {}",
+            units.len()
+        );
+        assert!(
+            units.iter().any(|u| u.kind == "function"),
+            "expected a function unit"
+        );
+        assert!(
+            units.iter().any(|u| u.kind == "class"),
+            "expected a class unit"
+        );
     }
 
     #[test]
@@ -166,7 +112,8 @@ mod python_coverage {
 
     #[test]
     fn collect_detailed_from_node_produces_class_metrics() {
-        let source = "class Dog:\n    def bark(self):\n        pass\n    def sit(self):\n        pass\n";
+        let source =
+            "class Dog:\n    def bark(self):\n        pass\n    def sit(self):\n        pass\n";
         let mut parser = crate::parsing::create_parser().unwrap();
         parser
             .set_language(&tree_sitter_python::LANGUAGE.into())
@@ -208,7 +155,7 @@ mod python_coverage {
     }
 
     #[test]
-    fn walk_detailed_children_traverses_nested() {
+    fn walk_py_ast_traverses_nested_for_detailed() {
         let source = "if True:\n    def inner(x):\n        pass\n";
         let mut parser = crate::parsing::create_parser().unwrap();
         parser
@@ -219,12 +166,12 @@ mod python_coverage {
         collect_detailed_from_node_for_test(tree.root_node(), source, "test.py", &mut units);
         assert!(
             units.iter().any(|u| u.name == "inner"),
-            "walk_detailed_children should find nested function"
+            "walk_py_ast should find nested function"
         );
     }
 
     #[test]
-    fn push_py_function_unit_and_push_py_class_unit_names() {
+    fn detailed_units_include_class_methods_and_standalone_fn() {
         let source = "class Outer:\n    def method_a(self, flag: bool):\n        return 1\n\ndef standalone():\n    pass\n";
         let mut parser = crate::parsing::create_parser().unwrap();
         parser
@@ -235,8 +182,8 @@ mod python_coverage {
         collect_detailed_from_node_for_test(tree.root_node(), source, "f.py", &mut units);
 
         let names: Vec<&str> = units.iter().map(|u| u.name.as_str()).collect();
-        assert!(names.contains(&"Outer"), "push_py_class_unit should emit class");
-        assert!(names.contains(&"method_a"), "push_py_function_unit should emit method");
-        assert!(names.contains(&"standalone"), "push_py_function_unit should emit standalone fn");
+        assert!(names.contains(&"Outer"), "expected class unit");
+        assert!(names.contains(&"method_a"), "expected method unit");
+        assert!(names.contains(&"standalone"), "expected standalone function unit");
     }
 }

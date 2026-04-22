@@ -66,8 +66,6 @@ mod rules_config_integration;
 mod rust_counts_violations;
 #[path = "cases/stress_break_kiss.rs"]
 mod stress_break_kiss;
-#[path = "cases/sync_stats_check.rs"]
-mod sync_stats_check;
 #[path = "cases/stress_break_kiss_2.rs"]
 mod stress_break_kiss_2;
 #[path = "cases/symbol_mv_regressions.rs"]
@@ -78,3 +76,5 @@ mod symbol_mv_regressions_2;
 mod symbol_mv_regressions_3;
 #[path = "cases/symbol_mv_regressions_4.rs"]
 mod symbol_mv_regressions_4;
+#[path = "cases/sync_stats_check.rs"]
+mod sync_stats_check;

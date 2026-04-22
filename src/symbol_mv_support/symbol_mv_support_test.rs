@@ -3,14 +3,14 @@
 use std::fs;
 use std::path::Path;
 
+use crate::Language;
 use crate::symbol_mv::{EditKind, MvPlan, PlannedEdit};
 use crate::symbol_mv_support::{
-    apply_plan_transactional, build_move_edits, collect_reference_edits, collect_source_rename_edits,
-    detect_language, find_definition_span, gather_candidate_files, is_valid_identifier,
-    parse_symbol_shape, run_mv_inner, DefinitionSpan, MoveEditsParams, ReferenceRenameParams,
-    SourceRenameParams,
+    DefinitionSpan, MoveEditsParams, ReferenceRenameParams, SourceRenameParams,
+    apply_plan_transactional, build_move_edits, collect_reference_edits,
+    collect_source_rename_edits, detect_language, find_definition_span, gather_candidate_files,
+    is_valid_identifier, parse_symbol_shape, run_mv_inner,
 };
-use crate::Language;
 use tempfile::TempDir;
 
 #[test]
@@ -20,7 +20,10 @@ fn basics_detect_and_parse() {
         Language::Python
     );
     assert_eq!(detect_language(Path::new("x.rs")).unwrap(), Language::Rust);
-    assert_eq!(detect_language(Path::new("x.PY")).unwrap(), Language::Python);
+    assert_eq!(
+        detect_language(Path::new("x.PY")).unwrap(),
+        Language::Python
+    );
     assert_eq!(detect_language(Path::new("x.RS")).unwrap(), Language::Rust);
     assert!(detect_language(Path::new("x.txt")).is_err());
 
@@ -87,7 +90,11 @@ fn collect_edits_roundtrip_smoke() {
         def_span: find_definition_span(&content, "x", None, Language::Python),
         moving: false,
     });
-    assert!(renames.iter().any(|e| matches!(e.kind, EditKind::Definition)));
+    assert!(
+        renames
+            .iter()
+            .any(|e| matches!(e.kind, EditKind::Definition))
+    );
 }
 
 #[test]
@@ -153,10 +160,7 @@ fn run_mv_inner_errors_on_empty_plan() {
 
 #[test]
 fn definition_span_contains() {
-    let s = DefinitionSpan {
-        start: 1,
-        end: 4,
-    };
+    let s = DefinitionSpan { start: 1, end: 4 };
     assert!(s.contains(1));
     assert!(!s.contains(4));
 }

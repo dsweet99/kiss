@@ -1,12 +1,12 @@
 pub mod args;
 
 use crate::analyze;
+use kiss::DependencyGraph;
+use kiss::Language;
 use kiss::graph::build_dependency_graph;
 use kiss::rust_graph::build_rust_dependency_graph;
 use kiss::test_refs::CoveringTest;
 use kiss::{ParsedFile, ParsedRustFile};
-use kiss::Language;
-use kiss::DependencyGraph;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -24,7 +24,9 @@ fn gather_files_with_path_expansion(
     let mut all_rs: HashSet<PathBuf> = rs_files.into_iter().collect();
     for path_str in paths {
         let path = Path::new(path_str);
-        let Ok(canonical) = path.canonicalize() else { continue };
+        let Ok(canonical) = path.canonicalize() else {
+            continue;
+        };
         let root = if canonical.is_dir() {
             canonical
         } else {
@@ -212,7 +214,14 @@ fn emit_show_tests_output(a: args::EmitShowTestsArgs<'_, '_>) {
                     }
                 });
             let suffix = candidates_suffix.as_deref().unwrap_or("");
-            let _ = writeln!(out, "UNTESTED:{}:{}:{}{}", file.display(), line, name, suffix);
+            let _ = writeln!(
+                out,
+                "UNTESTED:{}:{}:{}{}",
+                file.display(),
+                line,
+                name,
+                suffix
+            );
         }
     }
 }

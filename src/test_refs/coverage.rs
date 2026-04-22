@@ -59,7 +59,9 @@ pub(crate) fn build_ref_to_covered_def_indices(
 
     for (i, def) in definitions.iter().enumerate() {
         let unique = name_files.get(&def.name).is_none_or(|f| f.len() <= 1);
-        let disambiguated = disambiguation.get(&def.name).is_some_and(|w| *w == def.file);
+        let disambiguated = disambiguation
+            .get(&def.name)
+            .is_some_and(|w| *w == def.file);
         let import_matched = module_suffixes.get(&def.file).is_some_and(|def_suffix| {
             import_bindings.iter().any(|(import_module, names)| {
                 names.contains(&def.name) && module_suffix_matches(def_suffix, import_module)
@@ -87,8 +89,13 @@ pub(crate) fn build_py_coverage_map(
     import_bindings: &HashMap<String, HashSet<String>>,
     module_suffixes: &HashMap<PathBuf, String>,
 ) -> HashMap<(PathBuf, String), Vec<CoveringTest>> {
-    let ref_to_defs =
-        build_ref_to_covered_def_indices(definitions, name_files, disambiguation, import_bindings, module_suffixes);
+    let ref_to_defs = build_ref_to_covered_def_indices(
+        definitions,
+        name_files,
+        disambiguation,
+        import_bindings,
+        module_suffixes,
+    );
 
     let mut idx_map: HashMap<usize, Vec<usize>> = HashMap::new();
 

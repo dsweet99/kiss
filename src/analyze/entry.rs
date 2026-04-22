@@ -35,11 +35,12 @@ fn try_cache_hit(
     if !(opts.bypass_gate && !opts.show_timing && !opts.suppress_final_status) {
         return None;
     }
-    crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus_set)
-        .map(|ok| AnalyzeResult {
+    crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus_set).map(|ok| {
+        AnalyzeResult {
             success: ok,
             metrics: None,
-        })
+        }
+    })
 }
 
 /// Run analysis and return a simple success/failure bool.

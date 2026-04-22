@@ -21,11 +21,7 @@ def test_handler_process():
     assert result is not None
 
 
-class TestApiHandler:
-    """Test class."""
-
-    def test_handle_request(self):
-        handler = ApiHandler()
-        response = handler.handle_request("/api/test")
-        assert response.status == 200
-
+def test_handle_request():
+    handler = ApiHandler()
+    response = handler.handle_request("/api/test")
+    assert response.status == 200

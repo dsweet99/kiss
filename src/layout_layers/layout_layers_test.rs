@@ -106,10 +106,7 @@ fn test_three_node_cycle() {
     let info = compute_layers(&graph);
 
     assert_eq!(info.num_layers(), 1);
-    let layers: Vec<_> = ["a", "b", "c"]
-        .iter()
-        .map(|m| info.layer_for(m))
-        .collect();
+    let layers: Vec<_> = ["a", "b", "c"].iter().map(|m| info.layer_for(m)).collect();
     assert!(
         layers.iter().all(|l| *l == Some(0)),
         "All cycle members should be at layer 0"
@@ -158,7 +155,11 @@ fn test_multiple_isolated_nodes() {
     graph.get_or_create_node("c");
 
     let info = compute_layers(&graph);
-    assert_eq!(info.num_layers(), 1, "All isolated nodes should be at layer 0");
+    assert_eq!(
+        info.num_layers(),
+        1,
+        "All isolated nodes should be at layer 0"
+    );
     assert_eq!(info.layer_for("a"), Some(0));
     assert_eq!(info.layer_for("b"), Some(0));
     assert_eq!(info.layer_for("c"), Some(0));
@@ -195,7 +196,11 @@ fn test_build_condensation_single_node() {
     graph.get_or_create_node("only_node");
     let info = compute_layers(&graph);
 
-    assert_eq!(info.num_layers(), 1, "Single node condensation should yield one layer");
+    assert_eq!(
+        info.num_layers(),
+        1,
+        "Single node condensation should yield one layer"
+    );
     assert_eq!(info.layers[0].len(), 1, "Exactly one node in condensation");
     assert_eq!(info.layer_for("only_node"), Some(0));
 }
@@ -208,7 +213,11 @@ fn test_build_condensation_preserves_edges() {
     let graph = build_graph(&[("a", "b"), ("b", "c")]);
     let info = compute_layers(&graph);
 
-    assert_eq!(info.num_layers(), 3, "Three SCCs with inter-edges should have 3 layers");
+    assert_eq!(
+        info.num_layers(),
+        3,
+        "Three SCCs with inter-edges should have 3 layers"
+    );
     assert_eq!(info.layer_for("c"), Some(0), "c has no outgoing edges");
     assert_eq!(info.layer_for("b"), Some(1), "b depends on c");
     assert_eq!(info.layer_for("a"), Some(2), "a depends on b");
@@ -223,7 +232,11 @@ fn test_build_condensation_removes_intra_scc_edges() {
     let graph = build_graph(&[("a", "b"), ("b", "c"), ("c", "a"), ("d", "a")]);
     let info = compute_layers(&graph);
 
-    assert_eq!(info.num_layers(), 2, "One SCC + one external node = 2 layers");
+    assert_eq!(
+        info.num_layers(),
+        2,
+        "One SCC + one external node = 2 layers"
+    );
     assert_eq!(info.layer_for("a"), Some(0), "a is in the SCC at layer 0");
     assert_eq!(info.layer_for("b"), Some(0), "b is in the SCC at layer 0");
     assert_eq!(info.layer_for("c"), Some(0), "c is in the SCC at layer 0");
@@ -247,11 +260,18 @@ fn test_compute_layer_for_node_cached() {
     assert_eq!(info.layer_for("base"), Some(0), "base is foundation");
     assert_eq!(info.layer_for("mid1"), Some(1), "mid1 depends on base");
     assert_eq!(info.layer_for("mid2"), Some(1), "mid2 depends on base");
-    assert_eq!(info.layer_for("top"), Some(2), "top depends on mid1 and mid2");
+    assert_eq!(
+        info.layer_for("top"),
+        Some(2),
+        "top depends on mid1 and mid2"
+    );
 
     // Call compute_layers again to verify idempotence (memoization produces same result)
     let info2 = compute_layers(&graph);
-    assert_eq!(info.layers, info2.layers, "Repeated computation should be identical");
+    assert_eq!(
+        info.layers, info2.layers,
+        "Repeated computation should be identical"
+    );
 }
 
 #[test]
@@ -273,12 +293,17 @@ fn test_deep_linear_chain_no_stack_overflow() {
     let info = compute_layers(&graph);
 
     // Should have `depth` layers
-    assert_eq!(info.num_layers(), depth, "Expected {depth} layers for linear chain");
+    assert_eq!(
+        info.num_layers(),
+        depth,
+        "Expected {depth} layers for linear chain"
+    );
     assert_eq!(info.layer_for("n0"), Some(0), "n0 is foundation");
     assert_eq!(
         info.layer_for(&format!("n{}", depth - 1)),
         Some(depth - 1),
-        "Top node should be at layer {}", depth - 1
+        "Top node should be at layer {}",
+        depth - 1
     );
 }
 

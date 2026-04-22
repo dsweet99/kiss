@@ -1,15 +1,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::symbol_mv::{EditKind, PlannedEdit};
 use crate::Language;
+use crate::symbol_mv::{EditKind, PlannedEdit};
 
 use super::basics::detect_language;
 use super::definition::DefinitionSpan;
 use super::identifiers::find_identifier_occurrences;
 use super::identifiers::line_for_offset;
 use super::lex::is_code_offset;
-use super::reference::{is_supported_reference_site, RefSiteCtx};
+use super::reference::{RefSiteCtx, is_supported_reference_site};
 
 pub struct ReferenceRenameParams<'a> {
     pub path: &'a Path,

@@ -9,7 +9,11 @@ fn kiss_binary() -> Command {
 #[test]
 fn cli_init_writes_default_config_in_current_directory() {
     let tmp = TempDir::new().unwrap();
-    let output = kiss_binary().arg("init").current_dir(tmp.path()).output().unwrap();
+    let output = kiss_binary()
+        .arg("init")
+        .current_dir(tmp.path())
+        .output()
+        .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
@@ -24,7 +28,9 @@ fn cli_init_writes_default_config_in_current_directory() {
         "config:\n{config}"
     );
     assert!(
-        config.contains("[python]\nstatements_per_function = 35\npositional_args = 3\nkeyword_only_args = 3"),
+        config.contains(
+            "[python]\nstatements_per_function = 35\npositional_args = 3\nkeyword_only_args = 3"
+        ),
         "config:\n{config}"
     );
     assert!(
@@ -51,7 +57,10 @@ fn cli_init_does_not_overwrite_existing_config() {
         output.status.success(),
         "init should not fail when config exists. stderr:\n{stderr}\nstdout:\n{stdout}"
     );
-    assert_eq!(fs::read_to_string(&config_path).unwrap(), "original = true\n");
+    assert_eq!(
+        fs::read_to_string(&config_path).unwrap(),
+        "original = true\n"
+    );
     assert!(
         stdout.contains("did not overwrite it"),
         "stdout should explain that the file was preserved. stdout:\n{stdout}"
@@ -96,7 +105,10 @@ fn cli_analyze_runs_on_python() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(!stdout.is_empty(), "kiss check should produce output. stdout: {stdout}");
+    assert!(
+        !stdout.is_empty(),
+        "kiss check should produce output. stdout: {stdout}"
+    );
 }
 
 #[test]
@@ -112,7 +124,10 @@ fn cli_analyze_reports_violations_on_god_class() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("VIOLATION"), "god_class should report violations. stdout: {stdout}");
+    assert!(
+        stdout.contains("VIOLATION"),
+        "god_class should report violations. stdout: {stdout}"
+    );
 }
 
 #[test]
@@ -121,7 +136,10 @@ fn cli_stats_command_runs() {
     fs::write(tmp.path().join("mod.py"), "def foo(): x = 1").unwrap();
     let output = kiss_binary().arg("stats").arg(tmp.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Python"), "kiss stats should mention Python. stdout: {stdout}");
+    assert!(
+        stdout.contains("Python"),
+        "kiss stats should mention Python. stdout: {stdout}"
+    );
 }
 
 #[test]

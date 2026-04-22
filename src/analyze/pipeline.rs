@@ -1,11 +1,11 @@
-use crate::analyze::finalize::{finalize_analysis, AnalysisProducts, FinalizeAnalysisIn};
+use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
 use crate::analyze::focus::filter_viols_by_focus;
 use crate::analyze::gated::run_gated_analysis;
 use crate::analyze::options::AnalyzeResult;
-use crate::analyze::parallel::{run_parallel_py_analysis, run_rust_analysis, ParallelPyIn};
+use crate::analyze::parallel::{ParallelPyIn, run_parallel_py_analysis, run_rust_analysis};
 use crate::analyze::params::{GatedAnalysis, RunAnalyzeUncached};
 use crate::analyze::print::log_parse_timing;
-use crate::analyze_parse::{parse_all_timed, ParseAllTimedParams};
+use crate::analyze_parse::{ParseAllTimedParams, parse_all_timed};
 
 pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult {
     let RunAnalyzeUncached {
@@ -40,13 +40,14 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
     }
 
     let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config, None);
-    let ((py_graph, graph_viols_all), (py_cov, py_dups_all)) = run_parallel_py_analysis(ParallelPyIn {
-        py_parsed: &result.py_parsed,
-        rs_graph: rs.graph.as_ref(),
-        opts,
-        file_count,
-        cached_py_cov: None,
-    });
+    let ((py_graph, graph_viols_all), (py_cov, py_dups_all)) =
+        run_parallel_py_analysis(ParallelPyIn {
+            py_parsed: &result.py_parsed,
+            rs_graph: rs.graph.as_ref(),
+            opts,
+            file_count,
+            cached_py_cov: None,
+        });
 
     finalize_analysis(FinalizeAnalysisIn {
         opts,

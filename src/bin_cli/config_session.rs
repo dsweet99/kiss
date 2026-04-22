@@ -26,7 +26,10 @@ pub fn run_init_command(repo_path: &Path) -> i32 {
         return 1;
     }
     if !repo_path.is_dir() {
-        eprintln!("Error: Repo path is not a directory: {}", repo_path.display());
+        eprintln!(
+            "Error: Repo path is not a directory: {}",
+            repo_path.display()
+        );
         return 1;
     }
 

@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use kiss::cli_output::{print_dry_results, print_no_files_message};
 use crate::analyze_parse::py_parsed_or_log;
+use kiss::cli_output::{print_dry_results, print_no_files_message};
 use kiss::{
-    DuplicationConfig, DuplicatePair, Language, detect_duplicates_from_chunks,
+    DuplicatePair, DuplicationConfig, Language, detect_duplicates_from_chunks,
     extract_chunks_for_duplication, extract_rust_chunks_for_duplication, parse_files,
     parse_rust_files,
 };
@@ -91,7 +91,7 @@ fn filter_pairs_by_files(pairs: &mut Vec<DuplicatePair>, filter_files: &[String]
 
 #[cfg(test)]
 mod dry_helpers_test {
-    use super::{filter_pairs_by_files, parse_py_for_dry, parse_rs_for_dry, DryRunParams};
+    use super::{DryRunParams, filter_pairs_by_files, parse_py_for_dry, parse_rs_for_dry};
     use kiss::{DuplicatePair, DuplicationConfig};
 
     #[test]

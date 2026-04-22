@@ -320,7 +320,13 @@ type CollectedRefs = (
 );
 
 fn empty_collected() -> CollectedRefs {
-    (Vec::new(), HashSet::new(), HashSet::new(), HashMap::new(), PerTestUsage::new())
+    (
+        Vec::new(),
+        HashSet::new(),
+        HashSet::new(),
+        HashMap::new(),
+        PerTestUsage::new(),
+    )
 }
 
 fn merge_collected(
@@ -337,7 +343,10 @@ fn merge_collected(
     (defs, t_refs, u_refs, i_binds, pt)
 }
 
-pub(crate) fn collect_refs_parallel(parsed_files: &[&ParsedFile], need_coverage_map: bool) -> CollectedRefs {
+pub(crate) fn collect_refs_parallel(
+    parsed_files: &[&ParsedFile],
+    need_coverage_map: bool,
+) -> CollectedRefs {
     parsed_files
         .par_iter()
         .map(|parsed| {

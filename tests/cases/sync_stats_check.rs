@@ -35,10 +35,10 @@ const NON_SHARED_METRICS: &[&str] = &[
     "arguments_per_function",
     "dependency_depth",
     // Known gaps (remove items when the gap is fixed)
-    "returns_per_function",           // no chk! macro in counts/mod.rs
-    "positional_args",                // check skips inside_class methods
-    "annotations_per_function",       // stats ID; check emits "decorators_per_function" instead
-    "decorators_per_function",        // check ID; stats emits "annotations_per_function" instead
+    "returns_per_function",     // no chk! macro in counts/mod.rs
+    "positional_args",          // check skips inside_class methods
+    "annotations_per_function", // stats ID; check emits "decorators_per_function" instead
+    "decorators_per_function",  // check ID; stats emits "annotations_per_function" instead
 ];
 
 fn is_shared_metric(id: &str) -> bool {
@@ -68,7 +68,9 @@ fn parse_stat_lines(stdout: &str) -> Vec<MetricEntry> {
         .filter_map(|line| {
             let tail = line.strip_prefix("STAT:")?;
             let parts: Vec<&str> = tail.splitn(5, ':').collect();
-            if parts.len() < 5 { return None; }
+            if parts.len() < 5 {
+                return None;
+            }
             Some(MetricEntry {
                 metric_id: parts[0].to_string(),
                 value: parts[1].parse().ok()?,
@@ -79,26 +81,54 @@ fn parse_stat_lines(stdout: &str) -> Vec<MetricEntry> {
         .collect()
 }
 
-/// Parse `VIOLATION:<metric_id>:<file>:<line>:<name>: <message>` lines.
+#[allow(clippy::redundant_closure_for_method_calls)]
+fn violation_message_observed_value(message_and_suggestion: &str) -> Option<usize> {
+    let s = message_and_suggestion.trim_start();
+    if s.contains('%') && s.contains("covered") {
+        let head = s.split('%').next()?;
+        let digits: String = head.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits.is_empty() {
+            return None;
+        }
+        return digits.parse().ok();
+    }
+    for needle in [" has ", "File has "] {
+        if let Some(pos) = s.find(needle) {
+            let rest = &s[pos + needle.len()..];
+            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(v) = digits.parse::<usize>() {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+fn violation_message_fallback_digits(message: &str) -> Option<usize> {
+    message
+        .split(|c: char| !c.is_ascii_digit())
+        .find(|s| !s.is_empty())
+        .and_then(|s| s.parse().ok())
+}
+
+fn parse_violation_line(line: &str) -> Option<MetricEntry> {
+    let tail = line.strip_prefix("VIOLATION:")?;
+    let parts: Vec<&str> = tail.splitn(5, ':').collect();
+    if parts.len() < 5 {
+        return None;
+    }
+    let value: usize = violation_message_observed_value(parts[4])
+        .or_else(|| violation_message_fallback_digits(parts[4]))?;
+    Some(MetricEntry {
+        metric_id: parts[0].to_string(),
+        file_stem: file_stem_of(parts[1]),
+        name: parts[3].to_string(),
+        value,
+    })
+}
+
 fn parse_violation_lines(stdout: &str) -> Vec<MetricEntry> {
-    stdout
-        .lines()
-        .filter_map(|line| {
-            let tail = line.strip_prefix("VIOLATION:")?;
-            let parts: Vec<&str> = tail.splitn(5, ':').collect();
-            if parts.len() < 5 { return None; }
-            let value: usize = parts[4]
-                .split(|c: char| !c.is_ascii_digit())
-                .find(|s| !s.is_empty())
-                .and_then(|s| s.parse().ok())?;
-            Some(MetricEntry {
-                metric_id: parts[0].to_string(),
-                file_stem: file_stem_of(parts[1]),
-                name: parts[3].to_string(),
-                value,
-            })
-        })
-        .collect()
+    stdout.lines().filter_map(parse_violation_line).collect()
 }
 
 fn build_sync_corpus(dir: &std::path::Path) {
@@ -256,8 +286,10 @@ fn build_metric_map(entries: &[MetricEntry]) -> BTreeMap<MetricKey<'_>, usize> {
 
 fn run_stats(config: &std::path::Path, corpus: &std::path::Path, home: &std::path::Path) -> String {
     let out = kiss_binary()
-        .arg("--config").arg(config)
-        .arg("stats").arg("--all=999")
+        .arg("--config")
+        .arg(config)
+        .arg("stats")
+        .arg("--all=999")
         .arg(corpus)
         .env("HOME", home)
         .output()
@@ -269,8 +301,12 @@ fn run_stats(config: &std::path::Path, corpus: &std::path::Path, home: &std::pat
 
 fn run_check(config: &std::path::Path, corpus: &std::path::Path, home: &std::path::Path) -> String {
     let out = kiss_binary()
-        .arg("--config").arg(config)
-        .arg("check").arg("--lang").arg("python").arg("--all")
+        .arg("--config")
+        .arg(config)
+        .arg("check")
+        .arg("--lang")
+        .arg("python")
+        .arg("--all")
         .arg(corpus)
         .env("HOME", home)
         .output()
@@ -288,7 +324,9 @@ fn find_sync_failures(
     let mut mismatches = Vec::new();
     let mut missing_check = Vec::new();
     for (&(metric, file, name), &stat_val) in stat_map {
-        if stat_val == 0 { continue; }
+        if stat_val == 0 {
+            continue;
+        }
         match viol_map.get(&(metric, file, name)) {
             Some(&v) if v != stat_val => mismatches.push(format!(
                 "  {metric} {file}::{name}: stats={stat_val} check={v}"
@@ -336,7 +374,10 @@ fn stats_and_check_agree_on_shared_metrics() {
     let stat_entries = parse_stat_lines(&stats_stdout);
     let viol_entries = parse_violation_lines(&check_stdout);
     assert!(!stat_entries.is_empty(), "no STAT lines:\n{stats_stdout}");
-    assert!(!viol_entries.is_empty(), "no VIOLATION lines:\n{check_stdout}");
+    assert!(
+        !viol_entries.is_empty(),
+        "no VIOLATION lines:\n{check_stdout}"
+    );
 
     let stat_map = build_metric_map(&stat_entries);
     let viol_map = build_metric_map(&viol_entries);

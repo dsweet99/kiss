@@ -3,8 +3,7 @@ use syn::{Block, ImplItem, Item};
 
 use crate::config::Config;
 use crate::rust_fn_metrics::{
-    compute_rust_file_metrics, compute_rust_function_metrics, count_non_doc_attrs,
-    is_cfg_test_mod,
+    compute_rust_file_metrics, compute_rust_function_metrics, count_non_doc_attrs, is_cfg_test_mod,
 };
 use crate::rust_parsing::ParsedRustFile;
 use crate::violation::{Violation, ViolationBuilder};

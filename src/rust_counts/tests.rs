@@ -39,10 +39,11 @@ fn test_analyzer_checks() {
 
 #[test]
 fn analyze_skips_cfg_test_mod_for_per_function_rules() {
-    let body = (0..15).map(|_| "let _ = 1;").collect::<Vec<_>>().join("\n        ");
-    let src = format!(
-        "#[cfg(test)]\nmod t {{\n    fn bloated() {{\n        {body}\n    }}\n}}\n"
-    );
+    let body = (0..15)
+        .map(|_| "let _ = 1;")
+        .collect::<Vec<_>>()
+        .join("\n        ");
+    let src = format!("#[cfg(test)]\nmod t {{\n    fn bloated() {{\n        {body}\n    }}\n}}\n");
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(tmp, "{src}").unwrap();
     let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
@@ -59,7 +60,10 @@ fn analyze_skips_cfg_test_mod_for_per_function_rules() {
 
 #[test]
 fn analyze_nested_mod_without_cfg_still_checked() {
-    let body = (0..15).map(|_| "let _ = 1;").collect::<Vec<_>>().join("\n        ");
+    let body = (0..15)
+        .map(|_| "let _ = 1;")
+        .collect::<Vec<_>>()
+        .join("\n        ");
     let src = format!("mod t {{\n    fn bloated() {{\n        {body}\n    }}\n}}\n");
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(tmp, "{src}").unwrap();

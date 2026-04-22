@@ -42,7 +42,12 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
         append_python_defaults(&mut out);
     }
     if p.rs_n > 0 {
-        append_section(&mut out, "[rust]", &compute_summaries(p.rs), rust_config_key);
+        append_section(
+            &mut out,
+            "[rust]",
+            &compute_summaries(p.rs),
+            rust_config_key,
+        );
     } else {
         append_rust_defaults(&mut out);
     }

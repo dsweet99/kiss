@@ -5,9 +5,9 @@ use kiss::{Config, GateConfig};
 
 use crate::analyze::graph_api::graph_stats;
 use crate::analyze::options::AnalyzeOptions;
-use crate::analyze::print::{print_analysis_summary, PrintResultsCtx};
+use crate::analyze::print::{PrintResultsCtx, print_analysis_summary};
 use crate::analyze::{
-    filter_duplicates_by_focus, gather_files, run_analyze, AnalyzeGraphsIn, GraphConfigs,
+    AnalyzeGraphsIn, GraphConfigs, filter_duplicates_by_focus, gather_files, run_analyze,
 };
 use crate::analyze_parse::ParseResult;
 use tempfile::TempDir;
@@ -91,7 +91,10 @@ fn test_print_functions_and_helpers() {
     let (n, e) = graph_stats(None, None);
     assert_eq!(n, 0);
     assert_eq!(e, 0);
-    assert!(crate::analyze::is_focus_file(Path::new("any.py"), &HashSet::new()));
+    assert!(crate::analyze::is_focus_file(
+        Path::new("any.py"),
+        &HashSet::new()
+    ));
     let dups = filter_duplicates_by_focus(vec![], &HashSet::new());
     assert!(dups.is_empty());
 }

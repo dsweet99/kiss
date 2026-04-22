@@ -8,7 +8,7 @@ mod query;
 pub use edit::{EditKind, MvPlan, PlannedEdit};
 pub use opts::{MvOptions, MvRequest};
 pub use plan::plan_edits;
-pub use query::{parse_mv_query, validate_new_name, ParsedQuery};
+pub use query::{ParsedQuery, parse_mv_query, validate_new_name};
 
 use crate::Language;
 
@@ -29,7 +29,7 @@ pub fn run_mv_command(opts: MvOptions) -> i32 {
 
 #[cfg(test)]
 mod symbol_mv_coverage {
-    use super::{apply_plan_transactional, language_name, run_mv_command, MvOptions, MvPlan};
+    use super::{MvOptions, MvPlan, apply_plan_transactional, language_name, run_mv_command};
 
     #[test]
     fn touch_symbol_mv_public_api() {

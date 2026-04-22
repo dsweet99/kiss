@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use crate::test_utils::parse_python_source as parse;
 
 use super::body_walk::{
-    is_try_body, try_body_byte_range, update_body_counts, update_return_counts,
-    update_try_block_statements, walk_body, BodyAgg, BodySummary,
+    BodyAgg, BodySummary, is_try_body, try_body_byte_range, update_body_counts,
+    update_return_counts, update_try_block_statements, walk_body,
 };
 use super::compute::compute_function_metrics;
 use super::file_walk::{is_interface_token, walk_file};

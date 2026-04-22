@@ -69,7 +69,11 @@ pub(super) fn extend_defs_from_py(
     }
     let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
     let a = analyze_test_refs(&refs, None);
-    definitions.extend(a.definitions.iter().map(|d| (d.file.clone(), d.name.clone(), d.line)));
+    definitions.extend(
+        a.definitions
+            .iter()
+            .map(|d| (d.file.clone(), d.name.clone(), d.line)),
+    );
     unreferenced.extend(
         a.unreferenced
             .iter()
@@ -115,9 +119,7 @@ pub(crate) fn has_orphan_modules(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRu
     let rs_refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
     let py_config = Config::python_defaults();
     let rs_config = Config::rust_defaults();
-    let has_orphan = |viols: &[crate::Violation]| {
-        viols.iter().any(|v| v.metric == "orphan_module")
-    };
+    let has_orphan = |viols: &[crate::Violation]| viols.iter().any(|v| v.metric == "orphan_module");
     if !py_parsed.is_empty() {
         let graph = build_dependency_graph(&py_refs);
         if has_orphan(&analyze_graph(&graph, &py_config, true)) {

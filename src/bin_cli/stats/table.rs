@@ -40,9 +40,9 @@ fn print_py_table(py_files: &[std::path::PathBuf]) {
 }
 
 fn print_rs_table(rs_files: &[std::path::PathBuf]) {
+    use kiss::rust_graph::build_rust_dependency_graph;
     use kiss::rust_parsing::parse_rust_files;
     use kiss::{collect_detailed_rs, format_detailed_table};
-    use kiss::rust_graph::build_rust_dependency_graph;
 
     if rs_files.is_empty() {
         return;

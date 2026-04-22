@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use kiss::cli_output::{file_coverage_map, print_coverage_gate_failure, CoverageGateFailureCtx};
 use kiss::check_universe_cache::CachedCoverageItem;
+use kiss::cli_output::{CoverageGateFailureCtx, file_coverage_map, print_coverage_gate_failure};
 
 use crate::analyze::coverage::compute_test_coverage_from_lists;
 use crate::analyze::coverage_types::CheckCoverageGateParams;
@@ -73,8 +73,14 @@ pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
         show_timing: _show_timing,
     } = p;
     let (defs_cached, unrefs_cached) = crate::analyze_cache::coverage_lists(py_parsed, rs_parsed);
-    let defs_t: Vec<_> = defs_cached.into_iter().map(CachedCoverageItem::into_tuple).collect();
-    let unrefs_t: Vec<_> = unrefs_cached.into_iter().map(CachedCoverageItem::into_tuple).collect();
+    let defs_t: Vec<_> = defs_cached
+        .into_iter()
+        .map(CachedCoverageItem::into_tuple)
+        .collect();
+    let unrefs_t: Vec<_> = unrefs_cached
+        .into_iter()
+        .map(CachedCoverageItem::into_tuple)
+        .collect();
     let (_, _, _, unreferenced) = compute_test_coverage_from_lists(&defs_t, &unrefs_t, focus_set);
     let defs_focus: Vec<_> = defs_t
         .iter()

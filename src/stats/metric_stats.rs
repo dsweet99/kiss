@@ -1,11 +1,11 @@
 use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
-use crate::py_metrics::compute_file_metrics;
+use crate::py_metrics::{compute_file_metrics, walk_py_ast};
 use crate::rust_fn_metrics::compute_rust_file_metrics;
 use crate::rust_parsing::ParsedRustFile;
 use rayon::prelude::*;
 
-use super::collect_py::collect_from_node;
+use super::collect_py::StatsVisitor;
 use super::collect_rust::collect_rust_from_items;
 
 #[derive(Debug, Default)]
@@ -62,7 +62,13 @@ impl MetricStats {
                 stats.interface_types_per_file.push(fm.interface_types);
                 stats.concrete_types_per_file.push(fm.concrete_types);
                 stats.imported_names_per_file.push(fm.imports);
-                collect_from_node(parsed.tree.root_node(), &parsed.source, &mut stats, false);
+                let mut visitor = StatsVisitor { stats: &mut stats };
+                walk_py_ast(
+                    parsed.tree.root_node(),
+                    &parsed.source,
+                    &mut |a| visitor.process(a),
+                    false,
+                );
                 stats
             })
             .reduce(Self::default, |mut a, b| {

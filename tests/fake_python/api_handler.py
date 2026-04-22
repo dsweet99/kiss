@@ -1,10 +1,10 @@
 """API handler with big try/except blocks and functions that do too much."""
 
-import json
 import logging
 import time
-from datetime import datetime
 
+from common import serializer
+from common.sdatetime import now_isoformat
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ def handle_api_request(request):
     This function does way too many things:
     - Request parsing
     - Authentication
-    - Authorization  
+    - Authorization
     - Rate limiting
     - Input validation
     - Business logic routing
@@ -25,24 +25,24 @@ def handle_api_request(request):
     """
     start_time = time.time()
     request_id = f"req_{int(start_time * 1000)}"
-    
+
     try:
         # Parse request
         if request is None:
             raise ValueError("Request cannot be None")
-        
+
         method = request.get("method", "GET")
         path = request.get("path", "/")
         headers = request.get("headers", {})
         body = request.get("body")
         _query_params = request.get("query_params", {})
-        
+
         logger.info(f"[{request_id}] {method} {path}")
-        
+
         # Authentication
         auth_header = headers.get("Authorization", "")
         user = None
-        
+
         if auth_header:
             if auth_header.startswith("Bearer "):
                 token = auth_header[7:]
@@ -77,11 +77,11 @@ def handle_api_request(request):
                         "body": {"error": "Invalid credentials"},
                         "headers": {"Content-Type": "application/json"}
                     }
-        
+
         # Rate limiting (simplified)
         _client_ip = headers.get("X-Forwarded-For", "127.0.0.1")
         # In real code, check rate limit here
-        
+
         # Route to handler
         if path == "/api/users":
             if method == "GET":
@@ -138,14 +138,14 @@ def handle_api_request(request):
                     "id": 3,
                     "username": body["username"],
                     "email": body["email"],
-                    "created_at": datetime.now().isoformat()
+                    "created_at": now_isoformat()
                 }
                 return {
                     "status": 201,
                     "body": new_user,
                     "headers": {"Content-Type": "application/json"}
                 }
-        
+
         elif path.startswith("/api/users/"):
             user_id = path.split("/")[-1]
             if method == "GET":
@@ -166,21 +166,21 @@ def handle_api_request(request):
                     "body": None,
                     "headers": {}
                 }
-        
+
         elif path == "/api/health":
             return {
                 "status": 200,
-                "body": {"status": "healthy", "timestamp": datetime.now().isoformat()},
+                "body": {"status": "healthy", "timestamp": now_isoformat()},
                 "headers": {"Content-Type": "application/json"}
             }
-        
+
         else:
             return {
                 "status": 404,
                 "body": {"error": f"Not found: {path}"},
                 "headers": {"Content-Type": "application/json"}
             }
-    
+
     except ValueError as e:
         logger.error(f"[{request_id}] ValueError: {e}")
         return {
@@ -195,7 +195,7 @@ def handle_api_request(request):
             "body": {"error": f"Missing field: {e}"},
             "headers": {"Content-Type": "application/json"}
         }
-    except json.JSONDecodeError as e:
+    except serializer.JsonDecodeError as e:
         logger.error(f"[{request_id}] JSONDecodeError: {e}")
         return {
             "status": 400,
@@ -245,7 +245,7 @@ def process_batch_operations(operations, context):
         "failed": 0,
         "skipped": 0
     }
-    
+
     try:
         # Validate context
         if not context:
@@ -254,33 +254,33 @@ def process_batch_operations(operations, context):
             raise ValueError("User context is required")
         if not context.get("database"):
             raise ValueError("Database connection is required")
-        
+
         db = context["database"]
         user = context["user"]
-        
+
         # Check permissions
         if "batch_operations" not in user.get("permissions", []):
             raise PermissionError("User lacks batch operation permission")
-        
+
         # Process each operation
         for i, op in enumerate(operations):
             try:
                 op_type = op.get("type")
                 op_data = op.get("data", {})
                 op_target = op.get("target")
-                
+
                 if op_type == "create":
                     # Validate create data
                     if not op_data:
                         raise ValueError(f"Operation {i}: No data for create")
                     if not op_target:
                         raise ValueError(f"Operation {i}: No target for create")
-                    
+
                     # Insert into database
                     result = db.insert(op_target, op_data)
                     results.append({"index": i, "status": "created", "id": result.get("id")})
                     stats["success"] += 1
-                
+
                 elif op_type == "update":
                     if not op_data:
                         raise ValueError(f"Operation {i}: No data for update")
@@ -288,28 +288,28 @@ def process_batch_operations(operations, context):
                         raise ValueError(f"Operation {i}: No target for update")
                     if "id" not in op_data:
                         raise ValueError(f"Operation {i}: No ID for update")
-                    
+
                     result = db.update(op_target, {"id": op_data["id"]}, op_data)
                     results.append({"index": i, "status": "updated", "id": op_data["id"]})
                     stats["success"] += 1
-                
+
                 elif op_type == "delete":
                     if not op_target:
                         raise ValueError(f"Operation {i}: No target for delete")
                     if "id" not in op_data:
                         raise ValueError(f"Operation {i}: No ID for delete")
-                    
+
                     db.delete(op_target, {"id": op_data["id"]})
                     results.append({"index": i, "status": "deleted", "id": op_data["id"]})
                     stats["success"] += 1
-                
+
                 elif op_type == "skip":
                     results.append({"index": i, "status": "skipped"})
                     stats["skipped"] += 1
-                
+
                 else:
                     raise ValueError(f"Operation {i}: Unknown operation type: {op_type}")
-            
+
             except ValueError as e:
                 errors.append({"index": i, "error": str(e)})
                 stats["failed"] += 1
@@ -319,14 +319,14 @@ def process_batch_operations(operations, context):
             except Exception as e:
                 errors.append({"index": i, "error": f"Unexpected: {e}"})
                 stats["failed"] += 1
-        
+
         return {
             "success": stats["failed"] == 0,
             "results": results,
             "errors": errors,
             "stats": stats
         }
-    
+
     except ValueError as e:
         logger.error(f"Batch validation error: {e}")
         return {
@@ -359,4 +359,18 @@ def process_batch_operations(operations, context):
             "errors": [{"index": -1, "error": "Internal error"}],
             "stats": stats
         }
+
+
+class _SimpleResponse:
+    status = 200
+
+
+class ApiHandler:
+    """Minimal stub for api_handler_test imports in the fake_python suite."""
+
+    def process(self, _data):
+        return {"ok": True}
+
+    def handle_request(self, _path):
+        return _SimpleResponse()
 

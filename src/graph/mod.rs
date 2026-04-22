@@ -6,9 +6,9 @@
 use crate::config::Config;
 use crate::parsing::ParsedFile;
 use crate::violation::Violation;
+use petgraph::Direction;
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
-use petgraph::Direction;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::ffi::OsStr;

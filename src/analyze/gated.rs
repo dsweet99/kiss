@@ -1,12 +1,10 @@
 use kiss::{GateConfig, ParsedFile};
 
 use crate::analyze::coverage_gate::evaluate_gate;
-use crate::analyze::finalize::{finalize_analysis, AnalysisProducts, FinalizeAnalysisIn};
+use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
 use crate::analyze::graph_api::{build_py_graph, build_rs_graph};
 use crate::analyze::options::AnalyzeResult;
-use crate::analyze::parallel::{
-    build_graph_violations, BuildGraphViols, RustAnalysis,
-};
+use crate::analyze::parallel::{BuildGraphViols, RustAnalysis, build_graph_violations};
 use crate::analyze::params::GatedAnalysis;
 
 type PyDup = kiss::DuplicateCluster;
@@ -18,7 +16,9 @@ struct GatedPyParallelIn<'a> {
     gate: &'a GateConfig,
 }
 
-fn gated_py_parallel(in_: &GatedPyParallelIn<'_>) -> (
+fn gated_py_parallel(
+    in_: &GatedPyParallelIn<'_>,
+) -> (
     kiss::TestRefAnalysis,
     Option<kiss::DependencyGraph>,
     Vec<kiss::Violation>,
@@ -81,12 +81,13 @@ pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
     } = in_;
     let rs_cov = kiss::analyze_rust_test_refs(&result.rs_parsed.iter().collect::<Vec<_>>(), None);
 
-    let (py_cov, py_graph, mut graph_viols_all, py_dups_all) = gated_py_parallel(&GatedPyParallelIn {
-        py_parsed: &result.py_parsed,
-        opts,
-        file_count,
-        gate: opts.gate_config,
-    });
+    let (py_cov, py_graph, mut graph_viols_all, py_dups_all) =
+        gated_py_parallel(&GatedPyParallelIn {
+            py_parsed: &result.py_parsed,
+            opts,
+            file_count,
+            gate: opts.gate_config,
+        });
 
     if let Some(early) = evaluate_gate(
         &py_cov,

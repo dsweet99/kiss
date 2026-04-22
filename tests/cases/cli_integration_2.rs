@@ -50,7 +50,10 @@ fn cli_help_flag_works() {
     let output = kiss_binary().arg("--help").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
-    assert!(stdout.contains("kiss"), "help output should contain 'kiss'. stdout: {stdout}");
+    assert!(
+        stdout.contains("kiss"),
+        "help output should contain 'kiss'. stdout: {stdout}"
+    );
 }
 
 #[test]
@@ -58,7 +61,10 @@ fn cli_version_flag_works() {
     let output = kiss_binary().arg("--version").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
-    assert!(stdout.contains("kiss"), "version output should contain 'kiss'. stdout: {stdout}");
+    assert!(
+        stdout.contains("kiss"),
+        "version output should contain 'kiss'. stdout: {stdout}"
+    );
 }
 
 #[test]
@@ -172,5 +178,8 @@ fn cli_mv_requires_query_shape() {
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success(), "mv should fail for bad query");
-    assert!(stderr.contains("source must contain '::'"), "stderr:\n{stderr}");
+    assert!(
+        stderr.contains("source must contain '::'"),
+        "stderr:\n{stderr}"
+    );
 }

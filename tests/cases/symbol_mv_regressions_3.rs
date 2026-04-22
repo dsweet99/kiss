@@ -1,5 +1,5 @@
-use kiss::symbol_mv::{MvOptions, run_mv_command};
 use kiss::Language;
+use kiss::symbol_mv::{MvOptions, run_mv_command};
 use std::fs;
 use tempfile::TempDir;
 
@@ -385,4 +385,3 @@ fn regression_rename_updates_backslash_inside_parenthesized_from_import() {
         "backslash after comma in parenthesized import should rename; got:\n{updated_caller}"
     );
 }
-

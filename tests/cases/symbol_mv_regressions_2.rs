@@ -1,5 +1,5 @@
-use kiss::symbol_mv::{MvOptions, run_mv_command};
 use kiss::Language;
+use kiss::symbol_mv::{MvOptions, run_mv_command};
 use std::fs;
 use tempfile::TempDir;
 
@@ -230,8 +230,14 @@ fn regression_toplevel_rename_should_not_touch_method_calls() {
     assert_eq!(run_mv_command(opts), 0);
 
     let updated = fs::read_to_string(&file).unwrap();
-    assert!(updated.contains("def bar():"), "top-level function should be renamed");
-    assert!(updated.contains("result = bar()"), "direct call should be renamed");
+    assert!(
+        updated.contains("def bar():"),
+        "top-level function should be renamed"
+    );
+    assert!(
+        updated.contains("result = bar()"),
+        "direct call should be renamed"
+    );
     assert!(
         updated.contains("obj.foo()"),
         "method call on object should NOT be renamed when renaming top-level function"
@@ -319,11 +325,7 @@ fn regression_method_move_should_be_rejected() {
     let src = tmp.path().join("source.py");
     let dest = tmp.path().join("dest.py");
 
-    fs::write(
-        &src,
-        "class A:\n    def foo(self):\n        return 1\n",
-    )
-    .unwrap();
+    fs::write(&src, "class A:\n    def foo(self):\n        return 1\n").unwrap();
     fs::write(&dest, "# destination\n").unwrap();
 
     let opts = MvOptions {

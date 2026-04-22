@@ -1,6 +1,7 @@
 use super::*;
+use crate::py_metrics::walk_py_ast;
 use crate::test_utils::parse_python_source;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn test_analyze_file_no_violations() {
@@ -18,6 +19,23 @@ fn test_analyze_file_with_violation() {
     };
     let violations = analyze_file(&parsed, &config);
     assert!(!violations.is_empty());
+}
+
+#[test]
+fn test_nested_function_try_block_violation_emitted() {
+    let src = "def outer():\n    def inner():\n        try:\n            a = 1\n            b = 2\n        except Exception:\n            pass\n";
+    let parsed = parse_python_source(src);
+    let config = Config {
+        statements_per_try_block: 1,
+        ..Default::default()
+    };
+    let violations = analyze_file(&parsed, &config);
+    assert!(
+        violations
+            .iter()
+            .any(|v| { v.unit_name == "inner" && v.metric == "statements_per_try_block" }),
+        "expected statements_per_try_block on nested inner, got {violations:?}"
+    );
 }
 
 #[test]
@@ -60,31 +78,30 @@ fn test_violation_builder() {
 }
 
 #[test]
-fn test_analyze_node() {
+fn test_walk_py_ast_module_tree_no_violations() {
     let parsed = parse_python_source("def f(): pass\nclass C: pass");
     let mut viols = Vec::new();
-    analyze_node(
+    let config = Config::default();
+    walk_py_ast(
         parsed.tree.root_node(),
         &parsed.source,
-        &parsed.path,
-        &mut viols,
+        &mut |a| handle_py_walk_check(a, &parsed.path, &config, &mut viols),
         false,
-        &Config::default(),
     );
     assert!(viols.is_empty());
 }
 
 #[test]
-fn test_analyze_class_node() {
+fn test_walk_py_ast_class_subtree_no_violations() {
     let parsed = parse_python_source("class C:\n    def m(self): pass");
     let mut viols = Vec::new();
+    let config = Config::default();
     let cls = parsed.tree.root_node().child(0).unwrap();
-    analyze_class_node(
+    walk_py_ast(
         cls,
         &parsed.source,
-        &parsed.path,
-        &mut viols,
-        &Config::default(),
+        &mut |a| handle_py_walk_check(a, &parsed.path, &config, &mut viols),
+        false,
     );
     assert!(viols.is_empty());
 }
@@ -113,17 +130,16 @@ fn test_check_file_metrics() {
 }
 
 #[test]
-fn test_analyze_node_function() {
+fn test_walk_py_ast_function_subtree_no_violations() {
     let parsed = parse_python_source("def f(a): x = 1");
     let func = parsed.tree.root_node().child(0).unwrap();
     let mut viols = Vec::new();
-    analyze_node(
+    let config = Config::default();
+    walk_py_ast(
         func,
         &parsed.source,
-        &parsed.path,
-        &mut viols,
+        &mut |a| handle_py_walk_check(a, &parsed.path, &config, &mut viols),
         false,
-        &Config::default(),
     );
     assert!(viols.is_empty());
 }
@@ -160,14 +176,6 @@ fn test_check_function_metrics() {
     let mut viols = Vec::new();
     check_function_metrics(&m, Path::new("t.py"), 1, "f", false, &cfg, &mut viols);
     assert!(viols.len() >= 5);
-}
-
-#[test]
-fn test_recursion_enum() {
-    let skip = Recursion::Skip;
-    let cont = Recursion::Continue(true);
-    assert!(matches!(skip, Recursion::Skip));
-    assert!(matches!(cont, Recursion::Continue(true)));
 }
 
 #[test]

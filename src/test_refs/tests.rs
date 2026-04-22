@@ -100,7 +100,8 @@ fn test_nested_functions_not_tracked_for_coverage() {
     use crate::parsing::{ParsedFile, create_parser};
     let mut parser = create_parser().unwrap();
 
-    let src = "def outer():\n    def nested_helper():\n        return 42\n    return nested_helper()\n";
+    let src =
+        "def outer():\n    def nested_helper():\n        return 42\n    return nested_helper()\n";
     let tree = parser.parse(src, None).unwrap();
     let file = ParsedFile {
         path: PathBuf::from("mymodule.py"),
@@ -327,7 +328,10 @@ fn test_collect_class_test_methods_extracts_test_methods() {
     assert!(ids.contains(&"TestFoo::test_one"));
     assert!(ids.contains(&"TestFoo::test_two"));
     assert!(!ids.iter().any(|id| id.contains("helper")));
-    let (_, refs) = out.iter().find(|(id, _)| id == "TestFoo::test_one").unwrap();
+    let (_, refs) = out
+        .iter()
+        .find(|(id, _)| id == "TestFoo::test_one")
+        .unwrap();
     assert!(refs.contains("run"));
 }
 
@@ -368,8 +372,14 @@ fn test_collect_all_test_file_data_imports_calls_decorators() {
         &mut usage_refs,
         &mut import_bindings,
     );
-    assert!(test_refs.contains("helper"), "import name captured in test_refs");
-    assert!(test_refs.contains("mymod"), "module name captured in test_refs");
+    assert!(
+        test_refs.contains("helper"),
+        "import name captured in test_refs"
+    );
+    assert!(
+        test_refs.contains("mymod"),
+        "module name captured in test_refs"
+    );
     assert!(test_refs.contains("pytest"), "import captured in test_refs");
     assert!(usage_refs.contains("helper"), "call captured in usage_refs");
     assert!(
@@ -377,5 +387,3 @@ fn test_collect_all_test_file_data_imports_calls_decorators() {
         "import binding recorded"
     );
 }
-
-

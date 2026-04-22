@@ -42,7 +42,10 @@ pub(crate) fn build_node_index(nodes: &[String]) -> HashMap<&str, usize> {
     idx
 }
 
-pub(crate) fn node_size_and_display(name: &str, paths: &BTreeMap<String, PathBuf>) -> (u64, String) {
+pub(crate) fn node_size_and_display(
+    name: &str,
+    paths: &BTreeMap<String, PathBuf>,
+) -> (u64, String) {
     paths.get(name).map_or_else(
         || (0, name.to_string()),
         |p| {
@@ -120,7 +123,11 @@ pub(crate) fn build_cluster_edges(
     out
 }
 
-pub(crate) const fn should_use_fast_coarsen(node_count: usize, edge_count: usize, target: usize) -> bool {
+pub(crate) const fn should_use_fast_coarsen(
+    node_count: usize,
+    edge_count: usize,
+    target: usize,
+) -> bool {
     let aggressive_coarsen = target.saturating_mul(2) < node_count;
     aggressive_coarsen || node_count >= 1_500 || edge_count >= 7_500
 }

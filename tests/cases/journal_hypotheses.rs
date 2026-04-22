@@ -129,5 +129,8 @@ fn hypothesis_10_parenthesized_tuple_return_counts_elements() {
     let p = parse_py(Path::new("tests/fake_python/return_parenthesized_tuple.py"));
     let func = first_function(&p);
     let m = compute_function_metrics(func, &p.source);
-    assert_eq!(m.max_return_values, 3, "parenthesized tuple return should count elements");
+    assert_eq!(
+        m.max_return_values, 3,
+        "parenthesized tuple return should count elements"
+    );
 }

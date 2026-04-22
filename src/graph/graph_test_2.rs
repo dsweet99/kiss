@@ -1,10 +1,10 @@
 use super::tests::new_graph;
 use crate::graph::{
-    build_dependency_graph, build_dependency_graph_from_import_lists, cycle_size_violation,
-    is_test_module, qualified_module_name, resolve_import, DependencyGraph,
+    DependencyGraph, build_dependency_graph, build_dependency_graph_from_import_lists,
+    cycle_size_violation, is_test_module, qualified_module_name, resolve_import,
 };
-use crate::parsing::create_parser;
 use crate::parsing::ParsedFile;
+use crate::parsing::create_parser;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -41,9 +41,8 @@ fn build_temp_pkg_graph(importer_code: &str) -> DependencyGraph {
 
 #[test]
 fn test_build_dependency_graph_creates_edge_for_from_dot_import() {
-    let g = build_temp_pkg_graph(
-        "def f():\n    from . import target\n    return target.do_work()\n",
-    );
+    let g =
+        build_temp_pkg_graph("def f():\n    from . import target\n    return target.do_work()\n");
 
     let m_importer = g.module_metrics("pkg.importer");
     let m_target = g.module_metrics("pkg.target");
@@ -55,9 +54,8 @@ fn test_build_dependency_graph_creates_edge_for_from_dot_import() {
 
 #[test]
 fn test_from_import_adds_submodule_candidate_when_internal() {
-    let g = build_temp_pkg_graph(
-        "def f():\n    from pkg import target\n    return target.do_work()\n",
-    );
+    let g =
+        build_temp_pkg_graph("def f():\n    from pkg import target\n    return target.do_work()\n");
 
     let m_importer = g.module_metrics("pkg.importer");
     let m_target = g.module_metrics("pkg.target");
@@ -167,7 +165,10 @@ fn test_test_importers_of_returns_test_modules_that_import_target() {
 #[test]
 fn test_is_test_module_singular_test_dir() {
     let mut g = DependencyGraph::new();
-    g.path_to_module.insert(std::path::PathBuf::from("test/helpers.py"), "test.helpers".into());
+    g.path_to_module.insert(
+        std::path::PathBuf::from("test/helpers.py"),
+        "test.helpers".into(),
+    );
     g.paths.insert(
         "test.helpers".into(),
         std::path::PathBuf::from("test/helpers.py"),
@@ -180,7 +181,7 @@ fn test_is_test_module_singular_test_dir() {
 
 #[test]
 fn test_touch_importinfo_and_push_import_name_segments() {
-    use crate::graph::{push_import_name_segments, ImportInfo};
+    use crate::graph::{ImportInfo, push_import_name_segments};
     let _ = ImportInfo {
         from_qualified: "a.b".into(),
         from_parent_module: Some("a".into()),

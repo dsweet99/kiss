@@ -51,9 +51,7 @@ fn py_binding_keyword_allows(before: &str, owner: Option<&str>) -> bool {
     if owner.is_some() {
         return false;
     }
-    before.ends_with("global ")
-        || before.ends_with("nonlocal ")
-        || before.ends_with("del ")
+    before.ends_with("global ") || before.ends_with("nonlocal ") || before.ends_with("del ")
 }
 
 fn py_await_allows(before: &str, owner: Option<&str>) -> bool {
@@ -65,9 +63,7 @@ fn py_def_owner_ok(ctx: &RefSiteCtx<'_>) -> bool {
         || !is_inside_any_class(ctx.content, ctx.start),
         |class_name| {
             find_python_class_block(ctx.content, class_name)
-                .is_some_and(|(cls_start, cls_end)| {
-                    ctx.start >= cls_start && ctx.start < cls_end
-                })
+                .is_some_and(|(cls_start, cls_end)| ctx.start >= cls_start && ctx.start < cls_end)
         },
     )
 }
@@ -142,7 +138,11 @@ fn type_from_assignment_rhs(rest: &str) -> Option<String> {
 
 fn infer_python_receiver_type(content: &str, receiver: &str) -> Option<String> {
     let receiver = receiver.trim_end_matches("()");
-    if receiver.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+    if receiver
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_uppercase())
+    {
         return Some(receiver.to_string());
     }
     let pat = format!("{receiver} = ");
@@ -164,9 +164,7 @@ fn is_rust_reference_site(ctx: &RefSiteCtx<'_>) -> bool {
 fn rust_fn_owner_ok(ctx: &RefSiteCtx<'_>) -> bool {
     ctx.owner.is_none_or(|type_name| {
         find_impl_block(ctx.content, type_name)
-            .is_some_and(|(impl_start, impl_end)| {
-                ctx.start >= impl_start && ctx.start < impl_end
-            })
+            .is_some_and(|(impl_start, impl_end)| ctx.start >= impl_start && ctx.start < impl_end)
     })
 }
 
@@ -174,7 +172,8 @@ fn rust_non_fn_site(ctx: &RefSiteCtx<'_>, before: &str, after: &str) -> bool {
     match ctx.owner {
         Some(_) if !before.ends_with('.') => false,
         Some(type_name) => {
-            infer_receiver_type(ctx.content, &extract_receiver(before)).as_deref() == Some(type_name)
+            infer_receiver_type(ctx.content, &extract_receiver(before)).as_deref()
+                == Some(type_name)
         }
         None => after.trim_start().starts_with('('),
     }
