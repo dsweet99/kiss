@@ -175,8 +175,17 @@ fn rust_non_fn_site(ctx: &RefSiteCtx<'_>, before: &str, after: &str) -> bool {
             infer_receiver_type(ctx.content, &extract_receiver(before)).as_deref()
                 == Some(type_name)
         }
-        None => after.trim_start().starts_with('('),
+        None => rust_import_allows(before) || after.trim_start().starts_with('('),
     }
+}
+
+fn rust_import_allows(before: &str) -> bool {
+    if !(before.ends_with("::") || before.ends_with('{') || before.ends_with(", ")) {
+        return false;
+    }
+    let line_start = before.rfind('\n').map_or(0, |idx| idx + 1);
+    let prefix_on_line = before[line_start..].trim_start();
+    prefix_on_line.starts_with("use ") || prefix_on_line.starts_with("pub use ")
 }
 
 fn extract_receiver(before: &str) -> String {

@@ -1,4 +1,5 @@
 # Test fixtures - intentionally contain violations for testing
 tests/fake_python/
 tests/fake_rust/
+tests/fixtures/mv/
 

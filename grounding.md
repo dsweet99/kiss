@@ -119,6 +119,46 @@ The design intent is **constrained minimization**: reduce one chosen dimension o
 
 `kiss shrink` also runs the full `kiss check` pipeline, so per-unit thresholds remain enforced during shrink.
 
+### Metric synchronization between `check` and `stats`
+
+`kiss check` and `kiss stats` both analyze the same source files. Keeping them
+synchronized — so that any metric value `stats` reports can also trigger a
+`check` violation — is a structural invariant.
+
+**How synchronization is achieved:**
+
+- **Shared walker**: Both `check` and `stats` use the same `walk_py_ast`
+  function (in `src/py_metrics/walk.rs`). This function recurses through the
+  AST, calls `compute_function_metrics` / `compute_class_metrics` once per node,
+  and emits a `PyWalkAction` to a consumer callback. Both consumers see the
+  exact same `FunctionMetrics` / `ClassMetrics` struct from the same
+  computation. There is no separate metric-computation path that can diverge.
+
+- **Consumer callbacks differ only in what they do with the metrics**: `check`
+  compares them against thresholds and emits violations; `stats` pushes them
+  into distribution vectors for percentile reporting.
+
+**The sync integration test** (`tests/cases/sync_stats_check.rs`) enforces this
+by running both `kiss stats --all` and `kiss check` on a synthetic corpus with
+all thresholds set to 0, then asserting that every nonzero STAT line has a
+matching VIOLATION line (and vice versa) for all "shared" metrics.
+
+**Intentional asymmetries** (documented in `NON_SHARED_METRICS`):
+
+- Some metrics are architectural or aggregate-only (e.g. `cycle_size`,
+  `fan_in`, `fan_out`, `inv_test_coverage`) — `stats` reports them but `check`
+  either doesn't emit per-unit violations or uses a different scoping.
+- Python splits `arguments_per_function` into `positional_args` +
+  `keyword_only_args` for checking, while `stats` also reports the total.
+- `positional_args` checking is intentionally skipped for class methods
+  (the `self` parameter would inflate the count).
+
+**Rule of thumb**: when adding a new metric, add it to *both* paths (the
+`check_fn_threshold!` macro in `check_function_metrics` and the `push` in
+`push_py_fn_metrics`) using the same metric ID string. If the metric is
+intentionally asymmetric, add it to `NON_SHARED_METRICS` with a comment
+explaining why.
+
 ### `kiss` is a CLI tool, not a library
 
 `kiss` is designed as a **command-line tool**. The `[lib]` target in `Cargo.toml` exists for internal code organization (the binary crate depends on the library crate), not for external consumption. The public API surface in `lib.rs` is not a supported library interface.

@@ -47,7 +47,7 @@ fn test_analyze_file_with_statement_count_helper() {
 }
 
 #[test]
-fn test_check_function_metrics_tail_smoke() {
+fn test_return_values_and_calls_violations_smoke() {
     let m = FunctionMetrics {
         calls: 999,
         max_return_values: 3,
@@ -60,8 +60,9 @@ fn test_check_function_metrics_tail_smoke() {
         ..Default::default()
     };
     let mut v = Vec::new();
-    check_function_metrics_tail(&m, Path::new("t.py"), 1, "f", &cfg, &mut v, "Function");
-    assert!(!v.is_empty());
+    check_function_metrics(&m, Path::new("t.py"), 1, "f", false, &cfg, &mut v);
+    assert!(v.iter().any(|x| x.metric == "return_values_per_function"));
+    assert!(v.iter().any(|x| x.metric == "calls_per_function"));
 }
 
 #[test]

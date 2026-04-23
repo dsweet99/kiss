@@ -201,6 +201,55 @@ pub(crate) fn violation(file: &Path, line: usize, name: &str) -> ViolationBuilde
     Violation::builder(file).line(line).unit_name(name)
 }
 
+macro_rules! check_fn_threshold {
+    (
+        $m:ident, $cfg:ident, $v:ident, $file:ident, $line:ident, $name:ident, $ut:ident,
+        $mf:ident, $cf:ident, $metric:literal, $label:literal, $sug:literal
+    ) => {
+        if $m.$mf > $cfg.$cf {
+            $v.push(
+                violation($file, $line, $name)
+                    .metric($metric)
+                    .value($m.$mf)
+                    .threshold($cfg.$cf)
+                    .message(format!(
+                        "{} '{}' has {} {} (threshold: {})",
+                        $ut, $name, $m.$mf, $label, $cfg.$cf
+                    ))
+                    .suggestion($sug)
+                    .build(),
+            );
+        }
+    };
+}
+
+fn push_positional_args_violation(
+    m: &FunctionMetrics,
+    file: &Path,
+    line: usize,
+    name: &str,
+    inside_class: bool,
+    cfg: &Config,
+    v: &mut Vec<Violation>,
+) {
+    if !inside_class && m.arguments_positional > cfg.arguments_positional {
+        v.push(
+            violation(file, line, name)
+                .metric("positional_args")
+                .value(m.arguments_positional)
+                .threshold(cfg.arguments_positional)
+                .message(format!(
+                    "Function '{}' has {} positional arguments (threshold: {})",
+                    name, m.arguments_positional, cfg.arguments_positional
+                ))
+                .suggestion(
+                    "Consider using keyword-only arguments, a config object, or the builder pattern.",
+                )
+                .build(),
+        );
+    }
+}
+
 pub(crate) fn check_function_metrics(
     m: &FunctionMetrics,
     file: &Path,
@@ -211,134 +260,41 @@ pub(crate) fn check_function_metrics(
     v: &mut Vec<Violation>,
 ) {
     let ut = if inside_class { "Method" } else { "Function" };
-    macro_rules! chk {
-        ($mf:ident, $cf:ident, $metric:literal, $label:literal, $sug:literal) => {
-            if m.$mf > cfg.$cf {
-                v.push(
-                    violation(file, line, name)
-                        .metric($metric)
-                        .value(m.$mf)
-                        .threshold(cfg.$cf)
-                        .message(format!(
-                            "{} '{}' has {} {} (threshold: {})",
-                            ut, name, m.$mf, $label, cfg.$cf
-                        ))
-                        .suggestion($sug)
-                        .build(),
-                );
-            }
-        };
-    }
-    chk!(
-        statements,
-        statements_per_function,
-        "statements_per_function",
-        "statements",
-        "Break into smaller, focused functions."
-    );
-    if !inside_class && m.arguments_positional > cfg.arguments_positional {
-        v.push(violation(file, line, name).metric("positional_args").value(m.arguments_positional).threshold(cfg.arguments_positional)
-            .message(format!("Function '{}' has {} positional arguments (threshold: {})", name, m.arguments_positional, cfg.arguments_positional))
-            .suggestion("Consider using keyword-only arguments, a config object, or the builder pattern.").build());
-    }
-    chk!(
-        arguments_keyword_only,
-        arguments_keyword_only,
-        "keyword_only_args",
-        "keyword-only arguments",
-        "Consider grouping related parameters into a config object."
-    );
-    chk!(
-        max_indentation,
-        max_indentation_depth,
-        "max_indentation_depth",
-        "indentation depth",
-        "Extract nested logic into helper functions or use early returns."
-    );
-    chk!(
-        nested_function_depth,
-        nested_function_depth,
-        "nested_function_depth",
-        "nested functions",
-        "Move nested functions to module level or use classes."
-    );
-    chk!(
-        branches,
-        branches_per_function,
-        "branches_per_function",
-        "branches",
-        "Consider using polymorphism, lookup tables, or the strategy pattern."
-    );
-    chk!(
-        local_variables,
-        local_variables_per_function,
-        "local_variables_per_function",
-        "local variables",
-        "Extract related variables into a data class or split the function."
-    );
-    chk!(
-        max_try_block_statements,
-        statements_per_try_block,
-        "statements_per_try_block",
-        "statements in try block",
-        "Keep try blocks narrow: wrap only the code that can raise the specific exception."
-    );
-    chk!(
-        boolean_parameters,
-        boolean_parameters,
-        "boolean_parameters",
-        "boolean parameters",
-        "Use keyword-only arguments, an enum, or separate functions instead of boolean flags."
-    );
-    chk!(
-        decorators,
-        annotations_per_function,
-        "decorators_per_function",
-        "decorators",
-        "Consider consolidating decorators or simplifying the function's responsibilities."
-    );
-    check_function_metrics_tail(m, file, line, name, cfg, v, ut);
-}
-
-pub(crate) fn check_function_metrics_tail(
-    m: &FunctionMetrics,
-    file: &Path,
-    line: usize,
-    name: &str,
-    cfg: &Config,
-    v: &mut Vec<Violation>,
-    ut: &str,
-) {
-    if m.max_return_values > cfg.return_values_per_function {
-        v.push(
-            violation(file, line, name)
-                .metric("return_values_per_function")
-                .value(m.max_return_values)
-                .threshold(cfg.return_values_per_function)
-                .message(format!(
-                    "{ut} '{name}' has {} return values (threshold: {})",
-                    m.max_return_values, cfg.return_values_per_function
-                ))
-                .suggestion(
-                    "Consider returning a named tuple, dataclass, or structured object instead of multiple values.",
-                )
-                .build(),
-        );
-    }
-    if m.calls > cfg.calls_per_function {
-        v.push(
-            violation(file, line, name)
-                .metric("calls_per_function")
-                .value(m.calls)
-                .threshold(cfg.calls_per_function)
-                .message(format!(
-                    "{ut} '{name}' has {} calls (threshold: {})",
-                    m.calls, cfg.calls_per_function
-                ))
-                .suggestion(
-                    "Extract some calls into helper functions to reduce coordination complexity.",
-                )
-                .build(),
-        );
-    }
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        statements, statements_per_function, "statements_per_function", "statements",
+        "Break into smaller, focused functions.");
+    push_positional_args_violation(m, file, line, name, inside_class, cfg, v);
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        arguments_keyword_only, arguments_keyword_only, "keyword_only_args", "keyword-only arguments",
+        "Consider grouping related parameters into a config object.");
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        max_indentation, max_indentation_depth, "max_indentation_depth", "indentation depth",
+        "Extract nested logic into helper functions or use early returns.");
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        nested_function_depth, nested_function_depth, "nested_function_depth", "nested functions",
+        "Move nested functions to module level or use classes.");
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        branches, branches_per_function, "branches_per_function", "branches",
+        "Consider using polymorphism, lookup tables, or the strategy pattern.");
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        local_variables, local_variables_per_function, "local_variables_per_function", "local variables",
+        "Extract related variables into a data class or split the function.");
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        max_try_block_statements, statements_per_try_block, "statements_per_try_block", "statements in try block",
+        "Keep try blocks narrow: wrap only the code that can raise the specific exception.");
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        boolean_parameters, boolean_parameters, "boolean_parameters", "boolean parameters",
+        "Use keyword-only arguments, an enum, or separate functions instead of boolean flags.");
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        returns, returns_per_function, "returns_per_function", "return statements",
+        "Use early guard returns at the top, then a single main return path.");
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        decorators, annotations_per_function, "annotations_per_function", "annotations (decorators)",
+        "Consider consolidating decorators or simplifying the function's responsibilities.");
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        max_return_values, return_values_per_function, "return_values_per_function", "return values",
+        "Consider returning a named tuple, dataclass, or structured object instead of multiple values.");
+    check_fn_threshold!(m, cfg, v, file, line, name, ut,
+        calls, calls_per_function, "calls_per_function", "calls",
+        "Extract some calls into helper functions to reduce coordination complexity.");
 }

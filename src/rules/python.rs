@@ -68,10 +68,10 @@ pub(super) const PY_RULE_SPECS: &[RuleSpec] = &[
         description: "boolean_parameters is the maximum number of boolean default parameters (True/False) in a Python function.",
     },
     RuleSpec {
-        metric: "decorators_per_function",
+        metric: "annotations_per_function",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.annotations_per_function),
-        description: "decorators_per_function is the maximum number of decorators applied to a Python function.",
+        description: "annotations_per_function counts Python decorators on a function; TOML key under [python] is decorators_per_function (maps to the same field).",
     },
     RuleSpec {
         metric: "calls_per_function",

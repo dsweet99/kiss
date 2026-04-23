@@ -34,7 +34,7 @@ class BigClass:
     let parsed = parse_python_source(code);
     let config = Config {
         methods_per_class: 3,
-        ..Default::default()
+        ..Config::python_defaults()
     };
 
     let violations = analyze_file(&parsed, &config);
@@ -63,7 +63,7 @@ def risky_function():
     let parsed = parse_python_source(code);
     let config = Config {
         statements_per_try_block: 3,
-        ..Default::default()
+        ..Config::python_defaults()
     };
 
     let violations = analyze_file(&parsed, &config);
@@ -86,7 +86,7 @@ def func_with_flags(a=True, b=False):
     let parsed = parse_python_source(code);
     let config = Config {
         boolean_parameters: 1,
-        ..Default::default()
+        ..Config::python_defaults()
     };
 
     let violations = analyze_file(&parsed, &config);
@@ -96,4 +96,57 @@ def func_with_flags(a=True, b=False):
         has_violation,
         "should trigger boolean_parameters violation when function has 2 boolean params > threshold 1"
     );
+}
+
+#[test]
+fn test_returns_per_function_violation() {
+    let code = r"
+def many_returns(x):
+    if x == 1:
+        return 1
+    if x == 2:
+        return 2
+    if x == 3:
+        return 3
+    return 0
+";
+    let parsed = parse_python_source(code);
+    let config = Config {
+        returns_per_function: 2,
+        ..Config::python_defaults()
+    };
+    let violations = analyze_file(&parsed, &config);
+    let v = violations
+        .iter()
+        .find(|v| v.metric == "returns_per_function")
+        .expect("returns_per_function violation");
+    assert_eq!(v.value, 4);
+    assert_eq!(v.threshold, 2);
+    assert_eq!(v.unit_name, "many_returns");
+}
+
+#[test]
+fn test_annotations_per_function_violation() {
+    let code = r"
+def d(fn):
+    return fn
+@d
+@d
+@d
+def decorated():
+    pass
+";
+    let parsed = parse_python_source(code);
+    let config = Config {
+        annotations_per_function: 2,
+        ..Config::python_defaults()
+    };
+    let violations = analyze_file(&parsed, &config);
+    let v = violations
+        .iter()
+        .find(|v| v.metric == "annotations_per_function")
+        .expect("annotations_per_function violation");
+    assert_eq!(v.value, 3);
+    assert_eq!(v.threshold, 2);
+    assert_eq!(v.unit_name, "decorated");
 }

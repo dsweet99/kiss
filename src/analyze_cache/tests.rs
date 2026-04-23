@@ -39,7 +39,7 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
 }
 
 #[test]
-fn cache_round_trip_and_helpers() {
+fn fingerprint_path_duplicates_and_coverage_helpers() {
     let fp = fingerprint_for_check(
         &[],
         &[],
@@ -74,9 +74,50 @@ fn fnv1a64_properties() {
 
 #[test]
 fn full_cache_inputs_and_store() {
-    let mut inputs = empty_inputs("test_fp");
+    let mut inputs = empty_inputs("test_fp_persist");
     inputs.py_file_count = 1;
     assert_eq!(inputs.py_file_count, 1);
+    store_full_cache_from_run(inputs);
+    let loaded = load_full_cache("test_fp_persist");
+    assert_eq!(loaded.as_ref().map(|c| c.fingerprint.as_str()), Some("test_fp_persist"));
+    assert_eq!(loaded.map(|c| c.py_file_count), Some(1));
+}
 
-    store_full_cache_from_run(empty_inputs("empty_run_test"));
+#[test]
+fn fingerprint_includes_python_annotations_per_function() {
+    let gate = GateConfig::default();
+    let rs = Config::rust_defaults();
+    let base = Config::python_defaults();
+    let mut other = base.clone();
+    other.annotations_per_function = base.annotations_per_function.saturating_add(1);
+    assert_ne!(
+        fingerprint_for_check(&[], &[], &base, &rs, &gate),
+        fingerprint_for_check(&[], &[], &other, &rs, &gate),
+    );
+}
+
+#[test]
+fn fingerprint_includes_python_returns_per_function() {
+    let gate = GateConfig::default();
+    let rs = Config::rust_defaults();
+    let base = Config::python_defaults();
+    let mut other = base.clone();
+    other.returns_per_function = base.returns_per_function.saturating_add(1);
+    assert_ne!(
+        fingerprint_for_check(&[], &[], &base, &rs, &gate),
+        fingerprint_for_check(&[], &[], &other, &rs, &gate),
+    );
+}
+
+#[test]
+fn fingerprint_includes_gate_test_coverage_threshold() {
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let g0 = GateConfig::default();
+    let mut g1 = g0.clone();
+    g1.test_coverage_threshold = g0.test_coverage_threshold.saturating_add(1);
+    assert_ne!(
+        fingerprint_for_check(&[], &[], &py, &rs, &g0),
+        fingerprint_for_check(&[], &[], &py, &rs, &g1),
+    );
 }

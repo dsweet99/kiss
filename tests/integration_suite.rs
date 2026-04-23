@@ -1,6 +1,8 @@
 //! Single integration-test crate: links once against `kiss` instead of one binary per `tests/*.rs` file.
 #[path = "common/mod.rs"]
 mod common;
+#[path = "support/mod.rs"]
+mod support;
 
 #[path = "cases/c2_break_orphans.rs"]
 mod break_c2_orphans;
@@ -76,5 +78,11 @@ mod symbol_mv_regressions_2;
 mod symbol_mv_regressions_3;
 #[path = "cases/symbol_mv_regressions_4.rs"]
 mod symbol_mv_regressions_4;
+#[path = "cases/symbol_mv_matrix.rs"]
+mod symbol_mv_matrix;
+#[path = "cases/symbol_mv_metamorphic.rs"]
+mod symbol_mv_metamorphic;
+#[path = "cases/symbol_mv_corpus.rs"]
+mod symbol_mv_corpus;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;
