@@ -180,12 +180,47 @@ fn rust_non_fn_site(ctx: &RefSiteCtx<'_>, before: &str, after: &str) -> bool {
 }
 
 fn rust_import_allows(before: &str) -> bool {
-    if !(before.ends_with("::") || before.ends_with('{') || before.ends_with(", ")) {
+    let trimmed = before.trim_end();
+    let direct =
+        trimmed.ends_with("::") || trimmed.ends_with('{') || trimmed.ends_with(',');
+    if !direct {
         return false;
     }
-    let line_start = before.rfind('\n').map_or(0, |idx| idx + 1);
-    let prefix_on_line = before[line_start..].trim_start();
-    prefix_on_line.starts_with("use ") || prefix_on_line.starts_with("pub use ")
+    rust_use_stmt_in_scope(before)
+}
+
+fn rust_use_stmt_in_scope(before: &str) -> bool {
+    for line in before.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if is_use_line_prefix(trimmed) {
+            return true;
+        }
+        if !trimmed.ends_with(',') && !trimmed.ends_with('{') {
+            return false;
+        }
+    }
+    false
+}
+
+fn is_use_line_prefix(line: &str) -> bool {
+    if line.starts_with("use ") {
+        return true;
+    }
+    if let Some(rest) = line.strip_prefix("pub") {
+        let rest = rest.trim_start();
+        if rest.starts_with("use ") {
+            return true;
+        }
+        if let Some(after_paren) = rest.strip_prefix('(')
+            && let Some(after_vis) = after_paren.split_once(')')
+        {
+            return after_vis.1.trim_start().starts_with("use ");
+        }
+    }
+    false
 }
 
 fn extract_receiver(before: &str) -> String {

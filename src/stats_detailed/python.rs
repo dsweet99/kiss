@@ -1,7 +1,41 @@
-use crate::py_metrics::{FunctionMetrics, PyWalkAction, walk_py_ast};
+use crate::graph::DependencyGraph;
+use crate::parsing::ParsedFile;
+use crate::py_metrics::{FunctionMetrics, PyWalkAction, compute_file_metrics, walk_py_ast};
 use tree_sitter::Node;
 
 use super::types::UnitMetrics;
+use super::{FileScopeMetrics, file_unit_metrics};
+
+#[must_use]
+pub fn collect_detailed_py(
+    parsed_files: &[&ParsedFile],
+    graph: Option<&DependencyGraph>,
+) -> Vec<UnitMetrics> {
+    let mut units = Vec::new();
+    for &parsed in parsed_files {
+        let fm = compute_file_metrics(parsed);
+        let lines = parsed.source.lines().count();
+        units.push(file_unit_metrics(
+            &parsed.path,
+            FileScopeMetrics {
+                lines,
+                imports: fm.imports,
+                statements: fm.statements,
+                functions: fm.functions,
+                interface_types: fm.interface_types,
+                concrete_types: fm.concrete_types,
+            },
+            graph,
+        ));
+        collect_detailed_from_node(
+            parsed.tree.root_node(),
+            &parsed.source,
+            &parsed.path.display().to_string(),
+            &mut units,
+        );
+    }
+    units
+}
 
 fn unit_metrics_from_py_function(
     file: &str,
@@ -33,16 +67,23 @@ pub(crate) fn collect_detailed_from_node(
     file: &str,
     units: &mut Vec<UnitMetrics>,
 ) {
-    walk_py_ast(node, source, &mut |action| match action {
-        PyWalkAction::Function(v) => {
-            units.push(unit_metrics_from_py_function(file, v.name, v.line, v.metrics));
-        }
-        PyWalkAction::Class(v) => {
-            let mut u = UnitMetrics::new(file.to_string(), v.name.to_string(), "class", v.line);
-            u.methods = Some(v.metrics.methods);
-            units.push(u);
-        }
-    }, false);
+    walk_py_ast(
+        node,
+        source,
+        &mut |action| match action {
+            PyWalkAction::Function(v) => {
+                units.push(unit_metrics_from_py_function(
+                    file, v.name, v.line, v.metrics,
+                ));
+            }
+            PyWalkAction::Class(v) => {
+                let mut u = UnitMetrics::new(file.to_string(), v.name.to_string(), "class", v.line);
+                u.methods = Some(v.metrics.methods);
+                units.push(u);
+            }
+        },
+        false,
+    );
 }
 
 #[cfg(test)]
@@ -57,7 +98,7 @@ pub(crate) fn collect_detailed_from_node_for_test(
 
 #[cfg(test)]
 mod python_coverage {
-    use super::super::collect_detailed_py;
+    use super::collect_detailed_py;
     use super::*;
     use std::io::Write;
 
@@ -184,6 +225,9 @@ mod python_coverage {
         let names: Vec<&str> = units.iter().map(|u| u.name.as_str()).collect();
         assert!(names.contains(&"Outer"), "expected class unit");
         assert!(names.contains(&"method_a"), "expected method unit");
-        assert!(names.contains(&"standalone"), "expected standalone function unit");
+        assert!(
+            names.contains(&"standalone"),
+            "expected standalone function unit"
+        );
     }
 }

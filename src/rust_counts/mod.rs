@@ -311,9 +311,9 @@ impl<'a> RustAnalyzer<'a> {
         chk!(
             attributes,
             annotations_per_function,
-            "attributes_per_function",
+            "annotations_per_function",
             "attributes",
-            "Consider consolidating attributes or simplifying the function's responsibilities."
+            "Consider consolidating attributes or simplifying the function's responsibilities. (TOML key: attributes_per_function)"
         );
         chk!(
             calls,

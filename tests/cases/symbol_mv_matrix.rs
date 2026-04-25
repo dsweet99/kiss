@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use kiss::Language;
 use std::path::Path;
 
@@ -12,9 +10,11 @@ pub enum MoveKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FixtureKind {
+    #[allow(dead_code)]
     PythonSimplePackage,
     PythonMethodOwnerSplit,
     PythonImportForms,
+    #[allow(dead_code)]
     RustSimpleCrate,
     RustMethodOwnerSplit,
     RustImportForms,
@@ -112,9 +112,7 @@ pub fn fixture_root(kind: FixtureKind) -> &'static Path {
         }
         FixtureKind::PythonImportForms => Path::new("tests/fixtures/mv/python/import_forms"),
         FixtureKind::RustSimpleCrate => Path::new("tests/fixtures/mv/rust/simple_crate"),
-        FixtureKind::RustMethodOwnerSplit => {
-            Path::new("tests/fixtures/mv/rust/method_owner_split")
-        }
+        FixtureKind::RustMethodOwnerSplit => Path::new("tests/fixtures/mv/rust/method_owner_split"),
         FixtureKind::RustImportForms => Path::new("tests/fixtures/mv/rust/import_forms"),
     }
 }

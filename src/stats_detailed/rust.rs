@@ -1,9 +1,43 @@
+use crate::graph::DependencyGraph;
 use crate::rust_fn_metrics::{
-    RustFunctionMetrics, compute_rust_function_metrics, count_non_doc_attrs, is_cfg_test_mod,
+    RustFunctionMetrics, compute_rust_file_metrics, compute_rust_function_metrics,
+    count_non_doc_attrs, is_cfg_test_mod,
 };
+use crate::rust_parsing::ParsedRustFile;
 use syn::{ImplItem, Item};
 
 use super::types::UnitMetrics;
+use super::{FileScopeMetrics, file_unit_metrics};
+
+#[must_use]
+pub fn collect_detailed_rs(
+    parsed_files: &[&ParsedRustFile],
+    graph: Option<&DependencyGraph>,
+) -> Vec<UnitMetrics> {
+    let mut units = Vec::new();
+    for &parsed in parsed_files {
+        let fm = compute_rust_file_metrics(parsed);
+        let lines = parsed.source.lines().count();
+        units.push(file_unit_metrics(
+            &parsed.path,
+            FileScopeMetrics {
+                lines,
+                imports: fm.imports,
+                statements: fm.statements,
+                functions: fm.functions,
+                interface_types: fm.interface_types,
+                concrete_types: fm.concrete_types,
+            },
+            graph,
+        ));
+        collect_detailed_from_items(
+            &parsed.ast.items,
+            &parsed.path.display().to_string(),
+            &mut units,
+        );
+    }
+    units
+}
 
 pub(crate) struct RustFnMethodPush<'a> {
     pub file: &'a str,
@@ -116,7 +150,7 @@ pub(crate) fn get_impl_name(i: &syn::ItemImpl) -> String {
 
 #[cfg(test)]
 mod rust_coverage {
-    use super::super::collect_detailed_rs;
+    use super::collect_detailed_rs;
     use super::*;
     use std::io::Write;
 

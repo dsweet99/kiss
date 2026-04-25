@@ -20,6 +20,14 @@ pub(crate) enum PyWalkAction<'a> {
     Class(ClassVisit<'a>),
 }
 
+/// Walk the Python AST, invoking `sink` for each function and class node.
+///
+/// Unlike the old `analyze_node` (which returned `Recursion::Skip` for function
+/// nodes), this walker **recurses into function bodies**. This is intentional:
+/// nested functions (e.g. `def outer(): def inner(): ...`) are visited and
+/// checked with `inside_class = false`. The `nested_function_depth` metric
+/// on the outer function already measures nesting depth; this recursion
+/// ensures the *inner* function's own metrics are also checked.
 pub(crate) fn walk_py_ast(
     node: Node<'_>,
     source: &str,

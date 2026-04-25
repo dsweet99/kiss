@@ -1,10 +1,8 @@
-#![allow(dead_code)]
-
 //! Shared `kiss mv` integration-test helpers.
 
 use super::mv_oracles::{OracleBundle, run_post_move_oracles_from_root};
-use kiss::symbol_mv::{MvOptions, MvRequest, parse_mv_query, plan_edits};
 use crate::symbol_mv_matrix::{ScenarioSpec, fixture_root};
+use kiss::symbol_mv::{MvOptions, MvRequest, parse_mv_query, plan_edits};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
@@ -38,6 +36,7 @@ impl ScenarioRun {
 pub struct AppliedScenario {
     _temp_dir: Option<TempDir>,
     _original_temp_dir: TempDir,
+    #[allow(dead_code)]
     pub name: String,
     pub root: PathBuf,
     pub original_root: PathBuf,
@@ -49,7 +48,9 @@ pub struct AppliedScenario {
 #[derive(Debug)]
 pub struct HeavyOutcome {
     pub scenario_name: String,
+    #[allow(dead_code)]
     pub root: PathBuf,
+    #[allow(dead_code)]
     pub move_count: usize,
     pub post_oracles: OracleBundle,
 }
@@ -74,32 +75,16 @@ impl AppliedScenario {
 
 pub fn apply_scenario(spec: &ScenarioSpec) -> Result<AppliedScenario, String> {
     let run = ScenarioRun::from_fixture(*spec)?;
-    let original_temp_dir = TempDir::new().map_err(|err| err.to_string())?;
-    copy_dir_contents(&run.root, original_temp_dir.path())?;
     let opts = build_options(run.root.as_path(), spec, None);
-    let touched_rel_paths = planned_touched_paths(&opts)?;
-    if kiss::symbol_mv::run_mv_command(opts.clone()) != 0 {
-        return Err("kiss mv command failed".to_string());
-    }
     let (temp_dir, root, scenario) = run.into_parts();
-    let untouched_files = snapshot_tree(original_temp_dir.path())
-        .into_iter()
-        .filter_map(|(rel, contents)| {
-            (!touched_rel_paths.contains(rel.as_str()))
-                .then_some((root.join(Path::new(&rel)), contents))
-        })
-        .collect();
-    let original_root = original_temp_dir.path().to_path_buf();
-    Ok(AppliedScenario {
-        _temp_dir: Some(temp_dir),
-        _original_temp_dir: original_temp_dir,
-        name: spec.name.to_string(),
-        root: root.clone(),
-        original_root,
-        inverse: build_inverse_options(&opts, &root)?,
-        untouched_files,
-        language: scenario.language,
-    })
+    run_and_build_applied(
+        &opts,
+        &root,
+        &root,
+        spec.name.to_string(),
+        scenario.language,
+        Some(temp_dir),
+    )
 }
 
 pub fn run_post_move_oracles(run: &AppliedScenario) -> OracleBundle {
@@ -121,7 +106,7 @@ pub fn apply_move_sequence(spec: &ScenarioSpec, depth: usize) -> Result<HeavyOut
             if kiss::symbol_mv::run_mv_command(opts.clone()) != 0 {
                 return Err("kiss mv sequence step failed".to_string());
             }
-            next = build_inverse_options(&opts, &applied.root)?;
+            next = Some(build_inverse_options(&opts, &applied.root)?);
         }
     }
     Ok(HeavyOutcome {
@@ -145,8 +130,26 @@ fn apply_options(
     root: &Path,
     original_root: &Path,
 ) -> Result<AppliedScenario, String> {
+    run_and_build_applied(
+        opts,
+        root,
+        original_root,
+        opts.query.clone(),
+        language,
+        None,
+    )
+}
+
+fn run_and_build_applied(
+    opts: &MvOptions,
+    root: &Path,
+    snapshot_source: &Path,
+    name: String,
+    language: kiss::Language,
+    keep_temp_dir: Option<TempDir>,
+) -> Result<AppliedScenario, String> {
     let original_temp_dir = TempDir::new().map_err(|err| err.to_string())?;
-    copy_dir_contents(original_root, original_temp_dir.path())?;
+    copy_dir_contents(snapshot_source, original_temp_dir.path())?;
     let touched_rel_paths = planned_touched_paths(opts)?;
     if kiss::symbol_mv::run_mv_command(opts.clone()) != 0 {
         return Err("kiss mv command failed".to_string());
@@ -158,23 +161,20 @@ fn apply_options(
                 .then_some((root.join(Path::new(&rel)), contents))
         })
         .collect();
+    let original_root = original_temp_dir.path().to_path_buf();
     Ok(AppliedScenario {
-        _temp_dir: None,
+        _temp_dir: keep_temp_dir,
         _original_temp_dir: original_temp_dir,
-        name: opts.query.clone(),
+        name,
         root: root.to_path_buf(),
-        original_root: original_root.to_path_buf(),
-        inverse: build_inverse_options(opts, root)?,
+        original_root,
+        inverse: Some(build_inverse_options(opts, root)?),
         untouched_files,
         language,
     })
 }
 
-fn build_options(
-    root: &Path,
-    spec: &ScenarioSpec,
-    override_query: Option<String>,
-) -> MvOptions {
+fn build_options(root: &Path, spec: &ScenarioSpec, override_query: Option<String>) -> MvOptions {
     let query = override_query.unwrap_or_else(|| absolute_query(root, spec.query));
     MvOptions {
         query,
@@ -193,7 +193,7 @@ fn absolute_query(root: &Path, relative_query: &str) -> String {
     format!("{}::{}", root.join(path).display(), symbol)
 }
 
-fn build_inverse_options(opts: &MvOptions, root: &Path) -> Result<Option<MvOptions>, String> {
+fn build_inverse_options(opts: &MvOptions, root: &Path) -> Result<MvOptions, String> {
     let parsed = parse_mv_query(&opts.query)?;
     let original_name = parsed.old_name().to_string();
     let current_path = opts.to.clone().unwrap_or_else(|| parsed.path.clone());
@@ -208,7 +208,7 @@ fn build_inverse_options(opts: &MvOptions, root: &Path) -> Result<Option<MvOptio
     } else {
         None
     };
-    Ok(Some(MvOptions {
+    Ok(MvOptions {
         query: inverse_query,
         new_name: original_name,
         paths: vec![root.display().to_string()],
@@ -217,7 +217,7 @@ fn build_inverse_options(opts: &MvOptions, root: &Path) -> Result<Option<MvOptio
         json: false,
         lang_filter: opts.lang_filter,
         ignore: vec![],
-    }))
+    })
 }
 
 fn planned_touched_paths(opts: &MvOptions) -> Result<BTreeSet<String>, String> {
@@ -257,7 +257,9 @@ fn collect_snapshot_entries(
         if should_skip_snapshot_path(&name) {
             continue;
         }
-        let file_type = fs::metadata(&path).map_err(|err| err.to_string())?.file_type();
+        let file_type = fs::metadata(&path)
+            .map_err(|err| err.to_string())?
+            .file_type();
         if file_type.is_dir() {
             collect_snapshot_entries(root, &path, entries)?;
         } else if file_type.is_file() {
@@ -287,9 +289,6 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
             fs::create_dir_all(&dst_path).map_err(|err| err.to_string())?;
             copy_dir_contents(&src_path, &dst_path)?;
         } else {
-            if let Some(parent) = dst_path.parent() {
-                fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-            }
             fs::copy(&src_path, &dst_path).map_err(|err| err.to_string())?;
         }
     }

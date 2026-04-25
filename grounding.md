@@ -154,7 +154,7 @@ matching VIOLATION line (and vice versa) for all "shared" metrics.
   (the `self` parameter would inflate the count).
 
 **Rule of thumb**: when adding a new metric, add it to *both* paths (the
-`check_fn_threshold!` macro in `check_function_metrics` and the `push` in
+`chk!` macro inside `check_function_metrics` and the `push` in
 `push_py_fn_metrics`) using the same metric ID string. If the metric is
 intentionally asymmetric, add it to `NON_SHARED_METRICS` with a comment
 explaining why.

@@ -70,6 +70,12 @@ mod rust_counts_violations;
 mod stress_break_kiss;
 #[path = "cases/stress_break_kiss_2.rs"]
 mod stress_break_kiss_2;
+#[path = "cases/symbol_mv_corpus.rs"]
+mod symbol_mv_corpus;
+#[path = "cases/symbol_mv_matrix.rs"]
+mod symbol_mv_matrix;
+#[path = "cases/symbol_mv_metamorphic.rs"]
+mod symbol_mv_metamorphic;
 #[path = "cases/symbol_mv_regressions.rs"]
 mod symbol_mv_regressions;
 #[path = "cases/symbol_mv_regressions_2.rs"]
@@ -78,11 +84,7 @@ mod symbol_mv_regressions_2;
 mod symbol_mv_regressions_3;
 #[path = "cases/symbol_mv_regressions_4.rs"]
 mod symbol_mv_regressions_4;
-#[path = "cases/symbol_mv_matrix.rs"]
-mod symbol_mv_matrix;
-#[path = "cases/symbol_mv_metamorphic.rs"]
-mod symbol_mv_metamorphic;
-#[path = "cases/symbol_mv_corpus.rs"]
-mod symbol_mv_corpus;
+#[path = "cases/symbol_mv_regressions_5.rs"]
+mod symbol_mv_regressions_5;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;

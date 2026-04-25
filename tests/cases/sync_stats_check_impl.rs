@@ -76,39 +76,10 @@ pub(super) fn parse_stat_lines(stdout: &str) -> Vec<MetricEntry> {
 
 fn violation_message_observed_value(message_and_suggestion: &str) -> Option<usize> {
     let s = message_and_suggestion.trim_start();
-    if s.contains('%') && s.contains("covered") {
-        let head = s.split('%').next()?;
-        let digits: String = head
-            .chars()
-            .filter(char::is_ascii_digit)
-            .collect();
-        if digits.is_empty() {
-            return None;
-        }
-        return digits.parse().ok();
-    }
     let before_threshold = s.split(" (threshold: ").next().unwrap_or(s);
     for needle in [" has ", "File has "] {
         if let Some(pos) = before_threshold.find(needle) {
             let rest = &before_threshold[pos + needle.len()..];
-            let digits: String = rest
-                .chars()
-                .take_while(char::is_ascii_digit)
-                .collect();
-            if let Ok(v) = digits.parse::<usize>() {
-                return Some(v);
-            }
-        }
-    }
-    None
-}
-
-fn violation_message_fallback_digits(message: &str) -> Option<usize> {
-    let before_threshold = message.split(" (threshold: ").next()?;
-    let s = before_threshold.trim_start();
-    for needle in [" has ", "File has "] {
-        if let Some(pos) = s.find(needle) {
-            let rest = &s[pos + needle.len()..];
             let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
             if let Ok(v) = digits.parse::<usize>() {
                 return Some(v);
@@ -124,8 +95,7 @@ fn parse_violation_line(line: &str) -> Option<MetricEntry> {
     if parts.len() < 5 {
         return None;
     }
-    let value: usize = violation_message_observed_value(parts[4])
-        .or_else(|| violation_message_fallback_digits(parts[4]))?;
+    let value: usize = violation_message_observed_value(parts[4])?;
     Some(MetricEntry {
         metric_id: parts[0].to_string(),
         file_stem: file_stem_of(parts[1]),
