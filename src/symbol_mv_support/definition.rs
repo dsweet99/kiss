@@ -98,19 +98,25 @@ fn find_rust_definition_span(
     method: &str,
     owner: Option<&str>,
 ) -> Option<DefinitionSpan> {
-    let (lo, hi) = owner
-        .and_then(|type_name| find_impl_block(content, type_name))
-        .unwrap_or((0, content.len()));
-    let scope = &content[lo..hi];
-    let fn_start = [format!("fn {method}("), format!("pub fn {method}(")]
-        .iter()
-        .find_map(|candidate| scope.find(candidate))
-        .map(|pos| lo + pos)?;
-    let open = fn_start + content[fn_start..].find('{')?;
-    find_brace_block_end(content, open).map(|end| DefinitionSpan {
-        start: rust_item_start(content, fn_start),
-        end,
-    })
+    let ranges = owner.map_or_else(
+        || vec![(0, content.len())],
+        |type_name| find_impl_blocks(content, type_name),
+    );
+    for (lo, hi) in ranges {
+        let scope = &content[lo..hi];
+        let fn_start = [format!("fn {method}("), format!("pub fn {method}(")]
+            .iter()
+            .find_map(|candidate| scope.find(candidate))
+            .map(|pos| lo + pos);
+        if let Some(fn_start) = fn_start {
+            let open = fn_start + content[fn_start..].find('{')?;
+            return find_brace_block_end(content, open).map(|end| DefinitionSpan {
+                start: rust_item_start(content, fn_start),
+                end,
+            });
+        }
+    }
+    None
 }
 
 pub(super) fn find_brace_block_end(content: &str, open_brace: usize) -> Option<usize> {
@@ -147,21 +153,28 @@ fn rust_lexer_is_inside_non_code(state: &LexState) -> bool {
     state.line_comment || state.block_comment_depth > 0 || state.string_state != StringState::None
 }
 
-pub(super) fn find_impl_block(content: &str, owner: &str) -> Option<(usize, usize)> {
+pub(super) fn find_impl_blocks(content: &str, owner: &str) -> Vec<(usize, usize)> {
     let needle = format!("impl {owner}");
+    let mut results = Vec::new();
     let mut search_start = 0;
     while let Some(rel) = content[search_start..].find(&needle) {
         let start = search_start + rel;
         let after = start + needle.len();
         let next_char = content[after..].chars().next();
         let is_exact = next_char.is_none_or(|c| !c.is_alphanumeric() && c != '_');
-        if is_exact {
-            let open = start + content[start..].find('{')?;
-            return find_brace_block_end(content, open).map(|end| (start, end));
+        if is_exact
+            && let Some(open_rel) = content[start..].find('{')
+        {
+            let open = start + open_rel;
+            if let Some(end) = find_brace_block_end(content, open) {
+                results.push((start, end));
+                search_start = end;
+                continue;
+            }
         }
         search_start = after;
     }
-    None
+    results
 }
 
 pub(super) fn find_python_class_block(content: &str, class_name: &str) -> Option<(usize, usize)> {
@@ -226,7 +239,7 @@ mod definition_coverage {
             Some(src_with_string.len())
         );
         let impl_src = "impl Foo { fn x() {} }";
-        let (lo, hi) = find_impl_block(impl_src, "Foo").unwrap();
+        let (lo, hi) = find_impl_blocks(impl_src, "Foo")[0];
         assert!(hi > lo);
         let py = "class C:\n    x = 1\n";
         let (a, b) = find_python_class_block(py, "C").unwrap();

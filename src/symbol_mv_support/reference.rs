@@ -1,6 +1,6 @@
 use crate::Language;
 
-use super::definition::{find_impl_block, find_python_class_block};
+use super::definition::{find_impl_blocks, find_python_class_block};
 
 pub(super) struct RefSiteCtx<'a> {
     pub content: &'a str,
@@ -78,18 +78,36 @@ fn py_import_allows(before: &str, owner: Option<&str>) -> bool {
     let line_start = before.rfind('\n').map_or(0, |idx| idx + 1);
     let prefix_on_line = &before[line_start..];
     if prefix_on_line.trim().is_empty() {
-        let prev = before.get(..line_start.saturating_sub(1)).unwrap_or("");
-        let prev_line_start = prev.rfind('\n').map_or(0, |idx| idx + 1);
-        let prev_line = &prev[prev_line_start..];
-        let t = prev_line.trim_end();
-        if t.ends_with("import (") || t.ends_with(", (") {
-            return true;
-        }
-        // `from pkg import \\n name` or `from pkg import (a, \\n name)` — line ends with `\`
-        return t.ends_with('\\') && t.contains("import");
+        return py_import_block_in_scope(before);
     }
     let t = prefix_on_line.trim_end();
     t.ends_with("import (") || t.ends_with(", (")
+}
+
+/// `helper` sits at the start of its own line (only whitespace before it on
+/// the current line). Walk preceding non-empty, non-comment lines in reverse:
+/// accept as soon as we hit an import-opener line; reject as soon as we hit a
+/// line that isn't a continuation of an import list (`,` at end).
+fn py_import_block_in_scope(before: &str) -> bool {
+    for line in before.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if py_is_import_opener_line(trimmed) {
+            return true;
+        }
+        if !trimmed.ends_with(',') {
+            return false;
+        }
+    }
+    false
+}
+
+fn py_is_import_opener_line(trimmed: &str) -> bool {
+    trimmed.ends_with("import (")
+        || trimmed.ends_with(", (")
+        || (trimmed.ends_with('\\') && trimmed.contains("import"))
 }
 
 fn py_non_def_site(ctx: &RefSiteCtx<'_>, before: &str) -> bool {
@@ -163,8 +181,9 @@ fn is_rust_reference_site(ctx: &RefSiteCtx<'_>) -> bool {
 
 fn rust_fn_owner_ok(ctx: &RefSiteCtx<'_>) -> bool {
     ctx.owner.is_none_or(|type_name| {
-        find_impl_block(ctx.content, type_name)
-            .is_some_and(|(impl_start, impl_end)| ctx.start >= impl_start && ctx.start < impl_end)
+        find_impl_blocks(ctx.content, type_name)
+            .iter()
+            .any(|&(impl_start, impl_end)| ctx.start >= impl_start && ctx.start < impl_end)
     })
 }
 
@@ -268,6 +287,8 @@ mod reference_coverage {
         let _ = is_python_reference_site(&ctx);
         let _ = py_def_owner_ok(&ctx);
         let _ = py_import_allows("from m import ", None);
+        let _ = py_import_block_in_scope("from m import (\n    a,\n    ");
+        let _ = py_is_import_opener_line("from m import (");
         let _ = py_from_clause_allows("raise RuntimeError() from ", None);
         let _ = py_binding_keyword_allows("nonlocal ", None);
         let _ = py_await_allows("return await ", None);

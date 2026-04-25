@@ -24,15 +24,16 @@ pub fn collect_reference_edits(p: &ReferenceRenameParams<'_>) -> Vec<PlannedEdit
     find_identifier_occurrences(p.content, p.old_name)
         .into_iter()
         .filter(|(start, _, _)| {
-            is_supported_reference_site(
-                &RefSiteCtx {
-                    content: p.content,
-                    start: *start,
-                    ident: p.old_name,
-                    owner: p.owner,
-                },
-                p.language,
-            )
+            is_code_offset(p.content, *start, p.language)
+                && is_supported_reference_site(
+                    &RefSiteCtx {
+                        content: p.content,
+                        start: *start,
+                        ident: p.old_name,
+                        owner: p.owner,
+                    },
+                    p.language,
+                )
         })
         .map(|(start_byte, end_byte, line)| PlannedEdit {
             path: p.path.to_path_buf(),
@@ -61,15 +62,17 @@ pub fn collect_source_rename_edits(p: &SourceRenameParams<'_>) -> Vec<PlannedEdi
     find_identifier_occurrences(p.source_content, p.old_name)
         .into_iter()
         .filter(|(start, _, _)| {
-            is_supported_reference_site(
-                &RefSiteCtx {
-                    content: p.source_content,
-                    start: *start,
-                    ident: p.old_name,
-                    owner: p.owner,
-                },
-                p.language,
-            ) && !(p.moving && p.def_span.is_some_and(|span| span.contains(*start)))
+            is_code_offset(p.source_content, *start, p.language)
+                && is_supported_reference_site(
+                    &RefSiteCtx {
+                        content: p.source_content,
+                        start: *start,
+                        ident: p.old_name,
+                        owner: p.owner,
+                    },
+                    p.language,
+                )
+                && !(p.moving && p.def_span.is_some_and(|span| span.contains(*start)))
         })
         .map(|(start_byte, end_byte, line)| PlannedEdit {
             path: p.source_path.to_path_buf(),
