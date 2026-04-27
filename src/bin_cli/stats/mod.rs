@@ -9,7 +9,7 @@ pub use table::run_stats_table;
 #[cfg(test)]
 pub use top::{collect_all_units, print_all_top_metrics, print_top_for_metric, run_stats_top};
 
-use kiss::Language;
+use kiss::{Config, GateConfig, Language};
 
 pub struct RunStatsArgs<'a> {
     pub paths: &'a [String],
@@ -17,6 +17,9 @@ pub struct RunStatsArgs<'a> {
     pub ignore: &'a [String],
     pub all: Option<usize>,
     pub table: bool,
+    pub py_config: &'a Config,
+    pub rs_config: &'a Config,
+    pub gate_config: &'a GateConfig,
 }
 
 pub fn run_stats(args: RunStatsArgs<'_>) {
@@ -25,6 +28,13 @@ pub fn run_stats(args: RunStatsArgs<'_>) {
     } else if let Some(n) = args.all {
         top::run_stats_top(args.paths, args.lang_filter, args.ignore, n);
     } else {
-        summary::run_stats_summary(args.paths, args.lang_filter, args.ignore);
+        summary::run_stats_summary(
+            args.paths,
+            args.lang_filter,
+            args.ignore,
+            args.py_config,
+            args.rs_config,
+            args.gate_config,
+        );
     }
 }

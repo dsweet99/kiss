@@ -53,14 +53,14 @@ fn gather_candidate_files_respects_language() {
 #[test]
 fn find_python_definition_span_finds_method() {
     let src = "class C:\n    def foo(self):\n        pass\n";
-    let span = find_definition_span(src, "foo", Some("C"), Language::Python).unwrap();
+    let span = find_definition_span(src, "foo", Some("C"), Language::Python, Path::new("python-span")).unwrap();
     assert!(src[span.start..span.end].contains("def foo"));
 }
 
 #[test]
 fn find_rust_definition_span_finds_fn() {
     let src = "impl T {\n    pub fn bar(&self) {}\n}\n";
-    let span = find_definition_span(src, "bar", Some("T"), Language::Rust).unwrap();
+    let span = find_definition_span(src, "bar", Some("T"), Language::Rust, Path::new("rust-span")).unwrap();
     assert!(src[span.start..span.end].contains("fn bar"));
 }
 
@@ -87,7 +87,7 @@ fn collect_edits_roundtrip_smoke() {
         new_name: "y",
         owner: None,
         language: Language::Python,
-        def_span: find_definition_span(&content, "x", None, Language::Python),
+        def_span: find_definition_span(&content, "x", None, Language::Python, &path),
         moving: false,
     });
     assert!(
@@ -105,7 +105,7 @@ fn build_move_edits_inserts_at_dest() {
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
     fs::write(&dst, "").unwrap();
     let content = fs::read_to_string(&src).unwrap();
-    let span = find_definition_span(&content, "foo", None, Language::Python).unwrap();
+    let span = find_definition_span(&content, "foo", None, Language::Python, &src).unwrap();
     let built = build_move_edits(&MoveEditsParams {
         source_path: &src,
         source_content: &content,
@@ -115,6 +115,51 @@ fn build_move_edits_inserts_at_dest() {
         dest: Some(&dst),
     });
     assert!(built.is_some());
+}
+
+#[test]
+fn find_definition_span_python_class_method() {
+    let src = "class C:\n    @decorated\n    def m(self):\n        pass\n";
+    let sp = find_definition_span(
+        src,
+        "m",
+        Some("C"),
+        Language::Python,
+        Path::new("def-class-test"),
+    )
+    .unwrap();
+    assert!(sp.contains(sp.start));
+    assert!(sp.end > sp.start);
+}
+
+#[test]
+fn find_definition_span_python_async_class_method() {
+    let src = "class C:\n    async def helper(self):\n        return 1\n";
+    let sp = find_definition_span(
+        src,
+        "helper",
+        Some("C"),
+        Language::Python,
+        Path::new("def-async-test"),
+    )
+    .unwrap();
+    let extracted = &src[sp.start..sp.end];
+    assert!(extracted.contains("async def helper(self):"));
+}
+
+#[test]
+fn find_definition_span_rust_async_function() {
+    let src = "async fn helper() -> usize {\n    1\n}\n\nfn caller() {\n    let _ = futures::executor::block_on(helper());\n}\n";
+    let sp = find_definition_span(
+        src,
+        "helper",
+        None,
+        Language::Rust,
+        Path::new("def-async-fn-test"),
+    )
+    .unwrap();
+    let extracted = &src[sp.start..sp.end];
+    assert!(extracted.contains("async fn helper()"));
 }
 
 #[test]

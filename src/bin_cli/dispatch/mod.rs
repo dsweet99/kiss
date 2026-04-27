@@ -61,6 +61,7 @@ pub fn dispatch(
             all,
             table,
             ignore,
+            cfg: &cfg,
         }),
         Commands::Mimic { paths, out, ignore } => dispatch_mimic(MimicDispatchOptions {
             lang,
@@ -204,6 +205,7 @@ mod dispatch_coverage {
             all: None,
             table: false,
             ignore: vec![],
+            cfg: &cfg,
         };
         let _ = MimicDispatchOptions {
             lang: None,

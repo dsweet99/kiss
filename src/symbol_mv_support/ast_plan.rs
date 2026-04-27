@@ -7,7 +7,8 @@
 //! preserve current behavior during the transition.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use crate::Language;
 
@@ -55,7 +56,7 @@ pub(crate) struct PlanInvocationGuard;
 
 impl PlanInvocationGuard {
     pub(crate) fn enter() -> Self {
-        WARNED_THIS_INVOCATION.with(|w| w.set(false));
+        WARNED_FILES.with(|warned| warned.borrow_mut().clear());
         PARSE_CACHE.with(|c| c.borrow_mut().clear());
         Self
     }
@@ -63,17 +64,18 @@ impl PlanInvocationGuard {
 
 impl Drop for PlanInvocationGuard {
     fn drop(&mut self) {
+        WARNED_FILES.with(|warned| warned.borrow_mut().clear());
         PARSE_CACHE.with(|c| c.borrow_mut().clear());
     }
 }
 
-pub(super) fn cached_parse_outcome(content: &str, language: Language) -> ParseOutcome {
+pub(super) fn cached_parse_outcome(content: &str, path: &Path, language: Language) -> ParseOutcome {
     let key = (content_hash(content), content.len(), lang_key(language));
     let cached = PARSE_CACHE.with(|c| c.borrow().get(&key).cloned());
     if let Some(hit) = cached {
         let outcome = cached_to_outcome(hit);
         if let ParseOutcome::Fail(reason) = &outcome {
-            warn_per_invocation(reason);
+            warn_on_parse_failure(path, reason);
         }
         return outcome;
     }
@@ -84,14 +86,14 @@ pub(super) fn cached_parse_outcome(content: &str, language: Language) -> ParseOu
     PARSE_CACHE.with(|c| c.borrow_mut().insert(key, outcome.clone()));
     let outcome = cached_to_outcome(outcome);
     if let ParseOutcome::Fail(reason) = &outcome {
-        warn_per_invocation(reason);
+        warn_on_parse_failure(path, reason);
     }
     outcome
 }
 
 #[cfg(test)]
 fn cached_parse(content: &str, language: Language) -> Option<AstResult> {
-    match cached_parse_outcome(content, language) {
+    match cached_parse_outcome(content, Path::new("<test>"), language) {
         ParseOutcome::Success(res) => Some(res),
         ParseOutcome::Fail(_) => None,
     }
@@ -295,22 +297,24 @@ fn matches_name(content: &str, start: usize, end: usize, name: &str) -> bool {
 }
 
 thread_local! {
-    static WARNED_THIS_INVOCATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static WARNED_FILES: RefCell<HashSet<PathBuf>> = RefCell::new(HashSet::new());
 }
 
-fn warn_per_invocation(reason: &FallbackReason) {
-    let already = WARNED_THIS_INVOCATION.with(std::cell::Cell::get);
-    if already {
+fn warn_on_parse_failure(path: &Path, reason: &FallbackReason) {
+    let emitted = WARNED_FILES.with(|warned| warned.borrow_mut().insert(path.to_path_buf()));
+    if !emitted {
         return;
     }
-    WARNED_THIS_INVOCATION.with(|w| w.set(true));
     let (label, detail) = match reason {
         FallbackReason::ParseFailed => ("parse_failed", "source did not parse"),
         FallbackReason::ParserUnavailable => {
             ("parser_unavailable", "parser could not be initialized")
         }
     };
-    eprintln!("kiss mv: AST analysis disabled ({label}: {detail}); falling back to lexical scan");
+    eprintln!(
+        "kiss mv: {path}: AST analysis disabled ({label}: {detail}); falling back to lexical scan",
+        path = path.display()
+    );
 }
 
 #[cfg(test)]

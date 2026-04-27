@@ -231,6 +231,51 @@ fn cli_config_with_custom_file() {
 }
 
 #[test]
+fn cli_config_with_custom_file_and_local_layers_merges() {
+    let tmp = TempDir::new().unwrap();
+    let repo = tmp.path().join("repo");
+    let home = tmp.path().join("home");
+    std::fs::create_dir(&repo).unwrap();
+    std::fs::create_dir(&home).unwrap();
+
+    fs::write(repo.join(".kissconfig"), "[python]\nstatements_per_function = 100\n").unwrap();
+    fs::write(home.join(".kissconfig"), "[shared]\nlines_per_file = 111\n").unwrap();
+
+    let config_path = repo.join("custom.kissconfig");
+    fs::write(&config_path, "[python]\npositional_args = 1\n").unwrap();
+
+    let output = kiss_binary()
+        .current_dir(&repo)
+        .env("HOME", &home)
+        .arg("config")
+        .arg("--config")
+        .arg(&config_path)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("Source:"), "Should show source. stdout: {stdout}");
+    assert!(
+        stdout.contains(&config_path.to_string_lossy().to_string())
+            || stdout.contains("custom.kissconfig"),
+        "Should show custom config source. stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("statements_per_function = 100"),
+        "Local .kissconfig should be preserved. stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("lines_per_file = 111"),
+        "Home .kissconfig shared key should be preserved. stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("positional_args = 1"),
+        "Explicit --config should override local settings. stdout: {stdout}"
+    );
+}
+
+#[test]
 fn cli_config_shows_python_specific_settings() {
     let output = kiss_binary()
         .arg("config")

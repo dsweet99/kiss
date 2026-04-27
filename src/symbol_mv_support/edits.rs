@@ -6,8 +6,7 @@ use crate::symbol_mv::{EditKind, PlannedEdit};
 
 use super::ast_models::{AstResult, ParseOutcome};
 use super::ast_plan::{
-    ast_definition_ident_offsets_from_result, ast_reference_offsets_from_result,
-    ast_reference_offsets_raw_from_result, cached_parse_outcome,
+    ast_definition_ident_offsets_from_result, ast_reference_offsets_from_result, cached_parse_outcome,
 };
 use super::basics::detect_language;
 use super::definition::DefinitionSpan;
@@ -26,7 +25,7 @@ pub struct ReferenceRenameParams<'a> {
 }
 
 pub fn collect_reference_edits(p: &ReferenceRenameParams<'_>) -> Vec<PlannedEdit> {
-    match cached_parse_outcome(p.content, p.language) {
+    match cached_parse_outcome(p.content, p.path, p.language) {
         ParseOutcome::Success(result) => {
             collect_reference_sites_from_result(&result, p.content, p.old_name, p.owner, p.language)
                 .into_iter()
@@ -74,11 +73,6 @@ fn collect_reference_sites_from_result(
     owner: Option<&str>,
     language: Language,
 ) -> Vec<(usize, usize, usize)> {
-    let raw_sites =
-        ast_reference_offsets_raw_from_result(result, content, old_name, owner, language);
-    if matches!(language, Language::Rust) && raw_sites.is_empty() {
-        return lexical_reference_sites(content, old_name, owner, language);
-    }
     ast_reference_offsets_from_result(result, content, old_name, owner, language)
         .into_iter()
         .map(|(start_byte, end_byte)| (start_byte, end_byte, line_for_offset(content, start_byte)))
@@ -120,7 +114,7 @@ pub struct SourceRenameParams<'a> {
 }
 
 pub fn collect_source_rename_edits(p: &SourceRenameParams<'_>) -> Vec<PlannedEdit> {
-    match cached_parse_outcome(p.source_content, p.language) {
+    match cached_parse_outcome(p.source_content, p.source_path, p.language) {
         ParseOutcome::Success(result) => {
             let mut merged: Vec<(usize, usize, usize, EditKind)> =
                 collect_reference_sites_from_result(
@@ -306,7 +300,23 @@ mod edits_coverage {
 
         let fallback = collect_reference_sites(src, "foo", None, Language::Python);
         assert!(!fallback.is_empty());
-        let fallback_lex = ast_plan::cached_parse_outcome(src, Language::Python);
+        let fallback_lex = ast_plan::cached_parse_outcome(src, std::path::Path::new("edits.rs"), Language::Python);
         assert!(matches!(fallback_lex, ParseOutcome::Success(_)));
+    }
+
+    #[test]
+    fn collect_reference_sites_from_result_does_not_fallback_on_parse_success() {
+        let src = "fn one() {}\n";
+        let ParseOutcome::Success(parsed) = ast_plan::parse_for(src, crate::Language::Rust) else {
+            panic!("parse should succeed")
+        };
+        let sites = collect_reference_sites_from_result(
+            &parsed,
+            src,
+            "one",
+            None,
+            Language::Rust,
+        );
+        assert!(sites.is_empty());
     }
 }

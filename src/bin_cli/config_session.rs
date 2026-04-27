@@ -75,17 +75,9 @@ pub fn load_configs(config_path: Option<&PathBuf>, use_defaults: bool) -> (Confi
             Config::load_for_language(ConfigLanguage::Rust),
         );
     };
-    let Ok(content) = std::fs::read_to_string(path) else {
-        eprintln!("Warning: Config file not found: {}", path.display());
-        return defaults();
-    };
-    if let Err(e) = content.parse::<toml::Table>() {
-        eprintln!("Warning: Failed to parse config {}: {}", path.display(), e);
-        return defaults();
-    }
     (
-        Config::load_from_content(&content, ConfigLanguage::Python),
-        Config::load_from_content(&content, ConfigLanguage::Rust),
+        Config::load_for_language_with_override(path, ConfigLanguage::Python),
+        Config::load_for_language_with_override(path, ConfigLanguage::Rust),
     )
 }
 

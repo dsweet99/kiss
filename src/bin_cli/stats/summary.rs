@@ -1,4 +1,4 @@
-use crate::bin_cli::config_session::{config_provenance, load_configs, load_gate_config};
+use crate::bin_cli::config_session::config_provenance;
 use kiss::cli_output::file_coverage_map;
 use kiss::parsing::{ParsedFile, parse_files};
 use kiss::rust_parsing::{ParsedRustFile, parse_rust_files};
@@ -24,18 +24,22 @@ struct LangAnalysis {
     orphan_violations: usize,
 }
 
-pub fn run_stats_summary(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
+pub fn run_stats_summary(
+    paths: &[String],
+    lang_filter: Option<Language>,
+    ignore: &[String],
+    py_cfg: &Config,
+    rs_cfg: &Config,
+    gate: &GateConfig,
+) {
     let (py_files, rs_files) = collect_files(paths, lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         eprintln!("No source files found.");
         std::process::exit(1);
     }
 
-    let gate = load_gate_config(None, false);
-    let (py_cfg, rs_cfg) = load_configs(None, false);
-
-    let py = analyze_python(&py_files, &py_cfg, &gate);
-    let rs = analyze_rust(&rs_files, &rs_cfg, &gate);
+    let py = analyze_python(&py_files, py_cfg, gate);
+    let rs = analyze_rust(&rs_files, rs_cfg, gate);
 
     print_summary(paths, py.as_ref(), rs.as_ref());
 }

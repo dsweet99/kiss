@@ -115,6 +115,6 @@ fn touch_ast_plan_helpers_for_coverage_gate() {
     let _ = reference_admits("a", &r, Some("X"), Language::Python);
     let _ = method_receiver_matches("a = X()\na.f()", 9, "X", Language::Python);
     let _ = method_receiver_matches("let a:X=x;\na.f()", 12, "X", Language::Rust);
-    warn_per_invocation(&FallbackReason::ParseFailed);
-    warn_per_invocation(&FallbackReason::ParserUnavailable);
+    let _ = cached_parse_outcome("def f():\n pass\n", std::path::Path::new("warn-test-a"), Language::Python);
+    let _ = cached_parse_outcome("def g():\n pass\n", std::path::Path::new("warn-test-b"), Language::Rust);
 }

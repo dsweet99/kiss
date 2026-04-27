@@ -40,6 +40,9 @@ pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i
         ignore: &ignore,
         all: o.all,
         table: o.table,
+        py_config: o.cfg.py,
+        rs_config: o.cfg.rs,
+        gate_config: o.cfg.gate,
     });
     0
 }

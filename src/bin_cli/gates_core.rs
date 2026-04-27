@@ -1,3 +1,5 @@
+use kiss::{Config, ConfigLanguage, GateConfig};
+use kiss::Language;
 use crate::bin_cli::args::{Cli, Commands, parse_language};
 use crate::bin_cli::config_session::{
     ensure_default_config_exists, load_configs, load_gate_config,
@@ -9,7 +11,6 @@ use crate::bin_cli::stats::{
     run_stats_summary, run_stats_table,
 };
 use crate::bin_cli::util::{normalize_ignore_prefixes, validate_paths};
-use kiss::Language;
 use kiss::truncate;
 
 #[test]
@@ -82,7 +83,17 @@ fn test_gather_stats_normalize_validate() {
             .len(),
         1
     );
-    run_stats_summary(std::slice::from_ref(&p), Some(Language::Python), &[]);
+    let py_cfg = Config::load_for_language(ConfigLanguage::Python);
+    let rs_cfg = Config::load_for_language(ConfigLanguage::Rust);
+    let gate_cfg = GateConfig::load();
+    run_stats_summary(
+        std::slice::from_ref(&p),
+        Some(Language::Python),
+        &[],
+        &py_cfg,
+        &rs_cfg,
+        &gate_cfg,
+    );
     run_stats_table(std::slice::from_ref(&p), Some(Language::Rust), &[]);
     assert_eq!(
         normalize_ignore_prefixes(&["src/".to_string(), String::new()]),
@@ -100,6 +111,9 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         ignore: &[],
         all: None,
         table: false,
+        py_config: &kiss::Config::python_defaults(),
+        rs_config: &kiss::Config::rust_defaults(),
+        gate_config: &kiss::GateConfig::default(),
     });
     run_stats(RunStatsArgs {
         paths,
@@ -107,6 +121,9 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         ignore: &[],
         all: Some(10),
         table: false,
+        py_config: &kiss::Config::python_defaults(),
+        rs_config: &kiss::Config::rust_defaults(),
+        gate_config: &kiss::GateConfig::default(),
     });
     run_stats(RunStatsArgs {
         paths,
@@ -114,6 +131,9 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         ignore: &[],
         all: None,
         table: true,
+        py_config: &kiss::Config::python_defaults(),
+        rs_config: &kiss::Config::rust_defaults(),
+        gate_config: &kiss::GateConfig::default(),
     });
     run_mimic(paths, None, Some(Language::Python), &[]);
 }

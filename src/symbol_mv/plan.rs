@@ -119,6 +119,7 @@ pub fn plan_edits(req: &MvRequest) -> MvPlan {
         old_name,
         owner,
         req.query.language,
+        source_path,
     );
 
     let mut edits = collect_source_rename_edits(&SourceRenameParams {

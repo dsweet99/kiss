@@ -43,6 +43,9 @@ impl GateConfig {
         {
             config.merge_from_toml(&c);
         }
+        if let Ok(c) = std::fs::read_to_string(".kissconfig") {
+            config.merge_from_toml(&c);
+        }
         if let Ok(c) = std::fs::read_to_string(path) {
             config.merge_from_toml(&c);
         }

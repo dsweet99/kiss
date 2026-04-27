@@ -183,3 +183,31 @@ fn cli_mv_requires_query_shape() {
         "stderr:\n{stderr}"
     );
 }
+
+#[test]
+fn cli_mv_parse_failure_warning_includes_source_path() {
+    let tmp = TempDir::new().unwrap();
+    let source = tmp.path().join("broken.rs");
+    let other = tmp.path().join("good.rs");
+    fs::write(&source, "fn main( {\n").unwrap();
+    fs::write(&other, "fn helper() {}\n").unwrap();
+
+    let output = kiss_binary()
+        .arg("mv")
+        .arg(format!("{}::main", source.display()))
+        .arg("main2")
+        .arg(tmp.path())
+        .arg("--dry-run")
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "mv should still succeed with lexical fallback. stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("kiss mv: {}:", source.display())),
+        "warning should include failed source path. stderr:\n{stderr}"
+    );
+}

@@ -1,181 +1,476 @@
-## `kiss` grounding: design + intent
+# `kiss` grounding
 
-`kiss` is a **code-quality metrics tool for Python and Rust** whose primary consumer is an **LLM coding agent**, not a human. It exists to turn "this code feels too complex/coupled/duplicated/undertested" into **simple, actionable, machine-readable feedback** that nudges an agent toward smaller units, clearer boundaries, less duplication, and better test coverage.
+This document is **implementation-agnostic**. It is a reference for the
+*intention*, *objectives*, and *constraints* that must remain true even
+if algorithms, parsers, parallelism strategy, or internal structure
+change.
 
-### What problem `kiss` is trying to solve
+`kiss` has two related surfaces, both grounded here:
 
-- **LLMs have strong local focus**: they can produce a correct patch in the file they're editing, while accidentally making the *whole codebase* harder to maintain (more coupling, deeper dependency chains, larger units).
-- Traditional linters often target stylistic or language-specific issues; `kiss` targets **structural maintainability** and **global consequences**.
-- The goal is not "perfect code", it's **keeping code easy for agents (and humans) to change** by preventing complexity growth and spotlighting outliers.
+- **Measurement and feedback**: `check`, `stats`, `shrink`,
+  `show-tests`, `mimic`, `clamp`, `init`, `rules`, `config`, `dry`,
+  `viz`. These analyze a codebase and report on it.
+- **Semantic refactoring**: `mv`. This proposes and applies
+  meaning-preserving rename/move edits to Python and Rust symbols.
 
-### Performance is a first-class goal (inner-loop feedback)
+The two surfaces share the same overall ethos (machine-readable output,
+strict-by-default, fast enough for the inner loop, deterministic) but
+have distinct correctness contracts; their constraints are listed
+separately below.
 
-`kiss` is intended to run **in the inner LLM coding loop**, so it aims to be **fast enough to run frequently** (alongside tests/linters) without feeling "expensive".
+---
 
-Current speed-oriented choices include:
+## Intention
 
-- **Parallelism**: file-level work is parallelized (e.g., parsing/analysis over many files).
-- **Module-level dependency graph**: coupling is measured at the file/module boundary (file = module), which is far cheaper and more actionable than building full symbol graphs.
-- **Fast cycle detection**: cycles are found via SCC (Tarjan) on the module graph.
-- **Approximate duplication detection**: duplication uses **MinHash + LSH** to cheaply find "likely similar" code blocks without comparing every pair.
-- **Static test-reference coverage**: "coverage" is a fast static reference check (names referenced by tests), not runtime coverage instrumentation.
-- **Early exit gates**: `kiss check` can stop early on gate failure unless explicitly bypassed.
+`kiss` exists to give an **LLM coding agent** fast, machine-readable
+help in two complementary modes:
 
-### Core philosophy
+- *Diagnose*: structural-maintainability feedback so the agent's local
+  edits don't silently degrade the global properties of the project
+  (size, branching, nesting, coupling, duplication, test reference
+  coverage).
+- *Act*: meaning-preserving symbol renames and moves, so the agent can
+  refactor across files without hand-tracking every reference.
 
-- **KISS is the ethos**: prefer straightforward refactors and simple abstractions over clever designs.
-- **Component checks, not composite scores**: avoid derived "mega-metrics" (e.g., God Class / LCOM). Instead, measure the components that cause them (size, depth, branching, coupling, duplication).
-- **Empirical over arbitrary**: thresholds can be derived from real codebases you respect via `kiss mimic`, rather than invented.
-- **Cross-language consistency**: "the same metric name should mean the same thing" across Python and Rust wherever possible.
+Both modes are designed for an agent loop, not a TTY: stable prefixes,
+predictable exit codes, and batch-friendly invocations.
 
-### The contract: output is for tooling
+---
 
-`kiss check` emits **one line per item** with stable prefixes so an agent can parse it reliably:
+## Problem statement
 
-- `Analyzed: ...` (a stable summary line; intended to be safe to ignore for parsers)
-- `VIOLATION:<metric>:<file>:<line>:<name>: <message> <suggestion>`
-- `GATE_FAILED:test_coverage: ...` (a hard stop unless you bypass)
-- `NO VIOLATIONS` (final success sentinel)
+Editors that touch code one file at a time — humans, but especially
+LLMs — tend to optimize for the patch in front of them. Over many such
+patches, units grow, dependency graphs thicken, copy/paste accumulates,
+tests fall behind, and renames either get skipped or get done by
+text-replace with predictable wreckage.
 
-The intent is that a runner/agent can:
+Existing linters mostly police *style* and *language correctness*; they
+do not police *structural drift* and they do not perform semantic
+edits. `kiss` fills both gaps:
 
-- stream the output,
-- turn each violation into a to-do,
-- and iterate until `NO VIOLATIONS`.
+1. Given a tree of source files in a supported language, measure
+   structural properties per code unit and across the project, compare
+   them to thresholds (defaulted, mimicked, or clamped from the repo),
+   and emit a stable line-oriented report.
+2. Given a fully-qualified source symbol and a target name (and
+   optionally a destination file), produce a precise, deterministic
+   plan of edits that renames or moves that symbol everywhere it is
+   referenced — without false positives on shadowed or unrelated
+   same-named identifiers — and apply that plan transactionally.
 
-### `kiss show-tests` output format
+---
 
-`kiss show-tests` emits one line per definition with stable prefixes for agent parsing:
+## Stable vocabulary
 
-- **`TEST:<file>:<name> <covering_tests>`** — Definition is covered. `<covering_tests>` is a comma-separated list of `path::function` (e.g. `test_utils.py::test_parse_empty` or `test_widget.py::TestWidget::test_render`). May be empty when coverage is from module-level or fixture references only.
-- **`UNTESTED:<file>:<line>:<name>`** — Definition has no test references. Emitted only with the `--untested` flag.
+Measurement vocabulary
 
-`SHOW_TESTS_SUMMARY` was removed; the output consists solely of `TEST:` and optionally `UNTESTED:` lines.
+- **Code unit**: smallest grain at which per-unit metrics are
+  reported (function, method, or type, depending on metric).
+- **Metric**: a named numeric property of a code unit or of the
+  project (e.g. `statements`, `branches`, `graph_edges`).
+- **Threshold**: configured upper (or lower) bound on a metric.
+- **Violation**: emitted line indicating a metric crossed its
+  threshold for a specific code unit.
+- **Gate**: a violation class that, by default, halts further
+  reporting until satisfied. Currently only the test-coverage gate
+  exists.
+- **Universe**: set of source files used to compute graph-level and
+  coverage-level facts.
+- **Focus**: subset of the universe whose violations are reported.
+  Unspecified focus = universe.
+- **Module**: file-level node in the dependency graph. One source
+  file is one module.
+- **Shared metric**: metric required to be emitted by both `check`
+  (per-unit enforcement) and `stats` (distribution reporting).
+- **Snapshot baseline**: recorded global metric values used by
+  `shrink` to detect regression of non-targeted globals.
+- **Strict-by-default**: built-in defaults reject typical "messy"
+  code; adoption on existing repos is via clamp/mimic, not via loose
+  defaults.
 
-### How `kiss check` works (pipeline)
+Refactoring vocabulary
 
-`kiss check` runs a pipeline over discovered source files (optionally filtered by language) and emits violations from several analysis types:
+- **Query**: the source-side identifier of the symbol to rename or
+  move, given as `path::name`, `path::Type.method`, etc.
+- **Target name**: the bare identifier the symbol should bear after
+  the operation.
+- **Definition span**: the byte range in the source file that bounds
+  the symbol's defining construct (function, class/impl item, type).
+- **Reference**: a use site of the symbol that must be rewritten in
+  lockstep with the definition rename.
+- **Plan**: ordered set of byte-range edits across one or more files
+  that, applied together, perform the rename (and optionally move).
+- **Transactional apply**: an all-or-nothing application of a plan;
+  partial failure leaves the working tree unchanged.
+- **Dry-run mode**: produce and report the plan without writing.
+- **JSON mode**: emit the plan in a machine-stable structured form
+  rather than human-oriented text.
+- **AST analysis path**: the parser-backed resolution of definition
+  and references using a real syntactic model of the file.
+- **Lexical fallback**: a coarser identifier-scan path used only when
+  the AST path cannot be constructed (parse failure), and only after
+  an explicit warning.
 
-- **Discovery**: find Python/Rust source files with ignore support.
-- **Parsing**:
-  - Python via tree-sitter
-  - Rust via `syn`
-- **Local complexity metrics (counts)**:
-  - per-function: statements, arguments, branches, locals, returns, nesting depth, etc.
-  - per-file: statements (inside bodies), number of functions/types, imported names, etc.
-- **Dependency graph analysis (module-level)**:
-  - cycles (SCC/Tarjan), dependency depth, transitive dependency counts, orphan modules.
-- **Duplication detection (approximate)**:
-  - MinHash/LSH-based similarity to flag copy/paste blocks and encourage extraction.
-- **Test-reference coverage (static)**:
-  - treat "is referenced by tests" as a gateable property to keep changes grounded in tests.
+---
 
-### "Universe vs focus" (how `check` scopes work)
+## Objectives
 
-`kiss check` supports a "global analysis, local reporting" workflow:
+### Primary objective
 
-- The **first path** is the **universe**: everything used to compute graphs/coverage and find context.
-- Additional paths are **focus paths**: only violations from these files are reported.
+- Produce a **machine-parseable, deterministic** report of structural
+  violations and, separately, a **machine-parseable, deterministic**
+  plan of correctness-preserving symbol edits, both fast enough to
+  run in an agent's inner edit/test loop.
 
-This matches how an agent works: compute global consequences, but report only what's relevant to the current edit.
+### Secondary objectives (priority order)
 
-### Gates: fail fast unless bypassed
+1. **Cross-language consistency.** A metric name carries the same
+   meaning in every supported language. Symbol resolution semantics
+   (definition, scope, shadowing) are described in language-agnostic
+   terms wherever possible; intentional asymmetries are declared.
+2. **Synchronization between `check` and `stats`.** Any value `stats`
+   can report for a shared metric must be reachable as a `check`
+   violation given a low enough threshold, and vice versa.
+3. **Strict-by-default, gradually adoptable.** Defaults are tight;
+   `clamp` and `mimic` exist so existing codebases can opt in
+   without first rewriting everything.
+4. **Global analysis, local reporting.** Graph and coverage facts
+   are computed over the universe but reports are restricted to the
+   focus, so an agent only sees what's actionable for its current
+   edit.
+5. **Constrained minimization.** `shrink` provides a way to drive
+   one global metric down without letting any other global metric
+   grow.
+6. **Precision before reach.** `mv` prefers refusing to rename (or
+   loudly degrading) over silently producing wrong edits. False
+   positives on shadowed or unrelated same-named identifiers are
+   contract violations.
 
-Some feedback is treated as a **gate** (not just "more violations"):
+---
 
-- By default, `kiss check` can **stop early** on insufficient test-reference coverage and print `GATE_FAILED:test_coverage: ...`.
-- `--all` bypasses the gate so you can explore and see all violations anyway.
+## Constraints (must-haves)
 
-The intention is to make "working without tests" a deliberate choice, not an accident.
+Each constraint is stated as goal / measurement / pass condition so a
+reviewer can mechanically check it.
 
-### Configuration model (tight defaults, easy adoption)
+### Measurement-surface constraints
 
-`kiss` is meant to be **strict-by-default** but adoptable on existing repos:
+#### M1) Output is line-oriented and stably prefixed
 
-- **Config precedence**: built-in defaults → `~/.kissconfig` → `./.kissconfig` → `--config`.
-- `kiss clamp`: generate a repo-local `.kissconfig` that matches today's code, preventing further complexity growth.
-- `kiss mimic PATH --out FILE`: infer thresholds from another "good" codebase to encode a taste/standard.
+- **Goal**: every report line a downstream parser must understand
+  starts with a fixed prefix from a small, closed set.
+- **Measurement**: run `kiss check` and `kiss show-tests` on a
+  corpus and partition stdout lines by leading token before the
+  first `:` or whitespace.
+- **Pass condition**: every non-blank, non-indented stdout line
+  begins with one of the documented prefixes (currently
+  `Analyzed:`, `VIOLATION:<metric>:`, `GATE_FAILED:<gate>:`,
+  `NO VIOLATIONS`, `TEST:`, `UNTESTED:`). Unknown prefixes count as
+  a contract break.
 
-This supports a gradual workflow: clamp now, ratchet down later.
+#### M2) Exit code contract
 
-### Why the dependency graph is module-level
+- **Goal**: exit code is sufficient to drive an agent loop without
+  parsing stdout for success/failure.
+- **Measurement**: invoke each command with both clean and dirty
+  inputs and observe `$?`.
+- **Pass condition**:
+  - `kiss check`: 0 iff no violations and no gate failure; 1
+    otherwise.
+  - `kiss shrink`: 0 iff target met and no other global regressed
+    and no `check` violation; 1 otherwise.
+  - All other measurement subcommands: 0 on successful execution
+    regardless of measured values; 1 on operational error (invalid
+    paths, no source files, bad config, write failure).
 
-`kiss` models dependencies at the **file/module level** because that is:
+#### M3) Determinism
 
-- aligned with Python/Rust import semantics,
-- a natural unit of refactoring (move/split modules),
-- and easier for an agent to act on than fine-grained symbol graphs.
+- **Goal**: same inputs ⇒ byte-identical stdout (modulo line
+  ordering rules the command itself defines).
+- **Measurement**: run a measurement subcommand twice on the same
+  immutable tree with the same config; diff stdout.
+- **Pass condition**: empty diff.
 
-### `kiss shrink`: constrained minimization
+#### M4) Inner-loop performance
 
-`kiss check` enforces per-unit thresholds but does not constrain **global** metrics (total files, code_units, statements, graph_nodes, graph_edges). It can't — constraining globals would prevent adding new features.
+- **Goal**: `kiss check` is cheap enough to run alongside tests and
+  formatters on every iteration.
+- **Measurement**: wall-clock time on a corpus of representative
+  repositories of known size.
+- **Pass condition**: scaling is at most linear in source size; on
+  a small/medium repo (≲ 100k LOC) the command completes in a time
+  comparable to a fast linter pass on the same tree. Concrete
+  numeric thresholds live in performance tests, not here.
 
-`kiss shrink` fills that gap with a separate workflow:
+#### M5) Universe-vs-focus invariant
 
-- `kiss shrink graph_edges=120` records a baseline snapshot plus a target constraint.
-- `kiss shrink` (no argument) re-measures globals and fails if the target metric exceeds the constraint **or** if any other global metric grew beyond its baseline.
+- **Goal**: report is restricted to focus paths, but facts (graph
+  metrics, coverage) are computed from the universe.
+- **Measurement**: run `kiss check U F` where `F ⊂ U`; collect the
+  set of files appearing in violation lines.
+- **Pass condition**: every reported file is in `F`, *and* graph-
+  level metrics for files in `F` are identical to the values they
+  would have if computed against `U` alone.
 
-The design intent is **constrained minimization**: reduce one chosen dimension of complexity without letting anything else grow. This drives the agent toward cohesion (fewer edges), simplicity (fewer statements), or consolidation (fewer units/nodes), depending on which metric is targeted.
+#### M6) Cross-command metric synchronization
 
-`kiss shrink` also runs the full `kiss check` pipeline, so per-unit thresholds remain enforced during shrink.
+- **Goal**: for every shared metric, a value reportable by `stats`
+  is reachable as a `check` violation given a sufficiently low
+  threshold.
+- **Measurement**: run `stats --all` and `check` (with all shared
+  thresholds set to 0) on the same synthetic corpus.
+- **Pass condition**: every nonzero `STAT` line for a shared metric
+  has a corresponding `VIOLATION` line for the same `(metric, code
+  unit)`, and vice versa. Intentional asymmetries are enumerated in
+  code with rationale and excluded from this comparison.
 
-### Metric synchronization between `check` and `stats`
+#### M7) Cross-language metric semantics
 
-`kiss check` and `kiss stats` both analyze the same source files. Keeping them
-synchronized — so that any metric value `stats` reports can also trigger a
-`check` violation — is a structural invariant.
+- **Goal**: a metric name has the same operational definition in
+  every supported language.
+- **Measurement**: per-metric definition tables in code/tests.
+- **Pass condition**: for each shared metric, no language emits a
+  value violating the documented definition. Language-specific
+  metrics are explicitly named as such.
 
-**How synchronization is achieved:**
+#### M8) Configuration precedence
 
-- **Shared walker**: Both `check` and `stats` use the same `walk_py_ast`
-  function (in `src/py_metrics/walk.rs`). This function recurses through the
-  AST, calls `compute_function_metrics` / `compute_class_metrics` once per node,
-  and emits a `PyWalkAction` to a consumer callback. Both consumers see the
-  exact same `FunctionMetrics` / `ClassMetrics` struct from the same
-  computation. There is no separate metric-computation path that can diverge.
+- **Goal**: config resolution is layered, predictable, and
+  overridable.
+- **Measurement**: load config with various combinations of
+  `~/.kissconfig`, `./.kissconfig`, and `--config FILE` present.
+- **Pass condition**: layers are merged in the order
+  built-in defaults → `~/.kissconfig` → `./.kissconfig` → `--config`,
+  later layers overriding earlier ones key-by-key. A missing layer
+  is a no-op, not an error.
 
-- **Consumer callbacks differ only in what they do with the metrics**: `check`
-  compares them against thresholds and emits violations; `stats` pushes them
-  into distribution vectors for percentile reporting.
+#### M9) Strict-by-default
 
-**The sync integration test** (`tests/cases/sync_stats_check.rs`) enforces this
-by running both `kiss stats --all` and `kiss check` on a synthetic corpus with
-all thresholds set to 0, then asserting that every nonzero STAT line has a
-matching VIOLATION line (and vice versa) for all "shared" metrics.
+- **Goal**: built-in defaults catch typical structural problems
+  without the user having to opt in.
+- **Measurement**: run `kiss check` with no config on a synthetic
+  "messy" corpus.
+- **Pass condition**: the messy corpus produces violations under
+  defaults.
 
-**Intentional asymmetries** (documented in `NON_SHARED_METRICS`):
+#### M10) Shrink monotonicity
 
-- Some metrics are architectural or aggregate-only (e.g. `cycle_size`,
-  `fan_in`, `fan_out`, `inv_test_coverage`) — `stats` reports them but `check`
-  either doesn't emit per-unit violations or uses a different scoping.
-- Python splits `arguments_per_function` into `positional_args` +
-  `keyword_only_args` for checking, while `stats` also reports the total.
-- `positional_args` checking is intentionally skipped for class methods
-  (the `self` parameter would inflate the count).
+- **Goal**: `kiss shrink` succeeds only when the targeted global
+  metric has actually moved toward the target *and* no non-targeted
+  global has grown beyond its baseline.
+- **Measurement**: set a target, modify the tree, run `kiss shrink`.
+- **Pass condition**: success iff `target_metric ≤ target_value`
+  and, for every non-targeted global, `current ≤ baseline`.
 
-**Rule of thumb**: when adding a new metric, add it to *both* paths (the
-`chk!` macro inside `check_function_metrics` and the `push` in
-`push_py_fn_metrics`) using the same metric ID string. If the metric is
-intentionally asymmetric, add it to `NON_SHARED_METRICS` with a comment
-explaining why.
+### Refactoring-surface constraints (`kiss mv`)
 
-### `kiss` is a CLI tool, not a library
+#### R1) AST-first analysis with declared fallback
 
-`kiss` is designed as a **command-line tool**. The `[lib]` target in `Cargo.toml` exists for internal code organization (the binary crate depends on the library crate), not for external consumption. The public API surface in `lib.rs` is not a supported library interface.
+- **Goal**: definition and reference resolution use a parser-backed
+  syntactic model. The lexical (identifier-scan) path is a fallback
+  used only when parsing fails, and never silently.
+- **Measurement**: feed both a parseable file and a syntactically
+  broken file; observe stderr and the resulting plan.
+- **Pass condition**: on parseable input, no rename decision is
+  made by an identifier scan that the AST could have answered. On
+  unparseable input, an explicit warning naming the file is emitted
+  to stderr before any lexical-only edit is reported, and the
+  affected file is either skipped or processed under the
+  lexical-fallback path with that warning attached.
 
-### Exit code contract
+#### R2) Scope-aware symbol resolution
 
-`kiss` uses exit codes to communicate success/failure to the calling agent:
+- **Goal**: `mv` rewrites only the binding the user named; shadowed
+  or unrelated same-named identifiers are left alone.
+- **Measurement**: regression suite covering nested-scope shadowing
+  in both Python (LEGB, comprehension scopes) and Rust (block
+  scopes, `let`-shadowing).
+- **Pass condition**: every shadowing regression test passes; in
+  particular, an inner re-binding with the same name as the target
+  is not renamed, and an outer/sibling binding with the same name
+  but different scope is not renamed.
 
-- **`kiss check`**: exits **0** on no violations, **1** on any violation or gate failure.
-- **`kiss shrink`**: exits **0** when all constraints are met, **1** on any shrink violation or check violation.
-- **All commands**: exit **1** on errors (invalid paths, no source files found, bad config, write failures).
+#### R3) Receiver / method disambiguation
 
-An agent should treat exit code 0 as "nothing to fix" and non-zero as "read stdout/stderr for what to fix."
+- **Goal**: when renaming a method, only call sites whose receiver
+  is of the owning type are rewritten; same-named free functions or
+  methods on unrelated types are not.
+- **Measurement**: regression tests pairing `Type.helper` with a
+  free `helper` function and with a `helper` method on an unrelated
+  type, and exercising `obj.helper()` call sites.
+- **Pass condition**: only the targeted owner's references are
+  rewritten. Trait-receiver ambiguity that the AST cannot resolve
+  must surface as a non-zero exit, not as a silent rewrite.
 
-### Intended workflow (how an agent should use it)
+#### R4) Graceful degradation on malformed input
 
-- Put `kiss rules` output in the agent's context to bias generation toward compliant code.
-- Run `kiss check` as part of the loop with tests and formatters/linters.
-- When onboarding an existing codebase, run `kiss clamp`, then gradually tighten.
-- When you want a "style target", run `kiss mimic` on a codebase you consider simple/clean.
+- **Goal**: malformed inputs never panic and never silently emit
+  wrong edits.
+- **Measurement**: feed a corpus including syntactically broken
+  files.
+- **Pass condition**: process does not panic; either an explicit
+  warning is emitted and the file is skipped (no edits to it), or
+  the lexical-fallback path is taken under R1's signaling
+  requirement.
+
+#### R5) Deterministic plans and edits
+
+- **Goal**: same inputs ⇒ same plan ⇒ same on-disk result.
+- **Measurement**: invoke `kiss mv` twice on the same immutable
+  tree (once with `--dry-run`, once for real, and once more to
+  re-verify); compare both the plan and the resulting trees.
+- **Pass condition**: planned edits are totally ordered (by file
+  path, then by start byte) and the ordering is stable across
+  invocations; repeated runs produce byte-identical results.
+
+#### R6) Transactional apply
+
+- **Goal**: a failed apply leaves the working tree unchanged.
+- **Measurement**: induce a write failure (e.g. read-only file)
+  partway through a multi-file plan.
+- **Pass condition**: no file in the plan is left in a
+  partially-rewritten state; exit is non-zero with a diagnostic.
+
+#### R7) Dry-run / apply equivalence
+
+- **Goal**: `--dry-run` reports exactly the edit set that an actual
+  run would perform on the same inputs.
+- **Measurement**: run `--dry-run`, capture edits; run for real on
+  a fresh copy of the same tree; compare the actual diff to the
+  reported edits.
+- **Pass condition**: identical edit set, file by file, byte range
+  by byte range.
+
+#### R8) Machine-stable JSON output
+
+- **Goal**: `--json` mode is the parser-friendly contract for the
+  plan; its shape changes are breaking changes.
+- **Measurement**: validate `--json` output against a fixed schema
+  in tests.
+- **Pass condition**: schema validates; no field is renamed,
+  removed, or repurposed without a coordinated contract bump.
+
+#### R9) Single parse per file per invocation
+
+- **Goal**: planning never reparses the same file more than once
+  per invocation; this is what keeps `mv` cheap enough for the
+  inner loop.
+- **Measurement**: instrument the parser with a counter per file
+  path during a planning run.
+- **Pass condition**: for every file involved in the plan, the
+  parser-invocation count is ≤ 1 per language.
+
+---
+
+## Non-goals
+
+- **Style/formatting.** Whitespace, naming conventions, import
+  order, and language-idiom checks belong to formatters and
+  language-specific linters.
+- **Runtime test coverage.** Coverage in `kiss` is a static
+  test-reference check. Instrumented runtime coverage is out of
+  scope.
+- **Composite "code health" scores.** No God-Class index, no LCOM,
+  no rolled-up quality grade. Only component metrics.
+- **Library API.** `kiss` is shipped as a CLI. The `[lib]` target
+  exists for internal modularity; it is not a supported public API.
+- **TTY-friendly pretty output.** The contract is for parsers;
+  humans are second-class consumers of stdout.
+- **Languages other than Python and Rust** for either surface.
+  Adding a language is a contract-level change.
+- **Symbol-level dependency graphs** for the measurement surface.
+  The dependency graph is module-level by design (file = node);
+  finer-grained graphs are excluded as too expensive and too noisy
+  for the inner loop. (This is unrelated to `mv`'s symbol-level
+  resolution, which is per-invocation, not a global graph.)
+- **Cross-language refactoring.** `kiss mv` operates within one
+  language at a time; it does not chase a Python symbol into Rust
+  bindings or vice versa.
+- **Whole-program type inference for `mv`.** Disambiguation that
+  would require a full type system (e.g. resolving an
+  arbitrarily-typed `obj.helper()` purely from inference) is out
+  of scope; such cases must surface as failures, not guesses.
+- **Parser/library choices, parallelism mechanism, on-disk
+  formats.** These are implementation details and may change
+  without changing the contract above.
+
+---
+
+## Design principles
+
+- **Contract before mechanism.** A change to output prefixes, exit
+  codes, shared-metric names, or `mv`'s `--json` shape is a
+  breaking change. A change to how a value is computed or how a
+  rename is resolved is not, as long as the result still satisfies
+  the documented contract.
+- **Single computation path per metric.** A metric is computed in
+  one place and consumed by both `check` and `stats`; no parallel
+  re-implementation is permitted.
+- **Single resolution path per file in `mv`.** A file is parsed at
+  most once per invocation per language, and the AST path is
+  authoritative whenever it succeeds.
+- **Asymmetries are declared, not implicit.** Any metric emitted by
+  one of `check`/`stats` but not the other is enumerated in code
+  with a one-line rationale. Any case where `mv` falls back from
+  AST to lexical resolution is signaled to the user, not hidden.
+- **Fail closed on operational errors.** Bad paths, missing files,
+  malformed config, write failures: exit 1, write to stderr, do
+  not pretend to succeed. For `mv`, this extends to "ambiguous
+  reference the AST cannot resolve" — refuse, don't guess.
+- **Bounded per-file work.** Parsing and metric computation for one
+  file must not require global state beyond what the graph/coverage
+  layers provide; this keeps cost roughly linear in source size and
+  makes file-level parallelism safe.
+- **Quiet success.** A clean measurement run prints exactly one
+  terminal sentinel line on stdout (`NO VIOLATIONS`); a clean `mv`
+  run with no edits to make exits 0 with an empty plan. Auxiliary
+  diagnostics go to stderr.
+- **Defaults encode taste, not minimums.** The default config is a
+  direction, not the lowest passable bar.
+- **Precision before reach.** It is better for `mv` to refuse to
+  rename a binding than to rename it incorrectly.
+
+---
+
+## Acceptance checklist
+
+A change to `kiss` is acceptable only if it preserves the following.
+Reviewers should walk this list before approving.
+
+- **Prefix set unchanged.** No new top-level stdout prefix on the
+  measurement surface is introduced, removed, or renamed without a
+  corresponding update to M1.
+- **Exit codes unchanged** per M2 for every measurement subcommand
+  the change touches; per R6 for `mv`.
+- **Determinism preserved** (M3, R5): repeated runs on the same
+  input produce byte-identical results.
+- **Universe/focus invariant preserved** (M5): focus narrows
+  reporting only, never analysis.
+- **Sync invariant preserved** (M6): the cross-command sync test
+  still passes; any newly added shared metric is wired into both
+  `check` and `stats`, or explicitly declared asymmetric with
+  rationale.
+- **Cross-language semantics preserved** (M7): a shared metric
+  still has one definition.
+- **Config precedence preserved** (M8).
+- **Shrink monotonicity preserved** (M10) for any change touching
+  `shrink`.
+- **`mv` precision preserved** (R1–R4): no regression in scope,
+  receiver, or fallback behavior; ambiguity surfaces, not guesses.
+- **`mv` transactional and dry-run guarantees preserved** (R6,
+  R7): partial writes never persist; `--dry-run` matches the real
+  run.
+- **`mv --json` schema unchanged** (R8) without a coordinated
+  contract bump.
+- **Single-parse invariant preserved** (R9) for any change to the
+  `mv` planning path.
+- **No implementation detail leaks into this document.** Library
+  names, parallelism mechanism, specific algorithms, file paths,
+  function names, and struct names do not appear here. (If a future
+  revision adds a Catalog of code-level entities, this checklist
+  must also gain a literal **"Catalog parity"** clause and the
+  catalog itself must move in lockstep with the code.)
+- **Non-goals respected.** A change that adds behavior outside the
+  Non-goals list above requires updating the Non-goals list first,
+  with a one-line rationale for the scope expansion.
