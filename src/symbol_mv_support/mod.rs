@@ -1,11 +1,19 @@
 //! Helpers for `kiss mv`: identifier spans, reference filtering, transactional apply.
 
+mod ast_models;
+mod ast_plan;
+mod ast_python;
+mod ast_rust;
 mod basics;
 mod definition;
 mod edits;
 mod identifiers;
 mod lex;
+mod lex_fstring;
+mod lex_rust;
+mod signature;
 mod reference;
+mod reference_inference;
 mod run_mv;
 mod transaction;
 
@@ -20,6 +28,8 @@ pub use edits::{
 };
 pub use run_mv::run_mv_inner;
 pub use transaction::apply_plan_transactional;
+
+pub(crate) use ast_plan::PlanInvocationGuard;
 
 #[cfg(test)]
 #[path = "symbol_mv_support_test.rs"]

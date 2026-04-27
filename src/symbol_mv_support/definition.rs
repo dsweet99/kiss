@@ -1,6 +1,8 @@
 use crate::Language;
 
+use super::ast_plan::ast_definition_span;
 use super::lex::{LexScan, LexState, StringState, rust_item_start, step_lex_state};
+use super::signature::{is_python_def_line, is_rust_fn_definition_line};
 
 #[derive(Clone, Copy)]
 pub struct DefinitionSpan {
@@ -20,6 +22,9 @@ pub fn find_definition_span(
     owner: Option<&str>,
     language: Language,
 ) -> Option<DefinitionSpan> {
+    if let Some((start, end)) = ast_definition_span(content, method, owner, language) {
+        return Some(DefinitionSpan { start, end });
+    }
     match language {
         Language::Python => find_python_definition_span(content, method, owner),
         Language::Rust => find_rust_definition_span(content, method, owner),
@@ -35,7 +40,6 @@ fn find_python_definition_span(
         .and_then(|class_name| find_python_class_block(content, class_name))
         .unwrap_or((0, content.len()));
     let scope = &content[range_start..range_end];
-    let needle = format!("def {method}(");
     let lines = split_lines_with_offsets(scope);
     let mut def_start = None;
     let mut def_indent = 0;
@@ -43,7 +47,7 @@ fn find_python_definition_span(
     for (idx, (line_offset, line)) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
         let indent = line.len() - trimmed.len();
-        if def_start.is_none() && trimmed.starts_with(&needle) {
+        if def_start.is_none() && is_python_def_line(line, method) {
             def_start = Some(range_start + decorated_start(&lines, idx, indent, *line_offset));
             def_indent = indent;
         } else if let Some(start) = def_start
@@ -104,10 +108,16 @@ fn find_rust_definition_span(
     );
     for (lo, hi) in ranges {
         let scope = &content[lo..hi];
-        let fn_start = [format!("fn {method}("), format!("pub fn {method}(")]
-            .iter()
-            .find_map(|candidate| scope.find(candidate))
-            .map(|pos| lo + pos);
+        let fn_start = split_lines_with_offsets(scope)
+            .into_iter()
+            .find_map(|(line_offset, line)| {
+                if is_rust_fn_definition_line(line, method) {
+                    let fn_pos = line.find("fn ")?;
+                    Some(lo + line_offset + fn_pos)
+                } else {
+                    None
+                }
+            });
         if let Some(fn_start) = fn_start {
             let open = fn_start + content[fn_start..].find('{')?;
             return find_brace_block_end(content, open).map(|end| DefinitionSpan {
@@ -221,10 +231,26 @@ mod definition_coverage {
     }
 
     #[test]
+    fn find_definition_span_python_async_class_method() {
+        let src = "class C:\n    async def helper(self):\n        return 1\n";
+        let sp = find_definition_span(src, "helper", Some("C"), Language::Python).unwrap();
+        let extracted = &src[sp.start..sp.end];
+        assert!(extracted.contains("async def helper(self):"));
+    }
+
+    #[test]
     fn find_definition_span_rust_impl_fn() {
         let src = "struct X;\nimpl X {\n    pub fn m(&self) { let _ = 1; }\n}\n";
         let sp = find_definition_span(src, "m", Some("X"), Language::Rust).unwrap();
         assert!(sp.end > sp.start);
+    }
+
+    #[test]
+    fn find_definition_span_rust_async_function() {
+        let src = "async fn helper() -> usize {\n    1\n}\n\nfn caller() {\n    let _ = futures::executor::block_on(helper());\n}\n";
+        let sp = find_definition_span(src, "helper", None, Language::Rust).unwrap();
+        let extracted = &src[sp.start..sp.end];
+        assert!(extracted.contains("async fn helper()"));
     }
 
     #[test]

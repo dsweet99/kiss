@@ -92,5 +92,21 @@ mod symbol_mv_regressions_6;
 mod symbol_mv_regressions_7;
 #[path = "cases/symbol_mv_regressions_8.rs"]
 mod symbol_mv_regressions_8;
+#[path = "cases/symbol_mv_regressions_9.rs"]
+mod symbol_mv_regressions_9;
+#[path = "cases/review_findings.rs"]
+mod review_findings;
+#[path = "cases/review_findings_python.rs"]
+mod review_findings_python;
+#[path = "cases/review_findings_python_2.rs"]
+mod review_findings_python_2;
+#[path = "cases/review_findings_rust.rs"]
+mod review_findings_rust;
+#[path = "cases/review_findings_rust_2.rs"]
+mod review_findings_rust_2;
+#[path = "cases/review_findings_cache.rs"]
+mod review_findings_cache;
+#[path = "cases/symbol_mv_internal_coverage.rs"]
+mod symbol_mv_internal_coverage;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;

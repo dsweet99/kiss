@@ -1,6 +1,11 @@
 use crate::Language;
 
 use super::definition::{find_impl_blocks, find_python_class_block};
+use super::reference_inference::{
+    extract_receiver, infer_python_receiver_type, infer_python_receiver_type_at,
+    infer_receiver_type, infer_receiver_type_at,
+};
+use super::signature::{is_python_def_line, is_rust_fn_definition_line};
 
 pub(super) struct RefSiteCtx<'a> {
     pub content: &'a str,
@@ -20,9 +25,7 @@ fn is_python_reference_site(ctx: &RefSiteCtx<'_>) -> bool {
     let before = &ctx.content[..ctx.start];
     let line_start = before.rfind('\n').map_or(0, |idx| idx + 1);
     let line = &ctx.content[line_start..].lines().next().unwrap_or_default();
-    let is_def = line
-        .trim_start()
-        .starts_with(&format!("def {}(", ctx.ident));
+    let is_def = is_python_def_line(line, ctx.ident);
     if is_def {
         return py_def_owner_ok(ctx);
     }
@@ -60,12 +63,37 @@ fn py_await_allows(before: &str, owner: Option<&str>) -> bool {
 
 fn py_def_owner_ok(ctx: &RefSiteCtx<'_>) -> bool {
     ctx.owner.map_or_else(
-        || !is_inside_any_class(ctx.content, ctx.start),
+        || {
+            !is_inside_any_class(ctx.content, ctx.start)
+                && !is_inside_any_function(ctx.content, ctx.start)
+        },
         |class_name| {
             find_python_class_block(ctx.content, class_name)
                 .is_some_and(|(cls_start, cls_end)| ctx.start >= cls_start && ctx.start < cls_end)
         },
     )
+}
+
+fn is_inside_any_function(content: &str, offset: usize) -> bool {
+    let mut fn_indent: Option<usize> = None;
+    let mut pos = 0;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        let starts_def = trimmed.starts_with("def ") || trimmed.starts_with("async def ");
+        if pos <= offset && offset <= pos + line.len() {
+            return fn_indent.is_some_and(|d| indent > d);
+        }
+        if starts_def && trimmed.contains(':') {
+            fn_indent = Some(indent);
+        } else if fn_indent.is_some_and(|current| {
+            indent <= current && !trimmed.is_empty() && !trimmed.starts_with('#')
+        }) {
+            fn_indent = None;
+        }
+        pos += line.len() + 1;
+    }
+    false
 }
 
 fn py_import_allows(before: &str, owner: Option<&str>) -> bool {
@@ -144,36 +172,12 @@ fn is_inside_any_class(content: &str, offset: usize) -> bool {
     false
 }
 
-fn type_from_assignment_rhs(rest: &str) -> Option<String> {
-    let paren = rest.find('(')?;
-    let type_name = rest[..paren].trim();
-    type_name
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_uppercase())
-        .then(|| type_name.to_string())
-}
-
-fn infer_python_receiver_type(content: &str, receiver: &str) -> Option<String> {
-    let receiver = receiver.trim_end_matches("()");
-    if receiver
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_uppercase())
-    {
-        return Some(receiver.to_string());
-    }
-    let pat = format!("{receiver} = ");
-    let pos = content.find(&pat)?;
-    type_from_assignment_rhs(&content[pos + pat.len()..])
-}
-
 fn is_rust_reference_site(ctx: &RefSiteCtx<'_>) -> bool {
     let before = &ctx.content[..ctx.start];
     let after = &ctx.content[(ctx.start + ctx.ident.len())..];
     let line_start = before.rfind('\n').map_or(0, |idx| idx + 1);
     let line = &ctx.content[line_start..].lines().next().unwrap_or_default();
-    if line.contains(&format!("fn {}(", ctx.ident)) {
+    if is_rust_fn_definition_line(line, ctx.ident) {
         return rust_fn_owner_ok(ctx);
     }
     rust_non_fn_site(ctx, before, after)
@@ -242,32 +246,24 @@ fn is_use_line_prefix(line: &str) -> bool {
     false
 }
 
-fn extract_receiver(before: &str) -> String {
-    let trimmed = before.trim_end_matches('.').trim_end_matches("()");
-    let start = trimmed
-        .rfind(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-        .map_or(0, |idx| idx + 1);
-    trimmed[start..].to_string()
+pub(super) fn infer_python_receiver_type_pub(
+    content: &str,
+    start: usize,
+    receiver: &str,
+) -> Option<String> {
+    infer_python_receiver_type_at(content, start, receiver)
 }
 
-fn type_after_pattern(content: &str, pat: &str) -> Option<String> {
-    let pos = content.find(pat)?;
-    let ty: String = content[pos + pat.len()..]
-        .chars()
-        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-        .collect();
-    (!ty.is_empty()).then_some(ty)
+pub(super) fn infer_rust_receiver_type_pub(
+    content: &str,
+    start: usize,
+    receiver: &str,
+) -> Option<String> {
+    infer_receiver_type_at(content, start, receiver)
 }
 
-fn infer_receiver_type(content: &str, receiver: &str) -> Option<String> {
-    [
-        format!("let {receiver}: "),
-        format!("let {receiver} : "),
-        format!("{receiver}: &"),
-        format!("{receiver}: "),
-    ]
-    .into_iter()
-    .find_map(|pat| type_after_pattern(content, &pat))
+pub(super) fn extract_receiver_pub(before: &str) -> String {
+    extract_receiver(before)
 }
 
 #[cfg(test)]
@@ -294,8 +290,14 @@ mod reference_coverage {
         let _ = py_await_allows("return await ", None);
         let _ = py_non_def_site(&ctx, "x");
         let _ = is_inside_any_class("class C:\n pass\n", 8);
-        let _ = type_from_assignment_rhs("Bar()");
-        let _ = infer_python_receiver_type("x = Foo()", "x");
+
+        let async_ctx = RefSiteCtx {
+            content: "async def f():\n pass\nf()",
+            start: 10,
+            ident: "f",
+            owner: None,
+        };
+        let _ = is_python_reference_site(&async_ctx);
 
         let rctx = RefSiteCtx {
             content: "impl T { fn m() {} }",
@@ -307,7 +309,8 @@ mod reference_coverage {
         let _ = rust_fn_owner_ok(&rctx);
         let _ = rust_non_fn_site(&rctx, "T.", "()");
         let _ = extract_receiver("self.");
-        let _ = type_after_pattern("let x: Type", "let x: ");
-        let _ = infer_receiver_type("let s: MyT", "s");
+        let _ = is_inside_any_function("def outer():\n    def inner():\n        pass\n", 30);
+        let _ = is_inside_any_function("def f():\n    pass\n", 0);
+        let _ = is_inside_any_function;
     }
 }

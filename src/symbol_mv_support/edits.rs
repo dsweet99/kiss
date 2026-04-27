@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::Language;
 use crate::symbol_mv::{EditKind, PlannedEdit};
 
+use super::ast_plan::ast_reference_offsets;
 use super::basics::detect_language;
 use super::definition::DefinitionSpan;
 use super::identifiers::find_identifier_occurrences;
@@ -21,20 +22,9 @@ pub struct ReferenceRenameParams<'a> {
 }
 
 pub fn collect_reference_edits(p: &ReferenceRenameParams<'_>) -> Vec<PlannedEdit> {
-    find_identifier_occurrences(p.content, p.old_name)
+    let sites = collect_reference_sites(p.content, p.old_name, p.owner, p.language);
+    sites
         .into_iter()
-        .filter(|(start, _, _)| {
-            is_code_offset(p.content, *start, p.language)
-                && is_supported_reference_site(
-                    &RefSiteCtx {
-                        content: p.content,
-                        start: *start,
-                        ident: p.old_name,
-                        owner: p.owner,
-                    },
-                    p.language,
-                )
-        })
         .map(|(start_byte, end_byte, line)| PlannedEdit {
             path: p.path.to_path_buf(),
             start_byte,
@@ -43,6 +33,49 @@ pub fn collect_reference_edits(p: &ReferenceRenameParams<'_>) -> Vec<PlannedEdit
             old_snippet: p.old_name.to_string(),
             new_snippet: p.new_name.to_string(),
             kind: EditKind::Reference,
+        })
+        .collect()
+}
+
+fn collect_reference_sites(
+    content: &str,
+    old_name: &str,
+    owner: Option<&str>,
+    language: Language,
+) -> Vec<(usize, usize, usize)> {
+    let mut sites = lexical_reference_sites(content, old_name, owner, language);
+    if let Some(ast_sites) = ast_reference_offsets(content, old_name, owner, language) {
+        let known: std::collections::HashSet<(usize, usize)> =
+            sites.iter().map(|&(s, e, _)| (s, e)).collect();
+        for (s, e) in ast_sites {
+            if !known.contains(&(s, e)) {
+                sites.push((s, e, line_for_offset(content, s)));
+            }
+        }
+    }
+    sites.sort_by_key(|&(s, _, _)| s);
+    sites
+}
+
+fn lexical_reference_sites(
+    content: &str,
+    old_name: &str,
+    owner: Option<&str>,
+    language: Language,
+) -> Vec<(usize, usize, usize)> {
+    find_identifier_occurrences(content, old_name)
+        .into_iter()
+        .filter(|(start, _, _)| {
+            is_code_offset(content, *start, language)
+                && is_supported_reference_site(
+                    &RefSiteCtx {
+                        content,
+                        start: *start,
+                        ident: old_name,
+                        owner,
+                    },
+                    language,
+                )
         })
         .collect()
 }
@@ -59,35 +92,54 @@ pub struct SourceRenameParams<'a> {
 }
 
 pub fn collect_source_rename_edits(p: &SourceRenameParams<'_>) -> Vec<PlannedEdit> {
-    find_identifier_occurrences(p.source_content, p.old_name)
+    let sites = collect_reference_sites(p.source_content, p.old_name, p.owner, p.language);
+    let def_ident_sites = if p.def_span.is_some() {
+        ast_definition_ident_sites(p.source_content, p.old_name, p.owner, p.language)
+    } else {
+        Vec::new()
+    };
+    let mut merged: Vec<(usize, usize, usize, EditKind)> = sites
         .into_iter()
-        .filter(|(start, _, _)| {
-            is_code_offset(p.source_content, *start, p.language)
-                && is_supported_reference_site(
-                    &RefSiteCtx {
-                        content: p.source_content,
-                        start: *start,
-                        ident: p.old_name,
-                        owner: p.owner,
-                    },
-                    p.language,
-                )
-                && !(p.moving && p.def_span.is_some_and(|span| span.contains(*start)))
+        .filter(|(start, _, _)| !(p.moving && p.def_span.is_some_and(|span| span.contains(*start))))
+        .map(|(s, e, l)| {
+            let kind = if p.def_span.is_some_and(|span| span.contains(s)) {
+                EditKind::Definition
+            } else {
+                EditKind::Reference
+            };
+            (s, e, l, kind)
         })
-        .map(|(start_byte, end_byte, line)| PlannedEdit {
+        .collect();
+    if !p.moving {
+        for (s, e) in def_ident_sites {
+            if !merged.iter().any(|&(ms, me, _, _)| ms == s && me == e) {
+                merged.push((s, e, line_for_offset(p.source_content, s), EditKind::Definition));
+            }
+        }
+    }
+    merged.sort_by_key(|&(s, _, _, _)| s);
+    merged
+        .into_iter()
+        .map(|(start_byte, end_byte, line, kind)| PlannedEdit {
             path: p.source_path.to_path_buf(),
             start_byte,
             end_byte,
             line,
             old_snippet: p.old_name.to_string(),
             new_snippet: p.new_name.to_string(),
-            kind: if p.def_span.is_some_and(|span| span.contains(start_byte)) {
-                EditKind::Definition
-            } else {
-                EditKind::Reference
-            },
+            kind,
         })
         .collect()
+}
+
+fn ast_definition_ident_sites(
+    content: &str,
+    name: &str,
+    owner: Option<&str>,
+    language: Language,
+) -> Vec<(usize, usize)> {
+    use super::ast_plan::ast_definition_ident_offsets;
+    ast_definition_ident_offsets(content, name, owner, language).unwrap_or_default()
 }
 
 pub struct MoveEditsParams<'a> {

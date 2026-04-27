@@ -104,6 +104,7 @@ fn finalize_plan(files: BTreeSet<PathBuf>, mut edits: Vec<PlannedEdit>) -> MvPla
 }
 
 pub fn plan_edits(req: &MvRequest) -> MvPlan {
+    let _guard = crate::symbol_mv_support::PlanInvocationGuard::enter();
     let old_name = req.query.old_name();
     let source_path = &req.query.path;
     let source_canonical = canonical_path(source_path);
