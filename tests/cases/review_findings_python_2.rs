@@ -51,7 +51,12 @@ class C:
     )
     .unwrap();
 
-    run_python_mv(&file, format!("{}::C.helper", file.display()), "renamed", tmp.path());
+    run_python_mv(
+        &file,
+        format!("{}::C.helper", file.display()),
+        "renamed",
+        tmp.path(),
+    );
 
     let updated = fs::read_to_string(&file).unwrap();
     assert!(updated.contains("def renamed(self):"), "got:\n{updated}");
@@ -89,7 +94,12 @@ def caller():
     )
     .unwrap();
 
-    run_python_mv(&file, format!("{}::C.helper", file.display()), "renamed", tmp.path());
+    run_python_mv(
+        &file,
+        format!("{}::C.helper", file.display()),
+        "renamed",
+        tmp.path(),
+    );
 
     let updated = fs::read_to_string(&file).unwrap();
     assert!(updated.contains("def renamed(self):"), "got:\n{updated}");
@@ -135,7 +145,12 @@ def caller():
     )
     .unwrap();
 
-    run_python_mv(&file, format!("{}::C.helper", file.display()), "renamed", tmp.path());
+    run_python_mv(
+        &file,
+        format!("{}::C.helper", file.display()),
+        "renamed",
+        tmp.path(),
+    );
 
     let updated = fs::read_to_string(&file).unwrap();
     assert!(
@@ -147,7 +162,96 @@ def caller():
         "D.helper must remain untouched; got:\n{updated}"
     );
     assert!(
+        updated.contains("x.renamed()"),
+        "x is a C, so x.helper() must be renamed; got:\n{updated}"
+    );
+    assert!(
         updated.contains("y.helper()"),
         "y is a D, not a C; y.helper() must NOT be renamed; got:\n{updated}"
+    );
+}
+
+#[test]
+fn review_python_same_named_builders_should_use_matching_receiver() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("a.py");
+    fs::write(
+        &file,
+        "\
+class X:
+    def helper(self):
+        return 1
+
+
+class Y:
+    def helper(self):
+        return 2
+
+
+class A:
+    def build(self) -> X:
+        return X()
+
+
+class B:
+    def build(self) -> Y:
+        return Y()
+
+
+def caller(a: A, b: B):
+    return a.build().helper() + b.build().helper()
+",
+    )
+    .unwrap();
+
+    run_python_mv(
+        &file,
+        format!("{}::X.helper", file.display()),
+        "renamed",
+        tmp.path(),
+    );
+
+    let updated = fs::read_to_string(&file).unwrap();
+    assert!(
+        updated.contains("a.build().renamed()"),
+        "matching receiver should be renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("b.build().helper()"),
+        "non-matching receiver must remain unchanged; got:\n{updated}"
+    );
+}
+
+#[test]
+fn review_python_classmethod_receiver_should_be_renamed() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("a.py");
+    fs::write(
+        &file,
+        "\
+class C:
+    @classmethod
+    def helper(cls):
+        return 1
+
+    @classmethod
+    def caller(cls):
+        return cls.helper()
+",
+    )
+    .unwrap();
+
+    run_python_mv(
+        &file,
+        format!("{}::C.helper", file.display()),
+        "renamed",
+        tmp.path(),
+    );
+
+    let updated = fs::read_to_string(&file).unwrap();
+    assert!(updated.contains("def renamed(cls):"), "got:\n{updated}");
+    assert!(
+        updated.contains("return cls.renamed()"),
+        "classmethod receiver `cls` must be renamed; got:\n{updated}"
     );
 }

@@ -22,9 +22,8 @@ pub(super) fn try_parse_python_fstring_start(
     if quote != b'\'' && quote != b'"' {
         return None;
     }
-    let triple = quote_idx + 2 < target
-        && bytes[quote_idx + 1] == quote
-        && bytes[quote_idx + 2] == quote;
+    let triple =
+        quote_idx + 2 < target && bytes[quote_idx + 1] == quote && bytes[quote_idx + 2] == quote;
     state.string_state = match (quote, triple) {
         (b'\'', false) => StringState::FStringSingle { depth: 0 },
         (b'\'', true) => StringState::FStringTripleSingle { depth: 0 },
@@ -115,14 +114,17 @@ fn step_fstring_text(
 /// Detect a two-byte escape inside f-string text: a backslash followed by
 /// any byte (`\X`), or a doubled brace (`{{` / `}}`). Returns the number of
 /// bytes to consume (always 2) when matched, or `None` otherwise.
-const fn matches_two_byte_text_escape(b: u8, bytes: &[u8], idx: usize, target: usize) -> Option<usize> {
+const fn matches_two_byte_text_escape(
+    b: u8,
+    bytes: &[u8],
+    idx: usize,
+    target: usize,
+) -> Option<usize> {
     if idx + 1 >= target {
         return None;
     }
     let next = bytes[idx + 1];
-    let matched = (b == b'\\')
-        || (b == b'{' && next == b'{')
-        || (b == b'}' && next == b'}');
+    let matched = (b == b'\\') || (b == b'{' && next == b'{') || (b == b'}' && next == b'}');
     if matched { Some(2) } else { None }
 }
 
@@ -164,6 +166,33 @@ fn step_fstring_code(state: &mut LexState, bytes: &[u8], idx: usize, depth: usiz
         _ => {}
     }
     1
+}
+
+#[cfg(test)]
+mod lex_fstring_coverage_private {
+    use super::*;
+
+    #[test]
+    fn touch_fstring_internals() {
+        let src = r#"f"abc {x + y:{width}}"#;
+        let idx = src.find('x').unwrap();
+        let mut state = LexState {
+            string_state: StringState::FStringSingle { depth: 0 },
+            ..LexState::default()
+        };
+        assert_eq!(step_fstring_text(&mut state, src.as_bytes(), 0, src.len(), b'"', false), 1);
+        assert_eq!(step_fstring_code(&mut state, src.as_bytes(), idx, 0), 1);
+
+        let mut state2 = LexState::default();
+        assert_eq!(try_parse_python_fstring_start(&mut state2, src.as_bytes(), 0, src.len()), Some(2));
+        assert_eq!(parse_python_fstring_prefix(src.as_bytes(), 0, src.len()), Some((1, 1)));
+        assert_eq!(
+            step_fstring_state(&mut state2, src.as_bytes(), src.find('{').unwrap(), src.len()),
+            1
+        );
+        state2.string_state = StringState::FStringSingle { depth: 1 };
+        assert_eq!(step_fstring_code(&mut state2, src.as_bytes(), idx, 1), 1);
+    }
 }
 
 #[cfg(test)]
@@ -220,19 +249,39 @@ mod lex_fstring_coverage {
         assert!(is_code_offset(escaped, y_at, Language::Python));
 
         let nested = "f\"{x:{width}}\"";
-        assert!(is_code_offset(nested, nested.find('x').unwrap(), Language::Python));
-        assert!(is_code_offset(nested, nested.find("width").unwrap(), Language::Python));
+        assert!(is_code_offset(
+            nested,
+            nested.find('x').unwrap(),
+            Language::Python
+        ));
+        assert!(is_code_offset(
+            nested,
+            nested.find("width").unwrap(),
+            Language::Python
+        ));
         let trailing = "f\"{x:{w}}\" + tail";
-        assert!(is_code_offset(trailing, trailing.find("tail").unwrap(), Language::Python));
+        assert!(is_code_offset(
+            trailing,
+            trailing.find("tail").unwrap(),
+            Language::Python
+        ));
     }
 
     #[test]
     fn non_fstring_f_identifier_is_not_misparsed() {
         let src = "from a import b";
-        assert!(is_code_offset(src, src.find('a').unwrap(), Language::Python));
+        assert!(is_code_offset(
+            src,
+            src.find('a').unwrap(),
+            Language::Python
+        ));
 
         let src2 = "helper_f\"x\"";
-        assert!(!is_code_offset(src2, src2.find('x').unwrap(), Language::Python));
+        assert!(!is_code_offset(
+            src2,
+            src2.find('x').unwrap(),
+            Language::Python
+        ));
     }
 
     #[test]

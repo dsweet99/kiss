@@ -193,6 +193,9 @@ fn rust_fn_owner_ok(ctx: &RefSiteCtx<'_>) -> bool {
 
 fn rust_non_fn_site(ctx: &RefSiteCtx<'_>, before: &str, after: &str) -> bool {
     match ctx.owner {
+        Some(type_name) if before.ends_with("::") => {
+            rust_associated_call_owner(before).as_deref() == Some(type_name)
+        }
         Some(_) if !before.ends_with('.') => false,
         Some(type_name) => {
             infer_receiver_type(ctx.content, &extract_receiver(before)).as_deref()
@@ -202,10 +205,19 @@ fn rust_non_fn_site(ctx: &RefSiteCtx<'_>, before: &str, after: &str) -> bool {
     }
 }
 
+fn rust_associated_call_owner(before: &str) -> Option<String> {
+    let trimmed = before.trim_end();
+    let prefix = trimmed.strip_suffix("::")?;
+    let start = prefix
+        .rfind(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .map_or(0, |idx| idx + 1);
+    let name = &prefix[start..];
+    (!name.is_empty()).then(|| name.to_string())
+}
+
 fn rust_import_allows(before: &str) -> bool {
     let trimmed = before.trim_end();
-    let direct =
-        trimmed.ends_with("::") || trimmed.ends_with('{') || trimmed.ends_with(',');
+    let direct = trimmed.ends_with("::") || trimmed.ends_with('{') || trimmed.ends_with(',');
     if !direct {
         return false;
     }
@@ -266,6 +278,14 @@ pub(super) fn extract_receiver_pub(before: &str) -> String {
     extract_receiver(before)
 }
 
+pub(super) fn associated_call_owner_matches_pub(
+    content: &str,
+    start: usize,
+    type_name: &str,
+) -> bool {
+    rust_associated_call_owner(&content[..start]).as_deref() == Some(type_name)
+}
+
 #[cfg(test)]
 mod reference_coverage {
     use super::*;
@@ -311,6 +331,11 @@ mod reference_coverage {
         let _ = extract_receiver("self.");
         let _ = is_inside_any_function("def outer():\n    def inner():\n        pass\n", 30);
         let _ = is_inside_any_function("def f():\n    pass\n", 0);
-        let _ = is_inside_any_function;
+        let _ = rust_associated_call_owner("foo().bar");
+        let _ = rust_import_allows("pub(self)");
+        let _ = rust_use_stmt_in_scope("use crate::foo;");
+        let _ = is_use_line_prefix("use crate::foo;");
+        let _ = extract_receiver_pub("self.");
+        let _ = associated_call_owner_matches_pub("self.foo().bar()", 9, "Owner");
     }
 }

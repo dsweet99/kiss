@@ -41,6 +41,7 @@ fn review_rust_macro_body_call_sites_should_be_renamed() {
 fn helper() -> u32 { 1 }
 
 fn caller() {
+    let _direct = helper();
     println!(\"{}\", helper());
     let _v = vec![helper(), helper()];
 }
@@ -51,10 +52,111 @@ fn caller() {
     run_rust_mv(format!("{}::helper", file.display()), "renamed", tmp.path());
 
     let updated = fs::read_to_string(&file).unwrap();
-    assert!(updated.contains("fn renamed()"), "definition must be renamed; got:\n{updated}");
     assert!(
-        !updated.contains("helper()"),
-        "all call sites including those inside macros must be renamed; got:\n{updated}"
+        updated.contains("fn renamed()"),
+        "definition must be renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("let _direct = renamed();"),
+        "direct call site should still be renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("println!(\"{}\", renamed())"),
+        "macro body call site must be renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("vec![renamed(), renamed()]"),
+        "all macro body call sites must be renamed; got:\n{updated}"
+    );
+}
+
+#[test]
+fn review_rust_nested_shadowed_helper_should_not_be_touched() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("a.rs");
+    fs::write(
+        &file,
+        "\
+fn helper() -> u32 { 1 }
+
+fn outer() -> u32 {
+    let before = helper();
+    fn helper() -> u32 { 0 }
+    let after = helper();
+    before + after
+}
+
+fn caller() -> u32 {
+    helper()
+}
+",
+    )
+    .unwrap();
+
+    run_rust_mv(format!("{}::helper", file.display()), "renamed", tmp.path());
+
+    let updated = fs::read_to_string(&file).unwrap();
+    assert!(
+        updated.contains("fn renamed() -> u32 { 1 }"),
+        "outer helper definition must be renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("fn outer() -> u32 {\n    let before = helper();"),
+        "the call before the nested helper must remain bound to the shadow; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("fn helper() -> u32 { 0 }"),
+        "nested shadowed helper definition must remain unchanged; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("    let after = helper();"),
+        "the call after the nested helper must remain bound to the shadow; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("fn caller() -> u32 {\n    renamed()"),
+        "the top-level caller must still be renamed; got:\n{updated}"
+    );
+}
+
+#[test]
+fn review_rust_same_named_builders_should_use_matching_receiver() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("a.rs");
+    fs::write(
+        &file,
+        "\
+struct X;
+struct Y;
+struct A;
+struct B;
+
+impl A { fn build(&self) -> X { X } }
+impl B { fn build(&self) -> Y { Y } }
+
+impl X { fn helper(&self) -> u32 { 1 } }
+impl Y { fn helper(&self) -> u32 { 2 } }
+
+fn caller(a: &A, b: &B) -> u32 {
+    a.build().helper() + b.build().helper()
+}
+",
+    )
+    .unwrap();
+
+    run_rust_mv(
+        format!("{}::X.helper", file.display()),
+        "renamed",
+        tmp.path(),
+    );
+
+    let updated = fs::read_to_string(&file).unwrap();
+    assert!(
+        updated.contains("a.build().renamed()"),
+        "matching receiver should be renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("b.build().helper()"),
+        "non-matching receiver must remain unchanged; got:\n{updated}"
     );
 }
 
@@ -126,12 +228,20 @@ fn caller(x: &X) -> u32 { x.helper() }
     )
     .unwrap();
 
-    run_rust_mv(format!("{}::X.helper", file.display()), "renamed", tmp.path());
+    run_rust_mv(
+        format!("{}::X.helper", file.display()),
+        "renamed",
+        tmp.path(),
+    );
 
     let updated = fs::read_to_string(&file).unwrap();
     assert!(
         updated.contains("fn renamed(&self) -> u32 { 1 }"),
         "method on `impl T for &X` must be attributed to owner X; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("fn caller(x: &X) -> u32 { x.renamed() }"),
+        "the owner-qualified call site must also be renamed; got:\n{updated}"
     );
 }
 
@@ -161,7 +271,11 @@ impl T for Box<X> {
     )
     .unwrap();
 
-    run_rust_mv(format!("{}::X.helper", file.display()), "renamed", tmp.path());
+    run_rust_mv(
+        format!("{}::X.helper", file.display()),
+        "renamed",
+        tmp.path(),
+    );
 
     let updated = fs::read_to_string(&file).unwrap();
     assert!(
@@ -195,7 +309,11 @@ fn outer() -> u32 {
     )
     .unwrap();
 
-    run_rust_mv(format!("{}::inner_helper", file.display()), "renamed", tmp.path());
+    run_rust_mv(
+        format!("{}::inner_helper", file.display()),
+        "renamed",
+        tmp.path(),
+    );
 
     let updated = fs::read_to_string(&file).unwrap();
     assert!(
@@ -240,7 +358,11 @@ fn caller(x: &X) -> u32 {
     )
     .unwrap();
 
-    run_rust_mv(format!("{}::Y.helper", file.display()), "renamed", tmp.path());
+    run_rust_mv(
+        format!("{}::Y.helper", file.display()),
+        "renamed",
+        tmp.path(),
+    );
 
     let updated = fs::read_to_string(&file).unwrap();
     assert!(

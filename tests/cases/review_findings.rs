@@ -141,8 +141,14 @@ def caller(obj):
     assert_eq!(run_mv_command(opts), 0);
 
     let updated = fs::read_to_string(&file).unwrap();
-    assert!(updated.contains("def renamed():"), "def renamed; got:\n{updated}");
-    assert!(updated.contains("return renamed()"), "call site renamed; got:\n{updated}");
+    assert!(
+        updated.contains("def renamed():"),
+        "def renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("return renamed()"),
+        "call site renamed; got:\n{updated}"
+    );
     assert!(
         updated.contains("target = obj.helper"),
         "owner=None bare attribute access (`obj.helper`) is by-design left intact; got:\n{updated}"
@@ -190,7 +196,10 @@ def caller():
     assert_eq!(run_mv_command(opts), 0);
 
     let updated = fs::read_to_string(&file).unwrap();
-    assert!(updated.contains("def renamed():"), "def renamed; got:\n{updated}");
+    assert!(
+        updated.contains("def renamed():"),
+        "def renamed; got:\n{updated}"
+    );
     assert!(
         updated.contains("def helper_dec(f):"),
         "decorator helper_dec must remain intact; got:\n{updated}"

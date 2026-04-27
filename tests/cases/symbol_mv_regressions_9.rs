@@ -172,6 +172,150 @@ fn regression_rust_async_function_definition_should_be_renamed() {
 }
 
 #[test]
+fn regression_rust_method_should_ignore_shadowed_local_name() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("a.rs");
+
+    fs::write(
+        &file,
+        "\
+trait T { fn helper(&self) -> u32; }
+
+struct S;
+
+impl T for S {
+    fn helper(&self) -> u32 { 1 }
+}
+
+fn caller(s: &S) -> u32 {
+    fn helper() -> u32 { 0 }
+    s.helper() + helper()
+}
+",
+    )
+    .unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::S.helper", file.display()),
+        new_name: "renamed".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Rust),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0, "mv command should succeed");
+
+    let updated = fs::read_to_string(&file).unwrap();
+    assert!(
+        updated.contains("fn renamed(&self) -> u32 { 1 }"),
+        "trait method definition should be renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("s.renamed()"),
+        "method call on the receiver should be renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("fn helper() -> u32 { 0 }"),
+        "shadowed local helper definition must remain unchanged; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("s.renamed() + helper()"),
+        "shadowed local helper call must remain unchanged; got:\n{updated}"
+    );
+}
+
+#[test]
+fn regression_python_malformed_source_falls_back_to_lexical_scan() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("a.py");
+
+    fs::write(
+        &file,
+        "\
+def helper():
+    return 1
+
+def caller():
+    return helper()
+
+if True:
+    print(\"broken\"
+",
+    )
+    .unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::helper", file.display()),
+        new_name: "renamed".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Python),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0, "mv command should succeed");
+
+    let updated = fs::read_to_string(&file).unwrap();
+    assert!(
+        updated.contains("def renamed():"),
+        "definition should still be renamed via lexical fallback; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("return renamed()"),
+        "call site should still be renamed via lexical fallback; got:\n{updated}"
+    );
+}
+
+#[test]
+fn regression_rust_malformed_source_falls_back_to_lexical_scan() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("a.rs");
+
+    fs::write(
+        &file,
+        "\
+fn helper() -> u32 { 1 }
+
+fn caller() -> u32 {
+    helper()
+}
+
+fn broken() {
+    let _ = (
+",
+    )
+    .unwrap();
+
+    let opts = MvOptions {
+        query: format!("{}::helper", file.display()),
+        new_name: "renamed".to_string(),
+        paths: vec![tmp.path().display().to_string()],
+        to: None,
+        dry_run: false,
+        json: false,
+        lang_filter: Some(Language::Rust),
+        ignore: vec![],
+    };
+
+    assert_eq!(run_mv_command(opts), 0, "mv command should succeed");
+
+    let updated = fs::read_to_string(&file).unwrap();
+    assert!(
+        updated.contains("fn renamed() -> u32 { 1 }"),
+        "definition should still be renamed via lexical fallback; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("renamed()"),
+        "call site should still be renamed via lexical fallback; got:\n{updated}"
+    );
+}
+
+#[test]
 fn regression_definition_prefers_ast_when_lexical_misidentifies() {
     let tmp = TempDir::new().unwrap();
     let file = tmp.path().join("a.py");

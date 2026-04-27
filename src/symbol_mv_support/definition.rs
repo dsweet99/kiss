@@ -1,8 +1,11 @@
 use crate::Language;
 
-use super::ast_plan::ast_definition_span;
+use super::ast_models::ParseOutcome;
+use super::ast_plan::{ast_definition_span_from_result, cached_parse_outcome};
+use super::ast_rust::impl_owner_name;
 use super::lex::{LexScan, LexState, StringState, rust_item_start, step_lex_state};
 use super::signature::{is_python_def_line, is_rust_fn_definition_line};
+use syn::ItemImpl;
 
 #[derive(Clone, Copy)]
 pub struct DefinitionSpan {
@@ -22,12 +25,13 @@ pub fn find_definition_span(
     owner: Option<&str>,
     language: Language,
 ) -> Option<DefinitionSpan> {
-    if let Some((start, end)) = ast_definition_span(content, method, owner, language) {
-        return Some(DefinitionSpan { start, end });
-    }
-    match language {
-        Language::Python => find_python_definition_span(content, method, owner),
-        Language::Rust => find_rust_definition_span(content, method, owner),
+    match cached_parse_outcome(content, language) {
+        ParseOutcome::Success(result) => ast_definition_span_from_result(&result, method, owner)
+            .map(|(start, end)| DefinitionSpan { start, end }),
+        ParseOutcome::Fail(_) => match language {
+            Language::Python => find_python_definition_span(content, method, owner),
+            Language::Rust => find_rust_definition_span(content, method, owner),
+        },
     }
 }
 
@@ -108,16 +112,17 @@ fn find_rust_definition_span(
     );
     for (lo, hi) in ranges {
         let scope = &content[lo..hi];
-        let fn_start = split_lines_with_offsets(scope)
-            .into_iter()
-            .find_map(|(line_offset, line)| {
-                if is_rust_fn_definition_line(line, method) {
-                    let fn_pos = line.find("fn ")?;
-                    Some(lo + line_offset + fn_pos)
-                } else {
-                    None
-                }
-            });
+        let fn_start =
+            split_lines_with_offsets(scope)
+                .into_iter()
+                .find_map(|(line_offset, line)| {
+                    if is_rust_fn_definition_line(line, method) {
+                        let fn_pos = line.find("fn ")?;
+                        Some(lo + line_offset + fn_pos)
+                    } else {
+                        None
+                    }
+                });
         if let Some(fn_start) = fn_start {
             let open = fn_start + content[fn_start..].find('{')?;
             return find_brace_block_end(content, open).map(|end| DefinitionSpan {
@@ -164,25 +169,39 @@ fn rust_lexer_is_inside_non_code(state: &LexState) -> bool {
 }
 
 pub(super) fn find_impl_blocks(content: &str, owner: &str) -> Vec<(usize, usize)> {
-    let needle = format!("impl {owner}");
     let mut results = Vec::new();
     let mut search_start = 0;
-    while let Some(rel) = content[search_start..].find(&needle) {
+    while let Some(rel) = content[search_start..].find("impl") {
         let start = search_start + rel;
-        let after = start + needle.len();
-        let next_char = content[after..].chars().next();
-        let is_exact = next_char.is_none_or(|c| !c.is_alphanumeric() && c != '_');
-        if is_exact
-            && let Some(open_rel) = content[start..].find('{')
-        {
-            let open = start + open_rel;
-            if let Some(end) = find_brace_block_end(content, open) {
-                results.push((start, end));
-                search_start = end;
-                continue;
-            }
+        let prev_ok = start == 0
+            || content[..start]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        let after_impl = start + "impl".len();
+        let next_ok = content[after_impl..]
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        if !prev_ok || !next_ok {
+            search_start = after_impl;
+            continue;
         }
-        search_start = after;
+        let Some(open_rel) = content[start..].find('{') else {
+            break;
+        };
+        let open = start + open_rel;
+        if let Some(end) = find_brace_block_end(content, open) {
+            let candidate = format!("{}{}", &content[start..open], "{}");
+            if let Ok(item_impl) = syn::parse_str::<ItemImpl>(&candidate)
+                && impl_owner_name(&item_impl.self_ty).as_deref() == Some(owner)
+            {
+                results.push((start, end));
+            }
+            search_start = end;
+            continue;
+        }
+        search_start = after_impl;
     }
     results
 }

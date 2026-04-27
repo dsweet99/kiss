@@ -140,7 +140,10 @@ def caller():
     assert_eq!(run_mv_command(opts), 0);
 
     let updated = fs::read_to_string(&file).unwrap();
-    assert!(updated.contains("def renamed(f):"), "def renamed; got:\n{updated}");
+    assert!(
+        updated.contains("def renamed(f):"),
+        "def renamed; got:\n{updated}"
+    );
     assert!(
         updated.contains("@renamed"),
         "`@helper` decorator usage must be renamed; got:\n{updated}"
@@ -358,5 +361,13 @@ def caller():
     assert!(
         updated.contains("    def helper():\n        return 2\n"),
         "inner shadow `def helper` inside `outer` must NOT be renamed; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("    return helper()"),
+        "the call inside `outer` must keep resolving to the inner shadow; got:\n{updated}"
+    );
+    assert!(
+        updated.contains("def caller():\n    return renamed()"),
+        "the top-level caller must still be renamed; got:\n{updated}"
     );
 }

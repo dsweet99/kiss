@@ -4,17 +4,16 @@
 //! sites for `kiss mv`. Rust spans expose only line/column locations (not
 //! byte ranges), so byte offsets are derived from line/column via a single
 //! prefix scan of the source.
-
-use syn::spanned::Spanned;
-use syn::visit::Visit;
-use syn::{Expr, ExprCall, ExprPath, ImplItem, Item, ItemFn, ItemImpl, Type};
-
-use crate::Language;
-
 use super::ast_models::{
     AstResult, Definition, FallbackReason, ParseOutcome, Reference, ReferenceKind, SymbolKind,
 };
-
+use crate::Language;
+use syn::spanned::Spanned;
+use syn::visit::Visit;
+use syn::{Expr, ExprCall, ExprMacro, ExprPath, ImplItem, Item, ItemFn, ItemImpl, Type};
+#[path = "ast_rust_macros.rs"]
+mod ast_rust_macros;
+use ast_rust_macros::collect_macro_reference_sites;
 pub(super) fn parse_rust(content: &str) -> ParseOutcome {
     let Ok(file) = syn::parse_file(content) else {
         return ParseOutcome::Fail(FallbackReason::ParseFailed);
@@ -23,7 +22,13 @@ pub(super) fn parse_rust(content: &str) -> ParseOutcome {
     let mut definitions = Vec::new();
     let mut references = Vec::new();
     for item in &file.items {
-        collect_rust_item(item, content, &line_offsets, &mut definitions, &mut references);
+        collect_rust_item(
+            item,
+            content,
+            &line_offsets,
+            &mut definitions,
+            &mut references,
+        );
     }
     let mut nested = NestedDefVisitor {
         content,
@@ -48,7 +53,12 @@ pub(super) fn compute_line_offsets(content: &str) -> Vec<usize> {
     offsets
 }
 
-pub(super) fn lc_to_byte(content: &str, line_offsets: &[usize], line: usize, column: usize) -> Option<usize> {
+pub(super) fn lc_to_byte(
+    content: &str,
+    line_offsets: &[usize],
+    line: usize,
+    column: usize,
+) -> Option<usize> {
     assert!(line >= 1, "syn line numbers are 1-indexed");
     let row = line.checked_sub(1)?;
     let line_start = *line_offsets.get(row)?;
@@ -239,8 +249,7 @@ pub(super) fn collect_impl(
     for impl_item in &item_impl.items {
         if let ImplItem::Fn(method) = impl_item {
             if let Some((s, e)) = item_full_span(method, content, line_offsets)
-                && let Some((ns, ne)) =
-                    ident_byte_span(line_offsets, &method.sig.ident, content)
+                && let Some((ns, ne)) = ident_byte_span(line_offsets, &method.sig.ident, content)
             {
                 defs.push(Definition {
                     name: method.sig.ident.to_string(),
@@ -340,6 +349,14 @@ impl<'ast> Visit<'ast> for CallVisitor<'_> {
         syn::visit::visit_expr_call(self, node);
     }
 
+    fn visit_expr_macro(&mut self, node: &'ast ExprMacro) {
+        collect_macro_reference_sites(&node.mac.tokens, self.content, self.line_offsets, self.refs);
+    }
+
+    fn visit_stmt_macro(&mut self, node: &'ast syn::StmtMacro) {
+        collect_macro_reference_sites(&node.mac.tokens, self.content, self.line_offsets, self.refs);
+    }
+
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
         if let Some((s, e)) = ident_byte_span(self.line_offsets, &node.method, self.content) {
             self.refs.push(Reference {
@@ -361,16 +378,13 @@ impl<'ast> Visit<'ast> for CallVisitor<'_> {
         }
         syn::visit::visit_use_path(self, node);
     }
-
     fn visit_use_name(&mut self, node: &'ast syn::UseName) {
         self.push_use_ident(&node.ident);
     }
-
     fn visit_use_rename(&mut self, node: &'ast syn::UseRename) {
         self.push_use_ident(&node.ident);
     }
 }
-
 impl CallVisitor<'_> {
     fn push_use_ident(&mut self, ident: &syn::Ident) {
         if let Some((s, e)) = ident_byte_span(self.line_offsets, ident, self.content) {
@@ -382,8 +396,4 @@ impl CallVisitor<'_> {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "ast_rust_test.rs"]
-mod ast_rust_test;
-
+#[cfg(test)] #[path = "ast_rust_test.rs"] mod ast_rust_test;

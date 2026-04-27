@@ -18,6 +18,7 @@ pub mod check_universe_cache;
 pub mod counts;
 pub mod discovery;
 pub mod duplication;
+mod macro_expr_parser;
 pub mod graph;
 pub mod layout_cycles;
 pub mod minhash;

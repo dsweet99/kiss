@@ -92,7 +92,10 @@ fn parses_await_and_binding_keyword_and_raise_from() {
         .iter()
         .filter(|r| &src[r.start..r.end] == "helper")
         .count();
-    assert!(count >= 5, "expected await/del/global/nonlocal/raise refs: {count}");
+    assert!(
+        count >= 5,
+        "expected await/del/global/nonlocal/raise refs: {count}"
+    );
 }
 
 #[test]
@@ -129,7 +132,7 @@ fn name_test_references() {
 }
 
 #[test]
-fn inner_function_shadow_emits_only_outer_def() {
+fn inner_function_shadow_collects_nested_definitions() {
     let src = "def helper():\n    return 1\n\ndef outer():\n    def helper():\n        return 2\n    return helper()\n";
     let ParseOutcome::Success(res) = parse_python(src) else {
         panic!("parse should succeed");
@@ -139,7 +142,10 @@ fn inner_function_shadow_emits_only_outer_def() {
         .iter()
         .filter(|d| d.name == "helper" && d.owner.is_none())
         .count();
-    assert_eq!(count, 1, "outer def only; got {count}");
+    assert_eq!(
+        count, 2,
+        "outer and nested defs should both be collected; got {count}"
+    );
 }
 
 #[test]

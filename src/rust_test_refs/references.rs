@@ -1,4 +1,5 @@
 use super::{has_cfg_test_attribute, has_test_attribute};
+use crate::macro_expr_parser::{parse_expr_list, parse_single_expr};
 use std::collections::HashSet;
 use syn::visit::Visit;
 use syn::{Expr, Item};
@@ -155,25 +156,11 @@ impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
     }
 }
 
-struct ExprList(Vec<Expr>);
-impl syn::parse::Parse for ExprList {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut exprs = Vec::new();
-        while !input.is_empty() {
-            exprs.push(input.parse()?);
-            if input.peek(syn::Token![,]) {
-                let _: syn::Token![,] = input.parse()?;
-            }
-        }
-        Ok(Self(exprs))
-    }
-}
-
 pub(super) fn try_parse_as_single_expr(
     tokens: &proc_macro2::TokenStream,
     refs: &mut HashSet<String>,
 ) -> bool {
-    if let Ok(e) = syn::parse2::<Expr>(tokens.clone()) {
+    if let Some(e) = parse_single_expr(tokens) {
         ReferenceVisitor { refs }.visit_expr(&e);
         return true;
     }
@@ -184,7 +171,7 @@ pub(super) fn try_parse_as_expr_list(
     tokens: &proc_macro2::TokenStream,
     refs: &mut HashSet<String>,
 ) -> bool {
-    if let Ok(ExprList(exprs)) = syn::parse2::<ExprList>(tokens.clone()) {
+    if let Some(exprs) = parse_expr_list(tokens) {
         for e in exprs {
             ReferenceVisitor { refs }.visit_expr(&e);
         }

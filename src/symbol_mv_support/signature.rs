@@ -12,14 +12,13 @@ fn has_identifier_boundary(s: &str, ident: &str) -> bool {
     let Some(rest) = s.strip_prefix(ident) else {
         return false;
     };
-    rest.chars()
-        .next()
-        .is_none_or(|c| !is_ident_char(c))
+    rest.chars().next().is_none_or(|c| !is_ident_char(c))
 }
 
 pub(super) fn is_python_def_line(line: &str, ident: &str) -> bool {
     let trimmed = line.trim_start();
-    trimmed.starts_with(&format!("def {ident}(")) || trimmed.starts_with(&format!("async def {ident}("))
+    trimmed.starts_with(&format!("def {ident}("))
+        || trimmed.starts_with(&format!("async def {ident}("))
 }
 
 pub(super) fn is_rust_fn_definition_line(line: &str, ident: &str) -> bool {
@@ -75,10 +74,27 @@ mod signature_coverage {
     fn rust_fn_lines_include_visibility_and_async() {
         assert!(is_rust_fn_definition_line("fn helper() {}", "helper"));
         assert!(is_rust_fn_definition_line("pub fn helper() {}", "helper"));
-        assert!(is_rust_fn_definition_line("pub(crate) fn helper() {}", "helper"));
+        assert!(is_rust_fn_definition_line(
+            "pub(crate) fn helper() {}",
+            "helper"
+        ));
         assert!(is_rust_fn_definition_line("async fn helper() {}", "helper"));
-        assert!(is_rust_fn_definition_line("pub async fn helper() {}", "helper"));
-        assert!(is_rust_fn_definition_line("pub(crate) async fn helper() {}", "helper"));
+        assert!(is_rust_fn_definition_line(
+            "pub async fn helper() {}",
+            "helper"
+        ));
+        assert!(is_rust_fn_definition_line(
+            "pub(crate) async fn helper() {}",
+            "helper"
+        ));
         assert!(!is_rust_fn_definition_line("let helper() =", "helper"));
+    }
+
+    #[test]
+    fn private_signature_helpers_have_expected_behavior() {
+        assert!(is_ident_char('a'));
+        assert!(!is_ident_char('$'));
+        assert!(has_identifier_boundary("helper(", "helper"));
+        assert!(!has_identifier_boundary("helperx(", "helper"));
     }
 }

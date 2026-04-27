@@ -99,7 +99,10 @@ mod lex_rust_coverage {
 
     #[test]
     fn try_parse_raw_string_start_variants() {
-        assert_eq!(try_parse_raw_string_start(b"r\"hello\"", 0, 8), Some((0, 2)));
+        assert_eq!(
+            try_parse_raw_string_start(b"r\"hello\"", 0, 8),
+            Some((0, 2))
+        );
         assert_eq!(
             try_parse_raw_string_start(b"r##\"content\"##", 0, 14),
             Some((2, 4))
@@ -116,5 +119,21 @@ mod lex_rust_coverage {
         assert_eq!(try_parse_char_literal(b"'a'", 0, 3), Some(3));
         assert_eq!(try_parse_char_literal(b"'\\n'", 0, 4), Some(4));
         assert_eq!(try_parse_char_literal(b"x", 0, 1), None);
+    }
+
+    #[test]
+    fn step_state_variants_are_covered() {
+        let mut state = LexState::default();
+        let bytes = b"r##\"hello\"##";
+        assert_eq!(step_raw_string_state(&mut state, bytes, 0, 12, 2), 1);
+        assert_eq!(step_raw_string_state(&mut state, bytes, 9, 12, 2), 3);
+        assert_eq!(state.string_state, StringState::None);
+
+        let mut state2 = LexState {
+            string_state: StringState::Single,
+            ..LexState::default()
+        };
+        let consumed = step_rust_code_state(&mut state2, b"'x'", 0, 3);
+        assert_eq!(consumed, 3);
     }
 }

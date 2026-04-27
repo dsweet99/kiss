@@ -4,7 +4,11 @@ use std::path::{Path, PathBuf};
 use crate::Language;
 use crate::symbol_mv::{EditKind, PlannedEdit};
 
-use super::ast_plan::ast_reference_offsets;
+use super::ast_models::{AstResult, ParseOutcome};
+use super::ast_plan::{
+    ast_definition_ident_offsets_from_result, ast_reference_offsets_from_result,
+    ast_reference_offsets_raw_from_result, cached_parse_outcome,
+};
 use super::basics::detect_language;
 use super::definition::DefinitionSpan;
 use super::identifiers::find_identifier_occurrences;
@@ -22,19 +26,36 @@ pub struct ReferenceRenameParams<'a> {
 }
 
 pub fn collect_reference_edits(p: &ReferenceRenameParams<'_>) -> Vec<PlannedEdit> {
-    let sites = collect_reference_sites(p.content, p.old_name, p.owner, p.language);
-    sites
-        .into_iter()
-        .map(|(start_byte, end_byte, line)| PlannedEdit {
-            path: p.path.to_path_buf(),
-            start_byte,
-            end_byte,
-            line,
-            old_snippet: p.old_name.to_string(),
-            new_snippet: p.new_name.to_string(),
-            kind: EditKind::Reference,
-        })
-        .collect()
+    match cached_parse_outcome(p.content, p.language) {
+        ParseOutcome::Success(result) => {
+            collect_reference_sites_from_result(&result, p.content, p.old_name, p.owner, p.language)
+                .into_iter()
+                .map(|(start_byte, end_byte, line)| PlannedEdit {
+                    path: p.path.to_path_buf(),
+                    start_byte,
+                    end_byte,
+                    line,
+                    old_snippet: p.old_name.to_string(),
+                    new_snippet: p.new_name.to_string(),
+                    kind: EditKind::Reference,
+                })
+                .collect()
+        }
+        ParseOutcome::Fail(_) => {
+            collect_reference_sites(p.content, p.old_name, p.owner, p.language)
+                .into_iter()
+                .map(|(start_byte, end_byte, line)| PlannedEdit {
+                    path: p.path.to_path_buf(),
+                    start_byte,
+                    end_byte,
+                    line,
+                    old_snippet: p.old_name.to_string(),
+                    new_snippet: p.new_name.to_string(),
+                    kind: EditKind::Reference,
+                })
+                .collect()
+        }
+    }
 }
 
 fn collect_reference_sites(
@@ -43,18 +64,25 @@ fn collect_reference_sites(
     owner: Option<&str>,
     language: Language,
 ) -> Vec<(usize, usize, usize)> {
-    let mut sites = lexical_reference_sites(content, old_name, owner, language);
-    if let Some(ast_sites) = ast_reference_offsets(content, old_name, owner, language) {
-        let known: std::collections::HashSet<(usize, usize)> =
-            sites.iter().map(|&(s, e, _)| (s, e)).collect();
-        for (s, e) in ast_sites {
-            if !known.contains(&(s, e)) {
-                sites.push((s, e, line_for_offset(content, s)));
-            }
-        }
+    lexical_reference_sites(content, old_name, owner, language)
+}
+
+fn collect_reference_sites_from_result(
+    result: &AstResult,
+    content: &str,
+    old_name: &str,
+    owner: Option<&str>,
+    language: Language,
+) -> Vec<(usize, usize, usize)> {
+    let raw_sites =
+        ast_reference_offsets_raw_from_result(result, content, old_name, owner, language);
+    if matches!(language, Language::Rust) && raw_sites.is_empty() {
+        return lexical_reference_sites(content, old_name, owner, language);
     }
-    sites.sort_by_key(|&(s, _, _)| s);
-    sites
+    ast_reference_offsets_from_result(result, content, old_name, owner, language)
+        .into_iter()
+        .map(|(start_byte, end_byte)| (start_byte, end_byte, line_for_offset(content, start_byte)))
+        .collect()
 }
 
 fn lexical_reference_sites(
@@ -92,54 +120,91 @@ pub struct SourceRenameParams<'a> {
 }
 
 pub fn collect_source_rename_edits(p: &SourceRenameParams<'_>) -> Vec<PlannedEdit> {
-    let sites = collect_reference_sites(p.source_content, p.old_name, p.owner, p.language);
-    let def_ident_sites = if p.def_span.is_some() {
-        ast_definition_ident_sites(p.source_content, p.old_name, p.owner, p.language)
-    } else {
-        Vec::new()
-    };
-    let mut merged: Vec<(usize, usize, usize, EditKind)> = sites
-        .into_iter()
-        .filter(|(start, _, _)| !(p.moving && p.def_span.is_some_and(|span| span.contains(*start))))
-        .map(|(s, e, l)| {
-            let kind = if p.def_span.is_some_and(|span| span.contains(s)) {
-                EditKind::Definition
-            } else {
-                EditKind::Reference
-            };
-            (s, e, l, kind)
-        })
-        .collect();
-    if !p.moving {
-        for (s, e) in def_ident_sites {
-            if !merged.iter().any(|&(ms, me, _, _)| ms == s && me == e) {
-                merged.push((s, e, line_for_offset(p.source_content, s), EditKind::Definition));
+    match cached_parse_outcome(p.source_content, p.language) {
+        ParseOutcome::Success(result) => {
+            let mut merged: Vec<(usize, usize, usize, EditKind)> =
+                collect_reference_sites_from_result(
+                    &result,
+                    p.source_content,
+                    p.old_name,
+                    p.owner,
+                    p.language,
+                )
+                .into_iter()
+                .filter(|(start, _, _)| {
+                    !(p.moving && p.def_span.is_some_and(|span| span.contains(*start)))
+                })
+                .map(|(s, e, l)| {
+                    let kind = if p.def_span.is_some_and(|span| span.contains(s)) {
+                        EditKind::Definition
+                    } else {
+                        EditKind::Reference
+                    };
+                    (s, e, l, kind)
+                })
+                .collect();
+            if !p.moving {
+                for (s, e) in ast_definition_ident_offsets_from_result(
+                    &result,
+                    p.source_content,
+                    p.old_name,
+                    p.owner,
+                ) {
+                    if !merged.iter().any(|&(ms, me, _, _)| ms == s && me == e) {
+                        merged.push((
+                            s,
+                            e,
+                            line_for_offset(p.source_content, s),
+                            EditKind::Definition,
+                        ));
+                    }
+                }
             }
+            merged.sort_by_key(|&(s, _, _, _)| s);
+            merged
+                .into_iter()
+                .map(|(start_byte, end_byte, line, kind)| PlannedEdit {
+                    path: p.source_path.to_path_buf(),
+                    start_byte,
+                    end_byte,
+                    line,
+                    old_snippet: p.old_name.to_string(),
+                    new_snippet: p.new_name.to_string(),
+                    kind,
+                })
+                .collect()
+        }
+        ParseOutcome::Fail(_) => {
+            let mut merged: Vec<(usize, usize, usize, EditKind)> =
+                collect_reference_sites(p.source_content, p.old_name, p.owner, p.language)
+                    .into_iter()
+                    .filter(|(start, _, _)| {
+                        !(p.moving && p.def_span.is_some_and(|span| span.contains(*start)))
+                    })
+                    .map(|(s, e, l)| {
+                        let kind = if p.def_span.is_some_and(|span| span.contains(s)) {
+                            EditKind::Definition
+                        } else {
+                            EditKind::Reference
+                        };
+                        (s, e, l, kind)
+                    })
+                    .collect();
+            merged.sort_by_key(|&(s, _, _, _)| s);
+            merged
+                .into_iter()
+                .map(|(start_byte, end_byte, line, kind)| PlannedEdit {
+                    path: p.source_path.to_path_buf(),
+                    start_byte,
+                    end_byte,
+                    line,
+                    old_snippet: p.old_name.to_string(),
+                    new_snippet: p.new_name.to_string(),
+                    kind,
+                })
+                .collect()
         }
     }
-    merged.sort_by_key(|&(s, _, _, _)| s);
-    merged
-        .into_iter()
-        .map(|(start_byte, end_byte, line, kind)| PlannedEdit {
-            path: p.source_path.to_path_buf(),
-            start_byte,
-            end_byte,
-            line,
-            old_snippet: p.old_name.to_string(),
-            new_snippet: p.new_name.to_string(),
-            kind,
-        })
-        .collect()
-}
-
-fn ast_definition_ident_sites(
-    content: &str,
-    name: &str,
-    owner: Option<&str>,
-    language: Language,
-) -> Vec<(usize, usize)> {
-    use super::ast_plan::ast_definition_ident_offsets;
-    ast_definition_ident_offsets(content, name, owner, language).unwrap_or_default()
 }
 
 pub struct MoveEditsParams<'a> {
@@ -216,10 +281,32 @@ fn rename_definition_text(
 #[cfg(test)]
 mod edits_coverage {
     use super::*;
+    use crate::symbol_mv_support::ast_plan;
 
     #[test]
     fn rename_definition_text_replaces_name() {
         let out = rename_definition_text("def foo(self): pass", "foo", "bar", Language::Python);
         assert!(out.contains("def bar("));
+    }
+
+    #[test]
+    fn collect_reference_helpers_cover_private_paths() {
+        let src = "def foo():\n    bar.foo()\n    foo()\n    foo\n";
+        let ParseOutcome::Success(parsed) = ast_plan::parse_for(src, crate::Language::Python) else {
+            panic!("parse should succeed")
+        };
+        let sites = collect_reference_sites_from_result(
+            &parsed,
+            src,
+            "foo",
+            None,
+            Language::Python,
+        );
+        assert!(!sites.is_empty());
+
+        let fallback = collect_reference_sites(src, "foo", None, Language::Python);
+        assert!(!fallback.is_empty());
+        let fallback_lex = ast_plan::cached_parse_outcome(src, Language::Python);
+        assert!(matches!(fallback_lex, ParseOutcome::Success(_)));
     }
 }

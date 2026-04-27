@@ -11,10 +11,10 @@ mod identifiers;
 mod lex;
 mod lex_fstring;
 mod lex_rust;
-mod signature;
 mod reference;
 mod reference_inference;
 mod run_mv;
+mod signature;
 mod transaction;
 
 pub use basics::{

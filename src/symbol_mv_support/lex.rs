@@ -3,7 +3,7 @@ use crate::Language;
 use super::identifiers::line_start_offset;
 use super::identifiers::previous_line_bounds;
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) enum StringState {
     #[default]
     None,
@@ -15,10 +15,18 @@ pub(super) enum StringState {
     /// Python f-string. `depth` tracks the `{ ... }` nesting depth: depth == 0
     /// means we're in the literal text portion (string-like), depth >= 1 means
     /// we're inside a code-bearing brace expression (code-like).
-    FStringSingle { depth: usize },
-    FStringDouble { depth: usize },
-    FStringTripleSingle { depth: usize },
-    FStringTripleDouble { depth: usize },
+    FStringSingle {
+        depth: usize,
+    },
+    FStringDouble {
+        depth: usize,
+    },
+    FStringTripleSingle {
+        depth: usize,
+    },
+    FStringTripleDouble {
+        depth: usize,
+    },
 }
 
 impl StringState {
@@ -300,5 +308,27 @@ mod lex_coverage {
             line_cmt.find("code").unwrap(),
             Language::Rust
         ));
+
+        let mut state = LexState {
+            string_state: StringState::TripleSingle,
+            ..LexState::default()
+        };
+        assert_eq!(step_triple_string_state(&mut state, b"'''abc'''", 0, 7), 3);
+        state.string_state = StringState::Single;
+        assert_eq!(step_string_state(&mut state, b"'abc", 0, 4), 1);
+        state.string_state = StringState::None;
+        assert_eq!(step_code_state(&mut LexScan {
+            state: &mut state,
+            bytes: b"x#y",
+            idx: 1,
+            target: 3,
+            language: Language::Rust,
+        }), 1);
+        let mut inside = LexState {
+            string_state: StringState::FStringDouble { depth: 1 },
+            ..LexState::default()
+        };
+        assert_eq!(step_inside_string_state(&mut inside, b"{x", 0, 2), Some(1));
+        assert_eq!(open_python_string_at(&mut inside, b"\"x\"", 0, 3), Some(1));
     }
 }

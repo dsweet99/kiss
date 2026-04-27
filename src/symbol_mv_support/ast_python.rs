@@ -27,7 +27,14 @@ pub(super) fn parse_python(content: &str) -> ParseOutcome {
     }
     let mut definitions = Vec::new();
     let mut references = Vec::new();
-    walk_py(root, content, None, false, &mut definitions, &mut references);
+    walk_py(
+        root,
+        content,
+        None,
+        false,
+        &mut definitions,
+        &mut references,
+    );
     ParseOutcome::Success(AstResult {
         definitions,
         references,
@@ -47,9 +54,7 @@ pub(super) fn walk_py(
             handle_decorated(node, src, owner, inside_fn, defs, refs);
         }
         "function_definition" | "async_function_definition" => {
-            if !inside_fn {
-                collect_py_def(node, node, src, owner, defs);
-            }
+            collect_py_def(node, node, src, owner, defs);
             recurse_py(node, src, None, true, defs, refs);
         }
         "class_definition" => {
@@ -166,9 +171,7 @@ pub(super) fn handle_decorated(
     };
     match definition.kind() {
         "function_definition" | "async_function_definition" => {
-            if !inside_fn {
-                collect_py_def(definition, node, src, owner, defs);
-            }
+            collect_py_def(definition, node, src, owner, defs);
             recurse_py(definition, src, None, true, defs, refs);
         }
         "class_definition" => {
