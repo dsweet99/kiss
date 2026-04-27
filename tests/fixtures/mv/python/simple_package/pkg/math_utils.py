@@ -1,5 +1,6 @@
 def helper(value: int) -> int:
     label = "helper should stay in strings"
+    _ = label
     return value + 1
 
 
