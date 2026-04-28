@@ -203,11 +203,11 @@ fn cli_mv_parse_failure_warning_includes_source_path() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        output.status.success(),
-        "mv should still succeed with lexical fallback. stderr:\n{stderr}"
-    );
-    assert!(
         stderr.contains(&format!("kiss mv: {}:", source.display())),
         "warning should include failed source path. stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("skipping file"),
+        "warning should announce that the file is skipped. stderr:\n{stderr}"
     );
 }

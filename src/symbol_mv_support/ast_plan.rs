@@ -391,7 +391,7 @@ fn warn_on_parse_failure(path: &Path, reason: &FallbackReason) {
         }
     };
     eprintln!(
-        "kiss mv: {path}: AST analysis disabled ({label}: {detail}); falling back to lexical scan",
+        "kiss mv: {path}: skipping file ({label}: {detail})",
         path = path.display()
     );
 }

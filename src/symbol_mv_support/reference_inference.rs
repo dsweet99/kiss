@@ -9,10 +9,6 @@ use reference_inference_assignments::{
     type_from_assignment_target,
 };
 
-pub(super) fn infer_python_receiver_type(content: &str, receiver: &str) -> Option<String> {
-    infer_python_receiver_type_at(content, content.len(), receiver)
-}
-
 pub(super) fn infer_python_receiver_type_at(
     content: &str,
     upto: usize,
@@ -276,10 +272,6 @@ fn matching_open_paren(text: &str, close: usize) -> Option<usize> {
         }
     }
     None
-}
-
-pub(super) fn infer_receiver_type(content: &str, receiver: &str) -> Option<String> {
-    infer_receiver_type_at(content, content.len(), receiver)
 }
 
 pub(super) fn infer_receiver_type_at(content: &str, upto: usize, receiver: &str) -> Option<String> {

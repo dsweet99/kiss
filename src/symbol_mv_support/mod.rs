@@ -14,7 +14,6 @@ mod lex_rust;
 mod reference;
 mod reference_inference;
 mod run_mv;
-mod signature;
 mod transaction;
 
 pub use basics::{

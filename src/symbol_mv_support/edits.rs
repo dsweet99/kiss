@@ -13,7 +13,6 @@ use super::definition::DefinitionSpan;
 use super::identifiers::find_identifier_occurrences;
 use super::identifiers::line_for_offset;
 use super::lex::is_code_offset;
-use super::reference::{RefSiteCtx, is_supported_reference_site};
 
 pub struct ReferenceRenameParams<'a> {
     pub path: &'a Path,
@@ -40,30 +39,8 @@ pub fn collect_reference_edits(p: &ReferenceRenameParams<'_>) -> Vec<PlannedEdit
                 })
                 .collect()
         }
-        ParseOutcome::Fail(_) => {
-            collect_reference_sites(p.content, p.old_name, p.owner, p.language)
-                .into_iter()
-                .map(|(start_byte, end_byte, line)| PlannedEdit {
-                    path: p.path.to_path_buf(),
-                    start_byte,
-                    end_byte,
-                    line,
-                    old_snippet: p.old_name.to_string(),
-                    new_snippet: p.new_name.to_string(),
-                    kind: EditKind::Reference,
-                })
-                .collect()
-        }
+        ParseOutcome::Fail(_) => Vec::new(),
     }
-}
-
-fn collect_reference_sites(
-    content: &str,
-    old_name: &str,
-    owner: Option<&str>,
-    language: Language,
-) -> Vec<(usize, usize, usize)> {
-    collect_legacy_lexical_reference_sites(content, old_name, owner, language)
 }
 
 fn collect_reference_sites_from_result(
@@ -76,29 +53,6 @@ fn collect_reference_sites_from_result(
     ast_reference_offsets_from_result(result, content, old_name, owner, language)
         .into_iter()
         .map(|(start_byte, end_byte)| (start_byte, end_byte, line_for_offset(content, start_byte)))
-        .collect()
-}
-
-fn lexical_reference_sites(
-    content: &str,
-    old_name: &str,
-    owner: Option<&str>,
-    language: Language,
-) -> Vec<(usize, usize, usize)> {
-    find_identifier_occurrences(content, old_name)
-        .into_iter()
-        .filter(|(start, _, _)| {
-            is_code_offset(content, *start, language)
-                && is_supported_reference_site(
-                    &RefSiteCtx {
-                        content,
-                        start: *start,
-                        ident: old_name,
-                        owner,
-                    },
-                    language,
-                )
-        })
         .collect()
 }
 
@@ -168,46 +122,8 @@ pub fn collect_source_rename_edits(p: &SourceRenameParams<'_>) -> Vec<PlannedEdi
                 })
                 .collect()
         }
-        ParseOutcome::Fail(_) => {
-            let mut merged: Vec<(usize, usize, usize, EditKind)> =
-                collect_reference_sites(p.source_content, p.old_name, p.owner, p.language)
-                    .into_iter()
-                    .filter(|(start, _, _)| {
-                        !(p.moving && p.def_span.is_some_and(|span| span.contains(*start)))
-                    })
-                    .map(|(s, e, l)| {
-                        let kind = if p.def_span.is_some_and(|span| span.contains(s)) {
-                            EditKind::Definition
-                        } else {
-                            EditKind::Reference
-                        };
-                        (s, e, l, kind)
-                    })
-                    .collect();
-            merged.sort_by_key(|&(s, _, _, _)| s);
-            merged
-                .into_iter()
-                .map(|(start_byte, end_byte, line, kind)| PlannedEdit {
-                    path: p.source_path.to_path_buf(),
-                    start_byte,
-                    end_byte,
-                    line,
-                    old_snippet: p.old_name.to_string(),
-                    new_snippet: p.new_name.to_string(),
-                    kind,
-                })
-                .collect()
-        }
+        ParseOutcome::Fail(_) => Vec::new(),
     }
-}
-
-fn collect_legacy_lexical_reference_sites(
-    content: &str,
-    old_name: &str,
-    owner: Option<&str>,
-    language: Language,
-) -> Vec<(usize, usize, usize)> {
-    lexical_reference_sites(content, old_name, owner, language)
 }
 
 pub struct MoveEditsParams<'a> {
@@ -307,10 +223,8 @@ mod edits_coverage {
         );
         assert!(!sites.is_empty());
 
-        let fallback = collect_reference_sites(src, "foo", None, Language::Python);
-        assert!(!fallback.is_empty());
-        let fallback_lex = ast_plan::cached_parse_outcome(src, std::path::Path::new("edits.rs"), Language::Python);
-        assert!(matches!(fallback_lex, ParseOutcome::Success(_)));
+        let cached = ast_plan::cached_parse_outcome(src, std::path::Path::new("edits.rs"), Language::Python);
+        assert!(matches!(cached, ParseOutcome::Success(_)));
     }
 
     #[test]

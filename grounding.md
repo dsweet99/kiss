@@ -107,10 +107,9 @@ Refactoring vocabulary
 - **JSON mode**: emit the plan in a machine-stable structured form
   rather than human-oriented text.
 - **AST analysis path**: the parser-backed resolution of definition
-  and references using a real syntactic model of the file.
-- **Lexical fallback**: a coarser identifier-scan path used only when
-  the AST path cannot be constructed (parse failure), and only after
-  an explicit warning.
+  and references using a real syntactic model of the file. This is
+  the only resolution path; files that fail to parse are skipped
+  with an explicit warning.
 
 ---
 
@@ -265,19 +264,17 @@ reviewer can mechanically check it.
 
 ### Refactoring-surface constraints (`kiss mv`)
 
-#### R1) AST-first analysis with declared fallback
+#### R1) AST-only analysis
 
 - **Goal**: definition and reference resolution use a parser-backed
-  syntactic model. The lexical (identifier-scan) path is a fallback
-  used only when parsing fails, and never silently.
+  syntactic model. There is no identifier-scan fallback; every
+  rename decision is anchored in the AST.
 - **Measurement**: feed both a parseable file and a syntactically
   broken file; observe stderr and the resulting plan.
-- **Pass condition**: on parseable input, no rename decision is
-  made by an identifier scan that the AST could have answered. On
-  unparseable input, an explicit warning naming the file is emitted
-  to stderr before any lexical-only edit is reported, and the
-  affected file is either skipped or processed under the
-  lexical-fallback path with that warning attached.
+- **Pass condition**: on parseable input, every rename decision is
+  derived from the AST. On unparseable input, an explicit warning
+  naming the file is emitted to stderr and the affected file
+  contributes no edits to the plan.
 
 #### R2) Scope-aware symbol resolution
 
@@ -309,10 +306,8 @@ reviewer can mechanically check it.
   wrong edits.
 - **Measurement**: feed a corpus including syntactically broken
   files.
-- **Pass condition**: process does not panic; either an explicit
-  warning is emitted and the file is skipped (no edits to it), or
-  the lexical-fallback path is taken under R1's signaling
-  requirement.
+- **Pass condition**: process does not panic; an explicit warning
+  is emitted and the unparseable file is skipped (no edits to it).
 
 #### R5) Deterministic plans and edits
 
@@ -412,8 +407,7 @@ reviewer can mechanically check it.
   authoritative whenever it succeeds.
 - **Asymmetries are declared, not implicit.** Any metric emitted by
   one of `check`/`stats` but not the other is enumerated in code
-  with a one-line rationale. Any case where `mv` falls back from
-  AST to lexical resolution is signaled to the user, not hidden.
+  with a one-line rationale.
 - **Fail closed on operational errors.** Bad paths, missing files,
   malformed config, write failures: exit 1, write to stderr, do
   not pretend to succeed. For `mv`, this extends to "ambiguous
@@ -457,7 +451,8 @@ Reviewers should walk this list before approving.
 - **Shrink monotonicity preserved** (M10) for any change touching
   `shrink`.
 - **`mv` precision preserved** (R1–R4): no regression in scope,
-  receiver, or fallback behavior; ambiguity surfaces, not guesses.
+  receiver, or skip-on-parse-failure behavior; ambiguity surfaces,
+  not guesses.
 - **`mv` transactional and dry-run guarantees preserved** (R6,
   R7): partial writes never persist; `--dry-run` matches the real
   run.

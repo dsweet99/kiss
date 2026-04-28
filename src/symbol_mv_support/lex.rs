@@ -1,8 +1,5 @@
 use crate::Language;
 
-use super::identifiers::line_start_offset;
-use super::identifiers::previous_line_bounds;
-
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) enum StringState {
     #[default]
@@ -215,18 +212,6 @@ fn open_python_string_at(
     Some(if triple { 3 } else { 1 })
 }
 
-pub(super) fn rust_item_start(content: &str, offset: usize) -> usize {
-    let mut start = line_start_offset(content, offset);
-    while let Some((prev_start, prev_end)) = previous_line_bounds(content, start) {
-        if content[prev_start..prev_end].trim_start().starts_with("#[") {
-            start = prev_start;
-        } else {
-            break;
-        }
-    }
-    start
-}
-
 #[cfg(test)]
 mod lex_coverage {
     use super::*;
@@ -267,7 +252,6 @@ mod lex_coverage {
             ..LexState::default()
         };
         step_string_state(&mut st3, b"'", 0, 1);
-        assert_eq!(rust_item_start("#[inline]\nfn a() {}", 15), 0);
     }
 
     #[test]

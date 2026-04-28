@@ -6,7 +6,7 @@ fn touch_reference_inference_helpers_for_coverage_gate() {
     let _ = type_from_assignment_rhs("C()");
     let _ = type_from_assignment_rhs("y = C()");
     let _ = type_from_assignment_rhs("pkg.C()");
-    let _ = infer_python_receiver_type("x = C()", "x");
+    let _ = infer_python_receiver_type_at("x = C()", 7, "x");
     let _ = infer_python_receiver_type_at("class C:\n    def m(self):\n        self.h()\n", 35, "self");
     let _ = infer_python_receiver_type_at("if (x := C()):\n    x.h()\n", 20, "x");
     let _ = rfind_word_boundary("prev_x = D()\nx = C()", "x = ");
@@ -21,7 +21,7 @@ fn touch_reference_inference_helpers_for_coverage_gate() {
     let _ = unwrap_python_annotation("C");
     let _ = extract_receiver("self.");
     let _ = extract_receiver("x.foo().");
-    let _ = infer_receiver_type("let s: MyT", "s");
+    let _ = infer_receiver_type_at("let s: MyT", 10, "s");
     let _ = infer_receiver_type_at("let x: &mut C = c;", 20, "x");
     let _ = method_return_type("fn into_y(&self) -> Y { Y }", 20, "into_y", None);
     let _ = type_after_pattern_last_before("let x: Type", "let x: Type".len(), "let x: ");
