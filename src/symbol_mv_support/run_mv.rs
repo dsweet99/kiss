@@ -9,6 +9,32 @@ pub fn run_mv_inner(opts: MvOptions) -> Result<(), ()> {
         to: opts.to,
         ignore: opts.ignore,
     };
+    if req.query.member.is_some() {
+        let owner = req.query.symbol.as_str();
+        let old_name = req.query.old_name();
+        let source_file = req.query.path.clone();
+        let Ok(content) = std::fs::read_to_string(&source_file) else {
+            eprintln!(
+                "Error: failed to read '{}' for ambiguity check",
+                source_file.display()
+            );
+            return Err(());
+        };
+        if super::ast_plan::has_ambiguous_method_reference(
+            &source_file,
+            &content,
+            old_name,
+            Some(owner),
+            req.query.language,
+        ) {
+            eprintln!(
+                "Error: trait-receiver ambiguity for '{}' in {}",
+                req.query.raw,
+                source_file.display()
+            );
+            return Err(());
+        }
+    }
     let plan = symbol_mv::plan_edits(&req);
     if plan.edits.is_empty() {
         eprintln!("Error: no symbol occurrences found for '{}'", req.query.raw);

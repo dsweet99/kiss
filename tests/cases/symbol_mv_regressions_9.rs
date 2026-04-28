@@ -61,25 +61,10 @@ def caller():
     let updated_def = fs::read_to_string(&def_file).unwrap();
     let updated_caller = fs::read_to_string(&caller_file).unwrap();
 
-    assert!(
-        updated_def.contains("def renamed():"),
-        "definition in source file should be renamed; got:\n{updated_def}"
-    );
-    assert!(
-        updated_caller.contains("from a import renamed"),
-        "import line in caller should be renamed; got:\n{updated_caller}"
-    );
-
-    assert!(
-        updated_caller.contains("f\"value={renamed()}\""),
-        "identifier reference inside f-string braces must be renamed \
-         to keep the project runnable after `kiss mv`; got:\n{updated_caller}"
-    );
-    assert!(
-        !updated_caller.contains("helper()"),
-        "old name `helper` must not appear anywhere in the caller after \
-         the rename (otherwise running the file raises NameError); \
-         got:\n{updated_caller}"
+    assert_eq!(updated_def, "def renamed():\n    return 1\n");
+    assert_eq!(
+        updated_caller,
+        "from a import renamed\n\n\ndef caller():\n    return f\"value={renamed()}\"\n"
     );
 }
 
@@ -117,17 +102,9 @@ async def caller():
 
     let updated = fs::read_to_string(&file).unwrap();
 
-    assert!(
-        !updated.contains("async def helper(self):"),
-        "async method definition should be rewritten; got:\n{updated}"
-    );
-    assert!(
-        updated.contains("async def renamed(self):"),
-        "async method definition should be renamed to `renamed`; got:\n{updated}"
-    );
-    assert!(
-        updated.contains("return await obj.renamed()"),
-        "async call site should be updated to the new name; got:\n{updated}"
+    assert_eq!(
+        updated,
+        "class C:\n    async def renamed(self):\n        return 1\n\nasync def caller():\n    obj = C()\n    return await obj.renamed()\n"
     );
 }
 
@@ -157,17 +134,9 @@ fn regression_rust_async_function_definition_should_be_renamed() {
 
     let updated = fs::read_to_string(&file).unwrap();
 
-    assert!(
-        !updated.contains("async fn helper() -> u32"),
-        "async function definition should be rewritten; got:\n{updated}"
-    );
-    assert!(
-        updated.contains("async fn renamed() -> u32"),
-        "async function definition should be renamed to `renamed`; got:\n{updated}"
-    );
-    assert!(
-        updated.contains("let _ = renamed().await;"),
-        "async call site should be updated to the new name; got:\n{updated}"
+    assert_eq!(
+        updated,
+        "async fn renamed() -> u32 {\n    1\n}\n\nasync fn caller() {\n    let _ = renamed().await;\n}\n"
     );
 }
 
@@ -209,21 +178,9 @@ fn caller(s: &S) -> u32 {
     assert_eq!(run_mv_command(opts), 0, "mv command should succeed");
 
     let updated = fs::read_to_string(&file).unwrap();
-    assert!(
-        updated.contains("fn renamed(&self) -> u32 { 1 }"),
-        "trait method definition should be renamed; got:\n{updated}"
-    );
-    assert!(
-        updated.contains("s.renamed()"),
-        "method call on the receiver should be renamed; got:\n{updated}"
-    );
-    assert!(
-        updated.contains("fn helper() -> u32 { 0 }"),
-        "shadowed local helper definition must remain unchanged; got:\n{updated}"
-    );
-    assert!(
-        updated.contains("s.renamed() + helper()"),
-        "shadowed local helper call must remain unchanged; got:\n{updated}"
+    assert_eq!(
+        updated,
+        "trait T { fn helper(&self) -> u32; }\n\nstruct S;\n\nimpl T for S {\n    fn renamed(&self) -> u32 { 1 }\n}\n\nfn caller(s: &S) -> u32 {\n    fn helper() -> u32 { 0 }\n    s.renamed() + helper()\n}\n"
     );
 }
 
@@ -261,14 +218,9 @@ if True:
     assert_eq!(run_mv_command(opts), 0, "mv command should succeed");
 
     let updated = fs::read_to_string(&file).unwrap();
-    assert!(
-        updated.contains("def renamed():"),
-        "definition should still be renamed via lexical fallback; got:\n{updated}"
-    );
-    assert!(
-        updated.contains("return renamed()"),
-        "call site should still be renamed via lexical fallback; got:\n{updated}"
-    );
+    assert!(updated.contains("def renamed():\n    return 1"));
+    assert!(updated.contains("def caller():\n    return renamed()"));
+    assert!(updated.contains("if True:\n    print(\"broken\""));
 }
 
 #[test]
@@ -305,14 +257,9 @@ fn broken() {
     assert_eq!(run_mv_command(opts), 0, "mv command should succeed");
 
     let updated = fs::read_to_string(&file).unwrap();
-    assert!(
-        updated.contains("fn renamed() -> u32 { 1 }"),
-        "definition should still be renamed via lexical fallback; got:\n{updated}"
-    );
-    assert!(
-        updated.contains("renamed()"),
-        "call site should still be renamed via lexical fallback; got:\n{updated}"
-    );
+    assert!(updated.starts_with(
+        "fn renamed() -> u32 { 1 }\n\nfn caller() -> u32 {\n    renamed()\n}\n\nfn broken() {\n    let _ = (\n"
+    ));
 }
 
 #[test]
@@ -354,16 +301,9 @@ def caller():
     assert_eq!(run_mv_command(opts), 0);
 
     let updated = fs::read_to_string(&file).unwrap();
-    assert!(
-        updated.contains("def renamed(self):"),
-        "AST-resolved class method should be renamed; got:\n{updated}"
-    );
-    assert!(
-        updated.contains("    def helper(self):\n        return 999"),
-        "fake def line inside the docstring must remain intact; got:\n{updated}"
-    );
-    assert!(
-        updated.contains("return C().renamed()"),
-        "method call site should be updated; got:\n{updated}"
+    assert_eq!(
+        updated,
+        "\"\"\"\nModule docstring that contains a fake def line:\n    def helper(self):\n        return 999\n\"\"\"\n\n\nclass C:\n    def renamed(self):\n        return 1\n\n\ndef caller():\n    return C().renamed()\n"
     );
 }
+
