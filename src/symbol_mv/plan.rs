@@ -50,6 +50,12 @@ fn append_reference_edits(ctx: &mut AppendReferenceCtx<'_>) {
         let Ok(content) = fs::read_to_string(&path) else {
             continue;
         };
+        if owner.is_none()
+            && ctx.req.query.language == crate::Language::Python
+            && has_python_top_level_definition(&content, ctx.old_name)
+        {
+            continue;
+        }
         let ref_edits = collect_reference_edits(&ReferenceRenameParams {
             path: &path,
             content: &content,
@@ -63,6 +69,37 @@ fn append_reference_edits(ctx: &mut AppendReferenceCtx<'_>) {
             ctx.edits.extend(ref_edits);
         }
     }
+}
+
+const fn is_python_identifier_boundary(next: Option<char>) -> bool {
+    matches!(next, None | Some(' ' | '\t' | '(' | ':' | '\r' | '\n'))
+}
+
+fn has_python_top_level_definition(content: &str, old_name: &str) -> bool {
+    for line in content.lines() {
+        if line.starts_with(' ') || line.starts_with('\t') {
+            continue;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let body = trimmed.strip_prefix("async ").map_or(trimmed, |after_async| after_async);
+        if let Some(rest) = body.strip_prefix("def ") {
+            if rest.starts_with(old_name) {
+                let next = rest.get(old_name.len()..).and_then(|s| s.chars().next());
+                if is_python_identifier_boundary(next) {
+                    return true;
+                }
+            }
+        } else if let Some(rest) = body.strip_prefix("class ") && rest.starts_with(old_name) {
+            let next = rest.get(old_name.len()..).and_then(|s| s.chars().next());
+            if is_python_identifier_boundary(next) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 struct AppendMoveCtx<'a> {
@@ -166,6 +203,8 @@ mod plan_coverage {
         t(append_reference_edits);
         t(append_move_edits_if_any);
         t(finalize_plan);
+        t(has_python_top_level_definition);
+        t(is_python_identifier_boundary);
         let _ = std::mem::size_of::<AppendReferenceCtx>();
         let _ = std::mem::size_of::<AppendMoveCtx>();
     }

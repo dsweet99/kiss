@@ -60,6 +60,7 @@ pub(super) fn walk_py(
         }
         "class_definition" => {
             let name = name_text(node, src);
+            collect_py_def(node, node, src, owner, defs);
             if let Some(body) = node.child_by_field_name("body") {
                 let mut c = body.walk();
                 for child in body.children(&mut c) {
@@ -231,6 +232,7 @@ pub(super) fn handle_decorated(
         }
         "class_definition" => {
             let name = name_text(definition, src);
+            collect_py_def(definition, definition, src, owner, defs);
             if let Some(body) = definition.child_by_field_name("body") {
                 let mut c = body.walk();
                 for child in body.children(&mut c) {
