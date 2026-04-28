@@ -88,7 +88,61 @@ pub(super) fn walk_py(
         "decorator" => {
             collect_decorator(node, src, owner, inside_fn, defs, refs);
         }
+        "identifier" => {
+            if python_identifier_is_value_reference(node) {
+                refs.push(Reference {
+                    start: node.start_byte(),
+                    end: node.end_byte(),
+                    kind: ReferenceKind::Call,
+                });
+            }
+        }
         _ => recurse_py(node, src, owner, inside_fn, defs, refs),
+    }
+}
+
+/// Decide whether a bare `identifier` node represents a *use* of a name
+/// (i.e. a reference site) rather than a binding/definition site. Catches
+/// callback-style uses like `map(my_fn, …)`, kwarg values like `key=my_fn`,
+/// assignment RHS like `ref = my_fn`, container literals, return values,
+/// etc. — fixes KPOP round 6 H2 ("function-as-value not renamed").
+///
+/// References that are emitted via dedicated branches above (calls,
+/// decorators, imports, await, raise-from, global/nonlocal/delete) are
+/// also re-emitted here when the walker recurses into them; the planner
+/// dedupes by (start, end), so duplicates are harmless.
+fn python_identifier_is_value_reference(node: Node<'_>) -> bool {
+    let Some(parent) = node.parent() else {
+        return true;
+    };
+    let same = |field: &str| {
+        parent
+            .child_by_field_name(field)
+            .is_some_and(|n| n.id() == node.id())
+    };
+    match parent.kind() {
+        // Definition NAME positions are bindings, not references.
+        "function_definition" | "async_function_definition" | "class_definition"
+        | "typed_parameter" | "default_parameter" | "typed_default_parameter" => false,
+        // Bare parameter names: `def f(x):` parses `x` as an identifier
+        // child of a `parameters` node.
+        "parameters"
+        | "lambda_parameters"
+        | "import_from_statement"
+        | "import_statement"
+        | "aliased_import"
+        | "dotted_name"
+        | "decorator"
+        | "global_statement"
+        | "nonlocal_statement"
+        | "delete_statement"
+        | "keyword_argument"
+            if same("name") => false,
+        // Attribute access `obj.attr`: the `attr` part is the attribute
+        // (handled separately as Method when it heads a call); the
+        // `object` part IS a name reference and falls through.
+        "attribute" if same("attribute") => false,
+        _ => true,
     }
 }
 

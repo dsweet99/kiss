@@ -7,7 +7,7 @@ use kiss::symbol_mv::{MvOptions, run_mv_command};
 use std::fs;
 use tempfile::TempDir;
 
-fn py(query: &str, new_name: &str, root: &std::path::Path) -> MvOptions {
+pub fn py(query: &str, new_name: &str, root: &std::path::Path) -> MvOptions {
     MvOptions {
         query: query.to_string(),
         new_name: new_name.to_string(),
@@ -20,7 +20,7 @@ fn py(query: &str, new_name: &str, root: &std::path::Path) -> MvOptions {
     }
 }
 
-fn rs(query: &str, new_name: &str, root: &std::path::Path) -> MvOptions {
+pub fn rs(query: &str, new_name: &str, root: &std::path::Path) -> MvOptions {
     MvOptions {
         query: query.to_string(),
         new_name: new_name.to_string(),

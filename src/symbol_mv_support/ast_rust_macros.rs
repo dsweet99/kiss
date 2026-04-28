@@ -29,6 +29,7 @@ fn try_parse_as_single_expr(
             content,
             line_offsets,
             refs,
+            in_call: false,
         };
         visitor.visit_expr(&expr);
         return true;
@@ -47,6 +48,7 @@ fn try_parse_as_expr_list(
             content,
             line_offsets,
             refs,
+            in_call: false,
         };
         for expr in exprs {
             visitor.visit_expr(&expr);
