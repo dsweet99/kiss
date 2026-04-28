@@ -58,10 +58,20 @@ pub(super) struct Reference {
     pub kind: ReferenceKind,
 }
 
+/// A `impl <Trait> for <Type>` link discovered in the file. Used so that
+/// renaming a trait method propagates to overrides and to method-call
+/// receivers whose static type is a known implementor.
+#[derive(Clone, Debug)]
+pub(super) struct TraitImpl {
+    pub trait_name: String,
+    pub implementor: String,
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct AstResult {
     pub definitions: Vec<Definition>,
     pub references: Vec<Reference>,
+    pub trait_impls: Vec<TraitImpl>,
 }
 
 #[derive(Clone, Debug)]
@@ -125,6 +135,7 @@ mod ast_models_coverage {
                 end: 1,
                 kind: ReferenceKind::Call,
             }],
+            trait_impls: vec![],
         };
         let bare = res.matching_definition("f", None).unwrap();
         assert!(matches!(bare.kind, SymbolKind::Function));

@@ -38,6 +38,7 @@ pub(super) fn parse_python(content: &str) -> ParseOutcome {
     ParseOutcome::Success(AstResult {
         definitions,
         references,
+        trait_impls: Vec::new(),
     })
 }
 

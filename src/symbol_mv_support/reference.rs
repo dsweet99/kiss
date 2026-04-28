@@ -1,6 +1,14 @@
 use super::reference_inference::{
-    extract_receiver, infer_python_receiver_type_at, infer_receiver_type_at,
+    enclosing_rust_impl_type, extract_receiver, infer_python_receiver_type_at,
+    infer_receiver_type_at, python_subclasses_of,
 };
+
+pub(super) fn python_subclasses_of_pub(
+    content: &str,
+    parent: &str,
+) -> std::collections::HashSet<String> {
+    python_subclasses_of(content, parent)
+}
 
 pub(super) fn infer_python_receiver_type_pub(
     content: &str,
@@ -27,7 +35,11 @@ pub(super) fn associated_call_owner_matches_pub(
     start: usize,
     type_name: &str,
 ) -> bool {
-    rust_associated_call_owner(&content[..start]).as_deref() == Some(type_name)
+    let owner = rust_associated_call_owner(&content[..start]);
+    let direct_match = owner.as_deref() == Some(type_name);
+    let self_match = owner.as_deref() == Some("Self")
+        && enclosing_rust_impl_type(content, start).as_deref() == Some(type_name);
+    direct_match || self_match
 }
 
 fn rust_associated_call_owner(before: &str) -> Option<String> {

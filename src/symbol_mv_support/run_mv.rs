@@ -9,6 +9,7 @@ pub fn run_mv_inner(opts: MvOptions) -> Result<(), ()> {
         to: opts.to,
         ignore: opts.ignore,
     };
+    check_destination_collision(&req)?;
     if req.query.member.is_some() {
         let owner = req.query.symbol.as_str();
         let old_name = req.query.old_name();
@@ -48,6 +49,40 @@ pub fn run_mv_inner(opts: MvOptions) -> Result<(), ()> {
     }
     if !opts.dry_run {
         symbol_mv::apply_plan_transactional(&plan).map_err(|err| eprintln!("Error: {err}"))?;
+    }
+    Ok(())
+}
+
+/// When the user is moving a top-level symbol with `--to DEST`, refuse if
+/// `DEST` already defines a top-level symbol with `new_name`. Otherwise the
+/// move would silently produce two definitions in `DEST` (the second
+/// shadowing the first) — see KPOP H10.
+fn check_destination_collision(req: &MvRequest) -> Result<(), ()> {
+    let Some(dest_path) = req.to.as_ref() else {
+        return Ok(());
+    };
+    if req.query.member.is_some() {
+        return Ok(());
+    }
+    let Ok(dest_content) = std::fs::read_to_string(dest_path) else {
+        return Ok(());
+    };
+    let language = req.query.language;
+    if super::definition::find_definition_span(
+        &dest_content,
+        &req.new_name,
+        None,
+        language,
+        dest_path,
+    )
+    .is_some()
+    {
+        eprintln!(
+            "Error: destination {} already defines a top-level '{}'; refusing to move (would shadow)",
+            dest_path.display(),
+            req.new_name,
+        );
+        return Err(());
     }
     Ok(())
 }

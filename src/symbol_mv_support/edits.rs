@@ -97,6 +97,7 @@ pub fn collect_source_rename_edits(p: &SourceRenameParams<'_>) -> Vec<PlannedEdi
                     p.source_content,
                     p.old_name,
                     p.owner,
+                    p.language,
                 ) {
                     if !merged.iter().any(|&(ms, me, _, _)| ms == s && me == e) {
                         merged.push((
