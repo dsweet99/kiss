@@ -30,13 +30,13 @@ pub fn find_definition_span(
         ParseOutcome::Success(result) => ast_definition_span_from_result(&result, method, owner)
             .map(|(start, end)| DefinitionSpan { start, end }),
         ParseOutcome::Fail(_) => match language {
-            Language::Python => find_python_definition_span(content, method, owner),
-            Language::Rust => find_rust_definition_span(content, method, owner),
+            Language::Python => find_python_definition_span_legacy(content, method, owner),
+            Language::Rust => find_rust_definition_span_legacy(content, method, owner),
         },
     }
 }
 
-fn find_python_definition_span(
+fn find_python_definition_span_legacy(
     content: &str,
     method: &str,
     owner: Option<&str>,
@@ -102,7 +102,7 @@ fn decorated_start(lines: &[(usize, &str)], idx: usize, indent: usize, fallback:
     start
 }
 
-fn find_rust_definition_span(
+fn find_rust_definition_span_legacy(
     content: &str,
     method: &str,
     owner: Option<&str>,
@@ -278,7 +278,7 @@ mod definition_coverage {
     #[test]
     fn find_python_definition_span_standalone_function() {
         let src = "x = 1\ndef foo(a):\n    return a\n\ny = 2\n";
-        let sp = find_python_definition_span(src, "foo", None).unwrap();
+        let sp = find_python_definition_span_legacy(src, "foo", None).unwrap();
         let extracted = &src[sp.start..sp.end];
         assert!(extracted.starts_with("def foo("));
         assert!(extracted.contains("return a"));
@@ -288,7 +288,7 @@ mod definition_coverage {
     #[test]
     fn find_rust_definition_span_standalone_function() {
         let src = "fn helper() { let x = 1; }\nfn main() { helper(); }\n";
-        let sp = find_rust_definition_span(src, "helper", None).unwrap();
+        let sp = find_rust_definition_span_legacy(src, "helper", None).unwrap();
         let extracted = &src[sp.start..sp.end];
         assert!(extracted.contains("fn helper()"));
         assert!(extracted.contains("let x = 1"));
@@ -329,7 +329,7 @@ mod definition_coverage {
     #[test]
     fn decorated_start_with_decorators() {
         let src = "@deco_a\n@deco_b\ndef decorated(x):\n    pass\n\ndef after():\n    pass\n";
-        let sp = find_python_definition_span(src, "decorated", None).unwrap();
+        let sp = find_python_definition_span_legacy(src, "decorated", None).unwrap();
         let extracted = &src[sp.start..sp.end];
         assert!(
             extracted.starts_with("@deco_a"),

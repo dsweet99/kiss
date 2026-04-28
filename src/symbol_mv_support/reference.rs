@@ -16,12 +16,12 @@ pub(super) struct RefSiteCtx<'a> {
 
 pub(super) fn is_supported_reference_site(ctx: &RefSiteCtx<'_>, language: Language) -> bool {
     match language {
-        Language::Python => is_python_reference_site(ctx),
-        Language::Rust => is_rust_reference_site(ctx),
+        Language::Python => is_legacy_python_reference_site(ctx),
+        Language::Rust => is_legacy_rust_reference_site(ctx),
     }
 }
 
-fn is_python_reference_site(ctx: &RefSiteCtx<'_>) -> bool {
+fn is_legacy_python_reference_site(ctx: &RefSiteCtx<'_>) -> bool {
     let before = &ctx.content[..ctx.start];
     let line_start = before.rfind('\n').map_or(0, |idx| idx + 1);
     let line = &ctx.content[line_start..].lines().next().unwrap_or_default();
@@ -172,7 +172,7 @@ fn is_inside_any_class(content: &str, offset: usize) -> bool {
     false
 }
 
-fn is_rust_reference_site(ctx: &RefSiteCtx<'_>) -> bool {
+fn is_legacy_rust_reference_site(ctx: &RefSiteCtx<'_>) -> bool {
     let before = &ctx.content[..ctx.start];
     let after = &ctx.content[(ctx.start + ctx.ident.len())..];
     let line_start = before.rfind('\n').map_or(0, |idx| idx + 1);
@@ -300,7 +300,7 @@ mod reference_coverage {
             owner: None,
         };
         let _ = is_supported_reference_site(&ctx, Language::Python);
-        let _ = is_python_reference_site(&ctx);
+        let _ = is_legacy_python_reference_site(&ctx);
         let _ = py_def_owner_ok(&ctx);
         let _ = py_import_allows("from m import ", None);
         let _ = py_import_block_in_scope("from m import (\n    a,\n    ");
@@ -317,7 +317,7 @@ mod reference_coverage {
             ident: "f",
             owner: None,
         };
-        let _ = is_python_reference_site(&async_ctx);
+        let _ = is_legacy_python_reference_site(&async_ctx);
 
         let rctx = RefSiteCtx {
             content: "impl T { fn m() {} }",
@@ -325,7 +325,7 @@ mod reference_coverage {
             ident: "m",
             owner: Some("T"),
         };
-        let _ = is_rust_reference_site(&rctx);
+        let _ = is_legacy_rust_reference_site(&rctx);
         let _ = rust_fn_owner_ok(&rctx);
         let _ = rust_non_fn_site(&rctx, "T.", "()");
         let _ = extract_receiver("self.");

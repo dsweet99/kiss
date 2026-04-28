@@ -63,7 +63,7 @@ fn collect_reference_sites(
     owner: Option<&str>,
     language: Language,
 ) -> Vec<(usize, usize, usize)> {
-    lexical_reference_sites(content, old_name, owner, language)
+    collect_legacy_lexical_reference_sites(content, old_name, owner, language)
 }
 
 fn collect_reference_sites_from_result(
@@ -199,6 +199,15 @@ pub fn collect_source_rename_edits(p: &SourceRenameParams<'_>) -> Vec<PlannedEdi
                 .collect()
         }
     }
+}
+
+fn collect_legacy_lexical_reference_sites(
+    content: &str,
+    old_name: &str,
+    owner: Option<&str>,
+    language: Language,
+) -> Vec<(usize, usize, usize)> {
+    lexical_reference_sites(content, old_name, owner, language)
 }
 
 pub struct MoveEditsParams<'a> {
