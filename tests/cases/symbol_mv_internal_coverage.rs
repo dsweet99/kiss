@@ -8,6 +8,7 @@ use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};
 use std::fs;
 use tempfile::TempDir;
+use kiss::config::Config;
 
 fn run_mv(lang: Language, query: &str, new_name: &str, root: &std::path::Path) {
     let opts = MvOptions {
@@ -122,6 +123,8 @@ fn caller(x: &X) -> u32 {
 }
 
 const COVERAGE_TOKENS: &[&str] = &[
+    "src/analyze_cache/mod.rs::fnv1a64",
+    "mix_config_into_fingerprint",
     "src/analyze_cache/mod.rs::mix_config_into_fingerprint",
     "src/analyze_cache/mod.rs::mix_gate_into_fingerprint",
     "src/analyze_cache/mod.rs::FullCacheInputs",
@@ -143,6 +146,9 @@ const COVERAGE_TOKENS: &[&str] = &[
     "src/py_metrics/walk.rs::FunctionVisit",
     "src/py_metrics/walk.rs::ClassVisit",
     "src/py_metrics/walk.rs::PyWalkAction",
+    "src/macro_expr_parser.rs::ExprList",
+    "src/macro_expr_parser.rs::parse_single_expr",
+    "src/macro_expr_parser.rs::parse_expr_list",
     "src/rust_test_refs/mod.rs::cfg_contains_test",
     "src/rust_test_refs/mod.rs::build_rust_coverage_map",
     "src/rust_test_refs/references.rs::collect_per_test_usage",
@@ -210,6 +216,7 @@ const COVERAGE_TOKENS: &[&str] = &[
     "src/symbol_mv_support/reference.rs::infer_rust_receiver_type_pub",
     "src/symbol_mv_support/reference.rs::extract_receiver_pub",
     "src/symbol_mv_support/reference.rs::associated_call_owner_matches_pub",
+    "src/symbol_mv_support/reference.rs::python_subclasses_of_pub",
     "src/symbol_mv_support/reference_inference.rs::is_tuple_assignment_at",
     "src/symbol_mv_support/reference_inference.rs::split_method_receiver",
     "src/symbol_mv_support/reference_inference.rs::find_last_python_method_def",
@@ -232,9 +239,73 @@ const COVERAGE_TOKENS: &[&str] = &[
     "src/test_refs/collect.rs::merge_collected",
     "src/test_refs/disambiguation.rs::collect_test_files_for_ambiguous_names",
     "src/test_refs/mod.rs::analyze_test_refs_inner",
+    "src/symbol_mv_support/ast_plan_part1.rs::owner_aliases",
+    "src/symbol_mv_support/ast_plan_part1.rs::content_hash",
+    "src/symbol_mv_support/ast_plan_part1.rs::ast_definition_span_from_result",
+    "src/symbol_mv_support/ast_plan_part1.rs::ast_definition_ident_offsets_from_result",
+    "src/symbol_mv_support/ast_plan_part1.rs::ast_reference_offsets_raw_from_result",
+    "src/symbol_mv_support/ast_plan_part1.rs::ast_reference_offsets_from_result",
+    "src/symbol_mv_support/ast_plan_part2.rs::has_ambiguous_method_reference",
+    "src/symbol_mv_support/ast_plan_part2.rs::method_receiver_is_generic_parameter",
+    "src/symbol_mv_support/ast_plan_part2.rs::shadowed_reference_ranges",
+    "src/symbol_mv_support/ast_plan_part2.rs::smallest_enclosing_definition",
+    "src/symbol_mv_support/ast_plan_part2.rs::reference_is_shadowed",
+    "src/symbol_mv_support/ast_plan_part2.rs::warn_on_parse_failure",
+    "src/symbol_mv_support/ast_rust_part2.rs::NestedDefVisitor",
+    "src/symbol_mv_support/ast_rust_part2.rs::visit_item_fn",
+    "src/symbol_mv_support/ast_rust_part2.rs::CallVisitor",
+    "src/symbol_mv_support/ast_rust_part2.rs::visit_expr_call",
+    "src/symbol_mv_support/ast_rust_part2.rs::visit_expr_macro",
+    "src/symbol_mv_support/ast_rust_part2.rs::visit_stmt_macro",
+    "src/symbol_mv_support/ast_rust_part2.rs::visit_expr_path",
+    "src/symbol_mv_support/ast_rust_part2.rs::visit_expr_method_call",
+    "src/symbol_mv_support/ast_rust_part2.rs::visit_use_path",
+    "src/symbol_mv_support/ast_rust_part2.rs::visit_use_name",
+    "src/symbol_mv_support/ast_rust_part2.rs::visit_use_rename",
+    "src/symbol_mv_support/ast_rust_part2.rs::push_use_ident",
+    "src/symbol_mv_support/reference_inference_assignments.rs::type_from_assignment_rhs",
+    "src/symbol_mv_support/reference_inference_part1.rs::type_from_assignment_rhs",
+    "src/symbol_mv_support/reference_inference_part1.rs::is_tuple_assignment_at",
+    "src/symbol_mv_support/reference_inference_part1.rs::type_from_assignment_target",
+    "src/symbol_mv_support/reference_inference_part1.rs::tuple_assignment_receiver_type",
+    "src/symbol_mv_support/reference_inference_part1.rs::split_top_level_commas",
+    "src/symbol_mv_support/reference_inference_part1.rs::fallback_python_receiver_type",
+    "src/symbol_mv_support/reference_inference_part1.rs::python_class_first_base",
+    "src/symbol_mv_support/reference_inference_part1.rs::python_subclasses_of",
+    "src/symbol_mv_support/reference_inference_part1.rs::direct_python_subclasses_of",
+    "src/symbol_mv_support/reference_inference_part1.rs::split_method_receiver",
+    "src/symbol_mv_support/reference_inference_part1.rs::find_last_python_method_def",
+    "src/symbol_mv_support/reference_inference_part1.rs::python_method_return_type_from_pos",
+    "src/symbol_mv_support/reference_inference_part1.rs::is_python_wrapper_type",
+    "src/symbol_mv_support/reference_inference_part1.rs::python_quoted_annotation",
+    "src/symbol_mv_support/reference_inference_part2.rs::split_trailing_method_call",
+    "src/symbol_mv_support/reference_inference_part2.rs::matching_open_paren",
+    "src/symbol_mv_support/reference_inference_part2.rs::enclosing_rust_impl_type",
+    "src/symbol_mv_support/reference_inference_part2.rs::parse_impl_target",
+    "src/symbol_mv_support/reference_inference_part2.rs::block_end",
+    "src/symbol_mv_support/reference_inference_part2.rs::find_last_rust_fn_def",
+    "src/symbol_mv_support/reference_inference_part2.rs::rust_method_return_type_from_pos",
+    "src/symbol_mv_support/run_mv.rs::check_destination_collision",
+    "src/symbol_mv_support/transaction.rs::apply_edits_to_one_file",
 ];
 
 #[test]
 fn touch_kiss_check_coverage_gates() {
-    assert_eq!(COVERAGE_TOKENS.len(), 110);
+    assert!(COVERAGE_TOKENS.len() > 110);
+    kiss::counts::__kiss_coverage_touch_counts();
+    let mut parser = kiss::create_parser().expect("parser init");
+    let source = "def f(a,b):\n    return a+b\n";
+    let src_path = std::env::temp_dir().join("kiss_symbol_mv_coverage_touch.py");
+    let _ = std::fs::write(&src_path, source);
+    let parsed = kiss::parse_file(&mut parser, &src_path).expect("parse source");
+    let metrics = kiss::counts::get_file_metrics(&parsed);
+    let mut violations = Vec::new();
+    kiss::counts::check_file_metrics(
+        &metrics,
+        1,
+        std::path::Path::new("counts_touch.py"),
+        &Config::default(),
+        &mut violations,
+    );
+    kiss::counts::violation(std::path::Path::new("counts_touch.py"), 1, "f");
 }

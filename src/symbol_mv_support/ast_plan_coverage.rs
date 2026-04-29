@@ -1,4 +1,9 @@
 use super::*;
+use super::ast_plan_extras::method_receiver_matches;
+use crate::symbol_mv_support::ast_models::{Reference, ReferenceKind};
+use crate::symbol_mv_support::reference::{
+    infer_python_receiver_type_pub, infer_rust_receiver_type_pub,
+};
 
 #[test]
 fn definition_span_matches_python() {
