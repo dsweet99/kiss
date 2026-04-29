@@ -56,6 +56,8 @@ mod main_integration;
 mod py_metrics_tests;
 #[path = "cases/python_counts_violations.rs"]
 mod python_counts_violations;
+#[path = "cases/regression_check_ignore_filename.rs"]
+mod regression_check_ignore_filename;
 #[path = "cases/regression_check_perf.rs"]
 mod regression_check_perf;
 #[path = "cases/regression_stats_all_metric_registry.rs"]
