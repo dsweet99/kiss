@@ -28,12 +28,19 @@ fn parses_class_method_and_attribute_call() {
         panic!("parse should succeed");
     };
     assert!(res.matching_definition("helper", Some("C")).is_some());
-    let method_count = res
+    // `obj.helper()` produces two `Method` references at the same span:
+    // one from the call-form attribute branch and one from the bare
+    // `attribute` arm (KPOP round 9 H1 fix). Both point at exactly the
+    // same byte range; the planner dedupes by (start, end). Verify
+    // there is at least one and that any duplicates collapse to a
+    // single distinct span.
+    let method_spans: std::collections::BTreeSet<(usize, usize)> = res
         .references
         .iter()
         .filter(|r| r.kind == ReferenceKind::Method && &src[r.start..r.end] == "helper")
-        .count();
-    assert_eq!(method_count, 1);
+        .map(|r| (r.start, r.end))
+        .collect();
+    assert_eq!(method_spans.len(), 1);
 }
 
 #[test]

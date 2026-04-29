@@ -89,6 +89,27 @@ pub(super) fn walk_py(
         "decorator" => {
             collect_decorator(node, src, owner, inside_fn, defs, refs);
         }
+        // Bare attribute access `obj.attr` not heading a call, e.g.
+        // `@property` reads (`b.area`), method-as-value reads
+        // (`cb = obj.handler`), and attribute writes (`obj.field = …`).
+        // Without this arm the trailing attribute identifier is
+        // suppressed by `python_identifier_is_value_reference`'s
+        // `"attribute" if same("attribute") => false` guard, so every
+        // such site silently escapes the rename plan (KPOP round 9 H1).
+        // The planner dedupes by (start, end) so overlap with the
+        // call/decorator arms that already emit the same span is
+        // harmless. Receiver/owner filtering happens later in
+        // `reference_admits`, preserving R3 disambiguation.
+        "attribute" => {
+            if let Some(attr) = node.child_by_field_name("attribute") {
+                refs.push(Reference {
+                    start: attr.start_byte(),
+                    end: attr.end_byte(),
+                    kind: ReferenceKind::Method,
+                });
+            }
+            recurse_py(node, src, owner, inside_fn, defs, refs);
+        }
         "identifier" => {
             if python_identifier_is_value_reference(node) {
                 refs.push(Reference {

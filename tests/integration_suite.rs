@@ -120,5 +120,7 @@ mod symbol_mv_regressions_11;
 mod symbol_mv_regressions_12;
 #[path = "cases/symbol_mv_regressions_13.rs"]
 mod symbol_mv_regressions_13;
+#[path = "cases/symbol_mv_regressions_14.rs"]
+mod symbol_mv_regressions_14;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;
