@@ -9,6 +9,11 @@ use syn::{ImplItem, Item};
 use super::types::UnitMetrics;
 use super::{FileScopeMetrics, file_unit_metrics};
 
+fn rust_import_metric(path: &std::path::Path, imports: usize) -> Option<usize> {
+    let fname = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    (!matches!(fname, "lib.rs" | "mod.rs")).then_some(imports)
+}
+
 #[must_use]
 pub fn collect_detailed_rs(
     parsed_files: &[&ParsedRustFile],
@@ -22,7 +27,7 @@ pub fn collect_detailed_rs(
             &parsed.path,
             FileScopeMetrics {
                 lines,
-                imports: fm.imports,
+                imports: rust_import_metric(&parsed.path, fm.imports),
                 statements: fm.statements,
                 functions: fm.functions,
                 interface_types: fm.interface_types,

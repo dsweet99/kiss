@@ -1,8 +1,7 @@
 //! Rust receiver-type / annotation helpers split out of
 //! `reference_inference.rs` to keep that file under the `lines_per_file` gate.
 
-use super::super::definition::find_impl_blocks;
-use super::{rfind_word_boundary, split_method_receiver};
+use super::{find_impl_blocks, rfind_word_boundary, split_method_receiver};
 
 pub(crate) fn extract_receiver(before: &str) -> String {
     let line = before.rsplit('\n').next().unwrap_or(before);

@@ -11,6 +11,15 @@ fn empty_repo_metrics() -> kiss::GlobalMetrics {
     kiss::GlobalMetrics::default()
 }
 
+/// Sentinel path inserted when the user specified a focus path but it
+/// resolved to zero source files. Keeps the resulting `HashSet` non-empty
+/// so `is_focus_file`'s "empty == no filter" fallback does not silently
+/// disable focus filtering and leak the universe-wide report.
+/// Cannot collide with a real canonicalized source path.
+fn focus_no_match_sentinel() -> std::path::PathBuf {
+    std::path::PathBuf::from("\0__kiss_focus_no_match__")
+}
+
 fn focus_set_for_opts(
     opts: &AnalyzeOptions<'_>,
     py_files: &[std::path::PathBuf],
@@ -22,7 +31,14 @@ fn focus_set_for_opts(
         set.extend(rs_files.iter().cloned());
         set
     } else {
-        build_focus_set(opts.focus_paths, opts.lang_filter, opts.ignore_prefixes)
+        let mut set = build_focus_set(opts.focus_paths, opts.lang_filter, opts.ignore_prefixes);
+        if set.is_empty() {
+            eprintln!(
+                "Warning: focus path(s) matched no source files; reporting nothing for this focus."
+            );
+            set.insert(focus_no_match_sentinel());
+        }
+        set
     }
 }
 

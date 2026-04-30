@@ -33,7 +33,7 @@ fn module_id_for_path(path: &std::path::Path, graph: &DependencyGraph) -> String
 #[derive(Clone, Copy)]
 pub(crate) struct FileScopeMetrics {
     pub lines: usize,
-    pub imports: usize,
+    pub imports: Option<usize>,
     pub statements: usize,
     pub functions: usize,
     pub interface_types: usize,
@@ -62,7 +62,7 @@ pub(crate) fn file_unit_metrics(
         .to_string();
     let mut u = UnitMetrics::new(path.display().to_string(), name, "file", 1);
     u.lines = Some(fm.lines);
-    u.imports = Some(fm.imports);
+    u.imports = fm.imports;
     u.file_statements = Some(fm.statements);
     u.file_functions = Some(fm.functions);
     u.interface_types = Some(fm.interface_types);
@@ -141,7 +141,7 @@ mod tests {
             std::path::Path::new("src/foo.py"),
             super::FileScopeMetrics {
                 lines: 100,
-                imports: 5,
+                imports: Some(5),
                 statements: 0,
                 functions: 0,
                 interface_types: 0,
@@ -165,7 +165,7 @@ mod tests {
             &p,
             super::FileScopeMetrics {
                 lines: 10,
-                imports: 0,
+                imports: Some(0),
                 statements: 0,
                 functions: 0,
                 interface_types: 0,

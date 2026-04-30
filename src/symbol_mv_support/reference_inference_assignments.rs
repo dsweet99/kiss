@@ -1,4 +1,4 @@
-pub(super) fn type_from_assignment_rhs(rest: &str) -> Option<String> {
+pub(crate) fn type_from_assignment_rhs(rest: &str) -> Option<String> {
     let paren = rest.find('(')?;
     let head = &rest[..paren];
     if let Some(eq_pos) = head.find('=') {
@@ -15,13 +15,13 @@ pub(super) fn type_from_assignment_rhs(rest: &str) -> Option<String> {
 }
 
 #[allow(dead_code)]
-pub(super) fn is_tuple_assignment_at(content: &str, pos: usize) -> bool {
+pub(crate) fn is_tuple_assignment_at(content: &str, pos: usize) -> bool {
     let line_start = content[..pos].rfind('\n').map_or(0, |i| i + 1);
     let line_prefix = &content[line_start..pos];
     line_prefix.contains(',')
 }
 
-pub(super) fn type_from_assignment_target(
+pub(crate) fn type_from_assignment_target(
     scope: &str,
     pos: usize,
     receiver: &str,
@@ -34,7 +34,7 @@ pub(super) fn type_from_assignment_target(
     type_from_assignment_rhs(&scope[pos + receiver.len() + 3..])
 }
 
-pub(super) fn tuple_assignment_receiver_type(scope: &str, receiver: &str) -> Option<String> {
+pub(crate) fn tuple_assignment_receiver_type(scope: &str, receiver: &str) -> Option<String> {
     for line in scope.lines().rev() {
         let trimmed = line.trim();
         if trimmed.is_empty()

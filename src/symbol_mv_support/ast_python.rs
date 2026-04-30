@@ -79,8 +79,20 @@ pub(super) fn walk_py(
             collect_identifier_children(node, refs);
             recurse_py(node, src, owner, inside_fn, defs, refs);
         }
-        "global_statement" | "nonlocal_statement" | "delete_statement" => {
+        "global_statement" | "nonlocal_statement" => {
             collect_identifier_children(node, refs);
+        }
+        // `del` accepts arbitrary targets (`del obj.attr`,
+        // `del obj.attr[0]`, `del a.x, b.x`), parsed as
+        // `delete_statement -> attribute(...)`/`subscript(...)`/
+        // `expression_list`. Recursing lets the `"attribute"` /
+        // `"identifier"` arms (and the default-recurse `subscript`
+        // path) handle each target. Without recursion, the round-9 H1
+        // attribute-arm fix never fires under `del` and every
+        // `del c.field` site is silently dropped from the rename plan
+        // (KPOP round 10 H1).
+        "delete_statement" => {
+            recurse_py(node, src, owner, inside_fn, defs, refs);
         }
         "raise_statement" => {
             collect_raise_from(node, refs);

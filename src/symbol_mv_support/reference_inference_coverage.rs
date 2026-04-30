@@ -1,5 +1,4 @@
 use super::*;
-use crate::symbol_mv_support::reference_inference::reference_inference_assignments::is_tuple_assignment_at;
 
 #[test]
 fn touch_reference_inference_helpers_for_coverage_gate() {

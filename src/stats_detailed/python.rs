@@ -6,6 +6,11 @@ use tree_sitter::Node;
 use super::types::UnitMetrics;
 use super::{FileScopeMetrics, file_unit_metrics};
 
+fn py_import_metric(path: &std::path::Path, imports: usize) -> Option<usize> {
+    let fname = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    (fname != "__init__.py").then_some(imports)
+}
+
 #[must_use]
 pub fn collect_detailed_py(
     parsed_files: &[&ParsedFile],
@@ -19,7 +24,7 @@ pub fn collect_detailed_py(
             &parsed.path,
             FileScopeMetrics {
                 lines,
-                imports: fm.imports,
+                imports: py_import_metric(&parsed.path, fm.imports),
                 statements: fm.statements,
                 functions: fm.functions,
                 interface_types: fm.interface_types,

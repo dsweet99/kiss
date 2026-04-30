@@ -109,6 +109,18 @@ pub(super) fn parse_violation_lines(stdout: &str) -> Vec<MetricEntry> {
 }
 
 fn build_sync_corpus(dir: &std::path::Path) {
+    let pkg_dir = dir.join("pkg");
+    fs::create_dir_all(&pkg_dir).unwrap();
+    fs::write(
+        pkg_dir.join("__init__.py"),
+        r"import os
+import sys
+import json
+from typing import Dict, List, Optional, Set, Tuple
+",
+    )
+    .unwrap();
+
     fs::write(
         dir.join("big_module.py"),
         r"import os

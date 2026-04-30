@@ -1,14 +1,26 @@
+use super::definition::{find_impl_blocks, find_python_class_block};
+
 #[path = "reference_inference_assignments.rs"]
 mod reference_inference_assignments;
-
-use super::definition::find_python_class_block;
-use reference_inference_assignments::{
-    tuple_assignment_receiver_type, type_from_assignment_rhs, type_from_assignment_target,
-};
+#[path = "reference_inference_rust.rs"]
+mod reference_inference_rust;
 
 #[cfg(test)]
 #[path = "reference_inference_coverage.rs"]
 mod reference_inference_coverage;
+
+pub(super) use reference_inference_assignments::{
+    tuple_assignment_receiver_type, type_from_assignment_rhs, type_from_assignment_target,
+};
+#[cfg(test)]
+pub(super) use reference_inference_assignments::is_tuple_assignment_at;
+pub(super) use reference_inference_rust::{
+    enclosing_rust_impl_type, extract_receiver, infer_receiver_type_at,
+};
+#[cfg(test)]
+pub(super) use reference_inference_rust::{
+    method_return_type, strip_rust_type_prefix, type_after_pattern_last_before,
+};
 
 // Receiver-type inference for owner-qualified `kiss mv` rename. Extracted
 // from `reference.rs` to keep that file under the `lines_per_file` gate.
@@ -230,7 +242,7 @@ pub(super) fn type_from_python_param_annotation(scope: &str, receiver: &str) -> 
     None
 }
 
-pub(super) fn split_method_receiver(receiver: &str) -> Option<(&str, &str)> {
+fn split_method_receiver(receiver: &str) -> Option<(&str, &str)> {
     let method = receiver.strip_prefix("@method:")?;
     let (method, base) = method.split_once('|').unwrap_or((method, ""));
     Some((method, base))
@@ -331,10 +343,3 @@ fn python_quoted_annotation(rest: &str) -> Option<&str> {
     None
 }
 
-#[path = "reference_inference_rust.rs"]
-mod reference_inference_rust;
-#[allow(unused_imports)]
-pub(super) use reference_inference_rust::{
-    enclosing_rust_impl_type, extract_receiver, infer_receiver_type_at, method_return_type,
-    strip_rust_type_prefix, type_after_pattern_last_before,
-};

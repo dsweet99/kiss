@@ -4,11 +4,10 @@
 use syn::visit::Visit;
 use syn::{Expr, ExprCall, ExprMacro, ExprPath, ImplItem, ItemFn, ItemImpl, Type};
 
-use crate::Language;
-
 use super::super::ast_models::{Definition, Reference, ReferenceKind, SymbolKind};
-use super::ast_rust_macros::collect_macro_reference_sites;
+use crate::Language;
 use super::{ident_byte_span, item_full_span};
+use super::ast_rust_macros::collect_macro_reference_sites;
 
 pub(crate) fn collect_impl(
     item_impl: &ItemImpl,

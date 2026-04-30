@@ -156,6 +156,30 @@ fn inner_function_shadow_collects_nested_definitions() {
 }
 
 #[test]
+fn del_obj_attr_emits_attribute_reference() {
+    // KPOP round 10 H1 regression: `del obj.attr` was silently dropped
+    // from the rename plan because `walk_py`'s `delete_statement` arm
+    // called `collect_identifier_children` without recursing, so the
+    // `"attribute"` arm (round 9 H1 fix) never fired under a `del`.
+    // Cover bare, tuple, and subscripted `del` targets.
+    let src = "class C:\n    def field(self):\n        return 1\n\ndef use(c, c2):\n    del c.field\n    del c.field, c2.field\n    del c.field[0]\n";
+    let ParseOutcome::Success(res) = parse_python(src) else {
+        panic!("parse should succeed");
+    };
+    let attr_refs: Vec<_> = res
+        .references
+        .iter()
+        .filter(|r| r.kind == ReferenceKind::Method && &src[r.start..r.end] == "field")
+        .collect();
+    assert!(
+        attr_refs.len() >= 4,
+        "expected at least 4 `field` Method refs from the four `del`-target attribute sites; got {} ({:?})",
+        attr_refs.len(),
+        attr_refs.iter().map(|r| (r.start, r.end)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn decorator_call_site_emits_reference() {
     let src = "def helper(f):\n    return f\n\n@helper\ndef other():\n    return 1\n";
     let ParseOutcome::Success(res) = parse_python(src) else {
