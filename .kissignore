@@ -3,3 +3,6 @@ tests/fake_python/
 tests/fake_rust/
 tests/fixtures/mv/
 
+# KPOP experiment artifacts (standalone microbenches, not production code)
+_kpop/
+
