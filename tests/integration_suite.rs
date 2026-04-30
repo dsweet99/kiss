@@ -58,6 +58,8 @@ mod py_metrics_tests;
 mod python_counts_violations;
 #[path = "cases/regression_check_focus_empty_dir.rs"]
 mod regression_check_focus_empty_dir;
+#[path = "cases/regression_init_py_imports_sync.rs"]
+mod regression_init_py_imports_sync;
 #[path = "cases/regression_check_ignore_filename.rs"]
 mod regression_check_ignore_filename;
 #[path = "cases/regression_check_perf.rs"]
