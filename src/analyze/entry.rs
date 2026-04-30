@@ -48,7 +48,13 @@ fn try_cache_hit(
     rs_files: &[std::path::PathBuf],
     focus_set: &HashSet<std::path::PathBuf>,
 ) -> Option<AnalyzeResult> {
-    if !(opts.bypass_gate && !opts.show_timing && !opts.suppress_final_status) {
+    // The cache is consulted whenever the caller wants the standard output
+    // shape: skip when the user asked for a timing breakdown (which would be
+    // bogus on a cached run) or when the caller suppresses the final status
+    // line (e.g. `shrink`'s pre-flight pass, which expects to drive its own
+    // status emission). Both `--all` (`bypass_gate`) and the gated default
+    // flow are eligible; `try_run_cached_all` dispatches on `opts.bypass_gate`.
+    if opts.show_timing || opts.suppress_final_status {
         return None;
     }
     crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus_set).map(|ok| {

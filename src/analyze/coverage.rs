@@ -219,12 +219,19 @@ pub(crate) fn collect_coverage_viols(
         py: py_cov,
         rs: rs_cov,
     } = cov;
-    if !out_opts.bypass_gate {
-        return (Vec::new(), None);
-    }
+    // Always compute coverage cache lists so the full-check cache can be primed
+    // by every successful `kiss check` invocation, not just `--all`. The
+    // per-definition coverage *violations* are still gated on `bypass_gate`
+    // (the gated flow handles its own coverage gate-failure output via
+    // `evaluate_gate` upstream).
     let (definitions, unreferenced) = merge_coverage_results(py_cov, rs_cov);
     let (cov_viols, definitions, unreferenced) =
         build_viols_after_merge(definitions, unreferenced, focus_set, graphs);
+    let cov_viols = if out_opts.bypass_gate {
+        cov_viols
+    } else {
+        Vec::new()
+    };
     let cache_lists = if out_opts.show_timing {
         None
     } else {

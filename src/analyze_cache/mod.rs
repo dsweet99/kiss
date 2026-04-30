@@ -1,10 +1,12 @@
+mod emit;
+
 use crate::analyze::{
     compute_test_coverage_from_lists, filter_duplicates_by_focus, filter_viols_by_focus,
 };
+use emit::{emit_cached_bypass, emit_cached_gated};
 use kiss::check_cache;
 use kiss::check_cache::{CachedCodeChunk, CachedViolation};
 use kiss::check_universe_cache::{CachedCoverageItem, CachedDuplicateCluster, FullCheckCache};
-use kiss::cli_output::{print_duplicates, print_final_status, print_violations};
 use kiss::{Config, DuplicateCluster, GateConfig, Violation};
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::collections::HashSet;
@@ -239,27 +241,12 @@ pub fn try_run_cached_all(
         opts.gate_config,
     );
     let cache = load_full_cache(&fp)?;
-    let (mut viols, py_dups, rs_dups, cache) =
-        cached_duplicates(cache, opts.gate_config, focus_set);
-    // Match `collect_coverage_viols`: the `--all` bypass path emits per-definition coverage.
-    if opts.bypass_gate {
-        viols.extend(cached_coverage_viols(&cache, focus_set));
-    }
 
-    println!(
-        "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
-        cache.py_file_count + cache.rs_file_count,
-        cache.code_unit_count,
-        cache.statement_count,
-        cache.graph_nodes,
-        cache.graph_edges
-    );
-    print_violations(&viols);
-    print_duplicates("Python", &py_dups);
-    print_duplicates("Rust", &rs_dups);
-    let has_violations = !(viols.is_empty() && py_dups.is_empty() && rs_dups.is_empty());
-    print_final_status(has_violations);
-    Some(!has_violations)
+    if opts.bypass_gate {
+        Some(emit_cached_bypass(cache, opts, focus_set))
+    } else {
+        Some(emit_cached_gated(cache, opts, focus_set))
+    }
 }
 
 pub fn graph_counts(

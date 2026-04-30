@@ -19,7 +19,12 @@ pub(crate) struct FullCacheStoreInput<'a> {
 }
 
 pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
-    if !inp.opts.bypass_gate || inp.opts.show_timing {
+    // Cache writes are independent of `--all`: every successful `kiss check`
+    // run primes the cache so subsequent invocations (with or without
+    // `--all`) can hit it. We still skip writes when the user asked for
+    // timing breakdowns, so the timed run isn't influenced by I/O it would
+    // not normally do.
+    if inp.opts.show_timing {
         return;
     }
     let Some((definitions, unreferenced)) = inp.coverage_cache_lists else {

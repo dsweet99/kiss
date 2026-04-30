@@ -56,6 +56,8 @@ mod main_integration;
 mod py_metrics_tests;
 #[path = "cases/python_counts_violations.rs"]
 mod python_counts_violations;
+#[path = "cases/regression_check_cache_uncached_default.rs"]
+mod regression_check_cache_uncached_default;
 #[path = "cases/regression_check_focus_empty_dir.rs"]
 mod regression_check_focus_empty_dir;
 #[path = "cases/regression_init_py_imports_sync.rs"]
