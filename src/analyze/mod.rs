@@ -24,10 +24,14 @@ mod print;
 pub use coverage::compute_test_coverage_from_lists;
 #[allow(unused_imports)] // Public API surface (`crate::analyze::check_coverage_gate`).
 pub use coverage_gate::check_coverage_gate;
+#[allow(unused_imports)] // Public API surface for cached-coverage-gate checks.
+pub(crate) use coverage_gate::evaluate_cached_gate;
 pub use dry::{run_dry, DryRunParams};
 #[allow(unused_imports)] // Public API surface for `kiss` library consumers.
 pub use dup_detect::{detect_py_duplicates, detect_rs_duplicates};
 pub use entry::{run_analyze, run_analyze_with_result};
+#[allow(unused_imports)]
+pub(crate) use cache::{FullCacheStoreInput, maybe_store_full_cache};
 pub use focus::{
     build_focus_set, filter_duplicates_by_focus, filter_viols_by_focus, gather_files, is_focus_file,
 };
@@ -40,6 +44,8 @@ pub use graph_api::{
 pub use coverage_types::CheckCoverageGateParams;
 pub use metrics_global::{compute_global_metrics, GlobalMetricsInput};
 pub use options::{AnalyzeOptions, AnalyzeResult};
+#[allow(unused_imports)]
+pub(crate) use pipeline::{FullPipelineInput, FullPipelineResult, run_full_pipeline};
 #[cfg(test)]
 mod tests_smoke;
 #[cfg(test)]

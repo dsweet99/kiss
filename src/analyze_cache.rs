@@ -4,12 +4,18 @@ use crate::analyze::{
 use kiss::check_cache;
 use kiss::check_cache::{CachedCodeChunk, CachedViolation};
 use kiss::check_universe_cache::{CachedCoverageItem, CachedDuplicateCluster, FullCheckCache};
+use kiss::stats::MetricStats;
 use kiss::cli_output::{print_duplicates, print_final_status, print_violations};
 use kiss::{Config, DuplicateCluster, GateConfig, Violation};
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
+
+mod path_helpers;
+use path_helpers::{cache_path_full, load_full_cache, same_cached_paths};
+
+const CACHE_SCHEMA_VERSION: &str = "v2";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -27,7 +33,7 @@ pub fn fingerprint_for_check(
     gate_config: &GateConfig,
 ) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    h = fnv1a64(h, env!("CARGO_PKG_VERSION").as_bytes());
+    h = fnv1a64(h, CACHE_SCHEMA_VERSION.as_bytes());
     h = fnv1a64(h, format!("{py_config:?}").as_bytes());
     h = fnv1a64(h, format!("{rs_config:?}").as_bytes());
     h = fnv1a64(h, format!("{gate_config:?}").as_bytes());
@@ -52,16 +58,6 @@ pub fn fingerprint_for_check(
     format!("{h:016x}")
 }
 
-fn cache_path_full(fingerprint: &str) -> PathBuf {
-    check_cache::cache_dir().join(format!("check_full_{fingerprint}.bin"))
-}
-
-fn load_full_cache(fingerprint: &str) -> Option<FullCheckCache> {
-    let p = cache_path_full(fingerprint);
-    let bytes = std::fs::read(p).ok()?;
-    let c: FullCheckCache = bincode::deserialize(&bytes).ok()?;
-    (c.fingerprint == fingerprint).then_some(c)
-}
 
 pub fn store_full_cache(cache: &FullCheckCache) {
     let dir = check_cache::cache_dir();
@@ -199,12 +195,24 @@ pub fn try_run_cached_all(
         opts.gate_config,
     );
     let cache = load_full_cache(&fp)?;
+    if !same_cached_paths(py_files, rs_files, focus_set, &cache) {
+        return None;
+    }
+    if !opts.bypass_gate
+        && opts.gate_config.test_coverage_threshold > 0
+        && crate::analyze::evaluate_cached_gate(
+            &cache.definitions,
+            &cache.unreferenced,
+            focus_set,
+            opts.gate_config.test_coverage_threshold,
+        )
+        .is_some()
+    {
+        return Some(false);
+    }
     let (mut viols, py_dups, rs_dups, cache) =
         cached_duplicates(cache, opts.gate_config, focus_set);
-    // Match `collect_coverage_viols`: the `--all` bypass path emits per-definition coverage.
-    if opts.bypass_gate {
-        viols.extend(cached_coverage_viols(&cache, focus_set));
-    }
+    viols.extend(cached_coverage_viols(&cache, focus_set));
 
     println!(
         "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
@@ -220,6 +228,28 @@ pub fn try_run_cached_all(
     let has_violations = !(viols.is_empty() && py_dups.is_empty() && rs_dups.is_empty());
     print_final_status(has_violations);
     Some(!has_violations)
+}
+
+pub(crate) fn try_run_cached_stats_summary(
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+    py_config: &Config,
+    rs_config: &Config,
+    gate_config: &GateConfig,
+) -> Option<FullCheckCache> {
+    let fp = fingerprint_for_check(py_files, rs_files, py_config, rs_config, gate_config);
+    let cache = load_full_cache(&fp)?;
+    let focus_set: HashSet<PathBuf> = py_files.iter().chain(rs_files).cloned().collect();
+    if !same_cached_paths(py_files, rs_files, &focus_set, &cache) {
+        return None;
+    }
+    if cache.py_file_count > 0 && cache.py_stats.is_none() {
+        return None;
+    }
+    if cache.rs_file_count > 0 && cache.rs_stats.is_none() {
+        return None;
+    }
+    Some(cache)
 }
 
 pub fn graph_counts(
@@ -271,6 +301,11 @@ pub struct FullCacheInputs<'a> {
     pub coverage_violations: &'a [Violation],
     pub py_graph: Option<&'a DependencyGraph>,
     pub rs_graph: Option<&'a DependencyGraph>,
+    pub py_stats: Option<&'a MetricStats>,
+    pub rs_stats: Option<&'a MetricStats>,
+    pub focus_paths: Vec<String>,
+    pub py_paths: Vec<String>,
+    pub rs_paths: Vec<String>,
     pub py_dups_all: &'a [DuplicateCluster],
     pub rs_dups_all: &'a [DuplicateCluster],
     pub definitions: Vec<CachedCoverageItem>,
@@ -281,6 +316,11 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
     let (graph_nodes, graph_edges) = graph_counts(inputs.py_graph, inputs.rs_graph);
     let cache = FullCheckCache {
         fingerprint: inputs.fingerprint,
+        py_stats: inputs.py_stats.cloned(),
+        rs_stats: inputs.rs_stats.cloned(),
+        focus_paths: inputs.focus_paths,
+        py_paths: inputs.py_paths,
+        rs_paths: inputs.rs_paths,
         py_file_count: inputs.py_file_count,
         rs_file_count: inputs.rs_file_count,
         code_unit_count: inputs.code_unit_count,
@@ -325,76 +365,4 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn empty_cache(fp: &str) -> FullCheckCache {
-        FullCheckCache {
-            fingerprint: fp.to_string(),
-            py_file_count: 0,
-            rs_file_count: 0,
-            code_unit_count: 0,
-            statement_count: 0,
-            graph_nodes: 0,
-            graph_edges: 0,
-            base_violations: Vec::new(),
-            graph_violations: Vec::new(),
-            coverage_violations: Vec::new(),
-            py_duplicates: Vec::new(),
-            rs_duplicates: Vec::new(),
-            definitions: Vec::new(),
-            unreferenced: Vec::new(),
-        }
-    }
-
-    fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
-        FullCacheInputs {
-            fingerprint: fp.to_string(),
-            py_file_count: 0, rs_file_count: 0,
-            code_unit_count: 0, statement_count: 0,
-            violations: &[], graph_viols_all: &[], coverage_violations: &[],
-            py_graph: None, rs_graph: None,
-            py_dups_all: &[], rs_dups_all: &[],
-            definitions: Vec::new(), unreferenced: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn cache_round_trip_and_helpers() {
-        let fp = fingerprint_for_check(
-            &[], &[], &Config::python_defaults(), &Config::rust_defaults(), &GateConfig::default(),
-        );
-        assert!(!fp.is_empty());
-
-        let v = coverage_violation(PathBuf::from("test.py"), "foo".into(), 1, 50);
-        assert_eq!(v.metric, "test_coverage");
-        assert!(v.message.contains("50%"));
-        assert_eq!(graph_counts(None, None), (0, 0));
-
-        cache_path_full("deadbeef");
-        assert!(load_full_cache("deadbeef").is_none());
-
-        let focus = HashSet::new();
-        let (_viols, py_dups, rs_dups, cache) =
-            cached_duplicates(empty_cache("deadbeef"), &GateConfig::default(), &focus);
-        assert!(py_dups.is_empty() && rs_dups.is_empty());
-        assert!(cached_coverage_viols(&cache, &focus).is_empty());
-    }
-
-    #[test]
-    fn fnv1a64_properties() {
-        let h0 = 0xcbf2_9ce4_8422_2325_u64;
-        assert_eq!(fnv1a64(h0, b""), h0);
-        assert_eq!(fnv1a64(h0, b"hello"), fnv1a64(h0, b"hello"));
-        assert_ne!(fnv1a64(h0, b"hello"), fnv1a64(h0, b"world"));
-    }
-
-    #[test]
-    fn full_cache_inputs_and_store() {
-        let mut inputs = empty_inputs("test_fp");
-        inputs.py_file_count = 1;
-        assert_eq!(inputs.py_file_count, 1);
-
-        store_full_cache_from_run(empty_inputs("empty_run_test"));
-    }
-}
+mod tests;

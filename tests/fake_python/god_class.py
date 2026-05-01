@@ -2,11 +2,21 @@
 
 import json
 import os
+import re
 import smtplib
 import sqlite3
+from collections.abc import Mapping
 from datetime import datetime
 from email.mime.text import MIMEText
 from typing import Any, Optional
+
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_identifier(identifier: str) -> str:
+    if not isinstance(identifier, str) or not _IDENTIFIER_RE.fullmatch(identifier):
+        raise ValueError("Invalid SQL identifier")
+    return identifier
 
 
 class ApplicationManager:
@@ -32,13 +42,13 @@ class ApplicationManager:
         self.sessions = {}
         self.log_file = None
         self.smtp_connection = None
-        
+
         self._load_config()
         self._init_database()
         self._init_logging()
 
     # ========== Configuration Management ==========
-    
+
     def _load_config(self):
         if os.path.exists(self.config_path):
             with open(self.config_path, 'r') as f:
@@ -79,7 +89,7 @@ class ApplicationManager:
         config[keys[-1]] = value
 
     # ========== Database Operations ==========
-    
+
     def _init_database(self):
         db_path = self.get_config("database.path", "app.db")
         self.db_connection = sqlite3.connect(db_path)
@@ -112,7 +122,10 @@ class ApplicationManager:
         return cursor.fetchall()
 
     def execute_insert(self, table: str, data: dict) -> int:
-        columns = ", ".join(data.keys())
+        if not isinstance(data, Mapping) or not data:
+            raise ValueError("data must be a non-empty mapping")
+        table = _validate_identifier(table)
+        columns = ", ".join(_validate_identifier(column) for column in data.keys())
         placeholders = ", ".join(["?" for _ in data])
         query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
         cursor = self.db_connection.cursor()
@@ -121,8 +134,13 @@ class ApplicationManager:
         return cursor.lastrowid
 
     def execute_update(self, table: str, data: dict, where: dict) -> int:
-        set_clause = ", ".join([f"{k} = ?" for k in data])
-        where_clause = " AND ".join([f"{k} = ?" for k in where])
+        if not isinstance(data, Mapping) or not data:
+            raise ValueError("data must be a non-empty mapping")
+        if not isinstance(where, Mapping) or not where:
+            raise ValueError("where must be a non-empty mapping")
+        table = _validate_identifier(table)
+        set_clause = ", ".join([f"{_validate_identifier(k)} = ?" for k in data.keys()])
+        where_clause = " AND ".join([f"{_validate_identifier(k)} = ?" for k in where.keys()])
         query = f"UPDATE {table} SET {set_clause} WHERE {where_clause}"
         cursor = self.db_connection.cursor()
         cursor.execute(query, tuple(data.values()) + tuple(where.values()))
@@ -130,7 +148,10 @@ class ApplicationManager:
         return cursor.rowcount
 
     def execute_delete(self, table: str, where: dict) -> int:
-        where_clause = " AND ".join([f"{k} = ?" for k in where])
+        if not isinstance(where, Mapping) or not where:
+            raise ValueError("where must be a non-empty mapping")
+        table = _validate_identifier(table)
+        where_clause = " AND ".join([f"{_validate_identifier(k)} = ?" for k in where.keys()])
         query = f"DELETE FROM {table} WHERE {where_clause}"
         cursor = self.db_connection.cursor()
         cursor.execute(query, tuple(where.values()))
@@ -138,7 +159,7 @@ class ApplicationManager:
         return cursor.rowcount
 
     # ========== Email Operations ==========
-    
+
     def _connect_smtp(self):
         if self.smtp_connection is None:
             host = self.get_config("email.host", "localhost")
@@ -165,7 +186,7 @@ class ApplicationManager:
         self.send_email(user_email, subject, body)
 
     # ========== Logging ==========
-    
+
     def _init_logging(self):
         log_file = self.get_config("logging.file", "app.log")
         self.log_file = open(log_file, "a")
@@ -173,19 +194,19 @@ class ApplicationManager:
     def log(self, level: str, message: str):
         timestamp = datetime.now().isoformat()
         log_entry = f"[{timestamp}] [{level}] {message}"
-        
+
         # Write to file
         if self.log_file:
             self.log_file.write(log_entry + "\n")
             self.log_file.flush()
-        
+
         # Write to database
         self.execute_insert("logs", {
             "timestamp": timestamp,
             "level": level,
             "message": message
         })
-        
+
         # Print to console
         print(log_entry)
 
@@ -199,7 +220,7 @@ class ApplicationManager:
         self.log("WARNING", message)
 
     # ========== Caching ==========
-    
+
     def cache_get(self, key: str) -> Optional[Any]:
         if not self.get_config("cache.enabled", True):
             return None
@@ -222,7 +243,7 @@ class ApplicationManager:
         self.cache = {}
 
     # ========== Session Management ==========
-    
+
     def create_session(self, user_id: int) -> str:
         import hashlib
         import secrets
@@ -250,7 +271,7 @@ class ApplicationManager:
             self.log_info(f"Session destroyed for user {user_id}")
 
     # ========== User Management (yes, this too!) ==========
-    
+
     def create_user(self, username: str, email: str, password: str) -> int:
         import hashlib
         password_hash = hashlib.sha256(password.encode()).hexdigest()
@@ -280,7 +301,7 @@ class ApplicationManager:
         return None
 
     # ========== Report Generation (why not!) ==========
-    
+
     def generate_user_report(self) -> str:
         users = self.execute_query("SELECT id, username, email, created_at FROM users")
         report = "USER REPORT\n" + "=" * 40 + "\n"
@@ -305,7 +326,7 @@ class ApplicationManager:
         return report
 
     # ========== Cleanup ==========
-    
+
     def close(self):
         if self.db_connection:
             self.db_connection.close()

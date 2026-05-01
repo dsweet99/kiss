@@ -60,28 +60,35 @@ fn finalize_coverage_and_dups(phase: CovDupPhase<'_>) -> CovDupOutcome {
         rs_cov,
         py_graph,
         rs_graph,
+        precomputed_cov_viols,
+        precomputed_coverage_cache_lists,
         graph_viols_all,
         py_dups_all,
         rs_dups_all,
     } = phase;
     viols.extend(filter_viols_by_focus(graph_viols_all.to_vec(), focus_set));
     let t_phase2 = Instant::now();
-    let graphs = GraphRefPair {
-        py: py_graph,
-        rs: rs_graph,
-    };
-    let out_opts = CoverageOutputOpts {
-        bypass_gate: opts.bypass_gate,
-        show_timing: opts.show_timing,
-    };
-    let (cov_viols, coverage_cache_lists) = collect_coverage_viols(
-        PyRsTestCoverage {
-            py: py_cov,
-            rs: rs_cov,
+    let (cov_viols, coverage_cache_lists) = precomputed_coverage_cache_lists.map_or_else(
+        || {
+            let graphs = GraphRefPair {
+                py: py_graph,
+                rs: rs_graph,
+            };
+            let out_opts = CoverageOutputOpts {
+                bypass_gate: opts.bypass_gate,
+                show_timing: opts.show_timing,
+            };
+            collect_coverage_viols(
+                PyRsTestCoverage {
+                    py: py_cov,
+                    rs: rs_cov,
+                },
+                focus_set,
+                out_opts,
+                graphs,
+            )
         },
-        focus_set,
-        out_opts,
-        graphs,
+        |coverage_cache_lists| (precomputed_cov_viols, Some(coverage_cache_lists)),
     );
     viols.extend(cov_viols.iter().cloned());
     let py_dups = filter_duplicates_by_focus(py_dups_all.to_vec(), focus_set);
@@ -101,6 +108,7 @@ fn finalize_store_and_print(phase: StorePrintPhase<'_>) -> bool {
         opts,
         py_files,
         rs_files,
+        focus_set,
         result,
         viols,
         graph_viols_all,
@@ -110,6 +118,8 @@ fn finalize_store_and_print(phase: StorePrintPhase<'_>) -> bool {
         py_dups_all,
         rs_dups_all,
         coverage_cache_lists,
+        py_stats,
+        rs_stats,
         py_dups,
         rs_dups,
         t_phase2,
@@ -118,6 +128,7 @@ fn finalize_store_and_print(phase: StorePrintPhase<'_>) -> bool {
         opts,
         py_files,
         rs_files,
+        focus_set,
         result,
         graph_viols_all,
         coverage_violations: cov_viols,
@@ -126,6 +137,8 @@ fn finalize_store_and_print(phase: StorePrintPhase<'_>) -> bool {
         py_dups_all,
         rs_dups_all,
         coverage_cache_lists,
+        py_stats,
+        rs_stats,
     });
     print_all_results_with_dups(
         viols,
@@ -140,36 +153,26 @@ fn finalize_store_and_print(phase: StorePrintPhase<'_>) -> bool {
 }
 
 pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
-    let FinalizeAnalysisIn {
-        opts,
-        py_files,
-        rs_files,
-        focus_set,
-        products:
-            AnalysisProducts {
-                result,
-                mut viols,
-                file_count,
-                py_cov,
-                rs,
-                py_graph,
-                graph_viols_all,
-                py_dups_all,
-            },
-        timings,
-    } = in_;
+    let opts = in_.opts;
+    let py_files = in_.py_files;
+    let rs_files = in_.rs_files;
+    let focus_set = in_.focus_set;
+    let timings = in_.timings;
+    let products = in_.products;
+    let mut viols = products.viols;
+    let file_count = products.file_count;
 
     let RustAnalysis {
         graph: rs_graph_owned,
         cov: rs_cov,
         dups: rs_dups_vec,
-    } = rs;
+    } = products.rs;
 
     let metrics = finalize_header(HeaderPhase {
         opts,
-        result: &result,
+        result: &products.result,
         file_count,
-        py_graph: py_graph.as_ref(),
+        py_graph: products.py_graph.as_ref(),
         rs_graph: rs_graph_owned.as_ref(),
         timings,
     });
@@ -178,12 +181,14 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         opts,
         focus_set,
         viols: &mut viols,
-        py_cov,
+        py_cov: products.py_cov,
         rs_cov,
-        py_graph: py_graph.as_ref(),
+        py_graph: products.py_graph.as_ref(),
         rs_graph: rs_graph_owned.as_ref(),
-        graph_viols_all: &graph_viols_all,
-        py_dups_all: &py_dups_all,
+        precomputed_cov_viols: products.cov_viols,
+        precomputed_coverage_cache_lists: products.coverage_cache_lists,
+        graph_viols_all: &products.graph_viols_all,
+        py_dups_all: &products.py_dups_all,
         rs_dups_all: &rs_dups_vec,
     });
 
@@ -191,15 +196,18 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         opts,
         py_files,
         rs_files,
-        result: &result,
+        focus_set,
+        result: &products.result,
         viols: &viols,
-        graph_viols_all: &graph_viols_all,
+        graph_viols_all: &products.graph_viols_all,
         cov_viols: &outcome.cov_viols,
-        py_graph: py_graph.as_ref(),
+        py_graph: products.py_graph.as_ref(),
         rs_graph: rs_graph_owned.as_ref(),
-        py_dups_all: &py_dups_all,
+        py_dups_all: &products.py_dups_all,
         rs_dups_all: &rs_dups_vec,
         coverage_cache_lists: outcome.coverage_cache_lists,
+        py_stats: products.py_stats.as_ref(),
+        rs_stats: products.rs_stats.as_ref(),
         py_dups: &outcome.py_dups,
         rs_dups: &outcome.rs_dups,
         t_phase2: outcome.t_phase2,

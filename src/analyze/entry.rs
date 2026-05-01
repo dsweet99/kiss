@@ -32,7 +32,7 @@ fn try_cache_hit(
     rs_files: &[std::path::PathBuf],
     focus_set: &HashSet<std::path::PathBuf>,
 ) -> Option<AnalyzeResult> {
-    if !(opts.bypass_gate && !opts.show_timing && !opts.suppress_final_status) {
+    if opts.show_timing || opts.suppress_final_status {
         return None;
     }
     crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus_set)

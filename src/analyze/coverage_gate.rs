@@ -63,6 +63,40 @@ pub(crate) fn evaluate_gate(
     None
 }
 
+pub(crate) fn evaluate_cached_gate(
+    definitions: &[CachedCoverageItem],
+    unreferenced: &[CachedCoverageItem],
+    focus_set: &HashSet<PathBuf>,
+    threshold: usize,
+) -> Option<crate::analyze::options::AnalyzeResult> {
+    let defs = definitions
+        .iter()
+        .map(|item| item.clone().into_tuple())
+        .collect::<Vec<_>>();
+    let unrefs = unreferenced
+        .iter()
+        .map(|item| item.clone().into_tuple())
+        .collect::<Vec<_>>();
+    let (coverage, _tested, _total, unreferenced_focus) =
+        compute_test_coverage_from_lists(&defs, &unrefs, focus_set);
+    if threshold == 0 {
+        return None;
+    }
+    if coverage >= threshold {
+        return None;
+    }
+    let file_pcts = file_coverage_map(&defs, &unreferenced_focus);
+    print_coverage_gate_failure(&CoverageGateFailureCtx {
+        threshold,
+        unreferenced: &unreferenced_focus,
+        file_pcts: &file_pcts,
+    });
+    Some(crate::analyze::options::AnalyzeResult {
+        success: false,
+        metrics: None,
+    })
+}
+
 #[allow(dead_code)] // Called from unit tests and via `crate::analyze::check_coverage_gate`; not all builds reference it.
 pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
     let CheckCoverageGateParams {

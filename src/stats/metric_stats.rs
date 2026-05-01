@@ -8,7 +8,9 @@ use rayon::prelude::*;
 use super::collect_py::collect_from_node;
 use super::collect_rust::collect_rust_from_items;
 
-#[derive(Debug, Default)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct MetricStats {
     pub statements_per_function: Vec<usize>,
     pub arguments_per_function: Vec<usize>,

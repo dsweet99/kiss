@@ -1,5 +1,8 @@
 use kiss::check_universe_cache::CachedCoverageItem;
+use kiss::stats::MetricStats;
 use kiss::{DuplicateCluster, Violation};
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 use crate::analyze::options::AnalyzeOptions;
 use crate::analyze_parse::ParseResult;
@@ -8,6 +11,7 @@ pub(crate) struct FullCacheStoreInput<'a> {
     pub opts: &'a AnalyzeOptions<'a>,
     pub py_files: &'a [std::path::PathBuf],
     pub rs_files: &'a [std::path::PathBuf],
+    pub focus_set: &'a HashSet<PathBuf>,
     pub result: &'a ParseResult,
     pub graph_viols_all: &'a [Violation],
     pub coverage_violations: &'a [Violation],
@@ -15,11 +19,13 @@ pub(crate) struct FullCacheStoreInput<'a> {
     pub rs_graph: Option<&'a kiss::DependencyGraph>,
     pub py_dups_all: &'a [DuplicateCluster],
     pub rs_dups_all: &'a [DuplicateCluster],
+    pub py_stats: Option<&'a MetricStats>,
+    pub rs_stats: Option<&'a MetricStats>,
     pub coverage_cache_lists: Option<(Vec<CachedCoverageItem>, Vec<CachedCoverageItem>)>,
 }
 
 pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
-    if !inp.opts.bypass_gate || inp.opts.show_timing {
+    if inp.opts.show_timing || inp.opts.suppress_final_status {
         return;
     }
     let Some((definitions, unreferenced)) = inp.coverage_cache_lists else {
@@ -32,12 +38,23 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
         inp.opts.rs_config,
         inp.opts.gate_config,
     );
+    let mut focus_paths: Vec<String> = inp
+        .focus_set
+        .iter()
+        .map(|path| path.to_string_lossy().to_string())
+        .collect();
+    focus_paths.sort();
     crate::analyze_cache::store_full_cache_from_run(crate::analyze_cache::FullCacheInputs {
         fingerprint: fp,
         py_file_count: inp.result.py_parsed.len(),
         rs_file_count: inp.result.rs_parsed.len(),
         code_unit_count: inp.result.code_unit_count,
         statement_count: inp.result.statement_count,
+        py_stats: inp.py_stats,
+        rs_stats: inp.rs_stats,
+        focus_paths,
+        py_paths: inp.py_files.iter().map(|f| f.to_string_lossy().to_string()).collect(),
+        rs_paths: inp.rs_files.iter().map(|f| f.to_string_lossy().to_string()).collect(),
         violations: &inp.result.violations,
         graph_viols_all: inp.graph_viols_all,
         coverage_violations: inp.coverage_violations,

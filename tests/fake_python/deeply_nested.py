@@ -1,10 +1,13 @@
 """Examples of overly nested code - too many indentation levels."""
 
 
+from collections.abc import Mapping
+
+
 def process_user_request(request, user, permissions, config):
     """This function has way too much nesting."""
     result = {"success": False, "data": None, "errors": []}
-    
+
     if request is not None:
         if request.get("action") is not None:
             action = request["action"]
@@ -52,17 +55,21 @@ def process_user_request(request, user, permissions, config):
             result["errors"].append("No action specified")
     else:
         result["errors"].append("No request provided")
-    
+
     return result
 
 
 def calculate_shipping(order, customer, warehouse, carrier_rates, promotions, settings):
     """Another deeply nested function."""
     shipping_cost = 0.0
-    
+
     if order:
         if order.get("items"):
-            if len(order["items"]) > 0:
+            items = order["items"]
+            if isinstance(items, list) and len(items) > 0:
+                valid_items = [item for item in items if isinstance(item, Mapping)]
+                if not valid_items:
+                    return shipping_cost
                 if customer:
                     if customer.get("address"):
                         address = customer["address"]
@@ -82,10 +89,10 @@ def calculate_shipping(order, customer, warehouse, carrier_rates, promotions, se
                                                                     per_kg = country_rates["per_kg"]
                                                                     total_weight = sum(
                                                                         item.get("weight", 0) * item.get("quantity", 1)
-                                                                        for item in order["items"]
+                                                                        for item in valid_items
                                                                     )
                                                                     shipping_cost = base + (total_weight * per_kg)
-                                                                    
+
                                                                     if promotions:
                                                                         if "free_shipping" in promotions:
                                                                             promo = promotions["free_shipping"]
@@ -93,7 +100,7 @@ def calculate_shipping(order, customer, warehouse, carrier_rates, promotions, se
                                                                                 if promo.get("min_order"):
                                                                                     order_total = sum(
                                                                                         item.get("price", 0) * item.get("quantity", 1)
-                                                                                        for item in order["items"]
+                                                                                        for item in valid_items
                                                                                     )
                                                                                     if order_total >= promo["min_order"]:
                                                                                         shipping_cost = 0.0
@@ -105,7 +112,7 @@ def validate_form_submission(form_data, schema, rules, context, options):
     """Yet another deeply nested validation function."""
     errors = []
     warnings = []
-    
+
     if form_data:
         if isinstance(form_data, dict):
             if schema:
@@ -147,6 +154,6 @@ def validate_form_submission(form_data, schema, rules, context, options):
                                     else:
                                         if not field_schema.get("nullable"):
                                             errors.append(f"{field_name} cannot be null")
-    
+
     return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
 

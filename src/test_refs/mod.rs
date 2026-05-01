@@ -34,7 +34,7 @@ pub type CoveringTest = (PathBuf, String);
 
 pub(crate) type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TestRefAnalysis {
     pub definitions: Vec<CodeDefinition>,
     pub test_references: HashSet<String>,

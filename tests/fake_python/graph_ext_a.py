@@ -1,9 +1,11 @@
 """Fixture: internal module with external imports."""
 
-import os
 import json
+import os
 
-import tests.fake_python.graph_ext_b
+from tests.fake_python import graph_ext_b as _graph_ext_b
 
-__all__ = ["os", "json", "tests"]
+_ = _graph_ext_b
+
+__all__ = ["os", "json"]
 

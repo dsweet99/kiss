@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use kiss::{GateConfig, ParsedFile};
 
 use crate::analyze::coverage_gate::evaluate_gate;
@@ -125,6 +127,10 @@ pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
             viols,
             file_count,
             py_cov,
+            cov_viols: Vec::new(),
+            coverage_cache_lists: None,
+            py_stats: None,
+            rs_stats: None,
             rs,
             py_graph,
             graph_viols_all,

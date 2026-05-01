@@ -56,10 +56,18 @@ mod py_metrics_tests;
 mod python_counts_violations;
 #[path = "cases/regression_check_perf.rs"]
 mod regression_check_perf;
+#[path = "cases/regression_check_default_warm_gate.rs"]
+mod regression_check_default_warm_gate;
+#[path = "cases/regression_check_default_writes_cache.rs"]
+mod regression_check_default_writes_cache;
 #[path = "cases/regression_stats_all_metric_registry.rs"]
 mod regression_stats_all_metric_registry;
 #[path = "cases/regression_stats_summary_headers_and_coverage.rs"]
 mod regression_stats_summary_headers_and_coverage;
+#[path = "cases/regression_stats_cold_eq_warm.rs"]
+mod regression_stats_cold_eq_warm;
+#[path = "cases/regression_stats_summary_uses_cache.rs"]
+mod regression_stats_summary_uses_cache;
 #[path = "cases/rules_config_integration.rs"]
 mod rules_config_integration;
 #[path = "cases/rust_counts_violations.rs"]

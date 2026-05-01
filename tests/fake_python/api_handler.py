@@ -1,10 +1,11 @@
 """API handler with big try/except blocks and functions that do too much."""
 
+import base64
 import json
 import logging
 import time
+from collections.abc import Mapping
 from datetime import datetime
-
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ def handle_api_request(request):
     This function does way too many things:
     - Request parsing
     - Authentication
-    - Authorization  
+    - Authorization
     - Rate limiting
     - Input validation
     - Business logic routing
@@ -25,24 +26,28 @@ def handle_api_request(request):
     """
     start_time = time.time()
     request_id = f"req_{int(start_time * 1000)}"
-    
+
     try:
         # Parse request
         if request is None:
             raise ValueError("Request cannot be None")
-        
+        if not isinstance(request, Mapping):
+            raise ValueError("Request must be a mapping")
+
         method = request.get("method", "GET")
         path = request.get("path", "/")
         headers = request.get("headers", {})
         body = request.get("body")
         _query_params = request.get("query_params", {})
-        
+        if not isinstance(headers, Mapping):
+            raise ValueError("Request headers must be a mapping")
+
         logger.info(f"[{request_id}] {method} {path}")
-        
+
         # Authentication
         auth_header = headers.get("Authorization", "")
         user = None
-        
+
         if auth_header:
             if auth_header.startswith("Bearer "):
                 token = auth_header[7:]
@@ -61,8 +66,21 @@ def handle_api_request(request):
                         "headers": {"Content-Type": "application/json"}
                     }
             elif auth_header.startswith("Basic "):
-                import base64
-                credentials = base64.b64decode(auth_header[6:]).decode()
+                try:
+                    credentials = base64.b64decode(auth_header[6:]).decode()
+                except (ValueError, base64.binascii.Error, UnicodeDecodeError) as e:
+                    logger.warning(f"[{request_id}] Invalid basic auth encoding: {e}")
+                    return {
+                        "status": 401,
+                        "body": {"error": "Invalid credentials"},
+                        "headers": {"Content-Type": "application/json"}
+                    }
+                if ":" not in credentials:
+                    return {
+                        "status": 401,
+                        "body": {"error": "Invalid credentials"},
+                        "headers": {"Content-Type": "application/json"}
+                    }
                 username, password = credentials.split(":", 1)
                 if username == "admin" and password == "secret":
                     user = {
@@ -77,11 +95,11 @@ def handle_api_request(request):
                         "body": {"error": "Invalid credentials"},
                         "headers": {"Content-Type": "application/json"}
                     }
-        
+
         # Rate limiting (simplified)
         _client_ip = headers.get("X-Forwarded-For", "127.0.0.1")
         # In real code, check rate limit here
-        
+
         # Route to handler
         if path == "/api/users":
             if method == "GET":
@@ -120,7 +138,12 @@ def handle_api_request(request):
                         "body": {"error": "Request body required"},
                         "headers": {"Content-Type": "application/json"}
                     }
-                # Validate user data
+                if not isinstance(body, Mapping):
+                    return {
+                        "status": 400,
+                        "body": {"error": "Request body must be an object"},
+                        "headers": {"Content-Type": "application/json"}
+                    }
                 if "username" not in body:
                     return {
                         "status": 400,
@@ -145,7 +168,7 @@ def handle_api_request(request):
                     "body": new_user,
                     "headers": {"Content-Type": "application/json"}
                 }
-        
+
         elif path.startswith("/api/users/"):
             user_id = path.split("/")[-1]
             if method == "GET":
@@ -155,7 +178,13 @@ def handle_api_request(request):
                     "headers": {"Content-Type": "application/json"}
                 }
             elif method == "DELETE":
-                if user is None or "admin" not in user.get("roles", []):
+                if user is None:
+                    return {
+                        "status": 401,
+                        "body": {"error": "Authentication required"},
+                        "headers": {"Content-Type": "application/json"}
+                    }
+                if "admin" not in user.get("roles", []):
                     return {
                         "status": 403,
                         "body": {"error": "Admin access required"},
@@ -166,21 +195,21 @@ def handle_api_request(request):
                     "body": None,
                     "headers": {}
                 }
-        
+
         elif path == "/api/health":
             return {
                 "status": 200,
                 "body": {"status": "healthy", "timestamp": datetime.now().isoformat()},
                 "headers": {"Content-Type": "application/json"}
             }
-        
+
         else:
             return {
                 "status": 404,
                 "body": {"error": f"Not found: {path}"},
                 "headers": {"Content-Type": "application/json"}
             }
-    
+
     except ValueError as e:
         logger.error(f"[{request_id}] ValueError: {e}")
         return {
@@ -237,16 +266,22 @@ def handle_api_request(request):
 
 def process_batch_operations(operations, context):
     """Another function with a massive try/except and too many responsibilities."""
-    results = []
-    errors = []
-    stats = {
-        "total": len(operations),
-        "success": 0,
-        "failed": 0,
-        "skipped": 0
-    }
-    
     try:
+        try:
+            operations = list(operations)
+        except TypeError:
+            raise ValueError("Operations must be an iterable")
+        if operations and not all(isinstance(op, Mapping) for op in operations):
+            raise ValueError("Each operation must be a mapping")
+        results = []
+        errors = []
+        stats = {
+            "total": len(operations),
+            "success": 0,
+            "failed": 0,
+            "skipped": 0
+        }
+
         # Validate context
         if not context:
             raise ValueError("Context is required")
@@ -254,33 +289,33 @@ def process_batch_operations(operations, context):
             raise ValueError("User context is required")
         if not context.get("database"):
             raise ValueError("Database connection is required")
-        
+
         db = context["database"]
         user = context["user"]
-        
+
         # Check permissions
         if "batch_operations" not in user.get("permissions", []):
             raise PermissionError("User lacks batch operation permission")
-        
+
         # Process each operation
         for i, op in enumerate(operations):
             try:
                 op_type = op.get("type")
                 op_data = op.get("data", {})
                 op_target = op.get("target")
-                
+
                 if op_type == "create":
                     # Validate create data
                     if not op_data:
                         raise ValueError(f"Operation {i}: No data for create")
                     if not op_target:
                         raise ValueError(f"Operation {i}: No target for create")
-                    
+
                     # Insert into database
                     result = db.insert(op_target, op_data)
                     results.append({"index": i, "status": "created", "id": result.get("id")})
                     stats["success"] += 1
-                
+
                 elif op_type == "update":
                     if not op_data:
                         raise ValueError(f"Operation {i}: No data for update")
@@ -288,28 +323,28 @@ def process_batch_operations(operations, context):
                         raise ValueError(f"Operation {i}: No target for update")
                     if "id" not in op_data:
                         raise ValueError(f"Operation {i}: No ID for update")
-                    
+
                     result = db.update(op_target, {"id": op_data["id"]}, op_data)
                     results.append({"index": i, "status": "updated", "id": op_data["id"]})
                     stats["success"] += 1
-                
+
                 elif op_type == "delete":
                     if not op_target:
                         raise ValueError(f"Operation {i}: No target for delete")
                     if "id" not in op_data:
                         raise ValueError(f"Operation {i}: No ID for delete")
-                    
+
                     db.delete(op_target, {"id": op_data["id"]})
                     results.append({"index": i, "status": "deleted", "id": op_data["id"]})
                     stats["success"] += 1
-                
+
                 elif op_type == "skip":
                     results.append({"index": i, "status": "skipped"})
                     stats["skipped"] += 1
-                
+
                 else:
                     raise ValueError(f"Operation {i}: Unknown operation type: {op_type}")
-            
+
             except ValueError as e:
                 errors.append({"index": i, "error": str(e)})
                 stats["failed"] += 1
@@ -319,14 +354,14 @@ def process_batch_operations(operations, context):
             except Exception as e:
                 errors.append({"index": i, "error": f"Unexpected: {e}"})
                 stats["failed"] += 1
-        
+
         return {
             "success": stats["failed"] == 0,
             "results": results,
             "errors": errors,
             "stats": stats
         }
-    
+
     except ValueError as e:
         logger.error(f"Batch validation error: {e}")
         return {
