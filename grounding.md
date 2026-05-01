@@ -8,6 +8,33 @@
 - Traditional linters often target stylistic or language-specific issues; `kiss` targets **structural maintainability** and **global consequences**.
 - The goal is not "perfect code", it's **keeping code easy for agents (and humans) to change** by preventing complexity growth and spotlighting outliers.
 
+### Core constraints
+
+Three non-negotiable constraints govern any change to `kiss check` /
+`kiss stats` / related commands:
+
+1. **Single calculator per metric.** `kiss stats` and `kiss check` (and
+   any future command) must compute each metric via the *same* calculator
+   function, called from the *same* place. No parallel implementations,
+   no "stats version" vs. "check version" of the same metric. This is the
+   architectural form of grounding M6 (cross-command metric
+   synchronization): if both commands surface a metric, they surface
+   identical values for it.
+2. **Metrics are correct.** A reported value must equal what a fresh,
+   from-scratch run would compute. Caches are allowed only when their
+   hit semantics are byte-identical to a cold run (same fingerprint
+   inputs, same calculator outputs); any drift is a correctness bug, not
+   a performance trade-off.
+3. **`kiss` is as fast as possible.** Subject to (1) and (2), every
+   command minimizes wall time. Concretely: shared work (parse,
+   dependency graph, test-reference scan, duplicate clustering) is
+   computed once and reused across commands via the on-disk cache; both
+   readers and writers of that cache live behind the same calculator.
+
+These constraints are ordered: correctness (2) is never sacrificed for
+speed (3); calculator unity (1) is never sacrificed for either, because
+violating (1) is the primary mechanism by which (2) silently breaks.
+
 ### Performance is a first-class goal (inner-loop feedback)
 
 `kiss` is intended to run **in the inner LLM coding loop**, so it aims to be **fast enough to run frequently** (alongside tests/linters) without feeling "expensive".
