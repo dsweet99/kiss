@@ -6,6 +6,26 @@ fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
 }
 
+fn cache_dir_under(home: &std::path::Path) -> std::path::PathBuf {
+    home.join(".cache").join("kiss")
+}
+
+fn list_full_check_cache_files(home: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let dir = cache_dir_under(home);
+    let Ok(rd) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    rd.filter_map(std::result::Result::ok)
+        .map(|e| e.path())
+        .filter(|p| {
+            let Some(name) = p.file_name().and_then(|s| s.to_str()) else {
+                return false;
+            };
+            name.starts_with("check_full_") && p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
+        })
+        .collect()
+}
+
 #[test]
 fn regression_check_default_writes_cache_and_replays() {
     let repo = TempDir::new().unwrap();
@@ -15,8 +35,6 @@ fn regression_check_default_writes_cache_and_replays() {
 
     fs::write(&src, "def covered_function(x):\n    return x * 2\n").unwrap();
     fs::write(&test, "from default import covered_function\n\ndef test_covered_function():\n    assert covered_function(2) == 4\n").unwrap();
-    let xdg_cache_home = home.path().join(".cache-home");
-
     let cold = kiss_binary()
         .arg("--defaults")
         .arg("check")
@@ -24,10 +42,14 @@ fn regression_check_default_writes_cache_and_replays() {
         .arg("python")
         .arg(repo.path())
         .env("HOME", home.path())
-        .env("XDG_CACHE_HOME", &xdg_cache_home)
         .output()
         .unwrap();
     let cold_stdout = String::from_utf8_lossy(&cold.stdout).to_string();
+    let cache_files = list_full_check_cache_files(home.path());
+    assert!(
+        !cache_files.is_empty(),
+        "expected full-check cache file under HOME. stdout:\n{cold_stdout}"
+    );
 
     let warm = kiss_binary()
         .arg("--defaults")
@@ -36,7 +58,6 @@ fn regression_check_default_writes_cache_and_replays() {
         .arg("python")
         .arg(repo.path())
         .env("HOME", home.path())
-        .env("XDG_CACHE_HOME", &xdg_cache_home)
         .output()
         .unwrap();
 

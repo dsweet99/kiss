@@ -215,9 +215,6 @@ pub(crate) fn collect_coverage_viols(
     graphs: GraphRefPair<'_>,
 ) -> (Vec<Violation>, Option<CoverageCachePair>) {
     let PyRsTestCoverage { py: py_cov, rs: rs_cov } = cov;
-    if !out_opts.bypass_gate {
-        return (Vec::new(), None);
-    }
     let (definitions, unreferenced) = merge_coverage_results(py_cov, rs_cov);
     let (cov_viols, definitions, unreferenced) =
         build_viols_after_merge(definitions, unreferenced, focus_set, graphs);
@@ -226,7 +223,11 @@ pub(crate) fn collect_coverage_viols(
     } else {
         Some((definitions, unreferenced))
     };
-    (cov_viols, cache_lists)
+    if out_opts.bypass_gate {
+        (cov_viols, cache_lists)
+    } else {
+        (Vec::new(), cache_lists)
+    }
 }
 
 #[cfg(test)]

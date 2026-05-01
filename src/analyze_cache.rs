@@ -212,7 +212,9 @@ pub fn try_run_cached_all(
     }
     let (mut viols, py_dups, rs_dups, cache) =
         cached_duplicates(cache, opts.gate_config, focus_set);
-    viols.extend(cached_coverage_viols(&cache, focus_set));
+    if opts.bypass_gate {
+        viols.extend(cached_coverage_viols(&cache, focus_set));
+    }
 
     println!(
         "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",

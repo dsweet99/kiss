@@ -235,6 +235,7 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
             focus_set,
             opts.gate_config.test_coverage_threshold,
         ) {
+            log_parse_timing(opts.show_timing, &parse_timing);
             return early;
         }
     }
