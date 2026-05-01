@@ -1,8 +1,45 @@
 #![allow(dead_code)]
 
 use kiss::parsing::{ParsedFile, create_parser, parse_file};
+use std::fs;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use tree_sitter::Node;
+
+/// `~/.cache/kiss` rooted under a given fake `HOME` (used by integration
+/// tests that drive the binary with `env("HOME", ...)`).
+pub fn cache_dir_under(home: &Path) -> PathBuf {
+    home.join(".cache").join("kiss")
+}
+
+/// True for files matching `check_full_*.bin` (the full-check analyze
+/// cache file). Used as the predicate for [`list_full_check_cache_files`].
+pub fn is_full_check_cache_file(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    name.starts_with("check_full_")
+        && Path::new(name)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
+}
+
+/// Sorted list of `check_full_*.bin` files in `~/.cache/kiss` under the
+/// given fake `HOME`. Returns an empty `Vec` if the cache dir does not
+/// exist yet.
+pub fn list_full_check_cache_files(home: &Path) -> Vec<PathBuf> {
+    let dir = cache_dir_under(home);
+    let Ok(rd) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<_> = rd
+        .filter_map(std::result::Result::ok)
+        .map(|e| e.path())
+        .filter(|p| is_full_check_cache_file(p))
+        .collect();
+    out.sort();
+    out
+}
 
 pub fn parse_python_source(code: &str) -> ParsedFile {
     let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();

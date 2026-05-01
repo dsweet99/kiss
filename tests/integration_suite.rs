@@ -60,6 +60,8 @@ mod regression_check_perf;
 mod regression_check_default_warm_gate;
 #[path = "cases/regression_check_default_writes_cache.rs"]
 mod regression_check_default_writes_cache;
+#[path = "cases/regression_check_stats_share_relative.rs"]
+mod regression_check_stats_share_relative;
 #[path = "cases/regression_stats_all_metric_registry.rs"]
 mod regression_stats_all_metric_registry;
 #[path = "cases/regression_stats_summary_headers_and_coverage.rs"]

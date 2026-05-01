@@ -1,10 +1,9 @@
 use crate::bin_cli::config_session::{config_provenance, load_configs, load_gate_config};
 use kiss::check_universe_cache::FullCheckCache;
-use kiss::{
-    Config, GateConfig, Language, compute_summaries, find_source_files_with_ignore, format_stats_table,
-};
+use kiss::discovery::gather_files_by_lang;
+use kiss::{Config, GateConfig, Language, compute_summaries, format_stats_table};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Instant;
 
 struct StatsSummaryInput<'a> {
@@ -19,7 +18,7 @@ struct StatsSummaryInput<'a> {
 }
 
 pub fn run_stats_summary(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
-    let (py_files, rs_files) = collect_files(paths, lang_filter, ignore);
+    let (py_files, rs_files) = gather_files_by_lang(paths, lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         eprintln!("No source files found.");
         std::process::exit(1);
@@ -167,29 +166,6 @@ fn try_run_cached_stats_summary(
     };
     print_cached_summary(paths, &cache);
     true
-}
-
-fn collect_files(
-    paths: &[String],
-    lang_filter: Option<Language>,
-    ignore: &[String],
-) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let mut py_files: Vec<PathBuf> = Vec::new();
-    let mut rs_files: Vec<PathBuf> = Vec::new();
-    for path in paths {
-        let root = Path::new(path);
-        for sf in find_source_files_with_ignore(root, ignore) {
-            let want = lang_filter.is_none() || lang_filter == Some(sf.language);
-            if !want {
-                continue;
-            }
-            match sf.language {
-                Language::Python => py_files.push(sf.path),
-                Language::Rust => rs_files.push(sf.path),
-            }
-        }
-    }
-    (py_files, rs_files)
 }
 
 fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
