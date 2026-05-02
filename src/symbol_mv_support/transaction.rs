@@ -33,7 +33,10 @@ fn read_original_snapshots(files: &[PathBuf]) -> Result<BTreeMap<PathBuf, Snapsh
                         content: String::new(),
                     }
                 } else {
-                    return Err(format!("failed reading snapshot for {}: {e}", path.display()));
+                    return Err(format!(
+                        "failed reading snapshot for {}: {e}",
+                        path.display()
+                    ));
                 }
             }
         };
@@ -242,10 +245,7 @@ mod transaction_coverage {
         invalid.end_byte = 2;
         let plan = MvPlan {
             files: vec![existing.clone(), missing.clone()],
-            edits: vec![
-                write_existing,
-                invalid,
-            ],
+            edits: vec![write_existing, invalid],
         };
         let err = apply_plan_transactional(&plan).expect_err("expected apply failure");
         assert!(err.contains("invalid edit range"));

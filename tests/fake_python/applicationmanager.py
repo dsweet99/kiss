@@ -5,9 +5,18 @@ import sqlite3
 import time
 from email.mime.text import MIMEText
 from typing import Any, Optional
+from collections.abc import Mapping
+import re
 
 from common import serializer
 from common.sdatetime import now_isoformat
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_identifier(identifier: str) -> str:
+    if not isinstance(identifier, str) or not _IDENTIFIER_RE.fullmatch(identifier):
+        raise ValueError("Invalid SQL identifier")
+    return identifier
 
 
 class ApplicationManager:
@@ -111,7 +120,10 @@ class ApplicationManager:
         return cursor.fetchall()
 
     def execute_insert(self, table: str, data: dict) -> int:
-        columns = ", ".join(data.keys())
+        if not isinstance(data, Mapping) or not data:
+            raise ValueError("data must be a non-empty mapping")
+        table = _validate_identifier(table)
+        columns = ", ".join(_validate_identifier(column) for column in data.keys())
         placeholders = ", ".join(["?" for _ in data])
         query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
         cursor = self.db_connection.cursor()
@@ -120,8 +132,13 @@ class ApplicationManager:
         return cursor.lastrowid
 
     def execute_update(self, table: str, data: dict, where: dict) -> int:
-        set_clause = ", ".join([f"{k} = ?" for k in data])
-        where_clause = " AND ".join([f"{k} = ?" for k in where])
+        if not isinstance(data, Mapping) or not data:
+            raise ValueError("data must be a non-empty mapping")
+        if not isinstance(where, Mapping) or not where:
+            raise ValueError("where must be a non-empty mapping")
+        table = _validate_identifier(table)
+        set_clause = ", ".join([f"{_validate_identifier(k)} = ?" for k in data.keys()])
+        where_clause = " AND ".join([f"{_validate_identifier(k)} = ?" for k in where.keys()])
         query = f"UPDATE {table} SET {set_clause} WHERE {where_clause}"
         cursor = self.db_connection.cursor()
         cursor.execute(query, tuple(data.values()) + tuple(where.values()))
@@ -129,7 +146,10 @@ class ApplicationManager:
         return cursor.rowcount
 
     def execute_delete(self, table: str, where: dict) -> int:
-        where_clause = " AND ".join([f"{k} = ?" for k in where])
+        if not isinstance(where, Mapping) or not where:
+            raise ValueError("where must be a non-empty mapping")
+        table = _validate_identifier(table)
+        where_clause = " AND ".join([f"{_validate_identifier(k)} = ?" for k in where.keys()])
         query = f"DELETE FROM {table} WHERE {where_clause}"
         cursor = self.db_connection.cursor()
         cursor.execute(query, tuple(where.values()))

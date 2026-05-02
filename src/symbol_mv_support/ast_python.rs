@@ -1,8 +1,4 @@
-//! Python AST extraction (Task 2).
-//!
-//! Uses the same tree-sitter grammar as `crate::parsing` to enumerate
-//! function/method definitions and reference sites for `kiss mv`. Returned
-//! offsets are byte offsets into the original source string.
+//! Python AST extraction for `kiss mv` definitions and references.
 
 use tree_sitter::{Node, Parser};
 
@@ -156,8 +152,12 @@ fn python_identifier_is_value_reference(node: Node<'_>) -> bool {
     };
     match parent.kind() {
         // Definition NAME positions are bindings, not references.
-        "function_definition" | "async_function_definition" | "class_definition"
-        | "typed_parameter" | "default_parameter" | "typed_default_parameter" => false,
+        "function_definition"
+        | "async_function_definition"
+        | "class_definition"
+        | "typed_parameter"
+        | "default_parameter"
+        | "typed_default_parameter" => false,
         // Bare parameter names: `def f(x):` parses `x` as an identifier
         // child of a `parameters` node.
         "parameters"
@@ -171,7 +171,10 @@ fn python_identifier_is_value_reference(node: Node<'_>) -> bool {
         | "nonlocal_statement"
         | "delete_statement"
         | "keyword_argument"
-            if same("name") => false,
+            if same("name") =>
+        {
+            false
+        }
         // Attribute access `obj.attr`: the `attr` part is the attribute
         // (handled separately as Method when it heads a call); the
         // `object` part IS a name reference and falls through.

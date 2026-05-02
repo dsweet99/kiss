@@ -110,11 +110,7 @@ def use_local():
     .unwrap();
 
     assert_eq!(
-        run_mv_command(py(
-            &format!("{}::Circle", a.display()),
-            "Disk",
-            tmp.path(),
-        )),
+        run_mv_command(py(&format!("{}::Circle", a.display()), "Disk", tmp.path(),)),
         0,
     );
 

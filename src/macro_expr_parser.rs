@@ -22,5 +22,7 @@ pub(crate) fn parse_single_expr(tokens: &proc_macro2::TokenStream) -> Option<Exp
 }
 
 pub(crate) fn parse_expr_list(tokens: &proc_macro2::TokenStream) -> Option<Vec<Expr>> {
-    syn::parse2::<ExprList>(tokens.clone()).ok().map(|ExprList(exprs)| exprs)
+    syn::parse2::<ExprList>(tokens.clone())
+        .ok()
+        .map(|ExprList(exprs)| exprs)
 }

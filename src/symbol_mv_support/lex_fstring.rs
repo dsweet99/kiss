@@ -180,14 +180,28 @@ mod lex_fstring_coverage_private {
             string_state: StringState::FStringSingle { depth: 0 },
             ..LexState::default()
         };
-        assert_eq!(step_fstring_text(&mut state, src.as_bytes(), 0, src.len(), b'"', false), 1);
+        assert_eq!(
+            step_fstring_text(&mut state, src.as_bytes(), 0, src.len(), b'"', false),
+            1
+        );
         assert_eq!(step_fstring_code(&mut state, src.as_bytes(), idx, 0), 1);
 
         let mut state2 = LexState::default();
-        assert_eq!(try_parse_python_fstring_start(&mut state2, src.as_bytes(), 0, src.len()), Some(2));
-        assert_eq!(parse_python_fstring_prefix(src.as_bytes(), 0, src.len()), Some((1, 1)));
         assert_eq!(
-            step_fstring_state(&mut state2, src.as_bytes(), src.find('{').unwrap(), src.len()),
+            try_parse_python_fstring_start(&mut state2, src.as_bytes(), 0, src.len()),
+            Some(2)
+        );
+        assert_eq!(
+            parse_python_fstring_prefix(src.as_bytes(), 0, src.len()),
+            Some((1, 1))
+        );
+        assert_eq!(
+            step_fstring_state(
+                &mut state2,
+                src.as_bytes(),
+                src.find('{').unwrap(),
+                src.len()
+            ),
             1
         );
         state2.string_state = StringState::FStringSingle { depth: 1 };

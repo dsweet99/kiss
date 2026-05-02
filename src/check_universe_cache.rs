@@ -1,4 +1,5 @@
 use crate::check_cache::{CachedCodeChunk, CachedViolation};
+use crate::stats::MetricStats;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -18,6 +19,16 @@ pub struct CachedCoverageItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FullCheckCache {
     pub fingerprint: String,
+    #[serde(default)]
+    pub py_stats: Option<MetricStats>,
+    #[serde(default)]
+    pub rs_stats: Option<MetricStats>,
+    #[serde(default)]
+    pub py_paths: Vec<String>,
+    #[serde(default)]
+    pub focus_paths: Vec<String>,
+    #[serde(default)]
+    pub rs_paths: Vec<String>,
     pub py_file_count: usize,
     pub rs_file_count: usize,
     pub code_unit_count: usize,
@@ -76,6 +87,11 @@ mod tests {
         };
         let _ = FullCheckCache {
             fingerprint: "deadbeef".to_string(),
+            py_stats: None,
+            rs_stats: None,
+            py_paths: vec![],
+            focus_paths: vec![],
+            rs_paths: vec![],
             py_file_count: 0,
             rs_file_count: 0,
             code_unit_count: 0,

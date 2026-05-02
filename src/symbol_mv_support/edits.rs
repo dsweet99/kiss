@@ -6,7 +6,8 @@ use crate::symbol_mv::{EditKind, PlannedEdit};
 
 use super::ast_models::{AstResult, ParseOutcome};
 use super::ast_plan::{
-    ast_definition_ident_offsets_from_result, ast_reference_offsets_from_result, cached_parse_outcome,
+    ast_definition_ident_offsets_from_result, ast_reference_offsets_from_result,
+    cached_parse_outcome,
 };
 use super::basics::detect_language;
 use super::definition::DefinitionSpan;
@@ -212,19 +213,16 @@ mod edits_coverage {
     #[test]
     fn collect_reference_helpers_cover_private_paths() {
         let src = "def foo():\n    bar.foo()\n    foo()\n    foo\n";
-        let ParseOutcome::Success(parsed) = ast_plan::parse_for(src, crate::Language::Python) else {
+        let ParseOutcome::Success(parsed) = ast_plan::parse_for(src, crate::Language::Python)
+        else {
             panic!("parse should succeed")
         };
-        let sites = collect_reference_sites_from_result(
-            &parsed,
-            src,
-            "foo",
-            None,
-            Language::Python,
-        );
+        let sites =
+            collect_reference_sites_from_result(&parsed, src, "foo", None, Language::Python);
         assert!(!sites.is_empty());
 
-        let cached = ast_plan::cached_parse_outcome(src, std::path::Path::new("edits.rs"), Language::Python);
+        let cached =
+            ast_plan::cached_parse_outcome(src, std::path::Path::new("edits.rs"), Language::Python);
         assert!(matches!(cached, ParseOutcome::Success(_)));
     }
 
@@ -234,13 +232,7 @@ mod edits_coverage {
         let ParseOutcome::Success(parsed) = ast_plan::parse_for(src, crate::Language::Rust) else {
             panic!("parse should succeed")
         };
-        let sites = collect_reference_sites_from_result(
-            &parsed,
-            src,
-            "one",
-            None,
-            Language::Rust,
-        );
+        let sites = collect_reference_sites_from_result(&parsed, src, "one", None, Language::Rust);
         assert!(sites.is_empty());
     }
 }

@@ -277,5 +277,7 @@ pub(super) fn ast_reference_offsets_from_result(
 #[path = "ast_plan_extras.rs"]
 mod ast_plan_extras;
 pub(crate) use ast_plan_extras::has_ambiguous_method_reference;
-use ast_plan_extras::{matches_name, reference_admits, reference_is_shadowed,
-    shadowed_reference_ranges, warn_on_parse_failure, warned_files_clear};
+use ast_plan_extras::{
+    matches_name, reference_admits, reference_is_shadowed, shadowed_reference_ranges,
+    warn_on_parse_failure, warned_files_clear,
+};

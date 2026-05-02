@@ -237,7 +237,11 @@ pub(crate) fn collect_coverage_viols(
     } else {
         Some((definitions, unreferenced))
     };
-    (cov_viols, cache_lists)
+    if out_opts.bypass_gate {
+        (cov_viols, cache_lists)
+    } else {
+        (Vec::new(), cache_lists)
+    }
 }
 
 #[cfg(test)]

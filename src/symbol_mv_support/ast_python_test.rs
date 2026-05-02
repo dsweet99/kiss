@@ -175,7 +175,10 @@ fn del_obj_attr_emits_attribute_reference() {
         attr_refs.len() >= 4,
         "expected at least 4 `field` Method refs from the four `del`-target attribute sites; got {} ({:?})",
         attr_refs.len(),
-        attr_refs.iter().map(|r| (r.start, r.end)).collect::<Vec<_>>()
+        attr_refs
+            .iter()
+            .map(|r| (r.start, r.end))
+            .collect::<Vec<_>>()
     );
 }
 

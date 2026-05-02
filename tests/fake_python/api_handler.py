@@ -1,11 +1,11 @@
 """API handler with big try/except blocks and functions that do too much."""
 
+import base64
 import logging
 import time
-
+from collections.abc import Mapping
 from common import serializer
 from common.sdatetime import now_isoformat
-
 logger = logging.getLogger(__name__)
 
 
@@ -30,11 +30,15 @@ def handle_api_request(request):
         # Parse request
         if request is None:
             raise ValueError("Request cannot be None")
+        if not isinstance(request, Mapping):
+            raise ValueError("Request must be a mapping")
 
         method = request.get("method", "GET")
         path = request.get("path", "/")
         headers = request.get("headers", {})
         body = request.get("body")
+        if not isinstance(headers, Mapping):
+            raise ValueError("Request headers must be a mapping")
         _query_params = request.get("query_params", {})
 
         logger.info(f"[{request_id}] {method} {path}")
@@ -61,8 +65,21 @@ def handle_api_request(request):
                         "headers": {"Content-Type": "application/json"}
                     }
             elif auth_header.startswith("Basic "):
-                import base64
-                credentials = base64.b64decode(auth_header[6:]).decode()
+                try:
+                    credentials = base64.b64decode(auth_header[6:]).decode()
+                except (ValueError, base64.binascii.Error, UnicodeDecodeError) as e:
+                    logger.warning(f"[{request_id}] Invalid basic auth encoding: {e}")
+                    return {
+                        "status": 401,
+                        "body": {"error": "Invalid credentials"},
+                        "headers": {"Content-Type": "application/json"}
+                    }
+                if ":" not in credentials:
+                    return {
+                        "status": 401,
+                        "body": {"error": "Invalid credentials"},
+                        "headers": {"Content-Type": "application/json"}
+                    }
                 username, password = credentials.split(":", 1)
                 if username == "admin" and password == "secret":
                     user = {
@@ -120,7 +137,12 @@ def handle_api_request(request):
                         "body": {"error": "Request body required"},
                         "headers": {"Content-Type": "application/json"}
                     }
-                # Validate user data
+                if not isinstance(body, Mapping):
+                    return {
+                        "status": 400,
+                        "body": {"error": "Request body must be an object"},
+                        "headers": {"Content-Type": "application/json"}
+                    }
                 if "username" not in body:
                     return {
                         "status": 400,
@@ -155,7 +177,13 @@ def handle_api_request(request):
                     "headers": {"Content-Type": "application/json"}
                 }
             elif method == "DELETE":
-                if user is None or "admin" not in user.get("roles", []):
+                if user is None:
+                    return {
+                        "status": 401,
+                        "body": {"error": "Authentication required"},
+                        "headers": {"Content-Type": "application/json"}
+                    }
+                if "admin" not in user.get("roles", []):
                     return {
                         "status": 403,
                         "body": {"error": "Admin access required"},
@@ -240,16 +268,26 @@ def process_batch_operations(operations, context):
     results = []
     errors = []
     stats = {
-        "total": len(operations),
+        "total": 0,
         "success": 0,
         "failed": 0,
         "skipped": 0
     }
 
     try:
+        try:
+            operations = list(operations)
+        except TypeError:
+            raise ValueError("Operations must be an iterable")
+        if operations and not all(isinstance(op, Mapping) for op in operations):
+            raise ValueError("Each operation must be a mapping")
+        stats["total"] = len(operations)
+
         # Validate context
         if not context:
             raise ValueError("Context is required")
+        if not isinstance(context, Mapping):
+            raise ValueError("Context must be a mapping")
         if not context.get("user"):
             raise ValueError("User context is required")
         if not context.get("database"):

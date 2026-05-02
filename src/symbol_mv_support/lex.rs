@@ -301,13 +301,16 @@ mod lex_coverage {
         state.string_state = StringState::Single;
         assert_eq!(step_string_state(&mut state, b"'abc", 0, 4), 1);
         state.string_state = StringState::None;
-        assert_eq!(step_code_state(&mut LexScan {
-            state: &mut state,
-            bytes: b"x#y",
-            idx: 1,
-            target: 3,
-            language: Language::Rust,
-        }), 1);
+        assert_eq!(
+            step_code_state(&mut LexScan {
+                state: &mut state,
+                bytes: b"x#y",
+                idx: 1,
+                target: 3,
+                language: Language::Rust,
+            }),
+            1
+        );
         let mut inside = LexState {
             string_state: StringState::FStringDouble { depth: 1 },
             ..LexState::default()

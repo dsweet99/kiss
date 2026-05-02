@@ -58,18 +58,28 @@ mod py_metrics_tests;
 mod python_counts_violations;
 #[path = "cases/regression_check_cache_uncached_default.rs"]
 mod regression_check_cache_uncached_default;
+#[path = "cases/regression_check_default_warm_gate.rs"]
+mod regression_check_default_warm_gate;
+#[path = "cases/regression_check_default_writes_cache.rs"]
+mod regression_check_default_writes_cache;
 #[path = "cases/regression_check_focus_empty_dir.rs"]
 mod regression_check_focus_empty_dir;
-#[path = "cases/regression_init_py_imports_sync.rs"]
-mod regression_init_py_imports_sync;
 #[path = "cases/regression_check_ignore_filename.rs"]
 mod regression_check_ignore_filename;
 #[path = "cases/regression_check_perf.rs"]
 mod regression_check_perf;
+#[path = "cases/regression_check_stats_share_relative.rs"]
+mod regression_check_stats_share_relative;
+#[path = "cases/regression_init_py_imports_sync.rs"]
+mod regression_init_py_imports_sync;
 #[path = "cases/regression_stats_all_metric_registry.rs"]
 mod regression_stats_all_metric_registry;
+#[path = "cases/regression_stats_cold_eq_warm.rs"]
+mod regression_stats_cold_eq_warm;
 #[path = "cases/regression_stats_summary_headers_and_coverage.rs"]
 mod regression_stats_summary_headers_and_coverage;
+#[path = "cases/regression_stats_summary_uses_cache.rs"]
+mod regression_stats_summary_uses_cache;
 #[path = "cases/review_findings.rs"]
 mod review_findings;
 #[path = "cases/review_findings_cache.rs"]
@@ -104,6 +114,16 @@ mod symbol_mv_matrix;
 mod symbol_mv_metamorphic;
 #[path = "cases/symbol_mv_regressions.rs"]
 mod symbol_mv_regressions;
+#[path = "cases/symbol_mv_regressions_10.rs"]
+mod symbol_mv_regressions_10;
+#[path = "cases/symbol_mv_regressions_11.rs"]
+mod symbol_mv_regressions_11;
+#[path = "cases/symbol_mv_regressions_12.rs"]
+mod symbol_mv_regressions_12;
+#[path = "cases/symbol_mv_regressions_13.rs"]
+mod symbol_mv_regressions_13;
+#[path = "cases/symbol_mv_regressions_14.rs"]
+mod symbol_mv_regressions_14;
 #[path = "cases/symbol_mv_regressions_2.rs"]
 mod symbol_mv_regressions_2;
 #[path = "cases/symbol_mv_regressions_3.rs"]
@@ -120,16 +140,6 @@ mod symbol_mv_regressions_7;
 mod symbol_mv_regressions_8;
 #[path = "cases/symbol_mv_regressions_9.rs"]
 mod symbol_mv_regressions_9;
-#[path = "cases/symbol_mv_regressions_10.rs"]
-mod symbol_mv_regressions_10;
-#[path = "cases/symbol_mv_regressions_11.rs"]
-mod symbol_mv_regressions_11;
-#[path = "cases/symbol_mv_regressions_12.rs"]
-mod symbol_mv_regressions_12;
-#[path = "cases/symbol_mv_regressions_13.rs"]
-mod symbol_mv_regressions_13;
-#[path = "cases/symbol_mv_regressions_14.rs"]
-mod symbol_mv_regressions_14;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;
 
@@ -151,109 +161,32 @@ fn static_coverage_touch_current_branch_units() {
         focus_no_match_sentinel,
         mix_config_into_fingerprint,
         mix_gate_into_fingerprint,
-        FullCacheInputs,
-        LangAnalysis,
-        collect_files,
-        analyze_python,
-        analyze_rust,
-        file_totals_py,
-        file_totals_rs,
-        count_orphans,
-        print_summary,
-        print_py_table,
-        print_rs_table,
+        try_run_cached_stats_summary,
+        run_full_pipeline,
+        run_full_pipeline_with_parse,
+        maybe_store_full_cache,
+        gather_files_by_lang,
+        analyze_cache_output_dir,
+        print_py_summary,
+        print_rs_summary,
         collect_py_units,
         collect_rs_units,
         check_file_metrics,
-        violation,
-        ExprList,
-        parse_single_expr,
-        parse_expr_list,
-        collect_import_names,
-        FunctionVisit,
-        ClassVisit,
-        PyWalkAction,
-        cfg_contains_test,
-        build_rust_coverage_map,
-        EmitShowTestsArgs,
-        gather_files_with_path_expansion,
-        collect_rust_impl,
-        py_import_metric,
-        unit_metrics_from_py_function,
-        collect_detailed_from_node,
-        rust_import_metric,
-        push_top_level_fn,
-        push_impl_block,
-        push_impl_method,
-        language_name,
-        owner_aliases,
-        content_hash,
-        ast_definition_span_from_result,
-        ast_definition_ident_offsets_from_result,
-        ast_reference_offsets_raw_from_result,
-        ast_reference_offsets_from_result,
-        has_ambiguous_method_reference,
-        method_receiver_is_generic_parameter,
-        shadowed_reference_ranges,
-        smallest_enclosing_definition,
-        reference_is_shadowed,
-        warned_files_clear,
         warn_on_parse_failure,
-        try_parse_as_single_expr,
-        try_parse_as_expr_list,
-        visit_nested_token_groups,
-        NestedDefVisitor,
-        visit_item_fn,
-        CallVisitor,
-        visit_expr_call,
-        visit_expr_macro,
-        visit_stmt_macro,
-        visit_expr_path,
-        visit_expr_method_call,
-        visit_use_path,
-        visit_use_name,
-        visit_use_rename,
-        push_use_ident,
-        extend_class_block,
-        decode_fstring_state,
-        set_fstring_depth,
-        matches_two_byte_text_escape,
-        close_fstring_text_quote,
-        python_subclasses_of_pub,
-        type_from_assignment_rhs,
-        is_tuple_assignment_at,
-        type_from_assignment_target,
-        tuple_assignment_receiver_type,
-        split_top_level_commas,
-        fallback_python_receiver_type,
-        python_class_first_base,
-        python_subclasses_of,
-        direct_python_subclasses_of,
-        split_method_receiver,
-        find_last_python_method_def,
-        python_method_return_type_from_pos,
-        is_python_wrapper_type,
-        python_quoted_annotation,
-        extract_receiver,
-        split_trailing_method_call,
-        matching_open_paren,
-        infer_receiver_type_at,
-        enclosing_rust_impl_type,
-        parse_impl_target,
-        block_end,
-        method_return_type,
-        find_last_rust_fn_def,
-        rust_method_return_type_from_pos,
-        type_after_pattern_last_before,
-        strip_rust_type_prefix,
-        check_destination_collision,
+        FullCacheInputs,
+        ParseCoverageConfig,
         apply_plan_transactional,
         apply_edits_to_one_file,
         try_add_def,
         collect_type_refs,
-        empty_collected,
-        merge_collected,
-        collect_test_files_for_ambiguous_names,
         analyze_test_refs_inner,
+        has_ambiguous_method_reference,
+        method_receiver_is_generic_parameter,
+        smallest_enclosing_definition,
+        reference_is_shadowed,
+        find_last_python_method_def,
+        find_last_rust_fn_def,
+        ParseExprError,
+        PyWalkAction,
     );
 }

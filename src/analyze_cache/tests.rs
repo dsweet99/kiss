@@ -3,6 +3,11 @@ use super::*;
 fn empty_cache(fp: &str) -> FullCheckCache {
     FullCheckCache {
         fingerprint: fp.to_string(),
+        py_stats: None,
+        rs_stats: None,
+        py_paths: Vec::new(),
+        focus_paths: Vec::new(),
+        rs_paths: Vec::new(),
         py_file_count: 0,
         rs_file_count: 0,
         code_unit_count: 0,
@@ -31,6 +36,11 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
         coverage_violations: &[],
         py_graph: None,
         rs_graph: None,
+        py_stats: None,
+        rs_stats: None,
+        focus_paths: Vec::new(),
+        py_paths: Vec::new(),
+        rs_paths: Vec::new(),
         py_dups_all: &[],
         rs_dups_all: &[],
         definitions: Vec::new(),
@@ -134,7 +144,7 @@ fn fingerprint_covers_all_config_fields() {
     let field_count = std::mem::size_of::<Config>() / std::mem::size_of::<usize>();
     assert_eq!(
         field_count, 24,
-        "Config field count changed — update mix_config_into_fingerprint and this test"
+        "Config field count changed; update mix_config_into_fingerprint and this test"
     );
     // Exhaustive destructure: adding a field to Config without listing it here
     // is a compile error, forcing the developer to update this test AND

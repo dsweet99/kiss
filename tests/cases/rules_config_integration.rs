@@ -238,7 +238,11 @@ fn cli_config_with_custom_file_and_local_layers_merges() {
     std::fs::create_dir(&repo).unwrap();
     std::fs::create_dir(&home).unwrap();
 
-    fs::write(repo.join(".kissconfig"), "[python]\nstatements_per_function = 100\n").unwrap();
+    fs::write(
+        repo.join(".kissconfig"),
+        "[python]\nstatements_per_function = 100\n",
+    )
+    .unwrap();
     fs::write(home.join(".kissconfig"), "[shared]\nlines_per_file = 111\n").unwrap();
 
     let config_path = repo.join("custom.kissconfig");
@@ -255,7 +259,10 @@ fn cli_config_with_custom_file_and_local_layers_merges() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(output.status.success());
-    assert!(stdout.contains("Source:"), "Should show source. stdout: {stdout}");
+    assert!(
+        stdout.contains("Source:"),
+        "Should show source. stdout: {stdout}"
+    );
     assert!(
         stdout.contains(&config_path.to_string_lossy().to_string())
             || stdout.contains("custom.kissconfig"),

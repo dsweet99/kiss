@@ -84,7 +84,9 @@ fn has_python_top_level_definition(content: &str, old_name: &str) -> bool {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let body = trimmed.strip_prefix("async ").map_or(trimmed, |after_async| after_async);
+        let body = trimmed
+            .strip_prefix("async ")
+            .map_or(trimmed, |after_async| after_async);
         if let Some(rest) = body.strip_prefix("def ") {
             if rest.starts_with(old_name) {
                 let next = rest.get(old_name.len()..).and_then(|s| s.chars().next());
@@ -92,7 +94,9 @@ fn has_python_top_level_definition(content: &str, old_name: &str) -> bool {
                     return true;
                 }
             }
-        } else if let Some(rest) = body.strip_prefix("class ") && rest.starts_with(old_name) {
+        } else if let Some(rest) = body.strip_prefix("class ")
+            && rest.starts_with(old_name)
+        {
             let next = rest.get(old_name.len()..).and_then(|s| s.chars().next());
             if is_python_identifier_boundary(next) {
                 return true;

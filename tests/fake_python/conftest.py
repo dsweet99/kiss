@@ -2,13 +2,16 @@
 
 import pytest
 
-from .models import Product, User
+try:
+    from .models import Product, User
+except ImportError:
+    from tests.fake_python.models import Product, User
 
 
 @pytest.fixture
 def sample_user():
     """Fixture function - provides test data."""
-    return User(1, "fixture", "fixture@example.com")
+    return User(1, "fixture_user", "fixture@example.com")
 
 
 @pytest.fixture

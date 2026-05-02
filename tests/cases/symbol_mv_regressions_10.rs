@@ -51,7 +51,10 @@ fn use_types(a: A, b: B) -> u32 {
     };
 
     let exit_code = run_mv_command(opts);
-    assert_ne!(exit_code, 0, "ambiguous receiver resolution must not be treated as success");
+    assert_ne!(
+        exit_code, 0,
+        "ambiguous receiver resolution must not be treated as success"
+    );
 
     let updated = fs::read_to_string(&file).unwrap();
     assert!(!updated.contains("renamed"));
@@ -99,10 +102,17 @@ fn use_types(a: A, b: B) -> u32 {
         ignore: vec![],
     };
 
-    assert_eq!(run_mv_command(opts), 0, "owned receiver should be unambiguous and rewrite");
+    assert_eq!(
+        run_mv_command(opts),
+        0,
+        "owned receiver should be unambiguous and rewrite"
+    );
 
     let updated = fs::read_to_string(&file).unwrap();
-    assert!(updated.contains("fn renamed(&self) -> u32 { 1 }"), "owner impl should be renamed");
+    assert!(
+        updated.contains("fn renamed(&self) -> u32 { 1 }"),
+        "owner impl should be renamed"
+    );
     assert!(updated.contains("a.renamed() + b.helper() + helper()"));
     assert!(!updated.contains("a.helper"));
     assert!(!updated.contains("trait T { fn renamed"));
@@ -182,7 +192,12 @@ def caller():
     assert_nested_python_shadowing_rename(&tmp, &file, source, expected);
 }
 
-fn assert_nested_python_shadowing_rename(tmp: &TempDir, file: &std::path::Path, source: &str, expected: &str) {
+fn assert_nested_python_shadowing_rename(
+    tmp: &TempDir,
+    file: &std::path::Path,
+    source: &str,
+    expected: &str,
+) {
     fs::write(file, source).unwrap();
     let opts = MvOptions {
         query: format!("{}::helper", file.display()),

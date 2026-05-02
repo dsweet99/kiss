@@ -1,5 +1,5 @@
-use super::*;
 use super::ast_plan_extras::method_receiver_matches;
+use super::*;
 use crate::symbol_mv_support::ast_models::{Reference, ReferenceKind};
 use crate::symbol_mv_support::reference::{
     infer_python_receiver_type_pub, infer_rust_receiver_type_pub,
@@ -48,8 +48,17 @@ fn rust_second_impl_block_method_site_is_admitted() {
     let _g = PlanInvocationGuard::enter();
     let src = "struct Foo;\n\nimpl Foo { fn alpha(&self) -> i32 { 1 } }\n\nimpl Foo { fn beta(&self) -> i32 { 2 } }\n\nfn call(f: &Foo) {\n    f.alpha();\n    f.beta();\n}\n";
     let upto = src.rfind("beta").expect("fixture should contain beta");
-    assert_eq!(infer_rust_receiver_type_pub(src, upto, "f"), Some("Foo".to_string()));
-    assert!(method_receiver_matches(src, upto, "Foo", None, Language::Rust));
+    assert_eq!(
+        infer_rust_receiver_type_pub(src, upto, "f"),
+        Some("Foo".to_string())
+    );
+    assert!(method_receiver_matches(
+        src,
+        upto,
+        "Foo",
+        None,
+        Language::Rust
+    ));
     let sites = ast_reference_offsets(src, "beta", Some("Foo"), Language::Rust).unwrap();
     assert!(
         sites.iter().any(|(s, e)| &src[*s..*e] == "beta"),
@@ -62,8 +71,17 @@ fn python_worker_method_site_is_admitted() {
     let _g = PlanInvocationGuard::enter();
     let src = "class Worker:\n    def run(self, value: int) -> int:\n        return value + 1\n\n\ndef test_methods_stay_distinct():\n    assert Worker().run(4) == 5\n";
     let upto = src.rfind("run").expect("fixture should contain run");
-    assert_eq!(infer_python_receiver_type_pub(src, upto, "Worker"), Some("Worker".to_string()));
-    assert!(method_receiver_matches(src, upto, "Worker", None, Language::Python));
+    assert_eq!(
+        infer_python_receiver_type_pub(src, upto, "Worker"),
+        Some("Worker".to_string())
+    );
+    assert!(method_receiver_matches(
+        src,
+        upto,
+        "Worker",
+        None,
+        Language::Python
+    ));
     let sites = ast_reference_offsets(src, "run", Some("Worker"), Language::Python).unwrap();
     assert!(
         sites.iter().any(|(s, e)| &src[*s..*e] == "run"),
@@ -121,6 +139,14 @@ fn touch_ast_plan_helpers_for_coverage_gate() {
     let _ = reference_admits("a", &r, Some("X"), None, Language::Python);
     let _ = method_receiver_matches("a = X()\na.f()", 9, "X", None, Language::Python);
     let _ = method_receiver_matches("let a:X=x;\na.f()", 12, "X", None, Language::Rust);
-    let _ = cached_parse_outcome("def f():\n pass\n", std::path::Path::new("warn-test-a"), Language::Python);
-    let _ = cached_parse_outcome("def g():\n pass\n", std::path::Path::new("warn-test-b"), Language::Rust);
+    let _ = cached_parse_outcome(
+        "def f():\n pass\n",
+        std::path::Path::new("warn-test-a"),
+        Language::Python,
+    );
+    let _ = cached_parse_outcome(
+        "def g():\n pass\n",
+        std::path::Path::new("warn-test-b"),
+        Language::Rust,
+    );
 }

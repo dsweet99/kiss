@@ -3,14 +3,11 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use kiss::check_universe_cache::{CachedCoverageItem, FullCheckCache};
-use kiss::cli_output::{
-    CoverageGateFailureCtx, file_coverage_map, print_coverage_gate_failure, print_duplicates,
-    print_final_status, print_violations,
-};
+use kiss::check_universe_cache::FullCheckCache;
+use kiss::cli_output::{print_duplicates, print_final_status, print_violations};
 
 use super::{cached_coverage_viols, cached_duplicates};
-use crate::analyze::compute_test_coverage_from_lists;
+use crate::analyze::evaluate_cached_gate;
 
 pub(super) fn emit_cached_bypass(
     cache: FullCheckCache,
@@ -38,28 +35,14 @@ pub(super) fn emit_cached_gated(
     opts: &crate::analyze::AnalyzeOptions<'_>,
     focus_set: &HashSet<PathBuf>,
 ) -> bool {
-    let defs: Vec<_> = cache
-        .definitions
-        .iter()
-        .cloned()
-        .map(CachedCoverageItem::into_tuple)
-        .collect();
-    let unref: Vec<_> = cache
-        .unreferenced
-        .iter()
-        .cloned()
-        .map(CachedCoverageItem::into_tuple)
-        .collect();
-    let (coverage, _, _, unreferenced_focus) =
-        compute_test_coverage_from_lists(&defs, &unref, focus_set);
-    let threshold = opts.gate_config.test_coverage_threshold;
-    if coverage < threshold {
-        let file_pcts = file_coverage_map(&defs, &unreferenced_focus);
-        print_coverage_gate_failure(&CoverageGateFailureCtx {
-            threshold,
-            unreferenced: &unreferenced_focus,
-            file_pcts: &file_pcts,
-        });
+    if evaluate_cached_gate(
+        &cache.definitions,
+        &cache.unreferenced,
+        focus_set,
+        opts.gate_config.test_coverage_threshold,
+    )
+    .is_some()
+    {
         return false;
     }
 

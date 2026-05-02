@@ -216,7 +216,10 @@ fn cli_stats_summary_respects_explicit_config_override_for_gate_behavior() {
         .output()
         .unwrap();
     let local_stdout = String::from_utf8_lossy(&local_out.stdout);
-    assert!(local_out.status.success(), "local stats should succeed:\n{local_stdout}");
+    assert!(
+        local_out.status.success(),
+        "local stats should succeed:\n{local_stdout}"
+    );
     let (local_dup, local_orphan) = parse_violation_counts(&local_stdout);
     assert!(
         local_dup > 0 && local_orphan > 0,
@@ -266,7 +269,10 @@ fn cli_stats_summary_defaults_can_disable_local_config_and_restore_defaults() {
         .output()
         .unwrap();
     let local_stdout = String::from_utf8_lossy(&local_out.stdout);
-    assert!(local_out.status.success(), "local stats should succeed:\n{local_stdout}");
+    assert!(
+        local_out.status.success(),
+        "local stats should succeed:\n{local_stdout}"
+    );
     let (local_dup, local_orphan) = parse_violation_counts(&local_stdout);
     assert!(
         local_dup == 0 && local_orphan == 0,
@@ -282,7 +288,10 @@ fn cli_stats_summary_defaults_can_disable_local_config_and_restore_defaults() {
         .output()
         .unwrap();
     let default_stdout = String::from_utf8_lossy(&default_out.stdout);
-    assert!(default_out.status.success(), "stats --defaults should succeed:\n{default_stdout}");
+    assert!(
+        default_out.status.success(),
+        "stats --defaults should succeed:\n{default_stdout}"
+    );
     let (default_dup, default_orphan) = parse_violation_counts(&default_stdout);
     assert!(
         default_dup > 0 && default_orphan > 0,

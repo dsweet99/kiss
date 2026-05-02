@@ -29,11 +29,7 @@ fn write_corpus(dir: &std::path::Path) {
     // default `test_coverage` gate can pass and `kiss check` exits 0
     // without `--all`. The gate firing is unrelated to the cache bug —
     // we just don't want it masking what we're trying to measure.
-    fs::write(
-        dir.join("lib.py"),
-        "def add(a, b):\n    return a + b\n",
-    )
-    .unwrap();
+    fs::write(dir.join("lib.py"), "def add(a, b):\n    return a + b\n").unwrap();
     fs::write(
         dir.join("test_lib.py"),
         "from lib import add\n\ndef test_add():\n    assert add(1, 2) == 3\n",

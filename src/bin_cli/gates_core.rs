@@ -1,5 +1,3 @@
-use kiss::{Config, ConfigLanguage, GateConfig};
-use kiss::Language;
 use crate::bin_cli::args::{Cli, Commands, parse_language};
 use crate::bin_cli::config_session::{
     ensure_default_config_exists, load_configs, load_gate_config,
@@ -11,7 +9,9 @@ use crate::bin_cli::stats::{
     run_stats_summary, run_stats_table,
 };
 use crate::bin_cli::util::{normalize_ignore_prefixes, validate_paths};
+use kiss::Language;
 use kiss::truncate;
+use kiss::{Config, ConfigLanguage, GateConfig};
 
 #[test]
 fn test_language_and_config() {

@@ -21,9 +21,13 @@ mod print;
 
 // `pub use` items are re-exports for `crate::analyze::*`; the RHS is otherwise unused in this module.
 #[allow(unused_imports)]
+pub(crate) use cache::{FullCacheStoreInput, maybe_store_full_cache};
+#[allow(unused_imports)]
 pub use coverage::compute_test_coverage_from_lists;
 #[allow(unused_imports)] // Public API surface (`crate::analyze::check_coverage_gate`).
 pub use coverage_gate::check_coverage_gate;
+#[allow(unused_imports)] // Public API surface for cached-coverage-gate checks.
+pub(crate) use coverage_gate::evaluate_cached_gate;
 #[allow(unused_imports)]
 pub use coverage_types::CheckCoverageGateParams;
 pub use dry::{DryRunParams, run_dry};
@@ -40,6 +44,8 @@ pub use graph_api::{
 };
 pub use metrics_global::{GlobalMetricsInput, compute_global_metrics};
 pub use options::{AnalyzeOptions, AnalyzeResult};
+#[allow(unused_imports)]
+pub(crate) use pipeline::{FullPipelineInput, FullPipelineResult, run_full_pipeline};
 #[cfg(test)]
 mod tests_coverage;
 #[cfg(test)]

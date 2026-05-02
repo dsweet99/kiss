@@ -21,7 +21,7 @@ use crate::test_refs::CoveringTest;
 
 type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RustTestRefAnalysis {
     pub definitions: Vec<RustCodeDefinition>,
     pub test_references: HashSet<String>,

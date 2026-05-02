@@ -5,10 +5,10 @@
 //! least one in-`tests/` reference.
 
 use kiss::Language;
+use kiss::config::Config;
 use kiss::symbol_mv::{MvOptions, run_mv_command};
 use std::fs;
 use tempfile::TempDir;
-use kiss::config::Config;
 
 fn run_mv(lang: Language, query: &str, new_name: &str, root: &std::path::Path) {
     let opts = MvOptions {

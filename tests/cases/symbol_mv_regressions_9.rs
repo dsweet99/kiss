@@ -228,4 +228,3 @@ def caller():
         "\"\"\"\nModule docstring that contains a fake def line:\n    def helper(self):\n        return 999\n\"\"\"\n\n\nclass C:\n    def renamed(self):\n        return 1\n\n\ndef caller():\n    return C().renamed()\n"
     );
 }
-

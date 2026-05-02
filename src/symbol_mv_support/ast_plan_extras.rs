@@ -224,7 +224,9 @@ pub(super) fn warn_on_parse_failure(path: &Path, reason: &FallbackReason) {
     }
     let (label, detail) = match reason {
         FallbackReason::ParseFailed => ("parse_failed", "source did not parse"),
-        FallbackReason::ParserUnavailable => ("parser_unavailable", "parser could not be initialized"),
+        FallbackReason::ParserUnavailable => {
+            ("parser_unavailable", "parser could not be initialized")
+        }
     };
     eprintln!(
         "kiss mv: {path}: skipping file ({label}: {detail})",

@@ -9,11 +9,11 @@ mod reference_inference_rust;
 #[path = "reference_inference_coverage.rs"]
 mod reference_inference_coverage;
 
+#[cfg(test)]
+pub(super) use reference_inference_assignments::is_tuple_assignment_at;
 pub(super) use reference_inference_assignments::{
     tuple_assignment_receiver_type, type_from_assignment_rhs, type_from_assignment_target,
 };
-#[cfg(test)]
-pub(super) use reference_inference_assignments::is_tuple_assignment_at;
 pub(super) use reference_inference_rust::{
     enclosing_rust_impl_type, extract_receiver, infer_receiver_type_at,
 };
@@ -342,4 +342,3 @@ fn python_quoted_annotation(rest: &str) -> Option<&str> {
     }
     None
 }
-

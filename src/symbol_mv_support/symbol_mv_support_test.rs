@@ -53,14 +53,28 @@ fn gather_candidate_files_respects_language() {
 #[test]
 fn find_python_definition_span_finds_method() {
     let src = "class C:\n    def foo(self):\n        pass\n";
-    let span = find_definition_span(src, "foo", Some("C"), Language::Python, Path::new("python-span")).unwrap();
+    let span = find_definition_span(
+        src,
+        "foo",
+        Some("C"),
+        Language::Python,
+        Path::new("python-span"),
+    )
+    .unwrap();
     assert!(src[span.start..span.end].contains("def foo"));
 }
 
 #[test]
 fn find_rust_definition_span_finds_fn() {
     let src = "impl T {\n    pub fn bar(&self) {}\n}\n";
-    let span = find_definition_span(src, "bar", Some("T"), Language::Rust, Path::new("rust-span")).unwrap();
+    let span = find_definition_span(
+        src,
+        "bar",
+        Some("T"),
+        Language::Rust,
+        Path::new("rust-span"),
+    )
+    .unwrap();
     assert!(src[span.start..span.end].contains("fn bar"));
 }
 

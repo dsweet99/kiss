@@ -250,4 +250,3 @@ pub(crate) fn strip_rust_type_prefix(s: &str) -> &str {
         return trimmed;
     }
 }
-

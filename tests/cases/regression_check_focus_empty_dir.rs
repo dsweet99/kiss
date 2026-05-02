@@ -27,11 +27,7 @@ fn kiss_binary() -> Command {
 /// Writes a file that triggers a `positional_args` violation under defaults
 /// (threshold is 3 positional args; this function has 8).
 fn write_violating_py(path: &std::path::Path) {
-    fs::write(
-        path,
-        "def big(a, b, c, d, e, f, g, h):\n    return a\n",
-    )
-    .unwrap();
+    fs::write(path, "def big(a, b, c, d, e, f, g, h):\n    return a\n").unwrap();
 }
 
 /// Baseline (locks in current correct behavior): when the focus path is a

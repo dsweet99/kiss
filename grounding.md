@@ -18,6 +18,18 @@ strict-by-default, fast enough for the inner loop, deterministic) but
 have distinct correctness contracts; their constraints are listed
 separately below.
 
+### Core constraints
+
+`kiss check`, `kiss stats`, and related commands prioritize:
+
+1. **Single calculator per metric.** A metric must be computed in exactly one place and consumed by both `check` and `stats` (or explicitly documented as asymmetric). This includes shared metric names, units, and normalizations.
+2. **Metrics are correct.** Reported values must match behavior from a fresh, from-scratch run. Cache reads are valid only when their semantics are byte-identical to the uncached path.
+3. **`kiss` is as fast as possible.** Reuse shared work (parse, dependency graph, test-reference scan, duplicate clustering) whenever safe, with correctness as the hard constraint.
+
+These constraints are ordered: correctness and metric-unity are never sacrificed for speed.
+
+### Performance is a first-class goal (inner-loop feedback)
+
 ---
 
 ## Intention

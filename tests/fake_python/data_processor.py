@@ -2,9 +2,18 @@
 
 import csv
 import os
-
+from collections.abc import Mapping
+from typing import Any
 from common import serializer
 from common.sdatetime import now_isoformat
+
+
+def _is_non_empty_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return bool(str(value).strip())
 
 
 def process_data_file(filepath, output_dir, config):
@@ -22,19 +31,26 @@ def process_data_file(filepath, output_dir, config):
     Should be broken into many smaller functions.
     """
     # Step 1: Validate input file exists
+    if not isinstance(config, Mapping):
+        if config is None:
+            print("Error: config is missing; using defaults")
+        else:
+            print("Error: config must be a mapping; using defaults")
+        config = {}
+
     if not filepath:
         print("Error: No filepath provided")
         return None
 
-    try:
-        file_size = os.path.getsize(filepath)
-    except OSError:
+    if not os.path.exists(filepath):
         print(f"Error: File not found: {filepath}")
         return None
 
     if not os.path.isfile(filepath):
         print(f"Error: Not a file: {filepath}")
         return None
+
+    file_size = os.path.getsize(filepath)
     if file_size == 0:
         print(f"Error: File is empty: {filepath}")
         return None
@@ -85,7 +101,7 @@ def process_data_file(filepath, output_dir, config):
             with open(filepath, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row_num, row in enumerate(reader, start=2):
-                    if any(v.strip() for v in row.values()):
+                    if any(_is_non_empty_value(v) for v in row.values()):
                         data.append(dict(row))
                     else:
                         errors.append(f"Empty row at line {row_num}")
@@ -97,7 +113,7 @@ def process_data_file(filepath, output_dir, config):
             with open(filepath, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f, delimiter='\t')
                 for row_num, row in enumerate(reader, start=2):
-                    if any(v.strip() for v in row.values()):
+                    if any(_is_non_empty_value(v) for v in row.values()):
                         data.append(dict(row))
                     else:
                         errors.append(f"Empty row at line {row_num}")
@@ -168,6 +184,9 @@ def process_data_file(filepath, output_dir, config):
     validation_errors = []
 
     required_fields = config.get("required_fields", [])
+    if not isinstance(required_fields, list):
+        print("Error: required_fields must be a list")
+        required_fields = []
 
     for i, record in enumerate(transformed):
         is_valid = True
@@ -177,7 +196,7 @@ def process_data_file(filepath, output_dir, config):
                 validation_errors.append(f"Record {i}: missing required field '{field}'")
                 is_valid = False
 
-        if "email" in record and record["email"]:
+        if "email" in record and isinstance(record["email"], str) and record["email"]:
             email = record["email"]
             if "@" not in email or "." not in email:
                 validation_errors.append(f"Record {i}: invalid email '{email}'")
@@ -202,7 +221,12 @@ def process_data_file(filepath, output_dir, config):
     print(f"Validated {len(validated)} records")
 
     # Step 6: Write output
-    os.makedirs(output_dir, exist_ok=True)
+    try:
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+    except OSError as e:
+        print(f"Error creating output directory: {e}")
+        return None
 
     base_name = os.path.splitext(os.path.basename(filepath))[0]
     output_path = os.path.join(output_dir, f"{base_name}_processed.json")

@@ -7,11 +7,17 @@ use emit::{emit_cached_bypass, emit_cached_gated};
 use kiss::check_cache;
 use kiss::check_cache::{CachedCodeChunk, CachedViolation};
 use kiss::check_universe_cache::{CachedCoverageItem, CachedDuplicateCluster, FullCheckCache};
+use kiss::stats::MetricStats;
 use kiss::{Config, DuplicateCluster, GateConfig, Violation};
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
+
+mod path_helpers;
+use path_helpers::{cache_path_full, load_full_cache, same_cached_paths};
+
+const CACHE_SCHEMA_VERSION: &str = "v3";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -69,6 +75,7 @@ pub fn fingerprint_for_check(
     gate_config: &GateConfig,
 ) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    h = fnv1a64(h, CACHE_SCHEMA_VERSION.as_bytes());
     h = fnv1a64(h, env!("CARGO_PKG_VERSION").as_bytes());
     h = mix_config_into_fingerprint(h, py_config);
     h = mix_config_into_fingerprint(h, rs_config);
@@ -92,17 +99,6 @@ pub fn fingerprint_for_check(
         }
     }
     format!("{h:016x}")
-}
-
-fn cache_path_full(fingerprint: &str) -> PathBuf {
-    check_cache::cache_dir().join(format!("check_full_{fingerprint}.bin"))
-}
-
-fn load_full_cache(fingerprint: &str) -> Option<FullCheckCache> {
-    let p = cache_path_full(fingerprint);
-    let bytes = std::fs::read(p).ok()?;
-    let c: FullCheckCache = bincode::deserialize(&bytes).ok()?;
-    (c.fingerprint == fingerprint).then_some(c)
 }
 
 pub fn store_full_cache(cache: &FullCheckCache) {
@@ -241,12 +237,37 @@ pub fn try_run_cached_all(
         opts.gate_config,
     );
     let cache = load_full_cache(&fp)?;
+    if !same_cached_paths(py_files, rs_files, focus_set, &cache) {
+        return None;
+    }
 
     if opts.bypass_gate {
         Some(emit_cached_bypass(cache, opts, focus_set))
     } else {
         Some(emit_cached_gated(cache, opts, focus_set))
     }
+}
+
+pub(crate) fn try_run_cached_stats_summary(
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+    py_config: &Config,
+    rs_config: &Config,
+    gate_config: &GateConfig,
+) -> Option<FullCheckCache> {
+    let fp = fingerprint_for_check(py_files, rs_files, py_config, rs_config, gate_config);
+    let cache = load_full_cache(&fp)?;
+    let focus_set: HashSet<PathBuf> = py_files.iter().chain(rs_files).cloned().collect();
+    if !same_cached_paths(py_files, rs_files, &focus_set, &cache) {
+        return None;
+    }
+    if cache.py_file_count > 0 && cache.py_stats.is_none() {
+        return None;
+    }
+    if cache.rs_file_count > 0 && cache.rs_stats.is_none() {
+        return None;
+    }
+    Some(cache)
 }
 
 pub fn graph_counts(
@@ -312,6 +333,11 @@ pub struct FullCacheInputs<'a> {
     pub coverage_violations: &'a [Violation],
     pub py_graph: Option<&'a DependencyGraph>,
     pub rs_graph: Option<&'a DependencyGraph>,
+    pub py_stats: Option<&'a MetricStats>,
+    pub rs_stats: Option<&'a MetricStats>,
+    pub focus_paths: Vec<String>,
+    pub py_paths: Vec<String>,
+    pub rs_paths: Vec<String>,
     pub py_dups_all: &'a [DuplicateCluster],
     pub rs_dups_all: &'a [DuplicateCluster],
     pub definitions: Vec<CachedCoverageItem>,
@@ -322,6 +348,11 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
     let (graph_nodes, graph_edges) = graph_counts(inputs.py_graph, inputs.rs_graph);
     let cache = FullCheckCache {
         fingerprint: inputs.fingerprint,
+        py_stats: inputs.py_stats.cloned(),
+        rs_stats: inputs.rs_stats.cloned(),
+        focus_paths: inputs.focus_paths,
+        py_paths: inputs.py_paths,
+        rs_paths: inputs.rs_paths,
         py_file_count: inputs.py_file_count,
         rs_file_count: inputs.rs_file_count,
         code_unit_count: inputs.code_unit_count,

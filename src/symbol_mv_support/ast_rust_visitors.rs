@@ -5,9 +5,9 @@ use syn::visit::Visit;
 use syn::{Expr, ExprCall, ExprMacro, ExprPath, ImplItem, ItemFn, ItemImpl, Type};
 
 use super::super::ast_models::{Definition, Reference, ReferenceKind, SymbolKind};
-use crate::Language;
-use super::{ident_byte_span, item_full_span};
 use super::ast_rust_macros::collect_macro_reference_sites;
+use super::{ident_byte_span, item_full_span};
+use crate::Language;
 
 pub(crate) fn collect_impl(
     item_impl: &ItemImpl,

@@ -105,10 +105,10 @@ mod tests {
             tuple_assignment_receiver_type("x, y = Foo(bar), Baz", "x"),
             Some("Foo".to_string())
         );
+        assert_eq!(split_top_level_commas("Foo, Bar, Baz").len(), 3);
         assert_eq!(
-            split_top_level_commas("Foo, Bar, Baz").len(),
-            3
+            split_top_level_commas("Foo((a,b),c), Bar"),
+            vec!["Foo((a,b),c)", " Bar"]
         );
-        assert_eq!(split_top_level_commas("Foo((a,b),c), Bar"), vec!["Foo((a,b),c)", " Bar"]);
     }
 }

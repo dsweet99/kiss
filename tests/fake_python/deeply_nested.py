@@ -1,6 +1,9 @@
 """Examples of overly nested code - too many indentation levels."""
 
 
+from collections.abc import Mapping
+
+
 def process_user_request(request, user, permissions, config):
     """This function has way too much nesting."""
     result = {"success": False, "data": None, "errors": []}
@@ -62,7 +65,11 @@ def calculate_shipping(order, customer, warehouse, carrier_rates, promotions, se
 
     if order:
         if order.get("items"):
-            if len(order["items"]) > 0:
+            items = order["items"]
+            if isinstance(items, list) and len(items) > 0:
+                valid_items = [item for item in items if isinstance(item, Mapping)]
+                if not valid_items:
+                    return shipping_cost
                 if customer:
                     if customer.get("address"):
                         address = customer["address"]
@@ -82,7 +89,7 @@ def calculate_shipping(order, customer, warehouse, carrier_rates, promotions, se
                                                                     per_kg = country_rates["per_kg"]
                                                                     total_weight = sum(
                                                                         item.get("weight", 0) * item.get("quantity", 1)
-                                                                        for item in order["items"]
+                                                                        for item in valid_items
                                                                     )
                                                                     shipping_cost = base + (total_weight * per_kg)
 
@@ -93,7 +100,7 @@ def calculate_shipping(order, customer, warehouse, carrier_rates, promotions, se
                                                                                 if promo.get("min_order"):
                                                                                     order_total = sum(
                                                                                         item.get("price", 0) * item.get("quantity", 1)
-                                                                                        for item in order["items"]
+                                                                                        for item in valid_items
                                                                                     )
                                                                                     if order_total >= promo["min_order"]:
                                                                                         shipping_cost = 0.0

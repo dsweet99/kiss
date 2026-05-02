@@ -6,7 +6,8 @@ fn touch_reference_inference_helpers_for_coverage_gate() {
     let _ = type_from_assignment_rhs("y = C()");
     let _ = type_from_assignment_rhs("pkg.C()");
     let _ = infer_python_receiver_type_at("x = C()", 7, "x");
-    let _ = infer_python_receiver_type_at("class C:\n    def m(self):\n        self.h()\n", 35, "self");
+    let _ =
+        infer_python_receiver_type_at("class C:\n    def m(self):\n        self.h()\n", 35, "self");
     let _ = infer_python_receiver_type_at("if (x := C()):\n    x.h()\n", 20, "x");
     let _ = rfind_word_boundary("prev_x = D()\nx = C()", "x = ");
     let _ = is_tuple_assignment_at("x, y = C(), D()", 4);
