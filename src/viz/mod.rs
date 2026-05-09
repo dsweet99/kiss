@@ -137,7 +137,10 @@ pub(crate) fn write_coarsened_mermaid(
     g: &CoarsenedGraph,
 ) -> std::io::Result<()> {
     for (i, label) in g.labels.iter().enumerate() {
-        let label = mermaid_escape_label(label);
+        // Embedded newlines split `c0["..."]` across lines and break many Mermaid parsers
+        // (rendered diagram shows bare ids like `c0` / stray digits instead of the label).
+        let label = label.replace('\n', " — ");
+        let label = mermaid_escape_label(&label);
         writeln!(out, "  c{i}[\"{label}\"]")?;
     }
     for (a, b) in &g.edges {
