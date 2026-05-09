@@ -238,7 +238,13 @@ fn planned_touched_paths(opts: &MvOptions) -> Result<BTreeSet<String>, String> {
 }
 
 fn relative_to_root(root: &Path, path: &Path) -> Result<String, String> {
-    path.strip_prefix(root)
+    if let Ok(relative) = path.strip_prefix(root) {
+        return Ok(relative.to_string_lossy().replace('\\', "/"));
+    }
+    let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    canonical_path
+        .strip_prefix(&canonical_root)
         .map(|relative| relative.to_string_lossy().replace('\\', "/"))
         .map_err(|err| err.to_string())
 }
