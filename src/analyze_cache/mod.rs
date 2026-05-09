@@ -1,11 +1,13 @@
+mod emit;
+
 use crate::analyze::{
     compute_test_coverage_from_lists, filter_duplicates_by_focus, filter_viols_by_focus,
 };
+use emit::{emit_cached_bypass, emit_cached_gated};
 use kiss::check_cache;
 use kiss::check_cache::{CachedCodeChunk, CachedViolation};
 use kiss::check_universe_cache::{CachedCoverageItem, CachedDuplicateCluster, FullCheckCache};
 use kiss::stats::MetricStats;
-use kiss::cli_output::{print_duplicates, print_final_status, print_violations};
 use kiss::{Config, DuplicateCluster, GateConfig, Violation};
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::collections::HashSet;
@@ -15,13 +17,53 @@ use std::time::UNIX_EPOCH;
 mod path_helpers;
 use path_helpers::{cache_path_full, load_full_cache, same_cached_paths};
 
-const CACHE_SCHEMA_VERSION: &str = "v2";
+const CACHE_SCHEMA_VERSION: &str = "v3";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
         h ^= u64::from(b);
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
+    h
+}
+
+fn mix_config_into_fingerprint(mut h: u64, cfg: &Config) -> u64 {
+    for u in [
+        cfg.statements_per_function,
+        cfg.methods_per_class,
+        cfg.statements_per_file,
+        cfg.lines_per_file,
+        cfg.functions_per_file,
+        cfg.arguments_per_function,
+        cfg.arguments_positional,
+        cfg.arguments_keyword_only,
+        cfg.max_indentation_depth,
+        cfg.interface_types_per_file,
+        cfg.concrete_types_per_file,
+        cfg.nested_function_depth,
+        cfg.returns_per_function,
+        cfg.return_values_per_function,
+        cfg.branches_per_function,
+        cfg.local_variables_per_function,
+        cfg.imported_names_per_file,
+        cfg.statements_per_try_block,
+        cfg.boolean_parameters,
+        cfg.annotations_per_function,
+        cfg.calls_per_function,
+        cfg.cycle_size,
+        cfg.indirect_dependencies,
+        cfg.dependency_depth,
+    ] {
+        h = fnv1a64(h, u.to_le_bytes().as_slice());
+    }
+    h
+}
+
+fn mix_gate_into_fingerprint(mut h: u64, gate: &GateConfig) -> u64 {
+    h = fnv1a64(h, gate.test_coverage_threshold.to_le_bytes().as_slice());
+    h = fnv1a64(h, gate.min_similarity.to_bits().to_le_bytes().as_slice());
+    h = fnv1a64(h, &[u8::from(gate.duplication_enabled)]);
+    h = fnv1a64(h, &[u8::from(gate.orphan_module_enabled)]);
     h
 }
 
@@ -34,9 +76,10 @@ pub fn fingerprint_for_check(
 ) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     h = fnv1a64(h, CACHE_SCHEMA_VERSION.as_bytes());
-    h = fnv1a64(h, format!("{py_config:?}").as_bytes());
-    h = fnv1a64(h, format!("{rs_config:?}").as_bytes());
-    h = fnv1a64(h, format!("{gate_config:?}").as_bytes());
+    h = fnv1a64(h, env!("CARGO_PKG_VERSION").as_bytes());
+    h = mix_config_into_fingerprint(h, py_config);
+    h = mix_config_into_fingerprint(h, rs_config);
+    h = mix_gate_into_fingerprint(h, gate_config);
 
     let mut all_files: Vec<&PathBuf> = py_files.iter().chain(rs_files).collect();
     all_files.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
@@ -57,7 +100,6 @@ pub fn fingerprint_for_check(
     }
     format!("{h:016x}")
 }
-
 
 pub fn store_full_cache(cache: &FullCheckCache) {
     let dir = check_cache::cache_dir();
@@ -198,38 +240,12 @@ pub fn try_run_cached_all(
     if !same_cached_paths(py_files, rs_files, focus_set, &cache) {
         return None;
     }
-    if !opts.bypass_gate
-        && opts.gate_config.test_coverage_threshold > 0
-        && crate::analyze::evaluate_cached_gate(
-            &cache.definitions,
-            &cache.unreferenced,
-            focus_set,
-            opts.gate_config.test_coverage_threshold,
-        )
-        .is_some()
-    {
-        return Some(false);
-    }
-    let (mut viols, py_dups, rs_dups, cache) =
-        cached_duplicates(cache, opts.gate_config, focus_set);
-    if opts.bypass_gate {
-        viols.extend(cached_coverage_viols(&cache, focus_set));
-    }
 
-    println!(
-        "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
-        cache.py_file_count + cache.rs_file_count,
-        cache.code_unit_count,
-        cache.statement_count,
-        cache.graph_nodes,
-        cache.graph_edges
-    );
-    print_violations(&viols);
-    print_duplicates("Python", &py_dups);
-    print_duplicates("Rust", &rs_dups);
-    let has_violations = !(viols.is_empty() && py_dups.is_empty() && rs_dups.is_empty());
-    print_final_status(has_violations);
-    Some(!has_violations)
+    if opts.bypass_gate {
+        Some(emit_cached_bypass(cache, opts, focus_set))
+    } else {
+        Some(emit_cached_gated(cache, opts, focus_set))
+    }
 }
 
 pub(crate) fn try_run_cached_stats_summary(
@@ -281,14 +297,28 @@ pub fn coverage_lists(
         line,
     };
 
-    let mut definitions: Vec<CachedCoverageItem> = py_cov.definitions.into_iter()
-        .map(|d| to_cached(d.file, d.name, d.line)).collect();
-    definitions.extend(rs_cov.definitions.into_iter()
-        .map(|d| to_cached(d.file, d.name, d.line)));
-    let mut unreferenced: Vec<CachedCoverageItem> = py_cov.unreferenced.into_iter()
-        .map(|d| to_cached(d.file, d.name, d.line)).collect();
-    unreferenced.extend(rs_cov.unreferenced.into_iter()
-        .map(|d| to_cached(d.file, d.name, d.line)));
+    let mut definitions: Vec<CachedCoverageItem> = py_cov
+        .definitions
+        .into_iter()
+        .map(|d| to_cached(d.file, d.name, d.line))
+        .collect();
+    definitions.extend(
+        rs_cov
+            .definitions
+            .into_iter()
+            .map(|d| to_cached(d.file, d.name, d.line)),
+    );
+    let mut unreferenced: Vec<CachedCoverageItem> = py_cov
+        .unreferenced
+        .into_iter()
+        .map(|d| to_cached(d.file, d.name, d.line))
+        .collect();
+    unreferenced.extend(
+        rs_cov
+            .unreferenced
+            .into_iter()
+            .map(|d| to_cached(d.file, d.name, d.line)),
+    );
     (definitions, unreferenced)
 }
 

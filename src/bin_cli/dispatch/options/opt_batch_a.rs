@@ -18,12 +18,13 @@ pub(crate) struct CheckDispatchOptions<'a> {
     pub cfg: &'a TriConfig<'a>,
 }
 
-pub(crate) struct StatsDispatchOptions {
+pub(crate) struct StatsDispatchOptions<'a> {
     pub lang: Option<Language>,
     pub paths: Vec<String>,
     pub all: Option<usize>,
     pub table: bool,
     pub ignore: Vec<String>,
+    pub cfg: &'a TriConfig<'a>,
 }
 
 pub(crate) struct MimicDispatchOptions {

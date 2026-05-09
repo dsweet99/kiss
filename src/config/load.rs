@@ -29,6 +29,19 @@ impl Config {
         Self::load_config_chain(base, Some(lang))
     }
 
+    pub fn load_for_language_with_override(path: &Path, lang: ConfigLanguage) -> Self {
+        let mut config = Self::load_for_language(lang);
+        match std::fs::read_to_string(path) {
+            Ok(content) => {
+                config.merge_from_toml_with_path(&content, Some(lang), Some(path));
+            }
+            Err(e) => {
+                eprintln!("Warning: Config file not found ({}): {e}", path.display());
+            }
+        }
+        config
+    }
+
     pub fn load_from(path: &Path) -> Self {
         let mut config = Self::default();
         if let Ok(content) = std::fs::read_to_string(path) {

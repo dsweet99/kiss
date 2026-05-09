@@ -1,12 +1,12 @@
 use crate::bin_cli::args::{Cli, Commands};
-use crate::bin_cli::check_cmd::{run_check_command, CheckCommandArgs};
+use crate::bin_cli::check_cmd::{CheckCommandArgs, run_check_command};
 use crate::bin_cli::config_session::config_provenance;
 use crate::bin_cli::run::run;
 use crate::bin_cli::show_tests_cmd::run_show_tests;
 use crate::bin_cli::shrink::{
-    emit_shrink_final_status, get_shrink_metrics, print_shrink_progress, run_shrink,
-    run_shrink_analysis, run_shrink_check, run_shrink_start, RunShrinkArgs, ShrinkFullContext,
-    ShrinkStartContext,
+    RunShrinkArgs, ShrinkFullContext, ShrinkStartContext, emit_shrink_final_status,
+    get_shrink_metrics, print_shrink_progress, run_shrink, run_shrink_analysis, run_shrink_check,
+    run_shrink_start,
 };
 use crate::bin_cli::stats::run_stats_top;
 use crate::bin_cli::util::set_sigpipe_default;
@@ -79,12 +79,7 @@ fn test_shrink_start_and_check() {
 
     let start = shrink_start_ctx(&py_cfg, &rs_cfg);
     assert_eq!(
-        run_shrink_start(
-            "statements=999999",
-            std::slice::from_ref(&p),
-            &[],
-            &start,
-        ),
+        run_shrink_start("statements=999999", std::slice::from_ref(&p), &[], &start,),
         1
     );
     assert_eq!(

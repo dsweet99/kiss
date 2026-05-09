@@ -46,7 +46,12 @@ pub(crate) fn analyze_body(body: Node, source: &str) -> BodySummary {
 }
 
 // Returns statement count for this subtree (including this node if it is a statement).
-pub(crate) fn walk_body(node: Node, source: &str, current_depth: usize, agg: &mut BodyAgg) -> usize {
+pub(crate) fn walk_body(
+    node: Node,
+    source: &str,
+    current_depth: usize,
+    agg: &mut BodyAgg,
+) -> usize {
     let kind = node.kind();
     let is_nested_scope = is_nested_scope_boundary(kind);
     let new_depth = if is_nested_scope {

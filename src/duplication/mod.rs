@@ -12,9 +12,9 @@ mod extraction;
 mod tests;
 
 pub use crate::minhash::MinHashSignature;
-pub use clustering::{cluster_duplicates, DuplicateCluster};
+pub use clustering::{DuplicateCluster, cluster_duplicates};
 pub use extraction::{
-    extract_chunks_for_duplication, extract_rust_chunks_for_duplication, CodeChunk,
+    CodeChunk, extract_chunks_for_duplication, extract_rust_chunks_for_duplication,
 };
 
 pub struct DuplicationConfig {

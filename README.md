@@ -112,50 +112,50 @@ DEFINITION: [statement] A statement inside a function/method body (not an import
 DEFINITION: [graph_node] A module (file) in the dependency graph.
 DEFINITION: [graph_edge] A dependency between two modules (file A depends on file B via imports/uses/mod declarations).
 RULE: [Python] [statements_per_function < 35] statements_per_function is the maximum number of statements in a Python function/method body.
-RULE: [Python] [positional_args < 5] positional_args is the maximum number of positional parameters in a Python function definition.
-RULE: [Python] [keyword_only_args < 6] keyword_only_args is the maximum number of keyword-only parameters in a Python function definition.
+RULE: [Python] [positional_args < 3] positional_args is the maximum number of positional parameters in a Python function definition.
+RULE: [Python] [keyword_only_args < 3] keyword_only_args is the maximum number of keyword-only parameters in a Python function definition.
 RULE: [Python] [max_indentation_depth < 4] max_indentation_depth is the maximum indentation depth within a Python function/method body.
-RULE: [Python] [branches_per_function < 10] branches_per_function is the number of if/elif/case_clause branches in a Python function.
-RULE: [Python] [local_variables_per_function < 20] local_variables_per_function is the number of distinct local variables assigned in a Python function.
+RULE: [Python] [branches_per_function < 9] branches_per_function is the number of if/elif/case_clause branches in a Python function.
+RULE: [Python] [local_variables_per_function < 15] local_variables_per_function is the number of distinct local variables assigned in a Python function.
 RULE: [Python] [returns_per_function < 5] returns_per_function is the number of return statements in a Python function.
 RULE: [Python] [return_values_per_function < 3] return_values_per_function is the maximum number of values returned by a single return statement in a Python function.
 RULE: [Python] [nested_function_depth < 2] nested_function_depth is the maximum nesting depth of function definitions inside a Python function.
-RULE: [Python] [statements_per_try_block < 5] statements_per_try_block is the maximum number of statements inside any try block in a Python function.
+RULE: [Python] [statements_per_try_block < 3] statements_per_try_block is the maximum number of statements inside any try block in a Python function.
 RULE: [Python] [boolean_parameters < 1] boolean_parameters is the maximum number of boolean default parameters (True/False) in a Python function.
-RULE: [Python] [decorators_per_function < 3] decorators_per_function is the maximum number of decorators applied to a Python function.
-RULE: [Python] [calls_per_function < 50] calls_per_function is the maximum number of function/method calls in a Python function.
-RULE: [Python] [methods_per_class < 20] methods_per_class is the maximum number of methods defined on a Python class.
-RULE: [Python] [statements_per_file < 400] statements_per_file is the maximum number of statements inside function/method bodies in a Python file.
-RULE: [Python] [lines_per_file < 2000] lines_per_file is the maximum number of source lines in a Python file (including comments and blanks).
-RULE: [Python] [functions_per_file < 30] functions_per_file is the maximum number of functions/methods defined in a Python file.
-RULE: [Python] [interface_types_per_file < 3] interface_types_per_file is the maximum number of interface types (Protocol/ABC classes) defined in a Python file.
-RULE: [Python] [concrete_types_per_file < 10] concrete_types_per_file is the maximum number of concrete types (non-Protocol/ABC classes) defined in a Python file.
-RULE: [Python] [imported_names_per_file < 20] imported_names_per_file is the maximum number of unique imported names in a Python file (excluding TYPE_CHECKING-only imports).
-RULE: [Python] [cycle_size < 3] cycle_size is the maximum allowed number of modules participating in an import cycle.
-RULE: [Python] [transitive_dependencies < 100] transitive_dependencies is the maximum number of downstream modules reachable from a module in the dependency graph.
-RULE: [Python] [dependency_depth < 7] dependency_depth is the maximum length of an import chain in the dependency graph.
+RULE: [Python] [annotations_per_function < 5] annotations_per_function counts Python decorators on a function; TOML key under [python] is decorators_per_function (maps to the same field).
+RULE: [Python] [calls_per_function < 20] calls_per_function is the maximum number of function/method calls in a Python function.
+RULE: [Python] [methods_per_class < 10] methods_per_class is the maximum number of methods defined on a Python class.
+RULE: [Python] [statements_per_file < 200] statements_per_file is the maximum number of statements inside function/method bodies in a Python file.
+RULE: [Python] [lines_per_file < 300] lines_per_file is the maximum number of source lines in a Python file (including comments and blanks).
+RULE: [Python] [functions_per_file < 10] functions_per_file is the maximum number of functions/methods defined in a Python file.
+RULE: [Python] [interface_types_per_file < 1] interface_types_per_file is the maximum number of interface types (Protocol/ABC classes) defined in a Python file.
+RULE: [Python] [concrete_types_per_file < 1] concrete_types_per_file is the maximum number of concrete types (non-Protocol/ABC classes) defined in a Python file.
+RULE: [Python] [imported_names_per_file < 30] imported_names_per_file is the maximum number of unique imported names in a Python file (excluding TYPE_CHECKING-only imports).
+RULE: [Python] [cycle_size < 0] cycle_size is the maximum allowed number of modules participating in an import cycle.
+RULE: [Python] [indirect_dependencies < 10] indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).
+RULE: [Python] [dependency_depth < 3] dependency_depth is the maximum length of an import chain in the dependency graph.
 RULE: [Python] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).
 RULE: [Python] [min_similarity >= 0.70] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
-RULE: [Rust] [statements_per_function < 25] statements_per_function is the maximum number of statements in a Rust function/method body.
+RULE: [Rust] [statements_per_function < 35] statements_per_function is the maximum number of statements in a Rust function/method body.
 RULE: [Rust] [arguments_per_function < 8] arguments_per_function is the maximum number of non-self parameters in a Rust function/method signature.
-RULE: [Rust] [max_indentation_depth < 4] max_indentation_depth is the maximum indentation depth within a Rust function/method body.
-RULE: [Rust] [branches_per_function < 8] branches_per_function is the number of `if` expressions in a Rust function.
+RULE: [Rust] [max_indentation_depth < 5] max_indentation_depth is the maximum indentation depth within a Rust function/method body.
+RULE: [Rust] [branches_per_function < 9] branches_per_function is the number of `if` expressions in a Rust function.
 RULE: [Rust] [local_variables_per_function < 20] local_variables_per_function is the maximum number of local bindings introduced in a Rust function.
 RULE: [Rust] [returns_per_function < 5] returns_per_function is the maximum number of `return` expressions in a Rust function.
 RULE: [Rust] [nested_function_depth < 2] nested_function_depth is the maximum nesting depth of closures within a Rust function.
-RULE: [Rust] [boolean_parameters < 2] boolean_parameters is the maximum number of `bool` parameters in a Rust function signature.
-RULE: [Rust] [attributes_per_function < 4] attributes_per_function is the maximum number of non-doc attributes on a Rust function.
-RULE: [Rust] [calls_per_function < 50] calls_per_function is the maximum number of function/method calls in a Rust function.
-RULE: [Rust] [methods_per_class < 15] methods_per_class is the maximum number of methods in an `impl` block for a Rust type.
-RULE: [Rust] [statements_per_file < 300] statements_per_file is the maximum number of statements inside function/method bodies in a Rust file.
-RULE: [Rust] [lines_per_file < 2000] lines_per_file is the maximum number of source lines in a Rust file (including comments and blanks).
-RULE: [Rust] [functions_per_file < 35] functions_per_file is the maximum number of functions/methods defined in a Rust file.
-RULE: [Rust] [interface_types_per_file < 3] interface_types_per_file is the maximum number of trait definitions in a Rust file.
+RULE: [Rust] [boolean_parameters < 1] boolean_parameters is the maximum number of `bool` parameters in a Rust function signature.
+RULE: [Rust] [attributes_per_function < 1] attributes_per_function is the maximum number of non-doc attributes on a Rust function.
+RULE: [Rust] [calls_per_function < 45] calls_per_function is the maximum number of function/method calls in a Rust function.
+RULE: [Rust] [methods_per_class < 10] methods_per_class is the maximum number of methods in an `impl` block for a Rust type.
+RULE: [Rust] [statements_per_file < 250] statements_per_file is the maximum number of statements inside function/method bodies in a Rust file.
+RULE: [Rust] [lines_per_file < 400] lines_per_file is the maximum number of source lines in a Rust file (including comments and blanks).
+RULE: [Rust] [functions_per_file < 40] functions_per_file is the maximum number of functions/methods defined in a Rust file.
+RULE: [Rust] [interface_types_per_file < 0] interface_types_per_file is the maximum number of trait definitions in a Rust file.
 RULE: [Rust] [concrete_types_per_file < 8] concrete_types_per_file is the maximum number of concrete type definitions (struct/enum/union) in a Rust file.
-RULE: [Rust] [imported_names_per_file < 20] imported_names_per_file is the maximum number of internal `use` statements in a Rust file (excluding `pub use`).
-RULE: [Rust] [cycle_size < 3] cycle_size is the maximum allowed number of modules participating in a dependency cycle.
-RULE: [Rust] [transitive_dependencies < 50] transitive_dependencies is the maximum number of downstream modules reachable from a module in the dependency graph.
-RULE: [Rust] [dependency_depth < 4] dependency_depth is the maximum length of a module dependency chain in the dependency graph.
+RULE: [Rust] [imported_names_per_file < 50] imported_names_per_file is the maximum number of internal `use` statements in a Rust file (excluding `pub use`).
+RULE: [Rust] [cycle_size < 0] cycle_size is the maximum allowed number of modules participating in a dependency cycle.
+RULE: [Rust] [indirect_dependencies < 10] indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).
+RULE: [Rust] [dependency_depth < 3] dependency_depth is the maximum length of a module dependency chain in the dependency graph.
 RULE: [Rust] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).
 RULE: [Rust] [min_similarity >= 0.70] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 ```

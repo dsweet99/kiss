@@ -116,9 +116,39 @@ fn test_mermaid_node_id() {
 #[test]
 fn test_run_viz_errors_on_no_source_files() {
     let out_path = Path::new("does-not-matter.dot");
-    let err = run_viz(out_path, &[], None, &[], 1.0).unwrap_err();
+    let err = run_viz(out_path, &[], None, &[], VizCoarsen::Zoom(1.0)).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert!(err.to_string().contains("No source files"));
+}
+
+#[test]
+fn test_run_viz_rejects_zero_num_nodes() {
+    let out_path = Path::new("does-not-matter.dot");
+    let err = run_viz(out_path, &[], None, &[], VizCoarsen::NumNodes(0)).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("num-nodes"));
+}
+
+#[test]
+fn test_validate_coarsen_passes_through_valid_inputs() {
+    assert!(matches!(
+        validate_coarsen(VizCoarsen::Zoom(0.5)).unwrap(),
+        VizCoarsen::Zoom(z) if (z - 0.5).abs() < f64::EPSILON
+    ));
+    assert!(matches!(
+        validate_coarsen(VizCoarsen::NumNodes(3)).unwrap(),
+        VizCoarsen::NumNodes(3)
+    ));
+    assert!(validate_coarsen(VizCoarsen::Zoom(1.5)).is_err());
+    assert!(validate_coarsen(VizCoarsen::NumNodes(0)).is_err());
+}
+
+#[test]
+fn test_renders_full_graph_only_for_zoom_one() {
+    assert!(renders_full_graph(VizCoarsen::Zoom(1.0)));
+    assert!(!renders_full_graph(VizCoarsen::Zoom(0.5)));
+    assert!(!renders_full_graph(VizCoarsen::NumNodes(1)));
+    assert!(!renders_full_graph(VizCoarsen::NumNodes(100)));
 }
 
 #[test]
@@ -150,6 +180,49 @@ fn test_write_coarsened_for_format() {
 }
 
 #[test]
+fn test_write_coarsened_mermaid_each_node_is_one_source_line() {
+    let cg = CoarsenedGraph {
+        labels: vec!["tests (74 nodes)".into(), "analyze (22 nodes)".into()],
+        edges: BTreeSet::from([(0usize, 1usize)]),
+    };
+    let mut buf = Vec::new();
+    write_coarsened_mermaid(&mut buf, &cg).unwrap();
+    let s = String::from_utf8(buf).unwrap();
+    for line in s.lines() {
+        let t = line.trim_start();
+        if let Some(rest) = t.strip_prefix("c")
+            && rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+            && line.contains("[\"")
+        {
+            assert!(
+                line.contains("\"]"),
+                "coarsened mermaid node must be one line ending with \"]; got {line:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_write_coarsened_mermaid_normalizes_embedded_newlines_in_label() {
+    let cg = CoarsenedGraph {
+        labels: vec!["bad\nlabel".into()],
+        edges: BTreeSet::new(),
+    };
+    let mut buf = Vec::new();
+    write_coarsened_mermaid(&mut buf, &cg).unwrap();
+    let s = String::from_utf8(buf).unwrap();
+    assert!(
+        s.contains("bad — label"),
+        "expected newline folded into line for Mermaid; got {s:?}"
+    );
+    assert_eq!(
+        s.lines().filter(|l| l.contains("c0[")).count(),
+        1,
+        "node definition should not span multiple lines: {s:?}"
+    );
+}
+
+#[test]
 fn test_build_py_graph_empty() {
     let graph = crate::analyze::build_py_graph_from_files(&[]).unwrap();
     assert!(graph.nodes.is_empty());
@@ -172,6 +245,9 @@ fn test_touch_coarsened_helpers_for_static_coverage() {
     out.clear();
     write_coarsened_mermaid(&mut out, &cg).unwrap();
 
-    let coarse = build_coarsened_graph(&[], &[], 0.2).unwrap();
+    let coarse = build_coarsened_graph(&[], &[], VizCoarsen::Zoom(0.2)).unwrap();
     assert!(!coarse.labels.is_empty());
+
+    let coarse_n = build_coarsened_graph(&[], &[], VizCoarsen::NumNodes(1)).unwrap();
+    assert_eq!(coarse_n.labels.len(), 1);
 }

@@ -28,9 +28,8 @@ fn test_extract_function() {
 
 #[test]
 fn test_count_matches_extract_len() {
-    let parsed = parse_python_source(
-        "def outer():\n    def inner(): pass\nclass C:\n    def m(self): pass",
-    );
+    let parsed =
+        parse_python_source("def outer():\n    def inner(): pass\nclass C:\n    def m(self): pass");
     assert_eq!(count_code_units(&parsed), extract_code_units(&parsed).len());
 }
 

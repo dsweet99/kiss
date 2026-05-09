@@ -1,11 +1,12 @@
-use super::collect_py::{collect_from_node, push_py_fn_metrics};
+use super::collect_py::{StatsVisitor, push_py_fn_metrics};
 use super::collect_rust::{collect_rust_from_items, push_rust_fn_metrics};
 use super::definitions::METRICS;
 use super::format::config_key_for;
 use super::metric_stats::MetricStats;
-use super::percentile::percentile;
 use super::percentile::PercentileSummary;
+use super::percentile::percentile;
 use super::summaries::{compute_summaries, metric_values};
+use crate::py_metrics::walk_py_ast;
 
 use crate::parsing::{create_parser, parse_file};
 use crate::rust_parsing::parse_rust_file;
@@ -64,10 +65,15 @@ fn test_metric_registry() {
     assert!(super::get_metric_def("fan_in").is_some());
     assert!(super::get_metric_def("nonexistent").is_none());
     assert_eq!(
-        super::get_metric_def("statements_per_function").unwrap().scope,
+        super::get_metric_def("statements_per_function")
+            .unwrap()
+            .scope,
         super::MetricScope::Function
     );
-    assert_eq!(super::get_metric_def("fan_in").unwrap().scope, super::MetricScope::Module);
+    assert_eq!(
+        super::get_metric_def("fan_in").unwrap().scope,
+        super::MetricScope::Module
+    );
     assert!(METRICS.len() > 20);
     let def = super::MetricDef {
         metric_id: "test",
@@ -104,10 +110,11 @@ fn test_collection_rust_and_py_parsing() {
     write!(tmp_py, "def foo():\n    x = 1").unwrap();
     let parsed_py = parse_file(&mut create_parser().unwrap(), tmp_py.path()).unwrap();
     let mut stats2 = MetricStats::default();
-    collect_from_node(
+    let mut visitor = StatsVisitor { stats: &mut stats2 };
+    walk_py_ast(
         parsed_py.tree.root_node(),
         &parsed_py.source,
-        &mut stats2,
+        &mut |a| visitor.process(a),
         false,
     );
     assert!(!stats2.statements_per_function.is_empty());

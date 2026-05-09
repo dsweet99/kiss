@@ -32,5 +32,6 @@ pub(crate) struct VizDispatchOptions {
     pub out: PathBuf,
     pub paths: Vec<String>,
     pub zoom: f64,
+    pub num_nodes: Option<usize>,
     pub ignore: Vec<String>,
 }

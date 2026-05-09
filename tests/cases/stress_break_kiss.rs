@@ -1,6 +1,4 @@
-use kiss::minhash::{
-    compute_minhash, estimate_similarity, generate_shingles, normalize_code,
-};
+use kiss::minhash::{compute_minhash, estimate_similarity, generate_shingles, normalize_code};
 use kiss::parsing::{create_parser, parse_file};
 use kiss::py_metrics::{compute_file_metrics, compute_function_metrics};
 use std::fmt::Write as _;
@@ -57,7 +55,10 @@ fn h1_error_node_in_return_corrupts_return_value_count() {
 
     let func = get_func_node(&p);
     let m = compute_function_metrics(func, &p.source);
-    assert!(m.has_error, "function with syntax error in return should set has_error");
+    assert!(
+        m.has_error,
+        "function with syntax error in return should set has_error"
+    );
 }
 
 #[test]
@@ -67,7 +68,11 @@ fn h1_unclosed_string_corrupts_entire_function() {
     let p = parse(code);
     let fm = compute_file_metrics(&p);
 
-    assert!(fm.functions >= 1, "should parse at least one function despite unclosed string, functions={}", fm.functions);
+    assert!(
+        fm.functions >= 1,
+        "should parse at least one function despite unclosed string, functions={}",
+        fm.functions
+    );
 }
 
 fn has_error_node(node: tree_sitter::Node) -> bool {
@@ -216,4 +221,3 @@ fn h3_file_with_500_functions() {
     let fm = compute_file_metrics(&p);
     assert_eq!(fm.functions, 500, "Should count 500 functions");
 }
-

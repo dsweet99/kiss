@@ -147,7 +147,14 @@ fn test_rust_duplication() {
     if let syn::Item::Fn(f) = &ast.items[0] {
         let start = f.sig.fn_token.span.start().line;
         let end = f.block.brace_token.span.close().end().line;
-        extraction::add_rust_function_chunk("bar", start, end, source, Path::new("test.rs"), &mut chunks);
+        extraction::add_rust_function_chunk(
+            "bar",
+            start,
+            end,
+            source,
+            Path::new("test.rs"),
+            &mut chunks,
+        );
     }
 }
 

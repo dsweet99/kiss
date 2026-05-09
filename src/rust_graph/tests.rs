@@ -213,14 +213,10 @@ fn mod_decls_prefer_child_module_under_same_parent() {
     writeln!(fa, "pub fn a() {{}}").unwrap();
     writeln!(fb, "pub fn b() {{}}").unwrap();
 
-    let a_mod_parsed =
-        crate::rust_parsing::parse_rust_file(&src.join("a").join("mod.rs")).unwrap();
-    let b_mod_parsed =
-        crate::rust_parsing::parse_rust_file(&src.join("b").join("mod.rs")).unwrap();
-    let a_foo_parsed =
-        crate::rust_parsing::parse_rust_file(&src.join("a").join("foo.rs")).unwrap();
-    let b_foo_parsed =
-        crate::rust_parsing::parse_rust_file(&src.join("b").join("foo.rs")).unwrap();
+    let a_mod_parsed = crate::rust_parsing::parse_rust_file(&src.join("a").join("mod.rs")).unwrap();
+    let b_mod_parsed = crate::rust_parsing::parse_rust_file(&src.join("b").join("mod.rs")).unwrap();
+    let a_foo_parsed = crate::rust_parsing::parse_rust_file(&src.join("a").join("foo.rs")).unwrap();
+    let b_foo_parsed = crate::rust_parsing::parse_rust_file(&src.join("b").join("foo.rs")).unwrap();
     let refs: Vec<&crate::rust_parsing::ParsedRustFile> =
         vec![&a_mod_parsed, &b_mod_parsed, &a_foo_parsed, &b_foo_parsed];
     let g = build_rust_dependency_graph(&refs);

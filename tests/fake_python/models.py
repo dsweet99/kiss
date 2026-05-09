@@ -1,20 +1,18 @@
 """Too many classes in one file - should be split up."""
 
-import json
-from datetime import datetime
 from typing import Optional
 
-__all__ = ["json", "User", "Product", "Category", "Order", "OrderItem", "Review", "Address", "Payment", "Coupon", "Notification"]
+from common.sdatetime import now_isoformat
 
 
 class User:
     """User model."""
 
-    def __init__(self, id: int, username: str, email: str):
-        self.id = id
+    def __init__(self, iid: int, username: str, email: str):
+        self.id = iid
         self.username = username
         self.email = email
-        self.created_at = datetime.now()
+        self.created_at = now_isoformat()
         self.updated_at = None
         self.is_active = True
 
@@ -23,8 +21,8 @@ class User:
             "id": self.id,
             "username": self.username,
             "email": self.email,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
             "is_active": self.is_active
         }
 
@@ -35,15 +33,15 @@ class User:
 class Product:
     """Product model."""
 
-    def __init__(self, id: int, name: str, price: float, category_id: int):
-        self.id = id
+    def __init__(self, iid: int, name: str, price: float, category_id: int):
+        self.id = iid
         self.name = name
         self.price = price
         self.category_id = category_id
         self.description = ""
         self.stock = 0
         self.is_available = True
-        self.created_at = datetime.now()
+        self.created_at = now_isoformat()
 
     def to_dict(self):
         return {
@@ -54,7 +52,7 @@ class Product:
             "description": self.description,
             "stock": self.stock,
             "is_available": self.is_available,
-            "created_at": self.created_at.isoformat()
+            "created_at": self.created_at
         }
 
     def __repr__(self):
@@ -64,8 +62,8 @@ class Product:
 class Category:
     """Category model."""
 
-    def __init__(self, id: int, name: str, parent_id: Optional[int] = None):
-        self.id = id
+    def __init__(self, iid: int, name: str, parent_id: Optional[int] = None):
+        self.id = iid
         self.name = name
         self.parent_id = parent_id
         self.description = ""
@@ -87,13 +85,13 @@ class Category:
 class Order:
     """Order model."""
 
-    def __init__(self, id: int, user_id: int, status: str = "pending"):
-        self.id = id
+    def __init__(self, iid: int, user_id: int, status: str = "pending"):
+        self.id = iid
         self.user_id = user_id
         self.status = status
         self.items = []
         self.total = 0.0
-        self.created_at = datetime.now()
+        self.created_at = now_isoformat()
         self.updated_at = None
         self.shipped_at = None
         self.delivered_at = None
@@ -117,10 +115,10 @@ class Order:
             "status": self.status,
             "items": self.items,
             "total": self.total,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "shipped_at": self.shipped_at.isoformat() if self.shipped_at else None,
-            "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "shipped_at": self.shipped_at,
+            "delivered_at": self.delivered_at
         }
 
     def __repr__(self):
@@ -130,8 +128,8 @@ class Order:
 class OrderItem:
     """Order item model."""
 
-    def __init__(self, id: int, order_id: int, product_id: int, quantity: int, price: float):
-        self.id = id
+    def __init__(self, iid: int, order_id: int, product_id: int, quantity: int, price: float):
+        self.id = iid
         self.order_id = order_id
         self.product_id = product_id
         self.quantity = quantity
@@ -158,13 +156,13 @@ class OrderItem:
 class Review:
     """Review model."""
 
-    def __init__(self, id: int, user_id: int, product_id: int, rating: int, comment: str = ""):
-        self.id = id
+    def __init__(self, iid: int, user_id: int, product_id: int, rating: int, comment: str = ""):
+        self.id = iid
         self.user_id = user_id
         self.product_id = product_id
         self.rating = rating
         self.comment = comment
-        self.created_at = datetime.now()
+        self.created_at = now_isoformat()
         self.is_verified = False
 
     def to_dict(self):
@@ -174,7 +172,7 @@ class Review:
             "product_id": self.product_id,
             "rating": self.rating,
             "comment": self.comment,
-            "created_at": self.created_at.isoformat(),
+            "created_at": self.created_at,
             "is_verified": self.is_verified
         }
 
@@ -185,8 +183,8 @@ class Review:
 class Address:
     """Address model."""
 
-    def __init__(self, id: int, user_id: int, street: str, city: str, state: str, zip_code: str, country: str):
-        self.id = id
+    def __init__(self, iid: int, user_id: int, street: str, city: str, state: str, zip_code: str, country: str):
+        self.id = iid
         self.user_id = user_id
         self.street = street
         self.city = city
@@ -217,14 +215,14 @@ class Address:
 class Payment:
     """Payment model."""
 
-    def __init__(self, id: int, order_id: int, amount: float, method: str):
-        self.id = id
+    def __init__(self, iid: int, order_id: int, amount: float, method: str):
+        self.id = iid
         self.order_id = order_id
         self.amount = amount
         self.method = method
         self.status = "pending"
         self.transaction_id = None
-        self.created_at = datetime.now()
+        self.created_at = now_isoformat()
         self.processed_at = None
 
     def to_dict(self):
@@ -235,8 +233,8 @@ class Payment:
             "method": self.method,
             "status": self.status,
             "transaction_id": self.transaction_id,
-            "created_at": self.created_at.isoformat(),
-            "processed_at": self.processed_at.isoformat() if self.processed_at else None
+            "created_at": self.created_at,
+            "processed_at": self.processed_at
         }
 
     def __repr__(self):
@@ -246,10 +244,10 @@ class Payment:
 class Coupon:
     """Coupon model."""
 
-    def __init__(self, id: int, code: str, discount_type: str, discount_value: float):
-        self.id = id
+    def __init__(self, iid: int, code: str, discount_type: str, discount_value: float):
+        self.id = iid
         self.code = code
-        self.discount_type = discount_type  # 'percentage' or 'fixed'
+        self.discount_type = discount_type
         self.discount_value = discount_value
         self.min_order_amount = 0.0
         self.max_uses = None
@@ -274,7 +272,7 @@ class Coupon:
             "min_order_amount": self.min_order_amount,
             "max_uses": self.max_uses,
             "uses": self.uses,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "expires_at": self.expires_at,
             "is_active": self.is_active
         }
 
@@ -285,19 +283,19 @@ class Coupon:
 class Notification:
     """Notification model."""
 
-    def __init__(self, id: int, user_id: int, title: str, message: str, notification_type: str = "info"):
-        self.id = id
+    def __init__(self, iid: int, user_id: int, title: str, message: str, notification_type: str = "info"):
+        self.id = iid
         self.user_id = user_id
         self.title = title
         self.message = message
         self.notification_type = notification_type
         self.is_read = False
-        self.created_at = datetime.now()
+        self.created_at = now_isoformat()
         self.read_at = None
 
     def mark_as_read(self):
         self.is_read = True
-        self.read_at = datetime.now()
+        self.read_at = now_isoformat()
 
     def to_dict(self):
         return {
@@ -307,10 +305,9 @@ class Notification:
             "message": self.message,
             "notification_type": self.notification_type,
             "is_read": self.is_read,
-            "created_at": self.created_at.isoformat(),
-            "read_at": self.read_at.isoformat() if self.read_at else None
+            "created_at": self.created_at,
+            "read_at": self.read_at
         }
 
     def __repr__(self):
         return f"Notification(id={self.id}, title={self.title})"
-

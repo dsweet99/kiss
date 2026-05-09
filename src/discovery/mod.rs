@@ -150,7 +150,11 @@ fn process_ext_entry(
     if !entry.file_type().is_some_and(|ft| ft.is_file()) {
         return WalkState::Continue;
     }
-    if entry.path().extension().is_some_and(|e| e.eq_ignore_ascii_case(ext)) {
+    if entry
+        .path()
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case(ext))
+    {
         results.lock().unwrap().push(entry.into_path());
     }
     WalkState::Continue

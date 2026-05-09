@@ -50,10 +50,10 @@ pub(super) const RS_RULE_SPECS: &[RuleSpec] = &[
         description: "boolean_parameters is the maximum number of `bool` parameters in a Rust function signature.",
     },
     RuleSpec {
-        metric: "attributes_per_function",
+        metric: "annotations_per_function",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.annotations_per_function),
-        description: "attributes_per_function is the maximum number of non-doc attributes on a Rust function.",
+        description: "annotations_per_function is the maximum number of non-doc attributes on a Rust function. (TOML key: attributes_per_function)",
     },
     RuleSpec {
         metric: "calls_per_function",

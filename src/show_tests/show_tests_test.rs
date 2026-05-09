@@ -130,11 +130,7 @@ fn test_one_function_covered_by_multiple_tests() {
 #[test]
 fn test_python_test_class_format() {
     let tmp = tempfile::TempDir::new().unwrap();
-    std::fs::write(
-        tmp.path().join("widget.py"),
-        "def render(): return 'ok'\n",
-    )
-    .unwrap();
+    std::fs::write(tmp.path().join("widget.py"), "def render(): return 'ok'\n").unwrap();
     std::fs::write(
         tmp.path().join("test_widget.py"),
         "from widget import render\n\nclass TestWidget:\n    def test_render(self):\n        assert render() == 'ok'\n",
@@ -188,7 +184,11 @@ fn test_format_covering_tests_empty() {
 #[test]
 fn test_covered_by_fixture_empty_covering_list() {
     let tmp = tempfile::TempDir::new().unwrap();
-    std::fs::write(tmp.path().join("mymod.py"), "def helper():\n    return 42\n").unwrap();
+    std::fs::write(
+        tmp.path().join("mymod.py"),
+        "def helper():\n    return 42\n",
+    )
+    .unwrap();
     std::fs::write(
         tmp.path().join("test_mymod.py"),
         "import pytest\nfrom mymod import helper\n\n@pytest.fixture\ndef my_fixture():\n    return helper()\n\ndef test_it(my_fixture):\n    pass\n",
@@ -235,7 +235,10 @@ fn test_test_line_format_stability() {
         .find(|l| l.contains("helper"))
         .expect("expected a TEST line for helper");
 
-    assert!(line.starts_with("TEST:"), "line must start with TEST: got {line:?}");
+    assert!(
+        line.starts_with("TEST:"),
+        "line must start with TEST: got {line:?}"
+    );
     let rest = line.strip_prefix("TEST:").unwrap();
     let (path_name, covering) = rest
         .split_once(' ')
@@ -272,11 +275,20 @@ fn test_show_tests_path_outside_universe() {
     std::fs::create_dir_all(&dir_b).unwrap();
 
     std::fs::write(dir_a.join("mod.py"), "def foo(): pass\n").unwrap();
-    std::fs::write(dir_a.join("test_mod.py"), "from mod import foo\ndef test_foo(): foo()\n").unwrap();
+    std::fs::write(
+        dir_a.join("test_mod.py"),
+        "from mod import foo\ndef test_foo(): foo()\n",
+    )
+    .unwrap();
     std::fs::write(dir_b.join("mod2.py"), "def bar(): pass\n").unwrap();
 
     let universe = dir_a.to_string_lossy().to_string();
-    let path_outside = dir_b.join("mod2.py").canonicalize().unwrap().to_string_lossy().to_string();
+    let path_outside = dir_b
+        .join("mod2.py")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
 
     let mut buf = Vec::new();
     let exit = run_show_tests_to_buf(&mut buf, &universe, &[path_outside], true);

@@ -30,7 +30,11 @@ fn kpop_show_tests_path_outside_universe_produces_output() {
 
     // dir_a: minimal files (universe = cwd when we run)
     fs::write(dir_a.join("mod.py"), "def foo(): pass\n").unwrap();
-    fs::write(dir_a.join("test_mod.py"), "from mod import foo\ndef test_foo(): foo()\n").unwrap();
+    fs::write(
+        dir_a.join("test_mod.py"),
+        "from mod import foo\ndef test_foo(): foo()\n",
+    )
+    .unwrap();
 
     // dir_b: file we want to query (sibling, outside cwd = universe)
     fs::write(dir_b.join("mod2.py"), "def bar(): pass\n").unwrap();

@@ -4,7 +4,9 @@ use crate::config::get_usize;
 #[test]
 fn test_gate_config_merge_from_toml() {
     let mut gate = GateConfig::default();
-    gate.merge_from_toml("[gate]\ntest_coverage_threshold = 50\nmin_similarity = 0.8\nduplication_enabled = false");
+    gate.merge_from_toml(
+        "[gate]\ntest_coverage_threshold = 50\nmin_similarity = 0.8\nduplication_enabled = false",
+    );
     assert_eq!(gate.test_coverage_threshold, 50);
     assert!((gate.min_similarity - 0.8).abs() < 0.01);
     assert!(!gate.duplication_enabled);

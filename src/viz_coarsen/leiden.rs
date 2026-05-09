@@ -2,7 +2,10 @@ use super::build_node_index;
 use fa_leiden_cd::{Graph as LeidenGraph, TrivialModularityOptimizer};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-pub(super) fn leiden_partition(nodes: &[String], edges: &BTreeSet<(String, String)>) -> Vec<Vec<usize>> {
+pub(super) fn leiden_partition(
+    nodes: &[String],
+    edges: &BTreeSet<(String, String)>,
+) -> Vec<Vec<usize>> {
     let mut g: LeidenGraph<String, ()> = LeidenGraph::new();
     let mut ids: HashMap<String, usize> = HashMap::new();
     for n in nodes {
@@ -36,7 +39,10 @@ pub(super) fn leiden_partition(nodes: &[String], edges: &BTreeSet<(String, Strin
     communities
 }
 
-pub(super) fn assign_nodes_to_communities(communities: &[Vec<usize>], node_count: usize) -> Vec<usize> {
+pub(super) fn assign_nodes_to_communities(
+    communities: &[Vec<usize>],
+    node_count: usize,
+) -> Vec<usize> {
     let mut node_to_comm = vec![0; node_count];
     for (ci, members) in communities.iter().enumerate() {
         for &m in members {

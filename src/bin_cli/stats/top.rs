@@ -45,9 +45,9 @@ fn collect_py_units(py_files: &[PathBuf]) -> Vec<kiss::UnitMetrics> {
 }
 
 fn collect_rs_units(rs_files: &[PathBuf]) -> Vec<kiss::UnitMetrics> {
-    use kiss::rust_parsing::parse_rust_files;
-    use kiss::rust_graph::build_rust_dependency_graph;
     use kiss::collect_detailed_rs;
+    use kiss::rust_graph::build_rust_dependency_graph;
+    use kiss::rust_parsing::parse_rust_files;
 
     if rs_files.is_empty() {
         return Vec::new();
@@ -218,8 +218,7 @@ mod exhaustiveness_tests {
     /// `src/stats/definitions.rs`.
     #[test]
     fn allowlist_entries_exist_in_registry() {
-        let registry_ids: Vec<&'static str> =
-            kiss::METRICS.iter().map(|m| m.metric_id).collect();
+        let registry_ids: Vec<&'static str> = kiss::METRICS.iter().map(|m| m.metric_id).collect();
         let stale: Vec<&'static str> = AGGREGATE_ONLY_METRICS
             .iter()
             .copied()

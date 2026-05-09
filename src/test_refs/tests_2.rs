@@ -63,8 +63,7 @@ fn test_same_stem_as_function_name_different_dirs() {
         tree: tree_2,
     };
 
-    let src_test =
-        "from sub_dir_1.some_name import some_name\ndef test_it():\n    some_name()\n";
+    let src_test = "from sub_dir_1.some_name import some_name\ndef test_it():\n    some_name()\n";
     let tree_test = parser.parse(src_test, None).unwrap();
     let file_test = ParsedFile {
         path: PathBuf::from("test_stuff.py"),
@@ -364,11 +363,11 @@ fn test_coverage_map_one_function_covered_by_two_tests() {
 
     let analysis = analyze_test_refs(&[&file, &file_test], None);
     let key = (PathBuf::from("utils.py"), "parse".to_string());
-    let covering = analysis.coverage_map.get(&key).expect("coverage_map should have parse");
-    let test_ids: Vec<String> = covering
-        .iter()
-        .map(|(_, func)| func.clone())
-        .collect();
+    let covering = analysis
+        .coverage_map
+        .get(&key)
+        .expect("coverage_map should have parse");
+    let test_ids: Vec<String> = covering.iter().map(|(_, func)| func.clone()).collect();
     assert!(
         test_ids.contains(&"test_parse_empty".to_string()),
         "coverage_map should list test_parse_empty, got: {test_ids:?}"
@@ -379,4 +378,3 @@ fn test_coverage_map_one_function_covered_by_two_tests() {
     );
     assert_eq!(covering.len(), 2);
 }
-

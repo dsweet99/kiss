@@ -8,8 +8,8 @@ use super::edit::{MvPlan, PlannedEdit};
 use super::opts::MvRequest;
 
 use crate::symbol_mv_support::{
-    build_move_edits, collect_reference_edits, collect_source_rename_edits, MoveEditsParams,
-    ReferenceRenameParams, SourceRenameParams,
+    MoveEditsParams, ReferenceRenameParams, SourceRenameParams, build_move_edits,
+    collect_reference_edits, collect_source_rename_edits,
 };
 
 const fn empty_plan() -> MvPlan {
@@ -32,7 +32,12 @@ struct AppendReferenceCtx<'a> {
 }
 
 fn append_reference_edits(ctx: &mut AppendReferenceCtx<'_>) {
-    let owner = ctx.req.query.member.as_ref().map(|_| ctx.req.query.symbol.as_str());
+    let owner = ctx
+        .req
+        .query
+        .member
+        .as_ref()
+        .map(|_| ctx.req.query.symbol.as_str());
     for path in crate::symbol_mv_support::gather_candidate_files(
         &ctx.req.paths,
         &ctx.req.ignore,
@@ -45,6 +50,12 @@ fn append_reference_edits(ctx: &mut AppendReferenceCtx<'_>) {
         let Ok(content) = fs::read_to_string(&path) else {
             continue;
         };
+        if owner.is_none()
+            && ctx.req.query.language == crate::Language::Python
+            && has_python_top_level_definition(&content, ctx.old_name)
+        {
+            continue;
+        }
         let ref_edits = collect_reference_edits(&ReferenceRenameParams {
             path: &path,
             content: &content,
@@ -58,6 +69,41 @@ fn append_reference_edits(ctx: &mut AppendReferenceCtx<'_>) {
             ctx.edits.extend(ref_edits);
         }
     }
+}
+
+const fn is_python_identifier_boundary(next: Option<char>) -> bool {
+    matches!(next, None | Some(' ' | '\t' | '(' | ':' | '\r' | '\n'))
+}
+
+fn has_python_top_level_definition(content: &str, old_name: &str) -> bool {
+    for line in content.lines() {
+        if line.starts_with(' ') || line.starts_with('\t') {
+            continue;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let body = trimmed
+            .strip_prefix("async ")
+            .map_or(trimmed, |after_async| after_async);
+        if let Some(rest) = body.strip_prefix("def ") {
+            if rest.starts_with(old_name) {
+                let next = rest.get(old_name.len()..).and_then(|s| s.chars().next());
+                if is_python_identifier_boundary(next) {
+                    return true;
+                }
+            }
+        } else if let Some(rest) = body.strip_prefix("class ")
+            && rest.starts_with(old_name)
+        {
+            let next = rest.get(old_name.len()..).and_then(|s| s.chars().next());
+            if is_python_identifier_boundary(next) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 struct AppendMoveCtx<'a> {
@@ -87,7 +133,11 @@ fn append_move_edits_if_any(ctx: &mut AppendMoveCtx<'_>) {
 }
 
 fn finalize_plan(files: BTreeSet<PathBuf>, mut edits: Vec<PlannedEdit>) -> MvPlan {
-    edits.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.start_byte.cmp(&b.start_byte)));
+    edits.sort_by(|a, b| {
+        a.path
+            .cmp(&b.path)
+            .then_with(|| a.start_byte.cmp(&b.start_byte))
+    });
     MvPlan {
         files: files.into_iter().collect(),
         edits,
@@ -95,6 +145,7 @@ fn finalize_plan(files: BTreeSet<PathBuf>, mut edits: Vec<PlannedEdit>) -> MvPla
 }
 
 pub fn plan_edits(req: &MvRequest) -> MvPlan {
+    let _guard = crate::symbol_mv_support::PlanInvocationGuard::enter();
     let old_name = req.query.old_name();
     let source_path = &req.query.path;
     let source_canonical = canonical_path(source_path);
@@ -104,8 +155,13 @@ pub fn plan_edits(req: &MvRequest) -> MvPlan {
 
     let mut files = BTreeSet::new();
     let owner = req.query.member.as_ref().map(|_| req.query.symbol.as_str());
-    let def_span =
-        crate::symbol_mv_support::find_definition_span(&source_content, old_name, owner, req.query.language);
+    let def_span = crate::symbol_mv_support::find_definition_span(
+        &source_content,
+        old_name,
+        owner,
+        req.query.language,
+        source_path,
+    );
 
     let mut edits = collect_source_rename_edits(&SourceRenameParams {
         source_path,
@@ -151,6 +207,8 @@ mod plan_coverage {
         t(append_reference_edits);
         t(append_move_edits_if_any);
         t(finalize_plan);
+        t(has_python_top_level_definition);
+        t(is_python_identifier_boundary);
         let _ = std::mem::size_of::<AppendReferenceCtx>();
         let _ = std::mem::size_of::<AppendMoveCtx>();
     }

@@ -9,7 +9,9 @@ mod definitions;
 mod references;
 
 #[cfg(test)]
-mod tests;
+mod tests_1;
+#[cfg(test)]
+mod tests_2;
 
 pub use definitions::RustCodeDefinition;
 use definitions::{collect_rust_definitions, collect_test_module_references};
@@ -161,12 +163,8 @@ pub fn analyze_rust_test_refs(
         .filter(|d| !is_covered_by_tests(d, &test_references, &name_files, &disambiguation))
         .cloned()
         .collect();
-    let coverage_map = build_rust_coverage_map(
-        &definitions,
-        &per_test_usage,
-        &name_files,
-        &disambiguation,
-    );
+    let coverage_map =
+        build_rust_coverage_map(&definitions, &per_test_usage, &name_files, &disambiguation);
     RustTestRefAnalysis {
         definitions,
         test_references,

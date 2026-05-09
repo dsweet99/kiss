@@ -81,7 +81,9 @@ pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> Dependen
             .entry(bare)
             .or_default()
             .push(qualified.clone());
-        graph.path_to_module.insert(parsed.path.clone(), qualified.clone());
+        graph
+            .path_to_module
+            .insert(parsed.path.clone(), qualified.clone());
         graph.paths.insert(qualified.clone(), parsed.path.clone());
         graph.get_or_create_node(&qualified);
     }

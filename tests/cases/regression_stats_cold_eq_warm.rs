@@ -11,11 +11,7 @@ fn regression_stats_cold_and_warm_are_identical() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
-    fs::write(
-        repo.path().join("stats.py"),
-        "def f(x):\n    return x\n",
-    )
-    .unwrap();
+    fs::write(repo.path().join("stats.py"), "def f(x):\n    return x\n").unwrap();
     fs::write(
         repo.path().join("test_stats.py"),
         "def test_f():\n    assert f(1) == 1\n",

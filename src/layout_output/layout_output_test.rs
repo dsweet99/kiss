@@ -384,4 +384,3 @@ fn test_format_what_if_empty_summary() {
     let after_yaml = md.split("```\n\n").last().unwrap_or("");
     assert!(!after_yaml.contains("\n\n\n"));
 }
-

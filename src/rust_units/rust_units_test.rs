@@ -1,7 +1,7 @@
-use super::extract_rust_code_units;
 use super::CodeUnitVisitor;
-use crate::units::CodeUnitKind;
+use super::extract_rust_code_units;
 use crate::rust_parsing::parse_rust_file;
+use crate::units::CodeUnitKind;
 use std::io::Write;
 use syn::visit::Visit;
 use tempfile::NamedTempFile;

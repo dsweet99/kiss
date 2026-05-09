@@ -9,8 +9,8 @@
 // `kiss layout` CLI was removed; this module remains for unit tests and programmatic reuse.
 
 use kiss::{DependencyGraph, Language, LayerInfo};
-use kiss::{analyze_cycles, compute_layers, format_markdown};
 use kiss::{LayoutAnalysis, LayoutMetrics, WhatIfAnalysis};
+use kiss::{analyze_cycles, compute_layers, format_markdown};
 use petgraph::visit::EdgeRef;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -104,8 +104,7 @@ fn derive_project_name(paths: &[String]) -> String {
 pub(crate) fn project_name_from_paths(paths: &[String]) -> Option<String> {
     let p = paths.first()?;
     let c = Path::new(p).canonicalize().ok()?;
-    c.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
+    c.file_name().map(|n| n.to_string_lossy().into_owned())
 }
 
 pub(crate) fn project_name_from_cwd() -> Option<String> {
@@ -240,5 +239,6 @@ fn clone_graph_without_edges(
 }
 
 #[cfg(test)]
-#[path = "layout_test.rs"]
-mod tests;
+mod layout_test_1;
+#[cfg(test)]
+mod layout_test_2;

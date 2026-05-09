@@ -1,15 +1,16 @@
-use crate::analyze::coverage::{collect_coverage_viols, CoverageOutputOpts, GraphRefPair, PyRsTestCoverage};
-use crate::analyze::finalize::{finalize_analysis, AnalysisProducts, FinalizeAnalysisIn};
+use crate::analyze::coverage::{
+    CoverageOutputOpts, GraphRefPair, PyRsTestCoverage, collect_coverage_viols,
+};
+use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
 use crate::analyze::focus::filter_viols_by_focus;
 use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
-use crate::analyze::parallel::{run_parallel_py_analysis, run_rust_analysis, ParallelPyIn};
+use crate::analyze::parallel::{ParallelPyIn, run_parallel_py_analysis, run_rust_analysis};
 use crate::analyze::params::RunAnalyzeUncached;
 use crate::analyze::print::log_parse_timing;
-use crate::analyze_parse::{parse_all_timed, ParseAllTimedParams, ParseResult};
-use kiss::{MetricStats};
-use kiss::cli_output::file_coverage_map;
+use crate::analyze_parse::{ParseAllTimedParams, ParseResult, parse_all_timed};
 use kiss::check_universe_cache::CachedCoverageItem;
-use kiss::{DuplicateCluster, DependencyGraph, ParsedFile, ParsedRustFile};
+use kiss::cli_output::file_coverage_map;
+use kiss::{DependencyGraph, DuplicateCluster, MetricStats, ParsedFile, ParsedRustFile};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -156,13 +157,14 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
     let file_count = result.py_parsed.len() + result.rs_parsed.len();
     let viols = filter_viols_by_focus(result.violations.clone(), focus_set);
     let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config, None);
-    let ((py_graph, graph_viols_all), (py_cov, py_dups_all)) = run_parallel_py_analysis(ParallelPyIn {
-        py_parsed: &result.py_parsed,
-        rs_graph: rs.graph.as_ref(),
-        opts,
-        file_count,
-        cached_py_cov: None,
-    });
+    let ((py_graph, graph_viols_all), (py_cov, py_dups_all)) =
+        run_parallel_py_analysis(ParallelPyIn {
+            py_parsed: &result.py_parsed,
+            rs_graph: rs.graph.as_ref(),
+            opts,
+            file_count,
+            cached_py_cov: None,
+        });
     let rs_dups_all = rs.dups.clone();
 
     let py_stats = build_python_metric_stats(&result.py_parsed, py_graph.as_ref(), &py_cov);

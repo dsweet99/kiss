@@ -5,17 +5,17 @@ use crate::gate_config::GateConfig;
 use crate::stats::{MetricStats, PercentileSummary};
 
 use super::collect::{
-    collect_all_stats, collect_all_stats_with_ignore, collect_py_stats, collect_py_stats_with_ignore,
-    collect_rs_stats, collect_rs_stats_with_ignore,
+    collect_all_stats, collect_all_stats_with_ignore, collect_py_stats,
+    collect_py_stats_with_ignore, collect_rs_stats, collect_rs_stats_with_ignore,
 };
 use super::config_keys::common_config_key;
 use super::defaults_append::{append_python_defaults, append_rust_defaults};
-use super::generate::{append_section, generate_config_toml_by_language, GenerateConfigParams};
+use super::generate::{GenerateConfigParams, append_section, generate_config_toml_by_language};
+use super::infer_gate::infer_gate_config_for_paths;
 use super::infer_gate::{
     compute_min_per_file_test_coverage, has_orphan_modules, has_reportable_duplicates,
 };
-use super::infer_gate::infer_gate_config_for_paths;
-use super::merge::{build_merged_output, format_section, merge_config_toml, MergeLanguageUpdate};
+use super::merge::{MergeLanguageUpdate, build_merged_output, format_section, merge_config_toml};
 use super::{python_config_key, rust_config_key, write_mimic_config};
 
 #[test]
@@ -115,7 +115,10 @@ fn test_infer_gate_config_orphan_module_enabled() {
     std::fs::write(&orphan_py, "def foo():\n    pass\n").unwrap();
     let paths = vec![tmp.path().to_string_lossy().to_string()];
     let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]);
-    assert!(!gate.orphan_module_enabled, "orphan module should set orphan_module_enabled=false");
+    assert!(
+        !gate.orphan_module_enabled,
+        "orphan module should set orphan_module_enabled=false"
+    );
 }
 
 #[test]
@@ -127,7 +130,10 @@ fn test_infer_gate_config_no_orphans_module_enabled() {
     std::fs::write(&b_py, "def bar():\n    pass\n").unwrap();
     let paths = vec![tmp.path().to_string_lossy().to_string()];
     let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]);
-    assert!(gate.orphan_module_enabled, "no orphan modules should set orphan_module_enabled=true");
+    assert!(
+        gate.orphan_module_enabled,
+        "no orphan modules should set orphan_module_enabled=true"
+    );
 }
 
 #[test]

@@ -68,7 +68,10 @@ fn is_nontrivial_cycle(graph: &DependencyGraph, scc: &[NodeIndex]) -> bool {
 /// reproducible suggestions across runs.
 ///
 /// Returns `(from_module, to_module)` or `None` if no edge found.
-fn find_deterministic_break_edge(graph: &DependencyGraph, scc: &[NodeIndex]) -> Option<(String, String)> {
+fn find_deterministic_break_edge(
+    graph: &DependencyGraph,
+    scc: &[NodeIndex],
+) -> Option<(String, String)> {
     use std::collections::HashSet;
 
     let scc_set: HashSet<NodeIndex> = scc.iter().copied().collect();
@@ -90,9 +93,7 @@ fn find_deterministic_break_edge(graph: &DependencyGraph, scc: &[NodeIndex]) -> 
 
             let should_update = match &candidate {
                 None => true,
-                Some((curr_from, curr_to)) => {
-                    (&from_name, &to_name) < (curr_from, curr_to)
-                }
+                Some((curr_from, curr_to)) => (&from_name, &to_name) < (curr_from, curr_to),
             };
 
             if should_update {

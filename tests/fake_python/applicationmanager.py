@@ -1,15 +1,15 @@
 """A 'God Class' that does way too many unrelated things."""
 
-import json
-import os
-import re
 import smtplib
 import sqlite3
-from collections.abc import Mapping
-from datetime import datetime
+import time
 from email.mime.text import MIMEText
 from typing import Any, Optional
+from collections.abc import Mapping
+import re
 
+from common import serializer
+from common.sdatetime import now_isoformat
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -50,10 +50,9 @@ class ApplicationManager:
     # ========== Configuration Management ==========
 
     def _load_config(self):
-        if os.path.exists(self.config_path):
-            with open(self.config_path, 'r') as f:
-                self.config = json.load(f)
-        else:
+        try:
+            self.config = serializer.load_file(self.config_path)
+        except OSError:
             self.config = self._default_config()
             self.save_config()
 
@@ -66,8 +65,7 @@ class ApplicationManager:
         }
 
     def save_config(self):
-        with open(self.config_path, 'w') as f:
-            json.dump(self.config, f, indent=2)
+        serializer.dump_file(self.config_path, self.config)
 
     def get_config(self, key: str, default: Any = None) -> Any:
         keys = key.split(".")
@@ -192,7 +190,7 @@ class ApplicationManager:
         self.log_file = open(log_file, "a")
 
     def log(self, level: str, message: str):
-        timestamp = datetime.now().isoformat()
+        timestamp = now_isoformat()
         log_entry = f"[{timestamp}] [{level}] {message}"
 
         # Write to file
@@ -226,7 +224,7 @@ class ApplicationManager:
             return None
         if key in self.cache:
             entry = self.cache[key]
-            if datetime.now().timestamp() - entry["timestamp"] < self.get_config("cache.ttl", 300):
+            if time.time() - entry["timestamp"] < self.get_config("cache.ttl", 300):
                 return entry["value"]
             else:
                 del self.cache[key]
@@ -236,7 +234,7 @@ class ApplicationManager:
         if self.get_config("cache.enabled", True):
             self.cache[key] = {
                 "value": value,
-                "timestamp": datetime.now().timestamp()
+                "timestamp": time.time()
             }
 
     def cache_clear(self):
@@ -251,8 +249,8 @@ class ApplicationManager:
         token = secrets.token_hex(32)
         self.sessions[token] = {
             "user_id": user_id,
-            "created_at": datetime.now().timestamp(),
-            "last_access": datetime.now().timestamp()
+            "created_at": time.time(),
+            "last_access": time.time()
         }
         self.log_info(f"Session created for user {user_id}")
         return token
@@ -260,7 +258,7 @@ class ApplicationManager:
     def validate_session(self, token: str) -> Optional[int]:
         if token in self.sessions:
             session = self.sessions[token]
-            session["last_access"] = datetime.now().timestamp()
+            session["last_access"] = time.time()
             return session["user_id"]
         return None
 
@@ -279,7 +277,7 @@ class ApplicationManager:
             "username": username,
             "email": email,
             "password_hash": password_hash,
-            "created_at": datetime.now().isoformat()
+            "created_at": now_isoformat()
         })
         self.send_welcome_email(email, username)
         self.log_info(f"User created: {username}")

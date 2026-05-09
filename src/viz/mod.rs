@@ -1,4 +1,4 @@
-use crate::viz_coarsen::{CoarsenedGraph, coarsen_with_zoom};
+use crate::viz_coarsen::{CoarsenedGraph, coarsen_with_target, coarsen_with_zoom};
 use kiss::{DependencyGraph, Language};
 use petgraph::visit::EdgeRef;
 use std::collections::{BTreeMap, BTreeSet};
@@ -7,6 +7,12 @@ use std::path::{Path, PathBuf};
 
 #[cfg(test)]
 mod tests;
+
+#[derive(Debug, Clone, Copy)]
+pub enum VizCoarsen {
+    Zoom(f64),
+    NumNodes(usize),
+}
 
 fn dot_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
@@ -126,9 +132,15 @@ pub(crate) fn write_coarsened_dot(out: &mut dyn Write, g: &CoarsenedGraph) -> st
     Ok(())
 }
 
-pub(crate) fn write_coarsened_mermaid(out: &mut dyn Write, g: &CoarsenedGraph) -> std::io::Result<()> {
+pub(crate) fn write_coarsened_mermaid(
+    out: &mut dyn Write,
+    g: &CoarsenedGraph,
+) -> std::io::Result<()> {
     for (i, label) in g.labels.iter().enumerate() {
-        let label = mermaid_escape_label(label);
+        // Embedded newlines split `c0["..."]` across lines and break many Mermaid parsers
+        // (rendered diagram shows bare ids like `c0` / stray digits instead of the label).
+        let label = label.replace('\n', " — ");
+        let label = mermaid_escape_label(&label);
         writeln!(out, "  c{i}[\"{label}\"]")?;
     }
     for (a, b) in &g.edges {
@@ -177,7 +189,10 @@ type CombinedGraphParts = (
     BTreeMap<String, PathBuf>,
 );
 
-pub(crate) fn collect_graph_nodes_and_edges(graph: &DependencyGraph, prefix: &str) -> CombinedGraphParts {
+pub(crate) fn collect_graph_nodes_and_edges(
+    graph: &DependencyGraph,
+    prefix: &str,
+) -> CombinedGraphParts {
     let mut nodes: BTreeSet<String> = BTreeSet::new();
     let mut paths: BTreeMap<String, PathBuf> = BTreeMap::new();
     for (name, path) in &graph.paths {
@@ -206,6 +221,26 @@ fn clamp_zoom(z: f64) -> std::io::Result<f64> {
         ));
     }
     Ok(z)
+}
+
+fn validate_coarsen(c: VizCoarsen) -> std::io::Result<VizCoarsen> {
+    match c {
+        VizCoarsen::Zoom(z) => Ok(VizCoarsen::Zoom(clamp_zoom(z)?)),
+        VizCoarsen::NumNodes(n) => {
+            if n == 0 {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "num-nodes must be at least 1",
+                ))
+            } else {
+                Ok(VizCoarsen::NumNodes(n))
+            }
+        }
+    }
+}
+
+const fn renders_full_graph(c: VizCoarsen) -> bool {
+    matches!(c, VizCoarsen::Zoom(z) if z >= 1.0)
 }
 
 pub(crate) fn write_format_header(buf: &mut Vec<u8>, format: VizFormat) -> std::io::Result<()> {
@@ -261,7 +296,7 @@ pub(crate) fn write_coarsened_for_format(
 pub(crate) fn build_coarsened_graph(
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
-    zoom: f64,
+    coarsen: VizCoarsen,
 ) -> std::io::Result<CoarsenedGraph> {
     let mut all_nodes: BTreeSet<String> = BTreeSet::new();
     let mut all_edges: BTreeSet<(String, String)> = BTreeSet::new();
@@ -283,7 +318,27 @@ pub(crate) fn build_coarsened_graph(
     }
 
     let nodes_vec: Vec<String> = all_nodes.into_iter().collect();
-    Ok(coarsen_with_zoom(&nodes_vec, &all_edges, &all_paths, zoom))
+    Ok(match coarsen {
+        VizCoarsen::Zoom(z) => coarsen_with_zoom(&nodes_vec, &all_edges, &all_paths, z),
+        VizCoarsen::NumNodes(n) => coarsen_with_target(&nodes_vec, &all_edges, &all_paths, n),
+    })
+}
+
+fn write_full_graph(
+    buf: &mut Vec<u8>,
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+    format: VizFormat,
+) -> std::io::Result<()> {
+    if !py_files.is_empty() {
+        let py_graph = crate::analyze::build_py_graph_from_files(py_files)?;
+        write_graph_for_format(buf, &py_graph, "py", format)?;
+    }
+    if !rs_files.is_empty() {
+        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files);
+        write_graph_for_format(buf, &rs_graph, "rs", format)?;
+    }
+    Ok(())
 }
 
 pub fn run_viz(
@@ -291,9 +346,9 @@ pub fn run_viz(
     paths: &[String],
     lang_filter: Option<Language>,
     ignore: &[String],
-    zoom: f64,
+    coarsen: VizCoarsen,
 ) -> std::io::Result<()> {
-    let zoom = clamp_zoom(zoom)?;
+    let coarsen = validate_coarsen(coarsen)?;
     let (py_files, rs_files) = kiss::discovery::gather_files_by_lang(paths, lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         return Err(std::io::Error::new(
@@ -306,19 +361,12 @@ pub fn run_viz(
     let mut buf: Vec<u8> = Vec::new();
     write_format_header(&mut buf, format)?;
 
-    if zoom >= 1.0 {
-        if !py_files.is_empty() {
-            let py_graph = crate::analyze::build_py_graph_from_files(&py_files)?;
-            write_graph_for_format(&mut buf, &py_graph, "py", format)?;
-        }
-        if !rs_files.is_empty() {
-            let rs_graph = crate::analyze::build_rs_graph_from_files(&rs_files);
-            write_graph_for_format(&mut buf, &rs_graph, "rs", format)?;
-        }
+    if renders_full_graph(coarsen) {
+        write_full_graph(&mut buf, &py_files, &rs_files, format)?;
     } else {
         write_coarsened_for_format(
             &mut buf,
-            &build_coarsened_graph(&py_files, &rs_files, zoom)?,
+            &build_coarsened_graph(&py_files, &rs_files, coarsen)?,
             format,
         )?;
     }

@@ -77,10 +77,13 @@ fn extracts_code_units_from_clean_utils() {
 }
 
 #[test]
-fn extracts_many_methods_from_god_class() {
+fn extracts_many_methods_from_applicationmanager() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed =
-        parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
+    let parsed = parse_file(
+        &mut parser,
+        Path::new("tests/fake_python/applicationmanager.py"),
+    )
+    .expect("should parse");
     let units = extract_code_units(&parsed);
     let methods: Vec<_> = units
         .iter()
@@ -94,10 +97,13 @@ fn extracts_many_methods_from_god_class() {
 }
 
 #[test]
-fn computes_file_metrics_for_god_class() {
+fn computes_file_metrics_for_applicationmanager() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed =
-        parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
+    let parsed = parse_file(
+        &mut parser,
+        Path::new("tests/fake_python/applicationmanager.py"),
+    )
+    .expect("should parse");
     let metrics = compute_file_metrics(&parsed);
     assert!(
         metrics.statements > 100,
@@ -114,16 +120,19 @@ fn computes_file_metrics_for_god_class() {
 }
 
 #[test]
-fn computes_class_metrics_for_god_class() {
+fn computes_class_metrics_for_applicationmanager() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed =
-        parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
+    let parsed = parse_file(
+        &mut parser,
+        Path::new("tests/fake_python/applicationmanager.py"),
+    )
+    .expect("should parse");
     let class_node = find_first_node_of_kind(parsed.tree.root_node(), "class_definition")
         .expect("should find class");
     let metrics = compute_class_metrics(class_node);
     assert!(
         metrics.methods > 20,
-        "God class should have more than 20 methods"
+        "ApplicationManager should have more than 20 methods"
     );
 }
 
@@ -159,21 +168,26 @@ fn find_first_node_of_kind<'a>(
 #[test]
 fn builds_dependency_graph() {
     let mut parser = create_parser().expect("parser should initialize");
-    let parsed_god =
-        parse_file(&mut parser, Path::new("tests/fake_python/god_class.py")).expect("should parse");
-    let parsed_files: Vec<&ParsedFile> = vec![&parsed_god];
+    let parsed_applicationmanager = parse_file(
+        &mut parser,
+        Path::new("tests/fake_python/applicationmanager.py"),
+    )
+    .expect("should parse");
+    let parsed_files: Vec<&ParsedFile> = vec![&parsed_applicationmanager];
     let graph = build_dependency_graph(&parsed_files);
     assert!(
         !graph.nodes.is_empty(),
         "Should have at least one node in graph"
     );
-    // Module names are now qualified with full package path: "tests.fake_python.god_class"
+    // Module names are now qualified with full package path: "tests.fake_python.applicationmanager"
     assert!(
-        graph.nodes.contains_key("tests.fake_python.god_class"),
-        "Expected tests.fake_python.god_class in nodes: {:?}",
+        graph
+            .nodes
+            .contains_key("tests.fake_python.applicationmanager"),
+        "Expected tests.fake_python.applicationmanager in nodes: {:?}",
         graph.nodes.keys().collect::<Vec<_>>()
     );
-    let metrics = graph.module_metrics("tests.fake_python.god_class");
+    let metrics = graph.module_metrics("tests.fake_python.applicationmanager");
     assert!(metrics.fan_out <= graph.nodes.len());
 }
 

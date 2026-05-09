@@ -1,8 +1,8 @@
+use kiss::Language;
 use kiss::symbol_mv::{
     EditKind, MvOptions, MvPlan, MvRequest, ParsedQuery, PlannedEdit, apply_plan_transactional,
     language_name, parse_mv_query, plan_edits, run_mv_command, validate_new_name,
 };
-use kiss::Language;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;

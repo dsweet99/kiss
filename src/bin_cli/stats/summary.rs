@@ -1,4 +1,4 @@
-use crate::bin_cli::config_session::{config_provenance, load_configs, load_gate_config};
+use crate::bin_cli::config_session::config_provenance;
 use kiss::check_universe_cache::FullCheckCache;
 use kiss::discovery::gather_files_by_lang;
 use kiss::{Config, GateConfig, Language, compute_summaries, format_stats_table};
@@ -17,17 +17,21 @@ struct StatsSummaryInput<'a> {
     gate: &'a GateConfig,
 }
 
-pub fn run_stats_summary(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
+pub fn run_stats_summary(
+    paths: &[String],
+    lang_filter: Option<Language>,
+    ignore: &[String],
+    py_cfg: &Config,
+    rs_cfg: &Config,
+    gate: &GateConfig,
+) {
     let (py_files, rs_files) = gather_files_by_lang(paths, lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         eprintln!("No source files found.");
         std::process::exit(1);
     }
 
-    let gate = load_gate_config(None, false);
-    let (py_cfg, rs_cfg) = load_configs(None, false);
-
-    if try_run_cached_stats_summary(paths, &py_files, &rs_files, &py_cfg, &rs_cfg, &gate) {
+    if try_run_cached_stats_summary(paths, &py_files, &rs_files, py_cfg, rs_cfg, gate) {
         return;
     }
 
@@ -35,11 +39,11 @@ pub fn run_stats_summary(paths: &[String], lang_filter: Option<Language>, ignore
         paths,
         py_files: &py_files,
         rs_files: &rs_files,
-        py_cfg: &py_cfg,
-        rs_cfg: &rs_cfg,
+        py_cfg,
+        rs_cfg,
         lang_filter,
         ignore,
-        gate: &gate,
+        gate,
     });
 }
 
@@ -48,6 +52,7 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
     focus_set.extend(input.py_files.iter().cloned());
     focus_set.extend(input.rs_files.iter().cloned());
     let universe = input.paths.first().map(String::as_str).unwrap_or_default();
+    let now = Instant::now();
     let options = crate::analyze::AnalyzeOptions {
         universe,
         focus_paths: input.paths,
@@ -66,9 +71,9 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         py_files: input.py_files,
         rs_files: input.rs_files,
         focus_set: &focus_set,
-        t0: Instant::now(),
-        t1: Instant::now(),
-        t2: Instant::now(),
+        t0: now,
+        t1: now,
+        t2: now,
     });
     crate::analyze::maybe_store_full_cache(crate::analyze::FullCacheStoreInput {
         opts: &options,
@@ -156,11 +161,7 @@ fn try_run_cached_stats_summary(
     gate: &GateConfig,
 ) -> bool {
     let Some(cache) = crate::analyze_cache::try_run_cached_stats_summary(
-        py_files,
-        rs_files,
-        py_cfg,
-        rs_cfg,
-        gate,
+        py_files, rs_files, py_cfg, rs_cfg, gate,
     ) else {
         return false;
     };
@@ -176,8 +177,6 @@ fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
         .chain(cache.graph_violations.iter())
         .filter(|v| v.metric == "orphan_module")
         .count();
-    let py_file_count = cache.py_file_count;
-    let rs_file_count = cache.rs_file_count;
 
     println!("kiss stats - Summary Statistics");
     println!("Analyzed from: {}", paths.join(", "));
@@ -193,22 +192,22 @@ fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
     );
     println!("Violations: {dup_total} duplicate, {orphan_total} orphan\n");
 
-    if py_file_count > 0
+    if cache.py_file_count > 0
         && let Some(stats) = &cache.py_stats
     {
-            println!(
-                "=== Python ({} files) ===\n{}\n",
-                py_file_count,
-                format_stats_table(&compute_summaries(stats))
-            );
+        println!(
+            "=== Python ({} files) ===\n{}\n",
+            cache.py_file_count,
+            format_stats_table(&compute_summaries(stats))
+        );
     }
-    if rs_file_count > 0
+    if cache.rs_file_count > 0
         && let Some(stats) = &cache.rs_stats
     {
-            println!(
-                "=== Rust ({} files) ===\n{}",
-                rs_file_count,
-                format_stats_table(&compute_summaries(stats))
-            );
+        println!(
+            "=== Rust ({} files) ===\n{}",
+            cache.rs_file_count,
+            format_stats_table(&compute_summaries(stats))
+        );
     }
 }

@@ -36,7 +36,6 @@ fn test_touch_privates_for_static_coverage_part1() {
     assert_eq!(idx.get("a"), Some(&0));
 
     let empty_paths: BTreeMap<String, PathBuf> = BTreeMap::new();
-    assert_eq!(node_size_and_display("missing", &empty_paths).0, 0);
 
     let comms = vec![vec![0], vec![1]];
     let _ = build_cluster_labels(&nodes, &empty_paths, &comms);
@@ -78,6 +77,90 @@ fn test_touch_privates_for_static_coverage_part2() {
     let _ = leiden::leiden_or_merge_to_target(&nodes, &BTreeSet::new(), 1);
 
     let _ = coarsen_with_zoom(&nodes, &edges, &paths_map, 0.3);
+}
+
+#[test]
+fn test_coarsen_with_target_supernode_for_target_one() {
+    let nodes: Vec<String> = vec!["py:a".into(), "py:b".into(), "py:c".into()];
+    let edges: BTreeSet<(String, String)> = BTreeSet::new();
+    let paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
+
+    let cg = coarsen_with_target(&nodes, &edges, &paths_map, 1);
+    assert_eq!(cg.labels.len(), 1);
+    assert!(cg.labels[0].contains("codebase"));
+    assert!(cg.labels[0].contains("3 nodes"));
+    assert!(cg.edges.is_empty());
+}
+
+#[test]
+fn test_coarsen_with_target_clamps_zero_to_one() {
+    let nodes: Vec<String> = vec!["py:a".into()];
+    let edges: BTreeSet<(String, String)> = BTreeSet::new();
+    let paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
+
+    let cg = coarsen_with_target(&nodes, &edges, &paths_map, 0);
+    assert_eq!(cg.labels.len(), 1);
+}
+
+#[test]
+fn test_coarsen_with_target_respects_explicit_count() {
+    let nodes: Vec<String> = (0..6).map(|i| format!("py:m{i}")).collect();
+    let mut paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
+    for (i, n) in nodes.iter().enumerate() {
+        let dir = if i < 3 { "pkg1" } else { "pkg2" };
+        paths_map.insert(n.clone(), PathBuf::from(format!("src/{dir}/m{i}.py")));
+    }
+    let edges: BTreeSet<(String, String)> = BTreeSet::new();
+
+    let cg = coarsen_with_target(&nodes, &edges, &paths_map, 2);
+    assert!(cg.labels.len() <= 2);
+    assert!(!cg.labels.is_empty());
+}
+
+#[test]
+fn test_build_cluster_labels_titles_clusters_with_common_directory_name() {
+    // Regression: a cluster of files all under the same directory should be
+    // labelled with that directory name (a meaningful cluster identifier),
+    // not as a list of full file paths.
+    let nodes: Vec<String> = (0..5).map(|i| format!("rs:n{i}")).collect();
+    let mut paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
+    for (i, n) in nodes.iter().enumerate() {
+        paths_map.insert(
+            n.clone(),
+            PathBuf::from(format!("/repo/src/widget/file_{i}.rs")),
+        );
+    }
+    let communities = vec![(0..5).collect::<Vec<usize>>()];
+
+    let labels = build_cluster_labels(&nodes, &paths_map, &communities);
+
+    assert_eq!(labels.len(), 1);
+    let label = &labels[0];
+    assert_eq!(label, "widget (5 nodes)");
+    assert!(
+        !label.contains("file_0.rs"),
+        "cluster label should not enumerate file paths; got: {label:?}"
+    );
+    assert!(
+        !label.contains('\n'),
+        "single-line labels required for Mermaid; got: {label:?}"
+    );
+}
+
+#[test]
+fn test_build_cluster_labels_collapses_multilevel_common_prefix() {
+    // When members share more than one directory level, the title should
+    // include the deepest common prefix (here `pkg/sub`).
+    let nodes: Vec<String> = vec!["py:a".into(), "py:b".into(), "py:c".into()];
+    let mut paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
+    paths_map.insert("py:a".into(), PathBuf::from("/repo/src/pkg/sub/x.py"));
+    paths_map.insert("py:b".into(), PathBuf::from("/repo/src/pkg/sub/y.py"));
+    paths_map.insert("py:c".into(), PathBuf::from("/repo/src/pkg/sub/z.py"));
+    let communities = vec![vec![0, 1, 2]];
+
+    let labels = build_cluster_labels(&nodes, &paths_map, &communities);
+
+    assert_eq!(labels[0], "pkg/sub (3 nodes)");
 }
 
 #[test]

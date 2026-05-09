@@ -8,12 +8,12 @@ use crate::bin_cli::config_session::run_init_command;
 
 use handlers::{
     dispatch_check, dispatch_clamp, dispatch_config, dispatch_dry, dispatch_mimic, dispatch_mv,
-    dispatch_rules, dispatch_shrink, dispatch_show_tests, dispatch_stats, dispatch_viz,
+    dispatch_rules, dispatch_show_tests, dispatch_shrink, dispatch_stats, dispatch_viz,
 };
 use options::{
     CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-    MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShrinkDispatchOptions,
-    ShowTestsDispatchOptions, StatsDispatchOptions, TriConfig, VizDispatchOptions,
+    MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShowTestsDispatchOptions,
+    ShrinkDispatchOptions, StatsDispatchOptions, TriConfig, VizDispatchOptions,
 };
 
 use kiss::GateConfig;
@@ -61,6 +61,7 @@ pub fn dispatch(
             all,
             table,
             ignore,
+            cfg: &cfg,
         }),
         Commands::Mimic { paths, out, ignore } => dispatch_mimic(MimicDispatchOptions {
             lang,
@@ -102,12 +103,14 @@ pub fn dispatch(
             out,
             paths,
             zoom,
+            num_nodes,
             ignore,
         } => dispatch_viz(VizDispatchOptions {
             lang,
             out,
             paths,
             zoom,
+            num_nodes,
             ignore,
         }),
         Commands::Shrink {
@@ -154,14 +157,13 @@ pub fn dispatch(
 #[cfg(test)]
 mod dispatch_coverage {
     use super::handlers::{
-        dispatch_check, dispatch_clamp, dispatch_config, dispatch_dry, dispatch_mimic,
-        dispatch_mv, dispatch_rules, dispatch_shrink, dispatch_show_tests, dispatch_stats,
-        dispatch_viz,
+        dispatch_check, dispatch_clamp, dispatch_config, dispatch_dry, dispatch_mimic, dispatch_mv,
+        dispatch_rules, dispatch_show_tests, dispatch_shrink, dispatch_stats, dispatch_viz,
     };
     use super::{
         CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-        MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShrinkDispatchOptions,
-        ShowTestsDispatchOptions, StatsDispatchOptions, TriConfig, VizDispatchOptions,
+        MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShowTestsDispatchOptions,
+        ShrinkDispatchOptions, StatsDispatchOptions, TriConfig, VizDispatchOptions,
     };
     use kiss::GateConfig;
 
@@ -205,6 +207,7 @@ mod dispatch_coverage {
             all: None,
             table: false,
             ignore: vec![],
+            cfg: &cfg,
         };
         let _ = MimicDispatchOptions {
             lang: None,
@@ -237,6 +240,7 @@ mod dispatch_coverage {
             out: std::path::PathBuf::from("out.dot"),
             paths: vec![],
             zoom: 1.0,
+            num_nodes: None,
             ignore: vec![],
         };
         let _ = ShrinkDispatchOptions {

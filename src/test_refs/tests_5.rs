@@ -156,7 +156,10 @@ fn test_disambiguate_files_no_match() {
 
 #[test]
 fn test_file_to_module_suffix_basic() {
-    assert_eq!(file_to_module_suffix(Path::new("pkg/sub/mod.py")), "pkg.sub.mod");
+    assert_eq!(
+        file_to_module_suffix(Path::new("pkg/sub/mod.py")),
+        "pkg.sub.mod"
+    );
     assert_eq!(file_to_module_suffix(Path::new("mod.py")), "mod");
 }
 
@@ -200,11 +203,17 @@ fn test_analyze_test_refs_quick_no_coverage_map() {
     };
 
     let quick = analyze_test_refs_quick(&[&file, &file_test]);
-    assert!(quick.coverage_map.is_empty(), "quick mode skips coverage_map");
+    assert!(
+        quick.coverage_map.is_empty(),
+        "quick mode skips coverage_map"
+    );
     assert!(quick.unreferenced.is_empty(), "run should be covered");
 
     let full = analyze_test_refs(&[&file, &file_test], None);
-    assert!(!full.coverage_map.is_empty(), "full mode builds coverage_map");
+    assert!(
+        !full.coverage_map.is_empty(),
+        "full mode builds coverage_map"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +294,11 @@ fn test_disambiguate_files_graph_fallback_empty_test_files() {
 
     let src = "def f(): pass\n";
     let t = parser.parse(src, None).unwrap();
-    let f = ParsedFile { path: PathBuf::from("a.py"), source: src.into(), tree: t };
+    let f = ParsedFile {
+        path: PathBuf::from("a.py"),
+        source: src.into(),
+        tree: t,
+    };
     let parsed: Vec<&ParsedFile> = vec![&f];
     let graph = build_dependency_graph(&parsed);
     let mut files = HashSet::new();
@@ -332,11 +345,10 @@ fn test_collect_test_files_for_ambiguous_names_via_build() {
         vec![("test_it".to_string(), usage_a)],
     )];
 
-    let map = super::disambiguation::build_disambiguation_map(
-        &name_files,
-        &refs,
-        &per_test_usage,
-        None,
+    let map =
+        super::disambiguation::build_disambiguation_map(&name_files, &refs, &per_test_usage, None);
+    assert!(
+        map.is_empty() || map.len() <= 1,
+        "without graph, falls back to ref-based only"
     );
-    assert!(map.is_empty() || map.len() <= 1, "without graph, falls back to ref-based only");
 }

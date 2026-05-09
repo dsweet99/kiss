@@ -9,18 +9,80 @@ pub fn run_mv_inner(opts: MvOptions) -> Result<(), ()> {
         to: opts.to,
         ignore: opts.ignore,
     };
+    check_destination_collision(&req)?;
+    if req.query.member.is_some() {
+        let owner = req.query.symbol.as_str();
+        let old_name = req.query.old_name();
+        let source_file = req.query.path.clone();
+        let Ok(content) = std::fs::read_to_string(&source_file) else {
+            eprintln!(
+                "Error: failed to read '{}' for ambiguity check",
+                source_file.display()
+            );
+            return Err(());
+        };
+        if super::ast_plan::has_ambiguous_method_reference(
+            &source_file,
+            &content,
+            old_name,
+            Some(owner),
+            req.query.language,
+        ) {
+            eprintln!(
+                "Error: trait-receiver ambiguity for '{}' in {}",
+                req.query.raw,
+                source_file.display()
+            );
+            return Err(());
+        }
+    }
     let plan = symbol_mv::plan_edits(&req);
     if plan.edits.is_empty() {
         eprintln!("Error: no symbol occurrences found for '{}'", req.query.raw);
         return Err(());
     }
     if opts.json {
-        print_json_plan(&plan).map_err(|err| eprintln!("Error: failed to serialize plan: {err}"))?;
+        print_json_plan(&plan)
+            .map_err(|err| eprintln!("Error: failed to serialize plan: {err}"))?;
     } else {
         print_human_plan(&plan);
     }
     if !opts.dry_run {
         symbol_mv::apply_plan_transactional(&plan).map_err(|err| eprintln!("Error: {err}"))?;
+    }
+    Ok(())
+}
+
+/// When the user is moving a top-level symbol with `--to DEST`, refuse if
+/// `DEST` already defines a top-level symbol with `new_name`. Otherwise the
+/// move would silently produce two definitions in `DEST` (the second
+/// shadowing the first) — see KPOP H10.
+fn check_destination_collision(req: &MvRequest) -> Result<(), ()> {
+    let Some(dest_path) = req.to.as_ref() else {
+        return Ok(());
+    };
+    if req.query.member.is_some() {
+        return Ok(());
+    }
+    let Ok(dest_content) = std::fs::read_to_string(dest_path) else {
+        return Ok(());
+    };
+    let language = req.query.language;
+    if super::definition::find_definition_span(
+        &dest_content,
+        &req.new_name,
+        None,
+        language,
+        dest_path,
+    )
+    .is_some()
+    {
+        eprintln!(
+            "Error: destination {} already defines a top-level '{}'; refusing to move (would shadow)",
+            dest_path.display(),
+            req.new_name,
+        );
+        return Err(());
     }
     Ok(())
 }

@@ -133,6 +133,9 @@ pub enum Commands {
         /// Coarsen the graph [0,1]. 0 collapses to one node; 1 shows all nodes (default: 1).
         #[arg(long, value_name = "Z", default_value = "1.0")]
         zoom: f64,
+        /// Coarsen the graph to approximately N nodes (mutually exclusive with --zoom).
+        #[arg(long, value_name = "N", conflicts_with = "zoom")]
+        num_nodes: Option<usize>,
         /// Ignore files/directories starting with PREFIX (repeatable)
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,

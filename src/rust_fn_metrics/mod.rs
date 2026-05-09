@@ -4,7 +4,9 @@ use syn::{Block, Expr, Pat, Stmt};
 use crate::rust_parsing::ParsedRustFile;
 
 #[cfg(test)]
-mod tests;
+mod tests_1;
+#[cfg(test)]
+mod tests_2;
 
 #[derive(Debug, Default)]
 pub struct RustFunctionMetrics {

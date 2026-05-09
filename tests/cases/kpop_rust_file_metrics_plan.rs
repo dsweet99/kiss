@@ -1,8 +1,8 @@
 //! KPOP / plan check: nested inline `mod` bodies in `compute_rust_file_metrics` and `MetricStats::collect_rust`.
 //! These tests verify the FIX for the nested mod gap described in plan.md.
+use kiss::MetricStats;
 use kiss::rust_fn_metrics::compute_rust_file_metrics;
 use kiss::rust_parsing::parse_rust_file;
-use kiss::MetricStats;
 use std::io::Write;
 
 #[test]

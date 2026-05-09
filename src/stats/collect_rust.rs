@@ -1,12 +1,13 @@
 use syn::{ImplItem, Item};
 
-use crate::rust_fn_metrics::{
-    compute_rust_function_metrics, count_non_doc_attrs, is_cfg_test_mod,
-};
+use crate::rust_fn_metrics::{compute_rust_function_metrics, count_non_doc_attrs, is_cfg_test_mod};
 
 use super::metric_stats::MetricStats;
 
-pub(crate) fn push_rust_fn_metrics(stats: &mut MetricStats, m: &crate::rust_counts::RustFunctionMetrics) {
+pub(crate) fn push_rust_fn_metrics(
+    stats: &mut MetricStats,
+    m: &crate::rust_counts::RustFunctionMetrics,
+) {
     stats.statements_per_function.push(m.statements);
     stats.arguments_per_function.push(m.arguments);
     stats.max_indentation.push(m.max_indentation);
@@ -74,8 +75,14 @@ mod collect_rust_coverage {
         let ast: syn::File = syn::parse_str(code).unwrap();
         let mut stats = MetricStats::default();
         collect_rust_from_items(&ast.items, &mut stats);
-        assert!(!stats.methods_per_class.is_empty(), "impl block should populate methods_per_class");
-        assert!(!stats.statements_per_function.is_empty(), "impl method should populate statements");
+        assert!(
+            !stats.methods_per_class.is_empty(),
+            "impl block should populate methods_per_class"
+        );
+        assert!(
+            !stats.statements_per_function.is_empty(),
+            "impl method should populate statements"
+        );
     }
 
     #[test]
@@ -96,7 +103,11 @@ mod collect_rust_coverage {
         let mut stats = MetricStats::default();
         collect_rust_from_items(&ast.items, &mut stats);
 
-        assert_eq!(stats.methods_per_class, vec![2], "collect_rust_impl should count 2 methods");
+        assert_eq!(
+            stats.methods_per_class,
+            vec![2],
+            "collect_rust_impl should count 2 methods"
+        );
         assert_eq!(
             stats.statements_per_function.len(),
             2,

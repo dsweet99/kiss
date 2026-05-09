@@ -1,6 +1,6 @@
 """Report generator - copy-pasted formatting code across methods."""
 
-from datetime import datetime
+import time
 
 
 class ReportGenerator:
@@ -18,7 +18,7 @@ class ReportGenerator:
         # Header - DUPLICATED BLOCK A
         lines.append("=" * 60)
         lines.append(f"  {self.company_name}")
-        lines.append(f"  Report Generated: {datetime.now().strftime(self.date_format)}")
+        lines.append(f"  Report Generated: {time.strftime(self.date_format, time.localtime())}")
         lines.append("=" * 60)
         lines.append("")
         lines.append("  SALES REPORT")
@@ -58,7 +58,7 @@ class ReportGenerator:
         # Header - DUPLICATED BLOCK A (copy-pasted!)
         lines.append("=" * 60)
         lines.append(f"  {self.company_name}")
-        lines.append(f"  Report Generated: {datetime.now().strftime(self.date_format)}")
+        lines.append(f"  Report Generated: {time.strftime(self.date_format, time.localtime())}")
         lines.append("=" * 60)
         lines.append("")
         lines.append("  INVENTORY REPORT")
@@ -107,7 +107,7 @@ class ReportGenerator:
         # Header - DUPLICATED BLOCK A (third copy!)
         lines.append("=" * 60)
         lines.append(f"  {self.company_name}")
-        lines.append(f"  Report Generated: {datetime.now().strftime(self.date_format)}")
+        lines.append(f"  Report Generated: {time.strftime(self.date_format, time.localtime())}")
         lines.append("=" * 60)
         lines.append("")
         lines.append("  EMPLOYEE REPORT")
@@ -154,7 +154,7 @@ class ReportGenerator:
         # Header - DUPLICATED BLOCK A (fourth copy!)
         lines.append("=" * 60)
         lines.append(f"  {self.company_name}")
-        lines.append(f"  Report Generated: {datetime.now().strftime(self.date_format)}")
+        lines.append(f"  Report Generated: {time.strftime(self.date_format, time.localtime())}")
         lines.append("=" * 60)
         lines.append("")
         lines.append("  EXPENSE REPORT")

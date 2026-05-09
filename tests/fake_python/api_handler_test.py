@@ -1,9 +1,9 @@
 # Test file identified by *_test.py naming pattern
 
 try:
-    from .api_handler import handle_api_request
+    from .api_handler import ApiHandler, handle_api_request
 except ImportError:
-    from tests.fake_python.api_handler import handle_api_request
+    from tests.fake_python.api_handler import ApiHandler, handle_api_request
 
 
 def make_handler():

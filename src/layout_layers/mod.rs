@@ -1,8 +1,8 @@
 use crate::graph::DependencyGraph;
+use petgraph::Direction;
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
-use petgraph::Direction;
 use std::collections::HashMap;
 
 /// Contains the layers, ordered from 0 (foundation) upward.
@@ -33,9 +33,7 @@ impl LayerInfo {
         self.layers
             .iter()
             .enumerate()
-            .flat_map(|(layer_num, modules)| {
-                modules.iter().map(move |m| (m.clone(), layer_num))
-            })
+            .flat_map(|(layer_num, modules)| modules.iter().map(move |m| (m.clone(), layer_num)))
             .collect()
     }
 }

@@ -1,5 +1,5 @@
-use kiss::{DependencyGraph, DuplicateCluster, Violation};
 use kiss::cli_output::{print_duplicates, print_final_status, print_violations};
+use kiss::{DependencyGraph, DuplicateCluster, Violation};
 
 pub(crate) fn print_analysis_summary(
     metrics: &kiss::GlobalMetrics,
@@ -32,7 +32,9 @@ pub(crate) fn print_all_results_with_dups(
     print_violations(viols);
     print_duplicates("Python", py_dups);
     print_duplicates("Rust", rs_dups);
-    if ctx.show_timing && let Some(t0) = ctx.t_phase2 {
+    if ctx.show_timing
+        && let Some(t0) = ctx.t_phase2
+    {
         let t2 = std::time::Instant::now();
         eprintln!(
             "[TIMING] dup_detect={:.2}s, output={:.2}s",

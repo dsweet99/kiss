@@ -7,10 +7,7 @@ use crate::bin_cli::stats::{RunStatsArgs, run_stats};
 #[test]
 fn test_touch_for_static_test_coverage() {
     fn touch<T>(_t: T) {}
-    let _ = (
-        touch(run_mimic),
-        touch(run_stats),
-    );
+    let _ = (touch(run_mimic), touch(run_stats));
     let _ = (
         std::mem::size_of::<RunShowTestsCmdArgs>(),
         std::mem::size_of::<RunStatsArgs>(),

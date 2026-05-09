@@ -11,10 +11,10 @@ use crate::units::CodeUnitKind;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-pub use detection::{has_test_framework_import, is_in_test_directory, is_test_file};
-pub use disambiguation::build_name_file_map;
 pub(crate) use collect::collect_refs_parallel;
 pub(crate) use coverage::{build_py_coverage_map, is_definition_covered};
+pub use detection::{has_test_framework_import, is_in_test_directory, is_test_file};
+pub use disambiguation::build_name_file_map;
 pub(crate) use disambiguation::{build_disambiguation_map, file_to_module_suffix};
 
 #[cfg(test)]
@@ -51,9 +51,7 @@ pub fn analyze_test_refs(
     analyze_test_refs_inner(parsed_files, graph, true)
 }
 
-pub fn analyze_test_refs_quick(
-    parsed_files: &[&ParsedFile],
-) -> TestRefAnalysis {
+pub fn analyze_test_refs_quick(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
     analyze_test_refs_inner(parsed_files, None, false)
 }
 
@@ -77,12 +75,8 @@ fn analyze_test_refs_inner(
             .iter()
             .map(|d| (d.name.as_str(), d.file.as_path())),
     );
-    let disambiguation = build_disambiguation_map(
-        &name_files,
-        &test_references,
-        &per_test_usage,
-        graph,
-    );
+    let disambiguation =
+        build_disambiguation_map(&name_files, &test_references, &per_test_usage, graph);
     let module_suffixes: HashMap<PathBuf, String> = definitions
         .iter()
         .map(|d| (d.file.clone(), file_to_module_suffix(&d.file)))

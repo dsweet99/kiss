@@ -25,6 +25,12 @@ pub(crate) struct FullCacheStoreInput<'a> {
 }
 
 pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
+    // Cache writes are independent of `--all`: every successful `kiss check`
+    // run primes the cache so subsequent invocations (with or without
+    // `--all`) can hit it. We still skip writes when the user asked for
+    // timing breakdowns, so the timed run isn't influenced by I/O it would
+    // not normally do. Suppressed-status callers (for example shrink
+    // pre-flight) also avoid priming the user-facing cache.
     if inp.opts.show_timing || inp.opts.suppress_final_status {
         return;
     }
@@ -53,8 +59,16 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
         py_stats: inp.py_stats,
         rs_stats: inp.rs_stats,
         focus_paths,
-        py_paths: inp.py_files.iter().map(|f| f.to_string_lossy().to_string()).collect(),
-        rs_paths: inp.rs_files.iter().map(|f| f.to_string_lossy().to_string()).collect(),
+        py_paths: inp
+            .py_files
+            .iter()
+            .map(|f| f.to_string_lossy().to_string())
+            .collect(),
+        rs_paths: inp
+            .rs_files
+            .iter()
+            .map(|f| f.to_string_lossy().to_string())
+            .collect(),
         violations: &inp.result.violations,
         graph_viols_all: inp.graph_viols_all,
         coverage_violations: inp.coverage_violations,

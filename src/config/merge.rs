@@ -128,7 +128,11 @@ pub(super) fn apply_rust_if_present(config: &mut Config, table: &toml::Table) {
     }
 }
 
-pub(super) fn apply_language_sections(config: &mut Config, table: &toml::Table, lang: Option<ConfigLanguage>) {
+pub(super) fn apply_language_sections(
+    config: &mut Config,
+    table: &toml::Table,
+    lang: Option<ConfigLanguage>,
+) {
     match lang {
         Some(ConfigLanguage::Python) => apply_python_if_present(config, table),
         Some(ConfigLanguage::Rust) => apply_rust_if_present(config, table),
@@ -139,7 +143,11 @@ pub(super) fn apply_language_sections(config: &mut Config, table: &toml::Table, 
     }
 }
 
-pub(super) fn apply_parsed_toml(config: &mut Config, table: &toml::Table, lang: Option<ConfigLanguage>) {
+pub(super) fn apply_parsed_toml(
+    config: &mut Config,
+    table: &toml::Table,
+    lang: Option<ConfigLanguage>,
+) {
     apply_thresholds_and_shared(config, table);
     apply_language_sections(config, table, lang);
 }

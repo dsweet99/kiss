@@ -2,6 +2,13 @@
 // `pub(crate)` in non-`pub` submodules is clearer than `pub` for crate-internal APIs; pedantic
 // `redundant_pub_crate` disagrees.
 #![allow(clippy::redundant_pub_crate)]
+// `#[must_use]` on every pure return value is noisy in this codebase; callers consume results
+// deliberately at well-defined boundaries.
+#![allow(clippy::must_use_candidate)]
+// `# Errors` / `# Panics` doc sections on every fallible/panicking function would be largely
+// repetitive given the small, internal API surface.
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
 
 pub mod cli_output;
 pub mod config;
@@ -20,6 +27,7 @@ pub mod discovery;
 pub mod duplication;
 pub mod graph;
 pub mod layout_cycles;
+mod macro_expr_parser;
 pub mod minhash;
 pub mod parsing;
 pub mod stats;

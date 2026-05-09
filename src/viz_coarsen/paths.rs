@@ -108,7 +108,10 @@ pub(super) fn merge_overflow(mut communities: Vec<Vec<usize>>, target: usize) ->
     kept
 }
 
-pub(super) fn split_largest_once(nodes: &[String], community: &[usize]) -> (Vec<usize>, Vec<usize>) {
+pub(super) fn split_largest_once(
+    nodes: &[String],
+    community: &[usize],
+) -> (Vec<usize>, Vec<usize>) {
     let mut a: Vec<usize> = Vec::new();
     let mut b: Vec<usize> = Vec::new();
     for &node_idx in community {

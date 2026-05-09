@@ -6,16 +6,14 @@ use crate::test_utils::parse_python_source as parse;
 
 use super::body_walk::analyze_body;
 use super::compute::compute_function_metrics;
-use super::file_walk::{collect_file_counts, is_interface_type};
+use super::compute_file_metrics;
 use super::file_stats::{count_class_statements, count_file_statements};
+use super::file_walk::{collect_file_counts, is_interface_type};
 use super::locals::collect_assigned_names;
 use super::nesting::compute_nested_function_depth;
-use super::parameters::{
-    count_decorators, count_parameters, is_boolean_default, ParameterCounts,
-};
+use super::parameters::{ParameterCounts, count_decorators, count_parameters, is_boolean_default};
 use super::returns::count_return_values;
 use super::statements::{count_statements, is_statement};
-use super::compute_file_metrics;
 
 fn get_func_node(p: &crate::parsing::ParsedFile) -> Node<'_> {
     p.tree.root_node().child(0).unwrap()
@@ -338,5 +336,4 @@ mod tests {
         let class_body = root2.child(0).unwrap().child_by_field_name("body").unwrap();
         assert!(count_class_statements(class_body) > 0);
     }
-
 }

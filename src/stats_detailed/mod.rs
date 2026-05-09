@@ -7,10 +7,10 @@ pub mod types;
 
 use crate::graph::DependencyGraph;
 
-pub use types::UnitMetrics;
 pub use python::collect_detailed_py;
 pub use rust::collect_detailed_rs;
 pub use table::format_detailed_table;
+pub use types::UnitMetrics;
 
 fn module_name_from_path(path: &std::path::Path) -> String {
     path.file_stem()
@@ -33,14 +33,14 @@ fn module_id_for_path(path: &std::path::Path, graph: &DependencyGraph) -> String
 #[derive(Clone, Copy)]
 pub(crate) struct FileScopeMetrics {
     pub lines: usize,
-    pub imports: usize,
+    pub imports: Option<usize>,
     pub statements: usize,
     pub functions: usize,
     pub interface_types: usize,
     pub concrete_types: usize,
 }
 
-fn file_unit_metrics(
+pub(crate) fn file_unit_metrics(
     path: &std::path::Path,
     fm: FileScopeMetrics,
     graph: Option<&DependencyGraph>,
@@ -62,7 +62,7 @@ fn file_unit_metrics(
         .to_string();
     let mut u = UnitMetrics::new(path.display().to_string(), name, "file", 1);
     u.lines = Some(fm.lines);
-    u.imports = Some(fm.imports);
+    u.imports = fm.imports;
     u.file_statements = Some(fm.statements);
     u.file_functions = Some(fm.functions);
     u.interface_types = Some(fm.interface_types);
@@ -92,7 +92,9 @@ mod tests {
     use crate::graph::DependencyGraph;
     use crate::parsing::{create_parser, parse_file};
     use crate::stats_detailed::python::collect_detailed_from_node_for_test;
-    use crate::stats_detailed::rust::{collect_detailed_from_items, get_impl_name, push_rust_fn_or_method_unit};
+    use crate::stats_detailed::rust::{
+        collect_detailed_from_items, get_impl_name, push_rust_fn_or_method_unit,
+    };
     use std::io::Write;
 
     #[test]
@@ -139,7 +141,7 @@ mod tests {
             std::path::Path::new("src/foo.py"),
             super::FileScopeMetrics {
                 lines: 100,
-                imports: 5,
+                imports: Some(5),
                 statements: 0,
                 functions: 0,
                 interface_types: 0,
@@ -163,7 +165,7 @@ mod tests {
             &p,
             super::FileScopeMetrics {
                 lines: 10,
-                imports: 0,
+                imports: Some(0),
                 statements: 0,
                 functions: 0,
                 interface_types: 0,
@@ -190,7 +192,12 @@ mod tests {
         .unwrap();
         let parsed = parse_file(&mut create_parser().unwrap(), tmp.path()).unwrap();
         let mut units = Vec::new();
-        collect_detailed_from_node_for_test(parsed.tree.root_node(), &parsed.source, "t.py", &mut units);
+        collect_detailed_from_node_for_test(
+            parsed.tree.root_node(),
+            &parsed.source,
+            "t.py",
+            &mut units,
+        );
         assert!(
             units
                 .iter()

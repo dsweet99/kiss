@@ -42,14 +42,39 @@ pub(crate) fn build_node_index(nodes: &[String]) -> HashMap<&str, usize> {
     idx
 }
 
-pub(crate) fn node_size_and_display(name: &str, paths: &BTreeMap<String, PathBuf>) -> (u64, String) {
-    paths.get(name).map_or_else(
-        || (0, name.to_string()),
-        |p| {
-            let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-            (size, p.display().to_string())
-        },
-    )
+pub(crate) fn cluster_title(member_paths: &[Option<PathBuf>]) -> String {
+    let known: Vec<&std::path::Path> = member_paths.iter().filter_map(|p| p.as_deref()).collect();
+    if known.is_empty() {
+        return "external".to_string();
+    }
+
+    let key_components: Vec<Vec<String>> = known
+        .iter()
+        .map(|p| {
+            paths::path_prefix_key(p, usize::MAX)
+                .split('/')
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect()
+        })
+        .collect();
+
+    let min_len = key_components.iter().map(Vec::len).min().unwrap_or(0);
+    let mut common: Vec<String> = Vec::new();
+    for i in 0..min_len {
+        let first = &key_components[0][i];
+        if key_components.iter().all(|c| &c[i] == first) {
+            common.push(first.clone());
+        } else {
+            break;
+        }
+    }
+
+    if common.is_empty() {
+        "mixed".to_string()
+    } else {
+        common.join("/")
+    }
 }
 
 pub(crate) fn build_cluster_labels(
@@ -57,34 +82,18 @@ pub(crate) fn build_cluster_labels(
     paths: &BTreeMap<String, PathBuf>,
     communities: &[Vec<usize>],
 ) -> Vec<String> {
-    use std::fmt::Write as _;
     let mut labels = Vec::with_capacity(communities.len());
     for members in communities {
-        let mut sized: Vec<(u64, String)> = members
+        let member_paths: Vec<Option<PathBuf>> = members
             .iter()
-            .map(|&idx| node_size_and_display(&nodes[idx], paths))
+            .map(|&idx| paths.get(&nodes[idx]).cloned())
             .collect();
-        sized.sort_by(|a, b| b.0.cmp(&a.0));
-
-        let total = sized.len();
-        let mut label = String::new();
-        if total <= 4 {
-            for (i, (_, s)) in sized.into_iter().enumerate() {
-                if i > 0 {
-                    label.push('\n');
-                }
-                label.push_str(&s);
-            }
-        } else {
-            for (i, (_, s)) in sized.into_iter().take(3).enumerate() {
-                if i > 0 {
-                    label.push('\n');
-                }
-                label.push_str(&s);
-            }
-            let _ = write!(label, "\n[{} more]", total - 3);
-        }
-        labels.push(label);
+        let title = cluster_title(&member_paths);
+        let count = members.len();
+        let suffix = if count == 1 { "node" } else { "nodes" };
+        // Single line: embedded `\n` inside `c0["..."]` breaks many Mermaid parsers (labels
+        // split across source lines; rendered graph shows only generic ids like `c0`).
+        labels.push(format!("{title} ({count} {suffix})"));
     }
     labels
 }
@@ -120,29 +129,29 @@ pub(crate) fn build_cluster_edges(
     out
 }
 
-pub(crate) const fn should_use_fast_coarsen(node_count: usize, edge_count: usize, target: usize) -> bool {
+pub(crate) const fn should_use_fast_coarsen(
+    node_count: usize,
+    edge_count: usize,
+    target: usize,
+) -> bool {
     let aggressive_coarsen = target.saturating_mul(2) < node_count;
     aggressive_coarsen || node_count >= 1_500 || edge_count >= 7_500
 }
 
 #[must_use]
-pub fn coarsen_with_zoom(
+pub fn coarsen_with_target(
     nodes: &[String],
     edges: &BTreeSet<(String, String)>,
     paths: &BTreeMap<String, PathBuf>,
-    zoom: f64,
+    target: usize,
 ) -> CoarsenedGraph {
-    if zoom <= 0.0 {
+    let target = target.max(1);
+    if target == 1 {
         return CoarsenedGraph {
-            labels: vec![format!("codebase\n{} nodes", nodes.len())],
+            labels: vec![format!("codebase ({} nodes)", nodes.len())],
             edges: BTreeSet::new(),
         };
     }
-    if zoom >= 1.0 {
-        // Caller should handle zoom==1 fast-path.
-    }
-
-    let target = target_node_count(nodes.len(), zoom);
 
     let use_fast = should_use_fast_coarsen(nodes.len(), edges.len(), target);
 
@@ -158,4 +167,19 @@ pub fn coarsen_with_zoom(
         labels,
         edges: co_edges,
     }
+}
+
+#[must_use]
+pub fn coarsen_with_zoom(
+    nodes: &[String],
+    edges: &BTreeSet<(String, String)>,
+    paths: &BTreeMap<String, PathBuf>,
+    zoom: f64,
+) -> CoarsenedGraph {
+    let target = if zoom <= 0.0 {
+        1
+    } else {
+        target_node_count(nodes.len(), zoom)
+    };
+    coarsen_with_target(nodes, edges, paths, target)
 }

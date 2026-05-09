@@ -1,11 +1,11 @@
 """Data processor with overly long functions."""
 
 import csv
-import json
 import os
 from collections.abc import Mapping
-from datetime import datetime
 from typing import Any
+from common import serializer
+from common.sdatetime import now_isoformat
 
 
 def _is_non_empty_value(value: Any) -> bool:
@@ -84,14 +84,14 @@ def process_data_file(filepath, output_dir, config):
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
-                parsed = json.loads(content)
+                parsed = serializer.loads(content)
                 if isinstance(parsed, list):
                     data = parsed
                 elif isinstance(parsed, dict):
                     data = [parsed]
                 else:
                     errors.append("JSON must be object or array")
-        except json.JSONDecodeError as e:
+        except serializer.JsonDecodeError as e:
             errors.append(f"JSON parse error: {e}")
         except UnicodeDecodeError as e:
             errors.append(f"Encoding error: {e}")
@@ -166,7 +166,7 @@ def process_data_file(filepath, output_dir, config):
                 new_record[clean_key] = value
 
             new_record["_source_file"] = os.path.basename(filepath)
-            new_record["_processed_at"] = datetime.now().isoformat()
+            new_record["_processed_at"] = now_isoformat()
             new_record["_record_index"] = i
 
             transformed.append(new_record)
@@ -232,11 +232,12 @@ def process_data_file(filepath, output_dir, config):
     output_path = os.path.join(output_dir, f"{base_name}_processed.json")
 
     try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump({
+        serializer.dump_file(
+            output_path,
+            {
                 "metadata": {
                     "source_file": filepath,
-                    "processed_at": datetime.now().isoformat(),
+                    "processed_at": now_isoformat(),
                     "total_records": len(data),
                     "valid_records": len(validated),
                     "parse_errors": len(errors),
@@ -244,7 +245,8 @@ def process_data_file(filepath, output_dir, config):
                     "validation_errors": len(validation_errors)
                 },
                 "records": validated
-            }, f, indent=2, default=str)
+            },
+        )
         print(f"Output written to: {output_path}")
     except IOError as e:
         print(f"Error writing output: {e}")
@@ -258,7 +260,7 @@ def process_data_file(filepath, output_dir, config):
         try:
             with open(error_log_path, 'w', encoding='utf-8') as f:
                 f.write(f"Error log for {filepath}\n")
-                f.write(f"Generated at {datetime.now().isoformat()}\n")
+                f.write(f"Generated at {now_isoformat()}\n")
                 f.write("=" * 50 + "\n\n")
                 for error in all_errors:
                     f.write(f"{error}\n")

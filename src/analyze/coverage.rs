@@ -43,9 +43,7 @@ pub(crate) fn orphan_post_pass(
             continue;
         };
         let metrics = g.module_metrics(&module);
-        let is_orphan = metrics.fan_in == 0
-            && metrics.fan_out == 0
-            && !is_entry_point(&module);
+        let is_orphan = metrics.fan_in == 0 && metrics.fan_out == 0 && !is_entry_point(&module);
         if is_orphan && !unref_set.contains(&(def.file.clone(), def.name.clone(), def.line)) {
             out.push(def.clone());
         }
@@ -175,7 +173,11 @@ pub(crate) fn build_viols_after_merge(
     unreferenced: Vec<CachedCoverageItem>,
     focus_set: &HashSet<PathBuf>,
     graphs: GraphRefPair<'_>,
-) -> (Vec<Violation>, Vec<CachedCoverageItem>, Vec<CachedCoverageItem>) {
+) -> (
+    Vec<Violation>,
+    Vec<CachedCoverageItem>,
+    Vec<CachedCoverageItem>,
+) {
     let unreferenced = orphan_post_pass(&definitions, unreferenced, graphs);
     let defs: Vec<_> = definitions
         .iter()
@@ -187,8 +189,7 @@ pub(crate) fn build_viols_after_merge(
         .cloned()
         .map(CachedCoverageItem::into_tuple)
         .collect();
-    let (_, _, _, unreferenced_focus) =
-        compute_test_coverage_from_lists(&defs, &unref, focus_set);
+    let (_, _, _, unreferenced_focus) = compute_test_coverage_from_lists(&defs, &unref, focus_set);
     let file_pcts = file_coverage_map(&defs, &unreferenced_focus);
     let cov_viols: Vec<Violation> = unreferenced_focus
         .into_iter()
@@ -214,10 +215,23 @@ pub(crate) fn collect_coverage_viols(
     out_opts: CoverageOutputOpts,
     graphs: GraphRefPair<'_>,
 ) -> (Vec<Violation>, Option<CoverageCachePair>) {
-    let PyRsTestCoverage { py: py_cov, rs: rs_cov } = cov;
+    let PyRsTestCoverage {
+        py: py_cov,
+        rs: rs_cov,
+    } = cov;
+    // Always compute coverage cache lists so the full-check cache can be primed
+    // by every successful `kiss check` invocation, not just `--all`. The
+    // per-definition coverage *violations* are still gated on `bypass_gate`
+    // (the gated flow handles its own coverage gate-failure output via
+    // `evaluate_gate` upstream).
     let (definitions, unreferenced) = merge_coverage_results(py_cov, rs_cov);
     let (cov_viols, definitions, unreferenced) =
         build_viols_after_merge(definitions, unreferenced, focus_set, graphs);
+    let cov_viols = if out_opts.bypass_gate {
+        cov_viols
+    } else {
+        Vec::new()
+    };
     let cache_lists = if out_opts.show_timing {
         None
     } else {
@@ -232,12 +246,14 @@ pub(crate) fn collect_coverage_viols(
 
 #[cfg(test)]
 mod coverage_touch {
-    use crate::analyze::coverage_types::{CheckCoverageGateParams, CoverageViolationSpec, PyRsTestCoverage};
+    use crate::analyze::coverage_types::{
+        CheckCoverageGateParams, CoverageViolationSpec, PyRsTestCoverage,
+    };
     use kiss::check_universe_cache::CachedCoverageItem;
     use std::collections::HashSet;
     use std::path::PathBuf;
 
-    use super::{build_viols_after_merge, CoverageOutputOpts, GraphRefPair};
+    use super::{CoverageOutputOpts, GraphRefPair, build_viols_after_merge};
 
     #[test]
     fn struct_sizes_for_gate() {
@@ -254,7 +270,8 @@ mod coverage_touch {
         let unreferenced = vec![];
         let focus_set: HashSet<PathBuf> = HashSet::new();
         let graphs = GraphRefPair { py: None, rs: None };
-        let (viols, defs, unref) = build_viols_after_merge(definitions, unreferenced, &focus_set, graphs);
+        let (viols, defs, unref) =
+            build_viols_after_merge(definitions, unreferenced, &focus_set, graphs);
         assert!(viols.is_empty());
         assert!(defs.is_empty());
         assert!(unref.is_empty());

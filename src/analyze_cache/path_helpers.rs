@@ -21,8 +21,14 @@ pub(super) fn same_cached_paths(
     }
     let mut cache_py = cache.py_paths.clone();
     let mut cache_rs = cache.rs_paths.clone();
-    let mut current_py: Vec<String> = current_py.iter().map(|p| p.to_string_lossy().to_string()).collect();
-    let mut current_rs: Vec<String> = current_rs.iter().map(|p| p.to_string_lossy().to_string()).collect();
+    let mut current_py: Vec<String> = current_py
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    let mut current_rs: Vec<String> = current_rs
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
     cache_py.sort();
     cache_rs.sort();
     current_py.sort();
@@ -41,7 +47,10 @@ pub(super) fn same_cached_paths(
         stored.sort();
         stored
     };
-    let mut current_focus: Vec<String> = focus_set.iter().map(|path| path.to_string_lossy().to_string()).collect();
+    let mut current_focus: Vec<String> = focus_set
+        .iter()
+        .map(|path| path.to_string_lossy().to_string())
+        .collect();
     current_focus.sort();
 
     cache_focus == current_focus

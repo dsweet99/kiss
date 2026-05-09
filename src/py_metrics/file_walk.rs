@@ -18,12 +18,7 @@ pub(crate) fn collect_file_counts(root: Node, source: &str) -> FileCounts {
     agg
 }
 
-pub(crate) fn walk_file(
-    node: Node,
-    source: &str,
-    in_type_checking: bool,
-    agg: &mut FileCounts,
-) {
+pub(crate) fn walk_file(node: Node, source: &str, in_type_checking: bool, agg: &mut FileCounts) {
     let now_type_checking = in_type_checking || is_type_checking_block(node, source);
 
     match node.kind() {

@@ -2,19 +2,19 @@ use std::path::Path;
 
 use crate::analyze;
 use crate::analyze::DryRunParams;
-use crate::bin_cli::check_cmd::{run_check_command, CheckCommandArgs};
+use crate::bin_cli::check_cmd::{CheckCommandArgs, run_check_command};
 use crate::bin_cli::mimic::run_mimic;
-use crate::bin_cli::show_tests_cmd::{run_show_tests, RunShowTestsCmdArgs};
-use crate::bin_cli::shrink::{run_shrink, RunShrinkArgs, ShrinkFullContext};
-use crate::bin_cli::stats::{run_stats, RunStatsArgs};
+use crate::bin_cli::show_tests_cmd::{RunShowTestsCmdArgs, run_show_tests};
+use crate::bin_cli::shrink::{RunShrinkArgs, ShrinkFullContext, run_shrink};
+use crate::bin_cli::stats::{RunStatsArgs, run_stats};
 use crate::bin_cli::util::{normalize_ignore_prefixes, validate_paths};
 use crate::rules::{run_config, run_rules};
-use crate::viz::run_viz;
+use crate::viz::{VizCoarsen, run_viz};
 use kiss::Language;
 
 use super::options::{
     CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-    MvDispatchOptions, RulesDispatchOptions, ShrinkDispatchOptions, ShowTestsDispatchOptions,
+    MvDispatchOptions, RulesDispatchOptions, ShowTestsDispatchOptions, ShrinkDispatchOptions,
     StatsDispatchOptions, VizDispatchOptions,
 };
 
@@ -40,6 +40,9 @@ pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i
         ignore: &ignore,
         all: o.all,
         table: o.table,
+        py_config: o.cfg.py,
+        rs_config: o.cfg.rs,
+        gate_config: o.cfg.gate,
     });
     0
 }
@@ -102,7 +105,10 @@ pub(in crate::bin_cli::dispatch) fn dispatch_config(o: ConfigDispatchOptions<'_>
 pub(in crate::bin_cli::dispatch) fn dispatch_viz(o: VizDispatchOptions) -> i32 {
     let ignore = normalize_ignore_prefixes(&o.ignore);
     validate_paths(&o.paths);
-    if let Err(e) = run_viz(&o.out, &o.paths, o.lang, &ignore, o.zoom) {
+    let coarsen = o
+        .num_nodes
+        .map_or(VizCoarsen::Zoom(o.zoom), VizCoarsen::NumNodes);
+    if let Err(e) = run_viz(&o.out, &o.paths, o.lang, &ignore, coarsen) {
         eprintln!("Error: {e}");
         return 1;
     }

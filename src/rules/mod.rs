@@ -154,7 +154,7 @@ fn print_rust_config(c: &Config) {
     println!("nested_function_depth = {}", c.nested_function_depth);
     println!("imported_names_per_file = {}", c.imported_names_per_file);
     println!("boolean_parameters = {}", c.boolean_parameters);
-    println!("attributes_per_function = {}", c.annotations_per_function);
+    println!("annotations_per_function = {}", c.annotations_per_function);
     println!("cycle_size = {}", c.cycle_size);
     println!("indirect_dependencies = {}", c.indirect_dependencies);
     println!("dependency_depth = {}", c.dependency_depth);

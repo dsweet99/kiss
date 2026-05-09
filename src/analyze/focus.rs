@@ -60,8 +60,7 @@ pub fn filter_duplicates_by_focus(
     dups: Vec<DuplicateCluster>,
     focus_set: &HashSet<PathBuf>,
 ) -> Vec<DuplicateCluster> {
-    dups
-        .into_iter()
+    dups.into_iter()
         .filter(|cluster| {
             cluster
                 .chunks

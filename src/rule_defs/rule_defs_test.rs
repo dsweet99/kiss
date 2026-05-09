@@ -19,10 +19,7 @@ fn test_rules_and_categories() {
     );
     assert_eq!(RuleCategory::Functions.python_heading(), "Functions");
     assert_eq!(RuleCategory::Classes.rust_heading(), "Types");
-    assert_eq!(
-        RuleCategory::Dependencies.python_heading(),
-        "Dependencies"
-    );
+    assert_eq!(RuleCategory::Dependencies.python_heading(), "Dependencies");
     let _ = (
         Applicability::Python,
         Applicability::Rust,

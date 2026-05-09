@@ -1,35 +1,15 @@
-use crate::py_metrics::{compute_class_metrics, compute_function_metrics};
-use tree_sitter::Node;
-
 use super::metric_stats::MetricStats;
+use crate::py_metrics::PyWalkAction;
 
-// inside_class tracks context for method counting; passed through recursion to nested scopes
-#[allow(clippy::only_used_in_recursion)]
-pub(crate) fn collect_from_node(node: Node, source: &str, stats: &mut MetricStats, inside_class: bool) {
-    match node.kind() {
-        "function_definition" | "async_function_definition" => {
-            let m = compute_function_metrics(node, source);
-            if !m.has_error {
-                push_py_fn_metrics(stats, &m);
-            }
-            let mut c = node.walk();
-            for child in node.children(&mut c) {
-                collect_from_node(child, source, stats, false);
-            }
-        }
-        "class_definition" => {
-            let m = compute_class_metrics(node);
-            stats.methods_per_class.push(m.methods);
-            let mut c = node.walk();
-            for child in node.children(&mut c) {
-                collect_from_node(child, source, stats, true);
-            }
-        }
-        _ => {
-            let mut c = node.walk();
-            for child in node.children(&mut c) {
-                collect_from_node(child, source, stats, inside_class);
-            }
+pub(crate) struct StatsVisitor<'a> {
+    pub(crate) stats: &'a mut MetricStats,
+}
+
+impl StatsVisitor<'_> {
+    pub(crate) fn process(&mut self, action: PyWalkAction<'_>) {
+        match action {
+            PyWalkAction::Function(visit) => push_py_fn_metrics(self.stats, visit.metrics),
+            PyWalkAction::Class(visit) => self.stats.methods_per_class.push(visit.metrics.methods),
         }
     }
 }

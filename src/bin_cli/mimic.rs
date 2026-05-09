@@ -1,8 +1,8 @@
-use kiss::config_gen::{
-    collect_all_stats_with_ignore, generate_config_toml_by_language, infer_gate_config_for_paths,
-    write_mimic_config, GenerateConfigParams,
-};
 use kiss::Language;
+use kiss::config_gen::{
+    GenerateConfigParams, collect_all_stats_with_ignore, generate_config_toml_by_language,
+    infer_gate_config_for_paths, write_mimic_config,
+};
 use std::path::Path;
 
 pub fn run_mimic(

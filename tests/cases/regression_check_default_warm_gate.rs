@@ -63,12 +63,8 @@ fn regression_check_default_warm_gate_matches_cold_and_warm_output() {
         String::from_utf8_lossy(&warm.stdout),
         "default warm-hit output should match cold-hit output"
     );
-    assert!(
-        String::from_utf8_lossy(&cold.stdout).contains("GATE_FAILED:test_coverage:")
-    );
-    assert!(
-        String::from_utf8_lossy(&warm.stdout).contains("GATE_FAILED:test_coverage:")
-    );
+    assert!(String::from_utf8_lossy(&cold.stdout).contains("GATE_FAILED:test_coverage:"));
+    assert!(String::from_utf8_lossy(&warm.stdout).contains("GATE_FAILED:test_coverage:"));
 }
 
 #[test]

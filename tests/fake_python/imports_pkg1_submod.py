@@ -4,5 +4,6 @@ import pkg1.submod
 
 
 def use_pkg1() -> str:
-    return pkg1.submod.greet()
+    raw = pkg1.submod.greet()
+    return "{0}".format(raw)
 
