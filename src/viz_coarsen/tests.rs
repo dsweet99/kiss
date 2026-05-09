@@ -81,6 +81,44 @@ fn test_touch_privates_for_static_coverage_part2() {
 }
 
 #[test]
+fn test_coarsen_with_target_supernode_for_target_one() {
+    let nodes: Vec<String> = vec!["py:a".into(), "py:b".into(), "py:c".into()];
+    let edges: BTreeSet<(String, String)> = BTreeSet::new();
+    let paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
+
+    let cg = coarsen_with_target(&nodes, &edges, &paths_map, 1);
+    assert_eq!(cg.labels.len(), 1);
+    assert!(cg.labels[0].contains("codebase"));
+    assert!(cg.labels[0].contains("3 nodes"));
+    assert!(cg.edges.is_empty());
+}
+
+#[test]
+fn test_coarsen_with_target_clamps_zero_to_one() {
+    let nodes: Vec<String> = vec!["py:a".into()];
+    let edges: BTreeSet<(String, String)> = BTreeSet::new();
+    let paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
+
+    let cg = coarsen_with_target(&nodes, &edges, &paths_map, 0);
+    assert_eq!(cg.labels.len(), 1);
+}
+
+#[test]
+fn test_coarsen_with_target_respects_explicit_count() {
+    let nodes: Vec<String> = (0..6).map(|i| format!("py:m{i}")).collect();
+    let mut paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
+    for (i, n) in nodes.iter().enumerate() {
+        let dir = if i < 3 { "pkg1" } else { "pkg2" };
+        paths_map.insert(n.clone(), PathBuf::from(format!("src/{dir}/m{i}.py")));
+    }
+    let edges: BTreeSet<(String, String)> = BTreeSet::new();
+
+    let cg = coarsen_with_target(&nodes, &edges, &paths_map, 2);
+    assert!(cg.labels.len() <= 2);
+    assert!(!cg.labels.is_empty());
+}
+
+#[test]
 fn test_choose_prefix_depth_and_group_nodes() {
     let nodes: Vec<String> = vec!["a".into(), "b".into(), "c".into()];
     let per_paths: Vec<Option<PathBuf>> = vec![

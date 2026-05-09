@@ -9,7 +9,7 @@ use crate::bin_cli::shrink::{RunShrinkArgs, ShrinkFullContext, run_shrink};
 use crate::bin_cli::stats::{RunStatsArgs, run_stats};
 use crate::bin_cli::util::{normalize_ignore_prefixes, validate_paths};
 use crate::rules::{run_config, run_rules};
-use crate::viz::run_viz;
+use crate::viz::{VizCoarsen, run_viz};
 use kiss::Language;
 
 use super::options::{
@@ -105,7 +105,10 @@ pub(in crate::bin_cli::dispatch) fn dispatch_config(o: ConfigDispatchOptions<'_>
 pub(in crate::bin_cli::dispatch) fn dispatch_viz(o: VizDispatchOptions) -> i32 {
     let ignore = normalize_ignore_prefixes(&o.ignore);
     validate_paths(&o.paths);
-    if let Err(e) = run_viz(&o.out, &o.paths, o.lang, &ignore, o.zoom) {
+    let coarsen = o
+        .num_nodes
+        .map_or(VizCoarsen::Zoom(o.zoom), VizCoarsen::NumNodes);
+    if let Err(e) = run_viz(&o.out, &o.paths, o.lang, &ignore, coarsen) {
         eprintln!("Error: {e}");
         return 1;
     }

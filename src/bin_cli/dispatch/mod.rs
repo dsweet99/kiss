@@ -103,12 +103,14 @@ pub fn dispatch(
             out,
             paths,
             zoom,
+            num_nodes,
             ignore,
         } => dispatch_viz(VizDispatchOptions {
             lang,
             out,
             paths,
             zoom,
+            num_nodes,
             ignore,
         }),
         Commands::Shrink {
@@ -238,6 +240,7 @@ mod dispatch_coverage {
             out: std::path::PathBuf::from("out.dot"),
             paths: vec![],
             zoom: 1.0,
+            num_nodes: None,
             ignore: vec![],
         };
         let _ = ShrinkDispatchOptions {

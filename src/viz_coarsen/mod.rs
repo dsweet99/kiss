@@ -133,23 +133,19 @@ pub(crate) const fn should_use_fast_coarsen(
 }
 
 #[must_use]
-pub fn coarsen_with_zoom(
+pub fn coarsen_with_target(
     nodes: &[String],
     edges: &BTreeSet<(String, String)>,
     paths: &BTreeMap<String, PathBuf>,
-    zoom: f64,
+    target: usize,
 ) -> CoarsenedGraph {
-    if zoom <= 0.0 {
+    let target = target.max(1);
+    if target == 1 {
         return CoarsenedGraph {
             labels: vec![format!("codebase\n{} nodes", nodes.len())],
             edges: BTreeSet::new(),
         };
     }
-    if zoom >= 1.0 {
-        // Caller should handle zoom==1 fast-path.
-    }
-
-    let target = target_node_count(nodes.len(), zoom);
 
     let use_fast = should_use_fast_coarsen(nodes.len(), edges.len(), target);
 
@@ -165,4 +161,19 @@ pub fn coarsen_with_zoom(
         labels,
         edges: co_edges,
     }
+}
+
+#[must_use]
+pub fn coarsen_with_zoom(
+    nodes: &[String],
+    edges: &BTreeSet<(String, String)>,
+    paths: &BTreeMap<String, PathBuf>,
+    zoom: f64,
+) -> CoarsenedGraph {
+    let target = if zoom <= 0.0 {
+        1
+    } else {
+        target_node_count(nodes.len(), zoom)
+    };
+    coarsen_with_target(nodes, edges, paths, target)
 }
