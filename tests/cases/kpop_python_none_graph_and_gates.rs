@@ -81,5 +81,5 @@ fn kpop_python_none_min_similarity() {
     let parsed: Vec<&ParsedFile> = vec![&p];
     let dups = kiss::detect_duplicates(&parsed, &kiss::DuplicationConfig::default());
     assert!(!dups.is_empty());
-    assert!(dups[0].similarity >= 0.7);
+    assert!(dups[0].similarity >= 0.9);
 }

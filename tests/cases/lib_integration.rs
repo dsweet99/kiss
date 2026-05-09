@@ -251,8 +251,8 @@ fn detects_duplicate_code() {
         "Should detect duplicates in user_service.py"
     );
     assert!(
-        duplicates[0].similarity > 0.7,
-        "Expected similarity > 0.7, got {}",
+        duplicates[0].similarity >= 0.9,
+        "Expected similarity >= 0.9, got {}",
         duplicates[0].similarity
     );
 }

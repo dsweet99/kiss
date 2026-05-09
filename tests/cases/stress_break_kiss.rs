@@ -140,7 +140,7 @@ fn h2_single_variable_rename_drops_similarity() {
     let sig_b = compute_minhash(&shingles_b, 100);
     let sim = estimate_similarity(&sig_a, &sig_b);
 
-    // These are clearly duplicates, but a single rename may push similarity below 0.7
+    // These are clearly duplicates, but a single rename may push similarity below 0.9
     assert!(
         sim > 0.5,
         "Near-duplicate with single rename should still have >50% similarity, got {sim}"

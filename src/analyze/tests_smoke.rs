@@ -101,9 +101,9 @@ fn test_print_functions_and_helpers() {
 
 #[test]
 fn test_detect_duplicates() {
-    let py_dups = crate::analyze::detect_py_duplicates(&[], 0.7);
+    let py_dups = crate::analyze::detect_py_duplicates(&[], 0.9);
     assert!(py_dups.is_empty());
-    let rs_dups = crate::analyze::detect_rs_duplicates(&[], 0.7);
+    let rs_dups = crate::analyze::detect_rs_duplicates(&[], 0.9);
     assert!(rs_dups.is_empty());
 }
 

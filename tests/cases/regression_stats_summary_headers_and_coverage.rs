@@ -36,7 +36,7 @@ fn build_corpus(dir: &std::path::Path) {
     )
     .unwrap();
     // Two long, near-identical functions in different files so the duplicate
-    // detector (default `min_similarity = 0.7`) classifies them as a cluster.
+    // detector (default `min_similarity = 0.9`) classifies them as a cluster.
     let dup_body = (0..40)
         .map(|i| format!("    a{i} = {i} + {i}"))
         .collect::<Vec<_>>()

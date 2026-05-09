@@ -54,7 +54,7 @@ pub mod graph {
 }
 
 pub mod duplication {
-    pub const MIN_SIMILARITY: f64 = 0.7;
+    pub const MIN_SIMILARITY: f64 = 0.9;
 }
 
 pub mod gate {

@@ -110,7 +110,7 @@ pub enum Commands {
         #[arg(long, default_value = "20")]
         lsh_bands: usize,
         /// Minimum similarity threshold [0.0-1.0] (default matches `kiss check`)
-        #[arg(long, default_value = "0.7")]
+        #[arg(long, default_value = "0.9")]
         min_similarity: f64,
         /// Ignore files/directories starting with PREFIX (repeatable)
         #[arg(long, value_name = "PREFIX")]

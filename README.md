@@ -135,7 +135,7 @@ RULE: [Python] [cycle_size < 0] cycle_size is the maximum allowed number of modu
 RULE: [Python] [indirect_dependencies < 10] indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).
 RULE: [Python] [dependency_depth < 3] dependency_depth is the maximum length of an import chain in the dependency graph.
 RULE: [Python] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).
-RULE: [Python] [min_similarity >= 0.70] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
+RULE: [Python] [min_similarity >= 0.90] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 RULE: [Rust] [statements_per_function < 35] statements_per_function is the maximum number of statements in a Rust function/method body.
 RULE: [Rust] [arguments_per_function < 8] arguments_per_function is the maximum number of non-self parameters in a Rust function/method signature.
 RULE: [Rust] [max_indentation_depth < 5] max_indentation_depth is the maximum indentation depth within a Rust function/method body.
@@ -157,7 +157,7 @@ RULE: [Rust] [cycle_size < 0] cycle_size is the maximum allowed number of module
 RULE: [Rust] [indirect_dependencies < 10] indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).
 RULE: [Rust] [dependency_depth < 3] dependency_depth is the maximum length of a module dependency chain in the dependency graph.
 RULE: [Rust] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).
-RULE: [Rust] [min_similarity >= 0.70] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
+RULE: [Rust] [min_similarity >= 0.90] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 ```
 
 

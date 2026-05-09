@@ -19,7 +19,7 @@ fn default_config_has_reasonable_values() {
 
 fn verify_gate_defaults(gate: &GateConfig) {
     assert_eq!(gate.test_coverage_threshold, 90);
-    assert!((gate.min_similarity - 0.7).abs() < f64::EPSILON);
+    assert!((gate.min_similarity - 0.9).abs() < f64::EPSILON);
     assert!(gate.duplication_enabled);
     assert!(gate.orphan_module_enabled);
 }

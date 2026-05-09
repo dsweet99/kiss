@@ -7,7 +7,7 @@ use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::show_tests_cmd::{RunShowTestsCmdArgs, run_show_tests};
 use crate::bin_cli::shrink::{RunShrinkArgs, ShrinkFullContext, run_shrink};
 use crate::bin_cli::stats::{RunStatsArgs, run_stats};
-use crate::bin_cli::util::{normalize_ignore_prefixes, validate_paths};
+use crate::bin_cli::util::{normalize_ignore_prefixes, validate_min_similarity, validate_paths};
 use crate::rules::{run_config, run_rules};
 use crate::viz::{VizCoarsen, run_viz};
 use kiss::Language;
@@ -69,6 +69,10 @@ pub(in crate::bin_cli::dispatch) fn dispatch_clamp(
 
 pub(in crate::bin_cli::dispatch) fn dispatch_dry(o: DryDispatchOptions) -> i32 {
     let ignore = normalize_ignore_prefixes(&o.ignore);
+    if let Err(msg) = validate_min_similarity(o.min_similarity) {
+        eprintln!("Error: {msg}");
+        return 1;
+    }
     let config = kiss::DuplicationConfig {
         shingle_size: o.shingle_size,
         minhash_size: o.minhash_size,
