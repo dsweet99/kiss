@@ -163,7 +163,7 @@ pub fn check_file_metrics(
             lines,
             cfg.lines_per_file,
             format!("File has {lines} lines (threshold: {})", cfg.lines_per_file),
-            "Split into smaller modules or move code into submodules.",
+            "Split the file roughly in half.",
         );
     }
     if m.statements > cfg.statements_per_file {
@@ -177,7 +177,7 @@ pub fn check_file_metrics(
                 "File has {} statements (threshold: {})",
                 m.statements, cfg.statements_per_file
             ),
-            "Split into multiple modules with focused responsibilities.",
+            "Split the file roughly in half.",
         );
     }
     if m.interface_types > cfg.interface_types_per_file {
