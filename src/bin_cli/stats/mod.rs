@@ -1,6 +1,8 @@
 mod summary;
 mod table;
 mod top;
+#[cfg(test)]
+mod top_tests;
 
 #[cfg(test)]
 pub use summary::run_stats_summary;
@@ -26,7 +28,15 @@ pub fn run_stats(args: RunStatsArgs<'_>) {
     if args.table {
         table::run_stats_table(args.paths, args.lang_filter, args.ignore);
     } else if let Some(n) = args.all {
-        top::run_stats_top(args.paths, args.lang_filter, args.ignore, n);
+        top::run_stats_top(top::StatsTopArgs {
+            paths: args.paths,
+            lang_filter: args.lang_filter,
+            ignore: args.ignore,
+            n,
+            py_config: args.py_config,
+            rs_config: args.rs_config,
+            gate_config: args.gate_config,
+        });
     } else {
         summary::run_stats_summary(
             args.paths,

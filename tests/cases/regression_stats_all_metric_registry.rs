@@ -1,28 +1,3 @@
-//! Regression tests for `kiss stats --all`.
-//!
-//! Two defects, observed by the user when `kiss stats` (summary mode) reports
-//! `concrete_types_per_file` for the kiss codebase but `kiss stats --all` does not
-//! emit any STAT line for that metric:
-//!
-//!   1. The hand-rolled metric list in `src/bin_cli/stats/top.rs` covers only 17
-//!      metrics, while the canonical registry `kiss::METRICS`
-//!      (`src/stats/definitions.rs`) lists 27. The missing metrics include
-//!      `concrete_types_per_file`, `interface_types_per_file`, `statements_per_file`,
-//!      `functions_per_file`, `statements_per_try_block`, `boolean_parameters`,
-//!      `annotations_per_function`, `calls_per_function`, and `cycle_size`.
-//!      `UnitMetrics` itself also lacks fields for several of these, so the data
-//!      is never plumbed through.
-//!
-//!   2. The metric IDs that `--all` does emit are non-canonical (`args_total`,
-//!      `args_positional`, `args_keyword_only`, `indirect_deps`), where the
-//!      registry uses `arguments_per_function`, `positional_args`, `keyword_only_args`,
-//!      `indirect_dependencies`. Downstream tooling joining on metric IDs
-//!      silently fails to match.
-//!
-//! Both tests below should FAIL on `dsweet/check_all` and pass once
-//! `print_all_top_metrics` is driven from `kiss::METRICS` and `UnitMetrics`
-//! is widened to carry every registered metric.
-
 use kiss::METRICS;
 use std::collections::BTreeSet;
 use std::fs;
@@ -33,7 +8,6 @@ fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
 }
 
-/// Parse the distinct metric IDs that `kiss stats --all` printed in `STAT:<id>:` lines.
 fn parsed_stat_ids(stdout: &str) -> BTreeSet<String> {
     stdout
         .lines()
@@ -47,16 +21,9 @@ fn registry_ids() -> BTreeSet<String> {
     METRICS.iter().map(|m| m.metric_id.to_string()).collect()
 }
 
-/// Run `kiss stats --all` against a corpus that exercises a broad set of metrics
-/// (concrete types, interface types via Protocols, multi-arg functions, returns,
-/// branches, locals, nested defs, imports, multiple files for `fan_in`/`fan_out`).
 fn build_broad_python_corpus(dir: &std::path::Path) {
     fs::write(
         dir.join("models.py"),
-        // Concrete classes -> concrete_types_per_file.
-        // Multiple top-level functions -> functions_per_file, statements_per_file.
-        // Method count -> methods_per_class.
-        // Imports -> imported_names_per_file (and fan_out).
         r#"import os
 import json
 from typing import Optional
@@ -101,7 +68,6 @@ def report(ledger: Ledger) -> str:
 
     fs::write(
         dir.join("protocols.py"),
-        // Protocols/ABCs -> interface_types_per_file (vs concrete_types_per_file).
         r"from typing import Protocol, runtime_checkable
 
 @runtime_checkable
@@ -117,9 +83,6 @@ class Source(Protocol):
 
     fs::write(
         dir.join("uses_models.py"),
-        // Imports models -> creates a graph edge so fan_in on models.py > 0.
-        // try/except block -> statements_per_try_block.
-        // Boolean parameter -> boolean_parameters.
         r#"import models
 
 def run(verbose: bool):
@@ -138,9 +101,14 @@ def run(verbose: bool):
 }
 
 fn run_stats_all(corpus: &std::path::Path) -> String {
+    run_stats_all_with_n(corpus, None)
+}
+
+fn run_stats_all_with_n(corpus: &std::path::Path, n: Option<usize>) -> String {
+    let all_arg = n.map_or_else(|| "--all".to_string(), |v| format!("--all={v}"));
     let output = kiss_binary()
         .arg("stats")
-        .arg("--all")
+        .arg(&all_arg)
         .arg(corpus)
         .output()
         .expect("kiss binary should execute");
@@ -148,23 +116,13 @@ fn run_stats_all(corpus: &std::path::Path) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     assert!(
         output.status.success(),
-        "kiss stats --all should succeed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "kiss stats {all_arg} should succeed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     stdout
 }
 
 #[test]
 fn regression_stats_all_emits_only_canonical_metric_ids_from_registry() {
-    // Restated bug: `kiss stats --all` emits metric IDs that are not present in
-    // `kiss::METRICS` (e.g. `args_total`, `args_positional`, `args_keyword_only`,
-    // `indirect_deps`). Anything keyed on registry IDs (the summary table,
-    // `.kissconfig`, mimic) cannot join against `--all` output.
-    //
-    // Hypothesis: Every `STAT:<id>:` line emitted by `--all` must use an `id`
-    // that is a member of `kiss::METRICS`.
-    //
-    // Predicted failure on `dsweet/check_all`: at least the four non-canonical
-    // IDs above appear and are reported as offenders.
     let tmp = TempDir::new().unwrap();
     build_broad_python_corpus(tmp.path());
 
@@ -181,16 +139,6 @@ fn regression_stats_all_emits_only_canonical_metric_ids_from_registry() {
 
 #[test]
 fn regression_stats_all_emits_concrete_types_per_file_when_corpus_has_classes() {
-    // Restated bug (user-observed): `kiss stats` summary reports
-    // `concrete_types_per_file`, but `kiss stats --all` produces zero STAT lines
-    // for it on the same corpus.
-    //
-    // Hypothesis: When the corpus contains at least one concrete class, `--all`
-    // must emit at least one `STAT:concrete_types_per_file:` line.
-    //
-    // Predicted failure on `dsweet/check_all`: the metric is absent from the
-    // hand-rolled list in `src/bin_cli/stats/top.rs` AND missing from
-    // `UnitMetrics`, so no STAT line is ever produced.
     let tmp = TempDir::new().unwrap();
     build_broad_python_corpus(tmp.path());
 
@@ -203,17 +151,6 @@ fn regression_stats_all_emits_concrete_types_per_file_when_corpus_has_classes() 
 
 #[test]
 fn regression_stats_all_emits_every_file_scope_metric_with_data() {
-    // Restated bug: the `--all` metric list in `src/bin_cli/stats/top.rs` is
-    // a hand-rolled subset of the canonical `kiss::METRICS` registry. New
-    // metrics added to the registry are silently absent from `--all` output.
-    //
-    // Hypothesis: For each File-scope metric in `kiss::METRICS`, the broad
-    // corpus produces non-zero data, so `--all` must emit at least one STAT
-    // line for it.
-    //
-    // Predicted failure on `dsweet/check_all`: at minimum
-    // `concrete_types_per_file`, `interface_types_per_file`,
-    // `statements_per_file`, and `functions_per_file` are missing from output.
     let tmp = TempDir::new().unwrap();
     build_broad_python_corpus(tmp.path());
 
@@ -224,15 +161,6 @@ fn regression_stats_all_emits_every_file_scope_metric_with_data() {
         .iter()
         .filter(|m| matches!(m.scope, kiss::MetricScope::File))
         .map(|m| m.metric_id)
-        // `inv_test_coverage` is File-scope in the registry but is
-        // intentionally NOT emitted by `kiss stats --all`: it requires a
-        // project-wide test-reference scan that only the summary path runs. It
-        // is documented in `AGGREGATE_ONLY_METRICS` in
-        // `src/bin_cli/stats/top.rs`. The strict registry-vs-extractor
-        // invariant is enforced by the unit tests in that module
-        // (`exhaustiveness_tests`); here we only check metrics that DO have a
-        // per-unit extractor.
-        .filter(|id| *id != "inv_test_coverage")
         .collect();
 
     let missing: Vec<&str> = file_scope_metrics
@@ -244,5 +172,78 @@ fn regression_stats_all_emits_every_file_scope_metric_with_data() {
     assert!(
         missing.is_empty(),
         "kiss stats --all is missing STAT lines for these File-scope registry metrics:\n  missing: {missing:?}\n  emitted: {emitted:?}\n  full stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn regression_stats_all_ranks_uncovered_above_covered_for_inv_test_coverage() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(
+        tmp.path().join("uncovered.rs"),
+        "pub fn alpha() {}\npub fn beta() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("covered.rs"),
+        "pub fn gamma() {}\npub fn delta() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("covered_test.rs"),
+        "#[test]\nfn t1() { gamma(); delta(); }\n",
+    )
+    .unwrap();
+
+    let stdout = run_stats_all_with_n(tmp.path(), Some(1));
+    let lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.starts_with("STAT:inv_test_coverage:"))
+        .collect();
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("STAT:inv_test_coverage:100:") && l.contains("uncovered.rs")),
+        "expected an inv_test_coverage:100 line for uncovered.rs at the top of the ranking.\n\
+         lines: {lines:?}\nfull stdout:\n{stdout}"
+    );
+    assert!(
+        lines.iter().all(|l| !l.contains("covered.rs:")
+            || l.contains("uncovered.rs:")
+            || !l.starts_with("STAT:inv_test_coverage:0:")),
+        "with --all=1, the covered file (inv_test_coverage=0) must rank below the uncovered \
+         file and be omitted.\nlines: {lines:?}"
+    );
+}
+
+#[test]
+fn regression_stats_all_emits_cycle_size_when_corpus_has_cycle() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(
+        tmp.path().join("a.py"),
+        "import b\ndef use_b():\n    return b.thing()\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("b.py"),
+        "import c\ndef thing():\n    return c.other()\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("c.py"),
+        "import a\ndef other():\n    return a.use_b()\n",
+    )
+    .unwrap();
+    let stdout = run_stats_all(tmp.path());
+    let cycle_lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.starts_with("STAT:cycle_size:"))
+        .collect();
+    assert!(
+        !cycle_lines.is_empty(),
+        "expected at least one STAT:cycle_size: line for a 3-module cycle.\nstdout:\n{stdout}"
+    );
+    assert!(
+        cycle_lines.iter().any(|l| l.starts_with("STAT:cycle_size:3:")),
+        "expected cycle_size value of 3 for the a → b → c → a cycle.\nlines: {cycle_lines:?}"
     );
 }

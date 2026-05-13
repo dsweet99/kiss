@@ -15,7 +15,13 @@ use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
 mod path_helpers;
+mod stats_top;
+#[cfg(test)]
+mod test_helpers;
 use path_helpers::{cache_path_full, load_full_cache, same_cached_paths};
+pub(crate) use stats_top::{
+    maybe_store_stats_top_cache, try_run_cached_stats_summary, try_run_cached_stats_top,
+};
 
 const CACHE_SCHEMA_VERSION: &str = "v3";
 
@@ -246,28 +252,6 @@ pub fn try_run_cached_all(
     } else {
         Some(emit_cached_gated(cache, opts, focus_set))
     }
-}
-
-pub(crate) fn try_run_cached_stats_summary(
-    py_files: &[PathBuf],
-    rs_files: &[PathBuf],
-    py_config: &Config,
-    rs_config: &Config,
-    gate_config: &GateConfig,
-) -> Option<FullCheckCache> {
-    let fp = fingerprint_for_check(py_files, rs_files, py_config, rs_config, gate_config);
-    let cache = load_full_cache(&fp)?;
-    let focus_set: HashSet<PathBuf> = py_files.iter().chain(rs_files).cloned().collect();
-    if !same_cached_paths(py_files, rs_files, &focus_set, &cache) {
-        return None;
-    }
-    if cache.py_file_count > 0 && cache.py_stats.is_none() {
-        return None;
-    }
-    if cache.rs_file_count > 0 && cache.rs_stats.is_none() {
-        return None;
-    }
-    Some(cache)
 }
 
 pub fn graph_counts(

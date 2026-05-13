@@ -38,11 +38,13 @@ pub struct UnitMetrics {
     pub file_functions: Option<usize>,
     pub interface_types: Option<usize>,
     pub concrete_types: Option<usize>,
+    pub inv_test_coverage: Option<usize>,
     // module-scope
     pub fan_in: Option<usize>,
     pub fan_out: Option<usize>,
     pub indirect_deps: Option<usize>,
     pub dependency_depth: Option<usize>,
+    pub cycle_size: Option<usize>,
 }
 
 impl UnitMetrics {
@@ -74,10 +76,12 @@ impl UnitMetrics {
             file_functions: None,
             interface_types: None,
             concrete_types: None,
+            inv_test_coverage: None,
             fan_in: None,
             fan_out: None,
             indirect_deps: None,
             dependency_depth: None,
+            cycle_size: None,
         }
     }
 }

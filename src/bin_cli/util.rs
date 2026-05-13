@@ -34,7 +34,6 @@ pub fn validate_paths(paths: &[String]) {
     }
 }
 
-/// `kiss dry --min-similarity` must stay within `[0.0, 1.0]` (matches gate config rules).
 pub fn validate_min_similarity(value: f64) -> Result<(), String> {
     if (0.0..=1.0).contains(&value) {
         Ok(())

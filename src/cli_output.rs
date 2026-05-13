@@ -30,12 +30,22 @@ pub fn file_coverage_map(
     definitions: &[(PathBuf, String, usize)],
     unreferenced: &[(PathBuf, String, usize)],
 ) -> HashMap<PathBuf, usize> {
+    file_coverage_map_from_paths(
+        definitions.iter().map(|(f, _, _)| f),
+        unreferenced.iter().map(|(f, _, _)| f),
+    )
+}
+
+pub fn file_coverage_map_from_paths<'a>(
+    definitions: impl IntoIterator<Item = &'a PathBuf>,
+    unreferenced: impl IntoIterator<Item = &'a PathBuf>,
+) -> HashMap<PathBuf, usize> {
     let mut defs_per_file: HashMap<PathBuf, usize> = HashMap::new();
     let mut unref_per_file: HashMap<PathBuf, usize> = HashMap::new();
-    for (file, _, _) in definitions {
+    for file in definitions {
         *defs_per_file.entry(file.clone()).or_default() += 1;
     }
-    for (file, _, _) in unreferenced {
+    for file in unreferenced {
         *unref_per_file.entry(file.clone()).or_default() += 1;
     }
     #[allow(
