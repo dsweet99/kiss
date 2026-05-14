@@ -2,6 +2,19 @@ use clap::{Parser, Subcommand};
 use kiss::Language;
 use std::path::PathBuf;
 
+use crate::test_git::TestChangeMode;
+
+pub fn parse_test_change_mode(s: &str) -> Result<TestChangeMode, String> {
+    match s.to_lowercase().as_str() {
+        "commit" => Ok(TestChangeMode::Commit),
+        "base" => Ok(TestChangeMode::Base),
+        "main" => Ok(TestChangeMode::Main),
+        _ => Err(format!(
+            "Unknown test mode '{s}'. Use commit, base, or main."
+        )),
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "kiss",
@@ -155,18 +168,21 @@ pub enum Commands {
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
     },
-    /// Show which tests kiss detects for specified source files
-    #[command(alias = "st")]
-    ShowTests {
-        /// Source file paths to inspect
-        #[arg(required = true)]
-        paths: Vec<String>,
-        /// Also show untested definitions
+    /// Run pytest / cargo test for tests covering changed files (git-based)
+    #[command(alias = "t")]
+    Test {
+        #[arg(default_value = "commit", value_parser = parse_test_change_mode)]
+        mode: TestChangeMode,
+        #[arg(long, value_name = "BRANCH")]
+        main_branch: Option<String>,
+        #[arg(long, value_name = "BRANCH")]
+        base_branch: Option<String>,
         #[arg(long)]
-        untested: bool,
-        /// Ignore files/directories starting with PREFIX (repeatable)
+        dry_run: bool,
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
+        #[arg(last = true)]
+        extra: Vec<String>,
     },
     /// Semantic rename/move for Python and Rust symbols (beta)
     Mv {

@@ -14,15 +14,7 @@ pub fn set_sigpipe_default() {
 pub fn set_sigpipe_default() {}
 
 pub fn normalize_ignore_prefixes(prefixes: &[String]) -> Vec<String> {
-    let result: Vec<String> = prefixes
-        .iter()
-        .map(|p| p.trim_end_matches('/').to_string())
-        .filter(|p| !p.is_empty())
-        .collect();
-    if result.iter().any(|p| p == ".") {
-        eprintln!("Warning: --ignore '.' matches all files");
-    }
-    result
+    kiss::normalize_ignore_prefixes(prefixes)
 }
 
 pub fn validate_paths(paths: &[String]) {

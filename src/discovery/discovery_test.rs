@@ -5,6 +5,17 @@ use tempfile::TempDir;
 use super::*;
 
 #[test]
+fn test_normalize_ignore_prefixes_trims_and_drops_empty() {
+    let out = normalize_ignore_prefixes(&[
+        "src/".to_string(),
+        "src".to_string(),
+        String::new(),
+        "  ".to_string(),
+    ]);
+    assert_eq!(out, vec!["src", "src"]);
+}
+
+#[test]
 fn test_language_from_path() {
     assert_eq!(
         Language::from_path(std::path::Path::new("foo.py")),

@@ -4,7 +4,7 @@ use crate::analyze;
 use crate::analyze::DryRunParams;
 use crate::bin_cli::check_cmd::{CheckCommandArgs, run_check_command};
 use crate::bin_cli::mimic::run_mimic;
-use crate::bin_cli::show_tests_cmd::{RunShowTestsCmdArgs, run_show_tests};
+use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::shrink::{RunShrinkArgs, ShrinkFullContext, run_shrink};
 use crate::bin_cli::stats::{RunStatsArgs, run_stats};
 use crate::bin_cli::util::{normalize_ignore_prefixes, validate_min_similarity, validate_paths};
@@ -14,7 +14,7 @@ use kiss::Language;
 
 use super::options::{
     CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-    MvDispatchOptions, RulesDispatchOptions, ShowTestsDispatchOptions, ShrinkDispatchOptions,
+    MvDispatchOptions, RulesDispatchOptions, TestDispatchOptions, ShrinkDispatchOptions,
     StatsDispatchOptions, VizDispatchOptions,
 };
 
@@ -134,14 +134,17 @@ pub(in crate::bin_cli::dispatch) fn dispatch_shrink(o: ShrinkDispatchOptions<'_>
     })
 }
 
-pub(in crate::bin_cli::dispatch) fn dispatch_show_tests(o: ShowTestsDispatchOptions) -> i32 {
-    run_show_tests(RunShowTestsCmdArgs {
-        universe: ".",
-        paths: &o.paths,
-        lang_filter: o.lang,
-        ignore: &o.ignore,
-        show_untested: o.untested,
-    })
+pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) -> i32 {
+    run_test_command(
+        o.mode,
+        o.main_branch.as_deref(),
+        o.base_branch.as_deref(),
+        o.dry_run,
+        &o.ignore,
+        &o.extra,
+        o.lang,
+        o.test_cfg,
+    )
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_mv(o: MvDispatchOptions) -> i32 {

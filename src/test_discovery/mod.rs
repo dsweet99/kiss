@@ -10,7 +10,7 @@ use kiss::{ParsedFile, ParsedRustFile};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-pub(crate) type DefEntry = (PathBuf, String, usize, Option<Vec<CoveringTest>>);
+pub type DefEntry = (PathBuf, String, usize, Option<Vec<CoveringTest>>);
 
 fn gather_files_with_path_expansion(
     universe: &str,
@@ -46,60 +46,35 @@ fn gather_files_with_path_expansion(
     (py_files, rs_files)
 }
 
-pub fn run_show_tests_to(a: args::RunShowTestsArgs<'_>) -> i32 {
-    let args::RunShowTestsArgs {
-        out,
+pub fn discover_covering_tests(
+    a: args::DiscoverArgs<'_>,
+) -> Result<Vec<DefEntry>, String> {
+    let args::DiscoverArgs {
         universe,
         paths,
         lang_filter,
         ignore,
-        show_untested,
     } = a;
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
     let (py_files, rs_files) =
         gather_files_with_path_expansion(universe, paths, lang_filter, ignore);
-
-    if py_files.is_empty() && rs_files.is_empty() {
-        eprintln!("No source files found.");
-        return 1;
-    }
-
     let focus_set = analyze::build_focus_set(paths, lang_filter, ignore);
     if focus_set.is_empty() {
-        eprintln!("No matching source files for specified paths.");
-        return 1;
+        return Ok(Vec::new());
     }
-
     let mut all_defs: Vec<DefEntry> = Vec::new();
-    let mut py_graph: Option<DependencyGraph> = None;
-    let mut rs_graph: Option<DependencyGraph> = None;
-
     if !py_files.is_empty() {
-        match collect_py_test_defs(&py_files, &focus_set) {
-            Ok((defs, graph)) => {
-                all_defs.extend(defs);
-                py_graph = graph;
-            }
-            Err(e) => {
-                eprintln!("error: failed to parse Python files: {e}");
-                return 1;
-            }
-        }
+        let (defs, _) = collect_py_test_defs(&py_files, &focus_set)?;
+        all_defs.extend(defs);
     }
     if !rs_files.is_empty() {
-        let (defs, graph) = collect_rs_test_defs(&rs_files, &focus_set);
+        let (defs, _) = collect_rs_test_defs(&rs_files, &focus_set);
         all_defs.extend(defs);
-        rs_graph = graph;
     }
-
     all_defs.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
-    emit_show_tests_output(args::EmitShowTestsArgs {
-        out,
-        all_defs: &all_defs,
-        show_untested,
-        py_graph: py_graph.as_ref(),
-        rs_graph: rs_graph.as_ref(),
-    });
-    0
+    Ok(all_defs)
 }
 
 pub(crate) fn defs_from_analysis_rows(
@@ -123,8 +98,6 @@ pub(crate) fn defs_from_analysis_rows(
         .collect()
 }
 
-/// Expands to `defs_from_analysis_rows` for any analysis value with
-/// `definitions`, `unreferenced`, and `coverage_map` fields (Python + Rust).
 macro_rules! defs_from_test_ref_analysis {
     ($analysis:expr, $focus_set:expr) => {
         defs_from_analysis_rows(
@@ -176,56 +149,6 @@ fn collect_rs_test_defs(
     (defs, graph)
 }
 
-fn format_covering_tests(covering: &[CoveringTest]) -> String {
-    covering
-        .iter()
-        .map(|(path, func)| format!("{}::{}", path.display(), func))
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn emit_show_tests_output(a: args::EmitShowTestsArgs<'_, '_>) {
-    let args::EmitShowTestsArgs {
-        out,
-        all_defs,
-        show_untested,
-        py_graph,
-        rs_graph,
-    } = a;
-    for (file, name, line, covering) in all_defs {
-        if let Some(tests) = covering {
-            let _ = writeln!(
-                out,
-                "TEST:{}:{} {}",
-                file.display(),
-                name,
-                format_covering_tests(tests)
-            );
-        } else if show_untested {
-            let candidates_suffix = analyze::graph_for_path(file, py_graph, rs_graph)
-                .and_then(|g| g.module_for_path(file).map(|module| (g, module)))
-                .map(|(g, module)| {
-                    let candidates = g.test_importers_of(&module);
-                    if candidates.is_empty() {
-                        String::new()
-                    } else {
-                        let truncated = kiss::cli_output::format_candidate_list(&candidates, 3);
-                        format!(" (candidates: {truncated})")
-                    }
-                });
-            let suffix = candidates_suffix.as_deref().unwrap_or("");
-            let _ = writeln!(
-                out,
-                "UNTESTED:{}:{}:{}{}",
-                file.display(),
-                line,
-                name,
-                suffix
-            );
-        }
-    }
-}
-
 #[cfg(test)]
-#[path = "show_tests_test.rs"]
+#[path = "test_discovery_test.rs"]
 mod tests;

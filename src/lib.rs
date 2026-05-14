@@ -34,6 +34,7 @@ pub mod stats;
 pub mod stats_detailed;
 pub mod symbol_mv;
 pub mod test_refs;
+pub mod test_section_config;
 pub mod units;
 
 pub mod rust_counts;
@@ -59,7 +60,7 @@ pub use counts::analyze_file_with_statement_count;
 pub use defaults::default_config_toml;
 pub use discovery::{
     Language, SourceFile, find_python_files, find_rust_files, find_source_files,
-    find_source_files_with_ignore, gather_files_by_lang,
+    find_source_files_with_ignore, gather_files_by_lang, normalize_ignore_prefixes,
 };
 pub use duplication::{
     CodeChunk, DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
@@ -68,6 +69,7 @@ pub use duplication::{
     extract_rust_chunks_for_duplication,
 };
 pub use gate_config::GateConfig;
+pub use test_section_config::TestSectionConfig;
 pub use graph::{
     CycleInfo, DependencyGraph, ModuleGraphMetrics, analyze_graph, build_dependency_graph,
     compute_cyclomatic_complexity,
@@ -90,6 +92,7 @@ pub use stats_detailed::{
 pub use test_refs::{
     CodeDefinition, TestRefAnalysis, analyze_test_refs, analyze_test_refs_no_map,
     analyze_test_refs_quick, build_name_file_map, is_in_test_directory, is_test_file,
+    test_functions_in,
 };
 pub use units::count_code_units;
 pub use units::{CodeUnit, CodeUnitKind, extract_code_units};
@@ -104,6 +107,7 @@ pub use rust_graph::build_rust_dependency_graph;
 pub use rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file, parse_rust_files};
 pub use rust_test_refs::{
     RustCodeDefinition, RustTestRefAnalysis, analyze_rust_test_refs, is_rust_test_file,
+    test_functions_in as rust_test_functions_in,
 };
 pub use rust_units::{RustCodeUnit, extract_rust_code_units};
 

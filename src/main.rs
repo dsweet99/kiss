@@ -5,11 +5,13 @@
 mod analyze;
 mod analyze_cache;
 mod analyze_parse;
+mod test_git;
+mod test_runner;
 mod bin_cli;
 #[cfg(test)]
 mod layout;
 mod rules;
-mod show_tests;
+mod test_discovery;
 mod viz;
 mod viz_coarsen;
 
@@ -26,4 +28,15 @@ fn main() {
         eprintln!("kiss: {}ms", d.as_millis());
     }
     std::process::exit(exit_code);
+}
+
+#[cfg(test)]
+pub(crate) mod cwd_test_lock {
+    use std::sync::Mutex;
+
+    static MUTEX: Mutex<()> = Mutex::new(());
+
+    pub fn lock() -> std::sync::MutexGuard<'static, ()> {
+        MUTEX.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }

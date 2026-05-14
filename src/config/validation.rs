@@ -19,7 +19,7 @@ pub(crate) fn check_unknown_keys(
 }
 
 pub(crate) fn check_unknown_sections(table: &toml::Table) -> Result<(), ConfigError> {
-    const VALID: &[&str] = &["python", "rust", "shared", "thresholds", "gate"];
+    const VALID: &[&str] = &["python", "rust", "shared", "thresholds", "gate", "test"];
     for key in table.keys() {
         if VALID.contains(&key.as_str()) {
             continue;

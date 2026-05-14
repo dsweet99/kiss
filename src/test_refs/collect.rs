@@ -384,3 +384,15 @@ pub(crate) fn collect_refs_parallel(
         .fold(empty_collected, merge_collected)
         .reduce(empty_collected, merge_collected)
 }
+
+#[must_use]
+pub fn test_functions_in(parsed: &ParsedFile) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_test_functions_with_refs(
+        parsed.tree.root_node(),
+        &parsed.source,
+        "",
+        &mut out,
+    );
+    out.into_iter().map(|(id, _)| id).collect()
+}
