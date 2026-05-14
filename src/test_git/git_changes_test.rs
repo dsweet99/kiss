@@ -79,7 +79,6 @@ fn diff_filter_drops_deleted_file() {
 #[test]
 fn resolve_changed_skips_dir_prefix_ignore() {
     let tmp = TempDir::new().unwrap();
-    init_repo(&tmp);
     let root = tmp.path().canonicalize().unwrap();
     let sub = tmp.path().join("sub");
     std::fs::create_dir_all(&sub).unwrap();
@@ -93,7 +92,6 @@ fn resolve_changed_skips_dir_prefix_ignore() {
 #[test]
 fn resolve_changed_skips_missing_file() {
     let tmp = TempDir::new().unwrap();
-    init_repo(&tmp);
     let root = tmp.path().canonicalize().unwrap();
     let rel = vec!["nope.py".to_string()];
     let out = resolve_changed_source_paths(&root, &rel, &[], None);
@@ -201,7 +199,6 @@ fn changed_paths_since_head_includes_worktree() {
 #[test]
 fn resolve_changed_respects_ignore_and_lang() {
     let tmp = TempDir::new().unwrap();
-    init_repo(&tmp);
     let root = tmp.path().canonicalize().unwrap();
     std::fs::write(tmp.path().join("skip_me.py"), "x=1\n").unwrap();
     let rel = vec!["skip_me.py".to_string()];
@@ -213,7 +210,6 @@ fn resolve_changed_respects_ignore_and_lang() {
 #[test]
 fn resolve_diff_target_commit_is_none() {
     let tmp = TempDir::new().unwrap();
-    init_repo(&tmp);
     let r = resolve_diff_target(
         tmp.path(),
         crate::test_git::TestChangeMode::Commit,

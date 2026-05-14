@@ -1,35 +1,17 @@
 use std::path::Path;
-use std::process::Command;
 
-// Scrub `GIT_*` env vars on every git invocation. When this test runs
-// under pre-commit, git sets `GIT_INDEX_FILE` to the parent repo's
-// `.git/index.lock`; without the scrub, every `git add`/`git commit`
-// here writes index entries into the parent repo's lock file while the
-// blobs go to the tempdir's `.git/objects`. The tempdir is dropped on
-// test end, leaving a phantom blob OID in the parent's lock file that
-// makes the user's outer commit fail with "invalid object ... Error
-// building trees".
-fn git_in(dir: &Path) -> Command {
-    let mut c = Command::new("git");
-    c.current_dir(dir)
-        .env_remove("GIT_INDEX_FILE")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_OBJECT_DIRECTORY")
-        .env_remove("GIT_COMMON_DIR");
-    c
-}
+use crate::support::git::git_command;
 
 fn init_git_repo(dir: &Path) {
     assert!(
-        git_in(dir)
+        git_command(dir)
             .args(["init"])
             .status()
             .unwrap()
             .success()
     );
     for kv in [("user.email", "t@t.t"), ("user.name", "t")] {
-        git_in(dir)
+        git_command(dir)
             .args(["config", kv.0, kv.1])
             .status()
             .unwrap();
@@ -48,21 +30,21 @@ fn kiss_test_dry_run_in_git_repo_smoke() {
     )
     .unwrap();
     assert!(
-        git_in(tmp.path())
+        git_command(tmp.path())
             .args(["add", "."])
             .status()
             .unwrap()
             .success()
     );
     assert!(
-        git_in(tmp.path())
+        git_command(tmp.path())
             .args(["commit", "-m", "init"])
             .status()
             .unwrap()
             .success()
     );
     std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 1\n").unwrap();
-    let out = Command::new(bin)
+    let out = std::process::Command::new(bin)
         .current_dir(tmp.path())
         .args(["test", "commit", "--dry-run"])
         .output()
