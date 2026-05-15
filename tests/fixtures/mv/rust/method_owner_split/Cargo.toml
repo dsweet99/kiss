@@ -1,0 +1,4 @@
+[package]
+name = "mv_method_owner_split"
+version = "0.1.0"
+edition = "2021"
