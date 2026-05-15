@@ -1,13 +1,15 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use clap::ValueEnum;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TestLangFilter {
     Python,
     Rust,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum TestChangeMode {
     Commit,
     Base,
@@ -60,8 +62,8 @@ fn git_output(repo: &Path, args: &[&str]) -> Result<String, String> {
 fn git_ok(repo: &Path, args: &[&str]) -> bool {
     git_command(repo)
         .args(args)
-        .status()
-        .is_ok_and(|s| s.success())
+        .output()
+        .is_ok_and(|out| out.status.success())
 }
 
 pub fn resolve_main_branch_name(

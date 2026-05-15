@@ -4,17 +4,6 @@ use std::path::PathBuf;
 
 use crate::test_git::TestChangeMode;
 
-pub fn parse_test_change_mode(s: &str) -> Result<TestChangeMode, String> {
-    match s.to_lowercase().as_str() {
-        "commit" => Ok(TestChangeMode::Commit),
-        "base" => Ok(TestChangeMode::Base),
-        "main" => Ok(TestChangeMode::Main),
-        _ => Err(format!(
-            "Unknown test mode '{s}'. Use commit, base, or main."
-        )),
-    }
-}
-
 #[derive(Parser, Debug)]
 #[command(
     name = "kiss",
@@ -171,7 +160,8 @@ pub enum Commands {
     /// Run pytest / cargo test for tests covering changed files (git-based)
     #[command(alias = "t")]
     Test {
-        #[arg(default_value = "commit", value_parser = parse_test_change_mode)]
+        /// What to diff against: commit, base, or main
+        #[arg(value_name = "commit|base|main")]
         mode: TestChangeMode,
         #[arg(long, value_name = "BRANCH")]
         main_branch: Option<String>,
