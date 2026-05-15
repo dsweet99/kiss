@@ -160,6 +160,18 @@ fn process_ext_entry(
     WalkState::Continue
 }
 
+pub fn normalize_ignore_prefixes(prefixes: &[String]) -> Vec<String> {
+    let result: Vec<String> = prefixes
+        .iter()
+        .map(|p| p.trim().trim_end_matches('/').to_string())
+        .filter(|p| !p.is_empty())
+        .collect();
+    if result.iter().any(|p| p == ".") {
+        eprintln!("Warning: --ignore '.' matches all files");
+    }
+    result
+}
+
 #[cfg(test)]
 #[path = "discovery_test.rs"]
 mod tests;

@@ -2,9 +2,13 @@
 
 [gate]
 test_coverage_threshold = 90
-min_similarity = 0.7
+min_similarity = 0.9
 duplication_enabled = true
 orphan_module_enabled = true
+
+# Optional trunk name for `kiss test` main-mode resolution (see `kiss test --help`).
+# [test]
+# main_branch = "main"
 
 [python]
 boolean_parameters = 1

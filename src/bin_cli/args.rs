@@ -2,6 +2,8 @@ use clap::{Parser, Subcommand};
 use kiss::Language;
 use std::path::PathBuf;
 
+use crate::test_git::TestChangeMode;
+
 #[derive(Parser, Debug)]
 #[command(
     name = "kiss",
@@ -110,7 +112,7 @@ pub enum Commands {
         #[arg(long, default_value = "20")]
         lsh_bands: usize,
         /// Minimum similarity threshold [0.0-1.0] (default matches `kiss check`)
-        #[arg(long, default_value = "0.7")]
+        #[arg(long, default_value = "0.9")]
         min_similarity: f64,
         /// Ignore files/directories starting with PREFIX (repeatable)
         #[arg(long, value_name = "PREFIX")]
@@ -155,18 +157,22 @@ pub enum Commands {
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
     },
-    /// Show which tests kiss detects for specified source files
-    #[command(alias = "st")]
-    ShowTests {
-        /// Source file paths to inspect
-        #[arg(required = true)]
-        paths: Vec<String>,
-        /// Also show untested definitions
+    /// Run pytest / cargo test for tests covering changed files (git-based)
+    #[command(alias = "t")]
+    Test {
+        /// What to diff against: commit, base, or main
+        #[arg(value_name = "commit|base|main")]
+        mode: TestChangeMode,
+        #[arg(long, value_name = "BRANCH")]
+        main_branch: Option<String>,
+        #[arg(long, value_name = "BRANCH")]
+        base_branch: Option<String>,
         #[arg(long)]
-        untested: bool,
-        /// Ignore files/directories starting with PREFIX (repeatable)
+        dry_run: bool,
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
+        #[arg(last = true)]
+        extra: Vec<String>,
     },
     /// Semantic rename/move for Python and Rust symbols (beta)
     Mv {

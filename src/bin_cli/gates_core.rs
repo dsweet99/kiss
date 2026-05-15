@@ -153,7 +153,7 @@ fn test_stats_top_helpers() {
     std::fs::write(tmp.path().join("b.rs"), "fn bar() { let z = 3; }").unwrap();
     let py_files = vec![tmp.path().join("a.py")];
     let rs_files = vec![tmp.path().join("b.rs")];
-    let units = collect_all_units(&py_files, &rs_files);
+    let units = collect_all_units(&py_files, &rs_files, None);
     assert!(!units.is_empty());
     print_all_top_metrics(&units, 2);
     print_top_for_metric(&units, 1, "test_metric", |u| u.statements);

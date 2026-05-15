@@ -2,7 +2,7 @@ use crate::bin_cli::args::{Cli, Commands};
 use crate::bin_cli::check_cmd::{CheckCommandArgs, run_check_command};
 use crate::bin_cli::config_session::config_provenance;
 use crate::bin_cli::run::run;
-use crate::bin_cli::show_tests_cmd::run_show_tests;
+use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::shrink::{
     RunShrinkArgs, ShrinkFullContext, ShrinkStartContext, emit_shrink_final_status,
     get_shrink_metrics, print_shrink_progress, run_shrink, run_shrink_analysis, run_shrink_check,
@@ -87,6 +87,7 @@ fn test_shrink_start_and_check() {
         1
     );
 
+    let _cwd_guard = crate::cwd_test_lock::lock();
     let orig_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
 
@@ -121,6 +122,7 @@ fn test_shrink_check_without_state() {
     let rs_cfg = Config::rust_defaults();
     let gate_cfg = GateConfig::default();
 
+    let _cwd_guard = crate::cwd_test_lock::lock();
     let orig_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
 
@@ -141,27 +143,31 @@ fn test_shrink_helper_functions() {
     touch(run_stats_top);
     let _ = std::mem::size_of::<CheckCommandArgs>();
     let _ = run_check_command as fn(&CheckCommandArgs) -> i32;
-    touch(run_show_tests);
+    touch(run_test_command);
 }
 
 #[test]
-fn test_show_tests_cli_parse() {
+fn test_test_cli_parse() {
     use clap::Parser;
-    let cli = Cli::try_parse_from(["kiss", "show-tests", "src/foo.rs"]).unwrap();
-    assert!(matches!(cli.command, Commands::ShowTests { .. }));
+    assert!(Cli::try_parse_from(["kiss", "test"]).is_err());
 
-    let cli = Cli::try_parse_from(["kiss", "st", "src/foo.rs", "src/bar.rs"]).unwrap();
-    assert!(matches!(cli.command, Commands::ShowTests { .. }));
-
-    assert!(
-        Cli::try_parse_from(["kiss", "show-tests"]).is_err(),
-        "show-tests requires at least one path"
-    );
-
-    let cli = Cli::try_parse_from(["kiss", "show-tests", "--untested", "src/foo.rs"]).unwrap();
+    let cli = Cli::try_parse_from(["kiss", "test", "base", "--dry-run"]).unwrap();
     match cli.command {
-        Commands::ShowTests { untested, .. } => assert!(untested),
-        _ => panic!("expected ShowTests"),
+        Commands::Test {
+            mode: crate::test_git::TestChangeMode::Base,
+            dry_run: true,
+            ..
+        } => {}
+        _ => panic!("expected Test base dry-run"),
+    }
+
+    let cli = Cli::try_parse_from(["kiss", "t", "main"]).unwrap();
+    match cli.command {
+        Commands::Test {
+            mode: crate::test_git::TestChangeMode::Main,
+            ..
+        } => {}
+        _ => panic!("expected Test main"),
     }
 }
 

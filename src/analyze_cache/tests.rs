@@ -84,8 +84,7 @@ fn fnv1a64_properties() {
 
 #[test]
 fn full_cache_inputs_and_store() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    unsafe { std::env::set_var("HOME", tmp.path()) };
+    let _home = super::test_helpers::ScopedHome::new();
     let mut inputs = empty_inputs("test_fp_persist");
     inputs.py_file_count = 1;
     assert_eq!(inputs.py_file_count, 1);

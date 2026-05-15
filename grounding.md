@@ -8,7 +8,7 @@ change.
 `kiss` has two related surfaces, both grounded here:
 
 - **Measurement and feedback**: `check`, `stats`, `shrink`,
-  `show-tests`, `mimic`, `clamp`, `init`, `rules`, `config`, `dry`,
+  `test`, `mimic`, `clamp`, `init`, `rules`, `config`, `dry`,
   `viz`. These analyze a codebase and report on it.
 - **Semantic refactoring**: `mv`. This proposes and applies
   meaning-preserving rename/move edits to Python and Rust symbols.
@@ -171,14 +171,17 @@ reviewer can mechanically check it.
 
 - **Goal**: every report line a downstream parser must understand
   starts with a fixed prefix from a small, closed set.
-- **Measurement**: run `kiss check` and `kiss show-tests` on a
+- **Measurement**: run `kiss check`, `kiss stats`, and `kiss test --dry-run` on a
   corpus and partition stdout lines by leading token before the
   first `:` or whitespace.
 - **Pass condition**: every non-blank, non-indented stdout line
   begins with one of the documented prefixes (currently
   `Analyzed:`, `VIOLATION:<metric>:`, `GATE_FAILED:<gate>:`,
-  `NO VIOLATIONS`, `TEST:`, `UNTESTED:`). Unknown prefixes count as
-  a contract break.
+  `NO VIOLATIONS`, `NO COVERING TESTS`). Unknown prefixes count as
+  a contract break. Lines printed by `kiss test` without `--dry-run`
+  are forwarded from pytest or cargo and are exempt from this prefix
+  contract. Each line printed by `kiss test --dry-run` is a full shell
+  command and is exempt from the leading-prefix contract.
 
 #### M2) Exit code contract
 
@@ -191,6 +194,11 @@ reviewer can mechanically check it.
     otherwise.
   - `kiss shrink`: 0 iff target met and no other global regressed
     and no `check` violation; 1 otherwise.
+  - `kiss test --dry-run`: 0 after printing intended runner command line(s)
+    on success; 1 on operational error (for example not inside a git work tree).
+  - `kiss test` without `--dry-run`: exit code reflects the spawned test
+    runner(s); when both pytest and cargo run, the exit code is the
+    maximum of their exit codes. Skipped runners count as success.
   - All other measurement subcommands: 0 on successful execution
     regardless of measured values; 1 on operational error (invalid
     paths, no source files, bad config, write failure).

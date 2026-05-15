@@ -23,6 +23,14 @@ pub(super) fn collect_per_test_usage(ast: &syn::File) -> Vec<(String, HashSet<St
     out
 }
 
+#[must_use]
+pub fn test_functions_in(parsed: &crate::rust_parsing::ParsedRustFile) -> Vec<String> {
+    collect_per_test_usage(&parsed.ast)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect()
+}
+
 pub(crate) fn collect_per_test_usage_from_items(
     items: &[syn::Item],
     prefix: &str,

@@ -77,7 +77,7 @@ impl<'a> RustAnalyzer<'a> {
                 lines,
                 c.lines_per_file,
                 format!("File has {lines} lines (threshold: {})", c.lines_per_file),
-                "Split into smaller modules or move code into submodules.",
+                "Split the file roughly in half.",
             );
         }
         if m.statements > c.statements_per_file {
@@ -90,7 +90,7 @@ impl<'a> RustAnalyzer<'a> {
                     "File has {} statements (threshold: {})",
                     m.statements, c.statements_per_file
                 ),
-                "Split into multiple modules with focused responsibilities.",
+                "Split the file roughly in half.",
             );
         }
         if m.interface_types > c.interface_types_per_file {

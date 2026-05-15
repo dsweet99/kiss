@@ -8,22 +8,24 @@ use crate::bin_cli::config_session::run_init_command;
 
 use handlers::{
     dispatch_check, dispatch_clamp, dispatch_config, dispatch_dry, dispatch_mimic, dispatch_mv,
-    dispatch_rules, dispatch_show_tests, dispatch_shrink, dispatch_stats, dispatch_viz,
+    dispatch_rules, dispatch_shrink, dispatch_stats, dispatch_test, dispatch_viz,
 };
 use options::{
     CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-    MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShowTestsDispatchOptions,
-    ShrinkDispatchOptions, StatsDispatchOptions, TriConfig, VizDispatchOptions,
+    MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShrinkDispatchOptions,
+    StatsDispatchOptions, TestDispatchOptions, TriConfig, VizDispatchOptions,
 };
 
 use kiss::GateConfig;
+use kiss::TestSectionConfig;
 
-#[allow(clippy::too_many_lines)] // Single match on `Commands` is intentionally one place.
+#[allow(clippy::too_many_lines)]
 pub fn dispatch(
     cli: Cli,
     py_config: &kiss::Config,
     rs_config: &kiss::Config,
     gate_config: &GateConfig,
+    test_section: &TestSectionConfig,
 ) -> i32 {
     let cfg = TriConfig {
         py: py_config,
@@ -124,15 +126,22 @@ pub fn dispatch(
             ignore,
             cfg: &cfg,
         }),
-        Commands::ShowTests {
-            paths,
-            untested,
+        Commands::Test {
+            mode,
+            main_branch,
+            base_branch,
+            dry_run,
             ignore,
-        } => dispatch_show_tests(ShowTestsDispatchOptions {
+            extra,
+        } => dispatch_test(TestDispatchOptions {
             lang,
-            paths,
-            untested,
+            mode,
+            main_branch,
+            base_branch,
+            dry_run,
             ignore,
+            extra,
+            test_cfg: test_section,
         }),
         Commands::Mv {
             query,
@@ -158,14 +167,15 @@ pub fn dispatch(
 mod dispatch_coverage {
     use super::handlers::{
         dispatch_check, dispatch_clamp, dispatch_config, dispatch_dry, dispatch_mimic, dispatch_mv,
-        dispatch_rules, dispatch_show_tests, dispatch_shrink, dispatch_stats, dispatch_viz,
+        dispatch_rules, dispatch_shrink, dispatch_stats, dispatch_test, dispatch_viz,
     };
     use super::{
         CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-        MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShowTestsDispatchOptions,
-        ShrinkDispatchOptions, StatsDispatchOptions, TriConfig, VizDispatchOptions,
+        MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShrinkDispatchOptions,
+        StatsDispatchOptions, TestDispatchOptions, TriConfig, VizDispatchOptions,
     };
     use kiss::GateConfig;
+    use kiss::TestSectionConfig;
 
     #[test]
     fn touch_dispatch_entrypoints_for_coverage_gate() {
@@ -179,7 +189,7 @@ mod dispatch_coverage {
         t(dispatch_config);
         t(dispatch_viz);
         t(dispatch_shrink);
-        t(dispatch_show_tests);
+        t(dispatch_test);
         t(dispatch_mv);
     }
 
@@ -188,6 +198,7 @@ mod dispatch_coverage {
         let py = kiss::Config::python_defaults();
         let rs = kiss::Config::rust_defaults();
         let gate = GateConfig::default();
+        let test = TestSectionConfig::default();
         let cfg = TriConfig {
             py: &py,
             rs: &rs,
@@ -250,11 +261,15 @@ mod dispatch_coverage {
             ignore: vec![],
             cfg: &cfg,
         };
-        let _ = ShowTestsDispatchOptions {
+        let _ = TestDispatchOptions {
             lang: None,
-            paths: vec![],
-            untested: false,
+            mode: crate::test_git::TestChangeMode::Commit,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
             ignore: vec![],
+            extra: vec![],
+            test_cfg: &test,
         };
         let _ = MvDispatchOptions {
             lang: None,

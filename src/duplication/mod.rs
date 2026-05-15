@@ -30,7 +30,7 @@ impl Default for DuplicationConfig {
             minhash_size: 100,
             shingle_size: 3,
             lsh_bands: 20,
-            min_similarity: 0.7,
+            min_similarity: crate::defaults::duplication::MIN_SIMILARITY,
         }
     }
 }

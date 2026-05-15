@@ -17,6 +17,8 @@ pub use definitions::RustCodeDefinition;
 use definitions::{collect_rust_definitions, collect_test_module_references};
 use references::{collect_per_test_usage, collect_rust_references};
 
+pub use references::test_functions_in;
+
 use crate::test_refs::CoveringTest;
 
 type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;

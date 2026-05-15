@@ -8,6 +8,22 @@ repository = "https://github.com/dsweet99/kiss"
 readme = "README.md"
 keywords = ["code-quality", "metrics", "linting", "python", "rust"]
 categories = ["development-tools", "command-line-utilities"]
+include = [
+    "Cargo.lock",
+    "Cargo.toml",
+    "LICENSE",
+    "README.md",
+    "images/**",
+    "kissconfig-default",
+    "pytest.ini",
+    "src/**",
+    "tests/**",
+    "!.pytest_cache/**",
+    "!tests/**/__pycache__/**",
+    "!tests/**/*.pyc",
+    "!tests/**/target/**",
+    "!tests/fixtures/mv/rust/**/Cargo.lock",
+]
 
 [[bin]]
 name = "kiss"

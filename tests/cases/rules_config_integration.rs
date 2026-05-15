@@ -201,7 +201,7 @@ fn cli_config_shows_gate_settings() {
         "Should show default coverage. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("min_similarity = 0.70"),
+        stdout.contains("min_similarity = 0.90"),
         "Should show default similarity. stdout: {stdout}"
     );
 }

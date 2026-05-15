@@ -289,7 +289,12 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
     for entry in fs::read_dir(src).map_err(|err| err.to_string())? {
         let entry = entry.map_err(|err| err.to_string())?;
         let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
+        let file_name = entry.file_name();
+        let dst_path = if file_name == OsStr::new("Cargo.fixture.toml") {
+            dst.join("Cargo.toml")
+        } else {
+            dst.join(&file_name)
+        };
         let file_type = entry.file_type().map_err(|err| err.to_string())?;
         if file_type.is_dir() {
             fs::create_dir_all(&dst_path).map_err(|err| err.to_string())?;
