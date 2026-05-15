@@ -22,7 +22,6 @@ include = [
     "!tests/**/__pycache__/**",
     "!tests/**/*.pyc",
     "!tests/**/target/**",
-    "!tests/fixtures/mv/rust/**/Cargo.toml",
     "!tests/fixtures/mv/rust/**/Cargo.lock",
 ]
 
