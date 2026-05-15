@@ -1,0 +1,367 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+
+\title{\texttt{kiss}: Structural Feedback for Agent-Written Code}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Design philosophy}
+
+\texttt{kiss} treats code quality feedback as a set of fast, named, falsifiable
+signals rather than as a single quality score.  This follows Fowler's account of
+code smells: a smell is a quick surface indication that often points to a deeper
+problem, but smells are not inherently bad and require inspection
+\cite{fowler-code-smell}.  The tool is therefore best understood as a guardrail
+for review and refactoring, not as an oracle.
+
+The non-rejected design hypothesis is that local edits can degrade global
+structure unless an editor receives compact repository-level feedback.  This is
+consistent with SWE-bench, where real GitHub issues often require coordinated
+changes across functions, classes, and files \cite{jimenez-swebench}, and with
+CodeAgent, where repository tools for retrieval, symbol navigation, and testing
+improved repository-level code generation \cite{zhang-codeagent}.  The hypothesis
+must be narrowed, because repository context is not automatically helpful:
+Gloaguen et al. found that AGENTS.md-style context files can increase inference
+cost and, in some settings, reduce success, so feedback should be justified,
+targeted, and minimal
+\cite{gloaguen-agents}.
+
+The second non-rejected hypothesis is that internal design quality lowers the
+cost of future change.  Fowler argues that internal quality matters because
+developers spend most of their time modifying existing code, and poor internal
+quality increases both understanding time and mistake risk
+\cite{fowler-quality}.  Parnas gives the classic modularity criterion:
+decompose systems around hidden design decisions so that changes remain local
+\cite{parnas}.  Ousterhout similarly frames software design as complexity
+management through deep modules and small interfaces \cite{ousterhout}.
+
+\section{Non-rejected and rejected hypotheses}
+
+\begin{longtable}{p{0.22\linewidth}p{0.34\linewidth}p{0.34\linewidth}}
+\toprule
+Hypothesis & Status & Practical interpretation \\
+\midrule
+\endhead
+Global structural feedback helps agents & Non-rejected, narrowed &
+Use compact, task-relevant feedback.  Repository-scale tasks need context, but
+unfiltered context can add cost or hurt
+\cite{jimenez-swebench,zhang-codeagent,gloaguen-agents}. \\
+
+Size and complexity matter & Non-rejected, calibrated &
+Large or intricate units are useful review targets.  Antinyan et al. report that
+some code-complexity characteristics have a major influence on maintenance time,
+while Sjoberg et al. found size and low cohesion to be the strongest observed
+maintenance-effort signals in their case study \cite{antinyan,sjoberg}. \\
+
+Dependency structure matters & Non-rejected, calibrated &
+Fan-out, cycles, and deep dependency chains are risk signals.  Coupling and
+structural dependencies have evidence as defect or change-propagation signals,
+but that evidence is strongest for coupling-related measures, and fan-in can
+also indicate a useful stable abstraction
+\cite{elemam,gerosa,parnas}. \\
+
+Duplication is always bad & Rejected as an absolute &
+Duplication is a smell, not proof of bad code.  Beck's simple design and the DRY
+principle discourage duplicated knowledge \cite{fowler-beck,pragmatic-dry}, but
+clone studies show many clones are not more defect-prone \cite{rahman-clones}. \\
+
+Test-reference coverage proves quality & Rejected as a quality target &
+Tests are central to safe change \cite{fowler-refactoring,feathers}, but coverage
+is only weak-to-moderately related to test effectiveness and should not be used
+as a quality target \cite{inozemtseva,kochhar}.  Static name references are an
+even coarser signal. \\
+
+Semantic refactoring is safer than broad text replacement & Non-rejected &
+Fowler defines refactoring as small behavior-preserving transformations, and
+Feathers recommends tests as the safety net for changing legacy code
+\cite{fowler-refactoring,feathers}. \\
+
+Fast, prioritized feedback matters & Non-rejected, partly extrapolated &
+Fast feedback is consistent with small-step refactoring, and CI evidence shows
+that long build durations are a practical problem \cite{fowler-refactoring,ghaleb}.
+Static-analysis studies also show warnings must be prioritized and useful, not
+merely numerous \cite{vassallo,motwani}. \\
+
+One universal code-health score is enough & Rejected &
+Fowler's smells and Beck's rules are component signals requiring judgment, not a
+single score \cite{fowler-code-smell,fowler-beck}.  Maintainability metrics can
+be mutually inconsistent, so decomposed signals are easier to inspect and act on
+\cite{sjoberg}. \\
+\bottomrule
+\end{longtable}
+
+\section{Metrics and confidence}
+
+The confidence column means confidence that the metric is useful as a review or
+refactoring signal.  It does not mean that violating the metric proves the code
+is bad.  Code smells require contextual judgment \cite{fowler-code-smell}, and
+static-analysis warnings are more useful when they are prioritized for
+actionability \cite{vassallo,motwani}.
+
+\begin{longtable}{p{0.22\linewidth}p{0.31\linewidth}p{0.30\linewidth}p{0.10\linewidth}}
+\toprule
+Area & \texttt{.kissconfig} names & How the metric can help & Confidence \\
+\midrule
+\endhead
+Function size and control-flow complexity &
+\texttt{statements\_per\_function}, \texttt{branches\_per\_function},
+\texttt{max\_indentation}, \texttt{nested\_function\_depth},
+\texttt{calls\_per\_function} &
+Flags functions that may require too much local reasoning.  Complexity is a
+central construction concern, and empirical work links some complexity
+characteristics to maintenance time
+\cite{antinyan,mcconnell,fowler-code-smell}. &
+High \\
+
+Function interface complexity &
+Python: \texttt{positional\_args}, \texttt{keyword\_only\_args}.
+Rust: \texttt{arguments}.  Both: \texttt{boolean\_parameters}. &
+Flags call sites whose meaning may be hard to read or easy to misuse.  This
+aligns with design guidance that code should reveal intention and reduce reader
+burden \cite{fowler-beck,ousterhout}. &
+Medium \\
+
+Function exit and data-shape complexity &
+\texttt{returns\_per\_function}, Python \texttt{return\_values\_per\_function},
+\texttt{local\_variables} &
+Flags functions with many paths or many local concepts.  These are conservative
+review prompts grounded in construction guidance and broader complexity evidence
+\cite{antinyan,mcconnell}. &
+Medium \\
+
+Exception or annotation surface &
+Python: \texttt{statements\_per\_try\_block},
+\texttt{decorators\_per\_function}.  Rust: \texttt{attributes\_per\_function}. &
+Keeps exceptional or meta-programmed regions narrow enough to inspect.  This is
+mainly a smell heuristic: broad wrappers and hidden behavior need review, but
+the metric is less directly validated than size or coupling \cite{fowler-code-smell}. &
+Low--Medium \\
+
+Type or class size &
+\texttt{methods\_per\_class}, \texttt{interface\_types\_per\_file},
+\texttt{concrete\_types\_per\_file} &
+Flags large type surfaces and crowded files.  It can reveal god-object or
+over-abstraction smells, but deep modules may legitimately contain substantial
+implementation behind a small interface \cite{ousterhout,fowler-code-smell}. &
+Medium \\
+
+File size and file crowding &
+\texttt{statements\_per\_file}, \texttt{lines\_per\_file},
+\texttt{functions\_per\_file} &
+Helps find files that have become change magnets or mixed-concern modules.
+System size and local size are useful signals, but splitting files blindly can
+increase indirection \cite{sjoberg,ousterhout}. &
+Medium \\
+
+Import and dependency graph &
+\texttt{imported\_names\_per\_file}, \texttt{cycle\_size},
+\texttt{indirect\_dependencies}, \texttt{dependency\_depth} &
+Highlights coupling, cycles, and long chains as review prompts.  Information
+hiding is central to modular design, while dependency evidence is strongest for
+coupling and change propagation \cite{parnas,elemam,gerosa}. &
+High for cycles/fan-out; Medium for counts \\
+
+Duplication gate &
+\texttt{min\_similarity}, \texttt{duplication\_enabled} &
+Finds similar chunks that may encode duplicated knowledge.  DRY and Beck's
+simple design support removing duplicated knowledge \cite{fowler-beck,pragmatic-dry},
+but clone evidence says not all clones are harmful \cite{rahman-clones}. &
+Medium \\
+
+Static test-reference gate &
+\texttt{test\_coverage\_threshold} &
+Flags code units that appear unmentioned by tests.  Tests are essential to safe
+change \cite{fowler-refactoring,feathers}, but coverage is not a reliable
+quality target \cite{inozemtseva,kochhar}.  This is why \texttt{kiss} treats the
+coverage threshold as a gate: until the safety net is visible, it withholds the
+other refactoring prompts rather than encouraging structural edits without test
+support \cite{fowler-refactoring,feathers}. &
+Low as quality proof; Medium as guardrail \\
+
+Orphan module gate &
+\texttt{orphan\_module\_enabled} &
+Finds modules that appear disconnected from the dependency graph.  Orphans may
+be dead code or intentional entry points; inspect before deleting.  The value is
+rooted in modularity and changeability rather than direct empirical validation
+\cite{parnas,fowler-quality}. &
+Low--Medium \\
+\bottomrule
+\end{longtable}
+
+\section{Setting thresholds}
+
+Start with \texttt{kiss clamp}.  The purpose of clamping is not to claim the
+current codebase is ideal; it records the current metric distribution as a
+working upper bound so new work does not silently increase structural drift.
+This is consistent with treating metrics as guardrails rather than universal
+quality measures \cite{fowler-code-smell,sjoberg}.
+
+After clamping, inspect \texttt{.kissconfig}.  Tighten only thresholds whose
+violations correspond to problems you are willing to fix, because static
+analysis works better when warnings are actionable and prioritized
+\cite{vassallo,motwani}.  Prefer ratcheting one or two metrics at a time over
+tightening everything at once; small, behavior-preserving change is Fowler's
+refactoring discipline \cite{fowler-refactoring}.
+
+Use \texttt{kiss stats} for the overview.  Percentiles show whether a proposed
+threshold targets only outliers or will create broad churn.  Outlier-focused
+thresholds fit Fowler's smell model: the metric should make you look deeper, not
+settle the design question by itself \cite{fowler-code-smell}.
+
+Use \texttt{kiss stats --all} to find specific instances, then inspect the code
+before changing it.  If your installed CLI accepts \texttt{kiss stats -all}, the
+same workflow applies.  For each violation, ask whether the metric points to
+duplicated knowledge, unnecessary coupling, excessive cognitive load, or missing
+tests; those are the hypotheses with the strongest support in the literature
+\cite{parnas,antinyan,pragmatic-dry,fowler-refactoring}.  If inspection shows
+the violation is an intentional deep module, stable abstraction, readable test
+duplication, or generated/boilerplate code, document or configure around it
+rather than forcing a mechanical refactor \cite{ousterhout,rahman-clones}.
+
+\section{Limitations}
+
+Much of the evidence behind these metrics comes from human software development:
+human estimates of maintenance time, human maintainability case studies, human
+static-analysis workflows, and human refactoring practice
+\cite{antinyan,sjoberg,vassallo,motwani,fowler-refactoring}.  \texttt{kiss}
+extrapolates from that evidence to coding agents.  The extrapolation is
+plausible because repository-level agent benchmarks show that agents face
+cross-file context, integration, and test-feedback problems that resemble human
+maintenance work \cite{jimenez-swebench,zhang-codeagent}.  But it remains an
+open empirical question whether agents need the same thresholds, respond to the
+same smells, or benefit from the same ordering of feedback as human programmers.
+The AGENTS.md study is a useful warning: additional repository guidance can
+increase cost and sometimes reduce agent success, so agent-facing feedback should
+be validated directly rather than inherited uncritically from human practice
+\cite{gloaguen-agents}.
+
+\begin{thebibliography}{99}
+
+\bibitem{antinyan}
+Vard Antinyan, Miroslaw Staron, and Anna Sandberg.
+\newblock Evaluating code complexity triggers, use of complexity measures and
+the influence of code complexity on maintenance time.
+\newblock \emph{Empirical Software Engineering}, 22:3057--3087, 2017.
+
+\bibitem{elemam}
+Khaled El Emam et al.
+\newblock The theory of relative dependency.
+\newblock \emph{IEEE Software}, 2010.
+
+\bibitem{feathers}
+Michael C. Feathers.
+\newblock \emph{Working Effectively with Legacy Code}.
+\newblock Prentice Hall, 2004.
+
+\bibitem{fowler-code-smell}
+Martin Fowler.
+\newblock Code Smell.
+\newblock \url{https://martinfowler.com/bliki/CodeSmell.html}.
+
+\bibitem{fowler-refactoring}
+Martin Fowler.
+\newblock \emph{Refactoring: Improving the Design of Existing Code}.
+\newblock Addison-Wesley, 2nd edition, 2018.
+
+\bibitem{fowler-quality}
+Martin Fowler.
+\newblock Is High Quality Software Worth the Cost?
+\newblock \url{https://martinfowler.com/articles/is-quality-worth-cost.html}.
+
+\bibitem{fowler-beck}
+Martin Fowler.
+\newblock Beck Design Rules.
+\newblock \url{https://martinfowler.com/bliki/BeckDesignRules.html}.
+
+\bibitem{gerosa}
+Marco A. Gerosa et al.
+\newblock How do structural dependencies influence change propagation? An
+empirical study.
+\newblock \emph{International Conference on Software Maintenance}, 2009.
+
+\bibitem{ghaleb}
+Tarek A. Ghaleb, Daniel A. da Costa, and Ying Zou.
+\newblock An empirical study of the long duration of continuous integration
+builds.
+\newblock \emph{Empirical Software Engineering}, 24:2102--2139, 2019.
+
+\bibitem{gloaguen-agents}
+Gloaguen et al.
+\newblock Evaluating AGENTS.md: Are Repository-Level Context Files Helpful for
+Coding Agents?
+\newblock arXiv:2602.11988, 2026.
+
+\bibitem{inozemtseva}
+Laura Inozemtseva and Reid Holmes.
+\newblock Coverage is not strongly correlated with test suite effectiveness.
+\newblock \emph{International Conference on Software Engineering}, 2014.
+
+\bibitem{jimenez-swebench}
+Carlos E. Jimenez et al.
+\newblock SWE-bench: Can Language Models Resolve Real-World GitHub Issues?
+\newblock \emph{International Conference on Learning Representations}, 2024.
+
+\bibitem{kochhar}
+Pavneet Singh Kochhar et al.
+\newblock Code coverage and post-release defects: A large-scale study on open
+source projects.
+\newblock \emph{Mining Software Repositories}, 2017.
+
+\bibitem{mcconnell}
+Steve McConnell.
+\newblock \emph{Code Complete}.
+\newblock Microsoft Press, 2nd edition, 2004.
+
+\bibitem{motwani}
+Manas Motwani et al.
+\newblock A tale from the trenches: cognitive usefulness and true positives in
+static analysis.
+\newblock \emph{ICSE Software Engineering in Practice}, 2023.
+
+\bibitem{ousterhout}
+John Ousterhout.
+\newblock \emph{A Philosophy of Software Design}.
+\newblock Yaknyam Press, 2nd edition, 2021.
+
+\bibitem{parnas}
+David L. Parnas.
+\newblock On the criteria to be used in decomposing systems into modules.
+\newblock \emph{Communications of the ACM}, 15(12):1053--1058, 1972.
+
+\bibitem{pragmatic-dry}
+Andrew Hunt and David Thomas.
+\newblock \emph{The Pragmatic Programmer}.
+\newblock Addison-Wesley, 20th anniversary edition, 2019.
+
+\bibitem{rahman-clones}
+Foyzur Rahman, Christian Bird, and Premkumar Devanbu.
+\newblock Clones: what is that smell?
+\newblock \emph{Empirical Software Engineering}, 17:503--530, 2012.
+
+\bibitem{sjoberg}
+Dag I. K. Sjoberg, Bente Anda, and Audris Mockus.
+\newblock Questioning software maintenance metrics: A comparative case study.
+\newblock \emph{Empirical Software Engineering and Measurement}, 2012.
+
+\bibitem{vassallo}
+Carmine Vassallo et al.
+\newblock How developers engage with static analysis tools in different
+contexts.
+\newblock \emph{Empirical Software Engineering}, 25:1419--1457, 2020.
+
+\bibitem{zhang-codeagent}
+Zhang et al.
+\newblock CodeAgent: Enhancing Code Generation with Tool-Integrated Agent
+Systems for Real-World Repo-level Coding Challenges.
+\newblock \emph{Association for Computational Linguistics}, 2024.
+
+\end{thebibliography}
+
+\end{document}
