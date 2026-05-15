@@ -8,16 +8,15 @@ repository = "https://github.com/dsweet99/kiss"
 readme = "README.md"
 keywords = ["code-quality", "metrics", "linting", "python", "rust"]
 categories = ["development-tools", "command-line-utilities"]
-exclude = [
-    "_kpop/**",
-    "_malvin/**",
-    ".kissconfig",
-    ".kissignore",
-    ".pre-commit-config.yaml",
-    "Makefile",
-    "grounding.md",
-    "journal.md",
-    "scripts/**",
+include = [
+    "Cargo.lock",
+    "Cargo.toml",
+    "LICENSE",
+    "README.md",
+    "images/**",
+    "kissconfig-default",
+    "pytest.ini",
+    "src/**",
     "tests/**",
 ]
 
