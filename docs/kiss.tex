@@ -13,31 +13,46 @@
 \begin{document}
 \maketitle
 
+\begin{abstract}
+\texttt{kiss} is a lightweight static-analysis tool for feeding coding agents
+fast structural feedback during review and refactoring.  It treats metrics as
+agent-facing review prompts, not as proof that code is good or bad.  The paper
+summarizes which prompts have stronger support from software-engineering
+research, which are weaker proxies, and where direct validation on agent-written
+code is still needed.  Early measurements suggest that the cheap static
+test-name reference check can be much faster than runtime line coverage and may
+serve as an effective proxy for finding under-referenced code.
+\end{abstract}
+
 \section{Design philosophy}
 
 \texttt{kiss} treats code quality feedback as a set of fast, named, falsifiable
-signals rather than as a single quality score.  This follows Fowler's account of
+prompts for coding agents rather than as a single quality score.  In this paper,
+a metric is a measured quantity, a gate is a thresholded check, and a prompt or
+signal is the review interpretation given to the agent.  This follows
+Fowler's account of
 code smells: a smell is a quick surface indication that often points to a deeper
 problem, but smells are not inherently bad and require inspection
-\cite{fowler-code-smell}.  The tool is therefore best understood as a guardrail
-for review and refactoring, not as an oracle.
+\cite{fowler-code-smell}.  The tool is therefore best understood as an
+agent-facing guardrail for review and refactoring, not as an oracle.
 
-The non-rejected design hypothesis is that local edits can degrade global
-structure unless an editor receives compact repository-level feedback.  This is
+Local edits can degrade repository structure, so \texttt{kiss} gives agents
+compact feedback before review and refactoring; this remains a design
+hypothesis, not a validated law.  That repository-level feedback hypothesis is
 consistent with SWE-bench, where real GitHub issues often require coordinated
 changes across functions, classes, and files \cite{jimenez-swebench}, and with
 CodeAgent, where repository tools for retrieval, symbol navigation, and testing
 improved repository-level code generation \cite{zhang-codeagent}.  The hypothesis
 must be narrowed, because repository context is not automatically helpful:
 Gloaguen et al. found that AGENTS.md-style context files can increase inference
-cost and, in some settings, reduce success, so feedback should be justified,
-targeted, and minimal
+cost and, in some settings, reduce success, so agent-facing feedback should be
+justified, targeted, and minimal
 \cite{gloaguen-agents}.
 
 The second non-rejected hypothesis is that internal design quality lowers the
-cost of future change.  Fowler argues that internal quality matters because
-developers spend most of their time modifying existing code, and poor internal
-quality increases both understanding time and mistake risk
+cost of future change.  Fowler argues that developers spend most of their time
+modifying existing code, and poor internal quality increases both understanding
+time and mistake risk
 \cite{fowler-quality}.  Parnas gives the classic modularity criterion:
 decompose systems around hidden design decisions so that changes remain local
 \cite{parnas}.  Ousterhout similarly frames software design as complexity
@@ -53,8 +68,8 @@ Hypothesis & Status \\
 \rowcolor{gray!18}
 Global structural feedback helps agents & Non-rejected, narrowed \\
 \multicolumn{2}{p{0.86\linewidth}}{
-Use compact, task-relevant feedback.  Repository-scale tasks need context, but
-unfiltered context can add cost or hurt
+Give agents compact, task-relevant feedback.  Repository-scale tasks need
+context, but unfiltered context can add cost or hurt
 \cite{jimenez-swebench,zhang-codeagent,gloaguen-agents}.} \\[0.35em]
 
 \rowcolor{gray!18}
@@ -82,7 +97,7 @@ principle discourage duplicated knowledge \cite{fowler-beck,pragmatic-dry}, but
 clone studies show many clones are not more defect-prone \cite{rahman-clones}.} \\[0.35em]
 
 \rowcolor{gray!18}
-Test-reference coverage proves quality & Rejected as a quality target \\
+Static test-name references prove quality & Rejected as a quality target \\
 \multicolumn{2}{p{0.86\linewidth}}{
 Tests are central to safe change \cite{fowler-refactoring,feathers}, but coverage
 is only weak-to-moderately related to test effectiveness and should not be used
@@ -97,10 +112,11 @@ Feathers recommends tests as the safety net for changing legacy code
 \cite{fowler-refactoring,feathers}.} \\[0.35em]
 
 \rowcolor{gray!18}
-Fast, prioritized feedback matters & Non-rejected, partly extrapolated \\
+Fast, prioritized agent feedback matters & Non-rejected, partly extrapolated \\
 \multicolumn{2}{p{0.86\linewidth}}{
-Fast feedback is consistent with small-step refactoring, and CI evidence shows
-that long build durations are a practical problem \cite{fowler-refactoring,ghaleb}.
+Fast feedback to the agent is consistent with small-step refactoring, and CI
+evidence shows that long build durations are a practical problem
+\cite{fowler-refactoring,ghaleb}.
 Static-analysis studies also show warnings must be prioritized and useful, not
 merely numerous \cite{vassallo,motwani}.} \\[0.35em]
 
@@ -116,15 +132,15 @@ be mutually inconsistent, so decomposed signals are easier to inspect and act on
 
 \section{Metrics and confidence}
 
-The confidence column means confidence that the metric is useful as a review or
-refactoring signal.  It does not mean that violating the metric proves the code
-is bad.  Code smells require contextual judgment \cite{fowler-code-smell}, and
-static-analysis warnings are more useful when they are prioritized for
-actionability \cite{vassallo,motwani}.
+The confidence column means confidence that the metric is useful as an
+agent-facing review or refactoring prompt.  It does not mean that violating the
+metric proves the code is bad.  Code smells require contextual judgment
+\cite{fowler-code-smell}, and static-analysis warnings are more useful when they
+are prioritized for actionability \cite{vassallo,motwani}.
 
 \begin{itemize}
-\item \textbf{High confidence} The metric is a strong review signal. There is
-direct support from software-engineering research or well-established
+\item \textbf{High confidence} The metric is a strong agent-facing review
+prompt. There is direct support from software-engineering research or well-established
 practice that the measured structure often affects maintainability, change risk,
 or comprehension.
 \item \textbf{Medium confidence} The metric is a useful heuristic. The
@@ -170,7 +186,7 @@ Medium \\
 \texttt{local\_variables}, \texttt{return\_values\_per\_function}} \\
 \multicolumn{2}{p{0.86\linewidth}}{Flags functions with many
 paths or many local concepts.  These are conservative
-review prompts grounded in construction guidance and broader complexity evidence
+agent-facing review prompts grounded in construction guidance and broader complexity evidence
 \cite{antinyan,mcconnell}.} \\[0.35em]
 
 \rowcolor{gray!18}
@@ -210,7 +226,7 @@ High for cycles/fan-out; \newline Medium for counts \\
 \texttt{cycle\_size}, \texttt{indirect\_dependencies},
 \texttt{dependency\_depth}} \\
 \multicolumn{2}{p{0.86\linewidth}}{Highlights coupling,
-cycles, and long chains as review prompts.  Information
+cycles, and long chains as prompts for agent review.  Information
 hiding is central to modular design, while dependency evidence is strongest for
 coupling and change propagation \cite{parnas,elemam,gerosa}.} \\[0.35em]
 
@@ -228,9 +244,9 @@ but clone evidence says not all clones are harmful \cite{rahman-clones}.} \\[0.3
 Static test-name reference gate &
 Low as quality proof; \newline Medium as guardrail \\
 \multicolumn{2}{@{\hspace{1.25em}}p{0.86\linewidth}}{\texttt{test\_coverage\_threshold}} \\
-\multicolumn{2}{p{0.86\linewidth}}{Flags code units whose
+\multicolumn{2}{p{0.86\linewidth}}{Flags definitions whose
 names do not appear in tests.  This is not runtime
-coverage and should not be read as evidence that a unit is tested.  It is a cheap
+coverage and should not be read as evidence that a definition is tested.  It is a cheap
 pre-refactoring proxy: an unmentioned name suggests the safety net is not
 visible, while a mentioned name may still be weakly asserted or incidental.
 Runtime coverage studies support only the narrower lesson that coverage can help
@@ -250,36 +266,38 @@ rooted in modularity and changeability rather than direct empirical validation
 \bottomrule
 \end{longtable}
 
-\texttt{inv\_test\_coverage} is the inverted static test-reference metric behind
+\subsection{Static test-name reference measurements}
+
+\texttt{inv\_test\_coverage} is the inverted static test-name reference metric behind
 the static test-name reference gate.  In \texttt{kiss stats}, each value is one
 source file's percentage of definitions whose names do not appear in tests.  The
 following columns are the same distribution columns printed by
 \texttt{kiss stats}: \texttt{N} is the number of measured files, \texttt{p50}
 through \texttt{p99} are distribution percentiles, and \texttt{max} is the
 largest observed value.  Because the metric is inverted, this table discusses
-\emph{median static test-reference coverage}: the estimated percentage of
+\emph{median static test-name reference coverage}: the estimated percentage of
 definitions in the median file whose names do appear in tests.  Numerically,
 that is \texttt{100 - p50}.
 
 \begingroup
 \small
 \setlength{\tabcolsep}{3pt}
-\begin{longtable}{p{0.12\linewidth}r r r r r r p{0.14\linewidth}r r}
+\begin{longtable}{p{0.12\linewidth}r r r r r r p{0.14\linewidth}r p{0.14\linewidth}}
 \toprule
-Project & N & p50 & p90 & p95 & p99 & max & Coverage & \texttt{kiss} time &
-Cov. time \\
+Project & N & p50 & p90 & p95 & p99 & max & Runtime coverage & \texttt{kiss} time &
+Coverage time \\
 \midrule
 \endhead
-\texttt{kiss} & 302 & 0 & 0 & 9 & 20 & 75 & 92.60\% \texttt{llvm-cov} &
-0.3s & 1.5s \\
-\texttt{ripgrep} & 100 & 50 & 100 & 100 & 100 & 100 & 60.47\% \texttt{llvm-cov} &
-0.4s & 15s \\
-\texttt{rich} & 213 & 0 & 100 & 100 & 100 & 100 & 91\% \texttt{slipcover} &
-0.2s & 11s \\
-\texttt{ruff} & 2917 & 0 & 0 & 100 & 100 & 100 & 89.48\% \texttt{llvm-cov} &
-3.5s & 24m \\
-\texttt{ruff} & 1828 & 100 & 100 & 100 & 100 & 100 & 62\% \texttt{slipcover} &
--- & 3s \\
+\texttt{kiss} & 302 & 0 & 0 & 9 & 20 & 75 & 92.60\% &
+0.3s & 1.5s \texttt{llvm-cov} \\
+\texttt{ripgrep} & 100 & 50 & 100 & 100 & 100 & 100 & 60.47\% &
+0.4s & 15s \texttt{llvm-cov} \\
+\texttt{rich} & 213 & 0 & 100 & 100 & 100 & 100 & 91\% &
+0.2s & 11s \texttt{slipcover} \\
+\texttt{ruff} & 2917 & 0 & 0 & 100 & 100 & 100 & 89.48\% &
+3.5s & 24m \texttt{llvm-cov} \\
+\texttt{ruff} & 1828 & 100 & 100 & 100 & 100 & 100 & 62\% &
+-- & 3s \texttt{slipcover} \\
 \bottomrule
 \end{longtable}
 \endgroup
@@ -287,11 +305,11 @@ Cov. time \\
 These measurements are not a validation study, but they show the intended
 tradeoff.  \texttt{kiss} is considerably faster than runtime line-level coverage
 measurement, especially when the coverage run requires full project test
-execution.  In this small sample, median static test-reference coverage is often
+execution.  In this small sample, median static test-name reference coverage is often
 in the same rough range as the line-level coverage number, but the second
 \texttt{ruff} row is a counterexample and the metric remains only a static
 name-reference proxy.  The \texttt{kiss} repository is a special case: it was
-fully agent-coded and has been maintained with \texttt{kiss} as a linter.  Its
+fully agent-written and has been maintained with \texttt{kiss} as a linter.  Its
 high line-level coverage is evidence that agent-written code developed with
 \texttt{kiss} feedback can maintain a strong runtime test suite, but not
 independent evidence that the static proxy will generalize across projects.
