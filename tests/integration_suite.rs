@@ -28,6 +28,8 @@ mod kpop_definitions;
 mod kpop_definitions_2;
 #[path = "cases/kpop_python_function_metrics.rs"]
 mod kpop_python_function_metrics;
+#[path = "cases/bug_indirect_dependencies_check.rs"]
+mod bug_indirect_dependencies_check;
 #[path = "cases/kpop_python_graph_metrics.rs"]
 mod kpop_python_graph_metrics;
 #[path = "cases/kpop_python_none.rs"]

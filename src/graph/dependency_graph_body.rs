@@ -230,3 +230,22 @@ pub fn is_entry_point(name: &str) -> bool {
 pub(crate) fn is_orphan(fan_in: usize, fan_out: usize, module_name: &str) -> bool {
     fan_in == 0 && fan_out == 0 && !is_entry_point(module_name)
 }
+
+/// Rust crate roots (`src/lib.rs`, `src/main.rs`, `src/build.rs`) aggregate the whole crate;
+/// their indirect-dependency counts reflect project size, not a single module's coupling.
+pub(crate) fn is_crate_root_aggregator(graph: &DependencyGraph, module_name: &str) -> bool {
+    let Some(path) = graph.paths.get(module_name) else {
+        return false;
+    };
+    let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    if !matches!(file_name, "lib.rs" | "main.rs" | "build.rs") {
+        return false;
+    }
+    path.parent().is_some_and(|parent| {
+        parent
+            .file_name()
+            .is_some_and(|d| d == OsStr::new("src") || d == OsStr::new("tests"))
+    })
+}
