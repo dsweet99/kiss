@@ -150,7 +150,9 @@ pub(crate) fn collect_module_violations(
         {
             violations.push(orphan_violation(graph, module_name));
         }
-        if metrics.indirect_dependencies > config.indirect_dependencies && metrics.fan_in > 0 {
+        if metrics.indirect_dependencies > config.indirect_dependencies
+            && !is_crate_root_aggregator(graph, module_name)
+        {
             violations.push(indirect_deps_violation(
                 graph,
                 module_name,

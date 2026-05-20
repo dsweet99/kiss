@@ -12,7 +12,6 @@ pub(super) fn kiss_binary() -> Command {
 /// - `cycle_size`, `inv_test_coverage`: aggregate-only (no per-unit STAT line).
 /// - `duplication`, `orphan_module`, `test_coverage`: gate-only (check emits, stats doesn't).
 /// - `fan_in`, `fan_out`: stats reports them but check never emits violations for them.
-/// - `indirect_dependencies`: check only emits when `fan_in` > 0.
 /// - `arguments_per_function`: stats reports total args; check splits into `positional`/`keyword_only`.
 /// - `dependency_depth`: check emits with module-qualified name differing from stats' filename.
 ///
@@ -28,7 +27,6 @@ const NON_SHARED_METRICS: &[&str] = &[
     "test_coverage",
     "fan_in",
     "fan_out",
-    "indirect_dependencies",
     "arguments_per_function",
     "dependency_depth",
     "positional_args", // check skips inside_class methods
