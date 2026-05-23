@@ -30,6 +30,8 @@ mod kpop_definitions_2;
 mod kpop_python_function_metrics;
 #[path = "cases/bug_indirect_dependencies_check.rs"]
 mod bug_indirect_dependencies_check;
+#[path = "cases/bug_test_coverage_aggregate_gate_masking.rs"]
+mod bug_test_coverage_aggregate_gate_masking;
 #[path = "cases/kpop_python_graph_metrics.rs"]
 mod kpop_python_graph_metrics;
 #[path = "cases/kpop_python_none.rs"]
