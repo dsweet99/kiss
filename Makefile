@@ -4,7 +4,7 @@ all:
 	cargo build --release
 
 test:
-	cargo test
+	pytest tests && cargo nextest run
 
 install:
 	cargo install --path . --force
