@@ -12,6 +12,7 @@ fn test_touch_private_helpers_for_static_coverage() {
     let _ = RustImports {
         use_roots: vec!["std".into()],
         mod_decls: vec!["foo".into()],
+        include_literals: vec!["foo.rs".into()],
     };
 
     let ast = parse_rust_code(
@@ -29,7 +30,8 @@ fn f() {
 
     let mut use_roots = Vec::new();
     let mut mod_decls = Vec::new();
-    extract_imports_from_items(&ast.items, &mut use_roots, &mut mod_decls);
+    let mut include_literals = Vec::new();
+    extract_imports_from_items(&ast.items, &mut use_roots, &mut mod_decls, &mut include_literals);
     assert!(!use_roots.is_empty() || !mod_decls.is_empty());
 
     // Exercise block/expr helpers directly.
@@ -39,7 +41,13 @@ fn f() {
     }) {
         let mut use_roots2 = Vec::new();
         let mut mod_decls2 = Vec::new();
-        extract_imports_from_block(&f.block, &mut use_roots2, &mut mod_decls2);
+        let mut include_literals2 = Vec::new();
+        extract_imports_from_block(
+            &f.block,
+            &mut use_roots2,
+            &mut mod_decls2,
+            &mut include_literals2,
+        );
         assert!(!use_roots2.is_empty() || !mod_decls2.is_empty());
 
         if let Some(syn::Stmt::Expr(expr, _)) = f
@@ -50,14 +58,32 @@ fn f() {
         {
             let mut use_roots3 = Vec::new();
             let mut mod_decls3 = Vec::new();
-            extract_imports_from_expr(expr, &mut use_roots3, &mut mod_decls3);
+            let mut include_literals3 = Vec::new();
+            extract_imports_from_expr(
+                expr,
+                &mut use_roots3,
+                &mut mod_decls3,
+                &mut include_literals3,
+            );
             // May be empty depending on stmt shape; just ensure it compiles/executes.
             let _ = (use_roots3, mod_decls3);
         }
     }
 
     t(resolve_import);
-    t(extract_include_rs_stem);
+    t(crate::rust_include::extract_include_literal_from_macro);
+}
+
+#[test]
+fn include_stem_strips_rs_and_inc_extensions() {
+    assert_eq!(
+        crate::rust_include::include_stem_from_literal("path/foo.inc"),
+        "foo"
+    );
+    assert_eq!(
+        crate::rust_include::include_stem_from_literal("bar.rs"),
+        "bar"
+    );
 }
 
 #[test]

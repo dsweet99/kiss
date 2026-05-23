@@ -44,6 +44,8 @@ mod kpop_rust_file_metrics_plan;
 mod kpop_rust_function_metrics;
 #[path = "cases/kpop_rust_graph_metrics.rs"]
 mod kpop_rust_graph_metrics;
+#[path = "cases/kpop_include_rollup_regressions.rs"]
+mod kpop_include_rollup_regressions;
 #[path = "cases/kpop_rust_none.rs"]
 mod kpop_rust_none;
 #[path = "cases/kpop_rust_none_graph_and_gates.rs"]

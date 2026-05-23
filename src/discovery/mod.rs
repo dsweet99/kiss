@@ -10,17 +10,20 @@ pub enum Language {
 
 impl Language {
     pub fn from_path(path: &Path) -> Option<Self> {
-        path.extension().and_then(|ext| {
-            ext.to_str().and_then(|s| {
-                if s.eq_ignore_ascii_case("py") {
-                    Some(Self::Python)
-                } else if s.eq_ignore_ascii_case("rs") {
-                    Some(Self::Rust)
-                } else {
-                    None
-                }
-            })
-        })
+        if crate::rust_include::is_rust_source_path(path) {
+            Some(Self::Rust)
+        } else if path.extension().and_then(|e| e.to_str()).is_some_and(|s| {
+            s.eq_ignore_ascii_case("py")
+        }) {
+            Some(Self::Python)
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    pub fn is_rust_path(path: &Path) -> bool {
+        crate::rust_include::is_rust_source_path(path)
     }
 
     pub const fn extension(&self) -> &'static str {
@@ -102,6 +105,7 @@ pub fn gather_files_by_lang(
             }
         }
     }
+    let rs_files = crate::rust_graph::expand_rust_files(rs_files);
     (py_files, rs_files)
 }
 

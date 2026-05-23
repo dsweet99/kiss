@@ -33,7 +33,7 @@ pub fn partition_changed_paths(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>
     let mut test = Vec::new();
     for p in paths {
         let is_py = p.extension().is_some_and(|e| e.eq_ignore_ascii_case("py"));
-        let is_rs = p.extension().is_some_and(|e| e.eq_ignore_ascii_case("rs"));
+        let is_rs = kiss::Language::is_rust_path(p);
         if is_py {
             if is_test_file(p) || is_in_test_directory(p) {
                 test.push(p.clone());
@@ -60,7 +60,7 @@ pub fn enumerate_tests_in_changed_files(test_paths: &[PathBuf]) -> Result<BTreeS
         .collect();
     let rs: Vec<_> = test_paths
         .iter()
-        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("rs")))
+        .filter(|p| kiss::Language::is_rust_path(p))
         .cloned()
         .collect();
     if !py.is_empty() {
@@ -185,14 +185,14 @@ pub fn combined_selectors(
     for (tp, tid) in collect_selectors_from_defs(&defs) {
         if tp.extension().is_some_and(|e| e.eq_ignore_ascii_case("py")) {
             py_sel.insert(py_selector(&tp, &tid));
-        } else if tp.extension().is_some_and(|e| e.eq_ignore_ascii_case("rs")) {
+        } else if kiss::Language::is_rust_path(&tp) {
             rs_sel.insert(tid);
         }
     }
     for (tp, tid) in enumerate_tests_in_changed_files(test_paths)? {
         if tp.extension().is_some_and(|e| e.eq_ignore_ascii_case("py")) {
             py_sel.insert(py_selector(&tp, &tid));
-        } else if tp.extension().is_some_and(|e| e.eq_ignore_ascii_case("rs")) {
+        } else if kiss::Language::is_rust_path(&tp) {
             rs_sel.insert(tid);
         }
     }

@@ -1,9 +1,3 @@
-pub(crate) struct ImportInfo {
-    pub from_qualified: String,
-    pub from_parent_module: Option<String>,
-    pub imports: Vec<String>,
-}
-
 pub(crate) struct GraphBuildState<'a> {
     pub graph: &'a mut DependencyGraph,
     pub bare_to_qualified: &'a mut HashMap<String, Vec<String>>,
@@ -23,60 +17,18 @@ impl GraphBuildState<'_> {
     }
 }
 
-pub(crate) fn add_edges_for_import_info(
-    graph: &mut DependencyGraph,
-    info: &ImportInfo,
-    bare_to_qualified: &HashMap<String, Vec<String>>,
-) {
-    for import in &info.imports {
-        if graph.nodes.contains_key(import) {
-            graph.add_dependency(&info.from_qualified, import);
-            continue;
-        }
-        let resolved = resolve_import(
-            import,
-            info.from_parent_module.as_deref(),
-            bare_to_qualified,
-        );
-        for r in resolved {
-            graph.add_dependency(&info.from_qualified, &r);
-        }
-    }
-}
-
 #[must_use]
 pub fn build_dependency_graph(parsed_files: &[&ParsedFile]) -> DependencyGraph {
-    let mut graph = DependencyGraph::new();
-    let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
-
-    {
-        let mut state = GraphBuildState {
-            graph: &mut graph,
-            bare_to_qualified: &mut bare_to_qualified,
-        };
-        for parsed in parsed_files {
-            let qualified = qualified_module_name(&parsed.path);
-            let bare = bare_module_name(&parsed.path);
-            state.register_module(&parsed.path, qualified, bare);
-        }
-    }
-
-    let per_file: Vec<ImportInfo> = parsed_files
+    let files: Vec<(PathBuf, Vec<String>)> = parsed_files
         .par_iter()
         .map(|parsed| {
-            let fq = qualified_module_name(&parsed.path);
-            ImportInfo {
-                from_qualified: fq.clone(),
-                from_parent_module: fq.rsplit_once('.').map(|(p, _)| p.to_string()),
-                imports: extract_imports_for_cache(parsed.tree.root_node(), &parsed.source),
-            }
+            (
+                parsed.path.clone(),
+                extract_imports_for_cache(parsed.tree.root_node(), &parsed.source),
+            )
         })
         .collect();
-
-    for info in &per_file {
-        add_edges_for_import_info(&mut graph, info, &bare_to_qualified);
-    }
-    graph
+    build_dependency_graph_from_import_lists(&files)
 }
 
 pub(crate) struct ImportListPass<'a> {

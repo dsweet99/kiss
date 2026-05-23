@@ -143,6 +143,25 @@ pub fn parse_and_analyze_rs(
             Err(e) => eprintln!("Error parsing Rust: {e}"),
         }
     }
+    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
+    let include_graph = kiss::rust_graph::build_include_graph(&refs);
+    let by_path: std::collections::HashMap<_, _> = parsed
+        .iter()
+        .map(|p| (kiss::rust_include::canonical_path(&p.path), p))
+        .collect();
+    for parent in &parsed {
+        let included_paths = include_graph.transitive_from(&parent.path);
+        if included_paths.is_empty() {
+            continue;
+        }
+        let included: Vec<&ParsedRustFile> = included_paths
+            .iter()
+            .filter_map(|path| by_path.get(path).copied())
+            .collect();
+        viols.extend(kiss::rust_counts::analyze_rust_file_include_rollup(
+            parent, &included, config,
+        ));
+    }
     (parsed, viols, unit_count, stmt_count)
 }
 

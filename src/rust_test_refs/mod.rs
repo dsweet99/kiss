@@ -33,9 +33,7 @@ pub struct RustTestRefAnalysis {
 }
 
 fn is_rs_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
+    crate::rust_include::is_rust_source_path(path)
 }
 
 fn has_test_naming_pattern(path: &Path) -> bool {

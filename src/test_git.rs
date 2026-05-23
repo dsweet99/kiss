@@ -194,9 +194,11 @@ fn rel_path_ignored(rel: &str, ignore: &[String]) -> bool {
 fn lang_ok(path: &Path, lang_filter: Option<TestLangFilter>) -> bool {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     match lang_filter {
-        None => ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"),
+        None => {
+            ext.eq_ignore_ascii_case("py") || kiss::Language::is_rust_path(path)
+        }
         Some(TestLangFilter::Python) => ext.eq_ignore_ascii_case("py"),
-        Some(TestLangFilter::Rust) => ext.eq_ignore_ascii_case("rs"),
+        Some(TestLangFilter::Rust) => kiss::Language::is_rust_path(path),
     }
 }
 

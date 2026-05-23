@@ -29,7 +29,7 @@ pub fn graph_for_path<'a>(
         e.to_str().and_then(|ext| {
             if ext.eq_ignore_ascii_case("py") {
                 py_graph
-            } else if ext.eq_ignore_ascii_case("rs") {
+            } else if kiss::Language::is_rust_path(path) {
                 rs_graph
             } else {
                 None
