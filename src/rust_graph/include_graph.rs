@@ -92,3 +92,20 @@ pub fn expand_rust_files(files: Vec<std::path::PathBuf>) -> Vec<std::path::PathB
     out.sort();
     out
 }
+
+#[cfg(test)]
+mod include_graph_tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn include_graph_transitive_from_follows_direct_edges() {
+        let root = PathBuf::from("/tmp/root.rs");
+        let child = PathBuf::from("/tmp/child.rs");
+        let mut direct = HashMap::new();
+        direct.insert(root.clone(), vec![child.clone()]);
+        let graph = IncludeGraph { direct };
+        assert_eq!(graph.transitive_from(&root), vec![child]);
+    }
+}

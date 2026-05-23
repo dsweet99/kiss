@@ -13,10 +13,6 @@ pub fn set_sigpipe_default() {
 #[cfg(not(unix))]
 pub fn set_sigpipe_default() {}
 
-pub fn normalize_ignore_prefixes(prefixes: &[String]) -> Vec<String> {
-    kiss::normalize_ignore_prefixes(prefixes)
-}
-
 pub fn validate_paths(paths: &[String]) {
     for p in paths {
         if !Path::new(p).exists() {

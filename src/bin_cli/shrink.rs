@@ -1,6 +1,7 @@
 use crate::analyze;
 use crate::analyze::GlobalMetricsInput;
-use crate::bin_cli::util::{normalize_ignore_prefixes, validate_paths};
+use crate::bin_cli::util::validate_paths;
+use kiss::normalize_ignore_prefixes;
 use kiss::{ShrinkState, ShrinkViolations, check_shrink_constraints, parse_target_arg};
 
 pub use super::shrink_analysis_types::{ShrinkAnalyzeArgs, ShrinkMetricsArgs};

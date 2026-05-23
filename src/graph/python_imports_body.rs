@@ -66,7 +66,7 @@ pub(crate) fn push_import_name_segments(node: Node, source: &str, imports: &mut 
     push_dotted_segments(name, imports);
 }
 
-fn collect_import_names(node: Node, source: &str, imports: &mut Vec<String>) {
+fn collect_graph_py_import_names(node: Node, source: &str, imports: &mut Vec<String>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -89,7 +89,7 @@ pub(crate) fn extract_imports_for_cache(node: Node, source: &str) -> Vec<String>
 
 pub(crate) fn extract_imports_recursive(node: Node, source: &str, imports: &mut Vec<String>) {
     match node.kind() {
-        "import_statement" => collect_import_names(node, source, imports),
+        "import_statement" => collect_graph_py_import_names(node, source, imports),
         "import_from_statement" => imports.extend(extract_modules_from_import_from(node, source)),
         "call" => {
             if let Some(m) = extract_dynamic_import_module(node, source) {

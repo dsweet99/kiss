@@ -1,6 +1,7 @@
 use crate::analyze;
 use crate::analyze::run_analyze;
-use crate::bin_cli::util::{normalize_ignore_prefixes, validate_paths};
+use crate::bin_cli::util::validate_paths;
+use kiss::normalize_ignore_prefixes;
 use kiss::Language;
 
 pub struct CheckCommandArgs<'a> {

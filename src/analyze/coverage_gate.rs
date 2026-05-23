@@ -153,6 +153,61 @@ pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
 mod coverage_gate_tests {
     use super::*;
     use std::collections::HashMap;
+    use std::collections::HashSet;
+
+    #[test]
+    fn per_file_gate_fails_when_file_below_threshold() {
+        use std::path::PathBuf;
+        let defs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
+        let unrefs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
+        let focus: HashSet<PathBuf> = std::iter::once(PathBuf::from("src/a.py")).collect();
+        let failure = per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90);
+        let (unreferenced, file_pcts) = failure.expect("expected gate failure");
+        assert_eq!(file_pcts.get(&PathBuf::from("src/a.py")), Some(&0));
+        assert_eq!(unreferenced.len(), 1);
+    }
+
+    #[test]
+    fn per_file_gate_ignores_files_outside_focus() {
+        use std::path::PathBuf;
+        let defs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
+        let unrefs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
+        let focus: HashSet<PathBuf> = std::iter::once(PathBuf::from("src/b.py")).collect();
+        assert!(per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90).is_none());
+    }
+
+    #[test]
+    fn per_file_gate_passes_when_file_meets_threshold() {
+        use std::path::PathBuf;
+        let defs = vec![
+            (PathBuf::from("src/a.py"), "f".into(), 1),
+            (PathBuf::from("src/a.py"), "g".into(), 2),
+        ];
+        let unrefs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
+        let focus: HashSet<PathBuf> = std::iter::once(PathBuf::from("src/a.py")).collect();
+        let failure = per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90);
+        let (_, file_pcts) = failure.expect("expected gate failure below 100%");
+        assert_eq!(file_pcts.get(&PathBuf::from("src/a.py")), Some(&50));
+    }
+
+    #[test]
+    fn evaluate_gate_passes_for_empty_analysis() {
+        let py_cov = kiss::TestRefAnalysis {
+            definitions: Vec::new(),
+            test_references: HashSet::new(),
+            unreferenced: Vec::new(),
+            coverage_map: HashMap::new(),
+        };
+        let rs_cov = kiss::RustTestRefAnalysis {
+            definitions: Vec::new(),
+            test_references: HashSet::new(),
+            unreferenced: Vec::new(),
+            coverage_map: HashMap::new(),
+        };
+        let focus = HashSet::new();
+        assert!(evaluate_gate(&py_cov, &rs_cov, &focus, 90).is_none());
+        assert!(evaluate_cached_gate(&[], &[], &focus, 90).is_none());
+    }
 
     #[test]
     fn test_analysis_tuples_empty() {

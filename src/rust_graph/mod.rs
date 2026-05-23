@@ -373,3 +373,4 @@ pub(crate) fn collect_use_paths(tree: &syn::UseTree, imports: &mut Vec<String>) 
         }
     }
 }
+

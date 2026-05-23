@@ -18,8 +18,13 @@ impl ParsedQuery {
         self.member.as_deref().unwrap_or(self.symbol.as_str())
     }
 
-    pub const fn language_name(&self) -> &'static str {
+    pub const fn language_label(&self) -> &'static str {
         super::language_name(self.language)
+    }
+
+    #[deprecated(note = "use language_label instead")]
+    pub const fn language_name(&self) -> &'static str {
+        self.language_label()
     }
 }
 
@@ -57,4 +62,17 @@ pub fn validate_new_name(new_name: &str, language: Language) -> Result<(), Strin
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod query_tests {
+    use super::*;
+
+    #[test]
+    fn language_name_alias_matches_language_label() {
+        let q = parse_mv_query("a.py::foo").unwrap();
+        #[allow(deprecated)]
+        let alias = q.language_name();
+        assert_eq!(alias, q.language_label());
+    }
 }

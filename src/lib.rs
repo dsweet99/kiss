@@ -109,7 +109,7 @@ pub use rust_graph::build_rust_dependency_graph;
 pub use rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file, parse_rust_files};
 pub use rust_test_refs::{
     RustCodeDefinition, RustTestRefAnalysis, analyze_rust_test_refs, is_rust_test_file,
-    test_functions_in as rust_test_functions_in,
+    rust_test_functions_in,
 };
 pub use rust_units::{RustCodeUnit, extract_rust_code_units};
 

@@ -43,3 +43,25 @@ pub fn extract_include_literal_from_macro(mac: &syn::Macro) -> Option<String> {
     let lit: syn::LitStr = syn::parse2(mac.tokens.clone()).ok()?;
     Some(lit.value())
 }
+
+#[cfg(test)]
+mod rust_include_tests {
+    use super::*;
+
+    #[test]
+    fn rust_include_helpers_resolve_paths() {
+        assert!(is_rust_source_path(Path::new("x.rs")));
+        assert!(is_rust_source_path(Path::new("x.inc")));
+        assert!(!is_rust_source_path(Path::new("x.py")));
+        assert_eq!(include_stem_from_literal("dir/child.inc"), "child");
+        let resolved = resolve_include_path(Path::new("src/lib.rs"), "child.rs");
+        assert!(resolved.to_string_lossy().ends_with("child.rs"));
+        let canon = canonical_path(Path::new("."));
+        assert!(canon.is_absolute());
+        let mac: syn::Macro = syn::parse_quote!(include!("child.rs"));
+        assert_eq!(
+            extract_include_literal_from_macro(&mac).as_deref(),
+            Some("child.rs")
+        );
+    }
+}

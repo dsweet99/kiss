@@ -109,11 +109,11 @@ fn test_extract_import_from_binding_aliased() {
 }
 
 // ---------------------------------------------------------------------------
-// collect.rs: collect_import_names
+// collect.rs: collect_py_import_names_for_refs
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_collect_import_names_from_import_statement() {
+fn test_collect_py_import_names_for_refs_from_import_statement() {
     use crate::parsing::create_parser;
     let mut parser = create_parser().unwrap();
     let src = "import os\nimport sys\nfrom pathlib import Path\n";
@@ -122,7 +122,7 @@ fn test_collect_import_names_from_import_statement() {
     let mut refs = std::collections::HashSet::new();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
-        super::collect::collect_import_names(child, src, &mut refs);
+        super::collect::collect_py_import_names_for_refs(child, src, &mut refs);
     }
     assert!(refs.contains("os"));
     assert!(refs.contains("sys"));

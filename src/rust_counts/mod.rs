@@ -17,7 +17,7 @@ mod tests;
 pub fn analyze_rust_file(parsed: &ParsedRustFile, config: &Config) -> Vec<Violation> {
     let mut violations = Vec::new();
     let mut analyzer = RustAnalyzer::new(&parsed.path, config, &mut violations);
-    analyzer.check_file_metrics(parsed);
+    analyzer.check_parsed_file_metrics(parsed);
     for item in &parsed.ast.items {
         analyzer.analyze_item(item);
     }
@@ -85,7 +85,7 @@ impl<'a> RustAnalyzer<'a> {
         suggestion: &'static str,
     ) {
         self.violations.push(
-            self.violation(1, fname)
+            self.build_violation(1, fname)
                 .metric(metric)
                 .value(value)
                 .threshold(threshold)
@@ -95,7 +95,7 @@ impl<'a> RustAnalyzer<'a> {
         );
     }
 
-    fn check_file_metrics(&mut self, parsed: &ParsedRustFile) {
+    fn check_parsed_file_metrics(&mut self, parsed: &ParsedRustFile) {
         let m = compute_rust_file_metrics(parsed);
         let fname = self
             .file
@@ -253,14 +253,14 @@ impl<'a> RustAnalyzer<'a> {
         }
     }
 
-    fn violation(&self, line: usize, name: &str) -> ViolationBuilder {
+    fn build_violation(&self, line: usize, name: &str) -> ViolationBuilder {
         Violation::builder(self.file).line(line).unit_name(name)
     }
 
     fn check_methods_per_class(&mut self, line: usize, name: &str, count: usize) {
         if count > self.config.methods_per_class {
             self.violations.push(
-                self.violation(line, name)
+                self.build_violation(line, name)
                     .metric("methods_per_class")
                     .value(count)
                     .threshold(self.config.methods_per_class)
@@ -290,7 +290,7 @@ impl<'a> RustAnalyzer<'a> {
             ($mf:ident, $cf:ident, $metric:literal, $label:literal, $sug:literal) => {
                 if m.$mf > c.$cf {
                     self.violations.push(
-                        self.violation(line, name)
+                        self.build_violation(line, name)
                             .metric($metric)
                             .value(m.$mf)
                             .threshold(c.$cf)
