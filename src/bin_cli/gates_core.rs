@@ -8,7 +8,8 @@ use crate::bin_cli::stats::{
     RunStatsArgs, collect_all_units, print_all_top_metrics, print_top_for_metric, run_stats,
     run_stats_summary, run_stats_table,
 };
-use crate::bin_cli::util::{normalize_ignore_prefixes, validate_paths};
+use crate::bin_cli::util::validate_paths;
+use kiss::normalize_ignore_prefixes;
 use kiss::Language;
 use kiss::truncate;
 use kiss::{Config, ConfigLanguage, GateConfig};

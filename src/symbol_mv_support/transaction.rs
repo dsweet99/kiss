@@ -145,52 +145,90 @@ mod transaction_coverage {
     use std::path::PathBuf;
 
     #[test]
-    fn touch_transaction_helpers_for_coverage_gate() {
+    fn check_for_overlaps_rejects_overlapping_edits() {
+        let p = PathBuf::from("overlap.txt");
         let plan = MvPlan {
-            files: vec![],
-            edits: vec![],
+            files: vec![p.clone()],
+            edits: vec![
+                PlannedEdit {
+                    path: p.clone(),
+                    start_byte: 0,
+                    end_byte: 2,
+                    line: 1,
+                    old_snippet: "ab".into(),
+                    new_snippet: "xy".into(),
+                    kind: EditKind::Reference,
+                },
+                PlannedEdit {
+                    path: p,
+                    start_byte: 1,
+                    end_byte: 3,
+                    line: 1,
+                    old_snippet: "bc".into(),
+                    new_snippet: "yz".into(),
+                    kind: EditKind::Reference,
+                },
+            ],
         };
-        assert!(apply_plan_transactional(&plan).is_ok());
-        let _ = read_original_snapshots(&[]).expect("empty snapshot read should succeed");
-        let _ = group_edits_by_path(&plan);
-        let p = PathBuf::from("nonexistent_path_xxx");
-        let mut pe: BTreeMap<PathBuf, Vec<&PlannedEdit>> = BTreeMap::new();
-        pe.insert(p.clone(), vec![]);
-        let mut om = BTreeMap::new();
-        om.insert(
+        let err = check_for_overlaps(&plan).expect_err("expected overlap error");
+        assert!(err.contains("overlapping edits"));
+    }
+
+    #[test]
+    fn read_original_snapshots_marks_missing_files() {
+        let p = PathBuf::from("/tmp/kiss_missing_snapshot_test_path");
+        let snaps = read_original_snapshots(std::slice::from_ref(&p)).unwrap();
+        assert!(!snaps.get(&p).expect("snapshot entry").existed);
+    }
+
+    #[test]
+    fn group_edits_by_path_collects_edits_per_file() {
+        let a = PathBuf::from("a.txt");
+        let b = PathBuf::from("b.txt");
+        let e1 = PlannedEdit {
+            path: a.clone(),
+            start_byte: 0,
+            end_byte: 1,
+            line: 1,
+            old_snippet: "a".into(),
+            new_snippet: "b".into(),
+            kind: EditKind::Reference,
+        };
+        let e2 = PlannedEdit {
+            path: b.clone(),
+            start_byte: 0,
+            end_byte: 1,
+            line: 1,
+            old_snippet: "a".into(),
+            new_snippet: "b".into(),
+            kind: EditKind::Reference,
+        };
+        let plan = MvPlan {
+            files: vec![a.clone(), b.clone()],
+            edits: vec![e1, e2],
+        };
+        let grouped = group_edits_by_path(&plan);
+        assert_eq!(grouped.get(&a).map(Vec::len), Some(1));
+        assert_eq!(grouped.get(&b).map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn apply_all_file_edits_skips_empty_edit_list_without_creating_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("absent.txt");
+        assert!(!p.exists());
+        let mut per_file: BTreeMap<PathBuf, Vec<&PlannedEdit>> = BTreeMap::new();
+        per_file.insert(p.clone(), vec![]);
+        let mut originals = BTreeMap::new();
+        originals.insert(
             p.clone(),
             Snapshot {
                 existed: false,
                 content: String::new(),
             },
         );
-        let _ = apply_all_file_edits(&om, &mut pe);
-        let e = PlannedEdit {
-            path: p.clone(),
-            start_byte: 0,
-            end_byte: 0,
-            line: 1,
-            old_snippet: String::new(),
-            new_snippet: String::new(),
-            kind: EditKind::Definition,
-        };
-        let bad = MvPlan {
-            files: vec![p.clone()],
-            edits: vec![
-                e,
-                PlannedEdit {
-                    path: p,
-                    start_byte: 0,
-                    end_byte: 1,
-                    line: 1,
-                    old_snippet: "a".into(),
-                    new_snippet: "b".into(),
-                    kind: EditKind::Reference,
-                },
-            ],
-        };
-        let _ = check_for_overlaps(&bad);
-        let _ = rollback(&BTreeMap::new());
+        apply_all_file_edits(&originals, &mut per_file).unwrap();
+        assert!(!p.exists());
     }
 
     #[test]
@@ -251,5 +289,22 @@ mod transaction_coverage {
         assert!(err.contains("invalid edit range"));
         assert_eq!(fs::read_to_string(&existing).unwrap(), "ab");
         assert!(!missing.exists());
+    }
+
+    #[test]
+    fn rollback_restores_snapshotted_file_contents() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("rollback.txt");
+        fs::write(&p, "modified").unwrap();
+        let mut originals = BTreeMap::new();
+        originals.insert(
+            p.clone(),
+            Snapshot {
+                existed: true,
+                content: "original".into(),
+            },
+        );
+        rollback(&originals).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), "original");
     }
 }

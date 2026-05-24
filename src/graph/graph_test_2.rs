@@ -181,12 +181,14 @@ fn test_is_test_module_singular_test_dir() {
 
 #[test]
 fn test_touch_importinfo_and_push_import_name_segments() {
-    use crate::graph::{ImportInfo, push_import_name_segments};
-    let _ = ImportInfo {
-        from_qualified: "a.b".into(),
-        from_parent_module: Some("a".into()),
-        imports: vec!["os".into()],
+    use crate::graph::{ImportListPass, push_import_name_segments};
+    let mut g = DependencyGraph::new();
+    let bare = std::collections::HashMap::new();
+    let mut pass = ImportListPass {
+        graph: &mut g,
+        bare_to_qualified: &bare,
     };
+    pass.add_edges("a.b", Some("a"), &["os".into()]);
     let mut parser = create_parser().unwrap();
     let tree = parser.parse("import os", None).unwrap();
     let node = tree.root_node().child(0).unwrap();

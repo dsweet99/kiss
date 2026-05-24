@@ -31,7 +31,7 @@ pub fn run_stats_summary(
         std::process::exit(1);
     }
 
-    if try_run_cached_stats_summary(paths, &py_files, &rs_files, py_cfg, rs_cfg, gate) {
+    if maybe_print_cached_stats_summary(paths, &py_files, &rs_files, py_cfg, rs_cfg, gate) {
         return;
     }
 
@@ -152,7 +152,7 @@ fn print_summary_from_pipeline(paths: &[String], pipeline: &crate::analyze::Full
     }
 }
 
-fn try_run_cached_stats_summary(
+fn maybe_print_cached_stats_summary(
     paths: &[String],
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
@@ -209,5 +209,51 @@ fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
             cache.rs_file_count,
             format_stats_table(&compute_summaries(stats))
         );
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+    use kiss::{Config, GateConfig};
+
+    #[test]
+    fn maybe_print_cached_stats_summary_returns_false_on_miss() {
+        let paths = vec![".".to_string()];
+        let py: Vec<PathBuf> = Vec::new();
+        let rs: Vec<PathBuf> = Vec::new();
+        let py_cfg = Config::default();
+        let rs_cfg = Config::default();
+        let gate = GateConfig::default();
+        assert!(!maybe_print_cached_stats_summary(
+            &paths, &py, &rs, &py_cfg, &rs_cfg, &gate
+        ));
+    }
+
+    #[test]
+    fn print_cached_summary_emits_stats_header() {
+        use kiss::check_universe_cache::FullCheckCache;
+        let cache = FullCheckCache {
+            fingerprint: "test".into(),
+            py_stats: None,
+            rs_stats: None,
+            py_paths: vec![],
+            focus_paths: vec![],
+            rs_paths: vec![],
+            py_file_count: 1,
+            rs_file_count: 0,
+            code_unit_count: 3,
+            statement_count: 5,
+            graph_nodes: 1,
+            graph_edges: 0,
+            base_violations: vec![],
+            graph_violations: vec![],
+            coverage_violations: vec![],
+            py_duplicates: vec![],
+            rs_duplicates: vec![],
+            definitions: vec![],
+            unreferenced: vec![],
+        };
+        print_cached_summary(&[".".into()], &cache);
     }
 }

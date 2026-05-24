@@ -89,36 +89,32 @@ fn has_error_node(node: tree_sitter::Node) -> bool {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// H2: Normalization collisions — functions differing only in
-//     numeric literals are falsely flagged as duplicates.
+// H2: Numeric literals must not collapse to identical fingerprints.
 // ═══════════════════════════════════════════════════════════════
 
 #[test]
-fn h2_numeric_normalization_creates_false_duplicates() {
-    // Two functions with completely different numeric constants
-    // but identical structure should normalize identically.
+fn h2_numeric_literals_stay_distinct_after_normalization() {
     let code_a = "result = compute(123, 456, 789)\nif result > 100:\n    return result * 2\n";
     let code_b = "result = compute(999, 111, 222)\nif result > 500:\n    return result * 3\n";
 
     let norm_a = normalize_code(code_a);
     let norm_b = normalize_code(code_b);
 
-    // After normalization, digits → N, so these become identical
-    assert_eq!(
+    assert_ne!(
         norm_a, norm_b,
-        "Numeric-only differences should normalize identically"
+        "Numeric literals must remain distinct after normalization"
     );
 
-    // Therefore shingles and minhash will be identical → 100% similarity
     let shingles_a = generate_shingles(&norm_a, 3);
     let shingles_b = generate_shingles(&norm_b, 3);
     let sig_a = compute_minhash(&shingles_a, 100);
     let sig_b = compute_minhash(&shingles_b, 100);
     let sim = estimate_similarity(&sig_a, &sig_b);
 
+    let min_sim = kiss::defaults::duplication::MIN_SIMILARITY;
     assert!(
-        (sim - 1.0).abs() < f64::EPSILON,
-        "Functions differing only in numbers should be 100% similar, got {sim}"
+        sim < min_sim,
+        "Functions differing only in numbers must be below duplication threshold ({min_sim}), got {sim}"
     );
 }
 

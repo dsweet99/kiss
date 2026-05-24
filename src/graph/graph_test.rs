@@ -1,5 +1,5 @@
 use crate::graph::{
-    CycleInfo, DependencyGraph, GraphBuildState, ImportListPass, add_edges_for_import_info,
+    CycleInfo, DependencyGraph, GraphBuildState, ImportListPass,
     build_dependency_graph_from_import_lists, collect_imported_name_candidates,
     collect_module_violations, compute_cyclomatic_complexity, count_decision_points,
     cycle_size_violation, dependency_depth_violation, extract_dynamic_import_module,
@@ -55,7 +55,6 @@ fn static_coverage_touch_graph_helpers() {
     t(dependency_depth_violation);
     t(cycle_size_violation);
     t(collect_module_violations);
-    t(add_edges_for_import_info);
     t(GraphBuildState::register_module);
     t(ImportListPass::add_edges);
     t(file_stem_str);

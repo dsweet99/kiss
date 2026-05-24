@@ -108,3 +108,63 @@ fn bug_orphan_module_should_not_flag_include_macro_in_rust() {
         "Expected orphan_include_target not to be orphan when included via include!; got:\n{viols:#?}"
     );
 }
+
+#[test]
+fn include_inc_fragment_not_orphan_when_included() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let lib_fixture = fs::read_to_string("tests/fake_rust/include_inc_lib.rs").unwrap();
+    let inc_fixture = fs::read_to_string("tests/fake_rust/include_inc_fragment.inc").unwrap();
+
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("lib.rs"), lib_fixture).unwrap();
+    fs::write(src.join("include_inc_fragment.inc"), inc_fixture).unwrap();
+
+    let lib = parse_rust_file(&src.join("lib.rs")).unwrap();
+    let frag = parse_rust_file(&src.join("include_inc_fragment.inc")).unwrap();
+    let parsed: Vec<&ParsedRustFile> = vec![&lib, &frag];
+    let g = build_rust_dependency_graph(&parsed);
+    let viols = analyze_graph(&g, &Config::rust_defaults(), true);
+
+    assert!(
+        !viols.iter().any(|v| {
+            v.metric == "orphan_module" && v.file.file_name().is_some_and(|n| n == "include_inc_fragment.inc")
+        }),
+        "included .inc fragment should not be orphan; got:\n{viols:#?}"
+    );
+}
+
+#[test]
+fn include_rollup_counts_fragment_statements_on_includer() {
+    use kiss::rust_counts::analyze_rust_file_include_rollup;
+    use std::fs;
+    use tempfile::TempDir;
+
+    let lib_fixture = fs::read_to_string("tests/fake_rust/include_inc_lib.rs").unwrap();
+    let inc_fixture = fs::read_to_string("tests/fake_rust/include_inc_fragment.inc").unwrap();
+
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("lib.rs"), lib_fixture).unwrap();
+    fs::write(src.join("include_inc_fragment.inc"), inc_fixture).unwrap();
+
+    let lib = parse_rust_file(&src.join("lib.rs")).unwrap();
+    let frag = parse_rust_file(&src.join("include_inc_fragment.inc")).unwrap();
+
+    let mut cfg = Config::rust_defaults();
+    cfg.statements_per_file = 2;
+
+    let viols = analyze_rust_file_include_rollup(&lib, &[&frag], &cfg);
+    assert!(
+        viols.iter().any(|v| {
+            v.metric == "statements_per_file"
+                && v.file.file_name().is_some_and(|n| n == "lib.rs")
+                && v.message.contains("include_inc_fragment.inc")
+        }),
+        "rollup violation should cite fragment path; got:\n{viols:#?}"
+    );
+}

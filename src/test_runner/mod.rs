@@ -184,7 +184,7 @@ mod plan_tests {
         std::fs::write(tmp.path().join("b.py"), "y=1\n").unwrap();
         let orig = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let planned = plan_selectors(
+        let planned: PlannedSelectors = plan_selectors(
             TestChangeMode::Commit,
             None,
             None,

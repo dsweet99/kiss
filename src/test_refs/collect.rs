@@ -1,13 +1,11 @@
-use super::detection::{is_abstract_method, is_protocol_class, is_python_test_file};
-use super::{CodeDefinition, PerTestUsage};
-use crate::parsing::ParsedFile;
+use super::detection::{is_abstract_method, is_protocol_class};
+use super::CodeDefinition;
 use crate::units::{CodeUnitKind, get_child_by_field};
-use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tree_sitter::Node;
 
-pub(crate) fn try_add_def(
+pub(crate) fn try_add_py_def(
     node: Node,
     source: &str,
     file: &Path,
@@ -46,11 +44,11 @@ pub(crate) fn collect_definitions(
             } else {
                 CodeUnitKind::Function
             };
-            try_add_def(node, source, file, defs, kind, class_name.map(String::from));
+            try_add_py_def(node, source, file, defs, kind, class_name.map(String::from));
         }
         "class_definition" if is_protocol_class(node, source) => {}
         "class_definition" => {
-            try_add_def(node, source, file, defs, CodeUnitKind::Class, None);
+            try_add_py_def(node, source, file, defs, CodeUnitKind::Class, None);
             let name = get_child_by_field(node, "name", source);
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
@@ -185,12 +183,12 @@ pub(crate) fn collect_all_test_file_data(
             }
         }
         "import_from_statement" => {
-            collect_import_names(node, source, test_refs);
+            collect_py_import_names_for_refs(node, source, test_refs);
             extract_import_from_binding(node, source, import_bindings);
             return;
         }
         "import_statement" => {
-            collect_import_names(node, source, test_refs);
+            collect_py_import_names_for_refs(node, source, test_refs);
             return;
         }
         "type" => {
@@ -293,7 +291,7 @@ pub(crate) fn extract_import_from_binding(
     }
 }
 
-pub(crate) fn collect_import_names(node: Node, source: &str, refs: &mut HashSet<String>) {
+pub(crate) fn collect_py_import_names_for_refs(node: Node, source: &str, refs: &mut HashSet<String>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -309,90 +307,4 @@ pub(crate) fn collect_import_names(node: Node, source: &str, refs: &mut HashSet<
             _ => {}
         }
     }
-}
-
-type CollectedRefs = (
-    Vec<CodeDefinition>,
-    HashSet<String>,
-    HashSet<String>,
-    HashMap<String, HashSet<String>>,
-    PerTestUsage,
-);
-
-fn empty_collected() -> CollectedRefs {
-    (
-        Vec::new(),
-        HashSet::new(),
-        HashSet::new(),
-        HashMap::new(),
-        PerTestUsage::new(),
-    )
-}
-
-fn merge_collected(
-    (mut defs, mut t_refs, mut u_refs, mut i_binds, mut pt): CollectedRefs,
-    (defs2, t_refs2, u_refs2, i_binds2, pt2): CollectedRefs,
-) -> CollectedRefs {
-    defs.extend(defs2);
-    t_refs.extend(t_refs2);
-    u_refs.extend(u_refs2);
-    for (module, names) in i_binds2 {
-        i_binds.entry(module).or_default().extend(names);
-    }
-    pt.extend(pt2);
-    (defs, t_refs, u_refs, i_binds, pt)
-}
-
-pub(crate) fn collect_refs_parallel(
-    parsed_files: &[&ParsedFile],
-    need_coverage_map: bool,
-) -> CollectedRefs {
-    parsed_files
-        .par_iter()
-        .map(|parsed| {
-            let mut r = empty_collected();
-            if is_python_test_file(parsed) {
-                collect_all_test_file_data(
-                    parsed.tree.root_node(),
-                    &parsed.source,
-                    &mut r.1,
-                    &mut r.2,
-                    &mut r.3,
-                );
-                if need_coverage_map {
-                    let mut test_funcs = Vec::new();
-                    collect_test_functions_with_refs(
-                        parsed.tree.root_node(),
-                        &parsed.source,
-                        "",
-                        &mut test_funcs,
-                    );
-                    r.4 = vec![(parsed.path.clone(), test_funcs)];
-                }
-            } else {
-                collect_definitions(
-                    parsed.tree.root_node(),
-                    &parsed.source,
-                    &parsed.path,
-                    &mut r.0,
-                    false,
-                    None,
-                );
-            }
-            r
-        })
-        .fold(empty_collected, merge_collected)
-        .reduce(empty_collected, merge_collected)
-}
-
-#[must_use]
-pub fn test_functions_in(parsed: &ParsedFile) -> Vec<String> {
-    let mut out = Vec::new();
-    collect_test_functions_with_refs(
-        parsed.tree.root_node(),
-        &parsed.source,
-        "",
-        &mut out,
-    );
-    out.into_iter().map(|(id, _)| id).collect()
 }

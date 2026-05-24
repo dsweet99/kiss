@@ -5,59 +5,15 @@ fn parse_rust_code(code: &str) -> syn::File {
 }
 
 #[test]
-fn test_touch_private_helpers_for_static_coverage() {
-    fn t<T>(_: T) {}
-    // Touch private helpers so static test-ref coverage includes them.
-    let _ = qualify_child_module("a", "b");
-    let _ = RustImports {
-        use_roots: vec!["std".into()],
-        mod_decls: vec!["foo".into()],
-    };
-
-    let ast = parse_rust_code(
-        r"
-mod foo;
-fn f() {
-    if true {
-        use std::io;
-    } else {
-        let _x = 1;
-    }
-}
-",
+fn include_stem_strips_rs_and_inc_extensions() {
+    assert_eq!(
+        crate::rust_include::include_stem_from_literal("path/foo.inc"),
+        "foo"
     );
-
-    let mut use_roots = Vec::new();
-    let mut mod_decls = Vec::new();
-    extract_imports_from_items(&ast.items, &mut use_roots, &mut mod_decls);
-    assert!(!use_roots.is_empty() || !mod_decls.is_empty());
-
-    // Exercise block/expr helpers directly.
-    if let Some(f) = ast.items.iter().find_map(|i| match i {
-        Item::Fn(f) => Some(f),
-        _ => None,
-    }) {
-        let mut use_roots2 = Vec::new();
-        let mut mod_decls2 = Vec::new();
-        extract_imports_from_block(&f.block, &mut use_roots2, &mut mod_decls2);
-        assert!(!use_roots2.is_empty() || !mod_decls2.is_empty());
-
-        if let Some(syn::Stmt::Expr(expr, _)) = f
-            .block
-            .stmts
-            .iter()
-            .find(|s| matches!(s, syn::Stmt::Expr(_, _)))
-        {
-            let mut use_roots3 = Vec::new();
-            let mut mod_decls3 = Vec::new();
-            extract_imports_from_expr(expr, &mut use_roots3, &mut mod_decls3);
-            // May be empty depending on stmt shape; just ensure it compiles/executes.
-            let _ = (use_roots3, mod_decls3);
-        }
-    }
-
-    t(resolve_import);
-    t(extract_include_rs_stem);
+    assert_eq!(
+        crate::rust_include::include_stem_from_literal("bar.rs"),
+        "bar"
+    );
 }
 
 #[test]
@@ -275,4 +231,84 @@ fn test_same_stem_different_dirs_no_collision() {
         "Two files named utils.rs in different dirs should produce 2 graph nodes, got: {:?}",
         graph.nodes.keys().collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn qualify_child_module_respects_crate_roots() {
+    assert_eq!(qualify_child_module("lib", "foo"), "foo");
+    assert_eq!(qualify_child_module("parent", "child"), "parent.child");
+}
+
+#[test]
+fn resolve_import_adds_edges_for_internal_and_bare_modules() {
+    let mut graph = DependencyGraph::default();
+    let internal: HashSet<String> = std::iter::once("foo".into()).collect();
+    let bare: HashMap<String, Vec<String>> = HashMap::new();
+    resolve_import("foo", "bar", &internal, &bare, &mut graph);
+    let bar_idx = *graph.nodes.get("bar").expect("bar node");
+    let foo_idx = *graph.nodes.get("foo").expect("foo node");
+    assert!(graph.graph.contains_edge(bar_idx, foo_idx));
+
+    let mut bare_map: HashMap<String, Vec<String>> = HashMap::new();
+    bare_map.insert("alias".into(), vec!["other.mod".into()]);
+    resolve_import("alias", "consumer", &HashSet::new(), &bare_map, &mut graph);
+    let consumer_idx = *graph.nodes.get("consumer").expect("consumer node");
+    let other_idx = *graph.nodes.get("other.mod").expect("other.mod node");
+    assert!(graph.graph.contains_edge(consumer_idx, other_idx));
+}
+
+#[test]
+fn extract_imports_from_block_and_expr_directly() {
+    let ast = parse_rust_code("fn f() { if true { use std::io; } else { use core::fmt; } }");
+    let syn::Item::Fn(func) = &ast.items[0] else {
+        panic!("expected function item");
+    };
+    let mut block_roots = Vec::new();
+    let mut block_mods = Vec::new();
+    let mut block_includes = Vec::new();
+    extract_imports_from_block(
+        &func.block,
+        &mut block_roots,
+        &mut block_mods,
+        &mut block_includes,
+    );
+    assert!(block_roots.contains(&"std".to_string()));
+
+    if let Some(syn::Stmt::Expr(expr, _)) = func
+        .block
+        .stmts
+        .iter()
+        .find(|s| matches!(s, syn::Stmt::Expr(_, _)))
+    {
+        let mut expr_roots = Vec::new();
+        let mut expr_mods = Vec::new();
+        let mut expr_includes = Vec::new();
+        extract_imports_from_expr(expr, &mut expr_roots, &mut expr_mods, &mut expr_includes);
+        assert!(!expr_roots.is_empty() || !expr_mods.is_empty());
+    }
+}
+
+#[test]
+fn resolve_import_ignores_unknown_modules() {
+    let mut graph = DependencyGraph::default();
+    resolve_import("missing", "module", &HashSet::new(), &HashMap::new(), &mut graph);
+    assert!(graph.nodes.is_empty());
+}
+
+#[test]
+fn rust_imports_and_push_include_edges() {
+    let _ = RustImports {
+        use_roots: vec!["std".into()],
+        mod_decls: vec!["child".into()],
+        include_literals: vec!["child.rs".into()],
+    };
+    let ast = parse_rust_code("use std::io; mod child;");
+    let mut use_roots = Vec::new();
+    let mut mod_decls = Vec::new();
+    let mut include_literals = Vec::new();
+    extract_imports_from_items(&ast.items, &mut use_roots, &mut mod_decls, &mut include_literals);
+    assert!(!use_roots.is_empty());
+    let mac: syn::Macro = syn::parse_quote!(include!("child.rs"));
+    push_include_edges(&mac, &mut mod_decls, &mut include_literals);
+    assert_eq!(include_literals, vec!["child.rs"]);
 }

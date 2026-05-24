@@ -86,6 +86,14 @@ fn regression_mv_json_without_dry_run_applies_edits() {
 }
 
 #[test]
+fn parsed_query_language_name_alias_matches_language_label() {
+    let q = parse_mv_query("a.py::foo").unwrap();
+    #[allow(deprecated)]
+    let alias = q.language_name();
+    assert_eq!(alias, q.language_label());
+}
+
+#[test]
 fn plan_edits_builds_request_from_public_types() {
     let tmp = TempDir::new().unwrap();
     let source = tmp.path().join("a.py");
@@ -94,7 +102,7 @@ fn plan_edits_builds_request_from_public_types() {
     fs::write(&caller, "from a import foo\nfoo()\n").unwrap();
 
     let query: ParsedQuery = parse_mv_query(&format!("{}::foo", source.display())).unwrap();
-    assert_eq!(query.language_name(), "python");
+    assert_eq!(query.language_label(), "python");
 
     let req = MvRequest {
         query,

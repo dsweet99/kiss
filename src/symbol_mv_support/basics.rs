@@ -6,8 +6,10 @@ use crate::symbol_mv;
 pub fn detect_language(path: &Path) -> Result<Language, String> {
     match path.extension().and_then(|ext| ext.to_str()) {
         Some(ext) if ext.eq_ignore_ascii_case("py") => Ok(Language::Python),
-        Some(ext) if ext.eq_ignore_ascii_case("rs") => Ok(Language::Rust),
-        _ => Err("source path must end in .py or .rs".to_string()),
+        Some(ext) if ext.eq_ignore_ascii_case("rs") || ext.eq_ignore_ascii_case("inc") => {
+            Ok(Language::Rust)
+        }
+        _ => Err("source path must end in .py, .rs, or .inc".to_string()),
     }
 }
 

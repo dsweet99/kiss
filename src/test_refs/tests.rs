@@ -240,11 +240,11 @@ fn test_disambiguate_by_graph_when_refs_tie() {
 }
 
 // ---------------------------------------------------------------------------
-// collect.rs: try_add_def
+// collect.rs: try_add_py_def
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_try_add_def_private_skipped() {
+fn test_try_add_py_def_private_skipped() {
     use crate::parsing::create_parser;
     let mut parser = create_parser().unwrap();
     let src = "def _private():\n    pass\ndef __init__(self):\n    pass\ndef test_foo():\n    pass\ndef normal():\n    pass\n";
@@ -254,7 +254,7 @@ fn test_try_add_def_private_skipped() {
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         if child.kind() == "function_definition" {
-            super::collect::try_add_def(
+            super::collect::try_add_py_def(
                 child,
                 src,
                 Path::new("mod.py"),

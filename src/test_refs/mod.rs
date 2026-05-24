@@ -1,4 +1,5 @@
 mod collect;
+mod collect_parallel;
 mod coverage;
 pub(crate) mod detection;
 pub(crate) mod disambiguation;
@@ -11,8 +12,8 @@ use crate::units::CodeUnitKind;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-pub use collect::test_functions_in;
-pub(crate) use collect::collect_refs_parallel;
+pub use collect_parallel::test_functions_in;
+pub(crate) use collect_parallel::collect_refs_parallel;
 pub(crate) use coverage::{build_py_coverage_map, is_definition_covered};
 pub use detection::{has_test_framework_import, is_in_test_directory, is_test_file};
 pub use disambiguation::build_name_file_map;

@@ -12,16 +12,16 @@ pub use query::{ParsedQuery, parse_mv_query, validate_new_name};
 
 use crate::Language;
 
-pub const fn language_name(language: Language) -> &'static str {
+pub const fn mv_language_name(language: Language) -> &'static str {
     match language {
         Language::Python => "python",
         Language::Rust => "rust",
     }
 }
 
-pub fn apply_plan_transactional(plan: &MvPlan) -> Result<(), String> {
-    crate::symbol_mv_support::apply_plan_transactional(plan)
-}
+pub use mv_language_name as language_name;
+
+pub use crate::symbol_mv_support::apply_plan_transactional;
 
 pub fn run_mv_command(opts: MvOptions) -> i32 {
     i32::from(crate::symbol_mv_support::run_mv_inner(opts).is_err())
@@ -29,55 +29,23 @@ pub fn run_mv_command(opts: MvOptions) -> i32 {
 
 #[cfg(test)]
 mod symbol_mv_coverage {
-    use super::{MvOptions, MvPlan, apply_plan_transactional, language_name, run_mv_command};
+    use super::{EditKind, MvOptions, MvPlan, PlannedEdit, run_mv_command};
+    use std::path::PathBuf;
 
     #[test]
-    fn touch_symbol_mv_public_api() {
+    fn mv_language_name_maps_each_language() {
         use crate::Language;
-
-        assert_eq!(language_name(Language::Python), "python");
-        assert_eq!(language_name(Language::Rust), "rust");
-        let plan = MvPlan {
-            files: vec![],
-            edits: vec![],
-        };
-        let _ = apply_plan_transactional(&plan);
-        let opts = MvOptions {
-            query: "x".into(),
-            new_name: "y".into(),
-            paths: vec![],
-            to: None,
-            dry_run: true,
-            json: false,
-            lang_filter: None,
-            ignore: vec![],
-        };
-        let _ = run_mv_command(opts);
+        assert_eq!(super::mv_language_name(Language::Python), "python");
     }
 
     #[test]
-    fn language_name_returns_expected_strings() {
+    fn language_name_export_matches_mv_language_name() {
         use crate::Language;
-        let py = language_name(Language::Python);
-        let rs = language_name(Language::Rust);
-        assert_eq!(py, "python");
-        assert_eq!(rs, "rust");
-    }
-
-    #[test]
-    fn apply_plan_transactional_empty_plan_succeeds() {
-        let plan = MvPlan {
-            files: vec![],
-            edits: vec![],
-        };
-        let result = apply_plan_transactional(&plan);
-        assert!(result.is_ok());
+        assert_eq!(super::language_name(Language::Rust), "rust");
     }
 
     #[test]
     fn mv_plan_and_planned_edit_construction() {
-        use super::{EditKind, PlannedEdit};
-        use std::path::PathBuf;
         let edit = PlannedEdit {
             path: PathBuf::from("test.rs"),
             start_byte: 0,

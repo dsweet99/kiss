@@ -17,10 +17,46 @@ mod tests;
 pub fn analyze_rust_file(parsed: &ParsedRustFile, config: &Config) -> Vec<Violation> {
     let mut violations = Vec::new();
     let mut analyzer = RustAnalyzer::new(&parsed.path, config, &mut violations);
-    analyzer.check_file_metrics(parsed);
+    analyzer.check_parsed_file_metrics(parsed);
     for item in &parsed.ast.items {
         analyzer.analyze_item(item);
     }
+    violations
+}
+
+/// File-level metrics rolled up from `include!` fragments onto the includer path.
+#[must_use]
+pub fn analyze_rust_file_include_rollup(
+    parent: &ParsedRustFile,
+    included: &[&ParsedRustFile],
+    config: &Config,
+) -> Vec<Violation> {
+    if included.is_empty() {
+        return Vec::new();
+    }
+    let mut violations = Vec::new();
+    let mut analyzer = RustAnalyzer::new(&parent.path, config, &mut violations);
+    let mut merged = compute_rust_file_metrics(parent);
+    let mut lines = parent.source.lines().count();
+    let mut contributor_paths = Vec::new();
+    for frag in included {
+        let fm = compute_rust_file_metrics(frag);
+        merged.statements += fm.statements;
+        merged.interface_types += fm.interface_types;
+        merged.concrete_types += fm.concrete_types;
+        merged.imports += fm.imports;
+        merged.functions += fm.functions;
+        lines += frag.source.lines().count();
+        contributor_paths.push(frag.path.display().to_string());
+    }
+    let contrib = contributor_paths.join(", ");
+    let fname = parent
+        .path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    analyzer.check_rolled_file_metrics(&fname, &merged, lines, &contrib);
     violations
 }
 
@@ -49,7 +85,7 @@ impl<'a> RustAnalyzer<'a> {
         suggestion: &'static str,
     ) {
         self.violations.push(
-            self.violation(1, fname)
+            self.build_violation(1, fname)
                 .metric(metric)
                 .value(value)
                 .threshold(threshold)
@@ -59,7 +95,7 @@ impl<'a> RustAnalyzer<'a> {
         );
     }
 
-    fn check_file_metrics(&mut self, parsed: &ParsedRustFile) {
+    fn check_parsed_file_metrics(&mut self, parsed: &ParsedRustFile) {
         let m = compute_rust_file_metrics(parsed);
         let fname = self
             .file
@@ -67,27 +103,45 @@ impl<'a> RustAnalyzer<'a> {
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
-        let c = self.config;
-
         let lines = parsed.source.lines().count();
+        self.check_rolled_file_metrics(&fname, &m, lines, "");
+    }
+
+    fn check_rolled_file_metrics(
+        &mut self,
+        fname: &str,
+        m: &RustFileMetrics,
+        lines: usize,
+        include_contributors: &str,
+    ) {
+        let c = self.config;
+        let suffix = if include_contributors.is_empty() {
+            String::new()
+        } else {
+            format!("; include fragments: {include_contributors}")
+        };
+
         if lines > c.lines_per_file {
             self.push_file_threshold_violation(
-                &fname,
+                fname,
                 "lines_per_file",
                 lines,
                 c.lines_per_file,
-                format!("File has {lines} lines (threshold: {})", c.lines_per_file),
+                format!(
+                    "File has {lines} lines (threshold: {}){suffix}",
+                    c.lines_per_file
+                ),
                 "Split the file roughly in half.",
             );
         }
         if m.statements > c.statements_per_file {
             self.push_file_threshold_violation(
-                &fname,
+                fname,
                 "statements_per_file",
                 m.statements,
                 c.statements_per_file,
                 format!(
-                    "File has {} statements (threshold: {})",
+                    "File has {} statements (threshold: {}){suffix}",
                     m.statements, c.statements_per_file
                 ),
                 "Split the file roughly in half.",
@@ -95,12 +149,12 @@ impl<'a> RustAnalyzer<'a> {
         }
         if m.interface_types > c.interface_types_per_file {
             self.push_file_threshold_violation(
-                &fname,
+                fname,
                 "interface_types_per_file",
                 m.interface_types,
                 c.interface_types_per_file,
                 format!(
-                    "File has {} interface types (threshold: {})",
+                    "File has {} interface types (threshold: {}){suffix}",
                     m.interface_types, c.interface_types_per_file
                 ),
                 "Move traits into a dedicated module.",
@@ -108,26 +162,25 @@ impl<'a> RustAnalyzer<'a> {
         }
         if m.concrete_types > c.concrete_types_per_file {
             self.push_file_threshold_violation(
-                &fname,
+                fname,
                 "concrete_types_per_file",
                 m.concrete_types,
                 c.concrete_types_per_file,
                 format!(
-                    "File has {} concrete types (threshold: {})",
+                    "File has {} concrete types (threshold: {}){suffix}",
                     m.concrete_types, c.concrete_types_per_file
                 ),
                 "Move types to separate files.",
             );
         }
-        // Skip lib.rs and mod.rs - they're module definition files that naturally aggregate re-exports
         if m.imports > c.imported_names_per_file && fname != "lib.rs" && fname != "mod.rs" {
             self.push_file_threshold_violation(
-                &fname,
+                fname,
                 "imported_names_per_file",
                 m.imports,
                 c.imported_names_per_file,
                 format!(
-                    "File has {} use statements (threshold: {})",
+                    "File has {} use statements (threshold: {}){suffix}",
                     m.imports, c.imported_names_per_file
                 ),
                 "Module may have too many responsibilities. Consider splitting.",
@@ -135,12 +188,12 @@ impl<'a> RustAnalyzer<'a> {
         }
         if m.functions > c.functions_per_file {
             self.push_file_threshold_violation(
-                &fname,
+                fname,
                 "functions_per_file",
                 m.functions,
                 c.functions_per_file,
                 format!(
-                    "File has {} functions (threshold: {})",
+                    "File has {} functions (threshold: {}){suffix}",
                     m.functions, c.functions_per_file
                 ),
                 "Split into multiple modules with focused responsibilities.",
@@ -200,14 +253,14 @@ impl<'a> RustAnalyzer<'a> {
         }
     }
 
-    fn violation(&self, line: usize, name: &str) -> ViolationBuilder {
+    fn build_violation(&self, line: usize, name: &str) -> ViolationBuilder {
         Violation::builder(self.file).line(line).unit_name(name)
     }
 
     fn check_methods_per_class(&mut self, line: usize, name: &str, count: usize) {
         if count > self.config.methods_per_class {
             self.violations.push(
-                self.violation(line, name)
+                self.build_violation(line, name)
                     .metric("methods_per_class")
                     .value(count)
                     .threshold(self.config.methods_per_class)
@@ -237,7 +290,7 @@ impl<'a> RustAnalyzer<'a> {
             ($mf:ident, $cf:ident, $metric:literal, $label:literal, $sug:literal) => {
                 if m.$mf > c.$cf {
                     self.violations.push(
-                        self.violation(line, name)
+                        self.build_violation(line, name)
                             .metric($metric)
                             .value(m.$mf)
                             .threshold(c.$cf)

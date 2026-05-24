@@ -125,6 +125,7 @@ fn test_coverage_gate_passes_with_tests() {
 fn test_print_functions_no_panic() {
     print_violations(&[]);
     print_final_status(false);
+    print_final_status(true);
     print_duplicates("Python", &[]);
     assert_eq!(count_py_unreferenced(&[]), 0);
     assert_eq!(count_rs_unreferenced(&[]), 0);

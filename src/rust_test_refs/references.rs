@@ -24,7 +24,7 @@ pub(super) fn collect_per_test_usage(ast: &syn::File) -> Vec<(String, HashSet<St
 }
 
 #[must_use]
-pub fn test_functions_in(parsed: &crate::rust_parsing::ParsedRustFile) -> Vec<String> {
+pub fn rust_test_functions_in(parsed: &crate::rust_parsing::ParsedRustFile) -> Vec<String> {
     collect_per_test_usage(&parsed.ast)
         .into_iter()
         .map(|(id, _)| id)

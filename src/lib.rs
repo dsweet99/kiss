@@ -40,6 +40,7 @@ pub mod units;
 pub mod rust_counts;
 pub mod rust_fn_metrics;
 pub mod rust_graph;
+pub mod rust_include;
 pub mod rust_parsing;
 pub mod rust_test_refs;
 pub mod rust_units;
@@ -98,7 +99,8 @@ pub use units::count_code_units;
 pub use units::{CodeUnit, CodeUnitKind, extract_code_units};
 pub use violation::{Violation, ViolationBuilder};
 
-pub use rust_counts::analyze_rust_file;
+pub use rust_counts::{analyze_rust_file, analyze_rust_file_include_rollup};
+pub use rust_graph::{build_include_graph, expand_rust_files, IncludeGraph};
 pub use rust_fn_metrics::{
     RustFileMetrics, RustFunctionMetrics, RustTypeMetrics, compute_rust_file_metrics,
     compute_rust_function_metrics, count_non_doc_attrs,
@@ -107,7 +109,7 @@ pub use rust_graph::build_rust_dependency_graph;
 pub use rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file, parse_rust_files};
 pub use rust_test_refs::{
     RustCodeDefinition, RustTestRefAnalysis, analyze_rust_test_refs, is_rust_test_file,
-    test_functions_in as rust_test_functions_in,
+    rust_test_functions_in,
 };
 pub use rust_units::{RustCodeUnit, extract_rust_code_units};
 

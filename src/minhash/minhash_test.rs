@@ -4,8 +4,12 @@ use super::*;
 
 #[test]
 fn test_normalize_code() {
-    assert_eq!(normalize_code("x = 123"), "x = N");
+    assert_eq!(normalize_code("x = 123"), "x = 123");
     assert_eq!(normalize_code("  hello   world  "), "hello world");
+    assert_ne!(
+        normalize_code("result = compute(123, 456)"),
+        normalize_code("result = compute(999, 111)")
+    );
 }
 
 #[test]

@@ -2,7 +2,7 @@ use super::stress_break_kiss::parse;
 use kiss::Config;
 use kiss::graph::{DependencyGraph, analyze_graph};
 use kiss::minhash::{
-    MinHashSignature, compute_minhash, estimate_similarity, generate_shingles, normalize_code,
+    MinHashSignature, compute_minhash, estimate_similarity, generate_shingles,
 };
 use std::fmt::Write as _;
 
@@ -184,7 +184,7 @@ fn h2_duplication_pipeline_with_near_identical_functions() {
     for i in 0..20 {
         let _ = write!(
             code,
-            "def func_{i}(data):\n    result = process(data, {i})\n    validated = check(result)\n    transformed = convert(validated)\n    output = finalize(transformed)\n    return output\n\n"
+            "def func_{i}(data):\n    result = process(data, 42)\n    validated = check(result)\n    transformed = convert(validated)\n    output = finalize(transformed)\n    return output\n\n"
         );
     }
 
@@ -201,8 +201,7 @@ fn h2_duplication_pipeline_with_near_identical_functions() {
     let sigs: Vec<MinHashSignature> = chunks
         .iter()
         .map(|c| {
-            let norm = normalize_code(&c.normalized);
-            let shingles = generate_shingles(&norm, 3);
+            let shingles = generate_shingles(&c.normalized, 3);
             compute_minhash(&shingles, 100)
         })
         .collect();
@@ -211,7 +210,42 @@ fn h2_duplication_pipeline_with_near_identical_functions() {
         let sim = estimate_similarity(&sigs[0], &sigs[1]);
         assert!(
             sim > 0.9,
-            "Near-identical functions should have >90% similarity, got {sim}"
+            "Identical bodies should have >90% similarity, got {sim}"
         );
     }
+
+    let mut code_vary = String::new();
+    for (name, n) in [("compute_a", "1"), ("compute_b", "9")] {
+        let _ = write!(
+            code_vary,
+            "def {name}(data):\n    result = process(data, {n})\n    validated = check(result)\n    transformed = convert(validated)\n    output = finalize(transformed)\n    return output\n\n"
+        );
+    }
+    let p2 = parse(&code_vary);
+    let chunks2 = kiss::extract_chunks_for_duplication(&[&p2]);
+    assert!(
+        chunks2.len() >= 2,
+        "numeric-only pair must yield extractable chunks, got {}",
+        chunks2.len()
+    );
+    let config = kiss::DuplicationConfig::default();
+    let pairs = kiss::detect_duplicates(&[&p2], &config);
+    assert!(
+        pairs.is_empty(),
+        "numeric-only literal differences must not be duplicate pairs, got {pairs:?}"
+    );
+
+    let mut code_index = String::new();
+    for i in 0..5 {
+        let _ = write!(
+            code_index,
+            "def func_{i}(data):\n    result = process(data, {i})\n    validated = check(result)\n    transformed = convert(validated)\n    output = finalize(transformed)\n    return output\n\n"
+        );
+    }
+    let p3 = parse(&code_index);
+    let pairs_index = kiss::detect_duplicates(&[&p3], &config);
+    assert!(
+        pairs_index.is_empty(),
+        "functions differing only by numeric literal index must not duplicate, got {pairs_index:?}"
+    );
 }

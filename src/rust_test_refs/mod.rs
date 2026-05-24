@@ -17,7 +17,7 @@ pub use definitions::RustCodeDefinition;
 use definitions::{collect_rust_definitions, collect_test_module_references};
 use references::{collect_per_test_usage, collect_rust_references};
 
-pub use references::test_functions_in;
+pub use references::rust_test_functions_in;
 
 use crate::test_refs::CoveringTest;
 
@@ -33,9 +33,7 @@ pub struct RustTestRefAnalysis {
 }
 
 fn is_rs_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
+    crate::rust_include::is_rust_source_path(path)
 }
 
 fn has_test_naming_pattern(path: &Path) -> bool {

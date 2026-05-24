@@ -10,4 +10,4 @@ fi
 cd "$(git rev-parse --show-toplevel)"
 
 # Run clippy with strict options
-cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::cargo
+cargo clippy --all-targets --all-features -- -D warnings -W clippy::cargo

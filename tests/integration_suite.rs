@@ -12,6 +12,8 @@ mod break_c2_test_coverage;
 mod cache_integration;
 #[path = "cases/cli_integration.rs"]
 mod cli_integration;
+#[path = "cases/cli_check_hint.rs"]
+mod cli_check_hint;
 #[path = "cases/cli_integration_2.rs"]
 mod cli_integration_2;
 #[path = "cases/config_tests.rs"]
@@ -30,6 +32,8 @@ mod kpop_definitions_2;
 mod kpop_python_function_metrics;
 #[path = "cases/bug_indirect_dependencies_check.rs"]
 mod bug_indirect_dependencies_check;
+#[path = "cases/bug_test_coverage_aggregate_gate_masking.rs"]
+mod bug_test_coverage_aggregate_gate_masking;
 #[path = "cases/kpop_python_graph_metrics.rs"]
 mod kpop_python_graph_metrics;
 #[path = "cases/kpop_python_none.rs"]
@@ -44,6 +48,8 @@ mod kpop_rust_file_metrics_plan;
 mod kpop_rust_function_metrics;
 #[path = "cases/kpop_rust_graph_metrics.rs"]
 mod kpop_rust_graph_metrics;
+#[path = "cases/kpop_include_rollup_regressions.rs"]
+mod kpop_include_rollup_regressions;
 #[path = "cases/kpop_rust_none.rs"]
 mod kpop_rust_none;
 #[path = "cases/kpop_rust_none_graph_and_gates.rs"]

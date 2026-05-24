@@ -34,6 +34,11 @@ fn test_language_from_path() {
         Some(Language::Rust)
     );
     assert_eq!(Language::from_path(std::path::Path::new("file.txt")), None);
+    assert_eq!(
+        Language::from_path(std::path::Path::new("frag.inc")),
+        Some(Language::Rust)
+    );
+    assert!(Language::is_rust_path(std::path::Path::new("x.INC")));
 }
 
 #[test]
