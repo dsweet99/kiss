@@ -12,6 +12,8 @@ mod break_c2_test_coverage;
 mod cache_integration;
 #[path = "cases/cli_integration.rs"]
 mod cli_integration;
+#[path = "cases/cli_check_hint.rs"]
+mod cli_check_hint;
 #[path = "cases/cli_integration_2.rs"]
 mod cli_integration_2;
 #[path = "cases/config_tests.rs"]

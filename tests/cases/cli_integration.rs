@@ -1,5 +1,6 @@
 use std::fs;
 use std::process::Command;
+use kiss::cli_output::VIOLATIONS_FIX_HINT;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
@@ -127,6 +128,10 @@ fn cli_analyze_reports_violations_on_god_class() {
     assert!(
         stdout.contains("VIOLATION"),
         "god_class should report violations. stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains(VIOLATIONS_FIX_HINT),
+        "violations should include fix hint. stdout: {stdout}"
     );
 }
 
