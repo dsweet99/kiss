@@ -20,7 +20,7 @@ repos:
 
       - id: cargo-test
         name: Rust tests
-        entry: cargo test
+        entry: cargo nextest run
         language: system
         pass_filenames: false
         types: [rust]
