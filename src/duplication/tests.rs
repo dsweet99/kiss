@@ -226,3 +226,40 @@ fn test_extract_chunks_for_duplication_direct() {
     let chunks = extract_chunks_for_duplication(&[&p]);
     assert!(!chunks.is_empty());
 }
+
+#[test]
+fn test_detect_duplicates_numeric_literals_only_differ() {
+    let code = "\
+def compute_a(data):
+    result = compute(123, 456, 789)
+    if result > 100:
+        return result * 2
+    x = 1
+    y = 2
+    z = 3
+    a = 4
+    b = 5
+    return x + y + z + a + b
+
+def compute_b(data):
+    result = compute(999, 111, 222)
+    if result > 500:
+        return result * 3
+    x = 1
+    y = 2
+    z = 3
+    a = 4
+    b = 5
+    return x + y + z + a + b
+";
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
+    write!(tmp, "{code}").unwrap();
+    let mut parser = create_parser().unwrap();
+    let p = parse_file(&mut parser, tmp.path()).unwrap();
+    let config = DuplicationConfig::default();
+    let pairs = detect_duplicates(&[&p], &config);
+    assert!(
+        pairs.is_empty(),
+        "expected no duplicate pairs when only numeric literals differ, got {pairs:?}"
+    );
+}

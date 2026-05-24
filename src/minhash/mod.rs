@@ -31,13 +31,12 @@ pub fn normalize_code(code: &str) -> String {
                 result.push(' ');
                 last_was_space = true;
             }
-        } else if c.is_ascii_digit() {
-            if !result.ends_with('N') {
-                result.push('N');
-                last_was_space = false;
-            }
         } else {
-            result.push(c.to_ascii_lowercase());
+            result.push(if c.is_ascii() {
+                c.to_ascii_lowercase()
+            } else {
+                c
+            });
             last_was_space = false;
         }
     }
