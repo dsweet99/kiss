@@ -29,6 +29,10 @@ include = [
 name = "kiss"
 path = "src/main.rs"
 
+[[bin]]
+name = "kiss-coverage-map"
+path = "src/bin/coverage_map.rs"
+
 [lib]
 name = "kiss"
 path = "src/lib.rs"
