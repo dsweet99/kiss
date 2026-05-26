@@ -15,19 +15,8 @@ mod test_discovery;
 mod viz;
 mod viz_coarsen;
 
-use crate::bin_cli::{run, set_sigpipe_default};
-
 fn main() {
-    let t0 = std::time::Instant::now();
-    set_sigpipe_default();
-    let exit_code = run();
-    let d = t0.elapsed();
-    if d.as_secs() >= 1 {
-        eprintln!("kiss: {:.2}s", d.as_secs_f64());
-    } else {
-        eprintln!("kiss: {}ms", d.as_millis());
-    }
-    std::process::exit(exit_code);
+    std::process::exit(crate::bin_cli::kiss_main_with_timing());
 }
 
 #[cfg(test)]

@@ -13,8 +13,7 @@ mod shrink_types;
 pub mod stats;
 pub mod util;
 
-pub use run::run;
-pub use util::set_sigpipe_default;
+pub use run::kiss_main_with_timing;
 
 #[cfg(test)]
 #[path = "gates_core.rs"]

@@ -43,6 +43,7 @@ fn test_touch_for_static_test_coverage_part_a() {
         touch(crate::analyze_cache::store_full_cache_from_run),
         touch(compute_test_coverage_from_lists),
         touch(crate::analyze::pipeline::run_analyze_uncached),
+        touch(kiss::cli_output::file_coverage_map_by_line_spans),
         touch(build_py_graph),
         touch(build_rs_graph),
         touch(merge_coverage_results),

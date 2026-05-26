@@ -1,5 +1,6 @@
 use super::collect::{
-    collect_all_test_file_data, collect_definitions, collect_test_functions_with_refs,
+    collect_all_test_file_data, collect_all_test_file_data_for_coverage_map,
+    collect_definitions, collect_test_functions_with_refs,
 };
 use super::detection::is_python_test_file;
 use super::{CodeDefinition, PerTestUsage};
@@ -39,22 +40,59 @@ fn merge_collected(
     (defs, t_refs, u_refs, i_binds, pt)
 }
 
+#[derive(Copy, Clone)]
+pub(crate) enum ParallelRefsKind {
+    Gate { need_coverage_map: bool },
+    CoverageCalibration,
+}
+
 pub(crate) fn collect_refs_parallel(
     parsed_files: &[&ParsedFile],
     need_coverage_map: bool,
 ) -> CollectedRefs {
+    collect_refs_parallel_with_mode(parsed_files, ParallelRefsKind::Gate {
+        need_coverage_map,
+    })
+}
+
+pub(crate) fn collect_refs_parallel_for_coverage_map(
+    parsed_files: &[&ParsedFile],
+) -> CollectedRefs {
+    collect_refs_parallel_with_mode(parsed_files, ParallelRefsKind::CoverageCalibration)
+}
+
+pub(crate) fn collect_refs_parallel_with_mode(
+    parsed_files: &[&ParsedFile],
+    kind: ParallelRefsKind,
+) -> CollectedRefs {
+    let (need_coverage_map, calibration) = match kind {
+        ParallelRefsKind::Gate {
+            need_coverage_map,
+        } => (need_coverage_map, false),
+        ParallelRefsKind::CoverageCalibration => (true, true),
+    };
     parsed_files
         .par_iter()
         .map(|parsed| {
             let mut r = empty_collected();
             if is_python_test_file(parsed) {
-                collect_all_test_file_data(
-                    parsed.tree.root_node(),
-                    &parsed.source,
-                    &mut r.1,
-                    &mut r.2,
-                    &mut r.3,
-                );
+                if calibration {
+                    collect_all_test_file_data_for_coverage_map(
+                        parsed.tree.root_node(),
+                        &parsed.source,
+                        &mut r.1,
+                        &mut r.2,
+                        &mut r.3,
+                    );
+                } else {
+                    collect_all_test_file_data(
+                        parsed.tree.root_node(),
+                        &parsed.source,
+                        &mut r.1,
+                        &mut r.2,
+                        &mut r.3,
+                    );
+                }
                 if need_coverage_map {
                     let mut test_funcs = Vec::new();
                     collect_test_functions_with_refs(
@@ -138,5 +176,33 @@ mod collect_parallel_tests {
                 .iter()
                 .any(|(name, usage)| name == "test_helper" && usage.contains("helper"))
         );
+    }
+
+    #[test]
+    fn collect_refs_parallel_for_coverage_map_calibration_branch() {
+        let mut src = NamedTempFile::with_suffix(".py").unwrap();
+        writeln!(src, "def api():\n    pass").unwrap();
+        let mut test = NamedTempFile::with_suffix("_test.py").unwrap();
+        writeln!(test, "def test_api():\n    api()").unwrap();
+        let mut parser = create_parser().expect("parser");
+        let parsed_src = parse_file(&mut parser, src.path()).expect("parse");
+        let parsed_test = parse_file(&mut parser, test.path()).expect("parse");
+        let refs = [&parsed_src, &parsed_test];
+        let (_, _, usage, _, per_test) = collect_refs_parallel_for_coverage_map(&refs);
+        assert!(usage.contains("api"));
+        assert_eq!(per_test.len(), 1);
+    }
+
+    #[test]
+    fn collect_refs_parallel_with_mode_empty_and_flags() {
+        let empty = collect_refs_parallel_with_mode(&[], ParallelRefsKind::CoverageCalibration);
+        assert!(empty.0.is_empty());
+        let empty2 = collect_refs_parallel_with_mode(
+            &[],
+            ParallelRefsKind::Gate {
+                need_coverage_map: false,
+            },
+        );
+        assert!(empty2.0.is_empty());
     }
 }

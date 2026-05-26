@@ -5,7 +5,7 @@ use crate::rust_parsing::ParsedRustFile;
 use crate::rust_test_refs::analyze_rust_test_refs;
 use crate::test_refs::analyze_test_refs;
 use crate::violation::Violation;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub const VIOLATIONS_FIX_HINT: &str =
@@ -37,6 +37,43 @@ pub fn file_coverage_map(
         definitions.iter().map(|(f, _, _)| f),
         unreferenced.iter().map(|(f, _, _)| f),
     )
+}
+
+/// Per-file coverage weighted by source line spans (for [`kiss-coverage-map`] calibration).
+pub fn file_coverage_map_by_line_spans(
+    definitions: &[(PathBuf, String, usize, usize)],
+    unreferenced: &[(PathBuf, String, usize)],
+) -> HashMap<PathBuf, usize> {
+    let unref_keys: HashSet<(&PathBuf, &str, usize)> = unreferenced
+        .iter()
+        .map(|(f, n, l)| (f, n.as_str(), *l))
+        .collect();
+    let mut total_lines: HashMap<PathBuf, usize> = HashMap::new();
+    let mut covered_lines: HashMap<PathBuf, usize> = HashMap::new();
+    for (file, name, start, end) in definitions {
+        let span = end.saturating_sub(*start).saturating_add(1);
+        *total_lines.entry(file.clone()).or_default() += span;
+        if !unref_keys.contains(&(file, name.as_str(), *start)) {
+            *covered_lines.entry(file.clone()).or_default() += span;
+        }
+    }
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    total_lines
+        .into_iter()
+        .map(|(file, total)| {
+            let covered = covered_lines.get(&file).copied().unwrap_or(0);
+            let pct = if total == 0 {
+                100
+            } else {
+                ((covered as f64 / total as f64) * 100.0).round() as usize
+            };
+            (file, pct)
+        })
+        .collect()
 }
 
 pub fn file_coverage_map_from_paths<'a>(
@@ -308,10 +345,28 @@ mod tests {
     }
 
     #[test]
+    fn test_file_coverage_map_by_line_spans_weights_longer_defs() {
+        let defs = vec![
+            (PathBuf::from("a.rs"), "big".into(), 1, 10),
+            (PathBuf::from("a.rs"), "small".into(), 20, 21),
+        ];
+        let unref = vec![(PathBuf::from("a.rs"), "big".into(), 1)];
+        let map = file_coverage_map_by_line_spans(&defs, &unref);
+        assert_eq!(map[&PathBuf::from("a.rs")], 17);
+    }
+
+    #[test]
+    fn file_coverage_map_from_paths_empty() {
+        let map = file_coverage_map_from_paths(std::iter::empty(), std::iter::empty());
+        assert!(map.is_empty());
+    }
+
+    #[test]
     fn static_coverage_touch_gate_90() {
         fn t<T>(_: T) {}
         t(format_candidate_list);
         t(min_per_file_coverage);
+        t(file_coverage_map_by_line_spans);
         t(print_dry_results);
     }
 

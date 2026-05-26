@@ -295,7 +295,7 @@ fn test_insert_identifier_captures_name() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_collect_usage_refs_in_scope_gathers_calls_and_identifiers() {
+fn test_collect_usage_refs_in_scope_gathers_call_witnesses_only() {
     use crate::parsing::create_parser;
     let mut parser = create_parser().unwrap();
     let src = "def test_it():\n    foo()\n    bar.baz()\n    x = helper\n";
@@ -307,7 +307,10 @@ fn test_collect_usage_refs_in_scope_gathers_calls_and_identifiers() {
     super::collect::collect_usage_refs_in_scope(body, src, &mut refs);
     assert!(refs.contains("foo"), "direct call captured");
     assert!(refs.contains("baz"), "attribute call captured");
-    assert!(refs.contains("helper"), "bare identifier captured");
+    assert!(
+        !refs.contains("helper"),
+        "bare identifier must not count as executable witness"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ use super::{has_cfg_test_attribute, has_test_attribute};
 use crate::units::CodeUnitKind;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use syn::spanned::Spanned;
 use syn::{Expr, ImplItem, Item, Stmt};
 
 use super::references::{ReferenceVisitor, collect_rust_references};
@@ -36,7 +37,7 @@ fn is_well_known_constructor(name: &str) -> bool {
 /// or a well-known constructor like `Ok`, `Err`, `Some`, `None`, and every argument is
 /// structurally trivial (so work cannot hide in call arguments).
 /// Examples: `lib::run()`, `crate::foo()`, `Ok(())`
-fn is_qualified_or_known_call(expr: &Expr) -> bool {
+pub(crate) fn is_qualified_or_known_call(expr: &Expr) -> bool {
     match expr {
         Expr::Call(c) => {
             if let Expr::Path(p) = c.func.as_ref() {
@@ -95,7 +96,7 @@ fn is_trivial_expr(expr: &Expr) -> bool {
 }
 
 /// Returns true if the statement is trivial (delegation only, no local definitions).
-fn is_trivial_stmt(stmt: &Stmt) -> bool {
+pub(crate) fn is_trivial_stmt(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Expr(e, _) => is_trivial_expr(e),
         Stmt::Local(l) => l.init.as_ref().is_none_or(|i| is_trivial_expr(&i.expr)),
@@ -131,6 +132,7 @@ pub struct RustCodeDefinition {
     pub kind: CodeUnitKind,
     pub file: PathBuf,
     pub line: usize,
+    pub end_line: usize,
     pub impl_for_type: Option<String>,
 }
 
@@ -154,6 +156,7 @@ pub(super) fn try_add_def(
     kind: CodeUnitKind,
     file: &Path,
     line: usize,
+    end_line: usize,
     impl_for_type: Option<String>,
 ) {
     if !is_private(name) {
@@ -162,6 +165,7 @@ pub(super) fn try_add_def(
             kind,
             file: file.to_path_buf(),
             line,
+            end_line: end_line.max(line),
             impl_for_type,
         });
     }
@@ -198,6 +202,7 @@ pub(super) fn collect_impl_methods(
                 kind,
                 file,
                 m.sig.ident.span().start().line,
+                m.block.span().end().line,
                 impl_for,
             );
         }
@@ -217,6 +222,7 @@ pub(super) fn collect_definitions_from_item(
                 CodeUnitKind::Function,
                 file,
                 f.sig.ident.span().start().line,
+                f.block.span().end().line,
                 None,
             );
         }
@@ -226,6 +232,7 @@ pub(super) fn collect_definitions_from_item(
             CodeUnitKind::Class,
             file,
             s.ident.span().start().line,
+            s.ident.span().end().line,
             None,
         ),
         Item::Enum(e) => try_add_def(
@@ -234,6 +241,7 @@ pub(super) fn collect_definitions_from_item(
             CodeUnitKind::Class,
             file,
             e.ident.span().start().line,
+            e.ident.span().end().line,
             None,
         ),
         Item::Impl(i) if !has_cfg_test_attribute(&i.attrs) => collect_impl_methods(i, file, defs),
@@ -249,22 +257,43 @@ pub(super) fn collect_definitions_from_item(
 }
 
 pub(super) fn collect_test_module_references(ast: &syn::File, refs: &mut HashSet<String>) {
+    collect_test_module_references_with_mode(ast, refs, super::references::RefWitnessMode::GATE);
+}
+
+pub(super) fn collect_test_module_references_for_coverage_map(
+    ast: &syn::File,
+    refs: &mut HashSet<String>,
+) {
+    collect_test_module_references_with_mode(
+        ast,
+        refs,
+        super::references::RefWitnessMode::COVERAGE_MAP,
+    );
+}
+
+fn collect_test_module_references_with_mode(
+    ast: &syn::File,
+    refs: &mut HashSet<String>,
+    mode: super::references::RefWitnessMode,
+) {
     for item in &ast.items {
         match item {
             Item::Mod(m) if has_cfg_test_attribute(&m.attrs) => {
                 if let Some((_, items)) = &m.content {
-                    collect_rust_references(
-                        &syn::File {
-                            shebang: None,
-                            attrs: vec![],
-                            items: items.clone(),
-                        },
-                        refs,
-                    );
+                    let sub = syn::File {
+                        shebang: None,
+                        attrs: vec![],
+                        items: items.clone(),
+                    };
+                    if mode.includes_bare_paths() {
+                        collect_rust_references(&sub, refs);
+                    } else {
+                        super::references::collect_rust_references_for_coverage_map(&sub, refs);
+                    }
                 }
             }
             Item::Fn(f) if has_test_attribute(&f.attrs) => {
-                ReferenceVisitor { refs }.visit_item_fn(f);
+                ReferenceVisitor { refs, mode }.visit_item_fn(f);
             }
             _ => {}
         }
@@ -303,30 +332,6 @@ mod definitions_coverage {
     }
 
     #[test]
-    fn is_trivial_stmt_variants() {
-        assert!(is_trivial_stmt(
-            &syn::parse_str::<syn::Stmt>("Ok(());").unwrap()
-        ));
-        let trivial: syn::Block = syn::parse_str("{ let x = 42; }").unwrap();
-        assert!(trivial.stmts.iter().all(is_trivial_stmt));
-        let non_trivial: syn::Block = syn::parse_str("{ fn inner() {} }").unwrap();
-        assert!(!non_trivial.stmts.iter().all(is_trivial_stmt));
-    }
-
-    #[test]
-    fn is_qualified_or_known_call_variants() {
-        assert!(is_qualified_or_known_call(
-            &syn::parse_str("module::func()").unwrap()
-        ));
-        assert!(is_qualified_or_known_call(
-            &syn::parse_str("Ok(())").unwrap()
-        ));
-        assert!(!is_qualified_or_known_call(
-            &syn::parse_str("unknown_func()").unwrap()
-        ));
-    }
-
-    #[test]
     fn try_add_def_public_and_private() {
         let mut defs = Vec::new();
         try_add_def(
@@ -334,6 +339,7 @@ mod definitions_coverage {
             "my_func",
             CodeUnitKind::Function,
             Path::new("t.rs"),
+            1,
             1,
             None,
         );
@@ -344,6 +350,7 @@ mod definitions_coverage {
             "_private",
             CodeUnitKind::Function,
             Path::new("t.rs"),
+            1,
             1,
             None,
         );
@@ -377,5 +384,13 @@ mod definitions_coverage {
         let mut refs = HashSet::new();
         collect_test_module_references(&ast, &mut refs);
         assert!(refs.contains("production_fn"));
+    }
+
+    #[test]
+    fn collect_test_module_references_for_coverage_map_smoke() {
+        let ast: syn::File = syn::parse_str("#[test] fn t() { helper(); }").unwrap();
+        let mut refs = HashSet::new();
+        collect_test_module_references_for_coverage_map(&ast, &mut refs);
+        assert!(refs.contains("helper"));
     }
 }

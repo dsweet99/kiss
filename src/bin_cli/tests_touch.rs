@@ -3,11 +3,13 @@
 use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::stats::{RunStatsArgs, run_stats};
+use crate::bin_cli::kiss_main_with_timing;
+use crate::bin_cli::run::run;
 
 #[test]
 fn test_touch_for_static_test_coverage() {
     fn touch<T>(_t: T) {}
-    let _ = (touch(run_mimic), touch(run_stats));
+    let _ = (touch(run_mimic), touch(run_stats), touch(run), touch(kiss_main_with_timing));
     let _ = (
         std::mem::size_of_val(&run_test_command),
         std::mem::size_of::<RunStatsArgs>(),

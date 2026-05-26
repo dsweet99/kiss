@@ -311,6 +311,7 @@ fn covered_by_import_fixture(usage: &[&str]) -> CovFixture {
         kind: crate::units::CodeUnitKind::Function,
         file: PathBuf::from("pkg/mod.py"),
         line: 1,
+        end_line: 1,
         containing_class: None,
     };
     let mut import_bindings = std::collections::HashMap::new();
@@ -346,6 +347,7 @@ fn test_is_covered_by_import_wrong_module() {
         kind: crate::units::CodeUnitKind::Function,
         file: PathBuf::from("alpha/mod.py"),
         line: 1,
+        end_line: 1,
         containing_class: None,
     };
     let mut import_bindings = std::collections::HashMap::new();

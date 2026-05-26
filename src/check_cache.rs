@@ -86,6 +86,8 @@ pub struct CachedCodeDefinition {
     pub kind: String,
     pub file: String,
     pub line: usize,
+    #[serde(default)]
+    pub end_line: usize,
     pub containing_class: Option<String>,
 }
 
@@ -120,6 +122,7 @@ impl From<&CodeDefinition> for CachedCodeDefinition {
             kind: kind_to_str(d.kind).to_string(),
             file: d.file.to_string_lossy().to_string(),
             line: d.line,
+            end_line: d.end_line,
             containing_class: d.containing_class.clone(),
         }
     }
@@ -132,6 +135,11 @@ impl CachedCodeDefinition {
             kind: kind_from_str(&self.kind),
             file: PathBuf::from(self.file),
             line: self.line,
+            end_line: if self.end_line == 0 {
+                self.line
+            } else {
+                self.end_line
+            },
             containing_class: self.containing_class,
         }
     }
@@ -189,6 +197,7 @@ mod tests {
             kind: CodeUnitKind::Class,
             file: PathBuf::from("x.py"),
             line: 3,
+        end_line: 3,
             containing_class: None,
         };
         let cached = CachedCodeDefinition::from(&d);

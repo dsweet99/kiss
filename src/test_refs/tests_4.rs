@@ -11,6 +11,7 @@ fn test_is_definition_covered_unique_name() {
         kind: crate::units::CodeUnitKind::Function,
         file: PathBuf::from("mod.py"),
         line: 1,
+        end_line: 1,
         containing_class: None,
     };
     let mut name_files = HashMap::new();
@@ -41,6 +42,7 @@ fn test_is_definition_covered_by_containing_class() {
         kind: crate::units::CodeUnitKind::Method,
         file: PathBuf::from("mod.py"),
         line: 5,
+        end_line: 5,
         containing_class: Some("MyClass".to_string()),
     };
     let name_files = HashMap::new();
@@ -67,6 +69,7 @@ fn test_is_definition_covered_disambiguation_winner() {
         kind: crate::units::CodeUnitKind::Function,
         file: PathBuf::from("alpha.py"),
         line: 1,
+        end_line: 1,
         containing_class: None,
     };
     let mut name_files = HashMap::new();
@@ -95,6 +98,7 @@ fn test_is_definition_covered_disambiguation_winner() {
         kind: crate::units::CodeUnitKind::Function,
         file: PathBuf::from("beta.py"),
         line: 1,
+        end_line: 1,
         containing_class: None,
     };
     assert!(!is_definition_covered(
@@ -120,13 +124,15 @@ fn test_build_ref_to_covered_def_indices_unique_and_class() {
             kind: crate::units::CodeUnitKind::Function,
             file: PathBuf::from("mod.py"),
             line: 1,
-            containing_class: None,
+        end_line: 1,
+        containing_class: None,
         },
         CodeDefinition {
             name: "bar".to_string(),
             kind: crate::units::CodeUnitKind::Method,
             file: PathBuf::from("mod.py"),
             line: 5,
+        end_line: 5,
             containing_class: Some("Cls".to_string()),
         },
     ];
@@ -169,6 +175,7 @@ fn test_build_py_coverage_map_per_test_tracking() {
         kind: crate::units::CodeUnitKind::Function,
         file: PathBuf::from("engine.py"),
         line: 1,
+        end_line: 1,
         containing_class: None,
     }];
     let mut name_files: HashMap<String, HashSet<PathBuf>> = HashMap::new();
@@ -344,3 +351,4 @@ fn test_is_python_test_file_regular_file() {
         "def helper():\n    pass\n"
     ));
 }
+

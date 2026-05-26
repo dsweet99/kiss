@@ -352,3 +352,4 @@ fn test_collect_test_files_for_ambiguous_names_via_build() {
         "without graph, falls back to ref-based only"
     );
 }
+

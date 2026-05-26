@@ -5,23 +5,40 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use syn::Attribute;
 
+mod calibration;
 mod definitions;
 mod references;
+
+#[cfg(test)]
+pub(crate) use calibration::{
+    expand_coverage_references_one_hop, expand_coverage_references_to_fixpoint,
+    expand_one_hop_from_item, has_rust_integration_test_runner,
+    merge_one_hop_refs, path_is_under_tests, seed_binary_entry_roots,
+    seed_binary_entry_roots_from_item,
+};
 
 #[cfg(test)]
 mod tests_1;
 #[cfg(test)]
 mod tests_2;
+#[cfg(test)]
+mod tests_2_cal;
 
 pub use definitions::RustCodeDefinition;
-use definitions::{collect_rust_definitions, collect_test_module_references};
-use references::{collect_per_test_usage, collect_rust_references};
+use definitions::{
+    collect_rust_definitions, collect_test_module_references,
+    collect_test_module_references_for_coverage_map,
+};
+use references::{
+    collect_per_test_usage, collect_per_test_usage_for_coverage_map,
+    collect_rust_references, collect_rust_references_for_coverage_map,
+};
 
 pub use references::rust_test_functions_in;
 
 use crate::test_refs::CoveringTest;
 
-type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
+pub(crate) type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
 
 #[derive(Debug, Clone)]
 pub struct RustTestRefAnalysis {
@@ -124,8 +141,37 @@ pub(crate) fn is_covered_by_tests(
     name_files: &HashMap<String, HashSet<PathBuf>>,
     disambiguation: &HashMap<String, PathBuf>,
 ) -> bool {
+    is_covered_by_tests_with_mode(def, refs, name_files, disambiguation, true)
+}
+
+pub(crate) fn is_covered_by_tests_for_coverage_map(
+    def: &RustCodeDefinition,
+    refs: &HashSet<String>,
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &HashMap<String, PathBuf>,
+) -> bool {
+    if calibration::is_calibration_excluded_file(&def.file) {
+        return false;
+    }
+    if matches!(
+        def.kind,
+        CodeUnitKind::TraitImplMethod | CodeUnitKind::Method
+    ) {
+        return is_directly_referenced(def, refs, name_files, disambiguation)
+            || is_impl_with_referenced_type(def, refs);
+    }
+    is_covered_by_tests_with_mode(def, refs, name_files, disambiguation, true)
+}
+
+pub(crate) fn is_covered_by_tests_with_mode(
+    def: &RustCodeDefinition,
+    refs: &HashSet<String>,
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &HashMap<String, PathBuf>,
+    allow_impl_type_sibling: bool,
+) -> bool {
     is_directly_referenced(def, refs, name_files, disambiguation)
-        || is_impl_with_referenced_type(def, refs)
+        || (allow_impl_type_sibling && is_impl_with_referenced_type(def, refs))
 }
 
 pub fn analyze_rust_test_refs(
@@ -163,8 +209,13 @@ pub fn analyze_rust_test_refs(
         .filter(|d| !is_covered_by_tests(d, &test_references, &name_files, &disambiguation))
         .cloned()
         .collect();
-    let coverage_map =
-        build_rust_coverage_map(&definitions, &per_test_usage, &name_files, &disambiguation);
+    let coverage_map = calibration::build_rust_coverage_map(
+        &definitions,
+        &per_test_usage,
+        &name_files,
+        &disambiguation,
+        &test_references,
+    );
     RustTestRefAnalysis {
         definitions,
         test_references,
@@ -173,49 +224,66 @@ pub fn analyze_rust_test_refs(
     }
 }
 
-#[allow(clippy::type_complexity)]
-fn build_rust_coverage_map(
-    definitions: &[RustCodeDefinition],
-    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
-    name_files: &HashMap<String, HashSet<PathBuf>>,
-    disambiguation: &HashMap<String, PathBuf>,
-) -> HashMap<(PathBuf, String), Vec<CoveringTest>> {
-    let mut name_to_defs: HashMap<&str, Vec<usize>> = HashMap::new();
-    for (i, def) in definitions.iter().enumerate() {
-        name_to_defs.entry(&def.name).or_default().push(i);
-        if let Some(ref t) = def.impl_for_type {
-            name_to_defs.entry(t.as_str()).or_default().push(i);
+/// Like [`analyze_rust_test_refs`], but counts only call/method/struct/macro/path-string witnesses
+/// (not bare `Expr::Path` or type names) when deciding coverage — for `kiss-coverage-map` calibration.
+pub fn analyze_rust_test_refs_for_coverage_map(
+    parsed_files: &[&ParsedRustFile],
+    graph: Option<&DependencyGraph>,
+) -> RustTestRefAnalysis {
+    let mut definitions = Vec::new();
+    let mut test_references = HashSet::new();
+    let mut coverage_references = HashSet::new();
+    let mut per_test_usage: PerTestUsage = Vec::new();
+    for parsed in parsed_files {
+        if is_rust_test_file(&parsed.path) {
+            collect_rust_references(&parsed.ast, &mut test_references);
+            collect_rust_references_for_coverage_map(&parsed.ast, &mut coverage_references);
+        } else {
+            collect_rust_definitions(&parsed.ast, &parsed.path, &mut definitions);
+            collect_test_module_references(&parsed.ast, &mut test_references);
+            collect_test_module_references_for_coverage_map(&parsed.ast, &mut coverage_references);
+        }
+        let test_funcs = collect_per_test_usage_for_coverage_map(&parsed.ast);
+        if !test_funcs.is_empty() {
+            per_test_usage.push((parsed.path.clone(), test_funcs));
         }
     }
-
-    let mut coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>> = HashMap::new();
-    for (test_path, test_funcs) in per_test_usage {
-        for (test_id, usage_refs) in test_funcs {
-            if test_id.is_empty() {
-                continue;
-            }
-            let mut seen = HashSet::new();
-            for ref_name in usage_refs {
-                let Some(def_indices) = name_to_defs.get(ref_name.as_str()) else {
-                    continue;
-                };
-                for &idx in def_indices {
-                    if !seen.insert(idx) {
-                        continue;
-                    }
-                    let def = &definitions[idx];
-                    if !is_covered_by_tests(def, usage_refs, name_files, disambiguation) {
-                        continue;
-                    }
-                    let key = (def.file.clone(), def.name.clone());
-                    let entry = (test_path.clone(), test_id.clone());
-                    let list = coverage_map.entry(key).or_default();
-                    if !list.contains(&entry) {
-                        list.push(entry);
-                    }
-                }
-            }
-        }
+    calibration::expand_coverage_map_witnesses(parsed_files, &mut coverage_references);
+    let name_files = crate::test_refs::build_name_file_map(
+        definitions
+            .iter()
+            .map(|d| (d.name.as_str(), d.file.as_path())),
+    );
+    let disambiguation = crate::test_refs::build_disambiguation_map(
+        &name_files,
+        &test_references,
+        &per_test_usage,
+        graph,
+    );
+    let unreferenced: Vec<RustCodeDefinition> = definitions
+        .iter()
+        .filter(|d| {
+            !is_covered_by_tests_for_coverage_map(
+                d,
+                &coverage_references,
+                &name_files,
+                &disambiguation,
+            )
+        })
+        .cloned()
+        .collect();
+    let coverage_map = calibration::build_rust_coverage_map_for_calibration(
+        &definitions,
+        &per_test_usage,
+        &name_files,
+        &disambiguation,
+        &coverage_references,
+    );
+    RustTestRefAnalysis {
+        definitions,
+        test_references: coverage_references,
+        unreferenced,
+        coverage_map,
     }
-    coverage_map
 }
+

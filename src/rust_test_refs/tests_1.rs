@@ -70,6 +70,7 @@ fn test_coverage_checks() {
         kind: CodeUnitKind::TraitImplMethod,
         file: "t.rs".into(),
         line: 1,
+        end_line: 1,
         impl_for_type: Some("MyType".into()),
     };
     let refs: HashSet<String> = ["MyType", "foo"].into_iter().map(String::from).collect();
@@ -79,6 +80,7 @@ fn test_coverage_checks() {
         kind: CodeUnitKind::Function,
         file: "t.rs".into(),
         line: 1,
+        end_line: 1,
         impl_for_type: None,
     };
     let all_definitions = [def.clone(), def2.clone()];
@@ -110,18 +112,47 @@ fn test_visitor_and_macros() {
     use syn::visit::Visit;
 
     let mut refs = HashSet::new();
-    let _ = references::ReferenceVisitor { refs: &mut refs };
     let ty: syn::Type = syn::parse_str("MyType").unwrap();
-    references::ReferenceVisitor { refs: &mut refs }.visit_type(&ty);
+    references::ReferenceVisitor {
+        refs: &mut refs,
+        mode: references::RefWitnessMode::GATE,
+    }
+    .visit_type(&ty);
     assert!(refs.contains("MyType"));
     let mac: syn::ExprMacro = syn::parse_str("println!(\"test\")").unwrap();
-    references::ReferenceVisitor { refs: &mut refs }.visit_macro(&mac.mac);
+    references::ReferenceVisitor {
+        refs: &mut refs,
+        mode: references::RefWitnessMode::GATE,
+    }
+    .visit_macro(&mac.mac);
     let tokens1: proc_macro2::TokenStream = "foo()".parse().unwrap();
-    assert!(references::try_parse_as_single_expr(&tokens1, &mut refs));
+    assert!(references::try_parse_as_single_expr(
+        &tokens1,
+        &mut refs,
+        references::RefWitnessMode::GATE
+    ));
     let tokens2: proc_macro2::TokenStream = "a, b".parse().unwrap();
-    assert!(references::try_parse_as_expr_list(&tokens2, &mut refs));
+    assert!(references::try_parse_as_expr_list(
+        &tokens2,
+        &mut refs,
+        references::RefWitnessMode::GATE
+    ));
     let tokens3: proc_macro2::TokenStream = "{ bar() }".parse().unwrap();
-    references::visit_nested_token_groups(&tokens3, &mut refs);
+    references::visit_nested_token_groups(&tokens3, &mut refs, references::RefWitnessMode::GATE);
+}
+
+#[test]
+fn test_analyze_refs_for_coverage_map() {
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    write!(
+        tmp,
+        "fn foo() {{}}\n#[cfg(test)] mod tests {{ use super::*; #[test] fn t() {{ foo(); }} }}"
+    )
+    .unwrap();
+    let parsed = parse_rust_file(tmp.path()).unwrap();
+    let analysis = analyze_rust_test_refs_for_coverage_map(&[&parsed], None);
+    assert!(analysis.unreferenced.is_empty());
+    assert!(analysis.coverage_map.contains_key(&(parsed.path, "foo".to_string())));
 }
 
 #[test]
@@ -153,6 +184,45 @@ fn test_collect_rust_references() {
     let mut refs = HashSet::new();
     references::collect_rust_references(&ast, &mut refs);
     assert!(refs.contains("foo"));
+}
+
+#[test]
+fn test_stringify_macro_and_path_ref_helpers() {
+    let mac: syn::Macro = syn::parse_str("stringify!(x)").unwrap();
+    assert!(references::is_stringify_macro(&mac));
+    let mut refs = HashSet::new();
+    references::insert_coverage_path_string_ref("src/x.rs::helper_fn", &mut refs);
+    assert!(refs.contains("helper_fn"));
+    references::insert_coverage_path_string_ref("not a path", &mut refs);
+    assert!(!refs.contains("not"));
+}
+
+#[test]
+fn test_coverage_map_mode_ignores_bare_path_types() {
+    let ast: syn::File = syn::parse_str(
+        "#[test]\nfn t() { let _: MyType = foo(); only_path(MyType); }",
+    )
+    .unwrap();
+    let mut full = HashSet::new();
+    let mut cal = HashSet::new();
+    references::collect_rust_references(&ast, &mut full);
+    references::collect_rust_references_for_coverage_map(&ast, &mut cal);
+    assert!(full.contains("MyType"));
+    assert!(!cal.contains("MyType") || cal.contains("foo"));
+    assert!(cal.contains("foo"));
+}
+
+#[test]
+fn test_stringify_and_path_string_refs() {
+    let ast: syn::File = syn::parse_str(
+        "#[test]\nfn t() { let _ = stringify!(ghost); foo(); let _ = \"src/a.rs::bar_helper\"; }",
+    )
+    .unwrap();
+    let mut refs = HashSet::new();
+    references::collect_rust_references(&ast, &mut refs);
+    assert!(!refs.contains("ghost"));
+    assert!(refs.contains("foo"));
+    assert!(refs.contains("bar_helper"));
 }
 
 // === Bug-hunting tests ===

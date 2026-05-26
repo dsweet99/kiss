@@ -22,9 +22,24 @@ pub(crate) fn try_add_py_def(
             kind,
             file: file.to_path_buf(),
             line: node.start_position().row + 1,
+            end_line: node.end_position().row + 1,
             containing_class,
         });
     }
+}
+
+pub(crate) fn is_dunder_main_guard(node: Node, source: &str) -> bool {
+    if node.kind() != "if_statement" {
+        return false;
+    }
+    let Some(cond) = node.child_by_field_name("condition") else {
+        return false;
+    };
+    let text: String = source[cond.start_byte()..cond.end_byte()]
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    text == "__name__==\"__main__\"" || text == "__name__=='__main__'"
 }
 
 pub(crate) fn collect_definitions(
@@ -36,6 +51,7 @@ pub(crate) fn collect_definitions(
     class_name: Option<&str>,
 ) {
     match node.kind() {
+        "if_statement" if is_dunder_main_guard(node, source) => {}
         "function_definition" | "async_function_definition" if is_abstract_method(node, source) => {
         }
         "function_definition" | "async_function_definition" => {
@@ -88,9 +104,6 @@ pub(crate) fn collect_usage_refs_in_scope(node: Node, source: &str, refs: &mut H
                     collect_call_target(child, source, refs);
                 }
             }
-        }
-        "identifier" => {
-            insert_identifier(node, source, refs);
         }
         _ => {}
     }
@@ -175,6 +188,41 @@ pub(crate) fn collect_all_test_file_data(
     usage_refs: &mut HashSet<String>,
     import_bindings: &mut HashMap<String, HashSet<String>>,
 ) {
+    collect_all_test_file_data_with_mode(
+        node,
+        source,
+        test_refs,
+        usage_refs,
+        import_bindings,
+        true,
+    );
+}
+
+pub(crate) fn collect_all_test_file_data_for_coverage_map(
+    node: Node,
+    source: &str,
+    test_refs: &mut HashSet<String>,
+    usage_refs: &mut HashSet<String>,
+    import_bindings: &mut HashMap<String, HashSet<String>>,
+) {
+    collect_all_test_file_data_with_mode(
+        node,
+        source,
+        test_refs,
+        usage_refs,
+        import_bindings,
+        false,
+    );
+}
+
+fn collect_all_test_file_data_with_mode(
+    node: Node,
+    source: &str,
+    test_refs: &mut HashSet<String>,
+    usage_refs: &mut HashSet<String>,
+    import_bindings: &mut HashMap<String, HashSet<String>>,
+    include_bare_identifiers: bool,
+) {
     match node.kind() {
         "call" => {
             if let Some(func) = node.child_by_field_name("function") {
@@ -208,14 +256,21 @@ pub(crate) fn collect_all_test_file_data(
                 }
             }
         }
-        "identifier" => {
+        "identifier" if include_bare_identifiers => {
             insert_identifier(node, source, usage_refs);
         }
         _ => {}
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_all_test_file_data(child, source, test_refs, usage_refs, import_bindings);
+        collect_all_test_file_data_with_mode(
+            child,
+            source,
+            test_refs,
+            usage_refs,
+            import_bindings,
+            include_bare_identifiers,
+        );
     }
 }
 
