@@ -108,6 +108,13 @@ mod python_coverage {
     use std::io::Write;
 
     #[test]
+    fn py_import_metric_none_for_init_py() {
+        use std::path::Path;
+        assert_eq!(super::py_import_metric(Path::new("pkg/__init__.py"), 3), None);
+        assert_eq!(super::py_import_metric(Path::new("pkg/mod.py"), 5), Some(5));
+    }
+
+    #[test]
     fn touch_for_coverage() {
         let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
         write!(

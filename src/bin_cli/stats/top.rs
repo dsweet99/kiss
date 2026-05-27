@@ -14,7 +14,7 @@ pub struct StatsTopArgs<'a> {
     pub gate_config: &'a GateConfig,
 }
 
-type FreshCoverageItems = (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>);
+pub(super) type FreshCoverageItems = (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>);
 
 pub fn run_stats_top(args: StatsTopArgs<'_>) {
     let (py_files, rs_files) =
@@ -37,8 +37,10 @@ pub fn run_stats_top(args: StatsTopArgs<'_>) {
         args.gate_config,
     )
     .map(coverage_map_to_string_keys);
-    let (py_units, py_fresh) = collect_py_units(&py_files, cached_coverage.as_ref());
-    let (rs_units, rs_fresh) = collect_rs_units(&rs_files, cached_coverage.as_ref());
+    let (py_units, py_fresh) =
+        super::top_collect::collect_py_units(&py_files, cached_coverage.as_ref());
+    let (rs_units, rs_fresh) =
+        super::top_collect::collect_rs_units(&rs_files, cached_coverage.as_ref());
     if cached_coverage.is_none()
         && let Some((definitions, unreferenced)) = merge_fresh_items(py_fresh, rs_fresh)
     {
@@ -57,13 +59,15 @@ pub fn run_stats_top(args: StatsTopArgs<'_>) {
     print_all_top_metrics(&all_units, args.n);
 }
 
-fn coverage_map_to_string_keys(map: HashMap<PathBuf, usize>) -> HashMap<String, usize> {
+pub(super) fn coverage_map_to_string_keys(
+    map: HashMap<PathBuf, usize>,
+) -> HashMap<String, usize> {
     map.into_iter()
         .map(|(p, v)| (p.display().to_string(), v))
         .collect()
 }
 
-fn merge_fresh_items(
+pub(super) fn merge_fresh_items(
     py: Option<FreshCoverageItems>,
     rs: Option<FreshCoverageItems>,
 ) -> Option<FreshCoverageItems> {
@@ -85,126 +89,11 @@ pub fn collect_all_units(
     rs_files: &[PathBuf],
     cached_coverage: Option<&HashMap<String, usize>>,
 ) -> Vec<kiss::UnitMetrics> {
-    let (py_units, _) = collect_py_units(py_files, cached_coverage);
-    let (rs_units, _) = collect_rs_units(rs_files, cached_coverage);
+    let (py_units, _) = super::top_collect::collect_py_units(py_files, cached_coverage);
+    let (rs_units, _) = super::top_collect::collect_rs_units(rs_files, cached_coverage);
     let mut units = py_units;
     units.extend(rs_units);
     units
-}
-
-fn collect_py_units(
-    py_files: &[PathBuf],
-    cached_coverage: Option<&HashMap<String, usize>>,
-) -> (Vec<kiss::UnitMetrics>, Option<FreshCoverageItems>) {
-    use kiss::parsing::parse_files;
-    use kiss::{analyze_test_refs, build_dependency_graph, collect_detailed_py};
-
-    collect_lang_units(LangCollect {
-        files: py_files,
-        cached_coverage,
-        parse: |files| match parse_files(files) {
-            Ok(r) => r.into_iter().filter_map(Result::ok).collect(),
-            Err(e) => {
-                eprintln!("error: failed to parse Python files: {e}");
-                Vec::new()
-            }
-        },
-        build_graph: build_dependency_graph,
-        analyze: |refs, graph| {
-            let cov = analyze_test_refs(refs, Some(graph));
-            (cov.definitions, cov.unreferenced)
-        },
-        collect_detailed: collect_detailed_py,
-        file_of: |d: &kiss::CodeDefinition| &d.file,
-        item_of: |d: &kiss::CodeDefinition| CachedCoverageItem {
-            file: d.file.to_string_lossy().to_string(),
-            name: d.name.clone(),
-            line: d.line,
-        },
-    })
-}
-
-fn collect_rs_units(
-    rs_files: &[PathBuf],
-    cached_coverage: Option<&HashMap<String, usize>>,
-) -> (Vec<kiss::UnitMetrics>, Option<FreshCoverageItems>) {
-    use kiss::rust_graph::build_rust_dependency_graph;
-    use kiss::rust_parsing::parse_rust_files;
-    use kiss::{analyze_rust_test_refs, collect_detailed_rs};
-
-    collect_lang_units(LangCollect {
-        files: rs_files,
-        cached_coverage,
-        parse: |files| {
-            parse_rust_files(files)
-                .into_iter()
-                .filter_map(Result::ok)
-                .collect()
-        },
-        build_graph: build_rust_dependency_graph,
-        analyze: |refs, graph| {
-            let cov = analyze_rust_test_refs(refs, Some(graph));
-            (cov.definitions, cov.unreferenced)
-        },
-        collect_detailed: collect_detailed_rs,
-        file_of: |d: &kiss::RustCodeDefinition| &d.file,
-        item_of: |d: &kiss::RustCodeDefinition| CachedCoverageItem {
-            file: d.file.to_string_lossy().to_string(),
-            name: d.name.clone(),
-            line: d.line,
-        },
-    })
-}
-
-struct LangCollect<'a, P, D, FParse, FBuild, FAnalyze, FCollect, FFile, FItem>
-where
-    FParse: FnOnce(&[PathBuf]) -> Vec<P>,
-    FBuild: FnOnce(&[&P]) -> kiss::DependencyGraph,
-    FAnalyze: FnOnce(&[&P], &kiss::DependencyGraph) -> (Vec<D>, Vec<D>),
-    FCollect: FnOnce(&[&P], Option<&kiss::DependencyGraph>) -> Vec<kiss::UnitMetrics>,
-    FFile: Fn(&D) -> &PathBuf,
-    FItem: Fn(&D) -> CachedCoverageItem,
-{
-    files: &'a [PathBuf],
-    cached_coverage: Option<&'a HashMap<String, usize>>,
-    parse: FParse,
-    build_graph: FBuild,
-    analyze: FAnalyze,
-    collect_detailed: FCollect,
-    file_of: FFile,
-    item_of: FItem,
-}
-
-fn collect_lang_units<P, D, FParse, FBuild, FAnalyze, FCollect, FFile, FItem>(
-    args: LangCollect<'_, P, D, FParse, FBuild, FAnalyze, FCollect, FFile, FItem>,
-) -> (Vec<kiss::UnitMetrics>, Option<FreshCoverageItems>)
-where
-    FParse: FnOnce(&[PathBuf]) -> Vec<P>,
-    FBuild: FnOnce(&[&P]) -> kiss::DependencyGraph,
-    FAnalyze: FnOnce(&[&P], &kiss::DependencyGraph) -> (Vec<D>, Vec<D>),
-    FCollect: FnOnce(&[&P], Option<&kiss::DependencyGraph>) -> Vec<kiss::UnitMetrics>,
-    FFile: Fn(&D) -> &PathBuf,
-    FItem: Fn(&D) -> CachedCoverageItem,
-{
-    if args.files.is_empty() {
-        return (Vec::new(), None);
-    }
-    let parsed = (args.parse)(args.files);
-    let parsed_refs: Vec<&P> = parsed.iter().collect();
-    let graph = (args.build_graph)(&parsed_refs);
-    let (coverage_map, fresh) = if let Some(m) = args.cached_coverage {
-        (m.clone(), None)
-    } else {
-        let (defs, unrefs) = (args.analyze)(&parsed_refs, &graph);
-        let map = coverage_pct_map(&defs, &unrefs, &args.file_of);
-        let cached_defs: Vec<CachedCoverageItem> = defs.iter().map(&args.item_of).collect();
-        let cached_unrefs: Vec<CachedCoverageItem> = unrefs.iter().map(&args.item_of).collect();
-        (map, Some((cached_defs, cached_unrefs)))
-    };
-    let mut units = (args.collect_detailed)(&parsed_refs, Some(&graph));
-    decorate_file_units_with_coverage(&mut units, &coverage_map);
-    append_cycle_units(&mut units, &graph);
-    (units, fresh)
 }
 
 pub(super) fn coverage_pct_map<D, F>(defs: &[D], unrefs: &[D], file_of: F) -> HashMap<String, usize>

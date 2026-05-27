@@ -72,7 +72,9 @@ def test_analyze_discrepancy_wrapper(tmp_path: Path, monkeypatch) -> None:
     repo = tmp_path / "proj"
     repo.mkdir()
     p = (repo / "m.py").resolve()
-    monkeypatch.setattr("ops.cd_analyze.kiss_per_file", lambda _repo: {p: 100.0})
+    monkeypatch.setattr(
+        "ops.cd_analyze.kiss_per_file", lambda _repo, **kwargs: {p: 100.0}
+    )
     monkeypatch.setattr("ops.cd_analyze.kiss_summary_median", lambda _repo: 100.0)
     report = analyze_discrepancy(
         repo, "python", RuntimeCoverage({p: 80.0}, 80.0)

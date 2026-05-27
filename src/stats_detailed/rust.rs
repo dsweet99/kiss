@@ -160,6 +160,20 @@ mod rust_coverage {
     use std::io::Write;
 
     #[test]
+    fn rust_import_metric_skips_lib_and_mod_rs() {
+        use std::path::Path;
+        assert_eq!(super::rust_import_metric(Path::new("src/lib.rs"), 3), None);
+        assert_eq!(
+            super::rust_import_metric(Path::new("src/foo/mod.rs"), 3),
+            None
+        );
+        assert_eq!(
+            super::rust_import_metric(Path::new("src/foo.rs"), 3),
+            Some(3)
+        );
+    }
+
+    #[test]
     fn touch_for_coverage() {
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
         write!(
@@ -201,6 +215,18 @@ mod rust_coverage {
         assert!(u.branches.is_some());
         assert!(u.locals.is_some());
         assert!(u.calls.is_some());
+    }
+
+    #[test]
+    fn rust_import_metric_none_for_lib_rs() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let lib = tmp.path().join("lib.rs");
+        std::fs::write(&lib, "use std::io;\n").unwrap();
+        let parsed = crate::rust_parsing::parse_rust_file(&lib).unwrap();
+        let refs = vec![&parsed];
+        let units = collect_detailed_rs(&refs, None);
+        let file_unit = units.iter().find(|u| u.kind == "file").expect("file unit");
+        assert!(file_unit.imports.is_none(), "lib.rs hides import metric");
     }
 
     #[test]

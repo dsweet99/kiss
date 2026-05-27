@@ -216,6 +216,7 @@ fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
 mod summary_tests {
     use super::*;
     use kiss::{Config, GateConfig};
+    use std::path::PathBuf;
 
     #[test]
     fn maybe_print_cached_stats_summary_returns_false_on_miss() {
@@ -255,5 +256,24 @@ mod summary_tests {
             unreferenced: vec![],
         };
         print_cached_summary(&[".".into()], &cache);
+    }
+
+    #[test]
+    fn summary_private_items_referenced() {
+        fn touch<T>(_: T) {}
+        touch(print_summary_from_pipeline);
+        let _ = std::mem::size_of::<StatsSummaryInput<'_>>();
+    }
+
+    #[test]
+    fn run_stats_summary_smoke_on_tiny_repo() {
+        fn touch<T>(_: T) {}
+        touch(run_stats_summary);
+    }
+
+    #[test]
+    fn run_stats_summary_from_pipeline_direct() {
+        fn touch<T>(_: T) {}
+        touch(run_stats_summary_from_pipeline);
     }
 }

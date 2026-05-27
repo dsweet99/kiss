@@ -105,3 +105,53 @@ fn coverage_pct_map_groups_by_file() {
     assert_eq!(map.get("a.py").copied(), Some(50));
     assert_eq!(map.get("b.py").copied(), Some(100));
 }
+
+#[test]
+fn merge_fresh_items_combines_py_and_rs() {
+    use super::top::{coverage_map_to_string_keys, merge_fresh_items};
+    use kiss::check_universe_cache::CachedCoverageItem;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    let py = Some((
+        vec![CachedCoverageItem {
+            file: "a.py".into(),
+            name: "f".into(),
+            line: 1,
+        }],
+        Vec::new(),
+    ));
+    let merged = merge_fresh_items(py, None).expect("merged");
+    assert_eq!(merged.0.len(), 1);
+    assert!(merge_fresh_items(None, None).is_none());
+
+    let mut map = HashMap::new();
+    map.insert(PathBuf::from("a.py"), 100);
+    let keyed = coverage_map_to_string_keys(map);
+    assert_eq!(keyed.get("a.py").copied(), Some(100));
+}
+
+#[test]
+fn collect_all_units_parses_python_file() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let py = tmp.path().join("a.py");
+    std::fs::write(&py, "def f():\n    pass\n").unwrap();
+    let units = super::collect_all_units(&[py], &[], None);
+    assert!(units.iter().any(|u| u.name == "f"));
+}
+
+#[test]
+fn collect_py_units_and_rs_units_on_fixtures() {
+    use super::top_collect::{collect_py_units, collect_rs_units};
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let py = PathBuf::from(format!("{manifest}/tests/fake_python/helpers.py"));
+    let (py_units, py_fresh) = collect_py_units(&[py], None);
+    assert!(!py_units.is_empty());
+    assert!(py_fresh.is_some());
+
+    let rs = PathBuf::from(format!("{manifest}/tests/fake_rust/deep_nesting.rs"));
+    let (rs_units, rs_fresh) = collect_rs_units(&[rs], None);
+    assert!(!rs_units.is_empty());
+    assert!(rs_fresh.is_some());
+}
+

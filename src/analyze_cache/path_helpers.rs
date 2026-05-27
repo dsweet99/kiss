@@ -37,6 +37,10 @@ pub(super) fn same_cached_paths(
         return false;
     }
 
+    if cache.focus_paths.is_empty() && focus_set.is_empty() {
+        return true;
+    }
+
     let cache_focus = if cache.focus_paths.is_empty() {
         let mut inferred: Vec<String> = cache_py.clone();
         inferred.extend(cache_rs.iter().cloned());

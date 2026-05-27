@@ -195,7 +195,16 @@ fn file_map_json(cov: &RepoCoverage) -> String {
 
 #[cfg(test)]
 mod coverage_map_tests {
-    use super::{UnitRow, run_coverage_map};
+    use super::{
+        analyze_repo, parse_coverage_map_args, run_coverage_map, CoverageMapArgs, RepoCoverage,
+        UnitRow,
+    };
+
+    #[test]
+    fn coverage_map_structs_are_constructible() {
+        let _ = std::mem::size_of::<RepoCoverage>();
+        let _ = std::mem::size_of::<CoverageMapArgs>();
+    }
 
     #[test]
     fn unit_row_json_roundtrip() {
@@ -230,6 +239,23 @@ mod coverage_map_tests {
         let json = run_coverage_map(&["--rust".into(), fixture]);
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("json");
         assert!(parsed.is_object());
+    }
+
+    #[test]
+    fn analyze_repo_builds_repo_coverage() {
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        // `tests/fake_python/` is listed in `.kissignore`; use production sources instead.
+        let fixture = format!("{manifest}/ops");
+        let args = parse_coverage_map_args(std::slice::from_ref(&fixture));
+        assert_eq!(args.repo_path, fixture);
+        assert!(!args.units_mode);
+        let cov = analyze_repo(&args.repo_path, args.lang_filter);
+        assert!(
+            !cov.py.definitions.is_empty(),
+            "expected Python coverage analysis from ops/"
+        );
+        let json = run_coverage_map(&[format!("{manifest}/ops")]);
+        assert!(json.starts_with('{') && json.len() > 2);
     }
 
     #[test]

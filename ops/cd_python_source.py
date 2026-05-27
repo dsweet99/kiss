@@ -13,6 +13,33 @@ def infer_slipcover_source(repo: Path) -> str | None:
     return _source_from_package_dirs(repo)
 
 
+def _poetry_include_root(data: dict) -> str | None:
+    tool = data.get("tool")
+    if not isinstance(tool, dict):
+        return None
+    poetry = tool.get("poetry")
+    if not isinstance(poetry, dict):
+        return None
+    packages = poetry.get("packages")
+    if not isinstance(packages, list) or not packages:
+        return None
+    first = packages[0]
+    if not isinstance(first, dict):
+        return None
+    include = first.get("include")
+    return include.split("/")[0] if isinstance(include, str) else None
+
+
+def _project_name_dir(repo: Path, data: dict) -> str | None:
+    project = data.get("project")
+    if not isinstance(project, dict):
+        return None
+    name = project.get("name")
+    if not isinstance(name, str) or not (repo / name).is_dir():
+        return None
+    return name
+
+
 def _source_from_pyproject(repo: Path) -> str | None:
     pyproject = repo / "pyproject.toml"
     if not pyproject.is_file():
@@ -21,23 +48,9 @@ def _source_from_pyproject(repo: Path) -> str | None:
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
         return None
-    tool = data.get("tool", {})
-    if isinstance(tool, dict):
-        poetry = tool.get("poetry", {})
-        if isinstance(poetry, dict):
-            packages = poetry.get("packages", [])
-            if isinstance(packages, list) and packages:
-                first = packages[0]
-                if isinstance(first, dict) and "include" in first:
-                    include = first["include"]
-                    if isinstance(include, str):
-                        return include.split("/")[0]
-    project = data.get("project", {})
-    if isinstance(project, dict):
-        name = project.get("name")
-        if isinstance(name, str) and (repo / name).is_dir():
-            return name
-    return None
+    if not isinstance(data, dict):
+        return None
+    return _poetry_include_root(data) or _project_name_dir(repo, data)
 
 
 def _source_from_package_dirs(repo: Path) -> str | None:

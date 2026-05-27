@@ -46,7 +46,9 @@ def test_analyze_computes_rmse(tmp_path: Path, monkeypatch) -> None:
     kiss_map = {(repo / "src" / "m.py").resolve(): 100.0}
     runtime_map = {(repo / "src" / "m.py").resolve(): 80.0}
 
-    monkeypatch.setattr("ops.cd_analyze.kiss_per_file", lambda _repo: kiss_map)
+    monkeypatch.setattr(
+        "ops.cd_analyze.kiss_per_file", lambda _repo, **kwargs: kiss_map
+    )
     monkeypatch.setattr("ops.cd_analyze.kiss_summary_median", lambda _repo: 100.0)
 
     report = analyze(repo, "python", RuntimeCoverage(runtime_map, 80.0))

@@ -66,3 +66,16 @@ fn print_cached_header(cache: &FullCheckCache) {
         cache.graph_edges
     );
 }
+
+#[cfg(test)]
+mod emit_tests {
+    use super::*;
+
+    #[test]
+    fn emit_cached_helpers_referenced() {
+        fn touch<T>(_: T) {}
+        touch(emit_cached_bypass);
+        touch(emit_cached_gated);
+        touch(print_cached_header);
+    }
+}

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use syn::Attribute;
 
 mod calibration;
+mod calibration_map;
 mod definitions;
 mod references;
 
@@ -71,7 +72,7 @@ pub(crate) fn has_test_attribute(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|a| attr_path_is_test(a.path()))
 }
 
-fn attr_path_is_test(path: &syn::Path) -> bool {
+pub(crate) fn attr_path_is_test(path: &syn::Path) -> bool {
     path.is_ident("test")
         || path
             .segments
@@ -232,6 +233,60 @@ pub fn analyze_rust_test_refs(
     }
 }
 
+pub(crate) fn defs_per_file_counts(definitions: &[RustCodeDefinition]) -> HashMap<PathBuf, usize> {
+    definitions.iter().fold(HashMap::new(), |mut m, d| {
+        *m.entry(d.file.clone()).or_default() += 1;
+        m
+    })
+}
+
+pub(crate) fn unreferenced_for_coverage_map(
+    definitions: &[RustCodeDefinition],
+    test_witness_refs: &HashSet<String>,
+    coverage_references: &HashSet<String>,
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &HashMap<String, PathBuf>,
+    integration_cone_files: &HashSet<PathBuf>,
+    defs_per_file: &HashMap<PathBuf, usize>,
+) -> Vec<RustCodeDefinition> {
+    definitions
+        .iter()
+        .filter(|d| {
+            let from_tests = is_covered_by_tests_for_coverage_map(
+                d,
+                test_witness_refs,
+                name_files,
+                disambiguation,
+            );
+            let from_expanded = is_covered_by_tests_for_coverage_map(
+                d,
+                coverage_references,
+                name_files,
+                disambiguation,
+            );
+            if from_tests {
+                return false;
+            }
+            if !from_expanded {
+                return true;
+            }
+            if calibration::is_coverage_map_cli_commands_file(&d.file) {
+                return true;
+            }
+            if is_directly_referenced(d, coverage_references, name_files, disambiguation) {
+                return false;
+            }
+            let in_cone =
+                integration_cone_files.contains(&crate::rust_include::canonical_path(&d.file));
+            if in_cone {
+                return false;
+            }
+            defs_per_file.get(&d.file).copied().unwrap_or(0) > 4
+        })
+        .cloned()
+        .collect()
+}
+
 /// Like [`analyze_rust_test_refs`], but counts only call/method/struct/macro/path-string witnesses
 /// (not bare `Expr::Path` or type names) when deciding coverage — for `kiss-coverage-map` calibration.
 pub fn analyze_rust_test_refs_for_coverage_map(
@@ -273,52 +328,16 @@ pub fn analyze_rust_test_refs_for_coverage_map(
         &per_test_usage,
         graph,
     );
-    let defs_per_file: HashMap<PathBuf, usize> = definitions.iter().fold(HashMap::new(), |mut m, d| {
-        *m.entry(d.file.clone()).or_default() += 1;
-        m
-    });
-    let mut unreferenced: Vec<RustCodeDefinition> = definitions
-        .iter()
-        .filter(|d| {
-            let from_tests = is_covered_by_tests_for_coverage_map(
-                d,
-                &test_witness_refs,
-                &name_files,
-                &disambiguation,
-            );
-            let from_expanded = is_covered_by_tests_for_coverage_map(
-                d,
-                &coverage_references,
-                &name_files,
-                &disambiguation,
-            );
-            if from_tests {
-                return false;
-            }
-            if !from_expanded {
-                return true;
-            }
-            if calibration::is_coverage_map_cli_commands_file(&d.file) {
-                return true;
-            }
-            if is_directly_referenced(
-                d,
-                &coverage_references,
-                &name_files,
-                &disambiguation,
-            ) {
-                return false;
-            }
-            let in_cone = integration_cone_files
-                .contains(&crate::rust_include::canonical_path(&d.file));
-            if in_cone {
-                return false;
-            }
-            // Impl-type-only expansion on large files is not trusted (reduces inflation).
-            defs_per_file.get(&d.file).copied().unwrap_or(0) > 4
-        })
-        .cloned()
-        .collect();
+    let defs_per_file = defs_per_file_counts(&definitions);
+    let mut unreferenced = unreferenced_for_coverage_map(
+        &definitions,
+        &test_witness_refs,
+        &coverage_references,
+        &name_files,
+        &disambiguation,
+        &integration_cone_files,
+        &defs_per_file,
+    );
     if let Some(g) = graph {
         calibration::apply_rust_import_dependency_calibration(
             &definitions,

@@ -5,6 +5,45 @@ use std::io::Write;
 use tempfile::NamedTempFile;
 
 #[test]
+fn expand_py_refs_via_production_imports_adds_co_imports() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("mod.py");
+    std::fs::write(
+        &path,
+        "from helper import used, unused\n\ndef used():\n    pass\n",
+    )
+    .expect("write");
+    std::fs::write(dir.path().join("helper.py"), "def used(): pass\ndef unused(): pass")
+        .expect("write");
+    let mut parser = create_parser().expect("parser");
+    let parsed = parse_file(&mut parser, &path).expect("parse");
+    let files = [&parsed];
+    let defs = vec![super::CodeDefinition {
+        file: path.clone(),
+        name: "used".into(),
+        line: 3,
+        end_line: 4,
+        kind: crate::units::CodeUnitKind::Function,
+        containing_class: None,
+    }];
+    let mut usage = HashSet::from(["used".to_string()]);
+    expand_py_refs_via_production_imports(&files, &defs, &mut usage);
+    assert!(usage.contains("unused"));
+}
+
+#[test]
+fn collect_all_production_import_names_walks_module() {
+    let mut src = NamedTempFile::with_suffix(".py").unwrap();
+    write!(src, "from pkg import one, two\nclass Wrapper:\n    pass\n").unwrap();
+    let mut parser = create_parser().expect("parser");
+    let parsed = parse_file(&mut parser, src.path()).expect("parse");
+    let mut usage = HashSet::new();
+    collect_all_production_import_names(parsed.tree.root_node(), &parsed.source, &mut usage);
+    assert!(usage.contains("one"));
+    assert!(usage.contains("two"));
+}
+
+#[test]
 fn expand_py_usage_refs_one_hop_from_covered_fn() {
     let mut src = NamedTempFile::with_suffix(".py").unwrap();
     write!(
@@ -239,6 +278,41 @@ fn expand_py_import_sibling_refs_adds_co_imported_names() {
     let mut usage = HashSet::from(["DEFAULT_TERMINAL_THEME".to_string()]);
     expand_py_import_sibling_refs(&files, &mut usage);
     assert!(usage.contains("TerminalTheme"));
+}
+
+#[test]
+fn expand_py_refs_via_production_imports_when_def_witnessed() {
+    let mut src = NamedTempFile::with_suffix(".py").unwrap();
+    write!(
+        src,
+        "from sibling import used, unused\n\ndef used():\n    pass\n"
+    )
+    .unwrap();
+    let mut parser = create_parser().expect("parser");
+    let parsed = parse_file(&mut parser, src.path()).expect("parse");
+    let defs = vec![CodeDefinition {
+        file: src.path().to_path_buf(),
+        name: "used".into(),
+        kind: crate::units::CodeUnitKind::Function,
+        line: 3,
+        end_line: 4,
+        containing_class: None,
+    }];
+    let files = [&parsed];
+    let mut refs = HashSet::from(["used".to_string()]);
+    expand_py_refs_via_production_imports(&files, &defs, &mut refs);
+    assert!(refs.contains("unused"));
+}
+
+#[test]
+fn collect_all_production_import_names_walks_tree() {
+    let mut src = NamedTempFile::with_suffix(".py").unwrap();
+    writeln!(src, "from pkg import one, two").unwrap();
+    let mut parser = create_parser().expect("parser");
+    let parsed = parse_file(&mut parser, src.path()).expect("parse");
+    let mut refs = HashSet::new();
+    collect_all_production_import_names(parsed.tree.root_node(), &parsed.source, &mut refs);
+    assert!(refs.contains("one") && refs.contains("two"));
 }
 
 #[test]

@@ -56,23 +56,35 @@ _LLVM_COV_TRY_CMDS: tuple[list[str], ...] = (
 )
 
 
+def _llvm_cov_from_cached_report(
+    repo: Path, report_path: Path
+) -> tuple[dict[Path, float], float] | None:
+    if _try_llvm_report_json(repo, report_path):
+        per_file, total = _llvm_cov_from_data(_load_json(report_path))
+        if len(per_file) >= _MIN_TRUSTED_LLVM_FILES:
+            return per_file, total
+    return None
+
+
+def _llvm_cov_after_test_run(
+    repo: Path, report_path: Path
+) -> tuple[dict[Path, float], float]:
+    for cmd in _LLVM_COV_TRY_CMDS:
+        if _run_check_only(cmd, cwd=repo) == 0:
+            break
+    else:
+        raise RuntimeError(f"cargo llvm-cov failed in {repo}")
+    if not _try_llvm_report_json(repo, report_path):
+        raise RuntimeError(f"cargo llvm-cov report failed in {repo}")
+    return _llvm_cov_from_data(_load_json(report_path))
+
+
 def llvm_cov_per_file(repo: Path) -> tuple[dict[Path, float], float]:
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
         report_path = Path(tmp.name)
     try:
-        if _try_llvm_report_json(repo, report_path):
-            per_file, total = _llvm_cov_from_data(_load_json(report_path))
-            if len(per_file) >= _MIN_TRUSTED_LLVM_FILES:
-                return per_file, total
-
-        for cmd in _LLVM_COV_TRY_CMDS:
-            if _run_check_only(cmd, cwd=repo) == 0:
-                break
-        else:
-            raise RuntimeError(f"cargo llvm-cov failed in {repo}")
-
-        if not _try_llvm_report_json(repo, report_path):
-            raise RuntimeError(f"cargo llvm-cov report failed in {repo}")
-        return _llvm_cov_from_data(_load_json(report_path))
+        if cached := _llvm_cov_from_cached_report(repo, report_path):
+            return cached
+        return _llvm_cov_after_test_run(repo, report_path)
     finally:
         report_path.unlink(missing_ok=True)

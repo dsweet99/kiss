@@ -125,10 +125,21 @@ mod tests {
     }
 
     #[test]
-    fn test_run_init_command_existing_config() {
+    fn test_run_init_command_writes_new_config() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join(".kissconfig"), "# existing").unwrap();
         let result = run_init_command(tmp.path());
         assert_eq!(result, 0);
+        assert!(tmp.path().join(".kissconfig").exists());
+    }
+
+    #[test]
+    fn load_test_section_config_paths() {
+        let defaults = load_test_section_config(None, true);
+        assert!(defaults.main_branch.is_none());
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg_path = tmp.path().join(".kissconfig");
+        std::fs::write(&cfg_path, "[gate]\ntest_coverage_threshold = 80\n").unwrap();
+        let _ = load_test_section_config(Some(&cfg_path), false);
+        let _ = load_test_section_config(None, false);
     }
 }

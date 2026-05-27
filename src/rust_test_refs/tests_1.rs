@@ -281,3 +281,48 @@ fn test_same_name_different_files_disambiguated_by_module() {
         "beta::helper should be uncovered (no test references beta)"
     );
 }
+
+#[test]
+fn coverage_map_helpers_and_test_attr_paths() {
+    let test_path: syn::Path = syn::parse_str("test").unwrap();
+    let tokio_test: syn::Path = syn::parse_str("tokio::test").unwrap();
+    assert!(super::attr_path_is_test(&test_path));
+    assert!(super::attr_path_is_test(&tokio_test));
+
+    let defs = vec![
+        RustCodeDefinition {
+            name: "seen".into(),
+            kind: CodeUnitKind::Function,
+            file: PathBuf::from("a.rs"),
+            line: 1,
+            end_line: 1,
+            impl_for_type: None,
+        },
+        RustCodeDefinition {
+            name: "miss".into(),
+            kind: CodeUnitKind::Function,
+            file: PathBuf::from("a.rs"),
+            line: 2,
+            end_line: 2,
+            impl_for_type: None,
+        },
+    ];
+    let counts = super::defs_per_file_counts(&defs);
+    assert_eq!(counts.get(&PathBuf::from("a.rs")).copied(), Some(2));
+
+    let name_files = crate::test_refs::build_name_file_map(
+        defs.iter().map(|d| (d.name.as_str(), d.file.as_path())),
+    );
+    let witness = HashSet::from(["seen".to_string()]);
+    let unref = super::unreferenced_for_coverage_map(
+        &defs,
+        &witness,
+        &HashSet::new(),
+        &name_files,
+        &HashMap::new(),
+        &HashSet::new(),
+        &counts,
+    );
+    assert_eq!(unref.len(), 1);
+    assert_eq!(unref[0].name, "miss");
+}

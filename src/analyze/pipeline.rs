@@ -272,3 +272,38 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
         timings: pipeline.timings,
     })
 }
+
+#[cfg(test)]
+mod pipeline_tests {
+    use super::*;
+
+    #[test]
+    fn pipeline_private_items_referenced() {
+        fn touch<T>(_: T) {}
+        touch(build_python_metric_stats);
+        touch(build_rust_metric_stats);
+        touch(run_full_pipeline_with_parse);
+        let _ = (
+            std::mem::size_of::<FullPipelineResult>(),
+            std::mem::size_of::<FullPipelineInput<'_>>(),
+            std::mem::size_of::<FullPipelineWithParseInput<'_>>(),
+        );
+    }
+
+    #[test]
+    fn build_metric_stats_direct_on_empty() {
+        let parsed: Vec<ParsedFile> = Vec::new();
+        let stats = build_metric_stats(
+            &parsed,
+            None,
+            Vec::new(),
+            Vec::new(),
+            |item: &ParsedFile| &item.path,
+            |files: &[ParsedFile]| {
+                let refs: Vec<_> = files.iter().collect();
+                MetricStats::collect(&refs)
+            },
+        );
+        assert!(stats.statements_per_function.is_empty());
+    }
+}

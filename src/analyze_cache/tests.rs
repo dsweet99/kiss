@@ -98,6 +98,105 @@ fn full_cache_inputs_and_store() {
 }
 
 #[test]
+fn same_cached_paths_empty_cache_and_focus_inference() {
+    let py = vec![PathBuf::from("/a.py")];
+    let rs: Vec<PathBuf> = Vec::new();
+    let focus = HashSet::new();
+    let mut cache = empty_cache("fp");
+    assert!(same_cached_paths(&py, &rs, &focus, &cache));
+
+    cache.py_paths = vec!["/a.py".into()];
+    cache.rs_paths = vec![];
+    let mut focus_a = HashSet::new();
+    focus_a.insert(PathBuf::from("/a.py"));
+    assert!(same_cached_paths(&py, &rs, &focus_a, &cache));
+
+    cache.focus_paths = vec!["/b.py".into()];
+    assert!(!same_cached_paths(&py, &rs, &focus, &cache));
+
+    let mut focus_b = HashSet::new();
+    focus_b.insert(PathBuf::from("/b.py"));
+    assert!(same_cached_paths(&py, &rs, &focus_b, &cache));
+}
+
+#[test]
+fn same_cached_paths_rejects_length_mismatch() {
+    let py = vec![PathBuf::from("/a.py"), PathBuf::from("/b.py")];
+    let rs: Vec<PathBuf> = Vec::new();
+    let focus = HashSet::new();
+    let mut cache = empty_cache("fp");
+    cache.py_paths = vec!["/a.py".into()];
+    assert!(!same_cached_paths(&py, &rs, &focus, &cache));
+}
+
+#[test]
+fn try_run_cached_all_bypass_and_gated_paths() {
+    let _home = super::test_helpers::ScopedHome::new();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let py_path = tmp.path().join("a.py");
+    std::fs::write(&py_path, "def f():\n    pass\n").unwrap();
+    let py_files = vec![py_path.clone()];
+    let rs_files: Vec<PathBuf> = Vec::new();
+    let focus: HashSet<_> = py_files.iter().cloned().collect();
+    let py_cfg = Config::python_defaults();
+    let rs_cfg = Config::rust_defaults();
+    let gate = GateConfig::default();
+    let fp = fingerprint_for_check(&py_files, &rs_files, &py_cfg, &rs_cfg, &gate);
+    let mut cache = empty_cache(&fp);
+    cache.py_file_count = 1;
+    cache.code_unit_count = 1;
+    cache.py_paths = vec![py_path.to_string_lossy().to_string()];
+    store_full_cache(&cache);
+
+    let paths = vec![tmp.path().to_string_lossy().to_string()];
+    let opts = crate::analyze::AnalyzeOptions {
+        universe: ".",
+        focus_paths: &paths,
+        py_config: &py_cfg,
+        rs_config: &rs_cfg,
+        lang_filter: None,
+        bypass_gate: true,
+        gate_config: &gate,
+        ignore_prefixes: &[],
+        show_timing: false,
+        suppress_final_status: false,
+    };
+    assert_eq!(
+        try_run_cached_all(&opts, &py_files, &rs_files, &focus),
+        Some(true)
+    );
+
+    let mut gate_fail = gate.clone();
+    gate_fail.test_coverage_threshold = 90;
+    let mut gated_cache = empty_cache(&fp);
+    gated_cache.py_file_count = 1;
+    gated_cache.py_paths = vec![py_path.to_string_lossy().to_string()];
+    gated_cache.definitions = vec![kiss::check_universe_cache::CachedCoverageItem {
+        file: py_path.to_string_lossy().to_string(),
+        name: "f".into(),
+        line: 1,
+    }];
+    gated_cache.unreferenced = gated_cache.definitions.clone();
+    store_full_cache(&gated_cache);
+    let opts_gated = crate::analyze::AnalyzeOptions {
+        universe: opts.universe,
+        focus_paths: opts.focus_paths,
+        py_config: opts.py_config,
+        rs_config: opts.rs_config,
+        lang_filter: opts.lang_filter,
+        bypass_gate: false,
+        gate_config: &gate_fail,
+        ignore_prefixes: opts.ignore_prefixes,
+        show_timing: opts.show_timing,
+        suppress_final_status: opts.suppress_final_status,
+    };
+    assert_eq!(
+        try_run_cached_all(&opts_gated, &py_files, &rs_files, &focus),
+        Some(false)
+    );
+}
+
+#[test]
 fn fingerprint_includes_python_annotations_per_function() {
     let gate = GateConfig::default();
     let rs = Config::rust_defaults();
@@ -134,6 +233,47 @@ fn fingerprint_includes_gate_test_coverage_threshold() {
         fingerprint_for_check(&[], &[], &py, &rs, &g0),
         fingerprint_for_check(&[], &[], &py, &rs, &g1),
     );
+}
+
+#[test]
+fn same_cached_paths_empty_cache_accepts_any_focus() {
+    let py: Vec<PathBuf> = Vec::new();
+    let rs: Vec<PathBuf> = Vec::new();
+    let focus = HashSet::new();
+    let cache = empty_cache("empty_paths");
+    assert!(super::path_helpers::same_cached_paths(&py, &rs, &focus, &cache));
+}
+
+#[test]
+fn same_cached_paths_matches_sorted_py_and_focus() {
+    let py = vec![PathBuf::from("/tmp/a.py"), PathBuf::from("/tmp/b.py")];
+    let rs: Vec<PathBuf> = Vec::new();
+    let focus: HashSet<PathBuf> = py.iter().cloned().collect();
+    let mut cache = empty_cache("sorted_paths");
+    cache.py_paths = vec!["/tmp/b.py".into(), "/tmp/a.py".into()];
+    cache.focus_paths = vec!["/tmp/a.py".into(), "/tmp/b.py".into()];
+    assert!(super::path_helpers::same_cached_paths(
+        &py, &rs, &focus, &cache
+    ));
+}
+
+#[test]
+fn same_cached_paths_rejects_mismatched_py_len() {
+    let py = vec![PathBuf::from("/tmp/a.py")];
+    let rs: Vec<PathBuf> = Vec::new();
+    let focus: HashSet<PathBuf> = py.iter().cloned().collect();
+    let mut cache = empty_cache("len_mismatch");
+    cache.py_paths = vec!["/tmp/a.py".into(), "/tmp/b.py".into()];
+    assert!(!super::path_helpers::same_cached_paths(
+        &py, &rs, &focus, &cache
+    ));
+}
+
+#[test]
+fn emit_cached_helpers_are_referenced() {
+    fn touch<T>(_: T) {}
+    touch(super::emit::emit_cached_bypass);
+    touch(super::emit::emit_cached_gated);
 }
 
 #[test]
