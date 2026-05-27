@@ -152,7 +152,10 @@ fn test_analyze_refs_for_coverage_map() {
     let parsed = parse_rust_file(tmp.path()).unwrap();
     let analysis = analyze_rust_test_refs_for_coverage_map(&[&parsed], None);
     assert!(analysis.unreferenced.is_empty());
-    assert!(analysis.coverage_map.contains_key(&(parsed.path, "foo".to_string())));
+    assert!(
+        analysis.coverage_map.is_empty(),
+        "kiss-coverage-map file_map path skips per-test coverage_map"
+    );
 }
 
 #[test]

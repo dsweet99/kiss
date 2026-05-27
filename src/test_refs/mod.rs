@@ -212,7 +212,7 @@ fn analyze_test_refs_inner(
         .cloned()
         .collect();
 
-    let coverage_map = if need_coverage_map {
+    let coverage_map = if need_coverage_map && !calibration {
         build_py_coverage_map(
             &definitions,
             &per_test_usage,

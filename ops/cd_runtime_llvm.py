@@ -46,12 +46,15 @@ def _run_llvm_report_cmd(repo: Path, report_path: Path) -> None:
         raise RuntimeError(f"cargo llvm-cov report failed in {repo}")
 
 
+_LLVM_COV_TRY_CMDS: tuple[list[str], ...] = (
+    ["cargo", "llvm-cov", "--lib", "--summary-only"],
+    ["cargo", "llvm-cov", "--summary-only"],
+    ["cargo", "llvm-cov", "nextest", "--lib", "--summary-only"],
+)
+
+
 def llvm_cov_per_file(repo: Path) -> tuple[dict[Path, float], float]:
-    for cmd in (
-        ["cargo", "llvm-cov", "nextest", "--lib", "--summary-only"],
-        ["cargo", "llvm-cov", "--lib", "--summary-only"],
-        ["cargo", "llvm-cov", "--summary-only"],
-    ):
+    for cmd in _LLVM_COV_TRY_CMDS:
         if _run_check_only(cmd, cwd=repo) == 0:
             break
     else:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 KISS_ROOT = Path(__file__).resolve().parents[1]
 _MAX_DIAG_BYTES = 65536
 _MAX_RUN_BYTES = 1_048_576
+_MAX_JSON_BYTES = 64 * 1024 * 1024
 
 
 def _bounded_text(path: Path, max_bytes: int = _MAX_DIAG_BYTES) -> str:
@@ -36,6 +38,13 @@ def _unlink_paths(*paths: Path) -> None:
         path.unlink(missing_ok=True)
 
 
+def _subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("NEXTEST_TEST_THREADS", "2")
+    env.setdefault("CARGO_BUILD_JOBS", "2")
+    return env
+
+
 def _run_to_temp_files(
     cmd: list[str], *, cwd: Path | None = None
 ) -> tuple[int, Path, Path]:
@@ -58,11 +67,17 @@ def _run_to_temp_files(
             stdout=stdout_f,
             stderr=stderr_f,
             check=False,
+            env=_subprocess_env(),
         )
     return proc.returncode, stdout_path, stderr_path
 
 
-def _load_json(path: Path) -> object:
+def _load_json(path: Path, *, max_bytes: int = _MAX_JSON_BYTES) -> object:
+    size = path.stat().st_size
+    if size > max_bytes:
+        raise RuntimeError(
+            f"json artifact too large ({size} bytes > {max_bytes}): {path}"
+        )
     with path.open(encoding="utf-8") as handle:
         return json.load(handle)
 
@@ -84,24 +99,17 @@ def _run_check_only(cmd: list[str], *, cwd: Path | None = None) -> int:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=False,
+        env=_subprocess_env(),
     )
     return proc.returncode
 
 
-def _scan_stdout_prefix(
-    path: Path, prefix: str, *, max_bytes: int = _MAX_RUN_BYTES
-) -> str | None:
-    matched: str | None = None
-    read = 0
+def _scan_stdout_prefix(path: Path, prefix: str) -> str | None:
     with path.open(encoding="utf-8", errors="replace") as handle:
         for line in handle:
-            read += len(line.encode("utf-8", errors="replace"))
-            if read > max_bytes:
-                break
             if line.startswith(prefix):
-                matched = line
-                break
-    return matched
+                return line
+    return None
 
 
 def run(

@@ -264,6 +264,7 @@ pub(crate) fn build_rust_coverage_map(
     coverage_map
 }
 
+#[allow(dead_code)] // retained for gate/calibration tooling; kiss-coverage-map file_map path skips it
 pub(crate) fn build_rust_coverage_map_for_calibration(
     definitions: &[RustCodeDefinition],
     per_test_usage: &PerTestUsage,

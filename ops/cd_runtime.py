@@ -3,6 +3,7 @@ from __future__ import annotations
 from ops.cd_runtime_io import (
     KISS_ROOT,
     _MAX_DIAG_BYTES,
+    _MAX_JSON_BYTES,
     _MAX_RUN_BYTES,
     _bounded_diagnostics,
     _bounded_text,
@@ -21,6 +22,7 @@ from ops.cd_runtime_slipcover import _SlipcoverRun, _run_slipcover, slipcover_pe
 __all__ = [
     "KISS_ROOT",
     "_MAX_DIAG_BYTES",
+    "_MAX_JSON_BYTES",
     "_MAX_RUN_BYTES",
     "_SlipcoverRun",
     "_bounded_diagnostics",

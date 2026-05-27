@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ops.cd_analyze import RuntimeCoverage, analyze_discrepancy as analyze
-from ops.cd_click import cli
 from ops.cd_report_io import emit_report
 from ops.cd_runtime import slipcover_per_file
 

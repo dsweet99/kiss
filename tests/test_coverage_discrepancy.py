@@ -75,19 +75,12 @@ def test_discrepancy_report_dataclass_and_run_helper() -> None:
     assert cd.run(["echo", "ok"]) == "ok\n"
 
 
-def test_register_python_command(tmp_path: Path) -> None:
+def test_register_python_command() -> None:
     import ops.cd_cli as cd_cli_mod
 
     group = click.Group()
     cd_cli_mod.register_python_command(group)
     assert "python" in group.commands
-    repo = tmp_path / "proj"
-    repo.mkdir()
-    from click.testing import CliRunner
-
-    runner = CliRunner()
-    result = runner.invoke(group, ["python", str(repo)])
-    assert result.exit_code != 0 or "file_rmse" in result.output or result.exit_code == 0
 
 
 def test_python_command_dispatches(monkeypatch, tmp_path: Path) -> None:

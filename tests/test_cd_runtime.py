@@ -41,20 +41,28 @@ def test_success_path_unlink_does_not_load_huge_stderr() -> None:
     assert after - before < 5.0
 
 
-def test_kiss_summary_median_scans_prefix_without_full_read(
-    monkeypatch, tmp_path: Path
-) -> None:
-    stats_path = tmp_path / "stats.txt"
-    stats_path.write_text("inv_test_coverage p50 42\n" + ("noise\n" * 1000))
+def test_load_json_rejects_huge_file(tmp_path: Path) -> None:
+    path = tmp_path / "big.json"
+    path.write_bytes(b"[]" + b" " * (rt._MAX_JSON_BYTES + 1))
+    with pytest.raises(RuntimeError, match="too large"):
+        rt._load_json(path)
 
-    def _fake_run_to_temp_files(
-        cmd: list[str], *, cwd: Path | None = None
-    ) -> tuple[int, Path, Path]:
-        assert cmd[0] == "kiss"
-        return 0, stats_path, tmp_path / "empty.stderr"
 
-    monkeypatch.setattr("ops.cd_runtime_kiss._run_to_temp_files", _fake_run_to_temp_files)
-    assert rt.kiss_summary_median(tmp_path) == 58.0
+def test_llvm_cov_tries_nextest_last(monkeypatch) -> None:
+    from ops import cd_runtime_llvm as llvm
+
+    calls: list[list[str]] = []
+
+    def _fake_check(cmd: list[str], *, cwd: Path | None = None) -> int:
+        _ = cwd
+        calls.append(cmd)
+        return 1
+
+    monkeypatch.setattr(llvm, "_run_check_only", _fake_check)
+    with pytest.raises(RuntimeError, match="llvm-cov failed"):
+        llvm.llvm_cov_per_file(Path("."))
+    assert calls[0] == ["cargo", "llvm-cov", "--lib", "--summary-only"]
+    assert calls[-1][2] == "nextest"
 
 
 def test_slipcover_success_unlinks_streams_without_reading(

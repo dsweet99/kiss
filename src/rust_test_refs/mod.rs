@@ -272,18 +272,11 @@ pub fn analyze_rust_test_refs_for_coverage_map(
         })
         .cloned()
         .collect();
-    let coverage_map = calibration::build_rust_coverage_map_for_calibration(
-        &definitions,
-        &per_test_usage,
-        &name_files,
-        &disambiguation,
-        &coverage_references,
-    );
     RustTestRefAnalysis {
         definitions,
         test_references: coverage_references,
         unreferenced,
-        coverage_map,
+        coverage_map: HashMap::new(),
     }
 }
 

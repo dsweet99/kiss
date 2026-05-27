@@ -37,26 +37,14 @@ def _try_kiss_coverage_cmd(cmd: list[str], cwd: Path) -> dict[Path, float] | Non
 def kiss_per_file(repo: Path) -> dict[Path, float]:
     repo = repo.resolve()
     binary = KISS_ROOT / "target" / "debug" / "kiss-coverage-map"
-    for cmd, cwd in (
-        ([str(binary), "."], repo),
-        (
-            [
-                "cargo",
-                "run",
-                "-q",
-                "--manifest-path",
-                str(KISS_ROOT / "Cargo.toml"),
-                "--bin",
-                "kiss-coverage-map",
-                "--",
-                ".",
-            ],
-            repo,
-        ),
-    ):
-        result = _try_kiss_coverage_cmd(cmd, cwd)
-        if result is not None:
-            return result
+    if not binary.is_file():
+        raise RuntimeError(
+            f"kiss-coverage-map binary missing at {binary}; "
+            "run `cargo build --bin kiss-coverage-map` in the kiss repo first"
+        )
+    result = _try_kiss_coverage_cmd([str(binary), "."], repo)
+    if result is not None:
+        return result
     raise RuntimeError(f"could not obtain kiss per-file coverage for {repo}")
 
 
