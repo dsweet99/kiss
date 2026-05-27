@@ -42,6 +42,8 @@ def _subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
     env.setdefault("NEXTEST_TEST_THREADS", "2")
     env.setdefault("CARGO_BUILD_JOBS", "2")
+    # Lower peak RSS when cargo-llvm-cov must compile/run the test suite.
+    env.setdefault("RUST_TEST_THREADS", "2")
     return env
 
 

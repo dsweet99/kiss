@@ -171,6 +171,11 @@ fn analyze_test_refs_inner(
     if calibration {
         coverage_expand::expand_py_usage_refs_fixpoint(parsed_files, &mut usage_references);
         coverage_expand::expand_py_import_sibling_refs(parsed_files, &mut usage_references);
+        coverage_expand::expand_py_refs_via_production_imports(
+            parsed_files,
+            &definitions,
+            &mut usage_references,
+        );
     }
 
     let name_files = build_name_file_map(

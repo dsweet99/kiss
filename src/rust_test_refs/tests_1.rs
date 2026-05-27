@@ -42,6 +42,10 @@ fn test_definitions_and_references() {
     if let syn::Item::Fn(f) = &f1.items[0] {
         assert!(has_test_attribute(&f.attrs));
     }
+    let tokio_test: syn::File = syn::parse_str("#[tokio::test]\nasync fn t() {}").unwrap();
+    if let syn::Item::Fn(f) = &tokio_test.items[0] {
+        assert!(has_test_attribute(&f.attrs));
+    }
     if let syn::Item::Mod(m) = &f2.items[0] {
         assert!(has_cfg_test_attribute(&m.attrs));
     }

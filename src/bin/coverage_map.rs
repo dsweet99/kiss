@@ -2,9 +2,11 @@
 //!
 //! Usage:
 //!   kiss-coverage-map REPO              # `{"path": pct, ...}`
+//!   kiss-coverage-map --rust REPO       # Rust sources only (mixed monorepos)
+//!   kiss-coverage-map --python REPO     # Python sources only
 //!   kiss-coverage-map --units REPO      # `[{"file","name","line","kiss_covered"}, ...]`
 use kiss::cli_output::file_coverage_map_by_line_spans;
-use kiss::discovery::gather_files_by_lang;
+use kiss::discovery::{gather_files_by_lang, Language};
 use kiss::graph::build_dependency_graph;
 use kiss::rust_graph::build_rust_dependency_graph;
 use kiss::rust_test_refs::RustTestRefAnalysis;
@@ -34,28 +36,62 @@ fn print_coverage_map(raw: &[String]) {
     println!("{}", run_coverage_map(raw));
 }
 
+struct CoverageMapArgs {
+    repo_path: String,
+    units_mode: bool,
+    lang_filter: Option<Language>,
+}
+
+fn parse_coverage_map_args(raw: &[String]) -> CoverageMapArgs {
+    let mut units_mode = false;
+    let mut lang_filter = None;
+    let mut repo_path = None;
+    for arg in raw {
+        match arg.as_str() {
+            "--units" => units_mode = true,
+            "--rust" => lang_filter = Some(Language::Rust),
+            "--python" => lang_filter = Some(Language::Python),
+            _ if arg.starts_with('-') => {
+                eprintln!("unknown option: {arg}");
+                std::process::exit(2);
+            }
+            _ => {
+                if repo_path.is_some() {
+                    eprintln!("unexpected extra argument: {arg}");
+                    std::process::exit(2);
+                }
+                repo_path = Some(arg.clone());
+            }
+        }
+    }
+    let lang_flags = raw
+        .iter()
+        .filter(|a| *a == "--rust" || *a == "--python")
+        .count();
+    if lang_flags > 1 {
+        eprintln!("use at most one of --rust and --python");
+        std::process::exit(2);
+    }
+    CoverageMapArgs {
+        repo_path: repo_path.unwrap_or_else(|| ".".into()),
+        units_mode,
+        lang_filter,
+    }
+}
+
 fn run_coverage_map(raw: &[String]) -> String {
-    let units_mode = raw.first().is_some_and(|a| a == "--units");
-    let path = resolve_repo_path(raw, units_mode);
-    let cov = analyze_repo(&path);
-    if units_mode {
+    let args = parse_coverage_map_args(raw);
+    let cov = analyze_repo(&args.repo_path, args.lang_filter);
+    if args.units_mode {
         units_json(&cov)
     } else {
         file_map_json(&cov)
     }
 }
 
-fn resolve_repo_path(raw: &[String], units_mode: bool) -> String {
-    if units_mode {
-        raw.get(1).cloned().unwrap_or_else(|| ".".into())
-    } else {
-        raw.first().cloned().unwrap_or_else(|| ".".into())
-    }
-}
-
-fn analyze_repo(path: &str) -> RepoCoverage {
+fn analyze_repo(path: &str, lang_filter: Option<Language>) -> RepoCoverage {
     let paths = vec![path.to_string()];
-    let (py_files, rs_files) = gather_files_by_lang(&paths, None, &[]);
+    let (py_files, rs_files) = gather_files_by_lang(&paths, lang_filter, &[]);
     let py_parsed: Vec<_> = parse_files(&py_files)
         .unwrap_or_default()
         .into_iter()
@@ -178,11 +214,20 @@ mod coverage_map_tests {
         fn touch<T>(_: T) {}
         touch(super::main);
         touch(super::print_coverage_map);
-        touch(super::resolve_repo_path);
+        touch(super::parse_coverage_map_args);
         touch(super::analyze_repo);
         let manifest = env!("CARGO_MANIFEST_DIR");
         let fixture = format!("{manifest}/tests/fake_python");
         let json = run_coverage_map(&[fixture]);
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("json");
+        assert!(parsed.is_object());
+    }
+
+    #[test]
+    fn run_coverage_map_rust_only_fixture() {
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let fixture = format!("{manifest}/tests/fake_rust");
+        let json = run_coverage_map(&["--rust".into(), fixture]);
         let parsed: serde_json::Value = serde_json::from_str(&json).expect("json");
         assert!(parsed.is_object());
     }

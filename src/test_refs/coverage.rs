@@ -219,6 +219,9 @@ pub(crate) fn apply_import_dependency_calibration(
         }
     }
     analysis.unreferenced.retain(|d| {
+        if is_platform_specific_prod_file(&d.file) {
+            return true;
+        }
         graph
             .path_to_module
             .get(&d.file)

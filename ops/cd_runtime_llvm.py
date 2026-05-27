@@ -28,7 +28,7 @@ def _llvm_cov_from_data(data: object) -> tuple[dict[Path, float], float]:
     return per_file, total_pct
 
 
-def _run_llvm_report_cmd(repo: Path, report_path: Path) -> None:
+def _try_llvm_report_json(repo: Path, report_path: Path) -> bool:
     code, stdout_path, stderr_path = _run_to_temp_files(
         [
             "cargo",
@@ -42,8 +42,11 @@ def _run_llvm_report_cmd(repo: Path, report_path: Path) -> None:
         cwd=repo,
     )
     _unlink_paths(stdout_path, stderr_path)
-    if code != 0 or report_path.stat().st_size == 0:
-        raise RuntimeError(f"cargo llvm-cov report failed in {repo}")
+    return code == 0 and report_path.is_file() and report_path.stat().st_size > 0
+
+
+# Stale or partial profdata can yield a tiny report; prefer re-running tests then.
+_MIN_TRUSTED_LLVM_FILES = 50
 
 
 _LLVM_COV_TRY_CMDS: tuple[list[str], ...] = (
@@ -54,16 +57,22 @@ _LLVM_COV_TRY_CMDS: tuple[list[str], ...] = (
 
 
 def llvm_cov_per_file(repo: Path) -> tuple[dict[Path, float], float]:
-    for cmd in _LLVM_COV_TRY_CMDS:
-        if _run_check_only(cmd, cwd=repo) == 0:
-            break
-    else:
-        raise RuntimeError(f"cargo llvm-cov failed in {repo}")
-
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
         report_path = Path(tmp.name)
     try:
-        _run_llvm_report_cmd(repo, report_path)
+        if _try_llvm_report_json(repo, report_path):
+            per_file, total = _llvm_cov_from_data(_load_json(report_path))
+            if len(per_file) >= _MIN_TRUSTED_LLVM_FILES:
+                return per_file, total
+
+        for cmd in _LLVM_COV_TRY_CMDS:
+            if _run_check_only(cmd, cwd=repo) == 0:
+                break
+        else:
+            raise RuntimeError(f"cargo llvm-cov failed in {repo}")
+
+        if not _try_llvm_report_json(repo, report_path):
+            raise RuntimeError(f"cargo llvm-cov report failed in {repo}")
         return _llvm_cov_from_data(_load_json(report_path))
     finally:
         report_path.unlink(missing_ok=True)

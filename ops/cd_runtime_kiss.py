@@ -23,6 +23,14 @@ def _kiss_map_from_paths(stdout_path: Path, stderr_path: Path) -> dict[Path, flo
     return {Path(k).resolve(): float(v) for k, v in raw.items()}
 
 
+def _kiss_lang_flag(language: str) -> list[str]:
+    if language == "rust":
+        return ["--rust"]
+    if language == "python":
+        return ["--python"]
+    return []
+
+
 def _try_kiss_coverage_cmd(cmd: list[str], cwd: Path) -> dict[Path, float] | None:
     try:
         code, stdout_path, stderr_path = _run_to_temp_files(cmd, cwd=cwd)
@@ -34,7 +42,7 @@ def _try_kiss_coverage_cmd(cmd: list[str], cwd: Path) -> dict[Path, float] | Non
     return _kiss_map_from_paths(stdout_path, stderr_path)
 
 
-def kiss_per_file(repo: Path) -> dict[Path, float]:
+def kiss_per_file(repo: Path, *, language: str) -> dict[Path, float]:
     repo = repo.resolve()
     binary = KISS_ROOT / "target" / "debug" / "kiss-coverage-map"
     if not binary.is_file():
@@ -42,7 +50,9 @@ def kiss_per_file(repo: Path) -> dict[Path, float]:
             f"kiss-coverage-map binary missing at {binary}; "
             "run `cargo build --bin kiss-coverage-map` in the kiss repo first"
         )
-    result = _try_kiss_coverage_cmd([str(binary), "."], repo)
+    result = _try_kiss_coverage_cmd(
+        [str(binary), *_kiss_lang_flag(language), "."], repo
+    )
     if result is not None:
         return result
     raise RuntimeError(f"could not obtain kiss per-file coverage for {repo}")

@@ -23,7 +23,7 @@ def analyze_discrepancy(
             language=language,
             runtime_map=runtime.per_file,
             runtime_total=runtime.total_pct,
-            kiss_map=kiss_per_file(repo),
+            kiss_map=kiss_per_file(repo, language=language),
             kiss_median=kiss_summary_median(repo),
         )
     )

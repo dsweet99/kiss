@@ -1,6 +1,7 @@
 use super::collect::{collect_py_import_names_for_refs, collect_usage_refs_in_scope};
 use super::detection::is_python_test_file;
 use super::disambiguation::file_to_module_suffix;
+use super::CodeDefinition;
 use crate::parsing::ParsedFile;
 use crate::units::get_child_by_field;
 use std::collections::HashSet;
@@ -22,6 +23,39 @@ pub(crate) fn expand_py_usage_refs_fixpoint(
 }
 
 /// When any name from a production `from … import a, b` is witnessed, add sibling imports.
+/// When a production file with a witnessed symbol imports names, add those imports to refs
+/// (reduces blind spots vs runtime line coverage for small re-export modules).
+pub(crate) fn expand_py_refs_via_production_imports(
+    parsed_files: &[&ParsedFile],
+    definitions: &[CodeDefinition],
+    refs: &mut HashSet<String>,
+) {
+    for parsed in parsed_files {
+        if is_python_test_file(parsed) {
+            continue;
+        }
+        let has_witness = definitions
+            .iter()
+            .filter(|d| d.file == parsed.path)
+            .any(|d| refs.contains(&d.name));
+        if !has_witness {
+            continue;
+        }
+        collect_all_production_import_names(parsed.tree.root_node(), &parsed.source, refs);
+    }
+}
+
+fn collect_all_production_import_names(node: Node, source: &str, refs: &mut HashSet<String>) {
+    if node.kind() == "import_from_statement" {
+        refs.extend(import_names_from_statement(node, source));
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_all_production_import_names(child, source, refs);
+    }
+}
+
 pub(crate) fn expand_py_import_sibling_refs(
     parsed_files: &[&ParsedFile],
     refs: &mut HashSet<String>,

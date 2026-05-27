@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ops.cd_analyze import RuntimeCoverage, analyze_discrepancy as analyze
+from ops.cd_python_source import infer_slipcover_source
 from ops.cd_report_io import emit_report
 from ops.cd_runtime import slipcover_per_file
 
@@ -18,8 +19,11 @@ class PythonCoverageRun:
 
 
 def run_python_coverage_discrepancy(run: PythonCoverageRun) -> None:
+    source = run.slipcover_source
+    if source is None:
+        source = infer_slipcover_source(run.repo)
     runtime_map, runtime_total = slipcover_per_file(
-        run.repo, list(run.pytest_args), source=run.slipcover_source
+        run.repo, list(run.pytest_args), source=source
     )
     emit_report(
         analyze(

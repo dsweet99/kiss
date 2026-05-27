@@ -68,7 +68,15 @@ pub fn is_rust_test_file(path: &Path) -> bool {
 }
 
 pub(crate) fn has_test_attribute(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|a| a.path().is_ident("test"))
+    attrs.iter().any(|a| attr_path_is_test(a.path()))
+}
+
+fn attr_path_is_test(path: &syn::Path) -> bool {
+    path.is_ident("test")
+        || path
+            .segments
+            .last()
+            .is_some_and(|s| s.ident == "test")
 }
 
 fn cfg_contains_test(tokens: proc_macro2::TokenStream) -> bool {
@@ -109,7 +117,7 @@ pub(crate) fn has_cfg_test_attribute(attrs: &[Attribute]) -> bool {
     })
 }
 
-fn is_directly_referenced(
+pub(crate) fn is_directly_referenced(
     def: &RustCodeDefinition,
     refs: &HashSet<String>,
     name_files: &HashMap<String, HashSet<PathBuf>>,
@@ -249,6 +257,11 @@ pub fn analyze_rust_test_refs_for_coverage_map(
         }
     }
     calibration::expand_coverage_map_witnesses(parsed_files, &mut coverage_references);
+    let integration_cone_files = calibration::integration_cone_files_for(parsed_files);
+    let test_witness_refs: HashSet<String> = per_test_usage
+        .iter()
+        .flat_map(|(_, funcs)| funcs.iter().flat_map(|(_, refs)| refs.iter().cloned()))
+        .collect();
     let name_files = crate::test_refs::build_name_file_map(
         definitions
             .iter()
@@ -260,18 +273,60 @@ pub fn analyze_rust_test_refs_for_coverage_map(
         &per_test_usage,
         graph,
     );
-    let unreferenced: Vec<RustCodeDefinition> = definitions
+    let defs_per_file: HashMap<PathBuf, usize> = definitions.iter().fold(HashMap::new(), |mut m, d| {
+        *m.entry(d.file.clone()).or_default() += 1;
+        m
+    });
+    let mut unreferenced: Vec<RustCodeDefinition> = definitions
         .iter()
         .filter(|d| {
-            !is_covered_by_tests_for_coverage_map(
+            let from_tests = is_covered_by_tests_for_coverage_map(
+                d,
+                &test_witness_refs,
+                &name_files,
+                &disambiguation,
+            );
+            let from_expanded = is_covered_by_tests_for_coverage_map(
                 d,
                 &coverage_references,
                 &name_files,
                 &disambiguation,
-            )
+            );
+            if from_tests {
+                return false;
+            }
+            if !from_expanded {
+                return true;
+            }
+            if calibration::is_coverage_map_cli_commands_file(&d.file) {
+                return true;
+            }
+            if is_directly_referenced(
+                d,
+                &coverage_references,
+                &name_files,
+                &disambiguation,
+            ) {
+                return false;
+            }
+            let in_cone = integration_cone_files
+                .contains(&crate::rust_include::canonical_path(&d.file));
+            if in_cone {
+                return false;
+            }
+            // Impl-type-only expansion on large files is not trusted (reduces inflation).
+            defs_per_file.get(&d.file).copied().unwrap_or(0) > 4
         })
         .cloned()
         .collect();
+    if let Some(g) = graph {
+        calibration::apply_rust_import_dependency_calibration(
+            &definitions,
+            &mut unreferenced,
+            g,
+            &test_witness_refs,
+        );
+    }
     RustTestRefAnalysis {
         definitions,
         test_references: coverage_references,

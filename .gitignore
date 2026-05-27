@@ -1,6 +1,6 @@
 # Rust build artifacts
 target/
-review.md
+./review.md
 .cursor
 .cursorrules
 *~
@@ -11,7 +11,7 @@ Cargo.lock
 .cursor/
 a.html
 bugs.md
-plan.md
+./plan.md
 style.md
 .kiss_shrink
 graph.md
@@ -19,4 +19,4 @@ graph.md
 .llm_style
 _malvin/
 .malvin_*
-_kpop/
+
