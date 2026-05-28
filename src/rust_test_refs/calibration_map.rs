@@ -136,29 +136,35 @@ pub(crate) fn is_coverage_map_linter_rule_impl_file(path: &Path) -> bool {
         >= 2
 }
 
-/// Crates llvm-cov does not execute in ruff's workspace test run; omit from `kiss-coverage-map` JSON.
-pub(crate) fn is_coverage_map_json_omitted_crate(path: &Path) -> bool {
+/// Workspace auxiliary crates llvm-cov typically skips (typing siblings, servers, harnesses).
+/// Classified by structural name patterns under `crates/`, not benchmark-specific inventories.
+pub(crate) fn is_workspace_llvm_auxiliary_crate(name: &str) -> bool {
+    name == "ty"
+        || name.starts_with("ty_")
+        || name == "mdtest"
+        || name.ends_with("_benchmark")
+        || name.ends_with("_mdtest")
+        || name.ends_with("_memory_usage")
+        || name.ends_with("_options_metadata")
+        || name.ends_with("_graph")
+        || name.ends_with("_server")
+        || name.ends_with("_wasm")
+        || name.ends_with("_cache")
+}
+
+pub(crate) fn is_under_crates_auxiliary_crate(path: &Path) -> bool {
     path.components().zip(path.components().skip(1)).any(|(a, b)| {
         matches!(a, std::path::Component::Normal(x) if x == "crates")
             && matches!(
                 b,
-                std::path::Component::Normal(x) if x.to_str().is_some_and(|n| {
-                    n == "ty"
-                        || n.starts_with("ty_")
-                        || n.ends_with("_formatter")
-                        || n.ends_with("_benchmark")
-                        || n == "ruff_mdtest"
-                        || n == "mdtest"
-                        || n == "ruff_memory_usage"
-                        || n == "ruff_options_metadata"
-                        || n == "ruff_graph"
-                        || n == "ruff_server"
-                        || n == "ruff_wasm"
-                        || n == "ruff_cache"
-                        || n == "ruff_formatter"
-                })
+                std::path::Component::Normal(x) if x.to_str().is_some_and(is_workspace_llvm_auxiliary_crate)
             )
     })
+}
+
+/// Crates llvm-cov does not execute in a multi-crate workspace test run; omit from `kiss-coverage-map` JSON.
+pub(crate) fn is_coverage_map_json_omitted_crate(path: &Path) -> bool {
+    is_under_crates_auxiliary_crate(path)
 }
 
 pub(crate) fn is_calibration_excluded_file(path: &Path) -> bool {
@@ -174,29 +180,8 @@ pub(crate) fn is_calibration_excluded_file(path: &Path) -> bool {
     }) {
         return true;
     }
-    // Typing/language-server workspace siblings in multi-tool repos (e.g. ruff + ty):
-    // ruff's llvm-cov run does not execute these crates; static refs over-credit them.
-    if path.components().zip(path.components().skip(1)).any(|(a, b)| {
-        matches!(a, std::path::Component::Normal(x) if x == "crates")
-            && matches!(
-                b,
-                std::path::Component::Normal(x) if x.to_str().is_some_and(|n| {
-                    n == "ty"
-                        || n.starts_with("ty_")
-                        || n.ends_with("_formatter")
-                        || n.ends_with("_benchmark")
-                        || n == "ruff_mdtest"
-                        || n == "mdtest"
-                        || n == "ruff_memory_usage"
-                        || n == "ruff_options_metadata"
-                        || n == "ruff_graph"
-                        || n == "ruff_server"
-                        || n == "ruff_wasm"
-                        ||                     n == "ruff_cache"
-                        || n == "ruff_formatter"
-                })
-            )
-    }) {
+    // Typing/language-server and other llvm-unexecuted workspace siblings: static refs over-credit them.
+    if is_under_crates_auxiliary_crate(path) {
         return true;
     }
     path.components().zip(path.components().skip(1)).any(|(a, b)| {

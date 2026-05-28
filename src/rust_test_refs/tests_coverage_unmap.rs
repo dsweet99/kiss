@@ -119,3 +119,70 @@ fn integration_cone_witnesses_are_not_vetoed_by_benchmark_dirname_inventory() {
         "definition with integration-cone attestation must not be marked uncovered"
     );
 }
+
+/// principles.md: workspace crate partitions must not hard-code benchmark vendor crate names.
+#[test]
+fn calibration_workspace_crates_are_not_benchmark_name_inventory() {
+    use super::calibration_map;
+
+    assert!(
+        !calibration_map::is_coverage_map_json_omitted_crate(Path::new(
+            "crates/acme_formatter/src/lib.rs"
+        )),
+        "generic formatter workspace crates must not be omitted via benchmark-shaped suffix inventory"
+    );
+    assert!(
+        !calibration_map::is_calibration_excluded_file(Path::new(
+            "crates/acme_formatter/src/lib.rs"
+        )),
+        "generic formatter workspace crates must not lose calibration credit"
+    );
+    assert_eq!(
+        calibration_map::is_coverage_map_json_omitted_crate(Path::new(
+            "crates/ruff_graph/src/lib.rs"
+        )),
+        calibration_map::is_coverage_map_json_omitted_crate(Path::new(
+            "crates/my_graph/src/lib.rs"
+        )),
+        "graph auxiliary crates must be classified by suffix pattern, not ruff_ prefix"
+    );
+
+    for path in [
+        "crates/ty/src/lib.rs",
+        "crates/ty_ide/src/lib.rs",
+        "crates/mdtest/src/lib.rs",
+        "crates/acme_mdtest/src/lib.rs",
+        "crates/acme_benchmark/src/lib.rs",
+        "crates/acme_memory_usage/src/lib.rs",
+        "crates/acme_options_metadata/src/lib.rs",
+        "crates/ruff_server/src/lib.rs",
+        "crates/acme_wasm/src/lib.rs",
+        "crates/acme_cache/src/lib.rs",
+    ] {
+        assert!(
+            calibration_map::is_coverage_map_json_omitted_crate(Path::new(path)),
+            "auxiliary workspace crate {path} should be omitted from coverage-map JSON"
+        );
+        assert!(
+            calibration_map::is_calibration_excluded_file(Path::new(path)),
+            "auxiliary workspace crate {path} should be calibration-excluded"
+        );
+    }
+
+    let src = include_str!("calibration_map.rs");
+    for lit in [
+        "ruff_mdtest",
+        "ruff_memory_usage",
+        "ruff_options_metadata",
+        "ruff_graph",
+        "ruff_server",
+        "ruff_wasm",
+        "ruff_cache",
+        "ruff_formatter",
+    ] {
+        assert!(
+            !src.contains(lit),
+            "calibration_map.rs must not hard-code benchmark crate name {lit:?}"
+        );
+    }
+}
