@@ -10,6 +10,7 @@ mod calibration_detect;
 mod calibration_expand;
 mod calibration_import;
 mod calibration_map;
+mod calibration_route;
 mod coverage_map_collect;
 mod coverage_map_unreferenced;
 mod definitions;
@@ -289,6 +290,11 @@ pub fn analyze_rust_test_refs_for_coverage_map(
     // `#[cfg(test)]` modules in production sources (e.g. ruff `test_case(Rule::Foo, …)`).
     coverage_references.extend(test_references.iter().cloned());
     calibration::expand_coverage_map_witnesses(parsed_files, &mut coverage_references);
+    calibration_route::expand_cli_route_witnesses(
+        parsed_files,
+        &definitions,
+        &mut coverage_references,
+    );
     let integration_cone_files = calibration::integration_cone_files_for(parsed_files);
     let subprocess_paths = coverage_map_collect::subprocess_integration_test_paths(parsed_files);
     let test_witness_refs = coverage_map_collect::test_witness_refs_excluding_subprocess(
@@ -310,6 +316,8 @@ pub fn analyze_rust_test_refs_for_coverage_map(
         *m.entry(d.file.clone()).or_default() += 1;
         m
     });
+    let cli_route_attested_files =
+        calibration_route::cli_route_attested_files(parsed_files, &definitions);
     let unref_ctx = coverage_map_unreferenced::CoverageMapUnrefCtx {
         test_witness_refs: &test_witness_refs,
         coverage_references: &coverage_references,
@@ -317,6 +325,7 @@ pub fn analyze_rust_test_refs_for_coverage_map(
         disambiguation: &disambiguation,
         integration_cone_files: &integration_cone_files,
         defs_per_file: &defs_per_file,
+        cli_route_attested_files: &cli_route_attested_files,
     };
     let mut unreferenced = coverage_map_unreferenced::unreferenced_for_coverage_map(&definitions, &unref_ctx);
     if let Some(g) = graph {

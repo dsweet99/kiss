@@ -2,8 +2,9 @@ use super::coverage_map_unreferenced::{
     coverage_map_direct_test_witness, coverage_map_expanded_dense_file,
     coverage_map_forced_uncovered_file, coverage_map_integration_cone_witness,
     coverage_map_single_crate_cli_witnessed, definition_uncovered_for_coverage_map,
-    CoverageMapUnrefCtx,
+    is_coverage_map_integration_cone_inflation_shim, CoverageMapUnrefCtx,
 };
+use std::path::Path;
 use super::RustCodeDefinition;
 use crate::units::CodeUnitKind;
 use std::collections::{HashMap, HashSet};
@@ -22,6 +23,15 @@ fn sample_def(name: &str, file: PathBuf) -> RustCodeDefinition {
 
 #[test]
 fn coverage_map_helper_paths() {
+    assert!(is_coverage_map_integration_cone_inflation_shim(Path::new(
+        "src/output/stdout_tee_env.rs"
+    )));
+    assert!(!is_coverage_map_integration_cone_inflation_shim(Path::new(
+        "src/learn_gate.rs"
+    )));
+    assert!(coverage_map_forced_uncovered_file(Path::new(
+        "src/acp/client_impl_session.rs"
+    )));
     assert!(coverage_map_forced_uncovered_file(PathBuf::from(
         "crates/ruff_linter/src/rules/flake8_x/settings.rs"
     ).as_path()));
@@ -43,6 +53,7 @@ fn coverage_map_helper_paths() {
         disambiguation: &HashMap::new(),
         integration_cone_files: &cone,
         defs_per_file: &empty_map,
+        cli_route_attested_files: &HashSet::new(),
     };
     assert!(coverage_map_single_crate_cli_witnessed(&cli_def, &ctx));
     assert!(coverage_map_direct_test_witness(&lib_def, &ctx));
@@ -56,6 +67,7 @@ fn coverage_map_helper_paths() {
         disambiguation: &HashMap::new(),
         integration_cone_files: &cone_files,
         defs_per_file: &empty_map,
+        cli_route_attested_files: &HashSet::new(),
     };
     assert!(coverage_map_integration_cone_witness(&lib_def, &cone_ctx));
 
@@ -68,6 +80,7 @@ fn coverage_map_helper_paths() {
         disambiguation: &HashMap::new(),
         integration_cone_files: &HashSet::new(),
         defs_per_file: &dense_counts,
+        cli_route_attested_files: &HashSet::new(),
     };
     assert!(coverage_map_expanded_dense_file(&lib_def, &dense_ctx));
     assert!(!definition_uncovered_for_coverage_map(

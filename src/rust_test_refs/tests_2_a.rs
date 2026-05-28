@@ -204,5 +204,8 @@ fn test_is_coverage_map_acp_kpop_body_shim() {
     assert!(!calibration_map::is_coverage_map_acp_kpop_body_shim(Path::new(
         "src/acp/client_impl.rs"
     )));
+    assert!(calibration_map::is_coverage_map_acp_client_impl_shim(Path::new(
+        "src/acp/client_impl_prompt.rs"
+    )));
 }
 

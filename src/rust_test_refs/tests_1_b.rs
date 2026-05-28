@@ -189,6 +189,7 @@ fn coverage_map_helpers_and_test_attr_paths() {
         disambiguation: &HashMap::new(),
         integration_cone_files: &HashSet::new(),
         defs_per_file: &counts,
+        cli_route_attested_files: &HashSet::new(),
     };
     let unref =
         crate::rust_test_refs::coverage_map_unreferenced::unreferenced_for_coverage_map(

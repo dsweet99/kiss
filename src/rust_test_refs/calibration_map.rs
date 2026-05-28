@@ -67,6 +67,14 @@ pub(crate) fn is_coverage_map_acp_kpop_body_shim(path: &Path) -> bool {
     })
 }
 
+/// `acp/client_impl_*.rs`: integration tests witness many symbols; llvm-cov executes a thin subset.
+pub(crate) fn is_coverage_map_acp_client_impl_shim(path: &Path) -> bool {
+    path.file_name().is_some_and(|n| n.to_str().is_some_and(|s| s.starts_with("client_impl_")))
+        && path.components().any(|c| {
+            matches!(c, std::path::Component::Normal(s) if s == "acp")
+        })
+}
+
 /// `src/cli/exit.rs` and similar: static integration tests reference exit paths llvm never runs.
 pub(crate) fn is_coverage_map_cli_exit_shim(path: &Path) -> bool {
     path.file_name().and_then(|n| n.to_str()) == Some("exit.rs")

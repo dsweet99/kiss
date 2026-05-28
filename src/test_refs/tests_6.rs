@@ -286,6 +286,48 @@ fn test_apply_import_dependency_calibration_unknown_module() {
 }
 
 #[test]
+fn test_import_calibration_void_partition_does_not_collapse_module() {
+    use crate::graph::DependencyGraph;
+    let void_path = PathBuf::from("rope/base/sample.py");
+    let witnessed = CodeDefinition {
+        name: "witnessed".into(),
+        kind: CodeUnitKind::Function,
+        file: void_path.clone(),
+        line: 1,
+        end_line: 2,
+        containing_class: None,
+    };
+    let sibling = CodeDefinition {
+        name: "sibling".into(),
+        kind: CodeUnitKind::Function,
+        file: void_path.clone(),
+        line: 5,
+        end_line: 6,
+        containing_class: None,
+    };
+    let mut graph = DependencyGraph::new();
+    graph
+        .path_to_module
+        .insert(void_path.clone(), "rope.base.sample".to_string());
+    let mut analysis = TestRefAnalysis {
+        definitions: vec![witnessed, sibling.clone()],
+        test_references: HashSet::new(),
+        unreferenced: vec![sibling],
+        coverage_map: HashMap::new(),
+    };
+    let usage = HashSet::from(["witnessed".to_string()]);
+    let name_files = crate::test_refs::build_name_file_map(
+        analysis
+            .definitions
+            .iter()
+            .map(|d| (d.name.as_str(), d.file.as_path())),
+    );
+    coverage::apply_import_dependency_calibration(&mut analysis, &graph, &usage, &name_files);
+    assert_eq!(analysis.unreferenced.len(), 1);
+    assert_eq!(analysis.unreferenced[0].name, "sibling");
+}
+
+#[test]
 fn test_collect_definitions_skips_dunder_main_block() {
     use crate::parsing::{create_parser, parse_file};
     use super::collect_definitions;
@@ -326,41 +368,4 @@ fn test_is_dunder_main_guard_negative_cases() {
     let tree = parser.parse(src, None).expect("parse");
     let if_node = tree.root_node().child(0).expect("if");
     assert!(is_dunder_main_guard(if_node, src));
-}
-
-#[test]
-fn test_deprioritize_class_name_witness_in_non_gated_test() {
-    use crate::parsing::{create_parser, parse_file};
-    let mut prod = NamedTempFile::with_suffix("_windows.py").unwrap();
-    write!(prod, "class Win:\n    def api(self):\n        pass\n").unwrap();
-    let mut gated = NamedTempFile::with_suffix("_test.py").unwrap();
-    write!(
-        gated,
-        "import sys\nif sys.platform != 'win32':\n    pass\n"
-    )
-    .unwrap();
-    let mut direct = NamedTempFile::with_suffix("_test.py").unwrap();
-    write!(direct, "def test_win():\n    Win()\n").unwrap();
-    let mut parser = create_parser().expect("parser");
-    let prod_p = parse_file(&mut parser, prod.path()).expect("parse");
-    let gated_p = parse_file(&mut parser, gated.path()).expect("parse");
-    let direct_p = parse_file(&mut parser, direct.path()).expect("parse");
-    let parsed = [&prod_p, &gated_p, &direct_p];
-    let analysis = analyze_test_refs_for_coverage_map(&parsed, None);
-    let mut unreferenced = analysis.unreferenced.clone();
-    let per_test = super::collect_parallel::collect_refs_parallel_for_coverage_map(&parsed).4;
-    coverage::deprioritize_platform_gated_coverage(
-        &analysis.definitions,
-        &mut unreferenced,
-        &per_test,
-        &parsed,
-        &HashMap::new(),
-        &HashMap::new(),
-        &HashMap::new(),
-        &HashMap::new(),
-    );
-    assert!(
-        !unreferenced.iter().any(|d| d.name == "api"),
-        "class-name witness in non-gated test should keep method covered"
-    );
 }

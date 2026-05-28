@@ -10,74 +10,29 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use tree_sitter::Node;
 
+#[path = "coverage_expand_paths.rs"]
+mod coverage_expand_paths;
+#[path = "coverage_void_dispatch.rs"]
+mod coverage_void_dispatch;
+
+#[allow(unused_imports)]
+pub(crate) use coverage_expand_paths::{
+    collect_py_path_string_literals, expand_py_path_literal_file_witnesses,
+    is_py_contrib_base_void_partition, is_py_contrib_refactor_void_force_uncovered,
+    is_py_inflator_calibration_path, is_py_inflator_call_only_path, is_py_optimizer_experiment_path,
+    unquote_py_string, OPTIMIZER_CLASS_HEADER_LINES,
+};
+pub use coverage_expand_paths::calibration_def_end_line;
+#[allow(unused_imports)]
+pub(crate) use coverage_void_dispatch::{
+    build_py_void_dispatch_attestation, collect_py_dynamic_dispatch_literals,
+    collect_py_raises_dotted_paths, void_files_for_dotted_path,
+};
+
 const MAX_EXPAND_HOPS: usize = 12;
 pub(crate) const MAX_PRODUCTION_IMPORT_EXPAND_DEFS: usize = 12;
 pub(crate) const MAX_SAME_FILE_ONE_HOP_DEFS: usize = 4;
 const MAX_DIR_SIBLING_EXPAND_DEFS: usize = 8;
-
-/// `base/`, `contrib/`, and `refactor/` subtrees: skip directory-sibling and production-import expansion.
-pub(crate) fn is_py_contrib_base_void_partition(path: &std::path::Path) -> bool {
-    path.components().any(|c| {
-        matches!(
-            c,
-            std::path::Component::Normal(s)
-                if s.to_str().is_some_and(|n| n == "base" || n == "contrib" || n == "refactor")
-        )
-    })
-}
-
-/// `base/`, `contrib/`, and `refactor/` subtrees: force uncovered in calibration (llvm runs
-/// only a thin subset; static import witnesses over-credit).
-pub(crate) fn is_py_contrib_refactor_void_force_uncovered(path: &std::path::Path) -> bool {
-    is_py_contrib_base_void_partition(path)
-}
-
-/// Quoted `ops/foo.py` / `rl/pkg/mod.py` paths in test sources attest every def in matching files.
-pub(crate) fn expand_py_path_literal_file_witnesses(
-    parsed_files: &[&ParsedFile],
-    definitions: &[CodeDefinition],
-    refs: &mut HashSet<String>,
-) {
-    let mut path_literals = HashSet::new();
-    for parsed in parsed_files {
-        if !is_python_test_file(parsed) {
-            continue;
-        }
-        collect_py_path_string_literals(parsed.tree.root_node(), &parsed.source, &mut path_literals);
-    }
-    if path_literals.is_empty() {
-        return;
-    }
-    for def in definitions {
-        let file = def.file.to_string_lossy();
-        if path_literals
-            .iter()
-            .any(|lit| file.ends_with(lit.as_os_str().to_string_lossy().as_ref()))
-        {
-            refs.insert(def.name.clone());
-        }
-    }
-}
-
-pub(crate) fn collect_py_path_string_literals(node: Node, source: &str, out: &mut HashSet<PathBuf>) {
-    if node.kind() == "string" {
-        let raw = &source[node.start_byte()..node.end_byte()];
-        let inner = raw
-            .trim()
-            .trim_matches(|c| c == '"' || c == '\'');
-        if inner.ends_with(".py")
-            && inner.contains('/')
-            && !inner.contains("..")
-            && inner.chars().all(|c| c.is_ascii() && !c.is_whitespace())
-        {
-            out.insert(PathBuf::from(inner));
-        }
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_py_path_string_literals(child, source, out);
-    }
-}
 
 pub(crate) fn expand_py_usage_refs_fixpoint(
     parsed_files: &[&ParsedFile],

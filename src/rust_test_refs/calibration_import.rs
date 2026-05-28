@@ -2,6 +2,9 @@ use super::calibration_map::{
     is_calibration_excluded_file, is_coverage_map_binary_crate_src_root,
     is_coverage_map_rule_settings_file, is_coverage_map_single_crate_cli_file,
 };
+use super::coverage_map_unreferenced::{
+    coverage_map_forced_uncovered_file, is_coverage_map_integration_cone_inflation_shim,
+};
 use super::definitions::RustCodeDefinition;
 use super::calibration::module_definition_counts;
 use crate::graph::DependencyGraph;
@@ -127,6 +130,11 @@ pub(crate) fn apply_rust_import_dependency_calibration(
         }
     }
     unreferenced.retain(|d| {
+        if coverage_map_forced_uncovered_file(&d.file)
+            || is_coverage_map_integration_cone_inflation_shim(&d.file)
+        {
+            return true;
+        }
         if is_calibration_excluded_file(&d.file) {
             return true;
         }

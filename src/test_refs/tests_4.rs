@@ -1,4 +1,5 @@
 use super::*;
+use super::coverage::is_definition_covered;
 
 // ---------------------------------------------------------------------------
 // coverage.rs: is_definition_covered

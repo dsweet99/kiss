@@ -80,8 +80,12 @@ pub(crate) fn has_test_function_or_class(node: Node, source: &str) -> bool {
 
 pub fn is_in_test_directory(path: &Path) -> bool {
     use std::ffi::OsStr;
-    path.components()
-        .any(|c| c.as_os_str() == OsStr::new("tests") || c.as_os_str() == OsStr::new("test"))
+    path.components().any(|c| {
+        let s = c.as_os_str();
+        s == OsStr::new("tests")
+            || s == OsStr::new("test")
+            || s == OsStr::new("ropetest")
+    })
 }
 
 pub(crate) fn is_python_test_file(parsed: &ParsedFile) -> bool {

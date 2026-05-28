@@ -20,11 +20,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 pub use collect_parallel::test_functions_in;
+pub use coverage_expand::calibration_def_end_line;
 pub(crate) use collect_parallel::collect_refs_parallel;
 pub(crate) use collect_parallel::collect_refs_parallel_for_coverage_map;
-pub(crate) use coverage::{
-    build_py_coverage_map, is_definition_covered,
-};
+pub(crate) use coverage::build_py_coverage_map;
 pub use detection::{has_test_framework_import, is_in_test_directory, is_test_file};
 pub use disambiguation::build_name_file_map;
 pub(crate) use disambiguation::{build_disambiguation_map, file_to_module_suffix};
@@ -149,6 +148,12 @@ fn apply_calibration_postprocessing(
         ctx.import_bindings,
         ctx.module_suffixes,
     );
+    coverage::deprioritize_pragma_no_cover_coverage(
+        &analysis.definitions,
+        &mut analysis.unreferenced,
+        ctx.per_test_usage,
+        ctx.parsed_files,
+    );
     if let Some(g) = ctx.graph {
         coverage::apply_import_dependency_calibration(
             analysis,
@@ -208,21 +213,26 @@ fn analyze_test_refs_inner(
         .iter()
         .map(|d| (d.file.clone(), file_to_module_suffix(&d.file)))
         .collect();
+    // g9 H1: void dispatch attestation disabled (net harmful on rope RMSE).
+    let void_dispatch_attestation = HashMap::new();
 
-    let unreferenced = calibration_analysis::filter_unreferenced_definitions(
-        &definitions,
-        &calibration_analysis::UnreferencedFilterCtx {
+    let filter_ctx = calibration_analysis::UnreferencedFilterCtx {
             calibration,
             defs_per_file: &calibration_defs_per_file,
             test_witness_refs: &test_witness_refs,
             calibration_strict_refs: &calibration_strict_refs,
             calibration_expanded_refs: &calibration_expanded_refs,
+            void_dispatch_attestation: &void_dispatch_attestation,
             usage_references: &usage_references,
             name_files: &name_files,
             disambiguation: &disambiguation,
             import_bindings: &import_bindings,
             module_suffixes: &module_suffixes,
-        },
+        };
+
+    let unreferenced = calibration_analysis::filter_unreferenced_definitions(
+        &definitions,
+        &filter_ctx,
     );
 
     let coverage_map = if need_coverage_map && !calibration {

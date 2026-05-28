@@ -1,6 +1,9 @@
-use super::coverage::is_definition_covered_for_calibration;
-use super::coverage_expand::is_py_contrib_refactor_void_force_uncovered;
-use super::{is_definition_covered, CodeDefinition, ParsedFile};
+use super::coverage::{is_definition_covered, is_definition_covered_for_calibration, is_py_package_init_import_witnessed};
+use super::coverage_expand::{
+    is_py_contrib_refactor_void_force_uncovered, is_py_inflator_calibration_path,
+};
+use super::{CodeDefinition, ParsedFile};
+use crate::units::CodeUnitKind;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -40,6 +43,7 @@ pub(crate) struct UnreferencedFilterCtx<'a> {
     pub test_witness_refs: &'a HashSet<String>,
     pub calibration_strict_refs: &'a HashSet<String>,
     pub calibration_expanded_refs: &'a HashSet<String>,
+    pub void_dispatch_attestation: &'a HashMap<PathBuf, HashSet<String>>,
     pub usage_references: &'a HashSet<String>,
     pub name_files: &'a HashMap<String, HashSet<PathBuf>>,
     pub disambiguation: &'a HashMap<String, PathBuf>,
@@ -55,11 +59,30 @@ pub(crate) fn filter_unreferenced_definitions(
         .iter()
         .filter(|def| {
             let covered = if ctx.calibration && is_py_contrib_refactor_void_force_uncovered(&def.file) {
+                match ctx.void_dispatch_attestation.get(&def.file) {
+                    None => false,
+                    Some(allowed) => {
+                        let name_ok = allowed.is_empty() || allowed.contains(&def.name);
+                        name_ok
+                            && is_definition_covered_for_calibration(
+                                def,
+                                ctx.name_files,
+                                ctx.disambiguation,
+                                ctx.import_bindings,
+                                ctx.module_suffixes,
+                                ctx.calibration_strict_refs,
+                            )
+                    }
+                }
+            } else if ctx.calibration
+                && is_py_inflator_calibration_path(&def.file)
+                && def.kind == CodeUnitKind::Class
+            {
                 false
             } else if ctx.calibration {
                 let file_defs = ctx.defs_per_file.get(&def.file).copied().unwrap_or(0);
-                let refs = if file_defs
-                    > super::coverage_expand::MAX_PRODUCTION_IMPORT_EXPAND_DEFS
+                let refs = if is_py_inflator_calibration_path(&def.file)
+                    || file_defs > super::coverage_expand::MAX_PRODUCTION_IMPORT_EXPAND_DEFS
                 {
                     ctx.test_witness_refs
                 } else if file_defs > super::coverage_expand::MAX_SAME_FILE_ONE_HOP_DEFS {
@@ -67,7 +90,12 @@ pub(crate) fn filter_unreferenced_definitions(
                 } else {
                     ctx.calibration_expanded_refs
                 };
-                is_definition_covered_for_calibration(
+                is_py_package_init_import_witnessed(
+                    def,
+                    ctx.import_bindings,
+                    ctx.module_suffixes,
+                )
+                    || is_definition_covered_for_calibration(
                     def,
                     ctx.name_files,
                     ctx.disambiguation,

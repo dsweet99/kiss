@@ -221,3 +221,57 @@ fn module_is_contrib_base_void_paths() {
         &graph
     ));
 }
+
+#[test]
+fn is_pragma_no_cover_def_detects_same_line_and_previous() {
+    use super::coverage::{deprioritize_pragma_no_cover_coverage, is_pragma_no_cover_def};
+    use crate::parsing::{create_parser, parse_file};
+    use std::io::Write;
+    let mut src = tempfile::NamedTempFile::with_suffix(".py").unwrap();
+    write!(
+        src,
+        "# pragma: no cover\ndef hidden():\n    pass\ndef visible():  # pragma: no cover\n    pass\n"
+    )
+    .unwrap();
+    let mut parser = create_parser().expect("parser");
+    let parsed = parse_file(&mut parser, src.path()).expect("parse");
+    let parsed_ref = [&parsed];
+    let hidden = CodeDefinition {
+        name: "hidden".into(),
+        kind: CodeUnitKind::Function,
+        file: parsed.path.clone(),
+        line: 2,
+        end_line: 3,
+        containing_class: None,
+    };
+    let visible = CodeDefinition {
+        name: "visible".into(),
+        kind: CodeUnitKind::Function,
+        file: parsed.path.clone(),
+        line: 4,
+        end_line: 5,
+        containing_class: None,
+    };
+    assert!(is_pragma_no_cover_def(&hidden, &parsed_ref));
+    assert!(is_pragma_no_cover_def(&visible, &parsed_ref));
+    let mut unreferenced = Vec::new();
+    deprioritize_pragma_no_cover_coverage(
+        &[hidden.clone(), visible.clone()],
+        &mut unreferenced,
+        &Vec::new(),
+        &parsed_ref,
+    );
+    assert_eq!(unreferenced.len(), 2);
+    let per_test: PerTestUsage = vec![(
+        PathBuf::from("tests/test_x.py"),
+        vec![("test_x".into(), HashSet::from(["hidden".into()]))],
+    )];
+    let mut unreferenced2 = Vec::new();
+    deprioritize_pragma_no_cover_coverage(
+        &[hidden],
+        &mut unreferenced2,
+        &per_test,
+        &parsed_ref,
+    );
+    assert!(unreferenced2.is_empty());
+}

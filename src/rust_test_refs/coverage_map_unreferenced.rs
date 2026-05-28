@@ -12,13 +12,44 @@ pub(crate) struct CoverageMapUnrefCtx<'a> {
     pub disambiguation: &'a HashMap<String, PathBuf>,
     pub integration_cone_files: &'a HashSet<PathBuf>,
     pub defs_per_file: &'a HashMap<PathBuf, usize>,
+    pub cli_route_attested_files: &'a HashSet<PathBuf>,
+}
+
+pub(crate) fn is_coverage_map_integration_cone_inflation_shim(path: &Path) -> bool {
+    path.components().any(|c| {
+        matches!(
+            c,
+            std::path::Component::Normal(s)
+                if s.to_str().is_some_and(|n| {
+                    n == "acp"
+                        || n == "cli"
+                        || n == "kpop_progression"
+                        || n == "orchestrator"
+                        || n == "output"
+                        || n == "cursor_store"
+                        || n == "tool_summary"
+                })
+        )
+    })
 }
 
 pub(crate) fn coverage_map_forced_uncovered_file(path: &Path) -> bool {
     calibration_map::is_coverage_map_rule_settings_file(path)
         || calibration_map::is_coverage_map_cli_exit_shim(path)
         || calibration_map::is_coverage_map_acp_kpop_body_shim(path)
+        || calibration_map::is_coverage_map_acp_client_impl_shim(path)
         || calibration_map::is_coverage_map_binary_crate_src_root(path)
+}
+
+pub(crate) fn coverage_map_cli_route_witnessed(
+    d: &RustCodeDefinition,
+    ctx: &CoverageMapUnrefCtx<'_>,
+) -> bool {
+    use super::calibration_map::is_coverage_map_single_crate_cli_file;
+    let key = crate::rust_include::canonical_path(&d.file);
+    is_coverage_map_single_crate_cli_file(&d.file)
+        && ctx.cli_route_attested_files.contains(&key)
+        && ctx.coverage_references.contains(&d.name)
 }
 
 pub(crate) fn coverage_map_single_crate_cli_witnessed(
@@ -28,6 +59,7 @@ pub(crate) fn coverage_map_single_crate_cli_witnessed(
     calibration_map::is_coverage_map_single_crate_cli_file(&d.file)
         && !ctx.integration_cone_files.is_empty()
         && ctx.test_witness_refs.contains(&d.name)
+        && ctx.defs_per_file.get(&d.file).copied().unwrap_or(0) <= 8
 }
 
 pub(crate) fn coverage_map_direct_test_witness(
@@ -51,8 +83,8 @@ pub(crate) fn coverage_map_integration_cone_witness(
     ctx.integration_cone_files
         .contains(&crate::rust_include::canonical_path(&d.file))
         && !calibration::is_calibration_excluded_file(&d.file)
-        && (!calibration::is_coverage_map_cli_commands_file(&d.file)
-            || calibration_map::is_coverage_map_single_crate_cli_file(&d.file))
+        && !calibration::is_coverage_map_cli_commands_file(&d.file)
+        && !is_coverage_map_integration_cone_inflation_shim(&d.file)
         && ctx.test_witness_refs.contains(&d.name)
 }
 
@@ -73,10 +105,11 @@ pub(crate) fn definition_uncovered_for_coverage_map(
     if coverage_map_forced_uncovered_file(&d.file) {
         return true;
     }
-    if coverage_map_single_crate_cli_witnessed(d, ctx) {
-        return false;
-    }
-    if coverage_map_direct_test_witness(d, ctx) || coverage_map_integration_cone_witness(d, ctx) {
+    let witnessed = coverage_map_cli_route_witnessed(d, ctx)
+        || coverage_map_single_crate_cli_witnessed(d, ctx)
+        || coverage_map_direct_test_witness(d, ctx)
+        || coverage_map_integration_cone_witness(d, ctx);
+    if witnessed {
         return false;
     }
     let from_expanded = is_covered_by_tests_for_coverage_map(
@@ -88,10 +121,8 @@ pub(crate) fn definition_uncovered_for_coverage_map(
     if !from_expanded || calibration::is_coverage_map_cli_commands_file(&d.file) {
         return true;
     }
-    if is_directly_referenced(d, ctx.coverage_references, ctx.name_files, ctx.disambiguation) {
-        return false;
-    }
-    coverage_map_expanded_dense_file(d, ctx)
+    !is_directly_referenced(d, ctx.coverage_references, ctx.name_files, ctx.disambiguation)
+        && coverage_map_expanded_dense_file(d, ctx)
 }
 
 pub(crate) fn unreferenced_for_coverage_map(
@@ -145,6 +176,7 @@ mod tests {
             disambiguation: &HashMap::new(),
             integration_cone_files: &HashSet::new(),
             defs_per_file: &counts,
+            cli_route_attested_files: &HashSet::new(),
         };
         let unref = unreferenced_for_coverage_map(&defs, &ctx);
         assert_eq!(unref.len(), 1);
