@@ -1,8 +1,15 @@
 use super::{has_cfg_test_attribute, has_test_attribute};
-use crate::macro_expr_parser::{parse_expr_list, parse_single_expr};
 use std::collections::HashSet;
 use syn::visit::Visit;
-use syn::{Expr, Item};
+use syn::{Attribute, Expr, Item};
+
+#[path = "references_macro.rs"]
+mod references_macro;
+pub(crate) use references_macro::visit_macro_tokens;
+#[cfg(test)]
+pub(crate) use references_macro::{
+    try_parse_as_expr_list, try_parse_as_single_expr, visit_nested_token_groups,
+};
 
 #[derive(Clone, Copy)]
 pub(super) struct RefWitnessMode {
@@ -25,13 +32,13 @@ impl RefWitnessMode {
     }
 }
 
-pub(super) fn collect_rust_references(ast: &syn::File, refs: &mut HashSet<String>) {
+pub(crate) fn collect_rust_references(ast: &syn::File, refs: &mut HashSet<String>) {
     collect_rust_references_with_mode(ast, refs, RefWitnessMode::GATE);
 }
 
 /// Collect references for coverage-map calibration: calls, method calls, struct literals,
 /// macro innards, and function-item call arguments (not bare paths, types, or path strings).
-pub(super) fn collect_rust_references_for_coverage_map(ast: &syn::File, refs: &mut HashSet<String>) {
+pub(crate) fn collect_rust_references_for_coverage_map(ast: &syn::File, refs: &mut HashSet<String>) {
     collect_rust_references_with_mode(ast, refs, RefWitnessMode::COVERAGE_MAP);
 }
 
@@ -61,7 +68,60 @@ pub(crate) fn collect_rust_references_for_fn_coverage_map(f: &syn::ItemFn) -> Ha
         mode: RefWitnessMode::COVERAGE_MAP,
     }
     .visit_item_fn(f);
+    collect_test_parametric_attr_macro_witnesses(&f.attrs, &mut refs, RefWitnessMode::COVERAGE_MAP);
     refs
+}
+
+/// `#[test_case(Rule::Foo, …)]` / `#[rstest(…)]` put witnesses in attribute tokens; `visit_attribute`
+/// does not descend into them, so collect them explicitly for coverage calibration.
+pub(super) fn is_test_parametric_attribute(attr: &Attribute) -> bool {
+    attr.path().is_ident("test_case")
+        || attr.path().is_ident("rstest")
+        || attr.path().is_ident("case")
+        || attr
+            .path()
+            .segments
+            .last()
+            .is_some_and(|s| matches!(s.ident.to_string().as_str(), "test_case" | "rstest" | "case"))
+}
+
+pub(super) fn has_test_parametric_attribute(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(is_test_parametric_attribute)
+}
+
+pub(super) fn collect_test_parametric_attr_macro_witnesses(
+    attrs: &[Attribute],
+    refs: &mut HashSet<String>,
+    mode: RefWitnessMode,
+) {
+    for attr in attrs {
+        if !is_test_parametric_attribute(attr) {
+            continue;
+        }
+        if let syn::Meta::List(list) = &attr.meta {
+            visit_macro_tokens(&list.tokens, refs, mode);
+        }
+    }
+}
+
+pub(super) fn collect_fn_test_attr_macro_witnesses(
+    items: &[Item],
+    refs: &mut HashSet<String>,
+    mode: RefWitnessMode,
+) {
+    for item in items {
+        match item {
+            Item::Mod(m) => {
+                if let Some((_, sub)) = &m.content {
+                    collect_fn_test_attr_macro_witnesses(sub, refs, mode);
+                }
+            }
+            Item::Fn(f) => {
+                collect_test_parametric_attr_macro_witnesses(&f.attrs, refs, mode);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Collects per-test (`test_id`, `usage_refs`) from a file.
@@ -107,7 +167,9 @@ pub(crate) fn collect_per_test_usage_from_items(
                     collect_per_test_usage_from_items(mod_items, &mod_prefix, out, mode);
                 }
             }
-            Item::Fn(f) if has_test_attribute(&f.attrs) => {
+            Item::Fn(f)
+                if has_test_attribute(&f.attrs) || has_test_parametric_attribute(&f.attrs) =>
+            {
                 let fn_name = f.sig.ident.to_string();
                 let refs = if mode.includes_bare_paths() {
                     collect_rust_references_for_fn(f)
@@ -212,6 +274,42 @@ pub(crate) fn insert_coverage_path_string_ref(value: &str, refs: &mut HashSet<St
     }
 }
 
+/// `Rule::ShebangNotExecutable` in `test_case` witnesses the variant ident, not `shebang_not_executable`.
+pub(crate) fn insert_rule_variant_snake_alias(path: &syn::Path, refs: &mut HashSet<String>) {
+    if path.segments.len() < 2 {
+        return;
+    }
+    let first = path.segments.first().map(|s| s.ident.to_string());
+    if first.as_deref() != Some("Rule") {
+        return;
+    }
+    let variant = path.segments.last().map(|s| s.ident.to_string());
+    let Some(variant) = variant else {
+        return;
+    };
+    if let Some(snake) = pascal_case_ident_to_snake(&variant) {
+        refs.insert(snake);
+    }
+}
+
+fn pascal_case_ident_to_snake(name: &str) -> Option<String> {
+    if name.is_empty() || !name.chars().skip(1).any(char::is_uppercase) {
+        return None;
+    }
+    let mut out = String::with_capacity(name.len() + 4);
+    for (i, c) in name.char_indices() {
+        if c.is_uppercase() {
+            if i > 0 {
+                out.push('_');
+            }
+            out.extend(c.to_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    Some(out)
+}
+
 pub(super) fn insert_path_segments(path: &syn::Path, refs: &mut HashSet<String>) {
     if starts_with_external_crate(path) {
         return;
@@ -222,6 +320,7 @@ pub(super) fn insert_path_segments(path: &syn::Path, refs: &mut HashSet<String>)
             refs.insert(name);
         }
     }
+    insert_rule_variant_snake_alias(path, refs);
 }
 
 impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
@@ -241,7 +340,9 @@ impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
                 self.refs.insert(m.method.to_string());
             }
             Expr::Struct(s) => insert_path_segments(&s.path, self.refs),
-            Expr::Path(p) if self.mode.bare_paths => insert_path_segments(&p.path, self.refs),
+            Expr::Path(p) if self.mode.bare_paths || p.path.segments.len() >= 2 => {
+                insert_path_segments(&p.path, self.refs);
+            }
             Expr::Macro(m) if !is_stringify_macro(&m.mac) => {
                 visit_macro_tokens(&m.mac.tokens, self.refs, self.mode);
             }
@@ -267,56 +368,4 @@ impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
         }
         syn::visit::visit_macro(self, mac);
     }
-}
-
-pub(super) fn try_parse_as_single_expr(
-    tokens: &proc_macro2::TokenStream,
-    refs: &mut HashSet<String>,
-    mode: RefWitnessMode,
-) -> bool {
-    if let Some(e) = parse_single_expr(tokens) {
-        ReferenceVisitor { refs, mode }.visit_expr(&e);
-        return true;
-    }
-    false
-}
-
-pub(super) fn try_parse_as_expr_list(
-    tokens: &proc_macro2::TokenStream,
-    refs: &mut HashSet<String>,
-    mode: RefWitnessMode,
-) -> bool {
-    if let Some(exprs) = parse_expr_list(tokens) {
-        for e in exprs {
-            ReferenceVisitor { refs, mode }.visit_expr(&e);
-        }
-        return true;
-    }
-    false
-}
-
-pub(super) fn visit_nested_token_groups(
-    tokens: &proc_macro2::TokenStream,
-    refs: &mut HashSet<String>,
-    mode: RefWitnessMode,
-) {
-    for t in tokens.clone() {
-        if let proc_macro2::TokenTree::Group(g) = t {
-            visit_macro_tokens(&g.stream(), refs, mode);
-        }
-    }
-}
-
-pub(crate) fn visit_macro_tokens(
-    tokens: &proc_macro2::TokenStream,
-    refs: &mut HashSet<String>,
-    mode: RefWitnessMode,
-) {
-    if try_parse_as_single_expr(tokens, refs, mode) {
-        return;
-    }
-    if try_parse_as_expr_list(tokens, refs, mode) {
-        return;
-    }
-    visit_nested_token_groups(tokens, refs, mode);
 }

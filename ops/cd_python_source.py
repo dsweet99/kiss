@@ -35,9 +35,35 @@ def _project_name_dir(repo: Path, data: dict) -> str | None:
     if not isinstance(project, dict):
         return None
     name = project.get("name")
-    if not isinstance(name, str) or not (repo / name).is_dir():
+    if not isinstance(name, str):
         return None
-    return name
+    if (repo / name).is_dir():
+        return name
+    src_name = repo / "src" / name
+    if src_name.is_dir():
+        return f"src/{name}"
+    return None
+
+
+def _maturin_python_source(data: dict, repo: Path) -> str | None:
+    tool = data.get("tool")
+    if not isinstance(tool, dict):
+        return None
+    maturin = tool.get("maturin")
+    if not isinstance(maturin, dict):
+        return None
+    python_source = maturin.get("python-source")
+    if not isinstance(python_source, str):
+        return None
+    module_name = maturin.get("module-name")
+    dotted_root = (
+        f"{python_source}/{module_name.split('.', 1)[0]}"
+        if isinstance(module_name, str) and "." in module_name
+        else None
+    )
+    if dotted_root is not None and (repo / dotted_root).is_dir():
+        return dotted_root
+    return python_source if (repo / python_source).is_dir() else None
 
 
 def _source_from_pyproject(repo: Path) -> str | None:
@@ -50,7 +76,27 @@ def _source_from_pyproject(repo: Path) -> str | None:
         return None
     if not isinstance(data, dict):
         return None
-    return _poetry_include_root(data) or _project_name_dir(repo, data)
+    return (
+        _maturin_python_source(data, repo)
+        or _poetry_include_root(data)
+        or _project_name_dir(repo, data)
+    )
+
+
+def infer_pytest_target(repo: Path) -> str:
+    """Default pytest path when coverage_discrepancy is invoked without extra args."""
+    for candidate in ("tests", "test", "ropetest", "testing"):
+        if (repo / candidate).is_dir():
+            return f"{candidate}/"
+    return "tests/"
+
+
+def _source_from_maturin_layout(repo: Path) -> str | None:
+    for candidate in ("python/ruff", "python"):
+        path = repo / candidate
+        if path.is_dir() and any(path.glob("**/__init__.py")):
+            return candidate
+    return None
 
 
 def _source_from_package_dirs(repo: Path) -> str | None:
@@ -75,4 +121,4 @@ def _source_from_package_dirs(repo: Path) -> str | None:
             candidates.append(child.name)
     if len(candidates) == 1:
         return candidates[0]
-    return None
+    return _source_from_maturin_layout(repo)

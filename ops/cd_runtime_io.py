@@ -48,7 +48,7 @@ def _subprocess_env() -> dict[str, str]:
 
 
 def _run_to_temp_files(
-    cmd: list[str], *, cwd: Path | None = None
+    cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None
 ) -> tuple[int, Path, Path]:
     with tempfile.NamedTemporaryFile(
         mode="w+", suffix=".stdout", delete=False, encoding="utf-8"
@@ -61,6 +61,9 @@ def _run_to_temp_files(
     with stdout_path.open("w", encoding="utf-8") as stdout_f, stderr_path.open(
         "w", encoding="utf-8"
     ) as stderr_f:
+        run_env = _subprocess_env()
+        if env:
+            run_env.update(env)
         proc = subprocess.run(
             cmd,
             cwd=cwd,
@@ -69,7 +72,7 @@ def _run_to_temp_files(
             stdout=stdout_f,
             stderr=stderr_f,
             check=False,
-            env=_subprocess_env(),
+            env=run_env,
         )
     return proc.returncode, stdout_path, stderr_path
 

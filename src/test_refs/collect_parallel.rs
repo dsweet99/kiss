@@ -1,6 +1,9 @@
 use super::collect::{
-    collect_all_test_file_data, collect_all_test_file_data_for_coverage_map,
     collect_definitions, collect_test_functions_with_refs,
+    collect_test_functions_with_refs_for_coverage_map,
+};
+use super::collect_test_file::{
+    collect_all_test_file_data, collect_all_test_file_data_for_coverage_map,
 };
 use super::detection::is_python_test_file;
 use super::{CodeDefinition, PerTestUsage};
@@ -95,12 +98,21 @@ pub(crate) fn collect_refs_parallel_with_mode(
                 }
                 if need_coverage_map {
                     let mut test_funcs = Vec::new();
-                    collect_test_functions_with_refs(
-                        parsed.tree.root_node(),
-                        &parsed.source,
-                        "",
-                        &mut test_funcs,
-                    );
+                    if calibration {
+                        collect_test_functions_with_refs_for_coverage_map(
+                            parsed.tree.root_node(),
+                            &parsed.source,
+                            "",
+                            &mut test_funcs,
+                        );
+                    } else {
+                        collect_test_functions_with_refs(
+                            parsed.tree.root_node(),
+                            &parsed.source,
+                            "",
+                            &mut test_funcs,
+                        );
+                    }
                     r.4 = vec![(parsed.path.clone(), test_funcs)];
                 }
             } else {

@@ -24,8 +24,10 @@ def _run_slipcover(spec: _SlipcoverRun) -> None:
     cmd = ["slipcover", "--json", "--out", spec.out_path]
     if spec.source:
         cmd.extend(["--source", spec.source])
-    cmd.extend(["-m", "pytest", *spec.pytest_args])
-    code, stdout_path, stderr_path = _run_to_temp_files(cmd, cwd=spec.repo)
+    cmd.extend(["-m", "pytest", "-o", "addopts=", "--continue-on-collection-errors", *spec.pytest_args])
+    # Honor repo pyproject but drop plugins that break headless slipcover runs.
+    env = {"PYTEST_ADDOPTS": "-p no:testmon -p no:pytest_testmon"}
+    code, stdout_path, stderr_path = _run_to_temp_files(cmd, cwd=spec.repo, env=env)
     try:
         out = Path(spec.out_path)
         if not out.exists() or out.stat().st_size == 0:

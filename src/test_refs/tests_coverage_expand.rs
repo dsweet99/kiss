@@ -315,19 +315,3 @@ fn collect_all_production_import_names_walks_tree() {
     assert!(refs.contains("one") && refs.contains("two"));
 }
 
-#[test]
-fn collect_one_hop_from_node_direct_async_and_plain() {
-    let mut src = NamedTempFile::with_suffix(".py").unwrap();
-    write!(
-        src,
-        "async def caller():\n    await other()\nasync def other():\n    pass\ndef plain():\n    pass\n"
-    )
-    .unwrap();
-    let mut parser = create_parser().expect("parser");
-    let parsed = parse_file(&mut parser, src.path()).expect("parse");
-    let root = parsed.tree.root_node();
-    let refs = HashSet::from(["caller".to_string()]);
-    let mut added = HashSet::new();
-    collect_one_hop_from_node(root, &parsed.source, &refs, &mut added, None);
-    assert!(added.contains("other"));
-}

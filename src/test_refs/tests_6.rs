@@ -90,7 +90,7 @@ fn test_analyze_test_refs_quick_and_no_map_empty() {
 #[test]
 fn test_collect_all_test_file_data_coverage_map_omits_bare_identifiers() {
     use crate::parsing::{create_parser, parse_file};
-    use super::collect::{
+    use super::{
         collect_all_test_file_data, collect_all_test_file_data_for_coverage_map,
     };
     let mut testf = NamedTempFile::with_suffix("_test.py").unwrap();
@@ -182,7 +182,7 @@ fn test_is_definition_covered_for_calibration_rejects_class_only() {
     let empty_import: HashMap<String, HashSet<String>> = HashMap::new();
     let mut usage = HashSet::new();
     usage.insert("MyClass".into());
-    assert!(!is_definition_covered_for_calibration(
+    assert!(!coverage::is_definition_covered_for_calibration(
         &def,
         &empty_map,
         &HashMap::new(),
@@ -191,7 +191,7 @@ fn test_is_definition_covered_for_calibration_rejects_class_only() {
         &usage,
     ));
     usage.insert("process".into());
-    assert!(is_definition_covered_for_calibration(
+    assert!(coverage::is_definition_covered_for_calibration(
         &def,
         &empty_map,
         &HashMap::new(),
@@ -238,11 +238,17 @@ fn test_apply_import_dependency_calibration_requires_module_witness() {
     };
     let mut usage = HashSet::new();
     usage.insert("api".to_string());
-    coverage::apply_import_dependency_calibration(&mut analysis, &graph, &usage);
+    let name_files = crate::test_refs::build_name_file_map(
+        analysis
+            .definitions
+            .iter()
+            .map(|d| (d.name.as_str(), d.file.as_path())),
+    );
+    coverage::apply_import_dependency_calibration(&mut analysis, &graph, &usage, &name_files);
     assert_eq!(analysis.unreferenced.len(), 1);
     usage.insert("helper_only".to_string());
     analysis.unreferenced.clear();
-    coverage::apply_import_dependency_calibration(&mut analysis, &graph, &usage);
+    coverage::apply_import_dependency_calibration(&mut analysis, &graph, &usage, &name_files);
     assert!(analysis.unreferenced.is_empty());
 }
 
@@ -270,27 +276,13 @@ fn test_apply_import_dependency_calibration_unknown_module() {
         coverage_map: HashMap::new(),
     };
     let dep = DependencyGraph::new();
-    coverage::apply_import_dependency_calibration(&mut analysis, &dep, &HashSet::new());
+    coverage::apply_import_dependency_calibration(
+        &mut analysis,
+        &dep,
+        &HashSet::new(),
+        &HashMap::new(),
+    );
     assert_eq!(analysis.unreferenced.len(), 1);
-}
-
-#[test]
-fn test_module_definition_counts_from_graph() {
-    use crate::graph::DependencyGraph;
-    let path = PathBuf::from("/proj/mod.py");
-    let def = CodeDefinition {
-        name: "f".into(),
-        kind: CodeUnitKind::Function,
-        file: path.clone(),
-        line: 1,
-        end_line: 1,
-        containing_class: None,
-    };
-    let mut graph = DependencyGraph::new();
-    graph.path_to_module.insert(path, "mod".into());
-    let counts = coverage::module_definition_counts(&[def], &graph);
-    assert_eq!(counts.get("mod"), Some(&1));
-    assert!(coverage::module_definition_counts(&[], &graph).is_empty());
 }
 
 #[test]

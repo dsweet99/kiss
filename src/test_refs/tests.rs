@@ -368,7 +368,7 @@ fn test_collect_all_test_file_data_imports_calls_decorators() {
     let mut test_refs = std::collections::HashSet::new();
     let mut usage_refs = std::collections::HashSet::new();
     let mut import_bindings = std::collections::HashMap::new();
-    super::collect::collect_all_test_file_data(
+    super::collect_all_test_file_data(
         tree.root_node(),
         src,
         &mut test_refs,

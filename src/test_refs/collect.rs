@@ -85,16 +85,32 @@ pub(crate) fn insert_identifier(node: Node, source: &str, refs: &mut HashSet<Str
 }
 
 pub(crate) fn collect_usage_refs_in_scope(node: Node, source: &str, refs: &mut HashSet<String>) {
+    collect_usage_refs_in_scope_with_mode(node, source, refs, UsageRefMode::Gate);
+}
+
+#[derive(Copy, Clone)]
+pub(crate) enum UsageRefMode {
+    Gate,
+    /// `kiss-coverage-map`: call sites only — no type annotations or decorators.
+    CalibrationWitness,
+}
+
+pub(crate) fn collect_usage_refs_in_scope_with_mode(
+    node: Node,
+    source: &str,
+    refs: &mut HashSet<String>,
+    mode: UsageRefMode,
+) {
     match node.kind() {
         "call" => {
             if let Some(func) = node.child_by_field_name("function") {
                 collect_call_target(func, source, refs);
             }
         }
-        "type" => {
+        "type" if matches!(mode, UsageRefMode::Gate) => {
             collect_type_refs(node, source, refs);
         }
-        "decorator" => {
+        "decorator" if matches!(mode, UsageRefMode::Gate) => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 if child.kind() == "identifier"
@@ -109,32 +125,18 @@ pub(crate) fn collect_usage_refs_in_scope(node: Node, source: &str, refs: &mut H
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_usage_refs_in_scope(child, source, refs);
+        collect_usage_refs_in_scope_with_mode(child, source, refs, mode);
     }
 }
 
+#[cfg(test)]
 pub(crate) fn collect_class_test_methods(
     class_body: Node,
     source: &str,
     class_prefix: &str,
     out: &mut Vec<(String, HashSet<String>)>,
 ) {
-    let mut cursor = class_body.walk();
-    for child in class_body.children(&mut cursor) {
-        if child.kind() != "function_definition" && child.kind() != "async_function_definition" {
-            continue;
-        }
-        let meth_name = get_child_by_field(child, "name", source).unwrap_or_default();
-        if !meth_name.starts_with("test_") {
-            continue;
-        }
-        let mut refs = HashSet::new();
-        if let Some(meth_body) = child.child_by_field_name("body") {
-            collect_usage_refs_in_scope(meth_body, source, &mut refs);
-        }
-        let test_id = format!("{class_prefix}::{meth_name}");
-        out.push((test_id, refs));
-    }
+    collect_class_test_methods_with_mode(class_body, source, class_prefix, out, UsageRefMode::Gate);
 }
 
 pub(crate) fn collect_test_functions_with_refs(
@@ -143,13 +145,38 @@ pub(crate) fn collect_test_functions_with_refs(
     prefix: &str,
     out: &mut Vec<(String, HashSet<String>)>,
 ) {
+    collect_test_functions_with_refs_mode(node, source, prefix, out, UsageRefMode::Gate);
+}
+
+pub(crate) fn collect_test_functions_with_refs_for_coverage_map(
+    node: Node,
+    source: &str,
+    prefix: &str,
+    out: &mut Vec<(String, HashSet<String>)>,
+) {
+    collect_test_functions_with_refs_mode(
+        node,
+        source,
+        prefix,
+        out,
+        UsageRefMode::CalibrationWitness,
+    );
+}
+
+pub(crate) fn collect_test_functions_with_refs_mode(
+    node: Node,
+    source: &str,
+    prefix: &str,
+    out: &mut Vec<(String, HashSet<String>)>,
+    witness_mode: UsageRefMode,
+) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {
             let name = get_child_by_field(node, "name", source).unwrap_or_default();
             if name.starts_with("test_") {
                 let mut refs = HashSet::new();
                 if let Some(body) = node.child_by_field_name("body") {
-                    collect_usage_refs_in_scope(body, source, &mut refs);
+                    collect_usage_refs_in_scope_with_mode(body, source, &mut refs, witness_mode);
                 }
                 let test_id = if prefix.is_empty() {
                     name
@@ -168,109 +195,47 @@ pub(crate) fn collect_test_functions_with_refs(
                     format!("{prefix}::{class_name}")
                 };
                 if let Some(body) = node.child_by_field_name("body") {
-                    collect_class_test_methods(body, source, &class_prefix, out);
+                    collect_class_test_methods_with_mode(
+                        body,
+                        source,
+                        &class_prefix,
+                        out,
+                        witness_mode,
+                    );
                 }
             }
         }
         _ => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                collect_test_functions_with_refs(child, source, prefix, out);
+                collect_test_functions_with_refs_mode(child, source, prefix, out, witness_mode);
             }
         }
     }
 }
 
-pub(crate) fn collect_all_test_file_data(
-    node: Node,
+pub(crate) fn collect_class_test_methods_with_mode(
+    class_body: Node,
     source: &str,
-    test_refs: &mut HashSet<String>,
-    usage_refs: &mut HashSet<String>,
-    import_bindings: &mut HashMap<String, HashSet<String>>,
+    class_prefix: &str,
+    out: &mut Vec<(String, HashSet<String>)>,
+    witness_mode: UsageRefMode,
 ) {
-    collect_all_test_file_data_with_mode(
-        node,
-        source,
-        test_refs,
-        usage_refs,
-        import_bindings,
-        true,
-    );
-}
-
-pub(crate) fn collect_all_test_file_data_for_coverage_map(
-    node: Node,
-    source: &str,
-    test_refs: &mut HashSet<String>,
-    usage_refs: &mut HashSet<String>,
-    import_bindings: &mut HashMap<String, HashSet<String>>,
-) {
-    collect_all_test_file_data_with_mode(
-        node,
-        source,
-        test_refs,
-        usage_refs,
-        import_bindings,
-        false,
-    );
-}
-
-fn collect_all_test_file_data_with_mode(
-    node: Node,
-    source: &str,
-    test_refs: &mut HashSet<String>,
-    usage_refs: &mut HashSet<String>,
-    import_bindings: &mut HashMap<String, HashSet<String>>,
-    include_bare_identifiers: bool,
-) {
-    match node.kind() {
-        "call" => {
-            if let Some(func) = node.child_by_field_name("function") {
-                collect_call_target(func, source, test_refs);
-                collect_call_target(func, source, usage_refs);
-            }
+    let mut cursor = class_body.walk();
+    for child in class_body.children(&mut cursor) {
+        if child.kind() != "function_definition" && child.kind() != "async_function_definition" {
+            continue;
         }
-        "import_from_statement" => {
-            collect_py_import_names_for_refs(node, source, test_refs);
-            extract_import_from_binding(node, source, import_bindings);
-            return;
+        let meth_name = get_child_by_field(child, "name", source).unwrap_or_default();
+        if !meth_name.starts_with("test_") {
+            continue;
         }
-        "import_statement" => {
-            collect_py_import_names_for_refs(node, source, test_refs);
-            return;
+        let mut refs = HashSet::new();
+        if let Some(meth_body) = child.child_by_field_name("body") {
+            collect_usage_refs_in_scope_with_mode(meth_body, source, &mut refs, witness_mode);
         }
-        "type" => {
-            collect_type_refs(node, source, test_refs);
-            collect_type_refs(node, source, usage_refs);
-            return;
-        }
-        "decorator" => {
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if child.kind() == "identifier"
-                    || child.kind() == "attribute"
-                    || child.kind() == "call"
-                {
-                    collect_call_target(child, source, test_refs);
-                    collect_call_target(child, source, usage_refs);
-                }
-            }
-        }
-        "identifier" if include_bare_identifiers => {
-            insert_identifier(node, source, usage_refs);
-        }
-        _ => {}
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_all_test_file_data_with_mode(
-            child,
-            source,
-            test_refs,
-            usage_refs,
-            import_bindings,
-            include_bare_identifiers,
-        );
+        let test_id = format!("{class_prefix}::{meth_name}");
+        out.push((test_id, refs));
     }
 }
 

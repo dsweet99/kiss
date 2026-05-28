@@ -9,7 +9,7 @@ use kiss::cli_output::file_coverage_map_by_line_spans;
 use kiss::discovery::{gather_files_by_lang, Language};
 use kiss::graph::build_dependency_graph;
 use kiss::rust_graph::build_rust_dependency_graph;
-use kiss::rust_test_refs::RustTestRefAnalysis;
+use kiss::rust_test_refs::{coverage_map_excluded_file, RustTestRefAnalysis};
 use kiss::test_refs::TestRefAnalysis;
 use kiss::{parse_files, parse_rust_files};
 use std::collections::{HashMap, HashSet};
@@ -174,12 +174,14 @@ fn file_map_json(cov: &RepoCoverage) -> String {
         .rs
         .definitions
         .iter()
+        .filter(|d| !coverage_map_excluded_file(&d.file))
         .map(|d| (d.file.clone(), d.name.clone(), d.line, d.end_line))
         .collect();
     let rs_unref: Vec<(PathBuf, String, usize)> = cov
         .rs
         .unreferenced
         .iter()
+        .filter(|d| !coverage_map_excluded_file(&d.file))
         .map(|d| (d.file.clone(), d.name.clone(), d.line))
         .collect();
     let mut map = file_coverage_map_by_line_spans(&py_defs, &py_unref);

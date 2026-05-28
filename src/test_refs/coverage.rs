@@ -11,6 +11,28 @@ pub(crate) fn is_covered_by_import(
     module_suffixes: &HashMap<PathBuf, String>,
     usage_refs: &HashSet<String>,
 ) -> bool {
+    import_matches_definition(def, import_bindings, module_suffixes, usage_refs)
+}
+
+pub(crate) fn is_covered_by_import_for_calibration(
+    def: &CodeDefinition,
+    import_bindings: &HashMap<String, HashSet<String>>,
+    module_suffixes: &HashMap<PathBuf, String>,
+    usage_refs: &HashSet<String>,
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+) -> bool {
+    if name_files.get(&def.name).is_some_and(|files| files.len() > 1) {
+        return false;
+    }
+    import_matches_definition(def, import_bindings, module_suffixes, usage_refs)
+}
+
+pub(crate) fn import_matches_definition(
+    def: &CodeDefinition,
+    import_bindings: &HashMap<String, HashSet<String>>,
+    module_suffixes: &HashMap<PathBuf, String>,
+    usage_refs: &HashSet<String>,
+) -> bool {
     if !usage_refs.contains(&def.name) {
         return false;
     }
@@ -60,7 +82,13 @@ pub(crate) fn is_definition_covered_for_calibration(
     module_suffixes: &HashMap<PathBuf, String>,
     usage_refs: &HashSet<String>,
 ) -> bool {
-    if is_covered_by_import(def, import_bindings, module_suffixes, usage_refs) {
+    if is_covered_by_import_for_calibration(
+        def,
+        import_bindings,
+        module_suffixes,
+        usage_refs,
+        name_files,
+    ) {
         return true;
     }
     if usage_refs.contains(&def.name) {
@@ -73,13 +101,22 @@ pub(crate) fn is_definition_covered_for_calibration(
         {
             return true;
         }
+        if def
+            .file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .is_some_and(|stem| stem == def.name)
+            && name_files.get(&def.name).is_none_or(|files| files.len() <= 1)
+        {
+            return true;
+        }
     }
     false
 }
 
 /// For `kiss-coverage-map`: credit production modules imported (transitively) from modules
 /// that already have a direct test witness.
-const MAX_IMPORT_CALIBRATION_DEFS_PER_MODULE: usize = 12;
+const MAX_IMPORT_CALIBRATION_DEFS_PER_MODULE: usize = 2;
 
 pub(crate) fn is_platform_specific_prod_file(path: &Path) -> bool {
     let s = path.to_string_lossy();
@@ -138,7 +175,7 @@ pub(crate) fn deprioritize_platform_gated_coverage(
     unreferenced.extend(to_add);
 }
 
-fn platform_direct_test_witness(
+pub(crate) fn platform_direct_test_witness(
     def: &CodeDefinition,
     per_test_usage: &PerTestUsage,
     gated_tests: &HashSet<&Path>,
@@ -166,15 +203,29 @@ fn platform_direct_test_witness(
     false
 }
 
-fn module_has_usage_witness(
+pub(crate) fn module_is_contrib_base_void(
+    module: &str,
+    definitions: &[CodeDefinition],
+    graph: &DependencyGraph,
+) -> bool {
+    use super::coverage_expand::is_py_contrib_base_void_partition;
+    definitions.iter().any(|d| {
+        graph.path_to_module.get(&d.file).is_some_and(|m| m == module)
+            && is_py_contrib_base_void_partition(&d.file)
+    })
+}
+
+pub(crate) fn module_has_usage_witness(
     module: &str,
     definitions: &[CodeDefinition],
     graph: &DependencyGraph,
     usage_refs: &HashSet<String>,
+    name_files: &HashMap<String, HashSet<PathBuf>>,
 ) -> bool {
     definitions.iter().any(|d| {
         graph.path_to_module.get(&d.file).is_some_and(|m| m == module)
             && usage_refs.contains(&d.name)
+            && name_files.get(&d.name).is_none_or(|files| files.len() <= 1)
     })
 }
 
@@ -182,6 +233,7 @@ pub(crate) fn apply_import_dependency_calibration(
     analysis: &mut TestRefAnalysis,
     graph: &DependencyGraph,
     usage_refs: &HashSet<String>,
+    name_files: &HashMap<String, HashSet<PathBuf>>,
 ) {
     let defs_per_module = module_definition_counts(&analysis.definitions, graph);
     let unref_keys: HashSet<(&PathBuf, &str, usize)> = analysis
@@ -213,7 +265,9 @@ pub(crate) fn apply_import_dependency_calibration(
             {
                 continue;
             }
-            if module_has_usage_witness(&dep, &analysis.definitions, graph, usage_refs) {
+            if module_has_usage_witness(&dep, &analysis.definitions, graph, usage_refs, name_files)
+                && !module_is_contrib_base_void(&dep, &analysis.definitions, graph)
+            {
                 covered_modules.insert(dep);
             }
         }
@@ -329,72 +383,3 @@ pub(crate) fn build_py_coverage_map(
         .collect()
 }
 
-#[cfg(test)]
-mod coverage_unit_tests {
-    use super::*;
-    use crate::graph::DependencyGraph;
-    use crate::units::CodeUnitKind;
-    use std::collections::HashSet;
-    use std::path::{Path, PathBuf};
-
-    #[test]
-    fn platform_direct_test_witness_paths() {
-        let gated: HashSet<&Path> = HashSet::from([Path::new("tests/gated_test.py")]);
-        let def = CodeDefinition {
-            name: "api".into(),
-            kind: CodeUnitKind::Method,
-            file: PathBuf::from("rich/_windows.py"),
-            line: 1,
-            end_line: 2,
-            containing_class: Some("Win".into()),
-        };
-        let per_test: PerTestUsage = vec![
-            (
-                PathBuf::from("tests/gated_test.py"),
-                vec![("test_gated".into(), HashSet::from(["api".into()]))],
-            ),
-            (
-                PathBuf::from("tests/test_ok.py"),
-                vec![("test_ok".into(), HashSet::from(["Win".into()]))],
-            ),
-        ];
-        assert!(!platform_direct_test_witness(&def, &per_test, &gated));
-        let per_test_direct: PerTestUsage = vec![(
-            PathBuf::from("tests/test_ok.py"),
-            vec![("test_ok".into(), HashSet::from(["api".into()]))],
-        )];
-        assert!(platform_direct_test_witness(&def, &per_test_direct, &gated));
-    }
-
-    #[test]
-    fn module_has_usage_witness_paths() {
-        let mut graph = DependencyGraph::new();
-        let path = PathBuf::from("/proj/helper.py");
-        graph
-            .path_to_module
-            .insert(path.clone(), "helper".to_string());
-        let definitions = vec![CodeDefinition {
-            name: "helper_only".into(),
-            kind: CodeUnitKind::Function,
-            file: path,
-            line: 1,
-            end_line: 2,
-            containing_class: None,
-        }];
-        let empty: HashSet<String> = HashSet::new();
-        assert!(!module_has_usage_witness(
-            "helper",
-            &definitions,
-            &graph,
-            &empty
-        ));
-        let mut usage = HashSet::new();
-        usage.insert("helper_only".into());
-        assert!(module_has_usage_witness(
-            "helper",
-            &definitions,
-            &graph,
-            &usage
-        ));
-    }
-}

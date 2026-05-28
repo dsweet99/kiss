@@ -79,12 +79,28 @@ def _llvm_cov_after_test_run(
     return _llvm_cov_from_data(_load_json(report_path))
 
 
+def _llvm_cov_repo_roots(repo: Path) -> list[Path]:
+    repo = repo.resolve()
+    roots = [repo]
+    nested = repo / "rust"
+    if nested.is_dir() and (nested / "Cargo.toml").is_file() and not (repo / "Cargo.toml").is_file():
+        roots.append(nested)
+    return roots
+
+
 def llvm_cov_per_file(repo: Path) -> tuple[dict[Path, float], float]:
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
-        report_path = Path(tmp.name)
-    try:
-        if cached := _llvm_cov_from_cached_report(repo, report_path):
-            return cached
-        return _llvm_cov_after_test_run(repo, report_path)
-    finally:
-        report_path.unlink(missing_ok=True)
+    last_error: RuntimeError | None = None
+    for root in _llvm_cov_repo_roots(repo):
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            report_path = Path(tmp.name)
+        try:
+            if cached := _llvm_cov_from_cached_report(root, report_path):
+                return cached
+            return _llvm_cov_after_test_run(root, report_path)
+        except RuntimeError as exc:
+            last_error = exc
+        finally:
+            report_path.unlink(missing_ok=True)
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"cargo llvm-cov failed in {repo}")

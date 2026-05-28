@@ -8,6 +8,7 @@ import click
 from ops.cd_analyze import RuntimeCoverage, analyze_discrepancy as analyze
 from ops.cd_click import cli, report_options
 from ops.cd_python_run import PythonCoverageRun, python_cmd
+from ops.cd_python_source import infer_pytest_target
 from ops.cd_report_io import emit_report
 from ops.cd_runtime import llvm_cov_per_file
 
@@ -16,11 +17,12 @@ class _PythonCoverageCommand(click.Command):
     def invoke(self, ctx: click.Context) -> int:
         repo = ctx.params["repo"]
         pytest_args = ctx.params["pytest_args"]
+        default_pytest = (infer_pytest_target(repo),)
         python_cmd(
             PythonCoverageRun(
                 repo,
                 ctx.params["source"],
-                pytest_args if pytest_args else ("tests/",),
+                pytest_args if pytest_args else default_pytest,
                 ctx.params["detailed"],
                 ctx.params["report_out"],
             )
@@ -53,7 +55,7 @@ def _python_coverage_params() -> list[click.Parameter]:
             default=None,
             help="Write full summary + per-file details as JSON to PATH.",
         ),
-        click.Argument(["pytest_args"], nargs=-1, default=("tests/",)),
+        click.Argument(["pytest_args"], nargs=-1, default=()),
     ]
 
 

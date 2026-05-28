@@ -290,6 +290,7 @@ fn collect_test_module_references_with_mode(
                     } else {
                         super::references::collect_rust_references_for_coverage_map(&sub, refs);
                     }
+                    super::references::collect_fn_test_attr_macro_witnesses(items, refs, mode);
                 }
             }
             Item::Fn(f) if has_test_attribute(&f.attrs) => {

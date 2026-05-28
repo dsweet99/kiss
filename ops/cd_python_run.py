@@ -30,6 +30,7 @@ def run_python_coverage_discrepancy(run: PythonCoverageRun) -> None:
             run.repo,
             "python",
             RuntimeCoverage(runtime_map, runtime_total),
+            slipcover_source=source,
         ),
         detailed=run.detailed,
         report_out=run.report_out,

@@ -1,6 +1,12 @@
 mod collect;
 mod collect_parallel;
+mod collect_test_file;
 mod coverage;
+#[cfg(test)]
+mod coverage_tests;
+#[cfg(test)]
+mod tests_collect;
+mod calibration_analysis;
 mod coverage_expand;
 pub(crate) mod detection;
 pub(crate) mod disambiguation;
@@ -17,7 +23,7 @@ pub use collect_parallel::test_functions_in;
 pub(crate) use collect_parallel::collect_refs_parallel;
 pub(crate) use collect_parallel::collect_refs_parallel_for_coverage_map;
 pub(crate) use coverage::{
-    build_py_coverage_map, is_definition_covered, is_definition_covered_for_calibration,
+    build_py_coverage_map, is_definition_covered,
 };
 pub use detection::{has_test_framework_import, is_in_test_directory, is_test_file};
 pub use disambiguation::build_name_file_map;
@@ -25,6 +31,11 @@ pub(crate) use disambiguation::{build_disambiguation_map, file_to_module_suffix}
 
 #[cfg(test)]
 pub(crate) use collect::collect_definitions;
+#[cfg(test)]
+pub(crate) use collect_test_file::{
+    collect_all_test_file_data, collect_all_test_file_data_for_coverage_map,
+    process_test_file_ast_node,
+};
 
 #[derive(Debug, Clone)]
 pub struct CodeDefinition {
@@ -139,7 +150,12 @@ fn apply_calibration_postprocessing(
         ctx.module_suffixes,
     );
     if let Some(g) = ctx.graph {
-        coverage::apply_import_dependency_calibration(analysis, g, ctx.test_witness_refs);
+        coverage::apply_import_dependency_calibration(
+            analysis,
+            g,
+            ctx.test_witness_refs,
+            ctx.name_files,
+        );
     }
 }
 
@@ -168,15 +184,18 @@ fn analyze_test_refs_inner(
     } else {
         HashSet::new()
     };
-    if calibration {
-        coverage_expand::expand_py_usage_refs_fixpoint(parsed_files, &mut usage_references);
-        coverage_expand::expand_py_import_sibling_refs(parsed_files, &mut usage_references);
-        coverage_expand::expand_py_refs_via_production_imports(
-            parsed_files,
-            &definitions,
-            &mut usage_references,
-        );
-    }
+    let (calibration_strict_refs, calibration_expanded_refs, calibration_defs_per_file) =
+        if calibration {
+            calibration_analysis::build_calibration_coverage_refs(
+                parsed_files,
+                &definitions,
+                &test_witness_refs,
+            )
+        } else {
+            coverage_expand::expand_py_usage_refs_fixpoint(parsed_files, &mut usage_references);
+            coverage_expand::expand_py_import_sibling_refs(parsed_files, &mut usage_references);
+            (HashSet::new(), usage_references.clone(), HashMap::new())
+        };
 
     let name_files = build_name_file_map(
         definitions
@@ -190,32 +209,21 @@ fn analyze_test_refs_inner(
         .map(|d| (d.file.clone(), file_to_module_suffix(&d.file)))
         .collect();
 
-    let unreferenced = definitions
-        .iter()
-        .filter(|def| {
-            let covered = if calibration {
-                is_definition_covered_for_calibration(
-                    def,
-                    &name_files,
-                    &disambiguation,
-                    &import_bindings,
-                    &module_suffixes,
-                    &usage_references,
-                )
-            } else {
-                is_definition_covered(
-                    def,
-                    &name_files,
-                    &disambiguation,
-                    &import_bindings,
-                    &module_suffixes,
-                    &usage_references,
-                )
-            };
-            !covered
-        })
-        .cloned()
-        .collect();
+    let unreferenced = calibration_analysis::filter_unreferenced_definitions(
+        &definitions,
+        &calibration_analysis::UnreferencedFilterCtx {
+            calibration,
+            defs_per_file: &calibration_defs_per_file,
+            test_witness_refs: &test_witness_refs,
+            calibration_strict_refs: &calibration_strict_refs,
+            calibration_expanded_refs: &calibration_expanded_refs,
+            usage_references: &usage_references,
+            name_files: &name_files,
+            disambiguation: &disambiguation,
+            import_bindings: &import_bindings,
+            module_suffixes: &module_suffixes,
+        },
+    );
 
     let coverage_map = if need_coverage_map && !calibration {
         build_py_coverage_map(
@@ -315,3 +323,5 @@ mod tests_4;
 mod tests_5;
 #[cfg(test)]
 mod tests_6;
+#[cfg(test)]
+mod tests_7;

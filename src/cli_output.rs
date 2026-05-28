@@ -40,6 +40,7 @@ pub fn file_coverage_map(
 }
 
 /// Per-file coverage weighted by source line spans (for [`kiss-coverage-map`] calibration).
+/// Each physical line counts at most once (avoids stacking many small defs on shared lines).
 pub fn file_coverage_map_by_line_spans(
     definitions: &[(PathBuf, String, usize, usize)],
     unreferenced: &[(PathBuf, String, usize)],
@@ -48,13 +49,15 @@ pub fn file_coverage_map_by_line_spans(
         .iter()
         .map(|(f, n, l)| (f, n.as_str(), *l))
         .collect();
-    let mut total_lines: HashMap<PathBuf, usize> = HashMap::new();
-    let mut covered_lines: HashMap<PathBuf, usize> = HashMap::new();
+    let mut total_lines: HashMap<PathBuf, HashSet<usize>> = HashMap::new();
+    let mut covered_lines: HashMap<PathBuf, HashSet<usize>> = HashMap::new();
     for (file, name, start, end) in definitions {
-        let span = end.saturating_sub(*start).saturating_add(1);
-        *total_lines.entry(file.clone()).or_default() += span;
-        if !unref_keys.contains(&(file, name.as_str(), *start)) {
-            *covered_lines.entry(file.clone()).or_default() += span;
+        let covered = !unref_keys.contains(&(file, name.as_str(), *start));
+        for line in *start..=*end {
+            total_lines.entry(file.clone()).or_default().insert(line);
+            if covered {
+                covered_lines.entry(file.clone()).or_default().insert(line);
+            }
         }
     }
     #[allow(
@@ -64,8 +67,12 @@ pub fn file_coverage_map_by_line_spans(
     )]
     total_lines
         .into_iter()
-        .map(|(file, total)| {
-            let covered = covered_lines.get(&file).copied().unwrap_or(0);
+        .map(|(file, total_set)| {
+            let total = total_set.len();
+            let covered = covered_lines
+                .get(&file)
+                .map(|s| s.intersection(&total_set).count())
+                .unwrap_or(0);
             let pct = if total == 0 {
                 100
             } else {

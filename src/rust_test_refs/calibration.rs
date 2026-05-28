@@ -1,11 +1,10 @@
-use super::definitions::{self, is_binary_entry_point, RustCodeDefinition};
+use super::definitions::{is_binary_entry_point, RustCodeDefinition};
 use super::references::{
     collect_rust_references_for_fn_coverage_map, ReferenceVisitor, RefWitnessMode,
 };
 use super::{has_cfg_test_attribute, has_test_attribute, is_rust_test_file};
 use crate::graph::DependencyGraph;
 use crate::rust_parsing::ParsedRustFile;
-use petgraph::Direction;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use syn::visit::Visit;
@@ -14,6 +13,13 @@ use syn::{ImplItem, Item, Type};
 /// Max `mod` depth from binary entry when expanding integration-test execution cones.
 pub(crate) const INTEGRATION_CONE_MAX_DEPTH: usize = 12;
 
+pub(crate) use super::calibration_detect::{
+    has_colocated_src_integration_tests, has_rust_integration_test_runner,
+    is_subprocess_integration_test_file,
+};
+pub(crate) use super::calibration_expand::{
+    expand_small_module_defs_from_stem_refs, expand_witnessed_directory_sibling_defs,
+};
 pub(crate) use super::calibration_map::{
     is_calibration_excluded_file, is_coverage_map_cli_commands_file,
 };
@@ -22,6 +28,12 @@ pub(crate) fn expand_coverage_map_witnesses(
     parsed_files: &[&ParsedRustFile],
     refs: &mut HashSet<String>,
 ) {
+    if has_colocated_src_integration_tests(parsed_files) {
+        expand_coverage_references_one_hop(parsed_files, refs);
+        expand_small_module_defs_from_stem_refs(parsed_files, refs);
+        expand_integration_cone_witnesses(parsed_files, refs);
+        return;
+    }
     if has_rust_integration_test_runner(parsed_files) {
         seed_binary_entry_roots(parsed_files, refs);
         expand_coverage_references_one_hop(parsed_files, refs);
@@ -29,52 +41,8 @@ pub(crate) fn expand_coverage_map_witnesses(
         expand_integration_cone_witnesses(parsed_files, refs);
     } else {
         expand_coverage_references_one_hop(parsed_files, refs);
-    }
-}
-
-const MAX_MODULE_STEM_EXPAND_DEFS: usize = 8;
-
-pub(crate) fn expand_small_module_defs_from_stem_refs(
-    parsed_files: &[&ParsedRustFile],
-    refs: &mut HashSet<String>,
-) {
-    for parsed in parsed_files {
-        if is_rust_test_file(&parsed.path) {
-            continue;
-        }
-        let Some(stem) = parsed.path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if !refs.contains(stem) {
-            continue;
-        }
-        let mut names = Vec::new();
-        collect_fn_names_from_items(&parsed.ast.items, &mut names);
-        if names.len() > MAX_MODULE_STEM_EXPAND_DEFS {
-            continue;
-        }
-        for name in names {
-            refs.insert(name);
-        }
-    }
-}
-
-pub(crate) fn collect_fn_names_from_items(items: &[Item], names: &mut Vec<String>) {
-    for item in items {
-        match item {
-            Item::Fn(f)
-                if !has_test_attribute(&f.attrs)
-                    && !definitions::is_private(&f.sig.ident.to_string()) =>
-            {
-                names.push(f.sig.ident.to_string());
-            }
-            Item::Mod(m) if !has_cfg_test_attribute(&m.attrs) => {
-                if let Some((_, sub)) = &m.content {
-                    collect_fn_names_from_items(sub, names);
-                }
-            }
-            _ => {}
-        }
+        expand_small_module_defs_from_stem_refs(parsed_files, refs);
+        expand_witnessed_directory_sibling_defs(parsed_files, refs);
     }
 }
 
@@ -175,6 +143,31 @@ pub(crate) fn integration_cone_file_paths(
     visited_files
 }
 
+/// Witness refs reachable only via call expansion from binary `main`/`run` inside the integration cone.
+#[allow(dead_code)] // exercised by unit tests; reserved for coverage-map cone diagnostics
+pub(crate) fn integration_cone_witness_refs(
+    parsed_files: &[&ParsedRustFile],
+) -> HashSet<String> {
+    let mut refs = HashSet::new();
+    if !has_rust_integration_test_runner(parsed_files) {
+        return refs;
+    }
+    seed_binary_entry_roots(parsed_files, &mut refs);
+    if refs.is_empty() {
+        return refs;
+    }
+    let seed_paths = binary_entry_paths(parsed_files);
+    let cone_files =
+        integration_cone_file_paths(parsed_files, &seed_paths, INTEGRATION_CONE_MAX_DEPTH);
+    let cone_parsed: Vec<&ParsedRustFile> = parsed_files
+        .iter()
+        .copied()
+        .filter(|p| cone_files.contains(&crate::rust_include::canonical_path(&p.path)))
+        .collect();
+    expand_coverage_references_to_fixpoint(&cone_parsed, &mut refs);
+    refs
+}
+
 /// Fixpoint witness expansion limited to the `mod` tree reachable from binary entry files.
 pub(crate) fn expand_integration_cone_witnesses(
     parsed_files: &[&ParsedRustFile],
@@ -200,89 +193,12 @@ pub(crate) fn expand_integration_cone_witnesses(
     expand_coverage_references_to_fixpoint(&cone_parsed, refs);
 }
 
-const MAX_IMPORT_CALIBRATION_DEFS_PER_MODULE: usize = 12;
-
-pub(crate) fn module_has_rust_witness(
-    module: &str,
-    definitions: &[RustCodeDefinition],
-    graph: &DependencyGraph,
-    witness_refs: &HashSet<String>,
-) -> bool {
-    definitions.iter().any(|d| {
-        graph
-            .path_to_module
-            .get(&crate::rust_include::canonical_path(&d.file))
-            .is_some_and(|m| m == module)
-            && witness_refs.contains(&d.name)
-    })
-}
-
-/// Credit small dependency modules when a neighboring module already has a direct test witness.
-pub(crate) fn apply_rust_import_dependency_calibration(
-    definitions: &[RustCodeDefinition],
-    unreferenced: &mut Vec<RustCodeDefinition>,
-    graph: &DependencyGraph,
-    witness_refs: &HashSet<String>,
-) {
-    let defs_per_module = module_definition_counts(definitions, graph);
-    let unref_keys: HashSet<(&PathBuf, &str, usize)> = unreferenced
-        .iter()
-        .map(|d| (&d.file, d.name.as_str(), d.line))
-        .collect();
-    let mut covered_modules: HashSet<String> = definitions
-        .iter()
-        .filter(|d| !unref_keys.contains(&(&d.file, d.name.as_str(), d.line)))
-        .filter_map(|d| {
-            graph
-                .path_to_module
-                .get(&crate::rust_include::canonical_path(&d.file))
-                .cloned()
-        })
-        .collect();
-    let seeds: Vec<String> = covered_modules.iter().cloned().collect();
-    for mod_name in seeds {
-        let Some(&idx) = graph.nodes.get(&mod_name) else {
-            continue;
-        };
-        for neighbor in graph.graph.neighbors_directed(idx, Direction::Outgoing) {
-            let dep = graph.graph[neighbor].clone();
-            if defs_per_module
-                .get(&dep)
-                .copied()
-                .unwrap_or(usize::MAX)
-                > MAX_IMPORT_CALIBRATION_DEFS_PER_MODULE
-            {
-                continue;
-            }
-            if module_has_rust_witness(&mod_name, definitions, graph, witness_refs) {
-                covered_modules.insert(dep);
-            }
-        }
-    }
-    unreferenced.retain(|d| {
-        if is_calibration_excluded_file(&d.file) {
-            return true;
-        }
-        let key = crate::rust_include::canonical_path(&d.file);
-        graph
-            .path_to_module
-            .get(&key)
-            .is_none_or(|m| !covered_modules.contains(m))
-    });
-}
-
-pub(crate) fn has_rust_integration_test_runner(parsed_files: &[&ParsedRustFile]) -> bool {
-    parsed_files.iter().any(|parsed| {
-        path_is_under_tests(&parsed.path)
-            && (parsed.source.contains("current_exe")
-                || parsed.source.contains("Command::new"))
-    })
-}
-
-pub(crate) fn path_is_under_tests(path: &Path) -> bool {
-    path.components()
-        .any(|c| matches!(c, std::path::Component::Normal(s) if s == "tests"))
-}
+pub(crate) use super::calibration_import::apply_rust_import_dependency_calibration;
+#[cfg(test)]
+pub(crate) use super::calibration_import::{
+    module_has_rust_witness, module_is_binary_crate_src_only, module_is_rule_settings_only,
+    module_is_single_crate_cli_only,
+};
 
 pub(crate) fn seed_binary_entry_roots(parsed_files: &[&ParsedRustFile], refs: &mut HashSet<String>) {
     for parsed in parsed_files {

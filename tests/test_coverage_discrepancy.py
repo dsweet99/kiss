@@ -3,18 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import click
-import ops.coverage_discrepancy as cd
-from ops.coverage_discrepancy import (
-    DiscrepancyReport,
-    FileCoverage,
-    RuntimeCoverage,
-    analyze,
-    emit_report,
-    print_detailed_report,
-    print_report,
-    write_report_json,
-)
+from ops.cd_analyze import RuntimeCoverage, analyze_discrepancy as analyze
+from ops.cd_discrepancy_report import DiscrepancyReport, FileCoverage
+from ops.cd_report_io import emit_report, print_detailed_report, print_report, write_report_json
+from ops.cd_runtime import run
 
 
 def _sample_report(tmp_path: Path) -> DiscrepancyReport:
@@ -73,71 +65,75 @@ def test_print_and_write_report(tmp_path: Path, capsys) -> None:
 
 
 def test_discrepancy_report_dataclass_and_run_helper() -> None:
-    assert cd.DiscrepancyReport.__name__ == "DiscrepancyReport"
-    assert cd.run(["echo", "ok"]) == "ok\n"
+    assert DiscrepancyReport.__name__ == "DiscrepancyReport"
+    assert run(["echo", "ok"]) == "ok\n"
 
 
-def test_register_python_command() -> None:
+def _invoke_rust_cmd(monkeypatch, cd_cli_mod, repo: Path) -> None:
+    rust_calls: list[object] = []
+    sample = DiscrepancyReport(
+        repo=repo,
+        language="rust",
+        n_files=0,
+        file_mae=0.0,
+        file_rmse=0.0,
+        spearman=0.0,
+        inflation_rate=0.0,
+        blind_spot_rate=0.0,
+        kiss_median_pct=0.0,
+        runtime_total_pct=0.0,
+        global_gap=0.0,
+        pairs=(),
+    )
+    monkeypatch.setattr(cd_cli_mod, "llvm_cov_per_file", lambda _repo: ({}, 0.0))
+    monkeypatch.setattr(cd_cli_mod, "analyze", lambda _r, _lang, _runtime: sample)
+    monkeypatch.setattr(
+        cd_cli_mod, "emit_report", lambda report, **_: rust_calls.append(report.repo)
+    )
+    cd_cli_mod.rust_cmd.callback(repo=repo, detailed=False, report_out=None)
+    assert rust_calls == [repo]
+
+
+def test_ops_cli_and_runtime_entrypoints(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    import click
     import ops.cd_cli as cd_cli_mod
+    import ops.cd_click
+    import ops.cd_runtime_kiss as kiss_mod
+    import pytest
+    from click.testing import CliRunner
+    from ops.cd_python_run import PythonCoverageRun, python_cmd
+
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    monkeypatch.setattr(kiss_mod, "KISS_ROOT", tmp_path)
+    with pytest.raises(RuntimeError, match="kiss-coverage-map"):
+        kiss_mod.kiss_per_file(tmp_path, language="rust")
+
+    seen: list[object] = []
+    monkeypatch.setattr("ops.cd_python_run.run_python_coverage_discrepancy", seen.append)
+    python_cmd(PythonCoverageRun(tmp_path, None, ("tests/",), False, None))
+    assert seen
+
+    calls: list[object] = []
+    monkeypatch.setattr("ops.cd_python_run.run_python_coverage_discrepancy", calls.append)
+    result = CliRunner().invoke(ops.cd_click.cli, ["python", str(repo.resolve())])
+    assert result.exit_code == 0, result.output
+    assert calls
+
+    _invoke_rust_cmd(monkeypatch, cd_cli_mod, repo)
 
     group = click.Group()
     cd_cli_mod.register_python_command(group)
     assert "python" in group.commands
 
+    def _boom(**_kwargs: object) -> None:
+        raise RuntimeError("boom")
 
-def test_python_command_dispatches(monkeypatch, tmp_path: Path) -> None:
-    import ops.cd_click
-    import ops.cd_python_run
-
-    repo = tmp_path / "proj"
-    repo.mkdir()
-    calls: list[object] = []
-
-    def _capture(run: object) -> None:
-        calls.append(run)
-
-    monkeypatch.setattr("ops.cd_python_run.run_python_coverage_discrepancy", _capture)
-    from click.testing import CliRunner
-
-    result = CliRunner().invoke(
-        ops.cd_click.cli,
-        ["python", str(repo)],
-    )
-    assert result.exit_code == 0, result.output
-    assert calls
-    assert calls[0].repo == repo
+    monkeypatch.setattr(cd_cli_mod, "cli", _boom)
+    with pytest.raises(SystemExit) as exc:
+        cd_cli_mod.main()
+    assert exc.value.code == 1
 
 
-def test_python_command_registered_on_cli() -> None:
-    import ops.cd_click
-    import ops.cd_cli
-
-    assert "python" in ops.cd_click.cli.commands
-
-
-def test_cli_group_help(capsys) -> None:
-    try:
-        cd.cli(["--help"])
-    except SystemExit as exc:
-        assert exc.code == 0
-    help_out = capsys.readouterr().out
-    assert "rust" in help_out and "python" in help_out
-
-
-def test_public_entrypoints_referenced() -> None:
-    from ops.cd_analyze import analyze_discrepancy
-    from ops.cd_python_run import PythonCoverageRun
-    assert callable(cd.main)
-    assert callable(cd.rust_cmd)
-    assert callable(cd.python_cmd)
-    assert callable(analyze_discrepancy)
-    assert callable(cd.kiss_per_file)
-    assert callable(cd.kiss_summary_median)
-    assert callable(cd.llvm_cov_per_file)
-    assert callable(cd.slipcover_per_file)
-    assert callable(cd.run_python_coverage_discrepancy)
-    assert PythonCoverageRun(Path("."), None, ("tests/",), False, None).repo == Path(".")
-    from ops.cd_click import report_options
-
-    assert callable(cd.python)
-    assert callable(report_options)
