@@ -8,16 +8,6 @@ use syn::Expr;
 
 const MAX_CLI_ROUTE_WITNESS_DEFS_PER_FILE: usize = 12;
 
-/// CLI subcommand / flag tokens from `try_parse_from([...])` in tests → deep `src/cli/` subdirs only.
-/// Top-level `*_flow.rs` entrypoints stay excluded (llvm executes a thin subset; route credit inflated them).
-fn cli_route_deep_path_segments(token: &str) -> Option<&'static [&'static str]> {
-    match token {
-        "kpop" => Some(&["gate_kpop_workflow", "workflow_kpop", "bug_id_lookup_kpop"]),
-        "--repo-gates" | "repo-gates" | "repo_gates" => Some(&["repo_checks"]),
-        _ => None,
-    }
-}
-
 /// Runtime-heavy workflow bodies inside route-attested trees: credit via direct witnesses only.
 fn cli_route_bulk_credit_excluded(path: &Path) -> bool {
     path.file_name().is_some_and(|n| {
@@ -28,45 +18,162 @@ fn cli_route_bulk_credit_excluded(path: &Path) -> bool {
     })
 }
 
-/// Top-level CLI modules attested by specific subcommand tokens (llvm runs them via dispatch).
-fn cli_route_top_level_file(token: &str, path: &Path) -> bool {
-    let file = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    matches!(
-        (token, file),
-        ("kpop", "bug_id_lookup.rs")
-            | ("code", "code_flow_a.rs")
-            | ("tidy", "workflow_kpop_shared.rs")
-            | ("do", "command_docs.rs")
-    )
-}
-
 fn path_has_cli_component(path: &Path) -> bool {
     path.components()
         .any(|c| matches!(c, std::path::Component::Normal(s) if s == "cli"))
 }
 
-fn token_matches_deep_cli_path(token: &str, path_str: &str) -> bool {
-    cli_route_deep_path_segments(token)
-        .is_some_and(|segs| segs.iter().any(|seg| path_str.contains(seg)))
+fn cli_path_components(path: &Path) -> Vec<&str> {
+    path.components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect()
 }
 
-pub(crate) fn file_matches_cli_route(path: &Path, tokens: &HashSet<String>) -> bool {
-    if cli_route_bulk_credit_excluded(path) {
+fn cli_token_variants(token: &str) -> Vec<String> {
+    let stripped = token.strip_prefix("--").unwrap_or(token);
+    let underscored = stripped.replace('-', "_");
+    let dashed = stripped.replace('_', "-");
+    [stripped.to_string(), underscored, dashed]
+        .into_iter()
+        .collect()
+}
+
+fn cli_token_matches_segment(token: &str, segment: &str) -> bool {
+    if segment == token {
+        return true;
+    }
+    for candidate in cli_token_variants(token) {
+        if candidate.len() < 3 {
+            continue;
+        }
+        if segment == candidate.as_str()
+            || segment.starts_with(&format!("{candidate}_"))
+            || segment.ends_with(&format!("_{candidate}"))
+            || segment.contains(&format!("_{candidate}_"))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn cli_flag_prefix(token: &str) -> Option<&str> {
+    let stripped = token.strip_prefix("--").unwrap_or(token);
+    if stripped.contains('-') || stripped.contains('_') {
+        return stripped
+            .split(['-', '_'])
+            .next()
+            .filter(|p| !p.is_empty());
+    }
+    None
+}
+
+fn is_top_level_cli_file(path: &Path) -> bool {
+    let comps = cli_path_components(path);
+    let Some(cli_idx) = comps.iter().position(|&c| c == "cli") else {
+        return false;
+    };
+    comps.len() == cli_idx + 2
+}
+
+fn token_matches_nested_cli_path(token: &str, path: &Path) -> bool {
+    let comps = cli_path_components(path);
+    let Some(cli_idx) = comps.iter().position(|&c| c == "cli") else {
+        return false;
+    };
+    comps[cli_idx + 1..]
+        .iter()
+        .any(|&seg| cli_token_matches_segment(token, seg))
+}
+
+fn token_matches_top_level_cli_file(token: &str, path: &Path) -> bool {
+    if !is_top_level_cli_file(path) {
         return false;
     }
-    if tokens
-        .iter()
-        .any(|t| cli_route_top_level_file(t, path))
-    {
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    cli_token_matches_segment(token, stem)
+        || cli_token_variants(token)
+            .iter()
+            .any(|v| cli_token_matches_segment(v, stem))
+}
+
+fn token_matches_cli_path(token: &str, path: &Path) -> bool {
+    if token_matches_nested_cli_path(token, path) {
         return true;
+    }
+    if token_matches_top_level_cli_file(token, path) {
+        return true;
+    }
+    if let Some(prefix) = cli_flag_prefix(token) {
+        let comps = cli_path_components(path);
+        let Some(cli_idx) = comps.iter().position(|&c| c == "cli") else {
+            return false;
+        };
+        return comps[cli_idx + 1..]
+            .iter()
+            .any(|&seg| seg.starts_with(prefix));
+    }
+    false
+}
+
+fn collect_cli_top_level_stems(definitions: &[RustCodeDefinition]) -> HashSet<String> {
+    definitions
+        .iter()
+        .filter_map(|d| {
+            let path = crate::rust_include::canonical_path(&d.file);
+            if !is_top_level_cli_file(&path) {
+                return None;
+            }
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+/// Top-level dispatch entry when a sibling `{stem}_{token}` module exists (structural co-dispatch).
+fn top_level_co_dispatch_match(
+    token: &str,
+    path: &Path,
+    sibling_stems: &HashSet<String>,
+) -> bool {
+    if !is_top_level_cli_file(path) || cli_route_bulk_credit_excluded(path) {
+        return false;
+    }
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    sibling_stems.iter().any(|s| {
+        cli_token_matches_segment(token, s) && (s.starts_with(stem) || stem.starts_with(s))
+    })
+}
+
+fn file_matches_cli_route_with_context(
+    path: &Path,
+    tokens: &HashSet<String>,
+    sibling_stems: &HashSet<String>,
+) -> bool {
+    if cli_route_bulk_credit_excluded(path) {
+        return false;
     }
     if !path_has_cli_component(path) {
         return false;
     }
-    let path_str = path.to_string_lossy();
-    tokens
-        .iter()
-        .any(|t| token_matches_deep_cli_path(t, &path_str))
+    tokens.iter().any(|t| {
+        token_matches_cli_path(t, path) || top_level_co_dispatch_match(t, path, sibling_stems)
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn file_matches_cli_route(path: &Path, tokens: &HashSet<String>) -> bool {
+    file_matches_cli_route_with_context(path, tokens, &HashSet::new())
 }
 
 pub(crate) fn collect_cli_route_tokens_from_tests(
@@ -149,10 +256,11 @@ pub(crate) fn cli_route_attested_files(
     if tokens.is_empty() {
         return HashSet::new();
     }
+    let sibling_stems = collect_cli_top_level_stems(definitions);
     definitions
         .iter()
         .map(|d| crate::rust_include::canonical_path(&d.file))
-        .filter(|p| file_matches_cli_route(p, &tokens))
+        .filter(|p| file_matches_cli_route_with_context(p, &tokens, &sibling_stems))
         .collect()
 }
 
@@ -166,10 +274,11 @@ pub(crate) fn expand_cli_route_witnesses(
     if tokens.is_empty() {
         return;
     }
+    let sibling_stems = collect_cli_top_level_stems(definitions);
     let mut by_file: HashMap<PathBuf, Vec<&RustCodeDefinition>> = HashMap::new();
     for d in definitions {
         let key = crate::rust_include::canonical_path(&d.file);
-        if file_matches_cli_route(&key, &tokens) {
+        if file_matches_cli_route_with_context(&key, &tokens, &sibling_stems) {
             by_file.entry(key).or_default().push(d);
         }
     }
@@ -184,167 +293,5 @@ pub(crate) fn expand_cli_route_witnesses(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::rust_parsing::parse_rust_file;
-    use std::io::Write;
-    use std::path::Path;
-    use tempfile::NamedTempFile;
-
-    #[test]
-    fn cli_route_maps_kpop_to_gate_workflow() {
-        let tokens = HashSet::from(["kpop".to_string()]);
-        assert!(file_matches_cli_route(
-            Path::new("src/cli/gate_kpop_workflow/params.rs"),
-            &tokens
-        ));
-    }
-
-    #[test]
-    fn cli_route_maps_repo_gates_flag() {
-        let tokens = HashSet::from(["--repo-gates".to_string()]);
-        assert!(file_matches_cli_route(
-            Path::new("src/cli/repo_checks/gate_run.rs"),
-            &tokens
-        ));
-    }
-
-    #[test]
-    fn cli_route_excludes_bulk_credit_files() {
-        let tokens = HashSet::from(["kpop".to_string()]);
-        assert!(!file_matches_cli_route(
-            Path::new("src/cli/gate_kpop_workflow/run_loop.rs"),
-            &tokens
-        ));
-    }
-
-    #[test]
-    fn cli_route_top_level_file_matches() {
-        let tokens = HashSet::from(["kpop".to_string()]);
-        assert!(file_matches_cli_route(
-            Path::new("src/cli/bug_id_lookup.rs"),
-            &tokens
-        ));
-    }
-
-    #[test]
-    fn cli_route_rejects_non_cli_paths() {
-        let tokens = HashSet::from(["kpop".to_string()]);
-        assert!(!file_matches_cli_route(Path::new("src/lib.rs"), &tokens));
-    }
-
-    #[test]
-    fn cli_route_deep_segments_cover_repo_gates_aliases() {
-        let tokens = HashSet::from(["repo-gates".to_string(), "repo_gates".to_string()]);
-        assert!(file_matches_cli_route(
-            Path::new("src/cli/repo_checks/mod.rs"),
-            &tokens
-        ));
-    }
-
-    #[test]
-    fn collect_tokens_from_try_parse_from() {
-        let mut f = NamedTempFile::with_suffix("_test.rs").unwrap();
-        write!(
-            f,
-            "fn t() {{ let _ = Cli::try_parse_from([\"malvin\", \"kpop\", \"--doc\"]); }}"
-        )
-        .unwrap();
-        let parsed = parse_rust_file(f.path()).unwrap();
-        let tokens = collect_cli_route_tokens_from_tests(&[&parsed]);
-        assert!(tokens.contains("kpop"));
-        assert!(tokens.contains("malvin"));
-    }
-
-    #[test]
-    fn collect_tokens_from_method_try_parse_from() {
-        let mut f = NamedTempFile::with_suffix("_test.rs").unwrap();
-        write!(
-            f,
-            "fn t() {{ let _ = cli.try_parse_from([\"malvin\", \"tidy\"]); }}"
-        )
-        .unwrap();
-        let parsed = parse_rust_file(f.path()).unwrap();
-        let tokens = collect_cli_route_tokens_from_tests(&[&parsed]);
-        assert!(tokens.contains("tidy"));
-    }
-
-    #[test]
-    fn cli_route_attested_files_filters_definitions() {
-        let defs = vec![
-            RustCodeDefinition {
-                name: "run".into(),
-                kind: crate::units::CodeUnitKind::Function,
-                file: PathBuf::from("src/cli/gate_kpop_workflow/run.rs"),
-                line: 1,
-                end_line: 10,
-                impl_for_type: None,
-            },
-            RustCodeDefinition {
-                name: "other".into(),
-                kind: crate::units::CodeUnitKind::Function,
-                file: PathBuf::from("src/lib.rs"),
-                line: 1,
-                end_line: 10,
-                impl_for_type: None,
-            },
-        ];
-        let mut f = NamedTempFile::with_suffix("_test.rs").unwrap();
-        write!(
-            f,
-            "fn t() {{ let _ = Cli::try_parse_from([\"malvin\", \"kpop\"]); }}"
-        )
-        .unwrap();
-        let parsed = parse_rust_file(f.path()).unwrap();
-        let attested = cli_route_attested_files(&[&parsed], &defs);
-        assert_eq!(attested.len(), 1);
-        assert!(attested.contains(&PathBuf::from("src/cli/gate_kpop_workflow/run.rs")));
-    }
-
-    #[test]
-    fn expand_cli_route_witnesses_credits_attested_defs() {
-        let defs = vec![RustCodeDefinition {
-            name: "helper".into(),
-            kind: crate::units::CodeUnitKind::Function,
-            file: PathBuf::from("src/cli/repo_checks/gate_run.rs"),
-            line: 1,
-            end_line: 5,
-            impl_for_type: None,
-        }];
-        let mut f = NamedTempFile::with_suffix("_test.rs").unwrap();
-        write!(
-            f,
-            "fn t() {{ let _ = Cli::try_parse_from([\"malvin\", \"--repo-gates\"]); }}"
-        )
-        .unwrap();
-        let parsed = parse_rust_file(f.path()).unwrap();
-        let mut refs = HashSet::new();
-        expand_cli_route_witnesses(&[&parsed], &defs, &mut refs);
-        assert!(refs.contains("helper"));
-    }
-
-    #[test]
-    fn expand_cli_route_witnesses_skips_large_files() {
-        let file = PathBuf::from("src/cli/gate_kpop_workflow/big.rs");
-        let defs: Vec<RustCodeDefinition> = (0..13)
-            .map(|i| RustCodeDefinition {
-                name: format!("f{i}"),
-                kind: crate::units::CodeUnitKind::Function,
-                file: file.clone(),
-                line: i + 1,
-                end_line: i + 2,
-                impl_for_type: None,
-            })
-            .collect();
-        let mut f = NamedTempFile::with_suffix("_test.rs").unwrap();
-        write!(
-            f,
-            "fn t() {{ let _ = Cli::try_parse_from([\"malvin\", \"kpop\"]); }}"
-        )
-        .unwrap();
-        let parsed = parse_rust_file(f.path()).unwrap();
-        let mut refs = HashSet::new();
-        expand_cli_route_witnesses(&[&parsed], &defs, &mut refs);
-        assert!(refs.is_empty());
-    }
-}
+#[path = "tests_calibration_route.rs"]
+mod tests_calibration_route;

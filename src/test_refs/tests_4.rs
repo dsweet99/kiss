@@ -353,3 +353,28 @@ fn test_is_python_test_file_regular_file() {
     ));
 }
 
+#[test]
+fn test_is_python_test_file_widget_tests_dir() {
+    assert!(make_python_test_file_check(
+        "widget_tests/conftest_helpers.py",
+        "x = 1\n"
+    ));
+}
+
+#[test]
+fn test_is_python_test_file_unittest_outside_test_dir() {
+    assert!(make_python_test_file_check(
+        "vendor/runner.py",
+        "import unittest\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n"
+    ));
+}
+
+#[test]
+fn test_is_in_test_directory_suffix_patterns() {
+    use super::detection::is_in_test_directory;
+    use std::path::Path;
+    assert!(is_in_test_directory(Path::new("widget_tests/helpers.py")));
+    assert!(is_in_test_directory(Path::new("widget_test/helpers.py")));
+    assert!(!is_in_test_directory(Path::new("ropetest/runtime_adapter.py")));
+}
+

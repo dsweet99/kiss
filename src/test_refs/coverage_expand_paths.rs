@@ -7,14 +7,35 @@ pub fn calibration_def_end_line(def: &CodeDefinition) -> usize {
     def.end_line
 }
 
-/// `base/`, `contrib/`, and `refactor/` subtrees: skip directory-sibling and production-import expansion.
+fn path_segment_at_depth(path: &std::path::Path, depth: usize) -> Option<&str> {
+    path.components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .nth(depth)
+}
+
+const NON_PACKAGE_VOID_PARENTS: &[&str] = &["widgets", "lib", "reports", "src", "tests", "test"];
+
+/// `PKG/{base,contrib,refactor}/…` package-root subtrees only (not arbitrary nested `base/` segments).
 pub(crate) fn is_py_contrib_base_void_partition(path: &std::path::Path) -> bool {
-    path.components().any(|c| {
-        matches!(
-            c,
-            std::path::Component::Normal(s)
-                if s.to_str().is_some_and(|n| n == "base" || n == "contrib" || n == "refactor")
-        )
+    let comps: Vec<&str> = path
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect();
+    if comps
+        .get(1)
+        .is_some_and(|seg| matches!(*seg, "base" | "contrib" | "refactor"))
+    {
+        return true;
+    }
+    comps.windows(2).any(|pair| {
+        matches!(pair[1], "base" | "contrib" | "refactor")
+            && !NON_PACKAGE_VOID_PARENTS.contains(&pair[0])
     })
 }
 
@@ -24,40 +45,21 @@ pub(crate) fn is_py_contrib_refactor_void_force_uncovered(path: &std::path::Path
     is_py_contrib_base_void_partition(path)
 }
 
-/// Optimizer/experiment subtrees: per-def import-cal credit (no module-level collapse).
+/// Repo-root `optimizer/` / `experiments/` trees: per-def import-cal credit (no module-level collapse).
 pub(crate) fn is_py_optimizer_experiment_path(path: &std::path::Path) -> bool {
-    path.components().any(|c| {
-        matches!(
-            c,
-            std::path::Component::Normal(s)
-                if s.to_str().is_some_and(|n| n == "optimizer" || n == "experiments")
-        )
-    })
+    path_segment_at_depth(path, 0).is_some_and(|seg| matches!(seg, "optimizer" | "experiments"))
 }
 
-/// Yubo-style inflator subtrees: conftest import cones over-credit large class bodies.
+/// Repo-root inflator subtrees: conftest import cones over-credit large class bodies.
 pub(crate) fn is_py_inflator_calibration_path(path: &std::path::Path) -> bool {
-    path.components().any(|c| {
-        matches!(
-            c,
-            std::path::Component::Normal(s)
-                if s.to_str().is_some_and(|n| {
-                    n == "optimizer" || n == "experiments" || n == "analysis" || n == "ops"
-                })
-        )
-    })
+    path_segment_at_depth(path, 0)
+        .is_some_and(|seg| matches!(seg, "optimizer" | "experiments" | "analysis" | "ops"))
 }
 
-/// Optimizer/analysis only: call-only witnesses (ops/experiments need expanded reach for blind spots).
+/// Repo-root optimizer/analysis only: call-only witnesses (ops/experiments need expanded reach).
 #[allow(dead_code)]
 pub(crate) fn is_py_inflator_call_only_path(path: &std::path::Path) -> bool {
-    path.components().any(|c| {
-        matches!(
-            c,
-            std::path::Component::Normal(s)
-                if s.to_str().is_some_and(|n| n == "optimizer" || n == "analysis")
-        )
-    })
+    path_segment_at_depth(path, 0).is_some_and(|seg| matches!(seg, "optimizer" | "analysis"))
 }
 
 use crate::test_refs::CodeDefinition;

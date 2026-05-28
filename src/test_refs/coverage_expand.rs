@@ -335,3 +335,6 @@ mod tests_coverage_expand;
 #[cfg(test)]
 #[path = "tests_coverage_expand_extra.rs"]
 mod tests_coverage_expand_extra;
+#[cfg(test)]
+#[path = "tests_coverage_expand_extra_b.rs"]
+mod tests_coverage_expand_extra_b;

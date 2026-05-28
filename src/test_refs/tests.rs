@@ -72,8 +72,9 @@ fn test_is_in_test_directory() {
     assert!(is_in_test_directory(Path::new(
         "/project/tests/conftest.py"
     )));
-    assert!(!is_in_test_directory(Path::new("src/utils.py")));
-    assert!(!is_in_test_directory(Path::new("testing/utils.py")));
+    assert!(is_in_test_directory(Path::new("widget_tests/conftest_helpers.py")));
+    assert!(!is_in_test_directory(Path::new("ropetest/runtime_adapter.py")));
+    assert!(is_in_test_directory(Path::new("widget_test/helpers.py")));
 }
 
 #[test]

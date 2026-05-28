@@ -16,21 +16,24 @@ pub(crate) struct CoverageMapUnrefCtx<'a> {
 }
 
 pub(crate) fn is_coverage_map_integration_cone_inflation_shim(path: &Path) -> bool {
-    path.components().any(|c| {
-        matches!(
-            c,
-            std::path::Component::Normal(s)
-                if s.to_str().is_some_and(|n| {
-                    n == "acp"
-                        || n == "cli"
-                        || n == "kpop_progression"
-                        || n == "orchestrator"
-                        || n == "output"
-                        || n == "cursor_store"
-                        || n == "tool_summary"
-                })
-        )
-    })
+    let comps: Vec<&str> = path
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect();
+    let Some(src_idx) = comps.iter().position(|&c| c == "src") else {
+        return false;
+    };
+    let Some(seg) = comps.get(src_idx + 1) else {
+        return false;
+    };
+    matches!(
+        *seg,
+        "acp" | "cli" | "kpop_progression" | "orchestrator" | "output" | "cursor_store"
+            | "tool_summary"
+    )
 }
 
 pub(crate) fn coverage_map_forced_uncovered_file(path: &Path) -> bool {

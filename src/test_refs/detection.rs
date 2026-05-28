@@ -78,13 +78,18 @@ pub(crate) fn has_test_function_or_class(node: Node, source: &str) -> bool {
     }
 }
 
+fn is_test_directory_name(name: &str) -> bool {
+    name == "tests"
+        || name == "test"
+        || name.ends_with("_test")
+        || name.ends_with("_tests")
+}
+
 pub fn is_in_test_directory(path: &Path) -> bool {
-    use std::ffi::OsStr;
     path.components().any(|c| {
-        let s = c.as_os_str();
-        s == OsStr::new("tests")
-            || s == OsStr::new("test")
-            || s == OsStr::new("ropetest")
+        c.as_os_str()
+            .to_str()
+            .is_some_and(is_test_directory_name)
     })
 }
 
@@ -131,4 +136,33 @@ pub(crate) fn is_test_function(node: Node, source: &str) -> bool {
 
 pub(crate) fn is_test_class(node: Node, source: &str) -> bool {
     get_child_by_field(node, "name", source).is_some_and(|n| n.starts_with("Test"))
+}
+
+#[cfg(test)]
+mod detection_coverage {
+    use super::*;
+    use crate::parsing::{ParsedFile, create_parser};
+    use std::path::PathBuf;
+
+    #[test]
+    fn is_test_directory_name_covers_all_suffixes() {
+        assert!(is_in_test_directory(Path::new("tests/a.py")));
+        assert!(is_in_test_directory(Path::new("test/a.py")));
+        assert!(is_in_test_directory(Path::new("widget_tests/a.py")));
+        assert!(is_in_test_directory(Path::new("widget_test/a.py")));
+        assert!(!is_in_test_directory(Path::new("src/a.py")));
+    }
+
+    #[test]
+    fn is_python_test_file_framework_without_tests_is_false() {
+        let mut parser = create_parser().unwrap();
+        let src = "import pytest\n\ndef helper():\n    pass\n";
+        let tree = parser.parse(src, None).unwrap();
+        let file = ParsedFile {
+            path: PathBuf::from("src/mod.py"),
+            source: src.to_string(),
+            tree,
+        };
+        assert!(!is_python_test_file(&file));
+    }
 }

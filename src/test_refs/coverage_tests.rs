@@ -194,14 +194,14 @@ fn module_is_contrib_base_void_paths() {
     let mut graph = DependencyGraph::new();
     graph
         .path_to_module
-        .insert(PathBuf::from("/proj/pkg/normal.py"), "pkg.normal".into());
+        .insert(PathBuf::from("pkg/normal.py"), "pkg.normal".into());
     graph
         .path_to_module
-        .insert(PathBuf::from("/proj/pkg/contrib/hook.py"), "pkg.contrib.hook".into());
+        .insert(PathBuf::from("pkg/contrib/hook.py"), "pkg.contrib.hook".into());
     let normal = CodeDefinition {
         name: "run".into(),
         kind: CodeUnitKind::Function,
-        file: PathBuf::from("/proj/pkg/normal.py"),
+        file: PathBuf::from("pkg/normal.py"),
         line: 1,
         end_line: 2,
         containing_class: None,
@@ -209,7 +209,7 @@ fn module_is_contrib_base_void_paths() {
     let contrib = CodeDefinition {
         name: "hook".into(),
         kind: CodeUnitKind::Function,
-        file: PathBuf::from("/proj/pkg/contrib/hook.py"),
+        file: PathBuf::from("pkg/contrib/hook.py"),
         line: 1,
         end_line: 2,
         containing_class: None,

@@ -89,3 +89,33 @@ fn coverage_map_helper_paths() {
         &ctx,
     ));
 }
+
+/// principles.md: integration-cone credit must not veto on benchmark dirname inventories.
+#[test]
+fn integration_cone_witnesses_are_not_vetoed_by_benchmark_dirname_inventory() {
+    let def = sample_def("dispatch", PathBuf::from("vendor/orchestrator/dispatch.rs"));
+    let witness = HashSet::from(["dispatch".to_string()]);
+    let mut cone = HashSet::new();
+    cone.insert(crate::rust_include::canonical_path(&def.file));
+    let name_files = crate::test_refs::build_name_file_map(
+        [(def.name.as_str(), def.file.as_path())].into_iter(),
+    );
+    let empty_map: HashMap<PathBuf, usize> = HashMap::new();
+    let ctx = CoverageMapUnrefCtx {
+        test_witness_refs: &witness,
+        coverage_references: &witness,
+        name_files: &name_files,
+        disambiguation: &HashMap::new(),
+        integration_cone_files: &cone,
+        defs_per_file: &empty_map,
+        cli_route_attested_files: &HashSet::new(),
+    };
+    assert!(
+        coverage_map_integration_cone_witness(&def, &ctx),
+        "directly witnessed orchestrator def in integration cone must not lose credit to dirname veto"
+    );
+    assert!(
+        !definition_uncovered_for_coverage_map(&def, std::slice::from_ref(&def), &ctx),
+        "definition with integration-cone attestation must not be marked uncovered"
+    );
+}
