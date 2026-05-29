@@ -19,6 +19,7 @@ class DiscrepancyReport:
     runtime_total_pct: float
     global_gap: float
     file_mae: float
+    file_max_abs_diff: float
     file_rmse: float
     spearman: float | None
     inflation_rate: float
@@ -76,6 +77,7 @@ def analyze(inputs: AnalyzeInputs) -> DiscrepancyReport:
     sp = spearman([p.kiss_pct for p in pairs], [p.runtime_pct for p in pairs])
 
     file_mae = sum(abs_diffs) / n
+    file_max_abs_diff = max(abs_diffs) / MAX_COVERAGE_PCT
     file_rmse = math.sqrt(sum(sq_diffs) / n) / MAX_COVERAGE_PCT
 
     return DiscrepancyReport(
@@ -86,6 +88,7 @@ def analyze(inputs: AnalyzeInputs) -> DiscrepancyReport:
         runtime_total_pct=inputs.runtime_total,
         global_gap=global_gap,
         file_mae=file_mae,
+        file_max_abs_diff=file_max_abs_diff,
         file_rmse=file_rmse,
         spearman=sp,
         inflation_rate=inflation,

@@ -65,6 +65,7 @@ def test_analyze_core_computes_rmse(tmp_path: Path) -> None:
     assert report.spearman is not None
     assert report.global_gap == abs(50.0 - 55.0)
     assert report.file_mae > 0.0
+    assert report.file_max_abs_diff == 0.4
     assert report.file_rmse > 0.0
 
 

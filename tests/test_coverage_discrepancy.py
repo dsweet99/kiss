@@ -18,6 +18,7 @@ def _sample_report(tmp_path: Path) -> DiscrepancyReport:
         language="python",
         n_files=1,
         file_mae=20.0,
+        file_max_abs_diff=0.2,
         file_rmse=0.2,
         spearman=1.0,
         inflation_rate=0.0,
@@ -45,6 +46,7 @@ def test_analyze_computes_rmse(tmp_path: Path, monkeypatch) -> None:
 
     report = analyze(repo, "python", RuntimeCoverage(runtime_map, 80.0))
     assert report.n_files == 1
+    assert report.file_max_abs_diff == 0.2
     assert report.file_rmse == 0.2
 
 
@@ -52,6 +54,8 @@ def test_print_and_write_report(tmp_path: Path, capsys) -> None:
     report = _sample_report(tmp_path)
     print_report(report)
     out = capsys.readouterr().out
+    assert "file_mae: 20.0" in out
+    assert "file_max_abs_diff: 0.200" in out
     assert "file_rmse: 0.200" in out
     print_detailed_report(report)
     detailed = capsys.readouterr().out
@@ -59,6 +63,7 @@ def test_print_and_write_report(tmp_path: Path, capsys) -> None:
     json_path = tmp_path / "out.json"
     write_report_json(report, json_path)
     payload = json.loads(json_path.read_text())
+    assert payload["summary"]["file_max_abs_diff"] == 0.2
     assert payload["summary"]["file_rmse"] == 0.2
     emit_report(report, detailed=False, report_out=json_path)
     assert json_path.exists()
@@ -76,6 +81,7 @@ def _invoke_rust_cmd(monkeypatch, cd_cli_mod, repo: Path) -> None:
         language="rust",
         n_files=0,
         file_mae=0.0,
+        file_max_abs_diff=0.0,
         file_rmse=0.0,
         spearman=0.0,
         inflation_rate=0.0,

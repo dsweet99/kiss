@@ -14,6 +14,7 @@ def print_report(r: DiscrepancyReport) -> None:
     click.echo(f"runtime_total_line_pct: {r.runtime_total_pct:.1f}")
     click.echo(f"global_gap: {r.global_gap:.1f}")
     click.echo(f"file_mae: {r.file_mae:.1f}")
+    click.echo(f"file_max_abs_diff: {r.file_max_abs_diff:.3f}")
     click.echo(f"file_rmse: {r.file_rmse:.3f}")
     click.echo(f"spearman: {r.spearman if r.spearman is not None else 'n/a'}")
     click.echo(f"inflation_rate (kiss >= runtime+20): {r.inflation_rate:.3f}")
@@ -54,6 +55,7 @@ def write_report_json(r: DiscrepancyReport, out_path: Path) -> None:
             "runtime_total_line_pct": r.runtime_total_pct,
             "global_gap": r.global_gap,
             "file_mae": r.file_mae,
+            "file_max_abs_diff": r.file_max_abs_diff,
             "file_rmse": r.file_rmse,
             "spearman": r.spearman,
             "inflation_rate": r.inflation_rate,

@@ -56,6 +56,7 @@ def test_run_python_coverage_discrepancy(monkeypatch, tmp_path: Path, capsys) ->
         runtime_total_pct=50.0,
         global_gap=50.0,
         file_mae=50.0,
+        file_max_abs_diff=0.5,
         file_rmse=0.5,
         spearman=1.0,
         inflation_rate=0.0,
