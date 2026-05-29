@@ -34,8 +34,15 @@ fn init_stem_matches_imports(
 
 /// `base/oi/**`: credit when a test imports the module (or parent package) even if def names
 /// are not referenced — capped later via `calibration_def_end_line` on base/oi paths.
+/// Facade modules such as `evaluate.py` require explicit call witnesses instead.
 pub(crate) fn is_py_oi_module_import_target_file(path: &std::path::Path) -> bool {
-    path.file_name().and_then(|n| n.to_str()) == Some("interfaces.py")
+    if !is_py_base_oi_subtree(path) {
+        return false;
+    }
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    !matches!(name, "__init__.py" | "evaluate.py")
 }
 
 pub(crate) fn is_py_oi_module_import_witnessed(
