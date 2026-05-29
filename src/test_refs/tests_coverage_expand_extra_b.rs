@@ -1,4 +1,7 @@
 use super::*;
+use crate::test_refs::coverage_expand::coverage_expand_paths::{
+    collect_py_path_string_literals, is_py_optimizer_experiment_path, unquote_py_string,
+};
 use std::collections::HashSet;
 
 #[test]
@@ -124,6 +127,49 @@ fn unquote_py_string_strips_quotes() {
 }
 
 #[test]
+fn calibration_def_end_line_caps_inflator_function_spans() {
+    let def = CodeDefinition {
+        name: "f".into(),
+        kind: crate::units::CodeUnitKind::Function,
+        file: std::path::PathBuf::from("/tmp/yubo/optimizer/run.py"),
+        line: 10,
+        end_line: 42,
+        containing_class: None,
+    };
+    assert_eq!(calibration_def_end_line(&def), 12);
+}
+
+#[test]
+fn inflator_calibration_path_matches_absolute_repo_paths() {
+    use super::is_py_inflator_calibration_path;
+    assert!(is_py_inflator_calibration_path(std::path::Path::new(
+        "/home/user/yubo/optimizer/uhd_loop.py"
+    )));
+    assert!(is_py_inflator_calibration_path(std::path::Path::new(
+        "optimizer/uhd_simple_be_np.py"
+    )));
+}
+
+#[test]
+fn expand_witness_refs_via_import_aliases_maps_called_alias_to_canonical() {
+    use crate::test_refs::collect::expand_witness_refs_via_import_aliases;
+    use crate::parsing::{create_parser, parse_file};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let test = dir.path().join("tests").join("test_alias.py");
+    std::fs::create_dir_all(test.parent().unwrap()).expect("mkdir");
+    std::fs::write(
+        &test,
+        "def test_it():\n    from pkg.mod import foo as bar\n    bar()\n",
+    )
+    .expect("write");
+    let mut parser = create_parser().expect("parser");
+    let parsed = parse_file(&mut parser, &test).expect("parse");
+    let mut refs = std::collections::HashSet::from(["bar".to_string()]);
+    expand_witness_refs_via_import_aliases(&[&parsed], &mut refs);
+    assert!(refs.contains("foo"));
+}
+
+#[test]
 fn calibration_def_end_line_returns_def_end_line() {
     let def = CodeDefinition {
         name: "f".into(),
@@ -167,4 +213,25 @@ fn void_files_for_dotted_path_resolves_contrib_modules() {
     suffixes.insert(path.clone(), "rope.contrib.findit".to_string());
     let files = void_files_for_dotted_path("rope.contrib.findit.findit", &suffixes);
     assert!(files.contains(&path));
+}
+
+#[test]
+fn repo_root_path_predicates_classify_subtrees() {
+    assert!(is_py_optimizer_path(std::path::Path::new("optimizer/run.py")));
+    assert!(is_py_experiments_path(std::path::Path::new("experiments/trial.py")));
+    assert!(is_py_inflator_denominator_path(std::path::Path::new("ops/setup.py")));
+    assert!(is_py_rl_integration_path(std::path::Path::new("rl/agent.py")));
+    assert!(is_py_ecosystem_auxiliary_path(std::path::Path::new(
+        "vendor/ruff-ecosystem/check.py"
+    )));
+    assert!(is_py_base_subtree_only(std::path::Path::new("pkg/base/core.py")));
+    assert!(is_py_base_oi_subtree(std::path::Path::new(
+        "rope/base/oi/type_hinting/interfaces.py"
+    )));
+    assert!(!is_py_base_oi_subtree(std::path::Path::new("pkg/base/core.py")));
+    assert!(!is_py_optimizer_path(std::path::Path::new("lib/optimizer/run.py")));
+    assert!(is_py_optimizer_path(std::path::Path::new("optimizer/run.py")));
+    assert!(is_py_experiments_path(std::path::Path::new(
+        "/abs/repo/experiments/trial.py"
+    )));
 }

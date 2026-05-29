@@ -54,6 +54,7 @@ fn coverage_map_helper_paths() {
         integration_cone_files: &cone,
         defs_per_file: &empty_map,
         cli_route_attested_files: &HashSet::new(),
+        witnessed_rule_plugins: &HashSet::new(),
     };
     assert!(coverage_map_single_crate_cli_witnessed(&cli_def, &ctx));
     assert!(coverage_map_direct_test_witness(&lib_def, &ctx));
@@ -68,6 +69,7 @@ fn coverage_map_helper_paths() {
         integration_cone_files: &cone_files,
         defs_per_file: &empty_map,
         cli_route_attested_files: &HashSet::new(),
+        witnessed_rule_plugins: &HashSet::new(),
     };
     assert!(coverage_map_integration_cone_witness(&lib_def, &cone_ctx));
 
@@ -81,6 +83,7 @@ fn coverage_map_helper_paths() {
         integration_cone_files: &HashSet::new(),
         defs_per_file: &dense_counts,
         cli_route_attested_files: &HashSet::new(),
+        witnessed_rule_plugins: &HashSet::new(),
     };
     assert!(coverage_map_expanded_dense_file(&lib_def, &dense_ctx));
     assert!(!definition_uncovered_for_coverage_map(
@@ -109,6 +112,7 @@ fn integration_cone_witnesses_are_not_vetoed_by_benchmark_dirname_inventory() {
         integration_cone_files: &cone,
         defs_per_file: &empty_map,
         cli_route_attested_files: &HashSet::new(),
+        witnessed_rule_plugins: &HashSet::new(),
     };
     assert!(
         coverage_map_integration_cone_witness(&def, &ctx),
@@ -185,4 +189,99 @@ fn calibration_workspace_crates_are_not_benchmark_name_inventory() {
             "calibration_map.rs must not hard-code benchmark crate name {lit:?}"
         );
     }
+}
+
+#[test]
+fn calibration_map_plugin_and_workspace_path_classifiers() {
+    use super::calibration_map;
+
+    assert!(calibration_map::is_coverage_map_rule_plugin_top_mod(Path::new(
+        "crates/ruff_linter/src/rules/flake8_bandit/mod.rs"
+    )));
+    assert!(!calibration_map::is_coverage_map_rule_plugin_top_mod(Path::new(
+        "crates/ruff_linter/src/rules/flake8_bandit/rules/mod.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_rule_plugin_registry_hub(Path::new(
+        "crates/ruff_linter/src/rules/flake8_bandit/rules/mod.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_rule_plugin_hub_file(Path::new(
+        "crates/ruff_linter/src/rules/flake8_bandit/mod.rs"
+    )));
+    assert!(!calibration_map::is_coverage_map_rule_plugin_support_file(Path::new(
+        "crates/ruff_linter/src/rules/flake8_bandit/mod.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_rule_plugin_support_file(Path::new(
+        "crates/ruff_linter/src/rules/flake8_bandit/helpers.rs"
+    )));
+    assert_eq!(
+        calibration_map::linter_rule_plugin_name(Path::new(
+            "crates/ruff_linter/src/rules/flake8_bandit/helpers.rs"
+        )),
+        Some("flake8_bandit")
+    );
+    assert!(calibration_map::is_coverage_map_linter_checkers_file(Path::new(
+        "crates/ruff_linter/src/checkers/physical_lines.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_flat_workspace_crate_module(Path::new(
+        "crates/ruff_text_size/lib.rs"
+    )));
+    assert!(!calibration_map::is_coverage_map_flat_workspace_crate_module(Path::new(
+        "crates/ruff/src/lib.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_workspace_crate_flags_tree(Path::new(
+        "crates/ruff/flags/doc.rs"
+    )));
+    assert!(calibration_map::is_workspace_llvm_auxiliary_crate_for_test("ty", 1));
+    assert!(!calibration_map::is_workspace_llvm_auxiliary_crate_for_test("core", 1));
+}
+
+#[test]
+fn coverage_map_plugin_witness_helpers() {
+    use super::coverage_map_unreferenced::{
+        build_witnessed_rule_plugins, coverage_map_cli_route_witnessed,
+        coverage_map_plugin_rule_impl_witness, coverage_map_plugin_support_direct_only,
+        coverage_map_plugin_support_plugin_witness, CoverageMapUnrefCtx,
+    };
+
+    let rule_def = sample_def(
+        "unsafe_markup_use",
+        PathBuf::from(
+            "crates/ruff_linter/src/rules/flake8_bandit/rules/unsafe_markup_use.rs",
+        ),
+    );
+    let helper_def = sample_def(
+        "helper_fn",
+        PathBuf::from("crates/ruff_linter/src/rules/flake8_bandit/helpers.rs"),
+    );
+    let cli_def = sample_def("run", PathBuf::from("src/cli/learn.rs"));
+    let defs = vec![rule_def.clone(), helper_def.clone(), cli_def.clone()];
+    let witness = HashSet::from([
+        "unsafe_markup_use".to_string(),
+        "helper_fn".to_string(),
+        "run".to_string(),
+    ]);
+    let plugins = build_witnessed_rule_plugins(&defs, &witness);
+    assert!(plugins.contains("flake8_bandit"));
+    let name_files = crate::test_refs::build_name_file_map(
+        defs.iter()
+            .map(|d| (d.name.as_str(), d.file.as_path()))
+            .collect::<Vec<_>>()
+            .into_iter(),
+    );
+    let mut cli_attested = HashSet::new();
+    cli_attested.insert(crate::rust_include::canonical_path(&cli_def.file));
+    let ctx = CoverageMapUnrefCtx {
+        test_witness_refs: &witness,
+        coverage_references: &witness,
+        name_files: &name_files,
+        disambiguation: &HashMap::new(),
+        integration_cone_files: &HashSet::new(),
+        defs_per_file: &HashMap::new(),
+        cli_route_attested_files: &cli_attested,
+        witnessed_rule_plugins: &plugins,
+    };
+    assert!(coverage_map_plugin_rule_impl_witness(&rule_def, &ctx));
+    assert!(coverage_map_plugin_support_plugin_witness(&helper_def, &ctx));
+    assert!(coverage_map_plugin_support_direct_only(&helper_def, &ctx));
+    assert!(coverage_map_cli_route_witnessed(&cli_def, &ctx));
 }

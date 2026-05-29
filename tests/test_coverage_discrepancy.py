@@ -135,5 +135,89 @@ def test_ops_cli_and_runtime_entrypoints(
     with pytest.raises(SystemExit) as exc:
         cd_cli_mod.main()
     assert exc.value.code == 1
+    monkeypatch.setattr(cd_cli_mod, "cli", lambda **kwargs: None)
+    cd_cli_mod.main()
 
+
+def test_python_coverage_command_invoke(monkeypatch, tmp_path: Path) -> None:
+    import click
+    import ops.cd_cli as cd_cli_mod
+
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    seen: list[object] = []
+    monkeypatch.setattr(cd_cli_mod, "python_cmd", lambda run: seen.append(run))
+    monkeypatch.setattr(cd_cli_mod, "infer_pytest_target", lambda _repo: "tests/")
+    cmd = cd_cli_mod._PythonCoverageCommand("python", params=cd_cli_mod._python_coverage_params())
+    ctx = click.Context(cmd)
+    ctx.params = {
+        "repo": repo,
+        "source": None,
+        "pytest_args": (),
+        "detailed": False,
+        "report_out": None,
+    }
+    assert cmd.invoke(ctx) == 0
+    assert seen and seen[0].repo == repo
+
+
+def test_interval_audit_rmse(monkeypatch, tmp_path: Path) -> None:
+    import math
+
+    import ops.cd_interval_audit as audit_mod
+    from ops.cd_interval_audit import IntervalAudit, audit_python_repo
+
+    assert math.isnan(audit_mod._rmse([]))
+    pairs = [(100.0, 80.0), (90.0, 85.0)]
+    assert abs(audit_mod._rmse(pairs) - 0.145773) < 1e-3
+
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    mod = (repo / "mod.py").resolve()
+    (repo / "mod.py").write_text("def f():\n    pass\n")
+    monkeypatch.setattr(audit_mod, "infer_slipcover_source", lambda _repo: "proj")
+    monkeypatch.setattr(
+        audit_mod,
+        "slipcover_per_file",
+        lambda _repo, _args, source=None: ({mod: 75.0}, 75.0),
+    )
+    monkeypatch.setattr(
+        audit_mod,
+        "_kiss_map",
+        lambda _repo, language, bound_flag=None: {
+            None: {mod: 100.0},
+            "--attested": {mod: 100.0},
+            "--optimistic": {mod: 35.0},
+        }[bound_flag],
+    )
+    result = audit_python_repo(repo)
+    assert isinstance(result, IntervalAudit)
+    assert result.n_files == 1
+    assert result.wide_interval_rate == 1.0
+
+
+def test_interval_audit_main_and_cd_cli_main(monkeypatch, tmp_path: Path, capsys) -> None:
+    import ops.cd_interval_audit as audit_mod
+    from ops.cd_cli import main as cd_cli_main
+    from ops.cd_interval_audit import IntervalAudit, main as interval_audit_main
+
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    sample = IntervalAudit(
+        repo=repo,
+        n_files=0,
+        outside_rate=float("nan"),
+        wide_interval_rate=float("nan"),
+        shipped_rmse=float("nan"),
+        attested_rmse=float("nan"),
+        optimistic_rmse=float("nan"),
+        outside_inflated=0,
+        outside_blind=0,
+        outside_neutral=0,
+    )
+    monkeypatch.setattr(audit_mod, "audit_python_repo", lambda _repo: sample)
+    assert interval_audit_main(["cd_interval_audit.py"]) == 2
+    assert interval_audit_main(["cd_interval_audit.py", str(repo)]) == 0
+    assert repo.name in capsys.readouterr().out
+    assert callable(cd_cli_main)
 

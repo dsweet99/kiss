@@ -5,7 +5,8 @@
 //!   kiss-coverage-map --rust REPO       # Rust sources only (mixed monorepos)
 //!   kiss-coverage-map --python REPO     # Python sources only
 //!   kiss-coverage-map --units REPO      # `[{"file","name","line","kiss_covered"}, ...]`
-use kiss::cli_output::file_coverage_map_by_line_spans;
+use kiss::test_refs::CalibrationCoverageBound;
+use kiss::calibration_def_end_line;
 use kiss::discovery::{gather_files_by_lang, Language};
 use kiss::graph::build_dependency_graph;
 use kiss::rust_graph::build_rust_dependency_graph;
@@ -40,17 +41,21 @@ struct CoverageMapArgs {
     repo_path: String,
     units_mode: bool,
     lang_filter: Option<Language>,
+    coverage_bound: CalibrationCoverageBound,
 }
 
 fn parse_coverage_map_args(raw: &[String]) -> CoverageMapArgs {
     let mut units_mode = false;
     let mut lang_filter = None;
     let mut repo_path = None;
+    let mut coverage_bound = CalibrationCoverageBound::Shipped;
     for arg in raw {
         match arg.as_str() {
             "--units" => units_mode = true,
             "--rust" => lang_filter = Some(Language::Rust),
             "--python" => lang_filter = Some(Language::Python),
+            "--attested" => coverage_bound = CalibrationCoverageBound::Attested,
+            "--optimistic" => coverage_bound = CalibrationCoverageBound::Optimistic,
             _ if arg.starts_with('-') => {
                 eprintln!("unknown option: {arg}");
                 std::process::exit(2);
@@ -76,12 +81,13 @@ fn parse_coverage_map_args(raw: &[String]) -> CoverageMapArgs {
         repo_path: repo_path.unwrap_or_else(|| ".".into()),
         units_mode,
         lang_filter,
+        coverage_bound,
     }
 }
 
 fn run_coverage_map(raw: &[String]) -> String {
     let args = parse_coverage_map_args(raw);
-    let cov = analyze_repo(&args.repo_path, args.lang_filter);
+    let cov = analyze_repo(&args.repo_path, args.lang_filter, args.coverage_bound);
     if args.units_mode {
         units_json(&cov)
     } else {
@@ -89,7 +95,11 @@ fn run_coverage_map(raw: &[String]) -> String {
     }
 }
 
-fn analyze_repo(path: &str, lang_filter: Option<Language>) -> RepoCoverage {
+fn analyze_repo(
+    path: &str,
+    lang_filter: Option<Language>,
+    coverage_bound: CalibrationCoverageBound,
+) -> RepoCoverage {
     let paths = vec![path.to_string()];
     let (py_files, rs_files) = gather_files_by_lang(&paths, lang_filter, &[]);
     let py_parsed: Vec<_> = parse_files(&py_files)
@@ -106,7 +116,11 @@ fn analyze_repo(path: &str, lang_filter: Option<Language>) -> RepoCoverage {
     let py_graph = (!py_parsed.is_empty()).then(|| build_dependency_graph(&py_refs));
     let rs_graph = (!rs_parsed.is_empty()).then(|| build_rust_dependency_graph(&rs_refs));
     RepoCoverage {
-        py: kiss::analyze_test_refs_for_coverage_map(&py_refs, py_graph.as_ref()),
+        py: kiss::analyze_test_refs_for_coverage_map_with_bound(
+            &py_refs,
+            py_graph.as_ref(),
+            coverage_bound,
+        ),
         rs: kiss::analyze_rust_test_refs_for_coverage_map(&rs_refs, rs_graph.as_ref()),
     }
 }
@@ -162,7 +176,7 @@ fn file_map_json(cov: &RepoCoverage) -> String {
         .py
         .definitions
         .iter()
-        .map(|d| (d.file.clone(), d.name.clone(), d.line, d.end_line))
+        .map(|d| (d.file.clone(), d.name.clone(), d.line, calibration_def_end_line(d)))
         .collect();
     let py_unref: Vec<(PathBuf, String, usize)> = cov
         .py
@@ -184,8 +198,8 @@ fn file_map_json(cov: &RepoCoverage) -> String {
         .filter(|d| !coverage_map_excluded_file(&d.file))
         .map(|d| (d.file.clone(), d.name.clone(), d.line))
         .collect();
-    let mut map = file_coverage_map_by_line_spans(&py_defs, &py_unref);
-    for (file, pct) in file_coverage_map_by_line_spans(&rs_defs, &rs_unref) {
+    let mut map = kiss::cli_output::file_coverage_map_by_line_spans(&py_defs, &py_unref);
+    for (file, pct) in kiss::cli_output::file_coverage_map_by_line_spans(&rs_defs, &rs_unref) {
         map.insert(file, pct);
     }
     let out: HashMap<String, usize> = map
@@ -201,6 +215,7 @@ mod coverage_map_tests {
         analyze_repo, parse_coverage_map_args, run_coverage_map, CoverageMapArgs, RepoCoverage,
         UnitRow,
     };
+    use kiss::CalibrationCoverageBound;
 
     #[test]
     fn coverage_map_structs_are_constructible() {
@@ -251,7 +266,11 @@ mod coverage_map_tests {
         let args = parse_coverage_map_args(std::slice::from_ref(&fixture));
         assert_eq!(args.repo_path, fixture);
         assert!(!args.units_mode);
-        let cov = analyze_repo(&args.repo_path, args.lang_filter);
+        let cov = analyze_repo(
+            &args.repo_path,
+            args.lang_filter,
+            CalibrationCoverageBound::Shipped,
+        );
         assert!(
             !cov.py.definitions.is_empty(),
             "expected Python coverage analysis from ops/"

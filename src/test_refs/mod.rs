@@ -5,6 +5,8 @@ mod coverage;
 #[cfg(test)]
 mod coverage_tests;
 #[cfg(test)]
+mod tests_coverage_cal;
+#[cfg(test)]
 mod tests_collect;
 mod calibration_analysis;
 mod coverage_expand;
@@ -19,8 +21,10 @@ use crate::units::CodeUnitKind;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+pub use calibration_analysis::CalibrationCoverageBound;
 pub use collect_parallel::test_functions_in;
 pub use coverage_expand::calibration_def_end_line;
+pub use coverage_expand::is_py_inflator_denominator_path;
 pub(crate) use collect_parallel::collect_refs_parallel;
 pub(crate) use collect_parallel::collect_refs_parallel_for_coverage_map;
 pub(crate) use coverage::build_py_coverage_map;
@@ -63,7 +67,9 @@ pub struct TestRefAnalysis {
 #[derive(Copy, Clone)]
 pub(crate) enum TestRefsAnalysisKind {
     Full { need_coverage_map: bool },
-    CoverageCalibration,
+    CoverageCalibration {
+        coverage_bound: calibration_analysis::CalibrationCoverageBound,
+    },
     Quick,
 }
 
@@ -87,7 +93,26 @@ pub fn analyze_test_refs_for_coverage_map(
     parsed_files: &[&ParsedFile],
     graph: Option<&DependencyGraph>,
 ) -> TestRefAnalysis {
-    analyze_test_refs_inner(parsed_files, graph, TestRefsAnalysisKind::CoverageCalibration)
+    analyze_test_refs_for_coverage_map_with_bound(
+        parsed_files,
+        graph,
+        calibration_analysis::CalibrationCoverageBound::Shipped,
+    )
+}
+
+/// Calibration analysis with a fixed tier bound (attested/optimistic) or shipped tier selection.
+pub fn analyze_test_refs_for_coverage_map_with_bound(
+    parsed_files: &[&ParsedFile],
+    graph: Option<&DependencyGraph>,
+    coverage_bound: calibration_analysis::CalibrationCoverageBound,
+) -> TestRefAnalysis {
+    analyze_test_refs_inner(
+        parsed_files,
+        graph,
+        TestRefsAnalysisKind::CoverageCalibration {
+            coverage_bound,
+        },
+    )
 }
 
 pub fn analyze_test_refs_quick(parsed_files: &[&ParsedFile]) -> TestRefAnalysis {
@@ -164,17 +189,55 @@ fn apply_calibration_postprocessing(
     }
 }
 
+struct FilterUnreferencedInputs<'a> {
+    definitions: &'a [CodeDefinition],
+    calibration: bool,
+    coverage_bound: calibration_analysis::CalibrationCoverageBound,
+    calibration_defs_per_file: &'a HashMap<PathBuf, usize>,
+    test_witness_refs: &'a HashSet<String>,
+    calibration_strict_refs: &'a HashSet<String>,
+    calibration_expanded_refs: &'a HashSet<String>,
+    usage_references: &'a HashSet<String>,
+    name_files: &'a HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &'a HashMap<String, PathBuf>,
+    import_bindings: &'a HashMap<String, HashSet<String>>,
+    module_suffixes: &'a HashMap<PathBuf, String>,
+}
+
+fn filter_unreferenced_for_analysis(inputs: &FilterUnreferencedInputs<'_>) -> Vec<CodeDefinition> {
+    let void_dispatch_attestation = HashMap::new();
+    let filter_ctx = calibration_analysis::UnreferencedFilterCtx {
+        calibration: inputs.calibration,
+        coverage_bound: inputs.coverage_bound,
+        defs_per_file: inputs.calibration_defs_per_file,
+        test_witness_refs: inputs.test_witness_refs,
+        calibration_strict_refs: inputs.calibration_strict_refs,
+        calibration_expanded_refs: inputs.calibration_expanded_refs,
+        void_dispatch_attestation: &void_dispatch_attestation,
+        usage_references: inputs.usage_references,
+        name_files: inputs.name_files,
+        disambiguation: inputs.disambiguation,
+        import_bindings: inputs.import_bindings,
+        module_suffixes: inputs.module_suffixes,
+    };
+    calibration_analysis::filter_unreferenced_definitions(inputs.definitions, &filter_ctx)
+}
+
 fn analyze_test_refs_inner(
     parsed_files: &[&ParsedFile],
     graph: Option<&DependencyGraph>,
     kind: TestRefsAnalysisKind,
 ) -> TestRefAnalysis {
-    let calibration = matches!(kind, TestRefsAnalysisKind::CoverageCalibration);
+    let calibration = matches!(kind, TestRefsAnalysisKind::CoverageCalibration { .. });
+    let coverage_bound = match kind {
+        TestRefsAnalysisKind::CoverageCalibration { coverage_bound } => coverage_bound,
+        _ => calibration_analysis::CalibrationCoverageBound::Shipped,
+    };
     let need_coverage_map = match kind {
         TestRefsAnalysisKind::Full {
             need_coverage_map,
         } => need_coverage_map,
-        TestRefsAnalysisKind::CoverageCalibration => true,
+        TestRefsAnalysisKind::CoverageCalibration { .. } => true,
         TestRefsAnalysisKind::Quick => false,
     };
     let (definitions, test_references, mut usage_references, import_bindings, per_test_usage) =
@@ -184,11 +247,14 @@ fn analyze_test_refs_inner(
             collect_refs_parallel(parsed_files, need_coverage_map)
         };
 
-    let test_witness_refs = if calibration {
+    let mut test_witness_refs = if calibration {
         calibration_witness_refs(parsed_files, &per_test_usage)
     } else {
         HashSet::new()
     };
+    if calibration {
+        collect::expand_witness_refs_via_import_aliases(parsed_files, &mut test_witness_refs);
+    }
     let (calibration_strict_refs, calibration_expanded_refs, calibration_defs_per_file) =
         if calibration {
             calibration_analysis::build_calibration_coverage_refs(
@@ -213,27 +279,21 @@ fn analyze_test_refs_inner(
         .iter()
         .map(|d| (d.file.clone(), file_to_module_suffix(&d.file)))
         .collect();
-    // g9 H1: void dispatch attestation disabled (net harmful on rope RMSE).
-    let void_dispatch_attestation = HashMap::new();
-
-    let filter_ctx = calibration_analysis::UnreferencedFilterCtx {
-            calibration,
-            defs_per_file: &calibration_defs_per_file,
-            test_witness_refs: &test_witness_refs,
-            calibration_strict_refs: &calibration_strict_refs,
-            calibration_expanded_refs: &calibration_expanded_refs,
-            void_dispatch_attestation: &void_dispatch_attestation,
-            usage_references: &usage_references,
-            name_files: &name_files,
-            disambiguation: &disambiguation,
-            import_bindings: &import_bindings,
-            module_suffixes: &module_suffixes,
-        };
-
-    let unreferenced = calibration_analysis::filter_unreferenced_definitions(
-        &definitions,
-        &filter_ctx,
-    );
+    // g9 H1: global void dispatch attestation disabled (net harmful on rope RMSE).
+    let unreferenced = filter_unreferenced_for_analysis(&FilterUnreferencedInputs {
+        definitions: &definitions,
+        calibration,
+        coverage_bound,
+        calibration_defs_per_file: &calibration_defs_per_file,
+        test_witness_refs: &test_witness_refs,
+        calibration_strict_refs: &calibration_strict_refs,
+        calibration_expanded_refs: &calibration_expanded_refs,
+        usage_references: &usage_references,
+        name_files: &name_files,
+        disambiguation: &disambiguation,
+        import_bindings: &import_bindings,
+        module_suffixes: &module_suffixes,
+    });
 
     let coverage_map = if need_coverage_map && !calibration {
         build_py_coverage_map(
@@ -335,3 +395,5 @@ mod tests_5;
 mod tests_6;
 #[cfg(test)]
 mod tests_7;
+#[cfg(test)]
+mod tests_8;

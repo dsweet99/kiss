@@ -15,14 +15,15 @@ mod coverage_expand_paths;
 #[path = "coverage_void_dispatch.rs"]
 mod coverage_void_dispatch;
 
-#[allow(unused_imports)]
 pub(crate) use coverage_expand_paths::{
-    collect_py_path_string_literals, expand_py_path_literal_file_witnesses,
+    expand_py_path_literal_file_witnesses,
     is_py_contrib_base_void_partition, is_py_contrib_refactor_void_force_uncovered,
-    is_py_inflator_calibration_path, is_py_inflator_call_only_path, is_py_optimizer_experiment_path,
-    unquote_py_string, OPTIMIZER_CLASS_HEADER_LINES,
+    is_py_base_oi_subtree, is_py_base_subtree_only, is_py_ecosystem_auxiliary_path, is_py_experiments_path, is_py_inflator_calibration_path, is_py_inflator_call_only_path,
+    is_py_optimizer_path,
+    is_py_rl_integration_path,
 };
 pub use coverage_expand_paths::calibration_def_end_line;
+pub use coverage_expand_paths::is_py_inflator_denominator_path;
 #[allow(unused_imports)]
 pub(crate) use coverage_void_dispatch::{
     build_py_void_dispatch_attestation, collect_py_dynamic_dispatch_literals,
@@ -32,7 +33,7 @@ pub(crate) use coverage_void_dispatch::{
 const MAX_EXPAND_HOPS: usize = 12;
 pub(crate) const MAX_PRODUCTION_IMPORT_EXPAND_DEFS: usize = 12;
 pub(crate) const MAX_SAME_FILE_ONE_HOP_DEFS: usize = 4;
-const MAX_DIR_SIBLING_EXPAND_DEFS: usize = 8;
+pub(crate) const MAX_DIR_SIBLING_EXPAND_DEFS: usize = 8;
 
 pub(crate) fn expand_py_usage_refs_fixpoint(
     parsed_files: &[&ParsedFile],
@@ -88,7 +89,7 @@ pub(crate) fn expand_py_witnessed_directory_sibling_defs(
             if stem.starts_with('_') {
                 continue;
             }
-            if is_py_contrib_base_void_partition(file) {
+            if is_py_contrib_base_void_partition(file) && !is_py_base_oi_subtree(file) {
                 continue;
             }
             if names.len() > MAX_DIR_SIBLING_EXPAND_DEFS {
@@ -97,6 +98,55 @@ pub(crate) fn expand_py_witnessed_directory_sibling_defs(
             for name in names {
                 refs.insert(name.to_string());
             }
+        }
+    }
+}
+
+/// `base/oi/**/interfaces.py`: credit protocol stubs when a sibling module in the same directory
+/// already has a witnessed def (implementor-downward, not submodule blanket).
+pub(crate) fn expand_py_oi_interface_downward_witnesses(
+    definitions: &[CodeDefinition],
+    refs: &mut HashSet<String>,
+) {
+    let mut by_dir: BTreeMap<PathBuf, Vec<&CodeDefinition>> = BTreeMap::new();
+    for def in definitions {
+        if is_python_test_file_path(&def.file) || !is_py_base_oi_subtree(&def.file) {
+            continue;
+        }
+        let Some(parent) = def.file.parent() else {
+            continue;
+        };
+        by_dir
+            .entry(parent.to_path_buf())
+            .or_default()
+            .push(def);
+    }
+    for defs in by_dir.values() {
+        let dir_has_concrete_witness = defs.iter().any(|d| {
+            d.file
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n != "interfaces.py")
+                && refs.contains(&d.name)
+        });
+        if !dir_has_concrete_witness {
+            continue;
+        }
+        for d in defs.iter().filter(|d| {
+            d.file
+                .file_name()
+                .and_then(|n| n.to_str())
+                == Some("interfaces.py")
+        }) {
+            if defs
+                .iter()
+                .filter(|x| x.file == d.file)
+                .count()
+                > MAX_DIR_SIBLING_EXPAND_DEFS
+            {
+                continue;
+            }
+            refs.insert(d.name.clone());
         }
     }
 }

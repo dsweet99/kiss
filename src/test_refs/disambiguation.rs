@@ -152,6 +152,20 @@ pub(crate) fn build_disambiguation_map(
         .collect()
 }
 
+fn module_suffix_start_index(comps: &[&str]) -> usize {
+    // `…/rope/rope/base/oi/…` installs: absolute paths duplicate the package segment.
+    for i in 0..comps.len().saturating_sub(3) {
+        if comps[i] == comps[i + 1] && comps[i + 2] == "base" {
+            return i + 1;
+        }
+    }
+    // `…/pkg/src/module.py` layouts: start after `src`.
+    if let Some(src_idx) = comps.iter().position(|&c| c == "src") {
+        return src_idx + 1;
+    }
+    0
+}
+
 pub(crate) fn file_to_module_suffix(file: &Path) -> String {
     let mut parts = Vec::new();
     if let Some(parent) = file.parent() {
@@ -166,9 +180,12 @@ pub(crate) fn file_to_module_suffix(file: &Path) -> String {
     if let Some(stem) = file.file_stem().and_then(|s| s.to_str()) {
         parts.push(stem);
     }
-    parts.join(".")
+    let start = module_suffix_start_index(&parts);
+    parts[start..].join(".")
 }
 
 pub(crate) fn module_suffix_matches(def_suffix: &str, import_module: &str) -> bool {
-    def_suffix == import_module || def_suffix.ends_with(&format!(".{import_module}"))
+    def_suffix == import_module
+        || def_suffix.ends_with(&format!(".{import_module}"))
+        || def_suffix.starts_with(&format!("{import_module}."))
 }

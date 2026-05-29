@@ -13,6 +13,8 @@ pub(crate) struct CoverageMapUnrefCtx<'a> {
     pub integration_cone_files: &'a HashSet<PathBuf>,
     pub defs_per_file: &'a HashMap<PathBuf, usize>,
     pub cli_route_attested_files: &'a HashSet<PathBuf>,
+    /// Plugins with ≥1 rule def name in `coverage_references` (registry manifold S, g10 idea #3).
+    pub witnessed_rule_plugins: &'a HashSet<String>,
 }
 
 pub(crate) fn is_coverage_map_integration_cone_inflation_shim(path: &Path) -> bool {
@@ -42,6 +44,70 @@ pub(crate) fn coverage_map_forced_uncovered_file(path: &Path) -> bool {
         || calibration_map::is_coverage_map_acp_kpop_body_shim(path)
         || calibration_map::is_coverage_map_acp_client_impl_shim(path)
         || calibration_map::is_coverage_map_binary_crate_src_root(path)
+}
+
+pub(crate) fn build_witnessed_rule_plugins(
+    definitions: &[RustCodeDefinition],
+    coverage_references: &HashSet<String>,
+) -> HashSet<String> {
+    definitions
+        .iter()
+        .filter(|d| calibration_map::is_coverage_map_linter_rule_impl_file(&d.file))
+        .filter(|d| coverage_references.contains(&d.name))
+        .filter_map(|d| {
+            calibration_map::linter_rule_plugin_name(&d.file).map(str::to_string)
+        })
+        .collect()
+}
+
+pub(crate) fn coverage_map_plugin_rule_impl_witness(
+    d: &RustCodeDefinition,
+    ctx: &CoverageMapUnrefCtx<'_>,
+) -> bool {
+    if !calibration_map::is_coverage_map_linter_rule_impl_file(&d.file) {
+        return false;
+    }
+    let Some(plugin) = calibration_map::linter_rule_plugin_name(&d.file) else {
+        return false;
+    };
+    // Registry manifold alone over-credits rule bodies llvm never executes (g11).
+    ctx.witnessed_rule_plugins.contains(plugin)
+        && ctx.test_witness_refs.contains(&d.name)
+        && is_covered_by_tests_for_coverage_map(
+            d,
+            ctx.coverage_references,
+            ctx.name_files,
+            ctx.disambiguation,
+        )
+}
+
+/// Plugin support modules (helpers.rs): credit when the plugin has any witnessed rule impl
+/// (llvm runs helpers when integration tests exercise the plugin).
+pub(crate) fn coverage_map_plugin_support_plugin_witness(
+    d: &RustCodeDefinition,
+    ctx: &CoverageMapUnrefCtx<'_>,
+) -> bool {
+    if !calibration_map::is_coverage_map_rule_plugin_support_file(&d.file) {
+        return false;
+    }
+    let Some(plugin) = calibration_map::linter_rule_plugin_name(&d.file) else {
+        return false;
+    };
+    ctx.witnessed_rule_plugins.contains(plugin)
+        && is_covered_by_tests_for_coverage_map(
+            d,
+            ctx.coverage_references,
+            ctx.name_files,
+            ctx.disambiguation,
+        )
+}
+
+pub(crate) fn coverage_map_plugin_support_direct_only(
+    d: &RustCodeDefinition,
+    ctx: &CoverageMapUnrefCtx<'_>,
+) -> bool {
+    calibration_map::is_coverage_map_rule_plugin_support_file(&d.file)
+        && coverage_map_direct_test_witness(d, ctx)
 }
 
 pub(crate) fn coverage_map_cli_route_witnessed(
@@ -111,9 +177,15 @@ pub(crate) fn definition_uncovered_for_coverage_map(
     let witnessed = coverage_map_cli_route_witnessed(d, ctx)
         || coverage_map_single_crate_cli_witnessed(d, ctx)
         || coverage_map_direct_test_witness(d, ctx)
+        || coverage_map_plugin_rule_impl_witness(d, ctx)
+        || coverage_map_plugin_support_direct_only(d, ctx)
+        || coverage_map_plugin_support_plugin_witness(d, ctx)
         || coverage_map_integration_cone_witness(d, ctx);
     if witnessed {
         return false;
+    }
+    if calibration_map::is_coverage_map_rule_plugin_support_file(&d.file) {
+        return true;
     }
     let from_expanded = is_covered_by_tests_for_coverage_map(
         d,
@@ -180,6 +252,7 @@ mod tests {
             integration_cone_files: &HashSet::new(),
             defs_per_file: &counts,
             cli_route_attested_files: &HashSet::new(),
+            witnessed_rule_plugins: &HashSet::new(),
         };
         let unref = unreferenced_for_coverage_map(&defs, &ctx);
         assert_eq!(unref.len(), 1);

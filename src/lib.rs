@@ -91,9 +91,12 @@ pub use stats_detailed::{
     UnitMetrics, collect_detailed_py, collect_detailed_rs, format_detailed_table, truncate,
 };
 pub use test_refs::{
-    CodeDefinition, TestRefAnalysis, analyze_test_refs, analyze_test_refs_no_map,
-    analyze_test_refs_for_coverage_map, analyze_test_refs_quick, build_name_file_map,
-    is_in_test_directory, is_test_file, test_functions_in,
+    CalibrationCoverageBound, CodeDefinition, TestRefAnalysis, analyze_test_refs,
+    analyze_test_refs_no_map, analyze_test_refs_for_coverage_map,
+    analyze_test_refs_for_coverage_map_with_bound, analyze_test_refs_quick,
+    build_name_file_map, calibration_def_end_line, is_in_test_directory, is_test_file,
+    is_py_inflator_denominator_path,
+    test_functions_in,
 };
 pub use units::count_code_units;
 pub use units::{CodeUnit, CodeUnitKind, extract_code_units};

@@ -1,6 +1,6 @@
 use super::collect::{
     collect_call_target, collect_py_import_names_for_refs, collect_type_refs,
-    extract_import_from_binding, insert_identifier,
+    extract_import_from_binding, extract_import_statement_modules, insert_identifier,
 };
 use std::collections::{HashMap, HashSet};
 use tree_sitter::Node;
@@ -61,6 +61,7 @@ pub(crate) fn process_test_file_ast_node(
         }
         "import_statement" => {
             collect_py_import_names_for_refs(node, source, test_refs);
+            extract_import_statement_modules(node, source, import_bindings);
             return;
         }
         "type" => {

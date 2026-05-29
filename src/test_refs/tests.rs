@@ -262,6 +262,7 @@ fn test_try_add_py_def_private_skipped() {
                 &mut defs,
                 crate::units::CodeUnitKind::Function,
                 None,
+                false,
             );
         }
     }

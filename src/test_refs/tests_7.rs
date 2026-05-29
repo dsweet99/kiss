@@ -8,6 +8,39 @@ use std::io::Write;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
+fn void_partition_unreferenced_len(
+    path: PathBuf,
+    name: &str,
+    attestation: &HashMap<PathBuf, HashSet<String>>,
+) -> usize {
+    let def = CodeDefinition {
+        name: name.into(),
+        kind: CodeUnitKind::Function,
+        file: path,
+        line: 1,
+        end_line: 1,
+        containing_class: None,
+    };
+    let witnesses = HashSet::from([name.to_string()]);
+    let (strict, expanded, counts) =
+        build_calibration_coverage_refs(&[], std::slice::from_ref(&def), &witnesses);
+    let ctx = UnreferencedFilterCtx {
+        calibration: true,
+        coverage_bound: super::calibration_analysis::CalibrationCoverageBound::Shipped,
+        defs_per_file: &counts,
+        test_witness_refs: &witnesses,
+        calibration_strict_refs: &strict,
+        calibration_expanded_refs: &expanded,
+        void_dispatch_attestation: attestation,
+        usage_references: &HashSet::new(),
+        name_files: &HashMap::new(),
+        disambiguation: &HashMap::new(),
+        import_bindings: &HashMap::new(),
+        module_suffixes: &HashMap::new(),
+    };
+    filter_unreferenced_definitions(&[def], &ctx).len()
+}
+
 #[test]
 fn test_build_calibration_coverage_refs_expands_witnesses() {
     use crate::parsing::{create_parser, parse_file};
@@ -83,6 +116,7 @@ fn test_defs_per_file_counts_and_filter_unreferenced_definitions() {
     assert_eq!(counts.get(&path).copied(), Some(1));
     let ctx = UnreferencedFilterCtx {
         calibration: false,
+        coverage_bound: super::calibration_analysis::CalibrationCoverageBound::Shipped,
         defs_per_file: &counts,
         test_witness_refs: &HashSet::new(),
         calibration_strict_refs: &HashSet::new(),
@@ -100,33 +134,14 @@ fn test_defs_per_file_counts_and_filter_unreferenced_definitions() {
 
 #[test]
 fn test_void_partition_unreferenced_without_dispatch_attestation() {
-    let path = PathBuf::from("rope/contrib/findit.py");
-    let def = CodeDefinition {
-        name: "findit".into(),
-        kind: CodeUnitKind::Function,
-        file: path.clone(),
-        line: 1,
-        end_line: 1,
-        containing_class: None,
-    };
-    let witnesses = HashSet::from(["findit".to_string()]);
-    let (strict, expanded, counts) =
-        build_calibration_coverage_refs(&[], std::slice::from_ref(&def), &witnesses);
-    let ctx = UnreferencedFilterCtx {
-        calibration: true,
-        defs_per_file: &counts,
-        test_witness_refs: &witnesses,
-        calibration_strict_refs: &strict,
-        calibration_expanded_refs: &expanded,
-        void_dispatch_attestation: &HashMap::new(),
-        usage_references: &HashSet::new(),
-        name_files: &HashMap::new(),
-        disambiguation: &HashMap::new(),
-        import_bindings: &HashMap::new(),
-        module_suffixes: &HashMap::new(),
-    };
-    let unref = filter_unreferenced_definitions(&[def], &ctx);
-    assert_eq!(unref.len(), 1);
+    assert_eq!(
+        void_partition_unreferenced_len(
+            PathBuf::from("rope/contrib/findit.py"),
+            "findit",
+            &HashMap::new(),
+        ),
+        1
+    );
 }
 
 #[test]
@@ -147,6 +162,7 @@ fn test_void_partition_strict_witness_covers_with_dispatch_attestation() {
     attested.insert(path.clone(), HashSet::from(["findit".to_string()]));
     let ctx = UnreferencedFilterCtx {
         calibration: true,
+        coverage_bound: super::calibration_analysis::CalibrationCoverageBound::Shipped,
         defs_per_file: &counts,
         test_witness_refs: &witnesses,
         calibration_strict_refs: &strict,
@@ -163,7 +179,7 @@ fn test_void_partition_strict_witness_covers_with_dispatch_attestation() {
 }
 
 #[test]
-fn test_base_tree_force_uncovered_without_dispatch_attestation() {
+fn test_base_tree_credits_with_strict_witness_after_void_split() {
     let path = PathBuf::from("rope/base/exceptions.py");
     let def = CodeDefinition {
         name: "ResourceNotFoundError".into(),
@@ -178,6 +194,7 @@ fn test_base_tree_force_uncovered_without_dispatch_attestation() {
         build_calibration_coverage_refs(&[], std::slice::from_ref(&def), &witnesses);
     let ctx = UnreferencedFilterCtx {
         calibration: true,
+        coverage_bound: super::calibration_analysis::CalibrationCoverageBound::Shipped,
         defs_per_file: &counts,
         test_witness_refs: &witnesses,
         calibration_strict_refs: &strict,
@@ -190,7 +207,10 @@ fn test_base_tree_force_uncovered_without_dispatch_attestation() {
         module_suffixes: &HashMap::new(),
     };
     let unref = filter_unreferenced_definitions(&[def], &ctx);
-    assert_eq!(unref.len(), 1);
+    assert!(
+        unref.is_empty(),
+        "base/ is no longer void-force-uncovered; strict witnesses should credit"
+    );
 }
 
 #[test]
@@ -214,6 +234,7 @@ fn test_base_tree_strict_witness_can_cover_with_dispatch_attestation() {
     );
     let ctx = UnreferencedFilterCtx {
         calibration: true,
+        coverage_bound: super::calibration_analysis::CalibrationCoverageBound::Shipped,
         defs_per_file: &counts,
         test_witness_refs: &witnesses,
         calibration_strict_refs: &strict,

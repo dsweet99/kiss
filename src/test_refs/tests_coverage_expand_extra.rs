@@ -135,7 +135,7 @@ fn void_partition_includes_refactor_tree() {
     assert!(is_py_contrib_refactor_void_force_uncovered(std::path::Path::new(
         "rope/refactor/extract.py"
     )));
-    assert!(is_py_contrib_refactor_void_force_uncovered(std::path::Path::new(
+    assert!(!is_py_contrib_refactor_void_force_uncovered(std::path::Path::new(
         "rope/base/exceptions.py"
     )));
     assert!(!is_py_contrib_base_void_partition(std::path::Path::new(

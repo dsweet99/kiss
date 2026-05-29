@@ -82,8 +82,12 @@ fn test_analyze_test_refs_quick_and_no_map_empty() {
         }
     ));
     assert!(matches!(
-        TestRefsAnalysisKind::CoverageCalibration,
-        TestRefsAnalysisKind::CoverageCalibration
+        TestRefsAnalysisKind::CoverageCalibration {
+            coverage_bound: calibration_analysis::CalibrationCoverageBound::Shipped
+        },
+        TestRefsAnalysisKind::CoverageCalibration {
+            coverage_bound: calibration_analysis::CalibrationCoverageBound::Shipped
+        }
     ));
 }
 

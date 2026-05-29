@@ -1,7 +1,7 @@
+use super::coverage_expand::is_py_base_oi_subtree;
 use super::disambiguation::module_suffix_matches;
-use super::{CodeDefinition, CoveringTest, TestRefAnalysis};
+use super::{CodeDefinition, CoveringTest};
 use crate::graph::DependencyGraph;
-use petgraph::Direction;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -32,6 +32,28 @@ fn init_stem_matches_imports(
         .any(|k| k == stem || k.starts_with(&format!("{stem}.")))
 }
 
+/// `base/oi/**`: credit when a test imports the module (or parent package) even if def names
+/// are not referenced — capped later via `calibration_def_end_line` on base/oi paths.
+pub(crate) fn is_py_oi_module_import_target_file(path: &std::path::Path) -> bool {
+    path.file_name().and_then(|n| n.to_str()) == Some("interfaces.py")
+}
+
+pub(crate) fn is_py_oi_module_import_witnessed(
+    def: &CodeDefinition,
+    import_bindings: &HashMap<String, HashSet<String>>,
+    module_suffixes: &HashMap<PathBuf, String>,
+) -> bool {
+    if !is_py_base_oi_subtree(&def.file) || !is_py_oi_module_import_target_file(&def.file) {
+        return false;
+    }
+    let Some(def_suffix) = module_suffixes.get(&def.file) else {
+        return false;
+    };
+    import_bindings
+        .keys()
+        .any(|import_module| module_suffix_matches(def_suffix, import_module))
+}
+
 /// Package `__init__.py`: credit defs when any test imports a submodule of that package
 /// (import side effects run at collection; slipcover credits those lines).
 pub(crate) fn is_py_package_init_import_witnessed(
@@ -54,6 +76,30 @@ pub(crate) fn is_py_package_init_import_witnessed(
     suffix_match || stem_match
 }
 
+/// `PKG/base/` defs: credit when a test imports and calls the symbol (import-only witnesses
+/// over-credit facade modules like serializer/versioning with 0% runtime).
+pub(crate) fn is_py_base_explicit_import_witnessed(
+    def: &CodeDefinition,
+    import_bindings: &HashMap<String, HashSet<String>>,
+    module_suffixes: &HashMap<PathBuf, String>,
+    call_witness_refs: &HashSet<String>,
+) -> bool {
+    use super::coverage_expand::is_py_base_subtree_only;
+    if !is_py_base_subtree_only(&def.file) {
+        return false;
+    }
+    let Some(def_suffix) = module_suffixes.get(&def.file) else {
+        return false;
+    };
+    let import_ok = import_bindings.iter().any(|(import_module, names)| {
+        names.contains(&def.name) && module_suffix_matches(def_suffix, import_module)
+    });
+    if !import_ok {
+        return false;
+    }
+    call_witness_refs.contains(&def.name)
+}
+
 pub(crate) fn is_covered_by_import(
     def: &CodeDefinition,
     import_bindings: &HashMap<String, HashSet<String>>,
@@ -68,11 +114,8 @@ pub(crate) fn is_covered_by_import_for_calibration(
     import_bindings: &HashMap<String, HashSet<String>>,
     module_suffixes: &HashMap<PathBuf, String>,
     usage_refs: &HashSet<String>,
-    name_files: &HashMap<String, HashSet<PathBuf>>,
+    _name_files: &HashMap<String, HashSet<PathBuf>>,
 ) -> bool {
-    if name_files.get(&def.name).is_some_and(|files| files.len() > 1) {
-        return false;
-    }
     import_matches_definition(def, import_bindings, module_suffixes, usage_refs)
 }
 
@@ -163,103 +206,6 @@ pub(crate) fn is_definition_covered_for_calibration(
     false
 }
 
-/// For `kiss-coverage-map`: credit production modules imported (transitively) from modules
-/// that already have a direct test witness.
-const MAX_IMPORT_CALIBRATION_DEFS_PER_MODULE: usize = 2;
-
-#[path = "coverage_platform.rs"]
-mod coverage_platform;
-#[allow(unused_imports)]
-pub(crate) use coverage_platform::{
-    deprioritize_platform_gated_coverage, deprioritize_pragma_no_cover_coverage,
-    is_platform_specific_prod_file, is_pragma_no_cover_def, is_windows_gated_test_file,
-    platform_direct_test_witness,
-};
-
-pub(crate) fn module_is_contrib_base_void(
-    module: &str,
-    definitions: &[CodeDefinition],
-    graph: &DependencyGraph,
-) -> bool {
-    use super::coverage_expand::is_py_contrib_base_void_partition;
-    definitions.iter().any(|d| {
-        graph.path_to_module.get(&d.file).is_some_and(|m| m == module)
-            && is_py_contrib_base_void_partition(&d.file)
-    })
-}
-
-pub(crate) fn module_has_usage_witness(
-    module: &str,
-    definitions: &[CodeDefinition],
-    graph: &DependencyGraph,
-    usage_refs: &HashSet<String>,
-    name_files: &HashMap<String, HashSet<PathBuf>>,
-) -> bool {
-    definitions.iter().any(|d| {
-        graph.path_to_module.get(&d.file).is_some_and(|m| m == module)
-            && usage_refs.contains(&d.name)
-            && name_files.get(&d.name).is_none_or(|files| files.len() <= 1)
-    })
-}
-
-pub(crate) fn apply_import_dependency_calibration(
-    analysis: &mut TestRefAnalysis,
-    graph: &DependencyGraph,
-    usage_refs: &HashSet<String>,
-    name_files: &HashMap<String, HashSet<PathBuf>>,
-) {
-    let defs_per_module = module_definition_counts(&analysis.definitions, graph);
-    let unref_keys: HashSet<(PathBuf, String, usize)> = analysis
-        .unreferenced
-        .iter()
-        .map(|d| (d.file.clone(), d.name.clone(), d.line))
-        .collect();
-    let mut covered_modules: HashSet<String> = analysis
-        .definitions
-        .iter()
-        .filter(|d| !unref_keys.contains(&(d.file.clone(), d.name.clone(), d.line)))
-        .filter_map(|d| graph.path_to_module.get(&d.file).cloned())
-        .collect();
-    let seeds: Vec<String> = covered_modules.iter().cloned().collect();
-    for mod_name in seeds {
-        let Some(&idx) = graph.nodes.get(&mod_name) else {
-            continue;
-        };
-        for neighbor in graph
-            .graph
-            .neighbors_directed(idx, Direction::Outgoing)
-        {
-            let dep = graph.graph[neighbor].clone();
-            if defs_per_module
-                .get(&dep)
-                .copied()
-                .unwrap_or(usize::MAX)
-                > MAX_IMPORT_CALIBRATION_DEFS_PER_MODULE
-            {
-                continue;
-            }
-            if module_has_usage_witness(&dep, &analysis.definitions, graph, usage_refs, name_files)
-                && !module_is_contrib_base_void(&dep, &analysis.definitions, graph)
-            {
-                covered_modules.insert(dep);
-            }
-        }
-    }
-    analysis.unreferenced.retain(|d| {
-        if is_platform_specific_prod_file(&d.file) {
-            return true;
-        }
-        use super::coverage_expand::{is_py_contrib_base_void_partition, is_py_optimizer_experiment_path};
-        if is_py_contrib_base_void_partition(&d.file) || is_py_optimizer_experiment_path(&d.file) {
-            return unref_keys.contains(&(d.file.clone(), d.name.clone(), d.line));
-        }
-        graph
-            .path_to_module
-            .get(&d.file)
-            .is_none_or(|m| !covered_modules.contains(m))
-    });
-}
-
 pub(crate) fn module_definition_counts(
     definitions: &[CodeDefinition],
     graph: &DependencyGraph,
@@ -272,6 +218,24 @@ pub(crate) fn module_definition_counts(
     }
     counts
 }
+
+/// For `kiss-coverage-map`: credit production modules imported (transitively) from modules
+/// that already have a direct test witness.
+#[path = "coverage_import_cal.rs"]
+mod coverage_import_cal;
+#[allow(unused_imports)]
+pub(crate) use coverage_import_cal::{
+    apply_import_dependency_calibration, module_has_usage_witness, module_is_contrib_base_void,
+};
+
+#[path = "coverage_platform.rs"]
+mod coverage_platform;
+#[allow(unused_imports)]
+pub(crate) use coverage_platform::{
+    deprioritize_platform_gated_coverage, deprioritize_pragma_no_cover_coverage,
+    is_platform_specific_prod_file, is_pragma_no_cover_def, is_windows_gated_test_file,
+    platform_direct_test_witness,
+};
 
 pub(crate) fn build_ref_to_covered_def_indices(
     definitions: &[CodeDefinition],

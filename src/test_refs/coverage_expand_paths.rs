@@ -3,17 +3,61 @@
 #[allow(dead_code)]
 pub(crate) const OPTIMIZER_CLASS_HEADER_LINES: usize = 3;
 
+/// Inflator-path function defs: call witnesses usually reach headers only at runtime.
+pub(crate) const INFLATOR_FUNCTION_HEADER_LINES: usize = 3;
+
 pub fn calibration_def_end_line(def: &CodeDefinition) -> usize {
+    if def.kind == crate::units::CodeUnitKind::Class
+        && (is_py_optimizer_path(&def.file)
+            || is_py_inflator_call_only_path(&def.file)
+            || is_py_inflator_denominator_path(&def.file)
+            || is_py_base_subtree_only(&def.file)
+            || (is_py_repo_root_subtree(&def.file, &["ops"])
+                && !is_py_optimizer_experiment_path(&def.file)))
+    {
+        return def
+            .line
+            .saturating_add(OPTIMIZER_CLASS_HEADER_LINES.saturating_sub(1))
+            .min(def.end_line);
+    }
+    if (is_py_inflator_calibration_path(&def.file)
+        || is_py_inflator_denominator_path(&def.file)
+        || is_py_base_subtree_only(&def.file))
+        && matches!(
+            def.kind,
+            crate::units::CodeUnitKind::Function | crate::units::CodeUnitKind::Method
+        )
+    {
+        return def
+            .line
+            .saturating_add(INFLATOR_FUNCTION_HEADER_LINES.saturating_sub(1))
+            .min(def.end_line);
+    }
     def.end_line
 }
 
-fn path_segment_at_depth(path: &std::path::Path, depth: usize) -> Option<&str> {
+pub(crate) fn path_normal_components(path: &std::path::Path) -> Vec<&str> {
     path.components()
         .filter_map(|c| match c {
             std::path::Component::Normal(s) => s.to_str(),
             _ => None,
         })
-        .nth(depth)
+        .collect()
+}
+
+const REPO_SUBTREE_PARENT_BLOCKLIST: &[&str] = &[
+    "widgets", "lib", "reports", "src", "tests", "test", "base", "contrib", "refactor",
+];
+
+/// Repo-root subtrees keyed by first path segment (works for relative paths and absolute repo paths).
+pub(crate) fn is_py_repo_root_subtree(path: &std::path::Path, subtrees: &[&str]) -> bool {
+    let comps = path_normal_components(path);
+    if comps.first().is_some_and(|seg| subtrees.contains(seg)) {
+        return true;
+    }
+    comps.windows(2).any(|pair| {
+        subtrees.contains(&pair[1]) && !REPO_SUBTREE_PARENT_BLOCKLIST.contains(&pair[0])
+    })
 }
 
 const NON_PACKAGE_VOID_PARENTS: &[&str] = &["widgets", "lib", "reports", "src", "tests", "test"];
@@ -39,27 +83,89 @@ pub(crate) fn is_py_contrib_base_void_partition(path: &std::path::Path) -> bool 
     })
 }
 
-/// `base/`, `contrib/`, and `refactor/` subtrees: force uncovered in calibration (llvm runs
-/// only a thin subset; static import witnesses over-credit).
+/// `PKG/base/oi/…` — object-inference subtree; integration tests reach via package imports.
+pub(crate) fn is_py_base_oi_subtree(path: &std::path::Path) -> bool {
+    if !is_py_base_subtree_only(path) {
+        return false;
+    }
+    path_normal_components(path)
+        .windows(2)
+        .any(|pair| pair[0] == "base" && pair[1] == "oi")
+}
+
+/// `PKG/base/…` package-root subtree only (not contrib/refactor void partitions).
+pub(crate) fn is_py_base_subtree_only(path: &std::path::Path) -> bool {
+    let comps = path_normal_components(path);
+    if comps.get(1).is_some_and(|seg| *seg == "base") {
+        return true;
+    }
+    comps.windows(2).any(|pair| {
+        pair[1] == "base" && !NON_PACKAGE_VOID_PARENTS.contains(&pair[0])
+    })
+}
+
+/// `contrib/` and `refactor/` subtrees: force uncovered in calibration (llvm runs only a thin
+/// subset; static import witnesses over-credit). `base/` is excluded — tests import core APIs.
 pub(crate) fn is_py_contrib_refactor_void_force_uncovered(path: &std::path::Path) -> bool {
-    is_py_contrib_base_void_partition(path)
+    let comps = path_normal_components(path);
+    if comps
+        .get(1)
+        .is_some_and(|seg| matches!(*seg, "contrib" | "refactor"))
+    {
+        return true;
+    }
+    comps.windows(2).any(|pair| {
+        matches!(pair[1], "contrib" | "refactor")
+            && !NON_PACKAGE_VOID_PARENTS.contains(&pair[0])
+    })
+}
+
+/// Repo-root `optimizer/` only (not `experiments/` — modal scripts inflate under import-cal).
+pub(crate) fn is_py_optimizer_path(path: &std::path::Path) -> bool {
+    is_py_repo_root_subtree(path, &["optimizer"])
+}
+
+/// Repo-root `experiments/` only: modal scripts inflate under import-cal strict tier.
+pub(crate) fn is_py_experiments_path(path: &std::path::Path) -> bool {
+    is_py_repo_root_subtree(path, &["experiments"])
 }
 
 /// Repo-root `optimizer/` / `experiments/` trees: per-def import-cal credit (no module-level collapse).
 pub(crate) fn is_py_optimizer_experiment_path(path: &std::path::Path) -> bool {
-    path_segment_at_depth(path, 0).is_some_and(|seg| matches!(seg, "optimizer" | "experiments"))
+    is_py_repo_root_subtree(path, &["optimizer", "experiments"])
 }
 
 /// Repo-root inflator subtrees: conftest import cones over-credit large class bodies.
 pub(crate) fn is_py_inflator_calibration_path(path: &std::path::Path) -> bool {
-    path_segment_at_depth(path, 0)
-        .is_some_and(|seg| matches!(seg, "optimizer" | "experiments" | "analysis" | "ops"))
+    is_py_repo_root_subtree(path, &["optimizer", "experiments", "analysis", "ops"])
+}
+
+/// Inflator paths where def bodies belong in the coverage denominator but header-only credit.
+pub fn is_py_inflator_denominator_path(path: &std::path::Path) -> bool {
+    is_py_repo_root_subtree(path, &["experiments", "ops"])
+}
+
+/// Repo-root `rl/` integration subtrees: pytest executes via facade imports; allow expanded reach.
+pub(crate) fn is_py_rl_integration_path(path: &std::path::Path) -> bool {
+    is_py_repo_root_subtree(path, &["rl"])
+}
+
+/// Workspace-adjacent ecosystem packages (e.g. `ruff-ecosystem/`): static import witnesses
+/// over-credit tooling that llvm/slipcover does not execute in the unit-test run.
+pub(crate) fn is_py_ecosystem_auxiliary_path(path: &std::path::Path) -> bool {
+    path.components().any(|c| {
+        matches!(
+            c,
+            std::path::Component::Normal(s) if s
+                .to_str()
+                .is_some_and(|n| n.ends_with("-ecosystem"))
+        )
+    })
 }
 
 /// Repo-root optimizer/analysis only: call-only witnesses (ops/experiments need expanded reach).
-#[allow(dead_code)]
 pub(crate) fn is_py_inflator_call_only_path(path: &std::path::Path) -> bool {
-    path_segment_at_depth(path, 0).is_some_and(|seg| matches!(seg, "optimizer" | "analysis"))
+    is_py_repo_root_subtree(path, &["optimizer", "analysis"])
 }
 
 use crate::test_refs::CodeDefinition;

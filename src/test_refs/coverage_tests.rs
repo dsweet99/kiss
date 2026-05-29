@@ -116,8 +116,17 @@ fn is_covered_by_import_calibration_paths() {
         &module_suffixes,
         &usage
     ));
-    assert!(!is_covered_by_import_for_calibration(
+    assert!(is_covered_by_import_for_calibration(
         &def,
+        &import_bindings,
+        &module_suffixes,
+        &usage,
+        &name_files
+    ));
+    let mut other_def = def.clone();
+    other_def.file = PathBuf::from("/proj/other.py");
+    assert!(!is_covered_by_import_for_calibration(
+        &other_def,
         &import_bindings,
         &module_suffixes,
         &usage,

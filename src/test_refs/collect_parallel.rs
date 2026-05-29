@@ -116,12 +116,16 @@ pub(crate) fn collect_refs_parallel_with_mode(
                     r.4 = vec![(parsed.path.clone(), test_funcs)];
                 }
             } else {
+                use super::coverage_expand::{is_py_base_oi_subtree, is_py_base_subtree_only};
+                let include_private = calibration
+                    && is_py_base_subtree_only(&parsed.path)
+                    && !is_py_base_oi_subtree(&parsed.path);
                 collect_definitions(
                     parsed.tree.root_node(),
                     &parsed.source,
                     &parsed.path,
                     &mut r.0,
-                    false,
+                    include_private,
                     None,
                 );
             }

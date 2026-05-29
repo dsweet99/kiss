@@ -163,6 +163,15 @@ fn test_file_to_module_suffix_basic() {
     assert_eq!(file_to_module_suffix(Path::new("mod.py")), "mod");
 }
 
+#[test]
+fn test_file_to_module_suffix_nested_package_base_oi() {
+    let path = Path::new("/home/u/repos/rope/rope/base/oi/type_hinting/providers/interfaces.py");
+    assert_eq!(
+        file_to_module_suffix(path),
+        "rope.base.oi.type_hinting.providers.interfaces"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // disambiguation.rs: module_suffix_matches
 // ---------------------------------------------------------------------------
@@ -175,6 +184,10 @@ fn test_module_suffix_matches_exact_and_suffix() {
     assert!(module_suffix_matches("pkg.sub.mod", "mod"));
     assert!(!module_suffix_matches("pkg.sub.mod", "other.mod"));
     assert!(!module_suffix_matches("pkg.sub.mod", "ub.mod"));
+    assert!(module_suffix_matches(
+        "rope.base.oi.type_hinting.providers.interfaces",
+        "rope.base.oi.type_hinting"
+    ));
 }
 
 // ---------------------------------------------------------------------------

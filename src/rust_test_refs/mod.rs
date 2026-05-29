@@ -59,9 +59,12 @@ pub fn coverage_map_excluded_file(path: &Path) -> bool {
     calibration_map::is_coverage_map_json_omitted_crate(path)
         || calibration_map::is_coverage_map_rule_settings_file(path)
         || calibration_map::is_coverage_map_rule_rules_mod_file(path)
+        || calibration_map::is_coverage_map_rule_plugin_hub_file(path)
         || calibration_map::is_coverage_map_derive_shim_file(path)
         || calibration_map::is_coverage_map_cli_exit_shim(path)
         || calibration_map::is_coverage_map_acp_kpop_body_shim(path)
+        || calibration_map::is_coverage_map_linter_checkers_file(path)
+        || calibration_map::is_coverage_map_workspace_crate_flags_tree(path)
 }
 use definitions::{collect_rust_definitions, collect_test_module_references};
 use references::{collect_per_test_usage, collect_rust_references};
@@ -318,6 +321,8 @@ pub fn analyze_rust_test_refs_for_coverage_map(
     });
     let cli_route_attested_files =
         calibration_route::cli_route_attested_files(parsed_files, &definitions);
+    let witnessed_rule_plugins =
+        coverage_map_unreferenced::build_witnessed_rule_plugins(&definitions, &coverage_references);
     let unref_ctx = coverage_map_unreferenced::CoverageMapUnrefCtx {
         test_witness_refs: &test_witness_refs,
         coverage_references: &coverage_references,
@@ -326,6 +331,7 @@ pub fn analyze_rust_test_refs_for_coverage_map(
         integration_cone_files: &integration_cone_files,
         defs_per_file: &defs_per_file,
         cli_route_attested_files: &cli_route_attested_files,
+        witnessed_rule_plugins: &witnessed_rule_plugins,
     };
     let mut unreferenced = coverage_map_unreferenced::unreferenced_for_coverage_map(&definitions, &unref_ctx);
     if let Some(g) = graph {
