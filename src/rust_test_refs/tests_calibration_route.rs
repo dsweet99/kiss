@@ -90,7 +90,56 @@ fn cli_route_maps_repo_gates_flag() {
 }
 
 #[test]
-fn cli_route_excludes_bulk_credit_files() {
+fn cli_route_top_level_session_modules_match_workflow_tokens() {
+    let tokens = HashSet::from(["widget".to_string()]);
+    assert!(file_matches_cli_route(
+        Path::new("src/cli/widget_session.rs"),
+        &tokens
+    ));
+    assert!(file_matches_cli_route(
+        Path::new("src/cli/kpop_session.rs"),
+        &tokens
+    ));
+}
+
+#[test]
+fn cli_route_private_helpers_cover_stem_and_nested_exclusion() {
+    let defs = vec![
+        RustCodeDefinition {
+            name: "dispatch".into(),
+            kind: crate::units::CodeUnitKind::Function,
+            file: PathBuf::from("src/cli/inventory/list.rs"),
+            line: 1,
+            end_line: 1,
+            impl_for_type: None,
+        },
+        RustCodeDefinition {
+            name: "dispatch".into(),
+            kind: crate::units::CodeUnitKind::Function,
+            file: PathBuf::from("src/cli/widget_lookup.rs"),
+            line: 1,
+            end_line: 1,
+            impl_for_type: None,
+        },
+    ];
+    let stems = collect_cli_top_level_stems(&defs);
+    assert!(stems.contains("widget_lookup"));
+    assert!(!stems.contains("list"));
+    assert!(top_level_co_dispatch_match(
+        "kpop",
+        Path::new("src/cli/bug_id_lookup.rs"),
+        &HashSet::from(["bug_id_lookup_kpop".to_string()]),
+    ));
+    assert!(nested_cli_route_bulk_credit_excluded(Path::new(
+        "src/cli/gate_kpop_workflow/run_loop.rs"
+    )));
+    assert!(!nested_cli_route_bulk_credit_excluded(Path::new(
+        "src/cli/widget_session.rs"
+    )));
+}
+
+#[test]
+fn cli_route_nested_loop_files_stay_excluded_from_matching() {
     let tokens = HashSet::from(["kpop".to_string()]);
     assert!(!file_matches_cli_route(
         Path::new("src/cli/gate_kpop_workflow/run_loop.rs"),
@@ -230,6 +279,46 @@ fn cli_route_attested_files_filters_definitions() {
     let attested = cli_route_attested_files(&[&parsed], &defs);
     assert_eq!(attested.len(), 1);
     assert!(attested.contains(&PathBuf::from("src/cli/gate_kpop_workflow/run.rs")));
+}
+
+#[test]
+fn cli_route_attested_collects_top_level_cli_stems() {
+    let defs = vec![
+        RustCodeDefinition {
+            name: "dispatch".into(),
+            kind: crate::units::CodeUnitKind::Function,
+            file: PathBuf::from("src/lib.rs"),
+            line: 1,
+            end_line: 1,
+            impl_for_type: None,
+        },
+        RustCodeDefinition {
+            name: "dispatch".into(),
+            kind: crate::units::CodeUnitKind::Function,
+            file: PathBuf::from("src/cli/widget_lookup.rs"),
+            line: 1,
+            end_line: 1,
+            impl_for_type: None,
+        },
+        RustCodeDefinition {
+            name: "dispatch".into(),
+            kind: crate::units::CodeUnitKind::Function,
+            file: PathBuf::from("src/cli/widget_session.rs"),
+            line: 1,
+            end_line: 1,
+            impl_for_type: None,
+        },
+    ];
+    let mut f = NamedTempFile::with_suffix("_test.rs").unwrap();
+    write!(
+        f,
+        "fn t() {{ let _ = Cli::try_parse_from([\"app\", \"widget\"]); }}"
+    )
+    .unwrap();
+    let parsed = parse_rust_file(f.path()).unwrap();
+    let attested = cli_route_attested_files(&[&parsed], &defs);
+    assert!(attested.contains(&PathBuf::from("src/cli/widget_session.rs")));
+    assert!(attested.contains(&PathBuf::from("src/cli/widget_lookup.rs")));
 }
 
 #[test]

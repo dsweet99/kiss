@@ -51,6 +51,11 @@ mod tests_3_cal;
 mod tests_references_cov;
 #[cfg(test)]
 mod tests_coverage_unmap;
+#[cfg(test)]
+mod tests_adversarial;
+#[cfg(test)]
+#[path = "tests_adversarial_b.rs"]
+mod tests_adversarial_b;
 
 pub use definitions::RustCodeDefinition;
 
@@ -66,7 +71,10 @@ pub fn coverage_map_excluded_file(path: &Path) -> bool {
         || calibration_map::is_coverage_map_linter_checkers_file(path)
         || calibration_map::is_coverage_map_workspace_crate_flags_tree(path)
 }
-use definitions::{collect_rust_definitions, collect_test_module_references};
+use definitions::{
+    collect_rust_definitions, collect_test_module_references,
+    collect_test_module_references_for_coverage_map,
+};
 use references::{collect_per_test_usage, collect_rust_references};
 
 pub use references::rust_test_functions_in;
@@ -291,7 +299,12 @@ pub fn analyze_rust_test_refs_for_coverage_map(
     let (definitions, test_references, mut coverage_references, per_test_usage) =
         coverage_map_collect::collect_coverage_map_scan(parsed_files);
     // `#[cfg(test)]` modules in production sources (e.g. ruff `test_case(Rule::Foo, …)`).
-    coverage_references.extend(test_references.iter().cloned());
+    for parsed in parsed_files {
+        if is_rust_test_file(&parsed.path) {
+            continue;
+        }
+        collect_test_module_references_for_coverage_map(&parsed.ast, &mut coverage_references);
+    }
     calibration::expand_coverage_map_witnesses(parsed_files, &mut coverage_references);
     calibration_route::expand_cli_route_witnesses(
         parsed_files,

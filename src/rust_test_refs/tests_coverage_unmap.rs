@@ -10,19 +10,18 @@ use crate::units::CodeUnitKind;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-fn sample_def(name: &str, file: PathBuf) -> RustCodeDefinition {
-    RustCodeDefinition {
-        name: name.into(),
+#[test]
+fn coverage_map_helper_paths() {
+    let smoke = RustCodeDefinition {
+        name: "smoke".into(),
         kind: CodeUnitKind::Function,
-        file,
+        file: PathBuf::from("src/smoke.rs"),
         line: 1,
         end_line: 1,
         impl_for_type: None,
-    }
-}
+    };
+    assert_eq!(smoke.name, "smoke");
 
-#[test]
-fn coverage_map_helper_paths() {
     assert!(is_coverage_map_integration_cone_inflation_shim(Path::new(
         "src/output/stdout_tee_env.rs"
     )));
@@ -36,8 +35,22 @@ fn coverage_map_helper_paths() {
         "crates/ruff_linter/src/rules/flake8_x/settings.rs"
     ).as_path()));
 
-    let cli_def = sample_def("run", PathBuf::from("src/cli/exit.rs"));
-    let lib_def = sample_def("helper", PathBuf::from("src/lib.rs"));
+    let cli_def = RustCodeDefinition {
+        name: "run".into(),
+        kind: CodeUnitKind::Function,
+        file: PathBuf::from("src/cli/exit.rs"),
+        line: 1,
+        end_line: 1,
+        impl_for_type: None,
+    };
+    let lib_def = RustCodeDefinition {
+        name: "helper".into(),
+        kind: CodeUnitKind::Function,
+        file: PathBuf::from("src/lib.rs"),
+        line: 1,
+        end_line: 1,
+        impl_for_type: None,
+    };
     let witness = HashSet::from(["run".to_string(), "helper".to_string()]);
     let mut cone = HashSet::new();
     cone.insert(PathBuf::from("src/main.rs"));
@@ -96,7 +109,14 @@ fn coverage_map_helper_paths() {
 /// principles.md: integration-cone credit must not veto on benchmark dirname inventories.
 #[test]
 fn integration_cone_witnesses_are_not_vetoed_by_benchmark_dirname_inventory() {
-    let def = sample_def("dispatch", PathBuf::from("vendor/orchestrator/dispatch.rs"));
+    let def = RustCodeDefinition {
+        name: "dispatch".into(),
+        kind: CodeUnitKind::Function,
+        file: PathBuf::from("vendor/orchestrator/dispatch.rs"),
+        line: 1,
+        end_line: 1,
+        impl_for_type: None,
+    };
     let witness = HashSet::from(["dispatch".to_string()]);
     let mut cone = HashSet::new();
     cone.insert(crate::rust_include::canonical_path(&def.file));
@@ -243,17 +263,32 @@ fn coverage_map_plugin_witness_helpers() {
         coverage_map_plugin_support_plugin_witness, CoverageMapUnrefCtx,
     };
 
-    let rule_def = sample_def(
-        "unsafe_markup_use",
-        PathBuf::from(
+    let rule_def = RustCodeDefinition {
+        name: "unsafe_markup_use".into(),
+        kind: CodeUnitKind::Function,
+        file: PathBuf::from(
             "crates/ruff_linter/src/rules/flake8_bandit/rules/unsafe_markup_use.rs",
         ),
-    );
-    let helper_def = sample_def(
-        "helper_fn",
-        PathBuf::from("crates/ruff_linter/src/rules/flake8_bandit/helpers.rs"),
-    );
-    let cli_def = sample_def("run", PathBuf::from("src/cli/learn.rs"));
+        line: 1,
+        end_line: 1,
+        impl_for_type: None,
+    };
+    let helper_def = RustCodeDefinition {
+        name: "helper_fn".into(),
+        kind: CodeUnitKind::Function,
+        file: PathBuf::from("crates/ruff_linter/src/rules/flake8_bandit/helpers.rs"),
+        line: 1,
+        end_line: 1,
+        impl_for_type: None,
+    };
+    let cli_def = RustCodeDefinition {
+        name: "run".into(),
+        kind: CodeUnitKind::Function,
+        file: PathBuf::from("src/cli/learn.rs"),
+        line: 1,
+        end_line: 1,
+        impl_for_type: None,
+    };
     let defs = vec![rule_def.clone(), helper_def.clone(), cli_def.clone()];
     let witness = HashSet::from([
         "unsafe_markup_use".to_string(),

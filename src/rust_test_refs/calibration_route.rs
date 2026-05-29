@@ -10,12 +10,11 @@ const MAX_CLI_ROUTE_WITNESS_DEFS_PER_FILE: usize = 12;
 
 /// Runtime-heavy workflow bodies inside route-attested trees: credit via direct witnesses only.
 fn cli_route_bulk_credit_excluded(path: &Path) -> bool {
-    path.file_name().is_some_and(|n| {
-        matches!(
-            n.to_str(),
-            Some("run_loop.rs" | "kpop_session.rs" | "behavior.rs" | "ideas_flow.rs")
-        )
-    })
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    stem.ends_with("_session")
+        || stem.ends_with("_loop")
+        || stem.ends_with("_flow")
+        || stem == "behavior"
 }
 
 fn path_has_cli_component(path: &Path) -> bool {
@@ -97,6 +96,9 @@ fn token_matches_top_level_cli_file(token: &str, path: &Path) -> bool {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("");
+    if stem.ends_with("_session") {
+        return token.len() >= 3 && !token.starts_with('-');
+    }
     cli_token_matches_segment(token, stem)
         || cli_token_variants(token)
             .iter()
@@ -155,12 +157,16 @@ fn top_level_co_dispatch_match(
     })
 }
 
+fn nested_cli_route_bulk_credit_excluded(path: &Path) -> bool {
+    !is_top_level_cli_file(path) && cli_route_bulk_credit_excluded(path)
+}
+
 fn file_matches_cli_route_with_context(
     path: &Path,
     tokens: &HashSet<String>,
     sibling_stems: &HashSet<String>,
 ) -> bool {
-    if cli_route_bulk_credit_excluded(path) {
+    if nested_cli_route_bulk_credit_excluded(path) {
         return false;
     }
     if !path_has_cli_component(path) {
@@ -284,6 +290,10 @@ pub(crate) fn expand_cli_route_witnesses(
     }
     for defs in by_file.values() {
         if defs.len() > MAX_CLI_ROUTE_WITNESS_DEFS_PER_FILE {
+            continue;
+        }
+        let file = crate::rust_include::canonical_path(&defs[0].file);
+        if cli_route_bulk_credit_excluded(&file) {
             continue;
         }
         for d in defs {

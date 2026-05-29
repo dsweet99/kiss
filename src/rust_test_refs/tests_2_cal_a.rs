@@ -28,6 +28,25 @@ fn test_is_subprocess_integration_test_file() {
 }
 
 #[test]
+fn test_has_non_subprocess_integration_tests() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(tmp.path().join("tests")).unwrap();
+    std::fs::write(
+        tmp.path().join("tests/spawn.rs"),
+        "fn t() { let _ = std::process::Command::new(\"app\"); }\n",
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("tests/unit.rs"), "#[test]\nfn ok() {}\n").unwrap();
+    let spawn = parse_rust_file(&tmp.path().join("tests/spawn.rs")).unwrap();
+    let unit = parse_rust_file(&tmp.path().join("tests/unit.rs")).unwrap();
+    let refs = vec![&spawn, &unit];
+    assert!(super::calibration::has_non_subprocess_integration_tests(&refs));
+
+    let spawn_only = vec![&spawn];
+    assert!(!super::calibration::has_non_subprocess_integration_tests(&spawn_only));
+}
+
+#[test]
 fn test_has_colocated_src_integration_tests() {
     let tmp = tempfile::TempDir::new().unwrap();
     let src = tmp.path().join("src");

@@ -51,11 +51,11 @@ pub(crate) fn is_coverage_map_single_crate_cli_file(path: &Path) -> bool {
     })
 }
 
-/// ACP kpop body modules: static integration tests reference them; llvm-cov runs little of the body.
+/// ACP ops-body modules: static integration tests reference them; llvm-cov runs little of the body.
 pub(crate) fn is_coverage_map_acp_kpop_body_shim(path: &Path) -> bool {
     path.file_name().is_some_and(|n| {
         let s = n.to_str().unwrap_or("");
-        s == "ops_body_kpop.rs" || s == "ops_body_kpop_mt.rs"
+        (s.starts_with("ops_body_") || s.starts_with("ops_body_mt_")) && s.ends_with(".rs")
     }) && path.components().any(|c| {
         matches!(c, std::path::Component::Normal(s) if s == "acp")
     })
@@ -247,7 +247,7 @@ pub(crate) fn is_workspace_llvm_auxiliary_crate(name: &str, workspace_crate_sibl
         || name.ends_with("_server")
         || name.ends_with("_wasm")
         || name.ends_with("_cache")
-        || (workspace_crate_siblings >= 2
+        || (workspace_crate_siblings >= 1
             && (name.ends_with("_formatter") || name.ends_with("_codegen")))
 }
 
@@ -275,7 +275,10 @@ fn workspace_crates_sibling_count(path: &Path) -> usize {
         .map(|entries| {
             entries
                 .filter_map(Result::ok)
-                .filter(|e| e.path().is_dir())
+                .filter(|e| {
+                    let p = e.path();
+                    p.is_dir() && (p.join("src").is_dir() || p.join("lib.rs").is_file())
+                })
                 .count()
         })
         .unwrap_or(0)
@@ -306,7 +309,11 @@ pub(crate) fn is_calibration_excluded_file(path: &Path) -> bool {
     {
         return true;
     }
-    if path.file_name().is_some_and(|n| n == "logger.rs") {
+    if path.file_name().is_some_and(|n| n == "logger.rs")
+        && path.components().any(|c| {
+            matches!(c, std::path::Component::Normal(s) if s == "crates")
+        })
+    {
         return true;
     }
     // PyO3 binding crates: static refs over-credit vs llvm line coverage.

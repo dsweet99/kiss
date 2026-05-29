@@ -14,8 +14,8 @@ use syn::{ImplItem, Item, Type};
 pub(crate) const INTEGRATION_CONE_MAX_DEPTH: usize = 12;
 
 pub(crate) use super::calibration_detect::{
-    has_colocated_src_integration_tests, has_rust_integration_test_runner,
-    is_subprocess_integration_test_file,
+    has_colocated_src_integration_tests, has_non_subprocess_integration_tests,
+    has_rust_integration_test_runner, is_subprocess_integration_test_file,
 };
 pub(crate) use super::calibration_expand::{
     expand_small_module_defs_from_stem_refs, expand_witnessed_directory_sibling_defs,
@@ -34,7 +34,9 @@ pub(crate) fn expand_coverage_map_witnesses(
         expand_integration_cone_witnesses(parsed_files, refs);
         return;
     }
-    if has_rust_integration_test_runner(parsed_files) {
+    if has_rust_integration_test_runner(parsed_files)
+        && has_non_subprocess_integration_tests(parsed_files)
+    {
         seed_binary_entry_roots(parsed_files, refs);
         expand_coverage_references_one_hop(parsed_files, refs);
         expand_small_module_defs_from_stem_refs(parsed_files, refs);
@@ -68,7 +70,9 @@ pub(crate) fn impl_self_type_name(ty: &Type) -> Option<String> {
 pub(crate) fn integration_cone_files_for(
     parsed_files: &[&ParsedRustFile],
 ) -> HashSet<PathBuf> {
-    if !has_rust_integration_test_runner(parsed_files) {
+    if !has_rust_integration_test_runner(parsed_files)
+        || !has_non_subprocess_integration_tests(parsed_files)
+    {
         return HashSet::new();
     }
     let seed_paths = binary_entry_paths(parsed_files);

@@ -2,6 +2,7 @@ use super::calibration;
 use super::calibration_map;
 use super::definitions::RustCodeDefinition;
 use super::{is_covered_by_tests_for_coverage_map, is_directly_referenced};
+use crate::units::CodeUnitKind;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -17,6 +18,16 @@ pub(crate) struct CoverageMapUnrefCtx<'a> {
     pub witnessed_rule_plugins: &'a HashSet<String>,
 }
 
+fn is_integration_cone_inflation_segment(seg: &str) -> bool {
+    seg.contains('_')
+        || matches!(
+            seg,
+            "cli" | "acp" | "output" | "orchestrator" | "cursor_store" | "tool_summary"
+        )
+}
+
+/// Integration-cone inflation shim: `src/<segment>/<file>.rs` where the segment is a
+/// multi-module workflow directory (underscore or known high-fan-out role), not a flat `src/*.rs` root.
 pub(crate) fn is_coverage_map_integration_cone_inflation_shim(path: &Path) -> bool {
     let comps: Vec<&str> = path
         .components()
@@ -31,17 +42,12 @@ pub(crate) fn is_coverage_map_integration_cone_inflation_shim(path: &Path) -> bo
     let Some(seg) = comps.get(src_idx + 1) else {
         return false;
     };
-    matches!(
-        *seg,
-        "acp" | "cli" | "kpop_progression" | "orchestrator" | "output" | "cursor_store"
-            | "tool_summary"
-    )
+    comps.len() >= src_idx + 3 && is_integration_cone_inflation_segment(seg)
 }
 
 pub(crate) fn coverage_map_forced_uncovered_file(path: &Path) -> bool {
     calibration_map::is_coverage_map_rule_settings_file(path)
         || calibration_map::is_coverage_map_cli_exit_shim(path)
-        || calibration_map::is_coverage_map_acp_kpop_body_shim(path)
         || calibration_map::is_coverage_map_acp_client_impl_shim(path)
         || calibration_map::is_coverage_map_binary_crate_src_root(path)
 }
@@ -127,7 +133,7 @@ pub(crate) fn coverage_map_single_crate_cli_witnessed(
 ) -> bool {
     calibration_map::is_coverage_map_single_crate_cli_file(&d.file)
         && !ctx.integration_cone_files.is_empty()
-        && ctx.test_witness_refs.contains(&d.name)
+        && ctx.coverage_references.contains(&d.name)
         && ctx.defs_per_file.get(&d.file).copied().unwrap_or(0) <= 8
 }
 
@@ -158,6 +164,18 @@ pub(crate) fn coverage_map_integration_cone_witness(
 }
 
 pub(crate) fn coverage_map_expanded_dense_file(d: &RustCodeDefinition, ctx: &CoverageMapUnrefCtx<'_>) -> bool {
+    if calibration_map::is_coverage_map_linter_rule_impl_file(&d.file)
+        && matches!(
+            d.kind,
+            CodeUnitKind::TraitImplMethod | CodeUnitKind::Method
+        )
+        && d
+            .impl_for_type
+            .as_ref()
+            .is_some_and(|t| ctx.coverage_references.contains(t))
+    {
+        return false;
+    }
     let dense_cap = if calibration_map::is_coverage_map_linter_rule_impl_file(&d.file) {
         0
     } else {

@@ -102,6 +102,7 @@ fn test_integration_cone_with_runner_and_binary_entry() {
         "fn t() { let _ = std::process::Command::new(\"kiss\"); }\n",
     )
     .unwrap();
+    std::fs::write(tests_dir.join("unit.rs"), "#[test]\nfn ok() {}\n").unwrap();
     let src = tmp.path().join("src");
     std::fs::create_dir_all(&src).unwrap();
     let main_rs = src.join("main.rs");
@@ -109,9 +110,11 @@ fn test_integration_cone_with_runner_and_binary_entry() {
     let child_rs = src.join("child.rs");
     std::fs::write(&child_rs, "pub fn run() {}\n").unwrap();
     let parsed_runner = parse_rust_file(&integration).unwrap();
+    let parsed_unit = parse_rust_file(&tests_dir.join("unit.rs")).unwrap();
     let parsed_main = parse_rust_file(&main_rs).unwrap();
     let parsed_child = parse_rust_file(&child_rs).unwrap();
-    let files: Vec<&ParsedRustFile> = vec![&parsed_runner, &parsed_main, &parsed_child];
+    let files: Vec<&ParsedRustFile> =
+        vec![&parsed_runner, &parsed_unit, &parsed_main, &parsed_child];
     let seeds = calibration::integration_cone_files_for(&files);
     assert!(seeds.contains(&crate::rust_include::canonical_path(&main_rs)));
     let mut refs = HashSet::from(["main".to_string()]);

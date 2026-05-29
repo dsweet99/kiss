@@ -31,6 +31,14 @@ pub(crate) fn is_subprocess_integration_test_file(parsed: &ParsedRustFile) -> bo
         && (parsed.source.contains("current_exe") || parsed.source.contains("Command::new"))
 }
 
+pub(crate) fn has_non_subprocess_integration_tests(parsed_files: &[&ParsedRustFile]) -> bool {
+    parsed_files.iter().any(|parsed| {
+        is_rust_test_file(&parsed.path)
+            && path_is_under_tests(&parsed.path)
+            && !is_subprocess_integration_test_file(parsed)
+    })
+}
+
 pub(crate) fn path_is_under_tests(path: &Path) -> bool {
     path.components()
         .any(|c| matches!(c, std::path::Component::Normal(s) if s == "tests"))
