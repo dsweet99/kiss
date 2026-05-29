@@ -87,25 +87,32 @@ pub(crate) fn coverage_map_plugin_rule_impl_witness(
         )
 }
 
-/// Plugin support modules (helpers.rs): credit when the plugin has any witnessed rule impl
-/// (llvm runs helpers when integration tests exercise the plugin).
-pub(crate) fn coverage_map_plugin_support_plugin_witness(
+/// Rule-impl attestation channel (S_impl): impl-type witnesses credit rule bodies without
+/// shared plugin registry or method-name test witnesses — incommensurable with helper channel.
+pub(crate) fn coverage_map_plugin_rule_impl_type_attestation(
     d: &RustCodeDefinition,
     ctx: &CoverageMapUnrefCtx<'_>,
 ) -> bool {
-    if !calibration_map::is_coverage_map_rule_plugin_support_file(&d.file) {
+    if !calibration_map::is_coverage_map_linter_rule_impl_file(&d.file) {
         return false;
     }
-    let Some(plugin) = calibration_map::linter_rule_plugin_name(&d.file) else {
-        return false;
-    };
-    ctx.witnessed_rule_plugins.contains(plugin)
-        && is_covered_by_tests_for_coverage_map(
-            d,
-            ctx.coverage_references,
-            ctx.name_files,
-            ctx.disambiguation,
-        )
+    matches!(
+        d.kind,
+        CodeUnitKind::TraitImplMethod | CodeUnitKind::Method
+    ) && d
+        .impl_for_type
+        .as_ref()
+        .is_some_and(|t| ctx.coverage_references.contains(t))
+}
+
+/// Plugin support modules (helpers.rs): S_support channel is strict-direct only; plugin
+/// registry witness no longer credits helpers (S_impl/S_support species firewall, g12).
+#[allow(dead_code)]
+pub(crate) fn coverage_map_plugin_support_plugin_witness(
+    _d: &RustCodeDefinition,
+    _ctx: &CoverageMapUnrefCtx<'_>,
+) -> bool {
+    false
 }
 
 pub(crate) fn coverage_map_plugin_support_direct_only(
@@ -196,8 +203,8 @@ pub(crate) fn definition_uncovered_for_coverage_map(
         || coverage_map_single_crate_cli_witnessed(d, ctx)
         || coverage_map_direct_test_witness(d, ctx)
         || coverage_map_plugin_rule_impl_witness(d, ctx)
+        || coverage_map_plugin_rule_impl_type_attestation(d, ctx)
         || coverage_map_plugin_support_direct_only(d, ctx)
-        || coverage_map_plugin_support_plugin_witness(d, ctx)
         || coverage_map_integration_cone_witness(d, ctx);
     if witnessed {
         return false;

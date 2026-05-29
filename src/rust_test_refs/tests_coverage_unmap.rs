@@ -259,8 +259,9 @@ fn calibration_map_plugin_and_workspace_path_classifiers() {
 fn coverage_map_plugin_witness_helpers() {
     use super::coverage_map_unreferenced::{
         build_witnessed_rule_plugins, coverage_map_cli_route_witnessed,
-        coverage_map_plugin_rule_impl_witness, coverage_map_plugin_support_direct_only,
-        coverage_map_plugin_support_plugin_witness, CoverageMapUnrefCtx,
+        coverage_map_plugin_rule_impl_type_attestation, coverage_map_plugin_rule_impl_witness,
+        coverage_map_plugin_support_direct_only, coverage_map_plugin_support_plugin_witness,
+        CoverageMapUnrefCtx,
     };
 
     let rule_def = RustCodeDefinition {
@@ -316,7 +317,31 @@ fn coverage_map_plugin_witness_helpers() {
         witnessed_rule_plugins: &plugins,
     };
     assert!(coverage_map_plugin_rule_impl_witness(&rule_def, &ctx));
-    assert!(coverage_map_plugin_support_plugin_witness(&helper_def, &ctx));
+    assert!(!coverage_map_plugin_support_plugin_witness(&helper_def, &ctx));
     assert!(coverage_map_plugin_support_direct_only(&helper_def, &ctx));
     assert!(coverage_map_cli_route_witnessed(&cli_def, &ctx));
+
+    let impl_type_def = RustCodeDefinition {
+        name: "guard".into(),
+        kind: CodeUnitKind::Method,
+        file: PathBuf::from("crates/linter/src/rules/widget_plugin/rules/guard.rs"),
+        line: 1,
+        end_line: 1,
+        impl_for_type: Some("Widget".into()),
+    };
+    let impl_witness = HashSet::from(["Widget".to_string()]);
+    let impl_ctx = CoverageMapUnrefCtx {
+        test_witness_refs: &HashSet::new(),
+        coverage_references: &impl_witness,
+        name_files: &name_files,
+        disambiguation: &HashMap::new(),
+        integration_cone_files: &HashSet::new(),
+        defs_per_file: &HashMap::new(),
+        cli_route_attested_files: &HashSet::new(),
+        witnessed_rule_plugins: &HashSet::new(),
+    };
+    assert!(coverage_map_plugin_rule_impl_type_attestation(
+        &impl_type_def,
+        &impl_ctx
+    ));
 }

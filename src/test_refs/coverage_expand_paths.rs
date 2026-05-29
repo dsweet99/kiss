@@ -6,7 +6,46 @@ pub(crate) const OPTIMIZER_CLASS_HEADER_LINES: usize = 3;
 /// Inflator-path function defs: call witnesses usually reach headers only at runtime.
 pub(crate) const INFLATOR_FUNCTION_HEADER_LINES: usize = 3;
 
+/// `PKG/base/…` but not under `base/oi/`.
+pub fn is_py_base_non_oi_subtree(path: &std::path::Path) -> bool {
+    is_py_base_subtree_only(path) && !is_py_base_oi_subtree(path)
+}
+
+/// `PKG/base/oi/…/interfaces.py` — protocol stubs; runtime loads full module bodies on import.
+pub fn is_py_oi_interfaces_stub_path(path: &std::path::Path) -> bool {
+    is_py_base_oi_subtree(path)
+        && path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n == "interfaces.py")
+}
+
+/// Direct children of `base/oi/` (e.g. `objectdb.py`): parent-package imports must not
+/// credit siblings; nested packages keep prefix binding.
+pub fn is_py_oi_root_level_module(path: &std::path::Path) -> bool {
+    if !is_py_base_oi_subtree(path) {
+        return false;
+    }
+    let comps = path_normal_components(path);
+    let oi_idx = comps.iter().position(|&c| c == "oi");
+    let Some(oi_idx) = oi_idx else {
+        return false;
+    };
+    comps.len() == oi_idx + 2
+        && path
+            .file_name()
+            .and_then(|n| n.to_str())
+            != Some("__init__.py")
+}
+
 pub fn calibration_def_end_line(def: &CodeDefinition) -> usize {
+    // Protocol stubs: header-only credit; full bodies stay in denominator via split in coverage_map.
+    if is_py_oi_interfaces_stub_path(&def.file) {
+        return def
+            .line
+            .saturating_add(INFLATOR_FUNCTION_HEADER_LINES.saturating_sub(1))
+            .min(def.end_line);
+    }
     if def.kind == crate::units::CodeUnitKind::Class
         && (is_py_optimizer_path(&def.file)
             || is_py_inflator_call_only_path(&def.file)
@@ -84,7 +123,7 @@ pub(crate) fn is_py_contrib_base_void_partition(path: &std::path::Path) -> bool 
 }
 
 /// `PKG/base/oi/…` — object-inference subtree; integration tests reach via package imports.
-pub(crate) fn is_py_base_oi_subtree(path: &std::path::Path) -> bool {
+pub fn is_py_base_oi_subtree(path: &std::path::Path) -> bool {
     if !is_py_base_subtree_only(path) {
         return false;
     }
@@ -133,6 +172,11 @@ pub(crate) fn is_py_experiments_path(path: &std::path::Path) -> bool {
 /// Repo-root `optimizer/` / `experiments/` trees: per-def import-cal credit (no module-level collapse).
 pub(crate) fn is_py_optimizer_experiment_path(path: &std::path::Path) -> bool {
     is_py_repo_root_subtree(path, &["optimizer", "experiments"])
+}
+
+/// Repo-root `acq/` subtrees: conftest import cones over-credit acquisition modules.
+pub(crate) fn is_py_acq_subtree(path: &std::path::Path) -> bool {
+    is_py_repo_root_subtree(path, &["acq"])
 }
 
 /// Repo-root inflator subtrees: conftest import cones over-credit large class bodies.

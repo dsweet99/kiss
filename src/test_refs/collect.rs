@@ -261,7 +261,7 @@ pub(crate) fn collect_test_functions_with_refs_mode(
         }
         "class_definition" => {
             let class_name = get_child_by_field(node, "name", source).unwrap_or_default();
-            if class_name.starts_with("Test") {
+            if super::detection::is_calibration_test_class(node, source) {
                 let class_prefix = if prefix.is_empty() {
                     class_name
                 } else {

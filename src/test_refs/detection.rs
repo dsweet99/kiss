@@ -134,8 +134,38 @@ pub(crate) fn is_test_function(node: Node, source: &str) -> bool {
     get_child_by_field(node, "name", source).is_some_and(|n| n.starts_with("test_"))
 }
 
+pub(crate) fn inherits_unittest_testcase(node: Node, source: &str) -> bool {
+    let Some(superclasses) = node.child_by_field_name("superclasses") else {
+        return false;
+    };
+    let mut cursor = superclasses.walk();
+    for child in superclasses.children(&mut cursor) {
+        match child.kind() {
+            "identifier" | "attribute" => {
+                let text = &source[child.start_byte()..child.end_byte()];
+                if text == "TestCase" || text.ends_with(".TestCase") {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Test class for witness collection: pytest `Test*` prefix, unittest `*Test` suffix, or
+/// explicit `unittest.TestCase` subclasses (e.g. rope's `ProjectTest`, `CodeAnalyzeTest`).
 pub(crate) fn is_test_class(node: Node, source: &str) -> bool {
-    get_child_by_field(node, "name", source).is_some_and(|n| n.starts_with("Test"))
+    let Some(name) = get_child_by_field(node, "name", source) else {
+        return false;
+    };
+    name.starts_with("Test")
+        || name.ends_with("Test")
+        || inherits_unittest_testcase(node, source)
+}
+
+pub(crate) fn is_calibration_test_class(node: Node, source: &str) -> bool {
+    is_test_class(node, source)
 }
 
 #[cfg(test)]
@@ -164,5 +194,38 @@ mod detection_coverage {
             tree,
         };
         assert!(!is_python_test_file(&file));
+    }
+
+    #[test]
+    fn inherits_unittest_testcase_branches() {
+        let mut parser = create_parser().unwrap();
+        let src = "class Direct(TestCase):\n    pass\nclass ModuleCase(unittest.TestCase):\n    pass\nclass Other(object):\n    pass\nclass Plain:\n    pass\n";
+        let tree = parser.parse(src, None).unwrap();
+        let root = tree.root_node();
+        assert!(inherits_unittest_testcase(root.child(0).unwrap(), src));
+        assert!(inherits_unittest_testcase(root.child(1).unwrap(), src));
+        assert!(!inherits_unittest_testcase(root.child(2).unwrap(), src));
+        assert!(!inherits_unittest_testcase(root.child(3).unwrap(), src));
+    }
+
+    #[test]
+    fn is_calibration_test_class_matches_test_class() {
+        let mut parser = create_parser().unwrap();
+        let src = "class TestFoo:\n    pass\nclass Helper:\n    pass\nclass ProjectTest(unittest.TestCase):\n    pass\n";
+        let tree = parser.parse(src, None).unwrap();
+        let root = tree.root_node();
+        assert!(is_calibration_test_class(root.child(0).unwrap(), src));
+        assert!(!is_calibration_test_class(root.child(1).unwrap(), src));
+        assert!(is_calibration_test_class(root.child(2).unwrap(), src));
+    }
+
+    #[test]
+    fn is_in_test_directory_suffixes() {
+        assert!(is_in_test_directory(Path::new("tests/conftest.py")));
+        assert!(is_in_test_directory(Path::new("test/unit.py")));
+        assert!(is_in_test_directory(Path::new("widget_tests/a.py")));
+        assert!(is_in_test_directory(Path::new("widget_test/a.py")));
+        assert!(!is_in_test_directory(Path::new("src/widget_test_utils.py")));
+        assert!(!is_in_test_directory(Path::new("ropetest/runtime.py")));
     }
 }

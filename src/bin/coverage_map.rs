@@ -7,6 +7,8 @@
 //!   kiss-coverage-map --units REPO      # `[{"file","name","line","kiss_covered"}, ...]`
 use kiss::test_refs::CalibrationCoverageBound;
 use kiss::calibration_def_end_line;
+use kiss::is_py_base_non_oi_subtree;
+use kiss::is_py_base_oi_subtree;
 use kiss::discovery::{gather_files_by_lang, Language};
 use kiss::graph::build_dependency_graph;
 use kiss::rust_graph::build_rust_dependency_graph;
@@ -172,11 +174,29 @@ fn push_rs_unit_row(
 }
 
 fn file_map_json(cov: &RepoCoverage) -> String {
-    let py_defs: Vec<(PathBuf, String, usize, usize)> = cov
+    let py_defs: Vec<(PathBuf, String, usize, usize, usize)> = cov
         .py
         .definitions
         .iter()
-        .map(|d| (d.file.clone(), d.name.clone(), d.line, calibration_def_end_line(d)))
+        .map(|d| {
+            let credit_end = calibration_def_end_line(d);
+            // OI paths only: full def bodies in denominator, header lines in numerator.
+            // Global split regresses yubo ops/experiments (g9 falsified).
+            let total_end = if credit_end < d.end_line
+                && (is_py_base_oi_subtree(&d.file) || is_py_base_non_oi_subtree(&d.file))
+            {
+                d.end_line
+            } else {
+                credit_end
+            };
+            (
+                d.file.clone(),
+                d.name.clone(),
+                d.line,
+                total_end,
+                credit_end,
+            )
+        })
         .collect();
     let py_unref: Vec<(PathBuf, String, usize)> = cov
         .py
@@ -198,7 +218,8 @@ fn file_map_json(cov: &RepoCoverage) -> String {
         .filter(|d| !coverage_map_excluded_file(&d.file))
         .map(|d| (d.file.clone(), d.name.clone(), d.line))
         .collect();
-    let mut map = kiss::cli_output::file_coverage_map_by_line_spans(&py_defs, &py_unref);
+    let mut map =
+        kiss::cli_output::file_coverage_map_by_line_spans_with_credit_end(&py_defs, &py_unref);
     for (file, pct) in kiss::cli_output::file_coverage_map_by_line_spans(&rs_defs, &rs_unref) {
         map.insert(file, pct);
     }

@@ -19,6 +19,24 @@ fn test_collect_test_functions_with_refs_for_coverage_map_class() {
 }
 
 #[test]
+fn test_collect_test_functions_unittest_suffix_class() {
+    use crate::parsing::create_parser;
+    let mut parser = create_parser().unwrap();
+    let src = "import unittest\n\nclass ProjectTest(unittest.TestCase):\n    def test_observer(self):\n        FilteredResourceObserver()\n";
+    let tree = parser.parse(src, None).unwrap();
+    let mut out = Vec::new();
+    super::collect::collect_test_functions_with_refs_for_coverage_map(
+        tree.root_node(),
+        src,
+        "",
+        &mut out,
+    );
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].0, "ProjectTest::test_observer");
+    assert!(out[0].1.contains("FilteredResourceObserver"));
+}
+
+#[test]
 fn test_collect_all_test_file_data_for_coverage_map_smoke() {
     use crate::parsing::create_parser;
     let mut parser = create_parser().unwrap();

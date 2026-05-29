@@ -102,6 +102,21 @@ fn oi_import_target_and_calibration_cap_branches() {
         &import_bindings,
         &module_suffixes,
     ));
+    let root_db = PathBuf::from("pkg/base/oi/objectdb.py");
+    let root_def = CodeDefinition {
+        name: "ObjectDB".into(),
+        kind: CodeUnitKind::Class,
+        file: root_db.clone(),
+        line: 1,
+        end_line: 5,
+        containing_class: None,
+    };
+    module_suffixes.insert(root_db, "pkg.base.oi.objectdb".into());
+    assert!(!is_py_oi_module_import_witnessed(
+        &root_def,
+        &import_bindings,
+        &module_suffixes,
+    ));
     let mut eval_def = oi_def.clone();
     eval_def.file = evaluate_file;
     eval_def.name = "score".into();
@@ -207,4 +222,100 @@ fn analyze_test_refs_for_coverage_map_with_attested_and_optimistic_bounds() {
     );
     assert_eq!(attested.definitions.len(), 1);
     assert_eq!(optimistic.definitions.len(), 1);
+}
+
+fn rope_base_exceptions_import_ctx(
+    path: &std::path::Path,
+) -> (
+    HashMap<String, HashSet<String>>,
+    HashMap<PathBuf, String>,
+) {
+    let mut import_bindings = HashMap::new();
+    import_bindings.insert(
+        "rope.base.exceptions".into(),
+        HashSet::from(["ResourceNotFoundError".into()]),
+    );
+    let mut module_suffixes = HashMap::new();
+    module_suffixes.insert(path.to_path_buf(), "rope.base.exceptions".into());
+    (import_bindings, module_suffixes)
+}
+
+#[test]
+fn base_tree_credits_with_strict_witness_after_void_split() {
+    use super::calibration_analysis::{
+        build_calibration_coverage_refs, filter_unreferenced_definitions, UnreferencedFilterCtx,
+    };
+    let path = PathBuf::from("rope/base/exceptions.py");
+    let def = CodeDefinition {
+        name: "ResourceNotFoundError".into(),
+        kind: CodeUnitKind::Class,
+        file: path.clone(),
+        line: 1,
+        end_line: 1,
+        containing_class: None,
+    };
+    let witnesses = HashSet::from(["ResourceNotFoundError".to_string()]);
+    let (strict, expanded, counts) =
+        build_calibration_coverage_refs(&[], std::slice::from_ref(&def), &witnesses);
+    let (import_bindings, module_suffixes) = rope_base_exceptions_import_ctx(&path);
+    let ctx = UnreferencedFilterCtx {
+        calibration: true,
+        coverage_bound: CalibrationCoverageBound::Shipped,
+        defs_per_file: &counts,
+        test_witness_refs: &witnesses,
+        calibration_strict_refs: &strict,
+        calibration_expanded_refs: &expanded,
+        void_dispatch_attestation: &HashMap::new(),
+        usage_references: &HashSet::new(),
+        name_files: &HashMap::new(),
+        disambiguation: &HashMap::new(),
+        import_bindings: &import_bindings,
+        module_suffixes: &module_suffixes,
+    };
+    let unref = filter_unreferenced_definitions(&[def], &ctx);
+    assert!(
+        unref.is_empty(),
+        "base/ is no longer void-force-uncovered; strict witnesses should credit"
+    );
+}
+
+#[test]
+fn base_tree_strict_witness_can_cover_with_dispatch_attestation() {
+    use super::calibration_analysis::{
+        build_calibration_coverage_refs, filter_unreferenced_definitions, UnreferencedFilterCtx,
+    };
+    let path = PathBuf::from("rope/base/exceptions.py");
+    let def = CodeDefinition {
+        name: "ResourceNotFoundError".into(),
+        kind: CodeUnitKind::Class,
+        file: path.clone(),
+        line: 1,
+        end_line: 1,
+        containing_class: None,
+    };
+    let witnesses = HashSet::from(["ResourceNotFoundError".to_string()]);
+    let (strict, expanded, counts) =
+        build_calibration_coverage_refs(&[], std::slice::from_ref(&def), &witnesses);
+    let mut attestation = HashMap::new();
+    attestation.insert(
+        path.clone(),
+        HashSet::from(["ResourceNotFoundError".to_string()]),
+    );
+    let (import_bindings, module_suffixes) = rope_base_exceptions_import_ctx(&path);
+    let ctx = UnreferencedFilterCtx {
+        calibration: true,
+        coverage_bound: CalibrationCoverageBound::Shipped,
+        defs_per_file: &counts,
+        test_witness_refs: &witnesses,
+        calibration_strict_refs: &strict,
+        calibration_expanded_refs: &expanded,
+        void_dispatch_attestation: &attestation,
+        usage_references: &HashSet::new(),
+        name_files: &HashMap::new(),
+        disambiguation: &HashMap::new(),
+        import_bindings: &import_bindings,
+        module_suffixes: &module_suffixes,
+    };
+    let unref = filter_unreferenced_definitions(&[def], &ctx);
+    assert!(unref.is_empty());
 }

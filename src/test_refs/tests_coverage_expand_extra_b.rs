@@ -235,3 +235,79 @@ fn repo_root_path_predicates_classify_subtrees() {
         "/abs/repo/experiments/trial.py"
     )));
 }
+
+#[test]
+fn base_oi_path_predicates_classify_subtrees() {
+    use super::{
+        is_py_base_non_oi_subtree, is_py_oi_interfaces_stub_path, is_py_oi_root_level_module,
+    };
+    assert!(is_py_base_non_oi_subtree(std::path::Path::new("rope/base/versioning.py")));
+    assert!(!is_py_base_non_oi_subtree(std::path::Path::new(
+        "rope/base/oi/objectdb.py"
+    )));
+    assert!(!is_py_base_non_oi_subtree(std::path::Path::new("rope/contrib/foo.py")));
+
+    assert!(is_py_oi_interfaces_stub_path(std::path::Path::new(
+        "rope/base/oi/type_hinting/interfaces.py"
+    )));
+    assert!(!is_py_oi_interfaces_stub_path(std::path::Path::new(
+        "rope/base/oi/objectdb.py"
+    )));
+    assert!(!is_py_oi_interfaces_stub_path(std::path::Path::new(
+        "rope/base/core.py"
+    )));
+
+    assert!(is_py_oi_root_level_module(std::path::Path::new(
+        "rope/base/oi/objectdb.py"
+    )));
+    assert!(!is_py_oi_root_level_module(std::path::Path::new(
+        "rope/base/oi/nested/mod.py"
+    )));
+    assert!(!is_py_oi_root_level_module(std::path::Path::new(
+        "rope/base/oi/__init__.py"
+    )));
+    assert!(!is_py_oi_root_level_module(std::path::Path::new("rope/base/core.py")));
+}
+
+#[test]
+fn path_normal_components_skips_non_normal_segments() {
+    use crate::test_refs::coverage_expand::coverage_expand_paths::path_normal_components;
+    use std::path::{Component, PathBuf};
+    let mut abs = PathBuf::new();
+    abs.push(Component::RootDir);
+    abs.push("repo");
+    abs.push("acq");
+    abs.push("train.py");
+    assert_eq!(
+        path_normal_components(&abs),
+        vec!["repo", "acq", "train.py"]
+    );
+    assert_eq!(
+        path_normal_components(std::path::Path::new("pkg/base/core.py")),
+        vec!["pkg", "base", "core.py"]
+    );
+}
+
+#[test]
+fn is_py_acq_subtree_respects_repo_root_blocklist() {
+    use crate::test_refs::coverage_expand::is_py_acq_subtree;
+    assert!(is_py_acq_subtree(std::path::Path::new("acq/uhd.py")));
+    assert!(is_py_acq_subtree(std::path::Path::new(
+        "/home/user/yubo/acq/batch.py"
+    )));
+    assert!(!is_py_acq_subtree(std::path::Path::new("lib/acq/uhd.py")));
+    assert!(!is_py_acq_subtree(std::path::Path::new("pkg/mod.py")));
+}
+
+#[test]
+fn calibration_def_end_line_caps_oi_interfaces_stub() {
+    let def = CodeDefinition {
+        name: "Protocol".into(),
+        kind: crate::units::CodeUnitKind::Class,
+        file: std::path::PathBuf::from("rope/base/oi/type_hinting/interfaces.py"),
+        line: 5,
+        end_line: 40,
+        containing_class: None,
+    };
+    assert_eq!(calibration_def_end_line(&def), 7);
+}

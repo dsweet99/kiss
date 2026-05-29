@@ -83,13 +83,15 @@ fn test_is_test_class_direct() {
     use super::detection::is_test_class;
     use crate::parsing::create_parser;
     let mut parser = create_parser().unwrap();
-    let src = "class TestFoo:\n    pass\nclass Helper:\n    pass\n";
+    let src = "class TestFoo:\n    pass\nclass Helper:\n    pass\nclass ProjectTest(unittest.TestCase):\n    pass\n";
     let tree = parser.parse(src, None).unwrap();
     let root = tree.root_node();
     let cls1 = root.child(0).unwrap();
     let cls2 = root.child(1).unwrap();
+    let cls3 = root.child(2).unwrap();
     assert!(is_test_class(cls1, src));
     assert!(!is_test_class(cls2, src));
+    assert!(is_test_class(cls3, src));
 }
 
 // ---------------------------------------------------------------------------

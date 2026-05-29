@@ -5,8 +5,8 @@ use super::coverage::{
 use super::coverage_expand::{
     is_py_contrib_refactor_void_force_uncovered, is_py_experiments_path,
     is_py_inflator_calibration_path, is_py_ecosystem_auxiliary_path, is_py_inflator_call_only_path,
-    is_py_inflator_denominator_path, is_py_optimizer_path,
-    is_py_rl_integration_path,
+    is_py_inflator_denominator_path, is_py_optimizer_path, is_py_acq_subtree,
+    is_py_rl_integration_path, is_py_base_subtree_only,
 };
 use super::coverage_expand::is_py_base_oi_subtree;
 use super::{CodeDefinition, ParsedFile};
@@ -145,6 +145,21 @@ fn rl_or_oi_path_covered(def: &CodeDefinition, ctx: &UnreferencedFilterCtx<'_>) 
         )
 }
 
+fn optimizer_module_import_witnessed(
+    def: &CodeDefinition,
+    ctx: &UnreferencedFilterCtx<'_>,
+) -> bool {
+    if !is_py_optimizer_path(&def.file) {
+        return false;
+    }
+    let Some(def_suffix) = ctx.module_suffixes.get(&def.file) else {
+        return false;
+    };
+    ctx.import_bindings
+        .keys()
+        .any(|import_module| def_suffix == import_module)
+}
+
 fn shipped_calibration_refs<'a>(
     def: &CodeDefinition,
     ctx: &'a UnreferencedFilterCtx<'_>,
@@ -172,10 +187,14 @@ fn shipped_calibration_covered(
     ctx: &UnreferencedFilterCtx<'_>,
     file_defs: usize,
 ) -> bool {
-    if is_py_experiments_path(&def.file) {
+    if is_py_experiments_path(&def.file) || is_py_acq_subtree(&def.file) {
         return experiments_path_covered(def, ctx);
     }
-    if is_py_rl_integration_path(&def.file) || is_py_base_oi_subtree(&def.file) {
+    if is_py_rl_integration_path(&def.file) {
+        return experiments_path_covered(def, ctx)
+            || is_py_package_init_import_witnessed(def, ctx.import_bindings, ctx.module_suffixes);
+    }
+    if is_py_base_oi_subtree(&def.file) {
         return rl_or_oi_path_covered(def, ctx);
     }
     let refs = shipped_calibration_refs(def, ctx, file_defs);
@@ -192,19 +211,43 @@ fn shipped_calibration_covered(
 
 fn calibration_def_covered(def: &CodeDefinition, ctx: &UnreferencedFilterCtx<'_>) -> bool {
     let file_defs = ctx.defs_per_file.get(&def.file).copied().unwrap_or(0);
+    if is_py_optimizer_path(&def.file) {
+        return optimizer_module_import_witnessed(def, ctx)
+            || is_definition_covered_for_calibration(
+                def,
+                ctx.name_files,
+                ctx.disambiguation,
+                ctx.import_bindings,
+                ctx.module_suffixes,
+                ctx.calibration_strict_refs,
+            );
+    }
+    if is_py_base_subtree_only(&def.file) && !is_py_base_oi_subtree(&def.file) {
+        return is_py_base_explicit_import_witnessed(
+            def,
+            ctx.import_bindings,
+            ctx.module_suffixes,
+            ctx.calibration_strict_refs,
+        );
+    }
     if is_py_base_explicit_import_witnessed(
         def,
         ctx.import_bindings,
         ctx.module_suffixes,
-        ctx.test_witness_refs,
+        ctx.calibration_strict_refs,
     ) {
         return true;
     }
-    if ctx.coverage_bound == CalibrationCoverageBound::Attested {
-        return bound_tier_covered(def, ctx, ctx.calibration_strict_refs);
-    }
-    if ctx.coverage_bound == CalibrationCoverageBound::Optimistic {
-        return bound_tier_covered(def, ctx, ctx.calibration_expanded_refs);
+    if matches!(
+        ctx.coverage_bound,
+        CalibrationCoverageBound::Attested | CalibrationCoverageBound::Optimistic
+    ) {
+        let refs = if ctx.coverage_bound == CalibrationCoverageBound::Attested {
+            ctx.calibration_strict_refs
+        } else {
+            ctx.calibration_expanded_refs
+        };
+        return bound_tier_covered(def, ctx, refs);
     }
     if inflator_call_only_uncovered(def, ctx) || ops_hub_class_deny(def, file_defs) {
         return false;

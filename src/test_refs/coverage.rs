@@ -1,4 +1,4 @@
-use super::coverage_expand::is_py_base_oi_subtree;
+use super::coverage_expand::{is_py_base_oi_subtree, is_py_oi_interfaces_stub_path, is_py_oi_root_level_module};
 use super::disambiguation::module_suffix_matches;
 use super::{CodeDefinition, CoveringTest};
 use crate::graph::DependencyGraph;
@@ -56,9 +56,17 @@ pub(crate) fn is_py_oi_module_import_witnessed(
     let Some(def_suffix) = module_suffixes.get(&def.file) else {
         return false;
     };
-    import_bindings
-        .keys()
-        .any(|import_module| module_suffix_matches(def_suffix, import_module))
+    import_bindings.keys().any(|import_module| {
+        if def_suffix == import_module {
+            return true;
+        }
+        if is_py_oi_root_level_module(&def.file)
+            && !is_py_oi_interfaces_stub_path(&def.file)
+        {
+            return false;
+        }
+        module_suffix_matches(def_suffix, import_module)
+    })
 }
 
 /// Package `__init__.py`: credit defs when any test imports a submodule of that package
@@ -68,6 +76,11 @@ pub(crate) fn is_py_package_init_import_witnessed(
     import_bindings: &HashMap<String, HashSet<String>>,
     module_suffixes: &HashMap<PathBuf, String>,
 ) -> bool {
+    use super::coverage_expand::is_py_base_oi_subtree;
+    use super::coverage_expand::is_py_base_subtree_only;
+    if is_py_base_subtree_only(&def.file) && !is_py_base_oi_subtree(&def.file) {
+        return false;
+    }
     if def.file.file_name().and_then(|n| n.to_str()) != Some("__init__.py") {
         return false;
     }

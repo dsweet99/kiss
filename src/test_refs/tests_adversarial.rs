@@ -62,6 +62,6 @@ fn protocol_stub_credit_must_not_key_on_interfaces_basename() {
     );
     assert!(
         contract_credited,
-        "neutral protocol stub (protocol_contract.py) must receive module-import witness credit without benchmark basename interfaces.py"
+        "nested OI protocol stub must receive module-import witness credit via parent prefix binding"
     );
 }
