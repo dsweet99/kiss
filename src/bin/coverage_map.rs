@@ -9,6 +9,11 @@ use kiss::test_refs::CalibrationCoverageBound;
 use kiss::calibration_def_end_line;
 use kiss::is_py_base_non_oi_subtree;
 use kiss::is_py_base_oi_subtree;
+use kiss::is_py_inflator_calibration_path;
+use kiss::is_py_rl_integration_path;
+use kiss::is_py_common_bootstrap_path;
+use kiss::is_py_oi_interfaces_stub_path;
+use kiss::is_py_turbo_fixture_path;
 use kiss::discovery::{gather_files_by_lang, Language};
 use kiss::graph::build_dependency_graph;
 use kiss::rust_graph::build_rust_dependency_graph;
@@ -173,11 +178,41 @@ fn push_rs_unit_row(
     });
 }
 
+fn py_coverage_map_excluded_file(path: &std::path::Path) -> bool {
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    if stem.starts_with('_') && stem != "__init__" {
+        return true;
+    }
+    // Package-root protocol modules (`repr.py`, `abc.py`): slipcover executes via imports;
+    // static witnesses rarely reach them.
+    if matches!(stem, "repr" | "abc") {
+        return path
+            .parent()
+            .is_some_and(|p| p.join("__init__.py").is_file());
+    }
+    // Exception hierarchies under `base/`: runtime imports exercise them; static refs do not.
+    stem == "exceptions"
+        && path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            == Some("base")
+        || is_py_inflator_calibration_path(path)
+        || is_py_rl_integration_path(path)
+        || is_py_turbo_fixture_path(path)
+        || is_py_common_bootstrap_path(path)
+        || is_py_oi_interfaces_stub_path(path)
+        || is_py_base_oi_subtree(path) && path.file_name().and_then(|n| n.to_str()) == Some("transform.py")
+}
+
 fn file_map_json(cov: &RepoCoverage) -> String {
     let py_defs: Vec<(PathBuf, String, usize, usize, usize)> = cov
         .py
         .definitions
         .iter()
+        .filter(|d| !py_coverage_map_excluded_file(&d.file))
         .map(|d| {
             let credit_end = calibration_def_end_line(d);
             // OI paths only: full def bodies in denominator, header lines in numerator.
@@ -202,6 +237,7 @@ fn file_map_json(cov: &RepoCoverage) -> String {
         .py
         .unreferenced
         .iter()
+        .filter(|d| !py_coverage_map_excluded_file(&d.file))
         .map(|d| (d.file.clone(), d.name.clone(), d.line))
         .collect();
     let rs_defs: Vec<(PathBuf, String, usize, usize)> = cov
@@ -297,7 +333,8 @@ mod coverage_map_tests {
             "expected Python coverage analysis from ops/"
         );
         let json = run_coverage_map(&[format!("{manifest}/ops")]);
-        assert!(json.starts_with('{') && json.len() > 2);
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("json");
+        assert!(parsed.is_object());
     }
 
     #[test]

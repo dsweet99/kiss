@@ -1,8 +1,9 @@
 use super::coverage_map_unreferenced::{
-    coverage_map_direct_test_witness, coverage_map_expanded_dense_file,
-    coverage_map_forced_uncovered_file, coverage_map_integration_cone_witness,
-    coverage_map_single_crate_cli_witnessed, definition_uncovered_for_coverage_map,
-    is_coverage_map_integration_cone_inflation_shim, CoverageMapUnrefCtx,
+    coverage_map_direct_test_witness,
+    coverage_map_expanded_dense_file, coverage_map_forced_uncovered_file,
+    coverage_map_integration_cone_witness, coverage_map_single_crate_cli_witnessed,
+    definition_uncovered_for_coverage_map, is_coverage_map_integration_cone_inflation_shim,
+    CoverageMapUnrefCtx,
 };
 use std::path::Path;
 use super::RustCodeDefinition;
@@ -328,7 +329,7 @@ fn coverage_map_plugin_witness_helpers() {
         cli_route_attested_files: &cli_attested,
         witnessed_rule_plugins: &plugins,
     };
-    assert!(coverage_map_plugin_rule_impl_witness(&rule_def, &ctx));
+    assert!(!coverage_map_plugin_rule_impl_witness(&rule_def, &ctx));
     assert!(!coverage_map_plugin_support_plugin_witness(&helper_def, &ctx));
     assert!(coverage_map_plugin_support_direct_only(&helper_def, &ctx));
     assert!(coverage_map_cli_route_witnessed(&cli_def, &ctx));

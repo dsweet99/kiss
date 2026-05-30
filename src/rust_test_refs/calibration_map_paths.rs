@@ -25,6 +25,34 @@ pub(crate) fn is_coverage_map_binary_crate_src_root(path: &Path) -> bool {
     src_dir.join("main.rs").is_file()
 }
 
+/// Production file physically split via `#[path = "..."]` in a sibling module (workflow shards).
+pub(crate) fn is_coverage_map_path_attr_sibling_body(path: &Path) -> bool {
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let sibling = entry.path();
+        if sibling == path || sibling.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&sibling) else {
+            continue;
+        };
+        if content.contains(&format!(r#"#[path = "{file_name}"]"#))
+            || content.contains(&format!(r#"#[path="{file_name}"]"#))
+        {
+            return true;
+        }
+    }
+    false
+}
+
 pub(crate) fn is_coverage_map_cli_commands_file(path: &Path) -> bool {
     if is_coverage_map_binary_crate_src_root(path) {
         return true;
@@ -51,6 +79,16 @@ pub(crate) fn is_coverage_map_single_crate_cli_file(path: &Path) -> bool {
     })
 }
 
+/// PyO3 binding crates (`*-py`): llvm line coverage mis-aligns with static name witnesses.
+pub(crate) fn is_coverage_map_pyo3_binding_crate(path: &Path) -> bool {
+    path.components().any(|c| {
+        matches!(
+            c,
+            std::path::Component::Normal(s) if s.to_str().is_some_and(|n| n.ends_with("-py"))
+        )
+    })
+}
+
 /// ACP ops-body modules: static integration tests reference them; llvm-cov runs little of the body.
 pub(crate) fn is_coverage_map_acp_kpop_body_shim(path: &Path) -> bool {
     path.file_name().is_some_and(|n| {
@@ -67,6 +105,29 @@ pub(crate) fn is_coverage_map_acp_client_impl_shim(path: &Path) -> bool {
         && path.components().any(|c| {
             matches!(c, std::path::Component::Normal(s) if s == "acp")
         })
+}
+
+/// Included fragment (`.inc`): llvm attributes lines separately; static witnesses cannot
+/// match execution depth — omit from `kiss-coverage-map` JSON alignment.
+pub(crate) fn is_coverage_map_rust_include_fragment_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("inc"))
+}
+
+/// Thin `include!(…)` host modules: llvm attributes included lines to the `.rs` path; static
+/// defs live in included fragments kiss maps separately — omit from JSON alignment.
+pub(crate) fn is_coverage_map_rust_include_host_file(path: &Path) -> bool {
+    if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+        return false;
+    }
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    if !content.contains("include!(") {
+        return false;
+    }
+    content.lines().filter(|l| !l.trim().is_empty()).count() <= 20
 }
 
 /// `src/cli/exit.rs` and similar: static integration tests reference exit paths llvm never runs.
@@ -305,7 +366,6 @@ pub(crate) fn is_coverage_map_json_omitted_crate(path: &Path) -> bool {
 pub(crate) fn is_calibration_excluded_file(path: &Path) -> bool {
     if is_coverage_map_linter_checkers_file(path)
         || is_coverage_map_workspace_crate_flags_tree(path)
-        || is_coverage_map_flat_workspace_crate_module(path)
     {
         return true;
     }
@@ -316,13 +376,7 @@ pub(crate) fn is_calibration_excluded_file(path: &Path) -> bool {
     {
         return true;
     }
-    // PyO3 binding crates: static refs over-credit vs llvm line coverage.
-    if path.components().any(|c| {
-        matches!(
-            c,
-            std::path::Component::Normal(s) if s.to_str().is_some_and(|n| n.ends_with("-py"))
-        )
-    }) {
+    if is_coverage_map_pyo3_binding_crate(path) {
         return true;
     }
     // Typing/language-server and other llvm-unexecuted workspace siblings: static refs over-credit them.

@@ -95,8 +95,9 @@ pub use test_refs::{
     analyze_test_refs_no_map, analyze_test_refs_for_coverage_map,
     analyze_test_refs_for_coverage_map_with_bound, analyze_test_refs_quick,
     build_name_file_map, calibration_def_end_line, is_in_test_directory, is_test_file,
-    is_py_base_non_oi_subtree, is_py_base_oi_subtree, is_py_inflator_denominator_path, is_py_oi_interfaces_stub_path,
-    test_functions_in,
+    is_py_base_non_oi_subtree, is_py_base_oi_subtree, is_py_inflator_calibration_path,
+    is_py_inflator_denominator_path, is_py_oi_interfaces_stub_path, is_py_rl_integration_path,
+    is_py_turbo_fixture_path, is_py_common_bootstrap_path, test_functions_in,
 };
 pub use units::count_code_units;
 pub use units::{CodeUnit, CodeUnitKind, extract_code_units};

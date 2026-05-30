@@ -47,13 +47,13 @@ def _python_coverage_params() -> list[click.Parameter]:
             ["--detailed"],
             is_flag=True,
             default=False,
-            help="Print file-by-file kiss vs runtime coverage after the summary.",
+            help="Include per-file details in the JSON report (default: summary only).",
         ),
         click.Option(
             ["--report-out"],
+            required=True,
             type=click.Path(dir_okay=False, path_type=Path),
-            default=None,
-            help="Write full summary + per-file details as JSON to PATH.",
+            help="Write summary (+ optional per-file details) as JSON to PATH.",
         ),
         click.Argument(["pytest_args"], nargs=-1, default=()),
     ]
@@ -78,7 +78,7 @@ register_python_command(cli)
     type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=Path),
 )
 @report_options
-def rust_cmd(repo: Path, detailed: bool, report_out: Path | None) -> None:
+def rust_cmd(repo: Path, detailed: bool, report_out: Path) -> None:
     """Measure discrepancy for a Rust repo (runtime via cargo-llvm-cov)."""
     runtime_map, runtime_total = llvm_cov_per_file(repo)
     emit_report(

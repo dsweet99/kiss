@@ -44,9 +44,11 @@ def print_detailed_report(r: DiscrepancyReport) -> None:
         )
 
 
-def write_report_json(r: DiscrepancyReport, out_path: Path) -> None:
+def write_report_json(
+    r: DiscrepancyReport, out_path: Path, *, detailed: bool = True
+) -> None:
     rows = sorted(r.pairs, key=lambda p: p.abs_delta, reverse=True)
-    payload = {
+    payload: dict[str, object] = {
         "repo": str(r.repo),
         "language": r.language,
         "summary": {
@@ -61,7 +63,9 @@ def write_report_json(r: DiscrepancyReport, out_path: Path) -> None:
             "inflation_rate": r.inflation_rate,
             "blind_spot_rate": r.blind_spot_rate,
         },
-        "files": [
+    }
+    if detailed:
+        payload["files"] = [
             {
                 "file": _display_path(r.repo, row.path),
                 "kiss_pct": row.kiss_pct,
@@ -71,20 +75,12 @@ def write_report_json(r: DiscrepancyReport, out_path: Path) -> None:
                 "flag": row.flag,
             }
             for row in rows
-        ],
-    }
+        ]
     out_path.write_text(json.dumps(payload, indent=2) + "\n")
 
 
-def emit_report(
-    r: DiscrepancyReport, *, detailed: bool, report_out: Path | None
-) -> None:
-    print_report(r)
-    if detailed:
-        print_detailed_report(r)
-    if report_out is not None:
-        write_report_json(r, report_out)
-        click.echo(f"report written: {report_out.resolve()}")
+def emit_report(r: DiscrepancyReport, *, detailed: bool, report_out: Path) -> None:
+    write_report_json(r, report_out, detailed=detailed)
 
 
 __all__ = ["print_report", "print_detailed_report", "write_report_json", "emit_report"]

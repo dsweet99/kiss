@@ -96,6 +96,24 @@ pub(crate) fn is_py_package_init_import_witnessed(
     suffix_match || stem_match
 }
 
+/// `PKG/base/` (non-OI): credit when tests import the module (side effects at collection).
+pub(crate) fn is_py_base_module_import_witnessed(
+    def: &CodeDefinition,
+    import_bindings: &HashMap<String, HashSet<String>>,
+    module_suffixes: &HashMap<PathBuf, String>,
+) -> bool {
+    use super::coverage_expand::{is_py_base_oi_subtree, is_py_base_subtree_only};
+    if !is_py_base_subtree_only(&def.file) || is_py_base_oi_subtree(&def.file) {
+        return false;
+    }
+    let Some(def_suffix) = module_suffixes.get(&def.file) else {
+        return false;
+    };
+    import_bindings.keys().any(|import_module| {
+        def_suffix == import_module || module_suffix_matches(def_suffix, import_module)
+    })
+}
+
 /// `PKG/base/` defs: credit when a test imports and calls the symbol (import-only witnesses
 /// over-credit facade modules like serializer/versioning with 0% runtime).
 pub(crate) fn is_py_base_explicit_import_witnessed(

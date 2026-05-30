@@ -209,3 +209,26 @@ fn test_is_coverage_map_acp_kpop_body_shim() {
     )));
 }
 
+#[test]
+fn test_is_coverage_map_rust_include_host_file() {
+    use crate::rust_test_refs::calibration_map;
+    use std::fs;
+    use std::path::Path;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let host = dir.path().join("wrap_session_spawn.rs");
+    fs::write(
+        &host,
+        r#"mod inline { include!("session_spawn.inc"); }
+pub use inline::*;
+"#,
+    )
+    .expect("write host");
+    assert!(calibration_map::is_coverage_map_rust_include_host_file(&host));
+    assert!(!calibration_map::is_coverage_map_rust_include_host_file(Path::new(
+        "src/acp/session_io.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_rust_include_fragment_file(Path::new(
+        "src/acp/session_spawn.inc"
+    )));
+}
+

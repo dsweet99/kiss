@@ -146,6 +146,35 @@ fn is_covered_by_import_calibration_paths() {
 }
 
 #[test]
+fn base_module_import_witnessed_when_module_imported() {
+    use super::coverage::is_py_base_module_import_witnessed;
+    let def = CodeDefinition {
+        name: "TaskHandle".into(),
+        kind: CodeUnitKind::Class,
+        file: PathBuf::from("rope/base/taskhandle.py"),
+        line: 1,
+        end_line: 10,
+        containing_class: None,
+    };
+    let mut module_suffixes = HashMap::new();
+    module_suffixes.insert(def.file.clone(), "rope.base.taskhandle".into());
+    let mut import_bindings = HashMap::new();
+    import_bindings.insert("rope.base.taskhandle".into(), HashSet::new());
+    assert!(is_py_base_module_import_witnessed(
+        &def,
+        &import_bindings,
+        &module_suffixes,
+    ));
+    import_bindings.clear();
+    import_bindings.insert("rope.base".into(), HashSet::new());
+    assert!(is_py_base_module_import_witnessed(
+        &def,
+        &import_bindings,
+        &module_suffixes,
+    ));
+}
+
+#[test]
 fn import_matches_and_module_definition_counts_paths() {
     use super::coverage::{import_matches_definition, module_definition_counts};
     use super::TestRefAnalysis;

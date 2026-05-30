@@ -171,7 +171,9 @@ fn shipped_calibration_refs<'a>(
     if is_py_ecosystem_auxiliary_path(&def.file)
         || is_py_experiments_path(&def.file)
         || is_py_inflator_calibration_path(&def.file)
-        || (super::coverage_expand::is_py_base_subtree_only(&def.file) && !is_py_base_oi_subtree(&def.file))
+        || (super::coverage_expand::is_py_base_subtree_only(&def.file)
+            && !is_py_base_oi_subtree(&def.file)
+            && file_defs > super::coverage_expand::MAX_DIR_SIBLING_EXPAND_DEFS)
         || file_defs > super::coverage_expand::MAX_PRODUCTION_IMPORT_EXPAND_DEFS
     {
         return ctx.calibration_strict_refs;
@@ -189,6 +191,18 @@ fn shipped_calibration_covered(
 ) -> bool {
     if is_py_experiments_path(&def.file) || is_py_acq_subtree(&def.file) {
         return experiments_path_covered(def, ctx);
+    }
+    if is_py_base_subtree_only(&def.file) && !is_py_base_oi_subtree(&def.file) {
+        return super::coverage::is_py_base_module_import_witnessed(
+            def,
+            ctx.import_bindings,
+            ctx.module_suffixes,
+        ) || is_py_base_explicit_import_witnessed(
+            def,
+            ctx.import_bindings,
+            ctx.module_suffixes,
+            ctx.calibration_strict_refs,
+        );
     }
     if is_py_rl_integration_path(&def.file) {
         return experiments_path_covered(def, ctx)
@@ -221,14 +235,6 @@ fn calibration_def_covered(def: &CodeDefinition, ctx: &UnreferencedFilterCtx<'_>
                 ctx.module_suffixes,
                 ctx.calibration_strict_refs,
             );
-    }
-    if is_py_base_subtree_only(&def.file) && !is_py_base_oi_subtree(&def.file) {
-        return is_py_base_explicit_import_witnessed(
-            def,
-            ctx.import_bindings,
-            ctx.module_suffixes,
-            ctx.calibration_strict_refs,
-        );
     }
     if is_py_base_explicit_import_witnessed(
         def,

@@ -18,16 +18,15 @@ mod coverage_void_dispatch;
 pub(crate) use coverage_expand_paths::{
     expand_py_path_literal_file_witnesses,
     is_py_contrib_base_void_partition, is_py_contrib_refactor_void_force_uncovered,
-    is_py_base_subtree_only, is_py_ecosystem_auxiliary_path, is_py_experiments_path, is_py_inflator_calibration_path, is_py_inflator_call_only_path,
-    is_py_optimizer_path,
-    is_py_rl_integration_path, is_py_acq_subtree,
+    is_py_base_subtree_only, is_py_ecosystem_auxiliary_path, is_py_experiments_path,
+    is_py_inflator_call_only_path, is_py_optimizer_path, is_py_acq_subtree,
 };
-pub use coverage_expand_paths::calibration_def_end_line;
-pub use coverage_expand_paths::is_py_base_non_oi_subtree;
-pub use coverage_expand_paths::is_py_base_oi_subtree;
-pub use coverage_expand_paths::is_py_oi_interfaces_stub_path;
-pub use coverage_expand_paths::is_py_oi_root_level_module;
-pub use coverage_expand_paths::is_py_inflator_denominator_path;
+pub use coverage_expand_paths::{
+    calibration_def_end_line, is_py_base_non_oi_subtree, is_py_base_oi_subtree,
+    is_py_inflator_calibration_path, is_py_inflator_denominator_path,
+    is_py_oi_interfaces_stub_path, is_py_oi_root_level_module, is_py_rl_integration_path,
+    is_py_turbo_fixture_path, is_py_common_bootstrap_path,
+};
 #[allow(unused_imports)]
 pub(crate) use coverage_void_dispatch::{
     build_py_void_dispatch_attestation, collect_py_dynamic_dispatch_literals,
@@ -37,7 +36,7 @@ pub(crate) use coverage_void_dispatch::{
 const MAX_EXPAND_HOPS: usize = 12;
 pub(crate) const MAX_PRODUCTION_IMPORT_EXPAND_DEFS: usize = 12;
 pub(crate) const MAX_SAME_FILE_ONE_HOP_DEFS: usize = 4;
-pub(crate) const MAX_DIR_SIBLING_EXPAND_DEFS: usize = 8;
+pub(crate) const MAX_DIR_SIBLING_EXPAND_DEFS: usize = 10;
 
 pub(crate) fn expand_py_usage_refs_fixpoint(
     parsed_files: &[&ParsedFile],

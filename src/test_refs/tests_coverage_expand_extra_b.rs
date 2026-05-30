@@ -234,6 +234,15 @@ fn repo_root_path_predicates_classify_subtrees() {
     assert!(is_py_experiments_path(std::path::Path::new(
         "/abs/repo/experiments/trial.py"
     )));
+    assert!(is_py_common_bootstrap_path(std::path::Path::new("common/seed_all.py")));
+    assert!(is_py_common_bootstrap_path(std::path::Path::new("pkg/common/util.py")));
+    assert!(is_py_turbo_fixture_path(std::path::Path::new(
+        "src/enn/turbo/python_fallback/components/x.py"
+    )));
+    assert!(is_py_turbo_fixture_path(std::path::Path::new(
+        "src/enn/turbo/optimizer_fixtures/capture.py"
+    )));
+    assert!(!is_py_turbo_fixture_path(std::path::Path::new("src/core.py")));
 }
 
 #[test]

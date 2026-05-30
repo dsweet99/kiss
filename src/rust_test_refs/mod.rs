@@ -56,20 +56,32 @@ mod tests_adversarial;
 #[cfg(test)]
 #[path = "tests_adversarial_b.rs"]
 mod tests_adversarial_b;
+#[cfg(test)]
+#[path = "tests_coverage_unmap_b.rs"]
+mod tests_coverage_unmap_b;
 
 pub use definitions::RustCodeDefinition;
 
 /// Whether `kiss-coverage-map` should omit this path from per-file JSON (llvm mis-aligns).
 pub fn coverage_map_excluded_file(path: &Path) -> bool {
-    calibration_map::is_coverage_map_json_omitted_crate(path)
+    calibration_map::is_coverage_map_pyo3_binding_crate(path)
+        || calibration_map::is_coverage_map_json_omitted_crate(path)
         || calibration_map::is_coverage_map_rule_settings_file(path)
         || calibration_map::is_coverage_map_rule_rules_mod_file(path)
         || calibration_map::is_coverage_map_rule_plugin_hub_file(path)
+        || calibration_map::is_coverage_map_rule_plugin_support_file(path)
         || calibration_map::is_coverage_map_derive_shim_file(path)
         || calibration_map::is_coverage_map_cli_exit_shim(path)
         || calibration_map::is_coverage_map_acp_kpop_body_shim(path)
         || calibration_map::is_coverage_map_linter_checkers_file(path)
         || calibration_map::is_coverage_map_workspace_crate_flags_tree(path)
+        || calibration_map::is_coverage_map_rust_include_host_file(path)
+        || calibration_map::is_coverage_map_rust_include_fragment_file(path)
+        || calibration_map::is_coverage_map_linter_rule_impl_file(path)
+        || (path.file_name().and_then(|n| n.to_str()) == Some("builtin_modules.rs")
+            && path.components().any(|c| {
+                matches!(c, std::path::Component::Normal(s) if s == "sys")
+            }))
 }
 use definitions::{
     collect_rust_definitions, collect_test_module_references,

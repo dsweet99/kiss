@@ -224,6 +224,47 @@ fn analyze_test_refs_for_coverage_map_with_attested_and_optimistic_bounds() {
     assert_eq!(optimistic.definitions.len(), 1);
 }
 
+#[test]
+fn dense_base_module_import_witness_credits_without_explicit_call() {
+    use super::calibration_analysis::{
+        build_calibration_coverage_refs, filter_unreferenced_definitions, UnreferencedFilterCtx,
+    };
+    let path = PathBuf::from("rope/base/taskhandle.py");
+    let def = CodeDefinition {
+        name: "TaskHandle".into(),
+        kind: CodeUnitKind::Class,
+        file: path.clone(),
+        line: 1,
+        end_line: 10,
+        containing_class: None,
+    };
+    let witnesses = HashSet::new();
+    let (strict, expanded, counts) =
+        build_calibration_coverage_refs(&[], std::slice::from_ref(&def), &witnesses);
+    let mut import_bindings = HashMap::new();
+    import_bindings.insert("rope.base.taskhandle".into(), HashSet::new());
+    let mut module_suffixes = HashMap::new();
+    module_suffixes.insert(path.clone(), "rope.base.taskhandle".into());
+    let ctx = UnreferencedFilterCtx {
+        calibration: true,
+        coverage_bound: CalibrationCoverageBound::Shipped,
+        defs_per_file: &counts,
+        test_witness_refs: &witnesses,
+        calibration_strict_refs: &strict,
+        calibration_expanded_refs: &expanded,
+        void_dispatch_attestation: &HashMap::new(),
+        usage_references: &HashSet::new(),
+        name_files: &HashMap::new(),
+        disambiguation: &HashMap::new(),
+        import_bindings: &import_bindings,
+        module_suffixes: &module_suffixes,
+    };
+    assert!(
+        filter_unreferenced_definitions(std::slice::from_ref(&def), &ctx).is_empty(),
+        "imported base/ modules must receive module-import witness credit under Shipped bound"
+    );
+}
+
 fn rope_base_exceptions_import_ctx(
     path: &std::path::Path,
 ) -> (

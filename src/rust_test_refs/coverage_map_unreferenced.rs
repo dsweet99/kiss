@@ -42,6 +42,21 @@ pub(crate) fn is_coverage_map_integration_cone_inflation_shim(path: &Path) -> bo
     let Some(seg) = comps.get(src_idx + 1) else {
         return false;
     };
+    // JSON-RPC transport modules: integration tests exercise error paths llvm runs; cone credit
+    // is attestation not bulk hub inflation.
+    if *seg == "acp" {
+        if comps.get(src_idx + 2) == Some(&"transport") {
+            return false;
+        }
+        // `wrap_*` session helpers: llvm executes heavily via integration tests; not hub inflation.
+        if path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .is_some_and(|stem| stem.starts_with("wrap_"))
+        {
+            return false;
+        }
+    }
     comps.len() >= src_idx + 3 && is_integration_cone_inflation_segment(seg)
 }
 
@@ -68,23 +83,14 @@ pub(crate) fn build_witnessed_rule_plugins(
 
 pub(crate) fn coverage_map_plugin_rule_impl_witness(
     d: &RustCodeDefinition,
-    ctx: &CoverageMapUnrefCtx<'_>,
+    _ctx: &CoverageMapUnrefCtx<'_>,
 ) -> bool {
     if !calibration_map::is_coverage_map_linter_rule_impl_file(&d.file) {
         return false;
     }
-    let Some(plugin) = calibration_map::linter_rule_plugin_name(&d.file) else {
-        return false;
-    };
-    // Registry manifold alone over-credits rule bodies llvm never executes (g11).
-    ctx.witnessed_rule_plugins.contains(plugin)
-        && ctx.test_witness_refs.contains(&d.name)
-        && is_covered_by_tests_for_coverage_map(
-            d,
-            ctx.coverage_references,
-            ctx.name_files,
-            ctx.disambiguation,
-        )
+    // Rule bodies: name-only test witnesses (registry snapshots) must not credit bodies llvm
+    // never executes — require impl-type attestation channel instead (g11/g13).
+    false
 }
 
 /// Rule-impl attestation channel (S_impl): impl-type witnesses credit rule bodies without
@@ -96,13 +102,35 @@ pub(crate) fn coverage_map_plugin_rule_impl_type_attestation(
     if !calibration_map::is_coverage_map_linter_rule_impl_file(&d.file) {
         return false;
     }
-    matches!(
+    if !matches!(
         d.kind,
         CodeUnitKind::TraitImplMethod | CodeUnitKind::Method
-    ) && d
+    ) {
+        return false;
+    }
+    let type_witnessed = d
         .impl_for_type
         .as_ref()
-        .is_some_and(|t| ctx.coverage_references.contains(t))
+        .is_some_and(|t| ctx.coverage_references.contains(t));
+    if !type_witnessed {
+        return false;
+    }
+    let file_defs = ctx.defs_per_file.get(&d.file).copied().unwrap_or(0);
+    file_defs <= 1 || ctx.coverage_references.contains(&d.name)
+}
+
+pub(crate) fn coverage_map_plugin_support_cone_witness(
+    d: &RustCodeDefinition,
+    ctx: &CoverageMapUnrefCtx<'_>,
+) -> bool {
+    if !calibration_map::is_coverage_map_rule_plugin_support_file(&d.file) {
+        return false;
+    }
+    let Some(plugin) = calibration_map::linter_rule_plugin_name(&d.file) else {
+        return false;
+    };
+    ctx.witnessed_rule_plugins.contains(plugin)
+        && ctx.defs_per_file.get(&d.file).copied().unwrap_or(0) <= 8
 }
 
 /// Plugin support modules (helpers.rs): S_support channel is strict-direct only; plugin
@@ -130,18 +158,41 @@ pub(crate) fn coverage_map_cli_route_witnessed(
     use super::calibration_map::is_coverage_map_single_crate_cli_file;
     let key = crate::rust_include::canonical_path(&d.file);
     is_coverage_map_single_crate_cli_file(&d.file)
+        && !coverage_map_cli_loop_body_inflation_shim(&d.file)
         && ctx.cli_route_attested_files.contains(&key)
         && ctx.coverage_references.contains(&d.name)
 }
 
-/// `run_loop.rs` / `*_flow.rs`: integration tests name modules; llvm-cov runs little of the body.
-fn coverage_map_cli_loop_body_inflation_shim(path: &Path) -> bool {
-    path.file_stem()
-        .and_then(|s| s.to_str())
-        .is_some_and(|stem| stem.ends_with("_loop") || stem.ends_with("_flow"))
-        && path.components().any(|c| {
-            matches!(c, std::path::Component::Normal(s) if s == "cli")
-        })
+/// CLI workflow bodies (`run_loop.rs`, `kpop_flow_a.rs` via `#[path]`): integration tests name
+/// modules; llvm-cov runs little of the body.
+pub(crate) fn coverage_map_cli_loop_body_inflation_shim(path: &Path) -> bool {
+    if !path.components().any(|c| {
+        matches!(c, std::path::Component::Normal(s) if s == "cli")
+    }) {
+        return false;
+    }
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    if stem.ends_with("_loop") {
+        return true;
+    }
+    let mut inflation = stem.ends_with("_flow_a")
+        && calibration_map::is_coverage_map_path_attr_sibling_body(path);
+    if !inflation && stem.ends_with("_flow") {
+        let comps: Vec<_> = path
+            .components()
+            .filter_map(|c| match c {
+                std::path::Component::Normal(s) => Some(s),
+                _ => None,
+            })
+            .collect();
+        inflation = comps
+            .iter()
+            .position(|&c| c == "src")
+            .is_some_and(|src_idx| comps.len().saturating_sub(src_idx + 1) >= 3);
+    }
+    inflation
 }
 
 pub(crate) fn coverage_map_single_crate_cli_witnessed(
@@ -159,6 +210,9 @@ pub(crate) fn coverage_map_direct_test_witness(
     d: &RustCodeDefinition,
     ctx: &CoverageMapUnrefCtx<'_>,
 ) -> bool {
+    if coverage_map_cli_loop_body_inflation_shim(&d.file) {
+        return false;
+    }
     !calibration::is_coverage_map_cli_commands_file(&d.file)
         && !calibration_map::is_coverage_map_linter_rule_impl_file(&d.file)
         && is_covered_by_tests_for_coverage_map(
@@ -175,7 +229,8 @@ pub(crate) fn coverage_map_integration_cone_witness(
 ) -> bool {
     ctx.integration_cone_files
         .contains(&crate::rust_include::canonical_path(&d.file))
-        && !calibration::is_calibration_excluded_file(&d.file)
+        && (!calibration::is_calibration_excluded_file(&d.file)
+            || calibration_map::is_coverage_map_flat_workspace_crate_module(&d.file))
         && !calibration::is_coverage_map_cli_commands_file(&d.file)
         && !is_coverage_map_integration_cone_inflation_shim(&d.file)
         && ctx.test_witness_refs.contains(&d.name)
@@ -216,11 +271,14 @@ pub(crate) fn definition_uncovered_for_coverage_map(
         || coverage_map_plugin_rule_impl_witness(d, ctx)
         || coverage_map_plugin_rule_impl_type_attestation(d, ctx)
         || coverage_map_plugin_support_direct_only(d, ctx)
+        || coverage_map_plugin_support_cone_witness(d, ctx)
         || coverage_map_integration_cone_witness(d, ctx);
     if witnessed {
         return false;
     }
-    if calibration_map::is_coverage_map_rule_plugin_support_file(&d.file) {
+    if calibration_map::is_coverage_map_linter_rule_impl_file(&d.file)
+        || calibration_map::is_coverage_map_rule_plugin_support_file(&d.file)
+    {
         return true;
     }
     let from_expanded = is_covered_by_tests_for_coverage_map(
@@ -229,7 +287,10 @@ pub(crate) fn definition_uncovered_for_coverage_map(
         ctx.name_files,
         ctx.disambiguation,
     );
-    if !from_expanded || calibration::is_coverage_map_cli_commands_file(&d.file) {
+    if !from_expanded
+        || calibration::is_coverage_map_cli_commands_file(&d.file)
+        || coverage_map_cli_loop_body_inflation_shim(&d.file)
+    {
         return true;
     }
     !is_directly_referenced(d, ctx.coverage_references, ctx.name_files, ctx.disambiguation)
@@ -262,13 +323,22 @@ mod tests {
             "src/cli/tidy_flow/run_flow.rs"
         )));
         assert!(!coverage_map_cli_loop_body_inflation_shim(Path::new(
+            "src/cli/code_flow.rs"
+        )));
+        assert!(!coverage_map_cli_loop_body_inflation_shim(Path::new(
+            "src/cli/tidy_flow.rs"
+        )));
+        assert!(!coverage_map_cli_loop_body_inflation_shim(Path::new(
+            "src/cli/code_flow_a.rs"
+        )));
+        assert!(!coverage_map_cli_loop_body_inflation_shim(Path::new(
             "src/cli/kpop_flow_a.rs"
         )));
-        assert!(is_coverage_map_integration_cone_inflation_shim(Path::new(
+        assert!(!is_coverage_map_integration_cone_inflation_shim(Path::new(
             "src/acp/transport/jsonrpc_error.rs"
         )));
         assert!(is_coverage_map_integration_cone_inflation_shim(Path::new(
-            "src/orchestrator/run.rs"
+            "src/cursor_store/mod.rs"
         )));
     }
 

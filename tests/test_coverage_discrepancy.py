@@ -66,7 +66,11 @@ def test_print_and_write_report(tmp_path: Path, capsys) -> None:
     assert payload["summary"]["file_max_abs_diff"] == 0.2
     assert payload["summary"]["file_rmse"] == 0.2
     emit_report(report, detailed=False, report_out=json_path)
-    assert json_path.exists()
+    payload = json.loads(json_path.read_text())
+    assert "files" not in payload
+    emit_report(report, detailed=True, report_out=json_path)
+    payload = json.loads(json_path.read_text())
+    assert payload["files"][0]["file"] == "m.py"
 
 
 def test_discrepancy_report_dataclass_and_run_helper() -> None:
@@ -74,7 +78,9 @@ def test_discrepancy_report_dataclass_and_run_helper() -> None:
     assert run(["echo", "ok"]) == "ok\n"
 
 
-def _invoke_rust_cmd(monkeypatch, cd_cli_mod, repo: Path) -> None:
+def _invoke_rust_cmd(
+    monkeypatch, cd_cli_mod, repo: Path, *, report_out: Path
+) -> None:
     rust_calls: list[object] = []
     sample = DiscrepancyReport(
         repo=repo,
@@ -96,7 +102,9 @@ def _invoke_rust_cmd(monkeypatch, cd_cli_mod, repo: Path) -> None:
     monkeypatch.setattr(
         cd_cli_mod, "emit_report", lambda report, **_: rust_calls.append(report.repo)
     )
-    cd_cli_mod.rust_cmd.callback(repo=repo, detailed=False, report_out=None)
+    cd_cli_mod.rust_cmd.callback(
+        repo=repo, detailed=False, report_out=report_out
+    )
     assert rust_calls == [repo]
 
 
@@ -109,7 +117,6 @@ def test_ops_cli_and_runtime_entrypoints(
     import ops.cd_runtime_kiss as kiss_mod
     import pytest
     from click.testing import CliRunner
-    from ops.cd_python_run import PythonCoverageRun, python_cmd
 
     repo = tmp_path / "proj"
     repo.mkdir()
@@ -117,18 +124,18 @@ def test_ops_cli_and_runtime_entrypoints(
     with pytest.raises(RuntimeError, match="kiss-coverage-map"):
         kiss_mod.kiss_per_file(tmp_path, language="rust")
 
-    seen: list[object] = []
-    monkeypatch.setattr("ops.cd_python_run.run_python_coverage_discrepancy", seen.append)
-    python_cmd(PythonCoverageRun(tmp_path, None, ("tests/",), False, None))
-    assert seen
-
     calls: list[object] = []
     monkeypatch.setattr("ops.cd_python_run.run_python_coverage_discrepancy", calls.append)
-    result = CliRunner().invoke(ops.cd_click.cli, ["python", str(repo.resolve())])
+    report_path = tmp_path / "out.json"
+    result = CliRunner().invoke(
+        ops.cd_click.cli,
+        ["python", str(repo.resolve()), "--report-out", str(report_path)],
+    )
     assert result.exit_code == 0, result.output
+    assert not result.output
     assert calls
 
-    _invoke_rust_cmd(monkeypatch, cd_cli_mod, repo)
+    _invoke_rust_cmd(monkeypatch, cd_cli_mod, repo, report_out=tmp_path / "rust.json")
 
     group = click.Group()
     cd_cli_mod.register_python_command(group)
@@ -161,7 +168,7 @@ def test_python_coverage_command_invoke(monkeypatch, tmp_path: Path) -> None:
         "source": None,
         "pytest_args": (),
         "detailed": False,
-        "report_out": None,
+        "report_out": tmp_path / "report.json",
     }
     assert cmd.invoke(ctx) == 0
     assert seen and seen[0].repo == repo

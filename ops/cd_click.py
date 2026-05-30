@@ -17,12 +17,12 @@ def report_options(f):
     f = click.option(
         "--detailed",
         is_flag=True,
-        help="Print file-by-file kiss vs runtime coverage after the summary.",
+        help="Include per-file details in the JSON report (default: summary only).",
     )(f)
     return click.option(
         "--report-out",
+        required=True,
         type=click.Path(dir_okay=False, path_type=Path),
-        default=None,
-        help="Write full summary + per-file details as JSON to PATH.",
+        help="Write summary (+ optional per-file details) as JSON to PATH.",
     )(f)
 

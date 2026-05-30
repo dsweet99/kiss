@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from ops.cd_include_rollup import build_rust_include_edges, rollup_inc_coverage
@@ -69,6 +70,8 @@ def test_run_python_coverage_discrepancy(monkeypatch, tmp_path: Path, capsys) ->
     )
     monkeypatch.setattr("ops.cd_python_run.analyze", lambda *_a, **_k: fake)
     run_python_coverage_discrepancy(
-        PythonCoverageRun(repo, "pkg", ("tests/",), False, None)
+        PythonCoverageRun(repo, "pkg", ("tests/",), False, tmp_path / "out.json")
     )
-    assert "file_rmse" in capsys.readouterr().out
+    assert not capsys.readouterr().out
+    payload = json.loads((tmp_path / "out.json").read_text())
+    assert payload["summary"]["file_rmse"] == 0.5

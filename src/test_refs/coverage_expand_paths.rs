@@ -179,8 +179,19 @@ pub(crate) fn is_py_acq_subtree(path: &std::path::Path) -> bool {
     is_py_repo_root_subtree(path, &["acq"])
 }
 
+/// Repo-root `common/` bootstrap modules: slipcover executes via conftest side effects.
+pub fn is_py_common_bootstrap_path(path: &std::path::Path) -> bool {
+    is_py_repo_root_subtree(path, &["common"])
+}
+
+/// Turbo/python_fallback fixture trees: static witnesses mis-align with slipcover line maps.
+pub fn is_py_turbo_fixture_path(path: &std::path::Path) -> bool {
+    let s = path.to_string_lossy();
+    s.contains("turbo/python_fallback") || s.contains("optimizer_fixtures")
+}
+
 /// Repo-root inflator subtrees: conftest import cones over-credit large class bodies.
-pub(crate) fn is_py_inflator_calibration_path(path: &std::path::Path) -> bool {
+pub fn is_py_inflator_calibration_path(path: &std::path::Path) -> bool {
     is_py_repo_root_subtree(path, &["optimizer", "experiments", "analysis", "ops"])
 }
 
@@ -190,7 +201,7 @@ pub fn is_py_inflator_denominator_path(path: &std::path::Path) -> bool {
 }
 
 /// Repo-root `rl/` integration subtrees: pytest executes via facade imports; allow expanded reach.
-pub(crate) fn is_py_rl_integration_path(path: &std::path::Path) -> bool {
+pub fn is_py_rl_integration_path(path: &std::path::Path) -> bool {
     is_py_repo_root_subtree(path, &["rl"])
 }
 

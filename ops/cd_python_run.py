@@ -15,7 +15,7 @@ class PythonCoverageRun:
     slipcover_source: str | None
     pytest_args: tuple[str, ...]
     detailed: bool
-    report_out: Path | None
+    report_out: Path
 
 
 def run_python_coverage_discrepancy(run: PythonCoverageRun) -> None:
