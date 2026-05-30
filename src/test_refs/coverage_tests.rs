@@ -146,6 +146,33 @@ fn is_covered_by_import_calibration_paths() {
 }
 
 #[test]
+fn base_symbol_import_witnessed_when_from_import_and_referenced() {
+    use super::coverage::is_py_base_symbol_import_witnessed;
+    let def = CodeDefinition {
+        name: "BuiltinClass".into(),
+        kind: CodeUnitKind::Class,
+        file: PathBuf::from("rope/base/builtins.py"),
+        line: 1,
+        end_line: 10,
+        containing_class: None,
+    };
+    let mut module_suffixes = HashMap::new();
+    module_suffixes.insert(def.file.clone(), "rope.base.builtins".into());
+    let mut import_bindings = HashMap::new();
+    import_bindings.insert(
+        "rope.base.builtins".into(),
+        HashSet::from(["BuiltinClass".into()]),
+    );
+    let witnesses = HashSet::from(["BuiltinClass".into()]);
+    assert!(is_py_base_symbol_import_witnessed(
+        &def,
+        &import_bindings,
+        &module_suffixes,
+        &witnesses,
+    ));
+}
+
+#[test]
 fn base_module_import_witnessed_when_module_imported() {
     use super::coverage::is_py_base_module_import_witnessed;
     let def = CodeDefinition {
@@ -167,7 +194,17 @@ fn base_module_import_witnessed_when_module_imported() {
     ));
     import_bindings.clear();
     import_bindings.insert("rope.base".into(), HashSet::new());
-    assert!(is_py_base_module_import_witnessed(
+    assert!(!is_py_base_module_import_witnessed(
+        &def,
+        &import_bindings,
+        &module_suffixes,
+    ));
+    import_bindings.clear();
+    import_bindings.insert(
+        "rope.base.pynamesdef".into(),
+        HashSet::from(["AssignedName".into()]),
+    );
+    assert!(!is_py_base_module_import_witnessed(
         &def,
         &import_bindings,
         &module_suffixes,

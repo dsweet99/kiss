@@ -103,7 +103,7 @@ def _invoke_rust_cmd(
         cd_cli_mod, "emit_report", lambda report, **_: rust_calls.append(report.repo)
     )
     cd_cli_mod.rust_cmd.callback(
-        repo=repo, detailed=False, report_out=report_out
+        repo=repo, report_out=report_out, detailed=False
     )
     assert rust_calls == [repo]
 
@@ -129,7 +129,7 @@ def test_ops_cli_and_runtime_entrypoints(
     report_path = tmp_path / "out.json"
     result = CliRunner().invoke(
         ops.cd_click.cli,
-        ["python", str(repo.resolve()), "--report-out", str(report_path)],
+        ["python", str(repo.resolve()), str(report_path)],
     )
     assert result.exit_code == 0, result.output
     assert not result.output

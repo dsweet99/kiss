@@ -1,28 +1,31 @@
 use std::path::{Path, PathBuf};
 
-/// Top-level `src/*.rs` modules in a workspace **binary shell** crate (e.g. `crates/ruff/src/printer.rs`).
+/// Workspace **binary shell** crate modules under `crates/<crate>/src/**` (e.g. `crates/ruff/src/commands/check.rs`).
 /// Requires `main.rs` in the same `src/` tree and a `crates/` path segment so single-crate repos
 /// like malvin (`src/learn_gate.rs` with lib+main) keep import-calibration credit.
 pub(crate) fn is_coverage_map_binary_crate_src_root(path: &Path) -> bool {
-    let Some(src_dir) = path.parent() else {
+    let comps: Vec<&str> = path
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect();
+    let Some(src_idx) = comps.iter().position(|&c| c == "src") else {
         return false;
     };
-    if src_dir.file_name().and_then(|s| s.to_str()) != Some("src") {
-        return false;
-    }
-    if !path.components().any(|c| {
-        matches!(c, std::path::Component::Normal(s) if s == "crates")
-    }) {
+    if !comps.contains(&"crates") {
         return false;
     }
     let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
     if file == "lib.rs" || file == "mod.rs" || file == "main.rs" {
         return false;
     }
-    if path.components().filter(|c| matches!(c, std::path::Component::Normal(_))).count() < 3 {
+    if comps.len() <= src_idx + 1 {
         return false;
     }
-    src_dir.join("main.rs").is_file()
+    super::calibration_map_shims::coverage_map_binary_crate_src_dir(path)
+        .is_some_and(|src_dir| src_dir.join("main.rs").is_file())
 }
 
 /// Production file physically split via `#[path = "..."]` in a sibling module (workflow shards).
@@ -173,10 +176,11 @@ pub(crate) fn is_coverage_map_derive_shim_file(path: &Path) -> bool {
             || s == "parenthesize.rs"
             || s == "recovery.rs"
             || s == "upstream_categories.rs"
-    })
+            || s == "relocate.rs"
+    }) || super::calibration_map_shims::is_coverage_map_ast_visitor_shim_file(path)
 }
 
-fn path_normal_components(path: &Path) -> Vec<&str> {
+pub(crate) fn path_normal_components(path: &Path) -> Vec<&str> {
     path.components()
         .filter_map(|c| match c {
             std::path::Component::Normal(s) => s.to_str(),
@@ -279,19 +283,18 @@ pub(crate) fn is_coverage_map_workspace_crate_flags_tree(path: &Path) -> bool {
     comps.get(crates_idx + 2) == Some(&"flags")
 }
 
-/// `rules/<plugin>/rules/*.rs` rule bodies (e.g. `flake8_bandit/rules/unsafe_markup_use.rs`).
+/// `rules/<plugin>/rules/**/*.rs` rule bodies (e.g. `flake8_bandit/rules/unsafe_markup_use.rs`,
+/// nested `pycodestyle/rules/logical_lines/*.rs`).
 pub(crate) fn is_coverage_map_linter_rule_impl_file(path: &Path) -> bool {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if name == "mod.rs" || name == "settings.rs" {
         return false;
     }
-    if path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()) != Some("rules") {
+    let comps = path_normal_components(path);
+    let Some(rules_idx) = comps.iter().position(|&c| c == "rules") else {
         return false;
-    }
-    path.components()
-        .filter(|c| matches!(c, std::path::Component::Normal(s) if *s == "rules"))
-        .count()
-        >= 2
+    };
+    comps.get(rules_idx + 2) == Some(&"rules")
 }
 
 /// Workspace auxiliary crates llvm-cov typically skips (typing siblings, servers, harnesses).
@@ -308,6 +311,7 @@ pub(crate) fn is_workspace_llvm_auxiliary_crate(name: &str, workspace_crate_sibl
         || name.ends_with("_server")
         || name.ends_with("_wasm")
         || name.ends_with("_cache")
+        || name.ends_with("_macros")
         || (workspace_crate_siblings >= 1
             && (name.ends_with("_formatter") || name.ends_with("_codegen")))
 }

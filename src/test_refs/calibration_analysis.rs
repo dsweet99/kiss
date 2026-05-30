@@ -197,6 +197,11 @@ fn shipped_calibration_covered(
             def,
             ctx.import_bindings,
             ctx.module_suffixes,
+        ) || super::coverage::is_py_base_symbol_import_witnessed(
+            def,
+            ctx.import_bindings,
+            ctx.module_suffixes,
+            ctx.test_witness_refs,
         ) || is_py_base_explicit_import_witnessed(
             def,
             ctx.import_bindings,

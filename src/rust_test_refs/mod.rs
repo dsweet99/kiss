@@ -65,7 +65,12 @@ pub use definitions::RustCodeDefinition;
 /// Whether `kiss-coverage-map` should omit this path from per-file JSON (llvm mis-aligns).
 pub fn coverage_map_excluded_file(path: &Path) -> bool {
     calibration_map::is_coverage_map_pyo3_binding_crate(path)
+        || calibration_map::is_coverage_map_binary_crate_src_root(path)
         || calibration_map::is_coverage_map_json_omitted_crate(path)
+        || calibration_map::is_coverage_map_parser_runtime_heavy_file(path)
+        || calibration_map::is_coverage_map_linter_cst_subtree_file(path)
+        || calibration_map::is_coverage_map_linter_settings_shim_file(path)
+        || calibration_map::is_coverage_map_semantic_core_shim_file(path)
         || calibration_map::is_coverage_map_rule_settings_file(path)
         || calibration_map::is_coverage_map_rule_rules_mod_file(path)
         || calibration_map::is_coverage_map_rule_plugin_hub_file(path)

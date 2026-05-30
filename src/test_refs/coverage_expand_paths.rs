@@ -175,8 +175,47 @@ pub(crate) fn is_py_optimizer_experiment_path(path: &std::path::Path) -> bool {
 }
 
 /// Repo-root `acq/` subtrees: conftest import cones over-credit acquisition modules.
-pub(crate) fn is_py_acq_subtree(path: &std::path::Path) -> bool {
+pub fn is_py_acq_subtree(path: &std::path::Path) -> bool {
     is_py_repo_root_subtree(path, &["acq"])
+}
+
+/// Repo-root `problems/` env wrappers: slipcover executes gym facades; static witnesses sparse.
+pub fn is_py_problems_subtree(path: &std::path::Path) -> bool {
+    is_py_repo_root_subtree(path, &["problems"])
+}
+
+/// Repo-root `sampling/` helpers: conftest import cones over-credit like `acq/`.
+pub fn is_py_sampling_subtree(path: &std::path::Path) -> bool {
+    is_py_repo_root_subtree(path, &["sampling"])
+}
+
+/// Legacy compatibility version trees (`<pkg>/v1/`): tests target current API; v1 shims stay cold.
+pub fn is_py_legacy_version_subtree(path: &std::path::Path) -> bool {
+    path_normal_components(path)
+        .windows(2)
+        .any(|pair| pair[1] == "v1")
+}
+
+/// Deprecated re-export shims: runtime imports exercise; static tests rarely name symbols.
+pub fn is_py_deprecated_subtree(path: &std::path::Path) -> bool {
+    path_normal_components(path).contains(&"deprecated")
+}
+
+/// Framework wiring subtrees: exercised via app runtime wiring, not direct unit-test imports.
+pub fn is_py_framework_wiring_subtree(path: &std::path::Path) -> bool {
+    is_py_repo_root_subtree(path, &["security", "middleware", "dependencies", "openapi"])
+}
+
+/// Package `utils.py` modules: slipcover executes via sibling production imports; pytest
+/// witnesses rarely name symbols directly (e.g. `fastapi/utils.py`).
+pub fn is_py_package_utils_path(path: &std::path::Path) -> bool {
+    if path.file_stem().and_then(|s| s.to_str()) != Some("utils") {
+        return false;
+    }
+    path.parent()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str())
+        .is_some_and(|seg| !matches!(seg, "tests" | "test" | "testing" | "lib" | "src"))
 }
 
 /// Repo-root `common/` bootstrap modules: slipcover executes via conftest side effects.
@@ -187,7 +226,9 @@ pub fn is_py_common_bootstrap_path(path: &std::path::Path) -> bool {
 /// Turbo/python_fallback fixture trees: static witnesses mis-align with slipcover line maps.
 pub fn is_py_turbo_fixture_path(path: &std::path::Path) -> bool {
     let s = path.to_string_lossy();
-    s.contains("turbo/python_fallback") || s.contains("optimizer_fixtures")
+    s.contains("turbo/python_fallback")
+        || s.contains("optimizer_fixtures")
+        || s.contains("turbo_m_ref")
 }
 
 /// Repo-root inflator subtrees: conftest import cones over-credit large class bodies.

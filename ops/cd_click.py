@@ -14,15 +14,13 @@ def cli() -> None:
 
 
 def report_options(f):
-    f = click.option(
+    f = click.argument(
+        "report_out",
+        type=click.Path(dir_okay=False, path_type=Path),
+    )(f)
+    return click.option(
         "--detailed",
         is_flag=True,
         help="Include per-file details in the JSON report (default: summary only).",
-    )(f)
-    return click.option(
-        "--report-out",
-        required=True,
-        type=click.Path(dir_okay=False, path_type=Path),
-        help="Write summary (+ optional per-file details) as JSON to PATH.",
     )(f)
 

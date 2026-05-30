@@ -1,6 +1,9 @@
 #[path = "calibration_map_paths.rs"]
 mod calibration_map_paths;
+#[path = "calibration_map_shims.rs"]
+mod calibration_map_shims;
 pub(crate) use calibration_map_paths::*;
+pub(crate) use calibration_map_shims::*;
 
 use super::definitions::RustCodeDefinition;
 use super::{

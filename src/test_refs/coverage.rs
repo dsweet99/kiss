@@ -109,8 +109,30 @@ pub(crate) fn is_py_base_module_import_witnessed(
     let Some(def_suffix) = module_suffixes.get(&def.file) else {
         return false;
     };
-    import_bindings.keys().any(|import_module| {
-        def_suffix == import_module || module_suffix_matches(def_suffix, import_module)
+    import_bindings.iter().any(|(import_module, names)| {
+        def_suffix == import_module && names.is_empty()
+    })
+}
+
+/// `PKG/base/` defs: credit when a test from-imports the symbol and references it in test code.
+pub(crate) fn is_py_base_symbol_import_witnessed(
+    def: &CodeDefinition,
+    import_bindings: &HashMap<String, HashSet<String>>,
+    module_suffixes: &HashMap<PathBuf, String>,
+    witness_refs: &HashSet<String>,
+) -> bool {
+    use super::coverage_expand::is_py_base_subtree_only;
+    if !is_py_base_subtree_only(&def.file) {
+        return false;
+    }
+    let Some(def_suffix) = module_suffixes.get(&def.file) else {
+        return false;
+    };
+    if !witness_refs.contains(&def.name) {
+        return false;
+    }
+    import_bindings.iter().any(|(import_module, names)| {
+        names.contains(&def.name) && module_suffix_matches(def_suffix, import_module)
     })
 }
 

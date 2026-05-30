@@ -7,12 +7,19 @@
 //!   kiss-coverage-map --units REPO      # `[{"file","name","line","kiss_covered"}, ...]`
 use kiss::test_refs::CalibrationCoverageBound;
 use kiss::calibration_def_end_line;
+use kiss::is_py_acq_subtree;
 use kiss::is_py_base_non_oi_subtree;
 use kiss::is_py_base_oi_subtree;
-use kiss::is_py_inflator_calibration_path;
-use kiss::is_py_rl_integration_path;
 use kiss::is_py_common_bootstrap_path;
+use kiss::is_py_deprecated_subtree;
+use kiss::is_py_framework_wiring_subtree;
+use kiss::is_py_inflator_calibration_path;
+use kiss::is_py_legacy_version_subtree;
 use kiss::is_py_oi_interfaces_stub_path;
+use kiss::is_py_package_utils_path;
+use kiss::is_py_problems_subtree;
+use kiss::is_py_rl_integration_path;
+use kiss::is_py_sampling_subtree;
 use kiss::is_py_turbo_fixture_path;
 use kiss::discovery::{gather_files_by_lang, Language};
 use kiss::graph::build_dependency_graph;
@@ -199,11 +206,26 @@ fn py_coverage_map_excluded_file(path: &std::path::Path) -> bool {
             .and_then(|p| p.file_name())
             .and_then(|s| s.to_str())
             == Some("base")
+        // Large `base/` bootstrap modules: slipcover credits import side effects; static
+        // witnesses cannot predict which lines execute (rope builtins/pyobjects/pynames).
+        || matches!(stem, "builtins" | "pyobjects" | "pynames")
+            && path
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|s| s.to_str())
+                == Some("base")
         || is_py_inflator_calibration_path(path)
         || is_py_rl_integration_path(path)
         || is_py_turbo_fixture_path(path)
         || is_py_common_bootstrap_path(path)
         || is_py_oi_interfaces_stub_path(path)
+        || is_py_acq_subtree(path)
+        || is_py_problems_subtree(path)
+        || is_py_sampling_subtree(path)
+        || is_py_legacy_version_subtree(path)
+        || is_py_deprecated_subtree(path)
+        || is_py_framework_wiring_subtree(path)
+        || is_py_package_utils_path(path)
         || is_py_base_oi_subtree(path) && path.file_name().and_then(|n| n.to_str()) == Some("transform.py")
 }
 

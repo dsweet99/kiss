@@ -28,14 +28,13 @@ use std::path::PathBuf;
 pub use calibration_analysis::CalibrationCoverageBound;
 pub use collect_parallel::test_functions_in;
 pub use coverage_expand::calibration_def_end_line;
-pub use coverage_expand::is_py_common_bootstrap_path;
-pub use coverage_expand::is_py_turbo_fixture_path;
-pub use coverage_expand::is_py_inflator_calibration_path;
-pub use coverage_expand::is_py_rl_integration_path;
-pub use coverage_expand::is_py_base_non_oi_subtree;
-pub use coverage_expand::is_py_base_oi_subtree;
-pub use coverage_expand::is_py_oi_interfaces_stub_path;
-pub use coverage_expand::is_py_inflator_denominator_path;
+pub use coverage_expand::{
+    is_py_acq_subtree, is_py_base_non_oi_subtree, is_py_base_oi_subtree, is_py_common_bootstrap_path,
+    is_py_deprecated_subtree, is_py_framework_wiring_subtree, is_py_inflator_calibration_path,
+    is_py_inflator_denominator_path,     is_py_legacy_version_subtree, is_py_oi_interfaces_stub_path, is_py_package_utils_path,
+    is_py_problems_subtree, is_py_rl_integration_path, is_py_sampling_subtree,
+    is_py_turbo_fixture_path,
+};
 pub(crate) use collect_parallel::collect_refs_parallel;
 pub(crate) use collect_parallel::collect_refs_parallel_for_coverage_map;
 pub(crate) use coverage::build_py_coverage_map;

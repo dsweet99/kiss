@@ -309,6 +309,29 @@ fn is_py_acq_subtree_respects_repo_root_blocklist() {
 }
 
 #[test]
+fn is_py_compat_and_framework_subtrees_detect_misaligned_partitions() {
+    use crate::test_refs::coverage_expand::{
+        is_py_deprecated_subtree, is_py_framework_wiring_subtree, is_py_legacy_version_subtree,
+        is_py_package_utils_path, is_py_problems_subtree, is_py_sampling_subtree,
+    };
+    assert!(is_py_legacy_version_subtree(std::path::Path::new("pydantic/v1/main.py")));
+    assert!(is_py_deprecated_subtree(std::path::Path::new(
+        "pydantic/deprecated/config.py"
+    )));
+    assert!(is_py_framework_wiring_subtree(std::path::Path::new(
+        "fastapi/security/oauth2.py"
+    )));
+    assert!(is_py_problems_subtree(std::path::Path::new(
+        "problems/mopta08.py"
+    )));
+    assert!(is_py_sampling_subtree(std::path::Path::new("sampling/cemniw.py")));
+    assert!(is_py_package_utils_path(std::path::Path::new("fastapi/utils.py")));
+    assert!(!is_py_package_utils_path(std::path::Path::new("tests/utils.py")));
+    assert!(!is_py_package_utils_path(std::path::Path::new("src/utils.py")));
+    assert!(!is_py_framework_wiring_subtree(std::path::Path::new("pkg/core.py")));
+}
+
+#[test]
 fn calibration_def_end_line_caps_oi_interfaces_stub() {
     let def = CodeDefinition {
         name: "Protocol".into(),

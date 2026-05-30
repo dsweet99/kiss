@@ -44,6 +44,9 @@ fn test_is_coverage_map_json_omitted_crate() {
     assert!(calibration_map::is_coverage_map_json_omitted_crate(Path::new(
         "crates/ruff_server/src/lib.rs"
     )));
+    assert!(calibration_map::is_coverage_map_json_omitted_crate(Path::new(
+        "crates/ruff_macros/src/lib.rs"
+    )));
     assert!(!calibration_map::is_coverage_map_json_omitted_crate(Path::new(
         "crates/core/logger.rs"
     )));
@@ -75,8 +78,49 @@ fn test_is_coverage_map_linter_rule_impl_file() {
     assert!(calibration_map::is_coverage_map_linter_rule_impl_file(Path::new(
         "crates/ruff_linter/src/rules/flake8_bandit/rules/unsafe_markup_use.rs"
     )));
+    assert!(calibration_map::is_coverage_map_linter_rule_impl_file(Path::new(
+        "crates/ruff_linter/src/rules/pycodestyle/rules/logical_lines/whitespace_before_comment.rs"
+    )));
     assert!(!calibration_map::is_coverage_map_linter_rule_impl_file(Path::new(
         "crates/ruff_linter/src/rules/flake8_bandit/mod.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_parser_runtime_heavy_file(Path::new(
+        "crates/ruff_python_parser/src/parser/mod.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_linter_cst_subtree_file(Path::new(
+        "crates/ruff_linter/src/cst/matchers.rs"
+    )));
+    let tmp = tempfile::TempDir::new().unwrap();
+    let ruff_src = tmp.path().join("crates").join("ruff").join("src");
+    std::fs::create_dir_all(ruff_src.join("commands")).unwrap();
+    std::fs::write(ruff_src.join("main.rs"), "fn main() {}\n").unwrap();
+    assert!(coverage_map_excluded_file(&ruff_src.join("cache.rs")));
+    assert!(coverage_map_excluded_file(&ruff_src.join("commands").join("check.rs")));
+    assert!(coverage_map_excluded_file(&ruff_src.join("resolve.rs")));
+    let src = tmp.path().join("crates").join("app").join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("main.rs"), "fn main() {}\n").unwrap();
+    assert_eq!(
+        calibration_map::coverage_map_binary_crate_src_dir(&src.join("args.rs")),
+        Some(src.clone())
+    );
+    assert!(calibration_map::is_coverage_map_semantic_core_shim_file(Path::new(
+        "crates/ruff_python_semantic/src/definition.rs"
+    )));
+    assert!(!calibration_map::is_coverage_map_semantic_core_shim_file(Path::new(
+        "crates/core/src/lib.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_ast_visitor_shim_file(Path::new(
+        "crates/ruff_python_ast/src/visitor/source_order.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_linter_settings_shim_file(Path::new(
+        "crates/ruff_linter/src/settings/flags.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_linter_settings_shim_file(Path::new(
+        "crates/ruff_linter/src/logging.rs"
+    )));
+    assert!(calibration_map::is_coverage_map_parser_runtime_heavy_file(Path::new(
+        "crates/ruff_python_parser/src/string.rs"
     )));
     assert!(!calibration_map::is_coverage_map_linter_rule_impl_file(Path::new(
         "crates/ruff_linter/src/rules/flake8_bandit/settings.rs"
