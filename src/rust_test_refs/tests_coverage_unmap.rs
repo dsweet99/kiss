@@ -70,6 +70,18 @@ fn coverage_map_helper_paths() {
         witnessed_rule_plugins: &HashSet::new(),
     };
     assert!(coverage_map_single_crate_cli_witnessed(&cli_def, &ctx));
+    let loop_def = RustCodeDefinition {
+        file: PathBuf::from("src/cli/code_flow/run_loop.rs"),
+        name: "run_once".into(),
+        line: 1,
+        end_line: 10,
+        kind: CodeUnitKind::Function,
+        impl_for_type: None,
+    };
+    assert!(
+        !coverage_map_single_crate_cli_witnessed(&loop_def, &ctx),
+        "loop bodies must not get integration-cone bulk CLI credit"
+    );
     assert!(coverage_map_direct_test_witness(&lib_def, &ctx));
 
     let mut cone_files = HashSet::new();

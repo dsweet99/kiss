@@ -48,7 +48,7 @@ def test_load_json_rejects_huge_file(tmp_path: Path) -> None:
         rt._load_json(path)
 
 
-def test_llvm_cov_tries_nextest_last(monkeypatch) -> None:
+def test_llvm_cov_tries_nextest_last(monkeypatch, tmp_path: Path) -> None:
     from ops import cd_runtime_llvm as llvm
 
     calls: list[list[str]] = []
@@ -58,11 +58,21 @@ def test_llvm_cov_tries_nextest_last(monkeypatch) -> None:
         calls.append(cmd)
         return 1
 
+    monkeypatch.setattr(llvm, "_llvm_cov_from_cached_report", lambda *_a, **_k: None)
     monkeypatch.setattr(llvm, "_run_check_only", _fake_check)
+    monkeypatch.setattr(llvm, "_try_llvm_report_json", lambda *_a, **_k: False)
     with pytest.raises(RuntimeError, match="llvm-cov failed"):
-        llvm.llvm_cov_per_file(Path("."))
-    assert calls[0] == ["cargo", "llvm-cov", "--lib", "--summary-only"]
+        llvm.llvm_cov_per_file(tmp_path)
+    assert calls[0] == ["cargo", "llvm-cov", "--summary-only"]
     assert calls[-1][2] == "nextest"
+
+
+def test_is_trusted_llvm_report_rejects_stale_zero_total() -> None:
+    from ops.cd_runtime_llvm import _is_trusted_llvm_report
+
+    many_files = {Path(f"f{i}.rs"): 0.0 for i in range(60)}
+    assert not _is_trusted_llvm_report(many_files, 0.4)
+    assert _is_trusted_llvm_report(many_files, 5.0)
 
 
 def test_slipcover_success_unlinks_streams_without_reading(

@@ -47,13 +47,22 @@ def _try_llvm_report_json(repo: Path, report_path: Path) -> bool:
 
 # Stale or partial profdata can yield a tiny report; prefer re-running tests then.
 _MIN_TRUSTED_LLVM_FILES = 50
+# Cached profdata with many file keys but ~0% lines covered (ruff) is still untrusted.
+_MIN_TRUSTED_LLVM_TOTAL_PCT = 2.0
 
 
 _LLVM_COV_TRY_CMDS: tuple[list[str], ...] = (
-    ["cargo", "llvm-cov", "--lib", "--summary-only"],
     ["cargo", "llvm-cov", "--summary-only"],
+    ["cargo", "llvm-cov", "--lib", "--summary-only"],
+    ["cargo", "llvm-cov", "nextest", "--summary-only"],
     ["cargo", "llvm-cov", "nextest", "--lib", "--summary-only"],
 )
+
+
+def _is_trusted_llvm_report(per_file: dict[Path, float], total_pct: float) -> bool:
+    if len(per_file) < _MIN_TRUSTED_LLVM_FILES:
+        return False
+    return total_pct >= _MIN_TRUSTED_LLVM_TOTAL_PCT
 
 
 def _llvm_cov_from_cached_report(
@@ -61,7 +70,7 @@ def _llvm_cov_from_cached_report(
 ) -> tuple[dict[Path, float], float] | None:
     if _try_llvm_report_json(repo, report_path):
         per_file, total = _llvm_cov_from_data(_load_json(report_path))
-        if len(per_file) >= _MIN_TRUSTED_LLVM_FILES:
+        if _is_trusted_llvm_report(per_file, total):
             return per_file, total
     return None
 

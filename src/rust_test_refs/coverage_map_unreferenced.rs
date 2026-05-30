@@ -134,11 +134,22 @@ pub(crate) fn coverage_map_cli_route_witnessed(
         && ctx.coverage_references.contains(&d.name)
 }
 
+/// `run_loop.rs` / `*_flow.rs`: integration tests name modules; llvm-cov runs little of the body.
+fn coverage_map_cli_loop_body_inflation_shim(path: &Path) -> bool {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .is_some_and(|stem| stem.ends_with("_loop") || stem.ends_with("_flow"))
+        && path.components().any(|c| {
+            matches!(c, std::path::Component::Normal(s) if s == "cli")
+        })
+}
+
 pub(crate) fn coverage_map_single_crate_cli_witnessed(
     d: &RustCodeDefinition,
     ctx: &CoverageMapUnrefCtx<'_>,
 ) -> bool {
     calibration_map::is_coverage_map_single_crate_cli_file(&d.file)
+        && !coverage_map_cli_loop_body_inflation_shim(&d.file)
         && !ctx.integration_cone_files.is_empty()
         && ctx.coverage_references.contains(&d.name)
         && ctx.defs_per_file.get(&d.file).copied().unwrap_or(0) <= 8
@@ -240,6 +251,26 @@ pub(crate) fn unreferenced_for_coverage_map(
 mod tests {
     use super::*;
     use crate::units::CodeUnitKind;
+    use std::path::Path;
+
+    #[test]
+    fn cli_loop_body_inflation_shim_and_cone_segments() {
+        assert!(coverage_map_cli_loop_body_inflation_shim(Path::new(
+            "src/cli/code_flow/run_loop.rs"
+        )));
+        assert!(coverage_map_cli_loop_body_inflation_shim(Path::new(
+            "src/cli/tidy_flow/run_flow.rs"
+        )));
+        assert!(!coverage_map_cli_loop_body_inflation_shim(Path::new(
+            "src/cli/kpop_flow_a.rs"
+        )));
+        assert!(is_coverage_map_integration_cone_inflation_shim(Path::new(
+            "src/acp/transport/jsonrpc_error.rs"
+        )));
+        assert!(is_coverage_map_integration_cone_inflation_shim(Path::new(
+            "src/orchestrator/run.rs"
+        )));
+    }
 
     #[test]
     fn forced_uncovered_and_witness_paths() {
