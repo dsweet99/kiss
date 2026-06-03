@@ -139,6 +139,9 @@ pub(super) fn collect_rust_definitions(
     file: &Path,
     defs: &mut Vec<RustCodeDefinition>,
 ) {
+    if is_binary_entry_point(file) {
+        return;
+    }
     for item in &ast.items {
         collect_definitions_from_item(item, file, defs);
     }
@@ -260,11 +263,16 @@ pub(super) fn collect_test_module_references(ast: &syn::File, refs: &mut HashSet
                             items: items.clone(),
                         },
                         refs,
+                        &mut HashSet::new(),
                     );
                 }
             }
             Item::Fn(f) if has_test_attribute(&f.attrs) => {
-                ReferenceVisitor { refs }.visit_item_fn(f);
+                ReferenceVisitor {
+                    refs,
+                    qualified: &mut HashSet::new(),
+                }
+                .visit_item_fn(f);
             }
             _ => {}
         }

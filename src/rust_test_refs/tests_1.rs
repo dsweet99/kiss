@@ -97,6 +97,7 @@ fn test_coverage_checks() {
     assert!(is_covered_by_tests(
         &def,
         &refs,
+        &HashSet::new(),
         &name_files,
         &disambiguation
     ));
@@ -110,18 +111,38 @@ fn test_visitor_and_macros() {
     use syn::visit::Visit;
 
     let mut refs = HashSet::new();
-    let _ = references::ReferenceVisitor { refs: &mut refs };
+    let mut qualified = HashSet::new();
+    let _ = references::ReferenceVisitor {
+        refs: &mut refs,
+        qualified: &mut qualified,
+    };
     let ty: syn::Type = syn::parse_str("MyType").unwrap();
-    references::ReferenceVisitor { refs: &mut refs }.visit_type(&ty);
+    references::ReferenceVisitor {
+        refs: &mut refs,
+        qualified: &mut qualified,
+    }
+    .visit_type(&ty);
     assert!(refs.contains("MyType"));
     let mac: syn::ExprMacro = syn::parse_str("println!(\"test\")").unwrap();
-    references::ReferenceVisitor { refs: &mut refs }.visit_macro(&mac.mac);
+    references::ReferenceVisitor {
+        refs: &mut refs,
+        qualified: &mut qualified,
+    }
+    .visit_macro(&mac.mac);
     let tokens1: proc_macro2::TokenStream = "foo()".parse().unwrap();
-    assert!(references::try_parse_as_single_expr(&tokens1, &mut refs));
+    assert!(references::try_parse_as_single_expr(
+        &tokens1,
+        &mut refs,
+        &mut qualified
+    ));
     let tokens2: proc_macro2::TokenStream = "a, b".parse().unwrap();
-    assert!(references::try_parse_as_expr_list(&tokens2, &mut refs));
+    assert!(references::try_parse_as_expr_list(
+        &tokens2,
+        &mut refs,
+        &mut qualified
+    ));
     let tokens3: proc_macro2::TokenStream = "{ bar() }".parse().unwrap();
-    references::visit_nested_token_groups(&tokens3, &mut refs);
+    references::visit_nested_token_groups(&tokens3, &mut refs, &mut qualified);
 }
 
 #[test]
@@ -151,7 +172,8 @@ fn test_analyze_refs() {
 fn test_collect_rust_references() {
     let ast: syn::File = syn::parse_str("fn test() { foo(); bar::baz(); }").unwrap();
     let mut refs = HashSet::new();
-    references::collect_rust_references(&ast, &mut refs);
+    let mut qualified = HashSet::new();
+    references::collect_rust_references(&ast, &mut refs, &mut qualified);
     assert!(refs.contains("foo"));
 }
 
