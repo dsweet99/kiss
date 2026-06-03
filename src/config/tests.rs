@@ -129,6 +129,23 @@ fn test_unknown_section_returns_error() {
 }
 
 #[test]
+fn test_load_from_for_language_and_try_load_from() {
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[python]\nstatements_per_function = 77\n").unwrap();
+
+    let loaded = Config::load_from_for_language(tmp.path(), ConfigLanguage::Python);
+    assert_eq!(loaded.statements_per_function, 77);
+
+    let try_loaded = Config::try_load_from(tmp.path(), ConfigLanguage::Python).unwrap();
+    assert_eq!(try_loaded.statements_per_function, 77);
+
+    let missing = tempfile::NamedTempFile::new().unwrap();
+    std::fs::remove_file(missing.path()).unwrap();
+    let err = Config::try_load_from(missing.path(), ConfigLanguage::Rust).unwrap_err();
+    assert!(matches!(err, ConfigError::IoError { .. }));
+}
+
+#[test]
 fn static_coverage_touch_validate_keys() {
     fn t<T>(_: T) {}
     t(validate_config_keys);

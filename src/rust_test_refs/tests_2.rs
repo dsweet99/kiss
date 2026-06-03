@@ -2,7 +2,7 @@ use super::*;
 use crate::rust_parsing::parse_rust_file;
 
 #[test]
-fn test_impl_method_covered_when_type_referenced() {
+fn test_impl_method_covered_when_type_and_method_referenced() {
     let tmp = tempfile::TempDir::new().unwrap();
 
     let alpha_path = tmp.path().join("alpha.rs");

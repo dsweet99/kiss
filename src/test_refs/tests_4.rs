@@ -50,7 +50,43 @@ fn test_is_definition_covered_by_containing_class() {
     let mut usage_refs = HashSet::new();
     usage_refs.insert("MyClass".to_string());
 
+    assert!(!is_definition_covered(
+        &def,
+        &name_files,
+        &disambiguation,
+        &import_bindings,
+        &module_suffixes,
+        &usage_refs,
+    ));
+
+    usage_refs.insert("process".to_string());
     assert!(is_definition_covered(
+        &def,
+        &name_files,
+        &disambiguation,
+        &import_bindings,
+        &module_suffixes,
+        &usage_refs,
+    ));
+}
+
+#[test]
+fn test_is_definition_covered_not_by_class_name_alone() {
+    let def = CodeDefinition {
+        name: "other".to_string(),
+        kind: crate::units::CodeUnitKind::Method,
+        file: PathBuf::from("mod.py"),
+        line: 5,
+        containing_class: Some("MyClass".to_string()),
+    };
+    let name_files = HashMap::new();
+    let disambiguation = HashMap::new();
+    let import_bindings = HashMap::new();
+    let module_suffixes = HashMap::new();
+    let mut usage_refs = HashSet::new();
+    usage_refs.insert("MyClass".to_string());
+
+    assert!(!is_definition_covered(
         &def,
         &name_files,
         &disambiguation,
@@ -152,10 +188,7 @@ fn test_build_ref_to_covered_def_indices_unique_and_class() {
     );
     assert!(map.get("foo").unwrap().contains(&0));
     assert!(map.get("bar").unwrap().contains(&1));
-    assert!(
-        map.get("Cls").unwrap().contains(&1),
-        "class name maps to method index"
-    );
+    assert!(!map.contains_key("Cls"));
 }
 
 // ---------------------------------------------------------------------------

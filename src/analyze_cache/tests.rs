@@ -1,4 +1,7 @@
 use super::*;
+use kiss::check_cache::CachedViolation;
+use kiss::check_universe_cache::CachedCoverageItem;
+use std::path::PathBuf;
 
 fn empty_cache(fp: &str) -> FullCheckCache {
     FullCheckCache {
@@ -46,6 +49,29 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
         definitions: Vec::new(),
         unreferenced: Vec::new(),
     }
+}
+
+#[test]
+fn cached_coverage_viols_replays_weighted_sentinel_not_in_unreferenced() {
+    let file = PathBuf::from("/tmp/cliff.py");
+    let cached = CachedViolation::from(&coverage_violation(
+        file.clone(),
+        "orchestrate".into(),
+        1,
+        2,
+    ));
+    let mut cache = empty_cache("sentinel_replay");
+    cache.coverage_violations = vec![cached];
+    cache.definitions.push(CachedCoverageItem {
+        file: file.to_string_lossy().to_string(),
+        name: "orchestrate".into(),
+        line: 1,
+    });
+    let focus = HashSet::new();
+    let viols = cached_coverage_viols(&cache, &focus);
+    assert_eq!(viols.len(), 1);
+    assert_eq!(viols[0].metric, "test_coverage");
+    assert!(viols[0].message.contains("2% covered"));
 }
 
 #[test]

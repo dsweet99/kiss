@@ -69,7 +69,7 @@ pub(crate) fn run_parallel_py_analysis(in_: ParallelPyIn<'_>) -> (GraphResult, C
         || {
             let py_cov = cached_py_cov.unwrap_or_else(|| {
                 let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-                kiss::analyze_test_refs_no_map(&py_refs, py_graph.as_ref())
+                kiss::analyze_test_refs(&py_refs, py_graph.as_ref())
             });
             let py_dups = if dup_enabled {
                 detect_py_duplicates(py_parsed, min_sim)

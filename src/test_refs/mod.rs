@@ -15,6 +15,7 @@ use std::path::PathBuf;
 pub use collect_parallel::test_functions_in;
 pub(crate) use collect_parallel::collect_refs_parallel;
 pub(crate) use coverage::{build_py_coverage_map, is_definition_covered};
+pub use coverage::compute_py_weighted_file_pcts;
 pub use detection::{has_test_framework_import, is_in_test_directory, is_test_file};
 pub use disambiguation::build_name_file_map;
 pub(crate) use disambiguation::{build_disambiguation_map, file_to_module_suffix};
@@ -130,3 +131,5 @@ mod tests_3;
 mod tests_4;
 #[cfg(test)]
 mod tests_5;
+#[cfg(test)]
+mod tests_weighted;

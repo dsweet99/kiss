@@ -12,10 +12,13 @@ mod references;
 mod tests_1;
 #[cfg(test)]
 mod tests_2;
+#[cfg(test)]
+mod tests_vault;
 
 pub use definitions::RustCodeDefinition;
 use definitions::{collect_rust_definitions, collect_test_module_references};
-use references::{collect_per_test_usage, collect_rust_references, QualifiedModuleRef};
+use references::{collect_per_test_usage, collect_rust_references, QualifiedModuleRef, ReferenceVisitor};
+use syn::visit::Visit;
 
 pub use references::rust_test_functions_in;
 
@@ -113,11 +116,18 @@ fn is_directly_referenced(
     false
 }
 
-fn is_impl_with_referenced_type(def: &RustCodeDefinition, refs: &HashSet<String>) -> bool {
+fn is_impl_method_covered_by_type_and_name(
+    def: &RustCodeDefinition,
+    refs: &HashSet<String>,
+) -> bool {
     matches!(
         def.kind,
         CodeUnitKind::TraitImplMethod | CodeUnitKind::Method
-    ) && def.impl_for_type.as_ref().is_some_and(|t| refs.contains(t))
+    ) && refs.contains(&def.name)
+        && def
+            .impl_for_type
+            .as_ref()
+            .is_some_and(|t| refs.contains(t))
 }
 
 fn is_covered_by_qualified_ref(
@@ -138,8 +148,71 @@ pub(crate) fn is_covered_by_tests(
     disambiguation: &HashMap<String, PathBuf>,
 ) -> bool {
     is_directly_referenced(def, refs, name_files, disambiguation)
-        || is_impl_with_referenced_type(def, refs)
+        || is_impl_method_covered_by_type_and_name(def, refs)
         || is_covered_by_qualified_ref(def, qualified_refs)
+}
+
+pub fn is_binary_entry_point(path: &Path) -> bool {
+    definitions::is_binary_entry_point(path)
+}
+
+fn propagate_from_items(
+    items: &[syn::Item],
+    test_references: &mut HashSet<String>,
+    qualified_references: &mut HashSet<QualifiedModuleRef>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(f)
+                if !has_cfg_test_attribute(&f.attrs) && !has_test_attribute(&f.attrs) =>
+            {
+                let fn_name = f.sig.ident.to_string();
+                if test_references.contains(&fn_name) {
+                    ReferenceVisitor {
+                        refs: test_references,
+                        qualified: qualified_references,
+                    }
+                    .visit_item_fn(f);
+                }
+            }
+            syn::Item::Mod(m) if !has_cfg_test_attribute(&m.attrs) => {
+                if let Some((_, mod_items)) = &m.content {
+                    propagate_from_items(mod_items, test_references, qualified_references);
+                }
+            }
+            syn::Item::Impl(i) if !has_cfg_test_attribute(&i.attrs) => {
+                for impl_item in &i.items {
+                    if let syn::ImplItem::Fn(m) = impl_item {
+                        let fn_name = m.sig.ident.to_string();
+                        if test_references.contains(&fn_name) {
+                            ReferenceVisitor {
+                                refs: test_references,
+                                qualified: qualified_references,
+                            }
+                            .visit_impl_item_fn(m);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn propagate_transitive_production_refs(
+    production_files: &[&ParsedRustFile],
+    test_references: &mut HashSet<String>,
+    qualified_references: &mut HashSet<QualifiedModuleRef>,
+) {
+    loop {
+        let before = test_references.len() + qualified_references.len();
+        for parsed in production_files {
+            propagate_from_items(&parsed.ast.items, test_references, qualified_references);
+        }
+        if test_references.len() + qualified_references.len() == before {
+            break;
+        }
+    }
 }
 
 pub fn analyze_rust_test_refs(
@@ -162,17 +235,24 @@ pub fn analyze_rust_test_refs(
         } else {
             collect_rust_definitions(&parsed.ast, &parsed.path, &mut definitions);
             collect_test_module_references(&parsed.ast, &mut test_references);
-            collect_rust_references(
-                &parsed.ast,
-                &mut test_references,
-                &mut qualified_references,
-            );
         }
         let test_funcs = collect_per_test_usage(&parsed.ast);
         if !test_funcs.is_empty() {
             per_test_usage.push((parsed.path.clone(), test_funcs));
         }
     }
+    let production_files: Vec<&ParsedRustFile> = parsed_files
+        .iter()
+        .copied()
+        .filter(|p| {
+            !is_rust_test_file(&p.path) && !definitions::is_binary_entry_point(&p.path)
+        })
+        .collect();
+    propagate_transitive_production_refs(
+        &production_files,
+        &mut test_references,
+        &mut qualified_references,
+    );
     let name_files = crate::test_refs::build_name_file_map(
         definitions
             .iter()
@@ -223,9 +303,6 @@ fn build_rust_coverage_map(
     let mut name_to_defs: HashMap<&str, Vec<usize>> = HashMap::new();
     for (i, def) in definitions.iter().enumerate() {
         name_to_defs.entry(&def.name).or_default().push(i);
-        if let Some(ref t) = def.impl_for_type {
-            name_to_defs.entry(t.as_str()).or_default().push(i);
-        }
     }
 
     let mut coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>> = HashMap::new();

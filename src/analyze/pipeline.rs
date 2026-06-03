@@ -170,6 +170,11 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
     let py_stats = build_python_metric_stats(&result.py_parsed, py_graph.as_ref(), &py_cov);
     let rs_stats = build_rust_metric_stats(&result.rs_parsed, rs.graph.as_ref(), &rs.cov);
 
+    let rs_paths: Vec<PathBuf> = result
+        .rs_parsed
+        .iter()
+        .map(|p| p.path.clone())
+        .collect();
     let (cov_viols, coverage_cache_lists) = if opts.show_timing {
         (Vec::new(), None)
     } else {
@@ -178,6 +183,7 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
                 py: py_cov.clone(),
                 rs: rs.cov.clone(),
             },
+            &result.py_parsed,
             focus_set,
             CoverageOutputOpts {
                 bypass_gate: opts.bypass_gate,
@@ -187,6 +193,7 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
                 py: py_graph.as_ref(),
                 rs: rs.graph.as_ref(),
             },
+            rs_paths.as_slice(),
         );
         (cov_viols, cache_lists)
     };

@@ -51,48 +51,36 @@ fn finalize_header(phase: HeaderPhase<'_>) -> kiss::GlobalMetrics {
 }
 
 fn finalize_coverage_and_dups(phase: CovDupPhase<'_>) -> CovDupOutcome {
-    let CovDupPhase {
-        opts,
-        focus_set,
-        viols,
-        py_cov,
-        rs_cov,
-        py_graph,
-        rs_graph,
-        precomputed_cov_viols,
-        precomputed_coverage_cache_lists,
-        graph_viols_all,
-        py_dups_all,
-        rs_dups_all,
-    } = phase;
-    viols.extend(filter_viols_by_focus(graph_viols_all.to_vec(), focus_set));
+    phase
+        .viols
+        .extend(filter_viols_by_focus(phase.graph_viols_all.to_vec(), phase.focus_set));
     let t_phase2 = Instant::now();
-    let (cov_viols, coverage_cache_lists) = precomputed_coverage_cache_lists.map_or_else(
+    let (cov_viols, coverage_cache_lists) = phase.precomputed_coverage_cache_lists.map_or_else(
         || {
-            let graphs = GraphRefPair {
-                py: py_graph,
-                rs: rs_graph,
-            };
-            let out_opts = CoverageOutputOpts {
-                bypass_gate: opts.bypass_gate,
-                show_timing: opts.show_timing,
-            };
             collect_coverage_viols(
                 PyRsTestCoverage {
-                    py: py_cov,
-                    rs: rs_cov,
+                    py: phase.py_cov,
+                    rs: phase.rs_cov,
                 },
-                focus_set,
-                out_opts,
-                graphs,
+                phase.py_parsed,
+                phase.focus_set,
+                CoverageOutputOpts {
+                    bypass_gate: phase.opts.bypass_gate,
+                    show_timing: phase.opts.show_timing,
+                },
+                GraphRefPair {
+                    py: phase.py_graph,
+                    rs: phase.rs_graph,
+                },
+                phase.rs_files,
             )
         },
-        |coverage_cache_lists| (precomputed_cov_viols, Some(coverage_cache_lists)),
+        |coverage_cache_lists| (phase.precomputed_cov_viols, Some(coverage_cache_lists)),
     );
-    viols.extend(cov_viols.iter().cloned());
-    let py_dups = filter_duplicates_by_focus(py_dups_all.to_vec(), focus_set);
-    let rs_dups_f = filter_duplicates_by_focus(rs_dups_all.to_vec(), focus_set);
-    log_timing_phase2(opts.show_timing, t_phase2, Instant::now());
+    phase.viols.extend(cov_viols.iter().cloned());
+    let py_dups = filter_duplicates_by_focus(phase.py_dups_all.to_vec(), phase.focus_set);
+    let rs_dups_f = filter_duplicates_by_focus(phase.rs_dups_all.to_vec(), phase.focus_set);
+    log_timing_phase2(phase.opts.show_timing, t_phase2, Instant::now());
     CovDupOutcome {
         cov_viols,
         coverage_cache_lists,
@@ -182,6 +170,7 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         viols: &mut viols,
         py_cov: products.py_cov,
         rs_cov,
+        py_parsed: &products.result.py_parsed,
         py_graph: products.py_graph.as_ref(),
         rs_graph: rs_graph_owned.as_ref(),
         precomputed_cov_viols: products.cov_viols,
@@ -189,6 +178,7 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         graph_viols_all: &products.graph_viols_all,
         py_dups_all: &products.py_dups_all,
         rs_dups_all: &rs_dups_vec,
+        rs_files,
     });
 
     let success = finalize_store_and_print(StorePrintPhase {

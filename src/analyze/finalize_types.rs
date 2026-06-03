@@ -50,6 +50,7 @@ pub(crate) struct CovDupPhase<'a> {
     pub viols: &'a mut Vec<Violation>,
     pub py_cov: kiss::TestRefAnalysis,
     pub rs_cov: kiss::RustTestRefAnalysis,
+    pub py_parsed: &'a [kiss::ParsedFile],
     pub py_graph: Option<&'a kiss::DependencyGraph>,
     pub rs_graph: Option<&'a kiss::DependencyGraph>,
     pub precomputed_cov_viols: Vec<Violation>,
@@ -57,6 +58,7 @@ pub(crate) struct CovDupPhase<'a> {
     pub graph_viols_all: &'a [Violation],
     pub py_dups_all: &'a [kiss::DuplicateCluster],
     pub rs_dups_all: &'a [kiss::DuplicateCluster],
+    pub rs_files: &'a [PathBuf],
 }
 
 pub(crate) struct CovDupOutcome {

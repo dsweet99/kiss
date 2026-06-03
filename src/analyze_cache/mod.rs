@@ -200,22 +200,11 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus_set: &HashSet<PathBuf>) -
     let (_, _, _, unreferenced) = compute_test_coverage_from_lists(&defs, &unref, focus_set);
 
     if !cache.coverage_violations.is_empty() {
-        let lookup: std::collections::HashMap<(String, String, usize), Violation> = cache
+        return cache
             .coverage_violations
             .iter()
-            .map(|v| {
-                (
-                    (v.file.clone(), v.unit_name.clone(), v.line),
-                    v.clone().into_violation(),
-                )
-            })
-            .collect();
-        return unreferenced
-            .into_iter()
-            .filter_map(|(file, name, line)| {
-                let key = (file.to_string_lossy().to_string(), name, line);
-                lookup.get(&key).cloned()
-            })
+            .map(|v| v.clone().into_violation())
+            .filter(|v| crate::analyze::is_focus_file(&v.file, focus_set))
             .collect();
     }
 
