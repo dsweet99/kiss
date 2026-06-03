@@ -18,6 +18,7 @@ def test_main_help() -> None:
     assert result.exit_code == 0
     assert "foil" in result.output
     assert "fix" in result.output
+    assert "loop" in result.output
     assert main.__doc__ is not None
 
 

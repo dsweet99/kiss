@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import python.adversarial as adv
+import python.adversarial_loop as adv_loop
 
 
 def test_parse_coverage_metrics_output_from_fixture() -> None:
@@ -57,3 +58,26 @@ def test_build_foil_prompt_contains_paths_and_thresholds(tmp_path: Path) -> None
     assert "mean+std(c_f)" in text
     assert "0.5" in text
     assert "0.6" in text
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("no success line\n", None),
+        (
+            "foil repo: /tmp/kiss_foil_abc\nfoil success: /tmp/kiss_foil_abc\n",
+            Path("/tmp/kiss_foil_abc"),
+        ),
+        (
+            "foil success: /tmp/first\nnoise\nfoil success: /tmp/second\n",
+            Path("/tmp/second"),
+        ),
+        (
+            "echo foil success: /fake\nfoil success: /tmp/real\n",
+            Path("/tmp/real"),
+        ),
+        ("foil success: /tmp/path with spaces\n", Path("/tmp/path with spaces")),
+    ],
+)
+def test_parse_foil_success_path(text: str, expected: Path | None) -> None:
+    assert adv_loop.parse_foil_success_path(text) == expected
