@@ -8,8 +8,15 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-import ops.coverage_metrics as cli
 import python.coverage_metrics as metrics
+from ops.coverage_metrics import main as coverage_metrics_main
+
+
+def test_main_help() -> None:
+    runner = CliRunner()
+    result = runner.invoke(coverage_metrics_main, ["--help"])
+    assert result.exit_code == 0
+    assert coverage_metrics_main.__doc__ is not None
 
 
 def test_coverage_comparison_namedtuple_fields() -> None:
@@ -91,7 +98,7 @@ def test_main_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(metrics, "run_kiss_check_all", lambda _repo: {"mod.py": 60.0})
 
     runner = CliRunner()
-    result = runner.invoke(cli.main, [str(repo)])
+    result = runner.invoke(coverage_metrics_main, [str(repo)])
     assert result.exit_code == 0
     assert "files compared: 1" in result.output
     assert "mean(c_f): 0.1000" in result.output
