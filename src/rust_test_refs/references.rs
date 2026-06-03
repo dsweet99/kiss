@@ -4,14 +4,25 @@ use std::collections::HashSet;
 use syn::visit::Visit;
 use syn::{Expr, Item};
 
-pub(super) fn collect_rust_references(ast: &syn::File, refs: &mut HashSet<String>) {
-    ReferenceVisitor { refs }.visit_file(ast);
+pub(crate) type QualifiedModuleRef = (String, String);
+
+pub(super) fn collect_rust_references(
+    ast: &syn::File,
+    refs: &mut HashSet<String>,
+    qualified: &mut HashSet<QualifiedModuleRef>,
+) {
+    ReferenceVisitor { refs, qualified }.visit_file(ast);
 }
 
 /// Collects references from a single function body. Returns the set of referenced names.
 pub(crate) fn collect_rust_references_for_fn(f: &syn::ItemFn) -> HashSet<String> {
     let mut refs = HashSet::new();
-    ReferenceVisitor { refs: &mut refs }.visit_item_fn(f);
+    let mut qualified = HashSet::new();
+    ReferenceVisitor {
+        refs: &mut refs,
+        qualified: &mut qualified,
+    }
+    .visit_item_fn(f);
     refs
 }
 
@@ -62,10 +73,6 @@ pub(crate) fn collect_per_test_usage_from_items(
             _ => {}
         }
     }
-}
-
-pub(super) struct ReferenceVisitor<'a> {
-    pub(super) refs: &'a mut HashSet<String>,
 }
 
 pub(crate) fn is_external_crate(name: &str) -> bool {
@@ -134,32 +141,64 @@ pub(super) fn insert_path_segments(path: &syn::Path, refs: &mut HashSet<String>)
     }
 }
 
+pub(super) fn insert_qualified_path_reference(
+    path: &syn::Path,
+    refs: &mut HashSet<String>,
+    qualified: &mut HashSet<QualifiedModuleRef>,
+) {
+    if starts_with_external_crate(path) {
+        return;
+    }
+    insert_path_segments(path, refs);
+    if path.segments.len() >= 2 {
+        let name = path.segments.last().unwrap().ident.to_string();
+        if is_rust_keyword(&name) {
+            return;
+        }
+        let module = path
+            .segments
+            .iter()
+            .take(path.segments.len() - 1)
+            .map(|s| s.ident.to_string())
+            .collect::<Vec<_>>()
+            .join(".");
+        qualified.insert((module, name));
+    }
+}
+
+pub(super) struct ReferenceVisitor<'a> {
+    pub(super) refs: &'a mut HashSet<String>,
+    pub(super) qualified: &'a mut HashSet<QualifiedModuleRef>,
+}
+
 impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
     fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::Call(c) => {
                 if let Expr::Path(p) = c.func.as_ref() {
-                    insert_path_segments(&p.path, self.refs);
+                    insert_qualified_path_reference(&p.path, self.refs, self.qualified);
                 }
             }
             Expr::MethodCall(m) => {
                 self.refs.insert(m.method.to_string());
             }
-            Expr::Struct(s) => insert_path_segments(&s.path, self.refs),
-            Expr::Path(p) => insert_path_segments(&p.path, self.refs),
-            Expr::Macro(m) => visit_macro_tokens(&m.mac.tokens, self.refs),
+            Expr::Struct(s) => {
+                insert_qualified_path_reference(&s.path, self.refs, self.qualified);
+            }
+            Expr::Path(p) => insert_qualified_path_reference(&p.path, self.refs, self.qualified),
+            Expr::Macro(m) => visit_macro_tokens(&m.mac.tokens, self.refs, self.qualified),
             _ => {}
         }
         syn::visit::visit_expr(self, expr);
     }
     fn visit_type(&mut self, ty: &'ast syn::Type) {
         if let syn::Type::Path(p) = ty {
-            insert_path_segments(&p.path, self.refs);
+            insert_qualified_path_reference(&p.path, self.refs, self.qualified);
         }
         syn::visit::visit_type(self, ty);
     }
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {
-        visit_macro_tokens(&mac.tokens, self.refs);
+        visit_macro_tokens(&mac.tokens, self.refs, self.qualified);
         syn::visit::visit_macro(self, mac);
     }
 }
@@ -167,9 +206,10 @@ impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
 pub(super) fn try_parse_as_single_expr(
     tokens: &proc_macro2::TokenStream,
     refs: &mut HashSet<String>,
+    qualified: &mut HashSet<QualifiedModuleRef>,
 ) -> bool {
     if let Some(e) = parse_single_expr(tokens) {
-        ReferenceVisitor { refs }.visit_expr(&e);
+        ReferenceVisitor { refs, qualified }.visit_expr(&e);
         return true;
     }
     false
@@ -178,10 +218,11 @@ pub(super) fn try_parse_as_single_expr(
 pub(super) fn try_parse_as_expr_list(
     tokens: &proc_macro2::TokenStream,
     refs: &mut HashSet<String>,
+    qualified: &mut HashSet<QualifiedModuleRef>,
 ) -> bool {
     if let Some(exprs) = parse_expr_list(tokens) {
         for e in exprs {
-            ReferenceVisitor { refs }.visit_expr(&e);
+            ReferenceVisitor { refs, qualified }.visit_expr(&e);
         }
         return true;
     }
@@ -191,20 +232,25 @@ pub(super) fn try_parse_as_expr_list(
 pub(super) fn visit_nested_token_groups(
     tokens: &proc_macro2::TokenStream,
     refs: &mut HashSet<String>,
+    qualified: &mut HashSet<QualifiedModuleRef>,
 ) {
     for t in tokens.clone() {
         if let proc_macro2::TokenTree::Group(g) = t {
-            visit_macro_tokens(&g.stream(), refs);
+            visit_macro_tokens(&g.stream(), refs, qualified);
         }
     }
 }
 
-pub(crate) fn visit_macro_tokens(tokens: &proc_macro2::TokenStream, refs: &mut HashSet<String>) {
-    if try_parse_as_single_expr(tokens, refs) {
+pub(crate) fn visit_macro_tokens(
+    tokens: &proc_macro2::TokenStream,
+    refs: &mut HashSet<String>,
+    qualified: &mut HashSet<QualifiedModuleRef>,
+) {
+    if try_parse_as_single_expr(tokens, refs, qualified) {
         return;
     }
-    if try_parse_as_expr_list(tokens, refs) {
+    if try_parse_as_expr_list(tokens, refs, qualified) {
         return;
     }
-    visit_nested_token_groups(tokens, refs);
+    visit_nested_token_groups(tokens, refs, qualified);
 }

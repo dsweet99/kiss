@@ -78,7 +78,8 @@ fn test_collect_per_test_usage_from_items_direct() {
 fn test_visit_macro_tokens_direct() {
     let tokens: proc_macro2::TokenStream = "foo(bar)".parse().unwrap();
     let mut refs = HashSet::new();
-    references::visit_macro_tokens(&tokens, &mut refs);
+    let mut qualified = HashSet::new();
+    references::visit_macro_tokens(&tokens, &mut refs, &mut qualified);
     assert!(refs.contains("foo") || refs.contains("bar"));
 }
 
@@ -193,7 +194,113 @@ fn test_trivial_main_skipped_in_definitions() {
     let parsed = parse_rust_file(&main_path).unwrap();
     let analysis = analyze_rust_test_refs(&[&parsed], None);
     assert!(
-        analysis.definitions.iter().any(|d| d.name == "main"),
-        "nontrivial main included"
+        analysis.definitions.is_empty(),
+        "binary entry point files contribute no definitions"
+    );
+}
+
+#[test]
+fn test_binary_entry_point_definitions_skipped() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let bin_path = tmp.path().join("src/bin/worker.rs");
+    std::fs::create_dir_all(bin_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &bin_path,
+        "fn worker_loop() -> u64 { 1 }\nfn main() { worker_loop(); }\n",
+    )
+    .unwrap();
+    let parsed = parse_rust_file(&bin_path).unwrap();
+    let analysis = analyze_rust_test_refs(&[&parsed], None);
+    assert!(
+        analysis.definitions.is_empty(),
+        "src/bin definitions should be excluded, got {:?}",
+        analysis
+            .definitions
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_qualified_production_refs_cover_dispatch_handlers() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let alpha = tmp.path().join("alpha.rs");
+    std::fs::write(&alpha, "pub fn step0(x: u64) -> u64 { x + 1 }\n").unwrap();
+    let beta = tmp.path().join("beta.rs");
+    std::fs::write(&beta, "pub fn step0(x: u64) -> u64 { x + 2 }\n").unwrap();
+    let table = tmp.path().join("table.rs");
+    std::fs::write(
+        &table,
+        "type Op = fn(u64) -> u64;\npub fn register() -> [Op; 2] { [alpha::step0 as Op, beta::step0 as Op] }\n",
+    )
+    .unwrap();
+    let test_path = tmp.path().join("table_integration.rs");
+    std::fs::write(
+        &test_path,
+        "#[test]\nfn smoke() { table::register(); }\n",
+    )
+    .unwrap();
+
+    let parsed_alpha = parse_rust_file(&alpha).unwrap();
+    let parsed_beta = parse_rust_file(&beta).unwrap();
+    let parsed_table = parse_rust_file(&table).unwrap();
+    let parsed_test = parse_rust_file(&test_path).unwrap();
+    let analysis = analyze_rust_test_refs(
+        &[
+            &parsed_alpha,
+            &parsed_beta,
+            &parsed_table,
+            &parsed_test,
+        ],
+        None,
+    );
+
+    let uncovered: Vec<_> = analysis
+        .unreferenced
+        .iter()
+        .map(|d| (d.name.as_str(), d.file.file_name().unwrap().to_str().unwrap()))
+        .collect();
+    assert!(
+        !analysis
+            .unreferenced
+            .iter()
+            .any(|d| d.name == "step0" && d.file == alpha),
+        "alpha::step0 should be covered via qualified production ref, unreferenced={uncovered:?}"
+    );
+    assert!(
+        !analysis
+            .unreferenced
+            .iter()
+            .any(|d| d.name == "step0" && d.file == beta),
+        "beta::step0 should be covered via qualified production ref, unreferenced={uncovered:?}"
+    );
+}
+
+#[test]
+fn test_production_call_refs_cover_transitive_callees() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let lib = tmp.path().join("chain.rs");
+    std::fs::write(
+        &lib,
+        "pub fn chain(seed: u64) -> u64 {\n    let v = seed;\n    helper(v)\n}\nfn helper(x: u64) -> u64 { x + 1 }\n",
+    )
+    .unwrap();
+    let test_path = tmp.path().join("chain_test.rs");
+    std::fs::write(
+        &test_path,
+        "#[test]\nfn calls_chain() { chain::chain(1); }\n",
+    )
+    .unwrap();
+
+    let parsed_lib = parse_rust_file(&lib).unwrap();
+    let parsed_test = parse_rust_file(&test_path).unwrap();
+    let analysis = analyze_rust_test_refs(&[&parsed_lib, &parsed_test], None);
+    assert!(
+        !analysis
+            .unreferenced
+            .iter()
+            .any(|d| d.name == "helper"),
+        "helper should be covered via production call from chain"
     );
 }
