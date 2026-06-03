@@ -92,7 +92,8 @@ Revise the generated repo until **at least one** foil condition holds:
 - mean(c_f) + std(c_f) > {MEAN_STD_THRESHOLD}  (printed as `mean+std(c_f)`)
 - spearman(coverage_true, coverage_kiss) < {SPEARMAN_THRESHOLD}
 
-Stop when either condition is satisfied. The repo must be measurable: tests must pass and coverage tools must succeed.
+Stop when either condition is satisfied. The repo must be measurable: tests must pass and coverage tools
+ must succeed. Be especially sensitive to signs of overfitting in kiss code, and aim to foil them.
 
 Print the final `coverage_metrics` output when done.
 """
