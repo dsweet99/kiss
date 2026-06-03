@@ -17,6 +17,7 @@ def test_main_help() -> None:
     result = runner.invoke(main, ["--help"])
     assert result.exit_code == 0
     assert "foil" in result.output
+    assert "fix" in result.output
     assert main.__doc__ is not None
 
 
