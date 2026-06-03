@@ -68,8 +68,11 @@ def report_metrics(comparison: CoverageComparison) -> None:
         click.echo("No overlapping files between runtime coverage and kiss analysis.")
         return
 
-    mean_err = statistics.mean(comparison.errors)
-    std_err = statistics.stdev(comparison.errors) if len(comparison.errors) > 1 else 0.0
+    scale = 100.0
+    errors_01 = [e / scale for e in comparison.errors]
+    mean_err = statistics.mean(errors_01)
+    std_err = statistics.stdev(errors_01) if len(errors_01) > 1 else 0.0
+    mean_plus_std = mean_err + std_err
     corr = spearmanr(comparison.true_vals, comparison.kiss_vals).statistic
     if corr is None:
         corr = float("nan")
@@ -77,11 +80,11 @@ def report_metrics(comparison: CoverageComparison) -> None:
     n_files = len(comparison.errors)
     click.echo(f"files compared: {n_files}")
     click.echo(f"mean(c_f): {mean_err:.4f}")
-    click.echo(f"std(c_f):  {std_err:.4f}")
-    click.echo(f"p50(c_f):  {percentile(comparison.errors, 50):.4f}")
-    click.echo(f"p90(c_f):  {percentile(comparison.errors, 90):.4f}")
-    click.echo(f"p99(c_f):  {percentile(comparison.errors, 99):.4f}")
-    click.echo(f"max(c_f):  {max(comparison.errors):.4f}")
+    click.echo(f"mean+std(c_f): {mean_plus_std:.4f}")
+    click.echo(f"p50(c_f):  {percentile(errors_01, 50):.4f}")
+    click.echo(f"p90(c_f):  {percentile(errors_01, 90):.4f}")
+    click.echo(f"p99(c_f):  {percentile(errors_01, 99):.4f}")
+    click.echo(f"max(c_f):  {max(errors_01):.4f}")
     click.echo(f"spearman(coverage_true, coverage_kiss): {corr:.4f}")
 
 

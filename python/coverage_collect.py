@@ -73,7 +73,9 @@ def run_llvm_cov(repo: Path) -> dict[str, float]:
 
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "coverage.json"
-        cmd = ["cargo", "llvm-cov", "--json", "--output-path", str(out)]
+        # nextest matches the repo's test harness (Makefile) and avoids parallel
+        # cargo test failures in stdout-capture unit tests under llvm-cov.
+        cmd = ["cargo", "llvm-cov", "nextest", "--json", "--output-path", str(out)]
         result = subprocess.run(
             cmd,
             cwd=repo,

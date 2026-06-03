@@ -46,7 +46,8 @@ def test_report_metrics_empty_errors(capsys: pytest.CaptureFixture[str]) -> None
     assert "No overlapping files" in out
 
 
-def test_report_metrics_prints_summary(capsys: pytest.CaptureFixture[str]) -> None:
+def test_report_metrics_scaled_values(capsys: pytest.CaptureFixture[str]) -> None:
+    """Two-file fixture with errors [0, 10] percentage points -> [0, 0.1] normalized."""
     metrics.report_metrics(
         metrics.CoverageComparison(
             ["a.py", "b.py"],
@@ -57,7 +58,10 @@ def test_report_metrics_prints_summary(capsys: pytest.CaptureFixture[str]) -> No
     )
     out = capsys.readouterr().out
     assert "files compared: 2" in out
-    assert "mean(c_f):" in out
+    assert "mean(c_f): 0.0500" in out
+    assert "mean+std(c_f): 0.1207" in out
+    assert "p50(c_f):  0.0500" in out
+    assert "max(c_f):  0.1000" in out
     assert "spearman(coverage_true, coverage_kiss):" in out
 
 
@@ -74,7 +78,8 @@ def test_run_comparison_end_to_end(
     metrics.run_comparison(repo)
     out = capsys.readouterr().out
     assert "files compared: 1" in out
-    assert "mean(c_f): 10.0000" in out
+    assert "mean(c_f): 0.1000" in out
+    assert "mean+std(c_f): 0.1000" in out
 
 
 def test_main_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -89,4 +94,5 @@ def test_main_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     result = runner.invoke(cli.main, [str(repo)])
     assert result.exit_code == 0
     assert "files compared: 1" in result.output
-    assert "mean(c_f): 10.0000" in result.output
+    assert "mean(c_f): 0.1000" in result.output
+    assert "mean+std(c_f): 0.1000" in result.output

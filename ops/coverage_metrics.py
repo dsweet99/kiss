@@ -3,11 +3,20 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import click
 
-from python.coverage_metrics import run_comparison
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def _ensure_import_path() -> None:
+    root = str(_repo_root())
+    if root not in sys.path:
+        sys.path.insert(0, root)
 
 
 @click.command()
@@ -17,6 +26,9 @@ from python.coverage_metrics import run_comparison
 )
 def main(repo: Path) -> None:
     """Compare kiss coverage estimates to runtime line coverage for REPO."""
+    _ensure_import_path()
+    from python.coverage_metrics import run_comparison
+
     run_comparison(repo.resolve())
 
 
