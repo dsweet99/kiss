@@ -192,9 +192,8 @@ impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
         syn::visit::visit_expr(self, expr);
     }
     fn visit_type(&mut self, ty: &'ast syn::Type) {
-        if let syn::Type::Path(p) = ty {
-            insert_qualified_path_reference(&p.path, self.refs, self.qualified);
-        }
+        // Type-position names (e.g. `size_of::<T>()`, `let _: T`) are not execution
+        // witnesses; skip them so impl methods are not marked covered without value use.
         syn::visit::visit_type(self, ty);
     }
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {

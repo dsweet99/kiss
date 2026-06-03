@@ -43,6 +43,35 @@ fn test_impl_method_covered_when_type_referenced() {
 }
 
 #[test]
+fn test_impl_methods_not_covered_by_size_of_type_witness() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let lib_path = tmp.path().join("heavy.rs");
+    std::fs::write(
+        &lib_path,
+        "pub struct Heavy;\nimpl Heavy {\n    pub fn work(&self) -> u64 { 1 }\n}\n",
+    )
+    .unwrap();
+    let test_path = tmp.path().join("heavy_test.rs");
+    std::fs::write(
+        &test_path,
+        "#[test]\nfn size_only() { let _ = std::mem::size_of::<Heavy>(); }\n",
+    )
+    .unwrap();
+
+    let parsed_lib = parse_rust_file(&lib_path).unwrap();
+    let parsed_test = parse_rust_file(&test_path).unwrap();
+    let analysis = analyze_rust_test_refs(&[&parsed_lib, &parsed_test], None);
+
+    assert!(
+        analysis
+            .unreferenced
+            .iter()
+            .any(|d| d.name == "work" && d.file == lib_path),
+        "size_of::<T>() must not cover impl methods"
+    );
+}
+
+#[test]
 fn test_insert_path_segments() {
     let path: syn::Path = syn::parse_str("foo::bar::Baz").unwrap();
     let mut refs = HashSet::new();

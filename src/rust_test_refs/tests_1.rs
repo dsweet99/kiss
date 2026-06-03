@@ -122,7 +122,10 @@ fn test_visitor_and_macros() {
         qualified: &mut qualified,
     }
     .visit_type(&ty);
-    assert!(refs.contains("MyType"));
+    assert!(
+        !refs.contains("MyType"),
+        "type-position refs must not count as coverage witnesses"
+    );
     let mac: syn::ExprMacro = syn::parse_str("println!(\"test\")").unwrap();
     references::ReferenceVisitor {
         refs: &mut refs,
