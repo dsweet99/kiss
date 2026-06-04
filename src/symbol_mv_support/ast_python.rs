@@ -4,6 +4,7 @@ use tree_sitter::{Node, Parser};
 
 use crate::Language;
 
+use super::ast_python_walk::walk_py;
 use super::ast_models::{
     AstResult, Definition, FallbackReason, ParseOutcome, Reference, ReferenceKind, SymbolKind,
 };
@@ -38,99 +39,6 @@ pub(super) fn parse_python(content: &str) -> ParseOutcome {
     })
 }
 
-pub(super) fn walk_py(
-    node: Node<'_>,
-    src: &str,
-    owner: Option<&str>,
-    inside_fn: bool,
-    defs: &mut Vec<Definition>,
-    refs: &mut Vec<Reference>,
-) {
-    match node.kind() {
-        "decorated_definition" => {
-            handle_decorated(node, src, owner, inside_fn, defs, refs);
-        }
-        "function_definition" | "async_function_definition" => {
-            collect_py_def(node, node, src, owner, defs);
-            recurse_py(node, src, None, true, defs, refs);
-        }
-        "class_definition" => {
-            let name = name_text(node, src);
-            collect_py_def(node, node, src, owner, defs);
-            if let Some(body) = node.child_by_field_name("body") {
-                let mut c = body.walk();
-                for child in body.children(&mut c) {
-                    walk_py(child, src, name.as_deref(), false, defs, refs);
-                }
-            }
-        }
-        "call" => {
-            collect_py_call(node, src, refs);
-            recurse_py(node, src, owner, inside_fn, defs, refs);
-        }
-        "import_from_statement" | "import_statement" => {
-            collect_py_import(node, src, refs);
-        }
-        "await" => {
-            collect_identifier_children(node, refs);
-            recurse_py(node, src, owner, inside_fn, defs, refs);
-        }
-        "global_statement" | "nonlocal_statement" => {
-            collect_identifier_children(node, refs);
-        }
-        // `del` accepts arbitrary targets (`del obj.attr`,
-        // `del obj.attr[0]`, `del a.x, b.x`), parsed as
-        // `delete_statement -> attribute(...)`/`subscript(...)`/
-        // `expression_list`. Recursing lets the `"attribute"` /
-        // `"identifier"` arms (and the default-recurse `subscript`
-        // path) handle each target. Without recursion, the round-9 H1
-        // attribute-arm fix never fires under `del` and every
-        // `del c.field` site is silently dropped from the rename plan
-        // (KPOP round 10 H1).
-        "delete_statement" => {
-            recurse_py(node, src, owner, inside_fn, defs, refs);
-        }
-        "raise_statement" => {
-            collect_raise_from(node, refs);
-            recurse_py(node, src, owner, inside_fn, defs, refs);
-        }
-        "decorator" => {
-            collect_decorator(node, src, owner, inside_fn, defs, refs);
-        }
-        // Bare attribute access `obj.attr` not heading a call, e.g.
-        // `@property` reads (`b.area`), method-as-value reads
-        // (`cb = obj.handler`), and attribute writes (`obj.field = …`).
-        // Without this arm the trailing attribute identifier is
-        // suppressed by `python_identifier_is_value_reference`'s
-        // `"attribute" if same("attribute") => false` guard, so every
-        // such site silently escapes the rename plan (KPOP round 9 H1).
-        // The planner dedupes by (start, end) so overlap with the
-        // call/decorator arms that already emit the same span is
-        // harmless. Receiver/owner filtering happens later in
-        // `reference_admits`, preserving R3 disambiguation.
-        "attribute" => {
-            if let Some(attr) = node.child_by_field_name("attribute") {
-                refs.push(Reference {
-                    start: attr.start_byte(),
-                    end: attr.end_byte(),
-                    kind: ReferenceKind::Method,
-                });
-            }
-            recurse_py(node, src, owner, inside_fn, defs, refs);
-        }
-        "identifier" => {
-            if python_identifier_is_value_reference(node) {
-                refs.push(Reference {
-                    start: node.start_byte(),
-                    end: node.end_byte(),
-                    kind: ReferenceKind::Call,
-                });
-            }
-        }
-        _ => recurse_py(node, src, owner, inside_fn, defs, refs),
-    }
-}
-
 /// Decide whether a bare `identifier` node represents a *use* of a name
 /// (i.e. a reference site) rather than a binding/definition site. Catches
 /// callback-style uses like `map(my_fn, …)`, kwarg values like `key=my_fn`,
@@ -141,7 +49,7 @@ pub(super) fn walk_py(
 /// decorators, imports, await, raise-from, global/nonlocal/delete) are
 /// also re-emitted here when the walker recurses into them; the planner
 /// dedupes by (start, end), so duplicates are harmless.
-fn python_identifier_is_value_reference(node: Node<'_>) -> bool {
+pub(super) fn python_identifier_is_value(node: Node<'_>) -> bool {
     let Some(parent) = node.parent() else {
         return true;
     };

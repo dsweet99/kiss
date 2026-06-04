@@ -3,6 +3,7 @@
 mod ast_models;
 mod ast_plan;
 mod ast_python;
+mod ast_python_walk;
 mod ast_rust;
 mod basics;
 mod definition;

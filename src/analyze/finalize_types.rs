@@ -51,6 +51,7 @@ pub(crate) struct CovDupPhase<'a> {
     pub py_cov: kiss::TestRefAnalysis,
     pub rs_cov: kiss::RustTestRefAnalysis,
     pub py_parsed: &'a [kiss::ParsedFile],
+    pub rs_parsed: &'a [kiss::ParsedRustFile],
     pub py_graph: Option<&'a kiss::DependencyGraph>,
     pub rs_graph: Option<&'a kiss::DependencyGraph>,
     pub precomputed_cov_viols: Vec<Violation>,

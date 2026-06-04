@@ -63,6 +63,7 @@ fn finalize_coverage_and_dups(phase: CovDupPhase<'_>) -> CovDupOutcome {
                     rs: phase.rs_cov,
                 },
                 phase.py_parsed,
+                phase.rs_parsed,
                 phase.focus_set,
                 CoverageOutputOpts {
                     bypass_gate: phase.opts.bypass_gate,
@@ -171,6 +172,7 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         py_cov: products.py_cov,
         rs_cov,
         py_parsed: &products.result.py_parsed,
+        rs_parsed: &products.result.rs_parsed,
         py_graph: products.py_graph.as_ref(),
         rs_graph: rs_graph_owned.as_ref(),
         precomputed_cov_viols: products.cov_viols,

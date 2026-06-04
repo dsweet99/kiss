@@ -30,6 +30,8 @@ fn test_file_detection_and_helpers() {
     let _ = RustTestRefAnalysis {
         definitions: vec![],
         test_references: HashSet::new(),
+        call_references: HashSet::new(),
+        propagated_references: HashSet::new(),
         unreferenced: vec![],
         coverage_map: HashMap::new(),
     };

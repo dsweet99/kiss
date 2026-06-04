@@ -184,6 +184,7 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
                 rs: rs.cov.clone(),
             },
             &result.py_parsed,
+            &result.rs_parsed,
             focus_set,
             CoverageOutputOpts {
                 bypass_gate: opts.bypass_gate,
@@ -236,11 +237,15 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
     if !opts.bypass_gate && opts.gate_config.test_coverage_threshold > 0 {
         let py_refs = result.py_parsed.iter().collect::<Vec<_>>();
         let rs_refs = result.rs_parsed.iter().collect::<Vec<_>>();
-        let py_cov = kiss::analyze_test_refs_quick(&py_refs);
-        let rs_cov = kiss::analyze_rust_test_refs(&rs_refs, None);
+        let py_graph = crate::analyze::graph_api::build_py_graph(&result.py_parsed);
+        let rs_graph = crate::analyze::graph_api::build_rs_graph(&result.rs_parsed);
+        let py_cov = kiss::analyze_test_refs(&py_refs, py_graph.as_ref());
+        let rs_cov = kiss::analyze_rust_test_refs(&rs_refs, rs_graph.as_ref());
         if let Some(early) = crate::analyze::coverage_gate::evaluate_gate(
             &py_cov,
             &rs_cov,
+            &result.py_parsed,
+            &result.rs_parsed,
             focus_set,
             opts.gate_config.test_coverage_threshold,
         ) {

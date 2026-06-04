@@ -6,7 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 import python.adversarial_loop as adv_loop
-from ops.adversarial import loop, main
+from ops.adversarial_loop import loop
 
 
 def test_loop_cli_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -40,10 +40,3 @@ def test_loop_cli_propagates_loop_error(monkeypatch: pytest.MonkeyPatch) -> None
     result = runner.invoke(loop, [])
     assert result.exit_code != 0
     assert "foil failed" in result.output
-
-
-def test_main_help_lists_loop() -> None:
-    runner = CliRunner()
-    result = runner.invoke(main, ["--help"])
-    assert result.exit_code == 0
-    assert "loop" in result.output

@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import click
 import pytest
 
 import python.coverage_collect as collect
@@ -26,7 +25,7 @@ def test_run_slipcover_missing_binary_raises(tmp_path: Path, monkeypatch: pytest
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.setenv("PATH", "")
-    with pytest.raises(click.ClickException, match="slipcover not found"):
+    with pytest.raises(RuntimeError, match="slipcover not found"):
         collect.run_slipcover(repo)
 
 
@@ -35,7 +34,7 @@ def test_run_slipcover_nonzero_exit_raises(tmp_path: Path, monkeypatch: pytest.M
     repo.mkdir()
     bindir = install_path_stub(tmp_path, "slipcover", "#!/bin/sh\nexit 2\n")
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ.get('PATH', '')}")
-    with pytest.raises(click.ClickException, match="slipcover/pytest failed"):
+    with pytest.raises(RuntimeError, match="slipcover/pytest failed"):
         collect.run_slipcover(repo)
 
 
@@ -44,7 +43,7 @@ def test_run_slipcover_missing_output_raises(tmp_path: Path, monkeypatch: pytest
     repo.mkdir()
     bindir = install_path_stub(tmp_path, "slipcover", "#!/bin/sh\nexit 0\n")
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ.get('PATH', '')}")
-    with pytest.raises(click.ClickException, match="did not write coverage JSON"):
+    with pytest.raises(RuntimeError, match="did not write coverage JSON"):
         collect.run_slipcover(repo)
 
 
@@ -79,7 +78,7 @@ def test_run_llvm_cov_missing_cargo_raises(tmp_path: Path, monkeypatch: pytest.M
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.setenv("PATH", "")
-    with pytest.raises(click.ClickException, match="cargo not found"):
+    with pytest.raises(RuntimeError, match="cargo not found"):
         collect.run_llvm_cov(repo)
 
 
@@ -96,5 +95,5 @@ def test_run_true_coverage_python_only(tmp_path: Path, monkeypatch: pytest.Monke
 def test_run_true_coverage_no_sources_raises(tmp_path: Path) -> None:
     repo = tmp_path / "empty"
     repo.mkdir()
-    with pytest.raises(click.ClickException, match="no Python or Rust sources"):
+    with pytest.raises(RuntimeError, match="no Python or Rust sources"):
         collect.run_true_coverage(repo)

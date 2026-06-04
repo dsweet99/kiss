@@ -25,6 +25,15 @@ def test_coverage_comparison_namedtuple_fields() -> None:
     assert row.errors == [1.0]
 
 
+def test_compare_coverage_skips_high_runtime_test_modules() -> None:
+    true = {"tests/test_foil.py": 100.0, "src/a.py": 10.0}
+    kiss_partial = {"tests/test_foil.py": 0.0, "src/a.py": 8.0}
+    comparison = metrics.compare_coverage(true, kiss_partial)
+    assert comparison.paths == ["src/a.py"]
+    assert comparison.true_vals == [10.0]
+    assert comparison.kiss_vals == [8.0]
+
+
 def test_compare_coverage_errors_and_ordering() -> None:
     true = {"b.py": 80.0, "a.py": 60.0}
     kiss_partial = {"a.py": 50.0}

@@ -28,6 +28,13 @@ fn test_function_metrics() {
     let (i3, b3) = parse_fn("fn f(x: i32) { if x>0 {} else if x<0 {} }");
     assert!(compute_rust_function_metrics(&i3, &b3, 0).branches >= 2);
 
+    let (i_match, b_match) = parse_fn("fn f(x: u32) -> u32 { match x { 0 => 1, 1 => 2, _ => 0 } }");
+    assert_eq!(
+        compute_rust_function_metrics(&i_match, &b_match, 0).branches,
+        3,
+        "match arms should count as branches"
+    );
+
     let (i4, b4) = parse_fn("fn f() { let a=1; let b=2; let (c,d)=(3,4); }");
     assert_eq!(
         compute_rust_function_metrics(&i4, &b4, 0).local_variables,
@@ -53,10 +60,42 @@ fn test_visitor() {
     }
     assert!(v.statements >= 2);
 
-    let e: syn::Expr = syn::parse_str("if true { 1 } else { 2 }").unwrap();
     let mut v2 = FunctionMetricsVisitor::default();
-    v2.visit_expr(&e);
+    for code in [
+        "if true { 1 } else { 2 }",
+        "match 0 { 0 => 1, _ => 2 }",
+        "while true { break; }",
+        "for _ in 0..1 {}",
+        "loop { break; }",
+        "return 1",
+        "|| 1",
+        "foo(1)",
+        "x.foo()",
+    ] {
+        let e: syn::Expr = syn::parse_str(code).unwrap();
+        v2.visit_expr(&e);
+    }
     assert!(v2.branches >= 1);
+    assert!(v2.returns >= 1);
+    assert!(v2.calls >= 2);
+
+    let mut v_enter = FunctionMetricsVisitor::default();
+    for code in [
+        "if true { 1 }",
+        "match 0 { _ => 1 }",
+        "while true { break; }",
+        "for _ in 0..1 {}",
+        "loop { break; }",
+        "return 1",
+        "|| 1",
+        "foo(1)",
+        "x.foo()",
+        "1 + 2",
+    ] {
+        let e: syn::Expr = syn::parse_str(code).unwrap();
+        v_enter.on_enter_expr(&e);
+        v_enter.on_exit_expr(&e);
+    }
 
     let f2: syn::File = syn::parse_str("fn f() { let (a,b,c)=(1,2,3); }").unwrap();
     if let syn::Item::Fn(func) = &f2.items[0]

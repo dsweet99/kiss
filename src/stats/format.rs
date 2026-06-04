@@ -21,8 +21,7 @@ pub fn format_stats_table(summaries: &[PercentileSummary]) -> String {
     out
 }
 
-/// Map `metric_id` to config key (some metrics use different config key names)
-pub(crate) fn config_key_for(metric_id: &str) -> Option<&'static str> {
+fn config_key_for_fn_core(metric_id: &str) -> Option<&'static str> {
     Some(match metric_id {
         "statements_per_function" => "statements_per_function",
         "arguments_per_function" => "arguments_per_function",
@@ -32,6 +31,12 @@ pub(crate) fn config_key_for(metric_id: &str) -> Option<&'static str> {
         "nested_function_depth" => "nested_function_depth",
         "returns_per_function" => "returns_per_function",
         "return_values_per_function" => "return_values_per_function",
+        _ => return None,
+    })
+}
+
+fn config_key_for_fn_extra(metric_id: &str) -> Option<&'static str> {
+    Some(match metric_id {
         "branches_per_function" => "branches_per_function",
         "local_variables_per_function" => "local_variables_per_function",
         "statements_per_try_block" => "statements_per_try_block",
@@ -39,12 +44,28 @@ pub(crate) fn config_key_for(metric_id: &str) -> Option<&'static str> {
         "annotations_per_function" => "annotations_per_function",
         "calls_per_function" => "calls_per_function",
         "methods_per_class" => "methods_per_class",
+        _ => return None,
+    })
+}
+
+fn config_key_for_fn(metric_id: &str) -> Option<&'static str> {
+    config_key_for_fn_core(metric_id).or_else(|| config_key_for_fn_extra(metric_id))
+}
+
+fn config_key_for_file(metric_id: &str) -> Option<&'static str> {
+    Some(match metric_id {
         "statements_per_file" => "statements_per_file",
         "lines_per_file" => "lines_per_file",
         "functions_per_file" => "functions_per_file",
         "interface_types_per_file" => "interface_types_per_file",
         "concrete_types_per_file" => "concrete_types_per_file",
         "imported_names_per_file" => "imported_names_per_file",
+        _ => return None,
+    })
+}
+
+fn config_key_for_graph(metric_id: &str) -> Option<&'static str> {
+    Some(match metric_id {
         "fan_in" => "fan_in",
         "fan_out" => "fan_out",
         "cycle_size" => "cycle_size",
@@ -52,6 +73,13 @@ pub(crate) fn config_key_for(metric_id: &str) -> Option<&'static str> {
         "dependency_depth" => "dependency_depth",
         _ => return None,
     })
+}
+
+/// Map `metric_id` to config key (some metrics use different config key names)
+pub(crate) fn config_key_for(metric_id: &str) -> Option<&'static str> {
+    config_key_for_fn(metric_id)
+        .or_else(|| config_key_for_file(metric_id))
+        .or_else(|| config_key_for_graph(metric_id))
 }
 
 pub fn generate_config_toml(summaries: &[PercentileSummary]) -> String {

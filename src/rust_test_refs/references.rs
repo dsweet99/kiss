@@ -14,6 +14,14 @@ pub(super) fn collect_rust_references(
     ReferenceVisitor { refs, qualified }.visit_file(ast);
 }
 
+pub(super) fn collect_rust_call_references(
+    ast: &syn::File,
+    refs: &mut HashSet<String>,
+    qualified: &mut HashSet<QualifiedModuleRef>,
+) {
+    CallReferenceVisitor { refs, qualified }.visit_file(ast);
+}
+
 /// Collects references from a single function body. Returns the set of referenced names.
 pub(crate) fn collect_rust_references_for_fn(f: &syn::ItemFn) -> HashSet<String> {
     let mut refs = HashSet::new();
@@ -169,6 +177,34 @@ pub(super) fn insert_qualified_path_reference(
 pub(super) struct ReferenceVisitor<'a> {
     pub(super) refs: &'a mut HashSet<String>,
     pub(super) qualified: &'a mut HashSet<QualifiedModuleRef>,
+}
+
+struct CallReferenceVisitor<'a> {
+    refs: &'a mut HashSet<String>,
+    qualified: &'a mut HashSet<QualifiedModuleRef>,
+}
+
+impl<'ast> Visit<'ast> for CallReferenceVisitor<'_> {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        match expr {
+            Expr::Call(c) => {
+                if let Expr::Path(p) = c.func.as_ref() {
+                    insert_qualified_path_reference(&p.path, self.refs, self.qualified);
+                }
+                for arg in &c.args {
+                    self.visit_expr(arg);
+                }
+            }
+            Expr::MethodCall(m) => {
+                self.refs.insert(m.method.to_string());
+                self.visit_expr(&m.receiver);
+                for arg in &m.args {
+                    self.visit_expr(arg);
+                }
+            }
+            _ => syn::visit::visit_expr(self, expr),
+        }
+    }
 }
 
 impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {

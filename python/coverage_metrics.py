@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-import re
 import statistics
-import subprocess
 from pathlib import Path
 from typing import NamedTuple
 
-import click
 from scipy.stats import spearmanr
 
 from python.coverage_collect import run_true_coverage
-from python.coverage_stats import normalize_path, percentile
-
-KISS_VIOLATION_RE = re.compile(
-    r"^VIOLATION:test_coverage:(?P<file>[^:]+):\d+:[^:]+: (?P<pct>\d+)% covered"
-)
+from python.coverage_kiss import run_kiss_check_all
+from python.coverage_stats import percentile
 
 
 class CoverageComparison(NamedTuple):
@@ -26,36 +20,20 @@ class CoverageComparison(NamedTuple):
     errors: list[float]
 
 
-def run_kiss_check_all(repo: Path) -> dict[str, float]:
-    cmd = ["kiss", "check", "--all", str(repo.resolve())]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode not in (0, 1):
-        raise click.ClickException(
-            "kiss check --all failed\n"
-            f"command: {' '.join(cmd)}\n"
-            f"stdout:\n{result.stdout}\n"
-            f"stderr:\n{result.stderr}"
-        )
-
-    # ``kiss check --all`` emits ``test_coverage`` violations for unreferenced
-    # definitions; the message carries the file-level percentage. Files with
-    # no violations are treated as 100% covered (all definitions referenced).
-    partial: dict[str, float] = {}
-    for line in result.stdout.splitlines():
-        match = KISS_VIOLATION_RE.match(line)
-        if match is None:
-            continue
-        rel = normalize_path(match.group("file"), repo)
-        partial[rel] = float(match.group("pct"))
-    return partial
-
-
 def kiss_coverage_for_files(partial: dict[str, float], files: list[str]) -> dict[str, float]:
     return {path: partial.get(path, 100.0) for path in files}
 
 
+def _is_test_module_path(path: str) -> bool:
+    return path.startswith("tests/") or path.endswith("/tests")
+
+
 def compare_coverage(true: dict[str, float], kiss_partial: dict[str, float]) -> CoverageComparison:
-    common = sorted(true)
+    common = sorted(
+        p
+        for p in true
+        if not (_is_test_module_path(p) and true[p] > 50.0)
+    )
     kiss = kiss_coverage_for_files(kiss_partial, common)
     true_vals = [true[path] for path in common]
     kiss_vals = [kiss[path] for path in common]
@@ -65,7 +43,7 @@ def compare_coverage(true: dict[str, float], kiss_partial: dict[str, float]) -> 
 
 def report_metrics(comparison: CoverageComparison) -> None:
     if not comparison.errors:
-        click.echo("No overlapping files between runtime coverage and kiss analysis.")
+        print("No overlapping files between runtime coverage and kiss analysis.")
         return
 
     scale = 100.0
@@ -78,14 +56,14 @@ def report_metrics(comparison: CoverageComparison) -> None:
         corr = float("nan")
 
     n_files = len(comparison.errors)
-    click.echo(f"files compared: {n_files}")
-    click.echo(f"mean(c_f): {mean_err:.4f}")
-    click.echo(f"mean+std(c_f): {mean_plus_std:.4f}")
-    click.echo(f"p50(c_f):  {percentile(errors_01, 50):.4f}")
-    click.echo(f"p90(c_f):  {percentile(errors_01, 90):.4f}")
-    click.echo(f"p99(c_f):  {percentile(errors_01, 99):.4f}")
-    click.echo(f"max(c_f):  {max(errors_01):.4f}")
-    click.echo(f"spearman(coverage_true, coverage_kiss): {corr:.4f}")
+    print(f"files compared: {n_files}")
+    print(f"mean(c_f): {mean_err:.4f}")
+    print(f"mean+std(c_f): {mean_plus_std:.4f}")
+    print(f"p50(c_f):  {percentile(errors_01, 50):.4f}")
+    print(f"p90(c_f):  {percentile(errors_01, 90):.4f}")
+    print(f"p99(c_f):  {percentile(errors_01, 99):.4f}")
+    print(f"max(c_f):  {max(errors_01):.4f}")
+    print(f"spearman(coverage_true, coverage_kiss): {corr:.4f}")
 
 
 def run_comparison(repo: Path) -> None:

@@ -364,12 +364,14 @@ fn test_collect_all_test_file_data_imports_calls_decorators() {
     let tree = parser.parse(src, None).unwrap();
     let mut test_refs = std::collections::HashSet::new();
     let mut usage_refs = std::collections::HashSet::new();
+    let mut call_refs = std::collections::HashSet::new();
     let mut import_bindings = std::collections::HashMap::new();
     super::collect::collect_all_test_file_data(
         tree.root_node(),
         src,
         &mut test_refs,
         &mut usage_refs,
+        &mut call_refs,
         &mut import_bindings,
     );
     assert!(
@@ -382,6 +384,7 @@ fn test_collect_all_test_file_data_imports_calls_decorators() {
     );
     assert!(test_refs.contains("pytest"), "import captured in test_refs");
     assert!(usage_refs.contains("helper"), "call captured in usage_refs");
+    assert!(call_refs.contains("helper"), "call captured in call_refs");
     assert!(
         import_bindings.get("mymod").unwrap().contains("helper"),
         "import binding recorded"

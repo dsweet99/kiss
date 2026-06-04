@@ -5,8 +5,15 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use syn::Attribute;
 
+mod coverage;
+mod coverage_map;
 mod definitions;
+mod propagation;
 mod references;
+mod trivial_expr;
+
+#[cfg(test)]
+mod tests_coverage;
 
 #[cfg(test)]
 mod tests_1;
@@ -15,10 +22,15 @@ mod tests_2;
 #[cfg(test)]
 mod tests_vault;
 
+pub use coverage::compute_rs_weighted_file_pcts;
 pub use definitions::RustCodeDefinition;
 use definitions::{collect_rust_definitions, collect_test_module_references};
-use references::{collect_per_test_usage, collect_rust_references, QualifiedModuleRef, ReferenceVisitor};
-use syn::visit::Visit;
+use coverage_map::build_rust_coverage_map;
+use propagation::propagate_transitive_production_refs;
+use references::{
+    collect_per_test_usage, collect_rust_call_references, collect_rust_references,
+    QualifiedModuleRef,
+};
 
 pub use references::rust_test_functions_in;
 
@@ -32,6 +44,8 @@ type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
 pub struct RustTestRefAnalysis {
     pub definitions: Vec<RustCodeDefinition>,
     pub test_references: HashSet<String>,
+    pub call_references: HashSet<String>,
+    pub propagated_references: HashSet<String>,
     pub unreferenced: Vec<RustCodeDefinition>,
     /// For each covered definition (file, name), the list of tests that reference it.
     pub coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>>,
@@ -130,7 +144,7 @@ fn is_impl_method_covered_by_type_and_name(
             .is_some_and(|t| refs.contains(t))
 }
 
-fn is_covered_by_qualified_ref(
+pub(super) fn is_covered_by_qualified_ref(
     def: &RustCodeDefinition,
     qualified_refs: &HashSet<QualifiedModuleRef>,
 ) -> bool {
@@ -156,71 +170,14 @@ pub fn is_binary_entry_point(path: &Path) -> bool {
     definitions::is_binary_entry_point(path)
 }
 
-fn propagate_from_items(
-    items: &[syn::Item],
-    test_references: &mut HashSet<String>,
-    qualified_references: &mut HashSet<QualifiedModuleRef>,
-) {
-    for item in items {
-        match item {
-            syn::Item::Fn(f)
-                if !has_cfg_test_attribute(&f.attrs) && !has_test_attribute(&f.attrs) =>
-            {
-                let fn_name = f.sig.ident.to_string();
-                if test_references.contains(&fn_name) {
-                    ReferenceVisitor {
-                        refs: test_references,
-                        qualified: qualified_references,
-                    }
-                    .visit_item_fn(f);
-                }
-            }
-            syn::Item::Mod(m) if !has_cfg_test_attribute(&m.attrs) => {
-                if let Some((_, mod_items)) = &m.content {
-                    propagate_from_items(mod_items, test_references, qualified_references);
-                }
-            }
-            syn::Item::Impl(i) if !has_cfg_test_attribute(&i.attrs) => {
-                for impl_item in &i.items {
-                    if let syn::ImplItem::Fn(m) = impl_item {
-                        let fn_name = m.sig.ident.to_string();
-                        if test_references.contains(&fn_name) {
-                            ReferenceVisitor {
-                                refs: test_references,
-                                qualified: qualified_references,
-                            }
-                            .visit_impl_item_fn(m);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn propagate_transitive_production_refs(
-    production_files: &[&ParsedRustFile],
-    test_references: &mut HashSet<String>,
-    qualified_references: &mut HashSet<QualifiedModuleRef>,
-) {
-    loop {
-        let before = test_references.len() + qualified_references.len();
-        for parsed in production_files {
-            propagate_from_items(&parsed.ast.items, test_references, qualified_references);
-        }
-        if test_references.len() + qualified_references.len() == before {
-            break;
-        }
-    }
-}
-
 pub fn analyze_rust_test_refs(
     parsed_files: &[&ParsedRustFile],
     graph: Option<&DependencyGraph>,
 ) -> RustTestRefAnalysis {
     let mut definitions = Vec::new();
     let mut test_references = HashSet::new();
+    let mut test_direct_references = HashSet::new();
+    let mut call_references = HashSet::new();
     let mut qualified_references = HashSet::new();
     let mut per_test_usage: PerTestUsage = Vec::new();
     for parsed in parsed_files {
@@ -229,6 +186,16 @@ pub fn analyze_rust_test_refs(
                 &parsed.ast,
                 &mut test_references,
                 &mut qualified_references,
+            );
+            collect_rust_references(
+                &parsed.ast,
+                &mut test_direct_references,
+                &mut HashSet::new(),
+            );
+            collect_rust_call_references(
+                &parsed.ast,
+                &mut call_references,
+                &mut HashSet::new(),
             );
         } else if definitions::is_binary_entry_point(&parsed.path) {
             collect_test_module_references(&parsed.ast, &mut test_references);
@@ -248,16 +215,23 @@ pub fn analyze_rust_test_refs(
             !is_rust_test_file(&p.path) && !definitions::is_binary_entry_point(&p.path)
         })
         .collect();
-    propagate_transitive_production_refs(
-        &production_files,
-        &mut test_references,
-        &mut qualified_references,
-    );
     let name_files = crate::test_refs::build_name_file_map(
         definitions
             .iter()
             .map(|d| (d.name.as_str(), d.file.as_path())),
     );
+    propagate_transitive_production_refs(
+        &production_files,
+        &definitions,
+        &name_files,
+        &mut test_references,
+        &mut qualified_references,
+    );
+    let propagated_references: HashSet<String> = test_references
+        .iter()
+        .filter(|name| !test_direct_references.contains(*name))
+        .cloned()
+        .collect();
     let disambiguation = crate::test_refs::build_disambiguation_map(
         &name_files,
         &test_references,
@@ -287,58 +261,9 @@ pub fn analyze_rust_test_refs(
     RustTestRefAnalysis {
         definitions,
         test_references,
+        call_references,
+        propagated_references,
         unreferenced,
         coverage_map,
     }
-}
-
-#[allow(clippy::type_complexity)]
-fn build_rust_coverage_map(
-    definitions: &[RustCodeDefinition],
-    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
-    name_files: &HashMap<String, HashSet<PathBuf>>,
-    disambiguation: &HashMap<String, PathBuf>,
-    qualified_refs: &HashSet<QualifiedModuleRef>,
-) -> HashMap<(PathBuf, String), Vec<CoveringTest>> {
-    let mut name_to_defs: HashMap<&str, Vec<usize>> = HashMap::new();
-    for (i, def) in definitions.iter().enumerate() {
-        name_to_defs.entry(&def.name).or_default().push(i);
-    }
-
-    let mut coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>> = HashMap::new();
-    for (test_path, test_funcs) in per_test_usage {
-        for (test_id, usage_refs) in test_funcs {
-            if test_id.is_empty() {
-                continue;
-            }
-            let mut seen = HashSet::new();
-            for ref_name in usage_refs {
-                let Some(def_indices) = name_to_defs.get(ref_name.as_str()) else {
-                    continue;
-                };
-                for &idx in def_indices {
-                    if !seen.insert(idx) {
-                        continue;
-                    }
-                    let def = &definitions[idx];
-                    if !is_covered_by_tests(
-                        def,
-                        usage_refs,
-                        qualified_refs,
-                        name_files,
-                        disambiguation,
-                    ) {
-                        continue;
-                    }
-                    let key = (def.file.clone(), def.name.clone());
-                    let entry = (test_path.clone(), test_id.clone());
-                    let list = coverage_map.entry(key).or_default();
-                    if !list.contains(&entry) {
-                        list.push(entry);
-                    }
-                }
-            }
-        }
-    }
-    coverage_map
 }

@@ -19,25 +19,11 @@ use options::{
 use kiss::GateConfig;
 use kiss::TestSectionConfig;
 
-#[allow(clippy::too_many_lines)]
-pub fn dispatch(
-    cli: Cli,
-    py_config: &kiss::Config,
-    rs_config: &kiss::Config,
-    gate_config: &GateConfig,
-    test_section: &TestSectionConfig,
+fn dispatch_analyze(
+    lang: Option<kiss::Language>,
+    command: Commands,
+    cfg: &TriConfig<'_>,
 ) -> i32 {
-    let cfg = TriConfig {
-        py: py_config,
-        rs: rs_config,
-        gate: gate_config,
-    };
-    let Cli {
-        lang,
-        defaults,
-        config,
-        command,
-    } = cli;
     match command {
         Commands::Check {
             paths,
@@ -50,7 +36,7 @@ pub fn dispatch(
             bypass_gate: all,
             ignore,
             timing,
-            cfg: &cfg,
+            cfg,
         }),
         Commands::Stats {
             paths,
@@ -63,7 +49,7 @@ pub fn dispatch(
             all,
             table,
             ignore,
-            cfg: &cfg,
+            cfg,
         }),
         Commands::Mimic { paths, out, ignore } => dispatch_mimic(MimicDispatchOptions {
             lang,
@@ -73,6 +59,19 @@ pub fn dispatch(
         }),
         Commands::Clamp { ignore } => dispatch_clamp(lang, ignore),
         Commands::Init { repo_path } => run_init_command(&repo_path),
+        _ => 2,
+    }
+}
+
+fn dispatch_tools(
+    lang: Option<kiss::Language>,
+    defaults: bool,
+    config: Option<std::path::PathBuf>,
+    command: Commands,
+    cfg: &TriConfig<'_>,
+    test_section: &TestSectionConfig,
+) -> i32 {
+    match command {
         Commands::Dry {
             path,
             filter_files,
@@ -94,12 +93,12 @@ pub fn dispatch(
         Commands::Rules => dispatch_rules(RulesDispatchOptions {
             lang,
             defaults,
-            cfg: &cfg,
+            cfg,
         }),
         Commands::Config => dispatch_config(ConfigDispatchOptions {
             defaults,
             config,
-            cfg: &cfg,
+            cfg,
         }),
         Commands::Viz {
             out,
@@ -124,7 +123,7 @@ pub fn dispatch(
             target,
             paths,
             ignore,
-            cfg: &cfg,
+            cfg,
         }),
         Commands::Test {
             mode,
@@ -160,6 +159,36 @@ pub fn dispatch(
             mv_flags: MvOutputFlags { dry_run, json },
             ignore,
         }),
+        _ => 2,
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+pub fn dispatch(
+    cli: Cli,
+    py_config: &kiss::Config,
+    rs_config: &kiss::Config,
+    gate_config: &GateConfig,
+    test_section: &TestSectionConfig,
+) -> i32 {
+    let cfg = TriConfig {
+        py: py_config,
+        rs: rs_config,
+        gate: gate_config,
+    };
+    let Cli {
+        lang,
+        defaults,
+        config,
+        command,
+    } = cli;
+    match command {
+        Commands::Check { .. }
+        | Commands::Stats { .. }
+        | Commands::Mimic { .. }
+        | Commands::Clamp { .. }
+        | Commands::Init { .. } => dispatch_analyze(lang, command, &cfg),
+        _ => dispatch_tools(lang, defaults, config, command, &cfg, test_section),
     }
 }
 

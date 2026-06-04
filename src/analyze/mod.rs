@@ -4,6 +4,7 @@ mod cache;
 mod coverage;
 mod coverage_gate;
 mod coverage_types;
+mod coverage_weighted;
 mod dry;
 mod dup_detect;
 mod entry;

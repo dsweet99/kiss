@@ -9,12 +9,8 @@ from pathlib import Path
 import click
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parent.parent
-
-
 def _ensure_import_path() -> None:
-    root = str(_repo_root())
+    root = str(Path(__file__).resolve().parent.parent)
     if root not in sys.path:
         sys.path.insert(0, root)
 
@@ -29,7 +25,10 @@ def main(repo: Path) -> None:
     _ensure_import_path()
     from python.coverage_metrics import run_comparison
 
-    run_comparison(repo.resolve())
+    try:
+        run_comparison(repo.resolve())
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 if __name__ == "__main__":

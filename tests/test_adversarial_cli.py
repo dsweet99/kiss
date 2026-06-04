@@ -2,37 +2,51 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
-import ops.adversarial as cli
+import python.adversarial_common as cli
+import ops.adversarial_foil as foil_mod
 import python.adversarial as adv
-from ops.adversarial import foil, main
+from ops.adversarial import main
+from ops.adversarial_foil import foil
 
 
 def test_main_help() -> None:
+    script = cli.repo_root() / "ops" / "run_adversarial.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert "foil" in result.stdout
+    assert "fix" in result.stdout
+    assert "cheat" in result.stdout
+    assert "loop" in result.stdout
+
+
+def test_main_group() -> None:
     runner = CliRunner()
     result = runner.invoke(main, ["--help"])
     assert result.exit_code == 0
-    assert "foil" in result.output
-    assert "fix" in result.output
-    assert "loop" in result.output
     assert main.__doc__ is not None
 
 
 def test_repo_root_points_at_kiss() -> None:
-    root = cli._repo_root()
+    root = cli.repo_root()
     assert (root / "ops" / "adversarial.py").is_file()
 
 
 def test_ensure_import_path_inserts_repo_root() -> None:
-    import sys
-
-    root = str(cli._repo_root())
+    root = str(cli.repo_root())
     sys.path[:] = [p for p in sys.path if p != root]
-    cli._ensure_import_path()
+    cli.ensure_import_path()
     assert root in sys.path
 
 
@@ -49,8 +63,8 @@ def _stub_foil_env(
         repo.mkdir(exist_ok=True)
         return str(repo)
 
-    monkeypatch.setattr(cli.tempfile, "mkdtemp", fake_mkdtemp)
-    monkeypatch.setattr(cli, "_repo_root", lambda: kiss)
+    monkeypatch.setattr(foil_mod.tempfile, "mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr(foil_mod, "repo_root", lambda: kiss)
     monkeypatch.setattr(adv, "run_malvin_code", lambda *_: 0)
     return kiss
 

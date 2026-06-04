@@ -156,13 +156,14 @@ fn test_collect_refs_parallel_mixed_files() {
     };
 
     let parsed: Vec<&ParsedFile> = vec![&file_prod, &file_test];
-    let (defs, test_refs, usage_refs, import_bindings, per_test_usage) =
+    let (defs, test_refs, usage_refs, call_refs, import_bindings, per_test_usage) =
         collect_refs_parallel(&parsed, true);
 
     assert_eq!(defs.len(), 1);
     assert_eq!(defs[0].name, "compute");
     assert!(test_refs.contains("compute"));
     assert!(usage_refs.contains("compute"));
+    assert!(call_refs.contains("compute"));
     assert!(import_bindings.get("compute").unwrap().contains("compute"));
     assert_eq!(per_test_usage.len(), 1);
     let (path, funcs) = &per_test_usage[0];
@@ -192,7 +193,7 @@ fn test_collect_refs_parallel_no_coverage_map() {
         tree: tree_test,
     };
 
-    let (_, _, _, _, per_test_usage) = collect_refs_parallel(&[&file, &file_test], false);
+    let (_, _, _, _, _, per_test_usage) = collect_refs_parallel(&[&file, &file_test], false);
     assert!(
         per_test_usage.is_empty(),
         "per_test_usage empty when need_coverage_map=false"

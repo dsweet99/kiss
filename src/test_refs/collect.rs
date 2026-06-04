@@ -173,6 +173,7 @@ pub(crate) fn collect_all_test_file_data(
     source: &str,
     test_refs: &mut HashSet<String>,
     usage_refs: &mut HashSet<String>,
+    call_refs: &mut HashSet<String>,
     import_bindings: &mut HashMap<String, HashSet<String>>,
 ) {
     match node.kind() {
@@ -180,6 +181,7 @@ pub(crate) fn collect_all_test_file_data(
             if let Some(func) = node.child_by_field_name("function") {
                 collect_call_target(func, source, test_refs);
                 collect_call_target(func, source, usage_refs);
+                collect_call_target(func, source, call_refs);
             }
         }
         "import_from_statement" => {
@@ -205,6 +207,7 @@ pub(crate) fn collect_all_test_file_data(
                 {
                     collect_call_target(child, source, test_refs);
                     collect_call_target(child, source, usage_refs);
+                    collect_call_target(child, source, call_refs);
                 }
             }
         }
@@ -215,7 +218,7 @@ pub(crate) fn collect_all_test_file_data(
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_all_test_file_data(child, source, test_refs, usage_refs, import_bindings);
+        collect_all_test_file_data(child, source, test_refs, usage_refs, call_refs, import_bindings);
     }
 }
 

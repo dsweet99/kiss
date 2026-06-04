@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-import ops.adversarial as cli
+import ops.adversarial_fix as fix_mod
 import python.adversarial as adv
-from ops.adversarial import fix
+from ops.adversarial_fix import fix
 
 
 @pytest.mark.parametrize(
@@ -81,7 +81,7 @@ def _stub_fix_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     repo = tmp_path / "counterexample"
     repo.mkdir()
 
-    monkeypatch.setattr(cli, "_repo_root", lambda: kiss)
+    monkeypatch.setattr(fix_mod, "repo_root", lambda: kiss)
     monkeypatch.setattr(adv, "run_malvin_code", lambda *_: 0)
     return kiss, repo
 
