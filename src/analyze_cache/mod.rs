@@ -204,13 +204,17 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus_set: &HashSet<PathBuf>) -
             .coverage_violations
             .iter()
             .map(|v| v.clone().into_violation())
-            .filter(|v| crate::analyze::is_focus_file(&v.file, focus_set))
+            .filter(|v| {
+                crate::analyze::is_focus_file(&v.file, focus_set)
+                    && crate::analyze::is_coverage_gate_file(&v.file, &v.unit_name)
+            })
             .collect();
     }
 
     let file_pcts = kiss::cli_output::file_coverage_map(&defs, &unreferenced);
     unreferenced
         .into_iter()
+        .filter(|(path, name, _)| crate::analyze::is_coverage_gate_file(path, name))
         .map(|(file, name, line)| {
             let pct = file_pcts.get(&file).copied().unwrap_or(0);
             coverage_violation(file, name, line, pct)

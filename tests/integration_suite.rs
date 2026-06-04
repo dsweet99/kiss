@@ -66,6 +66,8 @@ mod py_metrics_tests;
 mod python_counts_violations;
 #[path = "cases/regression_check_cache_uncached_default.rs"]
 mod regression_check_cache_uncached_default;
+#[path = "cases/regression_check_all_ignores_test_file_sentinel.rs"]
+mod regression_check_all_ignores_test_file_sentinel;
 #[path = "cases/regression_check_default_warm_gate.rs"]
 mod regression_check_default_warm_gate;
 #[path = "cases/regression_check_default_writes_cache.rs"]

@@ -2,12 +2,67 @@
 
 from __future__ import annotations
 
+import shutil
 import tempfile
 from pathlib import Path
 
 import click
 
-from python.adversarial_common import ensure_import_path, repo_root
+from python.adversarial_common import (
+    allocate_adversarial_id,
+    ensure_import_path,
+    repo_root,
+)
+
+
+def _cleanup_cheat_run(repo_dir: Path, prompt_path: Path) -> None:
+    if repo_dir.exists():
+        shutil.rmtree(repo_dir)
+    if prompt_path.exists():
+        prompt_path.unlink()
+
+
+def _persist_cheat_repo(repo_dir: Path) -> Path:
+    dest = allocate_adversarial_id("cheat")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(repo_dir), str(dest))
+    return dest
+
+
+def _run_cheat_session(
+    kiss_root: Path,
+    repo_dir: Path,
+    prompt_path: Path,
+    *,
+    lang: str | None,
+) -> Path:
+    from python.adversarial import pick_language, run_malvin_code
+    from python.adversarial_cheat import build_cheat_prompt, verify_cheat
+
+    chosen = pick_language(lang)
+    prompt_path.write_text(
+        build_cheat_prompt(kiss_root, repo_dir, chosen),
+        encoding="utf-8",
+    )
+    click.echo(f"cheat repo: {repo_dir}")
+    click.echo(f"language: {chosen}")
+    click.echo(f"prompt: {prompt_path}")
+
+    malvin_rc = run_malvin_code(kiss_root, prompt_path)
+    if malvin_rc != 0:
+        click.echo(
+            f"malvin exited {malvin_rc}; verifying cheat conditions anyway",
+            err=True,
+        )
+
+    passed, metrics, output = verify_cheat(kiss_root, repo_dir)
+    click.echo(output.rstrip())
+    if not passed:
+        raise click.ClickException(
+            "cheat conditions not met after malvin run "
+            f"(kiss_passes={metrics.kiss_passes}, gap_count={len(metrics.gaps)})"
+        )
+    return _persist_cheat_repo(repo_dir)
 
 
 @click.command("cheat-verify")
@@ -34,38 +89,17 @@ def cheat_verify(repo: Path) -> None:
 def cheat(lang: str | None) -> None:
     """Run malvin to create a repo that passes kiss but not runtime coverage."""
     ensure_import_path()
-    from python.adversarial import pick_language, run_malvin_code
-    from python.adversarial_cheat import (
-        build_cheat_prompt,
-        verify_cheat,
-    )
-
     kiss_root = repo_root()
     repo_dir = Path(tempfile.mkdtemp(prefix="kiss_cheat_", dir="/tmp"))
-    chosen = pick_language(lang)
     prompt_path = Path(f"{repo_dir}_prompt.md")
-    prompt_path.write_text(
-        build_cheat_prompt(kiss_root, repo_dir, chosen),
-        encoding="utf-8",
-    )
-
-    click.echo(f"cheat repo: {repo_dir}")
-    click.echo(f"language: {chosen}")
-    click.echo(f"prompt: {prompt_path}")
-
-    malvin_rc = run_malvin_code(kiss_root, prompt_path)
-    if malvin_rc != 0:
-        click.echo(
-            f"malvin exited {malvin_rc}; verifying cheat conditions anyway",
-            err=True,
-        )
-
-    passed, metrics, output = verify_cheat(kiss_root, repo_dir)
-    click.echo(output.rstrip())
-    if not passed:
-        raise click.ClickException(
-            "cheat conditions not met after malvin run "
-            f"(kiss_passes={metrics.kiss_passes}, gap_count={len(metrics.gaps)})"
-        )
-
-    click.echo(f"cheat success: {repo_dir}")
+    dest: Path | None = None
+    try:
+        dest = _run_cheat_session(kiss_root, repo_dir, prompt_path, lang=lang)
+    except Exception:
+        if dest is None:
+            _cleanup_cheat_run(repo_dir, prompt_path)
+        raise
+    finally:
+        if prompt_path.exists():
+            prompt_path.unlink()
+    click.echo(f"cheat success: {dest.resolve()}")

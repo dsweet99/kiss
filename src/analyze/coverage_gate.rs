@@ -39,7 +39,7 @@ fn analysis_tuples(
     (defs_t, unrefs_t)
 }
 
-fn is_coverage_gate_file(path: &Path, unit_name: &str) -> bool {
+pub(crate) fn is_coverage_gate_file(path: &Path, unit_name: &str) -> bool {
     unit_name != "__test_file__"
         && unit_name != "__entry_point__"
         && !kiss::test_refs::is_test_file(path)

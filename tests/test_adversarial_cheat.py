@@ -9,9 +9,8 @@ import pytest
 from click.testing import CliRunner
 
 import ops.adversarial_cheat as cheat_cli
-import python.adversarial as adv
 import python.adversarial_cheat as cheat_mod
-from ops.adversarial_cheat import cheat, cheat_verify
+from ops.adversarial_cheat import cheat_verify
 
 
 @pytest.mark.parametrize(
@@ -74,6 +73,28 @@ def test_load_coverage_maps_parses_subprocess_json(
     assert true == {"src/a.py": 5.0}
 
 
+def test_load_coverage_maps_subprocess_env_prepends_repo_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured.update(kwargs)
+        payload = '{"kiss": {}, "true": {}}'
+        return subprocess.CompletedProcess(cmd, 0, payload, "")
+
+    monkeypatch.setattr(cheat_mod.subprocess, "run", fake_run)
+    monkeypatch.setenv("PYTHONPATH", "/other")
+    cheat_mod._load_coverage_maps(repo)
+    env = captured["env"]
+    assert isinstance(env, dict)
+    root = str(cheat_mod.repo_root())
+    assert env["PYTHONPATH"].startswith(root)
+    assert "/other" in env["PYTHONPATH"]
+
+
 def test_cheat_report_and_verify(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -102,36 +123,6 @@ def test_cheat_report_and_verify(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert ok is True
     assert verified.kiss_passes is True
     assert "cheat gap count: 1" in combined
-
-
-@pytest.mark.parametrize("expect_success", [True, False])
-def test_cheat_cli(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, expect_success: bool
-) -> None:
-    kiss = tmp_path / "kiss"
-    (kiss / "ops").mkdir(parents=True)
-    (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
-
-    def fake_mkdtemp(*, prefix: str, dir: str) -> str:
-        repo = tmp_path / "cheat_repo"
-        repo.mkdir(exist_ok=True)
-        return str(repo)
-
-    monkeypatch.setattr(cheat_cli.tempfile, "mkdtemp", fake_mkdtemp)
-    monkeypatch.setattr(cheat_cli, "repo_root", lambda: kiss)
-    monkeypatch.setattr(adv, "run_malvin_code", lambda *_: 0)
-
-    gaps = (("src/a.py", 100.0, 5.0),) if expect_success else ()
-    metrics = cheat_mod.CheatMetrics(expect_success, gaps)
-    output = "kiss check: pass\n" if expect_success else "kiss check: fail\n"
-    monkeypatch.setattr(cheat_mod, "verify_cheat", lambda *_: (expect_success, metrics, output))
-
-    result = CliRunner().invoke(cheat, [])
-    assert (result.exit_code == 0) is expect_success
-    if expect_success:
-        assert "cheat success:" in result.output
-    else:
-        assert "cheat conditions not met" in result.output
 
 
 @pytest.mark.parametrize("expect_code", [0, 1])

@@ -10,6 +10,7 @@ pub(crate) use crate::analyze::coverage_types::{CoverageViolationSpec, PyRsTestC
 use crate::analyze::coverage_weighted::{
     inject_binary_entry_sentinels, inject_test_file_sentinels, merge_weighted_file_pcts,
 };
+use crate::analyze::coverage_gate::is_coverage_gate_file;
 use crate::analyze::focus::is_focus_file;
 use crate::analyze::graph_api::graph_for_path;
 
@@ -200,6 +201,7 @@ pub(crate) fn build_viols_after_merge(
             file_pcts.insert(path.clone(), *pct);
             if *pct < 100
                 && is_focus_file(path, focus_set)
+                && is_coverage_gate_file(path, "")
                 && !unreferenced_focus.iter().any(|(f, _, _)| f == path)
                 && let Some(def) = defs.iter().find(|(f, _, _)| f == path)
             {
@@ -209,6 +211,7 @@ pub(crate) fn build_viols_after_merge(
     }
     let cov_viols: Vec<Violation> = unreferenced_focus
         .into_iter()
+        .filter(|(path, name, _)| is_coverage_gate_file(path, name))
         .map(|(file, name, line)| {
             let pct = file_pcts.get(&file).copied().unwrap_or(0);
             build_coverage_violation_with_graph(

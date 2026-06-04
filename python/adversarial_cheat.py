@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
+
+from python.adversarial_common import repo_root
 
 TRUE_COVERAGE_CEILING = 80.0
 
@@ -92,6 +95,8 @@ Revise the generated repo until **both** hold:
 - at least one non-test source file has kiss coverage 100% but runtime line coverage
   below {TRUE_COVERAGE_CEILING:.0f}%
 
+Also, make your repo test something different from the other repos (if there are any): {repo_dir.resolve()}/../*
+
 Tests must pass and coverage tools must succeed. Stop when the cheat conditions are
 met. Print the final cheat-verify output when done.
 """
@@ -106,12 +111,25 @@ def run_kiss_check(repo: Path) -> tuple[int, str]:
     return result.returncode, combined
 
 
+def _coverage_maps_subprocess_env() -> dict[str, str]:
+    root = str(repo_root())
+    existing = os.environ.get("PYTHONPATH", "")
+    pythonpath = root if not existing else f"{root}{os.pathsep}{existing}"
+    return {**os.environ, "PYTHONPATH": pythonpath}
+
+
 def _load_coverage_maps(repo: Path) -> tuple[dict[str, float], dict[str, float]]:
     import json
 
     script = Path(__file__).resolve().parent / "coverage_maps_cli.py"
     cmd = [sys.executable, str(script), str(repo.resolve())]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_coverage_maps_subprocess_env(),
+    )
     if result.returncode != 0:
         msg = result.stderr or result.stdout or "coverage maps subprocess failed"
         raise RuntimeError(msg)
