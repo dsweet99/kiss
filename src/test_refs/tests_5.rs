@@ -169,12 +169,16 @@ fn test_file_to_module_suffix_basic() {
 
 #[test]
 fn test_module_suffix_matches_exact_and_suffix() {
-    use super::disambiguation::module_suffix_matches;
+    use super::disambiguation::{
+        crate_qualified_module_matches_def, module_suffix_matches,
+    };
     assert!(module_suffix_matches("pkg.sub.mod", "pkg.sub.mod"));
     assert!(module_suffix_matches("pkg.sub.mod", "sub.mod"));
     assert!(module_suffix_matches("pkg.sub.mod", "mod"));
     assert!(!module_suffix_matches("pkg.sub.mod", "other.mod"));
     assert!(!module_suffix_matches("pkg.sub.mod", "ub.mod"));
+    assert!(crate_qualified_module_matches_def("hydrology", "vendor.pkg.hydrology"));
+    assert!(!crate_qualified_module_matches_def("pkg.sub.mod", "other.mod"));
 }
 
 // ---------------------------------------------------------------------------
@@ -342,7 +346,7 @@ fn test_collect_test_files_for_ambiguous_names_via_build() {
     usage_a.insert("dup".to_string());
     let per_test_usage: super::PerTestUsage = vec![(
         PathBuf::from("test_a.py"),
-        vec![("test_it".to_string(), usage_a)],
+        vec![("test_it".to_string(), usage_a.clone(), HashSet::new())],
     )];
 
     let map =
@@ -351,4 +355,22 @@ fn test_collect_test_files_for_ambiguous_names_via_build() {
         map.is_empty() || map.len() <= 1,
         "without graph, falls back to ref-based only"
     );
+}
+
+#[test]
+fn test_is_method_covered_by_class_and_name_direct() {
+    use super::coverage::is_method_covered_by_class_and_name;
+    let def = CodeDefinition {
+        name: "process".to_string(),
+        kind: crate::units::CodeUnitKind::Method,
+        file: PathBuf::from("mod.py"),
+        line: 5,
+        containing_class: Some("Widget".to_string()),
+    };
+    let mut usage = HashSet::new();
+    assert!(!is_method_covered_by_class_and_name(&def, &usage));
+    usage.insert("Widget".to_string());
+    assert!(!is_method_covered_by_class_and_name(&def, &usage));
+    usage.insert("process".to_string());
+    assert!(is_method_covered_by_class_and_name(&def, &usage));
 }

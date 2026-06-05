@@ -29,7 +29,7 @@ pub use coverage::compute_test_coverage_from_lists;
 pub use coverage_gate::check_coverage_gate;
 #[allow(unused_imports)] // Public API surface for cached-coverage-gate checks.
 pub(crate) use coverage_gate::evaluate_cached_gate;
-pub(crate) use coverage_gate::is_coverage_gate_file;
+pub(crate) use coverage_gate::is_coverage_report_target;
 #[allow(unused_imports)]
 pub use coverage_types::CheckCoverageGateParams;
 pub use dry::{DryRunParams, run_dry};

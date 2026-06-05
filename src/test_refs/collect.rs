@@ -1,3 +1,5 @@
+use super::collect_mock_patch::record_patch_call;
+use super::dead_region::collect_py_live_scope;
 use super::detection::{is_abstract_method, is_protocol_class};
 use super::CodeDefinition;
 use crate::units::{CodeUnitKind, get_child_by_field};
@@ -68,7 +70,7 @@ pub(crate) fn insert_identifier(node: Node, source: &str, refs: &mut HashSet<Str
     refs.insert(source[node.start_byte()..node.end_byte()].to_string());
 }
 
-pub(crate) fn collect_usage_refs_in_scope(node: Node, source: &str, refs: &mut HashSet<String>) {
+fn collect_usage_refs_on_node(node: Node, source: &str, refs: &mut HashSet<String>) {
     match node.kind() {
         "call" => {
             if let Some(func) = node.child_by_field_name("function") {
@@ -94,17 +96,19 @@ pub(crate) fn collect_usage_refs_in_scope(node: Node, source: &str, refs: &mut H
         }
         _ => {}
     }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_usage_refs_in_scope(child, source, refs);
-    }
+}
+
+pub(crate) fn collect_usage_refs_in_scope(node: Node, source: &str, refs: &mut HashSet<String>) {
+    collect_py_live_scope(node, source, &mut |n| {
+        collect_usage_refs_on_node(n, source, refs);
+    });
 }
 
 pub(crate) fn collect_class_test_methods(
     class_body: Node,
     source: &str,
     class_prefix: &str,
-    out: &mut Vec<(String, HashSet<String>)>,
+    out: &mut Vec<(String, HashSet<String>, HashSet<String>)>,
 ) {
     let mut cursor = class_body.walk();
     for child in class_body.children(&mut cursor) {
@@ -116,34 +120,48 @@ pub(crate) fn collect_class_test_methods(
             continue;
         }
         let mut refs = HashSet::new();
+        let mut call_refs = HashSet::new();
         if let Some(meth_body) = child.child_by_field_name("body") {
             collect_usage_refs_in_scope(meth_body, source, &mut refs);
+            collect_call_refs_in_scope(meth_body, source, &mut call_refs);
         }
         let test_id = format!("{class_prefix}::{meth_name}");
-        out.push((test_id, refs));
+        out.push((test_id, refs, call_refs));
     }
+}
+
+pub(crate) fn collect_call_refs_in_scope(node: Node, source: &str, refs: &mut HashSet<String>) {
+    super::dead_region::collect_py_live_scope(node, source, &mut |n| {
+        if n.kind() == "call"
+            && let Some(func) = n.child_by_field_name("function")
+        {
+            collect_call_target(func, source, refs);
+        }
+    });
 }
 
 pub(crate) fn collect_test_functions_with_refs(
     node: Node,
     source: &str,
     prefix: &str,
-    out: &mut Vec<(String, HashSet<String>)>,
+    out: &mut Vec<(String, HashSet<String>, HashSet<String>)>,
 ) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {
             let name = get_child_by_field(node, "name", source).unwrap_or_default();
             if name.starts_with("test_") {
                 let mut refs = HashSet::new();
+                let mut call_refs = HashSet::new();
                 if let Some(body) = node.child_by_field_name("body") {
                     collect_usage_refs_in_scope(body, source, &mut refs);
+                    collect_call_refs_in_scope(body, source, &mut call_refs);
                 }
                 let test_id = if prefix.is_empty() {
                     name
                 } else {
                     format!("{prefix}::{name}")
                 };
-                out.push((test_id, refs));
+                out.push((test_id, refs, call_refs));
             }
         }
         "class_definition" => {
@@ -168,16 +186,34 @@ pub(crate) fn collect_test_functions_with_refs(
     }
 }
 
-pub(crate) fn collect_all_test_file_data(
+fn collect_decorator_refs(
+    node: Node,
+    source: &str,
+    _test_refs: &mut HashSet<String>,
+    _usage_refs: &mut HashSet<String>,
+    _call_refs: &mut HashSet<String>,
+    mocked_refs: &mut HashSet<String>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "call" {
+            record_patch_call(child, source, mocked_refs);
+        }
+    }
+}
+
+fn collect_test_file_data_on_node(
     node: Node,
     source: &str,
     test_refs: &mut HashSet<String>,
     usage_refs: &mut HashSet<String>,
     call_refs: &mut HashSet<String>,
     import_bindings: &mut HashMap<String, HashSet<String>>,
+    mocked_refs: &mut HashSet<String>,
 ) {
     match node.kind() {
         "call" => {
+            record_patch_call(node, source, mocked_refs);
             if let Some(func) = node.child_by_field_name("function") {
                 collect_call_target(func, source, test_refs);
                 collect_call_target(func, source, usage_refs);
@@ -187,39 +223,51 @@ pub(crate) fn collect_all_test_file_data(
         "import_from_statement" => {
             collect_py_import_names_for_refs(node, source, test_refs);
             extract_import_from_binding(node, source, import_bindings);
-            return;
         }
         "import_statement" => {
             collect_py_import_names_for_refs(node, source, test_refs);
-            return;
         }
         "type" => {
             collect_type_refs(node, source, test_refs);
             collect_type_refs(node, source, usage_refs);
-            return;
         }
         "decorator" => {
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if child.kind() == "identifier"
-                    || child.kind() == "attribute"
-                    || child.kind() == "call"
-                {
-                    collect_call_target(child, source, test_refs);
-                    collect_call_target(child, source, usage_refs);
-                    collect_call_target(child, source, call_refs);
-                }
-            }
+            collect_decorator_refs(
+                node,
+                source,
+                test_refs,
+                usage_refs,
+                call_refs,
+                mocked_refs,
+            );
         }
         "identifier" => {
             insert_identifier(node, source, usage_refs);
         }
         _ => {}
     }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_all_test_file_data(child, source, test_refs, usage_refs, call_refs, import_bindings);
-    }
+}
+
+pub(crate) fn collect_all_test_file_data(
+    node: Node,
+    source: &str,
+    test_refs: &mut HashSet<String>,
+    usage_refs: &mut HashSet<String>,
+    call_refs: &mut HashSet<String>,
+    import_bindings: &mut HashMap<String, HashSet<String>>,
+    mocked_refs: &mut HashSet<String>,
+) {
+    collect_py_live_scope(node, source, &mut |n| {
+        collect_test_file_data_on_node(
+            n,
+            source,
+            test_refs,
+            usage_refs,
+            call_refs,
+            import_bindings,
+            mocked_refs,
+        );
+    });
 }
 
 pub(crate) fn collect_type_refs(node: Node, source: &str, refs: &mut HashSet<String>) {

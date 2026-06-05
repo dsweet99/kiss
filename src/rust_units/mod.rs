@@ -153,5 +153,38 @@ pub fn extract_rust_code_units(parsed: &ParsedRustFile) -> Vec<RustCodeUnit> {
 }
 
 #[cfg(test)]
+mod inline_coverage_tests {
+    use super::*;
+    use syn::visit::Visit;
+
+    #[test]
+    fn direct_visitor_helpers_exercised() {
+        let src = "enum E { A, B }\nstruct S { x: i32 }\nmod inner { fn nested() {} }\nimpl S { fn f(&self) { let _ = 1; } }\nfn top() { let _ = 2; }\n";
+        let file: syn::File = syn::parse_str(src).unwrap();
+        let mut visitor = CodeUnitVisitor::new(src);
+        for item in &file.items {
+            match item {
+                syn::Item::Fn(f) => visitor.visit_top_level_fn(f),
+                syn::Item::Struct(s) => visitor.record_struct(s),
+                syn::Item::Enum(e) => visitor.record_enum(e),
+                syn::Item::Impl(i) => visitor.visit_impl_block(i),
+                syn::Item::Mod(m) => visitor.visit_item_mod(m),
+                other => visitor.visit_item(other),
+            }
+        }
+        let names: Vec<_> = visitor.units.iter().map(|u| u.name.as_str()).collect();
+        for expected in ["E", "S", "inner", "f", "top", "nested"] {
+            assert!(names.contains(&expected), "missing {expected} in {names:?}");
+        }
+    }
+
+    #[test]
+    fn estimate_block_lines_fallback_on_missing_brace_span() {
+        let block: syn::Block = syn::parse_str("{ let x = 1; }").unwrap();
+        assert!(estimate_block_lines(&block) >= 1);
+    }
+}
+
+#[cfg(test)]
 #[path = "rust_units_test.rs"]
 mod rust_units_test;

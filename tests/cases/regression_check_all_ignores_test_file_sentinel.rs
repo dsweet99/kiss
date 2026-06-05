@@ -1,6 +1,5 @@
-//! `kiss check --all` must not emit `__test_file__` coverage violations for
-//! test modules. Weighted overlay assigns 0% to test files for cache
-//! bookkeeping; those sentinels are not production coverage targets.
+//! `kiss check --all` must not emit coverage violations for test modules.
+//! Test files are witness sources, not production gate targets.
 
 use std::fs;
 use std::process::Command;
@@ -56,7 +55,7 @@ fn write_corpus(dir: &std::path::Path) {
 }
 
 #[test]
-fn kiss_check_all_passes_despite_test_file_sentinel() {
+fn kiss_check_all_passes_without_test_module_violations() {
     let corpus = TempDir::new().unwrap();
     write_corpus(corpus.path());
 
@@ -78,7 +77,7 @@ fn kiss_check_all_passes_despite_test_file_sentinel() {
         out.status.code(),
     );
     assert!(
-        !stdout.contains("__test_file__"),
-        "expected no __test_file__ violations, got:\n{stdout}"
+        !stdout.contains("tests/test_lib.py"),
+        "expected no test-module coverage violations, got:\n{stdout}"
     );
 }

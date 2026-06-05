@@ -1,4 +1,5 @@
 use super::{has_cfg_test_attribute, has_test_attribute};
+use super::dead_region::skip_dead_control_flow;
 use crate::macro_expr_parser::{parse_expr_list, parse_single_expr};
 use std::collections::HashSet;
 use syn::visit::Visit;
@@ -184,8 +185,22 @@ struct CallReferenceVisitor<'a> {
     qualified: &'a mut HashSet<QualifiedModuleRef>,
 }
 
+fn visit_item_skip_use<'a, V: Visit<'a>>(visitor: &mut V, item: &'a syn::Item) {
+    if matches!(item, Item::Use(_)) {
+        return;
+    }
+    syn::visit::visit_item(visitor, item);
+}
+
 impl<'ast> Visit<'ast> for CallReferenceVisitor<'_> {
+    fn visit_item(&mut self, item: &'ast syn::Item) {
+        visit_item_skip_use(self, item);
+    }
+
     fn visit_expr(&mut self, expr: &'ast Expr) {
+        if skip_dead_control_flow(self, expr) {
+            return;
+        }
         match expr {
             Expr::Call(c) => {
                 if let Expr::Path(p) = c.func.as_ref() {
@@ -208,7 +223,14 @@ impl<'ast> Visit<'ast> for CallReferenceVisitor<'_> {
 }
 
 impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
+    fn visit_item(&mut self, item: &'ast syn::Item) {
+        visit_item_skip_use(self, item);
+    }
+
     fn visit_expr(&mut self, expr: &'ast Expr) {
+        if skip_dead_control_flow(self, expr) {
+            return;
+        }
         match expr {
             Expr::Call(c) => {
                 if let Expr::Path(p) = c.func.as_ref() {

@@ -5,8 +5,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use syn::{ImplItem, Item};
 
-use super::references::{ReferenceVisitor, collect_rust_references};
-use syn::visit::Visit;
+use super::references::{collect_rust_call_references, collect_rust_references};
 
 /// Returns true if the file path is a Rust binary entry point.
 ///
@@ -169,32 +168,56 @@ pub(super) fn collect_definitions_from_item(
     }
 }
 
-pub(super) fn collect_test_module_references(ast: &syn::File, refs: &mut HashSet<String>) {
+fn inline_test_items(ast: &syn::File) -> Vec<syn::Item> {
+    let mut out = Vec::new();
     for item in &ast.items {
         match item {
             Item::Mod(m) if has_cfg_test_attribute(&m.attrs) => {
                 if let Some((_, items)) = &m.content {
-                    collect_rust_references(
-                        &syn::File {
-                            shebang: None,
-                            attrs: vec![],
-                            items: items.clone(),
-                        },
-                        refs,
-                        &mut HashSet::new(),
-                    );
+                    out.extend(items.iter().cloned());
                 }
             }
             Item::Fn(f) if has_test_attribute(&f.attrs) => {
-                ReferenceVisitor {
-                    refs,
-                    qualified: &mut HashSet::new(),
-                }
-                .visit_item_fn(f);
+                out.push(Item::Fn(f.clone()));
             }
             _ => {}
         }
     }
+    out
+}
+
+pub(super) fn collect_test_module_references(ast: &syn::File, refs: &mut HashSet<String>) {
+    let items = inline_test_items(ast);
+    if items.is_empty() {
+        return;
+    }
+    collect_rust_references(
+        &syn::File {
+            shebang: None,
+            attrs: vec![],
+            items,
+        },
+        refs,
+        &mut HashSet::new(),
+    );
+}
+
+pub(super) fn collect_inline_test_module_witnesses(
+    ast: &syn::File,
+    direct_refs: &mut HashSet<String>,
+    call_refs: &mut HashSet<String>,
+) {
+    let items = inline_test_items(ast);
+    if items.is_empty() {
+        return;
+    }
+    let file = syn::File {
+        shebang: None,
+        attrs: vec![],
+        items,
+    };
+    collect_rust_references(&file, direct_refs, &mut HashSet::new());
+    collect_rust_call_references(&file, call_refs, &mut HashSet::new());
 }
 
 #[cfg(test)]

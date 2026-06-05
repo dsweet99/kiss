@@ -3,17 +3,79 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 from python.coverage_stats import normalize_path, repo_has_python, repo_has_rust
 
 
+def _read_pytest_testpaths(repo: Path) -> list[str]:
+    pyproject = repo / "pyproject.toml"
+    if not pyproject.is_file():
+        return []
+    try:
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return []
+    pytest_ini = data.get("tool", {}).get("pytest", {}).get("ini_options", {})
+    testpaths = pytest_ini.get("testpaths")
+    if testpaths is None:
+        return []
+    if isinstance(testpaths, str):
+        return [testpaths]
+    return [str(p) for p in testpaths]
+
+
+def _default_pytest_targets(repo: Path) -> list[str]:
+    for name in ("tests", "test"):
+        if (repo / name).is_dir():
+            return [name]
+    return []
+
+
+def pytest_targets(repo: Path) -> list[str]:
+    paths = _read_pytest_testpaths(repo)
+    return paths if paths else _default_pytest_targets(repo)
+
+
+def _sklearn_shadows_site_package(repo: Path) -> bool:
+    return (repo / "sklearn" / "__init__.py").is_file()
+
+
+def slipcover_invocation(repo: Path) -> tuple[Path, list[str]]:
+    """Return (cwd, extra pytest args after ``-m pytest``)."""
+    targets = pytest_targets(repo)
+    base = ["--continue-on-collection-errors"]
+    if _sklearn_shadows_site_package(repo):
+        return Path("/tmp"), [*base, "--pyargs", "sklearn.tests"]
+    if targets:
+        return repo, [*base, *targets]
+    return repo, base
+
+
+def _parse_slipcover_json(out: Path, repo: Path) -> dict[str, float]:
+    payload = json.loads(out.read_text())
+    files = payload.get("files", {})
+    coverage: dict[str, float] = {}
+    for rel_path, info in files.items():
+        pct = info.get("summary", {}).get("percent_covered")
+        if pct is not None:
+            coverage[normalize_path(rel_path, repo)] = float(pct)
+    return coverage
+
+
 def run_slipcover(repo: Path) -> dict[str, float]:
     if shutil.which("slipcover") is None:
         raise RuntimeError("slipcover not found on PATH (needed for Python coverage)")
+
+    repo = repo.resolve()
+    cwd, pytest_args = slipcover_invocation(repo)
+    source = str(repo)
 
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "coverage.json"
@@ -21,35 +83,44 @@ def run_slipcover(repo: Path) -> dict[str, float]:
             "slipcover",
             "--json",
             "--source",
-            ".",
+            source,
             "--out",
             str(out),
             "-m",
             "pytest",
+            *pytest_args,
         ]
+        env = os.environ.copy()
+        if cwd == Path("/tmp"):
+            env.pop("PYTHONPATH", None)
         result = subprocess.run(
             cmd,
-            cwd=repo,
+            cwd=cwd,
             capture_output=True,
             text=True,
+            env=env,
         )
-        if result.returncode != 0:
+        if not out.is_file():
             raise RuntimeError(
                 "slipcover/pytest failed\n"
                 f"command: {' '.join(cmd)}\n"
                 f"stdout:\n{result.stdout}\n"
                 f"stderr:\n{result.stderr}"
             )
-        if not out.exists():
-            raise RuntimeError("slipcover did not write coverage JSON")
-
-        payload = json.loads(out.read_text())
-        files = payload.get("files", {})
-        coverage: dict[str, float] = {}
-        for rel_path, info in files.items():
-            pct = info.get("summary", {}).get("percent_covered")
-            if pct is not None:
-                coverage[normalize_path(rel_path, repo)] = float(pct)
+        coverage = _parse_slipcover_json(out, repo)
+        if not coverage:
+            raise RuntimeError(
+                "slipcover/pytest failed\n"
+                f"command: {' '.join(cmd)}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+        if result.returncode != 0:
+            print(
+                f"slipcover: pytest exit {result.returncode}, "
+                f"using partial coverage for {len(coverage)} files",
+                file=sys.stderr,
+            )
         return coverage
 
 
@@ -71,8 +142,6 @@ def run_llvm_cov(repo: Path) -> dict[str, float]:
 
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "coverage.json"
-        # nextest matches the repo's test harness (Makefile) and avoids parallel
-        # cargo test failures in stdout-capture unit tests under llvm-cov.
         cmd = ["cargo", "llvm-cov", "nextest", "--json", "--output-path", str(out)]
         result = subprocess.run(
             cmd,

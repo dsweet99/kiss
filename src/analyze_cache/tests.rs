@@ -52,15 +52,15 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
 }
 
 #[test]
-fn cached_coverage_viols_skips_test_file_sentinel_on_replay() {
+fn cached_coverage_viols_skips_test_files_on_replay() {
     let file = PathBuf::from("/tmp/repo/tests/test_lib.py");
     let cached = CachedViolation::from(&coverage_violation(
         file.clone(),
-        "__test_file__".into(),
+        "test_lib".into(),
         1,
         0,
     ));
-    let mut cache = empty_cache("test_file_sentinel");
+    let mut cache = empty_cache("test_file_skip");
     cache.coverage_violations = vec![cached];
     let focus: HashSet<_> = [file.clone()].into_iter().collect();
     assert!(cached_coverage_viols(&cache, &focus).is_empty());

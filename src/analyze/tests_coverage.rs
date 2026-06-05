@@ -135,7 +135,7 @@ fn coverage_build_viols_after_merge_empty() {
     let focus_set: HashSet<PathBuf> = HashSet::new();
     let graphs = GraphRefPair { py: None, rs: None };
     let (viols, defs, unref) =
-        build_viols_after_merge(definitions, unreferenced, &focus_set, graphs, None);
+        build_viols_after_merge(definitions, unreferenced, &focus_set, graphs, None, false);
     assert!(viols.is_empty());
     assert!(defs.is_empty());
     assert!(unref.is_empty());
@@ -157,7 +157,7 @@ fn coverage_build_viols_after_merge_with_unreferenced() {
     }];
     let focus_set: HashSet<PathBuf> = std::iter::once(PathBuf::from("/tmp/test.py")).collect();
     let graphs = GraphRefPair { py: None, rs: None };
-    let (viols, _, _) = build_viols_after_merge(definitions, unreferenced, &focus_set, graphs, None);
+    let (viols, _, _) = build_viols_after_merge(definitions, unreferenced, &focus_set, graphs, None, false);
     assert_eq!(viols.len(), 1);
     assert!(viols[0].message.contains("0% covered"));
 }
@@ -192,6 +192,7 @@ fn coverage_weighted_sentinel_respects_focus_set() {
         &focus_set,
         graphs,
         Some(&weighted),
+        false,
     );
     assert_eq!(viols.len(), 1);
     assert_eq!(viols[0].file, in_focus);
@@ -212,4 +213,45 @@ fn coverage_inject_binary_entry_sentinels_adds_unreferenced_entry_for_bin_files(
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].name, "__entry_point__");
     assert_eq!(unreferenced.len(), 1);
+}
+
+#[test]
+fn coverage_build_viols_reports_binary_entry_points_when_requested() {
+    use crate::analyze::coverage::{GraphRefPair, build_viols_after_merge};
+    use kiss::check_universe_cache::CachedCoverageItem;
+    let bin = PathBuf::from("/tmp/proj/src/bin/runner.rs");
+    let item = CachedCoverageItem {
+        file: bin.to_string_lossy().to_string(),
+        name: "__entry_point__".into(),
+        line: 1,
+    };
+    let definitions = vec![item.clone()];
+    let unreferenced = vec![item];
+    let focus_set: HashSet<PathBuf> = std::iter::once(bin.clone()).collect();
+    let graphs = GraphRefPair { py: None, rs: None };
+    let (viols, _, _) = build_viols_after_merge(
+        definitions,
+        unreferenced,
+        &focus_set,
+        graphs,
+        None,
+        false,
+    );
+    assert!(viols.is_empty(), "entry points hidden without report flag");
+    let item = CachedCoverageItem {
+        file: bin.to_string_lossy().to_string(),
+        name: "__entry_point__".into(),
+        line: 1,
+    };
+    let (viols, _, _) = build_viols_after_merge(
+        vec![item.clone()],
+        vec![item],
+        &focus_set,
+        graphs,
+        None,
+        true,
+    );
+    assert_eq!(viols.len(), 1);
+    assert_eq!(viols[0].file, bin);
+    assert!(viols[0].message.contains("0% covered"));
 }

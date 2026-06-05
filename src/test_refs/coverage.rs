@@ -3,6 +3,7 @@ use super::{CodeDefinition, CoveringTest};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+#[allow(dead_code)]
 pub(crate) fn is_covered_by_import(
     def: &CodeDefinition,
     import_bindings: &HashMap<String, HashSet<String>>,
@@ -37,9 +38,7 @@ pub(crate) fn is_definition_covered(
     module_suffixes: &HashMap<PathBuf, String>,
     usage_refs: &HashSet<String>,
 ) -> bool {
-    if is_covered_by_import(def, import_bindings, module_suffixes, usage_refs) {
-        return true;
-    }
+    let _ = (import_bindings, module_suffixes);
     if is_method_covered_by_class_and_name(def, usage_refs) {
         return true;
     }
@@ -88,7 +87,7 @@ pub(crate) fn build_ref_to_covered_def_indices(
 #[allow(clippy::type_complexity)]
 pub(crate) fn build_py_coverage_map(
     definitions: &[CodeDefinition],
-    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
+    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>, HashSet<String>)>)],
     name_files: &HashMap<String, HashSet<PathBuf>>,
     disambiguation: &HashMap<String, PathBuf>,
     import_bindings: &HashMap<String, HashSet<String>>,
@@ -107,12 +106,12 @@ pub(crate) fn build_py_coverage_map(
     let mut test_entries: Vec<(PathBuf, String)> = Vec::new();
     let mut test_idx = 0usize;
     for (test_path, test_funcs) in per_test_usage {
-        for (test_id, usage_refs) in test_funcs {
+        for (test_id, _usage_refs, call_refs) in test_funcs {
             let ti = test_idx;
             test_entries.push((test_path.clone(), test_id.clone()));
             test_idx += 1;
             let mut seen = HashSet::new();
-            for ref_name in usage_refs {
+            for ref_name in call_refs {
                 let Some(def_indices) = ref_to_defs.get(ref_name) else {
                     continue;
                 };

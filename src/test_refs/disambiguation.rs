@@ -110,12 +110,12 @@ pub(crate) fn resolve_ambiguous_name(
 
 #[allow(clippy::type_complexity)]
 fn collect_test_files_for_ambiguous_names<'a>(
-    per_test_usage: &'a [(PathBuf, Vec<(String, HashSet<String>)>)],
+    per_test_usage: &'a [(PathBuf, Vec<(String, HashSet<String>, HashSet<String>)>)],
     name_files: &HashMap<String, HashSet<PathBuf>>,
 ) -> HashMap<&'a str, Vec<PathBuf>> {
     let mut map: HashMap<&str, Vec<PathBuf>> = HashMap::new();
     for (test_path, test_funcs) in per_test_usage {
-        for (_, usage_refs) in test_funcs {
+        for (_, usage_refs, _) in test_funcs {
             for ref_name in usage_refs {
                 if name_files.get(ref_name).is_some_and(|f| f.len() > 1) {
                     let entry = map.entry(ref_name.as_str()).or_default();
@@ -133,7 +133,7 @@ fn collect_test_files_for_ambiguous_names<'a>(
 pub(crate) fn build_disambiguation_map(
     name_files: &HashMap<String, HashSet<PathBuf>>,
     refs: &HashSet<String>,
-    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>)>)],
+    per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>, HashSet<String>)>)],
     graph: Option<&DependencyGraph>,
 ) -> HashMap<String, PathBuf> {
     let name_to_test_files = if graph.is_some() {
@@ -170,5 +170,25 @@ pub(crate) fn file_to_module_suffix(file: &Path) -> String {
 }
 
 pub(crate) fn module_suffix_matches(def_suffix: &str, import_module: &str) -> bool {
-    def_suffix == import_module || def_suffix.ends_with(&format!(".{import_module}"))
+    def_suffix == import_module
+        || def_suffix.ends_with(&format!(".{import_module}"))
+        || import_module.ends_with(&format!(".{def_suffix}"))
+}
+
+pub(crate) fn crate_qualified_module_matches_def(def_suffix: &str, import_module: &str) -> bool {
+    if module_suffix_matches(def_suffix, import_module) {
+        return true;
+    }
+    let bare = def_suffix.strip_prefix("src.").unwrap_or(def_suffix);
+    if bare != def_suffix && module_suffix_matches(bare, import_module) {
+        return true;
+    }
+    let def_tail = bare.rsplit('.').next().unwrap_or(bare);
+    let import_tail = import_module.rsplit('.').next().unwrap_or(import_module);
+    if def_tail != import_tail {
+        return false;
+    }
+    let import_head = import_module.strip_suffix(&format!(".{import_tail}")).unwrap_or("");
+    import_head.contains('.')
+        && import_module.len() > def_tail.len() + import_head.len() + 1
 }

@@ -6,30 +6,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import click
+_ROOT = str(Path(__file__).resolve().parent.parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-
-def _ensure_import_path() -> None:
-    root = str(Path(__file__).resolve().parent.parent)
-    if root not in sys.path:
-        sys.path.insert(0, root)
-
-
-@click.command()
-@click.argument(
-    "repo",
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
-)
-def main(repo: Path) -> None:
-    """Compare kiss coverage estimates to runtime line coverage for REPO."""
-    _ensure_import_path()
-    from python.coverage_metrics import run_comparison
-
-    try:
-        run_comparison(repo.resolve())
-    except RuntimeError as exc:
-        raise click.ClickException(str(exc)) from exc
-
+from python.coverage_metrics import coverage_metrics_cli as main  # noqa: E402
 
 if __name__ == "__main__":
     main()

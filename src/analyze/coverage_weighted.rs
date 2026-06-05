@@ -20,63 +20,28 @@ pub(crate) fn merge_weighted_file_pcts(
             || kiss::test_refs::is_in_test_directory(&parsed.path)
         {
             weighted.insert(parsed.path.clone(), 0);
+        } else if !weighted.contains_key(&parsed.path)
+            && !py_cov
+                .definitions
+                .iter()
+                .any(|d| d.file == parsed.path)
+        {
+            let pct = if parsed.path.file_name().and_then(|s| s.to_str()) == Some("__init__.py") {
+                kiss::test_refs::py_init_marker_pct(parsed)
+            } else {
+                0
+            };
+            weighted.insert(parsed.path.clone(), pct);
         }
     }
     for parsed in rs_parsed {
-        if kiss::rust_test_refs::is_rust_test_file(&parsed.path) {
+        if kiss::rust_test_refs::is_rust_test_file(&parsed.path)
+            || kiss::rust_test_refs::is_binary_entry_point(&parsed.path)
+        {
             weighted.insert(parsed.path.clone(), 0);
         }
     }
     weighted
-}
-
-pub(crate) fn inject_test_file_sentinels(
-    definitions: &mut Vec<CachedCoverageItem>,
-    unreferenced: &mut Vec<CachedCoverageItem>,
-    py_parsed: &[kiss::ParsedFile],
-    rs_parsed: &[kiss::ParsedRustFile],
-    weighted: &HashMap<PathBuf, usize>,
-) {
-    for parsed in py_parsed {
-        if !(kiss::test_refs::is_test_file(&parsed.path)
-            || kiss::test_refs::is_in_test_directory(&parsed.path))
-        {
-            continue;
-        }
-        if weighted.get(&parsed.path).copied() != Some(0) {
-            continue;
-        }
-        let file_str = parsed.path.to_string_lossy().to_string();
-        if definitions.iter().any(|d| d.file == file_str) {
-            continue;
-        }
-        let item = CachedCoverageItem {
-            file: file_str,
-            name: "__test_file__".into(),
-            line: 1,
-        };
-        definitions.push(item.clone());
-        unreferenced.push(item);
-    }
-    for parsed in rs_parsed {
-        if !kiss::rust_test_refs::is_rust_test_file(&parsed.path) {
-            continue;
-        }
-        if weighted.get(&parsed.path).copied() != Some(0) {
-            continue;
-        }
-        let file_str = parsed.path.to_string_lossy().to_string();
-        if definitions.iter().any(|d| d.file == file_str) {
-            continue;
-        }
-        let item = CachedCoverageItem {
-            file: file_str,
-            name: "__test_file__".into(),
-            line: 1,
-        };
-        definitions.push(item.clone());
-        unreferenced.push(item);
-    }
 }
 
 pub(crate) fn inject_binary_entry_sentinels(

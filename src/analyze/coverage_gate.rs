@@ -40,12 +40,25 @@ fn analysis_tuples(
 }
 
 pub(crate) fn is_coverage_gate_file(path: &Path, unit_name: &str) -> bool {
-    unit_name != "__test_file__"
-        && unit_name != "__entry_point__"
+    unit_name != "__entry_point__"
         && !kiss::test_refs::is_test_file(path)
         && !kiss::test_refs::is_in_test_directory(path)
         && !kiss::rust_test_refs::is_rust_test_file(path)
         && !kiss::rust_test_refs::is_binary_entry_point(path)
+}
+
+pub(crate) fn is_coverage_report_target(
+    path: &Path,
+    unit_name: &str,
+    report_entry_points: bool,
+) -> bool {
+    if report_entry_points
+        && unit_name == "__entry_point__"
+        && kiss::rust_test_refs::is_binary_entry_point(path)
+    {
+        return true;
+    }
+    is_coverage_gate_file(path, unit_name)
 }
 
 fn is_weighted_overlay_target(path: &Path) -> bool {
@@ -255,11 +268,11 @@ mod coverage_gate_tests {
     }
 
     #[test]
-    fn per_file_gate_ignores_test_files_and_sentinels() {
+    fn per_file_gate_ignores_test_files_by_path() {
         use std::path::PathBuf;
         let test_py = PathBuf::from("tests/test_foo.py");
-        let defs = vec![(test_py.clone(), "__test_file__".into(), 1)];
-        let unrefs = vec![(test_py.clone(), "__test_file__".into(), 1)];
+        let defs = vec![(test_py.clone(), "test_foo".into(), 1)];
+        let unrefs = vec![(test_py.clone(), "test_foo".into(), 1)];
         let focus: HashSet<PathBuf> = std::iter::once(test_py).collect();
         assert!(per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90, None).is_none());
     }
@@ -284,11 +297,19 @@ mod coverage_gate_tests {
     }
 
     #[test]
+    fn weighted_overlay_target_skips_test_paths() {
+        use std::path::Path;
+        assert!(!is_weighted_overlay_target(Path::new("tests/test_foo.py")));
+        assert!(is_weighted_overlay_target(Path::new("src/foo.py")));
+    }
+
+    #[test]
     fn evaluate_gate_passes_for_empty_analysis() {
         let py_cov = kiss::TestRefAnalysis {
             definitions: Vec::new(),
             test_references: HashSet::new(),
             call_references: HashSet::new(),
+            mocked_references: HashSet::new(),
             unreferenced: Vec::new(),
             coverage_map: HashMap::new(),
         };
@@ -311,6 +332,7 @@ mod coverage_gate_tests {
             definitions: Vec::new(),
             test_references: HashSet::new(),
             call_references: HashSet::new(),
+            mocked_references: HashSet::new(),
             unreferenced: Vec::new(),
             coverage_map: HashMap::new(),
         };

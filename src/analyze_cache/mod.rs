@@ -23,7 +23,7 @@ pub(crate) use stats_top::{
     maybe_store_stats_top_cache, try_run_cached_stats_summary, try_run_cached_stats_top,
 };
 
-const CACHE_SCHEMA_VERSION: &str = "v6";
+const CACHE_SCHEMA_VERSION: &str = "v8";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -206,7 +206,11 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus_set: &HashSet<PathBuf>) -
             .map(|v| v.clone().into_violation())
             .filter(|v| {
                 crate::analyze::is_focus_file(&v.file, focus_set)
-                    && crate::analyze::is_coverage_gate_file(&v.file, &v.unit_name)
+                    && crate::analyze::is_coverage_report_target(
+                        &v.file,
+                        &v.unit_name,
+                        true,
+                    )
             })
             .collect();
     }
@@ -214,7 +218,9 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus_set: &HashSet<PathBuf>) -
     let file_pcts = kiss::cli_output::file_coverage_map(&defs, &unreferenced);
     unreferenced
         .into_iter()
-        .filter(|(path, name, _)| crate::analyze::is_coverage_gate_file(path, name))
+        .filter(|(path, name, _)| {
+            crate::analyze::is_coverage_report_target(path, name, true)
+        })
         .map(|(file, name, line)| {
             let pct = file_pcts.get(&file).copied().unwrap_or(0);
             coverage_violation(file, name, line, pct)

@@ -16,6 +16,54 @@ fn is_covered_for_propagation(
             && name_files.get(&def.name).is_none_or(|files| files.len() <= 1))
 }
 
+fn file_has_covered_production_fn(
+    file: &Path,
+    items: &[syn::Item],
+    definitions: &[RustCodeDefinition],
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    test_references: &HashSet<String>,
+    qualified_references: &HashSet<QualifiedModuleRef>,
+) -> bool {
+    items.iter().any(|item| {
+        let syn::Item::Fn(f) = item else {
+            return false;
+        };
+        if has_cfg_test_attribute(&f.attrs) || has_test_attribute(&f.attrs) {
+            return false;
+        }
+        let fn_name = f.sig.ident.to_string();
+        let Some(def) = definitions
+            .iter()
+            .find(|d| d.file == file && d.name == fn_name)
+        else {
+            return false;
+        };
+        is_covered_for_propagation(def, test_references, qualified_references, name_files)
+    })
+}
+
+fn propagate_const_and_static_refs(
+    items: &[syn::Item],
+    test_references: &mut HashSet<String>,
+    qualified_references: &mut HashSet<QualifiedModuleRef>,
+) {
+    for item in items {
+        let expr = match item {
+            syn::Item::Const(c) => Some(&c.expr),
+            syn::Item::Static(s) => Some(&s.expr),
+            _ => None,
+        };
+        let Some(expr) = expr else {
+            continue;
+        };
+        ReferenceVisitor {
+            refs: test_references,
+            qualified: qualified_references,
+        }
+        .visit_expr(expr);
+    }
+}
+
 fn propagate_from_items(
     file: &Path,
     items: &[syn::Item],
@@ -24,6 +72,17 @@ fn propagate_from_items(
     test_references: &mut HashSet<String>,
     qualified_references: &mut HashSet<QualifiedModuleRef>,
 ) {
+    let propagate_tables = file_has_covered_production_fn(
+        file,
+        items,
+        definitions,
+        name_files,
+        test_references,
+        qualified_references,
+    );
+    if propagate_tables {
+        propagate_const_and_static_refs(items, test_references, qualified_references);
+    }
     for item in items {
         match item {
             syn::Item::Fn(f)

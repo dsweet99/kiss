@@ -324,15 +324,16 @@ fn test_collect_class_test_methods_extracts_test_methods() {
     let body = class_node.child_by_field_name("body").unwrap();
     let mut out = Vec::new();
     super::collect::collect_class_test_methods(body, src, "TestFoo", &mut out);
-    let ids: Vec<&str> = out.iter().map(|(id, _)| id.as_str()).collect();
+    let ids: Vec<&str> = out.iter().map(|(id, _, _)| id.as_str()).collect();
     assert!(ids.contains(&"TestFoo::test_one"));
     assert!(ids.contains(&"TestFoo::test_two"));
     assert!(!ids.iter().any(|id| id.contains("helper")));
-    let (_, refs) = out
+    let (_, refs, call_refs) = out
         .iter()
-        .find(|(id, _)| id == "TestFoo::test_one")
+        .find(|(id, _, _)| id == "TestFoo::test_one")
         .unwrap();
     assert!(refs.contains("run"));
+    assert!(call_refs.contains("run"));
 }
 
 // ---------------------------------------------------------------------------
@@ -347,7 +348,7 @@ fn test_collect_test_functions_with_refs_top_level_and_class() {
     let tree = parser.parse(src, None).unwrap();
     let mut out = Vec::new();
     super::collect::collect_test_functions_with_refs(tree.root_node(), src, "", &mut out);
-    let ids: Vec<&str> = out.iter().map(|(id, _)| id.as_str()).collect();
+    let ids: Vec<&str> = out.iter().map(|(id, _, _)| id.as_str()).collect();
     assert!(ids.contains(&"test_alpha"));
     assert!(ids.contains(&"TestBeta::test_beta_one"));
 }
@@ -366,6 +367,7 @@ fn test_collect_all_test_file_data_imports_calls_decorators() {
     let mut usage_refs = std::collections::HashSet::new();
     let mut call_refs = std::collections::HashSet::new();
     let mut import_bindings = std::collections::HashMap::new();
+    let mut mocked_refs = std::collections::HashSet::new();
     super::collect::collect_all_test_file_data(
         tree.root_node(),
         src,
@@ -373,6 +375,7 @@ fn test_collect_all_test_file_data_imports_calls_decorators() {
         &mut usage_refs,
         &mut call_refs,
         &mut import_bindings,
+        &mut mocked_refs,
     );
     assert!(
         test_refs.contains("helper"),

@@ -54,7 +54,10 @@ fn try_cache_hit(
     // line (e.g. `shrink`'s pre-flight pass, which expects to drive its own
     // status emission). Both `--all` (`bypass_gate`) and the gated default
     // flow are eligible; `try_run_cached_all` dispatches on `opts.bypass_gate`.
-    if opts.show_timing || opts.suppress_final_status {
+    if opts.show_timing
+        || opts.suppress_final_status
+        || std::env::var("KISS_COVERAGE_MAP").ok().as_deref() == Some("1")
+    {
         return None;
     }
     crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus_set).map(|ok| {

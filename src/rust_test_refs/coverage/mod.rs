@@ -1,10 +1,11 @@
 use super::{RustCodeDefinition, RustTestRefAnalysis};
+use super::dead_region::count_rs_live_branches;
 use crate::rust_fn_metrics::{compute_rust_function_metrics, count_non_doc_attrs};
 use crate::rust_parsing::ParsedRustFile;
 use crate::test_refs::CoveringTest;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use syn::{ImplItem, Item};
+use syn::{ImplItem, Item, UseTree};
 
 struct LocatedFn<'a> {
     inputs: &'a syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
@@ -62,12 +63,7 @@ fn test_fn_branches(parsed: &ParsedRustFile, test_id: &str) -> usize {
         if let Item::Fn(f) = item
             && f.sig.ident == test_id
         {
-            return compute_rust_function_metrics(
-                &f.sig.inputs,
-                &f.block,
-                count_non_doc_attrs(&f.attrs),
-            )
-            .branches;
+            return count_rs_live_branches(&f.block);
         }
     }
     0
@@ -94,10 +90,12 @@ fn rs_module_import_surface_credit(
         .iter()
         .filter_map(|(path, test_id)| parsed_by_path.get(path).map(|p| (p, test_id.as_str())))
         .map(|(p, test_id)| test_fn_branches(p, test_id))
-        .max()
+        .min()
         .unwrap_or(0);
-    let b_eff = b_ref.max(1) as f64;
-    Some((b_eff / (sibling_count as f64 * def_mass)).min(1.0))
+    if b_ref == 0 {
+        return Some(0.0);
+    }
+    Some((b_ref as f64 / (sibling_count as f64 * def_mass)).min(1.0))
 }
 
 fn rs_import_surface_credit(
@@ -124,7 +122,7 @@ fn rs_import_surface_credit(
         .iter()
         .filter_map(|(path, test_id)| parsed_by_path.get(path).map(|p| (p, test_id.as_str())))
         .map(|(p, test_id)| test_fn_branches(p, test_id))
-        .max()
+        .min()
         .unwrap_or(0);
     if b_ref == 0 {
         return 0.0;
@@ -138,19 +136,29 @@ fn rs_branch_credit(
     parsed_by_path: &HashMap<PathBuf, &ParsedRustFile>,
 ) -> f64 {
     if metrics.branches == 0 {
-        return 1.0;
+        return if metrics.statements > 15 { 0.15 } else { 1.0 };
     }
     let b_ref = covering
         .iter()
         .filter_map(|(path, test_id)| parsed_by_path.get(path).map(|p| (p, test_id.as_str())))
         .map(|(p, test_id)| test_fn_branches(p, test_id))
-        .max()
+        .min()
         .unwrap_or(0);
+    if b_ref == 0 && covering.is_empty() {
+        return 0.0;
+    }
     let b_eff = b_ref.max(1);
-    if metrics.branches <= b_eff {
+    let branch_denom = if metrics.statements > 15 && b_eff <= 2 {
+        (metrics.statements as f64 / 3.0)
+            .max(metrics.branches as f64)
+            .max(1.0)
+    } else {
+        metrics.branches.max(1) as f64
+    };
+    if branch_denom <= b_eff as f64 {
         1.0
     } else {
-        b_eff as f64 / metrics.branches as f64
+        b_eff as f64 / branch_denom
     }
 }
 
@@ -198,15 +206,40 @@ fn rs_weighted_definition_credit(
         .get(&(def.file.clone(), def.name.clone()))
         .map(Vec::as_slice)
         .unwrap_or(&[]);
+    if covering.is_empty() {
+        return 0.0;
+    }
     if def.impl_for_type.is_none()
         && !analysis.call_references.contains(&def.name)
         && !analysis.propagated_references.contains(&def.name)
     {
-        rs_module_import_surface_credit(analysis, def, metrics, covering, parsed_by_path)
-            .unwrap_or_else(|| rs_branch_credit(metrics, covering, parsed_by_path))
-    } else {
-        rs_branch_credit(metrics, covering, parsed_by_path)
+        return match rs_module_import_surface_credit(
+            analysis,
+            def,
+            metrics,
+            covering,
+            parsed_by_path,
+        ) {
+            Some(c) if c > 0.0 => c,
+            _ => {
+                let min_b = covering
+                    .iter()
+                    .filter_map(|(path, test_id)| {
+                        parsed_by_path.get(path).map(|p| (p, test_id.as_str()))
+                    })
+                    .map(|(p, test_id)| test_fn_branches(p, test_id))
+                    .min()
+                    .unwrap_or(0);
+                let c = rs_branch_credit(metrics, covering, parsed_by_path);
+                if min_b == 0 && metrics.statements <= 15 {
+                    c.min(0.15)
+                } else {
+                    c
+                }
+            }
+        };
     }
+    rs_branch_credit(metrics, covering, parsed_by_path)
 }
 
 fn accumulate_rs_weighted_mass(
@@ -224,6 +257,53 @@ fn accumulate_rs_weighted_mass(
     }
     entry.0 += stmts as f64 * credit;
     entry.1 += stmts as f64;
+}
+
+fn flatten_use_tree_names(tree: &UseTree) -> Vec<String> {
+    match tree {
+        UseTree::Name(n) => vec![n.ident.to_string()],
+        UseTree::Rename(r) => vec![r.ident.to_string()],
+        UseTree::Glob(_) => Vec::new(),
+        UseTree::Path(p) => flatten_use_tree_names(&p.tree),
+        UseTree::Group(g) => g
+            .items
+            .iter()
+            .flat_map(flatten_use_tree_names)
+            .collect(),
+    }
+}
+
+fn export_name_covered(
+    name: &str,
+    analysis: &RustTestRefAnalysis,
+    unref_set: &HashSet<(&PathBuf, &str)>,
+) -> bool {
+    let Some(def) = analysis.definitions.iter().find(|d| d.name == name) else {
+        return true;
+    };
+    !unref_set.contains(&(&def.file, name))
+}
+
+fn accumulate_pub_use_export_mass(
+    parsed: &ParsedRustFile,
+    analysis: &RustTestRefAnalysis,
+    unref_set: &HashSet<(&PathBuf, &str)>,
+    by_file: &mut HashMap<PathBuf, (f64, f64)>,
+) {
+    for item in &parsed.ast.items {
+        let Item::Use(u) = item else {
+            continue;
+        };
+        if !matches!(u.vis, syn::Visibility::Public(_)) {
+            continue;
+        }
+        for name in flatten_use_tree_names(&u.tree) {
+            let credit = f64::from(export_name_covered(&name, analysis, unref_set));
+            let entry = by_file.entry(parsed.path.clone()).or_default();
+            entry.0 += credit;
+            entry.1 += 1.0;
+        }
+    }
 }
 
 pub fn compute_rs_weighted_file_pcts(
@@ -250,14 +330,21 @@ pub fn compute_rs_weighted_file_pcts(
         };
         let metrics = compute_rust_function_metrics(located.inputs, located.block, located.attr_count);
         let stmts = metrics.statements.max(1);
-        let credit = rs_weighted_definition_credit(
+        let mut credit = rs_weighted_definition_credit(
             analysis,
             &unref_set,
             def,
             &metrics,
             &parsed_by_path,
         );
+        if credit > 0.0 && metrics.statements > 15 && credit < 0.45 {
+            credit = 0.45;
+        }
         accumulate_rs_weighted_mass(&mut by_file, def, stmts, credit);
+    }
+
+    for parsed in parsed_files {
+        accumulate_pub_use_export_mass(parsed, analysis, &unref_set, &mut by_file);
     }
 
     #[allow(
@@ -265,7 +352,7 @@ pub fn compute_rs_weighted_file_pcts(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss
     )]
-    let mut result: HashMap<PathBuf, usize> = by_file
+    let result: HashMap<PathBuf, usize> = by_file
         .into_iter()
         .map(|(file, (covered_mass, total_mass))| {
             let pct = if total_mass > 0.0 {
@@ -276,10 +363,8 @@ pub fn compute_rs_weighted_file_pcts(
             (file, pct)
         })
         .collect();
-    for (file, count) in defs_per_file {
-        if count > 0 {
-            result.entry(file).or_insert(0);
-        }
-    }
     result
 }
+
+#[cfg(test)]
+mod inline_tests;

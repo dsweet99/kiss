@@ -220,8 +220,8 @@ fn test_build_py_coverage_map_per_test_tracking() {
     let per_test_usage: super::PerTestUsage = vec![(
         PathBuf::from("test_engine.py"),
         vec![
-            ("test_a".to_string(), refs_a),
-            ("test_b".to_string(), refs_b),
+            ("test_a".to_string(), refs_a.clone(), refs_a),
+            ("test_b".to_string(), refs_b.clone(), HashSet::new()),
         ],
     )];
 
