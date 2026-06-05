@@ -74,8 +74,3 @@ fn test_rule_spec_fields() {
     assert_eq!(spec.op, "<");
     assert!(!spec.description.is_empty());
 }
-
-#[test]
-fn static_coverage_touch_rule_spec_type() {
-    let _ = std::marker::PhantomData::<RuleSpec>;
-}

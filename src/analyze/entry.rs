@@ -1,7 +1,6 @@
-use std::collections::HashSet;
 use std::path::Path;
 
-use crate::analyze::focus::{build_focus_set, gather_files};
+use crate::analyze::focus::{FocusFilter, build_focus_filter, gather_files};
 use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
 use crate::analyze::params::RunAnalyzeUncached;
 use crate::analyze::pipeline::run_analyze_uncached;
@@ -11,55 +10,29 @@ fn empty_repo_metrics() -> kiss::GlobalMetrics {
     kiss::GlobalMetrics::default()
 }
 
-/// Sentinel path inserted when the user specified a focus path but it
-/// resolved to zero source files. Keeps the resulting `HashSet` non-empty
-/// so `is_focus_file`'s "empty == no filter" fallback does not silently
-/// disable focus filtering and leak the universe-wide report.
-/// Cannot collide with a real canonicalized source path.
-fn focus_no_match_sentinel() -> std::path::PathBuf {
-    std::path::PathBuf::from("\0__kiss_focus_no_match__")
-}
-
-fn focus_set_for_opts(
+fn focus_filter_for_opts(
     opts: &AnalyzeOptions<'_>,
-    py_files: &[std::path::PathBuf],
-    rs_files: &[std::path::PathBuf],
-) -> HashSet<std::path::PathBuf> {
-    if opts.focus_paths.len() == 1 && opts.focus_paths[0] == opts.universe {
-        let mut set = HashSet::with_capacity(py_files.len() + rs_files.len());
-        set.extend(py_files.iter().cloned());
-        set.extend(rs_files.iter().cloned());
-        set
-    } else {
-        let mut set = build_focus_set(opts.focus_paths, opts.lang_filter, opts.ignore_prefixes);
-        if set.is_empty() {
-            eprintln!(
-                "Warning: focus path(s) matched no source files; reporting nothing for this focus."
-            );
-            set.insert(focus_no_match_sentinel());
-        }
-        set
-    }
+) -> FocusFilter {
+    build_focus_filter(
+        opts.focus_paths,
+        opts.universe,
+        opts.lang_filter,
+        opts.ignore_prefixes,
+    )
 }
 
 fn try_cache_hit(
     opts: &AnalyzeOptions<'_>,
     py_files: &[std::path::PathBuf],
     rs_files: &[std::path::PathBuf],
-    focus_set: &HashSet<std::path::PathBuf>,
+    focus: &FocusFilter,
 ) -> Option<AnalyzeResult> {
-    // The cache is consulted whenever the caller wants the standard output
-    // shape: skip when the user asked for a timing breakdown (which would be
-    // bogus on a cached run) or when the caller suppresses the final status
-    // line (e.g. `shrink`'s pre-flight pass, which expects to drive its own
-    // status emission). Both `--all` (`bypass_gate`) and the gated default
-    // flow are eligible; `try_run_cached_all` dispatches on `opts.bypass_gate`.
     if opts.show_timing
         || opts.suppress_final_status
     {
         return None;
     }
-    crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus_set).map(|ok| {
+    crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus).map(|ok| {
         AnalyzeResult {
             success: ok,
             metrics: None,
@@ -85,8 +58,8 @@ pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
             metrics: Some(empty_repo_metrics()),
         };
     }
-    let focus_set = focus_set_for_opts(opts, &py_files, &rs_files);
-    if let Some(hit) = try_cache_hit(opts, &py_files, &rs_files, &focus_set) {
+    let focus = focus_filter_for_opts(opts);
+    if let Some(hit) = try_cache_hit(opts, &py_files, &rs_files, &focus) {
         return hit;
     }
     let t1 = std::time::Instant::now();
@@ -94,7 +67,7 @@ pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
         opts,
         py_files: &py_files,
         rs_files: &rs_files,
-        focus_set: &focus_set,
+        focus: &focus,
         t0,
         t1,
     })
@@ -110,7 +83,7 @@ mod entry_touch {
     }
 
     #[test]
-    fn test_focus_set_for_opts_universe_path() {
+    fn test_focus_filter_for_universe_path() {
         let tmp = tempfile::TempDir::new().unwrap();
         let universe = tmp.path().to_str().unwrap().to_string();
         let focus = vec![universe.clone()];
@@ -129,15 +102,36 @@ mod entry_touch {
             show_timing: false,
             suppress_final_status: false,
         };
-        let py_files = vec![tmp.path().join("a.py")];
-        let rs_files = vec![tmp.path().join("b.rs")];
-        let fset = focus_set_for_opts(&opts, &py_files, &rs_files);
-        assert!(fset.contains(&tmp.path().join("a.py")));
-        assert!(fset.contains(&tmp.path().join("b.rs")));
+        let filter = focus_filter_for_opts(&opts);
+        assert!(!filter.is_active());
     }
 
     #[test]
-    fn test_try_cache_hit_returns_none_when_not_bypass() {
+    fn test_try_cache_hit_skips_cache_when_show_timing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let universe = tmp.path().to_str().unwrap().to_string();
+        let focus = vec![universe.clone()];
+        let py_cfg = kiss::Config::python_defaults();
+        let rs_cfg = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let opts = AnalyzeOptions {
+            universe: &universe,
+            focus_paths: &focus,
+            py_config: &py_cfg,
+            rs_config: &rs_cfg,
+            lang_filter: None,
+            bypass_gate: false,
+            gate_config: &gate,
+            ignore_prefixes: &[],
+            show_timing: true,
+            suppress_final_status: false,
+        };
+        let focus_filter = FocusFilter::unrestricted();
+        assert!(try_cache_hit(&opts, &[], &[], &focus_filter).is_none());
+    }
+
+    #[test]
+    fn test_try_cache_hit_skips_cache_when_suppress_final_status() {
         let tmp = tempfile::TempDir::new().unwrap();
         let universe = tmp.path().to_str().unwrap().to_string();
         let focus = vec![universe.clone()];
@@ -154,11 +148,10 @@ mod entry_touch {
             gate_config: &gate,
             ignore_prefixes: &[],
             show_timing: false,
-            suppress_final_status: false,
+            suppress_final_status: true,
         };
-        let focus_set = std::collections::HashSet::new();
-        let result = try_cache_hit(&opts, &[], &[], &focus_set);
-        assert!(result.is_none());
+        let focus_filter = FocusFilter::unrestricted();
+        assert!(try_cache_hit(&opts, &[], &[], &focus_filter).is_none());
     }
 
     #[test]

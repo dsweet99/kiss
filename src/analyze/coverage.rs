@@ -9,7 +9,7 @@ use kiss::{DependencyGraph, Violation};
 pub(crate) use crate::analyze::coverage_types::{CoverageViolationSpec, PyRsTestCoverage};
 use crate::analyze::coverage_weighted::merge_weighted_file_pcts;
 use crate::analyze::coverage_gate::{is_coverage_gate_file, is_coverage_report_target};
-use crate::analyze::focus::is_focus_file;
+use crate::analyze::focus::{FocusFilter, is_focus_file};
 use crate::analyze::graph_api::graph_for_path;
 
 /// Graph pair for coverage / orphan resolution.
@@ -138,19 +138,19 @@ pub(crate) fn merge_coverage_results(
 pub fn compute_test_coverage_from_lists(
     defs: &[(PathBuf, String, usize)],
     unref: &[(PathBuf, String, usize)],
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
 ) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
     let mut total = 0usize;
     let mut untested = 0usize;
     let mut unreferenced = Vec::new();
 
     for (file, _, _) in defs {
-        if is_focus_file(file, focus_set) {
+        if is_focus_file(file, focus) {
             total += 1;
         }
     }
     for (file, name, line) in unref {
-        if is_focus_file(file, focus_set) {
+        if is_focus_file(file, focus) {
             untested += 1;
             unreferenced.push((file.clone(), name.clone(), *line));
         }
@@ -173,7 +173,7 @@ pub fn compute_test_coverage_from_lists(
 pub(crate) fn build_viols_after_merge(
     definitions: Vec<CachedCoverageItem>,
     unreferenced: Vec<CachedCoverageItem>,
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
     graphs: GraphRefPair<'_>,
     weighted_pcts: Option<&HashMap<PathBuf, usize>>,
     report_entry_points: bool,
@@ -193,13 +193,13 @@ pub(crate) fn build_viols_after_merge(
         .cloned()
         .map(CachedCoverageItem::into_tuple)
         .collect();
-    let (_, _, _, mut unreferenced_focus) = compute_test_coverage_from_lists(&defs, &unref, focus_set);
+    let (_, _, _, mut unreferenced_focus) = compute_test_coverage_from_lists(&defs, &unref, focus);
     let mut file_pcts = file_coverage_map(&defs, &unreferenced_focus);
     if let Some(weighted) = weighted_pcts {
         for (path, pct) in weighted {
             file_pcts.insert(path.clone(), *pct);
             if *pct < 100
-                && is_focus_file(path, focus_set)
+                && is_focus_file(path, focus)
                 && is_coverage_gate_file(path, "")
                 && !unreferenced_focus.iter().any(|(f, _, _)| f == path)
                 && let Some(def) = defs.iter().find(|(f, _, _)| f == path)
@@ -231,7 +231,7 @@ pub(crate) fn collect_coverage_viols(
     cov: PyRsTestCoverage,
     py_parsed: &[kiss::ParsedFile],
     rs_parsed: &[kiss::ParsedRustFile],
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
     out_opts: CoverageOutputOpts,
     graphs: GraphRefPair<'_>,
 ) -> (Vec<Violation>, Option<CoverageCachePair>) {
@@ -244,7 +244,7 @@ pub(crate) fn collect_coverage_viols(
     let (cov_viols, definitions, unreferenced) = build_viols_after_merge(
         definitions,
         unreferenced,
-        focus_set,
+        focus,
         graphs,
         Some(&weighted),
         out_opts.bypass_gate,

@@ -8,7 +8,7 @@ use std::collections::HashSet;
         use std::path::PathBuf;
         let defs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
         let unrefs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
-        let focus: HashSet<PathBuf> = std::iter::once(PathBuf::from("src/a.py")).collect();
+        let focus = crate::analyze::FocusFilter::restricting(std::iter::once(PathBuf::from("src/a.py")).collect());
         let failure = per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90, None);
         let (unreferenced, file_pcts) = failure.expect("expected gate failure");
         assert_eq!(file_pcts.get(&PathBuf::from("src/a.py")), Some(&0));
@@ -20,7 +20,7 @@ use std::collections::HashSet;
         use std::path::PathBuf;
         let defs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
         let unrefs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
-        let focus: HashSet<PathBuf> = std::iter::once(PathBuf::from("src/b.py")).collect();
+        let focus = crate::analyze::FocusFilter::restricting(std::iter::once(PathBuf::from("src/b.py")).collect());
         assert!(per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90, None).is_none());
     }
 
@@ -32,7 +32,7 @@ use std::collections::HashSet;
             (PathBuf::from("src/a.py"), "g".into(), 2),
         ];
         let unrefs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
-        let focus: HashSet<PathBuf> = std::iter::once(PathBuf::from("src/a.py")).collect();
+        let focus = crate::analyze::FocusFilter::restricting(std::iter::once(PathBuf::from("src/a.py")).collect());
         let failure = per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90, None);
         let (_, file_pcts) = failure.expect("expected gate failure below 100%");
         assert_eq!(file_pcts.get(&PathBuf::from("src/a.py")), Some(&50));
@@ -44,7 +44,7 @@ use std::collections::HashSet;
         let test_py = PathBuf::from("tests/test_foo.py");
         let defs = vec![(test_py.clone(), "test_foo".into(), 1)];
         let unrefs = vec![(test_py.clone(), "test_foo".into(), 1)];
-        let focus: HashSet<PathBuf> = std::iter::once(test_py).collect();
+        let focus = crate::analyze::FocusFilter::restricting(std::iter::once(test_py).collect());
         assert!(per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90, None).is_none());
     }
 
@@ -57,7 +57,7 @@ use std::collections::HashSet;
                 .map(|i| (module.clone(), format!("fn_{i}"), i + 1))
                 .collect();
             let unrefs = defs.clone();
-            let focus: HashSet<PathBuf> = std::iter::once(module.clone()).collect();
+            let focus = crate::analyze::FocusFilter::restricting(std::iter::once(module.clone()).collect());
             let weighted_pct = 17;
             let mut weighted = HashMap::new();
             weighted.insert(module.clone(), weighted_pct);
@@ -79,7 +79,7 @@ use std::collections::HashSet;
         let module = PathBuf::from("src/ambiguous/testing_hooks.py");
         let defs = vec![(module.clone(), "hook".into(), 1)];
         let unrefs = vec![(module.clone(), "hook".into(), 1)];
-        let focus: HashSet<PathBuf> = std::iter::once(module.clone()).collect();
+        let focus = crate::analyze::FocusFilter::restricting(std::iter::once(module.clone()).collect());
         let mut weighted = HashMap::new();
         weighted.insert(module.clone(), 42);
         let failure = per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90, Some(&weighted));
@@ -111,7 +111,7 @@ use std::collections::HashSet;
             (module.clone(), "a".into(), 1),
             (module.clone(), "b".into(), 2),
         ];
-        let focus: HashSet<PathBuf> = std::iter::once(module.clone()).collect();
+        let focus = crate::analyze::FocusFilter::restricting(std::iter::once(module.clone()).collect());
         let mut weighted = HashMap::new();
         weighted.insert(module.clone(), 23);
         let gate_failure =
@@ -187,7 +187,7 @@ use std::collections::HashSet;
             unreferenced: Vec::new(),
             coverage_map: HashMap::new(),
         };
-        let focus = HashSet::new();
+        let focus = crate::analyze::FocusFilter::unrestricted();
         assert!(evaluate_gate(&py_cov, &rs_cov, &[], &[], &focus, 90).is_none());
         assert!(evaluate_cached_gate(&[], &[], &focus, 90).is_none());
     }

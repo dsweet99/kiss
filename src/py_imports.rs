@@ -152,14 +152,6 @@ mod tests {
     }
 
     #[test]
-    fn static_coverage_touch_import_collectors() {
-        fn t<T>(_: T) {}
-        t(collect_import_names);
-        t(collect_import_statement_names);
-        t(collect_import_from_names);
-    }
-
-    #[test]
     fn test_collect_import_names_direct() {
         let p = parse("import os\nfrom sys import path");
         let mut names = std::collections::HashSet::new();

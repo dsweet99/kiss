@@ -4,9 +4,9 @@
 use syn::visit::Visit;
 use syn::{Expr, ExprCall, ExprMacro, ExprPath, ImplItem, ItemFn, ItemImpl, Type};
 
-use super::super::ast_models::{Definition, Reference, ReferenceKind, SymbolKind};
+use super::ast_models::{Definition, Reference, ReferenceKind, SymbolKind};
 use super::ast_rust_macros::collect_macro_reference_sites;
-use super::{ident_byte_span, item_full_span};
+use super::ast_rust_span::{ident_byte_span, item_full_span};
 use crate::Language;
 
 pub(crate) fn collect_impl(
@@ -179,15 +179,7 @@ impl<'ast> Visit<'ast> for CallVisitor<'_> {
         syn::visit::visit_use_path(self, node);
     }
     fn visit_use_name(&mut self, node: &'ast syn::UseName) {
-        self.push_use_ident(&node.ident);
-    }
-    fn visit_use_rename(&mut self, node: &'ast syn::UseRename) {
-        self.push_use_ident(&node.ident);
-    }
-}
-impl CallVisitor<'_> {
-    fn push_use_ident(&mut self, ident: &syn::Ident) {
-        if let Some((s, e)) = ident_byte_span(self.line_offsets, ident, self.content) {
+        if let Some((s, e)) = ident_byte_span(self.line_offsets, &node.ident, self.content) {
             self.refs.push(Reference {
                 start: s,
                 end: e,
@@ -195,4 +187,18 @@ impl CallVisitor<'_> {
             });
         }
     }
+    fn visit_use_rename(&mut self, node: &'ast syn::UseRename) {
+        if let Some((s, e)) = ident_byte_span(self.line_offsets, &node.ident, self.content) {
+            self.refs.push(Reference {
+                start: s,
+                end: e,
+                kind: ReferenceKind::Import,
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    include!("ast_rust_visitors_test.rs");
 }

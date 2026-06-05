@@ -1,16 +1,10 @@
-use std::marker::PhantomData;
 
 use crate::test_utils::parse_python_source as parse;
 
-use super::body_walk::{
-    BodyAgg, BodySummary, is_try_body, try_body_byte_range, update_body_counts,
-    update_return_counts, update_try_block_statements, walk_body,
-};
 use super::compute::compute_function_metrics;
-use super::file_walk::{is_interface_token, walk_file};
-use super::indent_scope::{is_indent_increasing, is_nested_scope_boundary, next_indent_depth};
-use super::locals::update_local_vars;
+use super::file_walk::is_interface_token;
 use super::parameters::count_parameters;
+use super::returns::count_return_values;
 
 fn get_func_node(p: &crate::parsing::ParsedFile) -> tree_sitter::Node<'_> {
     p.tree.root_node().child(0).unwrap()
@@ -18,7 +12,6 @@ fn get_func_node(p: &crate::parsing::ParsedFile) -> tree_sitter::Node<'_> {
 
 #[cfg_attr(test, allow(dead_code))]
 fn compute_max_return_values(node: tree_sitter::Node) -> usize {
-    use super::returns::count_return_values;
     let mut max = if node.kind() == "return_statement" {
         count_return_values(node)
     } else {
@@ -29,6 +22,14 @@ fn compute_max_return_values(node: tree_sitter::Node) -> usize {
         max = max.max(compute_max_return_values(child));
     }
     max
+}
+
+#[test]
+fn test_compute_max_return_values() {
+    let p = parse("def f():\n    return 1, 2\n    if x:\n        return 3\n");
+    let func = get_func_node(&p);
+    let body = func.child_by_field_name("body").unwrap();
+    assert!(compute_max_return_values(body) >= 2);
 }
 
 #[test]
@@ -103,26 +104,4 @@ fn test_typed_kwargs_not_counted() {
     let counts = count_parameters(params, &p.source);
     assert_eq!(counts.positional, 1, "only a is positional");
     assert_eq!(counts.keyword_only, 0, "**kwargs should not be counted");
-}
-
-#[test]
-fn static_coverage_touch_body_and_file_walkers() {
-    fn t<T>(_: T) {}
-    let _ = (
-        PhantomData::<BodyAgg>,
-        PhantomData::<BodySummary>,
-        PhantomData::<crate::py_metrics::file_walk::FileCounts>,
-    );
-    t(walk_body);
-    t(next_indent_depth);
-    t(is_indent_increasing);
-    t(is_nested_scope_boundary);
-    t(update_local_vars);
-    t(update_body_counts);
-    t(update_return_counts);
-    t(try_body_byte_range);
-    t(is_try_body);
-    t(update_try_block_statements);
-    t(walk_file);
-    t(compute_max_return_values);
 }

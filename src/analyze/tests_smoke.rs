@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::path::Path;
 
 use kiss::{Config, GateConfig};
@@ -91,11 +90,12 @@ fn test_print_functions_and_helpers() {
     let (n, e) = graph_stats(None, None);
     assert_eq!(n, 0);
     assert_eq!(e, 0);
+    let focus = crate::analyze::FocusFilter::unrestricted();
     assert!(crate::analyze::is_focus_file(
         Path::new("any.py"),
-        &HashSet::new()
+        &focus
     ));
-    let dups = filter_duplicates_by_focus(vec![], &HashSet::new());
+    let dups = filter_duplicates_by_focus(vec![], &focus);
     assert!(dups.is_empty());
 }
 

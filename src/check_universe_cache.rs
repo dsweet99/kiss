@@ -28,6 +28,8 @@ pub struct FullCheckCache {
     #[serde(default)]
     pub focus_paths: Vec<String>,
     #[serde(default)]
+    pub focus_restrict: bool,
+    #[serde(default)]
     pub rs_paths: Vec<String>,
     pub py_file_count: usize,
     pub rs_file_count: usize,
@@ -91,6 +93,7 @@ mod tests {
             rs_stats: None,
             py_paths: vec![],
             focus_paths: vec![],
+            focus_restrict: false,
             rs_paths: vec![],
             py_file_count: 0,
             rs_file_count: 0,

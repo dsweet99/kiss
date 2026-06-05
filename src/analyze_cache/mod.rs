@@ -1,5 +1,6 @@
 mod emit;
 
+use crate::analyze::FocusFilter;
 use crate::analyze::{
     compute_test_coverage_from_lists, filter_duplicates_by_focus, filter_viols_by_focus,
 };
@@ -10,7 +11,6 @@ use kiss::check_universe_cache::{CachedCoverageItem, CachedDuplicateCluster, Ful
 use kiss::stats::MetricStats;
 use kiss::{Config, DuplicateCluster, GateConfig, Violation};
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
@@ -132,7 +132,7 @@ pub fn coverage_violation(file: PathBuf, name: String, line: usize, file_pct: us
 fn cached_duplicates(
     cache: FullCheckCache,
     gate_config: &GateConfig,
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
 ) -> (
     Vec<Violation>,
     Vec<DuplicateCluster>,
@@ -150,7 +150,7 @@ fn cached_duplicates(
             .iter()
             .map(|v| v.clone().into_violation()),
     );
-    let viols = filter_viols_by_focus(viols, focus_set);
+    let viols = filter_viols_by_focus(viols, focus);
 
     let (py_dups, rs_dups) = if gate_config.duplication_enabled {
         (
@@ -163,7 +163,7 @@ fn cached_duplicates(
                         chunks: c.chunks.iter().map(|cc| cc.clone().into_chunk()).collect(),
                     })
                     .collect(),
-                focus_set,
+                focus,
             ),
             filter_duplicates_by_focus(
                 cache
@@ -174,7 +174,7 @@ fn cached_duplicates(
                         chunks: c.chunks.iter().map(|cc| cc.clone().into_chunk()).collect(),
                     })
                     .collect(),
-                focus_set,
+                focus,
             ),
         )
     } else {
@@ -184,7 +184,7 @@ fn cached_duplicates(
     (viols, py_dups, rs_dups, cache)
 }
 
-fn cached_coverage_viols(cache: &FullCheckCache, focus_set: &HashSet<PathBuf>) -> Vec<Violation> {
+fn cached_coverage_viols(cache: &FullCheckCache, focus: &FocusFilter) -> Vec<Violation> {
     let defs: Vec<_> = cache
         .definitions
         .iter()
@@ -197,7 +197,7 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus_set: &HashSet<PathBuf>) -
         .cloned()
         .map(CachedCoverageItem::into_tuple)
         .collect();
-    let (_, _, _, unreferenced) = compute_test_coverage_from_lists(&defs, &unref, focus_set);
+    let (_, _, _, unreferenced) = compute_test_coverage_from_lists(&defs, &unref, focus);
 
     if !cache.coverage_violations.is_empty() {
         return cache
@@ -205,7 +205,7 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus_set: &HashSet<PathBuf>) -
             .iter()
             .map(|v| v.clone().into_violation())
             .filter(|v| {
-                crate::analyze::is_focus_file(&v.file, focus_set)
+                crate::analyze::is_focus_file(&v.file, focus)
                     && crate::analyze::is_coverage_report_target(
                         &v.file,
                         &v.unit_name,
@@ -232,7 +232,7 @@ pub fn try_run_cached_all(
     opts: &crate::analyze::AnalyzeOptions<'_>,
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
 ) -> Option<bool> {
     let fp = fingerprint_for_check(
         py_files,
@@ -242,14 +242,14 @@ pub fn try_run_cached_all(
         opts.gate_config,
     );
     let cache = load_full_cache(&fp)?;
-    if !same_cached_paths(py_files, rs_files, focus_set, &cache) {
+    if !same_cached_paths(py_files, rs_files, focus, &cache) {
         return None;
     }
 
     if opts.bypass_gate {
-        Some(emit_cached_bypass(cache, opts, focus_set))
+        Some(emit_cached_bypass(cache, opts, focus))
     } else {
-        Some(emit_cached_gated(cache, opts, focus_set))
+        Some(emit_cached_gated(cache, opts, focus))
     }
 }
 
@@ -319,6 +319,7 @@ pub struct FullCacheInputs<'a> {
     pub py_stats: Option<&'a MetricStats>,
     pub rs_stats: Option<&'a MetricStats>,
     pub focus_paths: Vec<String>,
+    pub focus_restrict: bool,
     pub py_paths: Vec<String>,
     pub rs_paths: Vec<String>,
     pub py_dups_all: &'a [DuplicateCluster],
@@ -334,6 +335,7 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
         py_stats: inputs.py_stats.cloned(),
         rs_stats: inputs.rs_stats.cloned(),
         focus_paths: inputs.focus_paths,
+        focus_restrict: inputs.focus_restrict,
         py_paths: inputs.py_paths,
         rs_paths: inputs.rs_paths,
         py_file_count: inputs.py_file_count,

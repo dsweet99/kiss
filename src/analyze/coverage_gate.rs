@@ -1,11 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::cli_output::{CoverageGateFailureCtx, file_coverage_map, print_coverage_gate_failure};
 use crate::analyze::coverage::compute_test_coverage_from_lists;
 use crate::analyze::coverage_types::CheckCoverageGateParams;
-use crate::analyze::focus::is_focus_file;
+use crate::analyze::focus::{FocusFilter, is_focus_file};
 
 type PathNameLine = (PathBuf, String, usize);
 type PerFileGateFailure = (Vec<PathNameLine>, std::collections::HashMap<PathBuf, usize>);
@@ -63,10 +63,10 @@ fn overlay_weighted_file_pcts(
     unreferenced_focus: &mut Vec<PathNameLine>,
     defs_focus: &[(PathBuf, String, usize)],
     weighted: &HashMap<PathBuf, usize>,
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
 ) {
     for (path, pct) in weighted {
-        if !is_focus_file(path, focus_set) || !is_weighted_overlay_target(path) {
+        if !is_focus_file(path, focus) || !is_weighted_overlay_target(path) {
             continue;
         }
         file_pcts.insert(path.clone(), *pct);
@@ -82,15 +82,15 @@ fn overlay_weighted_file_pcts(
 fn per_file_coverage_gate_fails(
     defs_t: &[(PathBuf, String, usize)],
     unrefs_t: &[(PathBuf, String, usize)],
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
     threshold: usize,
     weighted_pcts: Option<&HashMap<PathBuf, usize>>,
 ) -> Option<PerFileGateFailure> {
     let (_, _, _, mut unreferenced_focus) =
-        compute_test_coverage_from_lists(defs_t, unrefs_t, focus_set);
+        compute_test_coverage_from_lists(defs_t, unrefs_t, focus);
     let defs_focus: Vec<_> = defs_t
         .iter()
-        .filter(|(f, _, _)| is_focus_file(f, focus_set))
+        .filter(|(f, _, _)| is_focus_file(f, focus))
         .cloned()
         .collect();
     let mut file_pcts = file_coverage_map(&defs_focus, &unreferenced_focus);
@@ -100,7 +100,7 @@ fn per_file_coverage_gate_fails(
             &mut unreferenced_focus,
             &defs_focus,
             weighted,
-            focus_set,
+            focus,
         );
     }
     let gate_fails = file_pcts
@@ -126,14 +126,14 @@ pub(crate) fn evaluate_gate(
     rs_cov: &kiss::RustTestRefAnalysis,
     _py_parsed: &[kiss::ParsedFile],
     _rs_parsed: &[kiss::ParsedRustFile],
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
     threshold: usize,
 ) -> Option<crate::analyze::options::AnalyzeResult> {
     let (defs_t, unrefs_t) = analysis_tuples(py_cov, rs_cov);
     if let Some((unreferenced_focus, file_pcts)) = per_file_coverage_gate_fails(
         &defs_t,
         &unrefs_t,
-        focus_set,
+        focus,
         threshold,
         None,
     ) {
@@ -153,7 +153,7 @@ pub(crate) fn evaluate_gate(
 pub(crate) fn evaluate_cached_gate(
     definitions: &[CachedCoverageItem],
     unreferenced: &[CachedCoverageItem],
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
     threshold: usize,
 ) -> Option<crate::analyze::options::AnalyzeResult> {
     let defs = definitions
@@ -168,7 +168,7 @@ pub(crate) fn evaluate_cached_gate(
         return None;
     }
     if let Some((unreferenced_focus, file_pcts)) =
-        per_file_coverage_gate_fails(&defs, &unrefs, focus_set, threshold, None)
+        per_file_coverage_gate_fails(&defs, &unrefs, focus, threshold, None)
     {
         print_coverage_gate_failure(&CoverageGateFailureCtx {
             threshold,
@@ -189,7 +189,7 @@ pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
         py_parsed,
         rs_parsed,
         gate_config,
-        focus_set,
+        focus,
         show_timing: _show_timing,
     } = p;
     let (defs_cached, unrefs_cached) = crate::analyze_cache::coverage_lists(py_parsed, rs_parsed);
@@ -205,7 +205,7 @@ pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
     if let Some((unreferenced, file_pcts)) = per_file_coverage_gate_fails(
         &defs_t,
         &unrefs_t,
-        focus_set,
+        focus,
         threshold,
         None,
     ) {

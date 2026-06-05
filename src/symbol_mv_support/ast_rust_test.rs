@@ -1,12 +1,8 @@
 //! Inline tests for `ast_rust.rs`. Split out per `lines_per_file` rule.
 
 use super::super::ast_models::{ParseOutcome, ReferenceKind, SymbolKind};
-use super::ast_rust_macros::collect_macro_reference_sites;
-use super::{
-    collect_foreign_mod, collect_impl, collect_rust_item, collect_top_fn, collect_trait,
-    collect_use, compute_line_offsets, ident_byte_span, impl_owner_name, item_full_span,
-    lc_to_byte, parse_rust,
-};
+use super::super::ast_rust_span::compute_line_offsets;
+use super::parse_rust;
 
 #[test]
 fn parses_top_level_function_and_call() {
@@ -122,36 +118,53 @@ fn lc_to_byte_handles_multibyte_columns() {
 }
 
 #[test]
-#[allow(clippy::no_effect_underscore_binding)]
-fn touch_ast_rust_helpers_for_coverage_gate() {
-    let src = "use a::b;\nfn c() {}\nimpl X { fn m(&self) {} }\nstruct X;\n";
-    let _ = parse_rust(src);
-    let line_offsets = compute_line_offsets("a\nb\n");
-    assert_eq!(line_offsets, vec![0, 2, 4]);
-    let _ = lc_to_byte("ab\n", &[0, 3], 1, 0);
-    let f: syn::File = syn::parse_str("fn x() {}").unwrap();
-    let _ = item_full_span(&f.items[0], "fn x() {}", &[0]);
-    let _ = impl_owner_name(&syn::parse_str::<syn::Type>("X").unwrap());
-    let _ = impl_owner_name(&syn::parse_str::<syn::Type>("&X").unwrap());
-    let _ = impl_owner_name(&syn::parse_str::<syn::Type>("&mut X").unwrap());
-    let _ = impl_owner_name(&syn::parse_str::<syn::Type>("Box<X>").unwrap());
-    let _ = impl_owner_name(&syn::parse_str::<syn::Type>("Pin<Arc<X>>").unwrap());
-    let _ = impl_owner_name(&syn::parse_str::<syn::Type>("(X, Y)").unwrap());
-    let _ = parse_rust("trait T { fn helper(&self) -> u32 { 7 } }\n");
-    let _ = parse_rust("extern \"C\" { fn helper(); }\n");
-    let _ = parse_rust("fn outer() { fn inner() {} }\n");
-    let _ = parse_rust("fn helper() -> u32 { 1 }\nfn caller() { println!(\"{}\", helper()); }\n");
-    let _ = parse_rust("use a::{b as c};\n");
-    let _ = parse_rust("impl T for &X { fn h(&self) {} }\n");
-    let _ = parse_rust("impl T for Box<X> { fn h(&self) {} }\n");
-    let macro_tokens: proc_macro2::TokenStream = "helper()".parse().unwrap();
-    let mut macro_refs = Vec::new();
-    collect_macro_reference_sites(&macro_tokens, "helper()", &[0], &mut macro_refs);
-    let _ = collect_rust_item;
-    let _ = collect_use;
-    let _ = collect_top_fn;
-    let _ = collect_impl;
-    let _ = collect_trait;
-    let _ = collect_foreign_mod;
-    let _ = ident_byte_span;
+fn parses_braced_use_rename_as_import_reference() {
+    let src = "use crate::a::{helper as renamed, plain};\nfn c() { renamed(); plain(); }\n";
+    let ParseOutcome::Success(res) = parse_rust(src) else {
+        panic!("parse should succeed");
+    };
+    let imports: Vec<&str> = res
+        .references
+        .iter()
+        .filter(|r| r.kind == ReferenceKind::Import)
+        .map(|r| &src[r.start..r.end])
+        .collect();
+    assert!(imports.contains(&"helper"));
+    assert!(imports.contains(&"plain"));
+}
+
+#[test]
+fn parses_use_rename_as_import_reference() {
+    let src = "use crate::a::{helper as renamed};\nfn c() { renamed(); }\n";
+    let ParseOutcome::Success(res) = parse_rust(src) else {
+        panic!("parse should succeed");
+    };
+    let any_import = res
+        .references
+        .iter()
+        .any(|r| r.kind == ReferenceKind::Import && &src[r.start..r.end] == "helper");
+    assert!(any_import);
+}
+
+#[test]
+fn parses_function_as_value_reference() {
+    let src = "fn helper() -> u32 { 1 }\nfn caller() { let f = helper; let _ = f(); }\n";
+    let ParseOutcome::Success(res) = parse_rust(src) else {
+        panic!("parse should succeed");
+    };
+    let value_refs = res
+        .references
+        .iter()
+        .filter(|r| r.kind == ReferenceKind::Call && &src[r.start..r.end] == "helper")
+        .count();
+    assert!(value_refs >= 1);
+}
+
+#[test]
+fn parses_stmt_macro_reference() {
+    let src = "macro_rules! m { ($x:expr) => { $x }; }\nfn helper() -> u32 { 1 }\nfn caller() { m!(helper()); }\n";
+    let ParseOutcome::Success(res) = parse_rust(src) else {
+        panic!("parse should succeed");
+    };
+    assert!(res.references.iter().any(|r| &src[r.start..r.end] == "helper"));
 }

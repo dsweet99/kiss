@@ -148,9 +148,3 @@ fn test_code_unit_kind_as_str() {
     assert_eq!(CodeUnitKind::Enum.as_str(), "enum");
     assert_eq!(CodeUnitKind::TraitImplMethod.as_str(), "trait_impl_method");
 }
-
-#[test]
-fn static_coverage_touch_count_from_node() {
-    fn t<T>(_: T) {}
-    t(count_from_node);
-}

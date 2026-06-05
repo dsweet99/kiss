@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use crate::analyze::FocusFilter;
 use kiss::{GateConfig, ParsedFile};
 
 use crate::analyze::CheckCoverageGateParams;
@@ -13,12 +14,12 @@ fn test_gate_helpers_and_empty_analysis() {
         test_coverage_threshold: 0,
         ..Default::default()
     };
-    let focus = HashSet::new();
+    let focus = FocusFilter::unrestricted();
     let p = CheckCoverageGateParams {
         py_parsed: &[],
         rs_parsed: &[],
         gate_config: &gate,
-        focus_set: &focus,
+        focus: &focus,
         show_timing: false,
     };
     assert!(crate::analyze::check_coverage_gate(&p));
@@ -55,7 +56,7 @@ fn write_gate_py_sources(dir: &Path) {
     std::fs::write(dir.join("test_well.py"), TEST_WELL_PY).unwrap();
 }
 
-fn parse_gate_py(dir: &Path) -> (Vec<ParsedFile>, HashSet<PathBuf>) {
+fn parse_gate_py(dir: &Path) -> (Vec<ParsedFile>, FocusFilter) {
     let py_files = vec![
         dir.join("well_covered.py"),
         dir.join("poorly_covered.py"),
@@ -64,11 +65,11 @@ fn parse_gate_py(dir: &Path) -> (Vec<ParsedFile>, HashSet<PathBuf>) {
     let results = kiss::parse_files(&py_files).unwrap();
     let py_parsed: Vec<ParsedFile> = results.into_iter().filter_map(Result::ok).collect();
     assert_eq!(py_parsed.len(), 3, "all 3 files should parse");
-    let focus: HashSet<PathBuf> = py_parsed.iter().map(|p| p.path.clone()).collect();
-    (py_parsed, focus)
+    let paths: HashSet<PathBuf> = py_parsed.iter().map(|p| p.path.clone()).collect();
+    (py_parsed, FocusFilter::restricting(paths))
 }
 
-fn write_per_file_gate_fixture(tmp: &TempDir) -> (Vec<ParsedFile>, HashSet<PathBuf>) {
+fn write_per_file_gate_fixture(tmp: &TempDir) -> (Vec<ParsedFile>, FocusFilter) {
     write_gate_py_sources(tmp.path());
     parse_gate_py(tmp.path())
 }
@@ -88,7 +89,7 @@ fn test_parse_gate_py_returns_three_files() {
     write_gate_py_sources(tmp.path());
     let (parsed, focus) = parse_gate_py(tmp.path());
     assert_eq!(parsed.len(), 3);
-    assert_eq!(focus.len(), 3);
+    assert_eq!(focus.paths().len(), 3);
 }
 
 /// Regression: per-file enforcement must fail when one file is below threshold
@@ -105,7 +106,7 @@ fn test_coverage_gate_per_file_fails_when_one_file_below_threshold() {
         py_parsed: &py_parsed,
         rs_parsed: &[],
         gate_config: &gate,
-        focus_set: &focus,
+        focus: &focus,
         show_timing: false,
     };
     assert!(
@@ -132,10 +133,10 @@ fn coverage_build_viols_after_merge_empty() {
     use crate::analyze::coverage::{GraphRefPair, build_viols_after_merge};
     let definitions = vec![];
     let unreferenced = vec![];
-    let focus_set: HashSet<PathBuf> = HashSet::new();
+    let focus = crate::analyze::FocusFilter::unrestricted();
     let graphs = GraphRefPair { py: None, rs: None };
     let (viols, defs, unref) =
-        build_viols_after_merge(definitions, unreferenced, &focus_set, graphs, None, false);
+        build_viols_after_merge(definitions, unreferenced, &focus, graphs, None, false);
     assert!(viols.is_empty());
     assert!(defs.is_empty());
     assert!(unref.is_empty());
@@ -155,9 +156,11 @@ fn coverage_build_viols_after_merge_with_unreferenced() {
         name: "foo".to_string(),
         line: 1,
     }];
-    let focus_set: HashSet<PathBuf> = std::iter::once(PathBuf::from("/tmp/test.py")).collect();
+    let focus = crate::analyze::FocusFilter::restricting(
+        std::iter::once(PathBuf::from("/tmp/test.py")).collect(),
+    );
     let graphs = GraphRefPair { py: None, rs: None };
-    let (viols, _, _) = build_viols_after_merge(definitions, unreferenced, &focus_set, graphs, None, false);
+    let (viols, _, _) = build_viols_after_merge(definitions, unreferenced, &focus, graphs, None, false);
     assert_eq!(viols.len(), 1);
     assert!(viols[0].message.contains("0% covered"));
 }
@@ -181,7 +184,9 @@ fn coverage_weighted_sentinel_respects_focus_set() {
             line: 1,
         },
     ];
-    let focus_set: HashSet<PathBuf> = std::iter::once(in_focus.clone()).collect();
+    let focus = crate::analyze::FocusFilter::restricting(
+        std::iter::once(in_focus.clone()).collect(),
+    );
     let mut weighted = HashMap::new();
     weighted.insert(out_of_focus.clone(), 0);
     weighted.insert(in_focus.clone(), 0);
@@ -189,7 +194,7 @@ fn coverage_weighted_sentinel_respects_focus_set() {
     let (viols, _, _) = build_viols_after_merge(
         definitions,
         vec![],
-        &focus_set,
+        &focus,
         graphs,
         Some(&weighted),
         false,

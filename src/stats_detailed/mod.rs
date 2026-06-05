@@ -93,7 +93,7 @@ mod tests {
     use crate::parsing::{create_parser, parse_file};
     use crate::stats_detailed::python::collect_detailed_from_node_for_test;
     use crate::stats_detailed::rust::{
-        collect_detailed_from_items, get_impl_name, push_rust_fn_or_method_unit,
+        collect_detailed_from_items, get_impl_name,
     };
     use std::io::Write;
 
@@ -218,12 +218,5 @@ mod tests {
                 .any(|u| u.name == "foo" && u.kind == "function")
         );
         assert!(units.iter().any(|u| u.name == "Bar" && u.kind == "impl"));
-    }
-
-    #[test]
-    fn static_coverage_touch_module_id_and_rust_push() {
-        fn t<T>(_: T) {}
-        t(super::module_id_for_path);
-        t(push_rust_fn_or_method_unit);
     }
 }
