@@ -1,5 +1,4 @@
-use super::collect_mock_patch::record_patch_call;
-use super::dead_region::collect_py_live_scope;
+use super::scope::collect_py_scope;
 use super::detection::{is_abstract_method, is_protocol_class};
 use super::CodeDefinition;
 use crate::units::{CodeUnitKind, get_child_by_field};
@@ -99,7 +98,7 @@ fn collect_usage_refs_on_node(node: Node, source: &str, refs: &mut HashSet<Strin
 }
 
 pub(crate) fn collect_usage_refs_in_scope(node: Node, source: &str, refs: &mut HashSet<String>) {
-    collect_py_live_scope(node, source, &mut |n| {
+    collect_py_scope(node, source, &mut |n| {
         collect_usage_refs_on_node(n, source, refs);
     });
 }
@@ -131,7 +130,7 @@ pub(crate) fn collect_class_test_methods(
 }
 
 pub(crate) fn collect_call_refs_in_scope(node: Node, source: &str, refs: &mut HashSet<String>) {
-    super::dead_region::collect_py_live_scope(node, source, &mut |n| {
+    super::scope::collect_py_scope(node, source, &mut |n| {
         if n.kind() == "call"
             && let Some(func) = n.child_by_field_name("function")
         {
@@ -186,22 +185,6 @@ pub(crate) fn collect_test_functions_with_refs(
     }
 }
 
-fn collect_decorator_refs(
-    node: Node,
-    source: &str,
-    _test_refs: &mut HashSet<String>,
-    _usage_refs: &mut HashSet<String>,
-    _call_refs: &mut HashSet<String>,
-    mocked_refs: &mut HashSet<String>,
-) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "call" {
-            record_patch_call(child, source, mocked_refs);
-        }
-    }
-}
-
 fn collect_test_file_data_on_node(
     node: Node,
     source: &str,
@@ -209,11 +192,9 @@ fn collect_test_file_data_on_node(
     usage_refs: &mut HashSet<String>,
     call_refs: &mut HashSet<String>,
     import_bindings: &mut HashMap<String, HashSet<String>>,
-    mocked_refs: &mut HashSet<String>,
 ) {
     match node.kind() {
         "call" => {
-            record_patch_call(node, source, mocked_refs);
             if let Some(func) = node.child_by_field_name("function") {
                 collect_call_target(func, source, test_refs);
                 collect_call_target(func, source, usage_refs);
@@ -231,16 +212,6 @@ fn collect_test_file_data_on_node(
             collect_type_refs(node, source, test_refs);
             collect_type_refs(node, source, usage_refs);
         }
-        "decorator" => {
-            collect_decorator_refs(
-                node,
-                source,
-                test_refs,
-                usage_refs,
-                call_refs,
-                mocked_refs,
-            );
-        }
         "identifier" => {
             insert_identifier(node, source, usage_refs);
         }
@@ -255,9 +226,8 @@ pub(crate) fn collect_all_test_file_data(
     usage_refs: &mut HashSet<String>,
     call_refs: &mut HashSet<String>,
     import_bindings: &mut HashMap<String, HashSet<String>>,
-    mocked_refs: &mut HashSet<String>,
 ) {
-    collect_py_live_scope(node, source, &mut |n| {
+    collect_py_scope(node, source, &mut |n| {
         collect_test_file_data_on_node(
             n,
             source,
@@ -265,7 +235,6 @@ pub(crate) fn collect_all_test_file_data(
             usage_refs,
             call_refs,
             import_bindings,
-            mocked_refs,
         );
     });
 }

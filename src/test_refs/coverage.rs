@@ -3,24 +3,6 @@ use super::{CodeDefinition, CoveringTest};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-#[allow(dead_code)]
-pub(crate) fn is_covered_by_import(
-    def: &CodeDefinition,
-    import_bindings: &HashMap<String, HashSet<String>>,
-    module_suffixes: &HashMap<PathBuf, String>,
-    usage_refs: &HashSet<String>,
-) -> bool {
-    if !usage_refs.contains(&def.name) {
-        return false;
-    }
-    let Some(def_suffix) = module_suffixes.get(&def.file) else {
-        return false;
-    };
-    import_bindings.iter().any(|(import_module, names)| {
-        names.contains(&def.name) && module_suffix_matches(def_suffix, import_module)
-    })
-}
-
 pub(crate) fn is_method_covered_by_class_and_name(
     def: &CodeDefinition,
     usage_refs: &HashSet<String>,

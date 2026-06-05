@@ -2,7 +2,7 @@ mod map_mode;
 
 pub use map_mode::py_init_marker_pct;
 
-use super::dead_region::count_py_live_branches;
+use super::scope::count_py_branches;
 use super::{CodeDefinition, TestRefAnalysis};
 use crate::parsing::ParsedFile;
 use crate::py_metrics::compute_function_metrics;
@@ -12,10 +12,9 @@ use std::path::{Path, PathBuf};
 use tree_sitter::Node;
 
 fn py_call_witness(analysis: &TestRefAnalysis, file: &Path, name: &str) -> bool {
-    !analysis.mocked_references.contains(name)
-        && analysis
-            .coverage_map
-            .contains_key(&(file.to_path_buf(), name.to_string()))
+    analysis
+        .coverage_map
+        .contains_key(&(file.to_path_buf(), name.to_string()))
 }
 
 fn find_def_node_at_line<'a>(root: Node<'a>, line: usize) -> Option<Node<'a>> {
@@ -112,7 +111,7 @@ fn test_function_branches(parsed: &ParsedFile, test_id: &str) -> usize {
     let Some(node) = find_test_function_node(root, &parsed.source, test_id) else {
         return 0;
     };
-    count_py_live_branches(node, &parsed.source)
+    count_py_branches(node)
 }
 
 fn module_import_surface_credit(
@@ -222,9 +221,6 @@ fn py_function_weighted_credit(
     unref_set: &HashSet<(&PathBuf, &str)>,
     parsed_by_path: &HashMap<PathBuf, &ParsedFile>,
 ) -> f64 {
-    if analysis.mocked_references.contains(&def.name) {
-        return 0.0;
-    }
     if unref_set.contains(&(&def.file, def.name.as_str())) {
         if def.containing_class.is_some()
             && py_call_witness(analysis, &def.file, &def.name)

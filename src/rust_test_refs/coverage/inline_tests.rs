@@ -46,32 +46,12 @@ fn locate_fn_finds_impl_method() {
 }
 
 #[test]
-fn direct_private_weighted_helpers() {
+fn import_surface_helpers_accept_synthetic_inputs() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let src = tmp.path().join("worker.rs");
+    let src = tmp.path().join("types.rs");
     std::fs::write(
         &src,
-        r#"pub struct Worker;
-impl Worker {
-    pub fn new() -> Self { Worker }
-    pub fn heavy_a(n: u64) -> u64 {
-        let mut acc = n;
-        for i in 0..20 { if i == n { acc += 1; } }
-        acc
-    }
-    pub fn heavy_b(n: u64) -> u64 {
-        let mut acc = n;
-        for i in 0..20 { if i == n { acc += 2; } }
-        acc
-    }
-}
-#[cfg(test)]
-mod tests {
-    use super::Worker;
-    #[test]
-    fn only_new() { let _ = Worker::new(); }
-}
-"#,
+        "pub fn free_fn() -> u32 { 1 }\npub struct Type;\nimpl Type {\n    pub fn new() -> Self { Type }\n    pub fn run(&self) -> u32 { 1 }\n}\n",
     )
     .unwrap();
     let parsed = parse_rust_file(&src).unwrap();
@@ -82,28 +62,42 @@ mod tests {
         .iter()
         .map(|d| (&d.file, d.name.as_str()))
         .collect();
-    let def = analysis
+    let free_def = analysis
         .definitions
         .iter()
-        .find(|d| d.name == "heavy_a")
-        .expect("heavy_a");
+        .find(|d| d.name == "free_fn")
+        .expect("free_fn");
+    let impl_def = analysis
+        .definitions
+        .iter()
+        .find(|d| d.name == "run")
+        .expect("run");
     let metrics = crate::rust_fn_metrics::RustFunctionMetrics {
-        statements: 10,
+        statements: 4,
         arguments: 1,
         max_indentation: 1,
         nested_function_depth: 0,
         returns: 1,
-        branches: 5,
-        local_variables: 2,
+        branches: 1,
+        local_variables: 1,
         bool_parameters: 0,
         attributes: 0,
-        calls: 1,
+        calls: 0,
     };
     let parsed_by_path = std::collections::HashMap::from([(parsed.path.clone(), &parsed)]);
-    let _ = rs_module_import_surface_credit(&analysis, def, &metrics, &[], &parsed_by_path);
-    let _ = rs_import_surface_credit(&analysis, def, &metrics, &[], &parsed_by_path);
-    let _ = impl_type_covering_tests(&analysis, &unref_set, def);
-    let _ = rs_import_surface_credit(&analysis, def, &metrics, &[], &parsed_by_path);
+    assert_eq!(
+        rs_module_import_surface_credit(&analysis, free_def, &metrics, &[], &parsed_by_path),
+        Some(0.0)
+    );
+    assert_eq!(
+        rs_module_import_surface_credit(&analysis, impl_def, &metrics, &[], &parsed_by_path),
+        None
+    );
+    assert_eq!(
+        rs_import_surface_credit(&analysis, impl_def, &metrics, &[], &parsed_by_path),
+        0.0
+    );
+    assert!(impl_type_covering_tests(&analysis, &unref_set, impl_def).is_none());
 }
 
 #[test]
@@ -153,21 +147,19 @@ fn direct_accumulate_and_locate_helpers() {
 }
 
 #[test]
-fn high_branch_locate_paths() {
+fn locate_in_item_finds_mod_inline_function() {
     let tmp = tempfile::TempDir::new().unwrap();
     let src = tmp.path().join("mix.rs");
     std::fs::write(
         &src,
-        "mod inner { pub fn nested(n: i32) -> i32 { n + 1 } }\npub struct S;\nimpl S { pub fn m(&self) -> i32 { 1 } }\n",
+        "mod inner { pub fn nested(n: i32) -> i32 { n + 1 } }\n",
     )
     .unwrap();
     let parsed = parse_rust_file(&src).unwrap();
-    let analysis = analyze_rust_test_refs(&[&parsed], None);
-    for (i, def) in analysis.definitions.iter().enumerate() {
-        if i % 2 == 0 {
-            assert!(locate_fn(&parsed, def).is_some() || def.name == "S");
-        } else {
-            let _ = locate_in_item(&parsed.ast.items[0], def);
-        }
-    }
+    let def = analyze_rust_test_refs(&[&parsed], None)
+        .definitions
+        .into_iter()
+        .find(|d| d.name == "nested")
+        .expect("nested");
+    assert!(locate_in_item(&parsed.ast.items[0], &def).is_some());
 }

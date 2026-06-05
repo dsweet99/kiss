@@ -156,7 +156,7 @@ fn test_collect_refs_parallel_mixed_files() {
     };
 
     let parsed: Vec<&ParsedFile> = vec![&file_prod, &file_test];
-    let (defs, test_refs, usage_refs, call_refs, import_bindings, per_test_usage, _mocked) =
+    let (defs, test_refs, usage_refs, call_refs, import_bindings, per_test_usage) =
         collect_refs_parallel(&parsed, true);
 
     assert_eq!(defs.len(), 1);
@@ -195,7 +195,7 @@ fn test_collect_refs_parallel_no_coverage_map() {
         tree: tree_test,
     };
 
-    let (_, _, _, _, _, per_test_usage, _) = collect_refs_parallel(&[&file, &file_test], false);
+    let (_, _, _, _, _, per_test_usage) = collect_refs_parallel(&[&file, &file_test], false);
     assert!(
         per_test_usage.is_empty(),
         "per_test_usage empty when need_coverage_map=false"
@@ -295,76 +295,4 @@ fn test_collect_definitions_protocol_class_excluded() {
         defs.is_empty(),
         "Protocol classes and their methods excluded"
     );
-}
-
-// ---------------------------------------------------------------------------
-// coverage.rs: is_covered_by_import
-// ---------------------------------------------------------------------------
-
-type CovFixture = (
-    CodeDefinition,
-    std::collections::HashMap<String, HashSet<String>>,
-    std::collections::HashMap<PathBuf, String>,
-    HashSet<String>,
-);
-
-fn covered_by_import_fixture(usage: &[&str]) -> CovFixture {
-    let def = CodeDefinition {
-        name: "foo".to_string(),
-        kind: crate::units::CodeUnitKind::Function,
-        file: PathBuf::from("pkg/mod.py"),
-        line: 1,
-        containing_class: None,
-    };
-    let mut import_bindings = std::collections::HashMap::new();
-    import_bindings
-        .entry("pkg.mod".to_string())
-        .or_insert_with(HashSet::new)
-        .insert("foo".to_string());
-    let mut module_suffixes = std::collections::HashMap::new();
-    module_suffixes.insert(PathBuf::from("pkg/mod.py"), "pkg.mod".to_string());
-    let usage_refs: HashSet<String> = usage.iter().map(ToString::to_string).collect();
-    (def, import_bindings, module_suffixes, usage_refs)
-}
-
-#[test]
-fn test_is_covered_by_import_matching() {
-    use super::coverage::is_covered_by_import;
-    let (def, ib, ms, ur) = covered_by_import_fixture(&["foo"]);
-    assert!(is_covered_by_import(&def, &ib, &ms, &ur));
-}
-
-#[test]
-fn test_is_covered_by_import_no_usage() {
-    use super::coverage::is_covered_by_import;
-    let (def, ib, ms, ur) = covered_by_import_fixture(&[]);
-    assert!(!is_covered_by_import(&def, &ib, &ms, &ur));
-}
-
-#[test]
-fn test_is_covered_by_import_wrong_module() {
-    use super::coverage::is_covered_by_import;
-    let def = CodeDefinition {
-        name: "foo".to_string(),
-        kind: crate::units::CodeUnitKind::Function,
-        file: PathBuf::from("alpha/mod.py"),
-        line: 1,
-        containing_class: None,
-    };
-    let mut import_bindings = std::collections::HashMap::new();
-    import_bindings
-        .entry("beta.mod".to_string())
-        .or_insert_with(HashSet::new)
-        .insert("foo".to_string());
-    let mut module_suffixes = std::collections::HashMap::new();
-    module_suffixes.insert(PathBuf::from("alpha/mod.py"), "alpha.mod".to_string());
-    let mut usage_refs = HashSet::new();
-    usage_refs.insert("foo".to_string());
-
-    assert!(!is_covered_by_import(
-        &def,
-        &import_bindings,
-        &module_suffixes,
-        &usage_refs
-    ));
 }

@@ -1,5 +1,4 @@
 use super::{has_cfg_test_attribute, has_test_attribute};
-use super::dead_region::skip_dead_control_flow;
 use crate::macro_expr_parser::{parse_expr_list, parse_single_expr};
 use std::collections::HashSet;
 use syn::visit::Visit;
@@ -198,9 +197,6 @@ impl<'ast> Visit<'ast> for CallReferenceVisitor<'_> {
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
-        if skip_dead_control_flow(self, expr) {
-            return;
-        }
         match expr {
             Expr::Call(c) => {
                 if let Expr::Path(p) = c.func.as_ref() {
@@ -228,9 +224,6 @@ impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
-        if skip_dead_control_flow(self, expr) {
-            return;
-        }
         match expr {
             Expr::Call(c) => {
                 if let Expr::Path(p) = c.func.as_ref() {

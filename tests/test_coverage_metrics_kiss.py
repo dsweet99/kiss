@@ -29,28 +29,6 @@ def test_run_kiss_check_all_parses_violations(tmp_path: Path, monkeypatch: pytes
     assert got == {"pkg/a.py": 42.0}
 
 
-def test_run_kiss_check_all_prefers_coverage_map_lines(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    stdout = "\n".join(
-        [
-            "COVERAGE_MAP:pkg/a.py:42",
-            "COVERAGE_MAP:pkg/b.py:100",
-            "VIOLATION:test_coverage:pkg/c.py:10:foo: 5% covered.",
-        ]
-    )
-
-    def fake_run(cmd, **kwargs):
-        assert kwargs["env"]["KISS_COVERAGE_MAP"] == "1"
-        return subprocess.CompletedProcess(cmd, 1, stdout, "")
-
-    monkeypatch.setattr(coverage_kiss.subprocess, "run", fake_run)
-    got = coverage_kiss.run_kiss_check_all(repo)
-    assert got == {"pkg/a.py": 42.0, "pkg/b.py": 100.0}
-
-
 def test_run_kiss_check_all_rc_zero_ok(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()

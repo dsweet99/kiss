@@ -14,7 +14,6 @@ type CollectedRefs = (
     HashSet<String>,
     HashMap<String, HashSet<String>>,
     PerTestUsage,
-    HashSet<String>,
 );
 
 fn empty_collected() -> CollectedRefs {
@@ -25,13 +24,12 @@ fn empty_collected() -> CollectedRefs {
         HashSet::new(),
         HashMap::new(),
         PerTestUsage::new(),
-        HashSet::new(),
     )
 }
 
 fn merge_collected(
-    (mut defs, mut t_refs, mut u_refs, mut c_refs, mut i_binds, mut pt, mut mocked): CollectedRefs,
-    (defs2, t_refs2, u_refs2, c_refs2, i_binds2, pt2, mocked2): CollectedRefs,
+    (mut defs, mut t_refs, mut u_refs, mut c_refs, mut i_binds, mut pt): CollectedRefs,
+    (defs2, t_refs2, u_refs2, c_refs2, i_binds2, pt2): CollectedRefs,
 ) -> CollectedRefs {
     defs.extend(defs2);
     t_refs.extend(t_refs2);
@@ -41,8 +39,7 @@ fn merge_collected(
         i_binds.entry(module).or_default().extend(names);
     }
     pt.extend(pt2);
-    mocked.extend(mocked2);
-    (defs, t_refs, u_refs, c_refs, i_binds, pt, mocked)
+    (defs, t_refs, u_refs, c_refs, i_binds, pt)
 }
 
 pub(crate) fn collect_refs_parallel(
@@ -61,7 +58,6 @@ pub(crate) fn collect_refs_parallel(
                     &mut r.2,
                     &mut r.3,
                     &mut r.4,
-                    &mut r.6,
                 );
                 if need_coverage_map {
                     let mut test_funcs = Vec::new();
@@ -136,7 +132,7 @@ mod collect_parallel_tests {
         let parsed_src = parse_file(&mut parser, src.path()).expect("parse src");
         let parsed_test = parse_file(&mut parser, test.path()).expect("parse test");
         let refs = [&parsed_src, &parsed_test];
-        let (defs, test_refs, _, call_refs, _, per_test, _mocked) = collect_refs_parallel(&refs, true);
+        let (defs, test_refs, _, call_refs, _, per_test) = collect_refs_parallel(&refs, true);
         assert!(defs.iter().any(|d| d.name == "helper"));
         assert!(test_refs.contains("helper"));
         assert!(call_refs.contains("helper"));

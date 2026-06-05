@@ -7,7 +7,7 @@ use kiss::graph::is_entry_point;
 use kiss::{DependencyGraph, Violation};
 
 pub(crate) use crate::analyze::coverage_types::{CoverageViolationSpec, PyRsTestCoverage};
-use crate::analyze::coverage_weighted::{inject_binary_entry_sentinels, merge_weighted_file_pcts};
+use crate::analyze::coverage_weighted::merge_weighted_file_pcts;
 use crate::analyze::coverage_gate::{is_coverage_gate_file, is_coverage_report_target};
 use crate::analyze::focus::is_focus_file;
 use crate::analyze::graph_api::graph_for_path;
@@ -227,17 +227,6 @@ pub(crate) fn build_viols_after_merge(
     (cov_viols, definitions, unreferenced)
 }
 
-pub(crate) fn print_coverage_map_if_requested(weighted: &HashMap<PathBuf, usize>) {
-    if std::env::var("KISS_COVERAGE_MAP").ok().as_deref() != Some("1") {
-        return;
-    }
-    let mut entries: Vec<_> = weighted.iter().collect();
-    entries.sort_by_key(|(path, _)| path.as_os_str());
-    for (path, pct) in entries {
-        println!("COVERAGE_MAP:{}:{pct}", path.display());
-    }
-}
-
 pub(crate) fn collect_coverage_viols(
     cov: PyRsTestCoverage,
     py_parsed: &[kiss::ParsedFile],
@@ -245,18 +234,13 @@ pub(crate) fn collect_coverage_viols(
     focus_set: &HashSet<PathBuf>,
     out_opts: CoverageOutputOpts,
     graphs: GraphRefPair<'_>,
-    rs_files: &[PathBuf],
 ) -> (Vec<Violation>, Option<CoverageCachePair>) {
     let PyRsTestCoverage {
         py: py_cov,
         rs: rs_cov,
     } = cov;
     let weighted = merge_weighted_file_pcts(&py_cov, py_parsed, &rs_cov, rs_parsed);
-    print_coverage_map_if_requested(&weighted);
-    let (mut definitions, mut unreferenced) = merge_coverage_results(py_cov, rs_cov);
-    if out_opts.bypass_gate {
-        inject_binary_entry_sentinels(&mut definitions, &mut unreferenced, rs_files);
-    }
+    let (definitions, unreferenced) = merge_coverage_results(py_cov, rs_cov);
     let (cov_viols, definitions, unreferenced) = build_viols_after_merge(
         definitions,
         unreferenced,

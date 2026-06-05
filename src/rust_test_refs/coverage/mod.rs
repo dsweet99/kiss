@@ -1,10 +1,10 @@
 use super::{RustCodeDefinition, RustTestRefAnalysis};
-use super::dead_region::count_rs_live_branches;
+use super::scope::count_rs_branches;
 use crate::rust_fn_metrics::{compute_rust_function_metrics, count_non_doc_attrs};
 use crate::rust_parsing::ParsedRustFile;
 use crate::test_refs::CoveringTest;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use syn::{ImplItem, Item, UseTree};
 
 struct LocatedFn<'a> {
@@ -63,7 +63,7 @@ fn test_fn_branches(parsed: &ParsedRustFile, test_id: &str) -> usize {
         if let Item::Fn(f) = item
             && f.sig.ident == test_id
         {
-            return count_rs_live_branches(&f.block);
+            return count_rs_branches(&f.block);
         }
     }
     0
@@ -130,13 +130,20 @@ fn rs_import_surface_credit(
     (b_ref as f64 / (method_count as f64 * def_branches as f64)).min(1.0)
 }
 
+fn rs_call_witness(analysis: &RustTestRefAnalysis, file: &Path, name: &str) -> bool {
+    analysis
+        .coverage_map
+        .contains_key(&(file.to_path_buf(), name.to_string()))
+}
+
 fn rs_branch_credit(
     metrics: &crate::rust_fn_metrics::RustFunctionMetrics,
+    witnessed: bool,
     covering: &[(PathBuf, String)],
     parsed_by_path: &HashMap<PathBuf, &ParsedRustFile>,
 ) -> f64 {
     if metrics.branches == 0 {
-        return if metrics.statements > 15 { 0.15 } else { 1.0 };
+        return if witnessed { 1.0 } else { 0.0 };
     }
     let b_ref = covering
         .iter()
@@ -144,21 +151,13 @@ fn rs_branch_credit(
         .map(|(p, test_id)| test_fn_branches(p, test_id))
         .min()
         .unwrap_or(0);
-    if b_ref == 0 && covering.is_empty() {
+    if b_ref == 0 {
         return 0.0;
     }
-    let b_eff = b_ref.max(1);
-    let branch_denom = if metrics.statements > 15 && b_eff <= 2 {
-        (metrics.statements as f64 / 3.0)
-            .max(metrics.branches as f64)
-            .max(1.0)
-    } else {
-        metrics.branches.max(1) as f64
-    };
-    if branch_denom <= b_eff as f64 {
+    if metrics.branches <= b_ref {
         1.0
     } else {
-        b_eff as f64 / branch_denom
+        b_ref as f64 / metrics.branches as f64
     }
 }
 
@@ -213,33 +212,28 @@ fn rs_weighted_definition_credit(
         && !analysis.call_references.contains(&def.name)
         && !analysis.propagated_references.contains(&def.name)
     {
-        return match rs_module_import_surface_credit(
+        return rs_module_import_surface_credit(
             analysis,
             def,
             metrics,
             covering,
             parsed_by_path,
-        ) {
-            Some(c) if c > 0.0 => c,
-            _ => {
-                let min_b = covering
-                    .iter()
-                    .filter_map(|(path, test_id)| {
-                        parsed_by_path.get(path).map(|p| (p, test_id.as_str()))
-                    })
-                    .map(|(p, test_id)| test_fn_branches(p, test_id))
-                    .min()
-                    .unwrap_or(0);
-                let c = rs_branch_credit(metrics, covering, parsed_by_path);
-                if min_b == 0 && metrics.statements <= 15 {
-                    c.min(0.15)
-                } else {
-                    c
-                }
-            }
-        };
+        )
+        .unwrap_or_else(|| {
+            rs_branch_credit(
+                metrics,
+                rs_call_witness(analysis, &def.file, &def.name),
+                covering,
+                parsed_by_path,
+            )
+        });
     }
-    rs_branch_credit(metrics, covering, parsed_by_path)
+    rs_branch_credit(
+        metrics,
+        rs_call_witness(analysis, &def.file, &def.name),
+        covering,
+        parsed_by_path,
+    )
 }
 
 fn accumulate_rs_weighted_mass(
@@ -330,16 +324,13 @@ pub fn compute_rs_weighted_file_pcts(
         };
         let metrics = compute_rust_function_metrics(located.inputs, located.block, located.attr_count);
         let stmts = metrics.statements.max(1);
-        let mut credit = rs_weighted_definition_credit(
+        let credit = rs_weighted_definition_credit(
             analysis,
             &unref_set,
             def,
             &metrics,
             &parsed_by_path,
         );
-        if credit > 0.0 && metrics.statements > 15 && credit < 0.45 {
-            credit = 0.45;
-        }
         accumulate_rs_weighted_mass(&mut by_file, def, stmts, credit);
     }
 

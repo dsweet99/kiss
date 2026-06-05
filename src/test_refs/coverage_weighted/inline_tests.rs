@@ -59,7 +59,7 @@ fn direct_import_surface_credit_helpers() {
     let node = find_def_node_at_line(root, heavy.line).expect("heavy node");
     let cls_cover = class_covering_tests(&analysis, &std::collections::HashSet::new(), &module, "Widget");
     let cls_slice = cls_cover.unwrap_or(empty_cover);
-    let _ = class_import_surface_credit(
+    let heavy_credit = class_import_surface_credit(
         heavy,
         &analysis,
         node,
@@ -67,19 +67,29 @@ fn direct_import_surface_credit_helpers() {
         cls_slice,
         &parsed_by_path,
     );
+    assert_eq!(
+        heavy_credit,
+        Some(0.0),
+        "unreferenced heavy method with no branch witness in covering tests gets zero credit"
+    );
     let orphan = analysis.definitions.iter().find(|d| d.name == "orphan").unwrap();
     let orphan_node = find_def_node_at_line(root, orphan.line).expect("orphan node");
     let cover_slice = analysis
         .coverage_map
         .get(&(module.clone(), "orphan".into()))
         .map_or(empty_cover, std::vec::Vec::as_slice);
-    let _ = module_import_surface_credit(
+    let orphan_credit = module_import_surface_credit(
         orphan,
         &analysis,
         orphan_node,
         &parsed_mod.source,
         cover_slice,
         &parsed_by_path,
+    );
+    assert_eq!(
+        orphan_credit,
+        Some(0.0),
+        "orphan with call witness but no covering tests should get zero module credit"
     );
 }
 
@@ -104,7 +114,15 @@ fn direct_class_covering_and_call_witness() {
         .map(|d| (&d.file, d.name.as_str()))
         .collect();
     assert!(py_call_witness(&analysis, &module, "ok"));
-    let _ = class_covering_tests(&analysis, &unref_set, &module, "Widget");
+    let covering = class_covering_tests(&analysis, &unref_set, &module, "Widget");
+    assert!(
+        covering.is_some(),
+        "Widget should have covering tests when ok() is witnessed"
+    );
+    assert!(
+        !covering.unwrap().is_empty(),
+        "covering tests should list at least one test file"
+    );
 }
 
 #[test]

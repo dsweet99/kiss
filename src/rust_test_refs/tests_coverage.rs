@@ -2,20 +2,20 @@ use super::compute_rs_weighted_file_pcts;
 use crate::rust_parsing::parse_rust_file;
 use crate::rust_test_refs::analyze_rust_test_refs;
 
-fn weighted_pct_for_worker(task_count: usize, test_body: &str) -> usize {
+fn weighted_pct_for_sparse_impl(method_count: usize, test_body: &str) -> usize {
     let tmp = tempfile::TempDir::new().unwrap();
-    let src = tmp.path().join("lib.rs");
+    let src = tmp.path().join("service.rs");
     let mut body = String::from(
-        "pub struct Worker;\nimpl Worker {\n    pub fn new() -> Self { Worker }\n",
+        "pub struct Service;\nimpl Service {\n    pub fn new() -> Self { Service }\n",
     );
-    for i in 0..task_count {
+    for i in 0..method_count {
         body.push_str(&format!(
-            "    pub fn task_{i}(seed: u64) -> u64 {{\n        let mut acc = seed;\n        if seed == {i} {{ acc += 1; }} else if seed == {} {{ acc += 2; }}\n        acc\n    }}\n",
+            "    pub fn method_{i}(seed: u64) -> u64 {{\n        let mut acc = seed;\n        if seed == {i} {{ acc += 1; }} else if seed == {} {{ acc += 2; }}\n        acc\n    }}\n",
             i + 100
         ));
     }
     body.push_str(&format!(
-        "}}\n#[cfg(test)]\nmod tests {{\n    use super::Worker;\n    {test_body}\n}}\n"
+        "}}\n#[cfg(test)]\nmod tests {{\n    use super::Service;\n    {test_body}\n}}\n"
     ));
     std::fs::write(&src, &body).unwrap();
 
@@ -27,22 +27,15 @@ fn weighted_pct_for_worker(task_count: usize, test_body: &str) -> usize {
 }
 
 #[test]
-fn weighted_pct_low_for_new_only_worker() {
-    let pct = weighted_pct_for_worker(10, "#[test]\n    fn worker_new_only() { let _ = Worker::new(); }");
-    assert!(
-        pct < 100,
-        "new-only worker should not score 100%, got {pct}%"
-    );
-}
-
-#[test]
-fn weighted_pct_monotone_in_task_count() {
-    let few = weighted_pct_for_worker(2, "#[test]\n    fn worker_new_only() { let _ = Worker::new(); }");
-    let many = weighted_pct_for_worker(10, "#[test]\n    fn worker_new_only() { let _ = Worker::new(); }");
+fn weighted_pct_monotone_in_unreferenced_method_count() {
+    let shallow_test = "#[test]\n    fn only_constructor() { let _ = Service::new(); }";
+    let few = weighted_pct_for_sparse_impl(2, shallow_test);
+    let many = weighted_pct_for_sparse_impl(10, shallow_test);
     assert!(
         many <= few,
-        "more unreferenced tasks should not increase weighted pct, few={few}% many={many}%"
+        "more unreferenced methods should not increase weighted pct, few={few}% many={many}%"
     );
+    assert!(many < 100, "sparse shallow coverage should stay below 100%, got {many}%");
 }
 
 #[test]
@@ -64,14 +57,12 @@ fn weighted_pct_zero_when_no_covered_defs_have_credit() {
 }
 
 #[test]
-fn bind_only_fn_pointer_leaves_heavy_routine_unreferenced() {
+fn bind_only_fn_pointer_yields_partial_credit_without_call_witness() {
     let tmp = tempfile::TempDir::new().unwrap();
     let src = tmp.path().join("lib.rs");
-    std::fs::write(
-        &src,
-        r#"pub fn trivial() -> i32 { 1 }
+    let prod = r#"pub fn shallow() -> i32 { 1 }
 
-pub fn heavy_routine(n: i32) -> i32 {
+pub fn deep(n: i32) -> i32 {
     let mut total = 0;
     for i in 0..300 {
         total += i * n;
@@ -79,51 +70,76 @@ pub fn heavy_routine(n: i32) -> i32 {
     total
 }
 
-pub fn entry_point(n: i32) -> i32 {
-    heavy_routine(n)
+pub fn gateway(n: i32) -> i32 {
+    deep(n)
 }
-
-#[cfg(test)]
+"#;
+    let bind_tests = r#"#[cfg(test)]
 mod tests {
-    use super::{entry_point, heavy_routine, trivial};
+    use super::{gateway, deep, shallow};
 
     #[test]
-    fn test_trivial_runs() {
-        assert_eq!(trivial(), 1);
+    fn test_shallow_runs() {
+        assert_eq!(shallow(), 1);
     }
 
     #[test]
-    fn test_entry_bind_only() {
-        let _fp: fn(i32) -> i32 = entry_point;
-        let _ = heavy_routine as fn(i32) -> i32;
+    fn test_gateway_bind_only() {
+        let _fp: fn(i32) -> i32 = gateway;
+        let _ = deep as fn(i32) -> i32;
     }
 }
-"#,
-    )
-    .unwrap();
-    let parsed = parse_rust_file(&src).unwrap();
-    let refs: Vec<_> = [&parsed].into_iter().collect();
-    let analysis = analyze_rust_test_refs(&refs, None);
-    let unref_names: std::collections::HashSet<_> = analysis
-        .unreferenced
-        .iter()
-        .filter(|d| d.file == src)
-        .map(|d| d.name.as_str())
-        .collect();
-    let weighted = compute_rs_weighted_file_pcts(&analysis, &refs);
-    let pct = weighted.get(&parsed.path).copied().unwrap_or(100);
+"#;
+    let call_tests = r#"#[cfg(test)]
+mod tests {
+    use super::{gateway, shallow};
+
+    #[test]
+    fn test_shallow_runs() {
+        assert_eq!(shallow(), 1);
+    }
+
+    #[test]
+    fn test_gateway_called() {
+        assert!(gateway(1) > 0);
+    }
+}
+"#;
+    std::fs::write(&src, format!("{prod}{bind_tests}")).unwrap();
+    let bind_parsed = parse_rust_file(&src).unwrap();
+    let bind_refs: Vec<_> = [&bind_parsed].into_iter().collect();
+    let bind_analysis = analyze_rust_test_refs(&bind_refs, None);
+    let bind_weighted = compute_rs_weighted_file_pcts(&bind_analysis, &bind_refs);
+    let bind_pct = bind_weighted.get(&src).copied().unwrap_or(100);
+
+    std::fs::write(&src, format!("{prod}{call_tests}")).unwrap();
+    let call_parsed = parse_rust_file(&src).unwrap();
+    let call_refs: Vec<_> = [&call_parsed].into_iter().collect();
+    let call_analysis = analyze_rust_test_refs(&call_refs, None);
+    let call_weighted = compute_rs_weighted_file_pcts(&call_analysis, &call_refs);
+    let call_pct = call_weighted.get(&src).copied().unwrap_or(0);
+
     assert!(
-        pct < 100,
-        "bind-only fn pointers should not yield full weighted credit, got {pct}% unref={unref_names:?}"
+        bind_pct < 100,
+        "bind-only fn pointers should not yield full weighted credit, got {bind_pct}%"
     );
     assert!(
-        !analysis.call_references.contains("heavy_routine"),
-        "fn-pointer bind should not count as a runtime call witness for heavy_routine"
+        !bind_analysis.call_references.contains("deep"),
+        "fn-pointer bind should not count as a runtime call witness for deep"
+    );
+    assert!(
+        call_analysis.call_references.contains("gateway")
+            || call_analysis.test_references.contains("deep"),
+        "direct gateway call should reference deep transitively"
+    );
+    assert!(
+        call_pct >= bind_pct,
+        "direct call should not score below bind-only, bind={bind_pct}% call={call_pct}%"
     );
 }
 
 #[test]
-fn const_false_test_body_leaves_defs_unreferenced() {
+fn syntactic_scope_collects_refs_inside_const_false_test_body() {
     let tmp = tempfile::TempDir::new().unwrap();
     let src = tmp.path().join("lib.rs");
     std::fs::write(
@@ -168,11 +184,11 @@ mod tests {
         .filter(|d| d.file == src)
         .map(|d| d.name.as_str())
         .collect();
-    assert!(unref_names.contains("unreached"));
+    assert!(!unref_names.contains("unreached"));
     assert!(!unref_names.contains("covered"));
     assert!(
-        !analysis.call_references.contains("unreached"),
-        "const-false body should not count as a runtime call witness"
+        analysis.call_references.contains("unreached"),
+        "syntactic scope should collect calls inside const-false test bodies"
     );
 }
 
@@ -226,15 +242,15 @@ mod tests {
 }
 
 #[test]
-fn weighted_pct_impl_type_import_surface_credit() {
+fn weighted_pct_impl_import_surface_below_full_credit() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let src = tmp.path().join("worker.rs");
+    let src = tmp.path().join("service.rs");
     std::fs::write(
         &src,
-        r#"pub struct Worker;
+        r#"pub struct Service;
 
-impl Worker {
-    pub fn new() -> Self { Worker }
+impl Service {
+    pub fn new() -> Self { Service }
     pub fn heavy_a(n: u64) -> u64 {
         let mut acc = n;
         for i in 0..20 { if i == n { acc += 1; } }
@@ -249,9 +265,9 @@ impl Worker {
 
 #[cfg(test)]
 mod tests {
-    use super::Worker;
+    use super::Service;
     #[test]
-    fn only_new() { let _ = Worker::new(); }
+    fn only_constructor() { let _ = Service::new(); }
 }
 "#,
     )

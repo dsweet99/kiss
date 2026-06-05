@@ -59,7 +59,6 @@ pub(crate) struct CovDupPhase<'a> {
     pub graph_viols_all: &'a [Violation],
     pub py_dups_all: &'a [kiss::DuplicateCluster],
     pub rs_dups_all: &'a [kiss::DuplicateCluster],
-    pub rs_files: &'a [PathBuf],
 }
 
 pub(crate) struct CovDupOutcome {

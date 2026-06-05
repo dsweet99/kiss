@@ -73,7 +73,6 @@ fn finalize_coverage_and_dups(phase: CovDupPhase<'_>) -> CovDupOutcome {
                     py: phase.py_graph,
                     rs: phase.rs_graph,
                 },
-                phase.rs_files,
             )
         },
         |coverage_cache_lists| (phase.precomputed_cov_viols, Some(coverage_cache_lists)),
@@ -180,7 +179,6 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         graph_viols_all: &products.graph_viols_all,
         py_dups_all: &products.py_dups_all,
         rs_dups_all: &rs_dups_vec,
-        rs_files,
     });
 
     let success = finalize_store_and_print(StorePrintPhase {

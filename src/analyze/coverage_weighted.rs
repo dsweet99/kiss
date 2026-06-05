@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use kiss::check_universe_cache::CachedCoverageItem;
-
 pub(crate) fn merge_weighted_file_pcts(
     py_cov: &kiss::TestRefAnalysis,
     py_parsed: &[kiss::ParsedFile],
@@ -42,27 +40,4 @@ pub(crate) fn merge_weighted_file_pcts(
         }
     }
     weighted
-}
-
-pub(crate) fn inject_binary_entry_sentinels(
-    definitions: &mut Vec<CachedCoverageItem>,
-    unreferenced: &mut Vec<CachedCoverageItem>,
-    rs_files: &[PathBuf],
-) {
-    for path in rs_files {
-        if !kiss::rust_test_refs::is_binary_entry_point(path) {
-            continue;
-        }
-        let file_str = path.to_string_lossy().to_string();
-        if definitions.iter().any(|d| d.file == file_str) {
-            continue;
-        }
-        let item = CachedCoverageItem {
-            file: file_str,
-            name: "__entry_point__".into(),
-            line: 1,
-        };
-        definitions.push(item.clone());
-        unreferenced.push(item);
-    }
 }

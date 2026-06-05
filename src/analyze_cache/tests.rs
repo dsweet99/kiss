@@ -67,26 +67,26 @@ fn cached_coverage_viols_skips_test_files_on_replay() {
 }
 
 #[test]
-fn cached_coverage_viols_replays_weighted_sentinel_not_in_unreferenced() {
-    let file = PathBuf::from("/tmp/cliff.py");
+fn cached_coverage_viols_replays_weighted_overlay_pct() {
+    let file = PathBuf::from("src/sparse_module.py");
     let cached = CachedViolation::from(&coverage_violation(
         file.clone(),
-        "orchestrate".into(),
+        "fn_a".into(),
         1,
-        2,
+        17,
     ));
-    let mut cache = empty_cache("sentinel_replay");
+    let mut cache = empty_cache("weighted_overlay_replay");
     cache.coverage_violations = vec![cached];
     cache.definitions.push(CachedCoverageItem {
         file: file.to_string_lossy().to_string(),
-        name: "orchestrate".into(),
+        name: "fn_a".into(),
         line: 1,
     });
     let focus = HashSet::new();
     let viols = cached_coverage_viols(&cache, &focus);
     assert_eq!(viols.len(), 1);
     assert_eq!(viols[0].metric, "test_coverage");
-    assert!(viols[0].message.contains("2% covered"));
+    assert!(viols[0].message.contains("17% covered"));
 }
 
 #[test]

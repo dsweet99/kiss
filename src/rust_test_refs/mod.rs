@@ -7,7 +7,7 @@ use syn::Attribute;
 
 mod coverage;
 mod coverage_map;
-mod dead_region;
+mod scope;
 mod definitions;
 mod propagation;
 mod references;
@@ -15,6 +15,8 @@ mod trivial_expr;
 
 #[cfg(test)]
 mod tests_coverage;
+#[cfg(test)]
+mod tests_coverage_witness;
 
 #[cfg(test)]
 mod tests_1;

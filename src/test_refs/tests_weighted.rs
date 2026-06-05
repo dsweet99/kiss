@@ -1,8 +1,8 @@
 use super::*;
 use crate::parsing::parse_files;
 
-fn write_cliff_module(path: &std::path::Path, branch_count: usize) {
-    let mut body = String::from("def orchestrate(seed: int) -> int:\n    acc = seed\n");
+fn write_branchy_module(path: &std::path::Path, branch_count: usize) {
+    let mut body = String::from("def compute(seed: int) -> int:\n    acc = seed\n");
     for i in 0..branch_count {
         body.push_str(&format!(
             "    if seed == {i}:\n        return acc + {i}\n    elif seed == {}:\n        acc += {}\n",
@@ -14,27 +14,27 @@ fn write_cliff_module(path: &std::path::Path, branch_count: usize) {
     std::fs::write(path, &body).unwrap();
 }
 
-fn weighted_pct_for_cliff(branch_count: usize) -> usize {
+fn weighted_pct_for_branchy_module(branch_count: usize) -> usize {
     let tmp = tempfile::TempDir::new().unwrap();
-    let cliff = tmp.path().join("cliff.py");
-    write_cliff_module(&cliff, branch_count);
-    let test_path = tmp.path().join("test_cliff.py");
+    let module = tmp.path().join("branchy.py");
+    write_branchy_module(&module, branch_count);
+    let test_path = tmp.path().join("test_branchy.py");
     std::fs::write(
         &test_path,
-        "from cliff import orchestrate\n\ndef test_cliff():\n    assert orchestrate(0) >= 0\n",
+        "from branchy import compute\n\ndef test_compute():\n    assert compute(0) >= 0\n",
     )
     .unwrap();
-    let paths = vec![cliff.clone(), test_path.clone()];
+    let paths = vec![module.clone(), test_path.clone()];
     let parsed: Vec<_> = parse_files(&paths).unwrap().into_iter().flatten().collect();
     let refs: Vec<_> = parsed.iter().collect();
     let analysis = analyze_test_refs(&refs, None);
     let weighted = super::coverage_weighted::compute_py_weighted_file_pcts(&analysis, &refs);
-    weighted.get(&cliff).copied().unwrap_or(100)
+    weighted.get(&module).copied().unwrap_or(100)
 }
 
 #[test]
 fn weighted_pct_discounts_high_branch_covered_def() {
-    let pct = weighted_pct_for_cliff(20);
+    let pct = weighted_pct_for_branchy_module(20);
     assert!(
         pct < 100,
         "high-branch covered def should not score 100%, got {pct}%"
@@ -43,13 +43,13 @@ fn weighted_pct_discounts_high_branch_covered_def() {
 
 #[test]
 fn weighted_pct_monotone_in_branch_count() {
-    let low = weighted_pct_for_cliff(2);
-    let high = weighted_pct_for_cliff(20);
+    let low = weighted_pct_for_branchy_module(2);
+    let high = weighted_pct_for_branchy_module(20);
     assert!(
         high <= low,
         "more branches should not increase weighted pct, low={low}% high={high}%"
     );
-    assert!(high < 100, "many-branch cliff should stay below 100%, got {high}%");
+    assert!(high < 100, "many-branch module should stay below 100%, got {high}%");
 }
 
 #[test]
@@ -92,19 +92,19 @@ fn test_weighted_module_import_surface_for_bind_only() {
     let module = tmp.path().join("mod.py");
     std::fs::write(
         &module,
-        "def alpha() -> int:\n    return 1\n\ndef beta(n: int) -> int:\n    return n + 2\n",
+        "def entry() -> int:\n    return 1\n\ndef worker(n: int) -> int:\n    return n + 2\n",
     )
     .unwrap();
     let bind_test = tmp.path().join("test_bind.py");
     std::fs::write(
         &bind_test,
-        "import mod\n\ndef test_bind_only():\n    fn = mod.beta\n    assert mod.alpha() == 1\n",
+        "import mod\n\ndef test_bind_only():\n    fn = mod.worker\n    assert mod.entry() == 1\n",
     )
     .unwrap();
     let call_test = tmp.path().join("test_call.py");
     std::fs::write(
         &call_test,
-        "import mod\n\ndef test_calls_beta():\n    assert mod.alpha() == 1\n    assert mod.beta(2) == 4\n",
+        "import mod\n\ndef test_calls_worker():\n    assert mod.entry() == 1\n    assert mod.worker(2) == 4\n",
     )
     .unwrap();
 
@@ -117,10 +117,10 @@ fn test_weighted_module_import_surface_for_bind_only() {
     let bind_refs: Vec<_> = bind_parsed.iter().collect();
     let bind_analysis = analyze_test_refs(&bind_refs, None);
     assert!(
-        !bind_analysis.call_references.contains("beta"),
-        "fn bind should not count as a runtime call witness for beta"
+        !bind_analysis.call_references.contains("worker"),
+        "fn bind should not count as a runtime call witness for worker"
     );
-    assert!(bind_analysis.call_references.contains("alpha"));
+    assert!(bind_analysis.call_references.contains("entry"));
     let bind_weighted =
         super::coverage_weighted::compute_py_weighted_file_pcts(&bind_analysis, &bind_refs);
     let bind_pct = bind_weighted.get(&module).copied().unwrap_or(100);
@@ -133,14 +133,14 @@ fn test_weighted_module_import_surface_for_bind_only() {
         .collect();
     let call_refs: Vec<_> = call_parsed.iter().collect();
     let call_analysis = analyze_test_refs(&call_refs, None);
-    assert!(call_analysis.call_references.contains("beta"));
+    assert!(call_analysis.call_references.contains("worker"));
     let call_weighted =
         super::coverage_weighted::compute_py_weighted_file_pcts(&call_analysis, &call_refs);
     let call_pct = call_weighted.get(&module).copied().unwrap_or(0);
 
     assert!(
         bind_pct < call_pct,
-        "bind-only beta should score lower than direct beta call, bind={bind_pct}% call={call_pct}%"
+        "bind-only worker should score lower than direct worker call, bind={bind_pct}% call={call_pct}%"
     );
 }
 

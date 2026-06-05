@@ -56,7 +56,6 @@ fn try_cache_hit(
     // flow are eligible; `try_run_cached_all` dispatches on `opts.bypass_gate`.
     if opts.show_timing
         || opts.suppress_final_status
-        || std::env::var("KISS_COVERAGE_MAP").ok().as_deref() == Some("1")
     {
         return None;
     }

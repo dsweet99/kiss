@@ -6,7 +6,7 @@ pub fn py_init_marker_pct(parsed: &ParsedFile) -> usize {
     }
     let root = parsed.tree.root_node();
     let mut has_import = false;
-    super::super::dead_region::collect_py_live_scope(root, &parsed.source, &mut |node| {
+    super::super::scope::collect_py_scope(root, &parsed.source, &mut |node| {
         if matches!(node.kind(), "import_from_statement" | "import_statement") {
             has_import = true;
         }

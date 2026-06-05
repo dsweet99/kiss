@@ -25,18 +25,6 @@ def _kiss_binary() -> str:
 KISS_VIOLATION_RE = re.compile(
     r"^VIOLATION:test_coverage:(?P<file>[^:]+):\d+:[^:]+: (?P<pct>\d+)% covered"
 )
-KISS_COVERAGE_MAP_RE = re.compile(r"^COVERAGE_MAP:(?P<file>[^:]+):(?P<pct>\d+)$")
-
-
-def _parse_coverage_map_lines(stdout: str, repo: Path) -> dict[str, float]:
-    coverage: dict[str, float] = {}
-    for line in stdout.splitlines():
-        match = KISS_COVERAGE_MAP_RE.match(line)
-        if match is None:
-            continue
-        rel = normalize_path(match.group("file"), repo)
-        coverage[rel] = float(match.group("pct"))
-    return coverage
 
 
 def _parse_violation_lines(stdout: str, repo: Path) -> dict[str, float]:
@@ -52,9 +40,7 @@ def _parse_violation_lines(stdout: str, repo: Path) -> dict[str, float]:
 
 def run_kiss_check_all(repo: Path) -> dict[str, float]:
     cmd = [_kiss_binary(), "check", "--all", str(repo.resolve())]
-    env = os.environ.copy()
-    env["KISS_COVERAGE_MAP"] = "1"
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode not in (0, 1):
         raise RuntimeError(
             "kiss check --all failed\n"
@@ -63,8 +49,4 @@ def run_kiss_check_all(repo: Path) -> dict[str, float]:
             f"stderr:\n{result.stderr}"
         )
 
-    stdout = result.stdout
-    coverage = _parse_coverage_map_lines(stdout, repo)
-    if coverage:
-        return coverage
-    return _parse_violation_lines(stdout, repo)
+    return _parse_violation_lines(result.stdout, repo)

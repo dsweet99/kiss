@@ -1,9 +1,8 @@
 mod collect;
-mod collect_mock_patch;
 mod collect_parallel;
 mod coverage;
 mod coverage_weighted;
-mod dead_region;
+mod scope;
 pub(crate) mod detection;
 pub(crate) mod disambiguation;
 
@@ -47,8 +46,6 @@ pub struct TestRefAnalysis {
     pub test_references: HashSet<String>,
     /// Names that appear as call targets in test code (not import/bind-only).
     pub call_references: HashSet<String>,
-    /// Names patched via unittest.mock.patch (or similar) in tests.
-    pub mocked_references: HashSet<String>,
     pub unreferenced: Vec<CodeDefinition>,
     /// For each covered definition (file, name), the list of tests that reference it.
     pub coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>>,
@@ -78,7 +75,7 @@ fn analyze_test_refs_inner(
     graph: Option<&DependencyGraph>,
     need_coverage_map: bool,
 ) -> TestRefAnalysis {
-    let (definitions, test_references, usage_references, call_references, import_bindings, per_test_usage, mocked_references) =
+    let (definitions, test_references, usage_references, call_references, import_bindings, per_test_usage) =
         collect_refs_parallel(parsed_files, need_coverage_map);
 
     let name_files = build_name_file_map(
@@ -125,7 +122,6 @@ fn analyze_test_refs_inner(
         definitions,
         test_references,
         call_references,
-        mocked_references,
         unreferenced,
         coverage_map,
     }
