@@ -1,9 +1,10 @@
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
 
 use kiss::Violation;
 use kiss::check_universe_cache::CachedCoverageItem;
+
+use crate::analyze::focus::FocusFilter;
 
 use crate::analyze::options::AnalyzeOptions;
 use crate::analyze::parallel::RustAnalysis;
@@ -30,7 +31,7 @@ pub(crate) struct FinalizeAnalysisIn<'a> {
     pub opts: &'a AnalyzeOptions<'a>,
     pub py_files: &'a [PathBuf],
     pub rs_files: &'a [PathBuf],
-    pub focus_set: &'a HashSet<PathBuf>,
+    pub focus: &'a FocusFilter,
     pub products: AnalysisProducts,
     pub timings: (Instant, Instant, Instant),
 }
@@ -46,10 +47,12 @@ pub(crate) struct HeaderPhase<'a> {
 
 pub(crate) struct CovDupPhase<'a> {
     pub opts: &'a AnalyzeOptions<'a>,
-    pub focus_set: &'a HashSet<PathBuf>,
+    pub focus: &'a FocusFilter,
     pub viols: &'a mut Vec<Violation>,
     pub py_cov: kiss::TestRefAnalysis,
     pub rs_cov: kiss::RustTestRefAnalysis,
+    pub py_parsed: &'a [kiss::ParsedFile],
+    pub rs_parsed: &'a [kiss::ParsedRustFile],
     pub py_graph: Option<&'a kiss::DependencyGraph>,
     pub rs_graph: Option<&'a kiss::DependencyGraph>,
     pub precomputed_cov_viols: Vec<Violation>,
@@ -71,7 +74,7 @@ pub(crate) struct StorePrintPhase<'a> {
     pub opts: &'a AnalyzeOptions<'a>,
     pub py_files: &'a [PathBuf],
     pub rs_files: &'a [PathBuf],
-    pub focus_set: &'a HashSet<PathBuf>,
+    pub focus: &'a FocusFilter,
     pub result: &'a ParseResult,
     pub viols: &'a [Violation],
     pub graph_viols_all: &'a [Violation],

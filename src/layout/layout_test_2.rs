@@ -198,13 +198,6 @@ fn test_run_layout_no_files_error() {
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert!(err.to_string().contains("No source files"));
 }
-
-#[test]
-fn static_coverage_touch_derive_project_name() {
-    fn t<T>(_: T) {}
-    t(derive_project_name);
-}
-
 #[test]
 fn test_project_name_from_paths() {
     let paths = vec!["/tmp/myproject/src".to_string()];

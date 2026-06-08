@@ -27,7 +27,7 @@ fn test_should_use_fast_coarsen_regressions() {
 }
 
 #[test]
-fn test_touch_privates_for_static_coverage_part1() {
+fn test_coarsen_private_helpers_part1() {
     let _ = stable_fnv1a_64("x");
     assert_eq!(target_node_count(10, 0.0), 1);
 
@@ -54,7 +54,7 @@ fn test_touch_privates_for_static_coverage_part1() {
 }
 
 #[test]
-fn test_touch_privates_for_static_coverage_part2() {
+fn test_coarsen_private_helpers_part2() {
     let nodes: Vec<String> = vec!["a".into(), "b".into()];
     let mut edges: BTreeSet<(String, String)> = BTreeSet::new();
     edges.insert(("a".to_string(), "b".to_string()));

@@ -16,7 +16,7 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
         .collect()
 }
 
-pub(crate) fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usize]> {
+fn metric_values_fn_core<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usize]> {
     Some(match metric_id {
         "statements_per_function" => &stats.statements_per_function,
         "arguments_per_function" => &stats.arguments_per_function,
@@ -26,6 +26,12 @@ pub(crate) fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Opti
         "nested_function_depth" => &stats.nested_function_depth,
         "returns_per_function" => &stats.returns_per_function,
         "return_values_per_function" => &stats.return_values_per_function,
+        _ => return None,
+    })
+}
+
+fn metric_values_fn_extra<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usize]> {
+    Some(match metric_id {
         "branches_per_function" => &stats.branches_per_function,
         "local_variables_per_function" => &stats.local_variables_per_function,
         "statements_per_try_block" => &stats.statements_per_try_block,
@@ -33,6 +39,16 @@ pub(crate) fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Opti
         "annotations_per_function" => &stats.annotations_per_function,
         "calls_per_function" => &stats.calls_per_function,
         "methods_per_class" => &stats.methods_per_class,
+        _ => return None,
+    })
+}
+
+fn metric_values_fn<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usize]> {
+    metric_values_fn_core(stats, metric_id).or_else(|| metric_values_fn_extra(stats, metric_id))
+}
+
+fn metric_values_file<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usize]> {
+    Some(match metric_id {
         "statements_per_file" => &stats.statements_per_file,
         "lines_per_file" => &stats.lines_per_file,
         "functions_per_file" => &stats.functions_per_file,
@@ -40,6 +56,12 @@ pub(crate) fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Opti
         "concrete_types_per_file" => &stats.concrete_types_per_file,
         "imported_names_per_file" => &stats.imported_names_per_file,
         "inv_test_coverage" => &stats.inv_test_coverage,
+        _ => return None,
+    })
+}
+
+fn metric_values_graph<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usize]> {
+    Some(match metric_id {
         "fan_in" => &stats.fan_in,
         "fan_out" => &stats.fan_out,
         "cycle_size" => &stats.cycle_size,
@@ -47,4 +69,10 @@ pub(crate) fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Opti
         "dependency_depth" => &stats.dependency_depth,
         _ => return None,
     })
+}
+
+pub(crate) fn metric_values<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usize]> {
+    metric_values_fn(stats, metric_id)
+        .or_else(|| metric_values_file(stats, metric_id))
+        .or_else(|| metric_values_graph(stats, metric_id))
 }

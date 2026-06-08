@@ -34,7 +34,12 @@ pub fn validate_min_similarity(value: f64) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_min_similarity;
+    use super::{set_sigpipe_default, validate_min_similarity};
+
+    #[test]
+    fn set_sigpipe_default_is_callable() {
+        set_sigpipe_default();
+    }
 
     #[test]
     fn validate_min_similarity_accepts_endpoints() {

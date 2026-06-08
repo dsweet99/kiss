@@ -44,28 +44,95 @@ pub fn build_focus_set(
     focus_set
 }
 
-pub fn is_focus_file(file: &Path, focus_set: &HashSet<PathBuf>) -> bool {
-    focus_set.is_empty() || focus_set.contains(file)
+/// Whether analysis results should be restricted to a focus subset.
+///
+/// When `restrict` is false, every file is in focus (no filter). When true,
+/// only paths in `paths` are in focus; an empty `paths` set means the user
+/// specified focus path(s) that matched zero source files.
+#[derive(Debug, Clone)]
+pub struct FocusFilter {
+    restrict: bool,
+    paths: HashSet<PathBuf>,
+}
+
+impl FocusFilter {
+    #[must_use]
+    pub fn unrestricted() -> Self {
+        Self {
+            restrict: false,
+            paths: HashSet::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn restricting(paths: HashSet<PathBuf>) -> Self {
+        Self {
+            restrict: true,
+            paths,
+        }
+    }
+
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.restrict
+    }
+
+    pub fn paths(&self) -> &HashSet<PathBuf> {
+        &self.paths
+    }
+
+    pub fn cache_focus_paths(&self) -> Vec<String> {
+        let mut paths: Vec<String> = self
+            .paths
+            .iter()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect();
+        paths.sort();
+        paths
+    }
+}
+
+pub fn build_focus_filter(
+    focus_paths: &[String],
+    universe: &str,
+    lang: Option<Language>,
+    ignore_prefixes: &[String],
+) -> FocusFilter {
+    if focus_paths.len() == 1 && focus_paths[0] == universe {
+        FocusFilter::unrestricted()
+    } else {
+        let paths = build_focus_set(focus_paths, lang, ignore_prefixes);
+        if paths.is_empty() {
+            eprintln!(
+                "Warning: focus path(s) matched no source files; reporting nothing for this focus."
+            );
+        }
+        FocusFilter::restricting(paths)
+    }
+}
+
+pub fn is_focus_file(file: &Path, filter: &FocusFilter) -> bool {
+    !filter.restrict || filter.paths.contains(file)
 }
 
 pub fn filter_viols_by_focus(
     mut viols: Vec<Violation>,
-    focus_set: &HashSet<PathBuf>,
+    filter: &FocusFilter,
 ) -> Vec<Violation> {
-    viols.retain(|v| is_focus_file(&v.file, focus_set));
+    viols.retain(|v| is_focus_file(&v.file, filter));
     viols
 }
 
 pub fn filter_duplicates_by_focus(
     dups: Vec<DuplicateCluster>,
-    focus_set: &HashSet<PathBuf>,
+    filter: &FocusFilter,
 ) -> Vec<DuplicateCluster> {
     dups.into_iter()
         .filter(|cluster| {
             cluster
                 .chunks
                 .iter()
-                .any(|c| is_focus_file(&c.file, focus_set))
+                .any(|c| is_focus_file(&c.file, filter))
         })
         .collect()
 }

@@ -1,7 +1,8 @@
 use super::tests::new_graph;
 use crate::graph::{
     DependencyGraph, build_dependency_graph, build_dependency_graph_from_import_lists,
-    cycle_size_violation, is_test_module, qualified_module_name, resolve_import,
+    cycle_size_violation, is_test_module, parent_prefix_match, qualified_module_name,
+    resolve_bare, resolve_dotted, resolve_import,
 };
 use crate::parsing::ParsedFile;
 use crate::parsing::create_parser;
@@ -95,6 +96,39 @@ fn test_qualified_and_bare_module_names() {
         "__init__.py should use the containing directory as bare name"
     );
     assert_eq!(bare_module_name(Path::new("click/utils.py")), "utils");
+}
+
+#[test]
+fn test_parent_prefix_match() {
+    let candidates = vec!["pkg.utils".into(), "pkg.other".into()];
+    assert_eq!(parent_prefix_match(&candidates, Some("pkg")), None);
+    assert_eq!(
+        parent_prefix_match(&["pkg.utils".into()], Some("pkg")),
+        Some("pkg.utils".into())
+    );
+    assert_eq!(parent_prefix_match(&candidates, None), None);
+}
+
+#[test]
+fn test_resolve_bare() {
+    let single: Vec<String> = vec!["pkg.utils".into()];
+    assert_eq!(resolve_bare(&single, Some("pkg")), vec!["pkg.utils".to_string()]);
+    let ambiguous: Vec<String> = vec!["a.utils".into(), "b.utils".into()];
+    assert_eq!(resolve_bare(&ambiguous, Some("a")), vec!["a.utils".to_string()]);
+}
+
+#[test]
+fn test_resolve_dotted() {
+    let mut bare = HashMap::new();
+    bare.insert(
+        "utils".into(),
+        vec!["pkg.utils".into(), "other.utils".into()],
+    );
+    assert_eq!(
+        resolve_dotted("pkg.utils", Some("pkg"), &bare),
+        vec!["pkg.utils".to_string()]
+    );
+    assert!(resolve_dotted("nope", Some("pkg"), &bare).is_empty());
 }
 
 #[test]

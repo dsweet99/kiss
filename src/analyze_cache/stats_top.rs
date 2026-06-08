@@ -1,8 +1,9 @@
 use kiss::check_universe_cache::{CachedCoverageItem, FullCheckCache};
 use kiss::{Config, GateConfig};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::analyze::FocusFilter;
 use super::fingerprint_for_check;
 use super::path_helpers::{load_full_cache, same_cached_paths};
 use super::{FullCacheInputs, store_full_cache_from_run};
@@ -71,8 +72,8 @@ fn load_top_only_cache(
 ) -> Option<FullCheckCache> {
     let fp = top_only_fingerprint(py_files, rs_files, py_config, rs_config, gate_config);
     let cache = load_full_cache(&fp)?;
-    let focus_set: HashSet<PathBuf> = py_files.iter().chain(rs_files).cloned().collect();
-    if !same_cached_paths(py_files, rs_files, &focus_set, &cache) {
+    let focus = FocusFilter::unrestricted();
+    if !same_cached_paths(py_files, rs_files, &focus, &cache) {
         return None;
     }
     Some(cache)
@@ -111,6 +112,7 @@ pub(crate) fn maybe_store_stats_top_cache(
         py_stats: None,
         rs_stats: None,
         focus_paths,
+        focus_restrict: false,
         py_paths: py_files
             .iter()
             .map(|p| p.to_string_lossy().to_string())
@@ -135,8 +137,8 @@ fn load_top_compatible_cache(
 ) -> Option<FullCheckCache> {
     let fp = fingerprint_for_check(py_files, rs_files, py_config, rs_config, gate_config);
     let cache = load_full_cache(&fp)?;
-    let focus_set: HashSet<PathBuf> = py_files.iter().chain(rs_files).cloned().collect();
-    if !same_cached_paths(py_files, rs_files, &focus_set, &cache) {
+    let focus = FocusFilter::unrestricted();
+    if !same_cached_paths(py_files, rs_files, &focus, &cache) {
         return None;
     }
     Some(cache)

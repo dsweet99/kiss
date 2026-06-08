@@ -2,7 +2,7 @@ use super::*;
 use crate::rust_parsing::parse_rust_file;
 
 #[test]
-fn test_impl_method_covered_when_type_referenced() {
+fn test_impl_method_covered_when_type_and_method_referenced() {
     let tmp = tempfile::TempDir::new().unwrap();
 
     let alpha_path = tmp.path().join("alpha.rs");
@@ -39,6 +39,35 @@ fn test_impl_method_covered_when_type_referenced() {
             .iter()
             .any(|d| d.name == "new" && d.file == alpha_path),
         "Foo::new should be covered (test calls Foo::new()), but unreferenced: {uncovered:?}"
+    );
+}
+
+#[test]
+fn test_impl_methods_not_covered_by_size_of_type_witness() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let lib_path = tmp.path().join("heavy.rs");
+    std::fs::write(
+        &lib_path,
+        "pub struct Heavy;\nimpl Heavy {\n    pub fn work(&self) -> u64 { 1 }\n}\n",
+    )
+    .unwrap();
+    let test_path = tmp.path().join("heavy_test.rs");
+    std::fs::write(
+        &test_path,
+        "#[test]\nfn size_only() { let _ = std::mem::size_of::<Heavy>(); }\n",
+    )
+    .unwrap();
+
+    let parsed_lib = parse_rust_file(&lib_path).unwrap();
+    let parsed_test = parse_rust_file(&test_path).unwrap();
+    let analysis = analyze_rust_test_refs(&[&parsed_lib, &parsed_test], None);
+
+    assert!(
+        analysis
+            .unreferenced
+            .iter()
+            .any(|d| d.name == "work" && d.file == lib_path),
+        "size_of::<T>() must not cover impl methods"
     );
 }
 

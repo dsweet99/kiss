@@ -1,8 +1,6 @@
 //! Output emission for cache-hit paths. Split out of `mod.rs` to keep the
 //! `analyze_cache` module under the per-file size threshold.
-use std::collections::HashSet;
-use std::path::PathBuf;
-
+use crate::analyze::FocusFilter;
 use kiss::check_universe_cache::FullCheckCache;
 use kiss::cli_output::{print_duplicates, print_final_status, print_violations};
 
@@ -12,11 +10,11 @@ use crate::analyze::evaluate_cached_gate;
 pub(super) fn emit_cached_bypass(
     cache: FullCheckCache,
     opts: &crate::analyze::AnalyzeOptions<'_>,
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
 ) -> bool {
     let (mut viols, py_dups, rs_dups, cache) =
-        cached_duplicates(cache, opts.gate_config, focus_set);
-    viols.extend(cached_coverage_viols(&cache, focus_set));
+        cached_duplicates(cache, opts.gate_config, focus);
+    viols.extend(cached_coverage_viols(&cache, focus));
     print_cached_header(&cache);
     print_violations(&viols);
     print_duplicates("Python", &py_dups);
@@ -33,12 +31,12 @@ pub(super) fn emit_cached_bypass(
 pub(super) fn emit_cached_gated(
     cache: FullCheckCache,
     opts: &crate::analyze::AnalyzeOptions<'_>,
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
 ) -> bool {
     if evaluate_cached_gate(
         &cache.definitions,
         &cache.unreferenced,
-        focus_set,
+        focus,
         opts.gate_config.test_coverage_threshold,
     )
     .is_some()
@@ -46,7 +44,7 @@ pub(super) fn emit_cached_gated(
         return false;
     }
 
-    let (viols, py_dups, rs_dups, cache) = cached_duplicates(cache, opts.gate_config, focus_set);
+    let (viols, py_dups, rs_dups, cache) = cached_duplicates(cache, opts.gate_config, focus);
     print_cached_header(&cache);
     print_violations(&viols);
     print_duplicates("Python", &py_dups);

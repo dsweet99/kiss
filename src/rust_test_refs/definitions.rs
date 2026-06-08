@@ -1,11 +1,11 @@
+use super::trivial_expr::is_delegation_only_block;
 use super::{has_cfg_test_attribute, has_test_attribute};
 use crate::units::CodeUnitKind;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use syn::{Expr, ImplItem, Item, Stmt};
+use syn::{ImplItem, Item};
 
-use super::references::{ReferenceVisitor, collect_rust_references};
-use syn::visit::Visit;
+use super::references::{collect_rust_call_references, collect_rust_references};
 
 /// Returns true if the file path is a Rust binary entry point.
 ///
@@ -24,89 +24,6 @@ pub(super) fn is_binary_entry_point(path: &Path) -> bool {
         return true;
     }
     path_str.contains("src/bin/") || path_str.contains("src\\bin\\")
-}
-
-/// Well-known constructors that don't need qualification.
-/// These are standard library types used in typical main error handling.
-fn is_well_known_constructor(name: &str) -> bool {
-    matches!(name, "Ok" | "Err" | "Some" | "None" | "Box" | "Vec")
-}
-
-/// Returns true if the expression is a qualified call (has a module path)
-/// or a well-known constructor like `Ok`, `Err`, `Some`, `None`, and every argument is
-/// structurally trivial (so work cannot hide in call arguments).
-/// Examples: `lib::run()`, `crate::foo()`, `Ok(())`
-fn is_qualified_or_known_call(expr: &Expr) -> bool {
-    match expr {
-        Expr::Call(c) => {
-            if let Expr::Path(p) = c.func.as_ref() {
-                let callee_ok = if p.path.segments.len() >= 2 {
-                    true
-                } else if p.path.segments.len() == 1 {
-                    let name = p.path.segments[0].ident.to_string();
-                    is_well_known_constructor(&name)
-                } else {
-                    false
-                };
-                callee_ok && c.args.iter().all(is_trivial_expr)
-            } else {
-                false
-            }
-        }
-        _ => false,
-    }
-}
-
-/// Returns true if the expression is structurally trivial (just delegation).
-/// Recursively checks if/match arms, blocks, etc.
-fn is_trivial_expr(expr: &Expr) -> bool {
-    match expr {
-        Expr::Call(_) => is_qualified_or_known_call(expr),
-        // `Expr::Macro` and other unlisted shapes: not analyzed as delegation (see wildcard).
-        Expr::Path(_) | Expr::Lit(_) => true,
-        Expr::Return(r) => r.expr.as_ref().is_none_or(|e| is_trivial_expr(e)),
-        Expr::Try(t) => is_trivial_expr(&t.expr),
-        Expr::Await(a) => is_trivial_expr(&a.base),
-        Expr::Block(b) => is_delegation_only_block(&b.block),
-        Expr::If(i) => {
-            is_trivial_expr(&i.cond)
-                && is_delegation_only_block(&i.then_branch)
-                && i.else_branch
-                    .as_ref()
-                    .is_none_or(|(_, e)| is_trivial_expr(e))
-        }
-        Expr::Match(m) => {
-            is_trivial_expr(&m.expr)
-                && m.arms.iter().all(|arm| {
-                    arm.guard.as_ref().is_none_or(|(_, g)| is_trivial_expr(g))
-                        && is_trivial_expr(&arm.body)
-                })
-        }
-        Expr::Let(l) => is_trivial_expr(&l.expr),
-        Expr::MethodCall(m) => is_trivial_expr(&m.receiver) && m.args.iter().all(is_trivial_expr),
-        Expr::Field(f) => is_trivial_expr(&f.base),
-        Expr::Reference(r) => is_trivial_expr(&r.expr),
-        Expr::Unary(u) => is_trivial_expr(&u.expr),
-        Expr::Binary(b) => is_trivial_expr(&b.left) && is_trivial_expr(&b.right),
-        Expr::Paren(p) => is_trivial_expr(&p.expr),
-        Expr::Tuple(t) => t.elems.iter().all(is_trivial_expr),
-        _ => false,
-    }
-}
-
-/// Returns true if the statement is trivial (delegation only, no local definitions).
-fn is_trivial_stmt(stmt: &Stmt) -> bool {
-    match stmt {
-        Stmt::Expr(e, _) => is_trivial_expr(e),
-        Stmt::Local(l) => l.init.as_ref().is_none_or(|i| is_trivial_expr(&i.expr)),
-        Stmt::Item(_) | Stmt::Macro(_) => false,
-    }
-}
-
-/// Returns true if the block only contains delegation (qualified calls, simple control flow).
-/// Macro bodies are not analyzed and are not treated as delegation. No local function/struct/enum definitions.
-pub(super) fn is_delegation_only_block(block: &syn::Block) -> bool {
-    block.stmts.iter().all(is_trivial_stmt)
 }
 
 /// Returns true if the function is a trivial binary entry point that only delegates.
@@ -251,36 +168,63 @@ pub(super) fn collect_definitions_from_item(
     }
 }
 
-pub(super) fn collect_test_module_references(ast: &syn::File, refs: &mut HashSet<String>) {
+fn inline_test_items(ast: &syn::File) -> Vec<syn::Item> {
+    let mut out = Vec::new();
     for item in &ast.items {
         match item {
             Item::Mod(m) if has_cfg_test_attribute(&m.attrs) => {
                 if let Some((_, items)) = &m.content {
-                    collect_rust_references(
-                        &syn::File {
-                            shebang: None,
-                            attrs: vec![],
-                            items: items.clone(),
-                        },
-                        refs,
-                        &mut HashSet::new(),
-                    );
+                    out.extend(items.iter().cloned());
                 }
             }
             Item::Fn(f) if has_test_attribute(&f.attrs) => {
-                ReferenceVisitor {
-                    refs,
-                    qualified: &mut HashSet::new(),
-                }
-                .visit_item_fn(f);
+                out.push(Item::Fn(f.clone()));
             }
             _ => {}
         }
     }
+    out
+}
+
+pub(super) fn collect_test_module_references(ast: &syn::File, refs: &mut HashSet<String>) {
+    let items = inline_test_items(ast);
+    if items.is_empty() {
+        return;
+    }
+    collect_rust_references(
+        &syn::File {
+            shebang: None,
+            attrs: vec![],
+            items,
+        },
+        refs,
+        &mut HashSet::new(),
+    );
+}
+
+pub(super) fn collect_inline_test_module_witnesses(
+    ast: &syn::File,
+    direct_refs: &mut HashSet<String>,
+    call_refs: &mut HashSet<String>,
+) {
+    let items = inline_test_items(ast);
+    if items.is_empty() {
+        return;
+    }
+    let file = syn::File {
+        shebang: None,
+        attrs: vec![],
+        items,
+    };
+    collect_rust_references(&file, direct_refs, &mut HashSet::new());
+    collect_rust_call_references(&file, call_refs, &mut HashSet::new());
 }
 
 #[cfg(test)]
 mod definitions_coverage {
+    use super::super::trivial_expr::{
+        is_qualified_or_known_call, is_trivial_expr, is_trivial_stmt, is_well_known_constructor,
+    };
     use super::*;
 
     #[test]

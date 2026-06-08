@@ -1,6 +1,6 @@
-use std::collections::HashSet;
 use std::path::PathBuf;
 
+use crate::analyze::FocusFilter;
 use kiss::{GateConfig, ParsedFile, ParsedRustFile};
 
 /// Owned Python + Rust test-reference analyses for coverage merging.
@@ -22,6 +22,6 @@ pub struct CheckCoverageGateParams<'a> {
     pub py_parsed: &'a [ParsedFile],
     pub rs_parsed: &'a [ParsedRustFile],
     pub gate_config: &'a GateConfig,
-    pub focus_set: &'a HashSet<PathBuf>,
+    pub focus: &'a FocusFilter,
     pub show_timing: bool,
 }

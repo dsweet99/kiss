@@ -2,7 +2,6 @@ use crate::bin_cli::config_session::config_provenance;
 use kiss::check_universe_cache::FullCheckCache;
 use kiss::discovery::gather_files_by_lang;
 use kiss::{Config, GateConfig, Language, compute_summaries, format_stats_table};
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -48,9 +47,7 @@ pub fn run_stats_summary(
 }
 
 fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
-    let mut focus_set = HashSet::new();
-    focus_set.extend(input.py_files.iter().cloned());
-    focus_set.extend(input.rs_files.iter().cloned());
+    let focus_filter = crate::analyze::FocusFilter::unrestricted();
     let universe = input.paths.first().map(String::as_str).unwrap_or_default();
     let now = Instant::now();
     let options = crate::analyze::AnalyzeOptions {
@@ -70,7 +67,7 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         opts: &options,
         py_files: input.py_files,
         rs_files: input.rs_files,
-        focus_set: &focus_set,
+        focus: &focus_filter,
         t0: now,
         t1: now,
         t2: now,
@@ -79,7 +76,7 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         opts: &options,
         py_files: input.py_files,
         rs_files: input.rs_files,
-        focus_set: &focus_set,
+        focus: &focus_filter,
         result: &pipeline.result,
         graph_viols_all: &pipeline.graph_viols_all,
         coverage_violations: &pipeline.cov_viols,
@@ -239,6 +236,7 @@ mod summary_tests {
             rs_stats: None,
             py_paths: vec![],
             focus_paths: vec![],
+            focus_restrict: false,
             rs_paths: vec![],
             py_file_count: 1,
             rs_file_count: 0,

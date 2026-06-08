@@ -1,4 +1,8 @@
 use super::*;
+use crate::analyze::FocusFilter;
+use kiss::check_cache::CachedViolation;
+use kiss::check_universe_cache::CachedCoverageItem;
+use std::path::PathBuf;
 
 fn empty_cache(fp: &str) -> FullCheckCache {
     FullCheckCache {
@@ -7,6 +11,7 @@ fn empty_cache(fp: &str) -> FullCheckCache {
         rs_stats: None,
         py_paths: Vec::new(),
         focus_paths: Vec::new(),
+        focus_restrict: false,
         rs_paths: Vec::new(),
         py_file_count: 0,
         rs_file_count: 0,
@@ -39,6 +44,7 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
         py_stats: None,
         rs_stats: None,
         focus_paths: Vec::new(),
+        focus_restrict: false,
         py_paths: Vec::new(),
         rs_paths: Vec::new(),
         py_dups_all: &[],
@@ -46,6 +52,44 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
         definitions: Vec::new(),
         unreferenced: Vec::new(),
     }
+}
+
+#[test]
+fn cached_coverage_viols_skips_test_files_on_replay() {
+    let file = PathBuf::from("/tmp/repo/tests/test_lib.py");
+    let cached = CachedViolation::from(&coverage_violation(
+        file.clone(),
+        "test_lib".into(),
+        1,
+        0,
+    ));
+    let mut cache = empty_cache("test_file_skip");
+    cache.coverage_violations = vec![cached];
+    let focus = FocusFilter::restricting([file.clone()].into_iter().collect());
+    assert!(cached_coverage_viols(&cache, &focus).is_empty());
+}
+
+#[test]
+fn cached_coverage_viols_replays_weighted_overlay_pct() {
+    let file = PathBuf::from("src/sparse_module.py");
+    let cached = CachedViolation::from(&coverage_violation(
+        file.clone(),
+        "fn_a".into(),
+        1,
+        17,
+    ));
+    let mut cache = empty_cache("weighted_overlay_replay");
+    cache.coverage_violations = vec![cached];
+    cache.definitions.push(CachedCoverageItem {
+        file: file.to_string_lossy().to_string(),
+        name: "fn_a".into(),
+        line: 1,
+    });
+    let focus = FocusFilter::unrestricted();
+    let viols = cached_coverage_viols(&cache, &focus);
+    assert_eq!(viols.len(), 1);
+    assert_eq!(viols[0].metric, "test_coverage");
+    assert!(viols[0].message.contains("17% covered"));
 }
 
 #[test]
@@ -67,7 +111,7 @@ fn fingerprint_path_duplicates_and_coverage_helpers() {
     cache_path_full("deadbeef");
     assert!(load_full_cache("deadbeef").is_none());
 
-    let focus = HashSet::new();
+    let focus = FocusFilter::unrestricted();
     let (_viols, py_dups, rs_dups, cache) =
         cached_duplicates(empty_cache("deadbeef"), &GateConfig::default(), &focus);
     assert!(py_dups.is_empty() && rs_dups.is_empty());

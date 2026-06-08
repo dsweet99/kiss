@@ -1,6 +1,8 @@
 mod collect;
 mod collect_parallel;
 mod coverage;
+mod coverage_weighted;
+mod scope;
 pub(crate) mod detection;
 pub(crate) mod disambiguation;
 
@@ -15,6 +17,8 @@ use std::path::PathBuf;
 pub use collect_parallel::test_functions_in;
 pub(crate) use collect_parallel::collect_refs_parallel;
 pub(crate) use coverage::{build_py_coverage_map, is_definition_covered};
+pub use coverage_weighted::compute_py_weighted_file_pcts;
+pub use coverage_weighted::py_init_marker_pct;
 pub use detection::{has_test_framework_import, is_in_test_directory, is_test_file};
 pub use disambiguation::build_name_file_map;
 pub(crate) use disambiguation::{build_disambiguation_map, file_to_module_suffix};
@@ -34,12 +38,14 @@ pub struct CodeDefinition {
 /// (`test_file_path`, `test_function_name`) — e.g. (`"tests/test_utils.py"`, `"test_parse_empty"`)
 pub type CoveringTest = (PathBuf, String);
 
-pub(crate) type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
+pub(crate) type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>, HashSet<String>)>)>;
 
 #[derive(Debug, Clone)]
 pub struct TestRefAnalysis {
     pub definitions: Vec<CodeDefinition>,
     pub test_references: HashSet<String>,
+    /// Names that appear as call targets in test code (not import/bind-only).
+    pub call_references: HashSet<String>,
     pub unreferenced: Vec<CodeDefinition>,
     /// For each covered definition (file, name), the list of tests that reference it.
     pub coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>>,
@@ -69,7 +75,7 @@ fn analyze_test_refs_inner(
     graph: Option<&DependencyGraph>,
     need_coverage_map: bool,
 ) -> TestRefAnalysis {
-    let (definitions, test_references, usage_references, import_bindings, per_test_usage) =
+    let (definitions, test_references, usage_references, call_references, import_bindings, per_test_usage) =
         collect_refs_parallel(parsed_files, need_coverage_map);
 
     let name_files = build_name_file_map(
@@ -84,7 +90,7 @@ fn analyze_test_refs_inner(
         .map(|d| (d.file.clone(), file_to_module_suffix(&d.file)))
         .collect();
 
-    let unreferenced = definitions
+    let unreferenced: Vec<CodeDefinition> = definitions
         .iter()
         .filter(|def| {
             !is_definition_covered(
@@ -115,6 +121,7 @@ fn analyze_test_refs_inner(
     TestRefAnalysis {
         definitions,
         test_references,
+        call_references,
         unreferenced,
         coverage_map,
     }
@@ -130,3 +137,5 @@ mod tests_3;
 mod tests_4;
 #[cfg(test)]
 mod tests_5;
+#[cfg(test)]
+mod tests_weighted;

@@ -66,6 +66,8 @@ mod py_metrics_tests;
 mod python_counts_violations;
 #[path = "cases/regression_check_cache_uncached_default.rs"]
 mod regression_check_cache_uncached_default;
+#[path = "cases/regression_check_all_ignores_test_file_sentinel.rs"]
+mod regression_check_all_ignores_test_file_sentinel;
 #[path = "cases/regression_check_default_warm_gate.rs"]
 mod regression_check_default_warm_gate;
 #[path = "cases/regression_check_default_writes_cache.rs"]
@@ -151,50 +153,3 @@ mod symbol_mv_regressions_9;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;
 
-#[test]
-#[allow(clippy::too_many_lines)]
-fn static_coverage_touch_current_branch_units() {
-    macro_rules! touch_names {
-        ($($name:ident),* $(,)?) => {{
-            let names = [$(stringify!($name)),*];
-            assert!(names.iter().all(|name| !name.is_empty()));
-        }};
-    }
-
-    // Static coverage touch for branch-local helper splits. The repo's
-    // test-coverage gate maps test references to source units by identifier,
-    // so keep these names in one test while the focused behavior tests live
-    // near each subsystem.
-    touch_names!(
-        focus_no_match_sentinel,
-        mix_config_into_fingerprint,
-        mix_gate_into_fingerprint,
-        try_run_cached_stats_summary,
-        run_full_pipeline,
-        run_full_pipeline_with_parse,
-        maybe_store_full_cache,
-        gather_files_by_lang,
-        analyze_cache_output_dir,
-        print_py_summary,
-        print_rs_summary,
-        collect_py_units,
-        collect_rs_units,
-        check_file_metrics,
-        warn_on_parse_failure,
-        FullCacheInputs,
-        ParseCoverageConfig,
-        apply_plan_transactional,
-        apply_edits_to_one_file,
-        try_add_def,
-        collect_type_refs,
-        analyze_test_refs_inner,
-        has_ambiguous_method_reference,
-        method_receiver_is_generic_parameter,
-        smallest_enclosing_definition,
-        reference_is_shadowed,
-        find_last_python_method_def,
-        find_last_rust_fn_def,
-        ParseExprError,
-        PyWalkAction,
-    );
-}

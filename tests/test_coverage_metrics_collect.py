@@ -5,11 +5,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import click
 import pytest
 
 import python.coverage_collect as collect
-from coverage_metrics_stubs import CARGO_LLVM_OK, SLIPCOVER_OK, install_path_stub
+from coverage_metrics_stubs import SLIPCOVER_OK, install_path_stub
 
 
 def test_run_slipcover_parses_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -26,7 +25,7 @@ def test_run_slipcover_missing_binary_raises(tmp_path: Path, monkeypatch: pytest
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.setenv("PATH", "")
-    with pytest.raises(click.ClickException, match="slipcover not found"):
+    with pytest.raises(RuntimeError, match="slipcover not found"):
         collect.run_slipcover(repo)
 
 
@@ -35,7 +34,7 @@ def test_run_slipcover_nonzero_exit_raises(tmp_path: Path, monkeypatch: pytest.M
     repo.mkdir()
     bindir = install_path_stub(tmp_path, "slipcover", "#!/bin/sh\nexit 2\n")
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ.get('PATH', '')}")
-    with pytest.raises(click.ClickException, match="slipcover/pytest failed"):
+    with pytest.raises(RuntimeError, match="slipcover/pytest failed"):
         collect.run_slipcover(repo)
 
 
@@ -44,43 +43,46 @@ def test_run_slipcover_missing_output_raises(tmp_path: Path, monkeypatch: pytest
     repo.mkdir()
     bindir = install_path_stub(tmp_path, "slipcover", "#!/bin/sh\nexit 0\n")
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ.get('PATH', '')}")
-    with pytest.raises(click.ClickException, match="did not write coverage JSON"):
+    with pytest.raises(RuntimeError, match="slipcover/pytest failed"):
         collect.run_slipcover(repo)
 
 
-def test_parse_llvm_cov_payload_extracts_files(tmp_path: Path) -> None:
+def test_pytest_targets_reads_pyproject_testpaths(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    payload = {
-        "data": [
-            {
-                "files": [
-                    {"filename": "src/lib.rs", "summary": {"lines": {"percent": 55.5}}},
-                    {"filename": "src/lib.rs", "summary": {"lines": {}}},
-                ],
-            },
-        ],
-    }
-    got = collect.parse_llvm_cov_payload(payload, repo)
-    assert got == {"src/lib.rs": 55.5}
+    (repo / "pyproject.toml").write_text(
+        '[tool.pytest.ini_options]\ntestpaths = ["pkg_tests"]\n',
+        encoding="utf-8",
+    )
+    assert collect.pytest_targets(repo) == ["pkg_tests"]
 
 
-def test_run_llvm_cov_parses_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_slipcover_invocation_sklearn_uses_pyargs(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "sklearn" / "__init__.py").parent.mkdir(parents=True)
+    (repo / "sklearn" / "__init__.py").write_text("", encoding="utf-8")
+    cwd, args = collect.slipcover_invocation(repo)
+    assert cwd == Path("/tmp")
+    assert "--pyargs" in args and "sklearn.tests" in args
+
+
+def test_run_slipcover_accepts_nonzero_exit_when_json_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    (repo / "Cargo.toml").write_text("[package]\nname='x'\n", encoding="utf-8")
-    bindir = install_path_stub(tmp_path, "cargo", CARGO_LLVM_OK)
+    (repo / "tests").mkdir()
+    script = """#!/usr/bin/env python3
+import json, sys
+from pathlib import Path
+out = Path(sys.argv[sys.argv.index("--out") + 1])
+out.write_text(json.dumps({"files": {"a.py": {"summary": {"percent_covered": 50.0}}}}))
+sys.exit(2)
+"""
+    bindir = install_path_stub(tmp_path, "slipcover", script)
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ.get('PATH', '')}")
-    got = collect.run_llvm_cov(repo)
-    assert got == {"src/lib.rs": 55.5}
-
-
-def test_run_llvm_cov_missing_cargo_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    monkeypatch.setenv("PATH", "")
-    with pytest.raises(click.ClickException, match="cargo not found"):
-        collect.run_llvm_cov(repo)
+    got = collect.run_slipcover(repo)
+    assert got == {"a.py": 50.0}
 
 
 def test_run_true_coverage_python_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -96,5 +98,5 @@ def test_run_true_coverage_python_only(tmp_path: Path, monkeypatch: pytest.Monke
 def test_run_true_coverage_no_sources_raises(tmp_path: Path) -> None:
     repo = tmp_path / "empty"
     repo.mkdir()
-    with pytest.raises(click.ClickException, match="no Python or Rust sources"):
+    with pytest.raises(RuntimeError, match="no Python or Rust sources"):
         collect.run_true_coverage(repo)

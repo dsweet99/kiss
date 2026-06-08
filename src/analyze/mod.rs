@@ -4,6 +4,7 @@ mod cache;
 mod coverage;
 mod coverage_gate;
 mod coverage_types;
+mod coverage_weighted;
 mod dry;
 mod dup_detect;
 mod entry;
@@ -28,6 +29,7 @@ pub use coverage::compute_test_coverage_from_lists;
 pub use coverage_gate::check_coverage_gate;
 #[allow(unused_imports)] // Public API surface for cached-coverage-gate checks.
 pub(crate) use coverage_gate::evaluate_cached_gate;
+pub(crate) use coverage_gate::is_coverage_report_target;
 #[allow(unused_imports)]
 pub use coverage_types::CheckCoverageGateParams;
 pub use dry::{DryRunParams, run_dry};
@@ -35,7 +37,8 @@ pub use dry::{DryRunParams, run_dry};
 pub use dup_detect::{detect_py_duplicates, detect_rs_duplicates};
 pub use entry::{run_analyze, run_analyze_with_result};
 pub use focus::{
-    build_focus_set, filter_duplicates_by_focus, filter_viols_by_focus, gather_files, is_focus_file,
+    FocusFilter, build_focus_set, filter_duplicates_by_focus,
+    filter_viols_by_focus, gather_files, is_focus_file,
 };
 #[allow(unused_imports)]
 pub use graph_api::{
@@ -50,5 +53,3 @@ pub(crate) use pipeline::{FullPipelineInput, FullPipelineResult, run_full_pipeli
 mod tests_coverage;
 #[cfg(test)]
 mod tests_smoke;
-#[cfg(test)]
-mod tests_touch;

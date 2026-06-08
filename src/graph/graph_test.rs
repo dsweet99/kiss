@@ -1,16 +1,10 @@
 use crate::graph::{
-    CycleInfo, DependencyGraph, GraphBuildState, ImportListPass,
-    build_dependency_graph_from_import_lists, collect_imported_name_candidates,
-    collect_module_violations, compute_cyclomatic_complexity, count_decision_points,
-    cycle_size_violation, dependency_depth_violation, extract_dynamic_import_module,
-    extract_imports_for_cache, extract_imports_recursive, extract_modules_from_import_from,
-    file_stem_str, get_module_path, indirect_deps_violation, is_decision_point, is_dunder_import,
-    is_crate_root_aggregator, is_entry_point, is_importlib_import_module, is_init_module,
-    is_orphan,
-    is_path_covered_by_another, join_qualified_dirs_and_stem, orphan_violation, parent_dir_strings,
-    parent_prefix_match, parse_python_string_literal, path_dedup_set, push_dotted_segments,
-    qualified_module_name, read_base_module, resolve_bare, resolve_dotted, strip_rbub_prefix,
-    trim_src_suffix, unquote_single, unquote_triple,
+    CycleInfo, DependencyGraph,
+    build_dependency_graph_from_import_lists, compute_cyclomatic_complexity, count_decision_points, extract_dynamic_import_module,
+    extract_imports_for_cache, extract_imports_recursive, extract_modules_from_import_from, get_module_path, is_decision_point,
+    is_crate_root_aggregator, is_entry_point,
+    is_orphan, push_dotted_segments,
+    qualified_module_name,
 };
 use crate::parsing::create_parser;
 use std::io::Write;
@@ -38,36 +32,6 @@ fn test_touch_dynamic_import_helpers_for_static_coverage() {
         .descendant_for_byte_range(code.find("importlib.import_module").unwrap(), code.len())
         .unwrap();
     let _ = extract_dynamic_import_module(call_node, code);
-}
-
-#[test]
-fn static_coverage_touch_graph_helpers() {
-    fn t<T>(_: T) {}
-    t(is_init_module);
-    t(path_dedup_set);
-    t(is_path_covered_by_another);
-    t(parent_prefix_match);
-    t(resolve_bare);
-    t(resolve_dotted);
-    t(parse_python_string_literal);
-    t(orphan_violation);
-    t(indirect_deps_violation);
-    t(dependency_depth_violation);
-    t(cycle_size_violation);
-    t(collect_module_violations);
-    t(GraphBuildState::register_module);
-    t(ImportListPass::add_edges);
-    t(file_stem_str);
-    t(parent_dir_strings);
-    t(trim_src_suffix);
-    t(join_qualified_dirs_and_stem);
-    t(read_base_module);
-    t(collect_imported_name_candidates);
-    t(is_importlib_import_module);
-    t(is_dunder_import);
-    t(strip_rbub_prefix);
-    t(unquote_triple);
-    t(unquote_single);
 }
 
 #[test]

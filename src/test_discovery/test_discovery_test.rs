@@ -275,12 +275,14 @@ fn test_defs_from_analysis_rows_direct() {
         (PathBuf::from("/tmp/a.py"), "foo".to_string()),
         vec![(PathBuf::from("/tmp/test_a.py"), "test_foo".to_string())],
     );
-    let focus_set: HashSet<PathBuf> = std::iter::once(PathBuf::from("/tmp/a.py")).collect();
+    let focus = crate::analyze::FocusFilter::restricting(
+        std::iter::once(PathBuf::from("/tmp/a.py")).collect(),
+    );
     let result = defs_from_analysis_rows(
         defs.into_iter(),
         unreferenced.into_iter(),
         &coverage_map,
-        &focus_set,
+        &focus,
     );
     assert_eq!(result.len(), 2);
     let foo_entry = result.iter().find(|(_, name, _, _)| name == "foo").unwrap();

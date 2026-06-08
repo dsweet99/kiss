@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 import python.adversarial as adv
+import python.adversarial_loop as adv_loop
 
 _MALVIN_CMDS: list[list[str]] = []
 
@@ -56,3 +58,20 @@ def test_verify_foil_delegates_to_run_coverage_metrics(
     assert metrics.mean_plus_std == pytest.approx(0.55)
     assert metrics.spearman == pytest.approx(0.9)
     assert "0.5500" in text
+
+
+def test_run_streaming_command_relay(tmp_path: Path) -> None:
+    script = tmp_path / "echo_lines.py"
+    script.write_text(
+        "import sys\n"
+        "for line in ['alpha\\n', 'foil success: /tmp/x\\n']:\n"
+        "    sys.stdout.write(line)\n",
+        encoding="utf-8",
+    )
+
+    rc, captured = adv_loop.run_streaming_command(
+        [sys.executable, str(script)], cwd=tmp_path
+    )
+    assert rc == 0
+    assert "foil success: /tmp/x" in captured
+    assert adv_loop.parse_foil_success_path(captured) == Path("/tmp/x")

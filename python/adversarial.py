@@ -6,8 +6,11 @@ import random
 import re
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import NamedTuple
+
+from python.adversarial_multi_repo import format_repo_paths, normalize_repos
 
 MEAN_STD_THRESHOLD = 0.5
 SPEARMAN_THRESHOLD = 0.6
@@ -92,40 +95,53 @@ Revise the generated repo until **at least one** foil condition holds:
 - mean(c_f) + std(c_f) > {MEAN_STD_THRESHOLD}  (printed as `mean+std(c_f)`)
 - spearman(coverage_true, coverage_kiss) < {SPEARMAN_THRESHOLD}
 
-Stop when either condition is satisfied. The repo must be measurable: tests must pass and coverage tools must succeed.
+Stop when either condition is satisfied. The repo must be measurable: tests must pass and coverage tools
+ must succeed. Be especially sensitive to signs of overfitting in kiss code, and aim to foil them.
+
+Also, make your repo test something different from the other repos (if there are any): {repo_dir.resolve()}/../*
 
 Print the final `coverage_metrics` output when done.
 """
 
 
-def build_fix_prompt(kiss_root: Path, repo: Path) -> str:
+def build_fix_prompt(kiss_root: Path, repos: Sequence[Path]) -> str:
     metrics_py = (kiss_root / "ops" / "coverage_metrics.py").resolve()
+    paths = normalize_repos(repos)
+    repo_block = format_repo_paths(paths)
+    one = len(paths) == 1
+    counter_label = "counterexample repository" if one else "counterexample repositories"
+    use_label = "that repo" if one else "those repos"
+    measure_cmds = "\n".join(
+        f"  {sys.executable} {metrics_py} {p}" for p in paths
+    )
+    pass_scope = "the repo" if one else "every repo"
     return f"""# Fix kiss: improve coverage estimation alignment
 
 Edit the kiss codebase at:
 
   {kiss_root.resolve()}
 
-Do **not** modify the counterexample repository at:
+Do **not** modify the {counter_label} at:
 
-  {repo.resolve()}
+{repo_block}
 
-Use that repo only for measurement.
+Use {use_label} only for measurement.
 
 ## Measurement loop
 
-From the kiss repo root, repeatedly run:
+From the kiss repo root, repeatedly run coverage metrics on each repo:
 
-  {sys.executable} {metrics_py} {repo.resolve()}
+{measure_cmds}
 
-Revise kiss until **both** pass conditions hold:
+Revise kiss until **both** pass conditions hold on {pass_scope}:
 
 - mean(c_f) + std(c_f) <= {MEAN_STD_THRESHOLD}  (printed as `mean+std(c_f)`)
 - spearman(coverage_true, coverage_kiss) >= {SPEARMAN_THRESHOLD}
 
-Stop when both conditions are satisfied. The counterexample repo must remain measurable: its tests must pass and coverage tools must succeed.
+Stop when both conditions are satisfied on {pass_scope}. Each counterexample repo must remain
+measurable: its tests must pass and coverage tools must succeed.
 
-Print the final `coverage_metrics` output when done.
+Print the final `coverage_metrics` output for each repo when done.
 """
 
 

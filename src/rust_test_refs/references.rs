@@ -14,6 +14,14 @@ pub(super) fn collect_rust_references(
     ReferenceVisitor { refs, qualified }.visit_file(ast);
 }
 
+pub(super) fn collect_rust_call_references(
+    ast: &syn::File,
+    refs: &mut HashSet<String>,
+    qualified: &mut HashSet<QualifiedModuleRef>,
+) {
+    CallReferenceVisitor { refs, qualified }.visit_file(ast);
+}
+
 /// Collects references from a single function body. Returns the set of referenced names.
 pub(crate) fn collect_rust_references_for_fn(f: &syn::ItemFn) -> HashSet<String> {
     let mut refs = HashSet::new();
@@ -171,7 +179,50 @@ pub(super) struct ReferenceVisitor<'a> {
     pub(super) qualified: &'a mut HashSet<QualifiedModuleRef>,
 }
 
+struct CallReferenceVisitor<'a> {
+    refs: &'a mut HashSet<String>,
+    qualified: &'a mut HashSet<QualifiedModuleRef>,
+}
+
+fn visit_item_skip_use<'a, V: Visit<'a>>(visitor: &mut V, item: &'a syn::Item) {
+    if matches!(item, Item::Use(_)) {
+        return;
+    }
+    syn::visit::visit_item(visitor, item);
+}
+
+impl<'ast> Visit<'ast> for CallReferenceVisitor<'_> {
+    fn visit_item(&mut self, item: &'ast syn::Item) {
+        visit_item_skip_use(self, item);
+    }
+
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        match expr {
+            Expr::Call(c) => {
+                if let Expr::Path(p) = c.func.as_ref() {
+                    insert_qualified_path_reference(&p.path, self.refs, self.qualified);
+                }
+                for arg in &c.args {
+                    self.visit_expr(arg);
+                }
+            }
+            Expr::MethodCall(m) => {
+                self.refs.insert(m.method.to_string());
+                self.visit_expr(&m.receiver);
+                for arg in &m.args {
+                    self.visit_expr(arg);
+                }
+            }
+            _ => syn::visit::visit_expr(self, expr),
+        }
+    }
+}
+
 impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
+    fn visit_item(&mut self, item: &'ast syn::Item) {
+        visit_item_skip_use(self, item);
+    }
+
     fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
             Expr::Call(c) => {
@@ -192,9 +243,8 @@ impl<'ast> Visit<'ast> for ReferenceVisitor<'_> {
         syn::visit::visit_expr(self, expr);
     }
     fn visit_type(&mut self, ty: &'ast syn::Type) {
-        if let syn::Type::Path(p) = ty {
-            insert_qualified_path_reference(&p.path, self.refs, self.qualified);
-        }
+        // Type-position names (e.g. `size_of::<T>()`, `let _: T`) are not execution
+        // witnesses; skip them so impl methods are not marked covered without value use.
         syn::visit::visit_type(self, ty);
     }
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {

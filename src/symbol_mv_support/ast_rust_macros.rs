@@ -1,8 +1,9 @@
 use syn::visit::Visit;
 
-use super::super::ast_models::Reference;
-use super::CallVisitor;
+use super::ast_models::Reference;
+use super::ast_rust_visitors::CallVisitor;
 use crate::macro_expr_parser::{parse_expr_list, parse_single_expr};
+
 pub(super) fn collect_macro_reference_sites(
     tokens: &proc_macro2::TokenStream,
     content: &str,

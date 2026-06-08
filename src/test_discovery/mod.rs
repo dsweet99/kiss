@@ -1,6 +1,6 @@
 pub mod args;
 
-use crate::analyze;
+use crate::analyze::{self, FocusFilter};
 use kiss::DependencyGraph;
 use kiss::Language;
 use kiss::graph::build_dependency_graph;
@@ -60,17 +60,19 @@ pub fn discover_covering_tests(
     }
     let (py_files, rs_files) =
         gather_files_with_path_expansion(universe, paths, lang_filter, ignore);
-    let focus_set = analyze::build_focus_set(paths, lang_filter, ignore);
-    if focus_set.is_empty() {
+    let focus = analyze::FocusFilter::restricting(analyze::build_focus_set(
+        paths, lang_filter, ignore,
+    ));
+    if focus.is_active() && focus.paths().is_empty() {
         return Ok(Vec::new());
     }
     let mut all_defs: Vec<DefEntry> = Vec::new();
     if !py_files.is_empty() {
-        let (defs, _) = collect_py_test_defs(&py_files, &focus_set)?;
+        let (defs, _) = collect_py_test_defs(&py_files, &focus)?;
         all_defs.extend(defs);
     }
     if !rs_files.is_empty() {
-        let (defs, _) = collect_rs_test_defs(&rs_files, &focus_set);
+        let (defs, _) = collect_rs_test_defs(&rs_files, &focus);
         all_defs.extend(defs);
     }
     all_defs.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)));
@@ -81,11 +83,11 @@ pub(crate) fn defs_from_analysis_rows(
     definitions: impl Iterator<Item = (PathBuf, String, usize)>,
     unreferenced: impl Iterator<Item = (PathBuf, String, usize)>,
     coverage_map: &HashMap<(PathBuf, String), Vec<CoveringTest>>,
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
 ) -> Vec<DefEntry> {
     let unref_set: HashSet<(PathBuf, String, usize)> = unreferenced.collect();
     definitions
-        .filter(|(file, _, _)| analyze::is_focus_file(file, focus_set))
+        .filter(|(file, _, _)| analyze::is_focus_file(file, focus))
         .map(|(file, name, line)| {
             let key = (file.clone(), name.clone());
             let covering = if unref_set.contains(&(file.clone(), name.clone(), line)) {
@@ -117,7 +119,7 @@ macro_rules! defs_from_test_ref_analysis {
 
 fn collect_py_test_defs(
     py_files: &[PathBuf],
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
 ) -> Result<(Vec<DefEntry>, Option<DependencyGraph>), String> {
     let results = kiss::parse_files(py_files).map_err(|e| e.to_string())?;
     let parsed: Vec<_> = results.into_iter().filter_map(Result::ok).collect();
@@ -128,13 +130,13 @@ fn collect_py_test_defs(
         Some(build_dependency_graph(&refs))
     };
     let analysis = kiss::analyze_test_refs(&refs, graph.as_ref());
-    let defs = defs_from_test_ref_analysis!(&analysis, focus_set);
+    let defs = defs_from_test_ref_analysis!(&analysis, focus);
     Ok((defs, graph))
 }
 
 fn collect_rs_test_defs(
     rs_files: &[PathBuf],
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
 ) -> (Vec<DefEntry>, Option<DependencyGraph>) {
     let results = kiss::parse_rust_files(rs_files);
     let parsed: Vec<_> = results.into_iter().filter_map(Result::ok).collect();
@@ -145,7 +147,7 @@ fn collect_rs_test_defs(
         Some(build_rust_dependency_graph(&refs))
     };
     let analysis = kiss::analyze_rust_test_refs(&refs, graph.as_ref());
-    let defs = defs_from_test_ref_analysis!(&analysis, focus_set);
+    let defs = defs_from_test_ref_analysis!(&analysis, focus);
     (defs, graph)
 }
 

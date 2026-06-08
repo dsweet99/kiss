@@ -1,7 +1,6 @@
 use crate::bin_cli::args::{Cli, Commands};
 use crate::bin_cli::check_cmd::{CheckCommandArgs, run_check_command};
 use crate::bin_cli::config_session::config_provenance;
-use crate::bin_cli::run::run;
 use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::shrink::{
     RunShrinkArgs, ShrinkFullContext, ShrinkStartContext, emit_shrink_final_status,
@@ -9,7 +8,6 @@ use crate::bin_cli::shrink::{
     run_shrink_start,
 };
 use crate::bin_cli::stats::run_stats_top;
-use crate::bin_cli::util::set_sigpipe_default;
 use kiss::{Config, GateConfig};
 
 #[test]
@@ -169,13 +167,4 @@ fn test_test_cli_parse() {
         } => {}
         _ => panic!("expected Test main"),
     }
-}
-
-#[test]
-fn static_coverage_touch_main_entrypoints() {
-    fn t<T>(_: T) {}
-    t(run);
-    t(crate::bin_cli::dispatch::dispatch);
-    t(set_sigpipe_default);
-    t(crate::layout::run_layout);
 }

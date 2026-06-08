@@ -1,9 +1,8 @@
 use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::stats::MetricStats;
 use kiss::{DuplicateCluster, Violation};
-use std::collections::HashSet;
-use std::path::PathBuf;
 
+use crate::analyze::focus::FocusFilter;
 use crate::analyze::options::AnalyzeOptions;
 use crate::analyze_parse::ParseResult;
 
@@ -11,7 +10,7 @@ pub(crate) struct FullCacheStoreInput<'a> {
     pub opts: &'a AnalyzeOptions<'a>,
     pub py_files: &'a [std::path::PathBuf],
     pub rs_files: &'a [std::path::PathBuf],
-    pub focus_set: &'a HashSet<PathBuf>,
+    pub focus: &'a FocusFilter,
     pub result: &'a ParseResult,
     pub graph_viols_all: &'a [Violation],
     pub coverage_violations: &'a [Violation],
@@ -44,12 +43,8 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
         inp.opts.rs_config,
         inp.opts.gate_config,
     );
-    let mut focus_paths: Vec<String> = inp
-        .focus_set
-        .iter()
-        .map(|path| path.to_string_lossy().to_string())
-        .collect();
-    focus_paths.sort();
+    let focus_paths = inp.focus.cache_focus_paths();
+    let focus_restrict = inp.focus.is_active();
     crate::analyze_cache::store_full_cache_from_run(crate::analyze_cache::FullCacheInputs {
         fingerprint: fp,
         py_file_count: inp.result.py_parsed.len(),
@@ -59,6 +54,7 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
         py_stats: inp.py_stats,
         rs_stats: inp.rs_stats,
         focus_paths,
+        focus_restrict,
         py_paths: inp
             .py_files
             .iter()

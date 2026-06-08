@@ -80,23 +80,159 @@ fn analyze_nested_mod_without_cfg_still_checked() {
 }
 
 #[test]
-fn test_analyzer_impl_and_fn() {
-    let p = std::path::PathBuf::from("t.rs");
-    let fi: syn::File = syn::parse_str("impl Foo { fn bar(&self) { let x = 1; } }").unwrap();
-    if let syn::Item::Impl(i) = &fi.items[0] {
-        let mut v = Vec::new();
-        RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_impl_block(i);
+fn analyze_rust_file_include_rollup_merges_fragments() {
+    let mut parent_tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    writeln!(parent_tmp, "fn parent() {{}}").unwrap();
+    let mut frag_tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    writeln!(frag_tmp, "fn child() {{ let _ = 1; let _ = 2; }}").unwrap();
+    let parent = crate::rust_parsing::parse_rust_file(parent_tmp.path()).unwrap();
+    let frag = crate::rust_parsing::parse_rust_file(frag_tmp.path()).unwrap();
+    let cfg = Config {
+        statements_per_file: 1,
+        ..Default::default()
+    };
+    let viols = analyze_rust_file_include_rollup(&parent, &[&frag], &cfg);
+    assert!(
+        viols.iter().any(|v| v.metric == "statements_per_file"),
+        "rollup should aggregate fragment statements: {viols:?}"
+    );
+}
+
+#[test]
+fn analyze_rust_file_include_rollup_empty_included() {
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    writeln!(tmp, "fn foo() {{}}").unwrap();
+    let parent = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+    assert!(analyze_rust_file_include_rollup(&parent, &[], &Config::default()).is_empty());
+}
+
+#[test]
+fn analyze_rust_file_triggers_file_threshold_violations() {
+    let body = (0..30)
+        .map(|i| format!("let _ = {i};"))
+        .collect::<Vec<_>>()
+        .join("\n    ");
+    let src = format!("fn bloated() {{\n    {body}\n}}\n");
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    writeln!(tmp, "{src}").unwrap();
+    let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+    let cfg = Config {
+        statements_per_file: 5,
+        statements_per_function: 5,
+        lines_per_file: 5,
+        functions_per_file: 1,
+        ..Default::default()
+    };
+    let viols = analyze_rust_file(&parsed, &cfg);
+    assert!(
+        viols.iter().any(|v| v.metric == "statements_per_file"),
+        "expected file statement violation: {viols:?}"
+    );
+    assert!(
+        viols.iter().any(|v| v.metric == "statements_per_function"),
+        "expected function statement violation: {viols:?}"
+    );
+}
+
+#[test]
+fn analyze_rust_file_triggers_type_and_import_thresholds() {
+    let mut types = String::new();
+    for i in 0..8 {
+        types.push_str(&format!("struct S{i} {{ x: i32 }}\n"));
     }
-    let ff: syn::File = syn::parse_str("fn foo(x: i32) { let y = x + 1; }").unwrap();
-    if let syn::Item::Fn(func) = &ff.items[0] {
-        let mut v = Vec::new();
-        RustAnalyzer::new(&p, &Config::default(), &mut v).analyze_function(
-            "foo",
-            1,
-            &func.sig.inputs,
-            &func.block,
-            count_non_doc_attrs(&func.attrs),
-            "Function",
-        );
+    types.push_str("use std::collections::{HashMap, HashSet, BTreeMap, BTreeSet};\n");
+    types.push_str("fn f() {}\n");
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    writeln!(tmp, "{types}").unwrap();
+    let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+    let cfg = Config {
+        concrete_types_per_file: 3,
+        imported_names_per_file: 2,
+        ..Default::default()
+    };
+    let viols = analyze_rust_file(&parsed, &cfg);
+    assert!(
+        viols.iter().any(|v| v.metric == "concrete_types_per_file"),
+        "expected concrete type violation: {viols:?}"
+    );
+    assert!(
+        viols.iter().any(|v| v.metric == "imported_names_per_file"),
+        "expected import violation: {viols:?}"
+    );
+}
+
+#[test]
+fn analyze_rust_file_triggers_function_metric_violations() {
+    let src = "fn bloated(a: i32, b: i32, c: i32, d: i32, bool_flag: bool) -> i32 {\n    if a > 0 { return 1; }\n    if b > 0 { return 2; }\n    if c > 0 { return 3; }\n    if d > 0 { return 4; }\n    a + b + c + d\n}\n";
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    writeln!(tmp, "{src}").unwrap();
+    let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+    let cfg = Config {
+        arguments_per_function: 2,
+        returns_per_function: 2,
+        branches_per_function: 2,
+        ..Default::default()
+    };
+    let viols = analyze_rust_file(&parsed, &cfg);
+    assert!(
+        viols.iter().any(|v| v.metric == "arguments_per_function"),
+        "expected argument violation: {viols:?}"
+    );
+    assert!(
+        viols.iter().any(|v| v.metric == "returns_per_function"),
+        "expected return violation: {viols:?}"
+    );
+    assert!(
+        viols.iter().any(|v| v.metric == "branches_per_function"),
+        "expected branch violation: {viols:?}"
+    );
+}
+
+#[test]
+fn analyze_rust_file_triggers_remaining_function_metrics() {
+    let src = r#"fn messy(flag: bool, other: bool) {
+    let a = 1;
+    let b = 2;
+    let c = 3;
+    let d = 4;
+    if flag {
+        if other {
+            std::process::exit(0);
+        }
     }
+    foo();
+    bar();
+    baz();
+}
+fn foo() {}
+fn bar() {}
+fn baz() {}
+"#;
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    writeln!(tmp, "{src}").unwrap();
+    let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+    let cfg = Config {
+        local_variables_per_function: 2,
+        calls_per_function: 1,
+        max_indentation_depth: 1,
+        functions_per_file: 2,
+        ..Default::default()
+    };
+    let viols = analyze_rust_file(&parsed, &cfg);
+    assert!(
+        viols.iter().any(|v| v.metric == "local_variables_per_function"),
+        "expected local var violation: {viols:?}"
+    );
+    assert!(
+        viols.iter().any(|v| v.metric == "calls_per_function"),
+        "expected calls violation: {viols:?}"
+    );
+    assert!(
+        viols.iter().any(|v| v.metric == "max_indentation_depth"),
+        "expected indentation violation: {viols:?}"
+    );
+    assert!(
+        viols.iter().any(|v| v.metric == "functions_per_file"),
+        "expected functions per file violation: {viols:?}"
+    );
 }

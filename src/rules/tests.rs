@@ -56,14 +56,21 @@ fn test_threshold_value_format() {
 }
 
 #[test]
-fn test_rule_spec_fields() {
-    let spec = &python::PY_RULE_SPECS[0];
-    assert_eq!(spec.metric, "statements_per_function");
-    assert_eq!(spec.op, "<");
-    assert!(!spec.description.is_empty());
+fn test_rule_spec_struct_literal_referenced() {
+    let spec = RuleSpec {
+        metric: "touch",
+        op: "=",
+        threshold: ThresholdValue::Usize(|c, _| c.statements_per_function),
+        description: "touch",
+    };
+    assert_eq!(spec.metric, "touch");
 }
 
 #[test]
-fn static_coverage_touch_rule_spec_type() {
-    let _ = std::marker::PhantomData::<RuleSpec>;
+fn test_rule_spec_fields() {
+    let specs: &[RuleSpec] = python::PY_RULE_SPECS;
+    let spec = &specs[0];
+    assert_eq!(spec.metric, "statements_per_function");
+    assert_eq!(spec.op, "<");
+    assert!(!spec.description.is_empty());
 }

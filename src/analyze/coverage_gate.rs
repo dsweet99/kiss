@@ -1,12 +1,11 @@
-use std::collections::HashSet;
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::cli_output::{CoverageGateFailureCtx, file_coverage_map, print_coverage_gate_failure};
-
 use crate::analyze::coverage::compute_test_coverage_from_lists;
 use crate::analyze::coverage_types::CheckCoverageGateParams;
-use crate::analyze::focus::is_focus_file;
+use crate::analyze::focus::{FocusFilter, is_focus_file};
 
 type PathNameLine = (PathBuf, String, usize);
 type PerFileGateFailure = (Vec<PathNameLine>, std::collections::HashMap<PathBuf, usize>);
@@ -40,21 +39,82 @@ fn analysis_tuples(
     (defs_t, unrefs_t)
 }
 
+pub(crate) fn is_coverage_gate_file(path: &Path, _unit_name: &str) -> bool {
+    !kiss::test_refs::is_test_file(path)
+        && !kiss::test_refs::is_in_test_directory(path)
+        && !kiss::rust_test_refs::is_rust_test_file(path)
+        && !kiss::rust_test_refs::is_binary_entry_point(path)
+}
+
+pub(crate) fn is_coverage_report_target(
+    path: &Path,
+    unit_name: &str,
+    _report_entry_points: bool,
+) -> bool {
+    is_coverage_gate_file(path, unit_name)
+}
+
+fn is_weighted_overlay_target(path: &Path) -> bool {
+    is_coverage_gate_file(path, "")
+}
+
+fn overlay_weighted_file_pcts(
+    file_pcts: &mut HashMap<PathBuf, usize>,
+    unreferenced_focus: &mut Vec<PathNameLine>,
+    defs_focus: &[(PathBuf, String, usize)],
+    weighted: &HashMap<PathBuf, usize>,
+    focus: &FocusFilter,
+) {
+    for (path, pct) in weighted {
+        if !is_focus_file(path, focus) || !is_weighted_overlay_target(path) {
+            continue;
+        }
+        file_pcts.insert(path.clone(), *pct);
+        if *pct < 100
+            && !unreferenced_focus.iter().any(|(f, _, _)| f == path)
+            && let Some(def) = defs_focus.iter().find(|(f, _, _)| f == path)
+        {
+            unreferenced_focus.push(def.clone());
+        }
+    }
+}
+
 fn per_file_coverage_gate_fails(
     defs_t: &[(PathBuf, String, usize)],
     unrefs_t: &[(PathBuf, String, usize)],
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
     threshold: usize,
+    weighted_pcts: Option<&HashMap<PathBuf, usize>>,
 ) -> Option<PerFileGateFailure> {
-    let (_, _, _, unreferenced_focus) =
-        compute_test_coverage_from_lists(defs_t, unrefs_t, focus_set);
+    let (_, _, _, mut unreferenced_focus) =
+        compute_test_coverage_from_lists(defs_t, unrefs_t, focus);
     let defs_focus: Vec<_> = defs_t
         .iter()
-        .filter(|(f, _, _)| is_focus_file(f, focus_set))
+        .filter(|(f, _, _)| is_focus_file(f, focus))
         .cloned()
         .collect();
-    let file_pcts = file_coverage_map(&defs_focus, &unreferenced_focus);
-    if file_pcts.values().any(|&pct| pct < threshold) {
+    let mut file_pcts = file_coverage_map(&defs_focus, &unreferenced_focus);
+    if let Some(weighted) = weighted_pcts {
+        overlay_weighted_file_pcts(
+            &mut file_pcts,
+            &mut unreferenced_focus,
+            &defs_focus,
+            weighted,
+            focus,
+        );
+    }
+    let gate_fails = file_pcts
+        .iter()
+        .any(|(path, &pct)| is_coverage_gate_file(path, "") && pct < threshold);
+    if gate_fails {
+        let file_pcts: HashMap<_, _> = file_pcts
+            .into_iter()
+            .filter(|(path, _)| is_coverage_gate_file(path, ""))
+            .collect();
+        let unreferenced_focus: Vec<_> = unreferenced_focus
+            .into_iter()
+            .filter(|(path, name, _)| is_coverage_gate_file(path, name))
+            .collect();
         Some((unreferenced_focus, file_pcts))
     } else {
         None
@@ -64,13 +124,19 @@ fn per_file_coverage_gate_fails(
 pub(crate) fn evaluate_gate(
     py_cov: &kiss::TestRefAnalysis,
     rs_cov: &kiss::RustTestRefAnalysis,
-    focus_set: &HashSet<PathBuf>,
+    _py_parsed: &[kiss::ParsedFile],
+    _rs_parsed: &[kiss::ParsedRustFile],
+    focus: &FocusFilter,
     threshold: usize,
 ) -> Option<crate::analyze::options::AnalyzeResult> {
     let (defs_t, unrefs_t) = analysis_tuples(py_cov, rs_cov);
-    if let Some((unreferenced_focus, file_pcts)) =
-        per_file_coverage_gate_fails(&defs_t, &unrefs_t, focus_set, threshold)
-    {
+    if let Some((unreferenced_focus, file_pcts)) = per_file_coverage_gate_fails(
+        &defs_t,
+        &unrefs_t,
+        focus,
+        threshold,
+        None,
+    ) {
         print_coverage_gate_failure(&CoverageGateFailureCtx {
             threshold,
             unreferenced: &unreferenced_focus,
@@ -87,7 +153,7 @@ pub(crate) fn evaluate_gate(
 pub(crate) fn evaluate_cached_gate(
     definitions: &[CachedCoverageItem],
     unreferenced: &[CachedCoverageItem],
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
     threshold: usize,
 ) -> Option<crate::analyze::options::AnalyzeResult> {
     let defs = definitions
@@ -102,7 +168,7 @@ pub(crate) fn evaluate_cached_gate(
         return None;
     }
     if let Some((unreferenced_focus, file_pcts)) =
-        per_file_coverage_gate_fails(&defs, &unrefs, focus_set, threshold)
+        per_file_coverage_gate_fails(&defs, &unrefs, focus, threshold, None)
     {
         print_coverage_gate_failure(&CoverageGateFailureCtx {
             threshold,
@@ -123,7 +189,7 @@ pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
         py_parsed,
         rs_parsed,
         gate_config,
-        focus_set,
+        focus,
         show_timing: _show_timing,
     } = p;
     let (defs_cached, unrefs_cached) = crate::analyze_cache::coverage_lists(py_parsed, rs_parsed);
@@ -136,9 +202,13 @@ pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
         .map(CachedCoverageItem::into_tuple)
         .collect();
     let threshold = gate_config.test_coverage_threshold;
-    if let Some((unreferenced, file_pcts)) =
-        per_file_coverage_gate_fails(&defs_t, &unrefs_t, focus_set, threshold)
-    {
+    if let Some((unreferenced, file_pcts)) = per_file_coverage_gate_fails(
+        &defs_t,
+        &unrefs_t,
+        focus,
+        threshold,
+        None,
+    ) {
         print_coverage_gate_failure(&CoverageGateFailureCtx {
             threshold,
             unreferenced: &unreferenced,
@@ -150,81 +220,5 @@ pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
 }
 
 #[cfg(test)]
-mod coverage_gate_tests {
-    use super::*;
-    use std::collections::HashMap;
-    use std::collections::HashSet;
-
-    #[test]
-    fn per_file_gate_fails_when_file_below_threshold() {
-        use std::path::PathBuf;
-        let defs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
-        let unrefs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
-        let focus: HashSet<PathBuf> = std::iter::once(PathBuf::from("src/a.py")).collect();
-        let failure = per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90);
-        let (unreferenced, file_pcts) = failure.expect("expected gate failure");
-        assert_eq!(file_pcts.get(&PathBuf::from("src/a.py")), Some(&0));
-        assert_eq!(unreferenced.len(), 1);
-    }
-
-    #[test]
-    fn per_file_gate_ignores_files_outside_focus() {
-        use std::path::PathBuf;
-        let defs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
-        let unrefs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
-        let focus: HashSet<PathBuf> = std::iter::once(PathBuf::from("src/b.py")).collect();
-        assert!(per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90).is_none());
-    }
-
-    #[test]
-    fn per_file_gate_passes_when_file_meets_threshold() {
-        use std::path::PathBuf;
-        let defs = vec![
-            (PathBuf::from("src/a.py"), "f".into(), 1),
-            (PathBuf::from("src/a.py"), "g".into(), 2),
-        ];
-        let unrefs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
-        let focus: HashSet<PathBuf> = std::iter::once(PathBuf::from("src/a.py")).collect();
-        let failure = per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90);
-        let (_, file_pcts) = failure.expect("expected gate failure below 100%");
-        assert_eq!(file_pcts.get(&PathBuf::from("src/a.py")), Some(&50));
-    }
-
-    #[test]
-    fn evaluate_gate_passes_for_empty_analysis() {
-        let py_cov = kiss::TestRefAnalysis {
-            definitions: Vec::new(),
-            test_references: HashSet::new(),
-            unreferenced: Vec::new(),
-            coverage_map: HashMap::new(),
-        };
-        let rs_cov = kiss::RustTestRefAnalysis {
-            definitions: Vec::new(),
-            test_references: HashSet::new(),
-            unreferenced: Vec::new(),
-            coverage_map: HashMap::new(),
-        };
-        let focus = HashSet::new();
-        assert!(evaluate_gate(&py_cov, &rs_cov, &focus, 90).is_none());
-        assert!(evaluate_cached_gate(&[], &[], &focus, 90).is_none());
-    }
-
-    #[test]
-    fn test_analysis_tuples_empty() {
-        let py_cov = kiss::TestRefAnalysis {
-            definitions: Vec::new(),
-            test_references: HashSet::new(),
-            unreferenced: Vec::new(),
-            coverage_map: HashMap::new(),
-        };
-        let rs_cov = kiss::RustTestRefAnalysis {
-            definitions: Vec::new(),
-            test_references: HashSet::new(),
-            unreferenced: Vec::new(),
-            coverage_map: HashMap::new(),
-        };
-        let (defs, unrefs) = analysis_tuples(&py_cov, &rs_cov);
-        assert!(defs.is_empty());
-        assert!(unrefs.is_empty());
-    }
-}
+#[path = "coverage_gate_tests.rs"]
+mod coverage_gate_tests;

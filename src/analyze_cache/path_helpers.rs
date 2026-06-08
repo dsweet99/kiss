@@ -1,7 +1,8 @@
 use kiss::check_cache;
 use kiss::check_universe_cache::FullCheckCache;
-use std::collections::HashSet;
 use std::path::PathBuf;
+
+use crate::analyze::FocusFilter;
 
 pub(super) fn cache_path_full(fingerprint: &str) -> PathBuf {
     check_cache::cache_dir().join(format!("check_full_{fingerprint}.bin"))
@@ -10,7 +11,7 @@ pub(super) fn cache_path_full(fingerprint: &str) -> PathBuf {
 pub(super) fn same_cached_paths(
     current_py: &[PathBuf],
     current_rs: &[PathBuf],
-    focus_set: &HashSet<PathBuf>,
+    focus: &FocusFilter,
     cache: &FullCheckCache,
 ) -> bool {
     if cache.py_paths.is_empty() && cache.rs_paths.is_empty() {
@@ -37,23 +38,17 @@ pub(super) fn same_cached_paths(
         return false;
     }
 
-    let cache_focus = if cache.focus_paths.is_empty() {
-        let mut inferred: Vec<String> = cache_py.clone();
-        inferred.extend(cache_rs.iter().cloned());
-        inferred.sort();
-        inferred
-    } else {
-        let mut stored = cache.focus_paths.clone();
-        stored.sort();
-        stored
-    };
-    let mut current_focus: Vec<String> = focus_set
-        .iter()
-        .map(|path| path.to_string_lossy().to_string())
-        .collect();
-    current_focus.sort();
+    if cache.focus_restrict != focus.is_active() {
+        return false;
+    }
 
-    cache_focus == current_focus
+    if !cache.focus_restrict {
+        return true;
+    }
+
+    let mut cache_focus = cache.focus_paths.clone();
+    cache_focus.sort();
+    focus.cache_focus_paths() == cache_focus
 }
 
 pub(super) fn load_full_cache(fingerprint: &str) -> Option<FullCheckCache> {

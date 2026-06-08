@@ -97,3 +97,66 @@ fn test_estimate_block_lines() {
         assert!(lines >= 1);
     }
 }
+
+#[test]
+fn test_estimate_block_lines_empty_block() {
+    let file: syn::File = syn::parse_str("fn empty() {}").unwrap();
+    if let syn::Item::Fn(func) = &file.items[0] {
+        assert_eq!(super::estimate_block_lines(&func.block), 1);
+    }
+}
+
+#[test]
+fn extracts_inline_module_with_content() {
+    let units = parse_and_extract("mod inner { fn nested() {} }");
+    let modules: Vec<_> = units
+        .iter()
+        .filter(|u| u.kind == CodeUnitKind::Module && u.name == "inner")
+        .collect();
+    assert_eq!(modules.len(), 1);
+    assert!(units.iter().any(|u| u.name == "nested"));
+}
+
+#[test]
+fn extracts_impl_method_parent_type() {
+    let units = parse_and_extract(
+        "struct Pair(i32, i32);\nimpl Pair { fn sum(&self) -> i32 { self.0 + self.1 } }",
+    );
+    let methods: Vec<_> = units
+        .iter()
+        .filter(|u| u.kind == CodeUnitKind::Method && u.name == "sum")
+        .collect();
+    assert_eq!(methods.len(), 1);
+    assert_eq!(methods[0].parent_type.as_deref(), Some("Pair"));
+}
+
+#[test]
+fn visit_item_handles_non_fn_items() {
+    let file: syn::File =
+        syn::parse_str("const X: i32 = 1;\nuse std::io;\nfn bar() {}\n").unwrap();
+    let mut visitor = CodeUnitVisitor::new("const X: i32 = 1;\nuse std::io;\nfn bar() {}\n");
+    for item in &file.items {
+        visitor.visit_item(item);
+    }
+    assert!(visitor.units.iter().any(|u| u.name == "bar"));
+}
+
+#[test]
+fn nested_fn_in_block_increments_line_estimate() {
+    let units = parse_and_extract(
+        "fn outer() {\n    fn inner() {\n        let x = 1;\n        let y = 2;\n    }\n}",
+    );
+    let outer: Vec<_> = units
+        .iter()
+        .filter(|u| u.name == "outer" && u.kind == CodeUnitKind::Function)
+        .collect();
+    assert_eq!(outer.len(), 1);
+    assert!(outer[0].end_line >= outer[0].start_line);
+}
+
+#[test]
+fn empty_mod_without_content_not_recorded() {
+    let units = parse_and_extract("mod empty;\nfn foo() {}\n");
+    assert!(!units.iter().any(|u| u.name == "empty" && u.kind == CodeUnitKind::Module));
+    assert!(units.iter().any(|u| u.name == "foo"));
+}

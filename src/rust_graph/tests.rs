@@ -258,6 +258,18 @@ fn resolve_import_adds_edges_for_internal_and_bare_modules() {
 }
 
 #[test]
+fn resolve_import_skips_self_edges_from_bare_map() {
+    let mut graph = DependencyGraph::default();
+    let mut bare_map: HashMap<String, Vec<String>> = HashMap::new();
+    bare_map.insert("alias".into(), vec!["consumer".into(), "other.mod".into()]);
+    resolve_import("alias", "consumer", &HashSet::new(), &bare_map, &mut graph);
+    let consumer_idx = *graph.nodes.get("consumer").expect("consumer node");
+    let other_idx = *graph.nodes.get("other.mod").expect("other.mod node");
+    assert!(graph.graph.contains_edge(consumer_idx, other_idx));
+    assert_eq!(graph.graph.edge_count(), 1);
+}
+
+#[test]
 fn extract_imports_from_block_and_expr_directly() {
     let ast = parse_rust_code("fn f() { if true { use std::io; } else { use core::fmt; } }");
     let syn::Item::Fn(func) = &ast.items[0] else {
@@ -309,6 +321,6 @@ fn rust_imports_and_push_include_edges() {
     extract_imports_from_items(&ast.items, &mut use_roots, &mut mod_decls, &mut include_literals);
     assert!(!use_roots.is_empty());
     let mac: syn::Macro = syn::parse_quote!(include!("child.rs"));
-    push_include_edges(&mac, &mut mod_decls, &mut include_literals);
+    super::extract_imports::push_include_edges(&mac, &mut mod_decls, &mut include_literals);
     assert_eq!(include_literals, vec!["child.rs"]);
 }

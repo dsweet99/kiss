@@ -1,7 +1,6 @@
 use super::ConfigError;
 use super::merge::{
-    apply_language_sections, apply_parsed_toml, apply_python, apply_python_if_present, apply_rust,
-    apply_rust_if_present, apply_shared, apply_thresholds, apply_thresholds_and_shared,
+    apply_python, apply_rust, apply_shared, apply_thresholds,
 };
 use super::types::{Config, ConfigLanguage};
 use super::validation::{
@@ -72,6 +71,34 @@ fn test_validation() {
 }
 
 #[test]
+fn validate_section_keys_accept_known_keys() {
+    let mut thresholds = toml::Table::new();
+    thresholds.insert("statements_per_function".into(), toml::Value::Integer(30));
+    validate_thresholds_keys(&thresholds).unwrap();
+
+    let mut shared = toml::Table::new();
+    shared.insert("statements_per_file".into(), toml::Value::Integer(100));
+    validate_shared_keys(&shared).unwrap();
+
+    let mut python = toml::Table::new();
+    python.insert("positional_args".into(), toml::Value::Integer(5));
+    validate_python_keys(&python).unwrap();
+
+    let mut rust = toml::Table::new();
+    rust.insert("arguments".into(), toml::Value::Integer(5));
+    validate_rust_keys(&rust).unwrap();
+
+    let mut root = toml::Table::new();
+    root.insert("thresholds".into(), toml::Value::Table(thresholds));
+    root.insert("shared".into(), toml::Value::Table(shared));
+    root.insert("python".into(), toml::Value::Table(python));
+    root.insert("rust".into(), toml::Value::Table(rust));
+    validate_config_keys(&root, None).unwrap();
+    validate_config_keys(&root, Some(ConfigLanguage::Python)).unwrap();
+    validate_config_keys(&root, Some(ConfigLanguage::Rust)).unwrap();
+}
+
+#[test]
 fn test_config_error_display() {
     let e = ConfigError::UnknownKey {
         key: "foo".into(),
@@ -129,21 +156,18 @@ fn test_unknown_section_returns_error() {
 }
 
 #[test]
-fn static_coverage_touch_validate_keys() {
-    fn t<T>(_: T) {}
-    t(validate_config_keys);
-    t(validate_thresholds_keys);
-    t(validate_shared_keys);
-    t(validate_python_keys);
-    t(validate_rust_keys);
-}
+fn test_load_from_for_language_and_try_load_from() {
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[python]\nstatements_per_function = 77\n").unwrap();
 
-#[test]
-fn static_coverage_touch_merge_helpers() {
-    fn t<T>(_: T) {}
-    t(apply_thresholds_and_shared);
-    t(apply_python_if_present);
-    t(apply_rust_if_present);
-    t(apply_language_sections);
-    t(apply_parsed_toml);
+    let loaded = Config::load_from_for_language(tmp.path(), ConfigLanguage::Python);
+    assert_eq!(loaded.statements_per_function, 77);
+
+    let try_loaded = Config::try_load_from(tmp.path(), ConfigLanguage::Python).unwrap();
+    assert_eq!(try_loaded.statements_per_function, 77);
+
+    let missing = tempfile::NamedTempFile::new().unwrap();
+    std::fs::remove_file(missing.path()).unwrap();
+    let err = Config::try_load_from(missing.path(), ConfigLanguage::Rust).unwrap_err();
+    assert!(matches!(err, ConfigError::IoError { .. }));
 }

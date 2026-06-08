@@ -178,15 +178,6 @@ fn test_check_function_metrics() {
     check_function_metrics(&m, Path::new("t.py"), 1, "f", false, &cfg, &mut viols);
     assert!(viols.len() >= 5);
 }
-
-#[test]
-fn static_coverage_touch_py_threshold_helpers() {
-    fn t<T>(_: T) {}
-    t(push_py_file_threshold);
-    t(check_file_metrics);
-    t(violation);
-}
-
 #[test]
 fn test_check_file_metrics_direct() {
     let m = FileMetrics {

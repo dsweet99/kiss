@@ -256,32 +256,38 @@ impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
         }
     }
 
-    // Note: Rust match arms are NOT counted as branches (unlike Python case clauses).
-    // Rust match is exhaustive pattern matching; Python match/case is optional branching.
-    // This preserves semantic consistency: we count optional code paths, not exhaustive coverage.
+    // Match arms count as branches for coverage weighting (aligned with Python elif/case clauses).
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
+        self.on_enter_expr(expr);
+        syn::visit::visit_expr(self, expr);
+        self.on_exit_expr(expr);
+    }
+}
+
+impl FunctionMetricsVisitor {
+    fn on_enter_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::If(_) => {
                 self.branches += 1;
                 self.enter_block();
             }
-            Expr::Match(_) | Expr::While(_) | Expr::ForLoop(_) | Expr::Loop(_) => {
+            Expr::Match(m) => {
+                self.branches += m.arms.len();
                 self.enter_block();
             }
-            Expr::Return(_) => {
-                self.returns += 1;
-            }
+            Expr::While(_) | Expr::ForLoop(_) | Expr::Loop(_) => self.enter_block(),
+            Expr::Return(_) => self.returns += 1,
             Expr::Closure(_) => {
                 self.current_closure_depth += 1;
                 self.max_closure_depth = self.max_closure_depth.max(self.current_closure_depth);
             }
-            Expr::Call(_) | Expr::MethodCall(_) => {
-                self.calls += 1;
-            }
+            Expr::Call(_) | Expr::MethodCall(_) => self.calls += 1,
             _ => {}
         }
-        syn::visit::visit_expr(self, expr);
+    }
+
+    fn on_exit_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::If(_) | Expr::Match(_) | Expr::While(_) | Expr::ForLoop(_) | Expr::Loop(_) => {
                 self.exit_block();

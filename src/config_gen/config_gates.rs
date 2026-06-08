@@ -12,9 +12,6 @@ use super::config_keys::common_config_key;
 use super::defaults_append::{append_python_defaults, append_rust_defaults};
 use super::generate::{GenerateConfigParams, append_section, generate_config_toml_by_language};
 use super::infer_gate::infer_gate_config_for_paths;
-use super::infer_gate::{
-    compute_min_per_file_test_coverage, has_orphan_modules, has_reportable_duplicates,
-};
 use super::merge::{MergeLanguageUpdate, build_merged_output, format_section, merge_config_toml};
 use super::{python_config_key, rust_config_key, write_mimic_config};
 
@@ -135,28 +132,6 @@ fn test_infer_gate_config_no_orphans_module_enabled() {
         "no orphan modules should set orphan_module_enabled=true"
     );
 }
-
-#[test]
-fn static_coverage_touch_infer_gate_helpers() {
-    fn t<T>(_: T) {}
-    t(compute_min_per_file_test_coverage);
-    t(has_orphan_modules);
-    t(has_reportable_duplicates);
-    t(super::infer_gate::extend_defs_from_py);
-    t(super::infer_gate::extend_defs_from_rs);
-    t(super::infer_gate::collect_defs_and_unrefs);
-}
-
-#[test]
-fn static_coverage_touch_merge_helpers() {
-    fn t<T>(_: T) {}
-    t(super::merge::load_merge_tables);
-    t(super::merge::merge_gate);
-    t(super::merge::merge_lang_sections);
-    t(super::merge::merge_shared);
-    t(super::merge::merge_thresholds);
-}
-
 #[test]
 fn test_write_mimic_config_smoke() {
     let tmp = tempfile::tempdir().unwrap();

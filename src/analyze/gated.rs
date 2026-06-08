@@ -41,7 +41,7 @@ fn gated_py_parallel(
     let (py_cov, (py_graph, graph_viols_all, py_dups_all)) = rayon::join(
         || {
             let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-            kiss::analyze_test_refs_quick(&py_refs)
+            kiss::analyze_test_refs(&py_refs, None)
         },
         || {
             let py_graph = build_py_graph(py_parsed);
@@ -77,11 +77,15 @@ pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
         opts,
         py_files,
         rs_files,
-        focus_set,
+        focus,
         parsed: (result, viols, file_count),
         timings,
     } = in_;
-    let rs_cov = kiss::analyze_rust_test_refs(&result.rs_parsed.iter().collect::<Vec<_>>(), None);
+    let rs_graph = build_rs_graph(&result.rs_parsed);
+    let rs_cov = kiss::analyze_rust_test_refs(
+        &result.rs_parsed.iter().collect::<Vec<_>>(),
+        rs_graph.as_ref(),
+    );
 
     let (py_cov, py_graph, mut graph_viols_all, py_dups_all) =
         gated_py_parallel(&GatedPyParallelIn {
@@ -94,7 +98,9 @@ pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
     if let Some(early) = evaluate_gate(
         &py_cov,
         &rs_cov,
-        focus_set,
+        &result.py_parsed,
+        &result.rs_parsed,
+        focus,
         opts.gate_config.test_coverage_threshold,
     ) {
         return early;
@@ -122,7 +128,7 @@ pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
         opts,
         py_files,
         rs_files,
-        focus_set,
+        focus,
         products: AnalysisProducts {
             result,
             viols,
@@ -195,6 +201,36 @@ mod gated_tests {
         fix.with_input(|input| {
             assert_eq!(input.file_count, 0);
         });
+    }
+
+    #[test]
+    fn test_run_gated_analysis_empty_repo() {
+        use crate::analyze::FocusFilter;
+        use crate::analyze::params::GatedAnalysis;
+        use crate::analyze_parse::ParseResult;
+        use std::time::Instant;
+
+        let fix = TestFixture::new();
+        let opts = fix.make_opts();
+        let focus = FocusFilter::unrestricted();
+        let result = ParseResult {
+            py_parsed: vec![],
+            rs_parsed: vec![],
+            violations: vec![],
+            code_unit_count: 0,
+            statement_count: 0,
+        };
+        let now = Instant::now();
+        let analysis = GatedAnalysis {
+            opts: &opts,
+            py_files: &[],
+            rs_files: &[],
+            focus: &focus,
+            parsed: (result, vec![], 0),
+            timings: (now, now, now),
+        };
+        let outcome = run_gated_analysis(analysis);
+        assert!(outcome.success);
     }
 
     #[test]

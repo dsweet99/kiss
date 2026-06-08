@@ -30,6 +30,8 @@ fn test_file_detection_and_helpers() {
     let _ = RustTestRefAnalysis {
         definitions: vec![],
         test_references: HashSet::new(),
+        call_references: HashSet::new(),
+        propagated_references: HashSet::new(),
         unreferenced: vec![],
         coverage_map: HashMap::new(),
     };
@@ -73,7 +75,6 @@ fn test_coverage_checks() {
         impl_for_type: Some("MyType".into()),
     };
     let refs: HashSet<String> = ["MyType", "foo"].into_iter().map(String::from).collect();
-    assert!(is_impl_with_referenced_type(&def, &refs));
     let def2 = RustCodeDefinition {
         name: "foo".into(),
         kind: CodeUnitKind::Function,
@@ -88,15 +89,25 @@ fn test_coverage_checks() {
             .map(|d| (d.name.as_str(), d.file.as_path())),
     );
     let disambiguation = crate::test_refs::build_disambiguation_map(&name_files, &refs, &[], None);
+    assert!(!is_impl_method_covered_by_type_and_name(&def, &refs));
     assert!(is_directly_referenced(
         &def2,
         &refs,
         &name_files,
         &disambiguation
     ));
-    assert!(is_covered_by_tests(
+    assert!(!is_covered_by_tests(
         &def,
         &refs,
+        &HashSet::new(),
+        &name_files,
+        &disambiguation
+    ));
+    let mut refs_with_fmt = refs.clone();
+    refs_with_fmt.insert("fmt".to_string());
+    assert!(is_covered_by_tests(
+        &def,
+        &refs_with_fmt,
         &HashSet::new(),
         &name_files,
         &disambiguation
@@ -122,7 +133,10 @@ fn test_visitor_and_macros() {
         qualified: &mut qualified,
     }
     .visit_type(&ty);
-    assert!(refs.contains("MyType"));
+    assert!(
+        !refs.contains("MyType"),
+        "type-position refs must not count as coverage witnesses"
+    );
     let mac: syn::ExprMacro = syn::parse_str("println!(\"test\")").unwrap();
     references::ReferenceVisitor {
         refs: &mut refs,
