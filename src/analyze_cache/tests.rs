@@ -1,4 +1,5 @@
 use super::*;
+use super::path_helpers::load_full_cache;
 use crate::analyze::FocusFilter;
 use kiss::check_cache::CachedViolation;
 use kiss::check_universe_cache::CachedCoverageItem;
@@ -26,6 +27,7 @@ fn empty_cache(fp: &str) -> FullCheckCache {
         rs_duplicates: Vec::new(),
         definitions: Vec::new(),
         unreferenced: Vec::new(),
+        file_content_digests: Vec::new(),
     }
 }
 

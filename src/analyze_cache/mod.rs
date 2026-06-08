@@ -1,3 +1,4 @@
+mod content_digest;
 mod emit;
 
 use crate::analyze::FocusFilter;
@@ -18,12 +19,13 @@ mod path_helpers;
 mod stats_top;
 #[cfg(test)]
 mod test_helpers;
-use path_helpers::{cache_path_full, load_full_cache, same_cached_paths};
+use path_helpers::{cache_path_full, same_cached_paths};
+pub(crate) use content_digest::load_verified_full_cache;
 pub(crate) use stats_top::{
     maybe_store_stats_top_cache, try_run_cached_stats_summary, try_run_cached_stats_top,
 };
 
-const CACHE_SCHEMA_VERSION: &str = "v8";
+const CACHE_SCHEMA_VERSION: &str = "v9";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -241,7 +243,7 @@ pub fn try_run_cached_all(
         opts.rs_config,
         opts.gate_config,
     );
-    let cache = load_full_cache(&fp)?;
+    let cache = load_verified_full_cache(&fp, py_files, rs_files)?;
     if !same_cached_paths(py_files, rs_files, focus, &cache) {
         return None;
     }
@@ -330,6 +332,11 @@ pub struct FullCacheInputs<'a> {
 
 pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
     let (graph_nodes, graph_edges) = graph_counts(inputs.py_graph, inputs.rs_graph);
+    let py_path_bufs: Vec<PathBuf> = inputs.py_paths.iter().map(PathBuf::from).collect();
+    let rs_path_bufs: Vec<PathBuf> = inputs.rs_paths.iter().map(PathBuf::from).collect();
+    let mut file_content_digests = content_digest::content_digests_for_paths(&py_path_bufs);
+    file_content_digests.extend(content_digest::content_digests_for_paths(&rs_path_bufs));
+    file_content_digests.sort_by(|a, b| a.0.cmp(&b.0));
     let cache = FullCheckCache {
         fingerprint: inputs.fingerprint,
         py_stats: inputs.py_stats.cloned(),
@@ -344,6 +351,7 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
         statement_count: inputs.statement_count,
         graph_nodes,
         graph_edges,
+        file_content_digests,
         base_violations: inputs
             .violations
             .iter()

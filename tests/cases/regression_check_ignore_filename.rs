@@ -1,17 +1,8 @@
-//! Regression test for `kiss check --ignore=PREFIX` filename-matching bug.
+//! Regression tests for `kiss check --ignore=PREFIX` filename and directory matching.
 //!
-//! Bug discovered via KPOP (see `_kpop/exp_log_kiss_check_bug.md`):
 //! The `--ignore=<PREFIX>` flag's help text in `src/bin_cli/args.rs` reads
-//! `"Ignore files/directories starting with PREFIX (repeatable)"`, but the
-//! implementation in `src/discovery/mod.rs::should_ignore` only matches
-//! directory components and explicitly skips the filename. This means
-//! `kiss check --ignore=big <dir>` does NOT ignore a file named `big.py`,
-//! contradicting the documented behavior.
-//!
-//! These tests assert the contract documented in the help text. They are
-//! gated with `#[ignore]` so CI stays green until the bug is fixed; once
-//! the implementation is updated to honor the documented contract, the
-//! `#[ignore]` attributes can be removed.
+//! `"Ignore files/directories starting with PREFIX (repeatable)"`. These tests
+//! lock in that contract for both directory and filename prefix matching.
 
 use std::fs;
 use std::process::Command;
@@ -62,17 +53,9 @@ fn cli_check_ignore_excludes_matching_directory() {
     );
 }
 
-/// Regression test for the documented-but-broken behavior:
-/// `--ignore=PREFIX` should also exclude files whose names start with
-/// PREFIX, per the `--ignore` help text in `src/bin_cli/args.rs`.
-///
-/// Currently FAILS because `src/discovery/mod.rs::should_ignore` only
-/// inspects directory components. Marked `#[ignore]` so this test can land
-/// alongside the bug report without breaking CI; un-ignore once
-/// `should_ignore` (and the test in `src/discovery/discovery_test.rs`
-/// asserting the opposite) are updated.
+/// `--ignore=PREFIX` excludes files whose names start with PREFIX, per the
+/// `--ignore` help text in `src/bin_cli/args.rs`.
 #[test]
-#[ignore = "Bug: --ignore=PREFIX does not match filenames; see _kpop/exp_log_kiss_check_bug.md"]
 fn cli_check_ignore_excludes_matching_filename() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();

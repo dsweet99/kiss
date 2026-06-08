@@ -49,6 +49,9 @@ pub struct FullCheckCache {
 
     pub definitions: Vec<CachedCoverageItem>,
     pub unreferenced: Vec<CachedCoverageItem>,
+    /// Per-file content digests captured at cache-write time; verified on replay.
+    #[serde(default)]
+    pub file_content_digests: Vec<(String, u64)>,
 }
 
 impl CachedCoverageItem {
@@ -108,6 +111,7 @@ mod tests {
             rs_duplicates: Vec::new(),
             definitions: Vec::new(),
             unreferenced: Vec::new(),
+            file_content_digests: Vec::new(),
         };
     }
 }
