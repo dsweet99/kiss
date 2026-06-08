@@ -30,28 +30,23 @@ fn run_python_check_all(repo: &Path, home: &Path) -> Output {
 }
 
 #[test]
-fn check_all_cache_hit_replays_without_reading_sources() {
+fn check_all_cache_hit_replays_on_second_run() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
     let src = repo.path().join("simple.py");
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
 
-    // Cold run populates cache.
     let out1 = run_python_check_all(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
     assert!(
         stdout1.contains("Analyzed:"),
         "expected summary line. stdout:\n{stdout1}"
     );
-    let cache_files = list_full_check_cache_files(home.path());
     assert!(
-        !cache_files.is_empty(),
+        !list_full_check_cache_files(home.path()).is_empty(),
         "expected full-check cache file under HOME. stdout:\n{stdout1}"
     );
-
-    // Make sources unreadable. If we hit cache, we should still be able to replay.
-    chmod(&src, 0o000);
 
     let out2 = run_python_check_all(repo.path(), home.path());
     let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
@@ -65,6 +60,28 @@ fn check_all_cache_hit_replays_without_reading_sources() {
     assert_eq!(
         stdout2, stdout1,
         "cache-hit output should match exactly.\n--stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
+    );
+}
+
+#[test]
+fn check_all_cache_invalidates_when_sources_unreadable() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+
+    let src = repo.path().join("simple.py");
+    fs::write(&src, "def foo():\n    return 1\n").unwrap();
+
+    let out1 = run_python_check_all(repo.path(), home.path());
+    let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
+    assert!(!list_full_check_cache_files(home.path()).is_empty());
+
+    chmod(&src, 0o000);
+
+    let out2 = run_python_check_all(repo.path(), home.path());
+    let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
+    assert_ne!(
+        stdout2, stdout1,
+        "unreadable sources must not replay cached output.\n--stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
     );
 }
 
