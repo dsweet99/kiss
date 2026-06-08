@@ -19,7 +19,6 @@ pub fn compute_summaries(stats: &MetricStats) -> Vec<PercentileSummary> {
 fn metric_values_fn_core<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a [usize]> {
     Some(match metric_id {
         "statements_per_function" => &stats.statements_per_function,
-        "arguments_per_function" => &stats.arguments_per_function,
         "positional_args" => &stats.arguments_positional,
         "keyword_only_args" => &stats.arguments_keyword_only,
         "max_indentation_depth" => &stats.max_indentation,

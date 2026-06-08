@@ -24,7 +24,6 @@ pub fn format_stats_table(summaries: &[PercentileSummary]) -> String {
 fn config_key_for_fn_core(metric_id: &str) -> Option<&'static str> {
     Some(match metric_id {
         "statements_per_function" => "statements_per_function",
-        "arguments_per_function" => "arguments_per_function",
         "positional_args" => "arguments_positional",
         "keyword_only_args" => "arguments_keyword_only",
         "max_indentation_depth" => "max_indentation_depth",

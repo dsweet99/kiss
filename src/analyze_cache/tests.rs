@@ -188,7 +188,7 @@ fn fingerprint_covers_all_config_fields() {
     // If a non-usize field is ever added, this will catch it as a count mismatch.
     let field_count = std::mem::size_of::<Config>() / std::mem::size_of::<usize>();
     assert_eq!(
-        field_count, 24,
+        field_count, 23,
         "Config field count changed; update mix_config_into_fingerprint and this test"
     );
     // Exhaustive destructure: adding a field to Config without listing it here
@@ -200,7 +200,6 @@ fn fingerprint_covers_all_config_fields() {
         statements_per_file: _,
         lines_per_file: _,
         functions_per_file: _,
-        arguments_per_function: _,
         arguments_positional: _,
         arguments_keyword_only: _,
         max_indentation_depth: _,

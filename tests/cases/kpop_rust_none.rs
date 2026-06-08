@@ -33,8 +33,8 @@ fn kpop_rust_none_statements_per_function() {
 }
 
 #[test]
-fn kpop_rust_none_arguments_per_function() {
-    // RULE: arguments_per_function
+fn kpop_rust_none_positional_args() {
+    // RULE: positional_args
     let (inputs, block, attr_count) =
         parse_first_fn("fn f(self_: i32, a:i32, b:bool){ let _=a+b; }");
     let m = compute_rust_function_metrics(&inputs, &block, attr_count);

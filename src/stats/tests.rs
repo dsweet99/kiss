@@ -93,7 +93,7 @@ fn test_push_py_fn_metrics() {
     };
     push_py_fn_metrics(&mut stats, &m);
     assert_eq!(stats.statements_per_function, vec![3]);
-    assert_eq!(stats.arguments_per_function, vec![2]);
+    assert_eq!(stats.arguments_positional, vec![0]);
 }
 
 #[test]
@@ -225,14 +225,14 @@ fn test_generate_config_toml_includes_boolean_parameters() {
 fn test_metric_values() {
     let mut stats = MetricStats::default();
     stats.statements_per_function.push(10);
-    stats.arguments_per_function.push(3);
+    stats.arguments_positional.push(3);
     stats.fan_in.push(2);
     assert_eq!(
         metric_values(&stats, "statements_per_function"),
         Some(&[10][..])
     );
     assert_eq!(
-        metric_values(&stats, "arguments_per_function"),
+        metric_values(&stats, "positional_args"),
         Some(&[3][..])
     );
     assert_eq!(metric_values(&stats, "fan_in"), Some(&[2][..]));

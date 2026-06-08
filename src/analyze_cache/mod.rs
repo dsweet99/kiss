@@ -42,7 +42,6 @@ fn mix_config_into_fingerprint(mut h: u64, cfg: &Config) -> u64 {
         cfg.statements_per_file,
         cfg.lines_per_file,
         cfg.functions_per_file,
-        cfg.arguments_per_function,
         cfg.arguments_positional,
         cfg.arguments_keyword_only,
         cfg.max_indentation_depth,

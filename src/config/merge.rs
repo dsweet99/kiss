@@ -21,7 +21,6 @@ pub(crate) fn apply_thresholds(config: &mut Config, table: &toml::Table) {
     apply_config!(config, table,
         "statements_per_function" => statements_per_function, "methods_per_class" => methods_per_class,
         "statements_per_file" => statements_per_file, "lines_per_file" => lines_per_file, "functions_per_file" => functions_per_file,
-        "arguments_per_function" => arguments_per_function,
         "arguments_positional" => arguments_positional, "arguments_keyword_only" => arguments_keyword_only,
         "max_indentation_depth" => max_indentation_depth,
         "interface_types_per_file" => interface_types_per_file,
@@ -90,7 +89,7 @@ pub(crate) fn apply_rust(config: &mut Config, table: &toml::Table) {
         return;
     }
     apply_config!(config, table,
-        "statements_per_function" => statements_per_function, "arguments" => arguments_per_function,
+        "statements_per_function" => statements_per_function, "arguments" => arguments_positional,
         "max_indentation" => max_indentation_depth, "branches_per_function" => branches_per_function,
         "local_variables" => local_variables_per_function, "methods_per_class" => methods_per_class,
         "statements_per_file" => statements_per_file,

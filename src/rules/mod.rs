@@ -140,7 +140,7 @@ fn print_rust_config(c: &Config) {
     println!("statements_per_function = {}", c.statements_per_function);
     println!("statements_per_file = {}", c.statements_per_file);
     println!("lines_per_file = {}", c.lines_per_file);
-    println!("arguments_per_function = {}", c.arguments_per_function);
+    println!("positional_args = {}", c.arguments_positional);
     println!("methods_per_class = {}", c.methods_per_class);
     println!("interface_types_per_file = {}", c.interface_types_per_file);
     println!("concrete_types_per_file = {}", c.concrete_types_per_file);

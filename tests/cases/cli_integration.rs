@@ -169,8 +169,8 @@ fn cli_stats_all_uses_metric_registry_display_names() {
     // (`src/stats/definitions.rs`); downstream tooling (mimic, .kissconfig,
     // summary tables) joins on those IDs.
     assert!(
-        stdout.contains("STAT:arguments_per_function:"),
-        "Expected STAT:arguments_per_function line in output. stdout:\n{stdout}"
+        stdout.contains("STAT:positional_args:"),
+        "Expected STAT:positional_args line in output. stdout:\n{stdout}"
     );
     assert!(
         stdout.contains("STAT:imported_names_per_file:"),

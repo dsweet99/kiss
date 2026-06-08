@@ -14,7 +14,7 @@ fn default_config_has_reasonable_values() {
     assert_eq!(rs_config.methods_per_class, 10);
     assert_eq!(rs_config.statements_per_file, 250);
     assert_eq!(rs_config.lines_per_file, 900);
-    assert_eq!(rs_config.arguments_per_function, 8);
+    assert_eq!(rs_config.arguments_positional, 8);
 }
 
 fn verify_gate_defaults(gate: &GateConfig) {
@@ -51,7 +51,7 @@ fn verify_python_defaults(c: &Config) {
 
 fn verify_rust_defaults(c: &Config) {
     assert_eq!(c.statements_per_function, 35);
-    assert_eq!(c.arguments_per_function, 8);
+    assert_eq!(c.arguments_positional, 8);
     assert_eq!(c.max_indentation_depth, 5);
     assert_eq!(c.nested_function_depth, 2);
     assert_eq!(c.returns_per_function, 5);

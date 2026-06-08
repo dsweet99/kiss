@@ -36,7 +36,7 @@ fn test_apply_language_sections() {
     let mut t2 = toml::Table::new();
     t2.insert("arguments".into(), toml::Value::Integer(5));
     apply_rust(&mut rs, &t2);
-    assert_eq!(rs.arguments_per_function, 5);
+    assert_eq!(rs.arguments_positional, 5);
 
     let mut c = Config::python_defaults();
     let mut t3 = toml::Table::new();

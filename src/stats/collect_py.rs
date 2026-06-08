@@ -16,7 +16,6 @@ impl StatsVisitor<'_> {
 
 pub(crate) fn push_py_fn_metrics(stats: &mut MetricStats, m: &crate::py_metrics::FunctionMetrics) {
     stats.statements_per_function.push(m.statements);
-    stats.arguments_per_function.push(m.arguments);
     stats.arguments_positional.push(m.arguments_positional);
     stats.arguments_keyword_only.push(m.arguments_keyword_only);
     stats.max_indentation.push(m.max_indentation);

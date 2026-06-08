@@ -4,7 +4,6 @@ pub const THRESHOLDS_KEYS: &[&str] = &[
     "statements_per_file",
     "lines_per_file",
     "functions_per_file",
-    "arguments_per_function",
     "arguments_positional",
     "arguments_keyword_only",
     "max_indentation_depth",

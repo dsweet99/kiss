@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct MetricStats {
     pub statements_per_function: Vec<usize>,
-    pub arguments_per_function: Vec<usize>,
     pub arguments_positional: Vec<usize>,
     pub arguments_keyword_only: Vec<usize>,
     pub max_indentation: Vec<usize>,
@@ -95,7 +94,6 @@ impl MetricStats {
         macro_rules! ext { ($($f:ident),*) => { $(self.$f.extend(o.$f);)* }; }
         ext!(
             statements_per_function,
-            arguments_per_function,
             arguments_positional,
             arguments_keyword_only,
             max_indentation,

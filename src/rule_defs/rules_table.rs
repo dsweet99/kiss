@@ -22,7 +22,7 @@ pub static RULES: &[Rule] = &[
     Rule {
         category: RuleCategory::Functions,
         template: "Limit arguments to ≤ {}",
-        get_threshold: |c, _| c.arguments_per_function,
+        get_threshold: |c, _| c.arguments_positional,
         applicability: Applicability::Rust,
     },
     Rule {

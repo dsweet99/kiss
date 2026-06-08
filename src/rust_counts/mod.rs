@@ -318,8 +318,8 @@ impl<'a> RustAnalyzer<'a> {
         );
         chk!(
             arguments,
-            arguments_per_function,
-            "arguments_per_function",
+            arguments_positional,
+            "positional_args",
             "arguments",
             "Group related arguments into a struct."
         );

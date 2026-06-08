@@ -54,7 +54,7 @@ pub fn python_config_key(metric_id: &str) -> Option<&'static str> {
 
 pub fn rust_config_key(metric_id: &str) -> Option<&'static str> {
     match metric_id {
-        "arguments_per_function" => Some("arguments"),
+        "positional_args" => Some("arguments"),
         "boolean_parameters" => Some("boolean_parameters"),
         "annotations_per_function" => Some("attributes_per_function"),
         _ => common_config_key(metric_id),

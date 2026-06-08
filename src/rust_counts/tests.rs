@@ -168,14 +168,14 @@ fn analyze_rust_file_triggers_function_metric_violations() {
     writeln!(tmp, "{src}").unwrap();
     let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
     let cfg = Config {
-        arguments_per_function: 2,
+        arguments_positional: 2,
         returns_per_function: 2,
         branches_per_function: 2,
         ..Default::default()
     };
     let viols = analyze_rust_file(&parsed, &cfg);
     assert!(
-        viols.iter().any(|v| v.metric == "arguments_per_function"),
+        viols.iter().any(|v| v.metric == "positional_args"),
         "expected argument violation: {viols:?}"
     );
     assert!(

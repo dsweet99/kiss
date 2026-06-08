@@ -19,10 +19,6 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::Function,
     },
     MetricDef {
-        metric_id: "arguments_per_function",
-        scope: MetricScope::Function,
-    },
-    MetricDef {
         metric_id: "positional_args",
         scope: MetricScope::Function,
     },
