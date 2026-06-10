@@ -367,6 +367,7 @@ fn test_collect_all_test_file_data_imports_calls_decorators() {
     let mut usage_refs = std::collections::HashSet::new();
     let mut call_refs = std::collections::HashSet::new();
     let mut import_bindings = std::collections::HashMap::new();
+    let mut alias_bindings = std::collections::HashMap::new();
     super::collect::collect_all_test_file_data(
         tree.root_node(),
         src,
@@ -374,6 +375,7 @@ fn test_collect_all_test_file_data_imports_calls_decorators() {
         &mut usage_refs,
         &mut call_refs,
         &mut import_bindings,
+        &mut alias_bindings,
     );
     assert!(
         test_refs.contains("helper"),

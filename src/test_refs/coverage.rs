@@ -3,6 +3,16 @@ use super::{CodeDefinition, CoveringTest};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+pub(crate) struct CoverageContext<'a> {
+    pub name_files: &'a HashMap<String, HashSet<PathBuf>>,
+    pub disambiguation: &'a HashMap<String, PathBuf>,
+    pub import_bindings: &'a HashMap<String, HashSet<String>>,
+    pub module_suffixes: &'a HashMap<PathBuf, String>,
+    pub usage_refs: &'a HashSet<String>,
+    pub call_refs: &'a HashSet<String>,
+    pub alias_bindings: &'a HashMap<String, String>,
+}
+
 pub(crate) fn is_method_covered_by_class_and_name(
     def: &CodeDefinition,
     usage_refs: &HashSet<String>,
@@ -12,30 +22,51 @@ pub(crate) fn is_method_covered_by_class_and_name(
     })
 }
 
-pub(crate) fn is_definition_covered(
-    def: &CodeDefinition,
-    name_files: &HashMap<String, HashSet<PathBuf>>,
-    disambiguation: &HashMap<String, PathBuf>,
-    import_bindings: &HashMap<String, HashSet<String>>,
-    module_suffixes: &HashMap<PathBuf, String>,
-    usage_refs: &HashSet<String>,
-) -> bool {
-    let _ = (import_bindings, module_suffixes);
-    if is_method_covered_by_class_and_name(def, usage_refs) {
+pub(crate) fn is_definition_covered(def: &CodeDefinition, ctx: &CoverageContext<'_>) -> bool {
+    if is_method_covered_by_class_and_name(def, ctx.usage_refs) {
         return true;
     }
-    if usage_refs.contains(&def.name) {
-        let unique = name_files.get(&def.name).is_none_or(|f| f.len() <= 1);
+    if ctx.usage_refs.contains(&def.name) {
+        let unique = ctx.name_files.get(&def.name).is_none_or(|f| f.len() <= 1);
         if unique {
             return true;
         }
-        if let Some(winner) = disambiguation.get(&def.name)
+        if let Some(winner) = ctx.disambiguation.get(&def.name)
             && *winner == def.file
         {
             return true;
         }
     }
-    false
+    is_import_called(
+        def,
+        ctx.import_bindings,
+        ctx.module_suffixes,
+        ctx.call_refs,
+        ctx.alias_bindings,
+    )
+}
+
+fn is_import_called(
+    def: &CodeDefinition,
+    import_bindings: &HashMap<String, HashSet<String>>,
+    module_suffixes: &HashMap<PathBuf, String>,
+    call_refs: &HashSet<String>,
+    alias_bindings: &HashMap<String, String>,
+) -> bool {
+    let Some(def_suffix) = module_suffixes.get(&def.file) else {
+        return false;
+    };
+    import_bindings.iter().any(|(import_module, names)| {
+        if !names.contains(&def.name) || !module_suffix_matches(def_suffix, import_module) {
+            return false;
+        }
+        if call_refs.contains(&def.name) {
+            return true;
+        }
+        alias_bindings.iter().any(|(alias, original)| {
+            original == &def.name && call_refs.contains(alias)
+        })
+    })
 }
 
 pub(crate) fn build_ref_to_covered_def_indices(
@@ -74,6 +105,7 @@ pub(crate) fn build_py_coverage_map(
     disambiguation: &HashMap<String, PathBuf>,
     import_bindings: &HashMap<String, HashSet<String>>,
     module_suffixes: &HashMap<PathBuf, String>,
+    alias_bindings: &HashMap<String, String>,
 ) -> HashMap<(PathBuf, String), Vec<CoveringTest>> {
     let ref_to_defs = build_ref_to_covered_def_indices(
         definitions,
@@ -94,7 +126,10 @@ pub(crate) fn build_py_coverage_map(
             test_idx += 1;
             let mut seen = HashSet::new();
             for ref_name in call_refs {
-                let Some(def_indices) = ref_to_defs.get(ref_name) else {
+                let resolved = alias_bindings
+                    .get(ref_name)
+                    .map_or(ref_name.as_str(), String::as_str);
+                let Some(def_indices) = ref_to_defs.get(resolved) else {
                     continue;
                 };
                 for &di in def_indices {
