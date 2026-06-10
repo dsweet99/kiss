@@ -9,7 +9,6 @@ pub mod python {
     pub const INTERFACE_TYPES_PER_FILE: usize = 1;
     pub const CONCRETE_TYPES_PER_FILE: usize = 1;
     pub const STATEMENTS_PER_FUNCTION: usize = 35;
-    pub const ARGUMENTS_PER_FUNCTION: usize = 7;
     pub const POSITIONAL_ARGS: usize = 3;
     pub const KEYWORD_ONLY_ARGS: usize = 3;
     pub const MAX_INDENTATION: usize = 4;

@@ -9,7 +9,7 @@ pub(crate) fn push_rust_fn_metrics(
     m: &crate::rust_counts::RustFunctionMetrics,
 ) {
     stats.statements_per_function.push(m.statements);
-    stats.arguments_per_function.push(m.arguments);
+    stats.arguments_positional.push(m.arguments);
     stats.max_indentation.push(m.max_indentation);
     stats.nested_function_depth.push(m.nested_function_depth);
     stats.returns_per_function.push(m.returns);
@@ -114,9 +114,9 @@ mod collect_rust_coverage {
             "collect_rust_impl should push stats for each method"
         );
         assert_eq!(
-            stats.arguments_per_function.len(),
+            stats.arguments_positional.len(),
             2,
-            "push_rust_fn_metrics should push arguments for each method"
+            "push_rust_fn_metrics should push positional args for each method"
         );
     }
 

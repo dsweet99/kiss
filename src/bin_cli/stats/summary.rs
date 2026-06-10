@@ -251,6 +251,7 @@ mod summary_tests {
             rs_duplicates: vec![],
             definitions: vec![],
             unreferenced: vec![],
+            file_content_digests: vec![],
         };
         print_cached_summary(&[".".into()], &cache);
     }

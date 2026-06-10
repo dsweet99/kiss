@@ -250,7 +250,6 @@ pub(super) const AGGREGATE_ONLY_METRICS: &[&str] = &[];
 fn extractor_for_fn_core(metric_id: &str) -> Option<UnitMetricExtractor> {
     match metric_id {
         "statements_per_function" => Some(|u| u.statements),
-        "arguments_per_function" => Some(|u| u.arguments),
         "positional_args" => Some(|u| u.args_positional),
         "keyword_only_args" => Some(|u| u.args_keyword_only),
         "max_indentation_depth" => Some(|u| u.indentation),

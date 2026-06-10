@@ -31,7 +31,6 @@ fn write_corpus(dir: &std::path::Path) {
          statements_per_file = 1000\n\
          functions_per_file = 100\n\
          imported_names_per_file = 100\n\
-         arguments_per_function = 100\n\
          arguments_positional = 100\n\
          arguments_keyword_only = 100\n\
          max_indentation_depth = 100\n\

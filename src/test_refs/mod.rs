@@ -17,6 +17,8 @@ use std::path::PathBuf;
 pub use collect_parallel::test_functions_in;
 pub(crate) use collect_parallel::collect_refs_parallel;
 pub(crate) use coverage::{build_py_coverage_map, is_definition_covered};
+#[cfg(test)]
+pub(crate) use coverage::CoverageContext;
 pub use coverage_weighted::compute_py_weighted_file_pcts;
 pub use coverage_weighted::py_init_marker_pct;
 pub use detection::{has_test_framework_import, is_in_test_directory, is_test_file};
@@ -75,8 +77,15 @@ fn analyze_test_refs_inner(
     graph: Option<&DependencyGraph>,
     need_coverage_map: bool,
 ) -> TestRefAnalysis {
-    let (definitions, test_references, usage_references, call_references, import_bindings, per_test_usage) =
-        collect_refs_parallel(parsed_files, need_coverage_map);
+    let (
+        definitions,
+        test_references,
+        usage_references,
+        call_references,
+        import_bindings,
+        alias_bindings,
+        per_test_usage,
+    ) = collect_refs_parallel(parsed_files, need_coverage_map);
 
     let name_files = build_name_file_map(
         definitions
@@ -93,14 +102,16 @@ fn analyze_test_refs_inner(
     let unreferenced: Vec<CodeDefinition> = definitions
         .iter()
         .filter(|def| {
-            !is_definition_covered(
-                def,
-                &name_files,
-                &disambiguation,
-                &import_bindings,
-                &module_suffixes,
-                &usage_references,
-            )
+            let ctx = coverage::CoverageContext {
+                name_files: &name_files,
+                disambiguation: &disambiguation,
+                import_bindings: &import_bindings,
+                module_suffixes: &module_suffixes,
+                usage_refs: &usage_references,
+                call_refs: &call_references,
+                alias_bindings: &alias_bindings,
+            };
+            !is_definition_covered(def, &ctx)
         })
         .cloned()
         .collect();
@@ -113,6 +124,7 @@ fn analyze_test_refs_inner(
             &disambiguation,
             &import_bindings,
             &module_suffixes,
+            &alias_bindings,
         )
     } else {
         HashMap::new()

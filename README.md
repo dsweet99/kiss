@@ -137,7 +137,7 @@ RULE: [Python] [dependency_depth < 3] dependency_depth is the maximum length of 
 RULE: [Python] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).
 RULE: [Python] [min_similarity >= 0.90] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 RULE: [Rust] [statements_per_function < 35] statements_per_function is the maximum number of statements in a Rust function/method body.
-RULE: [Rust] [arguments_per_function < 8] arguments_per_function is the maximum number of non-self parameters in a Rust function/method signature.
+RULE: [Rust] [positional_args < 8] positional_args is the maximum number of non-self parameters in a Rust function/method signature.
 RULE: [Rust] [max_indentation_depth < 5] max_indentation_depth is the maximum indentation depth within a Rust function/method body.
 RULE: [Rust] [branches_per_function < 9] branches_per_function is the number of `if` expressions in a Rust function.
 RULE: [Rust] [local_variables_per_function < 20] local_variables_per_function is the maximum number of local bindings introduced in a Rust function.

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::analyze::FocusFilter;
 use super::fingerprint_for_check;
+use super::load_verified_full_cache;
 use super::path_helpers::{load_full_cache, same_cached_paths};
 use super::{FullCacheInputs, store_full_cache_from_run};
 
@@ -71,7 +72,7 @@ fn load_top_only_cache(
     gate_config: &GateConfig,
 ) -> Option<FullCheckCache> {
     let fp = top_only_fingerprint(py_files, rs_files, py_config, rs_config, gate_config);
-    let cache = load_full_cache(&fp)?;
+    let cache = load_verified_full_cache(&fp, py_files, rs_files)?;
     let focus = FocusFilter::unrestricted();
     if !same_cached_paths(py_files, rs_files, &focus, &cache) {
         return None;
@@ -136,7 +137,7 @@ fn load_top_compatible_cache(
     gate_config: &GateConfig,
 ) -> Option<FullCheckCache> {
     let fp = fingerprint_for_check(py_files, rs_files, py_config, rs_config, gate_config);
-    let cache = load_full_cache(&fp)?;
+    let cache = load_verified_full_cache(&fp, py_files, rs_files)?;
     let focus = FocusFilter::unrestricted();
     if !same_cached_paths(py_files, rs_files, &focus, &cache) {
         return None;

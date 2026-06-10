@@ -192,6 +192,7 @@ fn collect_test_file_data_on_node(
     usage_refs: &mut HashSet<String>,
     call_refs: &mut HashSet<String>,
     import_bindings: &mut HashMap<String, HashSet<String>>,
+    alias_bindings: &mut HashMap<String, String>,
 ) {
     match node.kind() {
         "call" => {
@@ -203,7 +204,7 @@ fn collect_test_file_data_on_node(
         }
         "import_from_statement" => {
             collect_py_import_names_for_refs(node, source, test_refs);
-            extract_import_from_binding(node, source, import_bindings);
+            extract_import_from_binding(node, source, import_bindings, alias_bindings);
         }
         "import_statement" => {
             collect_py_import_names_for_refs(node, source, test_refs);
@@ -226,6 +227,7 @@ pub(crate) fn collect_all_test_file_data(
     usage_refs: &mut HashSet<String>,
     call_refs: &mut HashSet<String>,
     import_bindings: &mut HashMap<String, HashSet<String>>,
+    alias_bindings: &mut HashMap<String, String>,
 ) {
     collect_py_scope(node, source, &mut |n| {
         collect_test_file_data_on_node(
@@ -235,6 +237,7 @@ pub(crate) fn collect_all_test_file_data(
             usage_refs,
             call_refs,
             import_bindings,
+            alias_bindings,
         );
     });
 }
@@ -275,6 +278,7 @@ pub(crate) fn extract_import_from_binding(
     node: Node,
     source: &str,
     bindings: &mut HashMap<String, HashSet<String>>,
+    alias_bindings: &mut HashMap<String, String>,
 ) {
     let Some(module_node) = node.child_by_field_name("module_name") else {
         return;
@@ -297,7 +301,14 @@ pub(crate) fn extract_import_from_binding(
             }
             "aliased_import" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
-                    names.insert(source[name_node.start_byte()..name_node.end_byte()].to_string());
+                    let original =
+                        source[name_node.start_byte()..name_node.end_byte()].to_string();
+                    names.insert(original.clone());
+                    if let Some(alias_node) = child.child_by_field_name("alias") {
+                        let alias =
+                            source[alias_node.start_byte()..alias_node.end_byte()].to_string();
+                        alias_bindings.insert(alias, original);
+                    }
                 }
             }
             "dotted_name" => {

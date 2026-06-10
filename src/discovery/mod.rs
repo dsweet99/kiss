@@ -58,18 +58,22 @@ fn is_always_ignored(name: &str) -> bool {
 }
 
 fn should_ignore(path: &Path, ignore_prefixes: &[String]) -> bool {
-    // Only check directory components, not the filename itself.
     let components: Vec<_> = path.components().collect();
     let dir_components = if components.len() > 1 {
         &components[..components.len() - 1]
     } else {
-        return false;
+        &[]
     };
-    dir_components.iter().any(|c| {
+    if dir_components.iter().any(|c| {
         c.as_os_str()
             .to_str()
             .is_some_and(|s| has_ignored_prefix(s, ignore_prefixes) || is_always_ignored(s))
-    })
+    }) {
+        return true;
+    }
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|name| has_ignored_prefix(name, ignore_prefixes))
 }
 
 pub fn find_source_files(root: &Path) -> Vec<SourceFile> {

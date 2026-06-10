@@ -21,17 +21,21 @@ fn test_is_definition_covered_unique_name() {
     let disambiguation = HashMap::new();
     let import_bindings = HashMap::new();
     let module_suffixes = HashMap::new();
+    let call_refs = HashSet::new();
+    let alias_bindings = HashMap::new();
     let mut usage_refs = HashSet::new();
     usage_refs.insert("unique_func".to_string());
 
-    assert!(is_definition_covered(
-        &def,
-        &name_files,
-        &disambiguation,
-        &import_bindings,
-        &module_suffixes,
-        &usage_refs,
-    ));
+    let ctx = CoverageContext {
+        name_files: &name_files,
+        disambiguation: &disambiguation,
+        import_bindings: &import_bindings,
+        module_suffixes: &module_suffixes,
+        usage_refs: &usage_refs,
+        call_refs: &call_refs,
+        alias_bindings: &alias_bindings,
+    };
+    assert!(is_definition_covered(&def, &ctx));
 }
 
 #[test]
@@ -47,27 +51,33 @@ fn test_is_definition_covered_by_containing_class() {
     let disambiguation = HashMap::new();
     let import_bindings = HashMap::new();
     let module_suffixes = HashMap::new();
+    let call_refs = HashSet::new();
+    let alias_bindings = HashMap::new();
     let mut usage_refs = HashSet::new();
     usage_refs.insert("MyClass".to_string());
 
-    assert!(!is_definition_covered(
-        &def,
-        &name_files,
-        &disambiguation,
-        &import_bindings,
-        &module_suffixes,
-        &usage_refs,
-    ));
+    let ctx = CoverageContext {
+        name_files: &name_files,
+        disambiguation: &disambiguation,
+        import_bindings: &import_bindings,
+        module_suffixes: &module_suffixes,
+        usage_refs: &usage_refs,
+        call_refs: &call_refs,
+        alias_bindings: &alias_bindings,
+    };
+    assert!(!is_definition_covered(&def, &ctx));
 
     usage_refs.insert("process".to_string());
-    assert!(is_definition_covered(
-        &def,
-        &name_files,
-        &disambiguation,
-        &import_bindings,
-        &module_suffixes,
-        &usage_refs,
-    ));
+    let ctx = CoverageContext {
+        name_files: &name_files,
+        disambiguation: &disambiguation,
+        import_bindings: &import_bindings,
+        module_suffixes: &module_suffixes,
+        usage_refs: &usage_refs,
+        call_refs: &call_refs,
+        alias_bindings: &alias_bindings,
+    };
+    assert!(is_definition_covered(&def, &ctx));
 }
 
 #[test]
@@ -83,17 +93,21 @@ fn test_is_definition_covered_not_by_class_name_alone() {
     let disambiguation = HashMap::new();
     let import_bindings = HashMap::new();
     let module_suffixes = HashMap::new();
+    let call_refs = HashSet::new();
+    let alias_bindings = HashMap::new();
     let mut usage_refs = HashSet::new();
     usage_refs.insert("MyClass".to_string());
 
-    assert!(!is_definition_covered(
-        &def,
-        &name_files,
-        &disambiguation,
-        &import_bindings,
-        &module_suffixes,
-        &usage_refs,
-    ));
+    let ctx = CoverageContext {
+        name_files: &name_files,
+        disambiguation: &disambiguation,
+        import_bindings: &import_bindings,
+        module_suffixes: &module_suffixes,
+        usage_refs: &usage_refs,
+        call_refs: &call_refs,
+        alias_bindings: &alias_bindings,
+    };
+    assert!(!is_definition_covered(&def, &ctx));
 }
 
 #[test]
@@ -114,17 +128,21 @@ fn test_is_definition_covered_disambiguation_winner() {
     disambiguation.insert("dup".to_string(), PathBuf::from("alpha.py"));
     let import_bindings = HashMap::new();
     let module_suffixes = HashMap::new();
+    let call_refs = HashSet::new();
+    let alias_bindings = HashMap::new();
     let mut usage_refs = HashSet::new();
     usage_refs.insert("dup".to_string());
 
-    assert!(is_definition_covered(
-        &def,
-        &name_files,
-        &disambiguation,
-        &import_bindings,
-        &module_suffixes,
-        &usage_refs,
-    ));
+    let ctx = CoverageContext {
+        name_files: &name_files,
+        disambiguation: &disambiguation,
+        import_bindings: &import_bindings,
+        module_suffixes: &module_suffixes,
+        usage_refs: &usage_refs,
+        call_refs: &call_refs,
+        alias_bindings: &alias_bindings,
+    };
+    assert!(is_definition_covered(&def, &ctx));
 
     let def_beta = CodeDefinition {
         name: "dup".to_string(),
@@ -133,14 +151,7 @@ fn test_is_definition_covered_disambiguation_winner() {
         line: 1,
         containing_class: None,
     };
-    assert!(!is_definition_covered(
-        &def_beta,
-        &name_files,
-        &disambiguation,
-        &import_bindings,
-        &module_suffixes,
-        &usage_refs,
-    ));
+    assert!(!is_definition_covered(&def_beta, &ctx));
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +243,7 @@ fn test_build_py_coverage_map_per_test_tracking() {
         &disambiguation,
         &import_bindings,
         &module_suffixes,
+        &HashMap::new(),
     );
 
     let key = (PathBuf::from("engine.py"), "run".to_string());

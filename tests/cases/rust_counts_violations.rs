@@ -115,7 +115,7 @@ fn test_statements_per_function_violation() {
 }
 
 #[test]
-fn test_arguments_per_function_violation() {
+fn test_positional_args_violation() {
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(
         tmp,
@@ -124,16 +124,16 @@ fn test_arguments_per_function_violation() {
     .unwrap();
     let parsed = parse_rust_file(tmp.path()).unwrap();
     let config = Config {
-        arguments_per_function: 3,
+        arguments_positional: 3,
         ..Default::default()
     };
     let violations = analyze_rust_file(&parsed, &config);
     let has_violation = violations
         .iter()
-        .any(|v| v.metric == "arguments_per_function");
+        .any(|v| v.metric == "positional_args");
     assert!(
         has_violation,
-        "should trigger arguments_per_function violation"
+        "should trigger positional_args violation"
     );
 }
 

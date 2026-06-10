@@ -184,16 +184,18 @@ fn test_kissignore_file() {
 // === Bug-hunting tests ===
 
 #[test]
-fn test_should_ignore_does_not_match_filenames() {
-    // Ignore prefixes should match directory components, not filenames.
-    // A file named "test_utils.py" under "src/" should NOT be ignored
-    // just because its name starts with "test_".
+fn test_should_ignore_matches_filenames() {
+    // Per CLI help: --ignore=PREFIX ignores files/directories starting with PREFIX.
     assert!(
-        !should_ignore(
+        should_ignore(
             std::path::Path::new("src/test_utils.py"),
             &["test_".to_string()]
         ),
-        "should_ignore should not match filename prefixes, only directory components"
+        "should_ignore should match filename prefixes per documented --ignore behavior"
+    );
+    assert!(
+        should_ignore(std::path::Path::new("big.py"), &["big".to_string()]),
+        "root-level files should be ignored when filename starts with PREFIX"
     );
 }
 

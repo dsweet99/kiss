@@ -317,8 +317,8 @@ fn cli_config_shows_rust_specific_settings() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("arguments_per_function = 8"),
-        "Should show Rust arguments_per_function. stdout: {stdout}"
+        stdout.contains("positional_args = 8"),
+        "Should show Rust positional_args. stdout: {stdout}"
     );
     assert!(
         stdout.contains("interface_types_per_file"),

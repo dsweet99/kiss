@@ -8,10 +8,10 @@ pub(super) const RS_RULE_SPECS: &[RuleSpec] = &[
         description: "statements_per_function is the maximum number of statements in a Rust function/method body.",
     },
     RuleSpec {
-        metric: "arguments_per_function",
+        metric: "positional_args",
         op: "<",
-        threshold: ThresholdValue::Usize(|c, _| c.arguments_per_function),
-        description: "arguments_per_function is the maximum number of non-self parameters in a Rust function/method signature.",
+        threshold: ThresholdValue::Usize(|c, _| c.arguments_positional),
+        description: "positional_args is the maximum number of non-self parameters in a Rust function/method signature.",
     },
     RuleSpec {
         metric: "max_indentation_depth",

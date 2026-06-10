@@ -74,7 +74,8 @@ fn test_extract_import_from_binding_basic() {
     let import_node = root.child(0).unwrap();
     assert_eq!(import_node.kind(), "import_from_statement");
     let mut bindings = std::collections::HashMap::new();
-    super::collect::extract_import_from_binding(import_node, src, &mut bindings);
+    let mut alias_bindings = std::collections::HashMap::new();
+    super::collect::extract_import_from_binding(import_node, src, &mut bindings, &mut alias_bindings);
     let names = bindings.get("mymod").expect("mymod entry");
     assert!(names.contains("foo"));
     assert!(names.contains("bar"));
@@ -88,7 +89,8 @@ fn test_extract_import_from_binding_relative_skipped() {
     let tree = parser.parse(src, None).unwrap();
     let import_node = tree.root_node().child(0).unwrap();
     let mut bindings = std::collections::HashMap::new();
-    super::collect::extract_import_from_binding(import_node, src, &mut bindings);
+    let mut alias_bindings = std::collections::HashMap::new();
+    super::collect::extract_import_from_binding(import_node, src, &mut bindings, &mut alias_bindings);
     assert!(bindings.is_empty(), "relative imports are skipped");
 }
 
@@ -100,12 +102,14 @@ fn test_extract_import_from_binding_aliased() {
     let tree = parser.parse(src, None).unwrap();
     let import_node = tree.root_node().child(0).unwrap();
     let mut bindings = std::collections::HashMap::new();
-    super::collect::extract_import_from_binding(import_node, src, &mut bindings);
+    let mut alias_bindings = std::collections::HashMap::new();
+    super::collect::extract_import_from_binding(import_node, src, &mut bindings, &mut alias_bindings);
     let names = bindings.get("mymod").expect("mymod entry");
     assert!(
         names.contains("foo"),
         "aliased import captures original name"
     );
+    assert_eq!(alias_bindings.get("f"), Some(&"foo".to_string()));
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +160,7 @@ fn test_collect_refs_parallel_mixed_files() {
     };
 
     let parsed: Vec<&ParsedFile> = vec![&file_prod, &file_test];
-    let (defs, test_refs, usage_refs, call_refs, import_bindings, per_test_usage) =
+    let (defs, test_refs, usage_refs, call_refs, import_bindings, alias_bindings, per_test_usage) =
         collect_refs_parallel(&parsed, true);
 
     assert_eq!(defs.len(), 1);
@@ -165,6 +169,7 @@ fn test_collect_refs_parallel_mixed_files() {
     assert!(usage_refs.contains("compute"));
     assert!(call_refs.contains("compute"));
     assert!(import_bindings.get("compute").unwrap().contains("compute"));
+    assert!(alias_bindings.is_empty());
     assert_eq!(per_test_usage.len(), 1);
     let (path, funcs) = &per_test_usage[0];
     assert_eq!(path, &PathBuf::from("test_compute.py"));
@@ -172,6 +177,39 @@ fn test_collect_refs_parallel_mixed_files() {
     assert_eq!(funcs[0].0, "test_compute");
     assert!(funcs[0].1.contains("compute"));
     assert!(funcs[0].2.contains("compute"));
+}
+
+#[test]
+fn test_import_with_aliased_call_is_covered() {
+    use crate::parsing::{ParsedFile, create_parser};
+    let mut parser = create_parser().unwrap();
+
+    let src = "def some_func():\n    pass\n";
+    let tree = parser.parse(src, None).unwrap();
+    let file = ParsedFile {
+        path: PathBuf::from("mymod.py"),
+        source: src.to_string(),
+        tree,
+    };
+
+    let src_test = "from mymod import some_func as sf\ndef test_it():\n    sf()\n";
+    let tree_test = parser.parse(src_test, None).unwrap();
+    let file_test = ParsedFile {
+        path: PathBuf::from("test_mymod.py"),
+        source: src_test.to_string(),
+        tree: tree_test,
+    };
+
+    let analysis = analyze_test_refs(&[&file, &file_test], None);
+    assert!(
+        analysis.unreferenced.is_empty(),
+        "some_func should be covered when called via import alias: unreferenced={:?}",
+        analysis
+            .unreferenced
+            .iter()
+            .map(|d| &d.name)
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -195,7 +233,7 @@ fn test_collect_refs_parallel_no_coverage_map() {
         tree: tree_test,
     };
 
-    let (_, _, _, _, _, per_test_usage) = collect_refs_parallel(&[&file, &file_test], false);
+    let (_, _, _, _, _, _, per_test_usage) = collect_refs_parallel(&[&file, &file_test], false);
     assert!(
         per_test_usage.is_empty(),
         "per_test_usage empty when need_coverage_map=false"
