@@ -218,7 +218,7 @@ fn test_same_name_different_files_disambiguated_by_module() {
     std::fs::write(&beta_path, "pub fn helper() {}").unwrap();
 
     let test_path = tmp.path().join("test_alpha.rs");
-    std::fs::write(&test_path, "fn t() { alpha::helper(); }").unwrap();
+    std::fs::write(&test_path, "#[test]\nfn t() { alpha::helper(); }").unwrap();
 
     let parsed_alpha = parse_rust_file(&alpha_path).unwrap();
     let parsed_beta = parse_rust_file(&beta_path).unwrap();

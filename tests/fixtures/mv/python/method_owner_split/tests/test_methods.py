@@ -1,4 +1,5 @@
-from pkg.source import Reviewer, Worker
+from pkg.reviewer import Reviewer
+from pkg.source import Worker
 
 
 def test_methods_stay_distinct():

@@ -1,5 +1,5 @@
 use super::{has_cfg_test_attribute, has_test_attribute, is_covered_by_qualified_ref, RustCodeDefinition};
-use super::references::{QualifiedModuleRef, ReferenceVisitor};
+use super::references::{CallReferenceVisitor, QualifiedModuleRef, ReferenceVisitor};
 use crate::rust_parsing::ParsedRustFile;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -166,6 +166,102 @@ pub(super) fn propagate_transitive_production_refs(
             );
         }
         if test_references.len() + qualified_references.len() == before {
+            break;
+        }
+    }
+}
+
+fn propagate_call_refs_from_items(
+    file: &Path,
+    items: &[syn::Item],
+    definitions: &[RustCodeDefinition],
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    call_references: &mut HashSet<String>,
+    qualified_references: &mut HashSet<QualifiedModuleRef>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(f)
+                if !has_cfg_test_attribute(&f.attrs) && !has_test_attribute(&f.attrs) =>
+            {
+                let fn_name = f.sig.ident.to_string();
+                let Some(def) = definitions
+                    .iter()
+                    .find(|d| d.file == file && d.name == fn_name)
+                else {
+                    continue;
+                };
+                if is_covered_for_propagation(def, call_references, qualified_references, name_files)
+                {
+                    CallReferenceVisitor {
+                        refs: call_references,
+                        qualified: qualified_references,
+                    }
+                    .visit_item_fn(f);
+                }
+            }
+            syn::Item::Mod(m) if !has_cfg_test_attribute(&m.attrs) => {
+                if let Some((_, mod_items)) = &m.content {
+                    propagate_call_refs_from_items(
+                        file,
+                        mod_items,
+                        definitions,
+                        name_files,
+                        call_references,
+                        qualified_references,
+                    );
+                }
+            }
+            syn::Item::Impl(i) if !has_cfg_test_attribute(&i.attrs) => {
+                for impl_item in &i.items {
+                    if let syn::ImplItem::Fn(m) = impl_item {
+                        let fn_name = m.sig.ident.to_string();
+                        let Some(def) = definitions
+                            .iter()
+                            .find(|d| d.file == file && d.name == fn_name)
+                        else {
+                            continue;
+                        };
+                        if is_covered_for_propagation(
+                            def,
+                            call_references,
+                            qualified_references,
+                            name_files,
+                        ) {
+                            CallReferenceVisitor {
+                                refs: call_references,
+                                qualified: qualified_references,
+                            }
+                            .visit_impl_item_fn(m);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(super) fn propagate_transitive_production_call_refs(
+    production_files: &[&ParsedRustFile],
+    definitions: &[RustCodeDefinition],
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    call_references: &mut HashSet<String>,
+    qualified_references: &mut HashSet<QualifiedModuleRef>,
+) {
+    loop {
+        let before = call_references.len() + qualified_references.len();
+        for parsed in production_files {
+            propagate_call_refs_from_items(
+                &parsed.path,
+                &parsed.ast.items,
+                definitions,
+                name_files,
+                call_references,
+                qualified_references,
+            );
+        }
+        if call_references.len() + qualified_references.len() == before {
             break;
         }
     }

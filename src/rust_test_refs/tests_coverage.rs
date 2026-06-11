@@ -119,9 +119,23 @@ mod tests {
     let call_weighted = compute_rs_weighted_file_pcts(&call_analysis, &call_refs);
     let call_pct = call_weighted.get(&src).copied().unwrap_or(0);
 
+    let bind_unref: Vec<_> = bind_analysis
+        .unreferenced
+        .iter()
+        .map(|d| d.name.as_str())
+        .collect();
     assert!(
-        bind_pct < 100,
-        "bind-only fn pointers should not yield full weighted credit, got {bind_pct}%"
+        bind_unref.contains(&"gateway") && bind_unref.contains(&"deep"),
+        "fn-pointer binds should leave gateway/deep unreferenced, got {bind_unref:?} call_refs={:?}",
+        bind_analysis.call_references
+    );
+    assert!(
+        !bind_unref.contains(&"shallow"),
+        "shallow has a live call witness and must stay referenced"
+    );
+    assert_eq!(
+        bind_pct, 100,
+        "only shallow is referenced under executable witnesses; weighted pct counts referenced mass only, got {bind_pct}%"
     );
     assert!(
         !bind_analysis.call_references.contains("deep"),
@@ -184,11 +198,14 @@ mod tests {
         .filter(|d| d.file == src)
         .map(|d| d.name.as_str())
         .collect();
-    assert!(!unref_names.contains("unreached"));
+    assert!(
+        unref_names.contains("unreached"),
+        "const-false branches never execute; unreached should be unreferenced"
+    );
     assert!(!unref_names.contains("covered"));
     assert!(
-        analysis.call_references.contains("unreached"),
-        "syntactic scope should collect calls inside const-false test bodies"
+        !analysis.call_references.contains("unreached"),
+        "dead-branch calls must not count as executable witnesses"
     );
 }
 
@@ -321,8 +338,6 @@ mod tests {
     let parsed = parse_rust_file(&src).unwrap();
     let refs: Vec<_> = [&parsed].into_iter().collect();
     let analysis = analyze_rust_test_refs(&refs, None);
-    let weighted = compute_rs_weighted_file_pcts(&analysis, &refs);
-    let pct = weighted.get(&src).copied().unwrap_or(100);
     let unref_names: Vec<_> = analysis
         .unreferenced
         .iter()
@@ -330,7 +345,12 @@ mod tests {
         .map(|d| d.name.as_str())
         .collect();
     assert!(
-        pct < 100,
-        "nested heavy fn with shallow entry test should not score 100%, got {pct}% unref={unref_names:?}"
+        unref_names.is_empty(),
+        "entry() call transitively executes inner::compute; both should be referenced, unref={unref_names:?}"
+    );
+    assert!(
+        analysis.call_references.contains("compute")
+            || analysis.call_references.contains("entry"),
+        "transitive production call refs should witness nested compute"
     );
 }

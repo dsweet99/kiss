@@ -44,7 +44,7 @@ fn kpop_rust_none_test_coverage_threshold() {
     writeln!(src, "pub fn foo() {{}}").unwrap();
     writeln!(src, "pub fn bar() {{}}").unwrap();
     let mut tst = tempfile::NamedTempFile::with_suffix("_test.rs").unwrap();
-    writeln!(tst, "fn test_foo() {{ foo(); }}").unwrap();
+    writeln!(tst, "#[test]\nfn test_foo() {{ foo(); }}").unwrap();
 
     let parsed_src = parse_rust_file(src.path()).unwrap();
     let parsed_tst = parse_rust_file(tst.path()).unwrap();
