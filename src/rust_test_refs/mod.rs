@@ -7,6 +7,7 @@ use syn::Attribute;
 
 mod coverage;
 mod coverage_map;
+mod executable_calls;
 mod scope;
 mod definitions;
 mod propagation;
@@ -31,11 +32,13 @@ use definitions::{
     collect_inline_test_module_witnesses, collect_rust_definitions, collect_test_module_references,
 };
 use coverage_map::build_rust_coverage_map;
-use propagation::propagate_transitive_production_refs;
-use references::{
-    collect_per_test_usage, collect_rust_call_references, collect_rust_references,
-    QualifiedModuleRef,
+use propagation::{
+    propagate_transitive_production_call_refs, propagate_transitive_production_refs,
 };
+use executable_calls::{
+    collect_executable_call_references_from_test_fns, collect_per_test_call_usage,
+};
+use references::{collect_per_test_usage, collect_rust_references, QualifiedModuleRef};
 
 pub use references::rust_test_functions_in;
 
@@ -44,6 +47,7 @@ use crate::test_refs::file_to_module_suffix;
 use crate::test_refs::CoveringTest;
 
 type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
+type PerTestCallUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
 
 #[derive(Debug, Clone)]
 pub struct RustTestRefAnalysis {
@@ -68,9 +72,18 @@ fn has_test_naming_pattern(path: &Path) -> bool {
         })
 }
 
+fn is_fake_rust_fixture(path: &Path) -> bool {
+    path.to_string_lossy().contains("fake_rust")
+        || path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .is_some_and(|stem| stem.starts_with("fake_"))
+}
+
 #[must_use]
 pub fn is_rust_test_file(path: &Path) -> bool {
     is_rs_file(path)
+        && !is_fake_rust_fixture(path)
         && (has_test_naming_pattern(path) || crate::test_refs::is_in_test_directory(path))
 }
 
@@ -170,6 +183,7 @@ pub(super) fn is_covered_by_qualified_ref(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn is_covered_by_tests(
     def: &RustCodeDefinition,
     refs: &HashSet<String>,
@@ -180,6 +194,18 @@ pub(crate) fn is_covered_by_tests(
     is_directly_referenced(def, refs, name_files, disambiguation)
         || is_impl_method_covered_by_type_and_name(def, refs)
         || is_covered_by_qualified_ref(def, qualified_refs)
+}
+
+pub(crate) fn is_covered_by_executable_witnesses(
+    def: &RustCodeDefinition,
+    call_refs: &HashSet<String>,
+    qualified_call_refs: &HashSet<QualifiedModuleRef>,
+    name_files: &HashMap<String, HashSet<PathBuf>>,
+    disambiguation: &HashMap<String, PathBuf>,
+) -> bool {
+    is_directly_referenced(def, call_refs, name_files, disambiguation)
+        || is_impl_method_covered_by_type_and_name(def, call_refs)
+        || is_covered_by_qualified_ref(def, qualified_call_refs)
 }
 
 pub fn is_binary_entry_point(path: &Path) -> bool {
@@ -216,7 +242,7 @@ fn ingest_parsed_rust_file(
             test_direct_references,
             &mut HashSet::new(),
         );
-        collect_rust_call_references(
+        collect_executable_call_references_from_test_fns(
             &parsed.ast,
             call_references,
             &mut HashSet::new(),
@@ -306,6 +332,14 @@ pub fn analyze_rust_test_refs(
         &mut test_references,
         &mut qualified_references,
     );
+    let mut qualified_call_references = HashSet::new();
+    propagate_transitive_production_call_refs(
+        &production_files,
+        &definitions,
+        &name_files,
+        &mut call_references,
+        &mut qualified_call_references,
+    );
     let propagated_references: HashSet<String> = test_references
         .iter()
         .filter(|name| !test_direct_references.contains(*name))
@@ -316,22 +350,33 @@ pub fn analyze_rust_test_refs(
     let unreferenced = definitions
         .iter()
         .filter(|d| {
-            !is_covered_by_tests(
+            !is_covered_by_executable_witnesses(
                 d,
-                &test_references,
-                &qualified_references,
+                &call_references,
+                &qualified_call_references,
                 &name_files,
                 &disambiguation,
             )
         })
         .cloned()
         .collect();
+    let per_test_call_usage: PerTestCallUsage = parsed_files
+        .iter()
+        .filter_map(|parsed| {
+            let calls = collect_per_test_call_usage(&parsed.ast);
+            if calls.is_empty() {
+                None
+            } else {
+                Some((parsed.path.clone(), calls))
+            }
+        })
+        .collect();
     let coverage_map = build_rust_coverage_map(
         &definitions,
-        &per_test_usage,
+        &per_test_call_usage,
         &name_files,
         &disambiguation,
-        &qualified_references,
+        &qualified_call_references,
     );
     RustTestRefAnalysis {
         definitions,

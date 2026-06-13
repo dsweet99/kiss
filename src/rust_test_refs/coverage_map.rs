@@ -1,4 +1,4 @@
-use super::{is_covered_by_tests, RustCodeDefinition};
+use super::{is_covered_by_executable_witnesses, RustCodeDefinition};
 use super::references::QualifiedModuleRef;
 use crate::test_refs::CoveringTest;
 use std::collections::{HashMap, HashSet};
@@ -33,7 +33,7 @@ pub(super) fn build_rust_coverage_map(
                         continue;
                     }
                     let def = &definitions[idx];
-                    if !is_covered_by_tests(
+                    if !is_covered_by_executable_witnesses(
                         def,
                         usage_refs,
                         qualified_refs,

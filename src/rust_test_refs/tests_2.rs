@@ -20,7 +20,7 @@ fn test_impl_method_covered_when_type_and_method_referenced() {
     .unwrap();
 
     let test_path = tmp.path().join("test_alpha.rs");
-    std::fs::write(&test_path, "fn t() { let _f = Foo::new(); }").unwrap();
+    std::fs::write(&test_path, "#[test]\nfn t() { let _f = Foo::new(); }").unwrap();
 
     let parsed_alpha = parse_rust_file(&alpha_path).unwrap();
     let parsed_beta = parse_rust_file(&beta_path).unwrap();
@@ -291,18 +291,22 @@ fn test_qualified_production_refs_cover_dispatch_handlers() {
         .map(|d| (d.name.as_str(), d.file.file_name().unwrap().to_str().unwrap()))
         .collect();
     assert!(
-        !analysis
+        analysis
             .unreferenced
             .iter()
             .any(|d| d.name == "step0" && d.file == alpha),
-        "alpha::step0 should be covered via qualified production ref, unreferenced={uncovered:?}"
+        "fn-pointer table entries are not executable witnesses; alpha::step0 should be unreferenced, got {uncovered:?}"
     );
     assert!(
-        !analysis
+        analysis
             .unreferenced
             .iter()
             .any(|d| d.name == "step0" && d.file == beta),
-        "beta::step0 should be covered via qualified production ref, unreferenced={uncovered:?}"
+        "beta::step0 should be unreferenced without a direct call witness, got {uncovered:?}"
+    );
+    assert!(
+        !analysis.call_references.contains("step0"),
+        "register() call should not count fn-pointer binds as call witnesses"
     );
 }
 

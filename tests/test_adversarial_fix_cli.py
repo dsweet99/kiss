@@ -8,9 +8,8 @@ import pytest
 from click.testing import CliRunner
 
 import ops.adversarial_fix as fix_mod
-import python.adversarial as adv
-import python.adversarial_verify_batch as verify_batch
 from ops.adversarial_fix import fix
+from python.adversarial import ParsedMetrics
 
 
 def _stub_fix_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
@@ -22,15 +21,14 @@ def _stub_fix_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     repo.mkdir()
 
     monkeypatch.setattr(fix_mod, "repo_root", lambda: kiss)
-    monkeypatch.setattr(adv, "run_malvin_code", lambda *_: 0)
+    monkeypatch.setattr("python.adversarial.run_malvin_code", lambda *_: 0)
     return kiss, repo
 
 
 def test_fix_cli_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _kiss, repo = _stub_fix_env(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        verify_batch,
-        "verify_fix_repos",
+        "python.adversarial_verify_batch.verify_fix_repos",
         lambda *_: (True, [], "mean+std(c_f): 0.1000\n"),
     )
 
@@ -45,11 +43,10 @@ def test_fix_cli_failure_when_not_passed(
 ) -> None:
     _kiss, repo = _stub_fix_env(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        verify_batch,
-        "verify_fix_repos",
+        "python.adversarial_verify_batch.verify_fix_repos",
         lambda *_: (
             False,
-            [(repo, adv.ParsedMetrics(0.55, 0.3), "mean+std(c_f): 0.5500\n")],
+            [(repo, ParsedMetrics(0.55, 0.3), "mean+std(c_f): 0.5500\n")],
             "mean+std(c_f): 0.5500\n",
         ),
     )
@@ -63,10 +60,9 @@ def test_fix_cli_malvin_nonzero_still_verifies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _kiss, repo = _stub_fix_env(tmp_path, monkeypatch)
-    monkeypatch.setattr(adv, "run_malvin_code", lambda *_: 1)
+    monkeypatch.setattr("python.adversarial.run_malvin_code", lambda *_: 1)
     monkeypatch.setattr(
-        verify_batch,
-        "verify_fix_repos",
+        "python.adversarial_verify_batch.verify_fix_repos",
         lambda *_: (True, [], "mean+std(c_f): 0.1000\n"),
     )
 

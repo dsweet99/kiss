@@ -14,14 +14,6 @@ pub(super) fn collect_rust_references(
     ReferenceVisitor { refs, qualified }.visit_file(ast);
 }
 
-pub(super) fn collect_rust_call_references(
-    ast: &syn::File,
-    refs: &mut HashSet<String>,
-    qualified: &mut HashSet<QualifiedModuleRef>,
-) {
-    CallReferenceVisitor { refs, qualified }.visit_file(ast);
-}
-
 /// Collects references from a single function body. Returns the set of referenced names.
 pub(crate) fn collect_rust_references_for_fn(f: &syn::ItemFn) -> HashSet<String> {
     let mut refs = HashSet::new();
@@ -179,9 +171,9 @@ pub(super) struct ReferenceVisitor<'a> {
     pub(super) qualified: &'a mut HashSet<QualifiedModuleRef>,
 }
 
-struct CallReferenceVisitor<'a> {
-    refs: &'a mut HashSet<String>,
-    qualified: &'a mut HashSet<QualifiedModuleRef>,
+pub(super) struct CallReferenceVisitor<'a> {
+    pub(super) refs: &'a mut HashSet<String>,
+    pub(super) qualified: &'a mut HashSet<QualifiedModuleRef>,
 }
 
 fn visit_item_skip_use<'a, V: Visit<'a>>(visitor: &mut V, item: &'a syn::Item) {

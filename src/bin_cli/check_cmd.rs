@@ -4,6 +4,12 @@ use crate::bin_cli::util::validate_paths;
 use kiss::normalize_ignore_prefixes;
 use kiss::Language;
 
+/// Directory or filename prefixes excluded from `kiss check` by default.
+/// Intentionally-violating fixtures live under `tests/fake_python/` and
+/// `tests/fake_rust/`; they are analyzed directly in integration tests but
+/// must not fail the repo's own quality gate.
+const DEFAULT_CHECK_IGNORE_PREFIXES: &[&str] = &["fake_"];
+
 pub struct CheckCommandArgs<'a> {
     pub paths: &'a [String],
     pub lang_filter: Option<Language>,
@@ -16,7 +22,12 @@ pub struct CheckCommandArgs<'a> {
 }
 
 pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
-    let ignore = normalize_ignore_prefixes(args.ignore);
+    let mut ignore: Vec<String> = DEFAULT_CHECK_IGNORE_PREFIXES
+        .iter()
+        .map(|prefix| (*prefix).to_string())
+        .collect();
+    ignore.extend(args.ignore.iter().cloned());
+    let ignore = normalize_ignore_prefixes(&ignore);
     validate_paths(args.paths);
     let universe = &args.paths[0];
     let focus = if args.paths.len() > 1 {

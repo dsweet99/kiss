@@ -85,3 +85,72 @@ pub fn root(n: i32) -> i32 { mid(n) + 1 }
         "deeper call witnesses should not decrease weighted pct, shallow={shallow_pct}% deep={deep_pct}%"
     );
 }
+
+fn bypass_witness_status(src: &str) -> (bool, bool, bool) {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("lib.rs");
+    std::fs::write(&path, src).unwrap();
+    let parsed = parse_rust_file(&path).unwrap();
+    let refs: Vec<_> = [&parsed].into_iter().collect();
+    let analysis = analyze_rust_test_refs(&refs, None);
+    let covered = !analysis
+        .unreferenced
+        .iter()
+        .any(|d| d.name == "never_called");
+    (
+        covered,
+        analysis.test_references.contains("never_called"),
+        analysis.call_references.contains("never_called"),
+    )
+}
+
+#[test]
+fn exec_witness_bypass_families_without_runtime() {
+    let prod = "pub fn never_called() -> i32 { 42 }\n";
+    let cases: &[(&str, &str, bool, bool, bool)] = &[
+        (
+            "fn_value_ref",
+            "#[cfg(test)]\nmod tests {\n    use super::never_called;\n    #[test]\n    fn witness() { let _ = never_called; }\n}\n",
+            true,
+            false,
+            false,
+        ),
+        (
+            "custom_macro_wrap",
+            "macro_rules! cheat { ($t:tt) => { stringify!($t) } }\n#[cfg(test)]\nmod tests {\n    cheat!(never_called);\n    #[test]\n    fn smoke() { assert!(true); }\n}\n",
+            true,
+            false,
+            false,
+        ),
+        (
+            "uninvoked_closure",
+            "#[cfg(test)]\nmod tests {\n    use super::never_called;\n    #[test]\n    fn witness() { let _ = || { never_called(); }; }\n}\n",
+            true,
+            false,
+            false,
+        ),
+        (
+            "async_unawaited",
+            "#[cfg(test)]\nmod tests {\n    use super::never_called;\n    #[test]\n    fn witness() { let _ = async { never_called(); }; }\n}\n",
+            true,
+            false,
+            false,
+        ),
+        (
+            "uncalled_helper",
+            "#[cfg(test)]\nmod tests {\n    use super::never_called;\n    fn witness_farm() { if false { never_called(); } }\n    #[test]\n    fn smoke() { assert!(true); }\n}\n",
+            true,
+            false,
+            false,
+        ),
+    ];
+    for (label, tests, expect_test_refs, expect_call_refs, expect_covered) in cases {
+        let (covered, test_refs, call_refs) = bypass_witness_status(&format!("{prod}{tests}"));
+        assert_eq!(
+            covered, *expect_covered,
+            "{label}: executable-witness coverage mismatch"
+        );
+        assert_eq!(test_refs, *expect_test_refs, "{label}: test_refs mismatch");
+        assert_eq!(call_refs, *expect_call_refs, "{label}: call_refs mismatch");
+    }
+}

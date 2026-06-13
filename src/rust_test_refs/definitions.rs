@@ -5,7 +5,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use syn::{ImplItem, Item};
 
-use super::references::{collect_rust_call_references, collect_rust_references};
+use super::executable_calls::collect_executable_call_references_from_test_fns;
+use super::references::collect_rust_references;
 
 /// Returns true if the file path is a Rust binary entry point.
 ///
@@ -217,7 +218,7 @@ pub(super) fn collect_inline_test_module_witnesses(
         items,
     };
     collect_rust_references(&file, direct_refs, &mut HashSet::new());
-    collect_rust_call_references(&file, call_refs, &mut HashSet::new());
+    collect_executable_call_references_from_test_fns(&file, call_refs, &mut HashSet::new());
 }
 
 #[cfg(test)]

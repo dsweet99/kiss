@@ -54,6 +54,8 @@ mod kpop_include_rollup_regressions;
 mod kpop_rust_none;
 #[path = "cases/kpop_rust_none_graph_and_gates.rs"]
 mod kpop_rust_none_graph_and_gates;
+#[path = "cases/kpop_rust_syntactic_witness_coverage.rs"]
+mod kpop_rust_syntactic_witness_coverage;
 #[path = "cases/cli_kiss_test_smoke.rs"]
 mod cli_kiss_test_smoke;
 #[path = "cases/lib_integration.rs"]
