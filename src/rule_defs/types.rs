@@ -69,3 +69,54 @@ impl Rule {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn threshold(_: &Config, _: &GateConfig) -> usize {
+        42
+    }
+
+    #[test]
+    fn rule_format_substitutes_threshold() {
+        let rule = Rule {
+            category: RuleCategory::Functions,
+            template: "Keep functions below {} lines",
+            get_threshold: threshold,
+            applicability: Applicability::Both,
+        };
+        assert_eq!(
+            rule.format(&Config::default(), &GateConfig::default()),
+            "Keep functions below 42 lines"
+        );
+    }
+
+    #[test]
+    fn rule_category_headings_reflect_language() {
+        assert_eq!(RuleCategory::Classes.python_heading(), "Classes");
+        assert_eq!(RuleCategory::Classes.rust_heading(), "Types");
+        assert_eq!(RuleCategory::Dependencies.python_heading(), "Dependencies");
+        assert_eq!(RuleCategory::Testing.rust_heading(), "Testing");
+    }
+
+    #[test]
+    fn applicability_matches_language() {
+        let py = Rule {
+            category: RuleCategory::Testing,
+            template: "{}",
+            get_threshold: threshold,
+            applicability: Applicability::Python,
+        };
+        let rust = Rule {
+            category: RuleCategory::Testing,
+            template: "{}",
+            get_threshold: threshold,
+            applicability: Applicability::Rust,
+        };
+        assert!(py.applies_to_python());
+        assert!(!py.applies_to_rust());
+        assert!(!rust.applies_to_python());
+        assert!(rust.applies_to_rust());
+    }
+}

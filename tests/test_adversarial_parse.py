@@ -6,9 +6,7 @@ import random
 from pathlib import Path
 
 import pytest
-
 import python.adversarial as adv
-import python.adversarial_loop as adv_loop
 
 
 def test_parse_coverage_metrics_output_from_fixture() -> None:
@@ -21,6 +19,14 @@ def test_parse_coverage_metrics_output_from_fixture() -> None:
     parsed = adv.parse_coverage_metrics_output(text)
     assert parsed.mean_plus_std == pytest.approx(0.1207)
     assert parsed.spearman == pytest.approx(0.8500)
+
+
+def test_parse_coverage_metrics_output_handles_nan_and_missing() -> None:
+    parsed = adv.parse_coverage_metrics_output(
+        "mean+std(c_f): nan\nspearman(coverage_true, coverage_kiss): nan\n"
+    )
+    assert parsed == adv.ParsedMetrics(None, None)
+    assert adv.metrics_pass(parsed) is False
 
 
 def test_foil_violated_mean_std() -> None:
@@ -61,23 +67,39 @@ def test_build_foil_prompt_contains_paths_and_thresholds(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize(
-    ("text", "expected"),
+    ("lang", "expected"),
     [
-        ("no success line\n", None),
-        (
-            "foil repo: /tmp/kiss_foil_abc\nfoil success: /tmp/kiss_foil_abc\n",
-            Path("/tmp/kiss_foil_abc"),
-        ),
-        (
-            "foil success: /tmp/first\nnoise\nfoil success: /tmp/second\n",
-            Path("/tmp/second"),
-        ),
-        (
-            "echo foil success: /fake\nfoil success: /tmp/real\n",
-            Path("/tmp/real"),
-        ),
-        ("foil success: /tmp/path with spaces\n", Path("/tmp/path with spaces")),
+        ("rust", "Rust only"),
+        ("python", "Python only"),
+        ("both", "Both Rust and Python"),
     ],
 )
-def test_parse_foil_success_path(text: str, expected: Path | None) -> None:
-    assert adv_loop.parse_foil_success_path(text) == expected
+def test_build_foil_prompt_language_variants(
+    tmp_path: Path, lang: str, expected: str
+) -> None:
+    kiss = tmp_path / "kiss"
+    repo = tmp_path / "repo"
+    kiss.mkdir()
+    repo.mkdir()
+
+    text = adv.build_foil_prompt(kiss, repo, lang)
+
+    assert expected in text
+    assert "coverage_metrics.py" in text
+
+
+def test_build_fix_prompt_formats_single_and_multiple_repos(tmp_path: Path) -> None:
+    kiss = tmp_path / "kiss"
+    repo_a = tmp_path / "repo_a"
+    repo_b = tmp_path / "repo_b"
+    for path in [kiss / "ops", repo_a, repo_b]:
+        path.mkdir(parents=True)
+
+    single = adv.build_fix_prompt(kiss, [repo_a])
+    multi = adv.build_fix_prompt(kiss, [repo_a, repo_b])
+
+    assert "counterexample repository" in single
+    assert "that repo" in single
+    assert "counterexample repositories" in multi
+    assert "those repos" in multi
+    assert str(repo_b.resolve()) in multi

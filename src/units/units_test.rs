@@ -144,7 +144,23 @@ fn test_code_unit_kind_as_str() {
     assert_eq!(CodeUnitKind::Function.as_str(), "function");
     assert_eq!(CodeUnitKind::Class.as_str(), "class");
     assert_eq!(CodeUnitKind::Method.as_str(), "method");
+    assert_eq!(CodeUnitKind::Module.as_str(), "module");
     assert_eq!(CodeUnitKind::Struct.as_str(), "struct");
     assert_eq!(CodeUnitKind::Enum.as_str(), "enum");
     assert_eq!(CodeUnitKind::TraitImplMethod.as_str(), "trait_impl_method");
+}
+
+#[test]
+fn test_code_unit_kind_display_uses_as_str() {
+    for kind in [
+        CodeUnitKind::Function,
+        CodeUnitKind::Method,
+        CodeUnitKind::Class,
+        CodeUnitKind::Module,
+        CodeUnitKind::Struct,
+        CodeUnitKind::Enum,
+        CodeUnitKind::TraitImplMethod,
+    ] {
+        assert_eq!(kind.to_string(), kind.as_str());
+    }
 }

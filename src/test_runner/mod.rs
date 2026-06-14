@@ -66,7 +66,8 @@ pub(crate) fn plan_selectors(
 ) -> Result<PlannedSelectors, String> {
     let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
-    crate::test_git::assert_git_repo(&cwd).map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
+    crate::test_git::assert_git_repo(&cwd)
+        .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
     let repo_root = crate::test_git::git_repo_root(&cwd)?;
     let diff_target = crate::test_git::resolve_diff_target(
         &repo_root,
@@ -94,8 +95,13 @@ pub(crate) fn plan_selectors(
         }),
     );
     let (source_changed, test_changed) = runners::partition_changed_paths(&abs_paths);
-    let (py_sel, rs_sel) =
-        runners::combined_selectors(&repo_root, &source_changed, &test_changed, lang_filter, &ignore_norm)?;
+    let (py_sel, rs_sel) = runners::combined_selectors(
+        &repo_root,
+        &source_changed,
+        &test_changed,
+        lang_filter,
+        &ignore_norm,
+    )?;
     Ok(PlannedSelectors {
         repo_root,
         py_sel,
@@ -125,10 +131,16 @@ pub(crate) fn run_selectors(
     }
     let mut code = 0i32;
     if !planned.py_sel.is_empty() {
-        code = runners::merge_exit_codes(code, runners::run_command_inherit(&py_argv, &planned.repo_root)?);
+        code = runners::merge_exit_codes(
+            code,
+            runners::run_command_inherit(&py_argv, &planned.repo_root)?,
+        );
     }
     if !planned.rs_sel.is_empty() {
-        code = runners::merge_exit_codes(code, runners::run_command_inherit(&rs_argv, &planned.repo_root)?);
+        code = runners::merge_exit_codes(
+            code,
+            runners::run_command_inherit(&rs_argv, &planned.repo_root)?,
+        );
     }
     Ok(code)
 }
@@ -152,11 +164,7 @@ mod plan_tests {
     }
 
     fn init(tmp: &TempDir) {
-        assert!(git_in(tmp.path())
-            .arg("init")
-            .status()
-            .unwrap()
-            .success());
+        assert!(git_in(tmp.path()).arg("init").status().unwrap().success());
         git_in(tmp.path())
             .args(["config", "user.email", "t@t.t"])
             .status()
@@ -173,10 +181,7 @@ mod plan_tests {
         let tmp = TempDir::new().unwrap();
         init(&tmp);
         std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-        git_in(tmp.path())
-            .args(["add", "."])
-            .status()
-            .unwrap();
+        git_in(tmp.path()).args(["add", "."]).status().unwrap();
         git_in(tmp.path())
             .args(["commit", "-m", "m"])
             .status()
@@ -184,21 +189,34 @@ mod plan_tests {
         std::fs::write(tmp.path().join("b.py"), "y=1\n").unwrap();
         let orig = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let planned: PlannedSelectors = plan_selectors(
-            TestChangeMode::Commit,
-            None,
-            None,
-            &[],
-            None,
-            None,
-        )
-        .unwrap();
+        let planned: PlannedSelectors =
+            plan_selectors(TestChangeMode::Commit, None, None, &[], None, None).unwrap();
         std::env::set_current_dir(orig).unwrap();
         assert_eq!(planned.repo_root, tmp.path().canonicalize().unwrap());
         assert!(planned.py_sel.is_empty());
         assert!(planned.rs_sel.is_empty());
         let code = run_selectors(&planned, true, &[]).unwrap();
         assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn run_test_returns_error_outside_git_repo() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = TempDir::new().unwrap();
+        let orig = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let code = run_test(RunTestCmdArgs {
+            mode: TestChangeMode::Commit,
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run: true,
+            extra: &[],
+            ignore: &[],
+            lang_filter: None,
+            config_main_branch: None,
+        });
+        std::env::set_current_dir(orig).unwrap();
+        assert_eq!(code, 1);
     }
 }
 

@@ -86,6 +86,51 @@ pub fn root(n: i32) -> i32 { mid(n) + 1 }
     );
 }
 
+#[test]
+fn weighted_pct_credits_transitive_executable_calls() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("chain.rs");
+    std::fs::write(
+        &src,
+        r#"pub fn leaf(n: i32) -> i32 { n + 1 }
+pub fn mid(n: i32) -> i32 { leaf(n) + 1 }
+pub fn root(n: i32) -> i32 { mid(n) + 1 }
+
+#[cfg(test)]
+mod tests {
+    use super::root;
+
+    #[test]
+    fn calls_root() {
+        assert_eq!(root(1), 4);
+    }
+}
+"#,
+    )
+    .unwrap();
+    let parsed = parse_rust_file(&src).unwrap();
+    let refs: Vec<_> = [&parsed].into_iter().collect();
+    let analysis = analyze_rust_test_refs(&refs, None);
+
+    assert!(analysis.call_references.contains("root"));
+    assert!(analysis.call_references.contains("mid"));
+    assert!(analysis.call_references.contains("leaf"));
+    assert!(
+        analysis
+            .unreferenced
+            .iter()
+            .all(|def| !["root", "mid", "leaf"].contains(&def.name.as_str())),
+        "transitively executed functions should not be unreferenced: {:?}",
+        analysis.unreferenced
+    );
+    let weighted = compute_rs_weighted_file_pcts(&analysis, &refs);
+    let pct = weighted.get(&src).copied().unwrap_or(0);
+    assert_eq!(
+        pct, 100,
+        "branchless transitive call chain should be fully credited, got {pct}%"
+    );
+}
+
 fn bypass_witness_status(src: &str) -> (bool, bool, bool) {
     let tmp = tempfile::TempDir::new().unwrap();
     let path = tmp.path().join("lib.rs");

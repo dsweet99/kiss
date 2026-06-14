@@ -100,6 +100,16 @@ pub(crate) fn resolve_ambiguous_name(
     name_to_test_files: &HashMap<&str, Vec<PathBuf>>,
     graph: Option<&DependencyGraph>,
 ) -> Option<PathBuf> {
+    if let Some(test_files) = name_to_test_files.get(name) {
+        let same_file_hits: Vec<_> = files
+            .iter()
+            .filter(|file| test_files.iter().any(|test_file| test_file == *file))
+            .cloned()
+            .collect();
+        if same_file_hits.len() == 1 {
+            return same_file_hits.into_iter().next();
+        }
+    }
     disambiguate_files(files, refs).or_else(|| {
         let g = graph?;
         let empty = Vec::new();
@@ -136,11 +146,7 @@ pub(crate) fn build_disambiguation_map(
     per_test_usage: &[(PathBuf, Vec<(String, HashSet<String>, HashSet<String>)>)],
     graph: Option<&DependencyGraph>,
 ) -> HashMap<String, PathBuf> {
-    let name_to_test_files = if graph.is_some() {
-        collect_test_files_for_ambiguous_names(per_test_usage, name_files)
-    } else {
-        HashMap::new()
-    };
+    let name_to_test_files = collect_test_files_for_ambiguous_names(per_test_usage, name_files);
 
     name_files
         .iter()
@@ -188,7 +194,8 @@ pub(crate) fn crate_qualified_module_matches_def(def_suffix: &str, import_module
     if def_tail != import_tail {
         return false;
     }
-    let import_head = import_module.strip_suffix(&format!(".{import_tail}")).unwrap_or("");
-    import_head.contains('.')
-        && import_module.len() > def_tail.len() + import_head.len() + 1
+    let import_head = import_module
+        .strip_suffix(&format!(".{import_tail}"))
+        .unwrap_or("");
+    import_head.contains('.') && import_module.len() > def_tail.len() + import_head.len() + 1
 }

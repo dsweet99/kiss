@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 import python.coverage_collect as collect
 from coverage_metrics_stubs import CARGO_LLVM_OK, install_path_stub
 

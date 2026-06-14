@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from python.adversarial_metrics_batch import (
     RepoMetricsRow,
     format_metric,
@@ -62,7 +61,6 @@ def test_measure_repo_success(tmp_path: Path) -> None:
 def test_print_summary_table() -> None:
     import click
     from click.testing import CliRunner
-
     from python.adversarial_metrics_batch import print_summary_table
 
     rows = [

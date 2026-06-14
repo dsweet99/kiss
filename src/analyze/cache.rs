@@ -1,7 +1,7 @@
-use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::stats::MetricStats;
 use kiss::{DuplicateCluster, Violation};
 
+use crate::analyze::finalize_types::CoverageCacheData;
 use crate::analyze::focus::FocusFilter;
 use crate::analyze::options::AnalyzeOptions;
 use crate::analyze_parse::ParseResult;
@@ -20,7 +20,7 @@ pub(crate) struct FullCacheStoreInput<'a> {
     pub rs_dups_all: &'a [DuplicateCluster],
     pub py_stats: Option<&'a MetricStats>,
     pub rs_stats: Option<&'a MetricStats>,
-    pub coverage_cache_lists: Option<(Vec<CachedCoverageItem>, Vec<CachedCoverageItem>)>,
+    pub coverage_cache_lists: Option<CoverageCacheData>,
 }
 
 pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
@@ -33,7 +33,7 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
     if inp.opts.show_timing || inp.opts.suppress_final_status {
         return;
     }
-    let Some((definitions, unreferenced)) = inp.coverage_cache_lists else {
+    let Some(cache_data) = inp.coverage_cache_lists else {
         return;
     };
     let fp = crate::analyze_cache::fingerprint_for_check(
@@ -72,7 +72,17 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
         rs_graph: inp.rs_graph,
         py_dups_all: inp.py_dups_all,
         rs_dups_all: inp.rs_dups_all,
-        definitions,
-        unreferenced,
+        definitions: cache_data.definitions,
+        unreferenced: cache_data.unreferenced,
+        weighted_file_pcts: cache_data
+            .weighted_file_pcts
+            .into_iter()
+            .map(
+                |(file, pct)| kiss::check_universe_cache::CachedFileCoverage {
+                    file: file.to_string_lossy().to_string(),
+                    pct,
+                },
+            )
+            .collect(),
     });
 }

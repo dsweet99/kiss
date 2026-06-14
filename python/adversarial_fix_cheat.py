@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import NamedTuple
 
-from python.adversarial_multi_repo import format_repo_paths, normalize_repos
 from python.adversarial_cheat import (
     TRUE_COVERAGE_CEILING,
     CheatMetrics,
@@ -17,6 +16,7 @@ from python.adversarial_cheat import (
     format_cheat_report,
     run_kiss_check,
 )
+from python.adversarial_multi_repo import format_repo_paths, normalize_repos
 
 
 class FixCheatMetrics(NamedTuple):

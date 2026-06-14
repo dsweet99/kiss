@@ -3,13 +3,7 @@ use std::path::Path;
 use crate::support::git::git_command;
 
 fn init_git_repo(dir: &Path) {
-    assert!(
-        git_command(dir)
-            .args(["init"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_command(dir).args(["init"]).status().unwrap().success());
     for kv in [("user.email", "t@t.t"), ("user.name", "t")] {
         git_command(dir)
             .args(["config", kv.0, kv.1])

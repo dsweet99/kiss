@@ -231,10 +231,7 @@ fn test_metric_values() {
         metric_values(&stats, "statements_per_function"),
         Some(&[10][..])
     );
-    assert_eq!(
-        metric_values(&stats, "positional_args"),
-        Some(&[3][..])
-    );
+    assert_eq!(metric_values(&stats, "positional_args"), Some(&[3][..]));
     assert_eq!(metric_values(&stats, "fan_in"), Some(&[2][..]));
     assert_eq!(metric_values(&stats, "unknown_metric"), None);
 }

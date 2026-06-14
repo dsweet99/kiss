@@ -1,13 +1,13 @@
 use crate::bin_cli::args::{Cli, Commands};
 use crate::bin_cli::check_cmd::{CheckCommandArgs, run_check_command};
 use crate::bin_cli::config_session::config_provenance;
-use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::shrink::{
     RunShrinkArgs, ShrinkFullContext, ShrinkStartContext, emit_shrink_final_status,
     get_shrink_metrics, print_shrink_progress, run_shrink, run_shrink_analysis, run_shrink_check,
     run_shrink_start,
 };
 use crate::bin_cli::stats::run_stats_top;
+use crate::bin_cli::test_cmd::run_test_command;
 use kiss::{Config, GateConfig};
 
 #[test]

@@ -6,9 +6,12 @@ use kiss::cli_output::file_coverage_map;
 use kiss::graph::is_entry_point;
 use kiss::{DependencyGraph, Violation};
 
-pub(crate) use crate::analyze::coverage_types::{CoverageViolationSpec, PyRsTestCoverage};
-use crate::analyze::coverage_weighted::merge_weighted_file_pcts;
 use crate::analyze::coverage_gate::{is_coverage_gate_file, is_coverage_report_target};
+pub(crate) use crate::analyze::coverage_types::{CoverageViolationSpec, PyRsTestCoverage};
+use crate::analyze::coverage_weighted::{
+    merge_weighted_file_pcts, merge_weighted_file_pcts_for_runtime_py,
+};
+use crate::analyze::finalize_types::CoverageCacheData;
 use crate::analyze::focus::{FocusFilter, is_focus_file};
 use crate::analyze::graph_api::graph_for_path;
 
@@ -97,8 +100,6 @@ pub(crate) fn build_coverage_violation_with_graph(
         suggestion,
     }
 }
-
-type CoverageCachePair = (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>);
 
 pub(crate) fn merge_coverage_results(
     py_cov: kiss::TestRefAnalysis,
@@ -234,12 +235,20 @@ pub(crate) fn collect_coverage_viols(
     focus: &FocusFilter,
     out_opts: CoverageOutputOpts,
     graphs: GraphRefPair<'_>,
-) -> (Vec<Violation>, Option<CoverageCachePair>) {
+) -> (Vec<Violation>, Option<CoverageCacheData>) {
     let PyRsTestCoverage {
         py: py_cov,
         rs: rs_cov,
     } = cov;
-    let weighted = merge_weighted_file_pcts(&py_cov, py_parsed, &rs_cov, rs_parsed);
+    let uses_runtime_line_coverage = py_cov
+        .definitions
+        .iter()
+        .any(|def| def.name.starts_with("line_"));
+    let weighted = if uses_runtime_line_coverage {
+        merge_weighted_file_pcts_for_runtime_py(&py_cov, py_parsed, &rs_cov, rs_parsed)
+    } else {
+        merge_weighted_file_pcts(&py_cov, py_parsed, &rs_cov, rs_parsed)
+    };
     let (definitions, unreferenced) = merge_coverage_results(py_cov, rs_cov);
     let (cov_viols, definitions, unreferenced) = build_viols_after_merge(
         definitions,
@@ -257,7 +266,11 @@ pub(crate) fn collect_coverage_viols(
     let cache_lists = if out_opts.show_timing {
         None
     } else {
-        Some((definitions, unreferenced))
+        Some(CoverageCacheData {
+            definitions,
+            unreferenced,
+            weighted_file_pcts: weighted,
+        })
     };
     if out_opts.bypass_gate {
         (cov_viols, cache_lists)

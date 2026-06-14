@@ -75,6 +75,29 @@ fn try_get_f64_parses_float_and_integer() {
 }
 
 #[test]
+fn try_load_from_content_merges_all_gate_fields() {
+    let gate = GateConfig::try_load_from_content(
+        "[gate]\ntest_coverage_threshold = 91\nmin_similarity = 1\nduplication_enabled = false\norphan_module_enabled = false",
+    )
+    .unwrap();
+    assert_eq!(gate.test_coverage_threshold, 91);
+    assert_eq!(gate.min_similarity, int_to_f64(1));
+    assert!(!gate.duplication_enabled);
+    assert!(!gate.orphan_module_enabled);
+}
+
+#[test]
+fn try_load_from_content_rejects_out_of_range_values() {
+    let coverage =
+        GateConfig::try_load_from_content("[gate]\ntest_coverage_threshold = 101").unwrap_err();
+    assert!(matches!(coverage, ConfigError::InvalidValue { .. }));
+
+    let similarity =
+        GateConfig::try_load_from_content("[gate]\nmin_similarity = -0.1").unwrap_err();
+    assert!(matches!(similarity, ConfigError::InvalidValue { .. }));
+}
+
+#[test]
 fn get_bool_reads_bool_and_ignores_invalid() {
     let mut table = toml::Table::new();
     table.insert("flag".into(), toml::Value::Boolean(true));

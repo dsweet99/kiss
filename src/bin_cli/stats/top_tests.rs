@@ -69,7 +69,8 @@ fn append_cycle_units_emits_one_unit_per_cycle() {
     let mut g = kiss::DependencyGraph::new();
     for m in ["mod_a", "mod_b", "mod_c"] {
         g.get_or_create_node(m);
-        g.paths.insert(m.to_string(), PathBuf::from(format!("{m}.rs")));
+        g.paths
+            .insert(m.to_string(), PathBuf::from(format!("{m}.rs")));
     }
     g.add_dependency("mod_a", "mod_b");
     g.add_dependency("mod_b", "mod_c");

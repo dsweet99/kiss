@@ -1,6 +1,6 @@
+use kiss::cli_output::VIOLATIONS_FIX_HINT;
 use std::fs;
 use std::process::Command;
-use kiss::cli_output::VIOLATIONS_FIX_HINT;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {

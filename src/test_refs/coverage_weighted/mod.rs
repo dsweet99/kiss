@@ -55,8 +55,10 @@ fn find_function_at_line<'a>(root: Node<'a>, line: usize) -> Option<Node<'a>> {
                 if let Some(body) = child.child_by_field_name("body") {
                     let mut bc = body.walk();
                     for method in body.children(&mut bc) {
-                        if matches!(method.kind(), "function_definition" | "async_function_definition")
-                            && method.start_position().row + 1 == line
+                        if matches!(
+                            method.kind(),
+                            "function_definition" | "async_function_definition"
+                        ) && method.start_position().row + 1 == line
                         {
                             return Some(method);
                         }
@@ -85,8 +87,10 @@ fn find_test_function_node<'a>(root: Node<'a>, source: &str, test_id: &str) -> O
             if let Some(body) = child.child_by_field_name("body") {
                 let mut bc = body.walk();
                 for method in body.children(&mut bc) {
-                    if matches!(method.kind(), "function_definition" | "async_function_definition")
-                        && get_child_by_field(method, "name", source).as_deref() == Some(fn_name)
+                    if matches!(
+                        method.kind(),
+                        "function_definition" | "async_function_definition"
+                    ) && get_child_by_field(method, "name", source).as_deref() == Some(fn_name)
                     {
                         return Some(method);
                     }
@@ -97,8 +101,10 @@ fn find_test_function_node<'a>(root: Node<'a>, source: &str, test_id: &str) -> O
     }
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
-        if matches!(child.kind(), "function_definition" | "async_function_definition")
-            && get_child_by_field(child, "name", source).as_deref() == Some(test_id)
+        if matches!(
+            child.kind(),
+            "function_definition" | "async_function_definition"
+        ) && get_child_by_field(child, "name", source).as_deref() == Some(test_id)
         {
             return Some(child);
         }
@@ -129,9 +135,7 @@ fn module_import_surface_credit(
         .definitions
         .iter()
         .filter(|d| {
-            d.file == def.file
-                && d.containing_class.is_none()
-                && d.kind != CodeUnitKind::Class
+            d.file == def.file && d.containing_class.is_none() && d.kind != CodeUnitKind::Class
         })
         .count()
         .max(1);
@@ -294,7 +298,9 @@ pub fn compute_py_weighted_file_pcts(
             let Some(node) = find_def_node_at_line(root, def.line) else {
                 continue;
             };
-            let stmts = compute_function_metrics(node, &parsed.source).statements.max(1);
+            let stmts = compute_function_metrics(node, &parsed.source)
+                .statements
+                .max(1);
             let credit = py_function_weighted_credit(
                 def,
                 analysis,

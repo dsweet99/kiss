@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import importlib
 import os
+import runpy
 import subprocess
 import sys
 
 import click
-from click.testing import CliRunner
-
 import python.adversarial_common as cli
+from click.testing import CliRunner
 from ops.adversarial import _load_command, main
 
 
@@ -65,3 +65,9 @@ def test_adversarial_script_help_without_pythonpath() -> None:
     )
     assert result.returncode == 0
     assert "metrics" in result.stdout
+
+
+def test_python_package_init_docstring() -> None:
+    init_path = cli.repo_root() / "python" / "__init__.py"
+    module_globals = runpy.run_path(str(init_path))
+    assert module_globals["__doc__"] == "Library modules for kiss tooling (non-CLI)."

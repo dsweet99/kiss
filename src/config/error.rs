@@ -43,3 +43,60 @@ impl std::fmt::Display for ConfigError {
 }
 
 impl std::error::Error for ConfigError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_formats_each_config_error_variant() {
+        let cases = [
+            (
+                ConfigError::UnknownKey {
+                    key: "foo".into(),
+                    section: "gate".into(),
+                },
+                "Unknown config key 'foo' in [gate]",
+            ),
+            (
+                ConfigError::UnknownSection {
+                    section: "gtae".into(),
+                    hint: Some("gate".into()),
+                },
+                "Unknown config section '[gtae]' - did you mean '[gate]'?",
+            ),
+            (
+                ConfigError::InvalidValue {
+                    key: "min_similarity".into(),
+                    message: "expected float".into(),
+                },
+                "Invalid value for 'min_similarity': expected float",
+            ),
+            (
+                ConfigError::ParseError {
+                    message: "bad toml".into(),
+                },
+                "Failed to parse config: bad toml",
+            ),
+            (
+                ConfigError::IoError {
+                    path: "kiss.toml".into(),
+                    message: "missing".into(),
+                },
+                "Failed to read config 'kiss.toml': missing",
+            ),
+        ];
+        for (err, expected) in cases {
+            assert_eq!(err.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn unknown_section_without_hint_has_no_suggestion() {
+        let err = ConfigError::UnknownSection {
+            section: "extra".into(),
+            hint: None,
+        };
+        assert_eq!(err.to_string(), "Unknown config section '[extra]'");
+    }
+}

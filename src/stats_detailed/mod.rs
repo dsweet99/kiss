@@ -92,9 +92,7 @@ mod tests {
     use crate::graph::DependencyGraph;
     use crate::parsing::{create_parser, parse_file};
     use crate::stats_detailed::python::collect_detailed_from_node_for_test;
-    use crate::stats_detailed::rust::{
-        collect_detailed_from_items, get_impl_name,
-    };
+    use crate::stats_detailed::rust::{collect_detailed_from_items, get_impl_name};
     use std::io::Write;
 
     #[test]

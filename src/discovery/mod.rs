@@ -12,9 +12,11 @@ impl Language {
     pub fn from_path(path: &Path) -> Option<Self> {
         if crate::rust_include::is_rust_source_path(path) {
             Some(Self::Rust)
-        } else if path.extension().and_then(|e| e.to_str()).is_some_and(|s| {
-            s.eq_ignore_ascii_case("py")
-        }) {
+        } else if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|s| s.eq_ignore_ascii_case("py"))
+        {
             Some(Self::Python)
         } else {
             None

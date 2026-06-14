@@ -8,6 +8,7 @@ use crate::analyze::graph_api::{build_py_graph, build_rs_graph};
 use crate::analyze::options::AnalyzeResult;
 use crate::analyze::parallel::{BuildGraphViols, RustAnalysis, build_graph_violations};
 use crate::analyze::params::GatedAnalysis;
+use std::path::{Path, PathBuf};
 
 type PyDup = kiss::DuplicateCluster;
 
@@ -40,8 +41,10 @@ fn gated_py_parallel(
 
     let (py_cov, (py_graph, graph_viols_all, py_dups_all)) = rayon::join(
         || {
-            let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-            kiss::analyze_test_refs(&py_refs, None)
+            let repo_root = Path::new(opts.universe)
+                .canonicalize()
+                .unwrap_or_else(|_| PathBuf::from(opts.universe));
+            kiss::rslip_bridge::runtime_py_analysis(&repo_root, py_parsed)
         },
         || {
             let py_graph = build_py_graph(py_parsed);

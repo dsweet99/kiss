@@ -17,6 +17,12 @@ pub struct CachedCoverageItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedFileCoverage {
+    pub file: String,
+    pub pct: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FullCheckCache {
     pub fingerprint: String,
     #[serde(default)]
@@ -49,6 +55,9 @@ pub struct FullCheckCache {
 
     pub definitions: Vec<CachedCoverageItem>,
     pub unreferenced: Vec<CachedCoverageItem>,
+    /// Weighted per-file coverage percentages used by the live gate.
+    #[serde(default)]
+    pub weighted_file_pcts: Vec<CachedFileCoverage>,
     /// Per-file content digests captured at cache-write time; verified on replay.
     #[serde(default)]
     pub file_content_digests: Vec<(String, u64)>,
@@ -57,6 +66,12 @@ pub struct FullCheckCache {
 impl CachedCoverageItem {
     pub fn into_tuple(self) -> (PathBuf, String, usize) {
         (PathBuf::from(self.file), self.name, self.line)
+    }
+}
+
+impl CachedFileCoverage {
+    pub fn into_tuple(self) -> (PathBuf, usize) {
+        (PathBuf::from(self.file), self.pct)
     }
 }
 
@@ -111,7 +126,19 @@ mod tests {
             rs_duplicates: Vec::new(),
             definitions: Vec::new(),
             unreferenced: Vec::new(),
+            weighted_file_pcts: Vec::new(),
             file_content_digests: Vec::new(),
         };
+    }
+
+    #[test]
+    fn test_cached_file_coverage_into_tuple() {
+        let item = CachedFileCoverage {
+            file: "a.py".to_string(),
+            pct: 91,
+        };
+        let (p, pct) = item.into_tuple();
+        assert_eq!(p, PathBuf::from("a.py"));
+        assert_eq!(pct, 91);
     }
 }

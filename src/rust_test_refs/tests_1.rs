@@ -20,7 +20,18 @@ fn test_file_detection_and_helpers() {
         "Rust test file detection must accept uppercase .RS"
     );
     assert!(
+        is_rust_test_file(Path::new("fake_helper_test.rs")),
+        "Rust test file detection must not reject ordinary fake_* test names"
+    );
+    assert!(
+        is_rust_test_file(Path::new("tests/helpers/too_many_args.rs")),
+        "Rust files under test directories are test files; repo fixtures are excluded by discovery boundaries"
+    );
+    assert!(
         has_test_naming_pattern(Path::new("test_foo.rs"))
+            && has_test_naming_pattern(Path::new("tests_1.rs"))
+            && has_test_naming_pattern(Path::new("tests_coverage.rs"))
+            && has_test_naming_pattern(Path::new("inline_tests.rs"))
             && !has_test_naming_pattern(Path::new("foo.rs"))
     );
     assert!(definitions::is_private("_helper") && !definitions::is_private("helper"));
@@ -47,10 +58,19 @@ fn test_definitions_and_references() {
     if let syn::Item::Mod(m) = &f2.items[0] {
         assert!(has_cfg_test_attribute(&m.attrs));
     }
+    assert!(
+        has_inline_test_module(&f2),
+        "source-style inline test modules should be recognized from the AST"
+    );
     let f: syn::File = syn::parse_str("fn foo() {}\nstruct Bar {}").unwrap();
     let mut defs = Vec::new();
     definitions::collect_rust_definitions(&f, Path::new("t.rs"), &mut defs);
-    assert!(defs.len() >= 2);
+    let names: Vec<_> = defs.iter().map(|d| d.name.as_str()).collect();
+    assert!(names.contains(&"foo"));
+    assert!(
+        !names.contains(&"Bar"),
+        "bare type declarations are not executable coverage targets"
+    );
     for item in &f.items {
         definitions::collect_definitions_from_item(item, Path::new("t.rs"), &mut defs);
     }

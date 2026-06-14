@@ -17,6 +17,10 @@ pub mod defaults;
 pub mod gate_config;
 pub mod py_imports;
 pub mod py_metrics;
+pub mod rslip;
+pub mod rslip_bridge;
+#[cfg(test)]
+mod rslip_bridge_test;
 pub mod rule_defs;
 pub mod violation;
 
@@ -70,7 +74,6 @@ pub use duplication::{
     extract_rust_chunks_for_duplication,
 };
 pub use gate_config::GateConfig;
-pub use test_section_config::TestSectionConfig;
 pub use graph::{
     CycleInfo, DependencyGraph, ModuleGraphMetrics, analyze_graph, build_dependency_graph,
     compute_cyclomatic_complexity,
@@ -95,17 +98,18 @@ pub use test_refs::{
     analyze_test_refs_quick, build_name_file_map, is_in_test_directory, is_test_file,
     test_functions_in,
 };
+pub use test_section_config::TestSectionConfig;
 pub use units::count_code_units;
 pub use units::{CodeUnit, CodeUnitKind, extract_code_units};
 pub use violation::{Violation, ViolationBuilder};
 
 pub use rust_counts::{analyze_rust_file, analyze_rust_file_include_rollup};
-pub use rust_graph::{build_include_graph, expand_rust_files, IncludeGraph};
 pub use rust_fn_metrics::{
     RustFileMetrics, RustFunctionMetrics, RustTypeMetrics, compute_rust_file_metrics,
     compute_rust_function_metrics, count_non_doc_attrs,
 };
 pub use rust_graph::build_rust_dependency_graph;
+pub use rust_graph::{IncludeGraph, build_include_graph, expand_rust_files};
 pub use rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file, parse_rust_files};
 pub use rust_test_refs::{
     RustCodeDefinition, RustTestRefAnalysis, analyze_rust_test_refs, is_binary_entry_point,

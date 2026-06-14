@@ -1,8 +1,25 @@
 use ignore::WalkState;
 use std::fs;
+use std::path::PathBuf;
 use tempfile::TempDir;
 
 use super::*;
+
+struct CwdGuard(PathBuf);
+
+impl CwdGuard {
+    fn enter(path: &std::path::Path) -> Self {
+        let old = std::env::current_dir().unwrap();
+        std::env::set_current_dir(path).unwrap();
+        Self(old)
+    }
+}
+
+impl Drop for CwdGuard {
+    fn drop(&mut self) {
+        std::env::set_current_dir(&self.0).unwrap();
+    }
+}
 
 #[test]
 fn test_normalize_ignore_prefixes_trims_and_drops_empty() {
@@ -158,6 +175,127 @@ fn test_find_source_files_with_ignore() {
 
     let ignore = vec!["fake_".to_string()];
     assert_eq!(find_source_files_with_ignore(tmp.path(), &ignore).len(), 1);
+}
+
+#[test]
+fn kissignore_excludes_pathological_test_fixtures() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    let fake_py = tmp.path().join("tests/fake_python");
+    let fake_rs = tmp.path().join("tests/fake_rust");
+    let real_tests = tmp.path().join("tests/unit");
+    fs::create_dir_all(&src).unwrap();
+    fs::create_dir_all(&fake_py).unwrap();
+    fs::create_dir_all(&fake_rs).unwrap();
+    fs::create_dir_all(&real_tests).unwrap();
+    fs::write(src.join("lib.py"), "").unwrap();
+    fs::write(src.join("lib.rs"), "").unwrap();
+    fs::write(fake_py.join("pathological.py"), "").unwrap();
+    fs::write(fake_rs.join("pathological.rs"), "").unwrap();
+    fs::write(real_tests.join("test_real.py"), "").unwrap();
+    fs::write(
+        tmp.path().join(".kissignore"),
+        "tests/fake_python/\ntests/fake_rust/\n",
+    )
+    .unwrap();
+
+    let files = find_source_files(tmp.path());
+    let paths = files
+        .iter()
+        .map(|file| file.path.strip_prefix(tmp.path()).unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(paths.contains(&std::path::Path::new("src/lib.py")));
+    assert!(paths.contains(&std::path::Path::new("src/lib.rs")));
+    assert!(paths.contains(&std::path::Path::new("tests/unit/test_real.py")));
+    assert!(!paths.contains(&std::path::Path::new("tests/fake_python/pathological.py")));
+    assert!(!paths.contains(&std::path::Path::new("tests/fake_rust/pathological.rs")));
+}
+
+#[test]
+fn repo_root_discovery_uses_kissignore_for_fixture_boundaries() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    let fake_py = tmp.path().join("tests/fake_python");
+    let fake_rs = tmp.path().join("tests/fake_rust");
+    let fake_app = tmp.path().join("fake_app");
+    fs::create_dir_all(&src).unwrap();
+    fs::create_dir_all(&fake_py).unwrap();
+    fs::create_dir_all(&fake_rs).unwrap();
+    fs::create_dir_all(&fake_app).unwrap();
+    fs::write(src.join("lib.py"), "").unwrap();
+    fs::write(fake_py.join("pathological.py"), "").unwrap();
+    fs::write(fake_rs.join("pathological.rs"), "").unwrap();
+    fs::write(fake_app.join("real.py"), "").unwrap();
+    fs::write(
+        tmp.path().join(".kissignore"),
+        "tests/fake_python/\ntests/fake_rust/\n",
+    )
+    .unwrap();
+
+    let files = find_source_files(tmp.path());
+    let paths = files
+        .iter()
+        .map(|file| file.path.strip_prefix(tmp.path()).unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(paths.contains(&std::path::Path::new("src/lib.py")));
+    assert!(paths.contains(&std::path::Path::new("fake_app/real.py")));
+    assert!(!paths.contains(&std::path::Path::new("tests/fake_python/pathological.py")));
+    assert!(!paths.contains(&std::path::Path::new("tests/fake_rust/pathological.rs")));
+
+    let fixture_files = find_source_files(&fake_py);
+    assert!(
+        fixture_files
+            .iter()
+            .any(|file| file.path.ends_with("pathological.py")),
+        "explicit fixture-root discovery should still work"
+    );
+}
+
+#[test]
+fn relative_repo_root_discovery_uses_kissignore_for_fixture_boundaries() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    let fake_py = tmp.path().join("tests/fake_python");
+    let fake_rs = tmp.path().join("tests/fake_rust");
+    fs::create_dir_all(&src).unwrap();
+    fs::create_dir_all(&fake_py).unwrap();
+    fs::create_dir_all(&fake_rs).unwrap();
+    fs::write(src.join("lib.py"), "").unwrap();
+    fs::write(fake_py.join("pathological.py"), "").unwrap();
+    fs::write(fake_rs.join("pathological.rs"), "").unwrap();
+    fs::write(
+        tmp.path().join(".kissignore"),
+        "tests/fake_python/\ntests/fake_rust/\n",
+    )
+    .unwrap();
+
+    let _cwd = CwdGuard::enter(tmp.path());
+    let files = find_source_files(std::path::Path::new("."));
+    let paths = files
+        .iter()
+        .map(|file| {
+            file.path
+                .canonicalize()
+                .unwrap()
+                .strip_prefix(tmp.path())
+                .unwrap()
+                .to_path_buf()
+        })
+        .collect::<Vec<_>>();
+
+    assert!(paths.iter().any(|path| path == "src/lib.py"));
+    assert!(
+        !paths
+            .iter()
+            .any(|path| path == "tests/fake_python/pathological.py")
+    );
+    assert!(
+        !paths
+            .iter()
+            .any(|path| path == "tests/fake_rust/pathological.rs")
+    );
 }
 
 #[test]

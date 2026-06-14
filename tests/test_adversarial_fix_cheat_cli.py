@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-from click.testing import CliRunner
-
 import ops.adversarial_fix_cheat as fix_cheat_cli
+import pytest
 import python.adversarial_fix_cheat as fix_cheat_mod
 import python.adversarial_fix_cheat_session as fix_cheat_session
 import python.adversarial_verify_batch as verify_batch
+from click.testing import CliRunner
 from ops.adversarial_fix_cheat import fix_cheat, fix_cheat_verify
 
 

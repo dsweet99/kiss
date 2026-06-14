@@ -1,2 +1,4 @@
 target/
 ops/
+tests/fake_python/
+tests/fake_rust/

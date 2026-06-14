@@ -296,3 +296,93 @@ pub(crate) fn visit_macro_tokens(
     }
     visit_nested_token_groups(tokens, refs, qualified);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn call_reference_visitor_records_calls_but_skips_use_items() {
+        let ast: syn::File = syn::parse_str(
+            "use crate::ignored::Thing; fn f() { alpha::run(beta()); obj.method(gamma()); }",
+        )
+        .unwrap();
+        let mut refs = HashSet::new();
+        let mut qualified = HashSet::new();
+        CallReferenceVisitor {
+            refs: &mut refs,
+            qualified: &mut qualified,
+        }
+        .visit_file(&ast);
+
+        assert!(refs.contains("run"));
+        assert!(refs.contains("alpha"));
+        assert!(refs.contains("beta"));
+        assert!(refs.contains("method"));
+        assert!(refs.contains("gamma"));
+        assert!(
+            !refs.contains("ignored"),
+            "use items are not executable call witnesses"
+        );
+        assert!(qualified.contains(&("alpha".into(), "run".into())));
+    }
+
+    #[test]
+    fn call_reference_visitor_callbacks_are_directly_tested() {
+        let use_item: syn::Item = syn::parse_str("use crate::ignored::Thing;").unwrap();
+        let call_expr: syn::Expr = syn::parse_str("alpha::run(beta())").unwrap();
+        let mut refs = HashSet::new();
+        let mut qualified = HashSet::new();
+        let mut visitor = CallReferenceVisitor {
+            refs: &mut refs,
+            qualified: &mut qualified,
+        };
+
+        visit_item_skip_use(&mut visitor, &use_item);
+        visitor.visit_expr(&call_expr);
+
+        assert!(!refs.contains("ignored"));
+        assert!(refs.contains("run"));
+        assert!(refs.contains("beta"));
+    }
+
+    #[test]
+    fn reference_visitor_records_struct_paths_and_macros() {
+        let ast: syn::File = syn::parse_str(
+            "fn f() { let _ = pkg::Thing { value: helper() }; trace!(pkg::done()); }",
+        )
+        .unwrap();
+        let mut refs = HashSet::new();
+        let mut qualified = HashSet::new();
+        ReferenceVisitor {
+            refs: &mut refs,
+            qualified: &mut qualified,
+        }
+        .visit_file(&ast);
+
+        assert!(refs.contains("Thing"));
+        assert!(refs.contains("pkg"));
+        assert!(refs.contains("helper"));
+        assert!(refs.contains("done"));
+        assert!(qualified.contains(&("pkg".into(), "Thing".into())));
+    }
+
+    #[test]
+    fn reference_visitor_callbacks_are_directly_tested() {
+        let use_item: syn::Item = syn::parse_str("use crate::ignored::Thing;").unwrap();
+        let expr: syn::Expr = syn::parse_str("pkg::Thing { value: helper() }").unwrap();
+        let mut refs = HashSet::new();
+        let mut qualified = HashSet::new();
+        let mut visitor = ReferenceVisitor {
+            refs: &mut refs,
+            qualified: &mut qualified,
+        };
+
+        visit_item_skip_use(&mut visitor, &use_item);
+        visitor.visit_expr(&expr);
+
+        assert!(!refs.contains("ignored"));
+        assert!(refs.contains("Thing"));
+        assert!(refs.contains("helper"));
+    }
+}

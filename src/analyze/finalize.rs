@@ -51,9 +51,10 @@ fn finalize_header(phase: HeaderPhase<'_>) -> kiss::GlobalMetrics {
 }
 
 fn finalize_coverage_and_dups(phase: CovDupPhase<'_>) -> CovDupOutcome {
-    phase
-        .viols
-        .extend(filter_viols_by_focus(phase.graph_viols_all.to_vec(), phase.focus));
+    phase.viols.extend(filter_viols_by_focus(
+        phase.graph_viols_all.to_vec(),
+        phase.focus,
+    ));
     let t_phase2 = Instant::now();
     let (cov_viols, coverage_cache_lists) = phase.precomputed_coverage_cache_lists.map_or_else(
         || {

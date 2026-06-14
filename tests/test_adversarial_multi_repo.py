@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from python.adversarial_multi_repo import (
     adversarial_prompt_path,
     format_repo_paths,

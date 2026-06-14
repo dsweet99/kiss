@@ -27,4 +27,3 @@ pub(crate) struct GatedAnalysis<'a> {
     pub parsed: (crate::analyze_parse::ParseResult, Vec<Violation>, usize),
     pub timings: (Instant, Instant, Instant),
 }
-

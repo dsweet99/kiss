@@ -6,11 +6,11 @@ mod config_session;
 pub mod dispatch;
 mod mimic;
 mod run;
-mod test_cmd;
 mod shrink;
 mod shrink_analysis_types;
 mod shrink_types;
 pub mod stats;
+mod test_cmd;
 pub mod util;
 
 pub use run::run;

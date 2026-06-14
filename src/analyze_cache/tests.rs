@@ -1,5 +1,5 @@
-use super::*;
 use super::path_helpers::load_full_cache;
+use super::*;
 use crate::analyze::FocusFilter;
 use kiss::check_cache::CachedViolation;
 use kiss::check_universe_cache::CachedCoverageItem;
@@ -27,6 +27,7 @@ fn empty_cache(fp: &str) -> FullCheckCache {
         rs_duplicates: Vec::new(),
         definitions: Vec::new(),
         unreferenced: Vec::new(),
+        weighted_file_pcts: Vec::new(),
         file_content_digests: Vec::new(),
     }
 }
@@ -53,18 +54,14 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
         rs_dups_all: &[],
         definitions: Vec::new(),
         unreferenced: Vec::new(),
+        weighted_file_pcts: Vec::new(),
     }
 }
 
 #[test]
 fn cached_coverage_viols_skips_test_files_on_replay() {
     let file = PathBuf::from("/tmp/repo/tests/test_lib.py");
-    let cached = CachedViolation::from(&coverage_violation(
-        file.clone(),
-        "test_lib".into(),
-        1,
-        0,
-    ));
+    let cached = CachedViolation::from(&coverage_violation(file.clone(), "test_lib".into(), 1, 0));
     let mut cache = empty_cache("test_file_skip");
     cache.coverage_violations = vec![cached];
     let focus = FocusFilter::restricting([file.clone()].into_iter().collect());
@@ -74,12 +71,7 @@ fn cached_coverage_viols_skips_test_files_on_replay() {
 #[test]
 fn cached_coverage_viols_replays_weighted_overlay_pct() {
     let file = PathBuf::from("src/sparse_module.py");
-    let cached = CachedViolation::from(&coverage_violation(
-        file.clone(),
-        "fn_a".into(),
-        1,
-        17,
-    ));
+    let cached = CachedViolation::from(&coverage_violation(file.clone(), "fn_a".into(), 1, 17));
     let mut cache = empty_cache("weighted_overlay_replay");
     cache.coverage_violations = vec![cached];
     cache.definitions.push(CachedCoverageItem {

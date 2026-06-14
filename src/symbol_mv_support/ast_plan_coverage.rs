@@ -114,6 +114,18 @@ fn parse_cache_avoids_duplicate_parse() {
 }
 
 #[test]
+fn plan_invocation_guard_clears_parse_cache_on_drop() {
+    let guard = PlanInvocationGuard::enter();
+    let src = "def helper():\n    return 1\n";
+    let _ = ast_definition_span(src, "helper", None, Language::Python);
+    assert_eq!(PARSE_CACHE.with(|c| c.borrow().len()), 1);
+
+    drop(guard);
+
+    assert_eq!(PARSE_CACHE.with(|c| c.borrow().len()), 0);
+}
+
+#[test]
 fn touch_ast_plan_helpers_for_coverage_gate() {
     let _g = PlanInvocationGuard::enter();
     let _ = parse_for("x = 1\n", Language::Python);

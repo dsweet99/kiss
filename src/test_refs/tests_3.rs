@@ -75,7 +75,12 @@ fn test_extract_import_from_binding_basic() {
     assert_eq!(import_node.kind(), "import_from_statement");
     let mut bindings = std::collections::HashMap::new();
     let mut alias_bindings = std::collections::HashMap::new();
-    super::collect::extract_import_from_binding(import_node, src, &mut bindings, &mut alias_bindings);
+    super::collect::extract_import_from_binding(
+        import_node,
+        src,
+        &mut bindings,
+        &mut alias_bindings,
+    );
     let names = bindings.get("mymod").expect("mymod entry");
     assert!(names.contains("foo"));
     assert!(names.contains("bar"));
@@ -90,7 +95,12 @@ fn test_extract_import_from_binding_relative_skipped() {
     let import_node = tree.root_node().child(0).unwrap();
     let mut bindings = std::collections::HashMap::new();
     let mut alias_bindings = std::collections::HashMap::new();
-    super::collect::extract_import_from_binding(import_node, src, &mut bindings, &mut alias_bindings);
+    super::collect::extract_import_from_binding(
+        import_node,
+        src,
+        &mut bindings,
+        &mut alias_bindings,
+    );
     assert!(bindings.is_empty(), "relative imports are skipped");
 }
 
@@ -103,7 +113,12 @@ fn test_extract_import_from_binding_aliased() {
     let import_node = tree.root_node().child(0).unwrap();
     let mut bindings = std::collections::HashMap::new();
     let mut alias_bindings = std::collections::HashMap::new();
-    super::collect::extract_import_from_binding(import_node, src, &mut bindings, &mut alias_bindings);
+    super::collect::extract_import_from_binding(
+        import_node,
+        src,
+        &mut bindings,
+        &mut alias_bindings,
+    );
     let names = bindings.get("mymod").expect("mymod entry");
     assert!(
         names.contains("foo"),

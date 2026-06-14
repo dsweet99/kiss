@@ -98,7 +98,10 @@ fn bar() {}
         "calls_per_function",
         "max_indentation_depth",
     ] {
-        assert!(metrics.contains(expected), "missing {expected} in {metrics:?}");
+        assert!(
+            metrics.contains(expected),
+            "missing {expected} in {metrics:?}"
+        );
     }
 }
 

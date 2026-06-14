@@ -1,8 +1,8 @@
 use super::tests::new_graph;
 use crate::graph::{
     DependencyGraph, build_dependency_graph, build_dependency_graph_from_import_lists,
-    cycle_size_violation, is_test_module, parent_prefix_match, qualified_module_name,
-    resolve_bare, resolve_dotted, resolve_import,
+    cycle_size_violation, is_test_module, parent_prefix_match, qualified_module_name, resolve_bare,
+    resolve_dotted, resolve_import,
 };
 use crate::parsing::ParsedFile;
 use crate::parsing::create_parser;
@@ -112,9 +112,15 @@ fn test_parent_prefix_match() {
 #[test]
 fn test_resolve_bare() {
     let single: Vec<String> = vec!["pkg.utils".into()];
-    assert_eq!(resolve_bare(&single, Some("pkg")), vec!["pkg.utils".to_string()]);
+    assert_eq!(
+        resolve_bare(&single, Some("pkg")),
+        vec!["pkg.utils".to_string()]
+    );
     let ambiguous: Vec<String> = vec!["a.utils".into(), "b.utils".into()];
-    assert_eq!(resolve_bare(&ambiguous, Some("a")), vec!["a.utils".to_string()]);
+    assert_eq!(
+        resolve_bare(&ambiguous, Some("a")),
+        vec!["a.utils".to_string()]
+    );
 }
 
 #[test]

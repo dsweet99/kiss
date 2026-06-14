@@ -1,5 +1,8 @@
 use crate::bin_cli::args::{Cli, Commands};
-use crate::bin_cli::config_session::{ensure_default_config_exists, load_configs, load_gate_config, load_test_section_config, run_init_command};
+use crate::bin_cli::config_session::{
+    ensure_default_config_exists, load_configs, load_gate_config, load_test_section_config,
+    run_init_command,
+};
 use crate::bin_cli::dispatch::dispatch;
 use clap::Parser;
 

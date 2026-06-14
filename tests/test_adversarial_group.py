@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import click
-
 from ops.adversarial_group import AdversarialGroup
 
 

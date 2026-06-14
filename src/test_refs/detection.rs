@@ -128,3 +128,42 @@ pub(crate) fn is_test_function(node: Node, source: &str) -> bool {
 pub(crate) fn is_test_class(node: Node, source: &str) -> bool {
     get_child_by_field(node, "name", source).is_some_and(|n| n.starts_with("Test"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_detection_accepts_common_pytest_names_only() {
+        for path in [
+            Path::new("test_widget.py"),
+            Path::new("widget_test.py"),
+            Path::new("conftest.py"),
+            Path::new("CONFTEST.PY"),
+        ] {
+            assert!(
+                is_test_file(path),
+                "{} should be a test file",
+                path.display()
+            );
+        }
+        for path in [Path::new("test_widget.rs"), Path::new("contest.py")] {
+            assert!(
+                !is_test_file(path),
+                "{} should not be a test file",
+                path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn test_directory_detection_matches_path_components() {
+        for path in [
+            Path::new("pkg/tests/test_api.py"),
+            Path::new("pkg/test/helpers.py"),
+        ] {
+            assert!(is_in_test_directory(path));
+        }
+        assert!(!is_in_test_directory(Path::new("pkg/latest/helpers.py")));
+    }
+}

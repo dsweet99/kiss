@@ -69,6 +69,15 @@ fn test_shrink_state_save_load() {
 }
 
 #[test]
+fn test_shrink_state_load_missing_or_invalid_returns_none() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    assert!(ShrinkState::load_from(&tmp.path().join("missing.toml")).is_none());
+    let invalid = tmp.path().join("invalid.toml");
+    std::fs::write(&invalid, "not = [valid").unwrap();
+    assert!(ShrinkState::load_from(&invalid).is_none());
+}
+
+#[test]
 fn test_check_shrink_constraints_no_violations() {
     let state = ShrinkState {
         baseline: GlobalMetrics {

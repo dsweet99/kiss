@@ -19,7 +19,12 @@ fn py_selector_class_method() {
 
 #[test]
 fn shell_quote_simple() {
-    let v = vec!["python".into(), "-m".into(), "pytest".into(), "a.py::t".into()];
+    let v = vec![
+        "python".into(),
+        "-m".into(),
+        "pytest".into(),
+        "a.py::t".into(),
+    ];
     let s = shell_quote_line(&v);
     assert!(s.contains("python"));
     assert!(s.contains("pytest"));
@@ -87,11 +92,8 @@ fn shlex_quote_spaces() {
 #[cfg(unix)]
 fn run_command_true_zero() {
     let tmp = TempDir::new().unwrap();
-    let code = run_command_inherit(
-        &["sh".into(), "-c".into(), "exit 0".into()],
-        tmp.path(),
-    )
-    .unwrap();
+    let code =
+        run_command_inherit(&["sh".into(), "-c".into(), "exit 0".into()], tmp.path()).unwrap();
     assert_eq!(code, 0);
 }
 
@@ -118,5 +120,8 @@ fn collect_selectors_from_defs_smoke() {
         Some(vec![(PathBuf::from("/x/test_a.py"), "test_f".into())]),
     )];
     let s = collect_selectors_from_defs(&defs);
-    assert!(s.iter().any(|(p, id)| p.ends_with("test_a.py") && id == "test_f"));
+    assert!(
+        s.iter()
+            .any(|(p, id)| p.ends_with("test_a.py") && id == "test_f")
+    );
 }

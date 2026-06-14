@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use super::fnv1a64;
 use super::path_helpers::load_full_cache;
 
-fn content_digest(bytes: &[u8]) -> u64 {
+pub(super) fn content_digest(bytes: &[u8]) -> u64 {
     fnv1a64(0, bytes)
 }
 
@@ -12,12 +12,9 @@ pub(super) fn content_digests_for_paths(paths: &[PathBuf]) -> Vec<(String, u64)>
     let mut digests: Vec<(String, u64)> = paths
         .iter()
         .filter_map(|p| {
-            std::fs::read(p).ok().map(|bytes| {
-                (
-                    p.to_string_lossy().to_string(),
-                    content_digest(&bytes),
-                )
-            })
+            std::fs::read(p)
+                .ok()
+                .map(|bytes| (p.to_string_lossy().to_string(), content_digest(&bytes)))
         })
         .collect();
     digests.sort_by(|a, b| a.0.cmp(&b.0));
@@ -74,12 +71,35 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn content_digest_is_stable_and_content_sensitive() {
+        for (left, right, should_match) in [
+            (b"abc".as_slice(), b"abc".as_slice(), true),
+            (b"abc", b"abd", false),
+            (b"abc", b"abc\0", false),
+        ] {
+            if should_match {
+                assert_eq!(content_digest(left), content_digest(right));
+            } else {
+                assert_ne!(content_digest(left), content_digest(right));
+            }
+        }
+    }
+
+    #[test]
     fn verify_content_digests_rejects_unreadable_file() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("f.py");
         fs::write(&path, "def foo():\n    pass\n").unwrap();
         let stored = content_digests_for_paths(std::slice::from_ref(&path));
-        assert!(verify_content_digests(&stored, std::slice::from_ref(&path), &[]));
+        for (stored_path, digest) in &stored {
+            assert_eq!(stored_path, &path.to_string_lossy());
+            assert_eq!(*digest, content_digest(&fs::read(&path).unwrap()));
+        }
+        assert!(verify_content_digests(
+            &stored,
+            std::slice::from_ref(&path),
+            &[]
+        ));
 
         let mut perms = fs::metadata(&path).unwrap().permissions();
         perms.set_readonly(true);
@@ -119,7 +139,11 @@ mod tests {
 
         fs::write(&path, content1).unwrap();
         let stored = content_digests_for_paths(std::slice::from_ref(&path));
-        assert!(verify_content_digests(&stored, std::slice::from_ref(&path), &[]));
+        assert!(verify_content_digests(
+            &stored,
+            std::slice::from_ref(&path),
+            &[]
+        ));
 
         fs::write(&path, content2).unwrap();
         assert!(

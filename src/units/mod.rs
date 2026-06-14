@@ -145,3 +145,14 @@ pub(crate) fn get_child_by_field(node: Node, field: &str, source: &str) -> Optio
 #[cfg(test)]
 #[path = "units_test.rs"]
 mod tests;
+
+#[cfg(test)]
+mod inline_tests {
+    use super::*;
+
+    #[test]
+    fn code_unit_kind_string_methods_are_same_file_witnessed() {
+        assert_eq!(CodeUnitKind::Function.as_str(), "function");
+        assert_eq!(CodeUnitKind::Module.to_string(), "module");
+    }
+}

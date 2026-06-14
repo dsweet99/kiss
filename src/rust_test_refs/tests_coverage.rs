@@ -5,9 +5,8 @@ use crate::rust_test_refs::analyze_rust_test_refs;
 fn weighted_pct_for_sparse_impl(method_count: usize, test_body: &str) -> usize {
     let tmp = tempfile::TempDir::new().unwrap();
     let src = tmp.path().join("service.rs");
-    let mut body = String::from(
-        "pub struct Service;\nimpl Service {\n    pub fn new() -> Self { Service }\n",
-    );
+    let mut body =
+        String::from("pub struct Service;\nimpl Service {\n    pub fn new() -> Self { Service }\n");
     for i in 0..method_count {
         body.push_str(&format!(
             "    pub fn method_{i}(seed: u64) -> u64 {{\n        let mut acc = seed;\n        if seed == {i} {{ acc += 1; }} else if seed == {} {{ acc += 2; }}\n        acc\n    }}\n",
@@ -35,7 +34,10 @@ fn weighted_pct_monotone_in_unreferenced_method_count() {
         many <= few,
         "more unreferenced methods should not increase weighted pct, few={few}% many={many}%"
     );
-    assert!(many < 100, "sparse shallow coverage should stay below 100%, got {many}%");
+    assert!(
+        many < 100,
+        "sparse shallow coverage should stay below 100%, got {many}%"
+    );
 }
 
 #[test]
@@ -54,6 +56,47 @@ fn weighted_pct_zero_when_no_covered_defs_have_credit() {
     let weighted = compute_rs_weighted_file_pcts(&analysis, &refs);
     let pct = weighted.get(&src).copied().unwrap_or(100);
     assert_eq!(pct, 0, "unreferenced-only file should be 0%");
+}
+
+#[test]
+fn weighted_pct_live_branchy_call_gets_partial_credit() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("branchy.rs");
+    std::fs::write(
+        &src,
+        r#"pub fn branchy(n: i32) -> i32 {
+    if n > 0 {
+        n + 1
+    } else {
+        n - 1
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::branchy;
+
+    #[test]
+    fn calls_branchy() {
+        assert_eq!(branchy(1), 2);
+    }
+}
+"#,
+    )
+    .unwrap();
+    let parsed = parse_rust_file(&src).unwrap();
+    let refs: Vec<_> = [&parsed].into_iter().collect();
+    let analysis = analyze_rust_test_refs(&refs, None);
+    assert!(
+        analysis.call_references.contains("branchy"),
+        "test should contain a live call witness"
+    );
+    let weighted = compute_rs_weighted_file_pcts(&analysis, &refs);
+    let pct = weighted.get(&src).copied().unwrap_or(0);
+    assert!(
+        (1..100).contains(&pct),
+        "one executed path through a branchy function should receive partial credit, got {pct}%"
+    );
 }
 
 #[test]
@@ -133,9 +176,9 @@ mod tests {
         !bind_unref.contains(&"shallow"),
         "shallow has a live call witness and must stay referenced"
     );
-    assert_eq!(
-        bind_pct, 100,
-        "only shallow is referenced under executable witnesses; weighted pct counts referenced mass only, got {bind_pct}%"
+    assert!(
+        bind_pct < 100,
+        "bind-only references must not erase uncalled gateway/deep mass, got {bind_pct}%"
     );
     assert!(
         !bind_analysis.call_references.contains("deep"),
@@ -147,8 +190,8 @@ mod tests {
         "direct gateway call should reference deep transitively"
     );
     assert!(
-        call_pct >= bind_pct,
-        "direct call should not score below bind-only, bind={bind_pct}% call={call_pct}%"
+        call_pct > bind_pct,
+        "direct executable calls should score above bind-only references, bind={bind_pct}% call={call_pct}%"
     );
 }
 
@@ -349,8 +392,7 @@ mod tests {
         "entry() call transitively executes inner::compute; both should be referenced, unref={unref_names:?}"
     );
     assert!(
-        analysis.call_references.contains("compute")
-            || analysis.call_references.contains("entry"),
+        analysis.call_references.contains("compute") || analysis.call_references.contains("entry"),
         "transitive production call refs should witness nested compute"
     );
 }

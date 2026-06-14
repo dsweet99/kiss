@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use kiss::check_universe_cache::CachedCoverageItem;
-use kiss::cli_output::{CoverageGateFailureCtx, file_coverage_map, print_coverage_gate_failure};
 use crate::analyze::coverage::compute_test_coverage_from_lists;
 use crate::analyze::coverage_types::CheckCoverageGateParams;
 use crate::analyze::focus::{FocusFilter, is_focus_file};
+use kiss::check_universe_cache::CachedCoverageItem;
+use kiss::cli_output::{CoverageGateFailureCtx, file_coverage_map, print_coverage_gate_failure};
 
 type PathNameLine = (PathBuf, String, usize);
 type PerFileGateFailure = (Vec<PathNameLine>, std::collections::HashMap<PathBuf, usize>);
@@ -130,13 +130,9 @@ pub(crate) fn evaluate_gate(
     threshold: usize,
 ) -> Option<crate::analyze::options::AnalyzeResult> {
     let (defs_t, unrefs_t) = analysis_tuples(py_cov, rs_cov);
-    if let Some((unreferenced_focus, file_pcts)) = per_file_coverage_gate_fails(
-        &defs_t,
-        &unrefs_t,
-        focus,
-        threshold,
-        None,
-    ) {
+    if let Some((unreferenced_focus, file_pcts)) =
+        per_file_coverage_gate_fails(&defs_t, &unrefs_t, focus, threshold, None)
+    {
         print_coverage_gate_failure(&CoverageGateFailureCtx {
             threshold,
             unreferenced: &unreferenced_focus,
@@ -155,6 +151,7 @@ pub(crate) fn evaluate_cached_gate(
     unreferenced: &[CachedCoverageItem],
     focus: &FocusFilter,
     threshold: usize,
+    weighted_pcts: Option<&HashMap<PathBuf, usize>>,
 ) -> Option<crate::analyze::options::AnalyzeResult> {
     let defs = definitions
         .iter()
@@ -168,7 +165,7 @@ pub(crate) fn evaluate_cached_gate(
         return None;
     }
     if let Some((unreferenced_focus, file_pcts)) =
-        per_file_coverage_gate_fails(&defs, &unrefs, focus, threshold, None)
+        per_file_coverage_gate_fails(&defs, &unrefs, focus, threshold, weighted_pcts)
     {
         print_coverage_gate_failure(&CoverageGateFailureCtx {
             threshold,
@@ -202,13 +199,9 @@ pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
         .map(CachedCoverageItem::into_tuple)
         .collect();
     let threshold = gate_config.test_coverage_threshold;
-    if let Some((unreferenced, file_pcts)) = per_file_coverage_gate_fails(
-        &defs_t,
-        &unrefs_t,
-        focus,
-        threshold,
-        None,
-    ) {
+    if let Some((unreferenced, file_pcts)) =
+        per_file_coverage_gate_fails(&defs_t, &unrefs_t, focus, threshold, None)
+    {
         print_coverage_gate_failure(&CoverageGateFailureCtx {
             threshold,
             unreferenced: &unreferenced,

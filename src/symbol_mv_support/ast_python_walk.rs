@@ -185,7 +185,10 @@ mod ast_python_walk_tests {
     fn walk_collects_class_method_and_attribute_call() {
         let src = "class C:\n    def m(self):\n        return 1\n\ndef use():\n    c = C()\n    return c.m()\n";
         let (defs, refs) = walk_module(src);
-        assert!(defs.iter().any(|d| d.name == "m" && d.owner.as_deref() == Some("C")));
+        assert!(
+            defs.iter()
+                .any(|d| d.name == "m" && d.owner.as_deref() == Some("C"))
+        );
         assert!(
             refs.iter()
                 .any(|r| r.kind == ReferenceKind::Method && &src[r.start..r.end] == "m")
@@ -209,17 +212,15 @@ mod ast_python_walk_tests {
 
     #[test]
     fn walk_collects_global_nonlocal_delete_raise_and_decorator() {
-        let src = "@deco\ndef f():\n    global x\n    nonlocal y\n    del z\n    raise E from cause\n";
+        let src =
+            "@deco\ndef f():\n    global x\n    nonlocal y\n    del z\n    raise E from cause\n";
         let (tree, src) = parse_module(src);
         let mut defs = Vec::new();
         let mut refs = Vec::new();
         walk_py(tree.root_node(), &src, None, false, &mut defs, &mut refs);
         assert!(defs.iter().any(|d| d.name == "f"));
         for name in ["x", "y", "z", "cause", "deco"] {
-            assert!(
-                ref_names(&refs, &src).contains(&name),
-                "missing ref {name}"
-            );
+            assert!(ref_names(&refs, &src).contains(&name), "missing ref {name}");
         }
     }
 
@@ -249,8 +250,14 @@ mod ast_python_walk_tests {
     fn walk_nested_class_body() {
         let src = "class Outer:\n    class Inner:\n        def m(self):\n            return 1\n";
         let (defs, _) = walk_module(src);
-        assert!(defs.iter().any(|d| d.name == "Inner" && d.owner.as_deref() == Some("Outer")));
-        assert!(defs.iter().any(|d| d.name == "m" && d.owner.as_deref() == Some("Inner")));
+        assert!(
+            defs.iter()
+                .any(|d| d.name == "Inner" && d.owner.as_deref() == Some("Outer"))
+        );
+        assert!(
+            defs.iter()
+                .any(|d| d.name == "m" && d.owner.as_deref() == Some("Inner"))
+        );
     }
 
     #[test]
@@ -302,7 +309,8 @@ mod ast_python_walk_tests {
         use super::{
             walk_py_calls_and_imports, walk_py_definitions, walk_py_references, walk_py_stmt_refs,
         };
-        let (tree, src) = parse_module("import os\nfrom sys import path\n\ndef f():\n    global x\n");
+        let (tree, src) =
+            parse_module("import os\nfrom sys import path\n\ndef f():\n    global x\n");
         let root = tree.root_node();
         let mut defs = Vec::new();
         let mut refs = Vec::new();

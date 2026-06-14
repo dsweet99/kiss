@@ -169,16 +169,20 @@ fn test_file_to_module_suffix_basic() {
 
 #[test]
 fn test_module_suffix_matches_exact_and_suffix() {
-    use super::disambiguation::{
-        crate_qualified_module_matches_def, module_suffix_matches,
-    };
+    use super::disambiguation::{crate_qualified_module_matches_def, module_suffix_matches};
     assert!(module_suffix_matches("pkg.sub.mod", "pkg.sub.mod"));
     assert!(module_suffix_matches("pkg.sub.mod", "sub.mod"));
     assert!(module_suffix_matches("pkg.sub.mod", "mod"));
     assert!(!module_suffix_matches("pkg.sub.mod", "other.mod"));
     assert!(!module_suffix_matches("pkg.sub.mod", "ub.mod"));
-    assert!(crate_qualified_module_matches_def("hydrology", "vendor.pkg.hydrology"));
-    assert!(!crate_qualified_module_matches_def("pkg.sub.mod", "other.mod"));
+    assert!(crate_qualified_module_matches_def(
+        "hydrology",
+        "vendor.pkg.hydrology"
+    ));
+    assert!(!crate_qualified_module_matches_def(
+        "pkg.sub.mod",
+        "other.mod"
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +330,21 @@ fn test_resolve_ambiguous_name_ref_based() {
     let name_to_test_files: HashMap<&str, Vec<PathBuf>> = HashMap::new();
     let result = resolve_ambiguous_name("func", &files, &refs, &name_to_test_files, None);
     assert_eq!(result, Some(PathBuf::from("alpha/mod.py")));
+}
+
+#[test]
+fn test_resolve_ambiguous_name_prefers_same_file_inline_test_witness() {
+    use super::disambiguation::resolve_ambiguous_name;
+    let mut files = HashSet::new();
+    files.insert(PathBuf::from("src/a.rs"));
+    files.insert(PathBuf::from("src/b.rs"));
+    let refs = HashSet::from(["helper".to_string()]);
+    let name_to_test_files: HashMap<&str, Vec<PathBuf>> =
+        HashMap::from([("helper", vec![PathBuf::from("src/b.rs")])]);
+
+    let result = resolve_ambiguous_name("helper", &files, &refs, &name_to_test_files, None);
+
+    assert_eq!(result, Some(PathBuf::from("src/b.rs")));
 }
 
 // ---------------------------------------------------------------------------

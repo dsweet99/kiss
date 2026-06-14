@@ -1,5 +1,7 @@
-use super::{has_cfg_test_attribute, has_test_attribute, is_covered_by_qualified_ref, RustCodeDefinition};
 use super::references::{CallReferenceVisitor, QualifiedModuleRef, ReferenceVisitor};
+use super::{
+    RustCodeDefinition, has_cfg_test_attribute, has_test_attribute, is_covered_by_qualified_ref,
+};
 use crate::rust_parsing::ParsedRustFile;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -13,7 +15,9 @@ fn is_covered_for_propagation(
 ) -> bool {
     is_covered_by_qualified_ref(def, qualified_refs)
         || (refs.contains(&def.name)
-            && name_files.get(&def.name).is_none_or(|files| files.len() <= 1))
+            && name_files
+                .get(&def.name)
+                .is_none_or(|files| files.len() <= 1))
 }
 
 fn file_has_covered_production_fn(
@@ -95,8 +99,12 @@ fn propagate_from_items(
                 else {
                     continue;
                 };
-                if is_covered_for_propagation(def, test_references, qualified_references, name_files)
-                {
+                if is_covered_for_propagation(
+                    def,
+                    test_references,
+                    qualified_references,
+                    name_files,
+                ) {
                     ReferenceVisitor {
                         refs: test_references,
                         qualified: qualified_references,
@@ -191,8 +199,12 @@ fn propagate_call_refs_from_items(
                 else {
                     continue;
                 };
-                if is_covered_for_propagation(def, call_references, qualified_references, name_files)
-                {
+                if is_covered_for_propagation(
+                    def,
+                    call_references,
+                    qualified_references,
+                    name_files,
+                ) {
                     CallReferenceVisitor {
                         refs: call_references,
                         qualified: qualified_references,

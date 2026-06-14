@@ -5,7 +5,7 @@ try:
     from .models import Product, User
 except ImportError:
     from tests.fake_python.models import Product, User
- 
+
 
 
 def helper_create_user():

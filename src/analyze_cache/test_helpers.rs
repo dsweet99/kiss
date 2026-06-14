@@ -11,7 +11,9 @@ pub(crate) struct ScopedHome {
 
 impl ScopedHome {
     pub(crate) fn new() -> Self {
-        let guard = HOME_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guard = HOME_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
         let prev = std::env::var_os("HOME");
         unsafe { std::env::set_var("HOME", tmp.path()) };

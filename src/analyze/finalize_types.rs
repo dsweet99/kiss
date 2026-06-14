@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use kiss::Violation;
 use kiss::check_universe_cache::CachedCoverageItem;
+use std::collections::HashMap;
 
 use crate::analyze::focus::FocusFilter;
 
@@ -10,7 +11,12 @@ use crate::analyze::options::AnalyzeOptions;
 use crate::analyze::parallel::RustAnalysis;
 use crate::analyze_parse::ParseResult;
 
-pub(crate) type CoverageCachePair = (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>);
+#[derive(Clone)]
+pub(crate) struct CoverageCacheData {
+    pub definitions: Vec<CachedCoverageItem>,
+    pub unreferenced: Vec<CachedCoverageItem>,
+    pub weighted_file_pcts: HashMap<PathBuf, usize>,
+}
 
 pub(crate) struct AnalysisProducts {
     pub result: ParseResult,
@@ -18,7 +24,7 @@ pub(crate) struct AnalysisProducts {
     pub file_count: usize,
     pub py_cov: kiss::TestRefAnalysis,
     pub cov_viols: Vec<Violation>,
-    pub coverage_cache_lists: Option<CoverageCachePair>,
+    pub coverage_cache_lists: Option<CoverageCacheData>,
     pub py_stats: Option<kiss::MetricStats>,
     pub rs_stats: Option<kiss::MetricStats>,
     pub rs: RustAnalysis,
@@ -56,7 +62,7 @@ pub(crate) struct CovDupPhase<'a> {
     pub py_graph: Option<&'a kiss::DependencyGraph>,
     pub rs_graph: Option<&'a kiss::DependencyGraph>,
     pub precomputed_cov_viols: Vec<Violation>,
-    pub precomputed_coverage_cache_lists: Option<CoverageCachePair>,
+    pub precomputed_coverage_cache_lists: Option<CoverageCacheData>,
     pub graph_viols_all: &'a [Violation],
     pub py_dups_all: &'a [kiss::DuplicateCluster],
     pub rs_dups_all: &'a [kiss::DuplicateCluster],
@@ -64,7 +70,7 @@ pub(crate) struct CovDupPhase<'a> {
 
 pub(crate) struct CovDupOutcome {
     pub cov_viols: Vec<Violation>,
-    pub coverage_cache_lists: Option<CoverageCachePair>,
+    pub coverage_cache_lists: Option<CoverageCacheData>,
     pub t_phase2: Instant,
     pub py_dups: Vec<kiss::DuplicateCluster>,
     pub rs_dups: Vec<kiss::DuplicateCluster>,
@@ -83,7 +89,7 @@ pub(crate) struct StorePrintPhase<'a> {
     pub rs_graph: Option<&'a kiss::DependencyGraph>,
     pub py_dups_all: &'a [kiss::DuplicateCluster],
     pub rs_dups_all: &'a [kiss::DuplicateCluster],
-    pub coverage_cache_lists: Option<CoverageCachePair>,
+    pub coverage_cache_lists: Option<CoverageCacheData>,
     pub py_stats: Option<&'a kiss::MetricStats>,
     pub rs_stats: Option<&'a kiss::MetricStats>,
     pub py_dups: &'a [kiss::DuplicateCluster],

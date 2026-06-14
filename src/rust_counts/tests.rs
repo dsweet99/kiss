@@ -220,7 +220,9 @@ fn baz() {}
     };
     let viols = analyze_rust_file(&parsed, &cfg);
     assert!(
-        viols.iter().any(|v| v.metric == "local_variables_per_function"),
+        viols
+            .iter()
+            .any(|v| v.metric == "local_variables_per_function"),
         "expected local var violation: {viols:?}"
     );
     assert!(

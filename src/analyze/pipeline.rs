@@ -2,18 +2,20 @@ use crate::analyze::coverage::{
     CoverageOutputOpts, GraphRefPair, PyRsTestCoverage, collect_coverage_viols,
 };
 use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
+use crate::analyze::focus::FocusFilter;
 use crate::analyze::focus::filter_viols_by_focus;
 use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
 use crate::analyze::parallel::{ParallelPyIn, run_parallel_py_analysis, run_rust_analysis};
 use crate::analyze::params::RunAnalyzeUncached;
 use crate::analyze::print::log_parse_timing;
 use crate::analyze_parse::{ParseAllTimedParams, ParseResult, parse_all_timed};
-use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::cli_output::file_coverage_map;
 use kiss::{DependencyGraph, DuplicateCluster, MetricStats, ParsedFile, ParsedRustFile};
-use crate::analyze::focus::FocusFilter;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
+
+use crate::analyze::finalize_types::CoverageCacheData;
 
 pub(crate) struct FullPipelineResult {
     pub result: ParseResult,
@@ -28,7 +30,7 @@ pub(crate) struct FullPipelineResult {
     pub rs_dups_all: Vec<DuplicateCluster>,
     pub py_stats: MetricStats,
     pub rs_stats: MetricStats,
-    pub coverage_cache_lists: Option<(Vec<CachedCoverageItem>, Vec<CachedCoverageItem>)>,
+    pub coverage_cache_lists: Option<CoverageCacheData>,
     pub timings: (Instant, Instant, Instant),
 }
 
@@ -123,6 +125,16 @@ fn build_rust_metric_stats(
     )
 }
 
+fn runtime_py_coverage_for_opts(
+    opts: &AnalyzeOptions<'_>,
+    parsed: &[ParsedFile],
+) -> kiss::TestRefAnalysis {
+    let repo_root = Path::new(opts.universe)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(opts.universe));
+    kiss::rslip_bridge::runtime_py_analysis(&repo_root, parsed)
+}
+
 pub(crate) fn run_full_pipeline(in_: FullPipelineInput<'_>) -> FullPipelineResult {
     let (result, parse_timing) = parse_all_timed(ParseAllTimedParams {
         py_files: in_.py_files,
@@ -157,7 +169,7 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
     let file_count = result.py_parsed.len() + result.rs_parsed.len();
     let viols = filter_viols_by_focus(result.violations.clone(), focus);
     let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config, None);
-    let ((py_graph, graph_viols_all), (py_cov, py_dups_all)) =
+    let ((py_graph, graph_viols_all), (_py_cov_static, py_dups_all)) =
         run_parallel_py_analysis(ParallelPyIn {
             py_parsed: &result.py_parsed,
             rs_graph: rs.graph.as_ref(),
@@ -165,6 +177,7 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
             file_count,
             cached_py_cov: None,
         });
+    let py_cov = runtime_py_coverage_for_opts(opts, &result.py_parsed);
     let rs_dups_all = rs.dups.clone();
 
     let py_stats = build_python_metric_stats(&result.py_parsed, py_graph.as_ref(), &py_cov);
@@ -229,11 +242,9 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
     });
 
     if !opts.bypass_gate && opts.gate_config.test_coverage_threshold > 0 {
-        let py_refs = result.py_parsed.iter().collect::<Vec<_>>();
         let rs_refs = result.rs_parsed.iter().collect::<Vec<_>>();
-        let py_graph = crate::analyze::graph_api::build_py_graph(&result.py_parsed);
         let rs_graph = crate::analyze::graph_api::build_rs_graph(&result.rs_parsed);
-        let py_cov = kiss::analyze_test_refs(&py_refs, py_graph.as_ref());
+        let py_cov = runtime_py_coverage_for_opts(opts, &result.py_parsed);
         let rs_cov = kiss::analyze_rust_test_refs(&rs_refs, rs_graph.as_ref());
         if let Some(early) = crate::analyze::coverage_gate::evaluate_gate(
             &py_cov,

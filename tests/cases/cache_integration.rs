@@ -1,7 +1,7 @@
 use crate::common::list_full_check_cache_files;
 use std::fs;
-use std::path::Path;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::process::{Command, Output};
 use std::time::SystemTime;
 use tempfile::TempDir;
@@ -119,8 +119,8 @@ fn check_all_cache_invalidates_on_same_size_content_change() {
     let home = TempDir::new().unwrap();
 
     let src = repo.path().join("simple.py");
-    let content1 = "def foo():\n    return 1\n";
-    let content2 = "def bar():\n    return 2\n";
+    let content1 = "x=1\n# a\n";
+    let content2 = "x=1\ny=2\n";
     assert_eq!(content1.len(), content2.len());
     fs::write(&src, content1).unwrap();
 

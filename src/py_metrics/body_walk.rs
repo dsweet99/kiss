@@ -90,7 +90,11 @@ pub(crate) fn update_body_counts(node: Node, agg: &mut BodyAgg) {
     }
     if matches!(
         node.kind(),
-        "if_statement" | "elif_clause" | "case_clause" | "for_statement" | "while_statement"
+        "if_statement"
+            | "elif_clause"
+            | "case_clause"
+            | "for_statement"
+            | "while_statement"
             | "async_for_statement"
     ) {
         agg.branches += 1;

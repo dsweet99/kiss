@@ -1,6 +1,5 @@
 mod content_digest;
 mod emit;
-
 use crate::analyze::FocusFilter;
 use crate::analyze::{
     compute_test_coverage_from_lists, filter_duplicates_by_focus, filter_viols_by_focus,
@@ -8,24 +7,26 @@ use crate::analyze::{
 use emit::{emit_cached_bypass, emit_cached_gated};
 use kiss::check_cache;
 use kiss::check_cache::{CachedCodeChunk, CachedViolation};
-use kiss::check_universe_cache::{CachedCoverageItem, CachedDuplicateCluster, FullCheckCache};
+use kiss::check_universe_cache::{
+    CachedCoverageItem, CachedDuplicateCluster, CachedFileCoverage, FullCheckCache,
+};
 use kiss::stats::MetricStats;
 use kiss::{Config, DuplicateCluster, GateConfig, Violation};
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
-
 mod path_helpers;
 mod stats_top;
 #[cfg(test)]
 mod test_helpers;
-use path_helpers::{cache_path_full, same_cached_paths};
 pub(crate) use content_digest::load_verified_full_cache;
+use path_helpers::{cache_path_full, same_cached_paths};
 pub(crate) use stats_top::{
     maybe_store_stats_top_cache, try_run_cached_stats_summary, try_run_cached_stats_top,
 };
 
-const CACHE_SCHEMA_VERSION: &str = "v9";
+const CACHE_SCHEMA_VERSION: &str = "v11";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -207,25 +208,29 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus: &FocusFilter) -> Vec<Vio
             .map(|v| v.clone().into_violation())
             .filter(|v| {
                 crate::analyze::is_focus_file(&v.file, focus)
-                    && crate::analyze::is_coverage_report_target(
-                        &v.file,
-                        &v.unit_name,
-                        true,
-                    )
+                    && crate::analyze::is_coverage_report_target(&v.file, &v.unit_name, true)
             })
             .collect();
     }
 
-    let file_pcts = kiss::cli_output::file_coverage_map(&defs, &unreferenced);
+    let weighted = weighted_file_pct_map(&cache.weighted_file_pcts);
+    let mut file_pcts = kiss::cli_output::file_coverage_map(&defs, &unreferenced);
+    file_pcts.extend(weighted);
     unreferenced
         .into_iter()
-        .filter(|(path, name, _)| {
-            crate::analyze::is_coverage_report_target(path, name, true)
-        })
+        .filter(|(path, name, _)| crate::analyze::is_coverage_report_target(path, name, true))
         .map(|(file, name, line)| {
             let pct = file_pcts.get(&file).copied().unwrap_or(0);
             coverage_violation(file, name, line, pct)
         })
+        .collect()
+}
+
+pub(crate) fn weighted_file_pct_map(items: &[CachedFileCoverage]) -> HashMap<PathBuf, usize> {
+    items
+        .iter()
+        .cloned()
+        .map(CachedFileCoverage::into_tuple)
         .collect()
 }
 
@@ -327,6 +332,7 @@ pub struct FullCacheInputs<'a> {
     pub rs_dups_all: &'a [DuplicateCluster],
     pub definitions: Vec<CachedCoverageItem>,
     pub unreferenced: Vec<CachedCoverageItem>,
+    pub weighted_file_pcts: Vec<CachedFileCoverage>,
 }
 
 pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
@@ -384,9 +390,11 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
             .collect(),
         definitions: inputs.definitions,
         unreferenced: inputs.unreferenced,
+        weighted_file_pcts: inputs.weighted_file_pcts,
     };
     store_full_cache(&cache);
 }
-
+#[cfg(test)]
+mod content_digest_test;
 #[cfg(test)]
 mod tests;

@@ -1,5 +1,5 @@
-use super::{is_covered_by_executable_witnesses, RustCodeDefinition};
 use super::references::QualifiedModuleRef;
+use super::{RustCodeDefinition, is_covered_by_executable_witnesses};
 use crate::test_refs::CoveringTest;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -33,13 +33,17 @@ pub(super) fn build_rust_coverage_map(
                         continue;
                     }
                     let def = &definitions[idx];
-                    if !is_covered_by_executable_witnesses(
-                        def,
-                        usage_refs,
-                        qualified_refs,
-                        name_files,
-                        disambiguation,
-                    ) {
+                    let same_file_witness =
+                        test_path == &def.file && usage_refs.contains(&def.name);
+                    if !same_file_witness
+                        && !is_covered_by_executable_witnesses(
+                            def,
+                            usage_refs,
+                            qualified_refs,
+                            name_files,
+                            disambiguation,
+                        )
+                    {
                         continue;
                     }
                     let key = (def.file.clone(), def.name.clone());

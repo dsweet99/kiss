@@ -227,7 +227,10 @@ pub(super) fn decorate_file_units_with_coverage(
     }
 }
 
-pub(super) fn append_cycle_units(units: &mut Vec<kiss::UnitMetrics>, graph: &kiss::DependencyGraph) {
+pub(super) fn append_cycle_units(
+    units: &mut Vec<kiss::UnitMetrics>,
+    graph: &kiss::DependencyGraph,
+) {
     for cycle in graph.find_cycles().cycles {
         let Some(representative) = cycle.iter().min().cloned() else {
             continue;
@@ -336,4 +339,3 @@ where
         );
     }
 }
-

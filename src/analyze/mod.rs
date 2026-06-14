@@ -37,8 +37,8 @@ pub use dry::{DryRunParams, run_dry};
 pub use dup_detect::{detect_py_duplicates, detect_rs_duplicates};
 pub use entry::{run_analyze, run_analyze_with_result};
 pub use focus::{
-    FocusFilter, build_focus_set, filter_duplicates_by_focus,
-    filter_viols_by_focus, gather_files, is_focus_file,
+    FocusFilter, build_focus_set, filter_duplicates_by_focus, filter_viols_by_focus, gather_files,
+    is_focus_file,
 };
 #[allow(unused_imports)]
 pub use graph_api::{

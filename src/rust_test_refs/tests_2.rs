@@ -104,6 +104,47 @@ fn test_collect_per_test_usage_from_items_direct() {
 }
 
 #[test]
+fn test_same_named_inline_tests_cover_same_file_definitions() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let a_path = tmp.path().join("a.rs");
+    let b_path = tmp.path().join("b.rs");
+    std::fs::write(
+        &a_path,
+        "fn helper() -> i32 { 1 }\n#[cfg(test)] mod tests { use super::helper; #[test] fn covers_a() { assert_eq!(helper(), 1); } }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &b_path,
+        "fn helper() -> i32 { 2 }\n#[cfg(test)] mod tests { use super::helper; #[test] fn covers_b() { assert_eq!(helper(), 2); } }\n",
+    )
+    .unwrap();
+
+    let parsed_a = parse_rust_file(&a_path).unwrap();
+    let parsed_b = parse_rust_file(&b_path).unwrap();
+    let analysis = analyze_rust_test_refs(&[&parsed_a, &parsed_b], None);
+
+    assert!(
+        analysis.unreferenced.is_empty(),
+        "same-file inline tests should cover same-named helpers independently: {:?}",
+        analysis
+            .unreferenced
+            .iter()
+            .map(|d| (&d.file, &d.name))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        analysis
+            .coverage_map
+            .contains_key(&(a_path.clone(), "helper".to_string()))
+    );
+    assert!(
+        analysis
+            .coverage_map
+            .contains_key(&(b_path.clone(), "helper".to_string()))
+    );
+}
+
+#[test]
 fn test_visit_macro_tokens_direct() {
     let tokens: proc_macro2::TokenStream = "foo(bar)".parse().unwrap();
     let mut refs = HashSet::new();
@@ -126,6 +167,12 @@ fn test_is_binary_entry_point() {
     assert!(!definitions::is_binary_entry_point(Path::new(
         "tests/main.rs"
     )));
+}
+
+#[test]
+fn test_public_is_binary_entry_point_wrapper() {
+    assert!(is_binary_entry_point(Path::new("src/bin/worker.rs")));
+    assert!(!is_binary_entry_point(Path::new("tests/bin/worker.rs")));
 }
 
 #[test]
@@ -265,30 +312,26 @@ fn test_qualified_production_refs_cover_dispatch_handlers() {
     )
     .unwrap();
     let test_path = tmp.path().join("table_integration.rs");
-    std::fs::write(
-        &test_path,
-        "#[test]\nfn smoke() { table::register(); }\n",
-    )
-    .unwrap();
+    std::fs::write(&test_path, "#[test]\nfn smoke() { table::register(); }\n").unwrap();
 
     let parsed_alpha = parse_rust_file(&alpha).unwrap();
     let parsed_beta = parse_rust_file(&beta).unwrap();
     let parsed_table = parse_rust_file(&table).unwrap();
     let parsed_test = parse_rust_file(&test_path).unwrap();
     let analysis = analyze_rust_test_refs(
-        &[
-            &parsed_alpha,
-            &parsed_beta,
-            &parsed_table,
-            &parsed_test,
-        ],
+        &[&parsed_alpha, &parsed_beta, &parsed_table, &parsed_test],
         None,
     );
 
     let uncovered: Vec<_> = analysis
         .unreferenced
         .iter()
-        .map(|d| (d.name.as_str(), d.file.file_name().unwrap().to_str().unwrap()))
+        .map(|d| {
+            (
+                d.name.as_str(),
+                d.file.file_name().unwrap().to_str().unwrap(),
+            )
+        })
         .collect();
     assert!(
         analysis
@@ -330,10 +373,7 @@ fn test_production_call_refs_cover_transitive_callees() {
     let parsed_test = parse_rust_file(&test_path).unwrap();
     let analysis = analyze_rust_test_refs(&[&parsed_lib, &parsed_test], None);
     assert!(
-        !analysis
-            .unreferenced
-            .iter()
-            .any(|d| d.name == "helper"),
+        !analysis.unreferenced.iter().any(|d| d.name == "helper"),
         "helper should be covered via production call from chain"
     );
 }

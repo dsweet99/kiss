@@ -91,10 +91,7 @@ fn test_print_functions_and_helpers() {
     assert_eq!(n, 0);
     assert_eq!(e, 0);
     let focus = crate::analyze::FocusFilter::unrestricted();
-    assert!(crate::analyze::is_focus_file(
-        Path::new("any.py"),
-        &focus
-    ));
+    assert!(crate::analyze::is_focus_file(Path::new("any.py"), &focus));
     let dups = filter_duplicates_by_focus(vec![], &focus);
     assert!(dups.is_empty());
 }

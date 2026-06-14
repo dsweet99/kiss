@@ -5,11 +5,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-from click.testing import CliRunner
-
 import ops.adversarial_cheat as cheat_cli
+import pytest
 import python.adversarial_cheat as cheat_mod
+from click.testing import CliRunner
 from ops.adversarial_cheat import cheat_verify
 
 
@@ -43,56 +42,34 @@ def test_cheat_satisfied(metrics: cheat_mod.CheatMetrics, expected: bool) -> Non
     assert cheat_mod.cheat_satisfied(metrics) is expected
 
 
-def test_build_cheat_prompt_contains_paths_and_thresholds(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [
+        ("rust", "Rust only"),
+        ("python", "Python only"),
+        ("both", "Both Rust and Python"),
+    ],
+)
+def test_build_cheat_prompt_contains_paths_thresholds_and_language(
+    tmp_path: Path, lang: str, expected: str
+) -> None:
     kiss = tmp_path / "kiss"
     repo = tmp_path / "repo"
     kiss.mkdir()
     (kiss / "ops").mkdir()
     (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
     repo.mkdir()
-    text = cheat_mod.build_cheat_prompt(kiss, repo, "python")
+    text = cheat_mod.build_cheat_prompt(kiss, repo, lang)
     assert str(repo.resolve()) in text
     assert "cheat-verify" in text
     assert "below 80%" in text
+    assert expected in text
 
 
-def test_load_coverage_maps_parses_subprocess_json(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    payload = '{"kiss": {"src/a.py": 100.0}, "true": {"src/a.py": 5.0}}'
-
-    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        assert "coverage_maps_cli.py" in cmd[1]
-        return subprocess.CompletedProcess(cmd, 0, payload, "")
-
-    monkeypatch.setattr(cheat_mod.subprocess, "run", fake_run)
-    kiss_partial, true = cheat_mod._load_coverage_maps(repo)
-    assert kiss_partial == {"src/a.py": 100.0}
-    assert true == {"src/a.py": 5.0}
-
-
-def test_load_coverage_maps_subprocess_env_prepends_repo_root(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    captured: dict[str, object] = {}
-
-    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        captured.update(kwargs)
-        payload = '{"kiss": {}, "true": {}}'
-        return subprocess.CompletedProcess(cmd, 0, payload, "")
-
-    monkeypatch.setattr(cheat_mod.subprocess, "run", fake_run)
-    monkeypatch.setenv("PYTHONPATH", "/other")
-    cheat_mod._load_coverage_maps(repo)
-    env = captured["env"]
-    assert isinstance(env, dict)
-    root = str(cheat_mod.repo_root())
-    assert env["PYTHONPATH"].startswith(root)
-    assert "/other" in env["PYTHONPATH"]
+def test_format_cheat_report_no_gaps() -> None:
+    text = cheat_mod.format_cheat_report(cheat_mod.CheatMetrics(False, ()))
+    assert "kiss check: fail" in text
+    assert "source files with kiss=100% but low runtime coverage: (none)" in text
 
 
 def test_cheat_report_and_verify(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

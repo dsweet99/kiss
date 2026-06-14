@@ -19,11 +19,7 @@ use options::{
 use kiss::GateConfig;
 use kiss::TestSectionConfig;
 
-fn dispatch_analyze(
-    lang: Option<kiss::Language>,
-    command: Commands,
-    cfg: &TriConfig<'_>,
-) -> i32 {
+fn dispatch_analyze(lang: Option<kiss::Language>, command: Commands, cfg: &TriConfig<'_>) -> i32 {
     match command {
         Commands::Check {
             paths,

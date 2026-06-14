@@ -92,12 +92,7 @@ pub(crate) fn collect_refs_parallel(
 #[must_use]
 pub fn test_functions_in(parsed: &ParsedFile) -> Vec<String> {
     let mut out = Vec::new();
-    collect_test_functions_with_refs(
-        parsed.tree.root_node(),
-        &parsed.source,
-        "",
-        &mut out,
-    );
+    collect_test_functions_with_refs(parsed.tree.root_node(), &parsed.source, "", &mut out);
     out.into_iter().map(|(id, _, _)| id).collect()
 }
 
@@ -105,8 +100,63 @@ pub fn test_functions_in(parsed: &ParsedFile) -> Vec<String> {
 mod collect_parallel_tests {
     use super::*;
     use crate::parsing::{create_parser, parse_file};
+    use crate::test_refs::CodeDefinition;
+    use crate::units::CodeUnitKind;
+    use std::collections::{HashMap, HashSet};
     use std::io::Write;
+    use std::path::PathBuf;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn merge_collected_combines_every_bucket() {
+        let left_def = CodeDefinition {
+            name: "left".into(),
+            kind: CodeUnitKind::Function,
+            file: PathBuf::from("left.py"),
+            line: 1,
+            containing_class: None,
+        };
+        let right_def = CodeDefinition {
+            name: "right".into(),
+            kind: CodeUnitKind::Function,
+            file: PathBuf::from("right.py"),
+            line: 1,
+            containing_class: None,
+        };
+        let mut left_imports = HashMap::new();
+        left_imports.insert("mod".into(), HashSet::from(["left".into()]));
+        let mut right_imports = HashMap::new();
+        right_imports.insert("mod".into(), HashSet::from(["right".into()]));
+
+        let merged = merge_collected(
+            (
+                vec![left_def],
+                HashSet::from(["left_ref".into()]),
+                HashSet::from(["left_usage".into()]),
+                HashSet::from(["left_call".into()]),
+                left_imports,
+                HashMap::from([("alias_l".into(), "left".into())]),
+                vec![(PathBuf::from("test_l.py"), Vec::new())],
+            ),
+            (
+                vec![right_def],
+                HashSet::from(["right_ref".into()]),
+                HashSet::from(["right_usage".into()]),
+                HashSet::from(["right_call".into()]),
+                right_imports,
+                HashMap::from([("alias_r".into(), "right".into())]),
+                vec![(PathBuf::from("test_r.py"), Vec::new())],
+            ),
+        );
+
+        assert_eq!(merged.0.len(), 2);
+        assert!(merged.1.contains("left_ref") && merged.1.contains("right_ref"));
+        assert!(merged.2.contains("left_usage") && merged.2.contains("right_usage"));
+        assert!(merged.3.contains("left_call") && merged.3.contains("right_call"));
+        assert_eq!(merged.4["mod"].len(), 2);
+        assert_eq!(merged.5["alias_r"], "right");
+        assert_eq!(merged.6.len(), 2);
+    }
 
     #[test]
     fn test_functions_in_lists_test_defs() {
@@ -141,13 +191,8 @@ mod collect_parallel_tests {
         assert!(test_refs.contains("helper"));
         assert!(call_refs.contains("helper"));
         assert_eq!(per_test.len(), 1);
-        assert!(
-            per_test[0]
-                .1
-                .iter()
-                .any(|(name, usage, call)| {
-                    name == "test_helper" && usage.contains("helper") && call.contains("helper")
-                })
-        );
+        assert!(per_test[0].1.iter().any(|(name, usage, call)| {
+            name == "test_helper" && usage.contains("helper") && call.contains("helper")
+        }));
     }
 }

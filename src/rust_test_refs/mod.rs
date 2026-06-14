@@ -7,11 +7,11 @@ use syn::Attribute;
 
 mod coverage;
 mod coverage_map;
-mod executable_calls;
-mod scope;
 mod definitions;
+mod executable_calls;
 mod propagation;
 mod references;
+mod scope;
 mod trivial_expr;
 
 #[cfg(test)]
@@ -27,24 +27,24 @@ mod tests_2;
 mod tests_vault;
 
 pub use coverage::compute_rs_weighted_file_pcts;
+use coverage_map::build_rust_coverage_map;
 pub use definitions::RustCodeDefinition;
 use definitions::{
     collect_inline_test_module_witnesses, collect_rust_definitions, collect_test_module_references,
 };
-use coverage_map::build_rust_coverage_map;
-use propagation::{
-    propagate_transitive_production_call_refs, propagate_transitive_production_refs,
-};
 use executable_calls::{
     collect_executable_call_references_from_test_fns, collect_per_test_call_usage,
 };
-use references::{collect_per_test_usage, collect_rust_references, QualifiedModuleRef};
+use propagation::{
+    propagate_transitive_production_call_refs, propagate_transitive_production_refs,
+};
+use references::{QualifiedModuleRef, collect_per_test_usage, collect_rust_references};
 
 pub use references::rust_test_functions_in;
 
+use crate::test_refs::CoveringTest;
 use crate::test_refs::disambiguation::crate_qualified_module_matches_def;
 use crate::test_refs::file_to_module_suffix;
-use crate::test_refs::CoveringTest;
 
 type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
 type PerTestCallUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
@@ -68,22 +68,17 @@ fn has_test_naming_pattern(path: &Path) -> bool {
     path.file_stem()
         .and_then(|n| n.to_str())
         .is_some_and(|name| {
-            name.ends_with("_test") || name.starts_with("test_") || name.ends_with("_integration")
+            name.ends_with("_test")
+                || name.starts_with("test_")
+                || name.starts_with("tests")
+                || name.ends_with("_tests")
+                || name.ends_with("_integration")
         })
-}
-
-fn is_fake_rust_fixture(path: &Path) -> bool {
-    path.to_string_lossy().contains("fake_rust")
-        || path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .is_some_and(|stem| stem.starts_with("fake_"))
 }
 
 #[must_use]
 pub fn is_rust_test_file(path: &Path) -> bool {
     is_rs_file(path)
-        && !is_fake_rust_fixture(path)
         && (has_test_naming_pattern(path) || crate::test_refs::is_in_test_directory(path))
 }
 
@@ -129,6 +124,16 @@ pub(crate) fn has_cfg_test_attribute(attrs: &[Attribute]) -> bool {
     })
 }
 
+fn has_inline_test_module(ast: &syn::File) -> bool {
+    ast.items
+        .iter()
+        .any(|item| matches!(item, syn::Item::Mod(m) if has_cfg_test_attribute(&m.attrs)))
+}
+
+fn is_external_rust_test_file(parsed: &ParsedRustFile) -> bool {
+    is_rust_test_file(&parsed.path) && !has_inline_test_module(&parsed.ast)
+}
+
 fn is_directly_referenced(
     def: &RustCodeDefinition,
     refs: &HashSet<String>,
@@ -156,10 +161,7 @@ fn is_impl_method_covered_by_type_and_name(
         def.kind,
         CodeUnitKind::TraitImplMethod | CodeUnitKind::Method
     ) && refs.contains(&def.name)
-        && def
-            .impl_for_type
-            .as_ref()
-            .is_some_and(|t| refs.contains(t))
+        && def.impl_for_type.as_ref().is_some_and(|t| refs.contains(t))
 }
 
 pub(super) fn is_covered_by_qualified_ref(
@@ -167,19 +169,13 @@ pub(super) fn is_covered_by_qualified_ref(
     qualified_refs: &HashSet<QualifiedModuleRef>,
 ) -> bool {
     let def_suffix = file_to_module_suffix(&def.file);
-    let stem = def
-        .file
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
+    let stem = def.file.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     qualified_refs.iter().any(|(module, name)| {
         if name != &def.name {
             return false;
         }
         crate_qualified_module_matches_def(&def_suffix, module)
-            || (!stem.is_empty()
-                && module.contains('.')
-                && module.ends_with(&format!(".{stem}")))
+            || (!stem.is_empty() && module.contains('.') && module.ends_with(&format!(".{stem}")))
     })
 }
 
@@ -231,17 +227,9 @@ fn ingest_parsed_rust_file(
     qualified_references: &mut HashSet<QualifiedModuleRef>,
     per_test_usage: &mut PerTestUsage,
 ) {
-    if is_rust_test_file(&parsed.path) {
-        collect_rust_references(
-            &parsed.ast,
-            test_references,
-            qualified_references,
-        );
-        collect_rust_references(
-            &parsed.ast,
-            test_direct_references,
-            &mut HashSet::new(),
-        );
+    if is_external_rust_test_file(parsed) {
+        collect_rust_references(&parsed.ast, test_references, qualified_references);
+        collect_rust_references(&parsed.ast, test_direct_references, &mut HashSet::new());
         collect_executable_call_references_from_test_fns(
             &parsed.ast,
             call_references,
@@ -292,6 +280,18 @@ fn build_rust_disambiguation(
     crate::test_refs::build_disambiguation_map(name_files, test_references, &py_style_usage, graph)
 }
 
+fn same_file_call_witnesses(per_test_call_usage: &PerTestCallUsage) -> HashSet<(PathBuf, String)> {
+    let mut out = HashSet::new();
+    for (test_path, funcs) in per_test_call_usage {
+        for (_, refs) in funcs {
+            for ref_name in refs {
+                out.insert((test_path.clone(), ref_name.clone()));
+            }
+        }
+    }
+    out
+}
+
 pub fn analyze_rust_test_refs(
     parsed_files: &[&ParsedRustFile],
     graph: Option<&DependencyGraph>,
@@ -316,9 +316,7 @@ pub fn analyze_rust_test_refs(
     let production_files: Vec<&ParsedRustFile> = parsed_files
         .iter()
         .copied()
-        .filter(|p| {
-            !is_rust_test_file(&p.path) && !definitions::is_binary_entry_point(&p.path)
-        })
+        .filter(|p| !is_external_rust_test_file(p) && !definitions::is_binary_entry_point(&p.path))
         .collect();
     let name_files = crate::test_refs::build_name_file_map(
         definitions
@@ -347,19 +345,6 @@ pub fn analyze_rust_test_refs(
         .collect();
     let disambiguation =
         build_rust_disambiguation(&per_test_usage, &name_files, &test_references, graph);
-    let unreferenced = definitions
-        .iter()
-        .filter(|d| {
-            !is_covered_by_executable_witnesses(
-                d,
-                &call_references,
-                &qualified_call_references,
-                &name_files,
-                &disambiguation,
-            )
-        })
-        .cloned()
-        .collect();
     let per_test_call_usage: PerTestCallUsage = parsed_files
         .iter()
         .filter_map(|parsed| {
@@ -370,6 +355,21 @@ pub fn analyze_rust_test_refs(
                 Some((parsed.path.clone(), calls))
             }
         })
+        .collect();
+    let same_file_calls = same_file_call_witnesses(&per_test_call_usage);
+    let unreferenced = definitions
+        .iter()
+        .filter(|d| {
+            !same_file_calls.contains(&(d.file.clone(), d.name.clone()))
+                && !is_covered_by_executable_witnesses(
+                    d,
+                    &call_references,
+                    &qualified_call_references,
+                    &name_files,
+                    &disambiguation,
+                )
+        })
+        .cloned()
         .collect();
     let coverage_map = build_rust_coverage_map(
         &definitions,

@@ -4,8 +4,10 @@ import base64
 import logging
 import time
 from collections.abc import Mapping
+
 from common import serializer
 from common.sdatetime import now_isoformat
+
 logger = logging.getLogger(__name__)
 
 

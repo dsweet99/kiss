@@ -4,10 +4,10 @@ use tree_sitter::{Node, Parser};
 
 use crate::Language;
 
-use super::ast_python_walk::walk_py;
 use super::ast_models::{
     AstResult, Definition, FallbackReason, ParseOutcome, Reference, ReferenceKind, SymbolKind,
 };
+use super::ast_python_walk::walk_py;
 
 pub(super) fn parse_python(content: &str) -> ParseOutcome {
     let mut parser = Parser::new();

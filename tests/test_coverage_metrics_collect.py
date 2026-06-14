@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 import python.coverage_collect as collect
 from coverage_metrics_stubs import SLIPCOVER_OK, install_path_stub
 
@@ -57,6 +56,25 @@ def test_pytest_targets_reads_pyproject_testpaths(tmp_path: Path) -> None:
     assert collect.pytest_targets(repo) == ["pkg_tests"]
 
 
+def test_pytest_targets_reads_string_testpaths_and_bad_toml(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "pyproject.toml").write_text(
+        '[tool.pytest.ini_options]\ntestpaths = "unit_tests"\n',
+        encoding="utf-8",
+    )
+    assert collect.pytest_targets(repo) == ["unit_tests"]
+
+    (repo / "pyproject.toml").write_text("[tool.pytest.ini_options\n", encoding="utf-8")
+    assert collect.pytest_targets(repo) == []
+
+
+def test_pytest_targets_defaults_to_tests_directory(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "tests").mkdir(parents=True)
+    assert collect.pytest_targets(repo) == ["tests"]
+
+
 def test_slipcover_invocation_sklearn_uses_pyargs(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / "sklearn" / "__init__.py").parent.mkdir(parents=True)
@@ -83,20 +101,3 @@ sys.exit(2)
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ.get('PATH', '')}")
     got = collect.run_slipcover(repo)
     assert got == {"a.py": 50.0}
-
-
-def test_run_true_coverage_python_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / "mod.py").write_text("x=1\n", encoding="utf-8")
-    monkeypatch.setattr(collect, "run_slipcover", lambda _repo: {"mod.py": 100.0})
-    monkeypatch.setattr(collect, "run_llvm_cov", lambda _repo: {"should_not_run.rs": 0.0})
-    got = collect.run_true_coverage(repo)
-    assert got == {"mod.py": 100.0}
-
-
-def test_run_true_coverage_no_sources_raises(tmp_path: Path) -> None:
-    repo = tmp_path / "empty"
-    repo.mkdir()
-    with pytest.raises(RuntimeError, match="no Python or Rust sources"):
-        collect.run_true_coverage(repo)

@@ -108,6 +108,9 @@ pub(super) fn collect_impl_methods(
             if has_test_attribute(&m.attrs) {
                 continue;
             }
+            if is_trait_impl && m.sig.ident == "fmt" {
+                continue;
+            }
             let (kind, impl_for) = if is_trait_impl {
                 (CodeUnitKind::TraitImplMethod, impl_type_name.clone())
             } else {
@@ -141,22 +144,8 @@ pub(super) fn collect_definitions_from_item(
                 None,
             );
         }
-        Item::Struct(s) => try_add_def(
-            defs,
-            &s.ident.to_string(),
-            CodeUnitKind::Class,
-            file,
-            s.ident.span().start().line,
-            None,
-        ),
-        Item::Enum(e) => try_add_def(
-            defs,
-            &e.ident.to_string(),
-            CodeUnitKind::Class,
-            file,
-            e.ident.span().start().line,
-            None,
-        ),
+        // Bare type declarations are not executable coverage targets. Their
+        // behavior is covered through constructors, methods, and functions.
         Item::Impl(i) if !has_cfg_test_attribute(&i.attrs) => collect_impl_methods(i, file, defs),
         Item::Mod(m) if !has_cfg_test_attribute(&m.attrs) => {
             if let Some((_, items)) = &m.content {
@@ -248,6 +237,27 @@ mod definitions_coverage {
     }
 
     #[test]
+    fn display_fmt_trait_adapter_is_not_a_standalone_coverage_target() {
+        let ast: syn::File = syn::parse_str(
+            r#"
+struct E;
+impl std::fmt::Display for E {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "E")
+    }
+}
+"#,
+        )
+        .unwrap();
+        let mut defs = Vec::new();
+        collect_rust_definitions(&ast, Path::new("error.rs"), &mut defs);
+        assert!(
+            defs.iter().all(|def| def.name != "fmt"),
+            "formatting adapters are exercised through formatting APIs, not direct calls"
+        );
+    }
+
+    #[test]
     fn is_trivial_expr_variants() {
         assert!(is_trivial_expr(&syn::parse_str("42").unwrap()));
         assert!(is_trivial_expr(&syn::parse_str("x").unwrap()));
@@ -311,7 +321,7 @@ mod definitions_coverage {
         collect_rust_definitions(&ast, Path::new("test.rs"), &mut defs);
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"public_fn"));
-        assert!(names.contains(&"MyStruct"));
+        assert!(!names.contains(&"MyStruct"));
         assert!(!names.contains(&"_private_fn"));
     }
 

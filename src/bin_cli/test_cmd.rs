@@ -1,7 +1,7 @@
 use kiss::TestSectionConfig;
 
 use crate::test_git::TestChangeMode;
-use crate::test_runner::{run_test, RunTestCmdArgs};
+use crate::test_runner::{RunTestCmdArgs, run_test};
 
 #[allow(clippy::too_many_arguments)]
 pub fn run_test_command(

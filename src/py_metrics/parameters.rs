@@ -79,7 +79,14 @@ fn count_one_parameter(
             }
         }
         "default_parameter" | "typed_default_parameter" => {
-            count_default_parameter(child, source, positional, keyword_only, after_star, boolean_params);
+            count_default_parameter(
+                child,
+                source,
+                positional,
+                keyword_only,
+                after_star,
+                boolean_params,
+            );
         }
         "list_splat_pattern" => {
             *positional += 1;

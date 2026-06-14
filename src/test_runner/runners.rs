@@ -2,9 +2,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::test_discovery::{self, args as disc_args};
 use kiss::test_refs::{is_in_test_directory, is_test_file};
 use kiss::{parse_files, parse_rust_files, rust_test_functions_in, test_functions_in};
-use crate::test_discovery::{self, args as disc_args};
 
 pub const NO_COVERING_TESTS_MSG: &str = "NO COVERING TESTS";
 
@@ -16,7 +16,9 @@ pub fn merge_exit_codes(a: i32, b: i32) -> i32 {
     a.max(b)
 }
 
-pub fn collect_selectors_from_defs(defs: &[test_discovery::DefEntry]) -> BTreeSet<(PathBuf, String)> {
+pub fn collect_selectors_from_defs(
+    defs: &[test_discovery::DefEntry],
+) -> BTreeSet<(PathBuf, String)> {
     let mut set = BTreeSet::new();
     for (_src, _name, _line, cov) in defs {
         if let Some(tests) = cov {
@@ -51,7 +53,9 @@ pub fn partition_changed_paths(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>
     (source, test)
 }
 
-pub fn enumerate_tests_in_changed_files(test_paths: &[PathBuf]) -> Result<BTreeSet<(PathBuf, String)>, String> {
+pub fn enumerate_tests_in_changed_files(
+    test_paths: &[PathBuf],
+) -> Result<BTreeSet<(PathBuf, String)>, String> {
     let mut out = BTreeSet::new();
     let py: Vec<_> = test_paths
         .iter()
@@ -66,7 +70,9 @@ pub fn enumerate_tests_in_changed_files(test_paths: &[PathBuf]) -> Result<BTreeS
     if !py.is_empty() {
         let parsed = parse_files(&py).map_err(|e| e.to_string())?;
         for (path, r) in py.iter().zip(parsed) {
-            let pf = r.map_err(|e| format!("error: kiss test: failed to parse {}: {e}", path.display()))?;
+            let pf = r.map_err(|e| {
+                format!("error: kiss test: failed to parse {}: {e}", path.display())
+            })?;
             let ids = test_functions_in(&pf);
             for id in ids {
                 out.insert((pf.path.clone(), id));
@@ -76,7 +82,9 @@ pub fn enumerate_tests_in_changed_files(test_paths: &[PathBuf]) -> Result<BTreeS
     if !rs.is_empty() {
         let parsed = parse_rust_files(&rs);
         for (path, r) in rs.iter().zip(parsed) {
-            let pf = r.map_err(|e| format!("error: kiss test: failed to parse {}: {e}", path.display()))?;
+            let pf = r.map_err(|e| {
+                format!("error: kiss test: failed to parse {}: {e}", path.display())
+            })?;
             let ids = rust_test_functions_in(&pf);
             for id in ids {
                 out.insert((pf.path.clone(), id));
@@ -97,9 +105,9 @@ pub(crate) fn shlex_quote(s: &str) -> String {
     if s.is_empty() {
         return "''".into();
     }
-    if s.chars().all(|c| {
-        c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | ':' | '=' | ',')
-    }) && !s.starts_with('-')
+    if s.chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | ':' | '=' | ','))
+        && !s.starts_with('-')
     {
         return s.to_string();
     }
@@ -116,11 +124,7 @@ pub(crate) fn shlex_quote(s: &str) -> String {
 }
 
 pub fn build_pytest_argv(selectors: &[String], extra: &[String]) -> Vec<String> {
-    let mut v = vec![
-        "python".into(),
-        "-m".into(),
-        "pytest".into(),
-    ];
+    let mut v = vec!["python".into(), "-m".into(), "pytest".into()];
     v.extend(selectors.iter().cloned());
     v.extend(extra.iter().cloned());
     v
@@ -145,9 +149,7 @@ pub fn run_command_inherit(argv: &[String], cwd: &Path) -> Result<i32, String> {
     let st = cmd
         .status()
         .map_err(|e| format!("failed to spawn {}: {e}", argv[0]))?;
-    Ok(st
-        .code()
-        .unwrap_or_else(|| i32::from(!st.success())))
+    Ok(st.code().unwrap_or_else(|| i32::from(!st.success())))
 }
 
 pub fn discover_for_paths(
@@ -168,6 +170,22 @@ pub fn discover_for_paths(
     })
 }
 
+fn split_source_paths_by_lang(source_paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let mut py = Vec::new();
+    let mut rs = Vec::new();
+    for path in source_paths {
+        if path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("py"))
+        {
+            py.push(path.clone());
+        } else if kiss::Language::is_rust_path(path) {
+            rs.push(path.clone());
+        }
+    }
+    (py, rs)
+}
+
 pub fn combined_selectors(
     repo_root: &Path,
     source_paths: &[PathBuf],
@@ -175,13 +193,20 @@ pub fn combined_selectors(
     lang_filter: Option<kiss::Language>,
     ignore: &[String],
 ) -> Result<(Vec<String>, Vec<String>), String> {
-    let defs = if source_paths.is_empty() {
+    let (py_sources, rs_sources) = split_source_paths_by_lang(source_paths);
+    let defs = if rs_sources.is_empty() {
         Vec::new()
     } else {
-        discover_for_paths(repo_root, source_paths, lang_filter, ignore)?
+        discover_for_paths(repo_root, &rs_sources, Some(kiss::Language::Rust), ignore)?
     };
     let mut py_sel = BTreeSet::new();
     let mut rs_sel = BTreeSet::new();
+    if lang_filter != Some(kiss::Language::Rust) && !py_sources.is_empty() {
+        for selector in kiss::rslip_bridge::runtime_covering_selectors(repo_root, &py_sources, &[])?
+        {
+            py_sel.insert(selector);
+        }
+    }
     for (tp, tid) in collect_selectors_from_defs(&defs) {
         if tp.extension().is_some_and(|e| e.eq_ignore_ascii_case("py")) {
             py_sel.insert(py_selector(&tp, &tid));
@@ -196,8 +221,5 @@ pub fn combined_selectors(
             rs_sel.insert(tid);
         }
     }
-    Ok((
-        py_sel.into_iter().collect(),
-        rs_sel.into_iter().collect(),
-    ))
+    Ok((py_sel.into_iter().collect(), rs_sel.into_iter().collect()))
 }

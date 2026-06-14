@@ -149,3 +149,38 @@ pub(crate) fn resolve_import(
     }
     resolve_dotted(import, from_parent_module, bare_to_qualified)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_import_prefers_parent_for_ambiguous_bare_name() {
+        let bare_to_qualified = HashMap::from([(
+            "utils".to_string(),
+            vec!["pkg.utils".to_string(), "other.utils".to_string()],
+        )]);
+
+        assert_eq!(
+            resolve_import("utils", Some("pkg"), &bare_to_qualified),
+            vec!["pkg.utils".to_string()]
+        );
+        assert!(resolve_import("utils", Some("missing"), &bare_to_qualified).is_empty());
+    }
+
+    #[test]
+    fn resolve_import_falls_back_to_dotted_resolution() {
+        let bare_to_qualified = HashMap::from([(
+            "helpers".to_string(),
+            vec![
+                "pkg.sub.helpers".to_string(),
+                "other.sub.helpers".to_string(),
+            ],
+        )]);
+
+        assert_eq!(
+            resolve_import("sub.helpers", Some("pkg"), &bare_to_qualified),
+            vec!["pkg.sub.helpers".to_string()]
+        );
+    }
+}

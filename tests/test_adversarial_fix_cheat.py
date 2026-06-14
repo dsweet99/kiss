@@ -65,6 +65,21 @@ def test_format_fix_cheat_report_lists_flagged_tests() -> None:
     assert "tests/t.py" in text
 
 
+def test_format_fix_cheat_report_no_flagged_tests() -> None:
+    metrics = fix_cheat_mod.FixCheatMetrics((), (), False)
+    text = fix_cheat_mod.format_fix_cheat_report(metrics)
+    assert "kiss check: fail" in text
+    assert "test modules flagged by kiss: (none)" in text
+
+
+def test_format_fix_cheat_report_lists_only_flagged_tests() -> None:
+    metrics = fix_cheat_mod.FixCheatMetrics((), ("tests/t.py", "tests/u.py"), True)
+    text = fix_cheat_mod.format_fix_cheat_report(metrics)
+    assert "cheat gap count: 0" in text
+    assert "tests/t.py" in text
+    assert "tests/u.py" in text
+
+
 def test_build_fix_cheat_prompt_multiple_repos(tmp_path: Path) -> None:
     kiss = tmp_path / "kiss"
     repo_a = tmp_path / "a"
@@ -77,6 +92,8 @@ def test_build_fix_cheat_prompt_multiple_repos(tmp_path: Path) -> None:
     text = fix_cheat_mod.build_fix_cheat_prompt(kiss, [repo_a, repo_b])
     assert str(repo_a.resolve()) in text
     assert str(repo_b.resolve()) in text
+    assert "cheat counterexample repositories" in text
+    assert "those repos" in text
     assert "every repo" in text
 
 
@@ -93,4 +110,21 @@ def test_verify_fix_cheat(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     assert ok is True
     assert metrics.gaps == ()
     assert "cheat gap count: 0" in combined
+
+
+def test_verify_fix_cheat_combines_empty_kiss_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setattr(fix_cheat_mod, "run_kiss_check", lambda _r: (1, ""))
+    monkeypatch.setattr(
+        fix_cheat_mod,
+        "_load_coverage_maps",
+        lambda _r: ({"tests/t.py": 20.0}, {"src/a.py": 95.0}),
+    )
+    ok, metrics, combined = fix_cheat_mod.verify_fix_cheat(tmp_path, repo)
+    assert ok is False
+    assert metrics.flagged_tests == ("tests/t.py",)
+    assert combined.startswith("kiss check: fail")
 
