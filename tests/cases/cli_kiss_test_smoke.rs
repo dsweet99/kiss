@@ -50,7 +50,7 @@ fn kiss_test_dry_run_in_git_repo_smoke() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(
-        stdout.contains("pytest") || stdout.contains("NO COVERING"),
+        stdout.contains("python '-m' pytest test_lib.py::test_f"),
         "unexpected stdout: {stdout}"
     );
 }
