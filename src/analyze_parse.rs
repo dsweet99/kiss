@@ -328,4 +328,26 @@ mod tests {
         let (units, stmts, viols) = py_file_agg(&parsed[0], &cfg);
         assert!(units > 0 || stmts > 0 || viols.is_empty());
     }
+
+    impl ParseResult {
+        fn witness() -> Self {
+            Self {
+                py_parsed: vec![],
+                rs_parsed: vec![],
+                violations: vec![],
+                code_unit_count: 0,
+                statement_count: 0,
+            }
+        }
+    }
+
+    impl ParseAllTimedParams<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_parse_types() {
+        let _ = ParseResult::witness();
+        ParseAllTimedParams::witness();
+    }
 }

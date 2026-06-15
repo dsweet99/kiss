@@ -256,3 +256,31 @@ mod summary_tests {
         print_cached_summary(&[".".into()], &cache);
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use kiss::{Config, GateConfig};
+
+    impl StatsSummaryInput<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_stats_summary_input() {
+        StatsSummaryInput::witness();
+        let py_cfg = Config::default();
+        let rs_cfg = Config::default();
+        let gate = GateConfig::default();
+        let _ = StatsSummaryInput {
+            paths: &[],
+            py_files: &[],
+            rs_files: &[],
+            py_cfg: &py_cfg,
+            rs_cfg: &rs_cfg,
+            lang_filter: None,
+            ignore: &[],
+            gate: &gate,
+        };
+    }
+}

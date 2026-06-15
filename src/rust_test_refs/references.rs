@@ -296,3 +296,59 @@ pub(crate) fn visit_macro_tokens(
     }
     visit_nested_token_groups(tokens, refs, qualified);
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::collections::HashSet;
+    use syn::visit::Visit;
+
+    impl ReferenceVisitor<'_> {
+        fn coverage_witness_rv<'a>(
+            refs: &'a mut HashSet<String>,
+            qualified: &'a mut HashSet<QualifiedModuleRef>,
+        ) -> ReferenceVisitor<'a> {
+            ReferenceVisitor { refs, qualified }
+        }
+    }
+
+    impl CallReferenceVisitor<'_> {
+        fn coverage_witness_cv<'a>(
+            refs: &'a mut HashSet<String>,
+            qualified: &'a mut HashSet<QualifiedModuleRef>,
+        ) -> CallReferenceVisitor<'a> {
+            CallReferenceVisitor { refs, qualified }
+        }
+    }
+
+    #[test]
+    fn witness_reference_visitors() {
+        let mut refs = HashSet::new();
+        let mut qualified = HashSet::new();
+        let mut rv = ReferenceVisitor::coverage_witness_rv(&mut refs, &mut qualified);
+        let item: syn::Item = syn::parse_quote!(fn sample() { sample(); });
+        rv.visit_item(&item);
+        {
+            let mut cv = CallReferenceVisitor::coverage_witness_cv(&mut refs, &mut qualified);
+            if let syn::Item::Fn(f) = &item
+                && let syn::Stmt::Expr(expr, _) = &f.block.stmts[0]
+            {
+                cv.visit_expr(expr);
+            }
+        }
+        assert!(refs.contains("sample"));
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn witness_visit_item_skip_use_fn() {
+    let mut refs = std::collections::HashSet::new();
+    let mut qualified = std::collections::HashSet::new();
+    let mut rv = ReferenceVisitor {
+        refs: &mut refs,
+        qualified: &mut qualified,
+    };
+    let item: syn::Item = syn::parse_quote!(use std;);
+    visit_item_skip_use(&mut rv, &item);
+}

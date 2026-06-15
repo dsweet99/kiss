@@ -387,3 +387,29 @@ pub fn analyze_rust_test_refs(
         coverage_map,
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::path::Path;
+
+    impl RustTestRefAnalysis {
+        fn witness() -> Self {
+            Self {
+                definitions: vec![],
+                test_references: HashSet::new(),
+                call_references: HashSet::new(),
+                propagated_references: HashSet::new(),
+                unreferenced: vec![],
+                coverage_map: HashMap::new(),
+            }
+        }
+    }
+
+    #[test]
+    fn witness_rust_test_ref_analysis() {
+        let _ = RustTestRefAnalysis::witness();
+        assert!(!is_binary_entry_point(Path::new("tests/integration.rs")));
+        assert!(is_binary_entry_point(Path::new("src/main.rs")));
+    }
+}

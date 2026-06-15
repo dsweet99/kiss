@@ -155,3 +155,60 @@ pub(crate) fn build_py_coverage_map(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::collections::{HashMap, HashSet};
+    use std::path::PathBuf;
+
+    impl<'a> CoverageContext<'a> {
+        fn witness(
+            name_files: &'a HashMap<String, HashSet<PathBuf>>,
+            disambiguation: &'a HashMap<String, PathBuf>,
+            import_bindings: &'a HashMap<String, HashSet<String>>,
+            module_suffixes: &'a HashMap<PathBuf, String>,
+            usage_refs: &'a HashSet<String>,
+            call_refs: &'a HashSet<String>,
+            alias_bindings: &'a HashMap<String, String>,
+        ) -> Self {
+            Self {
+                name_files,
+                disambiguation,
+                import_bindings,
+                module_suffixes,
+                usage_refs,
+                call_refs,
+                alias_bindings,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_coverage_context() {
+        let name_files = HashMap::new();
+        let disambiguation = HashMap::new();
+        let import_bindings = HashMap::new();
+        let module_suffixes = HashMap::new();
+        let usage_refs = HashSet::new();
+        let call_refs = HashSet::new();
+        let alias_bindings = HashMap::new();
+        let ctx = CoverageContext::witness(
+            &name_files,
+            &disambiguation,
+            &import_bindings,
+            &module_suffixes,
+            &usage_refs,
+            &call_refs,
+            &alias_bindings,
+        );
+        let def = CodeDefinition {
+            name: "missing".into(),
+            kind: crate::units::CodeUnitKind::Function,
+            file: PathBuf::from("a.py"),
+            line: 1,
+            containing_class: None,
+        };
+        assert!(!is_definition_covered(&def, &ctx));
+    }
+}

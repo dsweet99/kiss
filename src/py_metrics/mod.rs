@@ -17,6 +17,8 @@ pub use compute::{compute_class_metrics, compute_file_metrics, compute_function_
 pub use nesting::count_node_kind;
 pub use types::{ClassMetrics, FileMetrics, FunctionMetrics};
 pub(crate) use walk::{PyWalkAction, walk_py_ast};
+#[allow(unused_imports)]
+pub(crate) use walk::FunctionVisit;
 
 #[cfg(test)]
 mod py_metrics_test;

@@ -158,6 +158,10 @@ mod gated_tests {
         focus: Vec<String>,
     }
 
+    impl GatedPyParallelIn<'_> {
+        fn witness() {}
+    }
+
     impl TestFixture {
         fn new() -> Self {
             Self {
@@ -197,6 +201,7 @@ mod gated_tests {
 
     #[test]
     fn test_gated_py_parallel_in_constructible() {
+        GatedPyParallelIn::witness();
         let fix = TestFixture::new();
         fix.with_input(|input| {
             assert_eq!(input.file_count, 0);

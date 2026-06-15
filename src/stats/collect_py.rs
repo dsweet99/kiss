@@ -31,3 +31,30 @@ pub(crate) fn push_py_fn_metrics(stats: &mut MetricStats, m: &crate::py_metrics:
     stats.annotations_per_function.push(m.decorators);
     stats.calls_per_function.push(m.calls);
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use crate::py_metrics::{FunctionMetrics, PyWalkAction};
+    use crate::stats::MetricStats;
+
+    impl StatsVisitor<'_> {
+        fn witness_for_coverage<'a>(stats: &'a mut MetricStats) -> StatsVisitor<'a> {
+            StatsVisitor { stats }
+        }
+    }
+
+    #[test]
+    fn witness_stats_visitor() {
+        let mut stats = MetricStats::default();
+        let metrics = FunctionMetrics::default();
+        let mut visitor = StatsVisitor::witness_for_coverage(&mut stats);
+        visitor.process(PyWalkAction::Function(crate::py_metrics::FunctionVisit {
+            name: "f",
+            metrics: &metrics,
+            line: 1,
+            inside_class: false,
+        }));
+        assert_eq!(stats.statements_per_function.len(), 1);
+    }
+}

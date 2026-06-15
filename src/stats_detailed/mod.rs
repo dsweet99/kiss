@@ -220,3 +220,29 @@ mod tests {
         assert!(units.iter().any(|u| u.name == "Bar" && u.kind == "impl"));
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::path::Path;
+
+    impl FileScopeMetrics {
+        fn witness() -> Self {
+            Self {
+                lines: 1,
+                imports: Some(0),
+                statements: 0,
+                functions: 0,
+                interface_types: 0,
+                concrete_types: 0,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_file_scope_metrics() {
+        let fm = FileScopeMetrics::witness();
+        let unit = file_unit_metrics(Path::new("a.py"), fm, None);
+        assert_eq!(unit.lines, Some(1));
+    }
+}

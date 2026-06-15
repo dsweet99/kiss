@@ -133,3 +133,38 @@ pub(crate) fn update_try_block_statements(
         agg.max_try_block_statements = agg.max_try_block_statements.max(body_stmts);
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use crate::test_utils::parse_python_source;
+
+    impl BodySummary {
+        fn witness() -> Self {
+            Self {
+                statements: 0,
+                max_indentation: 0,
+                branches: 0,
+                local_variables: 0,
+                returns: 0,
+                calls: 0,
+                max_try_block_statements: 0,
+                max_return_values: 0,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_body_summary() {
+        let _ = BodySummary::witness();
+        let parsed = parse_python_source("def f(): pass");
+        let func = parsed
+            .tree
+            .root_node()
+            .child(0)
+            .expect("function node");
+        let body = func.child_by_field_name("body").expect("body");
+        let summary = analyze_body(body, &parsed.source);
+        assert_eq!(summary.local_variables, 0);
+    }
+}

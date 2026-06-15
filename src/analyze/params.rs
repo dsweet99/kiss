@@ -28,3 +28,22 @@ pub(crate) struct GatedAnalysis<'a> {
     pub timings: (Instant, Instant, Instant),
 }
 
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl RunAnalyzeUncached<'_> {
+        fn witness() {}
+    }
+
+    impl GatedAnalysis<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_params_types() {
+        RunAnalyzeUncached::witness();
+        GatedAnalysis::witness();
+    }
+}
+

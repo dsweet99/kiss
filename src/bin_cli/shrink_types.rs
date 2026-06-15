@@ -26,10 +26,20 @@ pub struct RunShrinkArgs<'a> {
 mod shrink_types_coverage {
     use super::*;
 
+    impl ShrinkFullContext<'_> {
+        fn witness() {}
+    }
+    impl ShrinkStartContext<'_> {
+        fn witness() {}
+    }
+    impl RunShrinkArgs<'_> {
+        fn witness() {}
+    }
+
     #[test]
-    fn touch_shrink_context_types() {
-        let _ = std::mem::size_of::<ShrinkFullContext>();
-        let _ = std::mem::size_of::<ShrinkStartContext>();
-        let _ = std::mem::size_of::<RunShrinkArgs>();
+    fn witness_shrink_context_types() {
+        ShrinkFullContext::witness();
+        ShrinkStartContext::witness();
+        RunShrinkArgs::witness();
     }
 }

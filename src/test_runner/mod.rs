@@ -134,6 +134,43 @@ pub(crate) fn run_selectors(
 }
 
 #[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl RunTestCmdArgs<'_> {
+        fn witness() -> Self {
+            Self {
+                mode: TestChangeMode::Commit,
+                main_branch_cli: None,
+                base_branch_cli: None,
+                dry_run: true,
+                extra: &[],
+                ignore: &[],
+                lang_filter: None,
+                config_main_branch: None,
+            }
+        }
+    }
+
+    impl PlannedSelectors {
+        fn witness() -> Self {
+            Self {
+                repo_root: std::env::current_dir().unwrap_or_default(),
+                py_sel: vec![],
+                rs_sel: vec![],
+            }
+        }
+    }
+
+    #[test]
+    fn witness_test_runner_api() {
+        let _ = RunTestCmdArgs::witness();
+        let _ = PlannedSelectors::witness();
+        assert_eq!(run_test(RunTestCmdArgs::witness()), 0);
+    }
+}
+
+#[cfg(test)]
 mod plan_tests {
     use std::path::Path;
     use std::process::Command;

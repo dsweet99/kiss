@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::cli_output::min_per_file_coverage;
+use crate::cli_output::min_gate_eligible_per_file_coverage;
 use crate::config::Config;
 use crate::discovery::{Language, gather_files_by_lang};
 use crate::duplication::{
@@ -56,7 +56,7 @@ pub(crate) fn compute_min_per_file_test_coverage(
     rs_parsed: &[ParsedRustFile],
 ) -> usize {
     let (definitions, unreferenced) = collect_defs_and_unrefs(py_parsed, rs_parsed);
-    min_per_file_coverage(&definitions, &unreferenced)
+    min_gate_eligible_per_file_coverage(&definitions, &unreferenced)
 }
 
 pub(super) fn extend_defs_from_py(
@@ -90,7 +90,8 @@ pub(super) fn extend_defs_from_rs(
         return;
     }
     let refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let a = analyze_rust_test_refs(&refs, None);
+    let graph = build_rust_dependency_graph(&refs);
+    let a = analyze_rust_test_refs(&refs, Some(&graph));
     definitions.extend(
         a.definitions
             .iter()
@@ -103,7 +104,7 @@ pub(super) fn extend_defs_from_rs(
     );
 }
 
-pub(super) fn collect_defs_and_unrefs(
+pub(crate) fn collect_defs_and_unrefs(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],
 ) -> (DefLineList, DefLineList) {

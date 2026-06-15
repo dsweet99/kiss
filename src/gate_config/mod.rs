@@ -24,11 +24,6 @@ impl Default for GateConfig {
 impl GateConfig {
     pub fn load() -> Self {
         let mut config = Self::default();
-        if let Some(home) = std::env::var_os("HOME")
-            && let Ok(c) = std::fs::read_to_string(Path::new(&home).join(".kissconfig"))
-        {
-            config.merge_from_toml(&c);
-        }
         if let Ok(c) = std::fs::read_to_string(".kissconfig") {
             config.merge_from_toml(&c);
         }
@@ -37,12 +32,6 @@ impl GateConfig {
 
     pub fn load_from(path: &Path) -> Self {
         let mut config = Self::default();
-        // Chain from ~/.kissconfig first, matching Config::load_from behavior
-        if let Some(home) = std::env::var_os("HOME")
-            && let Ok(c) = std::fs::read_to_string(Path::new(&home).join(".kissconfig"))
-        {
-            config.merge_from_toml(&c);
-        }
         if let Ok(c) = std::fs::read_to_string(".kissconfig") {
             config.merge_from_toml(&c);
         }

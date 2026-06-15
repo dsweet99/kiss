@@ -1,14 +1,7 @@
 use crate::analyze;
 use crate::analyze::run_analyze;
-use crate::bin_cli::util::validate_paths;
-use kiss::normalize_ignore_prefixes;
+use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use kiss::Language;
-
-/// Directory or filename prefixes excluded from `kiss check` by default.
-/// Intentionally-violating fixtures live under `tests/fake_python/` and
-/// `tests/fake_rust/`; they are analyzed directly in integration tests but
-/// must not fail the repo's own quality gate.
-const DEFAULT_CHECK_IGNORE_PREFIXES: &[&str] = &["fake_"];
 
 pub struct CheckCommandArgs<'a> {
     pub paths: &'a [String],
@@ -22,12 +15,7 @@ pub struct CheckCommandArgs<'a> {
 }
 
 pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
-    let mut ignore: Vec<String> = DEFAULT_CHECK_IGNORE_PREFIXES
-        .iter()
-        .map(|prefix| (*prefix).to_string())
-        .collect();
-    ignore.extend(args.ignore.iter().cloned());
-    let ignore = normalize_ignore_prefixes(&ignore);
+    let ignore = merge_check_ignore_prefixes(args.ignore);
     validate_paths(args.paths);
     let universe = &args.paths[0];
     let focus = if args.paths.len() > 1 {
@@ -48,4 +36,34 @@ pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
         suppress_final_status: false,
     };
     i32::from(!run_analyze(&opts))
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl CheckCommandArgs<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_check_command() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().to_string_lossy().to_string();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = CheckCommandArgs {
+            paths: &[path],
+            lang_filter: None,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            bypass_gate: true,
+            ignore: &[],
+            timing: false,
+        };
+        CheckCommandArgs::witness();
+        assert_eq!(run_check_command(&args), 0);
+    }
 }

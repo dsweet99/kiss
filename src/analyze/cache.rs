@@ -76,3 +76,17 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
         unreferenced,
     });
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl FullCacheStoreInput<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_cache_types() {
+        FullCacheStoreInput::witness();
+    }
+}

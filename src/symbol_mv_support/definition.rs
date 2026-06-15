@@ -135,6 +135,13 @@ fn extend_class_block(content: &str, mut end: usize, base_indent: usize) -> usiz
     end
 }
 
+impl DefinitionSpan {
+    #[cfg(test)]
+    fn witness(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+}
+
 #[cfg(test)]
 mod definition_coverage {
     use super::*;
@@ -207,5 +214,12 @@ mod definition_coverage {
             ..LexState::default()
         };
         assert!(rust_lexer_is_inside_non_code(&st_string));
+    }
+
+    #[test]
+    fn witness_definition_span() {
+        let span = DefinitionSpan::witness(0, 4);
+        assert!(span.contains(1));
+        assert!(!span.contains(4));
     }
 }

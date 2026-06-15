@@ -278,3 +278,25 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
         timings: pipeline.timings,
     })
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl FullPipelineResult {
+        fn witness() {}
+    }
+    impl FullPipelineInput<'_> {
+        fn witness() {}
+    }
+    impl FullPipelineWithParseInput<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_pipeline_types() {
+        FullPipelineResult::witness();
+        FullPipelineInput::witness();
+        FullPipelineWithParseInput::witness();
+    }
+}

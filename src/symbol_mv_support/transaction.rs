@@ -138,6 +138,16 @@ fn rollback(originals: &BTreeMap<PathBuf, Snapshot>) -> Result<(), String> {
     Ok(())
 }
 
+impl Snapshot {
+    #[cfg(test)]
+    fn witness(content: &str) -> Self {
+        Self {
+            existed: true,
+            content: content.to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod transaction_coverage {
     use super::*;
@@ -306,5 +316,11 @@ mod transaction_coverage {
         );
         rollback(&originals).unwrap();
         assert_eq!(fs::read_to_string(&p).unwrap(), "original");
+    }
+
+    #[test]
+    fn witness_snapshot_type() {
+        let snap = Snapshot::witness("witness");
+        assert!(snap.existed);
     }
 }

@@ -115,11 +115,38 @@ pub(crate) fn build_graph_violations(in_: BuildGraphViols<'_>) -> Vec<Violation>
 
 #[cfg(test)]
 mod parallel_touch {
-    use super::{BuildGraphViols, ParallelPyIn};
+    use super::{BuildGraphViols, ParallelPyIn, RustAnalysis, run_rust_analysis};
+
+    impl RustAnalysis {
+        fn witness() -> Self {
+            Self {
+                graph: None,
+                cov: kiss::RustTestRefAnalysis {
+                    definitions: vec![],
+                    test_references: Default::default(),
+                    call_references: Default::default(),
+                    propagated_references: Default::default(),
+                    unreferenced: vec![],
+                    coverage_map: Default::default(),
+                },
+                dups: vec![],
+            }
+        }
+    }
+
+    impl ParallelPyIn<'_> {
+        fn witness() {}
+    }
+
+    impl BuildGraphViols<'_> {
+        fn witness() {}
+    }
 
     #[test]
-    fn struct_sizes_for_gate() {
-        let _ = std::mem::size_of::<ParallelPyIn>();
-        let _ = std::mem::size_of::<BuildGraphViols>();
+    fn witness_parallel_types() {
+        let _ = RustAnalysis::witness();
+        ParallelPyIn::witness();
+        BuildGraphViols::witness();
+        let _ = run_rust_analysis(&[], &kiss::GateConfig::default(), None);
     }
 }

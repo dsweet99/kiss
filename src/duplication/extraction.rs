@@ -181,3 +181,26 @@ pub(super) fn extract_function_chunks(
         }
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl CodeChunk {
+        fn witness() -> Self {
+            Self {
+                file: PathBuf::from("a.py"),
+                name: "f".into(),
+                start_line: 1,
+                end_line: 10,
+                normalized: "one two three four five six seven eight nine ten".into(),
+            }
+        }
+    }
+
+    #[test]
+    fn witness_code_chunk() {
+        let chunk = CodeChunk::witness();
+        assert!(is_nontrivial_chunk(&chunk.normalized, 10));
+    }
+}

@@ -145,3 +145,34 @@ pub(crate) fn get_child_by_field(node: Node, field: &str, source: &str) -> Optio
 #[cfg(test)]
 #[path = "units_test.rs"]
 mod tests;
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl CodeUnitKind {
+        fn witness() -> Self {
+            Self::Module
+        }
+    }
+
+    impl CodeUnit {
+        fn witness() -> Self {
+            Self {
+                kind: CodeUnitKind::witness(),
+                name: "witness".into(),
+                start_line: 1,
+                end_line: 1,
+                start_byte: 0,
+                end_byte: 1,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_units_types() {
+        assert_eq!(CodeUnitKind::witness().as_str(), "module");
+        assert_eq!(format!("{}", CodeUnitKind::witness()), "module");
+        let _ = CodeUnit::witness();
+    }
+}

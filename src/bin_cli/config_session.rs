@@ -1,3 +1,5 @@
+use crate::bin_cli::mimic::run_mimic;
+use crate::bin_cli::util::default_check_ignore_prefixes;
 use kiss::{Config, ConfigLanguage, GateConfig};
 use std::path::{Path, PathBuf};
 
@@ -6,18 +8,12 @@ pub fn ensure_default_config_exists() {
     if local_config.exists() {
         return;
     }
-    if let Some(home) = std::env::var_os("HOME") {
-        let home_config = Path::new(&home).join(".kissconfig");
-        if !home_config.exists()
-            && let Err(e) = std::fs::write(&home_config, kiss::default_config_toml())
-        {
-            eprintln!(
-                "Note: Could not write default config to {}: {}",
-                home_config.display(),
-                e
-            );
-        }
-    }
+    run_mimic(
+        &[".".to_string()],
+        Some(local_config),
+        None,
+        &default_check_ignore_prefixes(),
+    );
 }
 
 pub fn run_init_command(repo_path: &Path) -> i32 {
@@ -96,15 +92,8 @@ pub fn load_configs(config_path: Option<&PathBuf>, use_defaults: bool) -> (Confi
 
 pub fn config_provenance() -> String {
     let local = Path::new(".kissconfig");
-    let home = std::env::var_os("HOME")
-        .map(|h| Path::new(&h).join(".kissconfig"))
-        .filter(|p| p.exists());
     let local_status = if local.exists() { "found" } else { "not found" };
-    let home_status = home.as_ref().map_or_else(
-        || "not found".to_string(),
-        |p| format!("found: {}", p.display()),
-    );
-    format!("Config: defaults + ~/.kissconfig ({home_status}) + ./.kissconfig ({local_status})")
+    format!("Config: defaults + ./.kissconfig ({local_status})")
 }
 
 #[cfg(test)]
@@ -130,5 +119,23 @@ mod tests {
         std::fs::write(tmp.path().join(".kissconfig"), "# existing").unwrap();
         let result = run_init_command(tmp.path());
         assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_ensure_default_config_exists_runs_clamp() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("sample.py"), "def foo():\n    return 1\n").unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        assert!(!Path::new(".kissconfig").exists());
+        ensure_default_config_exists();
+        assert!(
+            Path::new(".kissconfig").exists(),
+            "missing local .kissconfig should be created by clamp"
+        );
+
+        std::env::set_current_dir(orig_dir).unwrap();
     }
 }

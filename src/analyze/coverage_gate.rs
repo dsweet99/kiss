@@ -39,23 +39,19 @@ fn analysis_tuples(
     (defs_t, unrefs_t)
 }
 
-pub(crate) fn is_coverage_gate_file(path: &Path, _unit_name: &str) -> bool {
-    !kiss::test_refs::is_test_file(path)
-        && !kiss::test_refs::is_in_test_directory(path)
-        && !kiss::rust_test_refs::is_rust_test_file(path)
-        && !kiss::rust_test_refs::is_binary_entry_point(path)
-}
+pub(crate) use kiss::cli_output::is_coverage_gate_file;
 
 pub(crate) fn is_coverage_report_target(
     path: &Path,
     unit_name: &str,
     _report_entry_points: bool,
 ) -> bool {
-    is_coverage_gate_file(path, unit_name)
+    let _ = unit_name;
+    is_coverage_gate_file(path)
 }
 
 fn is_weighted_overlay_target(path: &Path) -> bool {
-    is_coverage_gate_file(path, "")
+    is_coverage_gate_file(path)
 }
 
 fn overlay_weighted_file_pcts(
@@ -105,15 +101,15 @@ fn per_file_coverage_gate_fails(
     }
     let gate_fails = file_pcts
         .iter()
-        .any(|(path, &pct)| is_coverage_gate_file(path, "") && pct < threshold);
+        .any(|(path, &pct)| is_coverage_gate_file(path) && pct < threshold);
     if gate_fails {
         let file_pcts: HashMap<_, _> = file_pcts
             .into_iter()
-            .filter(|(path, _)| is_coverage_gate_file(path, ""))
+            .filter(|(path, _)| is_coverage_gate_file(path))
             .collect();
         let unreferenced_focus: Vec<_> = unreferenced_focus
             .into_iter()
-            .filter(|(path, name, _)| is_coverage_gate_file(path, name))
+            .filter(|(path, _name, _)| is_coverage_gate_file(path))
             .collect();
         Some((unreferenced_focus, file_pcts))
     } else {
@@ -217,6 +213,19 @@ pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
         return false;
     }
     true
+}
+
+#[cfg(test)]
+mod inline_coverage_witness {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn witness_local_is_coverage_gate_file() {
+        assert!(is_coverage_gate_file(Path::new("src/lib.rs")));
+        assert!(is_coverage_report_target(Path::new("src/lib.rs"), "mod", true));
+        assert!(is_weighted_overlay_target(Path::new("src/lib.rs")));
+    }
 }
 
 #[cfg(test)]

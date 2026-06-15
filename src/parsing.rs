@@ -17,11 +17,18 @@ impl From<std::io::Error> for ParseError {
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::IoError(e) => write!(f, "IO error: {e}"),
-            Self::ParserInitError => write!(f, "Failed to initialize Python parser"),
-            Self::ParseFailed => write!(f, "Failed to parse Python code"),
-        }
+        write_parse_error(self, f)
+    }
+}
+
+pub(crate) fn write_parse_error(
+    err: &ParseError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match err {
+        ParseError::IoError(e) => write!(f, "IO error: {e}"),
+        ParseError::ParserInitError => write!(f, "Failed to initialize Python parser"),
+        ParseError::ParseFailed => write!(f, "Failed to parse Python code"),
     }
 }
 
@@ -77,6 +84,18 @@ pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseErro
 mod tests {
     use super::*;
     use std::io::Write;
+
+    impl ParsedFile {
+        fn witness_from_source(source: &str) -> Self {
+            let mut parser = create_parser().unwrap();
+            let tree = parser.parse(source, None).unwrap();
+            Self {
+                path: PathBuf::from("witness.py"),
+                source: source.to_string(),
+                tree,
+            }
+        }
+    }
 
     #[test]
     fn test_create_parser() {
@@ -151,10 +170,35 @@ mod tests {
 
     #[test]
     fn test_parse_error_display_fmt() {
-        use std::fmt::Write;
-        let err = ParseError::ParseFailed;
-        let mut s = String::new();
-        write!(&mut s, "{err}").unwrap();
-        assert!(!s.is_empty());
+        use std::fmt::Display;
+        for err in [
+            ParseError::ParseFailed,
+            ParseError::ParserInitError,
+            ParseError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "file not found",
+            )),
+        ] {
+            let mut s = String::new();
+            write_parse_error(
+                &err,
+                &mut std::fmt::Formatter::new(&mut s, std::fmt::FormattingOptions::new()),
+            )
+            .unwrap();
+            let mut fmt_buf = String::new();
+            Display::fmt(
+                &err,
+                &mut std::fmt::Formatter::new(&mut fmt_buf, std::fmt::FormattingOptions::new()),
+            )
+            .unwrap();
+            assert!(!s.is_empty());
+            assert!(!fmt_buf.is_empty());
+        }
+    }
+
+    #[test]
+    fn witness_parsed_file_type() {
+        let file = ParsedFile::witness_from_source("x = 1");
+        assert!(file.source.contains('x'));
     }
 }

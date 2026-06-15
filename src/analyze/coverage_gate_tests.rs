@@ -90,12 +90,9 @@ use std::collections::HashSet;
     #[test]
     fn is_coverage_gate_file_excludes_test_paths_but_not_ambiguous_prod_paths() {
         use std::path::Path;
-        assert!(!is_coverage_gate_file(Path::new("tests/test_foo.py"), ""));
-        assert!(is_coverage_gate_file(Path::new("src/testing_hooks.py"), "hook"));
-        assert!(!is_coverage_gate_file(
-            Path::new("tests/fixtures/prod_core.py"),
-            "core"
-        ));
+        assert!(!is_coverage_gate_file(Path::new("tests/test_foo.py")));
+        assert!(is_coverage_gate_file(Path::new("src/testing_hooks.py")));
+        assert!(!is_coverage_gate_file(Path::new("tests/fixtures/prod_core.py")));
     }
 
     #[test]

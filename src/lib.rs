@@ -1,4 +1,5 @@
 //! Library crate for kiss metrics and analysis.
+#![cfg_attr(test, feature(formatting_options))]
 // `pub(crate)` in non-`pub` submodules is clearer than `pub` for crate-internal APIs; pedantic
 // `redundant_pub_crate` disagrees.
 #![allow(clippy::redundant_pub_crate)]

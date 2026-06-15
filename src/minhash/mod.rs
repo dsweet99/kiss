@@ -182,3 +182,20 @@ pub fn find_lsh_candidates(
 #[cfg(test)]
 #[path = "minhash_test.rs"]
 mod tests;
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl MinHashSignature {
+        fn witness() -> Self {
+            Self { hashes: vec![0] }
+        }
+    }
+
+    #[test]
+    fn witness_minhash_signature() {
+        let sig = MinHashSignature::witness();
+        assert_eq!(sig.hashes.len(), 1);
+    }
+}

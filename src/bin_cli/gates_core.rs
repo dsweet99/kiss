@@ -40,6 +40,20 @@ fn test_language_and_config() {
 }
 
 #[test]
+fn test_clamp_ignore_aligns_with_check_floor_in_repo() {
+    let cwd = std::env::current_dir().unwrap();
+    if !cwd.join("src/lib.rs").exists() {
+        return;
+    }
+    let ignore = crate::bin_cli::util::merge_check_ignore_prefixes(&[]);
+    let gate = kiss::config_gen::infer_gate_config_for_paths(&[".".to_string()], None, &ignore);
+    assert!(
+        gate.test_coverage_threshold <= 90,
+        "clamp should infer a floor at or below default gate threshold"
+    );
+}
+
+#[test]
 fn test_cli_and_commands() {
     use clap::Parser;
     assert!(matches!(

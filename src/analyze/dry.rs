@@ -94,6 +94,18 @@ mod dry_helpers_test {
     use super::{DryRunParams, filter_pairs_by_files, parse_py_for_dry, parse_rs_for_dry};
     use kiss::{DuplicatePair, DuplicationConfig};
 
+    impl<'a> DryRunParams<'a> {
+        fn witness(config: &'a DuplicationConfig) -> Self {
+            Self {
+                path: "/tmp",
+                filter_files: &[],
+                config,
+                ignore_prefixes: &[],
+                lang_filter: None,
+            }
+        }
+    }
+
     #[test]
     fn empty_inputs_smoke() {
         assert!(parse_py_for_dry(&[]).is_empty());
@@ -115,5 +127,11 @@ mod dry_helpers_test {
         };
         assert_eq!(params.path, "/tmp");
         assert!(params.filter_files.is_empty());
+    }
+
+    #[test]
+    fn witness_dry_run_params_assoc() {
+        let config = DuplicationConfig::default();
+        let _ = DryRunParams::witness(&config);
     }
 }

@@ -98,7 +98,7 @@ pub fn run_config(
     } else if let Some(path) = config_path {
         println!("# Source: {}", path.display());
     } else {
-        println!("# Source: .kissconfig or ~/.kissconfig (merged)");
+        println!("# Source: .kissconfig");
     }
     println!("\n[gate]");
     println!("test_coverage_threshold = {}", gate.test_coverage_threshold);

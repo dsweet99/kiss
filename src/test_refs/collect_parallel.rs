@@ -151,3 +151,11 @@ mod collect_parallel_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[test]
+fn witness_merge_collected() {
+    let merged = merge_collected(empty_collected(), empty_collected());
+    assert!(merged.0.is_empty());
+    assert!(merged.1.is_empty());
+}
