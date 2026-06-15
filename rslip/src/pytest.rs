@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -58,7 +58,7 @@ fn write_selector_input(input: &Path, selectors: &[String]) -> Result<(), String
 fn trace_script() -> &'static str {
     r#"
 import json, os, sys
-repo = os.path.abspath(sys.argv[1])
+repo = os.path.realpath(sys.argv[1])
 selectors_path = sys.argv[2]
 out_path = sys.argv[3]
 with open(selectors_path, encoding="utf-8") as fh:
@@ -66,9 +66,14 @@ with open(selectors_path, encoding="utf-8") as fh:
 hits = {selector: {} for selector in selectors}
 collection_hits = {}
 current = None
+canonical_filenames = {}
 def tracer(frame, event, arg):
     if event == "line":
-        filename = os.path.abspath(frame.f_code.co_filename)
+        raw_filename = frame.f_code.co_filename
+        filename = canonical_filenames.get(raw_filename)
+        if filename is None:
+            filename = os.path.realpath(raw_filename)
+            canonical_filenames[raw_filename] = filename
         if filename.startswith(repo + os.sep):
             rel = os.path.relpath(filename, repo).replace(os.sep, "/")
             target = collection_hits if current is None else hits.setdefault(current, {})
@@ -133,13 +138,7 @@ fn runs_from_raw(
     selectors
         .iter()
         .map(|selector| {
-            let hits = raw
-                .get(selector)
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(path, lines)| (PathBuf::from(path), lines.into_iter().collect()))
-                .collect();
+            let hits = raw_hits_for_selector(selector, &raw);
             let test_path = selector
                 .split_once("::")
                 .map_or_else(|| PathBuf::from(selector), |(path, _)| PathBuf::from(path));
@@ -150,6 +149,31 @@ fn runs_from_raw(
             }
         })
         .collect()
+}
+
+fn raw_hits_for_selector(
+    selector: &str,
+    raw: &BTreeMap<String, BTreeMap<String, Vec<usize>>>,
+) -> BTreeMap<PathBuf, BTreeSet<usize>> {
+    let mut hits: BTreeMap<PathBuf, BTreeSet<usize>> = BTreeMap::new();
+    for (nodeid, per_file) in raw {
+        if !runtime_node_matches_selector(selector, nodeid) {
+            continue;
+        }
+        for (path, lines) in per_file {
+            hits.entry(PathBuf::from(path))
+                .or_default()
+                .extend(lines.iter().copied());
+        }
+    }
+    hits
+}
+
+fn runtime_node_matches_selector(selector: &str, nodeid: &str) -> bool {
+    nodeid == selector
+        || nodeid
+            .strip_prefix(selector)
+            .is_some_and(|suffix| suffix.starts_with('['))
 }
 
 #[cfg(test)]
@@ -187,6 +211,26 @@ mod tests {
             runs[0].hits[&PathBuf::from("sample.py")],
             [1, 2].into_iter().collect()
         );
+    }
+
+    #[test]
+    fn parametrized_runtime_node_matching_is_selector_bounded() {
+        assert!(runtime_node_matches_selector(
+            "test_sample.py::test_value",
+            "test_sample.py::test_value"
+        ));
+        assert!(runtime_node_matches_selector(
+            "test_sample.py::test_value",
+            "test_sample.py::test_value[case-with[brackets]]"
+        ));
+        assert!(!runtime_node_matches_selector(
+            "test_sample.py::test_value",
+            "test_sample.py::test_value_extra[case]"
+        ));
+        assert!(!runtime_node_matches_selector(
+            "test_sample.py::test_value",
+            "test_sample.py::test_value::nested"
+        ));
     }
 
     #[test]
@@ -237,6 +281,73 @@ mod tests {
         assert!(
             sample_hits.contains(&1) && sample_hits.contains(&2),
             "function definition and return line should be traced, got {sample_hits:?}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn pytest_trace_collector_records_hits_from_symlinked_repo_root() {
+        let tmp = TempDir::new().unwrap();
+        let real_root = tmp.path().join("real");
+        let link_root = tmp.path().join("link");
+        fs::create_dir(&real_root).unwrap();
+        std::os::unix::fs::symlink(&real_root, &link_root).unwrap();
+        write(
+            &real_root.join("sample.py"),
+            "def value():\n    return 3\n",
+        );
+        write(
+            &real_root.join("test_sample.py"),
+            "from sample import value\n\ndef test_value():\n    assert value() == 3\n",
+        );
+
+        let collector = PytestTraceCollector;
+        let runs = collector
+            .collect(&link_root, &["test_sample.py::test_value".to_string()])
+            .unwrap();
+
+        assert_eq!(runs.len(), 1);
+        let sample_hits = runs[0]
+            .hits
+            .get(&PathBuf::from("sample.py"))
+            .expect("sample.py runtime hits from symlinked repo root");
+        assert!(
+            sample_hits.contains(&1) && sample_hits.contains(&2),
+            "symlinked repo roots should record canonical file hits under relative paths, got {sample_hits:?}"
+        );
+    }
+
+    #[test]
+    fn pytest_trace_collector_merges_parametrized_case_hits() {
+        let tmp = TempDir::new().unwrap();
+        write(
+            &tmp.path().join("sample.py"),
+            "def is_even(value):\n    return value % 2 == 0\n",
+        );
+        write(
+            &tmp.path().join("test_sample.py"),
+            concat!(
+                "import pytest\n",
+                "from sample import is_even\n\n",
+                "@pytest.mark.parametrize('value', [2, 4])\n",
+                "def test_is_even(value):\n",
+                "    assert is_even(value)\n",
+            ),
+        );
+
+        let collector = PytestTraceCollector;
+        let runs = collector
+            .collect(tmp.path(), &["test_sample.py::test_is_even".to_string()])
+            .unwrap();
+
+        assert_eq!(runs.len(), 1);
+        let sample_hits = runs[0]
+            .hits
+            .get(&PathBuf::from("sample.py"))
+            .expect("sample.py runtime hits");
+        assert!(
+            sample_hits.contains(&1) && sample_hits.contains(&2),
+            "parametrized runtime cases should be merged into the discovered selector, got {sample_hits:?}"
         );
     }
 }
