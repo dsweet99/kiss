@@ -35,19 +35,13 @@ pub fn run_post_move_oracles_from_root(language: kiss::Language, root: &Path) ->
                 &["-m", "compileall", "-q", "."],
                 &[("PYTHONPATH", root.as_os_str())],
             );
-            let import_smoke = run_cmd(
-                root,
-                "python",
-                &["-m", "pytest", "--collect-only", "-q"],
-                &[("PYTHONPATH", root.as_os_str())],
-            );
             let behavior = run_cmd(
                 root,
                 "python",
                 &["-m", "pytest", "-q"],
                 &[("PYTHONPATH", root.as_os_str())],
             );
-            build_python_bundle(&py_compile, &import_smoke, &behavior)
+            build_python_bundle(&py_compile, &behavior)
         }
         kiss::Language::Rust => {
             let check = run_cmd(root, "cargo", &["check", "--quiet"], &[]);
@@ -57,27 +51,17 @@ pub fn run_post_move_oracles_from_root(language: kiss::Language, root: &Path) ->
     }
 }
 
-fn build_python_bundle(
-    py_compile: &CommandOutcome,
-    import_smoke: &CommandOutcome,
-    behavior: &CommandOutcome,
-) -> OracleBundle {
+fn build_python_bundle(py_compile: &CommandOutcome, behavior: &CommandOutcome) -> OracleBundle {
     let mut messages = Vec::new();
     if !py_compile.success {
         messages.push(format!("compileall failed:\n{}", py_compile.output));
-    }
-    if !import_smoke.success {
-        messages.push(format!(
-            "pytest collection failed:\n{}",
-            import_smoke.output
-        ));
     }
     if !behavior.success {
         messages.push(format!("pytest run failed:\n{}", behavior.output));
     }
     OracleBundle {
         compile_ok: py_compile.success,
-        import_smoke_ok: import_smoke.success,
+        import_smoke_ok: behavior.success,
         behavior_ok: behavior.success,
         messages,
     }

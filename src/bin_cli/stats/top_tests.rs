@@ -1,8 +1,8 @@
 use super::top::{
-    AGGREGATE_ONLY_METRICS, append_cycle_units, coverage_pct_map,
+    AGGREGATE_ONLY_METRICS, append_cycle_units, collect_all_units, coverage_pct_map,
     decorate_file_units_with_coverage, extractor_for,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 fn file_unit(path: &str, name: &str) -> kiss::UnitMetrics {
@@ -105,4 +105,165 @@ fn coverage_pct_map_groups_by_file() {
     let map = coverage_pct_map(&defs, &unrefs, |d| &d.file);
     assert_eq!(map.get("a.py").copied(), Some(50));
     assert_eq!(map.get("b.py").copied(), Some(100));
+}
+
+fn file_stem_of(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(path)
+        .to_string()
+}
+
+fn is_stats_check_shared_metric(metric_id: &str) -> bool {
+    ![
+        "cycle_size",
+        "inv_test_coverage",
+        "duplication",
+        "orphan_module",
+        "test_coverage",
+        "fan_in",
+        "fan_out",
+        "dependency_depth",
+        "positional_args",
+    ]
+    .contains(&metric_id)
+}
+
+type MetricKey = (String, String, String);
+
+fn stats_unit_map(units: &[kiss::UnitMetrics]) -> BTreeMap<MetricKey, usize> {
+    let mut out = BTreeMap::new();
+    for unit in units {
+        for def in kiss::METRICS {
+            let Some(extractor) = extractor_for(def.metric_id) else {
+                continue;
+            };
+            if !is_stats_check_shared_metric(def.metric_id) {
+                continue;
+            }
+            let Some(value) = extractor(unit) else {
+                continue;
+            };
+            if value > 0 {
+                out.insert(
+                    (
+                        def.metric_id.to_string(),
+                        file_stem_of(&unit.file),
+                        unit.name.clone(),
+                    ),
+                    value,
+                );
+            }
+        }
+    }
+    out
+}
+
+fn check_violation_map(violations: &[kiss::Violation]) -> BTreeMap<MetricKey, usize> {
+    violations
+        .iter()
+        .filter(|v| is_stats_check_shared_metric(&v.metric))
+        .map(|v| {
+            (
+                (
+                    v.metric.clone(),
+                    file_stem_of(&v.file.to_string_lossy()),
+                    v.unit_name.clone(),
+                ),
+                v.value,
+            )
+        })
+        .collect()
+}
+
+fn write_sync_corpus(root: &std::path::Path) {
+    std::fs::write(
+        root.join("module.py"),
+        "import os\n\
+         import json\n\
+         \n\
+         class DataProcessor:\n\
+             def add(self, item):\n\
+                 return item\n\
+         \n\
+         def complex_function(a, b, c, *, key=None, verbose: bool = False):\n\
+             x = 1\n\
+             y = 2\n\
+             if a > b:\n\
+                 return x\n\
+             return y + c\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn detailed_stats_and_check_share_metric_values() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_sync_corpus(tmp.path());
+    let paths = vec![tmp.path().to_string_lossy().to_string()];
+    let (py_files, rs_files) =
+        kiss::discovery::gather_files_by_lang(&paths, Some(kiss::Language::Python), &[]);
+
+    let stats_map = stats_unit_map(&collect_all_units(&py_files, &rs_files, None));
+
+    let py_cfg = kiss::Config {
+        statements_per_function: 0,
+        methods_per_class: 0,
+        statements_per_file: 0,
+        lines_per_file: 0,
+        functions_per_file: 0,
+        arguments_positional: 0,
+        arguments_keyword_only: 0,
+        max_indentation_depth: 0,
+        interface_types_per_file: 0,
+        concrete_types_per_file: 0,
+        nested_function_depth: 0,
+        returns_per_function: 0,
+        return_values_per_function: 0,
+        branches_per_function: 0,
+        local_variables_per_function: 0,
+        imported_names_per_file: 0,
+        statements_per_try_block: 0,
+        boolean_parameters: 0,
+        annotations_per_function: 0,
+        calls_per_function: 0,
+        cycle_size: 0,
+        indirect_dependencies: 0,
+        dependency_depth: 0,
+    };
+    let rs_cfg = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 0,
+        min_similarity: 1.0,
+        duplication_enabled: false,
+        orphan_module_enabled: false,
+    };
+    let focus = crate::analyze::FocusFilter::unrestricted();
+    let opts = crate::analyze::AnalyzeOptions {
+        universe: &paths[0],
+        focus_paths: &paths,
+        py_config: &py_cfg,
+        rs_config: &rs_cfg,
+        lang_filter: Some(kiss::Language::Python),
+        bypass_gate: true,
+        gate_config: &gate,
+        ignore_prefixes: &[],
+        show_timing: false,
+        suppress_final_status: true,
+    };
+    let now = std::time::Instant::now();
+    let pipeline = crate::analyze::run_full_pipeline(crate::analyze::FullPipelineInput {
+        opts: &opts,
+        py_files: &py_files,
+        rs_files: &rs_files,
+        focus: &focus,
+        t0: now,
+        t1: now,
+        t2: now,
+    });
+    let mut check_violations = pipeline.result.violations;
+    check_violations.extend(pipeline.graph_viols_all);
+
+    assert_eq!(stats_map, check_violation_map(&check_violations));
 }

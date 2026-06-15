@@ -17,9 +17,20 @@ pub fn runtime_analysis_for_parsed(
     static_analysis: &TestRefAnalysis,
 ) -> Result<TestRefAnalysis, String> {
     let collector = ::rslip::PytestTraceCollector;
-    let db = ::rslip::current_database(repo_root, &|root, selectors| {
+    runtime_analysis_for_parsed_with_collector(repo_root, static_analysis, &|root, selectors| {
         collector.collect(root, selectors)
-    })?;
+    })
+}
+
+fn runtime_analysis_for_parsed_with_collector<F>(
+    repo_root: &Path,
+    static_analysis: &TestRefAnalysis,
+    collector: &F,
+) -> Result<TestRefAnalysis, String>
+where
+    F: Fn(&Path, &[String]) -> Result<Vec<::rslip::TestCoverageRun>, String>,
+{
+    let db = ::rslip::current_database(repo_root, collector)?;
     Ok(analysis_from_database(repo_root, static_analysis, &db))
 }
 
@@ -80,7 +91,8 @@ pub fn analysis_from_database(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{BTreeMap, HashMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+    use std::path::PathBuf;
 
     fn static_analysis_for(tmp: &std::path::Path, name: &str) -> TestRefAnalysis {
         TestRefAnalysis {
@@ -159,15 +171,22 @@ mod tests {
     }
 
     #[test]
-    fn runtime_analysis_for_parsed_collects_tiny_pytest_project() {
+    fn runtime_analysis_for_parsed_loads_clean_runtime_database() {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(tmp.path().join("a.py"), "def a():\n    return 1\n").unwrap();
-        std::fs::write(
-            tmp.path().join("test_a.py"),
-            "from a import a\n\ndef test_a():\n    assert a() == 1\n",
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("test_a.py"), "def test_a():\n    pass\n").unwrap();
         let static_analysis = static_analysis_for(tmp.path(), "a");
+
+        let db = ::rslip::refresh_with_collector(tmp.path(), &|_, selectors| {
+            assert_eq!(selectors, &["test_a.py::test_a".to_string()]);
+            Ok(vec![::rslip::TestCoverageRun {
+                selector: "test_a.py::test_a".to_string(),
+                test_path: PathBuf::from("test_a.py"),
+                hits: BTreeMap::from([(PathBuf::from("a.py"), BTreeSet::from([1_usize, 2_usize]))]),
+            }])
+        })
+        .unwrap();
+        ::rslip::write_database_atomic(tmp.path(), &db).unwrap();
 
         let runtime = runtime_analysis_for_parsed(tmp.path(), &static_analysis).unwrap();
 

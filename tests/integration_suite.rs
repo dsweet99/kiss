@@ -10,8 +10,6 @@ mod break_c2_orphans;
 mod break_c2_test_coverage;
 #[path = "cases/bug_indirect_dependencies_check.rs"]
 mod bug_indirect_dependencies_check;
-#[path = "cases/bug_test_coverage_aggregate_gate_masking.rs"]
-mod bug_test_coverage_aggregate_gate_masking;
 #[path = "cases/cache_integration.rs"]
 mod cache_integration;
 #[path = "cases/cli_check_hint.rs"]
@@ -20,8 +18,6 @@ mod cli_check_hint;
 mod cli_integration;
 #[path = "cases/cli_integration_2.rs"]
 mod cli_integration_2;
-#[path = "cases/cli_kiss_test_smoke.rs"]
-mod cli_kiss_test_smoke;
 #[path = "cases/config_tests.rs"]
 mod config_tests;
 #[path = "cases/fix_h1_error_nodes.rs"]
@@ -66,22 +62,14 @@ mod main_integration;
 mod py_metrics_tests;
 #[path = "cases/python_counts_violations.rs"]
 mod python_counts_violations;
-#[path = "cases/regression_check_all_ignores_test_file_sentinel.rs"]
-mod regression_check_all_ignores_test_file_sentinel;
-#[path = "cases/regression_check_cache_uncached_default.rs"]
-mod regression_check_cache_uncached_default;
 #[path = "cases/regression_check_default_warm_gate.rs"]
 mod regression_check_default_warm_gate;
-#[path = "cases/regression_check_default_writes_cache.rs"]
-mod regression_check_default_writes_cache;
 #[path = "cases/regression_check_focus_empty_dir.rs"]
 mod regression_check_focus_empty_dir;
 #[path = "cases/regression_check_ignore_filename.rs"]
 mod regression_check_ignore_filename;
 #[path = "cases/regression_check_perf.rs"]
 mod regression_check_perf;
-#[path = "cases/regression_check_stats_share_relative.rs"]
-mod regression_check_stats_share_relative;
 #[path = "cases/regression_init_py_imports_sync.rs"]
 mod regression_init_py_imports_sync;
 #[path = "cases/regression_repo_kissignore_fixture_boundaries.rs"]
@@ -154,5 +142,3 @@ mod symbol_mv_regressions_7;
 mod symbol_mv_regressions_8;
 #[path = "cases/symbol_mv_regressions_9.rs"]
 mod symbol_mv_regressions_9;
-#[path = "cases/sync_stats_check.rs"]
-mod sync_stats_check;

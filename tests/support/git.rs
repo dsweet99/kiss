@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[allow(dead_code)]
 pub fn git_command(repo: &Path) -> Command {
     let mut c = Command::new("git");
     c.current_dir(repo)

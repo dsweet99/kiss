@@ -18,7 +18,7 @@ use std::path::PathBuf;
 mod path_helpers;
 mod stats_top;
 #[cfg(test)]
-mod test_helpers;
+pub(crate) mod test_helpers;
 pub(crate) use content_digest::load_verified_full_cache;
 use path_helpers::{cache_path_full, same_cached_paths};
 pub(crate) use stats_top::{

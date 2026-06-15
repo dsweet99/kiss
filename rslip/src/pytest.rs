@@ -292,10 +292,7 @@ mod tests {
         let link_root = tmp.path().join("link");
         fs::create_dir(&real_root).unwrap();
         std::os::unix::fs::symlink(&real_root, &link_root).unwrap();
-        write(
-            &real_root.join("sample.py"),
-            "def value():\n    return 3\n",
-        );
+        write(&real_root.join("sample.py"), "def value():\n    return 3\n");
         write(
             &real_root.join("test_sample.py"),
             "from sample import value\n\ndef test_value():\n    assert value() == 3\n",

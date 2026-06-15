@@ -1,6 +1,8 @@
 //! Full-universe analysis: parsing, graphs, coverage, duplication, and reporting.
 
 mod cache;
+#[cfg(test)]
+mod cache_contract_tests;
 mod coverage;
 mod coverage_gate;
 mod coverage_types;

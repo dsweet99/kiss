@@ -29,6 +29,25 @@ fn per_file_gate_ignores_files_outside_focus() {
 }
 
 #[test]
+fn per_file_gate_catches_low_file_even_when_aggregate_passes() {
+    use std::path::PathBuf;
+    let good = PathBuf::from("good.py");
+    let bad = PathBuf::from("bad.py");
+    let mut defs = Vec::new();
+    for i in 1..=18 {
+        defs.push((good.clone(), format!("f{i}"), i));
+    }
+    defs.push((bad.clone(), "orphan_func".into(), 1));
+    let unrefs = vec![(bad.clone(), "orphan_func".into(), 1)];
+    let focus = crate::analyze::FocusFilter::unrestricted();
+
+    let (_, file_pcts) = per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90, None)
+        .expect("bad.py should fail even though aggregate coverage is 18/19");
+    assert_eq!(file_pcts.get(&good), Some(&100));
+    assert_eq!(file_pcts.get(&bad), Some(&0));
+}
+
+#[test]
 fn per_file_gate_passes_when_file_meets_threshold() {
     use std::path::PathBuf;
     let defs = vec![

@@ -256,4 +256,28 @@ mod summary_tests {
         };
         print_cached_summary(&[".".into()], &cache);
     }
+
+    #[test]
+    fn relative_stats_and_check_discovery_use_same_paths() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("share.py"),
+            "def covered():\n    return 1\n",
+        )
+        .unwrap();
+
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let rel = vec![".".to_string()];
+        let stats_paths = gather_files_by_lang(&rel, Some(Language::Python), &[]).0;
+        let check_paths =
+            crate::analyze::gather_files(std::path::Path::new("."), Some(Language::Python), &[]).0;
+        std::env::set_current_dir(original).unwrap();
+
+        assert_eq!(
+            stats_paths, check_paths,
+            "`kiss stats .` and `kiss check .` must fingerprint identical discovered paths"
+        );
+    }
 }
