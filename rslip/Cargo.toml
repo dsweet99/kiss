@@ -1,0 +1,26 @@
+[package]
+name = "rslip"
+version = "0.1.1"
+edition = "2024"
+description = "Runtime Python line coverage database for kiss"
+license = "MIT"
+repository = "https://github.com/dsweet99/kiss"
+readme = "../README.md"
+keywords = ["coverage", "python", "testing"]
+categories = ["development-tools", "development-tools::testing"]
+
+[lib]
+name = "rslip"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rslip"
+path = "src/main.rs"
+
+[dependencies]
+ignore = "0.4.26"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
