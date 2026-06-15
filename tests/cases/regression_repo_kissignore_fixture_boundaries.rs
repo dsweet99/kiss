@@ -1,8 +1,8 @@
 //! Regression test for repository-level fixture boundaries.
 //!
-//! `tests/fake_python` and `tests/fake_rust` contain intentionally pathological
-//! files used by focused unit tests. Default `kiss check` should not treat those
-//! fixture corpora as project code.
+//! `tests/fake_python`, `tests/fake_rust`, and `tests/fixtures` contain
+//! intentionally pathological files used by focused unit tests. Default
+//! `kiss check` should not treat those fixture corpora as project code.
 
 use std::fs;
 use std::path::Path;
@@ -21,7 +21,7 @@ fn repo_kissignore_entries() -> Vec<String> {
 #[test]
 fn repository_kissignore_excludes_pathological_fixture_roots() {
     let entries = repo_kissignore_entries();
-    for fixture_root in ["tests/fake_python/", "tests/fake_rust/"] {
+    for fixture_root in ["tests/fake_python/", "tests/fake_rust/", "tests/fixtures/"] {
         assert!(
             entries.iter().any(|entry| entry == fixture_root),
             ".kissignore must exclude {fixture_root}; entries were {entries:?}",

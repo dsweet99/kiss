@@ -80,12 +80,12 @@ mod regression_check_focus_empty_dir;
 mod regression_check_ignore_filename;
 #[path = "cases/regression_check_perf.rs"]
 mod regression_check_perf;
-#[path = "cases/regression_repo_kissignore_fixture_boundaries.rs"]
-mod regression_repo_kissignore_fixture_boundaries;
 #[path = "cases/regression_check_stats_share_relative.rs"]
 mod regression_check_stats_share_relative;
 #[path = "cases/regression_init_py_imports_sync.rs"]
 mod regression_init_py_imports_sync;
+#[path = "cases/regression_repo_kissignore_fixture_boundaries.rs"]
+mod regression_repo_kissignore_fixture_boundaries;
 #[path = "cases/regression_stats_all_metric_registry.rs"]
 mod regression_stats_all_metric_registry;
 #[path = "cases/regression_stats_cold_eq_warm.rs"]

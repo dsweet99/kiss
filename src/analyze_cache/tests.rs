@@ -2,7 +2,7 @@ use super::path_helpers::load_full_cache;
 use super::*;
 use crate::analyze::FocusFilter;
 use kiss::check_cache::CachedViolation;
-use kiss::check_universe_cache::CachedCoverageItem;
+use kiss::check_universe_cache::{CachedCoverageItem, CachedFileCoverage};
 use std::path::PathBuf;
 
 fn empty_cache(fp: &str) -> FullCheckCache {
@@ -84,6 +84,57 @@ fn cached_coverage_viols_replays_weighted_overlay_pct() {
     assert_eq!(viols.len(), 1);
     assert_eq!(viols[0].metric, "test_coverage");
     assert!(viols[0].message.contains("17% covered"));
+}
+
+#[test]
+fn cached_gated_replay_uses_weighted_file_coverage() {
+    let file = PathBuf::from("src/module.rs");
+    let mut cache = empty_cache("weighted_gate_replay");
+    cache.definitions = vec![
+        CachedCoverageItem {
+            file: file.to_string_lossy().to_string(),
+            name: "large_covered".into(),
+            line: 1,
+        },
+        CachedCoverageItem {
+            file: file.to_string_lossy().to_string(),
+            name: "small_missed".into(),
+            line: 20,
+        },
+    ];
+    cache.unreferenced = vec![CachedCoverageItem {
+        file: file.to_string_lossy().to_string(),
+        name: "small_missed".into(),
+        line: 20,
+    }];
+    cache.weighted_file_pcts = vec![CachedFileCoverage {
+        file: file.to_string_lossy().to_string(),
+        pct: 91,
+    }];
+    let focus = FocusFilter::restricting(std::iter::once(file).collect());
+    let py_config = Config::python_defaults();
+    let rs_config = Config::rust_defaults();
+    let gate_config = GateConfig {
+        test_coverage_threshold: 90,
+        ..GateConfig::default()
+    };
+    let opts = crate::analyze::AnalyzeOptions {
+        universe: ".",
+        focus_paths: &[],
+        py_config: &py_config,
+        rs_config: &rs_config,
+        lang_filter: None,
+        bypass_gate: false,
+        gate_config: &gate_config,
+        ignore_prefixes: &[],
+        show_timing: false,
+        suppress_final_status: false,
+    };
+
+    assert!(
+        super::emit::emit_cached_gated(cache, &opts, &focus),
+        "cached gated replay should honor stored weighted coverage"
+    );
 }
 
 #[test]

@@ -158,12 +158,17 @@ fn top_level_discovery_excludes_embedded_fixture_projects() {
     assert!(top_level_paths.contains(&"tests/test_app.py"));
     assert!(top_level_paths.contains(&".kissignore"));
     assert!(!top_level_paths.contains(&"tests/fixtures/mv/python/simple_package/pkg/caller.py"));
-    assert!(!top_level_paths.contains(&"tests/fixtures/mv/python/simple_package/tests/test_pkg.py"));
+    assert!(
+        !top_level_paths.contains(&"tests/fixtures/mv/python/simple_package/tests/test_pkg.py")
+    );
     assert!(!top_level_paths.contains(&"tests/fake_python/api_handler_test.py"));
 
     let fixture_root = tmp.path().join("tests/fixtures/mv/python/simple_package");
     let fixture_project = crate::discovery::discover_repo_files(&fixture_root).unwrap();
-    let fixture_paths: Vec<_> = fixture_project.iter().map(|file| file.path.as_str()).collect();
+    let fixture_paths: Vec<_> = fixture_project
+        .iter()
+        .map(|file| file.path.as_str())
+        .collect();
 
     assert!(fixture_paths.contains(&"pkg/caller.py"));
     assert!(fixture_paths.contains(&"tests/test_pkg.py"));
