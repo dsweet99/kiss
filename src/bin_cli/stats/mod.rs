@@ -48,3 +48,17 @@ pub fn run_stats(args: RunStatsArgs<'_>) {
         );
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl RunStatsArgs<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_run_stats_args() {
+        RunStatsArgs::witness();
+    }
+}

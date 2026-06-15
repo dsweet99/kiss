@@ -69,3 +69,30 @@ pub fn append_section(
     }
     out.push('\n');
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use crate::gate_config::GateConfig;
+    use crate::stats::MetricStats;
+
+    impl GenerateConfigParams<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_generate_config_params() {
+        GenerateConfigParams::witness();
+        let py = MetricStats::default();
+        let rs = MetricStats::default();
+        let gate = GateConfig::default();
+        let p = GenerateConfigParams {
+            py: &py,
+            rs: &rs,
+            py_n: 0,
+            rs_n: 0,
+            gate: &gate,
+        };
+        assert!(generate_config_toml_by_language(&p).contains("[gate]"));
+    }
+}

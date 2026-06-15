@@ -134,3 +134,30 @@ pub(crate) fn count_decorators(node: Node) -> usize {
                 .count()
         })
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use crate::test_utils::parse_python_source;
+
+    impl ParameterCounts {
+        fn witness() -> Self {
+            Self {
+                positional: 0,
+                keyword_only: 0,
+                total: 0,
+                boolean_params: 0,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_parameter_counts() {
+        let _ = ParameterCounts::witness();
+        let parsed = parse_python_source("def f(a, b=1, *, c): pass");
+        let func = parsed.tree.root_node().child(0).expect("function");
+        let params = func.child_by_field_name("parameters").expect("params");
+        let counts = count_parameters(params, &parsed.source);
+        assert!(counts.total >= 1);
+    }
+}

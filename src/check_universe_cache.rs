@@ -78,10 +78,10 @@ impl CachedFileCoverage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::check_cache::CachedCodeChunk;
+    use std::path::PathBuf;
 
     #[test]
-    fn test_cached_coverage_item_into_tuple() {
+    fn cached_coverage_item_into_tuple_preserves_fields() {
         let item = CachedCoverageItem {
             file: "a.py".to_string(),
             name: "x".to_string(),
@@ -94,45 +94,56 @@ mod tests {
     }
 
     #[test]
-    fn test_full_cache_struct_smoke() {
-        let _ = CachedDuplicateCluster {
-            chunks: vec![CachedCodeChunk {
-                file: "a.py".to_string(),
-                name: "x".to_string(),
-                start_line: 1,
-                end_line: 1,
-                normalized: "n".to_string(),
+    fn cached_duplicate_cluster_deserializes_chunk_fields() {
+        let json = serde_json::json!({
+            "chunks": [{
+                "file": "a.py",
+                "name": "x",
+                "start_line": 1,
+                "end_line": 5,
+                "normalized": "n"
             }],
-            avg_similarity: 1.0,
-        };
-        let _ = FullCheckCache {
-            fingerprint: "deadbeef".to_string(),
-            py_stats: None,
-            rs_stats: None,
-            py_paths: vec![],
-            focus_paths: vec![],
-            focus_restrict: false,
-            rs_paths: vec![],
-            py_file_count: 0,
-            rs_file_count: 0,
-            code_unit_count: 0,
-            statement_count: 0,
-            graph_nodes: 0,
-            graph_edges: 0,
-            base_violations: Vec::new(),
-            graph_violations: Vec::new(),
-            coverage_violations: Vec::new(),
-            py_duplicates: Vec::new(),
-            rs_duplicates: Vec::new(),
-            definitions: Vec::new(),
-            unreferenced: Vec::new(),
-            weighted_file_pcts: Vec::new(),
-            file_content_digests: Vec::new(),
-        };
+            "avg_similarity": 0.95
+        });
+
+        let cluster: CachedDuplicateCluster = serde_json::from_value(json).unwrap();
+
+        assert_eq!(cluster.chunks.len(), 1);
+        assert_eq!(cluster.chunks[0].file, "a.py");
+        assert_eq!(cluster.avg_similarity, 0.95);
     }
 
     #[test]
-    fn test_cached_file_coverage_into_tuple() {
+    fn full_check_cache_deserializes_defaulted_recent_fields() {
+        let json = serde_json::json!({
+            "fingerprint": "deadbeef",
+            "py_paths": [],
+            "focus_paths": [],
+            "focus_restrict": false,
+            "rs_paths": [],
+            "py_file_count": 0,
+            "rs_file_count": 0,
+            "code_unit_count": 0,
+            "statement_count": 0,
+            "graph_nodes": 0,
+            "graph_edges": 0,
+            "base_violations": [],
+            "graph_violations": [],
+            "py_duplicates": [],
+            "rs_duplicates": [],
+            "definitions": [],
+            "unreferenced": []
+        });
+
+        let cache: FullCheckCache = serde_json::from_value(json).unwrap();
+
+        assert!(cache.coverage_violations.is_empty());
+        assert!(cache.weighted_file_pcts.is_empty());
+        assert!(cache.file_content_digests.is_empty());
+    }
+
+    #[test]
+    fn cached_file_coverage_into_tuple_preserves_fields() {
         let item = CachedFileCoverage {
             file: "a.py".to_string(),
             pct: 91,

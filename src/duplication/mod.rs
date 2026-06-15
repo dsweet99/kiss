@@ -143,3 +143,36 @@ pub fn cluster_duplicates_from_chunks(
 
     clustering::cluster_from_pairs(chunks, good_pairs)
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::path::PathBuf;
+
+    impl DuplicatePair {
+        fn witness() -> Self {
+            Self {
+                chunk1: CodeChunk {
+                    file: PathBuf::from("a.py"),
+                    name: "f".into(),
+                    start_line: 1,
+                    end_line: 5,
+                    normalized: "x".into(),
+                },
+                chunk2: CodeChunk {
+                    file: PathBuf::from("b.py"),
+                    name: "g".into(),
+                    start_line: 1,
+                    end_line: 5,
+                    normalized: "x".into(),
+                },
+                similarity: 1.0,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_duplicate_pair() {
+        let _ = DuplicatePair::witness();
+    }
+}

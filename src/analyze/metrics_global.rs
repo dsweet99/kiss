@@ -36,3 +36,27 @@ pub fn compute_global_metrics(in_: &GlobalMetricsInput<'_>) -> Option<kiss::Glob
         graph_edges: edges,
     })
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl GlobalMetricsInput<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_global_metrics_input() {
+        GlobalMetricsInput::witness();
+        let py = Config::python_defaults();
+        let rs = Config::rust_defaults();
+        let input = GlobalMetricsInput {
+            paths: &[],
+            ignore: &[],
+            lang_filter: None,
+            py_config: &py,
+            rs_config: &rs,
+        };
+        assert!(compute_global_metrics(&input).is_none());
+    }
+}

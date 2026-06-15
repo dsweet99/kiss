@@ -363,3 +363,55 @@ mod plan_coverage {
         assert!(edits.is_empty());
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use crate::symbol_mv::{MvRequest, parse_mv_query};
+    use std::collections::BTreeSet;
+
+    impl AppendReferenceCtx<'_> {
+        fn witness() {}
+    }
+
+    impl AppendMoveCtx<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_append_context_types() {
+        AppendReferenceCtx::witness();
+        AppendMoveCtx::witness();
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("a.py");
+        std::fs::write(&source, "def foo(): pass\n").unwrap();
+        let query = parse_mv_query(&format!("{}::foo", source.display())).unwrap();
+        let req = MvRequest {
+            query,
+            new_name: "bar".into(),
+            paths: vec![tmp.path().display().to_string()],
+            to: None,
+            ignore: vec![],
+        };
+        let source_canonical = crate::rust_include::canonical_path(&source);
+        let mut files = BTreeSet::new();
+        let mut edits = Vec::new();
+        append_reference_edits(&mut AppendReferenceCtx {
+            req: &req,
+            source_canonical: &source_canonical,
+            old_name: "foo",
+            files: &mut files,
+            edits: &mut edits,
+        });
+        append_move_edits_if_any(&mut AppendMoveCtx {
+            req: &req,
+            source_path: &source,
+            source_content: "def foo(): pass\n",
+            old_name: "foo",
+            files: &mut files,
+            edits: &mut edits,
+            def_span: None,
+        });
+        assert!(edits.is_empty());
+    }
+}

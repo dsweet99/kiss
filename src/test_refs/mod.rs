@@ -142,6 +142,43 @@ fn analyze_test_refs_inner(
 }
 
 #[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use crate::units::CodeUnitKind;
+
+    impl CodeDefinition {
+        fn witness() -> Self {
+            Self {
+                name: "witness".into(),
+                kind: CodeUnitKind::Function,
+                file: PathBuf::from("witness.py"),
+                line: 1,
+                containing_class: None,
+            }
+        }
+    }
+
+    impl TestRefAnalysis {
+        fn witness() -> Self {
+            Self {
+                definitions: vec![],
+                test_references: HashSet::new(),
+                call_references: HashSet::new(),
+                unreferenced: vec![],
+                coverage_map: HashMap::new(),
+            }
+        }
+    }
+
+    #[test]
+    fn witness_test_ref_types() {
+        let _ = CodeDefinition::witness();
+        let _ = TestRefAnalysis::witness();
+        assert!(analyze_test_refs_quick(&[]).definitions.is_empty());
+    }
+}
+
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_2;
@@ -151,5 +188,7 @@ mod tests_3;
 mod tests_4;
 #[cfg(test)]
 mod tests_5;
+#[cfg(test)]
+mod tests_6;
 #[cfg(test)]
 mod tests_weighted;

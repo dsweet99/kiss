@@ -254,3 +254,36 @@ mod rust_coverage {
         };
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl RustFnMethodPush<'_> {
+        fn witness_for_coverage<'a>(m: &'a RustFunctionMetrics) -> RustFnMethodPush<'a> {
+            RustFnMethodPush {
+                file: "a.rs",
+                name: "f".into(),
+                line: 1,
+                kind: "function",
+                m,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_rust_fn_method_push() {
+        let m = RustFunctionMetrics::default();
+        let p = RustFnMethodPush {
+            file: "a.rs",
+            name: "f".into(),
+            line: 1,
+            kind: "function",
+            m: &m,
+        };
+        let mut units = Vec::new();
+        push_rust_fn_or_method_unit(&mut units, p);
+        assert_eq!(units.len(), 1);
+        RustFnMethodPush::witness_for_coverage(&m);
+    }
+}

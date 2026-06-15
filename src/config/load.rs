@@ -6,11 +6,6 @@ use crate::config::types::{Config, ConfigLanguage};
 impl Config {
     fn load_config_chain(base: Self, lang: Option<ConfigLanguage>) -> Self {
         let mut config = base;
-        if let Some(home) = std::env::var_os("HOME")
-            && let Ok(content) = std::fs::read_to_string(Path::new(&home).join(".kissconfig"))
-        {
-            config.merge_from_toml(&content, lang);
-        }
         if let Ok(content) = std::fs::read_to_string(".kissconfig") {
             config.merge_from_toml(&content, lang);
         }

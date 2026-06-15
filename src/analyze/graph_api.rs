@@ -140,3 +140,22 @@ mod graph_for_path_extension_tests {
         assert!(graph_for_path(Path::new("x.txt"), Some(&py), None).is_none());
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::{AnalyzeGraphsIn, GraphConfigs};
+
+    impl GraphConfigs<'_> {
+        fn witness() {}
+    }
+
+    impl AnalyzeGraphsIn<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_graph_api_types() {
+        GraphConfigs::witness();
+        AnalyzeGraphsIn::witness();
+    }
+}

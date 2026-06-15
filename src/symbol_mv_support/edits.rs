@@ -236,3 +236,38 @@ mod edits_coverage {
         assert!(sites.is_empty());
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::path::Path;
+
+    impl ReferenceRenameParams<'_> {
+        fn witness() {}
+    }
+
+    impl SourceRenameParams<'_> {
+        fn witness() {}
+    }
+
+    impl MoveEditsParams<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_edit_param_types() {
+        ReferenceRenameParams::witness();
+        SourceRenameParams::witness();
+        MoveEditsParams::witness();
+        let path = Path::new("a.py");
+        let p = MoveEditsParams {
+            source_path: path,
+            source_content: "def foo(): pass",
+            old_name: "foo",
+            new_name: "bar",
+            def_span: None,
+            dest: None,
+        };
+        assert!(build_move_edits(&p).is_none());
+    }
+}

@@ -202,3 +202,20 @@ mod tests;
 #[cfg(test)]
 #[path = "layout_output_test_2.rs"]
 mod layout_output_test_2;
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl LayoutAnalysis {
+        fn witness() -> Self {
+            Self::default()
+        }
+    }
+
+    #[test]
+    fn witness_layout_analysis() {
+        let analysis = LayoutAnalysis::witness();
+        assert!(format_markdown(&analysis).contains("Proposed Layout"));
+    }
+}

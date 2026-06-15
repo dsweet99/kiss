@@ -40,6 +40,23 @@ fn test_language_and_config() {
 }
 
 #[test]
+fn test_check_default_ignore_excludes_fake_fixture_from_gate_inference() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("fake_uncovered.py"),
+        "def uncovered():\n    return 1\n",
+    )
+    .unwrap();
+    let paths = vec![tmp.path().to_string_lossy().to_string()];
+
+    let ignore = crate::bin_cli::util::merge_check_ignore_prefixes(&[]);
+    let gate = kiss::config_gen::infer_gate_config_for_paths(&paths, None, &ignore);
+
+    assert_eq!(ignore, vec!["fake_".to_string()]);
+    assert_eq!(gate.test_coverage_threshold, 100);
+}
+
+#[test]
 fn test_cli_and_commands() {
     use clap::Parser;
     assert!(matches!(

@@ -164,3 +164,9 @@ fn test_code_unit_kind_display_uses_as_str() {
         assert_eq!(kind.to_string(), kind.as_str());
     }
 }
+
+#[test]
+fn get_child_by_field_returns_none_for_missing_field() {
+    let parsed = parse_python_source("x = 1");
+    assert!(get_child_by_field(parsed.tree.root_node(), "missing", &parsed.source).is_none());
+}

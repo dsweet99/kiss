@@ -151,7 +151,7 @@ mod inline_tests {
     use super::*;
 
     #[test]
-    fn code_unit_kind_string_methods_are_same_file_witnessed() {
+    fn code_unit_kind_string_methods_match_display() {
         assert_eq!(CodeUnitKind::Function.as_str(), "function");
         assert_eq!(CodeUnitKind::Module.to_string(), "module");
     }

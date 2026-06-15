@@ -233,3 +233,30 @@ pub(crate) fn collect_per_test_call_usage_from_items(
         }
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::collections::HashSet;
+    use syn::visit::Visit;
+
+    impl ExecutableCallReferenceVisitor<'_> {
+        fn for_coverage_test<'a>(
+            refs: &'a mut HashSet<String>,
+            qualified: &'a mut HashSet<QualifiedModuleRef>,
+        ) -> ExecutableCallReferenceVisitor<'a> {
+            ExecutableCallReferenceVisitor { refs, qualified }
+        }
+    }
+
+    #[test]
+    fn witness_executable_call_visitor() {
+        let mut refs = HashSet::new();
+        let mut qualified = HashSet::new();
+        let mut visitor =
+            ExecutableCallReferenceVisitor::for_coverage_test(&mut refs, &mut qualified);
+        let expr: syn::Expr = syn::parse_quote!(callee());
+        visitor.visit_expr(&expr);
+        assert!(refs.contains("callee"));
+    }
+}

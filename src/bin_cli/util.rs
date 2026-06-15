@@ -13,6 +13,25 @@ pub fn set_sigpipe_default() {
 #[cfg(not(unix))]
 pub fn set_sigpipe_default() {}
 
+/// Directory or filename prefixes excluded from `kiss check` by default.
+/// Intentionally-violating fixtures live under `tests/fake_python/` and
+/// `tests/fake_rust/`; they are analyzed directly in integration tests but
+/// must not fail the repo's own quality gate.
+pub const DEFAULT_CHECK_IGNORE_PREFIXES: &[&str] = &["fake_"];
+
+pub fn default_check_ignore_prefixes() -> Vec<String> {
+    DEFAULT_CHECK_IGNORE_PREFIXES
+        .iter()
+        .map(|prefix| (*prefix).to_string())
+        .collect()
+}
+
+pub fn merge_check_ignore_prefixes(user: &[String]) -> Vec<String> {
+    let mut ignore = default_check_ignore_prefixes();
+    ignore.extend(user.iter().cloned());
+    kiss::normalize_ignore_prefixes(&ignore)
+}
+
 pub fn validate_paths(paths: &[String]) {
     for p in paths {
         if !Path::new(p).exists() {

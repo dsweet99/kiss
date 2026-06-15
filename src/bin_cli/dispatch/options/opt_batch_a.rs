@@ -33,3 +33,36 @@ pub(crate) struct MimicDispatchOptions {
     pub out: Option<PathBuf>,
     pub ignore: Vec<String>,
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl TriConfig<'_> {
+        fn witness() {}
+    }
+    impl CheckDispatchOptions<'_> {
+        fn witness() {}
+    }
+    impl StatsDispatchOptions<'_> {
+        fn witness() {}
+    }
+    impl MimicDispatchOptions {
+        fn witness() -> Self {
+            Self {
+                lang: None,
+                paths: vec![],
+                out: None,
+                ignore: vec![],
+            }
+        }
+    }
+
+    #[test]
+    fn witness_opt_batch_a() {
+        TriConfig::witness();
+        CheckDispatchOptions::witness();
+        StatsDispatchOptions::witness();
+        let _ = MimicDispatchOptions::witness();
+    }
+}

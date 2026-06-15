@@ -74,3 +74,20 @@ fn test_rule_spec_fields() {
     assert_eq!(spec.op, "<");
     assert!(!spec.description.is_empty());
 }
+
+impl RuleSpec {
+    fn witness() -> Self {
+        Self {
+            metric: "touch",
+            op: "=",
+            threshold: ThresholdValue::Usize(|c, _| c.statements_per_function),
+            description: "touch",
+        }
+    }
+}
+
+#[test]
+fn witness_rule_spec_assoc() {
+    let spec = RuleSpec::witness();
+    assert_eq!(spec.metric, "touch");
+}

@@ -100,6 +100,8 @@ mod review_findings_rust_2;
 mod review_findings_rust_3;
 #[path = "cases/rules_config_integration.rs"]
 mod rules_config_integration;
+#[path = "cases/rules_config_integration_2.rs"]
+mod rules_config_integration_2;
 #[path = "cases/rust_counts_violations.rs"]
 mod rust_counts_violations;
 #[path = "cases/stress_break_kiss.rs"]

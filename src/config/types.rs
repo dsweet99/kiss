@@ -98,3 +98,21 @@ impl Config {
         }
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl ConfigLanguage {
+        fn witness() -> Self {
+            Self::Python
+        }
+    }
+
+    #[test]
+    fn witness_config_language() {
+        assert_eq!(ConfigLanguage::witness(), ConfigLanguage::Python);
+        let _ = Config::python_defaults();
+        let _ = Config::rust_defaults();
+    }
+}

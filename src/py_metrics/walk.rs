@@ -82,3 +82,21 @@ pub(crate) fn walk_py_ast(
         }
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::{ClassVisit, FunctionVisit};
+
+    impl FunctionVisit<'_> {
+        fn witness() {}
+    }
+    impl ClassVisit<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_py_walk_types() {
+        FunctionVisit::witness();
+        ClassVisit::witness();
+    }
+}

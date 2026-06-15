@@ -16,3 +16,37 @@ pub(crate) struct MvOutputFlags {
     pub dry_run: bool,
     pub json: bool,
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl MvDispatchOptions {
+        fn witness() -> Self {
+            Self {
+                lang: None,
+                query: "q".into(),
+                new_name: "n".into(),
+                paths: vec![],
+                to: None,
+                mv_flags: MvOutputFlags::witness(),
+                ignore: vec![],
+            }
+        }
+    }
+
+    impl MvOutputFlags {
+        fn witness() -> Self {
+            Self {
+                dry_run: false,
+                json: false,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_opt_batch_d() {
+        let _ = MvDispatchOptions::witness();
+        let _ = MvOutputFlags::witness();
+    }
+}

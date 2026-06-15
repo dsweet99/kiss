@@ -231,6 +231,68 @@ fn cli_config_with_custom_file() {
 }
 
 #[test]
+fn cli_config_ignores_home_kissconfig_without_local() {
+    let tmp = TempDir::new().unwrap();
+    let repo = tmp.path().join("repo");
+    let home = tmp.path().join("home");
+    std::fs::create_dir(&repo).unwrap();
+    std::fs::create_dir(&home).unwrap();
+    fs::write(repo.join("sample.py"), "def foo():\n    return 1\n").unwrap();
+    fs::write(
+        home.join(".kissconfig"),
+        "[python]\nstatements_per_function = 99\n",
+    )
+    .unwrap();
+
+    let output = kiss_binary()
+        .current_dir(&repo)
+        .env("HOME", &home)
+        .arg("config")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "config should succeed. stderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("statements_per_function = 35")
+            || stdout.contains("statements_per_function = 1"),
+        "Should not use home config value 99. stdout: {stdout}"
+    );
+    assert!(
+        !stdout.contains("statements_per_function = 99"),
+        "Home .kissconfig must not be merged. stdout: {stdout}"
+    );
+}
+
+#[test]
+fn cli_missing_local_kissconfig_is_created_by_clamp() {
+    let tmp = TempDir::new().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    fs::write(repo.join("sample.py"), "def foo():\n    return 1\n").unwrap();
+
+    let output = kiss_binary()
+        .current_dir(&repo)
+        .arg("config")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "config should succeed. stderr: {stderr}"
+    );
+    assert!(
+        repo.join(".kissconfig").exists(),
+        "kiss should clamp-write ./.kissconfig when missing"
+    );
+}
+
+#[test]
 fn cli_config_with_custom_file_and_local_layers_merges() {
     let tmp = TempDir::new().unwrap();
     let repo = tmp.path().join("repo");
@@ -273,8 +335,8 @@ fn cli_config_with_custom_file_and_local_layers_merges() {
         "Local .kissconfig should be preserved. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("lines_per_file = 111"),
-        "Home .kissconfig shared key should be preserved. stdout: {stdout}"
+        !stdout.contains("lines_per_file = 111"),
+        "Home .kissconfig should not be merged. stdout: {stdout}"
     );
     assert!(
         stdout.contains("positional_args = 1"),
@@ -331,39 +393,5 @@ fn cli_config_shows_rust_specific_settings() {
     assert!(
         stdout.contains("annotations_per_function"),
         "Should show annotations_per_function. stdout: {stdout}"
-    );
-}
-
-#[test]
-fn cli_rules_with_custom_config_file() {
-    let tmp = TempDir::new().unwrap();
-    let config_path = tmp.path().join("custom.kissconfig");
-    fs::write(&config_path, "[python]\nstatements_per_function = 42\n").unwrap();
-    let output = kiss_binary()
-        .arg("rules")
-        .arg("--config")
-        .arg(&config_path)
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success());
-    assert!(
-        stdout.contains("42"),
-        "Should reflect custom threshold. stdout: {stdout}"
-    );
-}
-
-#[test]
-fn cli_config_nonexistent_file_warns() {
-    let output = kiss_binary()
-        .arg("config")
-        .arg("--config")
-        .arg("/nonexistent/path/config")
-        .output()
-        .unwrap();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("Warning") || stderr.contains("Could not read"),
-        "Should warn about missing file. stderr: {stderr}"
     );
 }

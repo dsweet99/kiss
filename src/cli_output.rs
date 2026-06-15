@@ -21,6 +21,14 @@ pub fn format_candidate_list(candidates: &[String], max: usize) -> String {
     }
 }
 
+/// Whether a path participates in the per-file test-coverage gate.
+pub fn is_coverage_gate_file(path: &Path) -> bool {
+    !crate::test_refs::is_test_file(path)
+        && !crate::test_refs::is_in_test_directory(path)
+        && !crate::rust_test_refs::is_rust_test_file(path)
+        && !crate::rust_test_refs::is_binary_entry_point(path)
+}
+
 /// Returns the minimum per-file coverage percentage, or 100 if no files have definitions.
 pub fn min_per_file_coverage(
     definitions: &[(PathBuf, String, usize)],
@@ -28,6 +36,19 @@ pub fn min_per_file_coverage(
 ) -> usize {
     let map = file_coverage_map(definitions, unreferenced);
     map.values().min().copied().unwrap_or(100)
+}
+
+/// Minimum per-file coverage among files subject to the test-coverage gate.
+pub fn min_gate_eligible_per_file_coverage(
+    definitions: &[(PathBuf, String, usize)],
+    unreferenced: &[(PathBuf, String, usize)],
+) -> usize {
+    let map = file_coverage_map(definitions, unreferenced);
+    map.iter()
+        .filter(|(path, _)| is_coverage_gate_file(path))
+        .map(|(_, pct)| *pct)
+        .min()
+        .unwrap_or(100)
 }
 
 pub fn file_coverage_map(
@@ -308,5 +329,31 @@ mod tests {
     #[test]
     fn test_count_rs_unreferenced_empty() {
         assert_eq!(count_rs_unreferenced(&[]), 0);
+    }
+
+    impl<'a> CoverageGateFailureCtx<'a> {
+        fn witness(
+            threshold: usize,
+            unreferenced: &'a [(PathBuf, String, usize)],
+            file_pcts: &'a HashMap<PathBuf, usize>,
+        ) -> Self {
+            Self {
+                threshold,
+                unreferenced,
+                file_pcts,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_coverage_gate_helpers() {
+        use std::path::Path;
+        let defs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
+        let unref: Vec<(PathBuf, String, usize)> = vec![];
+        let file_pcts = HashMap::new();
+        assert!(is_coverage_gate_file(Path::new("src/a.py")));
+        assert_eq!(min_per_file_coverage(&defs, &unref), 100);
+        assert_eq!(min_gate_eligible_per_file_coverage(&defs, &unref), 100);
+        let _ = CoverageGateFailureCtx::witness(90, &unref, &file_pcts);
     }
 }

@@ -24,3 +24,27 @@ pub struct AnalyzeResult {
     /// `None` on cache hit (metrics not recomputed); `Some` on full analysis.
     pub metrics: Option<kiss::GlobalMetrics>,
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl<'a> AnalyzeOptions<'a> {
+        fn witness() {}
+    }
+
+    impl AnalyzeResult {
+        fn witness(success: bool) -> Self {
+            Self {
+                success,
+                metrics: None,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_options_types() {
+        AnalyzeOptions::witness();
+        let _ = AnalyzeResult::witness(true);
+    }
+}

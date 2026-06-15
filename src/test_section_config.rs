@@ -9,11 +9,6 @@ pub struct TestSectionConfig {
 impl TestSectionConfig {
     pub fn load() -> Self {
         let mut c = Self::default();
-        if let Some(home) = std::env::var_os("HOME")
-            && let Ok(s) = std::fs::read_to_string(Path::new(&home).join(".kissconfig"))
-        {
-            c.merge_from_toml(&s);
-        }
         if let Ok(s) = std::fs::read_to_string(".kissconfig") {
             c.merge_from_toml(&s);
         }

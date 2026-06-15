@@ -20,10 +20,17 @@ impl From<syn::Error> for RustParseError {
 
 impl std::fmt::Display for RustParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::IoError(e) => write!(f, "IO error: {e}"),
-            Self::SynError(e) => write!(f, "Syn parse error: {e}"),
-        }
+        write_rust_parse_error(self, f)
+    }
+}
+
+pub(crate) fn write_rust_parse_error(
+    err: &RustParseError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match err {
+        RustParseError::IoError(e) => write!(f, "IO error: {e}"),
+        RustParseError::SynError(e) => write!(f, "Syn parse error: {e}"),
     }
 }
 
@@ -57,6 +64,16 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
+
+    impl ParsedRustFile {
+        fn witness_from_source(source: &str) -> Self {
+            Self {
+                path: PathBuf::from("witness.rs"),
+                source: source.to_string(),
+                ast: syn::parse_file(source).unwrap(),
+            }
+        }
+    }
 
     #[test]
     fn parses_simple_rust_file() {
@@ -115,12 +132,31 @@ impl Counter {{
 
     #[test]
     fn test_rust_parse_error_display_fmt() {
-        use std::fmt::Write;
-        let err =
-            RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
-        let mut s = String::new();
-        write!(&mut s, "{err}").unwrap();
-        assert!(s.contains("IO error"));
+        struct RustParseErrorViaWriter<'a>(&'a RustParseError);
+
+        impl std::fmt::Display for RustParseErrorViaWriter<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write_rust_parse_error(self.0, f)
+            }
+        }
+
+        let cases = [
+            (
+                RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "test")),
+                "IO error: test",
+            ),
+            (
+                RustParseError::SynError(syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    "bad syntax",
+                )),
+                "Syn parse error: bad syntax",
+            ),
+        ];
+        for (err, expected) in cases {
+            assert_eq!(err.to_string(), expected);
+            assert_eq!(RustParseErrorViaWriter(&err).to_string(), expected);
+        }
     }
 
     #[test]
@@ -142,5 +178,11 @@ impl Counter {{
         let results = parse_rust_files(&paths);
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(std::result::Result::is_ok));
+    }
+
+    #[test]
+    fn witness_parsed_rust_file_type() {
+        let parsed = ParsedRustFile::witness_from_source("fn witness_fn() {}");
+        assert!(parsed.source.contains("witness_fn"));
     }
 }

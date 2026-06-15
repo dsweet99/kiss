@@ -17,11 +17,18 @@ impl From<std::io::Error> for ParseError {
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::IoError(e) => write!(f, "IO error: {e}"),
-            Self::ParserInitError => write!(f, "Failed to initialize Python parser"),
-            Self::ParseFailed => write!(f, "Failed to parse Python code"),
-        }
+        write_parse_error(self, f)
+    }
+}
+
+pub(crate) fn write_parse_error(
+    err: &ParseError,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match err {
+        ParseError::IoError(e) => write!(f, "IO error: {e}"),
+        ParseError::ParserInitError => write!(f, "Failed to initialize Python parser"),
+        ParseError::ParseFailed => write!(f, "Failed to parse Python code"),
     }
 }
 
@@ -77,6 +84,18 @@ pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseErro
 mod tests {
     use super::*;
     use std::io::Write;
+
+    impl ParsedFile {
+        fn witness_from_source(source: &str) -> Self {
+            let mut parser = create_parser().unwrap();
+            let tree = parser.parse(source, None).unwrap();
+            Self {
+                path: PathBuf::from("witness.py"),
+                source: source.to_string(),
+                tree,
+            }
+        }
+    }
 
     #[test]
     fn test_create_parser() {
@@ -151,10 +170,37 @@ mod tests {
 
     #[test]
     fn test_parse_error_display_fmt() {
-        use std::fmt::Write;
-        let err = ParseError::ParseFailed;
-        let mut s = String::new();
-        write!(&mut s, "{err}").unwrap();
-        assert!(!s.is_empty());
+        struct ParseErrorViaWriter<'a>(&'a ParseError);
+
+        impl std::fmt::Display for ParseErrorViaWriter<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write_parse_error(self.0, f)
+            }
+        }
+
+        let cases = [
+            (ParseError::ParseFailed, "Failed to parse Python code"),
+            (
+                ParseError::ParserInitError,
+                "Failed to initialize Python parser",
+            ),
+            (
+                ParseError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "file not found",
+                )),
+                "IO error: file not found",
+            ),
+        ];
+        for (err, expected) in cases {
+            assert_eq!(err.to_string(), expected);
+            assert_eq!(ParseErrorViaWriter(&err).to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn witness_parsed_file_type() {
+        let file = ParsedFile::witness_from_source("x = 1");
+        assert!(file.source.contains('x'));
     }
 }

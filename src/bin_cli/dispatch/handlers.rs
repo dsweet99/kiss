@@ -7,11 +7,10 @@ use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::shrink::{RunShrinkArgs, ShrinkFullContext, run_shrink};
 use crate::bin_cli::stats::{RunStatsArgs, run_stats};
 use crate::bin_cli::test_cmd::run_test_command;
-use crate::bin_cli::util::{validate_min_similarity, validate_paths};
+use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_min_similarity, validate_paths};
 use crate::rules::{run_config, run_rules};
 use crate::viz::{VizCoarsen, run_viz};
-use kiss::Language;
-use kiss::normalize_ignore_prefixes;
+use kiss::{Language, normalize_ignore_prefixes};
 
 use super::options::{
     CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
@@ -58,7 +57,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_clamp(
     lang: Option<Language>,
     ignore: Vec<String>,
 ) -> i32 {
-    let ignore = normalize_ignore_prefixes(&ignore);
+    let ignore = merge_check_ignore_prefixes(&ignore);
     run_mimic(
         &[".".to_string()],
         Some(Path::new(".kissconfig")),

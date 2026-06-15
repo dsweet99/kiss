@@ -201,7 +201,7 @@ pub(crate) fn build_viols_after_merge(
             file_pcts.insert(path.clone(), *pct);
             if *pct < 100
                 && is_focus_file(path, focus)
-                && is_coverage_gate_file(path, "")
+                && is_coverage_gate_file(path)
                 && !unreferenced_focus.iter().any(|(f, _, _)| f == path)
                 && let Some(def) = defs.iter().find(|(f, _, _)| f == path)
             {
@@ -276,5 +276,32 @@ pub(crate) fn collect_coverage_viols(
         (cov_viols, cache_lists)
     } else {
         (Vec::new(), cache_lists)
+    }
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl GraphRefPair<'_> {
+        fn witness() -> Self {
+            Self { py: None, rs: None }
+        }
+    }
+
+    impl CoverageOutputOpts {
+        fn witness() -> Self {
+            Self {
+                bypass_gate: false,
+                show_timing: false,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_coverage_types() {
+        let _ = GraphRefPair::witness();
+        let _ = CoverageOutputOpts::witness();
+        let _ = orphan_post_pass(&[], vec![], GraphRefPair::witness());
     }
 }

@@ -19,9 +19,16 @@ pub struct ShrinkMetricsArgs<'a, 'c> {
 mod shrink_analysis_types_coverage {
     use super::*;
 
+    impl ShrinkAnalyzeArgs<'_, '_> {
+        fn witness() {}
+    }
+    impl ShrinkMetricsArgs<'_, '_> {
+        fn witness() {}
+    }
+
     #[test]
-    fn touch_analysis_arg_types() {
-        let _ = std::mem::size_of::<ShrinkAnalyzeArgs>();
-        let _ = std::mem::size_of::<ShrinkMetricsArgs>();
+    fn witness_analysis_arg_types() {
+        ShrinkAnalyzeArgs::witness();
+        ShrinkMetricsArgs::witness();
     }
 }

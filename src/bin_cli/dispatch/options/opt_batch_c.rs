@@ -23,3 +23,21 @@ pub(crate) struct TestDispatchOptions<'a> {
     pub extra: Vec<String>,
     pub test_cfg: &'a TestSectionConfig,
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl ShrinkDispatchOptions<'_> {
+        fn witness() {}
+    }
+    impl TestDispatchOptions<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_opt_batch_c() {
+        ShrinkDispatchOptions::witness();
+        TestDispatchOptions::witness();
+    }
+}

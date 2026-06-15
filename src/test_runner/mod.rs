@@ -146,6 +146,65 @@ pub(crate) fn run_selectors(
 }
 
 #[cfg(test)]
+mod behavior_tests {
+    use super::*;
+
+    fn test_args() -> RunTestCmdArgs<'static> {
+        RunTestCmdArgs {
+            mode: TestChangeMode::Commit,
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run: true,
+            extra: &[],
+            ignore: &[],
+            lang_filter: None,
+            config_main_branch: None,
+        }
+    }
+
+    #[test]
+    fn run_test_reports_error_outside_git_repo() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let orig = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let code = run_test(test_args());
+
+        std::env::set_current_dir(orig).unwrap();
+        assert_eq!(code, 1);
+    }
+
+    #[test]
+    fn run_selectors_with_no_covering_tests_succeeds_without_spawning() {
+        let planned = PlannedSelectors {
+            repo_root: std::env::current_dir().unwrap_or_default(),
+            py_sel: vec![],
+            rs_sel: vec![],
+        };
+
+        let code = run_selectors(&planned, true, &[]).unwrap();
+
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn command_args_carry_dry_run_and_filters() {
+        let args = RunTestCmdArgs {
+            extra: &["--ignored".to_string()],
+            ignore: &["target".to_string()],
+            lang_filter: Some(Language::Rust),
+            ..test_args()
+        };
+
+        assert!(args.dry_run);
+        assert_eq!(args.extra, ["--ignored"]);
+        assert_eq!(args.ignore, ["target"]);
+        assert_eq!(args.lang_filter, Some(Language::Rust));
+    }
+}
+
+#[cfg(test)]
 mod plan_tests {
     use std::path::Path;
     use std::process::Command;

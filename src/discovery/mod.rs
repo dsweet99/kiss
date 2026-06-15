@@ -183,5 +183,8 @@ pub fn normalize_ignore_prefixes(prefixes: &[String]) -> Vec<String> {
 }
 
 #[cfg(test)]
+#[path = "discovery_fixture_test.rs"]
+mod fixture_tests;
+#[cfg(test)]
 #[path = "discovery_test.rs"]
 mod tests;
