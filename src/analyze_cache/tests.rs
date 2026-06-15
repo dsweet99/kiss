@@ -3,7 +3,9 @@ use super::*;
 use crate::analyze::FocusFilter;
 use kiss::check_cache::CachedViolation;
 use kiss::check_universe_cache::{CachedCoverageItem, CachedFileCoverage};
+use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
 
 fn empty_cache(fp: &str) -> FullCheckCache {
     FullCheckCache {
@@ -222,6 +224,41 @@ fn fingerprint_includes_gate_test_coverage_threshold() {
     assert_ne!(
         fingerprint_for_check(&[], &[], &py, &rs, &g0),
         fingerprint_for_check(&[], &[], &py, &rs, &g1),
+    );
+}
+
+#[test]
+fn fingerprint_ignores_metadata_only_file_changes() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("stable.py");
+    fs::write(&path, "def stable():\n    return 1\n").unwrap();
+    let py_files = vec![path.clone()];
+    let before = fingerprint_for_check(
+        &py_files,
+        &[],
+        &Config::python_defaults(),
+        &Config::rust_defaults(),
+        &GateConfig::default(),
+    );
+
+    let new_mtime = SystemTime::now() + Duration::from_secs(60);
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(new_mtime)
+        .unwrap();
+    let after = fingerprint_for_check(
+        &py_files,
+        &[],
+        &Config::python_defaults(),
+        &Config::rust_defaults(),
+        &GateConfig::default(),
+    );
+
+    assert_eq!(
+        before, after,
+        "metadata-only changes should not force a new full-check cache key"
     );
 }
 

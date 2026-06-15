@@ -3,7 +3,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Output};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
@@ -64,6 +64,45 @@ fn check_all_cache_hit_replays_on_second_run() {
 }
 
 #[test]
+fn check_all_cache_hit_survives_metadata_only_source_change() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+
+    let src = repo.path().join("simple.py");
+    fs::write(&src, "def foo():\n    return 1\n").unwrap();
+
+    let out1 = run_python_check_all(repo.path(), home.path());
+    let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
+    let cache_files1 = list_full_check_cache_files(home.path());
+    assert_eq!(
+        cache_files1.len(),
+        1,
+        "expected one full-check cache file after cold run. stdout:\n{stdout1}"
+    );
+
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&src)
+        .unwrap()
+        .set_modified(SystemTime::now() + Duration::from_secs(60))
+        .unwrap();
+
+    let out2 = run_python_check_all(repo.path(), home.path());
+    let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
+    let cache_files2 = list_full_check_cache_files(home.path());
+
+    assert_eq!(out2.status.code(), out1.status.code());
+    assert_eq!(
+        stdout2, stdout1,
+        "metadata-only changes should replay cached output.\n--stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
+    );
+    assert_eq!(
+        cache_files2, cache_files1,
+        "metadata-only changes should reuse the existing full-check cache file"
+    );
+}
+
+#[test]
 fn check_all_cache_invalidates_when_sources_unreadable() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
@@ -86,7 +125,7 @@ fn check_all_cache_invalidates_when_sources_unreadable() {
 }
 
 #[test]
-fn check_all_cache_invalidates_on_mtime_or_size_change() {
+fn check_all_cache_invalidates_on_content_change() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
@@ -97,7 +136,7 @@ fn check_all_cache_invalidates_on_mtime_or_size_change() {
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
     assert!(!list_full_check_cache_files(home.path()).is_empty());
 
-    // Change the file (updates mtime/size), then make it unreadable.
+    // Change the file content, then make it unreadable.
     chmod(&src, 0o200); // write-only
     fs::write(&src, "def foo():\n    return 2\n").unwrap();
     chmod(&src, 0o000); // unreadable, so a cache miss will drop parsing and change output

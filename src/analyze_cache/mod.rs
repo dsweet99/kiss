@@ -15,7 +15,6 @@ use kiss::{Config, DuplicateCluster, GateConfig, Violation};
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::UNIX_EPOCH;
 mod path_helpers;
 mod stats_top;
 #[cfg(test)]
@@ -94,17 +93,6 @@ pub fn fingerprint_for_check(
 
     for p in &all_files {
         h = fnv1a64(h, p.to_string_lossy().as_bytes());
-        if let Ok(meta) = std::fs::metadata(p) {
-            h = fnv1a64(h, meta.len().to_le_bytes().as_slice());
-            let mtime_ns = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map_or(0, |d| {
-                    u128::from(d.as_secs()) * 1_000_000_000_u128 + u128::from(d.subsec_nanos())
-                });
-            h = fnv1a64(h, mtime_ns.to_le_bytes().as_slice());
-        }
     }
     format!("{h:016x}")
 }

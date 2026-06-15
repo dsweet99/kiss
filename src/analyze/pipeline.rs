@@ -1,3 +1,4 @@
+use crate::analyze::cache::{FullCacheStoreInput, maybe_store_full_cache};
 use crate::analyze::coverage::{
     CoverageOutputOpts, GraphRefPair, PyRsTestCoverage, collect_coverage_viols,
 };
@@ -160,6 +161,54 @@ struct FullPipelineWithParseInput<'a> {
     timings: (Instant, Instant, Instant),
 }
 
+struct CoverageGateFailureCacheIn<'a> {
+    opts: &'a AnalyzeOptions<'a>,
+    py_files: &'a [PathBuf],
+    rs_files: &'a [PathBuf],
+    focus: &'a FocusFilter,
+    result: &'a ParseResult,
+    py_cov: kiss::TestRefAnalysis,
+    rs_cov: kiss::RustTestRefAnalysis,
+    rs_graph: Option<&'a DependencyGraph>,
+}
+
+fn store_coverage_gate_failure_cache(in_: CoverageGateFailureCacheIn<'_>) {
+    let py_graph = crate::analyze::graph_api::build_py_graph(&in_.result.py_parsed);
+    let (_cov_viols, coverage_cache_lists) = collect_coverage_viols(
+        PyRsTestCoverage {
+            py: in_.py_cov,
+            rs: in_.rs_cov,
+        },
+        &in_.result.py_parsed,
+        &in_.result.rs_parsed,
+        in_.focus,
+        CoverageOutputOpts {
+            bypass_gate: false,
+            show_timing: in_.opts.show_timing,
+        },
+        GraphRefPair {
+            py: py_graph.as_ref(),
+            rs: in_.rs_graph,
+        },
+    );
+    maybe_store_full_cache(FullCacheStoreInput {
+        opts: in_.opts,
+        py_files: in_.py_files,
+        rs_files: in_.rs_files,
+        focus: in_.focus,
+        result: in_.result,
+        graph_viols_all: &[],
+        coverage_violations: &[],
+        py_graph: py_graph.as_ref(),
+        rs_graph: in_.rs_graph,
+        py_dups_all: &[],
+        rs_dups_all: &[],
+        py_stats: None,
+        rs_stats: None,
+        coverage_cache_lists,
+    });
+}
+
 fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipelineResult {
     let opts = in_.opts;
     let focus = in_.focus;
@@ -255,6 +304,16 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
             opts.gate_config.test_coverage_threshold,
         ) {
             log_parse_timing(opts.show_timing, &parse_timing);
+            store_coverage_gate_failure_cache(CoverageGateFailureCacheIn {
+                opts,
+                py_files,
+                rs_files,
+                focus,
+                result: &result,
+                py_cov,
+                rs_cov,
+                rs_graph: rs_graph.as_ref(),
+            });
             return early;
         }
     }
