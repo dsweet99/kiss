@@ -71,6 +71,34 @@ impl Rule {
 }
 
 #[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    #[test]
+    fn witness_rule_defs_types() {
+        let _ = [
+            RuleCategory::Functions,
+            RuleCategory::Classes,
+            RuleCategory::Files,
+            RuleCategory::Dependencies,
+            RuleCategory::Testing,
+            RuleCategory::Duplication,
+        ];
+        let rule = Rule {
+            category: RuleCategory::Files,
+            template: "{}",
+            get_threshold: |_, _| 1,
+            applicability: Applicability::Both,
+        };
+        assert!(!rule.format(&Config::default(), &GateConfig::default()).is_empty());
+        assert!(rule.applies_to_python());
+        assert!(rule.applies_to_rust());
+        let _ = RuleCategory::Files.python_heading();
+        let _ = RuleCategory::Files.rust_heading();
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

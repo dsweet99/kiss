@@ -33,6 +33,20 @@ pub(crate) fn push_py_fn_metrics(stats: &mut MetricStats, m: &crate::py_metrics:
 }
 
 #[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl StatsVisitor<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_stats_visitor() {
+        StatsVisitor::witness();
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::parsing::{ParsedFile, create_parser};

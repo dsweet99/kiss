@@ -1,3 +1,5 @@
+cargo build -q --bin kiss
+PATH="$PWD/target/debug:$PATH"
 kiss check
 ruff check .
 pytest -sv tests

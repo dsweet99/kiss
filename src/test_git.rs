@@ -5,6 +5,7 @@ use clap::ValueEnum;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TestLangFilter {
+    #[allow(dead_code)]
     Python,
     Rust,
 }

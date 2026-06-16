@@ -347,7 +347,7 @@ checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
 name = "kiss-ai"
-version = "0.4.8"
+version = "0.4.9"
 dependencies = [
  "bincode",
  "clap",
@@ -356,6 +356,7 @@ dependencies = [
  "libc",
  "petgraph",
  "proc-macro2",
+ "pyfork",
  "rayon",
  "rslip",
  "serde",
@@ -439,6 +440,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pyfork"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -507,6 +517,7 @@ name = "rslip"
 version = "0.1.1"
 dependencies = [
  "ignore",
+ "pyfork",
  "serde",
  "serde_json",
  "tempfile",

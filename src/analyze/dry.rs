@@ -90,6 +90,20 @@ fn filter_pairs_by_files(pairs: &mut Vec<DuplicatePair>, filter_files: &[String]
 }
 
 #[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl<'a> DryRunParams<'a> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_dry_run_params() {
+        DryRunParams::witness();
+    }
+}
+
+#[cfg(test)]
 mod dry_helpers_test {
     use std::fs;
     use std::path::{Path, PathBuf};

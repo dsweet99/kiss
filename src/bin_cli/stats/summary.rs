@@ -61,6 +61,7 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         ignore_prefixes: input.ignore,
         show_timing: false,
         suppress_final_status: false,
+        jobs: None,
     };
 
     let pipeline = crate::analyze::run_full_pipeline(crate::analyze::FullPipelineInput {
@@ -253,6 +254,7 @@ mod summary_tests {
             unreferenced: vec![],
             weighted_file_pcts: vec![],
             file_content_digests: vec![],
+            rslip_fingerprint: String::new(),
         };
         print_cached_summary(&[".".into()], &cache);
     }

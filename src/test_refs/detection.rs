@@ -165,5 +165,7 @@ mod tests {
             assert!(is_in_test_directory(path));
         }
         assert!(!is_in_test_directory(Path::new("pkg/latest/helpers.py")));
+        assert!(!is_test_file(Path::new("")));
+        assert!(!is_in_test_directory(Path::new("")));
     }
 }

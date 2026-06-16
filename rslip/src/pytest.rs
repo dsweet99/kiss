@@ -1,149 +1,53 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::types::{PytestTraceCollector, TestCoverageRun};
-use crate::util::content_digest;
-
-static TRACE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 impl PytestTraceCollector {
     pub fn collect(
         &self,
         repo_root: &Path,
-        selectors: &[String],
+        nodeids: &[String],
+        j: usize,
     ) -> Result<Vec<TestCoverageRun>, String> {
-        if selectors.is_empty() {
+        if nodeids.is_empty() {
             return Ok(Vec::new());
         }
-        let (input, output) = trace_paths(selectors);
-        write_selector_input(&input, selectors)?;
-        let output_status = run_trace_process(repo_root, &input, &output)?;
-        let _ = fs::remove_file(&input);
-        if !output_status.status.success() {
-            let _ = fs::remove_file(&output);
+        let (code, trace_dir) = pyfork::trace_pool(repo_root, nodeids, j)?;
+        if code != 0 {
             return Err(format!(
-                "coverage collection failed for pytest selector batch\n{}{}",
-                String::from_utf8_lossy(&output_status.stdout),
-                String::from_utf8_lossy(&output_status.stderr)
+                "coverage collection failed for pytest nodeid pool (exit {code})"
             ));
         }
-        let raw = read_trace_output(&output)?;
-        Ok(runs_from_raw(selectors, raw))
+        let mut raw: BTreeMap<String, BTreeMap<String, Vec<usize>>> = BTreeMap::new();
+        for entry in fs::read_dir(&trace_dir).map_err(|e| format!("read trace dir: {e}"))? {
+            let entry = entry.map_err(|e| format!("read trace entry: {e}"))?;
+            let bytes = fs::read(entry.path()).map_err(|e| format!("read trace file: {e}"))?;
+            let chunk: BTreeMap<String, BTreeMap<String, Vec<usize>>> =
+                serde_json::from_slice(&bytes).map_err(|e| format!("parse trace output: {e}"))?;
+            for (nodeid, per_file) in chunk {
+                raw.entry(nodeid).or_default().extend(per_file);
+            }
+        }
+        let _ = fs::remove_dir_all(&trace_dir);
+        Ok(runs_from_raw(nodeids, raw))
     }
-}
-
-fn trace_paths(selectors: &[String]) -> (PathBuf, PathBuf) {
-    let token = content_digest(selectors.join("\n").as_bytes());
-    let nonce = TRACE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let input = std::env::temp_dir().join(format!(
-        "kiss-rslip-{}-{nonce}-{token}.in.json",
-        std::process::id()
-    ));
-    let output = std::env::temp_dir().join(format!(
-        "kiss-rslip-{}-{nonce}-{token}.out.json",
-        std::process::id()
-    ));
-    (input, output)
-}
-
-fn write_selector_input(input: &Path, selectors: &[String]) -> Result<(), String> {
-    let bytes =
-        serde_json::to_vec(selectors).map_err(|e| format!("failed to encode selectors: {e}"))?;
-    fs::write(input, bytes).map_err(|e| format!("failed to write {}: {e}", input.display()))
-}
-
-fn trace_script() -> &'static str {
-    r#"
-import json, os, sys
-repo = os.path.realpath(sys.argv[1])
-selectors_path = sys.argv[2]
-out_path = sys.argv[3]
-with open(selectors_path, encoding="utf-8") as fh:
-    selectors = json.load(fh)
-hits = {selector: {} for selector in selectors}
-collection_hits = {}
-current = None
-canonical_filenames = {}
-def tracer(frame, event, arg):
-    if event == "line":
-        raw_filename = frame.f_code.co_filename
-        filename = canonical_filenames.get(raw_filename)
-        if filename is None:
-            filename = os.path.realpath(raw_filename)
-            canonical_filenames[raw_filename] = filename
-        if filename.startswith(repo + os.sep):
-            rel = os.path.relpath(filename, repo).replace(os.sep, "/")
-            target = collection_hits if current is None else hits.setdefault(current, {})
-            target.setdefault(rel, set()).add(frame.f_lineno)
-    return tracer
-class RslipPlugin:
-    def pytest_runtest_setup(self, item):
-        global current
-        current = item.nodeid
-    def pytest_runtest_teardown(self, item, nextitem):
-        global current
-        current = None
-try:
-    import pytest
-except Exception as exc:
-    print(f"failed to import pytest: {exc}", file=sys.stderr)
-    sys.exit(97)
-sys.path.insert(0, repo)
-sys.settrace(tracer)
-try:
-    code = pytest.main(selectors + ["-q"], plugins=[RslipPlugin()])
-finally:
-    sys.settrace(None)
-serializable = {
-    selector: {
-        path: sorted(set(lines) | set(collection_hits.get(path, set())))
-        for path, lines in (collection_hits | per_file).items()
-    }
-    for selector, per_file in hits.items()
-}
-with open(out_path, "w", encoding="utf-8") as fh:
-    json.dump(serializable, fh)
-sys.exit(code)
-"#
-}
-
-fn run_trace_process(repo_root: &Path, input: &Path, output: &Path) -> Result<Output, String> {
-    Command::new("python")
-        .arg("-c")
-        .arg(trace_script())
-        .arg(repo_root)
-        .arg(input)
-        .arg(output)
-        .current_dir(repo_root)
-        .output()
-        .map_err(|e| format!("failed to run pytest trace batch: {e}"))
-}
-
-fn read_trace_output(
-    output: &Path,
-) -> Result<BTreeMap<String, BTreeMap<String, Vec<usize>>>, String> {
-    let bytes = fs::read(output)
-        .map_err(|e| format!("failed to read trace output {}: {e}", output.display()))?;
-    let _ = fs::remove_file(output);
-    serde_json::from_slice(&bytes).map_err(|e| format!("failed to parse trace output: {e}"))
 }
 
 fn runs_from_raw(
-    selectors: &[String],
+    nodeids: &[String],
     raw: BTreeMap<String, BTreeMap<String, Vec<usize>>>,
 ) -> Vec<TestCoverageRun> {
-    selectors
+    nodeids
         .iter()
-        .map(|selector| {
-            let hits = raw_hits_for_selector(selector, &raw);
-            let test_path = selector
+        .map(|nodeid| {
+            let hits = raw_hits_for_nodeid(nodeid, &raw);
+            let test_path = nodeid
                 .split_once("::")
-                .map_or_else(|| PathBuf::from(selector), |(path, _)| PathBuf::from(path));
+                .map_or_else(|| PathBuf::from(nodeid), |(path, _)| PathBuf::from(path));
             TestCoverageRun {
-                selector: selector.clone(),
+                selector: nodeid.clone(),
                 test_path,
                 hits,
             }
@@ -151,15 +55,12 @@ fn runs_from_raw(
         .collect()
 }
 
-fn raw_hits_for_selector(
-    selector: &str,
+fn raw_hits_for_nodeid(
+    nodeid: &str,
     raw: &BTreeMap<String, BTreeMap<String, Vec<usize>>>,
 ) -> BTreeMap<PathBuf, BTreeSet<usize>> {
     let mut hits: BTreeMap<PathBuf, BTreeSet<usize>> = BTreeMap::new();
-    for (nodeid, per_file) in raw {
-        if !runtime_node_matches_selector(selector, nodeid) {
-            continue;
-        }
+    if let Some(per_file) = raw.get(nodeid) {
         for (path, lines) in per_file {
             hits.entry(PathBuf::from(path))
                 .or_default()
@@ -167,13 +68,6 @@ fn raw_hits_for_selector(
         }
     }
     hits
-}
-
-fn runtime_node_matches_selector(selector: &str, nodeid: &str) -> bool {
-    nodeid == selector
-        || nodeid
-            .strip_prefix(selector)
-            .is_some_and(|suffix| suffix.starts_with('['))
 }
 
 #[cfg(test)]
@@ -187,73 +81,23 @@ mod tests {
     }
 
     #[test]
-    fn trace_helpers_round_trip_selectors_and_raw_hits() {
+    fn trace_helpers_round_trip_nodeids_and_raw_hits() {
         let tmp = TempDir::new().unwrap();
-        let selectors = vec!["test_sample.py::test_value".to_string()];
-        let (input, output) = trace_paths(&selectors);
-        assert_ne!(input, output);
-
-        write_selector_input(&input, &selectors).unwrap();
-        let encoded = fs::read_to_string(&input).unwrap();
-        assert!(encoded.contains("test_sample.py::test_value"));
-        let _ = fs::remove_file(&input);
-
-        assert!(trace_script().contains("pytest.main"));
+        let nodeids = vec!["test_sample.py::test_value".to_string()];
         fs::write(
             tmp.path().join("trace.json"),
             r#"{"test_sample.py::test_value":{"sample.py":[1,2]}}"#,
         )
         .unwrap();
-        let raw = read_trace_output(&tmp.path().join("trace.json")).unwrap();
-        let runs = runs_from_raw(&selectors, raw);
+        let bytes = fs::read(tmp.path().join("trace.json")).unwrap();
+        let raw: BTreeMap<String, BTreeMap<String, Vec<usize>>> =
+            serde_json::from_slice(&bytes).unwrap();
+        let runs = runs_from_raw(&nodeids, raw);
         assert_eq!(runs[0].test_path, PathBuf::from("test_sample.py"));
         assert_eq!(
             runs[0].hits[&PathBuf::from("sample.py")],
             [1, 2].into_iter().collect()
         );
-    }
-
-    #[test]
-    fn parametrized_runtime_node_matching_is_selector_bounded() {
-        assert!(runtime_node_matches_selector(
-            "test_sample.py::test_value",
-            "test_sample.py::test_value"
-        ));
-        assert!(runtime_node_matches_selector(
-            "test_sample.py::test_value",
-            "test_sample.py::test_value[case-with[brackets]]"
-        ));
-        assert!(!runtime_node_matches_selector(
-            "test_sample.py::test_value",
-            "test_sample.py::test_value_extra[case]"
-        ));
-        assert!(!runtime_node_matches_selector(
-            "test_sample.py::test_value",
-            "test_sample.py::test_value::nested"
-        ));
-    }
-
-    #[test]
-    fn run_trace_process_executes_the_trace_script() {
-        let tmp = TempDir::new().unwrap();
-        write(
-            &tmp.path().join("sample.py"),
-            "def value():\n    return 3\n",
-        );
-        write(
-            &tmp.path().join("test_sample.py"),
-            "from sample import value\n\ndef test_value():\n    assert value() == 3\n",
-        );
-        let selectors = vec!["test_sample.py::test_value".to_string()];
-        let input = tmp.path().join("selectors.json");
-        let output = tmp.path().join("trace.json");
-        write_selector_input(&input, &selectors).unwrap();
-
-        let process = run_trace_process(tmp.path(), &input, &output).unwrap();
-
-        assert!(process.status.success());
-        let raw = read_trace_output(&output).unwrap();
-        assert!(raw["test_sample.py::test_value"].contains_key("sample.py"));
     }
 
     #[test]
@@ -270,7 +114,7 @@ mod tests {
 
         let collector = PytestTraceCollector;
         let runs = collector
-            .collect(tmp.path(), &["test_sample.py::test_value".to_string()])
+            .collect(tmp.path(), &["test_sample.py::test_value".to_string()], 1)
             .unwrap();
 
         assert_eq!(runs.len(), 1);
@@ -300,7 +144,7 @@ mod tests {
 
         let collector = PytestTraceCollector;
         let runs = collector
-            .collect(&link_root, &["test_sample.py::test_value".to_string()])
+            .collect(&link_root, &["test_sample.py::test_value".to_string()], 1)
             .unwrap();
 
         assert_eq!(runs.len(), 1);
@@ -315,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn pytest_trace_collector_merges_parametrized_case_hits() {
+    fn pytest_trace_collector_stores_parametrized_nodeids_separately() {
         let tmp = TempDir::new().unwrap();
         write(
             &tmp.path().join("sample.py"),
@@ -333,18 +177,19 @@ mod tests {
         );
 
         let collector = PytestTraceCollector;
-        let runs = collector
-            .collect(tmp.path(), &["test_sample.py::test_is_even".to_string()])
-            .unwrap();
+        let nodeids = pyfork::collect_nodeids(tmp.path(), &[]).unwrap();
+        let runs = collector.collect(tmp.path(), &nodeids, 2).unwrap();
 
-        assert_eq!(runs.len(), 1);
-        let sample_hits = runs[0]
-            .hits
-            .get(&PathBuf::from("sample.py"))
-            .expect("sample.py runtime hits");
-        assert!(
-            sample_hits.contains(&1) && sample_hits.contains(&2),
-            "parametrized runtime cases should be merged into the discovered selector, got {sample_hits:?}"
-        );
+        assert_eq!(runs.len(), 2);
+        for run in &runs {
+            let sample_hits = run
+                .hits
+                .get(&PathBuf::from("sample.py"))
+                .expect("sample.py runtime hits");
+            assert!(
+                sample_hits.contains(&1) && sample_hits.contains(&2),
+                "parametrized nodeids should each have hits, got {sample_hits:?}"
+            );
+        }
     }
 }

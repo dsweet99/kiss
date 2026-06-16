@@ -44,7 +44,7 @@ fn gated_py_parallel(
             let repo_root = Path::new(opts.universe)
                 .canonicalize()
                 .unwrap_or_else(|_| PathBuf::from(opts.universe));
-            kiss::rslip_bridge::runtime_py_analysis(&repo_root, py_parsed)
+            kiss::rslip_bridge::runtime_py_analysis(&repo_root, py_parsed, opts.jobs)
         },
         || {
             let py_graph = build_py_graph(py_parsed);
@@ -187,6 +187,7 @@ mod gated_tests {
                 ignore_prefixes: &[],
                 show_timing: false,
                 suppress_final_status: false,
+                jobs: None,
             }
         }
 

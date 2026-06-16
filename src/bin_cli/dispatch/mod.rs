@@ -26,12 +26,14 @@ fn dispatch_analyze(lang: Option<kiss::Language>, command: Commands, cfg: &TriCo
             all,
             ignore,
             timing,
+            jobs,
         } => dispatch_check(CheckDispatchOptions {
             lang,
             paths,
             bypass_gate: all,
             ignore,
             timing,
+            jobs,
             cfg,
         }),
         Commands::Stats {
@@ -127,6 +129,7 @@ fn dispatch_tools(
             base_branch,
             dry_run,
             ignore,
+            jobs,
             extra,
         } => dispatch_test(TestDispatchOptions {
             lang,
@@ -135,6 +138,7 @@ fn dispatch_tools(
             base_branch,
             dry_run,
             ignore,
+            jobs,
             extra,
             test_cfg: test_section,
         }),
@@ -235,6 +239,7 @@ mod dispatch_coverage {
             bypass_gate: false,
             ignore: vec![],
             timing: false,
+            jobs: None,
             cfg: &cfg,
         };
         let _ = StatsDispatchOptions {
@@ -293,6 +298,7 @@ mod dispatch_coverage {
             base_branch: None,
             dry_run: false,
             ignore: vec![],
+            jobs: None,
             extra: vec![],
             test_cfg: &test,
         };

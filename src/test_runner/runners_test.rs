@@ -1,21 +1,8 @@
 use std::fs;
-use std::path::Path;
 
 use tempfile::TempDir;
 
 use super::runners::*;
-
-#[test]
-fn py_selector_uses_double_colon() {
-    let p = Path::new("/tmp/t.py");
-    assert_eq!(py_selector(p, "test_foo"), "/tmp/t.py::test_foo");
-}
-
-#[test]
-fn py_selector_class_method() {
-    let p = Path::new("/w/test_m.py");
-    assert_eq!(py_selector(p, "C::test_m"), "/w/test_m.py::C::test_m");
-}
 
 #[test]
 fn shell_quote_simple() {
@@ -67,18 +54,18 @@ fn discover_for_paths_empty_paths_ok() {
 }
 
 #[test]
-fn combined_selectors_empty_without_sources() {
+fn rust_selectors_empty_without_sources() {
     let tmp = TempDir::new().unwrap();
-    let (py, rs) = combined_selectors(tmp.path(), &[], &[], None, &[]).unwrap();
-    assert!(py.is_empty());
+    let rs = rust_selectors(tmp.path(), &[], &[], &[]).unwrap();
     assert!(rs.is_empty());
 }
 
 #[test]
 fn build_pytest_and_cargo_argv_non_empty() {
-    let py = build_pytest_argv(&["a.py::t".into()], &["-q".into()]);
+    let py = build_pytest_fork_argv("a.py::t", &["-q".into()]);
     assert_eq!(py[0], "python");
     assert!(py.iter().any(|s| s == "pytest"));
+    assert!(py.iter().any(|s| s == "a.py::t"));
     let c = build_cargo_test_argv(&["smoke_sub".into()], &[]);
     assert_eq!(c[0..4], ["cargo", "test", "--", "smoke_sub"]);
 }

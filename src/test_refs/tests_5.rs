@@ -222,6 +222,13 @@ fn test_analyze_test_refs_quick_no_coverage_map() {
         !full.coverage_map.is_empty(),
         "full mode builds coverage_map"
     );
+
+    let no_map = analyze_test_refs_no_map(&[&file, &file_test], None);
+    assert!(
+        no_map.coverage_map.is_empty(),
+        "no_map mode skips coverage_map like check path"
+    );
+    assert!(no_map.unreferenced.is_empty(), "run should be covered");
 }
 
 // ---------------------------------------------------------------------------

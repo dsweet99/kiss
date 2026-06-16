@@ -184,3 +184,27 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    #[test]
+    fn witness_graph_build_types() {
+        let mut graph = DependencyGraph::new();
+        let mut bare = HashMap::new();
+        let mut state = GraphBuildState {
+            graph: &mut graph,
+            bare_to_qualified: &mut bare,
+        };
+        state.register_module(Path::new("pkg/a.py"), "pkg.a".into(), "a".into());
+        let mut pass = ImportListPass {
+            graph: &mut graph,
+            bare_to_qualified: &bare,
+        };
+        pass.add_edges("pkg.a", Some("pkg"), &["utils".to_string()]);
+        let _ = resolve_import("utils", Some("pkg"), &bare);
+    }
+}

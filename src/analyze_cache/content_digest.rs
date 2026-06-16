@@ -65,6 +65,20 @@ pub(crate) fn load_verified_full_cache(
 }
 
 #[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    #[test]
+    fn witness_content_digest_fn() {
+        let empty = content_digest(b"");
+        let a = content_digest(b"x");
+        let b = content_digest(b"y");
+        assert_eq!(empty, content_digest(b""));
+        assert_ne!(a, b);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;

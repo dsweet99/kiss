@@ -35,6 +35,7 @@ fn test_structs() {
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
+        jobs: None,
     };
     let _ = ParseResult {
         py_parsed: vec![],
@@ -136,6 +137,7 @@ fn test_run_analyze_no_files() {
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
+        jobs: None,
     };
     assert!(run_analyze(&opts));
 

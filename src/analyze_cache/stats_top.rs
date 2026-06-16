@@ -125,6 +125,7 @@ pub(crate) fn maybe_store_stats_top_cache(
         definitions,
         unreferenced,
         weighted_file_pcts: Vec::new(),
+        rslip_fingerprint: String::new(),
     });
 }
 

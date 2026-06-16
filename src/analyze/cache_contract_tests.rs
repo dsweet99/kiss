@@ -58,6 +58,7 @@ fn analyze_options<'a>(
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
+        jobs: None,
     }
 }
 

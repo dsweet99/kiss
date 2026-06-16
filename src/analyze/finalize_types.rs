@@ -105,6 +105,16 @@ mod coverage_witness {
     use std::collections::{HashMap, HashSet};
     use std::time::Instant;
 
+    impl CoverageCacheData {
+        fn witness() -> Self {
+            Self {
+                definitions: vec![],
+                unreferenced: vec![],
+                weighted_file_pcts: HashMap::new(),
+            }
+        }
+    }
+
     impl AnalysisProducts {
         fn witness() -> Self {
             Self {
@@ -177,6 +187,7 @@ mod coverage_witness {
 
     #[test]
     fn witness_finalize_types() {
+        let _ = CoverageCacheData::witness();
         let _ = AnalysisProducts::witness();
         FinalizeAnalysisIn::witness();
         HeaderPhase::witness();

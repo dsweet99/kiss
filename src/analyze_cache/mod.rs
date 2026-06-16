@@ -2,7 +2,8 @@ mod content_digest;
 mod emit;
 use crate::analyze::FocusFilter;
 use crate::analyze::{
-    compute_test_coverage_from_lists, filter_duplicates_by_focus, filter_viols_by_focus,
+    cached_coverage_gate_would_fail, compute_test_coverage_from_lists,
+    filter_duplicates_by_focus, filter_viols_by_focus,
 };
 use emit::{emit_cached_bypass, emit_cached_gated};
 use kiss::check_cache;
@@ -25,7 +26,7 @@ pub(crate) use stats_top::{
     maybe_store_stats_top_cache, try_run_cached_stats_summary, try_run_cached_stats_top,
 };
 
-const CACHE_SCHEMA_VERSION: &str = "v11";
+const CACHE_SCHEMA_VERSION: &str = "v12";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -222,6 +223,13 @@ pub(crate) fn weighted_file_pct_map(items: &[CachedFileCoverage]) -> HashMap<Pat
         .collect()
 }
 
+fn cache_has_rslip_refresh_failure(cache: &FullCheckCache) -> bool {
+    cache
+        .definitions
+        .iter()
+        .any(|item| item.name == "rslip_refresh_failed")
+}
+
 pub fn try_run_cached_all(
     opts: &crate::analyze::AnalyzeOptions<'_>,
     py_files: &[PathBuf],
@@ -237,6 +245,24 @@ pub fn try_run_cached_all(
     );
     let cache = load_verified_full_cache(&fp, py_files, rs_files)?;
     if !same_cached_paths(py_files, rs_files, focus, &cache) {
+        return None;
+    }
+    let repo_root = std::path::Path::new(opts.universe);
+    if kiss::rslip_bridge::rslip_database_fingerprint(repo_root) != cache.rslip_fingerprint {
+        return None;
+    }
+    if cache_has_rslip_refresh_failure(&cache) {
+        return None;
+    }
+
+    if !opts.bypass_gate
+        && cached_coverage_gate_would_fail(
+            &cache.definitions,
+            &cache.unreferenced,
+            focus,
+            opts.gate_config.test_coverage_threshold,
+        )
+    {
         return None;
     }
 
@@ -321,6 +347,7 @@ pub struct FullCacheInputs<'a> {
     pub definitions: Vec<CachedCoverageItem>,
     pub unreferenced: Vec<CachedCoverageItem>,
     pub weighted_file_pcts: Vec<CachedFileCoverage>,
+    pub rslip_fingerprint: String,
 }
 
 pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
@@ -379,6 +406,7 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
         definitions: inputs.definitions,
         unreferenced: inputs.unreferenced,
         weighted_file_pcts: inputs.weighted_file_pcts,
+        rslip_fingerprint: inputs.rslip_fingerprint,
     };
     store_full_cache(&cache);
 }
@@ -386,3 +414,5 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
 mod content_digest_test;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_fingerprint;

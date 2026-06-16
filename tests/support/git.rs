@@ -1,6 +1,16 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub fn init_git_repo(dir: &Path) {
+    assert!(git_command(dir).args(["init"]).status().unwrap().success());
+    for kv in [("user.email", "t@t.t"), ("user.name", "t")] {
+        git_command(dir)
+            .args(["config", kv.0, kv.1])
+            .status()
+            .unwrap();
+    }
+}
+
 #[allow(dead_code)]
 pub fn git_command(repo: &Path) -> Command {
     let mut c = Command::new("git");

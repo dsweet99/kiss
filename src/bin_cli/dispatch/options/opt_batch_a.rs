@@ -15,6 +15,7 @@ pub(crate) struct CheckDispatchOptions<'a> {
     pub bypass_gate: bool,
     pub ignore: Vec<String>,
     pub timing: bool,
+    pub jobs: Option<usize>,
     pub cfg: &'a TriConfig<'a>,
 }
 

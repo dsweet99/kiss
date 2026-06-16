@@ -195,3 +195,15 @@ pub(crate) fn collect_use_paths(tree: &syn::UseTree, imports: &mut Vec<String>) 
         }
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    #[test]
+    fn witness_rust_imports() {
+        let ast: syn::File = syn::parse_str("use std::collections::HashMap;").unwrap();
+        let imports = extract_rust_imports(&ast);
+        assert!(!imports.use_roots.is_empty());
+    }
+}

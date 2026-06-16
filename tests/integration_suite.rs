@@ -18,12 +18,20 @@ mod cli_check_hint;
 mod cli_integration;
 #[path = "cases/cli_integration_2.rs"]
 mod cli_integration_2;
+#[path = "cases/cli_kiss_test_smoke.rs"]
+mod cli_kiss_test_smoke;
 #[path = "cases/config_tests.rs"]
 mod config_tests;
+#[path = "cases/error_formatter_coverage.rs"]
+mod error_formatter_coverage;
+#[path = "cases/gate_executable_coverage.rs"]
+mod gate_executable_coverage;
 #[path = "cases/fix_h1_error_nodes.rs"]
 mod fix_h1_error_nodes;
 #[path = "cases/fix_h5_phantom_orphans.rs"]
 mod fix_h5_phantom_orphans;
+#[path = "cases/incremental_skip_oracle.rs"]
+mod incremental_skip_oracle;
 #[path = "cases/journal_hypotheses.rs"]
 mod journal_hypotheses;
 #[path = "cases/kpop_definitions.rs"]

@@ -61,6 +61,9 @@ pub struct FullCheckCache {
     /// Per-file content digests captured at cache-write time; verified on replay.
     #[serde(default)]
     pub file_content_digests: Vec<(String, u64)>,
+    /// Digest of `.kiss/rslip.json` at cache-write time; verified on replay.
+    #[serde(default)]
+    pub rslip_fingerprint: String,
 }
 
 impl CachedCoverageItem {
@@ -72,6 +75,57 @@ impl CachedCoverageItem {
 impl CachedFileCoverage {
     pub fn into_tuple(self) -> (PathBuf, usize) {
         (PathBuf::from(self.file), self.pct)
+    }
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn witness_cache_types() {
+        let _ = CachedDuplicateCluster {
+            chunks: vec![],
+            avg_similarity: 0.0,
+        };
+        let item = CachedCoverageItem {
+            file: "a.py".to_string(),
+            name: "x".to_string(),
+            line: 1,
+        };
+        let _ = item.into_tuple();
+        let fc = CachedFileCoverage {
+            file: "a.py".to_string(),
+            pct: 100,
+        };
+        let _ = fc.into_tuple();
+        let _ = FullCheckCache {
+            fingerprint: String::new(),
+            py_stats: None,
+            rs_stats: None,
+            py_paths: vec![],
+            focus_paths: vec![],
+            focus_restrict: false,
+            rs_paths: vec![],
+            py_file_count: 0,
+            rs_file_count: 0,
+            code_unit_count: 0,
+            statement_count: 0,
+            graph_nodes: 0,
+            graph_edges: 0,
+            base_violations: vec![],
+            graph_violations: vec![],
+            coverage_violations: vec![],
+            py_duplicates: vec![],
+            rs_duplicates: vec![],
+            definitions: vec![],
+            unreferenced: vec![],
+            weighted_file_pcts: vec![],
+            file_content_digests: vec![],
+            rslip_fingerprint: String::new(),
+        };
+        let _ = PathBuf::from("a.py");
     }
 }
 

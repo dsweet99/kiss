@@ -15,6 +15,7 @@ impl FakeCollector {
         &self,
         _repo_root: &Path,
         selectors: &[String],
+        _j: usize,
     ) -> Result<Vec<TestCoverageRun>, String> {
         if self.fail {
             return Err("collector failed".to_string());
@@ -192,9 +193,9 @@ fn dirty_detection_catches_same_size_change_delete_and_config() {
         )],
         fail: false,
     };
-    let db = refresh_with_collector(tmp.path(), &|repo, selectors| {
-        collector.collect(repo, selectors)
-    })
+    let db = refresh_with_collector(tmp.path(), &|repo, selectors, _j| {
+        collector.collect(repo, selectors, _j)
+    }, 1)
     .unwrap();
     write(&tmp.path().join("pkg.py"), "x = 2\n");
     assert!(
@@ -237,9 +238,9 @@ fn dirty_detection_catches_implementation_fingerprint_change() {
         )],
         fail: false,
     };
-    let mut db = refresh_with_collector(tmp.path(), &|repo, selectors| {
-        collector.collect(repo, selectors)
-    })
+    let mut db = refresh_with_collector(tmp.path(), &|repo, selectors, _j| {
+        collector.collect(repo, selectors, _j)
+    }, 1)
     .unwrap();
     db.config_fingerprints
         .insert("rslip_version".to_string(), "stale".to_string());
@@ -265,9 +266,9 @@ fn refresh_records_one_test_covering_multiple_sources_and_inverse() {
         ],
         fail: false,
     };
-    let db = refresh_with_collector(tmp.path(), &|repo, selectors| {
-        collector.collect(repo, selectors)
-    })
+    let db = refresh_with_collector(tmp.path(), &|repo, selectors, _j| {
+        collector.collect(repo, selectors, _j)
+    }, 1)
     .unwrap();
     assert_eq!(
         db.source_to_covering_tests["b.py"],
@@ -296,9 +297,9 @@ fn changed_test_refresh_only_collects_tests_in_changed_file() {
         )],
         fail: false,
     };
-    let db = refresh_with_collector(tmp.path(), &|repo, selectors| {
-        initial.collect(repo, selectors)
-    })
+    let db = refresh_with_collector(tmp.path(), &|repo, selectors, _j| {
+        initial.collect(repo, selectors, _j)
+    }, 1)
     .unwrap();
     let changed = FakeCollector {
         runs: vec![fake_run(
@@ -312,7 +313,8 @@ fn changed_test_refresh_only_collects_tests_in_changed_file() {
         tmp.path(),
         &db,
         &[tmp.path().join("test_a.py")],
-        &|repo, selectors| changed.collect(repo, selectors),
+        &|repo, selectors, _j| changed.collect(repo, selectors, _j),
+        1,
     )
     .unwrap();
     assert!(next.tests.contains_key("test_other.py::test_other"));
@@ -335,15 +337,55 @@ fn atomic_refresh_preserves_previous_database_on_failure() {
         )],
         fail: false,
     };
-    let db = refresh_and_store(tmp.path(), &|repo, selectors| ok.collect(repo, selectors)).unwrap();
+    let db = refresh_and_store(tmp.path(), &|repo, selectors, _j| ok.collect(repo, selectors, _j), 1).unwrap();
     let failing = FakeCollector {
         runs: Vec::new(),
         fail: true,
     };
     assert!(
-        refresh_and_store(tmp.path(), &|repo, selectors| failing
-            .collect(repo, selectors))
+        refresh_and_store(tmp.path(), &|repo, selectors, _j| failing
+            .collect(repo, selectors, _j), 1)
         .is_err()
     );
     assert_eq!(load_database(tmp.path()).unwrap(), Some(db));
+}
+
+#[test]
+fn refresh_stores_parametrized_nodeids_as_keys() {
+    let tmp = TempDir::new().unwrap();
+    write(&tmp.path().join("sample.py"), "def is_even(v):\n    return v % 2 == 0\n");
+    write(
+        &tmp.path().join("test_sample.py"),
+        concat!(
+            "import pytest\n",
+            "from sample import is_even\n\n",
+            "@pytest.mark.parametrize('value', [2, 4])\n",
+            "def test_is_even(value):\n",
+            "    assert is_even(value)\n",
+        ),
+    );
+    let collector = FakeCollector {
+        runs: vec![
+            fake_run(
+                "test_sample.py::test_is_even[2]",
+                "test_sample.py",
+                &[("sample.py", &[1, 2])],
+            ),
+            fake_run(
+                "test_sample.py::test_is_even[4]",
+                "test_sample.py",
+                &[("sample.py", &[1, 2])],
+            ),
+        ],
+        fail: false,
+    };
+    let db = refresh_with_collector(
+        tmp.path(),
+        &|repo, selectors, j| collector.collect(repo, selectors, j),
+        1,
+    )
+    .unwrap();
+    assert!(db.tests.contains_key("test_sample.py::test_is_even[2]"));
+    assert!(db.tests.contains_key("test_sample.py::test_is_even[4]"));
+    assert!(!db.tests.contains_key("test_sample.py::test_is_even"));
 }

@@ -17,18 +17,11 @@ impl From<std::io::Error> for ParseError {
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write_parse_error(self, f)
-    }
-}
-
-pub(crate) fn write_parse_error(
-    err: &ParseError,
-    f: &mut std::fmt::Formatter<'_>,
-) -> std::fmt::Result {
-    match err {
-        ParseError::IoError(e) => write!(f, "IO error: {e}"),
-        ParseError::ParserInitError => write!(f, "Failed to initialize Python parser"),
-        ParseError::ParseFailed => write!(f, "Failed to parse Python code"),
+        match self {
+            ParseError::IoError(e) => write!(f, "IO error: {e}"),
+            ParseError::ParserInitError => write!(f, "Failed to initialize Python parser"),
+            ParseError::ParseFailed => write!(f, "Failed to parse Python code"),
+        }
     }
 }
 
@@ -78,6 +71,35 @@ pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseErro
             },
         )
         .collect())
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::fmt;
+
+    struct ParseErrorViaWriter<'a>(&'a ParseError);
+
+    impl fmt::Display for ParseErrorViaWriter<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            self.0.fmt(f)
+        }
+    }
+
+    #[test]
+    fn witness_parse_error_display_fmt() {
+        let cases = [
+            ParseError::ParseFailed,
+            ParseError::ParserInitError,
+            ParseError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "missing",
+            )),
+        ];
+        for err in cases {
+            assert!(!ParseErrorViaWriter(&err).to_string().is_empty());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -174,7 +196,7 @@ mod tests {
 
         impl std::fmt::Display for ParseErrorViaWriter<'_> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write_parse_error(self.0, f)
+                self.0.fmt(f)
             }
         }
 

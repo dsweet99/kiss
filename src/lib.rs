@@ -21,6 +21,8 @@ pub mod rslip;
 pub mod rslip_bridge;
 #[cfg(test)]
 mod rslip_bridge_test;
+#[cfg(test)]
+mod rslip_test;
 pub mod rule_defs;
 pub mod violation;
 

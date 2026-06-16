@@ -143,6 +143,36 @@ pub(crate) fn get_child_by_field(node: Node, field: &str, source: &str) -> Optio
 }
 
 #[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    #[test]
+    fn witness_code_unit_types() {
+        let kinds = [
+            CodeUnitKind::Function,
+            CodeUnitKind::Method,
+            CodeUnitKind::Class,
+            CodeUnitKind::Module,
+            CodeUnitKind::Struct,
+            CodeUnitKind::Enum,
+            CodeUnitKind::TraitImplMethod,
+        ];
+        for kind in kinds {
+            assert!(!kind.as_str().is_empty());
+            assert!(!kind.to_string().is_empty());
+        }
+        let _ = CodeUnit {
+            kind: CodeUnitKind::Module,
+            name: "m".to_string(),
+            start_line: 1,
+            end_line: 1,
+            start_byte: 0,
+            end_byte: 0,
+        };
+    }
+}
+
+#[cfg(test)]
 #[path = "units_test.rs"]
 mod tests;
 

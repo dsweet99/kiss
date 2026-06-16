@@ -13,6 +13,8 @@ pub struct AnalyzeOptions<'a> {
     pub show_timing: bool,
     /// If true, suppress "NO VIOLATIONS" sentinel (used by shrink mode after constraint check)
     pub suppress_final_status: bool,
+    /// Parallel pytest fork pool size for rslip refresh.
+    pub jobs: Option<usize>,
 }
 
 /// Result of running analysis, including computed global metrics.

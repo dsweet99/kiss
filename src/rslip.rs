@@ -9,7 +9,11 @@ pub fn query_covering_tests(
     repo_root: &Path,
     changed_sources: &[PathBuf],
 ) -> Result<Vec<crate::test_refs::CoveringTest>, String> {
-    ::rslip::query_covering_tests(repo_root, changed_sources)
+    ::rslip::query_covering_tests(
+        repo_root,
+        changed_sources,
+        pyfork::default_parallelism(),
+    )
 }
 
 pub fn runtime_analysis_for_parsed(
@@ -17,20 +21,21 @@ pub fn runtime_analysis_for_parsed(
     static_analysis: &TestRefAnalysis,
 ) -> Result<TestRefAnalysis, String> {
     let collector = ::rslip::PytestTraceCollector;
-    runtime_analysis_for_parsed_with_collector(repo_root, static_analysis, &|root, selectors| {
-        collector.collect(root, selectors)
-    })
+    runtime_analysis_for_parsed_with_collector(repo_root, static_analysis, &|root, selectors, _j| {
+        collector.collect(root, selectors, _j)
+    }, pyfork::default_parallelism())
 }
 
 fn runtime_analysis_for_parsed_with_collector<F>(
     repo_root: &Path,
     static_analysis: &TestRefAnalysis,
     collector: &F,
+    j: usize,
 ) -> Result<TestRefAnalysis, String>
 where
-    F: Fn(&Path, &[String]) -> Result<Vec<::rslip::TestCoverageRun>, String>,
+    F: Fn(&Path, &[String], usize) -> Result<Vec<::rslip::TestCoverageRun>, String>,
 {
-    let db = ::rslip::current_database(repo_root, collector)?;
+    let db = ::rslip::current_database(repo_root, collector, j)?;
     Ok(analysis_from_database(repo_root, static_analysis, &db))
 }
 
@@ -89,6 +94,17 @@ pub fn analysis_from_database(
 }
 
 #[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    #[test]
+    fn witness_query_covering_tests_symbol() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let _ = query_covering_tests(tmp.path(), &[]);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -108,6 +124,20 @@ mod tests {
             unreferenced: Vec::new(),
             coverage_map: HashMap::new(),
         }
+    }
+
+    #[test]
+    fn query_covering_tests_delegates_to_rslip() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("app.py"), "def app():\n    return 1\n").unwrap();
+        std::fs::write(
+            tmp.path().join("test_app.py"),
+            "from app import app\n\ndef test_app():\n    assert app() == 1\n",
+        )
+        .unwrap();
+        let covering = query_covering_tests(tmp.path(), &[tmp.path().join("app.py")]).unwrap();
+        assert_eq!(covering.len(), 1);
+        assert!(covering[0].0.ends_with("test_app.py"));
     }
 
     #[test]
@@ -177,14 +207,14 @@ mod tests {
         std::fs::write(tmp.path().join("test_a.py"), "def test_a():\n    pass\n").unwrap();
         let static_analysis = static_analysis_for(tmp.path(), "a");
 
-        let db = ::rslip::refresh_with_collector(tmp.path(), &|_, selectors| {
+        let db = ::rslip::refresh_with_collector(tmp.path(), &|_, selectors, _j| {
             assert_eq!(selectors, &["test_a.py::test_a".to_string()]);
             Ok(vec![::rslip::TestCoverageRun {
                 selector: "test_a.py::test_a".to_string(),
                 test_path: PathBuf::from("test_a.py"),
                 hits: BTreeMap::from([(PathBuf::from("a.py"), BTreeSet::from([1_usize, 2_usize]))]),
             }])
-        })
+        }, 1)
         .unwrap();
         ::rslip::write_database_atomic(tmp.path(), &db).unwrap();
 

@@ -146,7 +146,7 @@ pub fn discover_tests(
     out.dedup();
     Ok(out)
 }
-pub(crate) fn config_fingerprints(files: &[FileRecord]) -> BTreeMap<String, String> {
+pub fn config_fingerprints(files: &[FileRecord]) -> BTreeMap<String, String> {
     let mut out = BTreeMap::from([
         ("schema_version".to_string(), SCHEMA_VERSION.to_string()),
         ("rslip_version".to_string(), RSLIP_VERSION.to_string()),
@@ -195,5 +195,7 @@ mod tests {
         );
         assert_eq!(classify_python(Path::new("pkg/api.py")), FileRole::Source);
         assert!(is_config(Path::new("pyproject.toml")));
+        assert!(!is_test_file(Path::new("")));
+        assert!(!is_in_test_directory(Path::new("")));
     }
 }

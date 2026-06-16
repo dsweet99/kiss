@@ -4,41 +4,42 @@ use std::path::{Path, PathBuf};
 
 use crate::coverage::{executable_lines_from_source, line_coverage};
 use crate::database::{load_database, write_database_atomic};
-use crate::discovery::{config_fingerprints, discover_repo_files, discover_tests};
+use crate::discovery::{config_fingerprints, discover_repo_files};
+use crate::skip::is_file_dirty;
 use crate::types::{
     CoveringTest, Database, FileRecord, FileRole, PytestTraceCollector, TestRecord,
 };
 use crate::util::normalize_path;
 use crate::{RSLIP_VERSION, SCHEMA_VERSION};
 
-type CollectorFn<'a> = dyn Fn(&Path, &[String]) -> Result<Vec<crate::TestCoverageRun>, String> + 'a;
+type CollectorFn<'a> =
+    dyn Fn(&Path, &[String], usize) -> Result<Vec<crate::TestCoverageRun>, String> + 'a;
 
 pub fn refresh_with_collector(
     repo_root: &Path,
     collector: &CollectorFn<'_>,
+    j: usize,
 ) -> Result<Database, String> {
     let mut files = discover_repo_files(repo_root)?;
-    let tests = discover_tests(repo_root, &files)?;
-    refresh_selected_with_collector(repo_root, collector, &mut files, tests)
+    let nodeids = pyfork::collect_nodeids(repo_root, &[])?;
+    refresh_selected_with_collector(repo_root, collector, &mut files, nodeids, j)
 }
 
 fn refresh_selected_with_collector(
     repo_root: &Path,
     collector: &CollectorFn<'_>,
     files: &mut [FileRecord],
-    tests: Vec<(String, String)>,
+    nodeids: Vec<String>,
+    j: usize,
 ) -> Result<Database, String> {
-    let selectors: Vec<_> = tests.iter().map(|(selector, _)| selector.clone()).collect();
-    let runs = collector(repo_root, &selectors)?;
+    let runs = collector(repo_root, &nodeids, j)?;
     let mut source_to_tests: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut test_records = BTreeMap::new();
-    let test_path_by_selector: BTreeMap<_, _> = tests.into_iter().collect();
 
     for run in runs {
         let (selector, record) = test_record_from_run(
             repo_root,
             files,
-            &test_path_by_selector,
             &mut source_to_tests,
             run,
         );
@@ -67,15 +68,11 @@ fn refresh_selected_with_collector(
 fn test_record_from_run(
     repo_root: &Path,
     files: &[FileRecord],
-    test_path_by_selector: &BTreeMap<String, String>,
     source_to_tests: &mut BTreeMap<String, BTreeSet<String>>,
     run: crate::TestCoverageRun,
 ) -> (String, TestRecord) {
-    let selector = run.selector;
-    let test_path = test_path_by_selector
-        .get(&selector)
-        .cloned()
-        .unwrap_or_else(|| normalize_path(repo_root, &run.test_path));
+    let selector = run.selector.clone();
+    let test_path = normalize_path(repo_root, &run.test_path);
     let mut covered_files = Vec::new();
     let mut covered_lines = BTreeMap::new();
     for (path, lines) in run.hits {
@@ -138,8 +135,9 @@ fn apply_coverage_from_tests(
 pub fn refresh_and_store(
     repo_root: &Path,
     collector: &CollectorFn<'_>,
+    j: usize,
 ) -> Result<Database, String> {
-    let db = refresh_with_collector(repo_root, collector)?;
+    let db = refresh_with_collector(repo_root, collector, j)?;
     write_database_atomic(repo_root, &db)?;
     Ok(db)
 }
@@ -160,12 +158,12 @@ pub fn changed_files(repo_root: &Path, db: &Database) -> Result<Vec<String>, Str
     }
     let current_paths: HashSet<_> = current.iter().map(|file| file.path.as_str()).collect();
     for file in &current {
-        if db
-            .files
-            .get(&file.path)
-            .is_none_or(|old| old.content_digest != file.content_digest)
-        {
-            changed.push(file.path.clone());
+        match db.files.get(&file.path) {
+            None => changed.push(file.path.clone()),
+            Some(old) if is_file_dirty(old, file.mtime_ns, &file.content_digest) => {
+                changed.push(file.path.clone());
+            }
+            Some(_) => {}
         }
     }
     changed.extend(
@@ -184,24 +182,30 @@ pub fn refresh_changed_tests_with_collector(
     db: &Database,
     changed_test_paths: &[PathBuf],
     collector: &CollectorFn<'_>,
+    j: usize,
 ) -> Result<Database, String> {
     let mut files = discover_repo_files(repo_root)?;
     let changed: HashSet<_> = changed_test_paths
         .iter()
         .map(|path| normalize_path(repo_root, path))
         .collect();
-    let tests: Vec<_> = discover_tests(repo_root, &files)?
+    let nodeids: Vec<_> = pyfork::collect_nodeids(repo_root, &[])?
         .into_iter()
-        .filter(|(_, path)| changed.contains(path))
+        .filter(|nodeid| {
+            nodeid
+                .split_once("::")
+                .is_some_and(|(path, _)| changed.contains(path))
+        })
         .collect();
     let mut next = db.clone();
-    for selector in tests.iter().map(|(selector, _)| selector) {
+    for selector in &nodeids {
         next.tests.remove(selector);
     }
     for tests in next.source_to_covering_tests.values_mut() {
         tests.retain(|selector| next.tests.contains_key(selector));
     }
-    let partial = refresh_selected_with_collector(repo_root, collector, &mut files, tests)?;
+    let partial =
+        refresh_selected_with_collector(repo_root, collector, &mut files, nodeids, j)?;
     next.config_fingerprints = partial.config_fingerprints;
     for (selector, record) in partial.tests {
         next.tests.insert(selector, record);
@@ -227,20 +231,27 @@ pub fn refresh_changed_tests_with_collector(
     Ok(next)
 }
 
-pub fn current_database(repo_root: &Path, collector: &CollectorFn<'_>) -> Result<Database, String> {
+pub fn current_database(
+    repo_root: &Path,
+    collector: &CollectorFn<'_>,
+    j: usize,
+) -> Result<Database, String> {
     match load_database(repo_root)? {
         Some(db) if changed_files(repo_root, &db)?.is_empty() => Ok(db),
-        _ => refresh_and_store(repo_root, collector),
+        _ => refresh_and_store(repo_root, collector, j),
     }
 }
 
 pub fn query_covering_tests(
     repo_root: &Path,
     changed_sources: &[PathBuf],
+    j: usize,
 ) -> Result<Vec<CoveringTest>, String> {
     let collector = PytestTraceCollector;
-    let collect = |root: &Path, selectors: &[String]| collector.collect(root, selectors);
-    let db = current_database(repo_root, &collect)?;
+    let collect = |root: &Path, selectors: &[String], parallelism: usize| {
+        collector.collect(root, selectors, parallelism)
+    };
+    let db = current_database(repo_root, &collect, j)?;
     let mut out = BTreeSet::new();
     for source in changed_sources {
         let rel = normalize_path(repo_root, source);
@@ -300,6 +311,7 @@ mod tests {
         let covering = query_covering_tests(
             tmp.path(),
             &[tmp.path().join("app.py"), tmp.path().join("other.py")],
+            1,
         )
         .unwrap();
         for (path, id) in &covering {
@@ -310,7 +322,7 @@ mod tests {
             covering,
             vec![(tmp.path().join("test_app.py"), "test_app".to_string())]
         );
-        let empty = query_covering_tests(tmp.path(), &[]).unwrap();
+        let empty = query_covering_tests(tmp.path(), &[], 1).unwrap();
         assert!(empty.is_empty());
     }
 }

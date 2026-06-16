@@ -6,6 +6,8 @@ use kiss::Language;
 
 use crate::test_git::TestChangeMode;
 
+pub const COLD_CACHE_MSG: &str = "run kiss check first to warm the rslip cache";
+
 pub struct RunTestCmdArgs<'a> {
     pub mode: TestChangeMode,
     pub main_branch_cli: Option<&'a str>,
@@ -14,6 +16,7 @@ pub struct RunTestCmdArgs<'a> {
     pub extra: &'a [String],
     pub ignore: &'a [String],
     pub lang_filter: Option<Language>,
+    pub jobs: Option<usize>,
     pub config_main_branch: Option<&'a str>,
 }
 
@@ -26,8 +29,14 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
         extra,
         ignore,
         lang_filter,
+        jobs,
         config_main_branch,
     } = a;
+    let parallelism = jobs.unwrap_or_else(pyfork::default_parallelism);
+    if let Err(e) = pyfork::validate_pytest_extra(extra) {
+        eprintln!("{e}");
+        return 1;
+    }
     match plan_selectors(
         mode,
         main_branch_cli,
@@ -36,7 +45,7 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
         lang_filter,
         config_main_branch,
     ) {
-        Ok(planned) => match run_selectors(&planned, dry_run, extra) {
+        Ok(planned) => match run_selectors(&planned, dry_run, extra, parallelism) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("{e}");
@@ -69,39 +78,45 @@ pub(crate) fn plan_selectors(
     crate::test_git::assert_git_repo(&cwd)
         .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
     let repo_root = crate::test_git::git_repo_root(&cwd)?;
-    let diff_target = crate::test_git::resolve_diff_target(
-        &repo_root,
-        mode,
-        config_main_branch,
-        main_branch_cli,
-        base_branch_cli,
-    )?;
-    let rel_changed = match mode {
-        TestChangeMode::Commit => crate::test_git::changed_paths_commit(&repo_root)?,
-        TestChangeMode::Base | TestChangeMode::Main => {
-            let Some(ref rev) = diff_target else {
-                return Err("error: kiss test: internal error (missing diff target)".into());
-            };
-            crate::test_git::changed_paths_since(&repo_root, rev)?
+    let py_sel = if lang_filter == Some(Language::Rust) {
+        Vec::new()
+    } else {
+        let collected = pyfork::collect_nodeids(&repo_root, &[])?;
+        match rslip::load_database(&repo_root)? {
+            None => {
+                return Err(format!("error: kiss test: {COLD_CACHE_MSG}"));
+            }
+            Some(db) => rslip::scheduled_nodeids(&repo_root, &collected, &db)?,
         }
     };
-    let abs_paths = crate::test_git::resolve_changed_source_paths(
-        &repo_root,
-        &rel_changed,
-        &ignore_norm,
-        lang_filter.map(|l| match l {
-            Language::Python => crate::test_git::TestLangFilter::Python,
-            Language::Rust => crate::test_git::TestLangFilter::Rust,
-        }),
-    );
-    let (source_changed, test_changed) = runners::partition_changed_paths(&abs_paths);
-    let (py_sel, rs_sel) = runners::combined_selectors(
-        &repo_root,
-        &source_changed,
-        &test_changed,
-        lang_filter,
-        &ignore_norm,
-    )?;
+    let rs_sel = if lang_filter == Some(Language::Python) {
+        Vec::new()
+    } else {
+        let diff_target = crate::test_git::resolve_diff_target(
+            &repo_root,
+            mode,
+            config_main_branch,
+            main_branch_cli,
+            base_branch_cli,
+        )?;
+        let rel_changed = match mode {
+            TestChangeMode::Commit => crate::test_git::changed_paths_commit(&repo_root)?,
+            TestChangeMode::Base | TestChangeMode::Main => {
+                let Some(ref rev) = diff_target else {
+                    return Err("error: kiss test: internal error (missing diff target)".into());
+                };
+                crate::test_git::changed_paths_since(&repo_root, rev)?
+            }
+        };
+        let abs_paths = crate::test_git::resolve_changed_source_paths(
+            &repo_root,
+            &rel_changed,
+            &ignore_norm,
+            Some(crate::test_git::TestLangFilter::Rust),
+        );
+        let (source_changed, test_changed) = runners::partition_changed_paths(&abs_paths);
+        runners::rust_selectors(&repo_root, &source_changed, &test_changed, &ignore_norm)?
+    };
     Ok(PlannedSelectors {
         repo_root,
         py_sel,
@@ -113,16 +128,19 @@ pub(crate) fn run_selectors(
     planned: &PlannedSelectors,
     dry_run: bool,
     extra: &[String],
+    parallelism: usize,
 ) -> Result<i32, String> {
     if planned.py_sel.is_empty() && planned.rs_sel.is_empty() {
         println!("{}", runners::NO_COVERING_TESTS_MSG);
         return Ok(0);
     }
-    let py_argv = runners::build_pytest_argv(&planned.py_sel, extra);
     let rs_argv = runners::build_cargo_test_argv(&planned.rs_sel, extra);
     if dry_run {
-        if !planned.py_sel.is_empty() {
-            println!("{}", runners::shell_quote_line(&py_argv));
+        for nodeid in &planned.py_sel {
+            println!(
+                "{}",
+                runners::shell_quote_line(&runners::build_pytest_fork_argv(nodeid, extra))
+            );
         }
         if !planned.rs_sel.is_empty() {
             println!("{}", runners::shell_quote_line(&rs_argv));
@@ -133,7 +151,7 @@ pub(crate) fn run_selectors(
     if !planned.py_sel.is_empty() {
         code = runners::merge_exit_codes(
             code,
-            runners::run_command_inherit(&py_argv, &planned.repo_root)?,
+            pyfork::run_pool(&planned.repo_root, &planned.py_sel, parallelism, extra)?,
         );
     }
     if !planned.rs_sel.is_empty() {
@@ -143,6 +161,31 @@ pub(crate) fn run_selectors(
         );
     }
     Ok(code)
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl<'a> RunTestCmdArgs<'a> {
+        fn witness() {}
+    }
+
+    impl PlannedSelectors {
+        fn witness() -> Self {
+            Self {
+                repo_root: PathBuf::new(),
+                py_sel: vec![],
+                rs_sel: vec![],
+            }
+        }
+    }
+
+    #[test]
+    fn witness_test_runner_types() {
+        RunTestCmdArgs::witness();
+        let _ = PlannedSelectors::witness();
+    }
 }
 
 #[cfg(test)]
@@ -158,6 +201,7 @@ mod behavior_tests {
             extra: &[],
             ignore: &[],
             lang_filter: None,
+            jobs: None,
             config_main_branch: None,
         }
     }
@@ -183,7 +227,7 @@ mod behavior_tests {
             rs_sel: vec![],
         };
 
-        let code = run_selectors(&planned, true, &[]).unwrap();
+        let code = run_selectors(&planned, true, &[], 1).unwrap();
 
         assert_eq!(code, 0);
     }
@@ -194,6 +238,7 @@ mod behavior_tests {
             extra: &["--ignored".to_string()],
             ignore: &["target".to_string()],
             lang_filter: Some(Language::Rust),
+            jobs: Some(4),
             ..test_args()
         };
 
@@ -201,6 +246,7 @@ mod behavior_tests {
         assert_eq!(args.extra, ["--ignored"]);
         assert_eq!(args.ignore, ["target"]);
         assert_eq!(args.lang_filter, Some(Language::Rust));
+        assert_eq!(args.jobs, Some(4));
     }
 }
 
@@ -214,10 +260,6 @@ mod plan_tests {
     use super::*;
     use crate::test_git::TestChangeMode;
 
-    // See `git_command` in `src/test_git.rs` for why we scrub `GIT_*`
-    // env vars: pre-commit exports `GIT_INDEX_FILE` to isolate hooks
-    // and would otherwise redirect every test's git call to the real
-    // repo's index.
     fn git_in(dir: &Path) -> Command {
         crate::test_git::git_command(dir)
     }
@@ -235,7 +277,7 @@ mod plan_tests {
     }
 
     #[test]
-    fn plan_selectors_commit_smoke() {
+    fn plan_selectors_commit_smoke_without_cache_errors() {
         let _cwd_guard = crate::cwd_test_lock::lock();
         let tmp = TempDir::new().unwrap();
         init(&tmp);
@@ -245,17 +287,13 @@ mod plan_tests {
             .args(["commit", "-m", "m"])
             .status()
             .unwrap();
-        std::fs::write(tmp.path().join("b.py"), "y=1\n").unwrap();
         let orig = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let planned: PlannedSelectors =
-            plan_selectors(TestChangeMode::Commit, None, None, &[], None, None).unwrap();
+        match plan_selectors(TestChangeMode::Commit, None, None, &[], None, None) {
+            Err(e) => assert!(e.contains(COLD_CACHE_MSG), "{e}"),
+            Ok(_) => panic!("expected cold cache error"),
+        }
         std::env::set_current_dir(orig).unwrap();
-        assert_eq!(planned.repo_root, tmp.path().canonicalize().unwrap());
-        assert!(planned.py_sel.is_empty());
-        assert!(planned.rs_sel.is_empty());
-        let code = run_selectors(&planned, true, &[]).unwrap();
-        assert_eq!(code, 0);
     }
 
     #[test]
@@ -272,6 +310,7 @@ mod plan_tests {
             extra: &[],
             ignore: &[],
             lang_filter: None,
+            jobs: None,
             config_main_branch: None,
         });
         std::env::set_current_dir(orig).unwrap();

@@ -20,6 +20,9 @@ pub use util::set_sigpipe_default;
 #[path = "gates_core.rs"]
 mod gates_core;
 #[cfg(test)]
+#[path = "gates_j.rs"]
+mod gates_j;
+#[cfg(test)]
 #[path = "gates_shrink.rs"]
 mod gates_shrink;
 #[cfg(test)]

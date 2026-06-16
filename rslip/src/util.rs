@@ -26,6 +26,17 @@ pub fn normalize_path(repo_root: &Path, path: &Path) -> String {
 }
 
 #[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    #[test]
+    fn witness_content_digest() {
+        assert!(!content_digest(b"").is_empty());
+        assert_ne!(content_digest(b"a"), content_digest(b"b"));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -1,5 +1,61 @@
+use super::{FullCacheInputs, FullCheckCache};
 use std::sync::Mutex;
 use tempfile::TempDir;
+
+pub(crate) fn empty_cache(fp: &str) -> FullCheckCache {
+    FullCheckCache {
+        fingerprint: fp.to_string(),
+        py_stats: None,
+        rs_stats: None,
+        py_paths: Vec::new(),
+        focus_paths: Vec::new(),
+        focus_restrict: false,
+        rs_paths: Vec::new(),
+        py_file_count: 0,
+        rs_file_count: 0,
+        code_unit_count: 0,
+        statement_count: 0,
+        graph_nodes: 0,
+        graph_edges: 0,
+        base_violations: Vec::new(),
+        graph_violations: Vec::new(),
+        coverage_violations: Vec::new(),
+        py_duplicates: Vec::new(),
+        rs_duplicates: Vec::new(),
+        definitions: Vec::new(),
+        unreferenced: Vec::new(),
+        weighted_file_pcts: Vec::new(),
+        file_content_digests: Vec::new(),
+        rslip_fingerprint: String::new(),
+    }
+}
+
+pub(crate) fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
+    FullCacheInputs {
+        fingerprint: fp.to_string(),
+        py_file_count: 0,
+        rs_file_count: 0,
+        code_unit_count: 0,
+        statement_count: 0,
+        violations: &[],
+        graph_viols_all: &[],
+        coverage_violations: &[],
+        py_graph: None,
+        rs_graph: None,
+        py_stats: None,
+        rs_stats: None,
+        focus_paths: Vec::new(),
+        focus_restrict: false,
+        py_paths: Vec::new(),
+        rs_paths: Vec::new(),
+        py_dups_all: &[],
+        rs_dups_all: &[],
+        definitions: Vec::new(),
+        unreferenced: Vec::new(),
+        weighted_file_pcts: Vec::new(),
+        rslip_fingerprint: String::new(),
+    }
+}
 
 static HOME_LOCK: Mutex<()> = Mutex::new(());
 

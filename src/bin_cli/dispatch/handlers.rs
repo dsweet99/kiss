@@ -6,7 +6,6 @@ use crate::bin_cli::check_cmd::{CheckCommandArgs, run_check_command};
 use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::shrink::{RunShrinkArgs, ShrinkFullContext, run_shrink};
 use crate::bin_cli::stats::{RunStatsArgs, run_stats};
-use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_min_similarity, validate_paths};
 use crate::rules::{run_config, run_rules};
 use crate::viz::{VizCoarsen, run_viz};
@@ -28,6 +27,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) 
         bypass_gate: o.bypass_gate,
         ignore: &o.ignore,
         timing: o.timing,
+        jobs: o.jobs,
     };
     run_check_command(&args)
 }
@@ -135,16 +135,18 @@ pub(in crate::bin_cli::dispatch) fn dispatch_shrink(o: ShrinkDispatchOptions<'_>
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) -> i32 {
-    run_test_command(
-        o.mode,
-        o.main_branch.as_deref(),
-        o.base_branch.as_deref(),
-        o.dry_run,
-        &o.ignore,
-        &o.extra,
-        o.lang,
-        o.test_cfg,
-    )
+    use crate::bin_cli::test_cmd::{TestCommandArgs, run_test_command};
+    run_test_command(TestCommandArgs {
+        mode: o.mode,
+        main_branch: o.main_branch.as_deref(),
+        base_branch: o.base_branch.as_deref(),
+        dry_run: o.dry_run,
+        ignore: &o.ignore,
+        extra: &o.extra,
+        lang_filter: o.lang,
+        jobs: o.jobs,
+        test_cfg: o.test_cfg,
+    })
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_mv(o: MvDispatchOptions) -> i32 {

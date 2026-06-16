@@ -19,6 +19,7 @@ path = "src/main.rs"
 
 [dependencies]
 ignore = "0.4.26"
+pyfork = { path = "../pyfork" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

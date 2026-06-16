@@ -142,6 +142,26 @@ pub(crate) fn evaluate_gate(
     None
 }
 
+pub(crate) fn cached_coverage_gate_would_fail(
+    definitions: &[CachedCoverageItem],
+    unreferenced: &[CachedCoverageItem],
+    focus: &FocusFilter,
+    threshold: usize,
+) -> bool {
+    if threshold == 0 {
+        return false;
+    }
+    let defs = definitions
+        .iter()
+        .map(|item| item.clone().into_tuple())
+        .collect::<Vec<_>>();
+    let unrefs = unreferenced
+        .iter()
+        .map(|item| item.clone().into_tuple())
+        .collect::<Vec<_>>();
+    per_file_coverage_gate_fails(&defs, &unrefs, focus, threshold, None).is_some()
+}
+
 pub(crate) fn evaluate_cached_gate(
     definitions: &[CachedCoverageItem],
     unreferenced: &[CachedCoverageItem],

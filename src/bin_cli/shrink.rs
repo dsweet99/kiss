@@ -138,6 +138,7 @@ pub fn run_shrink_analysis(args: ShrinkAnalyzeArgs<'_, '_>) -> analyze::AnalyzeR
         ignore_prefixes: args.ignore,
         show_timing: false,
         suppress_final_status: true,
+        jobs: None,
     };
     analyze::run_analyze_with_result(&opts)
 }

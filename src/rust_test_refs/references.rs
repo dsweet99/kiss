@@ -386,3 +386,30 @@ mod tests {
         assert!(refs.contains("helper"));
     }
 }
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    #[test]
+    fn witness_reference_visitors_visit_expr() {
+        let call_expr: syn::Expr = syn::parse_str("other::nested(beta())").unwrap();
+        let method_expr: syn::Expr = syn::parse_str("obj.method(gamma())").unwrap();
+        let mut refs = HashSet::new();
+        let mut qualified = HashSet::new();
+        let mut call_visitor = CallReferenceVisitor {
+            refs: &mut refs,
+            qualified: &mut qualified,
+        };
+        call_visitor.visit_expr(&call_expr);
+        call_visitor.visit_expr(&method_expr);
+        let mut ref_visitor = ReferenceVisitor {
+            refs: &mut refs,
+            qualified: &mut qualified,
+        };
+        ref_visitor.visit_expr(&call_expr);
+        ref_visitor.visit_expr(&method_expr);
+        assert!(refs.contains("nested"));
+        assert!(refs.contains("method"));
+    }
+}

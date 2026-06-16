@@ -24,6 +24,7 @@ fn query_covering_tests_is_directly_callable_from_tests() {
     let covering = crate::refresh::query_covering_tests(
         tmp.path(),
         &[tmp.path().join("app.py"), tmp.path().join("other.py")],
+        1,
     )
     .unwrap();
     for (path, name) in &covering {
@@ -36,7 +37,8 @@ fn query_covering_tests_is_directly_callable_from_tests() {
         vec![(tmp.path().join("test_app.py"), "test_app".to_string())]
     );
     let missing =
-        crate::refresh::query_covering_tests(tmp.path(), &[tmp.path().join("missing.py")]).unwrap();
+        crate::refresh::query_covering_tests(tmp.path(), &[tmp.path().join("missing.py")], 1)
+            .unwrap();
     assert!(missing.is_empty());
 }
 
@@ -71,7 +73,7 @@ fn query_covering_tests_accepts_relative_sources_and_deduplicates_selectors() {
     write_database_atomic(tmp.path(), &db).unwrap();
 
     let covering =
-        crate::refresh::query_covering_tests(tmp.path(), &[PathBuf::from("app.py")]).unwrap();
+        crate::refresh::query_covering_tests(tmp.path(), &[PathBuf::from("app.py")], 1).unwrap();
     assert_eq!(
         covering,
         vec![
@@ -81,5 +83,32 @@ fn query_covering_tests_accepts_relative_sources_and_deduplicates_selectors() {
             ),
             (tmp.path().join("test_app.py"), "test_app".to_string()),
         ]
+    );
+}
+
+#[test]
+fn changed_files_uses_mtime_fast_path() {
+    let tmp = TempDir::new().unwrap();
+    write(&tmp.path().join("pkg.py"), "x = 1\n");
+    let records = discover_repo_files(tmp.path()).unwrap();
+    let pkg = records
+        .iter()
+        .find(|file| file.path == "pkg.py")
+        .expect("pkg.py record");
+    let mut stale = pkg.clone();
+    stale.mtime_ns = pkg.mtime_ns.saturating_sub(1);
+    assert_eq!(pkg.content_digest, stale.content_digest);
+    let db = Database {
+        schema_version: SCHEMA_VERSION,
+        rslip_version: RSLIP_VERSION.to_string(),
+        config_fingerprints: config_fingerprints(&records),
+        files: std::collections::BTreeMap::from([("pkg.py".to_string(), stale)]),
+        tests: std::collections::BTreeMap::new(),
+        source_to_covering_tests: std::collections::BTreeMap::new(),
+    };
+    let changed = crate::refresh::changed_files(tmp.path(), &db).unwrap();
+    assert!(
+        changed.contains(&"pkg.py".to_string()),
+        "mtime mismatch must mark file dirty even when digest unchanged: {changed:?}"
     );
 }

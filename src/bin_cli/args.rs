@@ -54,6 +54,9 @@ pub enum Commands {
         /// Show timing breakdown for performance analysis
         #[arg(long)]
         timing: bool,
+        /// Parallel pytest fork pool size for rslip refresh (default: available parallelism)
+        #[arg(short = 'j', value_name = "J")]
+        jobs: Option<usize>,
     },
     /// Show metric statistics for codebase
     Stats {
@@ -171,6 +174,9 @@ pub enum Commands {
         dry_run: bool,
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
+        /// Parallel pytest fork pool size (default: available parallelism)
+        #[arg(short = 'j', value_name = "J")]
+        jobs: Option<usize>,
         #[arg(last = true)]
         extra: Vec<String>,
     },

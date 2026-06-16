@@ -7,6 +7,14 @@ use super::validation::{
 };
 
 #[test]
+fn load_from_content_applies_language_defaults_and_toml() {
+    let py = Config::load_from_content("[python]\nstatements_per_function = 77", ConfigLanguage::Python);
+    let rs = Config::load_from_content("[rust]\nstatements_per_function = 88", ConfigLanguage::Rust);
+    assert_eq!(py.statements_per_function, 77);
+    assert_eq!(rs.statements_per_function, 88);
+}
+
+#[test]
 fn test_merge_and_apply() {
     let mut c = Config::python_defaults();
     c.merge_from_toml(

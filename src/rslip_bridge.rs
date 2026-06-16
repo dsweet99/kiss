@@ -5,35 +5,30 @@ use rslip::{Database, PytestTraceCollector};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-pub fn runtime_py_analysis(repo_root: &Path, parsed: &[ParsedFile]) -> TestRefAnalysis {
+pub fn rslip_database_fingerprint(repo_root: &Path) -> String {
+    let path = rslip::db_path(repo_root);
+    match std::fs::read(&path) {
+        Ok(bytes) => rslip::content_digest(&bytes),
+        Err(_) => "MISSING".to_string(),
+    }
+}
+
+pub fn runtime_py_analysis(
+    repo_root: &Path,
+    parsed: &[ParsedFile],
+    jobs: Option<usize>,
+) -> TestRefAnalysis {
+    let j = jobs.unwrap_or_else(pyfork::default_parallelism);
     let collector = PytestTraceCollector;
-    match rslip::current_database(repo_root, &|root, selectors| {
-        collector.collect(root, selectors)
-    }) {
+    match rslip::current_database(repo_root, &|root, selectors, parallelism| {
+        collector.collect(root, selectors, parallelism)
+    }, j) {
         Ok(db) => analysis_from_database(repo_root, parsed, &db),
         Err(err) => {
             eprintln!("error: rslip coverage refresh failed: {err}");
             fail_closed_analysis(parsed)
         }
     }
-}
-
-pub fn runtime_covering_selectors(
-    repo_root: &Path,
-    source_paths: &[PathBuf],
-    test_paths: &[PathBuf],
-) -> Result<Vec<String>, String> {
-    let mut selectors = Vec::new();
-    if !source_paths.is_empty() {
-        for (path, id) in rslip::query_covering_tests(repo_root, source_paths)? {
-            let rel = normalize_against(repo_root, &path);
-            selectors.push(format!("{rel}::{id}"));
-        }
-    }
-    selectors.extend(changed_test_file_selectors(repo_root, test_paths)?);
-    selectors.sort();
-    selectors.dedup();
-    Ok(selectors)
 }
 
 pub(crate) fn analysis_from_database(
@@ -114,39 +109,6 @@ fn tests_covering_file(db: &Database, rel: &str) -> Vec<CoveringTest> {
         .collect()
 }
 
-fn changed_test_file_selectors(
-    repo_root: &Path,
-    test_paths: &[PathBuf],
-) -> Result<Vec<String>, String> {
-    let mut selectors = Vec::new();
-    for path in test_paths {
-        let abs = if path.is_absolute() {
-            path.clone()
-        } else {
-            repo_root.join(path)
-        };
-        let text = std::fs::read_to_string(&abs)
-            .map_err(|err| format!("read {}: {err}", abs.display()))?;
-        let rel = normalize_against(repo_root, &abs);
-        for line in text.lines() {
-            let trimmed = line.trim_start();
-            if !trimmed.starts_with("def test_") && !trimmed.starts_with("async def test_") {
-                continue;
-            }
-            let Some(after_def) = trimmed
-                .strip_prefix("async def ")
-                .or_else(|| trimmed.strip_prefix("def "))
-            else {
-                continue;
-            };
-            if let Some(name) = after_def.split('(').next() {
-                selectors.push(format!("{rel}::{}", name.trim()));
-            }
-        }
-    }
-    Ok(selectors)
-}
-
 pub(crate) fn line_name(line: usize) -> String {
     format!("line_{line}")
 }
@@ -156,6 +118,26 @@ pub(crate) fn normalize_against(repo_root: &Path, path: &Path) -> String {
         .unwrap_or(path)
         .to_string_lossy()
         .replace('\\', "/")
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn witness_analysis_from_database_symbol() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = Database {
+            schema_version: rslip::SCHEMA_VERSION,
+            rslip_version: rslip::RSLIP_VERSION.to_string(),
+            config_fingerprints: BTreeMap::new(),
+            files: BTreeMap::new(),
+            tests: BTreeMap::new(),
+            source_to_covering_tests: BTreeMap::new(),
+        };
+        let _ = analysis_from_database(tmp.path(), &[], &db);
+    }
 }
 
 #[cfg(test)]
@@ -279,24 +261,6 @@ mod tests {
                 PathBuf::from("tests/test_a.py"),
                 "TestA::test_line".to_string()
             )]
-        );
-    }
-
-    #[test]
-    fn changed_test_file_selectors_finds_sync_and_async_tests() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let test_path = tmp.path().join("tests/test_a.py");
-        std::fs::create_dir_all(test_path.parent().unwrap()).unwrap();
-        std::fs::write(
-            &test_path,
-            "def test_sync():\n    pass\nasync def test_async():\n    pass\ndef helper():\n    pass\n",
-        )
-        .unwrap();
-
-        let selectors = changed_test_file_selectors(tmp.path(), &[test_path]).unwrap();
-        assert_eq!(
-            selectors,
-            vec!["tests/test_a.py::test_sync", "tests/test_a.py::test_async"]
         );
     }
 

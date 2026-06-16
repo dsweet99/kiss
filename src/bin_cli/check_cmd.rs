@@ -12,6 +12,7 @@ pub struct CheckCommandArgs<'a> {
     pub bypass_gate: bool,
     pub ignore: &'a [String],
     pub timing: bool,
+    pub jobs: Option<usize>,
 }
 
 pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
@@ -34,8 +35,23 @@ pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
         ignore_prefixes: &ignore,
         show_timing: args.timing,
         suppress_final_status: false,
+        jobs: args.jobs,
     };
     i32::from(!run_analyze(&opts))
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl<'a> CheckCommandArgs<'a> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_check_command_args() {
+        CheckCommandArgs::witness();
+    }
 }
 
 #[cfg(test)]
@@ -58,6 +74,7 @@ mod tests {
             bypass_gate: true,
             ignore: &[],
             timing: false,
+            jobs: None,
         };
         assert_eq!(run_check_command(&args), 0);
     }

@@ -20,17 +20,10 @@ impl From<syn::Error> for RustParseError {
 
 impl std::fmt::Display for RustParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write_rust_parse_error(self, f)
-    }
-}
-
-pub(crate) fn write_rust_parse_error(
-    err: &RustParseError,
-    f: &mut std::fmt::Formatter<'_>,
-) -> std::fmt::Result {
-    match err {
-        RustParseError::IoError(e) => write!(f, "IO error: {e}"),
-        RustParseError::SynError(e) => write!(f, "Syn parse error: {e}"),
+        match self {
+            RustParseError::IoError(e) => write!(f, "IO error: {e}"),
+            RustParseError::SynError(e) => write!(f, "Syn parse error: {e}"),
+        }
     }
 }
 
@@ -57,6 +50,37 @@ pub fn parse_rust_file(path: &Path) -> Result<ParsedRustFile, RustParseError> {
 // which are not Send. Parallelism is applied during analysis instead.
 pub fn parse_rust_files(paths: &[PathBuf]) -> Vec<Result<ParsedRustFile, RustParseError>> {
     paths.iter().map(|path| parse_rust_file(path)).collect()
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::fmt;
+
+    struct RustParseErrorViaWriter<'a>(&'a RustParseError);
+
+    impl fmt::Display for RustParseErrorViaWriter<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            self.0.fmt(f)
+        }
+    }
+
+    #[test]
+    fn witness_rust_parse_error_display_fmt() {
+        let cases = [
+            RustParseError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "missing",
+            )),
+            RustParseError::SynError(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "bad",
+            )),
+        ];
+        for err in cases {
+            assert!(!RustParseErrorViaWriter(&err).to_string().is_empty());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -136,7 +160,7 @@ impl Counter {{
 
         impl std::fmt::Display for RustParseErrorViaWriter<'_> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write_rust_parse_error(self.0, f)
+                self.0.fmt(f)
             }
         }
 

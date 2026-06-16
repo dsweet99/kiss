@@ -133,7 +133,7 @@ fn runtime_py_coverage_for_opts(
     let repo_root = Path::new(opts.universe)
         .canonicalize()
         .unwrap_or_else(|_| PathBuf::from(opts.universe));
-    kiss::rslip_bridge::runtime_py_analysis(&repo_root, parsed)
+    kiss::rslip_bridge::runtime_py_analysis(&repo_root, parsed, opts.jobs)
 }
 
 pub(crate) fn run_full_pipeline(in_: FullPipelineInput<'_>) -> FullPipelineResult {

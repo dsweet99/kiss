@@ -8,10 +8,6 @@ use kiss::{parse_files, parse_rust_files, rust_test_functions_in, test_functions
 
 pub const NO_COVERING_TESTS_MSG: &str = "NO COVERING TESTS";
 
-pub fn py_selector(test_path: &Path, test_id: &str) -> String {
-    format!("{}::{}", test_path.display(), test_id)
-}
-
 pub fn merge_exit_codes(a: i32, b: i32) -> i32 {
     a.max(b)
 }
@@ -123,9 +119,8 @@ pub(crate) fn shlex_quote(s: &str) -> String {
     out
 }
 
-pub fn build_pytest_argv(selectors: &[String], extra: &[String]) -> Vec<String> {
-    let mut v = vec!["python".into(), "-m".into(), "pytest".into()];
-    v.extend(selectors.iter().cloned());
+pub fn build_pytest_fork_argv(nodeid: &str, extra: &[String]) -> Vec<String> {
+    let mut v = vec!["python".into(), "-m".into(), "pytest".into(), nodeid.into()];
     v.extend(extra.iter().cloned());
     v
 }
@@ -170,56 +165,27 @@ pub fn discover_for_paths(
     })
 }
 
-fn split_source_paths_by_lang(source_paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let mut py = Vec::new();
-    let mut rs = Vec::new();
-    for path in source_paths {
-        if path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("py"))
-        {
-            py.push(path.clone());
-        } else if kiss::Language::is_rust_path(path) {
-            rs.push(path.clone());
-        }
-    }
-    (py, rs)
-}
-
-pub fn combined_selectors(
+pub fn rust_selectors(
     repo_root: &Path,
     source_paths: &[PathBuf],
     test_paths: &[PathBuf],
-    lang_filter: Option<kiss::Language>,
     ignore: &[String],
-) -> Result<(Vec<String>, Vec<String>), String> {
-    let (py_sources, rs_sources) = split_source_paths_by_lang(source_paths);
-    let defs = if rs_sources.is_empty() {
+) -> Result<Vec<String>, String> {
+    let defs = if source_paths.is_empty() {
         Vec::new()
     } else {
-        discover_for_paths(repo_root, &rs_sources, Some(kiss::Language::Rust), ignore)?
+        discover_for_paths(repo_root, source_paths, Some(kiss::Language::Rust), ignore)?
     };
-    let mut py_sel = BTreeSet::new();
     let mut rs_sel = BTreeSet::new();
-    if lang_filter != Some(kiss::Language::Rust) && !py_sources.is_empty() {
-        for selector in kiss::rslip_bridge::runtime_covering_selectors(repo_root, &py_sources, &[])?
-        {
-            py_sel.insert(selector);
-        }
-    }
     for (tp, tid) in collect_selectors_from_defs(&defs) {
-        if tp.extension().is_some_and(|e| e.eq_ignore_ascii_case("py")) {
-            py_sel.insert(py_selector(&tp, &tid));
-        } else if kiss::Language::is_rust_path(&tp) {
+        if kiss::Language::is_rust_path(&tp) {
             rs_sel.insert(tid);
         }
     }
     for (tp, tid) in enumerate_tests_in_changed_files(test_paths)? {
-        if tp.extension().is_some_and(|e| e.eq_ignore_ascii_case("py")) {
-            py_sel.insert(py_selector(&tp, &tid));
-        } else if kiss::Language::is_rust_path(&tp) {
+        if kiss::Language::is_rust_path(&tp) {
             rs_sel.insert(tid);
         }
     }
-    Ok((py_sel.into_iter().collect(), rs_sel.into_iter().collect()))
+    Ok(rs_sel.into_iter().collect())
 }

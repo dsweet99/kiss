@@ -4,7 +4,7 @@ use crate::analyze::FocusFilter;
 use kiss::check_universe_cache::FullCheckCache;
 use kiss::cli_output::{print_duplicates, print_final_status, print_violations};
 
-use super::{cached_coverage_viols, cached_duplicates, weighted_file_pct_map};
+use super::{cached_coverage_viols, cached_duplicates};
 use crate::analyze::evaluate_cached_gate;
 
 pub(super) fn emit_cached_bypass(
@@ -32,13 +32,12 @@ pub(super) fn emit_cached_gated(
     opts: &crate::analyze::AnalyzeOptions<'_>,
     focus: &FocusFilter,
 ) -> bool {
-    let weighted = weighted_file_pct_map(&cache.weighted_file_pcts);
     if evaluate_cached_gate(
         &cache.definitions,
         &cache.unreferenced,
         focus,
         opts.gate_config.test_coverage_threshold,
-        Some(&weighted),
+        None,
     )
     .is_some()
     {

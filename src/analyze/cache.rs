@@ -36,6 +36,13 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
     let Some(cache_data) = inp.coverage_cache_lists else {
         return;
     };
+    if cache_data
+        .definitions
+        .iter()
+        .any(|item| item.name == "rslip_refresh_failed")
+    {
+        return;
+    }
     let fp = crate::analyze_cache::fingerprint_for_check(
         inp.py_files,
         inp.rs_files,
@@ -45,8 +52,11 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
     );
     let focus_paths = inp.focus.cache_focus_paths();
     let focus_restrict = inp.focus.is_active();
+    let repo_root = std::path::Path::new(inp.opts.universe);
+    let rslip_fingerprint = kiss::rslip_bridge::rslip_database_fingerprint(repo_root);
     crate::analyze_cache::store_full_cache_from_run(crate::analyze_cache::FullCacheInputs {
         fingerprint: fp,
+        rslip_fingerprint,
         py_file_count: inp.result.py_parsed.len(),
         rs_file_count: inp.result.rs_parsed.len(),
         code_unit_count: inp.result.code_unit_count,

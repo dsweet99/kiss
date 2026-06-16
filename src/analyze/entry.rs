@@ -97,6 +97,7 @@ mod entry_touch {
             ignore_prefixes: &[],
             show_timing: false,
             suppress_final_status: false,
+            jobs: None,
         };
         let filter = focus_filter_for_opts(&opts);
         assert!(!filter.is_active());
@@ -121,6 +122,7 @@ mod entry_touch {
             ignore_prefixes: &[],
             show_timing: true,
             suppress_final_status: false,
+            jobs: None,
         };
         let focus_filter = FocusFilter::unrestricted();
         assert!(try_cache_hit(&opts, &[], &[], &focus_filter).is_none());
@@ -145,6 +147,7 @@ mod entry_touch {
             ignore_prefixes: &[],
             show_timing: false,
             suppress_final_status: true,
+            jobs: None,
         };
         let focus_filter = FocusFilter::unrestricted();
         assert!(try_cache_hit(&opts, &[], &[], &focus_filter).is_none());
@@ -169,6 +172,7 @@ mod entry_touch {
             ignore_prefixes: &[],
             show_timing: false,
             suppress_final_status: true,
+            jobs: None,
         };
         let result = run_analyze_with_result(&opts);
         assert!(result.success);

@@ -57,3 +57,55 @@ pub struct TestCoverageRun {
 }
 
 pub struct PytestTraceCollector;
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn witness_rslip_types() {
+        use crate::{content_digest, RSLIP_VERSION, SCHEMA_VERSION};
+        let record = FileRecord {
+            path: "a.py".to_string(),
+            role: FileRole::Source,
+            content_digest: content_digest(b"a"),
+            len: 1,
+            mtime_ns: 0,
+            coverage: Some(CoverageMetadata::default()),
+        };
+        assert_eq!(record.role, FileRole::Source);
+
+        let test = TestRecord {
+            selector: "t.py::test_x".to_string(),
+            test_path: "t.py".to_string(),
+            content_digest: content_digest(b"t"),
+            covered_files: vec!["a.py".to_string()],
+            covered_lines: BTreeMap::new(),
+        };
+        assert_eq!(test.selector, "t.py::test_x");
+
+        let db = Database {
+            schema_version: SCHEMA_VERSION,
+            rslip_version: RSLIP_VERSION.to_string(),
+            config_fingerprints: BTreeMap::new(),
+            files: BTreeMap::from([(record.path.clone(), record)]),
+            tests: BTreeMap::from([(test.selector.clone(), test)]),
+            source_to_covering_tests: BTreeMap::new(),
+        };
+        let json = serde_json::to_string(&db).unwrap();
+        let round_trip: Database = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_trip.schema_version, SCHEMA_VERSION);
+
+        let run = TestCoverageRun {
+            selector: "t.py::test_x".to_string(),
+            test_path: PathBuf::from("t.py"),
+            hits: BTreeMap::new(),
+        };
+        assert_eq!(run.selector, "t.py::test_x");
+
+        let collector = PytestTraceCollector;
+        let _ = std::any::type_name_of_val(&collector);
+    }
+}

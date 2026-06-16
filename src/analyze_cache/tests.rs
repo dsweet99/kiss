@@ -1,64 +1,11 @@
 use super::path_helpers::load_full_cache;
+use super::test_helpers::{empty_cache, empty_inputs, ScopedHome};
 use super::*;
+use crate::analyze::evaluate_cached_gate;
 use crate::analyze::FocusFilter;
 use kiss::check_cache::CachedViolation;
 use kiss::check_universe_cache::{CachedCoverageItem, CachedFileCoverage};
-use std::fs;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
-
-fn empty_cache(fp: &str) -> FullCheckCache {
-    FullCheckCache {
-        fingerprint: fp.to_string(),
-        py_stats: None,
-        rs_stats: None,
-        py_paths: Vec::new(),
-        focus_paths: Vec::new(),
-        focus_restrict: false,
-        rs_paths: Vec::new(),
-        py_file_count: 0,
-        rs_file_count: 0,
-        code_unit_count: 0,
-        statement_count: 0,
-        graph_nodes: 0,
-        graph_edges: 0,
-        base_violations: Vec::new(),
-        graph_violations: Vec::new(),
-        coverage_violations: Vec::new(),
-        py_duplicates: Vec::new(),
-        rs_duplicates: Vec::new(),
-        definitions: Vec::new(),
-        unreferenced: Vec::new(),
-        weighted_file_pcts: Vec::new(),
-        file_content_digests: Vec::new(),
-    }
-}
-
-fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
-    FullCacheInputs {
-        fingerprint: fp.to_string(),
-        py_file_count: 0,
-        rs_file_count: 0,
-        code_unit_count: 0,
-        statement_count: 0,
-        violations: &[],
-        graph_viols_all: &[],
-        coverage_violations: &[],
-        py_graph: None,
-        rs_graph: None,
-        py_stats: None,
-        rs_stats: None,
-        focus_paths: Vec::new(),
-        focus_restrict: false,
-        py_paths: Vec::new(),
-        rs_paths: Vec::new(),
-        py_dups_all: &[],
-        rs_dups_all: &[],
-        definitions: Vec::new(),
-        unreferenced: Vec::new(),
-        weighted_file_pcts: Vec::new(),
-    }
-}
 
 #[test]
 fn cached_coverage_viols_skips_test_files_on_replay() {
@@ -89,7 +36,7 @@ fn cached_coverage_viols_replays_weighted_overlay_pct() {
 }
 
 #[test]
-fn cached_gated_replay_uses_weighted_file_coverage() {
+fn cached_gated_replay_matches_live_gate_without_weighted_overlay() {
     let file = PathBuf::from("src/module.rs");
     let mut cache = empty_cache("weighted_gate_replay");
     cache.definitions = vec![
@@ -131,11 +78,24 @@ fn cached_gated_replay_uses_weighted_file_coverage() {
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
+        jobs: None,
     };
 
+    let weighted = weighted_file_pct_map(&cache.weighted_file_pcts);
     assert!(
-        super::emit::emit_cached_gated(cache, &opts, &focus),
-        "cached gated replay should honor stored weighted coverage"
+        evaluate_cached_gate(
+            &cache.definitions,
+            &cache.unreferenced,
+            &focus,
+            90,
+            Some(&weighted),
+        )
+        .is_none(),
+        "weighted overlay can still raise pct when passed explicitly"
+    );
+    assert!(
+        !super::emit::emit_cached_gated(cache, &opts, &focus),
+        "cached gated replay must match live evaluate_gate (no weighted overlay)"
     );
 }
 
@@ -174,8 +134,51 @@ fn fnv1a64_properties() {
 }
 
 #[test]
+fn try_run_cached_all_misses_when_cached_coverage_gate_would_fail() {
+    let _home = ScopedHome::new();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let universe = tmp.path().to_string_lossy().to_string();
+    let rs = tmp.path().join("lib.rs");
+    std::fs::write(&rs, "pub fn uncovered() -> i32 { 1 }\n").unwrap();
+    let py_files: Vec<PathBuf> = vec![];
+    let rs_files = vec![rs.clone()];
+    let py_config = Config::python_defaults();
+    let rs_config = Config::rust_defaults();
+    let gate = GateConfig::default();
+    let fp = fingerprint_for_check(&py_files, &rs_files, &py_config, &rs_config, &gate);
+    let mut inputs = empty_inputs(&fp);
+    inputs.rs_file_count = 1;
+    inputs.rs_paths = vec![rs.to_string_lossy().to_string()];
+    inputs.definitions = vec![CachedCoverageItem {
+        file: rs.to_string_lossy().to_string(),
+        name: "uncovered".into(),
+        line: 1,
+    }];
+    inputs.unreferenced = inputs.definitions.clone();
+    store_full_cache_from_run(inputs);
+    let focus = FocusFilter::unrestricted();
+    let opts = crate::analyze::AnalyzeOptions {
+        universe: &universe,
+        focus_paths: std::slice::from_ref(&universe),
+        py_config: &py_config,
+        rs_config: &rs_config,
+        lang_filter: Some(kiss::Language::Rust),
+        bypass_gate: false,
+        gate_config: &gate,
+        ignore_prefixes: &[],
+        show_timing: false,
+        suppress_final_status: false,
+        jobs: None,
+    };
+    assert!(
+        try_run_cached_all(&opts, &py_files, &rs_files, &focus).is_none(),
+        "cached coverage-gate failure must not replay; force uncached revalidation"
+    );
+}
+
+#[test]
 fn full_cache_inputs_and_store() {
-    let _home = super::test_helpers::ScopedHome::new();
+    let _home = ScopedHome::new();
     let mut inputs = empty_inputs("test_fp_persist");
     inputs.py_file_count = 1;
     assert_eq!(inputs.py_file_count, 1);
@@ -186,117 +189,4 @@ fn full_cache_inputs_and_store() {
         Some("test_fp_persist")
     );
     assert_eq!(loaded.map(|c| c.py_file_count), Some(1));
-}
-
-#[test]
-fn fingerprint_includes_python_annotations_per_function() {
-    let gate = GateConfig::default();
-    let rs = Config::rust_defaults();
-    let base = Config::python_defaults();
-    let mut other = base.clone();
-    other.annotations_per_function = base.annotations_per_function.saturating_add(1);
-    assert_ne!(
-        fingerprint_for_check(&[], &[], &base, &rs, &gate),
-        fingerprint_for_check(&[], &[], &other, &rs, &gate),
-    );
-}
-
-#[test]
-fn fingerprint_includes_python_returns_per_function() {
-    let gate = GateConfig::default();
-    let rs = Config::rust_defaults();
-    let base = Config::python_defaults();
-    let mut other = base.clone();
-    other.returns_per_function = base.returns_per_function.saturating_add(1);
-    assert_ne!(
-        fingerprint_for_check(&[], &[], &base, &rs, &gate),
-        fingerprint_for_check(&[], &[], &other, &rs, &gate),
-    );
-}
-
-#[test]
-fn fingerprint_includes_gate_test_coverage_threshold() {
-    let py = Config::python_defaults();
-    let rs = Config::rust_defaults();
-    let g0 = GateConfig::default();
-    let mut g1 = g0.clone();
-    g1.test_coverage_threshold = g0.test_coverage_threshold.saturating_add(1);
-    assert_ne!(
-        fingerprint_for_check(&[], &[], &py, &rs, &g0),
-        fingerprint_for_check(&[], &[], &py, &rs, &g1),
-    );
-}
-
-#[test]
-fn fingerprint_ignores_metadata_only_file_changes() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let path = tmp.path().join("stable.py");
-    fs::write(&path, "def stable():\n    return 1\n").unwrap();
-    let py_files = vec![path.clone()];
-    let before = fingerprint_for_check(
-        &py_files,
-        &[],
-        &Config::python_defaults(),
-        &Config::rust_defaults(),
-        &GateConfig::default(),
-    );
-
-    let new_mtime = SystemTime::now() + Duration::from_secs(60);
-    fs::OpenOptions::new()
-        .write(true)
-        .open(&path)
-        .unwrap()
-        .set_modified(new_mtime)
-        .unwrap();
-    let after = fingerprint_for_check(
-        &py_files,
-        &[],
-        &Config::python_defaults(),
-        &Config::rust_defaults(),
-        &GateConfig::default(),
-    );
-
-    assert_eq!(
-        before, after,
-        "metadata-only changes should not force a new full-check cache key"
-    );
-}
-
-#[test]
-fn fingerprint_covers_all_config_fields() {
-    // All Config fields are `usize`, so struct size / field size == field count.
-    // If a non-usize field is ever added, this will catch it as a count mismatch.
-    let field_count = std::mem::size_of::<Config>() / std::mem::size_of::<usize>();
-    assert_eq!(
-        field_count, 23,
-        "Config field count changed; update mix_config_into_fingerprint and this test"
-    );
-    // Exhaustive destructure: adding a field to Config without listing it here
-    // is a compile error, forcing the developer to update this test AND
-    // mix_config_into_fingerprint.
-    let Config {
-        statements_per_function: _,
-        methods_per_class: _,
-        statements_per_file: _,
-        lines_per_file: _,
-        functions_per_file: _,
-        arguments_positional: _,
-        arguments_keyword_only: _,
-        max_indentation_depth: _,
-        interface_types_per_file: _,
-        concrete_types_per_file: _,
-        nested_function_depth: _,
-        returns_per_function: _,
-        return_values_per_function: _,
-        branches_per_function: _,
-        local_variables_per_function: _,
-        imported_names_per_file: _,
-        statements_per_try_block: _,
-        boolean_parameters: _,
-        annotations_per_function: _,
-        calls_per_function: _,
-        cycle_size: _,
-        indirect_dependencies: _,
-        dependency_depth: _,
-    } = Config::python_defaults();
 }
