@@ -24,7 +24,7 @@ impl std::fmt::Display for ConfigError {
 
 pub(crate) fn write_config_error(
     err: &ConfigError,
-    f: &mut std::fmt::Formatter<'_>,
+    f: &mut impl std::fmt::Write,
 ) -> std::fmt::Result {
     match err {
         ConfigError::UnknownKey { key, section } => {
@@ -65,7 +65,6 @@ mod coverage_witness {
 
     #[test]
     fn witness_config_error_display() {
-        use std::fmt::Display;
         for err in [
             ConfigError::witness(),
             ConfigError::UnknownKey {
@@ -89,20 +88,12 @@ mod coverage_witness {
                 message: "m".into(),
             },
         ] {
-            let mut buf = String::new();
-            write_config_error(
-                &err,
-                &mut std::fmt::Formatter::new(&mut buf, std::fmt::FormattingOptions::new()),
-            )
-            .unwrap();
-            let mut fmt_buf = String::new();
-            Display::fmt(
-                &err,
-                &mut std::fmt::Formatter::new(&mut fmt_buf, std::fmt::FormattingOptions::new()),
-            )
-            .unwrap();
-            assert!(!buf.is_empty());
-            assert!(!fmt_buf.is_empty());
+            let mut direct = String::new();
+            write_config_error(&err, &mut direct).unwrap();
+            let display = format!("{err}");
+            assert!(!direct.is_empty());
+            assert_eq!(direct, display);
+            assert_eq!(direct, err.to_string());
         }
     }
 }

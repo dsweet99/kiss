@@ -1,4 +1,4 @@
-use super::trivial_expr::is_delegation_only_block;
+use super::trivial_expr::{is_delegation_only_block, is_trivial_trait_delegation_block};
 use super::{has_cfg_test_attribute, has_test_attribute};
 use crate::units::CodeUnitKind;
 use std::collections::HashSet;
@@ -106,6 +106,9 @@ pub(super) fn collect_impl_methods(
     for impl_item in &impl_block.items {
         if let ImplItem::Fn(m) = impl_item {
             if has_test_attribute(&m.attrs) {
+                continue;
+            }
+            if is_trait_impl && is_trivial_trait_delegation_block(&m.block) {
                 continue;
             }
             let (kind, impl_for) = if is_trait_impl {
@@ -234,6 +237,22 @@ mod definitions_coverage {
             assert!(is_well_known_constructor(name));
         }
         assert!(!is_well_known_constructor("MyType"));
+    }
+
+    #[test]
+    fn is_trivial_trait_delegation_block_variants() {
+        use super::super::trivial_expr::{
+            is_local_delegation_call, is_trivial_trait_delegation_block,
+        };
+        assert!(is_trivial_trait_delegation_block(
+            &syn::parse_str("{ write_helper(self, f) }").unwrap()
+        ));
+        assert!(!is_trivial_trait_delegation_block(
+            &syn::parse_str("{ helper(compute()); }").unwrap()
+        ));
+        assert!(is_local_delegation_call(
+            &syn::parse_str("write_helper(self, f)").unwrap()
+        ));
     }
 
     #[test]

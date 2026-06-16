@@ -26,7 +26,7 @@ impl std::fmt::Display for RustParseError {
 
 pub(crate) fn write_rust_parse_error(
     err: &RustParseError,
-    f: &mut std::fmt::Formatter<'_>,
+    f: &mut impl std::fmt::Write,
 ) -> std::fmt::Result {
     match err {
         RustParseError::IoError(e) => write!(f, "IO error: {e}"),
@@ -132,7 +132,6 @@ impl Counter {{
 
     #[test]
     fn test_rust_parse_error_display_fmt() {
-        use std::fmt::Display;
         for err in [
             RustParseError::IoError(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -143,20 +142,12 @@ impl Counter {{
                 "bad syntax",
             )),
         ] {
-            let mut s = String::new();
-            write_rust_parse_error(
-                &err,
-                &mut std::fmt::Formatter::new(&mut s, std::fmt::FormattingOptions::new()),
-            )
-            .unwrap();
-            let mut fmt_buf = String::new();
-            Display::fmt(
-                &err,
-                &mut std::fmt::Formatter::new(&mut fmt_buf, std::fmt::FormattingOptions::new()),
-            )
-            .unwrap();
-            assert!(!s.is_empty());
-            assert!(!fmt_buf.is_empty());
+            let mut direct = String::new();
+            write_rust_parse_error(&err, &mut direct).unwrap();
+            let display = format!("{err}");
+            assert!(!direct.is_empty());
+            assert_eq!(direct, display);
+            assert_eq!(direct, err.to_string());
         }
     }
 

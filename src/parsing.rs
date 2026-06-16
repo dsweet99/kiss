@@ -23,7 +23,7 @@ impl std::fmt::Display for ParseError {
 
 pub(crate) fn write_parse_error(
     err: &ParseError,
-    f: &mut std::fmt::Formatter<'_>,
+    f: &mut impl std::fmt::Write,
 ) -> std::fmt::Result {
     match err {
         ParseError::IoError(e) => write!(f, "IO error: {e}"),
@@ -170,7 +170,6 @@ mod tests {
 
     #[test]
     fn test_parse_error_display_fmt() {
-        use std::fmt::Display;
         for err in [
             ParseError::ParseFailed,
             ParseError::ParserInitError,
@@ -179,20 +178,12 @@ mod tests {
                 "file not found",
             )),
         ] {
-            let mut s = String::new();
-            write_parse_error(
-                &err,
-                &mut std::fmt::Formatter::new(&mut s, std::fmt::FormattingOptions::new()),
-            )
-            .unwrap();
-            let mut fmt_buf = String::new();
-            Display::fmt(
-                &err,
-                &mut std::fmt::Formatter::new(&mut fmt_buf, std::fmt::FormattingOptions::new()),
-            )
-            .unwrap();
-            assert!(!s.is_empty());
-            assert!(!fmt_buf.is_empty());
+            let mut direct = String::new();
+            write_parse_error(&err, &mut direct).unwrap();
+            let display = format!("{err}");
+            assert!(!direct.is_empty());
+            assert_eq!(direct, display);
+            assert_eq!(direct, err.to_string());
         }
     }
 

@@ -229,6 +229,59 @@ fn test_trivial_main_skipped_in_definitions() {
 }
 
 #[test]
+fn test_trivial_trait_delegation_skipped_in_definitions() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("error.rs");
+    std::fs::write(
+        &path,
+        r#"
+pub enum MyError {}
+
+pub(crate) fn write_my_error(err: &MyError, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+    let _ = err;
+    write!(f, "oops")
+}
+
+impl std::fmt::Display for MyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write_my_error(self, f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats() {
+        let err = MyError {};
+        let mut buf = String::new();
+        write_my_error(&err, &mut buf).unwrap();
+        assert_eq!(format!("{err}"), buf);
+    }
+}
+"#,
+    )
+    .unwrap();
+    let parsed = parse_rust_file(&path).unwrap();
+    let analysis = analyze_rust_test_refs(&[&parsed], None);
+    assert!(
+        !analysis
+            .definitions
+            .iter()
+            .any(|d| d.name == "fmt"),
+        "pure trait delegators should not be coverage units"
+    );
+    assert!(
+        analysis
+            .definitions
+            .iter()
+            .any(|d| d.name == "write_my_error"),
+        "delegated helper remains a coverage unit"
+    );
+}
+
+#[test]
 fn test_binary_entry_point_definitions_skipped() {
     let tmp = tempfile::TempDir::new().unwrap();
     let bin_path = tmp.path().join("src/bin/worker.rs");

@@ -86,3 +86,29 @@ pub(crate) fn is_trivial_stmt(stmt: &Stmt) -> bool {
         Stmt::Item(_) | Stmt::Macro(_) => false,
     }
 }
+
+pub(super) fn is_local_delegation_call(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call(c) => {
+            if let Expr::Path(p) = c.func.as_ref() {
+                p.path.segments.len() == 1
+                    && !is_well_known_constructor(&p.path.segments[0].ident.to_string())
+                    && c.args.iter().all(is_trivial_expr)
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+pub(super) fn is_trivial_trait_delegation_block(block: &syn::Block) -> bool {
+    block.stmts.iter().all(|stmt| match stmt {
+        Stmt::Expr(e, _) => is_trivial_expr(e) || is_local_delegation_call(e),
+        Stmt::Local(l) => l
+            .init
+            .as_ref()
+            .is_none_or(|i| is_trivial_expr(&i.expr) || is_local_delegation_call(&i.expr)),
+        Stmt::Item(_) | Stmt::Macro(_) => false,
+    })
+}
