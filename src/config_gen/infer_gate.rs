@@ -171,3 +171,69 @@ pub(crate) fn has_reportable_duplicates(
     let pairs = detect_duplicates_from_chunks(&chunks, &config);
     !cluster_duplicates(&pairs, &chunks).is_empty()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repo_root_for_runtime_coverage_uses_parent_for_file_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let file = tmp.path().join("one.py");
+        std::fs::write(&file, "def f():\n    return 1\n").unwrap();
+
+        assert_eq!(
+            repo_root_for_runtime_coverage(&[file.to_string_lossy().to_string()]),
+            tmp.path().canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn infer_gate_config_parses_rust_file_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let file = tmp.path().join("lib.rs");
+        std::fs::write(&file, "pub fn f() -> i32 { 1 }\n").unwrap();
+
+        let gate = infer_gate_config_for_paths(
+            &[file.to_string_lossy().to_string()],
+            Some(Language::Rust),
+            &[],
+        );
+
+        assert!(gate.test_coverage_threshold <= 100);
+    }
+
+    #[test]
+    fn collect_defs_and_unrefs_handles_rust_file_without_cargo_project() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let file = tmp.path().join("lib.rs");
+        std::fs::write(&file, "pub fn f() -> i32 { 1 }\n").unwrap();
+        let parsed = parse_rust_files(std::slice::from_ref(&file))
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect::<Vec<_>>();
+
+        let (defs, unrefs) = collect_defs_and_unrefs(tmp.path(), &[], &parsed);
+
+        assert!(unrefs.len() <= defs.len());
+    }
+
+    #[test]
+    fn has_reportable_duplicates_ignores_tiny_identical_python_chunks() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let file = tmp.path().join("dup.py");
+        std::fs::write(
+            &file,
+            "def a(x):\n    y = x + 1\n    z = y * 2\n    return z\n\n\
+             def b(x):\n    y = x + 1\n    z = y * 2\n    return z\n",
+        )
+        .unwrap();
+        let parsed = parse_files(&[file])
+            .unwrap()
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect::<Vec<_>>();
+
+        assert!(!has_reportable_duplicates(&parsed, &[], 0.8));
+    }
+}

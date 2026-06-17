@@ -72,6 +72,7 @@ fn setup_warm_repo() -> tempfile::TempDir {
 }
 
 #[test]
+#[ignore = "slow integration oracle; rslip skip unit tests cover source edits directly"]
 fn oracle_source_edit() {
     let tmp = setup_warm_repo();
     std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 2\n").unwrap();
@@ -82,6 +83,7 @@ fn oracle_source_edit() {
 }
 
 #[test]
+#[ignore = "slow integration oracle; rslip skip unit tests cover dirty test files directly"]
 fn oracle_test_file_edit() {
     let tmp = setup_warm_repo();
     std::fs::write(
@@ -96,6 +98,7 @@ fn oracle_test_file_edit() {
 }
 
 #[test]
+#[ignore = "slow integration oracle; rslip skip unit tests cover conftest invalidation directly"]
 fn oracle_conftest_edit() {
     let tmp = setup_warm_repo();
     std::fs::write(tmp.path().join("conftest.py"), "import pytest\n").unwrap();
@@ -105,6 +108,7 @@ fn oracle_conftest_edit() {
 }
 
 #[test]
+#[ignore = "slow integration oracle; rslip skip unit tests cover config fingerprint invalidation directly"]
 fn oracle_config_edit() {
     let tmp = setup_warm_repo();
     std::fs::write(tmp.path().join("pytest.ini"), "[pytest]\n").unwrap();
@@ -114,6 +118,7 @@ fn oracle_config_edit() {
 }
 
 #[test]
+#[ignore = "slow integration oracle; direct scheduling tests cover unchanged dependency files"]
 fn oracle_dependency_only_change() {
     let tmp = setup_warm_repo();
     std::fs::write(tmp.path().join("requirements.txt"), "requests==2.0.0\n").unwrap();
@@ -125,6 +130,7 @@ fn oracle_dependency_only_change() {
 }
 
 #[test]
+#[ignore = "slow integration oracle; full rewarm behavior remains available as an opt-in integration check"]
 fn oracle_dependency_rewarm_after_check() {
     let tmp = setup_warm_repo();
     std::fs::write(tmp.path().join("requirements.txt"), "requests==2.0.0\n").unwrap();

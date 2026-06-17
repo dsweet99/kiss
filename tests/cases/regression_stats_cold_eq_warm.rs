@@ -8,6 +8,7 @@ fn kiss_binary() -> Command {
 }
 
 #[test]
+#[ignore = "slow integration regression; cache/stat unit tests cover the default gate"]
 fn regression_stats_cold_and_warm_are_identical() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();

@@ -171,6 +171,27 @@ fn fail_closed_analysis_marks_all_parsed_files_uncovered() {
 }
 
 #[test]
+fn fail_closed_analysis_preserves_all_input_files_and_empty_sets() {
+    let parsed = vec![
+        parsed_rs(PathBuf::from("src/lib.rs")),
+        parsed_rs(PathBuf::from("src/main.rs")),
+    ];
+
+    let analysis = fail_closed_analysis(&parsed);
+
+    let files: Vec<_> = analysis.definitions.iter().map(|def| def.file.clone()).collect();
+    assert_eq!(
+        files,
+        vec![PathBuf::from("src/lib.rs"), PathBuf::from("src/main.rs")]
+    );
+    assert_eq!(analysis.unreferenced.len(), analysis.definitions.len());
+    assert!(analysis.test_references.is_empty());
+    assert!(analysis.call_references.is_empty());
+    assert!(analysis.propagated_references.is_empty());
+    assert!(analysis.coverage_map.is_empty());
+}
+
+#[test]
 fn runtime_rust_analysis_skips_nested_cargo_llvm_cov_run() {
     let _guard = ENV_LOCK.lock().unwrap();
     unsafe { std::env::set_var("CARGO_LLVM_COV", "1") };

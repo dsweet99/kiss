@@ -3,10 +3,12 @@ use crate::units::CodeUnitKind;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-fn parse_one(path: &std::path::Path, source: &str) -> crate::parsing::ParsedFile {
-    std::fs::write(path, source).unwrap();
-    let mut parser = crate::parsing::create_parser().unwrap();
-    crate::parsing::parse_file(&mut parser, path).unwrap()
+macro_rules! parse_one {
+    ($path:expr, $source:expr $(,)?) => {{
+        std::fs::write($path, $source).unwrap();
+        let mut parser = crate::parsing::create_parser().unwrap();
+        crate::parsing::parse_file(&mut parser, $path).unwrap()
+    }};
 }
 
 #[test]
@@ -14,11 +16,11 @@ fn module_import_surface_credit_uses_test_branch_evidence() {
     let tmp = tempfile::TempDir::new().unwrap();
     let module = tmp.path().join("svc.py");
     let test_path = tmp.path().join("test_svc.py");
-    let parsed_module = parse_one(
+    let parsed_module = parse_one!(
         &module,
         "def target(n: int) -> int:\n    if n:\n        return 1\n    return 0\n",
     );
-    let parsed_test = parse_one(
+    let parsed_test = parse_one!(
         &test_path,
         "def test_target(flag):\n    if flag:\n        target(1)\n    else:\n        target(0)\n",
     );
@@ -67,11 +69,11 @@ fn class_import_surface_credit_uses_class_covering_tests() {
     let tmp = tempfile::TempDir::new().unwrap();
     let module = tmp.path().join("svc.py");
     let test_path = tmp.path().join("test_svc.py");
-    let parsed_module = parse_one(
+    let parsed_module = parse_one!(
         &module,
         "class Widget:\n    def used(self):\n        return 1\n    def missing(self, n):\n        if n:\n            return 1\n        return 0\n",
     );
-    let parsed_test = parse_one(
+    let parsed_test = parse_one!(
         &test_path,
         "class TestWidget:\n    def test_used(self, flag):\n        if flag:\n            Widget().used()\n        else:\n            Widget().used()\n",
     );
@@ -130,11 +132,11 @@ fn definition_branch_credit_reaches_full_credit_when_test_has_enough_branches() 
     let tmp = tempfile::TempDir::new().unwrap();
     let module = tmp.path().join("svc.py");
     let test_path = tmp.path().join("test_svc.py");
-    let parsed_module = parse_one(
+    let parsed_module = parse_one!(
         &module,
         "def target(n):\n    if n:\n        return 1\n    return 0\n",
     );
-    let parsed_test = parse_one(
+    let parsed_test = parse_one!(
         &test_path,
         "def test_target(flag):\n    if flag:\n        target(1)\n    else:\n        target(0)\n",
     );
@@ -197,7 +199,7 @@ fn class_covering_tests_returns_none_for_unreferenced_class() {
 fn definition_branch_credit_handles_missing_and_unwitnessed_defs() {
     let tmp = tempfile::TempDir::new().unwrap();
     let module = tmp.path().join("svc.py");
-    let parsed_module = parse_one(&module, "def target():\n    return 1\n");
+    let parsed_module = parse_one!(&module, "def target():\n    return 1\n");
     let missing_def = CodeDefinition {
         name: "ghost".to_string(),
         kind: CodeUnitKind::Function,
@@ -241,7 +243,7 @@ fn definition_branch_credit_handles_missing_and_unwitnessed_defs() {
 fn weighted_file_pcts_scores_class_definitions_directly() {
     let tmp = tempfile::TempDir::new().unwrap();
     let module = tmp.path().join("svc.py");
-    let parsed_module = parse_one(
+    let parsed_module = parse_one!(
         &module,
         "class Used:\n    pass\n\nclass Missing:\n    pass\n",
     );

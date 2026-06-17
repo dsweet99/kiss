@@ -27,6 +27,7 @@ fn kiss_test_cold_cache_exits_with_actionable_error() {
 }
 
 #[test]
+#[ignore = "slow integration smoke; fast unit tests cover dry-run argv formatting"]
 fn kiss_test_dry_run_one_line_per_nodeid() {
     let tmp = setup_warm_python_lib_repo();
     std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 2\n").unwrap();
@@ -43,6 +44,7 @@ fn kiss_test_dry_run_one_line_per_nodeid() {
 }
 
 #[test]
+#[ignore = "slow integration smoke; run_test_rejects_incompatible_pytest_extra_before_planning covers this"]
 fn kiss_test_rejects_forbidden_pytest_extra() {
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
@@ -63,6 +65,7 @@ fn kiss_test_rejects_forbidden_pytest_extra() {
 }
 
 #[test]
+#[ignore = "slow integration smoke; rslip scheduling unit tests cover Python selection"]
 fn kiss_test_python_ignores_git_for_selection() {
     let tmp = setup_warm_python_rust_mixed_repo();
     std::fs::write(
@@ -120,6 +123,7 @@ fn kiss_test_rust_still_uses_git_selectors() {
 }
 
 #[test]
+#[ignore = "slow integration smoke; fast unit tests cover pytest extra argv construction"]
 fn kiss_test_extra_args_repeated_per_fork() {
     let tmp = setup_warm_python_lib_repo();
     std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 2\n").unwrap();

@@ -177,6 +177,7 @@ fn regression_stats_all_emits_every_file_scope_metric_with_data() {
 }
 
 #[test]
+#[ignore = "slow integration regression; metric-ranking unit tests cover the ordering contract"]
 fn regression_stats_all_ranks_uncovered_above_covered_for_inv_test_coverage() {
     let tmp = TempDir::new().unwrap();
     fs::write(

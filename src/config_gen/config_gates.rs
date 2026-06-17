@@ -39,6 +39,25 @@ fn test_collection() {
 }
 
 #[test]
+fn collect_stats_counts_nonempty_python_and_rust_inputs() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("mod.py"), "def f(x):\n    return x\n").unwrap();
+    std::fs::write(tmp.path().join("lib.rs"), "pub fn f(x: i32) -> i32 { x }\n").unwrap();
+    let paths = vec![tmp.path().to_string_lossy().to_string()];
+
+    assert_eq!(collect_py_stats(tmp.path()).1, 1);
+    assert_eq!(collect_rs_stats(tmp.path()).1, 1);
+    assert_eq!(collect_all_stats(&paths, Some(Language::Python)).0.1, 1);
+    assert_eq!(collect_all_stats(&paths, Some(Language::Rust)).1.1, 1);
+    assert_eq!(
+        collect_all_stats_with_ignore(&paths, None, &["mod.py".into()])
+            .0
+            .1,
+        0
+    );
+}
+
+#[test]
 fn test_config_keys() {
     assert_eq!(
         python_config_key("statements_per_function"),
@@ -177,6 +196,32 @@ fn test_infer_gate_config_no_orphans_module_enabled() {
         "no orphan modules should set orphan_module_enabled=true"
     );
 }
+
+#[test]
+fn infer_gate_helpers_handle_empty_and_rust_inputs() {
+    let tmp = TempDir::new().unwrap();
+    let rs = tmp.path().join("lib.rs");
+    std::fs::write(&rs, "pub fn f() {}\n").unwrap();
+    let parsed = crate::rust_parsing::parse_rust_files(std::slice::from_ref(&rs))
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
+
+    let (defs, unrefs) = super::infer_gate::collect_defs_and_unrefs(tmp.path(), &[], &[]);
+    assert!(defs.is_empty());
+    assert!(unrefs.is_empty());
+    assert!(!super::infer_gate::has_orphan_modules(&[], &parsed));
+    assert!(!super::infer_gate::has_reportable_duplicates(
+        &[],
+        &parsed,
+        0.8
+    ));
+    assert_eq!(
+        super::infer_gate::compute_min_per_file_test_coverage(tmp.path(), &[], &[]),
+        100
+    );
+}
+
 #[test]
 fn test_write_mimic_config_smoke() {
     let tmp = tempfile::tempdir().unwrap();

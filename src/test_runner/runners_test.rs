@@ -37,6 +37,17 @@ fn enumerate_tests_in_changed_files_finds_py() {
 }
 
 #[test]
+fn enumerate_tests_in_changed_files_finds_rs() {
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("tests.rs");
+    fs::write(&path, "#[test]\nfn test_one() { assert_eq!(1 + 1, 2); }\n").unwrap();
+
+    let got = enumerate_tests_in_changed_files(&[path]).unwrap();
+
+    assert!(got.iter().any(|(_, id)| id == "test_one"));
+}
+
+#[test]
 fn enumerate_tests_in_changed_files_errors_on_bad_rs() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("broken.rs"), "fn broken(\n").unwrap();
@@ -66,8 +77,11 @@ fn build_pytest_and_cargo_argv_non_empty() {
     assert_eq!(py[0], "python");
     assert!(py.iter().any(|s| s == "pytest"));
     assert!(py.iter().any(|s| s == "a.py::t"));
-    let c = build_cargo_test_argv(&["smoke_sub".into()], &[]);
+    assert!(py.iter().any(|s| s == "-q"));
+
+    let c = build_cargo_test_argv(&["smoke_sub".into()], &["--ignored".into()]);
     assert_eq!(c[0..4], ["cargo", "test", "--", "smoke_sub"]);
+    assert!(c.iter().any(|s| s == "--ignored"));
 }
 
 #[test]
@@ -85,16 +99,29 @@ fn run_command_true_zero() {
 }
 
 #[test]
+fn run_command_empty_is_success_without_spawn() {
+    let tmp = TempDir::new().unwrap();
+    assert_eq!(run_command_inherit(&[], tmp.path()).unwrap(), 0);
+}
+
+#[test]
 fn partition_changed_paths_split() {
     let tmp = TempDir::new().unwrap();
     let lib = tmp.path().join("lib.py");
     let tst = tmp.path().join("test_lib.py");
-    fs::write(&lib, "def f(): pass\n").unwrap();
-    fs::write(&tst, "def test_f(): pass\n").unwrap();
-    let paths = vec![lib.clone(), tst.clone()];
+    let rs_lib = tmp.path().join("src").join("lib.rs");
+    let rs_test = tmp.path().join("tests").join("basic.rs");
+    fs::create_dir_all(rs_lib.parent().unwrap()).unwrap();
+    fs::create_dir_all(rs_test.parent().unwrap()).unwrap();
+    for path in [&lib, &tst, &rs_lib, &rs_test] {
+        fs::write(path, "").unwrap();
+    }
+    let paths = vec![lib.clone(), tst.clone(), rs_lib.clone(), rs_test.clone()];
     let (src, tst_paths) = partition_changed_paths(&paths);
     assert!(src.iter().any(|p| p == &lib));
+    assert!(src.iter().any(|p| p == &rs_lib));
     assert!(tst_paths.iter().any(|p| p == &tst));
+    assert!(tst_paths.iter().any(|p| p == &rs_test));
 }
 
 #[test]
@@ -111,4 +138,16 @@ fn collect_selectors_from_defs_smoke() {
         s.iter()
             .any(|(p, id)| p.ends_with("test_a.py") && id == "test_f")
     );
+}
+
+#[test]
+fn rust_selectors_include_changed_rust_test_files() {
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("tests").join("basic.rs");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "#[test]\nfn changed_test() {}\n").unwrap();
+
+    let selectors = rust_selectors(tmp.path(), &[], &[path], &[]).unwrap();
+
+    assert_eq!(selectors, vec!["changed_test"]);
 }

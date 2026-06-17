@@ -32,10 +32,21 @@ fn path_has_component(path: &Path, name: &str) -> bool {
         .any(|c| matches!(c, Component::Normal(part) if part == name))
 }
 
+fn is_rust_test_module_path(path: &Path) -> bool {
+    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return false;
+    };
+    stem.ends_with("_test")
+        || stem.ends_with("_tests")
+        || stem.starts_with("test_")
+        || stem.starts_with("tests_")
+}
+
 fn is_rust_product_path(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == "rs")
         && !path_has_component(path, "tests")
         && !path_has_component(path, "target")
+        && !is_rust_test_module_path(path)
 }
 
 fn lines_from_segments(segments: &[Value]) -> (Vec<usize>, Vec<usize>) {
@@ -359,6 +370,9 @@ pub fn runtime_rust_analysis(repo_root: &Path, parsed: &[ParsedRustFile]) -> Rus
     }
 }
 
+#[cfg(test)]
+#[path = "rust_llvm_cov_path_test.rs"]
+mod path_tests;
 #[cfg(test)]
 #[path = "rust_llvm_cov_test.rs"]
 mod tests;

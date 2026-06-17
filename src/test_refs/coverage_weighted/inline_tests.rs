@@ -3,24 +3,28 @@ use crate::parsing::parse_files;
 use crate::units::CodeUnitKind;
 use std::collections::{HashMap, HashSet};
 
-fn parse_one(path: &std::path::Path, source: &str) -> crate::parsing::ParsedFile {
-    std::fs::write(path, source).unwrap();
-    parse_files(&[path.to_path_buf()])
-        .unwrap()
-        .into_iter()
-        .flatten()
-        .next()
-        .unwrap()
+macro_rules! parse_one {
+    ($path:expr, $source:expr $(,)?) => {{
+        std::fs::write($path, $source).unwrap();
+        parse_files(&[$path.to_path_buf()])
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .next()
+            .unwrap()
+    }};
 }
 
-fn empty_analysis(definitions: Vec<CodeDefinition>) -> TestRefAnalysis {
-    TestRefAnalysis {
-        definitions,
-        test_references: HashSet::new(),
-        call_references: HashSet::new(),
-        unreferenced: Vec::new(),
-        coverage_map: HashMap::new(),
-    }
+macro_rules! empty_analysis {
+    ($definitions:expr $(,)?) => {{
+        TestRefAnalysis {
+            definitions: $definitions,
+            test_references: HashSet::new(),
+            call_references: HashSet::new(),
+            unreferenced: Vec::new(),
+            coverage_map: HashMap::new(),
+        }
+    }};
 }
 
 #[test]
@@ -61,7 +65,7 @@ fn direct_weighted_helpers_via_fixtures() {
 fn find_def_node_at_line_handles_classes_methods_functions_and_misses() {
     let tmp = tempfile::TempDir::new().unwrap();
     let path = tmp.path().join("nodes.py");
-    let parsed = parse_one(
+    let parsed = parse_one!(
         &path,
         "class Widget:\n    def method(self):\n        return 1\n\ndef top():\n    return 2\n",
     );
@@ -86,7 +90,7 @@ fn find_def_node_at_line_handles_classes_methods_functions_and_misses() {
 fn test_function_branches_finds_class_and_top_level_tests() {
     let tmp = tempfile::TempDir::new().unwrap();
     let path = tmp.path().join("test_nodes.py");
-    let parsed = parse_one(
+    let parsed = parse_one!(
         &path,
         "class TestWidget:\n    def test_method(self):\n        if True:\n            assert True\n\ndef test_top():\n    if True:\n        assert True\n",
     );
@@ -101,9 +105,9 @@ fn test_function_branches_finds_class_and_top_level_tests() {
 fn weighted_file_pcts_skip_unmatched_or_unlocatable_definitions() {
     let tmp = tempfile::TempDir::new().unwrap();
     let path = tmp.path().join("simple.py");
-    let parsed = parse_one(&path, "value = 1\n");
+    let parsed = parse_one!(&path, "value = 1\n");
     let missing_path = tmp.path().join("missing.py");
-    let analysis = empty_analysis(vec![
+    let analysis = empty_analysis!(vec![
         CodeDefinition {
             name: "ghost".to_string(),
             kind: CodeUnitKind::Function,

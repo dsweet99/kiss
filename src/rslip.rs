@@ -126,17 +126,39 @@ mod tests {
     }
 
     #[test]
-    fn query_covering_tests_delegates_to_rslip() {
+    fn analysis_from_database_maps_covering_tests_to_static_definition() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("app.py"), "def app():\n    return 1\n").unwrap();
-        std::fs::write(
-            tmp.path().join("test_app.py"),
-            "from app import app\n\ndef test_app():\n    assert app() == 1\n",
-        )
-        .unwrap();
-        let covering = query_covering_tests(tmp.path(), &[tmp.path().join("app.py")]).unwrap();
-        assert_eq!(covering.len(), 1);
-        assert!(covering[0].0.ends_with("test_app.py"));
+        let db = ::rslip::Database {
+            schema_version: ::rslip::SCHEMA_VERSION,
+            rslip_version: ::rslip::RSLIP_VERSION.to_string(),
+            config_fingerprints: BTreeMap::new(),
+            files: BTreeMap::from([(
+                "a.py".to_string(),
+                ::rslip::FileRecord {
+                    path: "a.py".to_string(),
+                    role: ::rslip::FileRole::Source,
+                    content_digest: String::new(),
+                    len: 0,
+                    mtime_ns: 0,
+                    coverage: Some(::rslip::CoverageMetadata::default()),
+                },
+            )]),
+            tests: BTreeMap::new(),
+            source_to_covering_tests: BTreeMap::from([(
+                "a.py".to_string(),
+                vec!["test_a.py::test_a".to_string()],
+            )]),
+        };
+        let static_analysis = static_analysis_for(tmp.path(), "a");
+
+        let runtime = analysis_from_database(tmp.path(), &static_analysis, &db);
+
+        assert_eq!(
+            runtime
+                .coverage_map
+                .get(&(tmp.path().join("a.py"), "a".to_string())),
+            Some(&vec![(tmp.path().join("test_a.py"), "test_a".to_string())])
+        );
     }
 
     #[test]

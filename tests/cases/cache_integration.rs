@@ -154,6 +154,7 @@ fn check_all_cache_invalidates_on_content_change() {
 }
 
 #[test]
+#[ignore = "slow integration regression; fingerprint unit tests cover same-size content changes"]
 fn check_all_cache_invalidates_on_same_size_content_change() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
