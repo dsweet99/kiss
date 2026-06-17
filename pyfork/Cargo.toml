@@ -1,0 +1,21 @@
+[package]
+name = "pyfork"
+version = "0.1.0"
+edition = "2024"
+description = "Pytest collection and per-nodeid Linux fork pool for kiss"
+license = "MIT"
+repository = "https://github.com/dsweet99/kiss"
+readme = "../README.md"
+keywords = ["pytest", "testing", "fork"]
+categories = ["development-tools::testing"]
+
+[lib]
+name = "pyfork"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
