@@ -330,10 +330,93 @@ mod tests {
 
     #[test]
     fn test_touch_statement_counters_for_static_coverage() {
-        let p2 = parse("class C:\n    def m(self):\n        x = 1\n        return x\n");
+        let p2 = parse(
+            r#"@decorator
+def f():
+    x = 1
+    return x
+
+class C:
+    @decorator
+    def m(self):
+        x = 1
+        if x:
+            return x
+"#,
+        );
         let root2 = p2.tree.root_node();
-        assert!(count_file_statements(root2) > 0);
-        let class_body = root2.child(0).unwrap().child_by_field_name("body").unwrap();
-        assert!(count_class_statements(class_body) > 0);
+        assert_eq!(count_file_statements(root2), 5);
+        let class_body = root2.child(1).unwrap().child_by_field_name("body").unwrap();
+        assert_eq!(count_class_statements(class_body), 3);
+    }
+
+    #[test]
+    fn file_statement_counters_include_async_and_decorated_methods() {
+        let parsed = parse(
+            r#"async def top():
+    value = 1
+    return value
+
+class Service:
+    async def plain(self):
+        value = 2
+        return value
+
+    @decorator
+    async def decorated(self):
+        value = 3
+        return value
+"#,
+        );
+
+        let root = parsed.tree.root_node();
+        assert_eq!(count_file_statements(root), 6);
+        let class_body = root.child(1).unwrap().child_by_field_name("body").unwrap();
+        assert_eq!(count_class_statements(class_body), 4);
+    }
+
+    #[test]
+    fn file_statement_counters_ignore_incomplete_definitions() {
+        let incomplete_function = parse("def incomplete(\n");
+        assert_eq!(
+            count_file_statements(incomplete_function.tree.root_node()),
+            0
+        );
+
+        let incomplete_class = parse("class Broken(\n");
+        assert_eq!(count_file_statements(incomplete_class.tree.root_node()), 0);
+
+        let incomplete_method = parse(
+            r#"class Broken:
+    async def missing_body(
+"#,
+        );
+        let root = incomplete_method.tree.root_node();
+        let class_node = (0..root.child_count())
+            .filter_map(|i| root.child(i))
+            .find(|node| node.kind() == "class_definition")
+            .expect("expected class_definition node");
+        let class_body = class_node.child_by_field_name("body").unwrap();
+        assert_eq!(count_class_statements(class_body), 0);
+    }
+
+    #[test]
+    fn file_statement_counters_skip_definitions_without_bodies() {
+        let parsed = parse(
+            r#"def missing_body():
+
+class Broken:
+    def missing_method(self):
+"#,
+        );
+        let root = parsed.tree.root_node();
+
+        assert_eq!(count_file_statements(root), 0);
+        let class_node = (0..root.child_count())
+            .filter_map(|i| root.child(i))
+            .find(|node| node.kind() == "class_definition")
+            .expect("expected class_definition node");
+        let class_body = class_node.child_by_field_name("body").unwrap();
+        assert_eq!(count_class_statements(class_body), 0);
     }
 }

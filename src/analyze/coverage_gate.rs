@@ -199,21 +199,13 @@ pub(crate) fn evaluate_cached_gate(
 #[allow(dead_code)] // Called from unit tests and via `crate::analyze::check_coverage_gate`; not all builds reference it.
 pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
     let CheckCoverageGateParams {
-        py_parsed,
-        rs_parsed,
+        py_cov,
+        rs_cov,
         gate_config,
         focus,
         show_timing: _show_timing,
     } = p;
-    let (defs_cached, unrefs_cached) = crate::analyze_cache::coverage_lists(py_parsed, rs_parsed);
-    let defs_t: Vec<_> = defs_cached
-        .into_iter()
-        .map(CachedCoverageItem::into_tuple)
-        .collect();
-    let unrefs_t: Vec<_> = unrefs_cached
-        .into_iter()
-        .map(CachedCoverageItem::into_tuple)
-        .collect();
+    let (defs_t, unrefs_t) = analysis_tuples(py_cov, rs_cov);
     let threshold = gate_config.test_coverage_threshold;
     if let Some((unreferenced, file_pcts)) =
         per_file_coverage_gate_fails(&defs_t, &unrefs_t, focus, threshold, None)

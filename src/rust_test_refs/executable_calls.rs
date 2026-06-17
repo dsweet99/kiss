@@ -235,28 +235,164 @@ pub(crate) fn collect_per_test_call_usage_from_items(
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod executable_call_tests {
     use super::*;
     use std::collections::HashSet;
-    use syn::visit::Visit;
 
-    impl ExecutableCallReferenceVisitor<'_> {
-        fn for_coverage_test<'a>(
-            refs: &'a mut HashSet<String>,
-            qualified: &'a mut HashSet<QualifiedModuleRef>,
-        ) -> ExecutableCallReferenceVisitor<'a> {
-            ExecutableCallReferenceVisitor { refs, qualified }
+    fn refs_from(source: &str) -> HashSet<String> {
+        let ast: syn::File = syn::parse_str(source).unwrap();
+        let mut refs = HashSet::new();
+        let mut qualified = HashSet::new();
+        collect_executable_call_references_from_test_fns(&ast, &mut refs, &mut qualified);
+        refs
+    }
+
+    #[test]
+    fn constant_if_visits_only_reachable_branch() {
+        let refs = refs_from(
+            r#"
+#[test]
+fn branch_test() {
+    if false {
+        unreachable_call();
+    } else {
+        reachable_call();
+    }
+    if true {
+        always_call();
+    } else {
+        never_call();
+    }
+}
+"#,
+        );
+        assert!(refs.contains("reachable_call"));
+        assert!(refs.contains("always_call"));
+        assert!(!refs.contains("unreachable_call"));
+        assert!(!refs.contains("never_call"));
+    }
+
+    #[test]
+    fn non_constant_if_and_match_visit_all_executable_paths() {
+        let refs = refs_from(
+            r#"
+#[test]
+fn branch_test() {
+    if condition() {
+        then_call();
+    } else {
+        else_call();
+    }
+    match choose() {
+        Some(v) if guard(v) => guarded_call(v),
+        _ => fallback_call(),
+    }
+}
+"#,
+        );
+        for name in [
+            "condition",
+            "then_call",
+            "else_call",
+            "choose",
+            "guard",
+            "guarded_call",
+            "fallback_call",
+        ] {
+            assert!(refs.contains(name), "{name} should be reachable");
         }
     }
 
     #[test]
-    fn witness_executable_call_visitor() {
+    fn loops_skip_only_proven_unreachable_bodies() {
+        let refs = refs_from(
+            r#"
+#[test]
+fn loop_test() {
+    while false {
+        never_call();
+    }
+    while condition() {
+        repeated_call();
+    }
+    loop {
+        break;
+    }
+}
+"#,
+        );
+        assert!(refs.contains("condition"));
+        assert!(refs.contains("repeated_call"));
+        assert!(!refs.contains("never_call"));
+    }
+
+    #[test]
+    fn macros_and_nested_test_modules_are_collected() {
+        let ast: syn::File = syn::parse_str(
+            r#"
+#[cfg(test)]
+mod nested {
+    #[test]
+    fn macro_test() {
+        assert_eq!(left_call(), right_call());
+    }
+}
+"#,
+        )
+        .unwrap();
         let mut refs = HashSet::new();
         let mut qualified = HashSet::new();
-        let mut visitor =
-            ExecutableCallReferenceVisitor::for_coverage_test(&mut refs, &mut qualified);
-        let expr: syn::Expr = syn::parse_quote!(callee());
-        visitor.visit_expr(&expr);
-        assert!(refs.contains("callee"));
+        collect_executable_call_references_from_test_fns(&ast, &mut refs, &mut qualified);
+        assert!(refs.contains("left_call"));
+        assert!(refs.contains("right_call"));
+
+        let per_test = collect_per_test_call_usage(&ast);
+        assert_eq!(per_test.len(), 1);
+        assert_eq!(per_test[0].0, "nested::macro_test");
+        assert!(per_test[0].1.contains("left_call"));
+        assert!(per_test[0].1.contains("right_call"));
+    }
+
+    #[test]
+    fn closures_and_async_blocks_are_not_counted_as_immediate_calls() {
+        let refs = refs_from(
+            r#"
+#[test]
+fn lazy_work() {
+    let _f = || deferred_call();
+    let _g = async { async_call().await };
+    receiver().method_call(argument());
+}
+"#,
+        );
+
+        assert!(refs.contains("receiver"));
+        assert!(refs.contains("method_call"));
+        assert!(refs.contains("argument"));
+        assert!(!refs.contains("deferred_call"));
+        assert!(!refs.contains("async_call"));
+    }
+
+    #[test]
+    fn per_test_usage_preserves_nested_module_prefix() {
+        let ast: syn::File = syn::parse_str(
+            r#"
+#[cfg(test)]
+mod outer {
+    #[cfg(test)]
+    mod inner {
+        #[test]
+        fn records_name() { target(); }
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let per_test = collect_per_test_call_usage(&ast);
+
+        assert_eq!(per_test.len(), 1);
+        assert_eq!(per_test[0].0, "outer::inner::records_name");
+        assert!(per_test[0].1.contains("target"));
     }
 }

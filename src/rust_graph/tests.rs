@@ -199,6 +199,12 @@ fn test_qualified_rust_module_name() {
         qualified_rust_module_name(Path::new("tests/integration/helpers.rs")),
         "integration.helpers"
     );
+    assert_eq!(qualified_rust_module_name(Path::new("mod.rs")), "mod");
+    assert_eq!(
+        qualified_rust_module_name(Path::new("/outside/work/tree/pkg/file.rs")),
+        "tree.pkg.file"
+    );
+    assert_eq!(qualified_rust_module_name(Path::new("/")), "unknown");
 }
 
 #[test]
@@ -334,4 +340,88 @@ fn rust_imports_and_push_include_edges() {
     let mac: syn::Macro = syn::parse_quote!(include!("child.rs"));
     super::extract_imports::push_include_edges(&mac, &mut mod_decls, &mut include_literals);
     assert_eq!(include_literals, vec!["child.rs"]);
+}
+
+#[test]
+fn extract_imports_from_nested_runtime_blocks() {
+    let ast = parse_rust_code(
+        r#"
+mod inline {
+    mod child;
+}
+
+struct Service;
+impl Service {
+    const NAME: &'static str = "service";
+    fn run() {
+        loop {
+            use std::io;
+            break;
+        }
+        while false {
+            use core::fmt;
+        }
+        for _ in 0..1 {
+            use alloc::vec;
+        }
+        let _future = async {
+            use tokio::task;
+        };
+        let _closure = || {
+            use serde::Serialize;
+        };
+    }
+}
+"#,
+    );
+
+    let imports = extract_rust_imports(&ast);
+
+    assert!(imports.mod_decls.contains(&"child".to_string()));
+    for expected in ["std", "core", "alloc", "tokio", "serde"] {
+        assert!(
+            imports.use_roots.contains(&expected.to_string()),
+            "missing {expected} in {:?}",
+            imports.use_roots
+        );
+    }
+}
+
+#[test]
+fn build_rust_dependency_graph_adds_include_edges() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    let child = src.join("child.rs");
+    std::fs::write(&lib, r#"include!("child.rs");"#).unwrap();
+    std::fs::write(&child, "pub fn child() {}\n").unwrap();
+    let lib_parsed = crate::rust_parsing::parse_rust_file(&lib).unwrap();
+    let child_parsed = crate::rust_parsing::parse_rust_file(&child).unwrap();
+
+    let graph = build_rust_dependency_graph(&[&lib_parsed, &child_parsed]);
+
+    let lib_idx = *graph.nodes.get("lib").expect("lib node");
+    let child_idx = *graph.nodes.get("child").expect("child node");
+    assert!(graph.graph.contains_edge(lib_idx, child_idx));
+}
+
+#[test]
+fn collect_use_paths_handles_renames_and_ignores_relative_roots() {
+    let ast = parse_rust_code(
+        r#"
+use serde as de;
+use self::local;
+use super::parent;
+use crate::internal;
+"#,
+    );
+    let mut imports = Vec::new();
+    for item in &ast.items {
+        if let syn::Item::Use(u) = item {
+            collect_use_paths(&u.tree, &mut imports);
+        }
+    }
+
+    assert_eq!(imports, vec!["serde".to_string()]);
 }

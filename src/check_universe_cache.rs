@@ -64,6 +64,9 @@ pub struct FullCheckCache {
     /// Digest of `.kiss/rslip.json` at cache-write time; verified on replay.
     #[serde(default)]
     pub rslip_fingerprint: String,
+    /// Fingerprint of the Rust runtime coverage backend at cache-write time.
+    #[serde(default)]
+    pub rust_coverage_fingerprint: String,
 }
 
 impl CachedCoverageItem {
@@ -124,6 +127,7 @@ mod coverage_witness {
             weighted_file_pcts: vec![],
             file_content_digests: vec![],
             rslip_fingerprint: String::new(),
+            rust_coverage_fingerprint: String::new(),
         };
         let _ = PathBuf::from("a.py");
     }

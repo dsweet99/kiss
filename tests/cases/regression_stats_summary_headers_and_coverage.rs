@@ -12,12 +12,13 @@
 //! tolerant about whitespace and exact numeric values — only structural
 //! invariants are asserted, so unrelated metric drift won't break them.
 
+use crate::support::kiss_test::kiss_command;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
+    kiss_command()
 }
 
 /// Build a tiny Python corpus with: an importer, an importee, an orphan module

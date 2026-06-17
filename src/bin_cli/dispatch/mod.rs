@@ -201,7 +201,7 @@ mod dispatch_coverage {
     use super::{
         CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
         MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShrinkDispatchOptions,
-        StatsDispatchOptions, TestDispatchOptions, TriConfig, VizDispatchOptions,
+        StatsDispatchOptions, TestDispatchOptions, TriConfig, VizDispatchOptions, dispatch,
     };
     use kiss::GateConfig;
     use kiss::TestSectionConfig;
@@ -314,5 +314,76 @@ mod dispatch_coverage {
             },
             ignore: vec![],
         };
+    }
+
+    #[test]
+    fn dispatch_routes_dry_error_without_running_analysis() {
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = GateConfig::default();
+        let test = TestSectionConfig::default();
+        let cli = crate::bin_cli::args::Cli {
+            lang: None,
+            defaults: false,
+            config: None,
+            command: crate::bin_cli::args::Commands::Dry {
+                path: ".".to_string(),
+                filter_files: vec![],
+                shingle_size: 3,
+                minhash_size: 100,
+                lsh_bands: 20,
+                min_similarity: 2.0,
+                ignore: vec![],
+            },
+        };
+
+        let status = dispatch(cli, &py, &rs, &gate, &test);
+
+        assert_eq!(status, 1);
+    }
+
+    #[test]
+    fn dispatch_routes_init_to_requested_directory() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = GateConfig::default();
+        let test = TestSectionConfig::default();
+        let cli = crate::bin_cli::args::Cli {
+            lang: None,
+            defaults: false,
+            config: None,
+            command: crate::bin_cli::args::Commands::Init {
+                repo_path: tmp.path().to_path_buf(),
+            },
+        };
+
+        let status = dispatch(cli, &py, &rs, &gate, &test);
+
+        assert_eq!(status, 0);
+        assert!(tmp.path().join(".kissconfig").exists());
+    }
+
+    #[test]
+    fn dispatch_routes_shrink_missing_state_to_failure() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = GateConfig::default();
+        let test = TestSectionConfig::default();
+        let cli = crate::bin_cli::args::Cli {
+            lang: None,
+            defaults: false,
+            config: None,
+            command: crate::bin_cli::args::Commands::Shrink {
+                target: None,
+                paths: vec![tmp.path().to_string_lossy().to_string()],
+                ignore: vec![],
+            },
+        };
+
+        let status = dispatch(cli, &py, &rs, &gate, &test);
+
+        assert_eq!(status, 1);
     }
 }

@@ -11,7 +11,9 @@ pub fn run() -> i32 {
     if let Commands::Init { repo_path } = &cli.command {
         return run_init_command(repo_path);
     }
-    ensure_default_config_exists();
+    if !matches!(cli.command, Commands::Test { .. }) {
+        ensure_default_config_exists();
+    }
     let (py_config, rs_config) = load_configs(cli.config.as_ref(), cli.defaults);
     let gate_config = load_gate_config(cli.config.as_ref(), cli.defaults);
     let test_section = load_test_section_config(cli.config.as_ref(), cli.defaults);

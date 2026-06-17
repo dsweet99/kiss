@@ -164,31 +164,6 @@ pub(crate) fn run_selectors(
 }
 
 #[cfg(test)]
-mod coverage_witness {
-    use super::*;
-
-    impl<'a> RunTestCmdArgs<'a> {
-        fn witness() {}
-    }
-
-    impl PlannedSelectors {
-        fn witness() -> Self {
-            Self {
-                repo_root: PathBuf::new(),
-                py_sel: vec![],
-                rs_sel: vec![],
-            }
-        }
-    }
-
-    #[test]
-    fn witness_test_runner_types() {
-        RunTestCmdArgs::witness();
-        let _ = PlannedSelectors::witness();
-    }
-}
-
-#[cfg(test)]
 mod behavior_tests {
     use super::*;
 
@@ -220,6 +195,16 @@ mod behavior_tests {
     }
 
     #[test]
+    fn run_test_rejects_incompatible_pytest_extra_before_planning() {
+        let code = run_test(RunTestCmdArgs {
+            extra: &["-x".to_string()],
+            ..test_args()
+        });
+
+        assert_eq!(code, 1);
+    }
+
+    #[test]
     fn run_selectors_with_no_covering_tests_succeeds_without_spawning() {
         let planned = PlannedSelectors {
             repo_root: std::env::current_dir().unwrap_or_default(),
@@ -230,6 +215,37 @@ mod behavior_tests {
         let code = run_selectors(&planned, true, &[], 1).unwrap();
 
         assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn run_selectors_dry_run_accepts_python_and_rust_selectors() {
+        let planned = PlannedSelectors {
+            repo_root: std::env::current_dir().unwrap_or_default(),
+            py_sel: vec!["tests/test_example.py::test_case".to_string()],
+            rs_sel: vec!["module::test_case".to_string()],
+        };
+        let extra = vec!["--ignored".to_string()];
+
+        let code = run_selectors(&planned, true, &extra, 1).unwrap();
+
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn run_selectors_executes_rust_branch_and_returns_command_status() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let planned = PlannedSelectors {
+            repo_root: tmp.path().to_path_buf(),
+            py_sel: vec![],
+            rs_sel: vec!["missing_selector".to_string()],
+        };
+
+        let code = run_selectors(&planned, false, &[], 1).unwrap();
+
+        assert_ne!(
+            code, 0,
+            "cargo should fail in a directory without Cargo.toml"
+        );
     }
 
     #[test]
@@ -289,10 +305,12 @@ mod plan_tests {
             .unwrap();
         let orig = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        match plan_selectors(TestChangeMode::Commit, None, None, &[], None, None) {
-            Err(e) => assert!(e.contains(COLD_CACHE_MSG), "{e}"),
-            Ok(_) => panic!("expected cold cache error"),
-        }
+        let result = plan_selectors(TestChangeMode::Commit, None, None, &[], None, None);
+        assert!(
+            result
+                .as_ref()
+                .is_err_and(|err| err.contains(COLD_CACHE_MSG))
+        );
         std::env::set_current_dir(orig).unwrap();
     }
 
@@ -315,6 +333,35 @@ mod plan_tests {
         });
         std::env::set_current_dir(orig).unwrap();
         assert_eq!(code, 1);
+    }
+
+    #[test]
+    fn plan_selectors_rust_filter_does_not_require_rslip_cache() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = TempDir::new().unwrap();
+        init(&tmp);
+        std::fs::write(tmp.path().join("lib.rs"), "pub fn f() {}\n").unwrap();
+        git_in(tmp.path()).args(["add", "."]).status().unwrap();
+        git_in(tmp.path())
+            .args(["commit", "-m", "m"])
+            .status()
+            .unwrap();
+        let orig = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let result = plan_selectors(
+            TestChangeMode::Commit,
+            None,
+            None,
+            &[],
+            Some(Language::Rust),
+            None,
+        );
+
+        std::env::set_current_dir(orig).unwrap();
+        let planned = result.expect("rust-only planning should not load rslip cache");
+        assert!(planned.py_sel.is_empty());
+        assert!(planned.rs_sel.is_empty());
     }
 }
 

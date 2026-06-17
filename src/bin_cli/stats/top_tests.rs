@@ -2,6 +2,7 @@ use super::top::{
     AGGREGATE_ONLY_METRICS, append_cycle_units, collect_all_units, coverage_pct_map,
     decorate_file_units_with_coverage, extractor_for,
 };
+use super::top_roots::{runtime_coverage_root, stats_runtime_py_jobs};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
@@ -52,6 +53,92 @@ fn extractor_for_cycle_size_reads_field() {
     let mut u = file_unit("a.rs", "mod_a");
     u.cycle_size = Some(3);
     assert_eq!(extractor_for("cycle_size").unwrap()(&u), Some(3));
+}
+
+#[test]
+fn stats_runtime_py_jobs_serializes_nested_llvm_cov_stats() {
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = ENV_LOCK.lock().unwrap();
+    let old = std::env::var_os("CARGO_LLVM_COV");
+    unsafe { std::env::set_var("CARGO_LLVM_COV", "1") };
+
+    assert_eq!(stats_runtime_py_jobs(), Some(1));
+
+    match old {
+        Some(value) => unsafe { std::env::set_var("CARGO_LLVM_COV", value) },
+        None => unsafe { std::env::remove_var("CARGO_LLVM_COV") },
+    }
+}
+
+#[test]
+fn stats_runtime_py_jobs_uses_default_parallelism_outside_nested_coverage() {
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = ENV_LOCK.lock().unwrap();
+    let old_cov = std::env::var_os("CARGO_LLVM_COV");
+    let old_target = std::env::var_os("CARGO_LLVM_COV_TARGET_DIR");
+    unsafe { std::env::remove_var("CARGO_LLVM_COV") };
+    unsafe { std::env::remove_var("CARGO_LLVM_COV_TARGET_DIR") };
+
+    assert_eq!(stats_runtime_py_jobs(), None);
+
+    match old_cov {
+        Some(value) => unsafe { std::env::set_var("CARGO_LLVM_COV", value) },
+        None => unsafe { std::env::remove_var("CARGO_LLVM_COV") },
+    }
+    match old_target {
+        Some(value) => unsafe { std::env::set_var("CARGO_LLVM_COV_TARGET_DIR", value) },
+        None => unsafe { std::env::remove_var("CARGO_LLVM_COV_TARGET_DIR") },
+    }
+}
+
+#[test]
+fn runtime_coverage_root_uses_analyzed_temp_project() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let source = tmp.path().join("pkg").join("module.py");
+    std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+    std::fs::write(&source, "def f():\n    return 1\n").unwrap();
+
+    let input_paths = vec![tmp.path().to_string_lossy().to_string()];
+    let root = runtime_coverage_root(&input_paths, &[source], &[]);
+
+    assert_eq!(root, tmp.path());
+}
+
+#[test]
+fn runtime_coverage_root_climbs_to_project_marker() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("pyproject.toml"),
+        "[project]\nname = \"fixture\"\n",
+    )
+    .unwrap();
+    let package = tmp.path().join("src").join("pkg");
+    std::fs::create_dir_all(&package).unwrap();
+    let source = package.join("module.py");
+    std::fs::write(&source, "def f():\n    return 1\n").unwrap();
+
+    let root = runtime_coverage_root(&[], &[source], &[]);
+
+    assert_eq!(root, tmp.path());
+}
+
+#[test]
+fn runtime_coverage_root_uses_common_parent_for_multiple_inputs() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let left = tmp.path().join("pkg").join("left.py");
+    let right = tmp.path().join("tests").join("test_left.py");
+    std::fs::create_dir_all(left.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(right.parent().unwrap()).unwrap();
+    std::fs::write(&left, "def f():\n    return 1\n").unwrap();
+    std::fs::write(&right, "def test_f():\n    assert True\n").unwrap();
+    let input_paths = vec![
+        left.to_string_lossy().to_string(),
+        right.to_string_lossy().to_string(),
+    ];
+
+    let root = runtime_coverage_root(&input_paths, &[left, right], &[]);
+
+    assert_eq!(root, tmp.path());
 }
 
 #[test]
@@ -205,7 +292,15 @@ fn detailed_stats_and_check_share_metric_values() {
     let (py_files, rs_files) =
         kiss::discovery::gather_files_by_lang(&paths, Some(kiss::Language::Python), &[]);
 
-    let stats_map = stats_unit_map(&collect_all_units(&py_files, &rs_files, None));
+    let cached_coverage: HashMap<String, usize> = py_files
+        .iter()
+        .map(|path| (path.display().to_string(), 100))
+        .collect();
+    let stats_map = stats_unit_map(&collect_all_units(
+        &py_files,
+        &rs_files,
+        Some(&cached_coverage),
+    ));
 
     let py_cfg = kiss::Config {
         statements_per_function: 0,

@@ -27,8 +27,8 @@ pub use util::{content_digest, db_path, normalize_path};
 #[cfg(test)]
 mod discovery_test;
 #[cfg(test)]
-mod refresh_test;
-#[cfg(test)]
 mod integration_test;
+#[cfg(test)]
+mod refresh_test;
 #[cfg(test)]
 mod util_test;

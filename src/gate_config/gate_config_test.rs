@@ -1,5 +1,8 @@
 use super::*;
 use crate::config::{ConfigError, get_usize};
+use std::sync::Mutex;
+
+static CWD_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn test_gate_config_merge_from_toml() {
@@ -9,6 +12,51 @@ fn test_gate_config_merge_from_toml() {
     );
     assert_eq!(gate.test_coverage_threshold, 50);
     assert!((gate.min_similarity - 0.8).abs() < 0.01);
+    assert!(!gate.duplication_enabled);
+}
+
+#[test]
+fn load_reads_local_kissconfig() {
+    let _guard = CWD_LOCK.lock().unwrap();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let old = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    std::fs::write(
+        tmp.path().join(".kissconfig"),
+        "[gate]\ntest_coverage_threshold = 44\norphan_module_enabled = false\n",
+    )
+    .unwrap();
+
+    let gate = GateConfig::load();
+
+    std::env::set_current_dir(old).unwrap();
+    assert_eq!(gate.test_coverage_threshold, 44);
+    assert!(!gate.orphan_module_enabled);
+}
+
+#[test]
+fn load_from_applies_explicit_file_after_local_kissconfig() {
+    let _guard = CWD_LOCK.lock().unwrap();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let old = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    std::fs::write(
+        tmp.path().join(".kissconfig"),
+        "[gate]\ntest_coverage_threshold = 44\nmin_similarity = 0.4\n",
+    )
+    .unwrap();
+    let override_path = tmp.path().join("override.toml");
+    std::fs::write(
+        &override_path,
+        "[gate]\ntest_coverage_threshold = 77\nduplication_enabled = false\n",
+    )
+    .unwrap();
+
+    let gate = GateConfig::load_from(&override_path);
+
+    std::env::set_current_dir(old).unwrap();
+    assert_eq!(gate.test_coverage_threshold, 77);
+    assert_eq!(gate.min_similarity, 0.4);
     assert!(!gate.duplication_enabled);
 }
 
@@ -41,6 +89,16 @@ fn test_min_similarity_integer_accepted() {
 fn try_load_from_content_rejects_non_numeric_min_similarity() {
     let err = GateConfig::try_load_from_content("[gate]\nmin_similarity = \"bad\"").unwrap_err();
     assert!(matches!(err, ConfigError::InvalidValue { .. }));
+}
+
+#[test]
+fn try_load_from_reports_missing_file() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let missing = tmp.path().join("missing.toml");
+
+    let err = GateConfig::try_load_from(&missing).unwrap_err();
+
+    assert!(matches!(err, ConfigError::IoError { .. }));
 }
 
 #[test]
@@ -98,6 +156,37 @@ fn try_load_from_content_rejects_out_of_range_values() {
 }
 
 #[test]
+fn merge_from_toml_rejects_invalid_values_without_partial_update() {
+    let mut gate = GateConfig::default();
+    gate.merge_from_toml("[gate]\ntest_coverage_threshold = 101\nduplication_enabled = false");
+    assert_eq!(
+        gate.test_coverage_threshold,
+        defaults::gate::TEST_COVERAGE_THRESHOLD
+    );
+    assert!(gate.duplication_enabled);
+
+    gate.merge_from_toml("[gate]\nmin_similarity = 2.0\nduplication_enabled = false");
+    assert_eq!(gate.min_similarity, defaults::duplication::MIN_SIMILARITY);
+    assert!(gate.duplication_enabled);
+}
+
+#[test]
+fn merge_from_toml_ignores_parse_errors_and_unknown_keys() {
+    let mut gate = GateConfig::default();
+    gate.merge_from_toml("[gate\nbad");
+    assert_eq!(
+        gate.test_coverage_threshold,
+        defaults::gate::TEST_COVERAGE_THRESHOLD
+    );
+
+    gate.merge_from_toml("[gate]\nunknown = 1\ntest_coverage_threshold = 12");
+    assert_eq!(
+        gate.test_coverage_threshold,
+        defaults::gate::TEST_COVERAGE_THRESHOLD
+    );
+}
+
+#[test]
 fn get_bool_reads_bool_and_ignores_invalid() {
     let mut table = toml::Table::new();
     table.insert("flag".into(), toml::Value::Boolean(true));
@@ -123,6 +212,10 @@ fn test_get_f64() {
     let mut table = toml::Table::new();
     table.insert("valid".into(), toml::Value::Float(0.5));
     assert_eq!(get_f64(&table, "valid"), Some(0.5));
+    table.insert("integer".into(), toml::Value::Integer(1));
+    assert_eq!(get_f64(&table, "integer"), Some(1.0));
+    table.insert("bad".into(), toml::Value::String("nope".into()));
+    assert_eq!(get_f64(&table, "bad"), None);
     assert_eq!(get_f64(&table, "missing"), None);
 }
 

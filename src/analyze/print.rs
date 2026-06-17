@@ -82,24 +82,78 @@ pub(crate) fn log_timing_phase1(
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod tests {
     use super::*;
 
-    impl PrintResultsCtx {
-        fn witness() -> Self {
-            Self {
-                show_timing: false,
-                t_phase2: None,
-                suppress_final_status: true,
-            }
+    fn quiet_ctx() -> PrintResultsCtx {
+        PrintResultsCtx {
+            show_timing: false,
+            t_phase2: None,
+            suppress_final_status: true,
         }
     }
 
     #[test]
-    fn witness_print_results() {
-        let ctx = PrintResultsCtx::witness();
+    fn print_results_returns_success_when_no_findings() {
+        assert!(print_all_results_with_dups(&[], &[], &[], quiet_ctx()));
+    }
+
+    #[test]
+    fn print_results_returns_failure_when_violations_exist() {
+        let viol = Violation::builder("src/lib.rs")
+            .line(7)
+            .unit_name("unit")
+            .metric("test_metric")
+            .value(2)
+            .threshold(1)
+            .message("too high")
+            .suggestion("lower it")
+            .build();
+
+        assert!(!print_all_results_with_dups(&[viol], &[], &[], quiet_ctx(),));
+    }
+
+    #[test]
+    fn timing_helpers_accept_ordered_instants() {
+        let t0 = std::time::Instant::now();
+        let t1 = t0 + std::time::Duration::from_millis(1);
+        let t2 = t1 + std::time::Duration::from_millis(1);
+        let t3 = t2 + std::time::Duration::from_millis(1);
+
+        log_parse_timing(false, "parse=1ms");
+        log_timing_phase2(false, t3, t3);
+        log_timing_phase1(t0, t1, t2, t3);
+    }
+
+    #[test]
+    fn print_results_emits_timing_when_phase2_start_is_available() {
+        let ctx = PrintResultsCtx {
+            show_timing: true,
+            t_phase2: Some(std::time::Instant::now()),
+            suppress_final_status: true,
+        };
+
         assert!(print_all_results_with_dups(&[], &[], &[], ctx));
-        log_parse_timing(false, "");
-        log_timing_phase2(false, std::time::Instant::now(), std::time::Instant::now());
+    }
+
+    #[test]
+    fn phase2_timing_logs_when_enabled() {
+        let t3 = std::time::Instant::now();
+        let t4 = t3 + std::time::Duration::from_millis(1);
+
+        log_timing_phase2(true, t3, t4);
+    }
+
+    #[test]
+    fn print_analysis_summary_accepts_empty_graphs() {
+        let metrics = kiss::GlobalMetrics {
+            files: 2,
+            code_units: 3,
+            statements: 5,
+            graph_nodes: 0,
+            graph_edges: 0,
+        };
+
+        print_analysis_summary(&metrics, None, None);
     }
 }

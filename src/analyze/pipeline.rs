@@ -136,6 +136,16 @@ fn runtime_py_coverage_for_opts(
     kiss::rslip_bridge::runtime_py_analysis(&repo_root, parsed, opts.jobs)
 }
 
+fn runtime_rust_coverage_for_opts(
+    opts: &AnalyzeOptions<'_>,
+    parsed: &[ParsedRustFile],
+) -> kiss::RustTestRefAnalysis {
+    let repo_root = Path::new(opts.universe)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(opts.universe));
+    kiss::rust_llvm_cov::runtime_rust_analysis(&repo_root, parsed)
+}
+
 pub(crate) fn run_full_pipeline(in_: FullPipelineInput<'_>) -> FullPipelineResult {
     let (result, parse_timing) = parse_all_timed(ParseAllTimedParams {
         py_files: in_.py_files,
@@ -217,16 +227,17 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
     let result = in_.result;
     let file_count = result.py_parsed.len() + result.rs_parsed.len();
     let viols = filter_viols_by_focus(result.violations.clone(), focus);
-    let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config, None);
-    let ((py_graph, graph_viols_all), (_py_cov_static, py_dups_all)) =
+    let rs_cov = runtime_rust_coverage_for_opts(opts, &result.rs_parsed);
+    let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config, Some(rs_cov));
+    let py_cov = runtime_py_coverage_for_opts(opts, &result.py_parsed);
+    let ((py_graph, graph_viols_all), (py_cov, py_dups_all)) =
         run_parallel_py_analysis(ParallelPyIn {
             py_parsed: &result.py_parsed,
             rs_graph: rs.graph.as_ref(),
             opts,
             file_count,
-            cached_py_cov: None,
+            py_cov,
         });
-    let py_cov = runtime_py_coverage_for_opts(opts, &result.py_parsed);
     let rs_dups_all = rs.dups.clone();
 
     let py_stats = build_python_metric_stats(&result.py_parsed, py_graph.as_ref(), &py_cov);
@@ -291,10 +302,9 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
     });
 
     if !opts.bypass_gate && opts.gate_config.test_coverage_threshold > 0 {
-        let rs_refs = result.rs_parsed.iter().collect::<Vec<_>>();
         let rs_graph = crate::analyze::graph_api::build_rs_graph(&result.rs_parsed);
         let py_cov = runtime_py_coverage_for_opts(opts, &result.py_parsed);
-        let rs_cov = kiss::analyze_rust_test_refs(&rs_refs, rs_graph.as_ref());
+        let rs_cov = runtime_rust_coverage_for_opts(opts, &result.rs_parsed);
         if let Some(early) = crate::analyze::coverage_gate::evaluate_gate(
             &py_cov,
             &rs_cov,

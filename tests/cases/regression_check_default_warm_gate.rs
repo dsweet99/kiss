@@ -1,9 +1,10 @@
+use crate::support::kiss_test::kiss_command;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
+    kiss_command()
 }
 
 fn run_default_check(home: &std::path::Path, repo: &std::path::Path) -> std::process::Output {
@@ -74,7 +75,7 @@ fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
 
     fs::write(
         repo.path().join(".kissconfig"),
-        "[gate]\ntest_coverage_threshold = 0\n",
+        "[gate]\ntest_coverage_threshold = 0\norphan_module_enabled = false\n[python]\npositional_args = 1\n",
     )
     .unwrap();
     fs::write(
@@ -85,7 +86,12 @@ fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
 
     let cold = run_default_check_with_config(home.path(), repo.path());
     let cold_stdout = String::from_utf8_lossy(&cold.stdout).to_string();
-    assert_eq!(cold.status.code(), Some(0));
+    assert_eq!(
+        cold.status.code(),
+        Some(0),
+        "cold default check should pass when coverage gate is disabled.\nstdout:\n{cold_stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&cold.stderr)
+    );
     assert!(!cold_stdout.contains("GATE_FAILED:test_coverage:"));
     assert!(!cold_stdout.contains("VIOLATION:test_coverage"));
 

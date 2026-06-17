@@ -2,8 +2,8 @@ mod content_digest;
 mod emit;
 use crate::analyze::FocusFilter;
 use crate::analyze::{
-    cached_coverage_gate_would_fail, compute_test_coverage_from_lists,
-    filter_duplicates_by_focus, filter_viols_by_focus,
+    cached_coverage_gate_would_fail, compute_test_coverage_from_lists, filter_duplicates_by_focus,
+    filter_viols_by_focus,
 };
 use emit::{emit_cached_bypass, emit_cached_gated};
 use kiss::check_cache;
@@ -12,8 +12,7 @@ use kiss::check_universe_cache::{
     CachedCoverageItem, CachedDuplicateCluster, CachedFileCoverage, FullCheckCache,
 };
 use kiss::stats::MetricStats;
-use kiss::{Config, DuplicateCluster, GateConfig, Violation};
-use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
+use kiss::{Config, DependencyGraph, DuplicateCluster, GateConfig, Violation};
 use std::collections::HashMap;
 use std::path::PathBuf;
 mod path_helpers;
@@ -227,7 +226,7 @@ fn cache_has_rslip_refresh_failure(cache: &FullCheckCache) -> bool {
     cache
         .definitions
         .iter()
-        .any(|item| item.name == "rslip_refresh_failed")
+        .any(|item| item.name == "rslip_refresh_failed" || item.name == "llvm_cov_failed")
 }
 
 pub fn try_run_cached_all(
@@ -249,6 +248,9 @@ pub fn try_run_cached_all(
     }
     let repo_root = std::path::Path::new(opts.universe);
     if kiss::rslip_bridge::rslip_database_fingerprint(repo_root) != cache.rslip_fingerprint {
+        return None;
+    }
+    if kiss::rust_llvm_cov::backend_fingerprint(repo_root) != cache.rust_coverage_fingerprint {
         return None;
     }
     if cache_has_rslip_refresh_failure(&cache) {
@@ -284,47 +286,6 @@ pub fn graph_counts(
     (nodes, edges)
 }
 
-#[allow(dead_code)]
-pub fn coverage_lists(
-    py_parsed: &[ParsedFile],
-    rs_parsed: &[ParsedRustFile],
-) -> (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>) {
-    let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-    let rs_refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let py_cov = kiss::analyze_test_refs_quick(&py_refs);
-    let rs_cov = kiss::analyze_rust_test_refs(&rs_refs, None);
-
-    let to_cached = |file: PathBuf, name: String, line: usize| CachedCoverageItem {
-        file: file.to_string_lossy().to_string(),
-        name,
-        line,
-    };
-
-    let mut definitions: Vec<CachedCoverageItem> = py_cov
-        .definitions
-        .into_iter()
-        .map(|d| to_cached(d.file, d.name, d.line))
-        .collect();
-    definitions.extend(
-        rs_cov
-            .definitions
-            .into_iter()
-            .map(|d| to_cached(d.file, d.name, d.line)),
-    );
-    let mut unreferenced: Vec<CachedCoverageItem> = py_cov
-        .unreferenced
-        .into_iter()
-        .map(|d| to_cached(d.file, d.name, d.line))
-        .collect();
-    unreferenced.extend(
-        rs_cov
-            .unreferenced
-            .into_iter()
-            .map(|d| to_cached(d.file, d.name, d.line)),
-    );
-    (definitions, unreferenced)
-}
-
 pub struct FullCacheInputs<'a> {
     pub fingerprint: String,
     pub py_file_count: usize,
@@ -348,6 +309,7 @@ pub struct FullCacheInputs<'a> {
     pub unreferenced: Vec<CachedCoverageItem>,
     pub weighted_file_pcts: Vec<CachedFileCoverage>,
     pub rslip_fingerprint: String,
+    pub rust_coverage_fingerprint: String,
 }
 
 pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
@@ -407,6 +369,7 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
         unreferenced: inputs.unreferenced,
         weighted_file_pcts: inputs.weighted_file_pcts,
         rslip_fingerprint: inputs.rslip_fingerprint,
+        rust_coverage_fingerprint: inputs.rust_coverage_fingerprint,
     };
     store_full_cache(&cache);
 }

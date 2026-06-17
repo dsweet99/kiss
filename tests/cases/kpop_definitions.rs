@@ -12,6 +12,10 @@ fn parse_py(path: &Path) -> ParsedFile {
     parse_file(&mut parser, path).expect("should parse fixture")
 }
 
+fn fixture_path(relative: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(relative)
+}
+
 fn h1_module_code_unit_exists() {
     use std::io::Write;
     let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
@@ -188,8 +192,8 @@ fn file_h9_and_h10_parsing(tmp: &tempfile::TempDir) {
 
 #[test]
 fn bug_lazy_import_should_create_graph_edge_and_prevent_orphan() {
-    let importer = parse_py(Path::new("tests/fake_python/lazy_importer.py"));
-    let target = parse_py(Path::new("tests/fake_python/lazy_target.py"));
+    let importer = parse_py(&fixture_path("tests/fake_python/lazy_importer.py"));
+    let target = parse_py(&fixture_path("tests/fake_python/lazy_target.py"));
 
     let parsed_files: Vec<&ParsedFile> = vec![&importer, &target];
     let graph = build_dependency_graph(&parsed_files);
@@ -207,12 +211,12 @@ fn bug_lazy_import_should_create_graph_edge_and_prevent_orphan() {
 
 #[test]
 fn bug_graph_edge_dotted_import_should_create_internal_edge() {
-    let pkg1_sub = parse_py(Path::new("tests/fake_python/pkg1/submod.py"));
-    let pkg1_init = parse_py(Path::new("tests/fake_python/pkg1/__init__.py"));
-    let pkg2_sub = parse_py(Path::new("tests/fake_python/pkg2/submod.py"));
-    let pkg2_init = parse_py(Path::new("tests/fake_python/pkg2/__init__.py"));
-    let importer1 = parse_py(Path::new("tests/fake_python/imports_pkg1_submod.py"));
-    let importer2 = parse_py(Path::new("tests/fake_python/imports_pkg2_submod.py"));
+    let pkg1_sub = parse_py(&fixture_path("tests/fake_python/pkg1/submod.py"));
+    let pkg1_init = parse_py(&fixture_path("tests/fake_python/pkg1/__init__.py"));
+    let pkg2_sub = parse_py(&fixture_path("tests/fake_python/pkg2/submod.py"));
+    let pkg2_init = parse_py(&fixture_path("tests/fake_python/pkg2/__init__.py"));
+    let importer1 = parse_py(&fixture_path("tests/fake_python/imports_pkg1_submod.py"));
+    let importer2 = parse_py(&fixture_path("tests/fake_python/imports_pkg2_submod.py"));
 
     let parsed_files: Vec<&ParsedFile> = vec![
         &pkg1_sub, &pkg1_init, &pkg2_sub, &pkg2_init, &importer1, &importer2,

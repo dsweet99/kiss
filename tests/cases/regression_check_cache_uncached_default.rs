@@ -20,8 +20,8 @@
 //! path is made independent of `--all` (or, equivalently, both sites are
 //! widened to operate in the gated default flow too).
 
+use crate::support::kiss_test::kiss_command;
 use std::fs;
-use std::process::Command;
 use tempfile::TempDir;
 
 fn write_corpus(dir: &std::path::Path) {
@@ -109,7 +109,7 @@ fn kiss_check_default_writes_full_check_cache() {
         "precondition: cache dir should be empty before the run"
     );
 
-    let out = Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let out = kiss_command()
         .arg("check")
         .arg(corpus.path())
         .env("HOME", home.path())

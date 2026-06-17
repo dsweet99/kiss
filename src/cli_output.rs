@@ -331,29 +331,62 @@ mod tests {
         assert_eq!(count_rs_unreferenced(&[]), 0);
     }
 
-    impl<'a> CoverageGateFailureCtx<'a> {
-        fn witness(
-            threshold: usize,
-            unreferenced: &'a [(PathBuf, String, usize)],
-            file_pcts: &'a HashMap<PathBuf, usize>,
-        ) -> Self {
-            Self {
-                threshold,
-                unreferenced,
-                file_pcts,
-            }
-        }
+    #[test]
+    fn format_candidate_list_truncates_only_when_needed() {
+        let candidates = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+
+        assert_eq!(format_candidate_list(&candidates, 3), "alpha, beta, gamma");
+        assert_eq!(format_candidate_list(&candidates, 2), "alpha, beta…");
+        assert_eq!(format_candidate_list(&[], 2), "");
     }
 
     #[test]
-    fn witness_coverage_gate_helpers() {
+    fn coverage_gate_file_filter_excludes_tests_and_binaries() {
         use std::path::Path;
-        let defs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
-        let unref: Vec<(PathBuf, String, usize)> = vec![];
-        let file_pcts = HashMap::new();
+
         assert!(is_coverage_gate_file(Path::new("src/a.py")));
-        assert_eq!(min_per_file_coverage(&defs, &unref), 100);
+        assert!(is_coverage_gate_file(Path::new("src/lib.rs")));
+        assert!(!is_coverage_gate_file(Path::new("tests/test_a.py")));
+        assert!(!is_coverage_gate_file(Path::new("src/main.rs")));
+    }
+
+    #[test]
+    fn min_coverage_helpers_respect_gate_eligible_files() {
+        let defs = vec![
+            (PathBuf::from("src/a.py"), "f".into(), 1),
+            (PathBuf::from("tests/test_a.py"), "test_f".into(), 1),
+        ];
+        let unref = vec![(PathBuf::from("tests/test_a.py"), "test_f".into(), 1)];
+
+        assert_eq!(min_per_file_coverage(&defs, &unref), 0);
         assert_eq!(min_gate_eligible_per_file_coverage(&defs, &unref), 100);
-        let _ = CoverageGateFailureCtx::witness(90, &unref, &file_pcts);
+    }
+
+    #[test]
+    fn coverage_gate_failure_lists_only_below_threshold_units() {
+        let failing = PathBuf::from("src/failing.py");
+        let passing = PathBuf::from("src/passing.py");
+        let file_pcts: HashMap<PathBuf, usize> =
+            [(failing.clone(), 40), (passing.clone(), 95)].into();
+        let unreferenced = vec![
+            (failing.clone(), "missing".to_string(), 7),
+            (passing.clone(), "covered_enough".to_string(), 11),
+        ];
+        let mut out = Vec::new();
+
+        write_coverage_gate_failure(
+            &mut out,
+            &CoverageGateFailureCtx {
+                threshold: 90,
+                unreferenced: &unreferenced,
+                file_pcts: &file_pcts,
+            },
+        )
+        .unwrap();
+
+        let stdout = String::from_utf8(out).unwrap();
+        assert!(stdout.contains("src/failing.py: 40% (90% required)"));
+        assert!(stdout.contains("VIOLATION:test_coverage:src/failing.py:7:missing"));
+        assert!(!stdout.contains("covered_enough"));
     }
 }

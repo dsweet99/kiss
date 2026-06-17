@@ -39,7 +39,7 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
     if cache_data
         .definitions
         .iter()
-        .any(|item| item.name == "rslip_refresh_failed")
+        .any(|item| item.name == "rslip_refresh_failed" || item.name == "llvm_cov_failed")
     {
         return;
     }
@@ -54,9 +54,11 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
     let focus_restrict = inp.focus.is_active();
     let repo_root = std::path::Path::new(inp.opts.universe);
     let rslip_fingerprint = kiss::rslip_bridge::rslip_database_fingerprint(repo_root);
+    let rust_coverage_fingerprint = kiss::rust_llvm_cov::backend_fingerprint(repo_root);
     crate::analyze_cache::store_full_cache_from_run(crate::analyze_cache::FullCacheInputs {
         fingerprint: fp,
         rslip_fingerprint,
+        rust_coverage_fingerprint,
         py_file_count: inp.result.py_parsed.len(),
         rs_file_count: inp.result.rs_parsed.len(),
         code_unit_count: inp.result.code_unit_count,

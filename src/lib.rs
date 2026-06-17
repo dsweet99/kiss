@@ -47,6 +47,7 @@ pub mod rust_counts;
 pub mod rust_fn_metrics;
 pub mod rust_graph;
 pub mod rust_include;
+pub mod rust_llvm_cov;
 pub mod rust_parsing;
 pub mod rust_test_refs;
 pub mod rust_units;

@@ -217,6 +217,81 @@ fn test_cluster_from_pairs() {
 }
 
 #[test]
+fn cluster_duplicates_ignores_pairs_not_in_chunk_index() {
+    let chunks = vec![
+        CodeChunk {
+            file: "a.py".into(),
+            name: "kept_a".into(),
+            start_line: 1,
+            end_line: 10,
+            normalized: "a b c d e f g h i j".into(),
+        },
+        CodeChunk {
+            file: "b.py".into(),
+            name: "kept_b".into(),
+            start_line: 1,
+            end_line: 10,
+            normalized: "a b c d e f g h i j".into(),
+        },
+    ];
+    let missing = CodeChunk {
+        file: "missing.py".into(),
+        name: "missing".into(),
+        start_line: 1,
+        end_line: 10,
+        normalized: "a b c d e f g h i j".into(),
+    };
+    let pairs = vec![
+        DuplicatePair {
+            chunk1: chunks[0].clone(),
+            chunk2: missing,
+            similarity: 0.99,
+        },
+        DuplicatePair {
+            chunk1: chunks[0].clone(),
+            chunk2: chunks[1].clone(),
+            similarity: 0.75,
+        },
+    ];
+
+    let clusters = cluster_duplicates(&pairs, &chunks);
+
+    assert_eq!(clusters.len(), 1);
+    assert_eq!(clusters[0].chunks.len(), 2);
+    assert!((clusters[0].avg_similarity - 0.75).abs() < f64::EPSILON);
+}
+
+#[test]
+fn cluster_from_pairs_sorts_by_size_then_similarity() {
+    let chunks: Vec<_> = ["a.py", "b.py", "c.py", "d.py", "e.py"]
+        .iter()
+        .enumerate()
+        .map(|(idx, file)| CodeChunk {
+            file: (*file).into(),
+            name: format!("f{idx}"),
+            start_line: 1,
+            end_line: 10,
+            normalized: "a b c d e f g h i j".into(),
+        })
+        .collect();
+    let pairs = vec![(0, 1, 0.60), (1, 2, 0.80), (3, 4, 0.99)];
+
+    let clusters = clustering::cluster_from_pairs(&chunks, pairs);
+
+    assert_eq!(clusters.len(), 2);
+    assert_eq!(clusters[0].chunks.len(), 3);
+    assert_eq!(clusters[1].chunks.len(), 2);
+    assert_eq!(
+        clustering::min_chunk_in_cluster(&clusters[0]).unwrap().file,
+        PathBuf::from("a.py")
+    );
+    assert_eq!(
+        clustering::min_chunk_in_cluster(&clusters[1]).unwrap().file,
+        PathBuf::from("d.py")
+    );
+}
+
+#[test]
 fn test_extract_chunks_for_duplication_direct() {
     let code = "def foo():\n    x = 1\n    y = 2\n    z = 3\n    a = 4\n    b = 5\n    return x";
     let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
@@ -225,6 +300,71 @@ fn test_extract_chunks_for_duplication_direct() {
     let p = parse_file(&mut parser, tmp.path()).unwrap();
     let chunks = extract_chunks_for_duplication(&[&p]);
     assert!(!chunks.is_empty());
+}
+
+#[test]
+fn extract_python_chunks_includes_nested_functions_in_traversal_order() {
+    let code = "\
+def outer():
+    def inner():
+        a = 1
+        b = 2
+        c = 3
+        d = 4
+        return a + b + c + d
+    x = inner()
+    y = x + 1
+    z = y + 1
+    w = z + 1
+    return w
+";
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
+    write!(tmp, "{code}").unwrap();
+    let mut parser = create_parser().unwrap();
+    let parsed = parse_file(&mut parser, tmp.path()).unwrap();
+
+    let chunks = extract_chunks_for_duplication(&[&parsed]);
+    let names: Vec<_> = chunks.iter().map(|chunk| chunk.name.as_str()).collect();
+
+    assert_eq!(names, vec!["outer", "inner"]);
+    assert!(chunks.iter().all(|chunk| chunk.file == parsed.path));
+}
+
+#[test]
+fn extract_rust_chunks_includes_impl_and_inline_module_functions() {
+    let source = "\
+mod nested {
+    pub fn inner() {
+        let a = 1;
+        let b = 2;
+        let c = 3;
+        let d = 4;
+        let e = a + b + c + d;
+        drop(e);
+    }
+}
+
+struct Worker;
+
+impl Worker {
+    fn run(&self) {
+        let a = 1;
+        let b = 2;
+        let c = 3;
+        let d = 4;
+        let e = a + b + c + d;
+        drop(e);
+    }
+}
+";
+    let ast: syn::File = syn::parse_str(source).unwrap();
+    let mut chunks = Vec::new();
+
+    extraction::extract_rust_function_chunks(&ast, source, Path::new("lib.rs"), &mut chunks);
+    let names: Vec<_> = chunks.iter().map(|chunk| chunk.name.as_str()).collect();
+
+    assert_eq!(names, vec!["inner", "run"]);
+    assert!(chunks.iter().all(|chunk| chunk.file == Path::new("lib.rs")));
 }
 
 #[test]

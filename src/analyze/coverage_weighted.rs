@@ -64,3 +64,112 @@ fn merge_weighted_file_pcts_impl(
     }
     weighted
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn parsed_py(path: PathBuf, source: &str) -> kiss::ParsedFile {
+        let mut parser = kiss::create_parser().unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        kiss::ParsedFile {
+            path,
+            source: source.to_string(),
+            tree,
+        }
+    }
+
+    fn parsed_rs(path: PathBuf, source: &str) -> kiss::ParsedRustFile {
+        kiss::ParsedRustFile {
+            path,
+            source: source.to_string(),
+            ast: syn::parse_file(source).unwrap(),
+        }
+    }
+
+    fn empty_py_cov() -> kiss::TestRefAnalysis {
+        kiss::TestRefAnalysis {
+            definitions: Vec::new(),
+            test_references: HashSet::new(),
+            call_references: HashSet::new(),
+            unreferenced: Vec::new(),
+            coverage_map: HashMap::new(),
+        }
+    }
+
+    fn empty_rs_cov() -> kiss::RustTestRefAnalysis {
+        kiss::RustTestRefAnalysis {
+            definitions: Vec::new(),
+            test_references: HashSet::new(),
+            call_references: HashSet::new(),
+            propagated_references: HashSet::new(),
+            unreferenced: Vec::new(),
+            coverage_map: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn runtime_py_merge_does_not_invent_static_python_file_coverage() {
+        let py_parsed = vec![
+            parsed_py(PathBuf::from("/repo/pkg/__init__.py"), ""),
+            parsed_py(
+                PathBuf::from("/repo/tests/test_pkg.py"),
+                "def test_pkg():\n    pass\n",
+            ),
+        ];
+        let rs_parsed = vec![
+            parsed_rs(PathBuf::from("/repo/src/main.rs"), "fn main() {}\n"),
+            parsed_rs(
+                PathBuf::from("/repo/tests/runtime.rs"),
+                "#[test]\nfn covers_runtime() {}\n",
+            ),
+        ];
+
+        let weighted = merge_weighted_file_pcts_for_runtime_py(
+            &empty_py_cov(),
+            &py_parsed,
+            &empty_rs_cov(),
+            &rs_parsed,
+        );
+
+        assert!(
+            !weighted.contains_key(&PathBuf::from("/repo/pkg/__init__.py")),
+            "runtime Python coverage must come from rslip, not static Python defaults"
+        );
+        assert!(
+            !weighted.contains_key(&PathBuf::from("/repo/tests/test_pkg.py")),
+            "runtime Python coverage must not synthesize Python test-file coverage"
+        );
+        assert_eq!(weighted.get(&PathBuf::from("/repo/src/main.rs")), Some(&0));
+        assert_eq!(
+            weighted.get(&PathBuf::from("/repo/tests/runtime.rs")),
+            Some(&0)
+        );
+    }
+
+    #[test]
+    fn static_py_merge_records_python_scaffolding_and_rust_entry_points() {
+        let py_parsed = vec![
+            parsed_py(PathBuf::from("/repo/pkg/__init__.py"), ""),
+            parsed_py(
+                PathBuf::from("/repo/tests/test_pkg.py"),
+                "def test_pkg():\n    pass\n",
+            ),
+        ];
+        let rs_parsed = vec![parsed_rs(
+            PathBuf::from("/repo/src/main.rs"),
+            "fn main() {}\n",
+        )];
+
+        let weighted =
+            merge_weighted_file_pcts(&empty_py_cov(), &py_parsed, &empty_rs_cov(), &rs_parsed);
+
+        assert!(weighted.contains_key(&PathBuf::from("/repo/pkg/__init__.py")));
+        assert_eq!(
+            weighted.get(&PathBuf::from("/repo/tests/test_pkg.py")),
+            Some(&0)
+        );
+        assert_eq!(weighted.get(&PathBuf::from("/repo/src/main.rs")), Some(&0));
+    }
+}

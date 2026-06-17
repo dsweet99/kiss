@@ -4,12 +4,13 @@
 //! `"Ignore files/directories starting with PREFIX (repeatable)"`. These tests
 //! lock in that contract for both directory and filename prefix matching.
 
+use crate::support::kiss_test::kiss_command;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
+    kiss_command()
 }
 
 fn write_trivial_py(path: &std::path::Path) {

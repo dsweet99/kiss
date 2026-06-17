@@ -213,7 +213,7 @@ fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
 #[cfg(test)]
 mod summary_tests {
     use super::*;
-    use kiss::{Config, GateConfig};
+    use kiss::{Config, GateConfig, MetricStats};
 
     #[test]
     fn maybe_print_cached_stats_summary_returns_false_on_miss() {
@@ -233,14 +233,22 @@ mod summary_tests {
         use kiss::check_universe_cache::FullCheckCache;
         let cache = FullCheckCache {
             fingerprint: "test".into(),
-            py_stats: None,
-            rs_stats: None,
+            py_stats: Some(MetricStats {
+                lines_per_file: vec![10],
+                inv_test_coverage: vec![20],
+                ..Default::default()
+            }),
+            rs_stats: Some(MetricStats {
+                lines_per_file: vec![12],
+                inv_test_coverage: vec![30],
+                ..Default::default()
+            }),
             py_paths: vec![],
             focus_paths: vec![],
             focus_restrict: false,
             rs_paths: vec![],
             py_file_count: 1,
-            rs_file_count: 0,
+            rs_file_count: 1,
             code_unit_count: 3,
             statement_count: 5,
             graph_nodes: 1,
@@ -255,6 +263,7 @@ mod summary_tests {
             weighted_file_pcts: vec![],
             file_content_digests: vec![],
             rslip_fingerprint: String::new(),
+            rust_coverage_fingerprint: String::new(),
         };
         print_cached_summary(&[".".into()], &cache);
     }

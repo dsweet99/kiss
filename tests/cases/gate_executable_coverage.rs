@@ -5,7 +5,7 @@ use kiss::check_universe_cache::{
 };
 use kiss::units::{CodeUnitKind, extract_code_units};
 use kiss::{
-    is_in_test_directory, is_test_file, parse_file, parse_files, ConfigError, create_parser,
+    ConfigError, create_parser, is_in_test_directory, is_test_file, parse_file, parse_files,
 };
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -46,10 +46,7 @@ fn gate_parse_errors_display_is_executable() {
     for err in [
         kiss::ParseError::ParserInitError,
         kiss::ParseError::ParseFailed,
-        kiss::ParseError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "missing",
-        )),
+        kiss::ParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "missing")),
     ] {
         assert!(!err.to_string().is_empty());
     }
@@ -62,10 +59,7 @@ fn gate_rust_parse_errors_display_is_executable() {
         Err(err) => err,
     };
     for err in [
-        kiss::RustParseError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "missing",
-        )),
+        kiss::RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "missing")),
         kiss::RustParseError::SynError(syn_err),
     ] {
         assert!(!err.to_string().is_empty());
@@ -162,6 +156,7 @@ fn gate_check_universe_cache_types_round_trip() {
         weighted_file_pcts: vec![],
         file_content_digests: vec![],
         rslip_fingerprint: String::new(),
+        rust_coverage_fingerprint: String::new(),
     };
 }
 
@@ -184,7 +179,10 @@ fn gate_rslip_public_api_exercises_discovery_and_types() {
     let files = rslip::discover_repo_files(tmp.path()).unwrap();
     assert!(files.iter().any(|f| f.path == "test_sample.py"));
     assert!(files.iter().any(|f| f.path == "app.py"));
-    assert!(matches!(files[0].role, rslip::FileRole::Source | rslip::FileRole::Test));
+    assert!(matches!(
+        files[0].role,
+        rslip::FileRole::Source | rslip::FileRole::Test
+    ));
 
     let db = rslip::Database {
         schema_version: rslip::SCHEMA_VERSION,
@@ -211,7 +209,11 @@ fn gate_analyze_rust_test_refs_exercises_reference_pipeline() {
 fn gate_rslip_query_covering_tests_smoke() {
     let tmp = tempfile::TempDir::new().unwrap();
     std::fs::write(tmp.path().join("app.py"), "def app():\n    return 1\n").unwrap();
-    std::fs::write(tmp.path().join("test_app.py"), "def test_app():\n    assert 1\n").unwrap();
+    std::fs::write(
+        tmp.path().join("test_app.py"),
+        "def test_app():\n    assert 1\n",
+    )
+    .unwrap();
     let file_records = rslip::discover_repo_files(tmp.path()).unwrap();
     let files = file_records
         .iter()
@@ -229,7 +231,8 @@ fn gate_rslip_query_covering_tests_smoke() {
         )]),
     };
     rslip::write_database_atomic(tmp.path(), &db).unwrap();
-    let covering = kiss::rslip::query_covering_tests(tmp.path(), &[tmp.path().join("app.py")]).unwrap();
+    let covering =
+        kiss::rslip::query_covering_tests(tmp.path(), &[tmp.path().join("app.py")]).unwrap();
     assert_eq!(covering.len(), 1);
     assert!(covering[0].0.ends_with("test_app.py"));
 }

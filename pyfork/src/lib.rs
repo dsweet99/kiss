@@ -5,9 +5,7 @@ mod scripts;
 
 pub use collect::collect_nodeids;
 pub use flags::validate_pytest_extra;
-pub use pool::{
-    build_fork_argv, default_parallelism, run_pool, shell_quote_line, trace_pool,
-};
+pub use pool::{build_fork_argv, default_parallelism, run_pool, shell_quote_line, trace_pool};
 
 #[cfg(test)]
 mod tests {
@@ -44,7 +42,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let pkg = tmp.path().join("pkg");
         fs::create_dir_all(pkg.join("tests")).unwrap();
-        write(&pkg.join("pyproject.toml"), "[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n");
+        write(
+            &pkg.join("pyproject.toml"),
+            "[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n",
+        );
         write(
             &pkg.join("tests/test_pkg.py"),
             "def test_in_custom_path():\n    assert True\n",
@@ -78,9 +79,7 @@ mod tests {
 
     #[test]
     fn scheduler_keeps_j_in_flight() {
-        let nodeids: Vec<String> = (0..4)
-            .map(|i| format!("fake::node{i}"))
-            .collect();
+        let nodeids: Vec<String> = (0..4).map(|i| format!("fake::node{i}")).collect();
         #[cfg(unix)]
         {
             let peak = pool::scheduler_peak_concurrency(&nodeids, 2, 0.3).unwrap();
@@ -110,7 +109,10 @@ mod tests {
     #[test]
     fn trace_hook_emits_line_hits_for_nodeid() {
         let tmp = TempDir::new().unwrap();
-        write(&tmp.path().join("sample.py"), "def value():\n    return 3\n");
+        write(
+            &tmp.path().join("sample.py"),
+            "def value():\n    return 3\n",
+        );
         write(
             &tmp.path().join("test_sample.py"),
             "from sample import value\n\ndef test_value():\n    assert value() == 3\n",
@@ -156,7 +158,8 @@ mod tests {
     fn build_fork_argv_and_shell_quote_line() {
         let argv = build_fork_argv(Path::new("/repo"), "t.py::test_a", &["--tb=short".into()]);
         assert!(argv.iter().any(|s| s.contains("t.py::test_a")));
-        let quoted = shell_quote_line(&["python".into(), "-m".into(), "pytest".into(), "a b".into()]);
+        let quoted =
+            shell_quote_line(&["python".into(), "-m".into(), "pytest".into(), "a b".into()]);
         assert!(quoted.contains('\''));
     }
 

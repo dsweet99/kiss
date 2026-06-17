@@ -90,7 +90,11 @@ mod coverage_witness {
             get_threshold: |_, _| 1,
             applicability: Applicability::Both,
         };
-        assert!(!rule.format(&Config::default(), &GateConfig::default()).is_empty());
+        assert!(
+            !rule
+                .format(&Config::default(), &GateConfig::default())
+                .is_empty()
+        );
         assert!(rule.applies_to_python());
         assert!(rule.applies_to_rust());
         let _ = RuleCategory::Files.python_heading();

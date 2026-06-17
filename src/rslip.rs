@@ -9,11 +9,7 @@ pub fn query_covering_tests(
     repo_root: &Path,
     changed_sources: &[PathBuf],
 ) -> Result<Vec<crate::test_refs::CoveringTest>, String> {
-    ::rslip::query_covering_tests(
-        repo_root,
-        changed_sources,
-        pyfork::default_parallelism(),
-    )
+    ::rslip::query_covering_tests(repo_root, changed_sources, pyfork::default_parallelism())
 }
 
 pub fn runtime_analysis_for_parsed(
@@ -21,9 +17,12 @@ pub fn runtime_analysis_for_parsed(
     static_analysis: &TestRefAnalysis,
 ) -> Result<TestRefAnalysis, String> {
     let collector = ::rslip::PytestTraceCollector;
-    runtime_analysis_for_parsed_with_collector(repo_root, static_analysis, &|root, selectors, _j| {
-        collector.collect(root, selectors, _j)
-    }, pyfork::default_parallelism())
+    runtime_analysis_for_parsed_with_collector(
+        repo_root,
+        static_analysis,
+        &|root, selectors, _j| collector.collect(root, selectors, _j),
+        pyfork::default_parallelism(),
+    )
 }
 
 fn runtime_analysis_for_parsed_with_collector<F>(
@@ -207,14 +206,21 @@ mod tests {
         std::fs::write(tmp.path().join("test_a.py"), "def test_a():\n    pass\n").unwrap();
         let static_analysis = static_analysis_for(tmp.path(), "a");
 
-        let db = ::rslip::refresh_with_collector(tmp.path(), &|_, selectors, _j| {
-            assert_eq!(selectors, &["test_a.py::test_a".to_string()]);
-            Ok(vec![::rslip::TestCoverageRun {
-                selector: "test_a.py::test_a".to_string(),
-                test_path: PathBuf::from("test_a.py"),
-                hits: BTreeMap::from([(PathBuf::from("a.py"), BTreeSet::from([1_usize, 2_usize]))]),
-            }])
-        }, 1)
+        let db = ::rslip::refresh_with_collector(
+            tmp.path(),
+            &|_, selectors, _j| {
+                assert_eq!(selectors, &["test_a.py::test_a".to_string()]);
+                Ok(vec![::rslip::TestCoverageRun {
+                    selector: "test_a.py::test_a".to_string(),
+                    test_path: PathBuf::from("test_a.py"),
+                    hits: BTreeMap::from([(
+                        PathBuf::from("a.py"),
+                        BTreeSet::from([1_usize, 2_usize]),
+                    )]),
+                }])
+            },
+            1,
+        )
         .unwrap();
         ::rslip::write_database_atomic(tmp.path(), &db).unwrap();
 

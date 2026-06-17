@@ -16,12 +16,13 @@
 //! fixed; remove `#[ignore]` once `is_focus_file` distinguishes
 //! "no focus specified" from "focus specified but matched zero files".
 
+use crate::support::kiss_test::kiss_command;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
+    kiss_command()
 }
 
 /// Writes a file that triggers a `positional_args` violation under defaults

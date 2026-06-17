@@ -1,10 +1,11 @@
 use super::cli_integration::create_god_class_file;
+use crate::support::kiss_test::kiss_command;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
+    kiss_command()
 }
 
 #[test]

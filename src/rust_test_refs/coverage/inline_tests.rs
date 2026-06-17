@@ -163,3 +163,115 @@ fn locate_in_item_finds_mod_inline_function() {
         .expect("nested");
     assert!(locate_in_item(&parsed.ast.items[0], &def).is_some());
 }
+
+#[test]
+fn branch_credit_scales_with_test_branch_evidence() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let test_src = tmp.path().join("tests.rs");
+    std::fs::write(
+        &test_src,
+        "fn covers_paths(flag: bool) { if flag { left(); } else { right(); } }\n",
+    )
+    .unwrap();
+    let parsed_test = parse_rust_file(&test_src).unwrap();
+    let parsed_by_path = std::collections::HashMap::from([(test_src.clone(), &parsed_test)]);
+    let covering = vec![(test_src, "covers_paths".to_string())];
+    let metrics = crate::rust_fn_metrics::RustFunctionMetrics {
+        statements: 1,
+        arguments: 0,
+        max_indentation: 0,
+        nested_function_depth: 0,
+        returns: 0,
+        branches: 3,
+        local_variables: 0,
+        bool_parameters: 0,
+        attributes: 0,
+        calls: 0,
+    };
+
+    let credit = rs_branch_credit(&metrics, true, &covering, &parsed_by_path);
+
+    assert!(credit > 0.0 && credit < 1.0);
+    assert_eq!(
+        rs_branch_credit(&metrics, false, &covering, &parsed_by_path),
+        0.0
+    );
+}
+
+#[test]
+fn weighted_mass_records_zero_and_partial_credit() {
+    let file = std::path::PathBuf::from("src/lib.rs");
+    let def = RustCodeDefinition {
+        name: "run".to_string(),
+        kind: crate::units::CodeUnitKind::Function,
+        file: file.clone(),
+        line: 1,
+        impl_for_type: None,
+    };
+    let mut by_file = std::collections::HashMap::new();
+
+    accumulate_rs_weighted_mass(&mut by_file, &def, 4, 0.0);
+    accumulate_rs_weighted_mass(&mut by_file, &def, 6, 0.5);
+
+    assert_eq!(by_file.get(&file), Some(&(3.0, 10.0)));
+}
+
+#[test]
+fn locate_helpers_return_none_for_missing_or_external_items() {
+    let def = RustCodeDefinition {
+        name: "missing".to_string(),
+        kind: crate::units::CodeUnitKind::Function,
+        file: std::path::PathBuf::from("src/lib.rs"),
+        line: 99,
+        impl_for_type: None,
+    };
+    let external_mod: syn::Item = syn::parse_str("mod external;").unwrap();
+
+    assert!(locate_in_items(&[], &def).is_none());
+    assert!(locate_in_item(&external_mod, &def).is_none());
+}
+
+#[test]
+fn module_import_surface_credit_is_nonzero_with_branchy_covering_test() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("lib.rs");
+    let test_src = tmp.path().join("tests.rs");
+    std::fs::write(
+        &src,
+        "pub fn target() -> u32 { 1 }\npub fn sibling() -> u32 { 2 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &test_src,
+        "fn covers(flag: bool) { if flag { target(); } else { sibling(); } }\n",
+    )
+    .unwrap();
+    let parsed = parse_rust_file(&src).unwrap();
+    let parsed_test = parse_rust_file(&test_src).unwrap();
+    let refs: Vec<_> = [&parsed].into_iter().collect();
+    let analysis = analyze_rust_test_refs(&refs, None);
+    let target = analysis
+        .definitions
+        .iter()
+        .find(|d| d.name == "target")
+        .expect("target");
+    let metrics = crate::rust_fn_metrics::RustFunctionMetrics {
+        statements: 1,
+        arguments: 0,
+        max_indentation: 0,
+        nested_function_depth: 0,
+        returns: 1,
+        branches: 0,
+        local_variables: 0,
+        bool_parameters: 0,
+        attributes: 0,
+        calls: 0,
+    };
+    let parsed_by_path = std::collections::HashMap::from([(test_src.clone(), &parsed_test)]);
+    let covering = vec![(test_src, "covers".to_string())];
+
+    let credit =
+        rs_module_import_surface_credit(&analysis, target, &metrics, &covering, &parsed_by_path);
+
+    assert!(credit.is_some_and(|v| v > 0.0 && v <= 1.0));
+}

@@ -68,14 +68,8 @@ mod coverage_witness {
     #[test]
     fn witness_rust_parse_error_display_fmt() {
         let cases = [
-            RustParseError::IoError(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "missing",
-            )),
-            RustParseError::SynError(syn::Error::new(
-                proc_macro2::Span::call_site(),
-                "bad",
-            )),
+            RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "missing")),
+            RustParseError::SynError(syn::Error::new(proc_macro2::Span::call_site(), "bad")),
         ];
         for err in cases {
             assert!(!RustParseErrorViaWriter(&err).to_string().is_empty());

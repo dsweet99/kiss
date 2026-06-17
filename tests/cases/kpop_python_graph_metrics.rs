@@ -5,6 +5,10 @@ use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
+fn fixture_path(rel: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel)
+}
+
 fn parse_py(path: &Path) -> ParsedFile {
     let mut parser = create_parser().expect("parser should initialize");
     parse_file(&mut parser, path).expect("should parse fixture")
@@ -18,12 +22,15 @@ fn bug_indirect_dependencies_should_not_count_external_modules() {
     // inflating coupling metrics.
     //
     // Prediction: `tests.fake_python.graph_ext_a` has 1 direct dep (graph_ext_b), 0 indirect.
-    let a = parse_py(Path::new("tests/fake_python/graph_ext_a.py"));
-    let b = parse_py(Path::new("tests/fake_python/graph_ext_b.py"));
+    let a_path = fixture_path("tests/fake_python/graph_ext_a.py");
+    let b_path = fixture_path("tests/fake_python/graph_ext_b.py");
+    let a = parse_py(&a_path);
+    let b = parse_py(&b_path);
     let parsed_files: Vec<&ParsedFile> = vec![&a, &b];
     let g = build_dependency_graph(&parsed_files);
 
-    let m = g.module_metrics("tests.fake_python.graph_ext_a");
+    let module = g.module_for_path(&a_path).expect("fixture module exists");
+    let m = g.module_metrics(&module);
     assert_eq!(m.fan_out, 1);
     assert_eq!(m.indirect_dependencies, 0);
 }

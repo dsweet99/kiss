@@ -35,10 +35,7 @@ fn parse_error_display_covers_all_variants() {
     for err in [
         kiss::ParseError::ParserInitError,
         kiss::ParseError::ParseFailed,
-        kiss::ParseError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "missing",
-        )),
+        kiss::ParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "missing")),
     ] {
         assert!(!err.to_string().is_empty());
     }
@@ -51,10 +48,7 @@ fn rust_parse_error_display_covers_all_variants() {
         Err(err) => err,
     };
     for err in [
-        kiss::RustParseError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "missing",
-        )),
+        kiss::RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "missing")),
         kiss::RustParseError::SynError(syn_err),
     ] {
         assert!(!err.to_string().is_empty());

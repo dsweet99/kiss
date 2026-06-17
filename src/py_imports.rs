@@ -133,14 +133,8 @@ mod tests {
 
     #[test]
     fn test_wildcard_import_counted() {
-        // `from foo import *` should count as at least 1 imported name,
-        // since it pulls names into the namespace.
         let p = parse("from foo import *");
-        assert!(
-            count_imports(p.tree.root_node(), &p.source) >= 1,
-            "Wildcard import should count as at least 1 imported name (got {})",
-            count_imports(p.tree.root_node(), &p.source)
-        );
+        assert_eq!(count_imports(p.tree.root_node(), &p.source), 1);
     }
 
     #[test]
@@ -158,5 +152,58 @@ mod tests {
         collect_import_names(p.tree.root_node(), &p.source, &mut names);
         assert!(names.contains("os"));
         assert!(names.contains("path"));
+    }
+
+    #[test]
+    fn import_aliases_count_public_names() {
+        let p =
+            parse("import numpy as np\nimport pandas.core.frame\nfrom pkg import thing as alias");
+        let mut names = std::collections::HashSet::new();
+
+        collect_import_names(p.tree.root_node(), &p.source, &mut names);
+
+        assert!(names.contains("np"));
+        assert!(names.contains("pandas"));
+        assert!(names.contains("alias"));
+        assert_eq!(names.len(), 3);
+    }
+
+    #[test]
+    fn non_type_checking_if_blocks_are_traversed() {
+        let p =
+            parse("if SHOULD_IMPORT:\n    import os\nif typing.NOT_TYPE_CHECKING:\n    import sys");
+        let mut names = std::collections::HashSet::new();
+
+        collect_import_names(p.tree.root_node(), &p.source, &mut names);
+
+        assert!(names.contains("os"));
+        assert!(names.contains("sys"));
+    }
+
+    #[test]
+    fn malformed_if_is_not_type_checking_block() {
+        let p = parse("if:\n    import os");
+        let mut cursor = p.tree.root_node().walk();
+        let if_node = p
+            .tree
+            .root_node()
+            .children(&mut cursor)
+            .find(|node| node.kind() == "if_statement")
+            .expect("parser should still expose an if statement");
+
+        assert!(!is_type_checking_block(if_node, &p.source));
+    }
+
+    #[test]
+    fn import_from_without_alias_counts_imported_name() {
+        let p = parse("from package import (thing)");
+        let mut names = std::collections::HashSet::new();
+
+        collect_import_names(p.tree.root_node(), &p.source, &mut names);
+
+        assert_eq!(
+            names,
+            std::collections::HashSet::from(["thing".to_string()])
+        );
     }
 }

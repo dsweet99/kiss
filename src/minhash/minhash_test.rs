@@ -6,6 +6,7 @@ use super::*;
 fn test_normalize_code() {
     assert_eq!(normalize_code("x = 123"), "x = 123");
     assert_eq!(normalize_code("  hello   world  "), "hello world");
+    assert_eq!(normalize_code("CAFÉ\tΣ"), "cafÉ Σ");
     assert_ne!(
         normalize_code("result = compute(123, 456)"),
         normalize_code("result = compute(999, 111)")
@@ -25,6 +26,17 @@ fn test_minhash_identical() {
     let sig1 = compute_minhash(&shingles, 100);
     let sig2 = compute_minhash(&shingles, 100);
     assert!((estimate_similarity(&sig1, &sig2) - 1.0).abs() < 0.01);
+}
+
+#[test]
+fn test_minhash_custom_size_is_deterministic() {
+    let shingles = generate_shingles("the quick brown fox", 2);
+    let sig1 = compute_minhash(&shingles, 7);
+    let sig2 = compute_minhash(&shingles, 7);
+
+    assert_eq!(sig1.hashes, sig2.hashes);
+    assert_eq!(sig1.hashes.len(), 7);
+    assert!(sig1.hashes.iter().any(|h| *h != u64::MAX));
 }
 
 #[test]
@@ -79,6 +91,16 @@ fn test_add_bucket_pairs_single() {
     assert!(candidates.is_empty());
 }
 
+#[test]
+fn test_add_bucket_pairs_skips_oversized_buckets() {
+    let indices = (0..=100).collect::<Vec<_>>();
+    let mut candidates = HashSet::new();
+
+    super::add_bucket_pairs(&indices, &mut candidates);
+
+    assert!(candidates.is_empty());
+}
+
 // === Bug-hunting tests ===
 
 #[test]
@@ -87,6 +109,34 @@ fn test_generate_shingles_zero_size_returns_empty() {
     // windows(0) panics in Rust, so this exposes a missing guard.
     let shingles = generate_shingles("hello world test", 0);
     assert!(shingles.is_empty());
+}
+
+#[test]
+fn test_find_lsh_candidates_zero_bands_returns_empty() {
+    let sig = MinHashSignature {
+        hashes: vec![1, 2, 3],
+    };
+
+    let candidates = find_lsh_candidates(&[sig], 0);
+
+    assert!(candidates.is_empty());
+}
+
+#[test]
+fn test_find_lsh_candidates_stops_when_bands_exceed_hash_len() {
+    let a = MinHashSignature { hashes: vec![1, 2] };
+    let b = MinHashSignature { hashes: vec![1, 3] };
+
+    let candidates = find_lsh_candidates(&[a, b], 10);
+
+    assert!(candidates.contains(&(0, 1)));
+}
+
+#[test]
+fn test_empty_signatures_have_zero_similarity() {
+    let sig = MinHashSignature { hashes: vec![] };
+
+    assert_eq!(estimate_similarity(&sig, &sig), 0.0);
 }
 
 #[test]

@@ -18,11 +18,22 @@ pub fn runtime_py_analysis(
     parsed: &[ParsedFile],
     jobs: Option<usize>,
 ) -> TestRefAnalysis {
+    if parsed.is_empty() {
+        return TestRefAnalysis {
+            definitions: Vec::new(),
+            test_references: HashSet::new(),
+            call_references: HashSet::new(),
+            unreferenced: Vec::new(),
+            coverage_map: HashMap::new(),
+        };
+    }
     let j = jobs.unwrap_or_else(pyfork::default_parallelism);
     let collector = PytestTraceCollector;
-    match rslip::current_database(repo_root, &|root, selectors, parallelism| {
-        collector.collect(root, selectors, parallelism)
-    }, j) {
+    match rslip::current_database(
+        repo_root,
+        &|root, selectors, parallelism| collector.collect(root, selectors, parallelism),
+        j,
+    ) {
         Ok(db) => analysis_from_database(repo_root, parsed, &db),
         Err(err) => {
             eprintln!("error: rslip coverage refresh failed: {err}");
@@ -118,26 +129,6 @@ pub(crate) fn normalize_against(repo_root: &Path, path: &Path) -> String {
         .unwrap_or(path)
         .to_string_lossy()
         .replace('\\', "/")
-}
-
-#[cfg(test)]
-mod coverage_witness {
-    use super::*;
-    use std::collections::BTreeMap;
-
-    #[test]
-    fn witness_analysis_from_database_symbol() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let db = Database {
-            schema_version: rslip::SCHEMA_VERSION,
-            rslip_version: rslip::RSLIP_VERSION.to_string(),
-            config_fingerprints: BTreeMap::new(),
-            files: BTreeMap::new(),
-            tests: BTreeMap::new(),
-            source_to_covering_tests: BTreeMap::new(),
-        };
-        let _ = analysis_from_database(tmp.path(), &[], &db);
-    }
 }
 
 #[cfg(test)]
@@ -275,12 +266,108 @@ mod tests {
 
         assert_eq!(analysis.definitions.len(), 2);
         assert_eq!(analysis.unreferenced.len(), 2);
+        assert!(analysis.test_references.is_empty());
+        assert!(analysis.call_references.is_empty());
+        assert!(analysis.coverage_map.is_empty());
+        for (def, file) in analysis.definitions.iter().zip(&files) {
+            assert_eq!(def.name, "rslip_refresh_failed");
+            assert_eq!(def.kind, CodeUnitKind::Module);
+            assert_eq!(def.file, file.path);
+            assert_eq!(def.line, 1);
+            assert_eq!(def.containing_class, None);
+        }
+        assert_eq!(analysis.unreferenced.len(), analysis.definitions.len());
+        for (missing, def) in analysis.unreferenced.iter().zip(&analysis.definitions) {
+            assert_eq!(missing.name, def.name);
+            assert_eq!(missing.file, def.file);
+            assert_eq!(missing.line, def.line);
+        }
+    }
+
+    #[test]
+    fn fail_closed_analysis_preserves_file_order_and_denied_units() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let files = vec![
+            parsed(tmp.path().join("pkg/first.py")),
+            parsed(tmp.path().join("pkg/second.py")),
+            parsed(tmp.path().join("pkg/third.py")),
+        ];
+
+        let analysis = fail_closed_analysis(&files);
+
+        let definition_files: Vec<_> = analysis
+            .definitions
+            .iter()
+            .map(|def| def.file.strip_prefix(tmp.path()).unwrap().to_path_buf())
+            .collect();
+        let unreferenced_files: Vec<_> = analysis
+            .unreferenced
+            .iter()
+            .map(|def| def.file.strip_prefix(tmp.path()).unwrap().to_path_buf())
+            .collect();
+        assert_eq!(
+            definition_files,
+            vec![
+                PathBuf::from("pkg/first.py"),
+                PathBuf::from("pkg/second.py"),
+                PathBuf::from("pkg/third.py"),
+            ]
+        );
+        assert_eq!(unreferenced_files, definition_files);
         assert!(
             analysis
                 .definitions
                 .iter()
-                .all(|def| def.name == "rslip_refresh_failed")
+                .all(|def| def.name == "rslip_refresh_failed" && def.line == 1)
         );
+    }
+
+    #[test]
+    fn fail_closed_analysis_preserves_duplicate_input_cardinality() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let duplicate_path = tmp.path().join("pkg/retried.py");
+        let files = vec![
+            parsed(duplicate_path.clone()),
+            parsed(tmp.path().join("pkg/other.py")),
+            parsed(duplicate_path.clone()),
+        ];
+
+        let analysis = fail_closed_analysis(&files);
+
+        let definition_files: Vec<_> = analysis
+            .definitions
+            .iter()
+            .map(|def| def.file.clone())
+            .collect();
+        let unreferenced_files: Vec<_> = analysis
+            .unreferenced
+            .iter()
+            .map(|def| def.file.clone())
+            .collect();
+        assert_eq!(
+            definition_files,
+            vec![
+                duplicate_path.clone(),
+                tmp.path().join("pkg/other.py"),
+                duplicate_path
+            ]
+        );
+        assert_eq!(unreferenced_files, definition_files);
+        assert!(
+            analysis
+                .unreferenced
+                .iter()
+                .all(|def| def.name == "rslip_refresh_failed" && def.kind == CodeUnitKind::Module)
+        );
+    }
+
+    #[test]
+    fn fail_closed_analysis_keeps_empty_input_empty() {
+        let analysis = fail_closed_analysis(&[]);
+
+        assert!(analysis.definitions.is_empty());
+        assert!(analysis.unreferenced.is_empty());
+        assert!(analysis.coverage_map.is_empty());
     }
 
     #[test]

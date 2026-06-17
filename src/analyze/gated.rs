@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use kiss::{GateConfig, ParsedFile};
+use kiss::{GateConfig, ParsedFile, ParsedRustFile};
 
 use crate::analyze::coverage_gate::evaluate_gate;
 use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
@@ -73,6 +73,16 @@ fn gated_py_parallel(
     (py_cov, py_graph, graph_viols_all, py_dups_all)
 }
 
+fn runtime_rust_coverage_for_opts(
+    opts: &crate::analyze::options::AnalyzeOptions<'_>,
+    parsed: &[ParsedRustFile],
+) -> kiss::RustTestRefAnalysis {
+    let repo_root = Path::new(opts.universe)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(opts.universe));
+    kiss::rust_llvm_cov::runtime_rust_analysis(&repo_root, parsed)
+}
+
 pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
     use crate::analyze::dup_detect;
 
@@ -84,11 +94,7 @@ pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
         parsed: (result, viols, file_count),
         timings,
     } = in_;
-    let rs_graph = build_rs_graph(&result.rs_parsed);
-    let rs_cov = kiss::analyze_rust_test_refs(
-        &result.rs_parsed.iter().collect::<Vec<_>>(),
-        rs_graph.as_ref(),
-    );
+    let rs_cov = runtime_rust_coverage_for_opts(opts, &result.rs_parsed);
 
     let (py_cov, py_graph, mut graph_viols_all, py_dups_all) =
         gated_py_parallel(&GatedPyParallelIn {
@@ -153,16 +159,15 @@ pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
 #[cfg(test)]
 mod gated_tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct TestFixture {
         py_cfg: kiss::Config,
         rs_cfg: kiss::Config,
         gate: GateConfig,
         focus: Vec<String>,
-    }
-
-    impl GatedPyParallelIn<'_> {
-        fn witness() {}
     }
 
     impl TestFixture {
@@ -203,12 +208,23 @@ mod gated_tests {
         }
     }
 
+    fn parsed_rs(path: PathBuf) -> ParsedRustFile {
+        let source = "pub fn covered() -> usize { 1 }\n";
+        let ast = syn::parse_file(source).unwrap();
+        ParsedRustFile {
+            path,
+            source: source.to_string(),
+            ast,
+        }
+    }
+
     #[test]
-    fn test_gated_py_parallel_in_constructible() {
-        GatedPyParallelIn::witness();
+    fn gated_py_parallel_input_preserves_gate_options() {
         let fix = TestFixture::new();
         fix.with_input(|input| {
             assert_eq!(input.file_count, 0);
+            assert!(input.py_parsed.is_empty());
+            assert!(std::ptr::eq(input.gate, input.opts.gate_config));
         });
     }
 
@@ -252,5 +268,140 @@ mod gated_tests {
             assert!(graph_viols.is_empty());
             assert!(py_dups.is_empty());
         });
+    }
+
+    #[test]
+    fn runtime_rust_coverage_uses_unresolved_universe_without_static_fallback() {
+        let fix = TestFixture::new();
+        let missing_root = "/tmp/kiss-runtime-rust-coverage-missing-root";
+        let opts = crate::analyze::options::AnalyzeOptions {
+            universe: missing_root,
+            focus_paths: &fix.focus,
+            py_config: &fix.py_cfg,
+            rs_config: &fix.rs_cfg,
+            lang_filter: None,
+            bypass_gate: false,
+            gate_config: &fix.gate,
+            ignore_prefixes: &[],
+            show_timing: false,
+            suppress_final_status: false,
+            jobs: None,
+        };
+
+        let analysis = runtime_rust_coverage_for_opts(&opts, &[]);
+
+        assert!(analysis.definitions.is_empty());
+        assert!(analysis.unreferenced.is_empty());
+    }
+
+    #[test]
+    fn runtime_rust_coverage_keeps_deleted_universe_unresolved() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let deleted_root = tmp.path().join("deleted-root");
+        std::fs::create_dir(&deleted_root).unwrap();
+        std::fs::remove_dir(&deleted_root).unwrap();
+        let fix = TestFixture::new();
+        let opts = crate::analyze::options::AnalyzeOptions {
+            universe: deleted_root.to_str().unwrap(),
+            focus_paths: &fix.focus,
+            py_config: &fix.py_cfg,
+            rs_config: &fix.rs_cfg,
+            lang_filter: None,
+            bypass_gate: false,
+            gate_config: &fix.gate,
+            ignore_prefixes: &[],
+            show_timing: false,
+            suppress_final_status: false,
+            jobs: None,
+        };
+
+        let analysis = runtime_rust_coverage_for_opts(&opts, &[]);
+
+        assert!(analysis.definitions.is_empty());
+        assert!(analysis.unreferenced.is_empty());
+        assert!(analysis.coverage_map.is_empty());
+    }
+
+    #[test]
+    fn runtime_rust_coverage_accepts_existing_universe_without_static_fallback() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let fix = TestFixture::new();
+        let opts = crate::analyze::options::AnalyzeOptions {
+            universe: tmp.path().to_str().unwrap(),
+            focus_paths: &fix.focus,
+            py_config: &fix.py_cfg,
+            rs_config: &fix.rs_cfg,
+            lang_filter: None,
+            bypass_gate: false,
+            gate_config: &fix.gate,
+            ignore_prefixes: &[],
+            show_timing: false,
+            suppress_final_status: false,
+            jobs: None,
+        };
+
+        let analysis = runtime_rust_coverage_for_opts(&opts, &[]);
+
+        assert!(analysis.definitions.is_empty());
+        assert!(analysis.unreferenced.is_empty());
+        assert!(analysis.coverage_map.is_empty());
+    }
+
+    #[test]
+    fn runtime_rust_coverage_preserves_nested_runtime_absence() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("CARGO_LLVM_COV", "1") };
+        let tmp = tempfile::TempDir::new().unwrap();
+        let fix = TestFixture::new();
+        let opts = crate::analyze::options::AnalyzeOptions {
+            universe: tmp.path().to_str().unwrap(),
+            focus_paths: &fix.focus,
+            py_config: &fix.py_cfg,
+            rs_config: &fix.rs_cfg,
+            lang_filter: None,
+            bypass_gate: false,
+            gate_config: &fix.gate,
+            ignore_prefixes: &[],
+            show_timing: false,
+            suppress_final_status: false,
+            jobs: None,
+        };
+        let parsed = vec![parsed_rs(tmp.path().join("src/lib.rs"))];
+
+        let analysis = runtime_rust_coverage_for_opts(&opts, &parsed);
+
+        unsafe { std::env::remove_var("CARGO_LLVM_COV") };
+        assert!(analysis.definitions.is_empty());
+        assert!(analysis.unreferenced.is_empty());
+        assert!(analysis.coverage_map.is_empty());
+    }
+
+    #[test]
+    fn runtime_rust_coverage_keeps_unresolved_nested_runtime_empty() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("CARGO_LLVM_COV", "1") };
+        let fix = TestFixture::new();
+        let missing_root = "/tmp/kiss-runtime-rust-coverage-nested-missing-root";
+        let opts = crate::analyze::options::AnalyzeOptions {
+            universe: missing_root,
+            focus_paths: &fix.focus,
+            py_config: &fix.py_cfg,
+            rs_config: &fix.rs_cfg,
+            lang_filter: None,
+            bypass_gate: false,
+            gate_config: &fix.gate,
+            ignore_prefixes: &[],
+            show_timing: false,
+            suppress_final_status: false,
+            jobs: None,
+        };
+        let parsed = vec![parsed_rs(PathBuf::from(missing_root).join("src/lib.rs"))];
+
+        let analysis = runtime_rust_coverage_for_opts(&opts, &parsed);
+
+        unsafe { std::env::remove_var("CARGO_LLVM_COV") };
+        assert!(analysis.definitions.is_empty());
+        assert!(analysis.unreferenced.is_empty());
+        assert!(analysis.coverage_map.is_empty());
     }
 }

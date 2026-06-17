@@ -199,6 +199,28 @@ mod tests {
     }
 
     #[test]
+    fn cached_definition_preserves_all_code_unit_kinds() {
+        let cases = [
+            (CodeUnitKind::Function, "function"),
+            (CodeUnitKind::Method, "method"),
+            (CodeUnitKind::Class, "class"),
+            (CodeUnitKind::Module, "module"),
+            (CodeUnitKind::Struct, "struct"),
+            (CodeUnitKind::Enum, "enum"),
+            (CodeUnitKind::TraitImplMethod, "trait_impl_method"),
+        ];
+
+        for (kind, stored) in cases {
+            assert_eq!(kind_to_str(kind), stored);
+            assert_eq!(kind_from_str(stored), kind);
+        }
+        assert_eq!(
+            kind_from_str("unknown-old-cache-kind"),
+            CodeUnitKind::Function
+        );
+    }
+
+    #[test]
     fn test_cache_dir_smoke() {
         // Full-run cache uses this directory; keep it stable and non-panicking.
         let _ = cache_dir();

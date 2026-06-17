@@ -222,6 +222,75 @@ fn test_generate_config_toml_includes_boolean_parameters() {
 }
 
 #[test]
+fn stats_table_omits_empty_summaries_but_keeps_header() {
+    let table = super::format_stats_table(&[
+        PercentileSummary {
+            metric_id: "zero_metric",
+            count: 0,
+            p50: 0,
+            p90: 0,
+            p95: 0,
+            p99: 0,
+            max: 0,
+        },
+        PercentileSummary {
+            metric_id: "populated_metric",
+            count: 2,
+            p50: 1,
+            p90: 2,
+            p95: 2,
+            p99: 2,
+            max: 3,
+        },
+    ]);
+
+    assert!(table.starts_with("metric_id"));
+    assert!(table.contains("populated_metric"));
+    assert!(!table.contains("zero_metric"));
+}
+
+#[test]
+fn config_key_for_maps_function_file_and_graph_metrics() {
+    assert_eq!(
+        config_key_for("keyword_only_args"),
+        Some("arguments_keyword_only")
+    );
+    assert_eq!(
+        config_key_for("functions_per_file"),
+        Some("functions_per_file")
+    );
+    assert_eq!(config_key_for("fan_out"), Some("fan_out"));
+    assert_eq!(config_key_for("unknown_metric"), None);
+}
+
+#[test]
+fn generated_config_ignores_non_threshold_metrics() {
+    let toml = super::generate_config_toml(&[
+        PercentileSummary {
+            metric_id: "fan_in",
+            count: 3,
+            p50: 1,
+            p90: 2,
+            p95: 2,
+            p99: 4,
+            max: 5,
+        },
+        PercentileSummary {
+            metric_id: "not_a_threshold",
+            count: 3,
+            p50: 1,
+            p90: 2,
+            p95: 2,
+            p99: 99,
+            max: 100,
+        },
+    ]);
+
+    assert!(toml.contains("fan_in = 4"));
+    assert!(!toml.contains("not_a_threshold"));
+}
+
+#[test]
 fn test_metric_values() {
     let mut stats = MetricStats::default();
     stats.statements_per_function.push(10);

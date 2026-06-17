@@ -266,6 +266,47 @@ impl std::fmt::Display for E {
     }
 
     #[test]
+    fn trivial_expr_accepts_delegating_control_flow() {
+        for expr in [
+            "if flag { Ok(()) } else { Err(e) }",
+            "match result { Ok(v) if ready => Some(v), Err(e) => Err(e)? }",
+            "{ let value = input?; return Ok(value); }",
+        ] {
+            assert!(
+                is_trivial_expr(&syn::parse_str(expr).unwrap()),
+                "{expr} should be treated as delegation-only"
+            );
+        }
+    }
+
+    #[test]
+    fn trivial_expr_rejects_executable_control_flow() {
+        for expr in [
+            "if compute() { Ok(()) } else { Ok(()) }",
+            "match result { Ok(v) => transform(v), Err(e) => Err(e)? }",
+            "{ let value = make_value(); Ok(value) }",
+        ] {
+            assert!(
+                !is_trivial_expr(&syn::parse_str(expr).unwrap()),
+                "{expr} should require executable coverage"
+            );
+        }
+    }
+
+    #[test]
+    fn trivial_expr_accepts_only_trivial_compound_inputs() {
+        for expr in ["value.field", "&value", "-value", "(left, Some(right))"] {
+            assert!(
+                is_trivial_expr(&syn::parse_str(expr).unwrap()),
+                "{expr} should remain a trivial adapter expression"
+            );
+        }
+        assert!(!is_trivial_expr(
+            &syn::parse_str::<syn::Expr>("(left, make_right())").unwrap()
+        ));
+    }
+
+    #[test]
     fn is_trivial_stmt_variants() {
         assert!(is_trivial_stmt(
             &syn::parse_str::<syn::Stmt>("Ok(());").unwrap()

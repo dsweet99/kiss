@@ -191,4 +191,6 @@ mod tests_5;
 #[cfg(test)]
 mod tests_6;
 #[cfg(test)]
+mod tests_7;
+#[cfg(test)]
 mod tests_weighted;

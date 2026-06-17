@@ -32,7 +32,11 @@ fn kiss_test_dry_run_one_line_per_nodeid() {
     std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 2\n").unwrap();
     let out = kiss_test_dry_run(tmp.path(), &[]);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let lines = pytest_lines(&stdout);
     assert_eq!(lines.len(), 1, "unexpected stdout: {stdout}");
     assert!(stdout.contains("test_lib.py::test_f"), "stdout={stdout}");
@@ -68,7 +72,11 @@ fn kiss_test_python_ignores_git_for_selection() {
     .unwrap();
     let out = kiss_test_dry_run(tmp.path(), &[]);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(
         pytest_lines(&stdout).is_empty(),
         "Python scheduling must use rslip skip cache, not git diff; stdout={stdout}"
@@ -98,9 +106,15 @@ fn kiss_test_rust_still_uses_git_selectors() {
     .unwrap();
     let out = kiss_test_dry_run(tmp.path(), &["--lang", "rust"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "stderr={}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        stdout.lines().any(|l| l.contains("cargo") && l.contains("test")),
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout
+            .lines()
+            .any(|l| l.contains("cargo") && l.contains("test")),
         "Rust path should schedule via git diff; stdout={stdout}"
     );
 }
@@ -111,7 +125,11 @@ fn kiss_test_extra_args_repeated_per_fork() {
     std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 2\n").unwrap();
     let out = kiss_test_dry_run(tmp.path(), &["--", "--tb=short"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "stderr={}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let lines = pytest_lines(&stdout);
     assert_eq!(lines.len(), 1, "stdout={stdout}");
     assert!(

@@ -7,12 +7,13 @@
 use std::fmt::Write as _;
 use std::fs;
 use std::process::Command;
+use crate::support::kiss_test::kiss_command;
 use tempfile::TempDir;
 
 const COVERED_FUNCTION_COUNT: usize = 18;
 
 fn kiss_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
+    kiss_command()
 }
 
 fn write_permissive_config(root: &std::path::Path) {

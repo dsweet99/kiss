@@ -1,4 +1,4 @@
-use super::test_helpers::{empty_inputs, ScopedHome};
+use super::test_helpers::{ScopedHome, empty_inputs};
 use super::*;
 use crate::analyze::FocusFilter;
 use std::fs;
@@ -211,5 +211,88 @@ fn try_run_cached_all_rejects_rslip_refresh_failure_snapshot() {
     assert!(
         try_run_cached_all(&opts, &py_files, &rs_files, &focus).is_none(),
         "cache must miss when snapshot came from rslip refresh failure"
+    );
+}
+
+#[test]
+fn try_run_cached_all_rejects_stale_rust_coverage_fingerprint() {
+    let _home = ScopedHome::new();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let universe = tmp.path().to_string_lossy().to_string();
+    let rs = tmp.path().join("lib.rs");
+    fs::write(&rs, "pub fn a() -> usize { 1 }\n").unwrap();
+    let py_files: Vec<PathBuf> = vec![];
+    let rs_files = vec![rs.clone()];
+    let py_cfg = Config::python_defaults();
+    let rs_cfg = Config::rust_defaults();
+    let gate = GateConfig::default();
+    let fp = fingerprint_for_check(&py_files, &rs_files, &py_cfg, &rs_cfg, &gate);
+    let mut inputs = empty_inputs(&fp);
+    inputs.rs_file_count = 1;
+    inputs.rs_paths = vec![rs.to_string_lossy().to_string()];
+    inputs.rslip_fingerprint = kiss::rslip_bridge::rslip_database_fingerprint(tmp.path());
+    inputs.rust_coverage_fingerprint = "stale".to_string();
+    store_full_cache_from_run(inputs);
+    let focus = FocusFilter::unrestricted();
+    let opts = crate::analyze::AnalyzeOptions {
+        universe: &universe,
+        focus_paths: std::slice::from_ref(&universe),
+        py_config: &py_cfg,
+        rs_config: &rs_cfg,
+        lang_filter: None,
+        bypass_gate: false,
+        gate_config: &gate,
+        ignore_prefixes: &[],
+        show_timing: false,
+        suppress_final_status: false,
+        jobs: None,
+    };
+    assert!(
+        try_run_cached_all(&opts, &py_files, &rs_files, &focus).is_none(),
+        "cache must miss when Rust coverage backend fingerprint differs"
+    );
+}
+
+#[test]
+fn try_run_cached_all_rejects_llvm_cov_failure_snapshot() {
+    let _home = ScopedHome::new();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let universe = tmp.path().to_string_lossy().to_string();
+    let rs = tmp.path().join("lib.rs");
+    fs::write(&rs, "pub fn a() -> usize { 1 }\n").unwrap();
+    let py_files: Vec<PathBuf> = vec![];
+    let rs_files = vec![rs.clone()];
+    let py_cfg = Config::python_defaults();
+    let rs_cfg = Config::rust_defaults();
+    let gate = GateConfig::default();
+    let fp = fingerprint_for_check(&py_files, &rs_files, &py_cfg, &rs_cfg, &gate);
+    let mut inputs = empty_inputs(&fp);
+    inputs.rs_file_count = 1;
+    inputs.rs_paths = vec![rs.to_string_lossy().to_string()];
+    inputs.rslip_fingerprint = kiss::rslip_bridge::rslip_database_fingerprint(tmp.path());
+    inputs.rust_coverage_fingerprint = kiss::rust_llvm_cov::backend_fingerprint(tmp.path());
+    inputs.definitions = vec![kiss::check_universe_cache::CachedCoverageItem {
+        file: rs.to_string_lossy().to_string(),
+        name: "llvm_cov_failed".to_string(),
+        line: 1,
+    }];
+    store_full_cache_from_run(inputs);
+    let focus = FocusFilter::unrestricted();
+    let opts = crate::analyze::AnalyzeOptions {
+        universe: &universe,
+        focus_paths: std::slice::from_ref(&universe),
+        py_config: &py_cfg,
+        rs_config: &rs_cfg,
+        lang_filter: None,
+        bypass_gate: false,
+        gate_config: &gate,
+        ignore_prefixes: &[],
+        show_timing: false,
+        suppress_final_status: false,
+        jobs: None,
+    };
+    assert!(
+        try_run_cached_all(&opts, &py_files, &rs_files, &focus).is_none(),
+        "cache must miss when snapshot came from cargo llvm-cov failure"
     );
 }

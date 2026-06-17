@@ -163,3 +163,186 @@ pub(in crate::bin_cli::dispatch) fn dispatch_mv(o: MvDispatchOptions) -> i32 {
     };
     kiss::symbol_mv::run_mv_command(opts)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::options::TriConfig;
+    use super::*;
+
+    struct DispatchFixture {
+        py: kiss::Config,
+        rs: kiss::Config,
+        gate: kiss::GateConfig,
+    }
+
+    impl DispatchFixture {
+        fn new() -> Self {
+            Self {
+                py: kiss::Config::python_defaults(),
+                rs: kiss::Config::rust_defaults(),
+                gate: kiss::GateConfig::default(),
+            }
+        }
+
+        fn with_cfg<R>(&self, f: impl FnOnce(&TriConfig<'_>) -> R) -> R {
+            let cfg = TriConfig {
+                py: &self.py,
+                rs: &self.rs,
+                gate: &self.gate,
+            };
+            f(&cfg)
+        }
+    }
+
+    #[test]
+    fn dispatch_check_passes_empty_directory_when_gate_is_bypassed() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().to_string_lossy().to_string();
+        let fix = DispatchFixture::new();
+
+        let status = fix.with_cfg(|cfg| {
+            dispatch_check(CheckDispatchOptions {
+                lang: None,
+                paths: vec![path],
+                bypass_gate: true,
+                ignore: vec![],
+                timing: false,
+                jobs: Some(1),
+                cfg,
+            })
+        });
+
+        assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn dispatch_dry_rejects_invalid_similarity_without_scanning() {
+        let status = dispatch_dry(DryDispatchOptions {
+            lang: None,
+            path: ".".to_string(),
+            filter_files: vec![],
+            shingle_size: 3,
+            minhash_size: 100,
+            lsh_bands: 20,
+            min_similarity: 1.5,
+            ignore: vec![],
+        });
+
+        assert_eq!(status, 1);
+    }
+
+    #[test]
+    fn dispatch_dry_accepts_tiny_source_directory() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("a.py"), "def same():\n    return 1\n").unwrap();
+
+        let status = dispatch_dry(DryDispatchOptions {
+            lang: Some(Language::Python),
+            path: tmp.path().to_string_lossy().to_string(),
+            filter_files: vec![],
+            shingle_size: 3,
+            minhash_size: 16,
+            lsh_bands: 4,
+            min_similarity: 0.9,
+            ignore: vec![],
+        });
+
+        assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn dispatch_stats_and_mimic_accept_tiny_source_directory() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("sample.py"),
+            "def sample():\n    return 1\n",
+        )
+        .unwrap();
+        let path = tmp.path().to_string_lossy().to_string();
+        let fix = DispatchFixture::new();
+
+        let stats_status = fix.with_cfg(|cfg| {
+            dispatch_stats(StatsDispatchOptions {
+                lang: None,
+                paths: vec![path.clone()],
+                all: None,
+                table: false,
+                ignore: vec![],
+                cfg,
+            })
+        });
+        let mimic_status = dispatch_mimic(MimicDispatchOptions {
+            lang: None,
+            paths: vec![path],
+            out: None,
+            ignore: vec![],
+        });
+
+        assert_eq!(stats_status, 0);
+        assert_eq!(mimic_status, 0);
+    }
+
+    #[test]
+    fn dispatch_config_and_rules_report_success() {
+        let fix = DispatchFixture::new();
+
+        let config_status = fix.with_cfg(|cfg| {
+            dispatch_config(ConfigDispatchOptions {
+                defaults: true,
+                config: None,
+                cfg,
+            })
+        });
+        let rules_status = fix.with_cfg(|cfg| {
+            dispatch_rules(RulesDispatchOptions {
+                lang: Some(Language::Rust),
+                defaults: true,
+                cfg,
+            })
+        });
+
+        assert_eq!(config_status, 0);
+        assert_eq!(rules_status, 0);
+    }
+
+    #[test]
+    fn dispatch_viz_writes_graph_for_tiny_source_directory() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("a.py"),
+            "import math\n\ndef sample():\n    return math.sqrt(4)\n",
+        )
+        .unwrap();
+        let out = tmp.path().join("graph.mmd");
+
+        let status = dispatch_viz(VizDispatchOptions {
+            lang: Some(Language::Python),
+            out: out.clone(),
+            paths: vec![tmp.path().to_string_lossy().to_string()],
+            zoom: 1.0,
+            num_nodes: None,
+            ignore: vec![],
+        });
+
+        assert_eq!(status, 0);
+        assert!(out.exists());
+    }
+
+    #[test]
+    fn dispatch_shrink_without_state_reports_failure() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let fix = DispatchFixture::new();
+
+        let status = fix.with_cfg(|cfg| {
+            dispatch_shrink(ShrinkDispatchOptions {
+                lang: None,
+                target: None,
+                paths: vec![tmp.path().to_string_lossy().to_string()],
+                ignore: vec![],
+                cfg,
+            })
+        });
+
+        assert_eq!(status, 1);
+    }
+}

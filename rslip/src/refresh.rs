@@ -37,12 +37,7 @@ fn refresh_selected_with_collector(
     let mut test_records = BTreeMap::new();
 
     for run in runs {
-        let (selector, record) = test_record_from_run(
-            repo_root,
-            files,
-            &mut source_to_tests,
-            run,
-        );
+        let (selector, record) = test_record_from_run(repo_root, files, &mut source_to_tests, run);
         test_records.insert(selector, record);
     }
 
@@ -204,8 +199,7 @@ pub fn refresh_changed_tests_with_collector(
     for tests in next.source_to_covering_tests.values_mut() {
         tests.retain(|selector| next.tests.contains_key(selector));
     }
-    let partial =
-        refresh_selected_with_collector(repo_root, collector, &mut files, nodeids, j)?;
+    let partial = refresh_selected_with_collector(repo_root, collector, &mut files, nodeids, j)?;
     next.config_fingerprints = partial.config_fingerprints;
     for (selector, record) in partial.tests {
         next.tests.insert(selector, record);

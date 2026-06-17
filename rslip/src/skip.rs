@@ -27,11 +27,7 @@ pub fn file_dirty_same_mtime_different_digest(
     cached_mtime_ns == current_mtime_ns && cached_digest != current_digest
 }
 
-fn test_file_dirty(
-    db: &Database,
-    files: &BTreeMap<String, FileRecord>,
-    test_path: &str,
-) -> bool {
+fn test_file_dirty(db: &Database, files: &BTreeMap<String, FileRecord>, test_path: &str) -> bool {
     let Some(cached) = db.files.get(test_path) else {
         return true;
     };
@@ -73,7 +69,9 @@ fn conftest_dirty(db: &Database, files: &BTreeMap<String, FileRecord>) -> bool {
             Some(_) => {}
         }
     }
-    db.files.keys().any(|path| path.ends_with("conftest.py") && !files.contains_key(path))
+    db.files
+        .keys()
+        .any(|path| path.ends_with("conftest.py") && !files.contains_key(path))
 }
 
 pub fn scheduled_nodeids(
@@ -220,6 +218,43 @@ mod tests {
     }
 
     #[test]
+    fn skip_reruns_when_test_file_missing_from_current_scan() {
+        let nodeid = "t.py::test_a";
+        let mut tests = BTreeMap::new();
+        tests.insert(nodeid.to_string(), test_record(nodeid, "t.py", &["s.py"]));
+        let mut cached_files = BTreeMap::new();
+        cached_files.insert("t.py".to_string(), file("t.py", "td", 1));
+        cached_files.insert("s.py".to_string(), file("s.py", "sd", 1));
+        let database = db(tests, cached_files);
+        let mut current_files = BTreeMap::new();
+        current_files.insert("s.py".to_string(), file("s.py", "sd", 1));
+
+        assert!(should_schedule_nodeid(&database, &current_files, nodeid));
+    }
+
+    #[test]
+    fn skip_reruns_when_covered_file_missing_from_cache_or_current_scan() {
+        let nodeid = "t.py::test_a";
+        let mut tests = BTreeMap::new();
+        tests.insert(nodeid.to_string(), test_record(nodeid, "t.py", &["s.py"]));
+        let mut cached_files = BTreeMap::new();
+        cached_files.insert("t.py".to_string(), file("t.py", "td", 1));
+        let database = db(tests.clone(), cached_files);
+        let mut current_files = BTreeMap::new();
+        current_files.insert("t.py".to_string(), file("t.py", "td", 1));
+        current_files.insert("s.py".to_string(), file("s.py", "sd", 1));
+        assert!(should_schedule_nodeid(&database, &current_files, nodeid));
+
+        let mut cached_files = BTreeMap::new();
+        cached_files.insert("t.py".to_string(), file("t.py", "td", 1));
+        cached_files.insert("s.py".to_string(), file("s.py", "sd", 1));
+        let database = db(tests, cached_files);
+        let mut current_files = BTreeMap::new();
+        current_files.insert("t.py".to_string(), file("t.py", "td", 1));
+        assert!(should_schedule_nodeid(&database, &current_files, nodeid));
+    }
+
+    #[test]
     fn skip_reruns_all_on_conftest_change() {
         let nodeid = "t.py::test_a";
         let mut tests = BTreeMap::new();
@@ -231,11 +266,33 @@ mod tests {
         let mut current_files = BTreeMap::new();
         current_files.insert("t.py".to_string(), file("t.py", "td", 1));
         current_files.insert("s.py".to_string(), file("s.py", "sd", 1));
-        current_files.insert(
-            "conftest.py".to_string(),
-            file("conftest.py", "cd", 1),
-        );
+        current_files.insert("conftest.py".to_string(), file("conftest.py", "cd", 1));
         assert!(conftest_dirty(&database, &current_files));
+    }
+
+    #[test]
+    fn skip_reruns_all_when_cached_conftest_changes_or_disappears() {
+        let mut cached_files = BTreeMap::new();
+        cached_files.insert("conftest.py".to_string(), file("conftest.py", "old", 1));
+        let database = db(BTreeMap::new(), cached_files);
+        let mut current_files = BTreeMap::new();
+        current_files.insert("conftest.py".to_string(), file("conftest.py", "new", 1));
+        assert!(conftest_dirty(&database, &current_files));
+
+        let current_files = BTreeMap::new();
+        assert!(conftest_dirty(&database, &current_files));
+    }
+
+    #[test]
+    fn current_file_digest_reports_mtime_and_content_digest() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("a.py");
+        std::fs::write(&path, "print('a')\n").unwrap();
+
+        let (mtime_ns, digest) = current_file_digest(&path).unwrap();
+
+        assert!(mtime_ns > 0);
+        assert_eq!(digest, content_digest(b"print('a')\n"));
     }
 
     #[test]

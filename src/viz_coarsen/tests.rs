@@ -177,3 +177,76 @@ fn test_choose_prefix_depth_and_group_nodes() {
     let groups = paths::group_nodes(&nodes, &per_paths, depth);
     assert!(!groups.is_empty());
 }
+
+#[test]
+fn path_prefix_key_uses_absolute_suffix_and_handles_empty_depth() {
+    assert_eq!(
+        paths::path_prefix_key(Path::new("/tmp/build/pkg/sub/file.rs"), 2),
+        "pkg/sub"
+    );
+    assert_eq!(paths::path_prefix_key(Path::new("src/pkg/file.rs"), 0), "");
+    assert_eq!(paths::path_prefix_key(Path::new("file.rs"), 3), "");
+}
+
+#[test]
+fn collect_paths_tracks_missing_nodes_and_zero_depth_choices() {
+    let nodes: Vec<String> = vec!["known".into(), "missing".into()];
+    let mut paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
+    paths_map.insert("known".into(), PathBuf::from("src/pkg/known.rs"));
+
+    let (per_node, max_depth) = paths::collect_paths_and_depth(&nodes, &paths_map);
+
+    assert_eq!(per_node[0], Some(PathBuf::from("src/pkg/known.rs")));
+    assert_eq!(per_node[1], None);
+    assert!(max_depth >= 2);
+    assert_eq!(paths::choose_prefix_depth(&nodes, &[None, None], 0, 2), 0);
+}
+
+#[test]
+fn merge_overflow_keeps_small_community_sets_unchanged() {
+    let communities = vec![vec![0], vec![1, 2]];
+
+    let merged = paths::merge_overflow(communities.clone(), 3);
+
+    assert_eq!(merged, communities);
+}
+
+#[test]
+fn split_largest_once_falls_back_to_alternating_split_when_hashes_do_not_split() {
+    let nodes: Vec<String> = (0..100).map(|i| format!("node_{i}")).collect();
+    let even_indices: Vec<usize> = nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, node)| ((stable_fnv1a_64(node) & 1) == 0).then_some(idx))
+        .take(4)
+        .collect();
+    assert_eq!(
+        even_indices.len(),
+        4,
+        "test data should provide same-parity hashes"
+    );
+
+    let (left, right) = paths::split_largest_once(&nodes, &even_indices);
+
+    assert_eq!(left, vec![even_indices[0], even_indices[2]]);
+    assert_eq!(right, vec![even_indices[1], even_indices[3]]);
+}
+
+#[test]
+fn split_until_target_stops_when_only_singletons_remain() {
+    let nodes: Vec<String> = vec!["a".into(), "b".into()];
+    let communities = vec![vec![0], vec![1]];
+
+    let split = paths::split_until_target(&nodes, communities.clone(), 4);
+
+    assert_eq!(split, communities);
+}
+
+#[test]
+fn fast_communities_from_paths_handles_empty_input() {
+    let paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
+
+    let communities = paths::fast_communities_from_paths(&[], &paths_map, 3);
+
+    assert!(communities.is_empty());
+}

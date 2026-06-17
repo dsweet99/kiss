@@ -1,10 +1,33 @@
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 
 use crate::support::git::{git_command, init_git_repo};
 
-pub fn kiss_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_kiss")
+pub fn kiss_bin() -> PathBuf {
+    let compile_time = PathBuf::from(env!("CARGO_BIN_EXE_kiss"));
+    if compile_time.is_file() {
+        return compile_time;
+    }
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for rel in ["target/debug/kiss", "target/llvm-cov-target/debug/kiss"] {
+        let candidate = manifest_dir.join(rel);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    let exe = std::env::current_exe().expect("current test executable path");
+    for dir in exe.ancestors() {
+        let candidate = dir.join("kiss");
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    compile_time
+}
+
+pub fn kiss_command() -> Command {
+    Command::new(kiss_bin())
 }
 
 pub fn warm_rslip(dir: &Path) {

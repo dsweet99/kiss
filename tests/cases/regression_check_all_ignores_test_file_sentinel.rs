@@ -1,8 +1,8 @@
 //! `kiss check --all` must not emit coverage violations for test modules.
 //! Test files are witness sources, not production gate targets.
 
+use crate::support::kiss_test::kiss_command;
 use std::fs;
-use std::process::Command;
 use tempfile::TempDir;
 
 fn write_corpus(dir: &std::path::Path) {
@@ -60,7 +60,7 @@ fn kiss_check_all_passes_without_test_module_violations() {
 
     let home = TempDir::new().unwrap();
 
-    let out = Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let out = kiss_command()
         .arg("check")
         .arg("--all")
         .arg(corpus.path())

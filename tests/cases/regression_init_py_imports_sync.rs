@@ -26,8 +26,8 @@
 //! `__init__.py` for `imported_names_per_file` exactly like the other two
 //! sites do. Both tests fail before the fix and pass after.
 
+use crate::support::kiss_test::kiss_command;
 use std::fs;
-use std::process::Command;
 use tempfile::TempDir;
 
 use kiss::parsing::parse_files;
@@ -90,7 +90,7 @@ fn kiss_stats_summary_excludes_init_py_imports() {
     write_init_only_corpus(tmp.path());
 
     let home = TempDir::new().unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let out = kiss_command()
         .arg("stats")
         .arg(tmp.path())
         .env("HOME", home.path())

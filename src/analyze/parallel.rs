@@ -40,7 +40,7 @@ pub(crate) struct ParallelPyIn<'a> {
     pub rs_graph: Option<&'a DependencyGraph>,
     pub opts: &'a AnalyzeOptions<'a>,
     pub file_count: usize,
-    pub cached_py_cov: Option<kiss::TestRefAnalysis>,
+    pub py_cov: kiss::TestRefAnalysis,
 }
 
 pub(crate) fn run_parallel_py_analysis(in_: ParallelPyIn<'_>) -> (GraphResult, CoverageResult) {
@@ -49,7 +49,7 @@ pub(crate) fn run_parallel_py_analysis(in_: ParallelPyIn<'_>) -> (GraphResult, C
         rs_graph,
         opts,
         file_count,
-        cached_py_cov,
+        py_cov,
     } = in_;
     let orphan_enabled = opts.gate_config.orphan_module_enabled;
     let dup_enabled = opts.gate_config.duplication_enabled;
@@ -67,10 +67,6 @@ pub(crate) fn run_parallel_py_analysis(in_: ParallelPyIn<'_>) -> (GraphResult, C
             })
         },
         || {
-            let py_cov = cached_py_cov.unwrap_or_else(|| {
-                let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-                kiss::analyze_test_refs(&py_refs, py_graph.as_ref())
-            });
             let py_dups = if dup_enabled {
                 detect_py_duplicates(py_parsed, min_sim)
             } else {

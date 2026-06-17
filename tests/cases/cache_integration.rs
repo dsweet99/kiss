@@ -1,4 +1,5 @@
 use crate::common::list_full_check_cache_files;
+use crate::support::kiss_test::kiss_command;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -7,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
+    kiss_command()
 }
 
 fn chmod(path: &std::path::Path, mode: u32) {

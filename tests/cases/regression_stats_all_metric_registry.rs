@@ -1,3 +1,4 @@
+use crate::support::kiss_test::kiss_command;
 use kiss::METRICS;
 use std::collections::BTreeSet;
 use std::fs;
@@ -5,7 +6,7 @@ use std::process::Command;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
+    kiss_command()
 }
 
 fn parsed_stat_ids(stdout: &str) -> BTreeSet<String> {
@@ -179,20 +180,38 @@ fn regression_stats_all_emits_every_file_scope_metric_with_data() {
 fn regression_stats_all_ranks_uncovered_above_covered_for_inv_test_coverage() {
     let tmp = TempDir::new().unwrap();
     fs::write(
-        tmp.path().join("uncovered.rs"),
-        "pub fn alpha() {}\npub fn beta() {}\n",
+        tmp.path().join(".kissconfig"),
+        "[gate]\ntest_coverage_threshold = 0\n",
     )
     .unwrap();
     fs::write(
-        tmp.path().join("covered.rs"),
-        "pub fn gamma() {}\npub fn delta() {}\n",
+        tmp.path().join("uncovered.py"),
+        "def alpha():\n    return 1\n",
     )
     .unwrap();
     fs::write(
-        tmp.path().join("covered_test.rs"),
-        "#[test]\nfn t1() { gamma(); delta(); }\n",
+        tmp.path().join("covered.py"),
+        "def gamma():\n    return 3\n",
     )
     .unwrap();
+    fs::write(
+        tmp.path().join("test_covered.py"),
+        "from covered import gamma\n\ndef test_gamma():\n    assert gamma() == 3\n",
+    )
+    .unwrap();
+
+    let warm = kiss_binary()
+        .arg("check")
+        .arg("--all")
+        .arg(tmp.path())
+        .output()
+        .expect("kiss check should warm runtime coverage");
+    let warm_stdout = String::from_utf8_lossy(&warm.stdout);
+    assert!(
+        warm_stdout.contains("Analyzed:"),
+        "warm check should run analysis.\nstdout:\n{warm_stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&warm.stderr)
+    );
 
     let stdout = run_stats_all_with_n(tmp.path(), Some(1));
     let lines: Vec<&str> = stdout
@@ -202,13 +221,13 @@ fn regression_stats_all_ranks_uncovered_above_covered_for_inv_test_coverage() {
     assert!(
         lines
             .iter()
-            .any(|l| l.starts_with("STAT:inv_test_coverage:100:") && l.contains("uncovered.rs")),
-        "expected an inv_test_coverage:100 line for uncovered.rs at the top of the ranking.\n\
+            .any(|l| l.starts_with("STAT:inv_test_coverage:100:") && l.contains("uncovered.py")),
+        "expected an inv_test_coverage:100 line for uncovered.py at the top of the ranking.\n\
          lines: {lines:?}\nfull stdout:\n{stdout}"
     );
     assert!(
-        lines.iter().all(|l| !l.contains("covered.rs:")
-            || l.contains("uncovered.rs:")
+        lines.iter().all(|l| !l.contains("covered.py:")
+            || l.contains("uncovered.py:")
             || !l.starts_with("STAT:inv_test_coverage:0:")),
         "with --all=1, the covered file (inv_test_coverage=0) must rank below the uncovered \
          file and be omitted.\nlines: {lines:?}"

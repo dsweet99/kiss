@@ -58,3 +58,29 @@ pub fn gather_candidate_files(
         Language::Rust => rs_files,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn language_and_symbol_parsing_cover_boundary_shapes() {
+        assert_eq!(
+            detect_language(Path::new("generated.inc")).unwrap(),
+            Language::Rust
+        );
+        assert!(detect_language(Path::new("README")).is_err());
+
+        assert_eq!(
+            parse_symbol_shape("plain_name", Language::Python).unwrap(),
+            ("plain_name".to_string(), None)
+        );
+        assert_eq!(
+            parse_symbol_shape("Type.member_1", Language::Rust).unwrap(),
+            ("Type".to_string(), Some("member_1".to_string()))
+        );
+        assert!(parse_symbol_shape("Type.1bad", Language::Rust).is_err());
+        assert!(parse_symbol_shape("", Language::Python).is_err());
+        assert!(!is_valid_identifier("has-dash", Language::Python));
+    }
+}

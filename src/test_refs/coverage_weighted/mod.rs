@@ -329,4 +329,6 @@ pub fn compute_py_weighted_file_pcts(
 }
 
 #[cfg(test)]
+mod branch_tests;
+#[cfg(test)]
 mod inline_tests;

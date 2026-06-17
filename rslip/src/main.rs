@@ -6,9 +6,11 @@ fn main() {
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().expect("current directory"));
     let collector = rslip::PytestTraceCollector;
-    match rslip::refresh_and_store(&repo, &|root, selectors, _j| {
-        collector.collect(root, selectors, _j)
-    }, pyfork::default_parallelism()) {
+    match rslip::refresh_and_store(
+        &repo,
+        &|root, selectors, _j| collector.collect(root, selectors, _j),
+        pyfork::default_parallelism(),
+    ) {
         Ok(db) => {
             println!(
                 "rslip refreshed {} file records and {} test records",

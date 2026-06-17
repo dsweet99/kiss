@@ -16,9 +16,7 @@ pub fn collect_nodeids(repo_root: &Path, extra: &[String]) -> Result<Vec<String>
     let stderr = String::from_utf8_lossy(&output.stderr);
     let exit_code = output.status.code().unwrap_or(-1);
     if !output.status.success() && exit_code != 5 {
-        return Err(format!(
-            "pytest collection failed\n{stdout}{stderr}"
-        ));
+        return Err(format!("pytest collection failed\n{stdout}{stderr}"));
     }
     let nodeids: Vec<String> = stdout
         .lines()

@@ -1,8 +1,9 @@
 use super::tests::new_graph;
 use crate::graph::{
-    DependencyGraph, build_dependency_graph, build_dependency_graph_from_import_lists,
-    cycle_size_violation, is_test_module, parent_prefix_match, qualified_module_name, resolve_bare,
-    resolve_dotted, resolve_import,
+    DependencyGraph, analyze_graph, build_dependency_graph,
+    build_dependency_graph_from_import_lists, cycle_size_violation, extract_imports_for_cache,
+    is_test_module, parent_prefix_match, qualified_module_name, resolve_bare, resolve_dotted,
+    resolve_import,
 };
 use crate::parsing::ParsedFile;
 use crate::parsing::create_parser;
@@ -250,4 +251,97 @@ fn test_cycle_size_violation_suggestion_does_not_claim_unimplemented_min_cut() {
         "suggestion should not reference min-cut without that analysis; got: {}",
         v.suggestion
     );
+}
+
+#[test]
+fn analyze_graph_reports_each_enabled_violation_kind() {
+    let mut g = DependencyGraph::new();
+    for (module, path) in [
+        ("a", "a.py"),
+        ("b", "b.py"),
+        ("c", "c.py"),
+        ("d", "d.py"),
+        ("orphan", "orphan.py"),
+    ] {
+        g.get_or_create_node(module);
+        g.paths.insert(module.to_string(), PathBuf::from(path));
+    }
+    g.add_dependency("a", "b");
+    g.add_dependency("b", "c");
+    g.add_dependency("c", "d");
+    g.add_dependency("d", "b");
+
+    let mut config = crate::Config::python_defaults();
+    config.indirect_dependencies = 0;
+    config.dependency_depth = 1;
+    config.cycle_size = 2;
+
+    let violations = analyze_graph(&g, &config, true);
+    let metrics: std::collections::HashSet<_> =
+        violations.iter().map(|v| v.metric.as_str()).collect();
+
+    assert!(metrics.contains("orphan_module"));
+    assert!(metrics.contains("indirect_dependencies"));
+    assert!(metrics.contains("dependency_depth"));
+    assert!(metrics.contains("cycle_size"));
+}
+
+#[test]
+fn python_import_literal_edges_handle_empty_and_prefixed_strings() {
+    let mut parser = create_parser().unwrap();
+    let code = "import importlib\nimportlib.import_module('pkg.one')\n__import__(r\"pkg.two\")\n__import__(f\"pkg.{name}\")\n__import__(\"\")\n";
+    let imports = extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);
+
+    assert!(imports.contains(&"pkg.one".to_string()));
+    assert!(imports.contains(&"pkg.two".to_string()));
+    assert!(
+        !imports.iter().any(|m| m.contains("{name}") || m.is_empty()),
+        "f-strings and empty strings are not stable module literals: {imports:?}"
+    );
+}
+
+#[test]
+fn python_import_helpers_cover_alias_and_invalid_dynamic_shapes() {
+    let mut parser = create_parser().unwrap();
+    let import_src = "from pkg import target as alias\n";
+    let import_tree = parser.parse(import_src, None).unwrap();
+    let import_node = import_tree.root_node().child(0).unwrap();
+    let mut names = Vec::new();
+    super::graph_python::collect_imported_name_candidates(import_node, import_src, &mut names);
+    assert_eq!(names, vec!["target"]);
+
+    let no_string_src = "__import__(module_name)\n";
+    let no_string_tree = parser.parse(no_string_src, None).unwrap();
+    let call = no_string_tree
+        .root_node()
+        .descendant_for_byte_range(0, no_string_src.len())
+        .unwrap();
+    assert_eq!(
+        super::graph_python::extract_dynamic_import_module(call, no_string_src),
+        None
+    );
+
+    let plain_src = "import_module('pkg')\n";
+    let plain_tree = parser.parse(plain_src, None).unwrap();
+    let func = plain_tree
+        .root_node()
+        .child(0)
+        .unwrap()
+        .child(0)
+        .unwrap()
+        .child_by_field_name("function")
+        .unwrap();
+    assert!(!super::graph_python::is_importlib_import_module(
+        func, plain_src
+    ));
+    assert_eq!(
+        super::graph_python::strip_rbub_prefix("fr'pkg'"),
+        None,
+        "f-string dynamic imports are intentionally ignored"
+    );
+    assert_eq!(
+        super::graph_python::unquote_triple("\"\"\"pkg.deep\"\"\"", '"'),
+        Some("pkg.deep".to_string())
+    );
+    assert_eq!(super::graph_python::unquote_triple("'pkg'", '\''), None);
 }

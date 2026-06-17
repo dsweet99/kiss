@@ -1,6 +1,7 @@
 mod summary;
 mod table;
 mod top;
+mod top_roots;
 #[cfg(test)]
 mod top_tests;
 

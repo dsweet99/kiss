@@ -75,7 +75,57 @@ fn load_top_only_cache(
     if !same_cached_paths(py_files, rs_files, &focus, &cache) {
         return None;
     }
+    if !runtime_fingerprints_match(&cache, py_files, rs_files) {
+        return None;
+    }
+    if cache_has_coverage_failure(&cache) {
+        return None;
+    }
     Some(cache)
+}
+
+fn coverage_repo_root(py_files: &[PathBuf], rs_files: &[PathBuf]) -> PathBuf {
+    let mut paths = py_files.iter().chain(rs_files);
+    let Some(first) = paths.next() else {
+        return std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    };
+    let mut root = first.parent().unwrap_or(first).to_path_buf();
+    for path in paths {
+        while !path.starts_with(&root) {
+            if !root.pop() {
+                return std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            }
+        }
+    }
+    let mut candidate = root.clone();
+    loop {
+        if candidate.join("Cargo.toml").is_file()
+            || candidate.join("pyproject.toml").is_file()
+            || candidate.join(".git").exists()
+        {
+            return candidate;
+        }
+        if !candidate.pop() {
+            return root;
+        }
+    }
+}
+
+fn runtime_fingerprints_match(
+    cache: &FullCheckCache,
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+) -> bool {
+    let repo_root = coverage_repo_root(py_files, rs_files);
+    kiss::rslip_bridge::rslip_database_fingerprint(&repo_root) == cache.rslip_fingerprint
+        && kiss::rust_llvm_cov::backend_fingerprint(&repo_root) == cache.rust_coverage_fingerprint
+}
+
+fn cache_has_coverage_failure(cache: &FullCheckCache) -> bool {
+    cache
+        .definitions
+        .iter()
+        .any(|item| item.name == "rslip_refresh_failed" || item.name == "llvm_cov_failed")
 }
 
 pub(crate) fn maybe_store_stats_top_cache(
@@ -89,6 +139,12 @@ pub(crate) fn maybe_store_stats_top_cache(
 ) {
     let fp = top_only_fingerprint(py_files, rs_files, py_config, rs_config, gate_config);
     if load_full_cache(&fp).is_some() {
+        return;
+    }
+    if definitions
+        .iter()
+        .any(|item| item.name == "rslip_refresh_failed" || item.name == "llvm_cov_failed")
+    {
         return;
     }
     let mut focus_paths: Vec<String> = py_files
@@ -125,7 +181,14 @@ pub(crate) fn maybe_store_stats_top_cache(
         definitions,
         unreferenced,
         weighted_file_pcts: Vec::new(),
-        rslip_fingerprint: String::new(),
+        rslip_fingerprint: {
+            let repo_root = coverage_repo_root(py_files, rs_files);
+            kiss::rslip_bridge::rslip_database_fingerprint(&repo_root)
+        },
+        rust_coverage_fingerprint: {
+            let repo_root = coverage_repo_root(py_files, rs_files);
+            kiss::rust_llvm_cov::backend_fingerprint(&repo_root)
+        },
     });
 }
 
@@ -140,6 +203,12 @@ fn load_top_compatible_cache(
     let cache = load_verified_full_cache(&fp, py_files, rs_files)?;
     let focus = FocusFilter::unrestricted();
     if !same_cached_paths(py_files, rs_files, &focus, &cache) {
+        return None;
+    }
+    if !runtime_fingerprints_match(&cache, py_files, rs_files) {
+        return None;
+    }
+    if cache_has_coverage_failure(&cache) {
         return None;
     }
     Some(cache)

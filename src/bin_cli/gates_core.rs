@@ -171,7 +171,11 @@ fn test_stats_top_helpers() {
     std::fs::write(tmp.path().join("b.rs"), "fn bar() { let z = 3; }").unwrap();
     let py_files = vec![tmp.path().join("a.py")];
     let rs_files = vec![tmp.path().join("b.rs")];
-    let units = collect_all_units(&py_files, &rs_files, None);
+    let cached_coverage = std::collections::HashMap::from([
+        (py_files[0].display().to_string(), 100),
+        (rs_files[0].display().to_string(), 100),
+    ]);
+    let units = collect_all_units(&py_files, &rs_files, Some(&cached_coverage));
     assert!(!units.is_empty());
     print_all_top_metrics(&units, 2);
     print_top_for_metric(&units, 1, "test_metric", |u| u.statements);

@@ -66,7 +66,7 @@ mod coverage_witness {
 
     #[test]
     fn witness_rslip_types() {
-        use crate::{content_digest, RSLIP_VERSION, SCHEMA_VERSION};
+        use crate::{RSLIP_VERSION, SCHEMA_VERSION, content_digest};
         let record = FileRecord {
             path: "a.py".to_string(),
             role: FileRole::Source,

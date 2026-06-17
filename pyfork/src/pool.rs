@@ -108,7 +108,9 @@ pub fn run_pool(
         .status()
         .map_err(|e| format!("failed to run pyfork pool: {e}"))?;
     let _ = fs::remove_file(&config_path);
-    Ok(status.code().unwrap_or_else(|| i32::from(!status.success())))
+    Ok(status
+        .code()
+        .unwrap_or_else(|| i32::from(!status.success())))
 }
 
 pub fn trace_pool(
@@ -117,10 +119,8 @@ pub fn trace_pool(
     j: usize,
 ) -> Result<(i32, PathBuf), String> {
     if nodeids.is_empty() {
-        let trace_dir = std::env::temp_dir().join(format!(
-            "kiss-pyfork-trace-{}-empty",
-            std::process::id()
-        ));
+        let trace_dir =
+            std::env::temp_dir().join(format!("kiss-pyfork-trace-{}-empty", std::process::id()));
         let _ = fs::create_dir_all(&trace_dir);
         return Ok((0, trace_dir));
     }
@@ -158,7 +158,9 @@ pub fn trace_pool(
         .map_err(|e| format!("failed to run pyfork trace pool: {e}"))?;
     let _ = fs::remove_file(&config_path);
     Ok((
-        status.code().unwrap_or_else(|| i32::from(!status.success())),
+        status
+            .code()
+            .unwrap_or_else(|| i32::from(!status.success())),
         trace_dir,
     ))
 }
@@ -199,7 +201,11 @@ pub(crate) fn fork_runs_exactly_one_nodeid(repo_root: &Path, nodeid: &str) -> Re
 
 #[cfg(unix)]
 #[allow(dead_code)]
-pub(crate) fn scheduler_peak_concurrency(nodeids: &[String], j: usize, sleep_s: f64) -> Result<usize, String> {
+pub(crate) fn scheduler_peak_concurrency(
+    nodeids: &[String],
+    j: usize,
+    sleep_s: f64,
+) -> Result<usize, String> {
     let peak_path = std::env::temp_dir().join(format!("kiss-pyfork-peak-{}", std::process::id()));
     let config_path = std::env::temp_dir().join(format!(
         "kiss-pyfork-slow-{}-{}.json",

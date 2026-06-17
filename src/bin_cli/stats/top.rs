@@ -1,4 +1,5 @@
 use crate::bin_cli::config_session::config_provenance;
+use crate::bin_cli::stats::top_roots::{runtime_coverage_root, stats_runtime_py_jobs};
 use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::{Config, GateConfig, Language};
 use std::collections::HashMap;
@@ -37,8 +38,9 @@ pub fn run_stats_top(args: StatsTopArgs<'_>) {
         args.gate_config,
     )
     .map(coverage_map_to_string_keys);
-    let (py_units, py_fresh) = collect_py_units(&py_files, cached_coverage.as_ref());
-    let (rs_units, rs_fresh) = collect_rs_units(&rs_files, cached_coverage.as_ref());
+    let repo_root = runtime_coverage_root(args.paths, &py_files, &rs_files);
+    let (py_units, py_fresh) = collect_py_units(&repo_root, &py_files, cached_coverage.as_ref());
+    let (rs_units, rs_fresh) = collect_rs_units(&repo_root, &rs_files, cached_coverage.as_ref());
     if cached_coverage.is_none()
         && let Some((definitions, unreferenced)) = merge_fresh_items(py_fresh, rs_fresh)
     {
@@ -85,21 +87,24 @@ pub fn collect_all_units(
     rs_files: &[PathBuf],
     cached_coverage: Option<&HashMap<String, usize>>,
 ) -> Vec<kiss::UnitMetrics> {
-    let (py_units, _) = collect_py_units(py_files, cached_coverage);
-    let (rs_units, _) = collect_rs_units(rs_files, cached_coverage);
+    let repo_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let (py_units, _) = collect_py_units(&repo_root, py_files, cached_coverage);
+    let (rs_units, _) = collect_rs_units(&repo_root, rs_files, cached_coverage);
     let mut units = py_units;
     units.extend(rs_units);
     units
 }
 
 fn collect_py_units(
+    repo_root: &std::path::Path,
     py_files: &[PathBuf],
     cached_coverage: Option<&HashMap<String, usize>>,
 ) -> (Vec<kiss::UnitMetrics>, Option<FreshCoverageItems>) {
     use kiss::parsing::parse_files;
-    use kiss::{analyze_test_refs, build_dependency_graph, collect_detailed_py};
+    use kiss::{build_dependency_graph, collect_detailed_py};
 
     collect_lang_units(LangCollect {
+        repo_root,
         files: py_files,
         cached_coverage,
         parse: |files| match parse_files(files) {
@@ -110,8 +115,9 @@ fn collect_py_units(
             }
         },
         build_graph: build_dependency_graph,
-        analyze: |refs, graph| {
-            let cov = analyze_test_refs(refs, Some(graph));
+        analyze: |repo_root, parsed, _refs, _graph| {
+            let cov =
+                kiss::rslip_bridge::runtime_py_analysis(repo_root, parsed, stats_runtime_py_jobs());
             (cov.definitions, cov.unreferenced)
         },
         collect_detailed: collect_detailed_py,
@@ -125,14 +131,16 @@ fn collect_py_units(
 }
 
 fn collect_rs_units(
+    repo_root: &std::path::Path,
     rs_files: &[PathBuf],
     cached_coverage: Option<&HashMap<String, usize>>,
 ) -> (Vec<kiss::UnitMetrics>, Option<FreshCoverageItems>) {
+    use kiss::collect_detailed_rs;
     use kiss::rust_graph::build_rust_dependency_graph;
     use kiss::rust_parsing::parse_rust_files;
-    use kiss::{analyze_rust_test_refs, collect_detailed_rs};
 
     collect_lang_units(LangCollect {
+        repo_root,
         files: rs_files,
         cached_coverage,
         parse: |files| {
@@ -142,8 +150,8 @@ fn collect_rs_units(
                 .collect()
         },
         build_graph: build_rust_dependency_graph,
-        analyze: |refs, graph| {
-            let cov = analyze_rust_test_refs(refs, Some(graph));
+        analyze: |repo_root, parsed, _refs, _graph| {
+            let cov = kiss::rust_llvm_cov::runtime_rust_analysis(repo_root, parsed);
             (cov.definitions, cov.unreferenced)
         },
         collect_detailed: collect_detailed_rs,
@@ -160,11 +168,12 @@ struct LangCollect<'a, P, D, FParse, FBuild, FAnalyze, FCollect, FFile, FItem>
 where
     FParse: FnOnce(&[PathBuf]) -> Vec<P>,
     FBuild: FnOnce(&[&P]) -> kiss::DependencyGraph,
-    FAnalyze: FnOnce(&[&P], &kiss::DependencyGraph) -> (Vec<D>, Vec<D>),
+    FAnalyze: FnOnce(&std::path::Path, &[P], &[&P], &kiss::DependencyGraph) -> (Vec<D>, Vec<D>),
     FCollect: FnOnce(&[&P], Option<&kiss::DependencyGraph>) -> Vec<kiss::UnitMetrics>,
     FFile: Fn(&D) -> &PathBuf,
     FItem: Fn(&D) -> CachedCoverageItem,
 {
+    repo_root: &'a std::path::Path,
     files: &'a [PathBuf],
     cached_coverage: Option<&'a HashMap<String, usize>>,
     parse: FParse,
@@ -181,7 +190,7 @@ fn collect_lang_units<P, D, FParse, FBuild, FAnalyze, FCollect, FFile, FItem>(
 where
     FParse: FnOnce(&[PathBuf]) -> Vec<P>,
     FBuild: FnOnce(&[&P]) -> kiss::DependencyGraph,
-    FAnalyze: FnOnce(&[&P], &kiss::DependencyGraph) -> (Vec<D>, Vec<D>),
+    FAnalyze: FnOnce(&std::path::Path, &[P], &[&P], &kiss::DependencyGraph) -> (Vec<D>, Vec<D>),
     FCollect: FnOnce(&[&P], Option<&kiss::DependencyGraph>) -> Vec<kiss::UnitMetrics>,
     FFile: Fn(&D) -> &PathBuf,
     FItem: Fn(&D) -> CachedCoverageItem,
@@ -195,7 +204,7 @@ where
     let (coverage_map, fresh) = if let Some(m) = args.cached_coverage {
         (m.clone(), None)
     } else {
-        let (defs, unrefs) = (args.analyze)(&parsed_refs, &graph);
+        let (defs, unrefs) = (args.analyze)(args.repo_root, &parsed, &parsed_refs, &graph);
         let map = coverage_pct_map(&defs, &unrefs, &args.file_of);
         let cached_defs: Vec<CachedCoverageItem> = defs.iter().map(&args.item_of).collect();
         let cached_unrefs: Vec<CachedCoverageItem> = unrefs.iter().map(&args.item_of).collect();

@@ -49,7 +49,10 @@ fn oracle_scheduled(dir: &Path, invalidate_all: bool, dirty_paths: &[&str]) -> V
             if dirty_paths.contains(&record.test_path.as_str()) {
                 return true;
             }
-            record.covered_files.iter().any(|p| dirty_paths.contains(&p.as_str()))
+            record
+                .covered_files
+                .iter()
+                .any(|p| dirty_paths.contains(&p.as_str()))
         })
         .collect()
 }
@@ -57,11 +60,7 @@ fn oracle_scheduled(dir: &Path, invalidate_all: bool, dirty_paths: &[&str]) -> V
 fn setup_warm_repo() -> tempfile::TempDir {
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
-    std::fs::write(
-        tmp.path().join("lib.py"),
-        "def f():\n    return 1\n",
-    )
-    .unwrap();
+    std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 1\n").unwrap();
     std::fs::write(
         tmp.path().join("test_lib.py"),
         "from lib import f\n\ndef test_f():\n    assert f() == 1\n",
@@ -119,7 +118,10 @@ fn oracle_dependency_only_change() {
     let tmp = setup_warm_repo();
     std::fs::write(tmp.path().join("requirements.txt"), "requests==2.0.0\n").unwrap();
     let incremental = scheduled_from_dry_run(tmp.path());
-    assert!(incremental.is_empty(), "dependency-only change may skip until re-warm");
+    assert!(
+        incremental.is_empty(),
+        "dependency-only change may skip until re-warm"
+    );
 }
 
 #[test]

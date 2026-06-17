@@ -1,8 +1,8 @@
 use super::path_helpers::load_full_cache;
-use super::test_helpers::{empty_cache, empty_inputs, ScopedHome};
+use super::test_helpers::{ScopedHome, empty_cache, empty_inputs};
 use super::*;
-use crate::analyze::evaluate_cached_gate;
 use crate::analyze::FocusFilter;
+use crate::analyze::evaluate_cached_gate;
 use kiss::check_cache::CachedViolation;
 use kiss::check_universe_cache::{CachedCoverageItem, CachedFileCoverage};
 use std::path::PathBuf;

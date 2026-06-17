@@ -193,9 +193,11 @@ fn dirty_detection_catches_same_size_change_delete_and_config() {
         )],
         fail: false,
     };
-    let db = refresh_with_collector(tmp.path(), &|repo, selectors, _j| {
-        collector.collect(repo, selectors, _j)
-    }, 1)
+    let db = refresh_with_collector(
+        tmp.path(),
+        &|repo, selectors, _j| collector.collect(repo, selectors, _j),
+        1,
+    )
     .unwrap();
     write(&tmp.path().join("pkg.py"), "x = 2\n");
     assert!(
@@ -238,9 +240,11 @@ fn dirty_detection_catches_implementation_fingerprint_change() {
         )],
         fail: false,
     };
-    let mut db = refresh_with_collector(tmp.path(), &|repo, selectors, _j| {
-        collector.collect(repo, selectors, _j)
-    }, 1)
+    let mut db = refresh_with_collector(
+        tmp.path(),
+        &|repo, selectors, _j| collector.collect(repo, selectors, _j),
+        1,
+    )
     .unwrap();
     db.config_fingerprints
         .insert("rslip_version".to_string(), "stale".to_string());
@@ -266,9 +270,11 @@ fn refresh_records_one_test_covering_multiple_sources_and_inverse() {
         ],
         fail: false,
     };
-    let db = refresh_with_collector(tmp.path(), &|repo, selectors, _j| {
-        collector.collect(repo, selectors, _j)
-    }, 1)
+    let db = refresh_with_collector(
+        tmp.path(),
+        &|repo, selectors, _j| collector.collect(repo, selectors, _j),
+        1,
+    )
     .unwrap();
     assert_eq!(
         db.source_to_covering_tests["b.py"],
@@ -297,9 +303,11 @@ fn changed_test_refresh_only_collects_tests_in_changed_file() {
         )],
         fail: false,
     };
-    let db = refresh_with_collector(tmp.path(), &|repo, selectors, _j| {
-        initial.collect(repo, selectors, _j)
-    }, 1)
+    let db = refresh_with_collector(
+        tmp.path(),
+        &|repo, selectors, _j| initial.collect(repo, selectors, _j),
+        1,
+    )
     .unwrap();
     let changed = FakeCollector {
         runs: vec![fake_run(
@@ -337,14 +345,22 @@ fn atomic_refresh_preserves_previous_database_on_failure() {
         )],
         fail: false,
     };
-    let db = refresh_and_store(tmp.path(), &|repo, selectors, _j| ok.collect(repo, selectors, _j), 1).unwrap();
+    let db = refresh_and_store(
+        tmp.path(),
+        &|repo, selectors, _j| ok.collect(repo, selectors, _j),
+        1,
+    )
+    .unwrap();
     let failing = FakeCollector {
         runs: Vec::new(),
         fail: true,
     };
     assert!(
-        refresh_and_store(tmp.path(), &|repo, selectors, _j| failing
-            .collect(repo, selectors, _j), 1)
+        refresh_and_store(
+            tmp.path(),
+            &|repo, selectors, _j| failing.collect(repo, selectors, _j),
+            1
+        )
         .is_err()
     );
     assert_eq!(load_database(tmp.path()).unwrap(), Some(db));
@@ -353,7 +369,10 @@ fn atomic_refresh_preserves_previous_database_on_failure() {
 #[test]
 fn refresh_stores_parametrized_nodeids_as_keys() {
     let tmp = TempDir::new().unwrap();
-    write(&tmp.path().join("sample.py"), "def is_even(v):\n    return v % 2 == 0\n");
+    write(
+        &tmp.path().join("sample.py"),
+        "def is_even(v):\n    return v % 2 == 0\n",
+    );
     write(
         &tmp.path().join("test_sample.py"),
         concat!(

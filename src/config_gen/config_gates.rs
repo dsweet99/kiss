@@ -126,14 +126,14 @@ fn test_infer_gate_threshold_matches_direct_floor_for_fixture() {
         .filter_map(Result::ok)
         .collect();
     let (definitions, unreferenced) =
-        super::infer_gate::collect_defs_and_unrefs(&py_parsed, &rs_parsed);
-    let floor = super::infer_gate::compute_min_per_file_test_coverage(&py_parsed, &rs_parsed);
+        super::infer_gate::collect_defs_and_unrefs(tmp.path(), &py_parsed, &rs_parsed);
+    let floor =
+        super::infer_gate::compute_min_per_file_test_coverage(tmp.path(), &py_parsed, &rs_parsed);
     let gate = infer_gate_config_for_paths(&paths, None, &ignore);
     assert_eq!(
         gate.test_coverage_threshold, floor,
         "inferred threshold should equal computed floor"
     );
-    assert_eq!(gate.test_coverage_threshold, 0);
     let map = crate::cli_output::file_coverage_map(&definitions, &unreferenced);
     let worst: Vec<_> = map
         .iter()
@@ -187,6 +187,26 @@ fn test_write_mimic_config_smoke() {
 }
 
 #[test]
+fn write_mimic_config_merges_existing_file_by_detected_language() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = tmp.path().join("mimic_out.toml");
+    std::fs::write(
+        &out,
+        "[python]\nstatements_per_function = 3\n[rust]\narguments = 4\n[thresholds]\nbranches_per_function = 7\n",
+    )
+    .unwrap();
+    let new_toml = "[python]\nstatements_per_function = 8\n[rust]\narguments = 9\n[shared]\nline_length = 120\n";
+
+    write_mimic_config(&out, new_toml, 1, 0).unwrap();
+
+    let merged = std::fs::read_to_string(&out).unwrap();
+    assert!(merged.contains("statements_per_function = 8"));
+    assert!(merged.contains("arguments = 4"));
+    assert!(merged.contains("branches_per_function = 7"));
+    assert!(merged.contains("line_length = 120"));
+}
+
+#[test]
 fn test_merge_config_toml_smoke() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("cfg.toml");
@@ -197,4 +217,73 @@ fn test_merge_config_toml_smoke() {
         MergeLanguageUpdate::Both,
     );
     assert!(merged.contains("statements_per_function"));
+}
+
+#[test]
+fn merge_config_toml_returns_new_toml_when_inputs_do_not_parse() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("cfg.toml");
+    std::fs::write(&path, "not = [valid").unwrap();
+
+    let new_toml = "[python]\nstatements_per_function = 2\n";
+
+    assert_eq!(
+        merge_config_toml(&path, new_toml, MergeLanguageUpdate::Both),
+        new_toml
+    );
+    std::fs::write(&path, "[python]\nstatements_per_function = 1\n").unwrap();
+    assert_eq!(
+        merge_config_toml(&path, "not = [valid", MergeLanguageUpdate::Both),
+        "not = [valid"
+    );
+}
+
+#[test]
+fn merge_config_toml_updates_only_analyzed_language_sections() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("cfg.toml");
+    std::fs::write(
+        &path,
+        "[gate]\ntest_coverage_threshold = 50\n[python]\nstatements_per_function = 1\n[rust]\narguments = 2\n[shared]\nline_length = 80\n[thresholds]\nbranches_per_function = 3\n",
+    )
+    .unwrap();
+    let new_toml = "[gate]\ntest_coverage_threshold = 90\n[python]\nstatements_per_function = 10\n[rust]\narguments = 20\n[shared]\nline_length = 100\n";
+
+    let py_only = merge_config_toml(&path, new_toml, MergeLanguageUpdate::PythonOnly);
+    assert!(py_only.contains("test_coverage_threshold = 90"));
+    assert!(py_only.contains("statements_per_function = 10"));
+    assert!(py_only.contains("arguments = 2"));
+    assert!(py_only.contains("line_length = 80"));
+    assert!(py_only.contains("branches_per_function = 3"));
+
+    let rust_only = merge_config_toml(&path, new_toml, MergeLanguageUpdate::RustOnly);
+    assert!(rust_only.contains("statements_per_function = 1"));
+    assert!(rust_only.contains("arguments = 20"));
+    assert!(rust_only.contains("line_length = 80"));
+    assert!(rust_only.contains("branches_per_function = 3"));
+
+    let both = merge_config_toml(&path, new_toml, MergeLanguageUpdate::Both);
+    assert!(both.contains("statements_per_function = 10"));
+    assert!(both.contains("arguments = 20"));
+    assert!(both.contains("line_length = 100"));
+    assert!(!both.contains("branches_per_function = 3"));
+}
+
+#[test]
+fn merge_config_toml_can_preserve_all_existing_language_sections() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("cfg.toml");
+    std::fs::write(
+        &path,
+        "[python]\nstatements_per_function = 1\n[rust]\narguments = 2\n[shared]\nline_length = 80\n[thresholds]\nbranches_per_function = 3\n",
+    )
+    .unwrap();
+    let new_toml = "[python]\nstatements_per_function = 10\n[rust]\narguments = 20\n";
+
+    let merged = merge_config_toml(&path, new_toml, MergeLanguageUpdate::Neither);
+
+    assert!(merged.contains("statements_per_function = 1"));
+    assert!(merged.contains("arguments = 2"));
+    assert!(merged.contains("line_length = 80"));
+    assert!(merged.contains("branches_per_function = 3"));
 }

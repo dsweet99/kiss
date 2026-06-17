@@ -149,6 +149,21 @@ fn test_collect_py_import_names_for_refs_from_import_statement() {
     assert!(refs.contains("pathlib"));
 }
 
+#[test]
+fn test_collect_test_functions_with_refs_honors_existing_prefix() {
+    use crate::parsing::create_parser;
+    let mut parser = create_parser().unwrap();
+    let src = "def test_alpha():\n    do_alpha()\n\nclass TestBeta:\n    def test_beta(self):\n        do_beta()\n";
+    let tree = parser.parse(src, None).unwrap();
+    let mut out = Vec::new();
+
+    super::collect::collect_test_functions_with_refs(tree.root_node(), src, "outer", &mut out);
+
+    let ids: Vec<&str> = out.iter().map(|(id, _, _)| id.as_str()).collect();
+    assert!(ids.contains(&"outer::test_alpha"));
+    assert!(ids.contains(&"outer::TestBeta::test_beta"));
+}
+
 // ---------------------------------------------------------------------------
 // collect.rs: collect_refs_parallel on mix of test and non-test files
 // ---------------------------------------------------------------------------

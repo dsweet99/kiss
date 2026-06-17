@@ -1,12 +1,45 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::analyze::FocusFilter;
-use kiss::{GateConfig, ParsedFile};
+use kiss::{
+    CodeDefinition, CodeUnitKind, GateConfig, ParsedFile, RustTestRefAnalysis, TestRefAnalysis,
+};
 
 use crate::analyze::CheckCoverageGateParams;
 use crate::analyze::compute_test_coverage_from_lists;
 use tempfile::TempDir;
+
+fn empty_py_cov() -> TestRefAnalysis {
+    TestRefAnalysis {
+        definitions: Vec::new(),
+        test_references: HashSet::new(),
+        call_references: HashSet::new(),
+        unreferenced: Vec::new(),
+        coverage_map: HashMap::new(),
+    }
+}
+
+fn empty_rs_cov() -> RustTestRefAnalysis {
+    RustTestRefAnalysis {
+        definitions: Vec::new(),
+        test_references: HashSet::new(),
+        call_references: HashSet::new(),
+        propagated_references: HashSet::new(),
+        unreferenced: Vec::new(),
+        coverage_map: HashMap::new(),
+    }
+}
+
+fn runtime_line_def(file: &Path, line: usize) -> CodeDefinition {
+    CodeDefinition {
+        name: format!("line_{line}"),
+        kind: CodeUnitKind::Module,
+        file: file.to_path_buf(),
+        line,
+        containing_class: None,
+    }
+}
 
 #[test]
 fn test_gate_helpers_and_empty_analysis() {
@@ -15,9 +48,11 @@ fn test_gate_helpers_and_empty_analysis() {
         ..Default::default()
     };
     let focus = FocusFilter::unrestricted();
+    let py_cov = empty_py_cov();
+    let rs_cov = empty_rs_cov();
     let p = CheckCoverageGateParams {
-        py_parsed: &[],
-        rs_parsed: &[],
+        py_cov: &py_cov,
+        rs_cov: &rs_cov,
         gate_config: &gate,
         focus: &focus,
         show_timing: false,
@@ -98,13 +133,29 @@ fn test_parse_gate_py_returns_three_files() {
 fn test_coverage_gate_per_file_fails_when_one_file_below_threshold() {
     let tmp = TempDir::new().unwrap();
     let (py_parsed, focus) = write_per_file_gate_fixture(&tmp);
+    let well = py_parsed
+        .iter()
+        .find(|file| file.path.ends_with("well_covered.py"))
+        .expect("well-covered fixture should parse");
+    let poor = py_parsed
+        .iter()
+        .find(|file| file.path.ends_with("poorly_covered.py"))
+        .expect("poorly-covered fixture should parse");
+    let mut py_cov = empty_py_cov();
+    py_cov
+        .definitions
+        .extend((1..=9).map(|line| runtime_line_def(&well.path, line)));
+    let missed = runtime_line_def(&poor.path, 1);
+    py_cov.definitions.push(missed.clone());
+    py_cov.unreferenced.push(missed);
+    let rs_cov = empty_rs_cov();
     let gate = GateConfig {
         test_coverage_threshold: 90,
         ..Default::default()
     };
     let p = CheckCoverageGateParams {
-        py_parsed: &py_parsed,
-        rs_parsed: &[],
+        py_cov: &py_cov,
+        rs_cov: &rs_cov,
         gate_config: &gate,
         focus: &focus,
         show_timing: false,

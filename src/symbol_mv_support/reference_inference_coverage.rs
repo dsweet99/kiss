@@ -39,3 +39,33 @@ fn infer_rust_receiver_type_from_function_param() {
         Some("Foo".to_string())
     );
 }
+
+#[test]
+fn infer_rust_self_inside_plain_and_trait_impls() {
+    let plain = "impl Widget { fn run(&self) { self.tick(); } }";
+    let plain_upto = plain.find("tick").unwrap();
+    assert_eq!(
+        infer_receiver_type_at(plain, plain_upto, "self"),
+        Some("Widget".to_string())
+    );
+
+    let trait_impl = "impl<T> Runner for Worker<T> { fn run(&self) { Self::new(); } }";
+    let trait_upto = trait_impl.find("new").unwrap();
+    assert_eq!(
+        infer_receiver_type_at(trait_impl, trait_upto, "Self"),
+        Some("Worker".to_string())
+    );
+}
+
+#[test]
+fn method_return_type_prefers_owner_hint_scope() {
+    let src = "impl A { fn build(&self) -> Left { Left } }\nimpl B { fn build(&self) -> Right { Right } }\nfn call(b: B) { b.build(); }";
+    let upto = src.find("b.build").unwrap();
+
+    assert_eq!(
+        method_return_type(src, upto, "build", Some("B")),
+        Some("Right".to_string())
+    );
+    assert_eq!(strip_rust_type_prefix("& dyn Service"), "Service");
+    assert!(enclosing_rust_impl_type("let implied = 1;", 5).is_none());
+}

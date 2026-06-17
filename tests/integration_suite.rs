@@ -24,12 +24,12 @@ mod cli_kiss_test_smoke;
 mod config_tests;
 #[path = "cases/error_formatter_coverage.rs"]
 mod error_formatter_coverage;
-#[path = "cases/gate_executable_coverage.rs"]
-mod gate_executable_coverage;
 #[path = "cases/fix_h1_error_nodes.rs"]
 mod fix_h1_error_nodes;
 #[path = "cases/fix_h5_phantom_orphans.rs"]
 mod fix_h5_phantom_orphans;
+#[path = "cases/gate_executable_coverage.rs"]
+mod gate_executable_coverage;
 #[path = "cases/incremental_skip_oracle.rs"]
 mod incremental_skip_oracle;
 #[path = "cases/journal_hypotheses.rs"]

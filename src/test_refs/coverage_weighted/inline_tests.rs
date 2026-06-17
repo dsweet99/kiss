@@ -1,6 +1,27 @@
 use super::*;
 use crate::parsing::parse_files;
 use crate::units::CodeUnitKind;
+use std::collections::{HashMap, HashSet};
+
+fn parse_one(path: &std::path::Path, source: &str) -> crate::parsing::ParsedFile {
+    std::fs::write(path, source).unwrap();
+    parse_files(&[path.to_path_buf()])
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .next()
+        .unwrap()
+}
+
+fn empty_analysis(definitions: Vec<CodeDefinition>) -> TestRefAnalysis {
+    TestRefAnalysis {
+        definitions,
+        test_references: HashSet::new(),
+        call_references: HashSet::new(),
+        unreferenced: Vec::new(),
+        coverage_map: HashMap::new(),
+    }
+}
 
 #[test]
 fn direct_weighted_helpers_via_fixtures() {
@@ -34,6 +55,74 @@ fn direct_weighted_helpers_via_fixtures() {
             .any(|d| d.kind == CodeUnitKind::Class),
         "fixture should include class defs"
     );
+}
+
+#[test]
+fn find_def_node_at_line_handles_classes_methods_functions_and_misses() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("nodes.py");
+    let parsed = parse_one(
+        &path,
+        "class Widget:\n    def method(self):\n        return 1\n\ndef top():\n    return 2\n",
+    );
+    let root = parsed.tree.root_node();
+
+    assert_eq!(
+        find_def_node_at_line(root, 1).unwrap().kind(),
+        "class_definition"
+    );
+    assert_eq!(
+        find_def_node_at_line(root, 2).unwrap().kind(),
+        "function_definition"
+    );
+    assert_eq!(
+        find_def_node_at_line(root, 5).unwrap().kind(),
+        "function_definition"
+    );
+    assert!(find_def_node_at_line(root, 99).is_none());
+}
+
+#[test]
+fn test_function_branches_finds_class_and_top_level_tests() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("test_nodes.py");
+    let parsed = parse_one(
+        &path,
+        "class TestWidget:\n    def test_method(self):\n        if True:\n            assert True\n\ndef test_top():\n    if True:\n        assert True\n",
+    );
+
+    assert!(test_function_branches(&parsed, "TestWidget::test_method") > 0);
+    assert!(test_function_branches(&parsed, "test_top") > 0);
+    assert_eq!(test_function_branches(&parsed, "TestWidget::missing"), 0);
+    assert_eq!(test_function_branches(&parsed, "missing"), 0);
+}
+
+#[test]
+fn weighted_file_pcts_skip_unmatched_or_unlocatable_definitions() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("simple.py");
+    let parsed = parse_one(&path, "value = 1\n");
+    let missing_path = tmp.path().join("missing.py");
+    let analysis = empty_analysis(vec![
+        CodeDefinition {
+            name: "ghost".to_string(),
+            kind: CodeUnitKind::Function,
+            file: parsed.path.clone(),
+            line: 99,
+            containing_class: None,
+        },
+        CodeDefinition {
+            name: "absent".to_string(),
+            kind: CodeUnitKind::Function,
+            file: missing_path,
+            line: 1,
+            containing_class: None,
+        },
+    ]);
+
+    let weighted = compute_py_weighted_file_pcts(&analysis, &[&parsed]);
+
+    assert!(weighted.is_empty());
 }
 
 #[test]

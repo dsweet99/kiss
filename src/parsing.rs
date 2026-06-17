@@ -91,10 +91,7 @@ mod coverage_witness {
         let cases = [
             ParseError::ParseFailed,
             ParseError::ParserInitError,
-            ParseError::IoError(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "missing",
-            )),
+            ParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "missing")),
         ];
         for err in cases {
             assert!(!ParseErrorViaWriter(&err).to_string().is_empty());
