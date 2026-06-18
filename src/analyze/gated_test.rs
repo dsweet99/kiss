@@ -1,4 +1,3 @@
-
 use super::*;
 use std::sync::Mutex;
 
@@ -270,7 +269,7 @@ fn runtime_rust_coverage_returns_empty_during_nested_coverage_runs() {
     };
     let parsed = vec![parsed_rs(PathBuf::from(missing_root).join("src/lib.rs"))];
 
-    let analysis = runtime_rust_coverage_for_opts(&opts, &parsed);
+    let analysis = super::gated_runtime_rust_coverage_for_opts(&opts, &parsed);
 
     unsafe { std::env::remove_var("CARGO_LLVM_COV") };
     assert!(analysis.definitions.is_empty());
@@ -299,7 +298,7 @@ fn runtime_rust_coverage_allows_empty_input_without_cargo_probe() {
         jobs: None,
     };
 
-    let analysis = runtime_rust_coverage_for_opts(&opts, &[]);
+    let analysis = gated_runtime_rust_coverage_for_opts(&opts, &[]);
 
     assert!(analysis.definitions.is_empty());
     assert!(analysis.unreferenced.is_empty());
@@ -331,7 +330,7 @@ fn runtime_rust_coverage_fails_closed_for_missing_repo_when_not_nested() {
     };
     let parsed = vec![parsed_rs(missing_root.join("src/lib.rs"))];
 
-    let analysis = runtime_rust_coverage_for_opts(&opts, &parsed);
+    let analysis = super::gated_runtime_rust_coverage_for_opts(&opts, &parsed);
 
     if let Some(value) = old_cov {
         unsafe { std::env::set_var("CARGO_LLVM_COV", value) };
@@ -342,7 +341,10 @@ fn runtime_rust_coverage_fails_closed_for_missing_repo_when_not_nested() {
     assert_eq!(analysis.definitions.len(), 1);
     assert_eq!(analysis.unreferenced.len(), 1);
     assert_eq!(analysis.definitions[0].name, "llvm_cov_failed");
-    assert_eq!(analysis.unreferenced[0].file, missing_root.join("src/lib.rs"));
+    assert_eq!(
+        analysis.unreferenced[0].file,
+        missing_root.join("src/lib.rs")
+    );
 }
 
 #[test]
@@ -368,7 +370,7 @@ fn runtime_rust_coverage_canonicalizes_existing_universe() {
     };
     let parsed = vec![parsed_rs(tmp.path().join("src/lib.rs"))];
 
-    let analysis = runtime_rust_coverage_for_opts(&opts, &parsed);
+    let analysis = gated_runtime_rust_coverage_for_opts(&opts, &parsed);
 
     unsafe { std::env::remove_var("CARGO_LLVM_COV") };
     assert!(analysis.definitions.is_empty());

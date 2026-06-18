@@ -33,6 +33,52 @@ fn coverage_refresh_pytest_extra_keeps_default_without_fast_tests() {
 }
 
 #[test]
+fn refresh_line_coverage_uses_slipcover_source_lines_and_static_tests() {
+    let tmp = TempDir::new().unwrap();
+    fs::create_dir_all(tmp.path().join("tests").join("fast")).unwrap();
+    write(
+        &tmp.path().join("pkg.py"),
+        "def hot(value):\n    if value:\n        return 1\n    return 0\n",
+    );
+    write(&tmp.path().join("cold.py"), "def cold():\n    return 0\n");
+    write(
+        &tmp.path().join("tests").join("fast").join("test_pkg.py"),
+        concat!(
+            "import sys\n",
+            "from pathlib import Path\n",
+            "sys.path.insert(0, str(Path(__file__).parents[2]))\n",
+            "from pkg import hot\n\n",
+            "def test_hot():\n",
+            "    assert hot(1) == 1\n",
+        ),
+    );
+
+    let db = crate::refresh_line_coverage_and_store(tmp.path(), 1).unwrap();
+
+    let pkg = db.files["pkg.py"].coverage.as_ref().unwrap();
+    assert_eq!(pkg.executed_lines, vec![1, 2, 3]);
+    assert_eq!(pkg.missing_lines, vec![4]);
+    assert_eq!(pkg.executable_lines, vec![1, 2, 3, 4]);
+    let cold = db.files["cold.py"].coverage.as_ref().unwrap();
+    assert_eq!(cold.executed_lines, Vec::<usize>::new());
+    assert_eq!(cold.missing_lines, vec![1, 2]);
+    assert_eq!(
+        db.tests.keys().cloned().collect::<Vec<_>>(),
+        vec!["tests/fast/test_pkg.py::test_hot".to_string()]
+    );
+    let test = &db.tests["tests/fast/test_pkg.py::test_hot"];
+    assert_eq!(test.test_path, "tests/fast/test_pkg.py");
+    assert_eq!(test.covered_files, vec!["pkg.py"]);
+    assert_eq!(test.covered_lines["pkg.py"], vec![1, 2, 3]);
+    assert_eq!(
+        db.source_to_covering_tests["pkg.py"],
+        vec!["tests/fast/test_pkg.py::test_hot"]
+    );
+    assert!(!db.source_to_covering_tests.contains_key("cold.py"));
+    assert!(tmp.path().join(".kiss").join("rslip.json").is_file());
+}
+
+#[test]
 fn query_covering_tests_is_directly_callable_from_tests() {
     let tmp = TempDir::new().unwrap();
     write(&tmp.path().join("app.py"), "def app():\n    return 1\n");

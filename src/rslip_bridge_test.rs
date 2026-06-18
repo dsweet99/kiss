@@ -62,7 +62,7 @@ fn bridge_helpers_are_directly_callable_from_sibling_test_module() {
 
     let line = crate::rslip_bridge::line_name(1);
     let rel = crate::rslip_bridge::normalize_against(tmp.path(), &tmp.path().join("a.py"));
-    let analysis = crate::rslip_bridge::analysis_from_database(
+    let analysis = crate::rslip_bridge::bridge_analysis_from_database(
         tmp.path(),
         &[parsed_with_path(tmp.path().join("a.py"))],
         &db,
@@ -95,7 +95,7 @@ fn bridge_ignores_records_without_coverage_metadata() {
     let tmp = tempfile::TempDir::new().unwrap();
     let db = bridge_db(None, "tests/test_a.py::test_a", "tests/test_a.py");
 
-    let analysis = crate::rslip_bridge::analysis_from_database(
+    let analysis = crate::rslip_bridge::bridge_analysis_from_database(
         tmp.path(),
         &[parsed_with_path(tmp.path().join("a.py"))],
         &db,
@@ -120,7 +120,7 @@ fn bridge_falls_back_to_test_path_for_selector_without_separator() {
         "tests/test_a.py",
     );
 
-    let analysis = crate::rslip_bridge::analysis_from_database(
+    let analysis = crate::rslip_bridge::bridge_analysis_from_database(
         tmp.path(),
         &[parsed_with_path(tmp.path().join("a.py"))],
         &db,

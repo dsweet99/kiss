@@ -177,7 +177,7 @@ mod tests {
         };
         let static_analysis = static_analysis_for(tmp.path(), "a");
 
-        let runtime = analysis_from_database(tmp.path(), &static_analysis, &db);
+        let runtime = super::analysis_from_database(tmp.path(), &static_analysis, &db);
 
         assert_eq!(
             runtime
@@ -218,7 +218,7 @@ mod tests {
             )]),
         };
         let static_analysis = static_analysis_for(tmp.path(), "a");
-        let runtime = analysis_from_database(tmp.path(), &static_analysis, &db);
+        let runtime = super::analysis_from_database(tmp.path(), &static_analysis, &db);
         assert_eq!(runtime.unreferenced.len(), 1);
         assert!(
             runtime
@@ -324,6 +324,53 @@ mod tests {
         assert_eq!(runtime.unreferenced.len(), 1);
         assert_eq!(runtime.unreferenced[0].file, tmp.path().join("a.py"));
         assert!(runtime.coverage_map.is_empty());
+    }
+
+    #[test]
+    fn analysis_from_database_preserves_static_reference_sets() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = ::rslip::Database {
+            schema_version: ::rslip::SCHEMA_VERSION,
+            rslip_version: ::rslip::RSLIP_VERSION.to_string(),
+            config_fingerprints: BTreeMap::new(),
+            files: BTreeMap::from([(
+                "a.py".to_string(),
+                ::rslip::FileRecord {
+                    path: "a.py".to_string(),
+                    role: ::rslip::FileRole::Source,
+                    content_digest: String::new(),
+                    len: 0,
+                    mtime_ns: 0,
+                    coverage: Some(::rslip::CoverageMetadata::default()),
+                },
+            )]),
+            tests: BTreeMap::new(),
+            source_to_covering_tests: BTreeMap::new(),
+        };
+        let mut static_analysis = static_analysis_for(tmp.path(), "a");
+        static_analysis
+            .test_references
+            .insert("tests/test_a.py::test_a".to_string());
+        static_analysis.call_references.insert("helper".to_string());
+
+        let runtime = super::analysis_from_database(tmp.path(), &static_analysis, &db);
+
+        assert_eq!(runtime.definitions.len(), static_analysis.definitions.len());
+        assert_eq!(
+            runtime.definitions[0].name,
+            static_analysis.definitions[0].name
+        );
+        assert_eq!(
+            runtime.definitions[0].file,
+            static_analysis.definitions[0].file
+        );
+        assert_eq!(
+            runtime.definitions[0].line,
+            static_analysis.definitions[0].line
+        );
+        assert_eq!(runtime.test_references, static_analysis.test_references);
+        assert_eq!(runtime.call_references, static_analysis.call_references);
+        assert!(runtime.unreferenced.is_empty());
     }
 
     #[test]

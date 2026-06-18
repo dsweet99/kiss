@@ -38,18 +38,25 @@ def trace_many(repo, nodeids, out_path):
     current = None
     canonical_filenames = {}
 
+    def repo_filename(frame):
+        raw_filename = frame.f_code.co_filename
+        filename = canonical_filenames.get(raw_filename)
+        if filename is None:
+            filename = os.path.realpath(raw_filename)
+            canonical_filenames[raw_filename] = filename
+        if filename.startswith(repo + os.sep):
+            return filename
+        return None
+
     def tracer(frame, event, arg):
         nonlocal current
+        filename = repo_filename(frame)
+        if filename is None:
+            return None
         if event == "line":
-            raw_filename = frame.f_code.co_filename
-            filename = canonical_filenames.get(raw_filename)
-            if filename is None:
-                filename = os.path.realpath(raw_filename)
-                canonical_filenames[raw_filename] = filename
-            if filename.startswith(repo + os.sep):
-                rel = os.path.relpath(filename, repo).replace(os.sep, "/")
-                target = collection_hits if current is None else hits.setdefault(current, {})
-                target.setdefault(rel, set()).add(frame.f_lineno)
+            rel = os.path.relpath(filename, repo).replace(os.sep, "/")
+            target = collection_hits if current is None else hits.setdefault(current, {})
+            target.setdefault(rel, set()).add(frame.f_lineno)
         return tracer
 
     class RslipPlugin:

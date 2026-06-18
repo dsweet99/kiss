@@ -34,15 +34,15 @@ pub fn runtime_py_analysis(
         &|root, selectors, parallelism| collector.collect(root, selectors, parallelism),
         j,
     ) {
-        Ok(db) => analysis_from_database(repo_root, parsed, &db),
+        Ok(db) => bridge_analysis_from_database(repo_root, parsed, &db),
         Err(err) => {
             eprintln!("error: rslip coverage refresh failed: {err}");
-            fail_closed_analysis(parsed)
+            fail_closed_py_analysis(parsed)
         }
     }
 }
 
-pub(crate) fn analysis_from_database(
+pub(crate) fn bridge_analysis_from_database(
     repo_root: &Path,
     parsed: &[ParsedFile],
     db: &Database,
@@ -86,7 +86,7 @@ pub(crate) fn analysis_from_database(
     }
 }
 
-fn fail_closed_analysis(parsed: &[ParsedFile]) -> TestRefAnalysis {
+fn fail_closed_py_analysis(parsed: &[ParsedFile]) -> TestRefAnalysis {
     let mut definitions = Vec::new();
     for file in parsed {
         definitions.push(CodeDefinition {

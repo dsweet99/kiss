@@ -79,7 +79,7 @@ fn gated_py_parallel(
     (py_cov, py_graph, graph_viols_all, py_dups_all)
 }
 
-fn runtime_rust_coverage_for_opts(
+fn gated_runtime_rust_coverage_for_opts(
     opts: &crate::analyze::options::AnalyzeOptions<'_>,
     parsed: &[ParsedRustFile],
 ) -> kiss::RustTestRefAnalysis {
@@ -98,7 +98,7 @@ pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
         parsed: (result, viols, file_count),
         timings,
     } = in_;
-    let rs_cov = runtime_rust_coverage_for_opts(opts, &result.rs_parsed);
+    let rs_cov = gated_runtime_rust_coverage_for_opts(opts, &result.rs_parsed);
 
     let (py_cov, py_graph, mut graph_viols_all, py_dups_all) =
         gated_py_parallel(&GatedPyParallelIn {

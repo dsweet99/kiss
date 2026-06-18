@@ -53,9 +53,18 @@ fn analysis_from_database_keeps_fully_covered_file_without_covering_tests_refere
     assert!(runtime.unreferenced.is_empty());
     assert!(runtime.coverage_map.is_empty());
     assert_eq!(runtime.definitions.len(), 1);
-    assert_eq!(runtime.definitions[0].name, static_analysis.definitions[0].name);
-    assert_eq!(runtime.definitions[0].file, static_analysis.definitions[0].file);
-    assert_eq!(runtime.definitions[0].line, static_analysis.definitions[0].line);
+    assert_eq!(
+        runtime.definitions[0].name,
+        static_analysis.definitions[0].name
+    );
+    assert_eq!(
+        runtime.definitions[0].file,
+        static_analysis.definitions[0].file
+    );
+    assert_eq!(
+        runtime.definitions[0].line,
+        static_analysis.definitions[0].line
+    );
 }
 
 #[test]
@@ -93,7 +102,10 @@ fn analysis_from_database_ignores_malformed_covering_test_selectors() {
         runtime
             .coverage_map
             .get(&(tmp.path().join("a.py"), "a".to_string())),
-        Some(&vec![(tmp.path().join("tests/test_a.py"), "test_a".to_string())])
+        Some(&vec![(
+            tmp.path().join("tests/test_a.py"),
+            "test_a".to_string()
+        )])
     );
 }
 

@@ -1,4 +1,3 @@
-
 use super::*;
 use std::collections::BTreeMap;
 
@@ -86,7 +85,8 @@ fn analysis_from_database_maps_runtime_lines_to_module_defs() {
             covered_lines: BTreeMap::new(),
         },
     );
-    let analysis = analysis_from_database(tmp.path(), &[parsed(tmp.path().join("a.py"))], &db);
+    let analysis =
+        bridge_analysis_from_database(tmp.path(), &[parsed(tmp.path().join("a.py"))], &db);
 
     assert_eq!(analysis.definitions.len(), 2);
     assert_eq!(analysis.unreferenced.len(), 1);
@@ -125,7 +125,8 @@ fn missing_database_record_produces_no_runtime_definitions() {
         source_to_covering_tests: BTreeMap::new(),
     };
 
-    let analysis = analysis_from_database(tmp.path(), &[parsed(tmp.path().join("a.py"))], &db);
+    let analysis =
+        bridge_analysis_from_database(tmp.path(), &[parsed(tmp.path().join("a.py"))], &db);
     assert!(analysis.definitions.is_empty());
     assert!(analysis.unreferenced.is_empty());
     assert!(analysis.coverage_map.is_empty());
@@ -144,7 +145,8 @@ fn uncovered_file_without_covering_tests_emits_unreferenced_lines() {
         }),
     );
 
-    let analysis = analysis_from_database(tmp.path(), &[parsed(tmp.path().join("a.py"))], &db);
+    let analysis =
+        bridge_analysis_from_database(tmp.path(), &[parsed(tmp.path().join("a.py"))], &db);
 
     assert_eq!(analysis.definitions.len(), 2);
     assert_eq!(analysis.unreferenced.len(), 2);
@@ -190,7 +192,7 @@ fn fail_closed_analysis_marks_each_parsed_file_unreferenced() {
         parsed(tmp.path().join("a.py")),
         parsed(tmp.path().join("b.py")),
     ];
-    let analysis = fail_closed_analysis(&files);
+    let analysis = super::fail_closed_py_analysis(&files);
 
     assert_eq!(analysis.definitions.len(), 2);
     assert_eq!(analysis.unreferenced.len(), 2);
@@ -229,6 +231,29 @@ fn runtime_py_analysis_fails_closed_when_refresh_cannot_run() {
 }
 
 #[test]
+fn runtime_py_analysis_fails_closed_for_every_parsed_file() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let repo = tmp.path().join("missing-repo");
+    let files = vec![parsed(repo.join("pkg/a.py")), parsed(repo.join("pkg/b.py"))];
+
+    let analysis = runtime_py_analysis(&repo, &files, Some(1));
+
+    assert_eq!(analysis.definitions.len(), files.len());
+    assert_eq!(analysis.unreferenced.len(), files.len());
+    for (def, file) in analysis.definitions.iter().zip(&files) {
+        assert_eq!(def.name, "rslip_refresh_failed");
+        assert_eq!(def.file, file.path);
+        assert_eq!(def.line, 1);
+    }
+    for (missing, file) in analysis.unreferenced.iter().zip(&files) {
+        assert_eq!(missing.name, "rslip_refresh_failed");
+        assert_eq!(missing.file, file.path);
+        assert_eq!(missing.line, 1);
+    }
+    assert!(analysis.coverage_map.is_empty());
+}
+
+#[test]
 fn fail_closed_analysis_preserves_file_order_and_denied_units() {
     let tmp = tempfile::TempDir::new().unwrap();
     let files = vec![
@@ -237,7 +262,7 @@ fn fail_closed_analysis_preserves_file_order_and_denied_units() {
         parsed(tmp.path().join("pkg/third.py")),
     ];
 
-    let analysis = fail_closed_analysis(&files);
+    let analysis = fail_closed_py_analysis(&files);
 
     let definition_files: Vec<_> = analysis
         .definitions
@@ -276,7 +301,7 @@ fn fail_closed_analysis_preserves_duplicate_input_cardinality() {
         parsed(duplicate_path.clone()),
     ];
 
-    let analysis = fail_closed_analysis(&files);
+    let analysis = fail_closed_py_analysis(&files);
 
     let definition_files: Vec<_> = analysis
         .definitions
@@ -307,7 +332,7 @@ fn fail_closed_analysis_preserves_duplicate_input_cardinality() {
 
 #[test]
 fn fail_closed_analysis_keeps_empty_input_empty() {
-    let analysis = fail_closed_analysis(&[]);
+    let analysis = fail_closed_py_analysis(&[]);
 
     assert!(analysis.definitions.is_empty());
     assert!(analysis.unreferenced.is_empty());
