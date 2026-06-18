@@ -21,8 +21,16 @@ pub fn refresh_with_collector(
     j: usize,
 ) -> Result<Database, String> {
     let mut files = discover_repo_files(repo_root)?;
-    let nodeids = pyfork::collect_nodeids(repo_root, &[])?;
+    let extra = coverage_refresh_pytest_extra(repo_root);
+    let nodeids = pyfork::collect_nodeids(repo_root, &extra)?;
     refresh_selected_with_collector(repo_root, collector, &mut files, nodeids, j)
+}
+
+pub(crate) fn coverage_refresh_pytest_extra(repo_root: &Path) -> Vec<String> {
+    if repo_root.join("tests").join("fast").is_dir() {
+        return vec!["tests/fast".to_string()];
+    }
+    Vec::new()
 }
 
 fn refresh_selected_with_collector(
@@ -184,7 +192,8 @@ pub fn refresh_changed_tests_with_collector(
         .iter()
         .map(|path| normalize_path(repo_root, path))
         .collect();
-    let nodeids: Vec<_> = pyfork::collect_nodeids(repo_root, &[])?
+    let extra = coverage_refresh_pytest_extra(repo_root);
+    let nodeids: Vec<_> = pyfork::collect_nodeids(repo_root, &extra)?
         .into_iter()
         .filter(|nodeid| {
             nodeid

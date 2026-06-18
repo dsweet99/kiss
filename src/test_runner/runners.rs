@@ -126,9 +126,10 @@ pub fn build_pytest_fork_argv(nodeid: &str, extra: &[String]) -> Vec<String> {
 }
 
 pub fn build_cargo_test_argv(selectors: &[String], extra: &[String]) -> Vec<String> {
-    let mut v = vec!["cargo".into(), "test".into(), "--".into()];
-    v.extend(selectors.iter().cloned());
+    let mut v = vec!["cargo".into(), "test".into()];
     v.extend(extra.iter().cloned());
+    v.push("--".into());
+    v.extend(selectors.iter().cloned());
     v
 }
 

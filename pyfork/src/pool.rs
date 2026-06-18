@@ -39,9 +39,15 @@ fn pool_config_path(repo_root: &Path) -> PathBuf {
 }
 
 pub fn default_parallelism() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
+    cap_default_parallelism(
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1),
+    )
+}
+
+pub(crate) fn cap_default_parallelism(available: usize) -> usize {
+    available.clamp(1, 8)
 }
 
 pub fn build_fork_argv(repo_root: &Path, nodeid: &str, extra: &[String]) -> Vec<String> {

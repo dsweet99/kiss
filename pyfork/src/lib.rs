@@ -133,6 +133,24 @@ mod tests {
     }
 
     #[test]
+    fn trace_pool_marks_children_as_kiss_rslip() {
+        let tmp = TempDir::new().unwrap();
+        write(
+            &tmp.path().join("test_env.py"),
+            concat!(
+                "import os\n\n",
+                "def test_kiss_rslip_env():\n",
+                "    assert os.environ.get('KISS_RSLIP') == '1'\n",
+            ),
+        );
+        let nodeids = vec!["test_env.py::test_kiss_rslip_env".to_string()];
+
+        let (code, _trace_dir) = trace_pool(tmp.path(), &nodeids, 1).unwrap();
+
+        assert_eq!(code, 0);
+    }
+
+    #[test]
     fn isolation_module_global_reset_between_forks() {
         let tmp = TempDir::new().unwrap();
         write(
@@ -166,5 +184,16 @@ mod tests {
     #[test]
     fn default_parallelism_is_positive() {
         assert!(default_parallelism() >= 1);
+    }
+
+    #[test]
+    fn default_parallelism_cap_preserves_small_hosts() {
+        assert_eq!(pool::cap_default_parallelism(1), 1);
+        assert_eq!(pool::cap_default_parallelism(4), 4);
+    }
+
+    #[test]
+    fn default_parallelism_cap_bounds_large_hosts() {
+        assert_eq!(pool::cap_default_parallelism(64), 8);
     }
 }

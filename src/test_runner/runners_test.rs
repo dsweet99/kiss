@@ -79,9 +79,11 @@ fn build_pytest_and_cargo_argv_non_empty() {
     assert!(py.iter().any(|s| s == "a.py::t"));
     assert!(py.iter().any(|s| s == "-q"));
 
-    let c = build_cargo_test_argv(&["smoke_sub".into()], &["--ignored".into()]);
-    assert_eq!(c[0..4], ["cargo", "test", "--", "smoke_sub"]);
-    assert!(c.iter().any(|s| s == "--ignored"));
+    let c = build_cargo_test_argv(&["smoke_sub".into()], &["--workspace".into()]);
+    assert_eq!(
+        c.as_slice(),
+        ["cargo", "test", "--workspace", "--", "smoke_sub"]
+    );
 }
 
 #[test]

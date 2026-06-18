@@ -12,6 +12,27 @@ fn write(path: &Path, contents: &str) {
 }
 
 #[test]
+fn coverage_refresh_pytest_extra_prefers_fast_tests_when_present() {
+    let tmp = TempDir::new().unwrap();
+    fs::create_dir_all(tmp.path().join("tests").join("fast")).unwrap();
+
+    assert_eq!(
+        crate::refresh::coverage_refresh_pytest_extra(tmp.path()),
+        vec!["tests/fast".to_string()]
+    );
+}
+
+#[test]
+fn coverage_refresh_pytest_extra_keeps_default_without_fast_tests() {
+    let tmp = TempDir::new().unwrap();
+
+    assert_eq!(
+        crate::refresh::coverage_refresh_pytest_extra(tmp.path()),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
 fn query_covering_tests_is_directly_callable_from_tests() {
     let tmp = TempDir::new().unwrap();
     write(&tmp.path().join("app.py"), "def app():\n    return 1\n");

@@ -97,9 +97,13 @@ mod coverage_witness {
     use super::*;
 
     #[test]
-    fn witness_query_covering_tests_symbol() {
+    fn query_covering_tests_reports_missing_repo_error() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let _ = query_covering_tests(tmp.path(), &[]);
+        let missing_repo = tmp.path().join("missing");
+
+        let err = query_covering_tests(&missing_repo, &[]).unwrap_err();
+
+        assert!(!err.is_empty());
     }
 }
 
@@ -118,6 +122,28 @@ mod tests {
                 line: 1,
                 containing_class: None,
             }],
+            test_references: HashSet::new(),
+            call_references: HashSet::new(),
+            unreferenced: Vec::new(),
+            coverage_map: HashMap::new(),
+        }
+    }
+
+    fn static_analysis_for_defs(
+        tmp: &std::path::Path,
+        defs: impl IntoIterator<Item = (&'static str, usize)>,
+    ) -> TestRefAnalysis {
+        TestRefAnalysis {
+            definitions: defs
+                .into_iter()
+                .map(|(name, line)| crate::test_refs::CodeDefinition {
+                    name: name.to_string(),
+                    kind: crate::units::CodeUnitKind::Function,
+                    file: tmp.join("a.py"),
+                    line,
+                    containing_class: None,
+                })
+                .collect(),
             test_references: HashSet::new(),
             call_references: HashSet::new(),
             unreferenced: Vec::new(),
@@ -202,6 +228,54 @@ mod tests {
     }
 
     #[test]
+    fn analysis_from_database_marks_earliest_def_when_runtime_reports_missing_lines() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = ::rslip::Database {
+            schema_version: ::rslip::SCHEMA_VERSION,
+            rslip_version: ::rslip::RSLIP_VERSION.to_string(),
+            config_fingerprints: BTreeMap::new(),
+            files: BTreeMap::from([(
+                "a.py".to_string(),
+                ::rslip::FileRecord {
+                    path: "a.py".to_string(),
+                    role: ::rslip::FileRole::Source,
+                    content_digest: String::new(),
+                    len: 0,
+                    mtime_ns: 0,
+                    coverage: Some(::rslip::CoverageMetadata {
+                        executable_lines: vec![2, 10],
+                        executed_lines: vec![10],
+                        missing_lines: vec![2],
+                        percent_covered: 50,
+                    }),
+                },
+            )]),
+            tests: BTreeMap::new(),
+            source_to_covering_tests: BTreeMap::from([(
+                "a.py".to_string(),
+                vec!["test_a.py::test_partial".to_string()],
+            )]),
+        };
+        let static_analysis =
+            static_analysis_for_defs(tmp.path(), [("later_definition", 10), ("earliest_def", 2)]);
+
+        let runtime = analysis_from_database(tmp.path(), &static_analysis, &db);
+
+        assert_eq!(runtime.unreferenced.len(), 1);
+        assert_eq!(runtime.unreferenced[0].name, "earliest_def");
+        assert_eq!(runtime.coverage_map.len(), 2);
+        assert_eq!(
+            runtime
+                .coverage_map
+                .get(&(tmp.path().join("a.py"), "later_definition".to_string())),
+            Some(&vec![(
+                tmp.path().join("test_a.py"),
+                "test_partial".to_string()
+            )])
+        );
+    }
+
+    #[test]
     fn analysis_from_database_marks_missing_runtime_file_unreferenced() {
         let tmp = tempfile::TempDir::new().unwrap();
         let db = ::rslip::Database {
@@ -218,6 +292,37 @@ mod tests {
         assert_eq!(runtime.definitions.len(), 1);
         assert_eq!(runtime.unreferenced.len(), 1);
         assert_eq!(runtime.unreferenced[0].name, "a");
+        assert!(runtime.coverage_map.is_empty());
+    }
+
+    #[test]
+    fn analysis_from_database_marks_file_without_runtime_coverage_unreferenced() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = ::rslip::Database {
+            schema_version: ::rslip::SCHEMA_VERSION,
+            rslip_version: ::rslip::RSLIP_VERSION.to_string(),
+            config_fingerprints: BTreeMap::new(),
+            files: BTreeMap::from([(
+                "a.py".to_string(),
+                ::rslip::FileRecord {
+                    path: "a.py".to_string(),
+                    role: ::rslip::FileRole::Source,
+                    content_digest: String::new(),
+                    len: 0,
+                    mtime_ns: 0,
+                    coverage: None,
+                },
+            )]),
+            tests: BTreeMap::new(),
+            source_to_covering_tests: BTreeMap::new(),
+        };
+        let static_analysis = static_analysis_for(tmp.path(), "a");
+
+        let runtime = analysis_from_database(tmp.path(), &static_analysis, &db);
+
+        assert_eq!(runtime.definitions.len(), 1);
+        assert_eq!(runtime.unreferenced.len(), 1);
+        assert_eq!(runtime.unreferenced[0].file, tmp.path().join("a.py"));
         assert!(runtime.coverage_map.is_empty());
     }
 
@@ -256,3 +361,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "rslip_extra_test.rs"]
+mod extra_tests;

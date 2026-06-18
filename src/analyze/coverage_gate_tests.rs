@@ -250,7 +250,7 @@ fn evaluate_cached_gate_replays_weighted_file_coverage() {
 }
 
 #[test]
-fn evaluate_gate_honors_runtime_python_line_coverage_directly() {
+fn evaluate_gate_enforces_runtime_python_line_coverage() {
     let file = PathBuf::from("src/runtime.py");
     let definitions: Vec<_> = (1..=10)
         .map(|line| kiss::CodeDefinition {
@@ -265,7 +265,7 @@ fn evaluate_gate_honors_runtime_python_line_coverage_directly() {
         definitions: definitions.clone(),
         test_references: HashSet::new(),
         call_references: HashSet::new(),
-        unreferenced: vec![definitions[9].clone()],
+        unreferenced: definitions[1..].to_vec(),
         coverage_map: HashMap::new(),
     };
     let rs_cov = kiss::RustTestRefAnalysis {
@@ -279,8 +279,41 @@ fn evaluate_gate_honors_runtime_python_line_coverage_directly() {
     let focus = crate::analyze::FocusFilter::restricting(std::iter::once(file).collect());
 
     assert!(
-        evaluate_gate(&py_cov, &rs_cov, &[], &[], &focus, 90).is_none(),
-        "nine of ten runtime-covered Python lines should meet a 90% gate"
+        evaluate_gate(&py_cov, &rs_cov, &[], &[], &focus, 90).is_some(),
+        "runtime line coverage should enforce the default test_coverage gate"
+    );
+}
+
+#[test]
+fn evaluate_gate_still_fails_closed_on_runtime_refresh_error() {
+    let file = PathBuf::from("src/runtime.py");
+    let failed = kiss::CodeDefinition {
+        name: "rslip_refresh_failed".to_string(),
+        kind: kiss::CodeUnitKind::Module,
+        file: file.clone(),
+        line: 1,
+        containing_class: None,
+    };
+    let py_cov = kiss::TestRefAnalysis {
+        definitions: vec![failed.clone()],
+        test_references: HashSet::new(),
+        call_references: HashSet::new(),
+        unreferenced: vec![failed],
+        coverage_map: HashMap::new(),
+    };
+    let rs_cov = kiss::RustTestRefAnalysis {
+        definitions: Vec::new(),
+        test_references: HashSet::new(),
+        call_references: HashSet::new(),
+        propagated_references: HashSet::new(),
+        unreferenced: Vec::new(),
+        coverage_map: HashMap::new(),
+    };
+    let focus = crate::analyze::FocusFilter::restricting(std::iter::once(file).collect());
+
+    assert!(
+        evaluate_gate(&py_cov, &rs_cov, &[], &[], &focus, 90).is_some(),
+        "runtime backend failures must remain hard coverage failures"
     );
 }
 

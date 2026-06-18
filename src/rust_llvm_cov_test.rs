@@ -179,7 +179,11 @@ fn fail_closed_analysis_preserves_all_input_files_and_empty_sets() {
 
     let analysis = fail_closed_analysis(&parsed);
 
-    let files: Vec<_> = analysis.definitions.iter().map(|def| def.file.clone()).collect();
+    let files: Vec<_> = analysis
+        .definitions
+        .iter()
+        .map(|def| def.file.clone())
+        .collect();
     assert_eq!(
         files,
         vec![PathBuf::from("src/lib.rs"), PathBuf::from("src/main.rs")]

@@ -31,6 +31,7 @@ def run_pool(repo, nodeids, j, extra):
 
 def trace_one(repo, nodeid, out_path):
     import pytest
+    os.environ["KISS_RSLIP"] = "1"
     sys.path.insert(0, repo)
     hits = {}
     collection_hits = {}
