@@ -29,7 +29,7 @@ def run_pool(repo, nodeids, j, extra):
             exit_codes.append(code)
     return max(exit_codes) if exit_codes else 0
 
-def trace_one(repo, nodeid, out_path):
+def trace_many(repo, nodeids, out_path):
     import pytest
     os.environ["KISS_RSLIP"] = "1"
     sys.path.insert(0, repo)
@@ -62,36 +62,33 @@ def trace_one(repo, nodeid, out_path):
 
     sys.settrace(tracer)
     try:
-        code = pytest.main([nodeid, "-q"], plugins=[RslipPlugin()])
+        code = pytest.main(list(nodeids) + ["-q"], plugins=[RslipPlugin()])
     finally:
         sys.settrace(None)
-    per_file = hits.get(nodeid, {})
-    merged = {}
-    for path in set(collection_hits) | set(per_file):
-        merged[path] = sorted(set(collection_hits.get(path, set())) | set(per_file.get(path, set())))
+    output = {}
+    for nodeid in nodeids:
+        per_file = hits.get(nodeid, {})
+        merged = {}
+        for path in set(collection_hits) | set(per_file):
+            merged[path] = sorted(set(collection_hits.get(path, set())) | set(per_file.get(path, set())))
+        output[nodeid] = merged
     with open(out_path, "w", encoding="utf-8") as fh:
-        json.dump({nodeid: merged}, fh)
+        json.dump(output, fh)
     return code if isinstance(code, int) else int(code)
 
 def trace_pool(repo, nodeids, j, trace_dir):
-    queue = list(nodeids)
-    running = {}
-    exit_codes = []
-    while queue or running:
-        while len(running) < j and queue:
-            nodeid = queue.pop(0)
-            out_path = os.path.join(trace_dir, f"trace_{nodeid.replace('/', '_').replace(':', '_')}_{os.getpid()}.json")
-            pid = os.fork()
-            if pid == 0:
-                code = trace_one(repo, nodeid, out_path)
-                os._exit(code)
-            running[pid] = nodeid
-        if running:
-            nodeid, code = wait_one(running)
-            if code != 0:
-                print(f"=== {nodeid} ===", file=sys.stderr, flush=True)
-            exit_codes.append(code)
-    return max(exit_codes) if exit_codes else 0
+    if not nodeids:
+        return 0
+    out_path = os.path.join(trace_dir, f"trace_all_{os.getpid()}.json")
+    pid = os.fork()
+    if pid == 0:
+        code = trace_many(repo, nodeids, out_path)
+        os._exit(code)
+    done_pid, status = os.waitpid(pid, 0)
+    code = os.waitstatus_to_exitcode(status) if hasattr(os, "waitstatus_to_exitcode") else (status >> 8)
+    if code != 0:
+        print("=== trace pytest session ===", file=sys.stderr, flush=True)
+    return code
 
 def main():
     repo = os.path.realpath(sys.argv[1])

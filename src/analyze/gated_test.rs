@@ -307,6 +307,45 @@ fn runtime_rust_coverage_allows_empty_input_without_cargo_probe() {
 }
 
 #[test]
+fn runtime_rust_coverage_fails_closed_for_missing_repo_when_not_nested() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let old_cov = std::env::var_os("CARGO_LLVM_COV");
+    let old_target = std::env::var_os("CARGO_LLVM_COV_TARGET_DIR");
+    unsafe { std::env::remove_var("CARGO_LLVM_COV") };
+    unsafe { std::env::remove_var("CARGO_LLVM_COV_TARGET_DIR") };
+    let tmp = tempfile::TempDir::new().unwrap();
+    let missing_root = tmp.path().join("missing-repo");
+    let fix = TestFixture::new();
+    let opts = crate::analyze::options::AnalyzeOptions {
+        universe: missing_root.to_str().unwrap(),
+        focus_paths: &fix.focus,
+        py_config: &fix.py_cfg,
+        rs_config: &fix.rs_cfg,
+        lang_filter: None,
+        bypass_gate: false,
+        gate_config: &fix.gate,
+        ignore_prefixes: &[],
+        show_timing: false,
+        suppress_final_status: false,
+        jobs: None,
+    };
+    let parsed = vec![parsed_rs(missing_root.join("src/lib.rs"))];
+
+    let analysis = runtime_rust_coverage_for_opts(&opts, &parsed);
+
+    if let Some(value) = old_cov {
+        unsafe { std::env::set_var("CARGO_LLVM_COV", value) };
+    }
+    if let Some(value) = old_target {
+        unsafe { std::env::set_var("CARGO_LLVM_COV_TARGET_DIR", value) };
+    }
+    assert_eq!(analysis.definitions.len(), 1);
+    assert_eq!(analysis.unreferenced.len(), 1);
+    assert_eq!(analysis.definitions[0].name, "llvm_cov_failed");
+    assert_eq!(analysis.unreferenced[0].file, missing_root.join("src/lib.rs"));
+}
+
+#[test]
 fn runtime_rust_coverage_canonicalizes_existing_universe() {
     let _guard = ENV_LOCK.lock().unwrap();
     unsafe { std::env::set_var("CARGO_LLVM_COV", "1") };

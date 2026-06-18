@@ -136,3 +136,41 @@ fn analysis_from_database_maps_tests_to_all_defs_in_same_file() {
     );
     assert!(runtime.unreferenced.is_empty());
 }
+
+#[test]
+fn analysis_from_database_marks_missing_lines_without_covering_tests() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let db = ::rslip::Database {
+        schema_version: ::rslip::SCHEMA_VERSION,
+        rslip_version: ::rslip::RSLIP_VERSION.to_string(),
+        config_fingerprints: BTreeMap::new(),
+        files: BTreeMap::from([(
+            "a.py".to_string(),
+            ::rslip::FileRecord {
+                path: "a.py".to_string(),
+                role: ::rslip::FileRole::Source,
+                content_digest: String::new(),
+                len: 0,
+                mtime_ns: 0,
+                coverage: Some(::rslip::CoverageMetadata {
+                    executable_lines: vec![1, 3],
+                    executed_lines: vec![1],
+                    missing_lines: vec![3],
+                    percent_covered: 50,
+                }),
+            },
+        )]),
+        tests: BTreeMap::new(),
+        source_to_covering_tests: BTreeMap::new(),
+    };
+    let static_analysis = static_analysis(tmp.path(), &[("first", 1), ("second", 3)]);
+
+    let runtime = analysis_from_database(tmp.path(), &static_analysis, &db);
+
+    assert_eq!(runtime.unreferenced.len(), 1);
+    assert_eq!(runtime.unreferenced[0].name, "first");
+    assert!(runtime.coverage_map.is_empty());
+    assert_eq!(runtime.definitions.len(), 2);
+    assert_eq!(runtime.definitions[0].name, "first");
+    assert_eq!(runtime.definitions[1].name, "second");
+}

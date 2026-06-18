@@ -133,6 +133,53 @@ mod tests {
     }
 
     #[test]
+    fn trace_pool_collects_multiple_nodeids_in_one_pytest_session() {
+        let tmp = TempDir::new().unwrap();
+        write(
+            &tmp.path().join("sample.py"),
+            "def value():\n    return 3\n",
+        );
+        write(
+            &tmp.path().join("conftest.py"),
+            concat!(
+                "from pathlib import Path\n",
+                "def pytest_sessionstart(session):\n",
+                "    path = Path('session_count.txt')\n",
+                "    count = int(path.read_text()) if path.exists() else 0\n",
+                "    path.write_text(str(count + 1))\n",
+            ),
+        );
+        write(
+            &tmp.path().join("test_sample.py"),
+            concat!(
+                "from sample import value\n",
+                "def test_a():\n",
+                "    assert value() == 3\n",
+                "def test_b():\n",
+                "    assert value() == 3\n",
+            ),
+        );
+        let nodeids = vec![
+            "test_sample.py::test_a".to_string(),
+            "test_sample.py::test_b".to_string(),
+        ];
+
+        let (code, trace_dir) = trace_pool(tmp.path(), &nodeids, 1).unwrap();
+
+        assert_eq!(code, 0);
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("session_count.txt")).unwrap(),
+            "1"
+        );
+        let mut trace_text = String::new();
+        for entry in fs::read_dir(&trace_dir).unwrap() {
+            trace_text.push_str(&fs::read_to_string(entry.unwrap().path()).unwrap());
+        }
+        assert!(trace_text.contains("test_sample.py::test_a"));
+        assert!(trace_text.contains("test_sample.py::test_b"));
+    }
+
+    #[test]
     fn trace_pool_marks_children_as_kiss_rslip() {
         let tmp = TempDir::new().unwrap();
         write(
