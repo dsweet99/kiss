@@ -69,7 +69,10 @@ def trace_many(repo, nodeids, out_path):
 
     sys.settrace(tracer)
     try:
-        code = pytest.main(list(nodeids) + ["-q"], plugins=[RslipPlugin()])
+        code = pytest.main(
+            list(nodeids) + ["-q", "--import-mode=importlib"],
+            plugins=[RslipPlugin()],
+        )
     finally:
         sys.settrace(None)
     output = {}

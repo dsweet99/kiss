@@ -55,6 +55,31 @@ mod tests {
     }
 
     #[test]
+    fn collect_nodeids_allows_duplicate_test_module_basenames() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("tests/a")).unwrap();
+        fs::create_dir_all(tmp.path().join("tests/b")).unwrap();
+        write(
+            &tmp.path().join("tests/a/test_same.py"),
+            "def test_from_a():\n    assert True\n",
+        );
+        write(
+            &tmp.path().join("tests/b/test_same.py"),
+            "def test_from_b():\n    assert True\n",
+        );
+
+        let nodeids = collect_nodeids(tmp.path(), &["tests".to_string()]).unwrap();
+
+        assert_eq!(
+            nodeids,
+            vec![
+                "tests/a/test_same.py::test_from_a",
+                "tests/b/test_same.py::test_from_b",
+            ]
+        );
+    }
+
+    #[test]
     fn collect_errors_before_run() {
         let tmp = TempDir::new().unwrap();
         write(
@@ -177,6 +202,29 @@ mod tests {
         }
         assert!(trace_text.contains("test_sample.py::test_a"));
         assert!(trace_text.contains("test_sample.py::test_b"));
+    }
+
+    #[test]
+    fn trace_pool_allows_duplicate_test_module_basenames() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("tests/a")).unwrap();
+        fs::create_dir_all(tmp.path().join("tests/b")).unwrap();
+        write(
+            &tmp.path().join("tests/a/test_same.py"),
+            "def test_from_a():\n    assert True\n",
+        );
+        write(
+            &tmp.path().join("tests/b/test_same.py"),
+            "def test_from_b():\n    assert True\n",
+        );
+        let nodeids = vec![
+            "tests/a/test_same.py::test_from_a".to_string(),
+            "tests/b/test_same.py::test_from_b".to_string(),
+        ];
+
+        let (code, _trace_dir) = trace_pool(tmp.path(), &nodeids, 1).unwrap();
+
+        assert_eq!(code, 0);
     }
 
     #[test]

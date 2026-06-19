@@ -33,7 +33,7 @@ fn coverage_refresh_pytest_extra_keeps_default_without_fast_tests() {
 }
 
 #[test]
-fn refresh_line_coverage_uses_slipcover_source_lines_and_static_tests() {
+fn refresh_line_coverage_uses_slipcover_source_lines_without_synthetic_test_records() {
     let tmp = TempDir::new().unwrap();
     fs::create_dir_all(tmp.path().join("tests").join("fast")).unwrap();
     write(
@@ -62,19 +62,8 @@ fn refresh_line_coverage_uses_slipcover_source_lines_and_static_tests() {
     let cold = db.files["cold.py"].coverage.as_ref().unwrap();
     assert_eq!(cold.executed_lines, Vec::<usize>::new());
     assert_eq!(cold.missing_lines, vec![1, 2]);
-    assert_eq!(
-        db.tests.keys().cloned().collect::<Vec<_>>(),
-        vec!["tests/fast/test_pkg.py::test_hot".to_string()]
-    );
-    let test = &db.tests["tests/fast/test_pkg.py::test_hot"];
-    assert_eq!(test.test_path, "tests/fast/test_pkg.py");
-    assert_eq!(test.covered_files, vec!["pkg.py"]);
-    assert_eq!(test.covered_lines["pkg.py"], vec![1, 2, 3]);
-    assert_eq!(
-        db.source_to_covering_tests["pkg.py"],
-        vec!["tests/fast/test_pkg.py::test_hot"]
-    );
-    assert!(!db.source_to_covering_tests.contains_key("cold.py"));
+    assert!(db.tests.is_empty());
+    assert!(db.source_to_covering_tests.is_empty());
     assert!(tmp.path().join(".kiss").join("rslip.json").is_file());
 }
 

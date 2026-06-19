@@ -5,9 +5,9 @@ use std::process::Command;
 
 use crate::coverage::{executable_lines_from_source, line_coverage};
 use crate::database::write_database_atomic;
-use crate::discovery::{config_fingerprints, discover_repo_files, discover_tests};
+use crate::discovery::{config_fingerprints, discover_repo_files};
 use crate::refresh::coverage_refresh_pytest_extra;
-use crate::types::{CoverageMetadata, Database, FileRecord, FileRole, TestRecord};
+use crate::types::{CoverageMetadata, Database, FileRecord, FileRole};
 use crate::util::normalize_path;
 use crate::{RSLIP_VERSION, SCHEMA_VERSION};
 
@@ -31,14 +31,8 @@ pub fn refresh_line_coverage_and_store(repo_root: &Path, j: usize) -> Result<Dat
 pub fn refresh_line_coverage(repo_root: &Path, _j: usize) -> Result<Database, String> {
     let mut files = discover_repo_files(repo_root)?;
     let extra = coverage_refresh_pytest_extra(repo_root);
-    let nodeids: Vec<_> = discover_tests(repo_root, &files)?
-        .into_iter()
-        .map(|(selector, _test_path)| selector)
-        .collect();
     let coverage = run_slipcover_line_coverage(repo_root, &extra)?;
     apply_slipcover_coverage(repo_root, &mut files, &coverage);
-    let test_records = aggregate_test_records(repo_root, &files, &nodeids);
-    let source_to_covering_tests = aggregate_source_to_tests(&files, &test_records);
     let file_map = files
         .iter()
         .map(|file| (file.path.clone(), file.clone()))
@@ -48,8 +42,8 @@ pub fn refresh_line_coverage(repo_root: &Path, _j: usize) -> Result<Database, St
         rslip_version: RSLIP_VERSION.to_string(),
         config_fingerprints: config_fingerprints(&files),
         files: file_map,
-        tests: test_records,
-        source_to_covering_tests,
+        tests: BTreeMap::new(),
+        source_to_covering_tests: BTreeMap::new(),
     })
 }
 
@@ -155,64 +149,6 @@ fn apply_slipcover_coverage(
     }
 }
 
-fn aggregate_test_records(
-    repo_root: &Path,
-    files: &[FileRecord],
-    nodeids: &[String],
-) -> BTreeMap<String, TestRecord> {
-    let aggregate_lines: BTreeMap<String, Vec<usize>> = files
-        .iter()
-        .filter(|file| file.role == FileRole::Source)
-        .filter_map(|file| {
-            let coverage = file.coverage.as_ref()?;
-            if coverage.executed_lines.is_empty() {
-                return None;
-            }
-            Some((file.path.clone(), coverage.executed_lines.clone()))
-        })
-        .collect();
-    let covered_files: Vec<_> = aggregate_lines.keys().cloned().collect();
-    nodeids
-        .iter()
-        .map(|selector| {
-            let test_path = selector
-                .split_once("::")
-                .map_or_else(|| selector.as_str(), |(path, _)| path)
-                .to_string();
-            let digest = files
-                .iter()
-                .find(|file| file.path == normalize_path(repo_root, Path::new(&test_path)))
-                .map_or_else(String::new, |file| file.content_digest.clone());
-            (
-                selector.clone(),
-                TestRecord {
-                    selector: selector.clone(),
-                    test_path,
-                    content_digest: digest,
-                    covered_files: covered_files.clone(),
-                    covered_lines: aggregate_lines.clone(),
-                },
-            )
-        })
-        .collect()
-}
-
-fn aggregate_source_to_tests(
-    files: &[FileRecord],
-    tests: &BTreeMap<String, TestRecord>,
-) -> BTreeMap<String, Vec<String>> {
-    files
-        .iter()
-        .filter(|file| file.role == FileRole::Source)
-        .filter(|file| {
-            file.coverage
-                .as_ref()
-                .is_some_and(|coverage| !coverage.executed_lines.is_empty())
-        })
-        .map(|file| (file.path.clone(), tests.keys().cloned().collect()))
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,6 +186,21 @@ mod tests {
         assert_eq!(coverage.executed_lines, vec![1, 5]);
         assert_eq!(coverage.missing_lines, vec![2, 3]);
         assert_eq!(coverage.percent_covered, 50);
+    }
+
+    #[test]
+    fn slipcover_payload_deserializes_file_map() {
+        let payload: SlipcoverPayload = serde_json::from_str(
+            r#"{"files":{"pkg.py":{"executed_lines":[2,1],"missing_lines":[3]}}}"#,
+        )
+        .unwrap();
+        let payload = SlipcoverPayload {
+            files: payload.files,
+        };
+
+        let file = payload.files.get("pkg.py").unwrap();
+        assert_eq!(file.executed_lines, vec![2, 1]);
+        assert_eq!(file.missing_lines, vec![3]);
     }
 
     #[test]
@@ -322,7 +273,7 @@ exit 7
         let err =
             run_slipcover_line_coverage_with_program(tmp.path(), &[], &fake_slipcover).unwrap_err();
 
-        assert!(err.contains("slipcover failed (exit Some(7))"));
+        assert!(err.contains("slipcover failed (exit Some(7))"), "{err}");
         assert!(err.contains("stdout:\nfake stdout"));
         assert!(err.contains("stderr:\nfake stderr"));
     }

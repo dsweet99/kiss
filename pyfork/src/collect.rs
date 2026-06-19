@@ -6,7 +6,13 @@ use crate::flags::validate_pytest_extra;
 pub fn collect_nodeids(repo_root: &Path, extra: &[String]) -> Result<Vec<String>, String> {
     validate_pytest_extra(extra)?;
     let mut cmd = Command::new("python");
-    cmd.args(["-m", "pytest", "--collect-only", "-q"]);
+    cmd.args([
+        "-m",
+        "pytest",
+        "--collect-only",
+        "-q",
+        "--import-mode=importlib",
+    ]);
     cmd.args(extra);
     cmd.current_dir(repo_root);
     let output = cmd

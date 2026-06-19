@@ -75,6 +75,13 @@ def test_pytest_targets_defaults_to_tests_directory(tmp_path: Path) -> None:
     assert collect.pytest_targets(repo) == ["tests"]
 
 
+def test_pytest_targets_prefers_fast_tests_directory(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "tests" / "fast").mkdir(parents=True)
+    (repo / "tests" / "slow").mkdir()
+    assert collect.pytest_targets(repo) == ["tests/fast"]
+
+
 def test_slipcover_invocation_sklearn_uses_pyargs(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / "sklearn" / "__init__.py").parent.mkdir(parents=True)

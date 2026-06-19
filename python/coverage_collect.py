@@ -32,9 +32,9 @@ def _read_pytest_testpaths(repo: Path) -> list[str]:
 
 
 def _default_pytest_targets(repo: Path) -> list[str]:
-    for name in ("tests", "test"):
-        if (repo / name).is_dir():
-            return [name]
+    for rel in ("tests/fast", "tests", "test"):
+        if (repo / rel).is_dir():
+            return [rel]
     return []
 
 
@@ -172,6 +172,5 @@ def run_true_coverage(repo: Path) -> dict[str, float]:
     if has_py:
         coverage.update(run_slipcover(repo))
     if has_rs:
-        for path, pct in run_llvm_cov(repo).items():
-            coverage[path] = pct
+        coverage.update(run_llvm_cov(repo))
     return coverage

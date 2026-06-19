@@ -1,7 +1,7 @@
 use crate::ParsedFile;
 use crate::test_refs::{CodeDefinition, CoveringTest, TestRefAnalysis};
 use crate::units::CodeUnitKind;
-use rslip::{Database, PytestTraceCollector};
+use rslip::Database;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -28,12 +28,7 @@ pub fn runtime_py_analysis(
         };
     }
     let j = jobs.unwrap_or_else(pyfork::default_parallelism);
-    let collector = PytestTraceCollector;
-    match rslip::current_database(
-        repo_root,
-        &|root, selectors, parallelism| collector.collect(root, selectors, parallelism),
-        j,
-    ) {
+    match rslip::refresh_line_coverage_and_store(repo_root, j) {
         Ok(db) => bridge_analysis_from_database(repo_root, parsed, &db),
         Err(err) => {
             eprintln!("error: rslip coverage refresh failed: {err}");

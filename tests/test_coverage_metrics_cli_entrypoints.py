@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import runpy
-import sys
 from pathlib import Path
 
 import pytest
 import python.coverage_metrics as metrics
+import python.coverage_metrics_cli as shim
 from click.testing import CliRunner
 from python.coverage_metrics import coverage_metrics_cli
 from python.coverage_metrics import coverage_metrics_cli as coverage_metrics_main
+from python.coverage_metrics_cli import main as coverage_metrics_shim_main
 
 
 def test_run_comparison_end_to_end(
@@ -65,7 +65,8 @@ def test_coverage_metrics_cli_shim_main(monkeypatch: pytest.MonkeyPatch) -> None
     def fake_main() -> None:
         called.append("main")
 
-    monkeypatch.setattr(metrics, "coverage_metrics_cli", fake_main)
-    monkeypatch.setattr(sys, "argv", ["coverage_metrics_cli.py"])
-    runpy.run_module("python.coverage_metrics_cli", run_name="__main__")
-    assert called == ["main"]
+    monkeypatch.setattr(shim, "coverage_metrics_cli", fake_main)
+    coverage_metrics_shim_main()
+    shim._run_if_main("python.coverage_metrics_cli")
+    shim._run_if_main("__main__")
+    assert called == ["main", "main"]
