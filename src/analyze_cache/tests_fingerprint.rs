@@ -165,6 +165,7 @@ fn try_run_cached_all_rejects_stale_rslip_fingerprint() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     assert!(
         try_run_cached_all(&opts, &py_files, &rs_files, &focus).is_none(),
@@ -210,6 +211,7 @@ fn try_run_cached_all_replays_rslip_refresh_failure_snapshot() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     assert_eq!(
         try_run_cached_all(&opts, &py_files, &rs_files, &focus),
@@ -250,6 +252,7 @@ fn try_run_cached_all_rejects_stale_rust_coverage_fingerprint() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     assert!(
         try_run_cached_all(&opts, &py_files, &rs_files, &focus).is_none(),
@@ -295,6 +298,7 @@ fn try_run_cached_all_replays_llvm_cov_failure_snapshot() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     assert_eq!(
         try_run_cached_all(&opts, &py_files, &rs_files, &focus),

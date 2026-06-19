@@ -162,10 +162,10 @@ fn analysis_from_line_coverage_fails_closed_without_runtime_executable_lines() {
 }
 
 #[test]
-fn fail_closed_analysis_marks_all_parsed_files_uncovered() {
+fn fail_closed_runtime_analysis_marks_all_parsed_files_uncovered() {
     let parsed = vec![parsed_rs(PathBuf::from("src/lib.rs"))];
 
-    let analysis = fail_closed_analysis(&parsed);
+    let analysis = fail_closed_runtime_analysis(&parsed);
 
     assert_eq!(analysis.definitions.len(), 1);
     assert_eq!(analysis.unreferenced.len(), 1);
@@ -173,13 +173,13 @@ fn fail_closed_analysis_marks_all_parsed_files_uncovered() {
 }
 
 #[test]
-fn fail_closed_analysis_preserves_all_input_files_and_empty_sets() {
+fn fail_closed_runtime_analysis_preserves_all_input_files_and_empty_sets() {
     let parsed = vec![
         parsed_rs(PathBuf::from("src/lib.rs")),
         parsed_rs(PathBuf::from("src/main.rs")),
     ];
 
-    let analysis = fail_closed_analysis(&parsed);
+    let analysis = fail_closed_runtime_analysis(&parsed);
 
     let files: Vec<_> = analysis
         .definitions

@@ -20,6 +20,7 @@ mod options;
 mod parallel;
 mod params;
 mod pipeline;
+mod pipeline_gate_failure;
 mod print;
 
 // `pub use` items are re-exports for `crate::analyze::*`; the RHS is otherwise unused in this module.

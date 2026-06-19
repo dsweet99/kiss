@@ -31,6 +31,7 @@ fn try_run_cached_gate_failure_replays_without_full_cache() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     let fp = fingerprint_for_check(&py_files, &rs_files, &py_config, &rs_config, &gate);
     let violations = vec![kiss::Violation {
@@ -76,6 +77,7 @@ fn cached_gate_failure_replay_preserves_suggestions() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     let fp = fingerprint_for_check(&py_files, &rs_files, &py_config, &rs_config, &gate);
     let violations = vec![kiss::Violation {
@@ -135,6 +137,7 @@ fn compact_all_replay_serves_check_all_without_full_cache() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     store_all_replay_cache(&fp, &opts, &focus, &full);
     std::fs::remove_file(super::path_helpers::cache_path_full(&fp)).unwrap();
@@ -184,6 +187,7 @@ fn compact_all_replay_rejects_changed_source() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     store_all_replay_cache(&fp, &opts, &focus, &full);
     std::fs::remove_file(super::path_helpers::cache_path_full(&fp)).unwrap();
@@ -225,6 +229,7 @@ fn cached_bypass_emits_file_level_coverage_from_raw_lists() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
 
     assert!(
@@ -267,6 +272,7 @@ fn cached_bypass_reports_base_violation_in_focus() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
 
     assert!(
@@ -294,6 +300,7 @@ fn cached_bypass_clean_cache_passes() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
 
     assert!(

@@ -48,48 +48,61 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
     let repo_root = std::path::Path::new(inp.opts.universe);
     let rslip_fingerprint = kiss::rslip_bridge::rslip_database_fingerprint(repo_root);
     let rust_coverage_fingerprint = kiss::rust_llvm_cov::backend_fingerprint(repo_root);
-    crate::analyze_cache::store_full_cache_from_run(crate::analyze_cache::FullCacheInputs {
-        fingerprint: fp,
-        rslip_fingerprint,
-        rust_coverage_fingerprint,
-        py_file_count: inp.result.py_parsed.len(),
-        rs_file_count: inp.result.rs_parsed.len(),
-        code_unit_count: inp.result.code_unit_count,
-        statement_count: inp.result.statement_count,
-        py_stats: inp.py_stats,
-        rs_stats: inp.rs_stats,
-        focus_paths,
-        focus_restrict,
-        py_paths: inp
-            .py_files
-            .iter()
-            .map(|f| f.to_string_lossy().to_string())
-            .collect(),
-        rs_paths: inp
-            .rs_files
-            .iter()
-            .map(|f| f.to_string_lossy().to_string())
-            .collect(),
-        violations: &inp.result.violations,
-        graph_viols_all: inp.graph_viols_all,
-        coverage_violations: inp.coverage_violations,
-        py_graph: inp.py_graph,
-        rs_graph: inp.rs_graph,
-        py_dups_all: inp.py_dups_all,
-        rs_dups_all: inp.rs_dups_all,
-        definitions: cache_data.definitions,
-        unreferenced: cache_data.unreferenced,
-        weighted_file_pcts: cache_data
-            .weighted_file_pcts
-            .into_iter()
-            .map(
-                |(file, pct)| kiss::check_universe_cache::CachedFileCoverage {
-                    file: file.to_string_lossy().to_string(),
-                    pct,
-                },
-            )
-            .collect(),
-    });
+    let cache =
+        crate::analyze_cache::build_full_cache_from_run(crate::analyze_cache::FullCacheInputs {
+            fingerprint: fp,
+            rslip_fingerprint,
+            rust_coverage_fingerprint,
+            include_content_digests: !inp.opts.bypass_gate,
+            py_file_count: inp.result.py_parsed.len(),
+            rs_file_count: inp.result.rs_parsed.len(),
+            code_unit_count: inp.result.code_unit_count,
+            statement_count: inp.result.statement_count,
+            py_stats: inp.py_stats,
+            rs_stats: inp.rs_stats,
+            focus_paths,
+            focus_restrict,
+            py_paths: inp
+                .py_files
+                .iter()
+                .map(|f| f.to_string_lossy().to_string())
+                .collect(),
+            rs_paths: inp
+                .rs_files
+                .iter()
+                .map(|f| f.to_string_lossy().to_string())
+                .collect(),
+            violations: &inp.result.violations,
+            graph_viols_all: inp.graph_viols_all,
+            coverage_violations: inp.coverage_violations,
+            py_graph: inp.py_graph,
+            rs_graph: inp.rs_graph,
+            py_dups_all: inp.py_dups_all,
+            rs_dups_all: inp.rs_dups_all,
+            definitions: cache_data.definitions,
+            unreferenced: cache_data.unreferenced,
+            weighted_file_pcts: cache_data
+                .weighted_file_pcts
+                .into_iter()
+                .map(
+                    |(file, pct)| kiss::check_universe_cache::CachedFileCoverage {
+                        file: file.to_string_lossy().to_string(),
+                        pct,
+                    },
+                )
+                .collect(),
+        });
+    if inp.opts.bypass_gate {
+        crate::analyze_cache::store_all_replay_cache(
+            &cache.fingerprint,
+            inp.opts,
+            inp.focus,
+            &cache,
+        );
+        crate::analyze_cache::store_full_cache_marker(&cache.fingerprint);
+    } else {
+        crate::analyze_cache::store_full_cache(&cache);
+    }
 }
 
 #[cfg(test)]

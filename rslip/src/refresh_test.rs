@@ -168,3 +168,73 @@ fn changed_files_uses_mtime_fast_path() {
         "mtime mismatch must mark file dirty even when digest unchanged: {changed:?}"
     );
 }
+
+#[test]
+fn metadata_changed_files_accepts_clean_database_and_rejects_source_mtime_change() {
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("pkg.py");
+    write(&path, "x = 1\n");
+    let records = discover_repo_files(tmp.path()).unwrap();
+    let db = Database {
+        schema_version: SCHEMA_VERSION,
+        rslip_version: RSLIP_VERSION.to_string(),
+        config_fingerprints: config_fingerprints(&records),
+        files: records
+            .iter()
+            .map(|file| (file.path.clone(), file.clone()))
+            .collect(),
+        tests: std::collections::BTreeMap::new(),
+        source_to_covering_tests: std::collections::BTreeMap::new(),
+    };
+
+    assert!(
+        crate::refresh::metadata_changed_files(tmp.path(), &db)
+            .unwrap()
+            .is_empty()
+    );
+
+    let future = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(future)
+        .unwrap();
+
+    assert_eq!(
+        crate::refresh::metadata_changed_files(tmp.path(), &db).unwrap(),
+        vec!["pkg.py".to_string()]
+    );
+}
+
+#[test]
+fn metadata_changed_files_hashes_config_files() {
+    let tmp = TempDir::new().unwrap();
+    write(&tmp.path().join("pkg.py"), "x = 1\n");
+    write(
+        &tmp.path().join("pyproject.toml"),
+        "[tool.pytest.ini_options]\n",
+    );
+    let records = discover_repo_files(tmp.path()).unwrap();
+    let db = Database {
+        schema_version: SCHEMA_VERSION,
+        rslip_version: RSLIP_VERSION.to_string(),
+        config_fingerprints: config_fingerprints(&records),
+        files: records
+            .iter()
+            .map(|file| (file.path.clone(), file.clone()))
+            .collect(),
+        tests: std::collections::BTreeMap::new(),
+        source_to_covering_tests: std::collections::BTreeMap::new(),
+    };
+
+    write(
+        &tmp.path().join("pyproject.toml"),
+        "[tool.pytest.ini_options]\naddopts='-q'\n",
+    );
+
+    assert_eq!(
+        crate::refresh::metadata_changed_files(tmp.path(), &db).unwrap(),
+        vec!["pyproject.toml".to_string()]
+    );
+}

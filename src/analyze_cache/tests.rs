@@ -83,6 +83,7 @@ fn cached_gated_replay_matches_live_gate_without_weighted_overlay() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
 
     let weighted = weighted_file_pct_map(&cache.weighted_file_pcts);
@@ -175,6 +176,7 @@ fn try_run_cached_all_replays_default_coverage_gate_failure() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     assert_eq!(
         try_run_cached_all(&opts, &py_files, &rs_files, &focus),

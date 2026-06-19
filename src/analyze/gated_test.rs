@@ -33,6 +33,7 @@ impl TestFixture {
             show_timing: false,
             suppress_final_status: false,
             jobs: None,
+            collect_stats: false,
         }
     }
 
@@ -147,6 +148,7 @@ fn test_run_gated_analysis_fails_closed_when_py_runtime_refresh_fails() {
         show_timing: false,
         suppress_final_status: false,
         jobs: Some(1),
+        collect_stats: false,
     };
     let py_file = parsed_py(missing_repo.join("pkg/a.py"));
     let focus = FocusFilter::unrestricted();
@@ -199,6 +201,7 @@ fn test_run_gated_analysis_finishes_rust_graph_when_runtime_cov_is_nested() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     let rust_file = parsed_rs(tmp.path().join("src/lib.rs"));
     let focus = FocusFilter::unrestricted();
@@ -266,6 +269,7 @@ fn runtime_rust_coverage_returns_empty_during_nested_coverage_runs() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     let parsed = vec![parsed_rs(PathBuf::from(missing_root).join("src/lib.rs"))];
 
@@ -296,6 +300,7 @@ fn runtime_rust_coverage_allows_empty_input_without_cargo_probe() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
 
     let analysis = gated_runtime_rust_coverage_for_opts(&opts, &[]);
@@ -327,6 +332,7 @@ fn runtime_rust_coverage_fails_closed_for_missing_repo_when_not_nested() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     let parsed = vec![parsed_rs(missing_root.join("src/lib.rs"))];
 
@@ -367,6 +373,7 @@ fn runtime_rust_coverage_canonicalizes_existing_universe() {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     };
     let parsed = vec![parsed_rs(tmp.path().join("src/lib.rs"))];
 

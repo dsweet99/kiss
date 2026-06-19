@@ -300,6 +300,7 @@ mod tests {
             show_timing: false,
             suppress_final_status: false,
             jobs: None,
+            collect_stats: false,
         };
 
         assert!(

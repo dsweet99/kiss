@@ -57,12 +57,21 @@ impl DependencyGraph {
             .graph
             .neighbors_directed(idx, petgraph::Direction::Outgoing)
             .count();
+        let fan_in = self
+            .graph
+            .neighbors_directed(idx, petgraph::Direction::Incoming)
+            .count();
+        if fan_out == 0 {
+            return ModuleGraphMetrics {
+                fan_in,
+                fan_out,
+                indirect_dependencies: 0,
+                dependency_depth: 0,
+            };
+        }
         let (total_reachable, depth) = self.compute_reachable_and_depth(idx);
         ModuleGraphMetrics {
-            fan_in: self
-                .graph
-                .neighbors_directed(idx, petgraph::Direction::Incoming)
-                .count(),
+            fan_in,
             fan_out,
             indirect_dependencies: total_reachable.saturating_sub(fan_out),
             dependency_depth: depth,

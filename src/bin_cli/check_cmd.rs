@@ -36,6 +36,7 @@ pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
         show_timing: args.timing,
         suppress_final_status: false,
         jobs: args.jobs,
+        collect_stats: false,
     };
     i32::from(!run_analyze(&opts))
 }

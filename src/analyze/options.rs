@@ -15,6 +15,8 @@ pub struct AnalyzeOptions<'a> {
     pub suppress_final_status: bool,
     /// Parallel pytest fork pool size for rslip refresh.
     pub jobs: Option<usize>,
+    /// Collect metric distributions for `kiss stats`; `kiss check` only needs global counts.
+    pub collect_stats: bool,
 }
 
 /// Result of running analysis, including computed global metrics.

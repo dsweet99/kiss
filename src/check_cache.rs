@@ -3,6 +3,7 @@ use crate::test_refs::CodeDefinition;
 use crate::units::CodeUnitKind;
 use crate::violation::Violation;
 use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,12 +138,19 @@ impl CachedCodeDefinition {
     }
 }
 
-pub fn cache_dir() -> PathBuf {
+fn cache_dir_from_env(cache_override: Option<OsString>, home: Option<OsString>) -> PathBuf {
+    if let Some(dir) = cache_override {
+        return PathBuf::from(dir);
+    }
     // Prefer user cache dir; fall back to temp.
-    if let Some(home) = std::env::var_os("HOME") {
+    if let Some(home) = home {
         return Path::new(&home).join(".cache").join("kiss");
     }
     std::env::temp_dir().join("kiss-cache")
+}
+
+pub fn cache_dir() -> PathBuf {
+    cache_dir_from_env(std::env::var_os("KISS_CACHE_DIR"), std::env::var_os("HOME"))
 }
 
 #[cfg(test)]
@@ -228,5 +236,17 @@ mod tests {
         // Touch helpers for the static test-reference gate.
         let _ = kind_to_str(CodeUnitKind::Function);
         let _ = kind_from_str("class");
+    }
+
+    #[test]
+    fn cache_dir_prefers_explicit_override() {
+        assert_eq!(
+            cache_dir_from_env(Some(OsString::from("/tmp/kiss-explicit")), None),
+            PathBuf::from("/tmp/kiss-explicit")
+        );
+        assert_eq!(
+            cache_dir_from_env(None, Some(OsString::from("/home/alice"))),
+            PathBuf::from("/home/alice/.cache/kiss")
+        );
     }
 }

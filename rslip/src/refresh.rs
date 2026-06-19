@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::coverage::{executable_lines_from_source, line_coverage};
 use crate::database::{load_database, write_database_atomic};
-use crate::discovery::{config_fingerprints, discover_repo_files};
+use crate::discovery::{config_fingerprints, discover_repo_file_metadata, discover_repo_files};
 use crate::skip::is_file_dirty;
 use crate::types::{
     CoveringTest, Database, FileRecord, FileRole, PytestTraceCollector, TestRecord,
@@ -161,6 +161,41 @@ pub fn changed_files(repo_root: &Path, db: &Database) -> Result<Vec<String>, Str
         match db.files.get(&file.path) {
             None => changed.push(file.path.clone()),
             Some(old) if is_file_dirty(old, file.mtime_ns, &file.content_digest) => {
+                changed.push(file.path.clone());
+            }
+            Some(_) => {}
+        }
+    }
+    changed.extend(
+        db.files
+            .keys()
+            .filter(|path| !current_paths.contains(path.as_str()))
+            .cloned(),
+    );
+    changed.sort();
+    changed.dedup();
+    Ok(changed)
+}
+
+pub fn metadata_changed_files(repo_root: &Path, db: &Database) -> Result<Vec<String>, String> {
+    let current = discover_repo_file_metadata(repo_root)?;
+    let mut changed = Vec::new();
+    let current_fingerprints = config_fingerprints(&current);
+    for (key, digest) in &current_fingerprints {
+        if db.config_fingerprints.get(key) != Some(digest) {
+            changed.push(key.clone());
+        }
+    }
+    for key in db.config_fingerprints.keys() {
+        if !current_fingerprints.contains_key(key) {
+            changed.push(key.clone());
+        }
+    }
+    let current_paths: HashSet<_> = current.iter().map(|file| file.path.as_str()).collect();
+    for file in &current {
+        match db.files.get(&file.path) {
+            None => changed.push(file.path.clone()),
+            Some(old) if old.len != file.len || old.mtime_ns != file.mtime_ns => {
                 changed.push(file.path.clone());
             }
             Some(_) => {}

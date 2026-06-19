@@ -1,19 +1,17 @@
-use crate::analyze::cache::{FullCacheStoreInput, maybe_store_full_cache};
 use crate::analyze::coverage::{
     CoverageOutputOpts, GraphRefPair, PyRsTestCoverage, collect_coverage_viols,
 };
 use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
-use crate::analyze::focus::FocusFilter;
-use crate::analyze::focus::filter_viols_by_focus;
+use crate::analyze::focus::{FocusFilter, filter_viols_by_focus};
 use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
 use crate::analyze::parallel::{ParallelPyIn, run_parallel_py_analysis, run_rust_analysis};
 use crate::analyze::params::RunAnalyzeUncached;
+use crate::analyze::pipeline_gate_failure::{FinishGateFailureIn, finish_coverage_gate_failure};
 use crate::analyze::print::log_parse_timing;
 use crate::analyze_parse::{ParseAllTimedParams, ParseResult, parse_all_timed};
 use kiss::cli_output::file_coverage_map;
 use kiss::{DependencyGraph, DuplicateCluster, MetricStats, ParsedFile, ParsedRustFile};
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::analyze::finalize_types::CoverageCacheData;
@@ -29,8 +27,8 @@ pub(crate) struct FullPipelineResult {
     pub py_cov: kiss::TestRefAnalysis,
     pub py_dups_all: Vec<DuplicateCluster>,
     pub rs_dups_all: Vec<DuplicateCluster>,
-    pub py_stats: MetricStats,
-    pub rs_stats: MetricStats,
+    pub py_stats: Option<MetricStats>,
+    pub rs_stats: Option<MetricStats>,
     pub coverage_cache_lists: Option<CoverageCacheData>,
     pub timings: (Instant, Instant, Instant),
 }
@@ -140,10 +138,30 @@ fn runtime_rust_coverage_for_opts(
     opts: &AnalyzeOptions<'_>,
     parsed: &[ParsedRustFile],
 ) -> kiss::RustTestRefAnalysis {
+    if use_fail_closed_rust_coverage(opts) {
+        return kiss::rust_llvm_cov::fail_closed_runtime_analysis(parsed);
+    }
     let repo_root = Path::new(opts.universe)
         .canonicalize()
         .unwrap_or_else(|_| PathBuf::from(opts.universe));
     kiss::rust_llvm_cov::runtime_rust_analysis(&repo_root, parsed)
+}
+
+fn use_fail_closed_rust_coverage(opts: &AnalyzeOptions<'_>) -> bool {
+    // `kiss check --all` should report missing Rust runtime coverage without
+    // depending on a slow or flaky cargo-llvm-cov subprocess.
+    opts.bypass_gate && !opts.collect_stats
+}
+
+fn empty_rust_runtime_coverage() -> kiss::RustTestRefAnalysis {
+    kiss::RustTestRefAnalysis {
+        definitions: Vec::new(),
+        test_references: Default::default(),
+        call_references: Default::default(),
+        propagated_references: Default::default(),
+        unreferenced: Vec::new(),
+        coverage_map: Default::default(),
+    }
 }
 
 pub(crate) fn run_full_pipeline(in_: FullPipelineInput<'_>) -> FullPipelineResult {
@@ -171,62 +189,6 @@ struct FullPipelineWithParseInput<'a> {
     timings: (Instant, Instant, Instant),
 }
 
-struct CoverageGateFailureCacheIn<'a> {
-    opts: &'a AnalyzeOptions<'a>,
-    py_files: &'a [PathBuf],
-    rs_files: &'a [PathBuf],
-    focus: &'a FocusFilter,
-    result: &'a ParseResult,
-    py_cov: kiss::TestRefAnalysis,
-    rs_cov: kiss::RustTestRefAnalysis,
-    rs_graph: Option<&'a DependencyGraph>,
-}
-
-fn should_store_coverage_gate_failure_cache(
-    py_cov: &kiss::TestRefAnalysis,
-    rs_cov: &kiss::RustTestRefAnalysis,
-) -> bool {
-    const MAX_UNREFERENCED_UNITS_TO_CACHE: usize = 10_000;
-    py_cov.unreferenced.len() + rs_cov.unreferenced.len() <= MAX_UNREFERENCED_UNITS_TO_CACHE
-}
-
-fn store_coverage_gate_failure_cache(in_: CoverageGateFailureCacheIn<'_>) {
-    let py_graph = crate::analyze::graph_api::build_py_graph(&in_.result.py_parsed);
-    let (_cov_viols, coverage_cache_lists) = collect_coverage_viols(
-        PyRsTestCoverage {
-            py: in_.py_cov,
-            rs: in_.rs_cov,
-        },
-        &in_.result.py_parsed,
-        &in_.result.rs_parsed,
-        in_.focus,
-        CoverageOutputOpts {
-            bypass_gate: false,
-            show_timing: in_.opts.show_timing,
-        },
-        GraphRefPair {
-            py: py_graph.as_ref(),
-            rs: in_.rs_graph,
-        },
-    );
-    maybe_store_full_cache(FullCacheStoreInput {
-        opts: in_.opts,
-        py_files: in_.py_files,
-        rs_files: in_.rs_files,
-        focus: in_.focus,
-        result: in_.result,
-        graph_viols_all: &[],
-        coverage_violations: &[],
-        py_graph: py_graph.as_ref(),
-        rs_graph: in_.rs_graph,
-        py_dups_all: &[],
-        rs_dups_all: &[],
-        py_stats: None,
-        rs_stats: None,
-        coverage_cache_lists,
-    });
-}
-
 fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipelineResult {
     let opts = in_.opts;
     let focus = in_.focus;
@@ -248,8 +210,22 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
         });
     let rs_dups_all = rs.dups.clone();
 
-    let py_stats = build_python_metric_stats(&result.py_parsed, py_graph.as_ref(), &py_cov);
-    let rs_stats = build_rust_metric_stats(&result.rs_parsed, rs.graph.as_ref(), &rs.cov);
+    let (py_stats, rs_stats) = if opts.collect_stats {
+        (
+            Some(build_python_metric_stats(
+                &result.py_parsed,
+                py_graph.as_ref(),
+                &py_cov,
+            )),
+            Some(build_rust_metric_stats(
+                &result.rs_parsed,
+                rs.graph.as_ref(),
+                &rs.cov,
+            )),
+        )
+    } else {
+        (None, None)
+    };
 
     let (cov_viols, coverage_cache_lists) = if opts.show_timing {
         (Vec::new(), None)
@@ -311,6 +287,28 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
 
     if !opts.bypass_gate && opts.gate_config.test_coverage_threshold > 0 {
         let py_cov = runtime_py_coverage_for_opts(opts, &result.py_parsed);
+        let empty_rs_cov = empty_rust_runtime_coverage();
+        if let Some(early) = crate::analyze::coverage_gate::evaluate_gate(
+            &py_cov,
+            &empty_rs_cov,
+            &result.py_parsed,
+            &[],
+            focus,
+            opts.gate_config.test_coverage_threshold,
+        ) {
+            return finish_coverage_gate_failure(FinishGateFailureIn {
+                opts,
+                py_files,
+                rs_files,
+                focus,
+                result: &result,
+                parse_timing: &parse_timing,
+                py_cov,
+                rs_cov: empty_rs_cov,
+                rs_graph: None,
+                early,
+            });
+        }
         let rs_cov = runtime_rust_coverage_for_opts(opts, &result.rs_parsed);
         if let Some(early) = crate::analyze::coverage_gate::evaluate_gate(
             &py_cov,
@@ -320,43 +318,19 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
             focus,
             opts.gate_config.test_coverage_threshold,
         ) {
-            log_parse_timing(opts.show_timing, &parse_timing);
-            let gate_violations =
-                crate::analyze::coverage_gate::gate_failure_violations_from_runtime(
-                    &py_cov,
-                    &rs_cov,
-                    focus,
-                    opts.gate_config.test_coverage_threshold,
-                );
-            let fp = crate::analyze_cache::fingerprint_for_check(
-                py_files,
-                rs_files,
-                opts.py_config,
-                opts.rs_config,
-                opts.gate_config,
-            );
-            crate::analyze_cache::store_gate_failure_replay_cache(
-                fp,
+            let rs_graph = crate::analyze::graph_api::build_rs_graph(&result.rs_parsed);
+            return finish_coverage_gate_failure(FinishGateFailureIn {
                 opts,
                 py_files,
                 rs_files,
                 focus,
-                &gate_violations,
-            );
-            if should_store_coverage_gate_failure_cache(&py_cov, &rs_cov) {
-                let rs_graph = crate::analyze::graph_api::build_rs_graph(&result.rs_parsed);
-                store_coverage_gate_failure_cache(CoverageGateFailureCacheIn {
-                    opts,
-                    py_files,
-                    rs_files,
-                    focus,
-                    result: &result,
-                    py_cov,
-                    rs_cov,
-                    rs_graph: rs_graph.as_ref(),
-                });
-            }
-            return early;
+                result: &result,
+                parse_timing: &parse_timing,
+                py_cov,
+                rs_cov,
+                rs_graph: rs_graph.as_ref(),
+                early,
+            });
         }
     }
 
@@ -380,8 +354,8 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
             py_cov: pipeline.py_cov,
             cov_viols: pipeline.cov_viols,
             coverage_cache_lists: pipeline.coverage_cache_lists,
-            py_stats: Some(pipeline.py_stats),
-            rs_stats: Some(pipeline.rs_stats),
+            py_stats: pipeline.py_stats,
+            rs_stats: pipeline.rs_stats,
             rs: pipeline.rs,
             py_graph: pipeline.py_graph,
             graph_viols_all: pipeline.graph_viols_all,
@@ -412,3 +386,7 @@ mod coverage_witness {
         FullPipelineWithParseInput::witness();
     }
 }
+
+#[cfg(test)]
+#[path = "pipeline_collect_stats_test.rs"]
+mod collect_stats_tests;

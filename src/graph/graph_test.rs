@@ -77,6 +77,19 @@ fn test_graph_imports_and_cycles() {
 }
 
 #[test]
+fn leaf_module_metrics_do_not_need_reachability() {
+    let mut g = DependencyGraph::default();
+    g.add_dependency("root", "leaf");
+
+    let metrics = g.module_metrics("leaf");
+
+    assert_eq!(metrics.fan_in, 1);
+    assert_eq!(metrics.fan_out, 0);
+    assert_eq!(metrics.indirect_dependencies, 0);
+    assert_eq!(metrics.dependency_depth, 0);
+}
+
+#[test]
 fn test_from_import_does_not_create_edges_to_imported_names() {
     // Hypothesis 1 repro: `from X import Y` currently adds both `X` and `Y` as dependencies.
     // That can create huge, fake SCC cycles when `Y` happens to match some other module name.

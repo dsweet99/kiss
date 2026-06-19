@@ -57,6 +57,7 @@ pub(crate) fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
         weighted_file_pcts: Vec::new(),
         rslip_fingerprint: String::new(),
         rust_coverage_fingerprint: String::new(),
+        include_content_digests: true,
     }
 }
 

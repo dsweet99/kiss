@@ -347,6 +347,7 @@ fn detailed_stats_and_check_share_metric_values() {
         show_timing: false,
         suppress_final_status: true,
         jobs: None,
+        collect_stats: false,
     };
     let now = std::time::Instant::now();
     let pipeline = crate::analyze::run_full_pipeline(crate::analyze::FullPipelineInput {

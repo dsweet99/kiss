@@ -27,6 +27,29 @@ fn file_record(repo_root: &Path, path: &Path, role: FileRole) -> Result<FileReco
     })
 }
 
+fn file_record_metadata(
+    repo_root: &Path,
+    path: &Path,
+    role: FileRole,
+) -> Result<FileRecord, String> {
+    let meta = fs::metadata(path).map_err(|e| format!("failed to stat {}: {e}", path.display()))?;
+    let content_digest = if role == FileRole::Config {
+        let bytes =
+            fs::read(path).map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+        content_digest(&bytes)
+    } else {
+        String::new()
+    };
+    Ok(FileRecord {
+        path: normalize_path(repo_root, path),
+        role,
+        content_digest,
+        len: meta.len(),
+        mtime_ns: file_mtime_ns(&meta),
+        coverage: None,
+    })
+}
+
 fn walk_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     let walker = WalkBuilder::new(root)
         .hidden(false)
@@ -104,6 +127,25 @@ pub fn discover_repo_files(repo_root: &Path) -> Result<Vec<FileRecord>, String> 
             records.push(file_record(repo_root, &path, classify_python(&path))?);
         } else if is_config(&path) {
             records.push(file_record(repo_root, &path, FileRole::Config)?);
+        }
+    }
+    records.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(records)
+}
+
+pub fn discover_repo_file_metadata(repo_root: &Path) -> Result<Vec<FileRecord>, String> {
+    let mut paths = Vec::new();
+    walk_files(repo_root, &mut paths)?;
+    let mut records = Vec::new();
+    for path in paths {
+        if is_python(&path) {
+            records.push(file_record_metadata(
+                repo_root,
+                &path,
+                classify_python(&path),
+            )?);
+        } else if is_config(&path) {
+            records.push(file_record_metadata(repo_root, &path, FileRole::Config)?);
         }
     }
     records.sort_by(|a, b| a.path.cmp(&b.path));

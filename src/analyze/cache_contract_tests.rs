@@ -93,6 +93,7 @@ fn analyze_options<'a>(
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: false,
     }
 }
 

@@ -1,4 +1,5 @@
 use kiss::check_universe_cache::FullCheckCache;
+use rayon::prelude::*;
 use std::path::PathBuf;
 
 use super::fnv1a64;
@@ -10,7 +11,7 @@ pub(super) fn content_digest(bytes: &[u8]) -> u64 {
 
 pub(super) fn content_digests_for_paths(paths: &[PathBuf]) -> Vec<(String, u64)> {
     let mut digests: Vec<(String, u64)> = paths
-        .iter()
+        .par_iter()
         .filter_map(|p| {
             std::fs::read(p)
                 .ok()
@@ -66,7 +67,7 @@ fn metadata_fingerprint(path: &PathBuf) -> Option<u64> {
 
 pub(super) fn metadata_fingerprints_for_paths(paths: &[PathBuf]) -> Vec<(String, u64)> {
     let mut fingerprints: Vec<(String, u64)> = paths
-        .iter()
+        .par_iter()
         .filter_map(|p| metadata_fingerprint(p).map(|fp| (p.to_string_lossy().to_string(), fp)))
         .collect();
     fingerprints.sort_by(|a, b| a.0.cmp(&b.0));
@@ -89,7 +90,7 @@ fn verify_metadata_fingerprints(
         .iter()
         .map(|(path, fingerprint)| (path.as_str(), *fingerprint))
         .collect();
-    for p in all_paths {
+    all_paths.par_iter().all(|p| {
         let key = p.to_string_lossy();
         let Some(stored_fingerprint) = stored_map.get(key.as_ref()) else {
             return false;
@@ -97,11 +98,8 @@ fn verify_metadata_fingerprints(
         let Some(current_fingerprint) = metadata_fingerprint(p) else {
             return false;
         };
-        if current_fingerprint != *stored_fingerprint {
-            return false;
-        }
-    }
-    true
+        current_fingerprint == *stored_fingerprint
+    })
 }
 
 pub(crate) fn verify_content_digests(
@@ -120,7 +118,7 @@ pub(crate) fn verify_content_digests(
         .iter()
         .map(|(path, digest)| (path.as_str(), *digest))
         .collect();
-    for p in all_paths {
+    all_paths.par_iter().all(|p| {
         let key = p.to_string_lossy();
         let Some(stored_digest) = stored_map.get(key.as_ref()) else {
             return false;
@@ -128,11 +126,8 @@ pub(crate) fn verify_content_digests(
         let Ok(bytes) = std::fs::read(p) else {
             return false;
         };
-        if content_digest(&bytes) != *stored_digest {
-            return false;
-        }
-    }
-    true
+        content_digest(&bytes) == *stored_digest
+    })
 }
 
 pub(crate) fn verify_cached_file_state(

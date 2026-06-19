@@ -7,7 +7,8 @@ use crate::analyze::{
     build_file_coverage_violation, compute_test_coverage_from_lists, filter_duplicates_by_focus,
     filter_viols_by_focus,
 };
-use all_replay::{store_all_replay_cache, try_run_cached_all_replay};
+pub(crate) use all_replay::store_all_replay_cache;
+use all_replay::try_run_cached_all_replay;
 use emit::{emit_cached_bypass, emit_cached_gated};
 pub(crate) use gate_replay::{store_gate_failure_replay_cache, try_run_cached_gate_failure};
 use kiss::check_cache;
@@ -29,7 +30,7 @@ pub(crate) use stats_top::{
     maybe_store_stats_top_cache, try_run_cached_stats_summary, try_run_cached_stats_top,
 };
 
-const CACHE_SCHEMA_VERSION: &str = "v14";
+const CACHE_SCHEMA_VERSION: &str = "v16";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -108,6 +109,12 @@ pub fn store_full_cache(cache: &FullCheckCache) {
         return;
     };
     let _ = std::fs::write(cache_path_full(&cache.fingerprint), bytes);
+}
+
+pub fn store_full_cache_marker(fingerprint: &str) {
+    let dir = check_cache::cache_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(cache_path_full(fingerprint), b"compact-all-replay\n");
 }
 
 #[cfg(test)]
@@ -301,22 +308,28 @@ pub struct FullCacheInputs<'a> {
     pub weighted_file_pcts: Vec<CachedFileCoverage>,
     pub rslip_fingerprint: String,
     pub rust_coverage_fingerprint: String,
+    pub include_content_digests: bool,
 }
 
-pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) -> FullCheckCache {
+pub(crate) fn build_full_cache_from_run(inputs: FullCacheInputs<'_>) -> FullCheckCache {
     let (graph_nodes, graph_edges) = graph_counts(inputs.py_graph, inputs.rs_graph);
     let py_path_bufs: Vec<PathBuf> = inputs.py_paths.iter().map(PathBuf::from).collect();
     let rs_path_bufs: Vec<PathBuf> = inputs.rs_paths.iter().map(PathBuf::from).collect();
-    let mut file_content_digests = content_digest::content_digests_for_paths(&py_path_bufs);
-    file_content_digests.extend(content_digest::content_digests_for_paths(&rs_path_bufs));
-    file_content_digests.sort_by(|a, b| a.0.cmp(&b.0));
+    let file_content_digests = if inputs.include_content_digests {
+        let mut digests = content_digest::content_digests_for_paths(&py_path_bufs);
+        digests.extend(content_digest::content_digests_for_paths(&rs_path_bufs));
+        digests.sort_by(|a, b| a.0.cmp(&b.0));
+        digests
+    } else {
+        Vec::new()
+    };
     let mut file_metadata_fingerprints =
         content_digest::metadata_fingerprints_for_paths(&py_path_bufs);
     file_metadata_fingerprints.extend(content_digest::metadata_fingerprints_for_paths(
         &rs_path_bufs,
     ));
     file_metadata_fingerprints.sort_by(|a, b| a.0.cmp(&b.0));
-    let cache = FullCheckCache {
+    FullCheckCache {
         fingerprint: inputs.fingerprint,
         py_stats: inputs.py_stats.cloned(),
         rs_stats: inputs.rs_stats.cloned(),
@@ -368,7 +381,11 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) -> FullCheckCache 
         weighted_file_pcts: inputs.weighted_file_pcts,
         rslip_fingerprint: inputs.rslip_fingerprint,
         rust_coverage_fingerprint: inputs.rust_coverage_fingerprint,
-    };
+    }
+}
+
+pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) -> FullCheckCache {
+    let cache = build_full_cache_from_run(inputs);
     store_full_cache(&cache);
     cache
 }

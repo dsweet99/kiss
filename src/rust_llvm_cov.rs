@@ -355,7 +355,7 @@ pub fn analysis_from_line_coverage(
     analysis
 }
 
-fn fail_closed_analysis(parsed: &[ParsedRustFile]) -> RustTestRefAnalysis {
+pub fn fail_closed_runtime_analysis(parsed: &[ParsedRustFile]) -> RustTestRefAnalysis {
     let mut analysis = empty_analysis();
     for file in parsed {
         let def = RustCodeDefinition {
@@ -379,7 +379,7 @@ fn nested_cargo_llvm_cov_analysis(
         return empty_analysis();
     }
     eprintln!("error: cargo llvm-cov coverage skipped inside nested cargo llvm-cov run");
-    fail_closed_analysis(parsed)
+    fail_closed_runtime_analysis(parsed)
 }
 
 fn is_running_as_test_binary() -> bool {
@@ -410,7 +410,7 @@ pub fn runtime_rust_analysis(repo_root: &Path, parsed: &[ParsedRustFile]) -> Rus
         Ok(line_coverage) => analysis_from_line_coverage(parsed, &line_coverage),
         Err(err) => {
             eprintln!("error: cargo llvm-cov coverage failed: {err}");
-            fail_closed_analysis(parsed)
+            fail_closed_runtime_analysis(parsed)
         }
     }
 }

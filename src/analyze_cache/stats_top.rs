@@ -189,6 +189,7 @@ pub(crate) fn maybe_store_stats_top_cache(
             let repo_root = coverage_repo_root(py_files, rs_files);
             kiss::rust_llvm_cov::backend_fingerprint(&repo_root)
         },
+        include_content_digests: true,
     });
 }
 

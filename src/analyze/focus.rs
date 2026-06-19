@@ -9,10 +9,11 @@ pub fn gather_files(
     lang: Option<Language>,
     ignore_prefixes: &[String],
 ) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let root_abs = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let all = find_source_files_with_ignore(root, ignore_prefixes);
     let (mut py, mut rs) = (Vec::new(), Vec::new());
     for sf in all {
-        let path = sf.path.canonicalize().unwrap_or(sf.path);
+        let path = normalize_discovered_path(root, &root_abs, sf.path);
         match (sf.language, lang) {
             (Language::Python, None | Some(Language::Python)) => py.push(path),
             (Language::Rust, None | Some(Language::Rust)) => rs.push(path),
@@ -20,6 +21,14 @@ pub fn gather_files(
         }
     }
     (py, rs)
+}
+
+fn normalize_discovered_path(root: &Path, root_abs: &Path, path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        return path;
+    }
+    let rel = path.strip_prefix(root).unwrap_or(&path);
+    root_abs.join(rel)
 }
 
 /// Canonical paths for the given focus path list (files or directories).
@@ -42,6 +51,34 @@ pub fn build_focus_set(
         }
     }
     focus_set
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_discovered_path_uses_canonical_root_without_per_file_canonicalize() {
+        let root = Path::new(".");
+        let root_abs = Path::new("/repo");
+
+        assert_eq!(
+            normalize_discovered_path(root, root_abs, PathBuf::from("./src/a.py")),
+            PathBuf::from("/repo/src/a.py")
+        );
+        assert_eq!(
+            normalize_discovered_path(
+                Path::new("pkg"),
+                Path::new("/repo/pkg"),
+                PathBuf::from("pkg/mod.py")
+            ),
+            PathBuf::from("/repo/pkg/mod.py")
+        );
+        assert_eq!(
+            normalize_discovered_path(root, root_abs, PathBuf::from("/other/src/a.py")),
+            PathBuf::from("/other/src/a.py")
+        );
+    }
 }
 
 /// Whether analysis results should be restricted to a focus subset.

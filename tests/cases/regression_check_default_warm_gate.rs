@@ -150,3 +150,78 @@ fn regression_default_gate_fail_still_reports_timing() {
     assert!(stderr.contains("py: parse="));
     assert!(stderr.contains("analyze="));
 }
+
+#[test]
+fn default_coverage_gate_stops_before_rust_when_python_already_fails() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+
+    fs::write(
+        repo.path().join("uncovered.py"),
+        "def uncovered_function(x):\n    return x * 2\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("lib.rs"),
+        "pub fn uncovered() -> usize { 1 }\n",
+    )
+    .unwrap();
+
+    let out = kiss_binary()
+        .arg("--defaults")
+        .arg("check")
+        .arg(repo.path())
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stdout.contains("VIOLATION:test_coverage"),
+        "Python coverage should fail the default gate.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("cargo llvm-cov coverage failed"),
+        "Rust coverage should not run after Python coverage already fails.\nstderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn check_all_uses_fail_closed_rust_runtime_coverage() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+
+    fs::write(
+        repo.path().join("covered.py"),
+        "def covered():\n    return 1\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("lib.rs"),
+        "pub fn uncovered() -> usize { 1 }\n",
+    )
+    .unwrap();
+
+    let out = kiss_binary()
+        .arg("--defaults")
+        .arg("check")
+        .arg("--all")
+        .arg(repo.path())
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stdout.contains("VIOLATION:test_coverage"),
+        "fail-closed Rust coverage should report uncovered Rust files.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("cargo llvm-cov coverage failed"),
+        "check --all should use the explicit fail-closed Rust coverage path.\nstderr:\n{stderr}"
+    );
+}

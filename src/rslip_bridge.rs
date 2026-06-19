@@ -13,6 +13,29 @@ pub fn rslip_database_fingerprint(repo_root: &Path) -> String {
     }
 }
 
+fn has_line_coverage_database(db: &Database) -> bool {
+    let mut source_records = db
+        .files
+        .values()
+        .filter(|record| record.role == rslip::FileRole::Source)
+        .peekable();
+    source_records.peek().is_some() && source_records.all(|record| record.coverage.is_some())
+}
+
+fn has_test_mapping_database(db: &Database) -> bool {
+    !db.tests.is_empty() && !db.source_to_covering_tests.is_empty()
+}
+
+fn load_current_coverage_database(repo_root: &Path) -> Option<(Database, Vec<String>, bool)> {
+    let db = rslip::load_database(repo_root).ok().flatten()?;
+    if !has_line_coverage_database(&db) {
+        return None;
+    }
+    let changed = rslip::metadata_changed_files(repo_root, &db).ok()?;
+    let has_test_mappings = has_test_mapping_database(&db);
+    Some((db, changed, has_test_mappings))
+}
+
 pub fn runtime_py_analysis(
     repo_root: &Path,
     parsed: &[ParsedFile],
@@ -26,6 +49,18 @@ pub fn runtime_py_analysis(
             unreferenced: Vec::new(),
             coverage_map: HashMap::new(),
         };
+    }
+    if let Some((db, changed, has_test_mappings)) = load_current_coverage_database(repo_root) {
+        let (stale_all, stale_paths) = stale_inputs_for_parsed(&changed, repo_root, parsed);
+        if !(has_test_mappings && stale_all) {
+            return bridge_analysis_from_database_with_stale(
+                repo_root,
+                parsed,
+                &db,
+                stale_all,
+                &stale_paths,
+            );
+        }
     }
     let j = jobs.unwrap_or_else(pyfork::default_parallelism);
     let collector = rslip::PytestTraceCollector;
@@ -46,6 +81,26 @@ pub(crate) fn bridge_analysis_from_database(
     parsed: &[ParsedFile],
     db: &Database,
 ) -> TestRefAnalysis {
+    bridge_analysis_from_database_with_stale(repo_root, parsed, db, false, &HashSet::new())
+}
+
+fn stale_runtime_definition(file: &ParsedFile) -> CodeDefinition {
+    CodeDefinition {
+        name: "rslip_refresh_needed".to_string(),
+        kind: CodeUnitKind::Module,
+        file: file.path.clone(),
+        line: 1,
+        containing_class: None,
+    }
+}
+
+fn bridge_analysis_from_database_with_stale(
+    repo_root: &Path,
+    parsed: &[ParsedFile],
+    db: &Database,
+    stale_all: bool,
+    stale_paths: &HashSet<String>,
+) -> TestRefAnalysis {
     let mut definitions = Vec::new();
     let mut unreferenced = Vec::new();
     let mut coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>> = HashMap::new();
@@ -54,6 +109,12 @@ pub(crate) fn bridge_analysis_from_database(
             continue;
         }
         let rel = normalize_against(repo_root, &file.path);
+        if stale_all || stale_paths.contains(&rel) {
+            let def = stale_runtime_definition(file);
+            definitions.push(def.clone());
+            unreferenced.push(def);
+            continue;
+        }
         let Some(record) = db.files.get(&rel) else {
             continue;
         };
@@ -86,6 +147,26 @@ pub(crate) fn bridge_analysis_from_database(
         unreferenced,
         coverage_map,
     }
+}
+
+fn stale_inputs_for_parsed(
+    changed: &[String],
+    repo_root: &Path,
+    parsed: &[ParsedFile],
+) -> (bool, HashSet<String>) {
+    let parsed_rels = parsed
+        .iter()
+        .map(|file| normalize_against(repo_root, &file.path))
+        .collect::<HashSet<_>>();
+    let mut stale_paths = HashSet::new();
+    for path in changed {
+        if parsed_rels.contains(path) {
+            stale_paths.insert(path.clone());
+        } else {
+            return (true, HashSet::new());
+        }
+    }
+    (false, stale_paths)
 }
 
 fn fail_closed_py_analysis(parsed: &[ParsedFile]) -> TestRefAnalysis {
@@ -133,6 +214,9 @@ pub(crate) fn normalize_against(repo_root: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
+#[cfg(test)]
+#[path = "rslip_bridge_fail_closed_test.rs"]
+mod fail_closed_tests;
 #[cfg(test)]
 #[path = "rslip_bridge_inline_test.rs"]
 mod tests;

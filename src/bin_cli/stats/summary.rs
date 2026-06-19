@@ -62,6 +62,7 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
+        collect_stats: true,
     };
 
     let pipeline = crate::analyze::run_full_pipeline(crate::analyze::FullPipelineInput {
@@ -86,8 +87,8 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         py_dups_all: &pipeline.py_dups_all,
         rs_dups_all: &pipeline.rs_dups_all,
         coverage_cache_lists: pipeline.coverage_cache_lists.clone(),
-        py_stats: Some(&pipeline.py_stats),
-        rs_stats: Some(&pipeline.rs_stats),
+        py_stats: pipeline.py_stats.as_ref(),
+        rs_stats: pipeline.rs_stats.as_ref(),
     });
     print_summary_from_pipeline(input.paths, &pipeline);
 }
@@ -138,14 +139,24 @@ fn print_summary_from_pipeline(paths: &[String], pipeline: &crate::analyze::Full
         println!(
             "=== Python ({} files) ===\n{}\n",
             pipeline.result.py_parsed.len(),
-            format_stats_table(&compute_summaries(&pipeline.py_stats))
+            format_stats_table(&compute_summaries(
+                pipeline
+                    .py_stats
+                    .as_ref()
+                    .expect("stats pipeline collects Python metrics"),
+            ))
         );
     }
     if !pipeline.result.rs_parsed.is_empty() {
         println!(
             "=== Rust ({} files) ===\n{}",
             pipeline.result.rs_parsed.len(),
-            format_stats_table(&compute_summaries(&pipeline.rs_stats))
+            format_stats_table(&compute_summaries(
+                pipeline
+                    .rs_stats
+                    .as_ref()
+                    .expect("stats pipeline collects Rust metrics"),
+            ))
         );
     }
 }
