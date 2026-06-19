@@ -1,11 +1,15 @@
+mod all_replay;
 mod content_digest;
 mod emit;
+mod gate_replay;
 use crate::analyze::FocusFilter;
 use crate::analyze::{
-    cached_coverage_gate_would_fail, compute_test_coverage_from_lists, filter_duplicates_by_focus,
+    build_file_coverage_violation, compute_test_coverage_from_lists, filter_duplicates_by_focus,
     filter_viols_by_focus,
 };
+use all_replay::{store_all_replay_cache, try_run_cached_all_replay};
 use emit::{emit_cached_bypass, emit_cached_gated};
+pub(crate) use gate_replay::{store_gate_failure_replay_cache, try_run_cached_gate_failure};
 use kiss::check_cache;
 use kiss::check_cache::{CachedCodeChunk, CachedViolation};
 use kiss::check_universe_cache::{
@@ -13,7 +17,7 @@ use kiss::check_universe_cache::{
 };
 use kiss::stats::MetricStats;
 use kiss::{Config, DependencyGraph, DuplicateCluster, GateConfig, Violation};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 mod path_helpers;
 mod stats_top;
@@ -106,6 +110,7 @@ pub fn store_full_cache(cache: &FullCheckCache) {
     let _ = std::fs::write(cache_path_full(&cache.fingerprint), bytes);
 }
 
+#[cfg(test)]
 pub fn coverage_violation(file: PathBuf, name: String, line: usize, file_pct: usize) -> Violation {
     Violation {
         file,
@@ -189,28 +194,20 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus: &FocusFilter) -> Vec<Vio
         .collect();
     let (_, _, _, unreferenced) = compute_test_coverage_from_lists(&defs, &unref, focus);
 
-    if !cache.coverage_violations.is_empty() {
-        return cache
-            .coverage_violations
-            .iter()
-            .map(|v| v.clone().into_violation())
-            .filter(|v| {
-                crate::analyze::is_focus_file(&v.file, focus)
-                    && crate::analyze::is_coverage_report_target(&v.file, &v.unit_name, true)
-            })
-            .collect();
-    }
-
     let weighted = weighted_file_pct_map(&cache.weighted_file_pcts);
     let mut file_pcts = kiss::cli_output::file_coverage_map(&defs, &unreferenced);
     file_pcts.extend(weighted);
-    unreferenced
+    let mut failing_files: BTreeMap<PathBuf, usize> = BTreeMap::new();
+    for (file, name, _) in unreferenced {
+        if crate::analyze::is_coverage_report_target(&file, &name, true) {
+            failing_files
+                .entry(file.clone())
+                .or_insert_with(|| file_pcts.get(&file).copied().unwrap_or(0));
+        }
+    }
+    failing_files
         .into_iter()
-        .filter(|(path, name, _)| crate::analyze::is_coverage_report_target(path, name, true))
-        .map(|(file, name, line)| {
-            let pct = file_pcts.get(&file).copied().unwrap_or(0);
-            coverage_violation(file, name, line, pct)
-        })
+        .map(|(file, pct)| build_file_coverage_violation(file, pct))
         .collect()
 }
 
@@ -235,6 +232,9 @@ pub fn try_run_cached_all(
         opts.rs_config,
         opts.gate_config,
     );
+    if let Some(ok) = try_run_cached_all_replay(opts, py_files, rs_files, focus, &fp) {
+        return Some(ok);
+    }
     let cache = load_verified_full_cache(&fp, py_files, rs_files)?;
     if !same_cached_paths(py_files, rs_files, focus, &cache) {
         return None;
@@ -247,21 +247,22 @@ pub fn try_run_cached_all(
         return None;
     }
 
-    if !opts.bypass_gate
-        && cached_coverage_gate_would_fail(
+    if opts.bypass_gate {
+        store_all_replay_cache(&fp, opts, focus, &cache);
+        Some(emit_cached_bypass(cache, opts, focus))
+    } else {
+        let gate_violations = crate::analyze::gate_failure_violations_from_cached(
             &cache.definitions,
             &cache.unreferenced,
             focus,
             opts.gate_config.test_coverage_threshold,
-        )
-    {
-        return None;
-    }
-
-    if opts.bypass_gate {
-        Some(emit_cached_bypass(cache, opts, focus))
-    } else {
-        Some(emit_cached_gated(cache, opts, focus))
+            None,
+        );
+        let ok = emit_cached_gated(cache, opts, focus);
+        if !ok {
+            store_gate_failure_replay_cache(fp, opts, py_files, rs_files, focus, &gate_violations);
+        }
+        Some(ok)
     }
 }
 
@@ -377,3 +378,5 @@ mod content_digest_test;
 mod tests;
 #[cfg(test)]
 mod tests_fingerprint;
+#[cfg(test)]
+mod tests_replay;

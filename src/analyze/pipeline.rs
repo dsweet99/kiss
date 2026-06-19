@@ -321,6 +321,28 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
             opts.gate_config.test_coverage_threshold,
         ) {
             log_parse_timing(opts.show_timing, &parse_timing);
+            let gate_violations =
+                crate::analyze::coverage_gate::gate_failure_violations_from_runtime(
+                    &py_cov,
+                    &rs_cov,
+                    focus,
+                    opts.gate_config.test_coverage_threshold,
+                );
+            let fp = crate::analyze_cache::fingerprint_for_check(
+                py_files,
+                rs_files,
+                opts.py_config,
+                opts.rs_config,
+                opts.gate_config,
+            );
+            crate::analyze_cache::store_gate_failure_replay_cache(
+                fp,
+                opts,
+                py_files,
+                rs_files,
+                focus,
+                &gate_violations,
+            );
             if should_store_coverage_gate_failure_cache(&py_cov, &rs_cov) {
                 let rs_graph = crate::analyze::graph_api::build_rs_graph(&result.rs_parsed);
                 store_coverage_gate_failure_cache(CoverageGateFailureCacheIn {

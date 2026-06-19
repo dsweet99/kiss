@@ -142,15 +142,45 @@ pub(crate) fn evaluate_gate(
     None
 }
 
-pub(crate) fn cached_coverage_gate_would_fail(
+pub(crate) fn gate_failure_violations_from_runtime(
+    py_cov: &kiss::TestRefAnalysis,
+    rs_cov: &kiss::RustTestRefAnalysis,
+    focus: &FocusFilter,
+    threshold: usize,
+) -> Vec<kiss::Violation> {
+    let (defs_t, unrefs_t) = analysis_tuples(py_cov, rs_cov);
+    let Some((_unreferenced_focus, file_pcts)) =
+        per_file_coverage_gate_fails(&defs_t, &unrefs_t, focus, threshold, None)
+    else {
+        return Vec::new();
+    };
+    let mut failing: Vec<_> = file_pcts
+        .into_iter()
+        .filter(|(_, pct)| *pct < threshold)
+        .collect();
+    failing.sort_by(|a, b| a.0.cmp(&b.0));
+    failing
+        .into_iter()
+        .map(|(file, pct)| kiss::Violation {
+            file,
+            line: 0,
+            unit_name: "file".to_string(),
+            metric: "test_coverage".to_string(),
+            value: pct,
+            threshold,
+            message: format!("{pct}% covered. Add test coverage for this source file."),
+            suggestion: String::new(),
+        })
+        .collect()
+}
+
+pub(crate) fn gate_failure_violations_from_cached(
     definitions: &[CachedCoverageItem],
     unreferenced: &[CachedCoverageItem],
     focus: &FocusFilter,
     threshold: usize,
-) -> bool {
-    if threshold == 0 {
-        return false;
-    }
+    weighted_pcts: Option<&HashMap<PathBuf, usize>>,
+) -> Vec<kiss::Violation> {
     let defs = definitions
         .iter()
         .map(|item| item.clone().into_tuple())
@@ -159,7 +189,29 @@ pub(crate) fn cached_coverage_gate_would_fail(
         .iter()
         .map(|item| item.clone().into_tuple())
         .collect::<Vec<_>>();
-    per_file_coverage_gate_fails(&defs, &unrefs, focus, threshold, None).is_some()
+    let Some((_unreferenced_focus, file_pcts)) =
+        per_file_coverage_gate_fails(&defs, &unrefs, focus, threshold, weighted_pcts)
+    else {
+        return Vec::new();
+    };
+    let mut failing: Vec<_> = file_pcts
+        .into_iter()
+        .filter(|(_, pct)| *pct < threshold)
+        .collect();
+    failing.sort_by(|a, b| a.0.cmp(&b.0));
+    failing
+        .into_iter()
+        .map(|(file, pct)| kiss::Violation {
+            file,
+            line: 0,
+            unit_name: "file".to_string(),
+            metric: "test_coverage".to_string(),
+            value: pct,
+            threshold,
+            message: format!("{pct}% covered. Add test coverage for this source file."),
+            suggestion: String::new(),
+        })
+        .collect()
 }
 
 pub(crate) fn evaluate_cached_gate(

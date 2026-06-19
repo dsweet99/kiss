@@ -20,13 +20,17 @@ fn cached_coverage_viols_skips_test_files_on_replay() {
 #[test]
 fn cached_coverage_viols_replays_weighted_overlay_pct() {
     let file = PathBuf::from("src/sparse_module.py");
-    let cached = CachedViolation::from(&coverage_violation(file.clone(), "fn_a".into(), 1, 17));
     let mut cache = empty_cache("weighted_overlay_replay");
-    cache.coverage_violations = vec![cached];
-    cache.definitions.push(CachedCoverageItem {
+    let item = CachedCoverageItem {
         file: file.to_string_lossy().to_string(),
         name: "fn_a".into(),
         line: 1,
+    };
+    cache.definitions.push(item.clone());
+    cache.unreferenced.push(item);
+    cache.weighted_file_pcts.push(CachedFileCoverage {
+        file: file.to_string_lossy().to_string(),
+        pct: 17,
     });
     let focus = FocusFilter::unrestricted();
     let viols = cached_coverage_viols(&cache, &focus);
@@ -134,7 +138,7 @@ fn fnv1a64_properties() {
 }
 
 #[test]
-fn try_run_cached_all_misses_when_cached_coverage_gate_would_fail() {
+fn try_run_cached_all_replays_default_coverage_gate_failure() {
     let _home = ScopedHome::new();
     let tmp = tempfile::TempDir::new().unwrap();
     let universe = tmp.path().to_string_lossy().to_string();
@@ -149,6 +153,8 @@ fn try_run_cached_all_misses_when_cached_coverage_gate_would_fail() {
     let mut inputs = empty_inputs(&fp);
     inputs.rs_file_count = 1;
     inputs.rs_paths = vec![rs.to_string_lossy().to_string()];
+    inputs.rslip_fingerprint = kiss::rslip_bridge::rslip_database_fingerprint(tmp.path());
+    inputs.rust_coverage_fingerprint = kiss::rust_llvm_cov::backend_fingerprint(tmp.path());
     inputs.definitions = vec![CachedCoverageItem {
         file: rs.to_string_lossy().to_string(),
         name: "uncovered".into(),
@@ -170,9 +176,10 @@ fn try_run_cached_all_misses_when_cached_coverage_gate_would_fail() {
         suppress_final_status: false,
         jobs: None,
     };
-    assert!(
-        try_run_cached_all(&opts, &py_files, &rs_files, &focus).is_none(),
-        "cached coverage-gate failure must not replay; force uncached revalidation"
+    assert_eq!(
+        try_run_cached_all(&opts, &py_files, &rs_files, &focus),
+        Some(false),
+        "valid cached default coverage-gate failures should replay without rerunning coverage"
     );
 }
 

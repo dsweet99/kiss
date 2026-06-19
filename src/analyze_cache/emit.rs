@@ -73,14 +73,12 @@ fn cached_violation_in_focus(v: &CachedViolation, focus: &FocusFilter) -> bool {
 }
 
 fn cached_bypass_has_violations(cache: &FullCheckCache, focus: &FocusFilter) -> bool {
-    let stored = cache
+    cache
         .base_violations
         .iter()
         .chain(cache.graph_violations.iter())
-        .chain(cache.coverage_violations.iter())
-        .any(|v| cached_violation_in_focus(v, focus));
-    stored
-        || (cache.coverage_violations.is_empty() && !cached_coverage_viols(cache, focus).is_empty())
+        .any(|v| cached_violation_in_focus(v, focus))
+        || !cached_coverage_viols(cache, focus).is_empty()
 }
 
 fn write_cached_violation(w: &mut impl Write, v: &CachedViolation) -> std::io::Result<()> {
@@ -117,14 +115,17 @@ fn write_cached_bypass_violations(
 ) -> std::io::Result<()> {
     let _ = write_cached_violation_slice(w, &cache.base_violations, focus);
     let _ = write_cached_violation_slice(w, &cache.graph_violations, focus);
-    if cache.coverage_violations.is_empty() {
-        let viols = cached_coverage_viols(cache, focus);
-        for v in viols {
-            let cached = CachedViolation::from(&v);
-            let _ = write_cached_violation(w, &cached);
-        }
-    } else {
-        let _ = write_cached_violation_slice(w, &cache.coverage_violations, focus);
+    for v in cached_coverage_viols(cache, focus) {
+        writeln!(
+            w,
+            "VIOLATION:{}:{}:{}:{}: {} {}",
+            v.metric,
+            v.file.display(),
+            v.line,
+            v.unit_name,
+            v.message,
+            v.suggestion
+        )?;
     }
     Ok(())
 }

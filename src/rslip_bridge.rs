@@ -46,6 +46,9 @@ pub(crate) fn bridge_analysis_from_database(
     let mut unreferenced = Vec::new();
     let mut coverage_map: HashMap<(PathBuf, String), Vec<CoveringTest>> = HashMap::new();
     for file in parsed {
+        if crate::test_refs::py_init_marker_pct(file) == 100 {
+            continue;
+        }
         let rel = normalize_against(repo_root, &file.path);
         let Some(record) = db.files.get(&rel) else {
             continue;

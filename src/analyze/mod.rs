@@ -26,12 +26,12 @@ mod print;
 #[allow(unused_imports)]
 pub(crate) use cache::{FullCacheStoreInput, maybe_store_full_cache};
 #[allow(unused_imports)]
-pub use coverage::compute_test_coverage_from_lists;
+pub(crate) use coverage::{build_file_coverage_violation, compute_test_coverage_from_lists};
 #[allow(unused_imports)] // Public API surface (`crate::analyze::check_coverage_gate`).
 pub use coverage_gate::check_coverage_gate;
 pub(crate) use coverage_gate::is_coverage_report_target;
 #[allow(unused_imports)] // Public API surface for cached-coverage-gate checks.
-pub(crate) use coverage_gate::{cached_coverage_gate_would_fail, evaluate_cached_gate};
+pub(crate) use coverage_gate::{evaluate_cached_gate, gate_failure_violations_from_cached};
 #[allow(unused_imports)]
 pub use coverage_types::CheckCoverageGateParams;
 pub use dry::{DryRunParams, run_dry};

@@ -135,7 +135,7 @@ pub(crate) fn verify_content_digests(
     true
 }
 
-pub(super) fn verify_cached_file_state(
+pub(crate) fn verify_cached_file_state(
     file_metadata_fingerprints: &[(String, u64)],
     file_content_digests: &[(String, u64)],
     py_files: &[PathBuf],

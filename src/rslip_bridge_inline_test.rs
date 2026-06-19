@@ -8,6 +8,16 @@ fn parsed(path: PathBuf) -> ParsedFile {
     ParsedFile { path, source, tree }
 }
 
+fn parsed_source(path: PathBuf, source: &str) -> ParsedFile {
+    let mut parser = crate::parsing::create_parser().unwrap();
+    let tree = parser.parse(source, None).unwrap();
+    ParsedFile {
+        path,
+        source: source.to_string(),
+        tree,
+    }
+}
+
 fn database_with_file(rel: &str, coverage: Option<rslip::CoverageMetadata>) -> Database {
     Database {
         schema_version: rslip::SCHEMA_VERSION,
@@ -159,6 +169,51 @@ fn uncovered_file_without_covering_tests_emits_unreferenced_lines() {
         vec![("line_1", 1), ("line_2", 2)]
     );
     assert!(analysis.coverage_map.is_empty());
+}
+
+#[test]
+fn import_free_init_marker_does_not_emit_runtime_line_definitions() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let db = database_with_file(
+        "pkg/__init__.py",
+        Some(rslip::CoverageMetadata {
+            executable_lines: vec![1],
+            executed_lines: Vec::new(),
+            missing_lines: vec![1],
+            percent_covered: 0,
+        }),
+    );
+    let init = parsed_source(
+        tmp.path().join("pkg/__init__.py"),
+        "\"\"\"Package marker for tests.\"\"\"\n",
+    );
+
+    let analysis = bridge_analysis_from_database(tmp.path(), &[init], &db);
+
+    assert!(analysis.definitions.is_empty());
+    assert!(analysis.unreferenced.is_empty());
+    assert!(analysis.coverage_map.is_empty());
+}
+
+#[test]
+fn init_with_imports_emits_runtime_line_definitions() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let db = database_with_file(
+        "pkg/__init__.py",
+        Some(rslip::CoverageMetadata {
+            executable_lines: vec![1],
+            executed_lines: Vec::new(),
+            missing_lines: vec![1],
+            percent_covered: 0,
+        }),
+    );
+    let init = parsed_source(tmp.path().join("pkg/__init__.py"), "import os\n");
+
+    let analysis = bridge_analysis_from_database(tmp.path(), &[init], &db);
+
+    assert_eq!(analysis.definitions.len(), 1);
+    assert_eq!(analysis.unreferenced.len(), 1);
+    assert_eq!(analysis.definitions[0].name, "line_1");
 }
 
 #[test]

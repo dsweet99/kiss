@@ -169,13 +169,10 @@ fn test_coverage_gate_per_file_fails_when_one_file_below_threshold() {
 #[test]
 fn coverage_struct_sizes_for_gate() {
     use crate::analyze::coverage::{CoverageOutputOpts, GraphRefPair};
-    use crate::analyze::coverage_types::{
-        CheckCoverageGateParams, CoverageViolationSpec, PyRsTestCoverage,
-    };
+    use crate::analyze::coverage_types::{CheckCoverageGateParams, PyRsTestCoverage};
     let _ = std::mem::size_of::<GraphRefPair>();
     let _ = std::mem::size_of::<CoverageOutputOpts>();
     let _ = std::mem::size_of::<PyRsTestCoverage>();
-    let _ = std::mem::size_of::<CoverageViolationSpec>();
     let _ = std::mem::size_of::<CheckCoverageGateParams>();
 }
 

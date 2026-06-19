@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 use kiss::check_universe_cache::CachedCoverageItem;
@@ -7,7 +7,7 @@ use kiss::graph::is_entry_point;
 use kiss::{DependencyGraph, Violation};
 
 use crate::analyze::coverage_gate::{is_coverage_gate_file, is_coverage_report_target};
-pub(crate) use crate::analyze::coverage_types::{CoverageViolationSpec, PyRsTestCoverage};
+pub(crate) use crate::analyze::coverage_types::PyRsTestCoverage;
 use crate::analyze::coverage_weighted::{
     merge_weighted_file_pcts, merge_weighted_file_pcts_for_runtime_py,
 };
@@ -56,48 +56,16 @@ pub(crate) fn orphan_post_pass(
     out
 }
 
-pub(crate) fn build_coverage_violation_with_graph(
-    spec: CoverageViolationSpec,
-    graphs: GraphRefPair<'_>,
-) -> Violation {
-    let CoverageViolationSpec {
-        file,
-        name,
-        line,
-        file_pct,
-    } = spec;
-    let mut message = format!("{file_pct}% covered. Add test coverage for this code unit.");
-    let mut suggestion = String::new();
-
-    let graph = graph_for_path(&file, graphs.py, graphs.rs);
-
-    if let Some(g) = graph
-        && let Some(module) = g.module_for_path(&file)
-    {
-        let metrics = g.module_metrics(&module);
-        if metrics.fan_in == 0 && !is_entry_point(&module) {
-            message.push_str(" No test module imports this module.");
-            suggestion = "Add an import in a test file, or remove if dead.".to_string();
-        }
-        let candidates = g.test_importers_of(&module);
-        if !candidates.is_empty() {
-            let truncated = kiss::cli_output::format_candidate_list(&candidates, 3);
-            let _ = std::fmt::Write::write_fmt(
-                &mut message,
-                format_args!(" (candidates: {truncated})"),
-            );
-        }
-    }
-
+pub(crate) fn build_file_coverage_violation(file: PathBuf, file_pct: usize) -> Violation {
     Violation {
         file,
-        line,
-        unit_name: name,
+        line: 0,
+        unit_name: "file".to_string(),
         metric: "test_coverage".to_string(),
         value: 0,
         threshold: 0,
-        message,
-        suggestion,
+        message: format!("{file_pct}% covered. Add test coverage for this source file."),
+        suggestion: String::new(),
     }
 }
 
@@ -209,21 +177,17 @@ pub(crate) fn build_viols_after_merge(
             }
         }
     }
-    let cov_viols: Vec<Violation> = unreferenced_focus
+    let mut failing_files: BTreeMap<PathBuf, usize> = BTreeMap::new();
+    for (file, name, _) in unreferenced_focus {
+        if is_coverage_report_target(&file, &name, report_entry_points) {
+            failing_files
+                .entry(file.clone())
+                .or_insert_with(|| file_pcts.get(&file).copied().unwrap_or(0));
+        }
+    }
+    let cov_viols = failing_files
         .into_iter()
-        .filter(|(path, name, _)| is_coverage_report_target(path, name, report_entry_points))
-        .map(|(file, name, line)| {
-            let pct = file_pcts.get(&file).copied().unwrap_or(0);
-            build_coverage_violation_with_graph(
-                CoverageViolationSpec {
-                    file,
-                    name,
-                    line,
-                    file_pct: pct,
-                },
-                graphs,
-            )
-        })
+        .map(|(file, pct)| build_file_coverage_violation(file, pct))
         .collect();
     (cov_viols, definitions, unreferenced)
 }
@@ -316,5 +280,31 @@ mod coverage_witness {
         let _ = GraphRefPair::witness();
         let _ = CoverageOutputOpts::witness();
         let _ = orphan_post_pass(&[], vec![], GraphRefPair::witness());
+    }
+
+    #[test]
+    fn check_all_coverage_reports_one_violation_per_file() {
+        let file = PathBuf::from("src/many_lines.py");
+        let defs: Vec<_> = (1..=3)
+            .map(|line| CachedCoverageItem {
+                file: file.to_string_lossy().to_string(),
+                name: format!("line_{line}"),
+                line,
+            })
+            .collect();
+        let (viols, _, _) = build_viols_after_merge(
+            defs.clone(),
+            defs,
+            &FocusFilter::unrestricted(),
+            GraphRefPair::witness(),
+            None,
+            true,
+        );
+
+        assert_eq!(viols.len(), 1);
+        assert_eq!(viols[0].file, file);
+        assert_eq!(viols[0].line, 0);
+        assert_eq!(viols[0].unit_name, "file");
+        assert!(viols[0].message.contains("0% covered"));
     }
 }

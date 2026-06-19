@@ -28,6 +28,14 @@ fn try_cache_hit(
     if opts.show_timing || opts.suppress_final_status {
         return None;
     }
+    if let Some(ok) =
+        crate::analyze_cache::try_run_cached_gate_failure(opts, py_files, rs_files, focus)
+    {
+        return Some(AnalyzeResult {
+            success: ok,
+            metrics: None,
+        });
+    }
     crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus).map(|ok| {
         AnalyzeResult {
             success: ok,

@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::analyze::FocusFilter;
 use kiss::{GateConfig, RustTestRefAnalysis, TestRefAnalysis};
 
@@ -7,14 +5,6 @@ use kiss::{GateConfig, RustTestRefAnalysis, TestRefAnalysis};
 pub(crate) struct PyRsTestCoverage {
     pub py: kiss::TestRefAnalysis,
     pub rs: kiss::RustTestRefAnalysis,
-}
-
-/// Definition identity and per-file coverage percent for building a violation.
-pub(crate) struct CoverageViolationSpec {
-    pub file: PathBuf,
-    pub name: String,
-    pub line: usize,
-    pub file_pct: usize,
 }
 
 /// Inputs for [`crate::analyze::coverage_gate::check_coverage_gate`].
@@ -54,17 +44,6 @@ mod coverage_witness {
         }
     }
 
-    impl CoverageViolationSpec {
-        fn witness() -> Self {
-            Self {
-                file: std::path::PathBuf::from("witness.py"),
-                name: "witness".into(),
-                line: 1,
-                file_pct: 100,
-            }
-        }
-    }
-
     impl<'a> CheckCoverageGateParams<'a> {
         fn witness() {}
     }
@@ -88,7 +67,6 @@ mod coverage_witness {
             coverage_map: HashMap::new(),
         };
         let _ = PyRsTestCoverage::witness();
-        let _ = CoverageViolationSpec::witness();
         CheckCoverageGateParams::witness();
         let focus = FocusFilter::unrestricted();
         let _ = CheckCoverageGateParams {
