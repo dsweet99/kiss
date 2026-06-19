@@ -93,7 +93,7 @@ fn bug_whole_repo_check_fails_when_one_file_below_coverage_threshold() {
          stdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stdout.contains("GATE_FAILED:test_coverage"),
+        stdout.contains("VIOLATION:test_coverage"),
         "expected test_coverage gate failure on whole-repo check.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(

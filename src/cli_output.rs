@@ -5,13 +5,12 @@ use crate::rust_parsing::ParsedRustFile;
 use crate::rust_test_refs::analyze_rust_test_refs;
 use crate::test_refs::analyze_test_refs;
 use crate::violation::Violation;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const VIOLATIONS_FIX_HINT: &str =
     "Run 'kiss rules' for more information about fixing violations.";
-const MAX_COVERAGE_VIOLATIONS_PER_FILE: usize = 10;
 
 /// Format a candidate list for display, truncating to `max` items with ellipsis.
 pub fn format_candidate_list(candidates: &[String], max: usize) -> String {
@@ -132,7 +131,7 @@ pub fn write_coverage_gate_failure(
     w: &mut impl Write,
     ctx: &CoverageGateFailureCtx<'_>,
 ) -> std::io::Result<()> {
-    // Per-file enforcement: list failing files first, then unreferenced units
+    // Per-file enforcement: emit one file-level violation for each failing source file.
     let threshold = ctx.threshold;
     let mut failing: Vec<_> = ctx
         .file_pcts
@@ -141,42 +140,14 @@ pub fn write_coverage_gate_failure(
         .map(|(f, p)| (f.clone(), *p))
         .collect();
     failing.sort_by(|a, b| a.0.cmp(&b.0));
-    writeln!(
-        w,
-        "GATE_FAILED:test_coverage: {n} file(s) below {threshold}% threshold (per-file enforcement)",
-        n = failing.len()
-    )?;
     for (file, pct) in &failing {
-        writeln!(w, "  {}: {pct}% ({threshold}% required)", file.display())?;
-    }
-    let mut emitted_by_file: HashMap<&PathBuf, usize> = HashMap::new();
-    let mut omitted_by_file: BTreeMap<&PathBuf, usize> = BTreeMap::new();
-    for (file, name, line) in ctx.unreferenced {
-        let pct = ctx.file_pcts.get(file).copied().unwrap_or(0);
-        if pct < threshold {
-            let emitted = emitted_by_file.entry(file).or_default();
-            if *emitted < MAX_COVERAGE_VIOLATIONS_PER_FILE {
-                writeln!(
-                    w,
-                    "VIOLATION:test_coverage:{}:{}:{}: {pct}% covered. Add test coverage for this code unit.",
-                    file.display(),
-                    line,
-                    name
-                )?;
-                *emitted += 1;
-            } else {
-                *omitted_by_file.entry(file).or_default() += 1;
-            }
-        }
-    }
-    for (file, omitted) in omitted_by_file {
         writeln!(
             w,
-            "OMITTED:test_coverage:{}: {omitted} additional uncovered code unit(s) omitted",
-            file.display()
+            "VIOLATION:test_coverage:{}:0:file: {pct}% covered. Add test coverage for this source file.",
+            file.display(),
         )?;
     }
-    write_final_status(w, true)
+    Ok(())
 }
 
 pub fn print_violations(viols: &[Violation]) {
@@ -279,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn test_print_coverage_gate_failure_emits_hint() {
+    fn test_print_coverage_gate_failure_emits_only_file_violations() {
         let file_pcts: HashMap<std::path::PathBuf, usize> =
             [(std::path::PathBuf::from("foo.py"), 50)].into();
         let mut out = Vec::new();
@@ -294,12 +265,15 @@ mod tests {
         .unwrap();
         let stdout = String::from_utf8(out).unwrap();
         assert!(
-            stdout.contains(VIOLATIONS_FIX_HINT),
-            "expected hint in stdout: {stdout}"
+            stdout.contains(
+                "VIOLATION:test_coverage:foo.py:0:file: 50% covered. Add test coverage for this source file."
+            ),
+            "expected file-level violation in stdout: {stdout}"
         );
+        assert!(!stdout.contains(VIOLATIONS_FIX_HINT));
         assert!(
-            stdout.contains("GATE_FAILED:test_coverage:"),
-            "expected gate failure in stdout: {stdout}"
+            !stdout.contains("GATE_FAILED:test_coverage:"),
+            "expected no gate summary in stdout: {stdout}"
         );
     }
 
@@ -379,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_gate_failure_lists_only_below_threshold_units() {
+    fn coverage_gate_failure_lists_one_violation_per_below_threshold_file() {
         let failing = PathBuf::from("src/failing.py");
         let passing = PathBuf::from("src/passing.py");
         let file_pcts: HashMap<PathBuf, usize> =
@@ -401,12 +375,17 @@ mod tests {
         .unwrap();
 
         let stdout = String::from_utf8(out).unwrap();
-        assert!(stdout.contains("src/failing.py: 40% (90% required)"));
-        assert!(stdout.contains("VIOLATION:test_coverage:src/failing.py:10:line_10"));
-        assert!(!stdout.contains("VIOLATION:test_coverage:src/failing.py:11:line_11"));
         assert!(stdout.contains(
-            "OMITTED:test_coverage:src/failing.py: 2 additional uncovered code unit(s) omitted"
+            "VIOLATION:test_coverage:src/failing.py:0:file: 40% covered. Add test coverage for this source file."
         ));
+        let failing_violations = stdout
+            .lines()
+            .filter(|line| line.starts_with("VIOLATION:test_coverage:src/failing.py:"))
+            .count();
+        assert_eq!(failing_violations, 1, "expected stdout: {stdout}");
+        assert!(!stdout.contains("line_10"));
+        assert!(!stdout.contains("line_11"));
+        assert!(!stdout.contains("OMITTED"));
         assert!(!stdout.contains("covered_enough"));
     }
 }

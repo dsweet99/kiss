@@ -72,7 +72,7 @@ fn regression_check_default_writes_cache_for_coverage_gate_failure() {
         "precondition: uncovered source should fail the default coverage gate.\nstdout:\n{cold_stdout}"
     );
     assert!(
-        cold_stdout.contains("GATE_FAILED:test_coverage"),
+        cold_stdout.contains("VIOLATION:test_coverage"),
         "expected coverage gate failure. stdout:\n{cold_stdout}"
     );
     assert!(
