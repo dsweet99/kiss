@@ -155,6 +155,7 @@ fn gate_check_universe_cache_types_round_trip() {
         unreferenced: vec![],
         weighted_file_pcts: vec![],
         file_content_digests: vec![],
+        file_metadata_fingerprints: vec![],
         rslip_fingerprint: String::new(),
         rust_coverage_fingerprint: String::new(),
     };

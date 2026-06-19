@@ -26,6 +26,7 @@ pub(crate) fn empty_cache(fp: &str) -> FullCheckCache {
         unreferenced: Vec::new(),
         weighted_file_pcts: Vec::new(),
         file_content_digests: Vec::new(),
+        file_metadata_fingerprints: Vec::new(),
         rslip_fingerprint: String::new(),
         rust_coverage_fingerprint: String::new(),
     }

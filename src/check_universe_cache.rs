@@ -61,6 +61,9 @@ pub struct FullCheckCache {
     /// Per-file content digests captured at cache-write time; verified on replay.
     #[serde(default)]
     pub file_content_digests: Vec<(String, u64)>,
+    /// Cheap per-file metadata fingerprints used to avoid content reads on unchanged files.
+    #[serde(default)]
+    pub file_metadata_fingerprints: Vec<(String, u64)>,
     /// Digest of `.kiss/rslip.json` at cache-write time; verified on replay.
     #[serde(default)]
     pub rslip_fingerprint: String,
@@ -126,6 +129,7 @@ mod coverage_witness {
             unreferenced: vec![],
             weighted_file_pcts: vec![],
             file_content_digests: vec![],
+            file_metadata_fingerprints: vec![],
             rslip_fingerprint: String::new(),
             rust_coverage_fingerprint: String::new(),
         };

@@ -173,7 +173,7 @@ fn try_run_cached_all_rejects_stale_rslip_fingerprint() {
 }
 
 #[test]
-fn try_run_cached_all_rejects_rslip_refresh_failure_snapshot() {
+fn try_run_cached_all_replays_rslip_refresh_failure_snapshot() {
     let _home = ScopedHome::new();
     let tmp = tempfile::TempDir::new().unwrap();
     let universe = tmp.path().to_string_lossy().to_string();
@@ -188,11 +188,14 @@ fn try_run_cached_all_rejects_rslip_refresh_failure_snapshot() {
     let mut inputs = empty_inputs(&fp);
     inputs.py_file_count = 1;
     inputs.py_paths = vec![py.to_string_lossy().to_string()];
+    inputs.rslip_fingerprint = kiss::rslip_bridge::rslip_database_fingerprint(tmp.path());
+    inputs.rust_coverage_fingerprint = kiss::rust_llvm_cov::backend_fingerprint(tmp.path());
     inputs.definitions = vec![kiss::check_universe_cache::CachedCoverageItem {
         file: py.to_string_lossy().to_string(),
         name: "rslip_refresh_failed".to_string(),
         line: 1,
     }];
+    inputs.unreferenced = inputs.definitions.clone();
     store_full_cache_from_run(inputs);
     let focus = FocusFilter::unrestricted();
     let opts = crate::analyze::AnalyzeOptions {
@@ -201,16 +204,17 @@ fn try_run_cached_all_rejects_rslip_refresh_failure_snapshot() {
         py_config: &py_cfg,
         rs_config: &rs_cfg,
         lang_filter: None,
-        bypass_gate: false,
+        bypass_gate: true,
         gate_config: &gate,
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
     };
-    assert!(
-        try_run_cached_all(&opts, &py_files, &rs_files, &focus).is_none(),
-        "cache must miss when snapshot came from rslip refresh failure"
+    assert_eq!(
+        try_run_cached_all(&opts, &py_files, &rs_files, &focus),
+        Some(false),
+        "fail-closed rslip snapshots should replay for check --all when fingerprints match"
     );
 }
 
@@ -254,7 +258,7 @@ fn try_run_cached_all_rejects_stale_rust_coverage_fingerprint() {
 }
 
 #[test]
-fn try_run_cached_all_rejects_llvm_cov_failure_snapshot() {
+fn try_run_cached_all_replays_llvm_cov_failure_snapshot() {
     let _home = ScopedHome::new();
     let tmp = tempfile::TempDir::new().unwrap();
     let universe = tmp.path().to_string_lossy().to_string();
@@ -276,6 +280,7 @@ fn try_run_cached_all_rejects_llvm_cov_failure_snapshot() {
         name: "llvm_cov_failed".to_string(),
         line: 1,
     }];
+    inputs.unreferenced = inputs.definitions.clone();
     store_full_cache_from_run(inputs);
     let focus = FocusFilter::unrestricted();
     let opts = crate::analyze::AnalyzeOptions {
@@ -284,15 +289,16 @@ fn try_run_cached_all_rejects_llvm_cov_failure_snapshot() {
         py_config: &py_cfg,
         rs_config: &rs_cfg,
         lang_filter: None,
-        bypass_gate: false,
+        bypass_gate: true,
         gate_config: &gate,
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
         jobs: None,
     };
-    assert!(
-        try_run_cached_all(&opts, &py_files, &rs_files, &focus).is_none(),
-        "cache must miss when snapshot came from cargo llvm-cov failure"
+    assert_eq!(
+        try_run_cached_all(&opts, &py_files, &rs_files, &focus),
+        Some(false),
+        "fail-closed llvm-cov snapshots should replay for check --all when fingerprints match"
     );
 }

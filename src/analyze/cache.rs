@@ -36,13 +36,6 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
     let Some(cache_data) = inp.coverage_cache_lists else {
         return;
     };
-    if cache_data
-        .definitions
-        .iter()
-        .any(|item| item.name == "rslip_refresh_failed" || item.name == "llvm_cov_failed")
-    {
-        return;
-    }
     let fp = crate::analyze_cache::fingerprint_for_check(
         inp.py_files,
         inp.rs_files,

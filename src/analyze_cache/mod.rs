@@ -25,7 +25,7 @@ pub(crate) use stats_top::{
     maybe_store_stats_top_cache, try_run_cached_stats_summary, try_run_cached_stats_top,
 };
 
-const CACHE_SCHEMA_VERSION: &str = "v12";
+const CACHE_SCHEMA_VERSION: &str = "v14";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -222,13 +222,6 @@ pub(crate) fn weighted_file_pct_map(items: &[CachedFileCoverage]) -> HashMap<Pat
         .collect()
 }
 
-fn cache_has_rslip_refresh_failure(cache: &FullCheckCache) -> bool {
-    cache
-        .definitions
-        .iter()
-        .any(|item| item.name == "rslip_refresh_failed" || item.name == "llvm_cov_failed")
-}
-
 pub fn try_run_cached_all(
     opts: &crate::analyze::AnalyzeOptions<'_>,
     py_files: &[PathBuf],
@@ -251,9 +244,6 @@ pub fn try_run_cached_all(
         return None;
     }
     if kiss::rust_llvm_cov::backend_fingerprint(repo_root) != cache.rust_coverage_fingerprint {
-        return None;
-    }
-    if cache_has_rslip_refresh_failure(&cache) {
         return None;
     }
 
@@ -312,13 +302,19 @@ pub struct FullCacheInputs<'a> {
     pub rust_coverage_fingerprint: String,
 }
 
-pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
+pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) -> FullCheckCache {
     let (graph_nodes, graph_edges) = graph_counts(inputs.py_graph, inputs.rs_graph);
     let py_path_bufs: Vec<PathBuf> = inputs.py_paths.iter().map(PathBuf::from).collect();
     let rs_path_bufs: Vec<PathBuf> = inputs.rs_paths.iter().map(PathBuf::from).collect();
     let mut file_content_digests = content_digest::content_digests_for_paths(&py_path_bufs);
     file_content_digests.extend(content_digest::content_digests_for_paths(&rs_path_bufs));
     file_content_digests.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut file_metadata_fingerprints =
+        content_digest::metadata_fingerprints_for_paths(&py_path_bufs);
+    file_metadata_fingerprints.extend(content_digest::metadata_fingerprints_for_paths(
+        &rs_path_bufs,
+    ));
+    file_metadata_fingerprints.sort_by(|a, b| a.0.cmp(&b.0));
     let cache = FullCheckCache {
         fingerprint: inputs.fingerprint,
         py_stats: inputs.py_stats.cloned(),
@@ -334,6 +330,7 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
         graph_nodes,
         graph_edges,
         file_content_digests,
+        file_metadata_fingerprints,
         base_violations: inputs
             .violations
             .iter()
@@ -372,6 +369,7 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
         rust_coverage_fingerprint: inputs.rust_coverage_fingerprint,
     };
     store_full_cache(&cache);
+    cache
 }
 #[cfg(test)]
 mod content_digest_test;
