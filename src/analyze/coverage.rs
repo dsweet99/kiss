@@ -250,6 +250,19 @@ pub(crate) fn collect_coverage_viols(
         merge_weighted_file_pcts(&py_cov, py_parsed, &rs_cov, rs_parsed)
     };
     let (definitions, unreferenced) = merge_coverage_results(py_cov, rs_cov);
+    if !out_opts.bypass_gate {
+        let unreferenced = orphan_post_pass(&definitions, unreferenced, graphs);
+        let cache_lists = if out_opts.show_timing {
+            None
+        } else {
+            Some(CoverageCacheData {
+                definitions,
+                unreferenced,
+                weighted_file_pcts: weighted,
+            })
+        };
+        return (Vec::new(), cache_lists);
+    }
     let (cov_viols, definitions, unreferenced) = build_viols_after_merge(
         definitions,
         unreferenced,

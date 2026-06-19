@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output};
+use std::time::Duration;
 
 use crate::coverage::{executable_lines_from_source, line_coverage};
-use crate::database::write_database_atomic;
+use crate::database::{load_database, write_database_atomic};
 use crate::discovery::{config_fingerprints, discover_repo_files};
-use crate::refresh::coverage_refresh_pytest_extra;
+use crate::refresh::{changed_files, coverage_refresh_pytest_extra};
 use crate::types::{CoverageMetadata, Database, FileRecord, FileRole};
 use crate::util::normalize_path;
 use crate::{RSLIP_VERSION, SCHEMA_VERSION};
@@ -23,9 +24,25 @@ struct SlipcoverFile {
 }
 
 pub fn refresh_line_coverage_and_store(repo_root: &Path, j: usize) -> Result<Database, String> {
+    if let Some(db) = current_line_coverage_database(repo_root)? {
+        return Ok(db);
+    }
     let db = refresh_line_coverage(repo_root, j)?;
     write_database_atomic(repo_root, &db)?;
     Ok(db)
+}
+
+fn current_line_coverage_database(repo_root: &Path) -> Result<Option<Database>, String> {
+    let Some(db) = load_database(repo_root)? else {
+        return Ok(None);
+    };
+    if !db.tests.is_empty() || !db.source_to_covering_tests.is_empty() {
+        return Ok(None);
+    }
+    if changed_files(repo_root, &db)?.is_empty() {
+        return Ok(Some(db));
+    }
+    Ok(None)
 }
 
 pub fn refresh_line_coverage(repo_root: &Path, _j: usize) -> Result<Database, String> {
@@ -77,9 +94,8 @@ fn run_slipcover_line_coverage_with_program(
     } else {
         cmd.args(pytest_extra);
     }
-    let output = cmd
-        .current_dir(repo_root)
-        .output()
+    cmd.current_dir(repo_root);
+    let output = output_with_text_file_busy_retry(&mut cmd)
         .map_err(|e| format!("failed to run slipcover: {e}"))?;
     if !out_path.is_file() {
         return Err(format!(
@@ -110,6 +126,27 @@ fn run_slipcover_line_coverage_with_program(
         ));
     }
     Ok(coverage)
+}
+
+fn output_with_text_file_busy_retry(cmd: &mut Command) -> std::io::Result<Output> {
+    const TEXT_FILE_BUSY_OS_ERROR: i32 = 26;
+    const MAX_ATTEMPTS: usize = 5;
+
+    let mut delay = Duration::from_millis(10);
+    for attempt in 1..=MAX_ATTEMPTS {
+        match cmd.output() {
+            Ok(output) => return Ok(output),
+            Err(err)
+                if err.raw_os_error() == Some(TEXT_FILE_BUSY_OS_ERROR)
+                    && attempt < MAX_ATTEMPTS =>
+            {
+                std::thread::sleep(delay);
+                delay = delay.saturating_mul(2);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    unreachable!("loop returns on the last attempt");
 }
 
 fn coverage_from_slipcover(file: SlipcoverFile) -> CoverageMetadata {
@@ -204,6 +241,67 @@ mod tests {
     }
 
     #[test]
+    fn current_line_coverage_database_reuses_fresh_line_refresh_database() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("pkg.py"), "value = 1\n").unwrap();
+        let records = discover_repo_files(tmp.path()).unwrap();
+        let files = records
+            .iter()
+            .map(|file| (file.path.clone(), file.clone()))
+            .collect();
+        let cached = Database {
+            schema_version: SCHEMA_VERSION,
+            rslip_version: RSLIP_VERSION.to_string(),
+            config_fingerprints: config_fingerprints(&records),
+            files,
+            tests: BTreeMap::new(),
+            source_to_covering_tests: BTreeMap::new(),
+        };
+        write_database_atomic(tmp.path(), &cached).unwrap();
+
+        let loaded = current_line_coverage_database(tmp.path())
+            .unwrap()
+            .expect("fresh line-refresh database should be reused");
+
+        assert_eq!(loaded, cached);
+    }
+
+    #[test]
+    fn current_line_coverage_database_rejects_per_test_database() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("pkg.py"), "value = 1\n").unwrap();
+        let records = discover_repo_files(tmp.path()).unwrap();
+        let files = records
+            .iter()
+            .map(|file| (file.path.clone(), file.clone()))
+            .collect();
+        let cached = Database {
+            schema_version: SCHEMA_VERSION,
+            rslip_version: RSLIP_VERSION.to_string(),
+            config_fingerprints: config_fingerprints(&records),
+            files,
+            tests: BTreeMap::from([(
+                "test_pkg.py::test_value".to_string(),
+                crate::types::TestRecord {
+                    selector: "test_pkg.py::test_value".to_string(),
+                    test_path: "test_pkg.py".to_string(),
+                    content_digest: "test-digest".to_string(),
+                    covered_files: vec!["pkg.py".to_string()],
+                    covered_lines: BTreeMap::new(),
+                },
+            )]),
+            source_to_covering_tests: BTreeMap::new(),
+        };
+        write_database_atomic(tmp.path(), &cached).unwrap();
+
+        assert!(
+            current_line_coverage_database(tmp.path())
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn run_slipcover_line_coverage_defaults_to_repo_root_pytest_target() {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("pkg.py"), "def value():\n    return 1\n").unwrap();
@@ -282,7 +380,11 @@ exit 7
     fn apply_slipcover_coverage_falls_back_to_static_missing_lines() {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("pkg.py"), "def cold():\n    return 1\n").unwrap();
-        fs::write(tmp.path().join("test_pkg.py"), "def test_pkg():\n    assert 1\n").unwrap();
+        fs::write(
+            tmp.path().join("test_pkg.py"),
+            "def test_pkg():\n    assert 1\n",
+        )
+        .unwrap();
         let mut files = discover_repo_files(tmp.path()).unwrap();
 
         apply_slipcover_coverage(tmp.path(), &mut files, &BTreeMap::new());

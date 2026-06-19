@@ -182,6 +182,14 @@ struct CoverageGateFailureCacheIn<'a> {
     rs_graph: Option<&'a DependencyGraph>,
 }
 
+fn should_store_coverage_gate_failure_cache(
+    py_cov: &kiss::TestRefAnalysis,
+    rs_cov: &kiss::RustTestRefAnalysis,
+) -> bool {
+    const MAX_UNREFERENCED_UNITS_TO_CACHE: usize = 10_000;
+    py_cov.unreferenced.len() + rs_cov.unreferenced.len() <= MAX_UNREFERENCED_UNITS_TO_CACHE
+}
+
 fn store_coverage_gate_failure_cache(in_: CoverageGateFailureCacheIn<'_>) {
     let py_graph = crate::analyze::graph_api::build_py_graph(&in_.result.py_parsed);
     let (_cov_viols, coverage_cache_lists) = collect_coverage_viols(
@@ -302,7 +310,6 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
     });
 
     if !opts.bypass_gate && opts.gate_config.test_coverage_threshold > 0 {
-        let rs_graph = crate::analyze::graph_api::build_rs_graph(&result.rs_parsed);
         let py_cov = runtime_py_coverage_for_opts(opts, &result.py_parsed);
         let rs_cov = runtime_rust_coverage_for_opts(opts, &result.rs_parsed);
         if let Some(early) = crate::analyze::coverage_gate::evaluate_gate(
@@ -314,16 +321,19 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
             opts.gate_config.test_coverage_threshold,
         ) {
             log_parse_timing(opts.show_timing, &parse_timing);
-            store_coverage_gate_failure_cache(CoverageGateFailureCacheIn {
-                opts,
-                py_files,
-                rs_files,
-                focus,
-                result: &result,
-                py_cov,
-                rs_cov,
-                rs_graph: rs_graph.as_ref(),
-            });
+            if should_store_coverage_gate_failure_cache(&py_cov, &rs_cov) {
+                let rs_graph = crate::analyze::graph_api::build_rs_graph(&result.rs_parsed);
+                store_coverage_gate_failure_cache(CoverageGateFailureCacheIn {
+                    opts,
+                    py_files,
+                    rs_files,
+                    focus,
+                    result: &result,
+                    py_cov,
+                    rs_cov,
+                    rs_graph: rs_graph.as_ref(),
+                });
+            }
             return early;
         }
     }

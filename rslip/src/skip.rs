@@ -184,7 +184,6 @@ mod tests {
 
     #[test]
     fn skip_schedules_missing_entry() {
-        let _collected = vec!["t.py::test_a".to_string()];
         let database = db(BTreeMap::new(), BTreeMap::new());
         let files = BTreeMap::new();
         assert!(should_schedule_nodeid(&database, &files, "t.py::test_a"));

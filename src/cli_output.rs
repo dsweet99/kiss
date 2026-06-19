@@ -5,12 +5,13 @@ use crate::rust_parsing::ParsedRustFile;
 use crate::rust_test_refs::analyze_rust_test_refs;
 use crate::test_refs::analyze_test_refs;
 use crate::violation::Violation;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const VIOLATIONS_FIX_HINT: &str =
     "Run 'kiss rules' for more information about fixing violations.";
+const MAX_COVERAGE_VIOLATIONS_PER_FILE: usize = 10;
 
 /// Format a candidate list for display, truncating to `max` items with ellipsis.
 pub fn format_candidate_list(candidates: &[String], max: usize) -> String {
@@ -148,17 +149,32 @@ pub fn write_coverage_gate_failure(
     for (file, pct) in &failing {
         writeln!(w, "  {}: {pct}% ({threshold}% required)", file.display())?;
     }
+    let mut emitted_by_file: HashMap<&PathBuf, usize> = HashMap::new();
+    let mut omitted_by_file: BTreeMap<&PathBuf, usize> = BTreeMap::new();
     for (file, name, line) in ctx.unreferenced {
         let pct = ctx.file_pcts.get(file).copied().unwrap_or(0);
         if pct < threshold {
-            writeln!(
-                w,
-                "VIOLATION:test_coverage:{}:{}:{}: {pct}% covered. Add test coverage for this code unit.",
-                file.display(),
-                line,
-                name
-            )?;
+            let emitted = emitted_by_file.entry(file).or_default();
+            if *emitted < MAX_COVERAGE_VIOLATIONS_PER_FILE {
+                writeln!(
+                    w,
+                    "VIOLATION:test_coverage:{}:{}:{}: {pct}% covered. Add test coverage for this code unit.",
+                    file.display(),
+                    line,
+                    name
+                )?;
+                *emitted += 1;
+            } else {
+                *omitted_by_file.entry(file).or_default() += 1;
+            }
         }
+    }
+    for (file, omitted) in omitted_by_file {
+        writeln!(
+            w,
+            "OMITTED:test_coverage:{}: {omitted} additional uncovered code unit(s) omitted",
+            file.display()
+        )?;
     }
     write_final_status(w, true)
 }
@@ -368,10 +384,10 @@ mod tests {
         let passing = PathBuf::from("src/passing.py");
         let file_pcts: HashMap<PathBuf, usize> =
             [(failing.clone(), 40), (passing.clone(), 95)].into();
-        let unreferenced = vec![
-            (failing.clone(), "missing".to_string(), 7),
-            (passing.clone(), "covered_enough".to_string(), 11),
-        ];
+        let mut unreferenced: Vec<_> = (1..=12)
+            .map(|line| (failing.clone(), format!("line_{line}"), line))
+            .collect();
+        unreferenced.push((passing.clone(), "covered_enough".to_string(), 11));
         let mut out = Vec::new();
 
         write_coverage_gate_failure(
@@ -386,7 +402,11 @@ mod tests {
 
         let stdout = String::from_utf8(out).unwrap();
         assert!(stdout.contains("src/failing.py: 40% (90% required)"));
-        assert!(stdout.contains("VIOLATION:test_coverage:src/failing.py:7:missing"));
+        assert!(stdout.contains("VIOLATION:test_coverage:src/failing.py:10:line_10"));
+        assert!(!stdout.contains("VIOLATION:test_coverage:src/failing.py:11:line_11"));
+        assert!(stdout.contains(
+            "OMITTED:test_coverage:src/failing.py: 2 additional uncovered code unit(s) omitted"
+        ));
         assert!(!stdout.contains("covered_enough"));
     }
 }
