@@ -32,21 +32,10 @@ fn path_has_component(path: &Path, name: &str) -> bool {
         .any(|c| matches!(c, Component::Normal(part) if part == name))
 }
 
-fn is_rust_test_module_path(path: &Path) -> bool {
-    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-        return false;
-    };
-    stem.ends_with("_test")
-        || stem.ends_with("_tests")
-        || stem.starts_with("test_")
-        || stem.starts_with("tests_")
-}
-
 fn is_rust_product_path(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == "rs")
         && !path_has_component(path, "tests")
         && !path_has_component(path, "target")
-        && !is_rust_test_module_path(path)
 }
 
 fn lines_from_segments(segments: &[Value]) -> (Vec<usize>, Vec<usize>) {
@@ -290,6 +279,16 @@ fn line_definition(file: PathBuf, line: usize) -> RustCodeDefinition {
     }
 }
 
+fn missing_coverage_definition(file: PathBuf) -> RustCodeDefinition {
+    RustCodeDefinition {
+        name: "llvm_cov_missing".to_string(),
+        kind: CodeUnitKind::Module,
+        file,
+        line: 1,
+        impl_for_type: None,
+    }
+}
+
 fn coverage_for_parsed_file<'a>(
     parsed_path: &Path,
     exact: &HashMap<PathBuf, &'a RustLineCoverage>,
@@ -313,13 +312,31 @@ pub fn analysis_from_line_coverage(
     line_coverage: &[RustLineCoverage],
 ) -> RustTestRefAnalysis {
     let mut analysis = empty_analysis();
+    let parsed_refs = parsed.iter().collect::<Vec<_>>();
+    let cfg_test_module_paths = crate::rust_test_refs::rust_cfg_test_module_paths(&parsed_refs);
+    let static_definition_files = crate::rust_test_refs::analyze_rust_test_refs(&parsed_refs, None)
+        .definitions
+        .into_iter()
+        .map(|def| def.file)
+        .collect::<HashSet<_>>();
     let coverage_by_file = line_coverage
         .iter()
         .map(|coverage| (coverage.file.clone(), coverage))
         .collect::<HashMap<_, _>>();
     for file in parsed {
+        if crate::test_refs::is_in_test_directory(&file.path)
+            || cfg_test_module_paths.contains(&crate::rust_include::canonical_path(&file.path))
+        {
+            continue;
+        }
         let Some(file_cov) = coverage_for_parsed_file(&file.path, &coverage_by_file, line_coverage)
         else {
+            if !static_definition_files.contains(&file.path) {
+                continue;
+            }
+            let def = missing_coverage_definition(file.path.clone());
+            analysis.definitions.push(def.clone());
+            analysis.unreferenced.push(def);
             continue;
         };
         let missing = file_cov
@@ -354,12 +371,40 @@ fn fail_closed_analysis(parsed: &[ParsedRustFile]) -> RustTestRefAnalysis {
     analysis
 }
 
+fn nested_cargo_llvm_cov_analysis(
+    parsed: &[ParsedRustFile],
+    skip_recursive_probe: bool,
+) -> RustTestRefAnalysis {
+    if skip_recursive_probe {
+        return empty_analysis();
+    }
+    eprintln!("error: cargo llvm-cov coverage skipped inside nested cargo llvm-cov run");
+    fail_closed_analysis(parsed)
+}
+
+fn is_running_as_test_binary() -> bool {
+    if std::env::var_os("NEXTEST").is_some() || std::env::var_os("NEXTEST_RUN_ID").is_some() {
+        return true;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    exe.parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == "deps")
+        && exe
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.contains('-'))
+}
+
 pub fn runtime_rust_analysis(repo_root: &Path, parsed: &[ParsedRustFile]) -> RustTestRefAnalysis {
     if parsed.is_empty() {
         return empty_analysis();
     }
     if is_nested_cargo_llvm_cov_run() {
-        return empty_analysis();
+        return nested_cargo_llvm_cov_analysis(parsed, cfg!(test) || is_running_as_test_binary());
     }
     match collect_cargo_llvm_cov(repo_root) {
         Ok(line_coverage) => analysis_from_line_coverage(parsed, &line_coverage),
@@ -370,6 +415,9 @@ pub fn runtime_rust_analysis(repo_root: &Path, parsed: &[ParsedRustFile]) -> Rus
     }
 }
 
+#[cfg(test)]
+#[path = "rust_llvm_cov_missing_test.rs"]
+mod missing_tests;
 #[cfg(test)]
 #[path = "rust_llvm_cov_path_test.rs"]
 mod path_tests;

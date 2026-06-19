@@ -117,7 +117,7 @@ fn run_slipcover_line_coverage_with_program(
             coverage_from_slipcover(file),
         );
     }
-    if !output.status.success() && coverage.is_empty() {
+    if !output.status.success() {
         return Err(format!(
             "slipcover failed (exit {:?})\nstdout:\n{}\nstderr:\n{}",
             output.status.code(),
@@ -318,15 +318,14 @@ mod tests {
     }
 
     #[test]
-    fn run_slipcover_line_coverage_keeps_partial_coverage_on_pytest_failure() {
+    fn run_slipcover_line_coverage_rejects_partial_coverage_on_pytest_failure() {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("pkg.py"), "value = 1\n").unwrap();
 
-        let coverage =
-            run_slipcover_line_coverage(tmp.path(), &["missing_target".to_string()]).unwrap();
+        let err =
+            run_slipcover_line_coverage(tmp.path(), &["missing_target".to_string()]).unwrap_err();
 
-        assert_eq!(coverage["pkg.py"].executed_lines, Vec::<usize>::new());
-        assert_eq!(coverage["pkg.py"].missing_lines, vec![1]);
+        assert!(err.contains("slipcover failed"), "{err}");
     }
 
     #[test]
@@ -367,13 +366,38 @@ echo fake stderr >&2
 exit 7
 "#,
         );
-
         let err =
             run_slipcover_line_coverage_with_program(tmp.path(), &[], &fake_slipcover).unwrap_err();
 
         assert!(err.contains("slipcover failed (exit Some(7))"), "{err}");
         assert!(err.contains("stdout:\nfake stdout"));
         assert!(err.contains("stderr:\nfake stderr"));
+    }
+
+    #[test]
+    fn run_slipcover_line_coverage_rejects_nonempty_coverage_after_failure() {
+        let tmp = TempDir::new().unwrap();
+        let fake_slipcover = tmp.path().join("fake-slipcover-nonempty-failure");
+        write_executable(
+            &fake_slipcover,
+            r#"#!/bin/sh
+out=
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "--out" ]; then
+        shift
+        out="$1"
+    fi
+    shift || true
+done
+printf '{"files":{"pkg.py":{"executed_lines":[1],"missing_lines":[2]}}}\n' > "$out"
+exit 7
+"#,
+        );
+
+        let err =
+            run_slipcover_line_coverage_with_program(tmp.path(), &[], &fake_slipcover).unwrap_err();
+
+        assert!(err.contains("slipcover failed (exit Some(7))"), "{err}");
     }
 
     #[test]

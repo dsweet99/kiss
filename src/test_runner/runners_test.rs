@@ -87,6 +87,32 @@ fn build_pytest_and_cargo_argv_non_empty() {
 }
 
 #[test]
+fn build_cargo_test_argv_defaults_to_workspace_scope() {
+    let c = build_cargo_test_argv(&["member_integration_fails_after_change".into()], &[]);
+
+    assert_eq!(
+        c.as_slice(),
+        [
+            "cargo",
+            "test",
+            "--workspace",
+            "--",
+            "member_integration_fails_after_change"
+        ]
+    );
+}
+
+#[test]
+fn build_cargo_test_argv_honors_explicit_package_scope() {
+    let c = build_cargo_test_argv(&["case".into()], &["-p".into(), "member".into()]);
+
+    assert_eq!(
+        c.as_slice(),
+        ["cargo", "test", "-p", "member", "--", "case"]
+    );
+}
+
+#[test]
 fn shlex_quote_spaces() {
     assert!(shlex_quote("a b").contains('\''));
 }
@@ -152,4 +178,27 @@ fn rust_selectors_include_changed_rust_test_files() {
     let selectors = rust_selectors(tmp.path(), &[], &[path], &[]).unwrap();
 
     assert_eq!(selectors, vec!["changed_test"]);
+}
+
+#[test]
+fn rust_selectors_include_inline_tests_in_changed_source_files() {
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("src").join("lib.rs");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        concat!(
+            "pub fn value() -> usize { 1 }\n",
+            "#[cfg(test)]\n",
+            "mod tests {\n",
+            "    #[test]\n",
+            "    fn inline_failure() { assert_eq!(1, 2); }\n",
+            "}\n",
+        ),
+    )
+    .unwrap();
+
+    let selectors = rust_selectors(tmp.path(), &[path], &[], &[]).unwrap();
+
+    assert_eq!(selectors, vec!["tests::inline_failure"]);
 }

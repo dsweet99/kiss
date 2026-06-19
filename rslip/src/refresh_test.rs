@@ -12,13 +12,13 @@ fn write(path: &Path, contents: &str) {
 }
 
 #[test]
-fn coverage_refresh_pytest_extra_prefers_fast_tests_when_present() {
+fn coverage_refresh_pytest_extra_uses_default_discovery_when_fast_tests_exist() {
     let tmp = TempDir::new().unwrap();
     fs::create_dir_all(tmp.path().join("tests").join("fast")).unwrap();
 
     assert_eq!(
         crate::refresh::coverage_refresh_pytest_extra(tmp.path()),
-        vec!["tests/fast".to_string()]
+        Vec::<String>::new()
     );
 }
 

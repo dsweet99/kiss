@@ -5,10 +5,9 @@ use syn::Item;
 
 #[test]
 fn test_file_detection_and_helpers() {
-    assert!(
-        is_rust_test_file(Path::new("test_utils.rs"))
-            && is_rust_test_file(Path::new("utils_test.rs"))
-    );
+    assert!(!is_rust_test_file(Path::new("src/cache_tests.rs")));
+    assert!(!is_rust_test_file(Path::new("test_utils.rs")));
+    assert!(!is_rust_test_file(Path::new("utils_test.rs")));
     assert!(!is_rust_test_file(Path::new("src/main.rs")));
     assert!(is_rs_file(Path::new("foo.rs")) && !is_rs_file(Path::new("foo.py")));
     assert!(
@@ -16,23 +15,8 @@ fn test_file_detection_and_helpers() {
         ".RS extension must match Rust (Path::extension preserves case)"
     );
     assert!(
-        is_rust_test_file(Path::new("bar_test.RS")),
-        "Rust test file detection must accept uppercase .RS"
-    );
-    assert!(
-        is_rust_test_file(Path::new("fake_helper_test.rs")),
-        "Rust test file detection must not reject ordinary fake_* test names"
-    );
-    assert!(
         is_rust_test_file(Path::new("tests/helpers/too_many_args.rs")),
         "Rust files under test directories are test files; repo fixtures are excluded by discovery boundaries"
-    );
-    assert!(
-        has_test_naming_pattern(Path::new("test_foo.rs"))
-            && has_test_naming_pattern(Path::new("tests_1.rs"))
-            && has_test_naming_pattern(Path::new("tests_coverage.rs"))
-            && has_test_naming_pattern(Path::new("inline_tests.rs"))
-            && !has_test_naming_pattern(Path::new("foo.rs"))
     );
     assert!(definitions::is_private("_helper") && !definitions::is_private("helper"));
     assert!(references::is_rust_keyword("self") && !references::is_rust_keyword("foo"));
@@ -199,6 +183,51 @@ fn test_analyze_refs() {
     assert!(
         covering.iter().any(|(_, f)| f == "tests::t"),
         "foo should be covered by tests::t, got {covering:?}"
+    );
+}
+
+#[test]
+fn external_cfg_test_module_files_are_not_product_definitions() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let parent = tmp.path().join("lib.rs");
+    let helper = tmp.path().join("helper_tests.rs");
+    std::fs::write(
+        &parent,
+        "#[cfg(test)] mod helper_tests;\npub fn product() {}\n",
+    )
+    .unwrap();
+    std::fs::write(&helper, "pub fn fixture_helper() {}\n").unwrap();
+    let parsed_parent = parse_rust_file(&parent).unwrap();
+    let parsed_helper = parse_rust_file(&helper).unwrap();
+
+    let analysis = analyze_rust_test_refs(&[&parsed_parent, &parsed_helper], None);
+
+    let names: Vec<_> = analysis
+        .definitions
+        .iter()
+        .map(|def| def.name.as_str())
+        .collect();
+    assert!(names.contains(&"product"));
+    assert!(!names.contains(&"fixture_helper"));
+}
+
+#[test]
+fn test_like_product_module_files_remain_product_definitions() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let parent = tmp.path().join("lib.rs");
+    let module = tmp.path().join("cache_tests.rs");
+    std::fs::write(&parent, "mod cache_tests;\n").unwrap();
+    std::fs::write(&module, "pub fn cache_product() {}\n").unwrap();
+    let parsed_parent = parse_rust_file(&parent).unwrap();
+    let parsed_module = parse_rust_file(&module).unwrap();
+
+    let analysis = analyze_rust_test_refs(&[&parsed_parent, &parsed_module], None);
+
+    assert!(
+        analysis
+            .definitions
+            .iter()
+            .any(|def| def.name == "cache_product")
     );
 }
 

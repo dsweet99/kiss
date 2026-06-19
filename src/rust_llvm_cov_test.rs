@@ -150,13 +150,15 @@ fn analysis_from_line_coverage_matches_absolute_parsed_paths() {
 }
 
 #[test]
-fn analysis_from_line_coverage_ignores_files_without_runtime_executable_lines() {
+fn analysis_from_line_coverage_fails_closed_without_runtime_executable_lines() {
     let parsed = vec![parsed_rs(PathBuf::from("src/lib.rs"))];
 
     let analysis = analysis_from_line_coverage(&parsed, &[]);
 
-    assert!(analysis.definitions.is_empty());
-    assert!(analysis.unreferenced.is_empty());
+    assert_eq!(analysis.definitions.len(), 1);
+    assert_eq!(analysis.unreferenced.len(), 1);
+    assert_eq!(analysis.unreferenced[0].name, "llvm_cov_missing");
+    assert_eq!(analysis.unreferenced[0].file, PathBuf::from("src/lib.rs"));
 }
 
 #[test]
@@ -196,7 +198,28 @@ fn fail_closed_analysis_preserves_all_input_files_and_empty_sets() {
 }
 
 #[test]
-fn runtime_rust_analysis_skips_nested_cargo_llvm_cov_run() {
+fn nested_cargo_llvm_cov_analysis_fails_closed_when_recursive_skip_is_disabled() {
+    let parsed = vec![parsed_rs(PathBuf::from("src/lib.rs"))];
+
+    let analysis = nested_cargo_llvm_cov_analysis(&parsed, false);
+
+    assert_eq!(analysis.definitions.len(), 1);
+    assert_eq!(analysis.unreferenced.len(), 1);
+    assert_eq!(analysis.unreferenced[0].name, "llvm_cov_failed");
+}
+
+#[test]
+fn nested_cargo_llvm_cov_analysis_can_skip_recursive_test_binary_probe() {
+    let parsed = vec![parsed_rs(PathBuf::from("src/lib.rs"))];
+
+    let analysis = nested_cargo_llvm_cov_analysis(&parsed, true);
+
+    assert!(analysis.definitions.is_empty());
+    assert!(analysis.unreferenced.is_empty());
+}
+
+#[test]
+fn runtime_rust_analysis_skips_nested_cargo_llvm_cov_run_in_test_binary() {
     let _guard = ENV_LOCK.lock().unwrap();
     unsafe { std::env::set_var("CARGO_LLVM_COV", "1") };
     let tmp = tempfile::TempDir::new().unwrap();
@@ -210,7 +233,7 @@ fn runtime_rust_analysis_skips_nested_cargo_llvm_cov_run() {
 }
 
 #[test]
-fn runtime_rust_analysis_skips_nested_target_dir_coverage_run() {
+fn runtime_rust_analysis_skips_nested_target_dir_coverage_run_in_test_binary() {
     let _guard = ENV_LOCK.lock().unwrap();
     unsafe { std::env::set_var("CARGO_LLVM_COV_TARGET_DIR", "/tmp/kiss-nested-cov") };
     let tmp = tempfile::TempDir::new().unwrap();
@@ -361,7 +384,7 @@ fn temp_output_path_is_process_scoped_json_path() {
 }
 
 #[test]
-fn analysis_from_line_coverage_rejects_ambiguous_suffix_matches() {
+fn analysis_from_line_coverage_fails_closed_on_ambiguous_suffix_matches() {
     let parsed = vec![parsed_rs(PathBuf::from("/repo/src/lib.rs"))];
     let coverage = vec![
         RustLineCoverage {
@@ -378,8 +401,13 @@ fn analysis_from_line_coverage_rejects_ambiguous_suffix_matches() {
 
     let analysis = analysis_from_line_coverage(&parsed, &coverage);
 
-    assert!(analysis.definitions.is_empty());
-    assert!(analysis.unreferenced.is_empty());
+    assert_eq!(analysis.definitions.len(), 1);
+    assert_eq!(analysis.unreferenced.len(), 1);
+    assert_eq!(analysis.unreferenced[0].name, "llvm_cov_missing");
+    assert_eq!(
+        analysis.unreferenced[0].file,
+        PathBuf::from("/repo/src/lib.rs")
+    );
 }
 
 #[test]

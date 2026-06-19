@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn rust_product_path_excludes_test_module_filenames() {
+fn rust_product_path_includes_source_modules_with_test_like_names() {
     assert!(is_rust_product_path(Path::new("src/lib.rs")));
     for rel in [
         "src/foo_test.rs",
@@ -11,10 +11,12 @@ fn rust_product_path_excludes_test_module_filenames() {
         "src/test_refs/coverage_weighted/branch_tests.rs",
     ] {
         assert!(
-            !is_rust_product_path(Path::new(rel)),
-            "{rel} should not be treated as product code"
+            is_rust_product_path(Path::new(rel)),
+            "{rel} is compiled product code unless it lives under tests/ or target/"
         );
     }
+    assert!(!is_rust_product_path(Path::new("tests/foo_test.rs")));
+    assert!(!is_rust_product_path(Path::new("target/debug/build.rs")));
 }
 
 #[test]

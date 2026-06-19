@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use syn::Attribute;
 
+mod cfg_test_modules;
 mod coverage;
 mod coverage_map;
 mod definitions;
@@ -26,6 +27,7 @@ mod tests_2;
 #[cfg(test)]
 mod tests_vault;
 
+pub use cfg_test_modules::rust_cfg_test_module_paths;
 pub use coverage::compute_rs_weighted_file_pcts;
 use coverage_map::build_rust_coverage_map;
 pub use definitions::RustCodeDefinition;
@@ -49,6 +51,15 @@ use crate::test_refs::file_to_module_suffix;
 type PerTestUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
 type PerTestCallUsage = Vec<(PathBuf, Vec<(String, HashSet<String>)>)>;
 
+struct IngestRustTestRefs<'a> {
+    definitions: &'a mut Vec<RustCodeDefinition>,
+    test_references: &'a mut HashSet<String>,
+    test_direct_references: &'a mut HashSet<String>,
+    call_references: &'a mut HashSet<String>,
+    qualified_references: &'a mut HashSet<QualifiedModuleRef>,
+    per_test_usage: &'a mut PerTestUsage,
+}
+
 #[derive(Debug, Clone)]
 pub struct RustTestRefAnalysis {
     pub definitions: Vec<RustCodeDefinition>,
@@ -64,22 +75,9 @@ fn is_rs_file(path: &Path) -> bool {
     crate::rust_include::is_rust_source_path(path)
 }
 
-fn has_test_naming_pattern(path: &Path) -> bool {
-    path.file_stem()
-        .and_then(|n| n.to_str())
-        .is_some_and(|name| {
-            name.ends_with("_test")
-                || name.starts_with("test_")
-                || name.starts_with("tests")
-                || name.ends_with("_tests")
-                || name.ends_with("_integration")
-        })
-}
-
 #[must_use]
 pub fn is_rust_test_file(path: &Path) -> bool {
-    is_rs_file(path)
-        && (has_test_naming_pattern(path) || crate::test_refs::is_in_test_directory(path))
+    is_rs_file(path) && crate::test_refs::is_in_test_directory(path)
 }
 
 pub(crate) fn has_test_attribute(attrs: &[Attribute]) -> bool {
@@ -130,8 +128,13 @@ fn has_inline_test_module(ast: &syn::File) -> bool {
         .any(|item| matches!(item, syn::Item::Mod(m) if has_cfg_test_attribute(&m.attrs)))
 }
 
-fn is_external_rust_test_file(parsed: &ParsedRustFile) -> bool {
-    is_rust_test_file(&parsed.path) && !has_inline_test_module(&parsed.ast)
+fn is_external_rust_test_file(
+    parsed: &ParsedRustFile,
+    cfg_test_module_paths: &HashSet<PathBuf>,
+) -> bool {
+    (is_rust_test_file(&parsed.path)
+        || cfg_test_module_paths.contains(&crate::rust_include::canonical_path(&parsed.path)))
+        && !has_inline_test_module(&parsed.ast)
 }
 
 fn is_directly_referenced(
@@ -220,40 +223,44 @@ fn collect_non_test_file_refs(
 
 fn ingest_parsed_rust_file(
     parsed: &ParsedRustFile,
-    definitions: &mut Vec<RustCodeDefinition>,
-    test_references: &mut HashSet<String>,
-    test_direct_references: &mut HashSet<String>,
-    call_references: &mut HashSet<String>,
-    qualified_references: &mut HashSet<QualifiedModuleRef>,
-    per_test_usage: &mut PerTestUsage,
+    cfg_test_module_paths: &HashSet<PathBuf>,
+    state: &mut IngestRustTestRefs<'_>,
 ) {
-    if is_external_rust_test_file(parsed) {
-        collect_rust_references(&parsed.ast, test_references, qualified_references);
-        collect_rust_references(&parsed.ast, test_direct_references, &mut HashSet::new());
+    if is_external_rust_test_file(parsed, cfg_test_module_paths) {
+        collect_rust_references(
+            &parsed.ast,
+            state.test_references,
+            state.qualified_references,
+        );
+        collect_rust_references(
+            &parsed.ast,
+            state.test_direct_references,
+            &mut HashSet::new(),
+        );
         collect_executable_call_references_from_test_fns(
             &parsed.ast,
-            call_references,
+            state.call_references,
             &mut HashSet::new(),
         );
     } else if definitions::is_binary_entry_point(&parsed.path) {
         collect_non_test_file_refs(
             &parsed.ast,
-            test_references,
-            test_direct_references,
-            call_references,
+            state.test_references,
+            state.test_direct_references,
+            state.call_references,
         );
     } else {
-        collect_rust_definitions(&parsed.ast, &parsed.path, definitions);
+        collect_rust_definitions(&parsed.ast, &parsed.path, state.definitions);
         collect_non_test_file_refs(
             &parsed.ast,
-            test_references,
-            test_direct_references,
-            call_references,
+            state.test_references,
+            state.test_direct_references,
+            state.call_references,
         );
     }
     let test_funcs = collect_per_test_usage(&parsed.ast);
     if !test_funcs.is_empty() {
-        per_test_usage.push((parsed.path.clone(), test_funcs));
+        state.per_test_usage.push((parsed.path.clone(), test_funcs));
     }
 }
 
@@ -296,6 +303,7 @@ pub fn analyze_rust_test_refs(
     parsed_files: &[&ParsedRustFile],
     graph: Option<&DependencyGraph>,
 ) -> RustTestRefAnalysis {
+    let cfg_test_module_paths = rust_cfg_test_module_paths(parsed_files);
     let mut definitions = Vec::new();
     let mut test_references = HashSet::new();
     let mut test_direct_references = HashSet::new();
@@ -303,20 +311,23 @@ pub fn analyze_rust_test_refs(
     let mut qualified_references = HashSet::new();
     let mut per_test_usage: PerTestUsage = Vec::new();
     for parsed in parsed_files {
-        ingest_parsed_rust_file(
-            parsed,
-            &mut definitions,
-            &mut test_references,
-            &mut test_direct_references,
-            &mut call_references,
-            &mut qualified_references,
-            &mut per_test_usage,
-        );
+        let mut state = IngestRustTestRefs {
+            definitions: &mut definitions,
+            test_references: &mut test_references,
+            test_direct_references: &mut test_direct_references,
+            call_references: &mut call_references,
+            qualified_references: &mut qualified_references,
+            per_test_usage: &mut per_test_usage,
+        };
+        ingest_parsed_rust_file(parsed, &cfg_test_module_paths, &mut state);
     }
     let production_files: Vec<&ParsedRustFile> = parsed_files
         .iter()
         .copied()
-        .filter(|p| !is_external_rust_test_file(p) && !definitions::is_binary_entry_point(&p.path))
+        .filter(|p| {
+            !is_external_rust_test_file(p, &cfg_test_module_paths)
+                && !definitions::is_binary_entry_point(&p.path)
+        })
         .collect();
     let name_files = crate::test_refs::build_name_file_map(
         definitions

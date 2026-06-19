@@ -26,10 +26,7 @@ pub fn refresh_with_collector(
     refresh_selected_with_collector(repo_root, collector, &mut files, nodeids, j)
 }
 
-pub(crate) fn coverage_refresh_pytest_extra(repo_root: &Path) -> Vec<String> {
-    if repo_root.join("tests").join("fast").is_dir() {
-        return vec!["tests/fast".to_string()];
-    }
+pub(crate) fn coverage_refresh_pytest_extra(_repo_root: &Path) -> Vec<String> {
     Vec::new()
 }
 

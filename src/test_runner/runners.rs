@@ -127,6 +127,14 @@ pub fn build_pytest_fork_argv(nodeid: &str, extra: &[String]) -> Vec<String> {
 
 pub fn build_cargo_test_argv(selectors: &[String], extra: &[String]) -> Vec<String> {
     let mut v = vec!["cargo".into(), "test".into()];
+    if !extra.iter().any(|arg| {
+        matches!(
+            arg.as_str(),
+            "--workspace" | "--all" | "-p" | "--package" | "--manifest-path"
+        )
+    }) {
+        v.push("--workspace".into());
+    }
     v.extend(extra.iter().cloned());
     v.push("--".into());
     v.extend(selectors.iter().cloned());
@@ -184,6 +192,11 @@ pub fn rust_selectors(
         }
     }
     for (tp, tid) in enumerate_tests_in_changed_files(test_paths)? {
+        if kiss::Language::is_rust_path(&tp) {
+            rs_sel.insert(tid);
+        }
+    }
+    for (tp, tid) in enumerate_tests_in_changed_files(source_paths)? {
         if kiss::Language::is_rust_path(&tp) {
             rs_sel.insert(tid);
         }
