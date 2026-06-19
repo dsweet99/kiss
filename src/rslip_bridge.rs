@@ -28,7 +28,11 @@ pub fn runtime_py_analysis(
         };
     }
     let j = jobs.unwrap_or_else(pyfork::default_parallelism);
-    match rslip::refresh_line_coverage_and_store(repo_root, j) {
+    let collector = rslip::PytestTraceCollector;
+    let collect = |root: &Path, selectors: &[String], parallelism: usize| {
+        collector.collect(root, selectors, parallelism)
+    };
+    match rslip::refresh_and_store(repo_root, &collect, j) {
         Ok(db) => bridge_analysis_from_database(repo_root, parsed, &db),
         Err(err) => {
             eprintln!("error: rslip coverage refresh failed: {err}");
@@ -132,3 +136,6 @@ pub(crate) fn normalize_against(repo_root: &Path, path: &Path) -> String {
 #[cfg(test)]
 #[path = "rslip_bridge_inline_test.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "rslip_bridge_warm_cache_test.rs"]
+mod warm_cache_tests;

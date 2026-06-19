@@ -388,7 +388,7 @@ fn analysis_from_line_coverage_fails_closed_on_ambiguous_suffix_matches() {
     let parsed = vec![parsed_rs(PathBuf::from("/repo/src/lib.rs"))];
     let coverage = vec![
         RustLineCoverage {
-            file: PathBuf::from("repo/src/lib.rs"),
+            file: PathBuf::from("src/lib.rs"),
             executable_lines: vec![1],
             missing_lines: vec![],
         },

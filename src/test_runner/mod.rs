@@ -81,12 +81,19 @@ pub(crate) fn plan_selectors(
     let py_sel = if lang_filter == Some(Language::Rust) {
         Vec::new()
     } else {
-        let collected = pyfork::collect_nodeids(&repo_root, &[])?;
-        match rslip::load_database(&repo_root)? {
-            None => {
-                return Err(format!("error: kiss test: {COLD_CACHE_MSG}"));
+        let collected = pyfork::collect_nodeids(&repo_root, &pytest_ignore_args(&ignore_norm))?;
+        if collected.is_empty() {
+            Vec::new()
+        } else {
+            match rslip::load_database(&repo_root)? {
+                None => {
+                    return Err(format!("error: kiss test: {COLD_CACHE_MSG}"));
+                }
+                Some(db) if is_line_only_rslip_database(&db) => {
+                    return Err(format!("error: kiss test: {COLD_CACHE_MSG}"));
+                }
+                Some(db) => rslip::scheduled_nodeids(&repo_root, &collected, &db)?,
             }
-            Some(db) => rslip::scheduled_nodeids(&repo_root, &collected, &db)?,
         }
     };
     let rs_sel = if lang_filter == Some(Language::Python) {
@@ -122,6 +129,17 @@ pub(crate) fn plan_selectors(
         py_sel,
         rs_sel,
     })
+}
+
+fn pytest_ignore_args(ignore: &[String]) -> Vec<String> {
+    ignore
+        .iter()
+        .map(|prefix| format!("--ignore={prefix}"))
+        .collect()
+}
+
+fn is_line_only_rslip_database(db: &rslip::Database) -> bool {
+    db.tests.is_empty() && db.source_to_covering_tests.is_empty()
 }
 
 pub(crate) fn run_selectors(
@@ -267,103 +285,8 @@ mod behavior_tests {
 }
 
 #[cfg(test)]
-mod plan_tests {
-    use std::path::Path;
-    use std::process::Command;
-
-    use tempfile::TempDir;
-
-    use super::*;
-    use crate::test_git::TestChangeMode;
-
-    fn git_in(dir: &Path) -> Command {
-        crate::test_git::git_command(dir)
-    }
-
-    fn init(tmp: &TempDir) {
-        assert!(git_in(tmp.path()).arg("init").status().unwrap().success());
-        git_in(tmp.path())
-            .args(["config", "user.email", "t@t.t"])
-            .status()
-            .unwrap();
-        git_in(tmp.path())
-            .args(["config", "user.name", "t"])
-            .status()
-            .unwrap();
-    }
-
-    #[test]
-    fn plan_selectors_commit_smoke_without_cache_errors() {
-        let _cwd_guard = crate::cwd_test_lock::lock();
-        let tmp = TempDir::new().unwrap();
-        init(&tmp);
-        std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-        git_in(tmp.path()).args(["add", "."]).status().unwrap();
-        git_in(tmp.path())
-            .args(["commit", "-m", "m"])
-            .status()
-            .unwrap();
-        let orig = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
-        let result = plan_selectors(TestChangeMode::Commit, None, None, &[], None, None);
-        assert!(
-            result
-                .as_ref()
-                .is_err_and(|err| err.contains(COLD_CACHE_MSG))
-        );
-        std::env::set_current_dir(orig).unwrap();
-    }
-
-    #[test]
-    fn run_test_returns_error_outside_git_repo() {
-        let _cwd_guard = crate::cwd_test_lock::lock();
-        let tmp = TempDir::new().unwrap();
-        let orig = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
-        let code = run_test(RunTestCmdArgs {
-            mode: TestChangeMode::Commit,
-            main_branch_cli: None,
-            base_branch_cli: None,
-            dry_run: true,
-            extra: &[],
-            ignore: &[],
-            lang_filter: None,
-            jobs: None,
-            config_main_branch: None,
-        });
-        std::env::set_current_dir(orig).unwrap();
-        assert_eq!(code, 1);
-    }
-
-    #[test]
-    fn plan_selectors_rust_filter_does_not_require_rslip_cache() {
-        let _cwd_guard = crate::cwd_test_lock::lock();
-        let tmp = TempDir::new().unwrap();
-        init(&tmp);
-        std::fs::write(tmp.path().join("lib.rs"), "pub fn f() {}\n").unwrap();
-        git_in(tmp.path()).args(["add", "."]).status().unwrap();
-        git_in(tmp.path())
-            .args(["commit", "-m", "m"])
-            .status()
-            .unwrap();
-        let orig = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
-
-        let result = plan_selectors(
-            TestChangeMode::Commit,
-            None,
-            None,
-            &[],
-            Some(Language::Rust),
-            None,
-        );
-
-        std::env::set_current_dir(orig).unwrap();
-        let planned = result.expect("rust-only planning should not load rslip cache");
-        assert!(planned.py_sel.is_empty());
-        assert!(planned.rs_sel.is_empty());
-    }
-}
+#[path = "plan_tests.rs"]
+mod plan_tests;
 
 #[cfg(test)]
 #[path = "runners_test.rs"]

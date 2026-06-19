@@ -263,12 +263,10 @@ fn empty_analysis() -> RustTestRefAnalysis {
         coverage_map: HashMap::new(),
     }
 }
-
 fn is_nested_cargo_llvm_cov_run() -> bool {
     std::env::var_os("CARGO_LLVM_COV").is_some()
         || std::env::var_os("CARGO_LLVM_COV_TARGET_DIR").is_some()
 }
-
 fn line_definition(file: PathBuf, line: usize) -> RustCodeDefinition {
     RustCodeDefinition {
         name: format!("line_{line}"),
@@ -288,7 +286,6 @@ fn missing_coverage_definition(file: PathBuf) -> RustCodeDefinition {
         impl_for_type: None,
     }
 }
-
 fn coverage_for_parsed_file<'a>(
     parsed_path: &Path,
     exact: &HashMap<PathBuf, &'a RustLineCoverage>,
@@ -297,16 +294,19 @@ fn coverage_for_parsed_file<'a>(
     if let Some(coverage) = exact.get(parsed_path) {
         return Some(*coverage);
     }
-    let mut matches = all
+    let best_specificity = all
         .iter()
-        .filter(|coverage| parsed_path.ends_with(&coverage.file));
-    let first = matches.next()?;
-    if matches.next().is_some() {
-        return None;
-    }
-    Some(first)
+        .filter(|coverage| parsed_path.ends_with(&coverage.file))
+        .map(|coverage| (coverage.file.components().count(), coverage))
+        .map(|(specificity, _)| specificity)
+        .max()?;
+    let mut best = all.iter().filter(|coverage| {
+        parsed_path.ends_with(&coverage.file)
+            && coverage.file.components().count() == best_specificity
+    });
+    let coverage = best.next()?;
+    best.next().is_none().then_some(coverage)
 }
-
 pub fn analysis_from_line_coverage(
     parsed: &[ParsedRustFile],
     line_coverage: &[RustLineCoverage],
