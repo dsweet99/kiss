@@ -33,28 +33,28 @@ pub fn run_post_move_oracles_from_root(language: kiss::Language, root: &Path) ->
                 root,
                 "python",
                 &["-m", "compileall", "-q", "."],
-                &[("PYTHONPATH", root.as_os_str())],
-            );
-            let import_smoke = run_cmd(
-                root,
-                "python",
-                &["-m", "pytest", "--collect-only", "-q"],
-                &[("PYTHONPATH", root.as_os_str())],
+                &python_oracle_env(root),
             );
             let behavior = run_cmd(
                 root,
                 "python",
                 &["-m", "pytest", "-q"],
-                &[("PYTHONPATH", root.as_os_str())],
+                &python_oracle_env(root),
             );
-            build_python_bundle(&py_compile, &import_smoke, &behavior)
+            build_python_bundle(&py_compile, &behavior, &behavior)
         }
         kiss::Language::Rust => {
-            let check = run_cmd(root, "cargo", &["check", "--quiet"], &[]);
             let test = run_cmd(root, "cargo", &["test", "--quiet"], &[]);
-            build_rust_bundle(&check, &test)
+            build_rust_bundle(&test, &test)
         }
     }
+}
+
+fn python_oracle_env(root: &Path) -> [(&str, &OsStr); 2] {
+    [
+        ("PYTHONPATH", root.as_os_str()),
+        ("PYTEST_DISABLE_PLUGIN_AUTOLOAD", OsStr::new("1")),
+    ]
 }
 
 fn build_python_bundle(

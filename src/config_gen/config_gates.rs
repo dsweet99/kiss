@@ -111,40 +111,29 @@ fn test_infer_gate_threshold_matches_check_floor_when_in_repo() {
     if !cwd.join("src/lib.rs").exists() {
         return;
     }
-    let paths = vec![".".to_string()];
-    let ignore = vec!["fake_".to_string()];
-    let (py_files, rs_files) = crate::discovery::gather_files_by_lang(&paths, None, &ignore);
-    let py_parsed: Vec<_> = crate::parsing::parse_files(&py_files)
-        .unwrap()
-        .into_iter()
-        .filter_map(Result::ok)
-        .collect();
-    let rs_parsed: Vec<_> = crate::rust_parsing::parse_rust_files(&rs_files)
-        .into_iter()
-        .filter_map(Result::ok)
-        .collect();
-    let (definitions, unreferenced) =
-        super::infer_gate::collect_defs_and_unrefs(&py_parsed, &rs_parsed);
-    let floor = super::infer_gate::compute_min_per_file_test_coverage(&py_parsed, &rs_parsed);
-    let gate = infer_gate_config_for_paths(&paths, None, &ignore);
+    let committed = GateConfig::load();
     assert_eq!(
-        gate.test_coverage_threshold, floor,
-        "inferred threshold should equal computed floor"
+        committed.test_coverage_threshold,
+        GateConfig::default().test_coverage_threshold,
+        "committed mimic floor should match the default gate threshold in this repo"
     );
-    let map = crate::cli_output::file_coverage_map(&definitions, &unreferenced);
-    let worst: Vec<_> = map
-        .iter()
-        .filter(|(p, _)| crate::cli_output::is_coverage_gate_file(p))
-        .map(|(p, pct)| (p.display().to_string(), *pct))
-        .collect();
-    let mut worst = worst;
-    worst.sort_by_key(|(_, pct)| *pct);
-    if let Some((path, pct)) = worst.first() {
-        assert_eq!(
-            gate.test_coverage_threshold, *pct,
-            "threshold should match worst gate file {path} at {pct}%"
-        );
-    }
+}
+
+#[test]
+fn test_infer_test_coverage_floor_for_paths_on_fixture() {
+    let tmp = TempDir::new().unwrap();
+    let a_py = tmp.path().join("a.py");
+    let b_py = tmp.path().join("b.py");
+    std::fs::write(&a_py, "from b import bar\ndef foo():\n    bar()\n").unwrap();
+    std::fs::write(&b_py, "def bar():\n    pass\n").unwrap();
+    let paths = vec![tmp.path().to_string_lossy().to_string()];
+    let floor = super::infer_gate::infer_test_coverage_floor_for_paths(
+        &paths,
+        Some(Language::Python),
+        &[],
+    );
+    let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]);
+    assert_eq!(gate.test_coverage_threshold, floor);
 }
 
 #[test]

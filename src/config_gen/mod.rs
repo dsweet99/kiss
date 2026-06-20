@@ -13,7 +13,7 @@ pub use collect::{
 };
 pub use config_keys::{python_config_key, rust_config_key};
 pub use generate::{GenerateConfigParams, generate_config_toml_by_language};
-pub use infer_gate::infer_gate_config_for_paths;
+pub use infer_gate::{infer_gate_config_for_paths, infer_test_coverage_floor_for_paths};
 pub use merge::{MergeLanguageUpdate, merge_config_toml};
 
 use std::path::Path;

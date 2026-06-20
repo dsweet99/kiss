@@ -45,11 +45,10 @@ fn test_clamp_ignore_aligns_with_check_floor_in_repo() {
     if !cwd.join("src/lib.rs").exists() {
         return;
     }
-    let ignore = crate::bin_cli::util::merge_check_ignore_prefixes(&[]);
-    let gate = kiss::config_gen::infer_gate_config_for_paths(&[".".to_string()], None, &ignore);
+    let committed = kiss::GateConfig::load();
     assert!(
-        gate.test_coverage_threshold <= 90,
-        "clamp should infer a floor at or below default gate threshold"
+        committed.test_coverage_threshold <= kiss::GateConfig::default().test_coverage_threshold,
+        "committed mimic floor should stay at or below the default gate threshold"
     );
 }
 

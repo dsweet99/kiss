@@ -163,10 +163,40 @@ mod coverage_witness {
     }
 
     #[test]
-    fn witness_test_runner_api() {
+    fn witness_test_runner_api_types() {
         let _ = RunTestCmdArgs::witness();
         let _ = PlannedSelectors::witness();
+    }
+
+    #[test]
+    fn witness_run_test_dry_run_smoke() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        crate::test_git::git_command(tmp.path())
+            .arg("init")
+            .status()
+            .unwrap();
+        crate::test_git::git_command(tmp.path())
+            .args(["config", "user.email", "t@t.t"])
+            .status()
+            .unwrap();
+        crate::test_git::git_command(tmp.path())
+            .args(["config", "user.name", "t"])
+            .status()
+            .unwrap();
+        std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
+        crate::test_git::git_command(tmp.path())
+            .args(["add", "."])
+            .status()
+            .unwrap();
+        crate::test_git::git_command(tmp.path())
+            .args(["commit", "-m", "m"])
+            .status()
+            .unwrap();
+        let orig = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
         assert_eq!(run_test(RunTestCmdArgs::witness()), 0);
+        std::env::set_current_dir(orig).unwrap();
     }
 }
 

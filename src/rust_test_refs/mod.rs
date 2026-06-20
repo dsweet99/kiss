@@ -26,6 +26,9 @@ mod tests_2;
 #[cfg(test)]
 mod tests_vault;
 
+#[cfg(test)]
+mod witness_tests;
+
 pub use coverage::compute_rs_weighted_file_pcts;
 pub use definitions::RustCodeDefinition;
 use definitions::{
@@ -296,6 +299,21 @@ pub fn analyze_rust_test_refs(
     parsed_files: &[&ParsedRustFile],
     graph: Option<&DependencyGraph>,
 ) -> RustTestRefAnalysis {
+    analyze_rust_test_refs_inner(parsed_files, graph, true)
+}
+
+pub fn analyze_rust_test_refs_no_map(
+    parsed_files: &[&ParsedRustFile],
+    graph: Option<&DependencyGraph>,
+) -> RustTestRefAnalysis {
+    analyze_rust_test_refs_inner(parsed_files, graph, false)
+}
+
+fn analyze_rust_test_refs_inner(
+    parsed_files: &[&ParsedRustFile],
+    graph: Option<&DependencyGraph>,
+    need_coverage_map: bool,
+) -> RustTestRefAnalysis {
     let mut definitions = Vec::new();
     let mut test_references = HashSet::new();
     let mut test_direct_references = HashSet::new();
@@ -371,13 +389,17 @@ pub fn analyze_rust_test_refs(
             }
         })
         .collect();
-    let coverage_map = build_rust_coverage_map(
-        &definitions,
-        &per_test_call_usage,
-        &name_files,
-        &disambiguation,
-        &qualified_call_references,
-    );
+    let coverage_map = if need_coverage_map {
+        build_rust_coverage_map(
+            &definitions,
+            &per_test_call_usage,
+            &name_files,
+            &disambiguation,
+            &qualified_call_references,
+        )
+    } else {
+        HashMap::new()
+    };
     RustTestRefAnalysis {
         definitions,
         test_references,
@@ -385,31 +407,5 @@ pub fn analyze_rust_test_refs(
         propagated_references,
         unreferenced,
         coverage_map,
-    }
-}
-
-#[cfg(test)]
-mod coverage_witness {
-    use super::*;
-    use std::path::Path;
-
-    impl RustTestRefAnalysis {
-        fn witness() -> Self {
-            Self {
-                definitions: vec![],
-                test_references: HashSet::new(),
-                call_references: HashSet::new(),
-                propagated_references: HashSet::new(),
-                unreferenced: vec![],
-                coverage_map: HashMap::new(),
-            }
-        }
-    }
-
-    #[test]
-    fn witness_rust_test_ref_analysis() {
-        let _ = RustTestRefAnalysis::witness();
-        assert!(!is_binary_entry_point(Path::new("tests/integration.rs")));
-        assert!(is_binary_entry_point(Path::new("src/main.rs")));
     }
 }

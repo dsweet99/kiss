@@ -12,8 +12,8 @@ use crate::graph::{analyze_graph, build_dependency_graph};
 use crate::parsing::{ParsedFile, parse_files};
 use crate::rust_graph::build_rust_dependency_graph;
 use crate::rust_parsing::{ParsedRustFile, parse_rust_files};
-use crate::rust_test_refs::analyze_rust_test_refs;
-use crate::test_refs::analyze_test_refs;
+use crate::rust_test_refs::analyze_rust_test_refs_no_map;
+use crate::test_refs::analyze_test_refs_quick;
 
 type DefLineList = Vec<(PathBuf, String, usize)>;
 
@@ -23,7 +23,6 @@ pub fn infer_gate_config_for_paths(
     ignore: &[String],
 ) -> GateConfig {
     let (py_files, rs_files) = gather_files_by_lang(paths, lang, ignore);
-    let mut gate = GateConfig::default();
 
     let py_parsed = if py_files.is_empty() {
         Vec::new()
@@ -44,10 +43,45 @@ pub fn infer_gate_config_for_paths(
             .collect::<Vec<ParsedRustFile>>()
     };
 
-    gate.test_coverage_threshold = compute_min_per_file_test_coverage(&py_parsed, &rs_parsed);
+    infer_gate_config_from_parsed(&py_parsed, &rs_parsed)
+}
+
+pub fn infer_test_coverage_floor_for_paths(
+    paths: &[String],
+    lang: Option<Language>,
+    ignore: &[String],
+) -> usize {
+    let (py_files, rs_files) = gather_files_by_lang(paths, lang, ignore);
+    let py_parsed = if py_files.is_empty() {
+        Vec::new()
+    } else {
+        parse_files(&py_files)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .collect::<Vec<ParsedFile>>()
+    };
+    let rs_parsed = if rs_files.is_empty() {
+        Vec::new()
+    } else {
+        parse_rust_files(&rs_files)
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect::<Vec<ParsedRustFile>>()
+    };
+    compute_min_per_file_test_coverage(&py_parsed, &rs_parsed)
+}
+
+pub(crate) fn infer_gate_config_from_parsed(
+    py_parsed: &[ParsedFile],
+    rs_parsed: &[ParsedRustFile],
+) -> GateConfig {
+    let mut gate = GateConfig::default();
+    gate.test_coverage_threshold = compute_min_per_file_test_coverage(py_parsed, rs_parsed);
     gate.duplication_enabled =
-        !has_reportable_duplicates(&py_parsed, &rs_parsed, gate.min_similarity);
-    gate.orphan_module_enabled = !has_orphan_modules(&py_parsed, &rs_parsed);
+        !has_reportable_duplicates(py_parsed, rs_parsed, gate.min_similarity);
+    gate.orphan_module_enabled = !has_orphan_modules(py_parsed, rs_parsed);
     gate
 }
 
@@ -68,7 +102,7 @@ pub(super) fn extend_defs_from_py(
         return;
     }
     let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-    let a = analyze_test_refs(&refs, None);
+    let a = analyze_test_refs_quick(&refs);
     definitions.extend(
         a.definitions
             .iter()
@@ -91,7 +125,7 @@ pub(super) fn extend_defs_from_rs(
     }
     let refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
     let graph = build_rust_dependency_graph(&refs);
-    let a = analyze_rust_test_refs(&refs, Some(&graph));
+    let a = analyze_rust_test_refs_no_map(&refs, Some(&graph));
     definitions.extend(
         a.definitions
             .iter()
