@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use kiss::check_universe_cache::CachedCoverageItem;
-use kiss::cli_output::file_coverage_map;
+use kiss::cli_output::{file_coverage_map, format_unreferenced_unit_coverage_message};
 use kiss::graph::is_entry_point;
 use kiss::{DependencyGraph, Violation};
 
@@ -63,7 +63,7 @@ pub(crate) fn build_coverage_violation_with_graph(
         line,
         file_pct,
     } = spec;
-    let mut message = format!("{file_pct}% covered. Add test coverage for this code unit.");
+    let mut message = format_unreferenced_unit_coverage_message(file_pct);
     let mut suggestion = String::new();
 
     let graph = graph_for_path(&file, graphs.py, graphs.rs);
@@ -194,7 +194,12 @@ pub(crate) fn build_viols_after_merge(
         .map(CachedCoverageItem::into_tuple)
         .collect();
     let (_, _, _, mut unreferenced_focus) = compute_test_coverage_from_lists(&defs, &unref, focus);
-    let mut file_pcts = file_coverage_map(&defs, &unreferenced_focus);
+    let unweighted_file_pcts = file_coverage_map(&defs, &unreferenced_focus);
+    let pre_overlay_unreferenced: HashSet<_> = unreferenced_focus
+        .iter()
+        .map(|(f, n, l)| (f.clone(), n.clone(), *l))
+        .collect();
+    let mut file_pcts = unweighted_file_pcts.clone();
     if let Some(weighted) = weighted_pcts {
         for (path, pct) in weighted {
             file_pcts.insert(path.clone(), *pct);
@@ -212,7 +217,11 @@ pub(crate) fn build_viols_after_merge(
         .into_iter()
         .filter(|(path, name, _)| is_coverage_report_target(path, name, report_entry_points))
         .map(|(file, name, line)| {
-            let pct = file_pcts.get(&file).copied().unwrap_or(0);
+            let pct = if pre_overlay_unreferenced.contains(&(file.clone(), name.clone(), line)) {
+                unweighted_file_pcts.get(&file).copied().unwrap_or(0)
+            } else {
+                file_pcts.get(&file).copied().unwrap_or(0)
+            };
             build_coverage_violation_with_graph(
                 CoverageViolationSpec {
                     file,

@@ -125,7 +125,7 @@ pub fn coverage_violation(file: PathBuf, name: String, line: usize, file_pct: us
         metric: "test_coverage".to_string(),
         value: 0,
         threshold: 0,
-        message: format!("{file_pct}% covered. Add test coverage for this code unit."),
+        message: kiss::cli_output::format_unreferenced_unit_coverage_message(file_pct),
         suggestion: String::new(),
     }
 }
@@ -199,12 +199,30 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus: &FocusFilter) -> Vec<Vio
         .map(CachedCoverageItem::into_tuple)
         .collect();
     let (_, _, _, unreferenced) = compute_test_coverage_from_lists(&defs, &unref, focus);
+    let unweighted_file_pcts = kiss::cli_output::file_coverage_map(&defs, &unreferenced);
+    let def_unreferenced: std::collections::HashSet<_> = unreferenced
+        .iter()
+        .map(|(f, n, l)| (f.clone(), n.clone(), *l))
+        .collect();
 
     if !cache.coverage_violations.is_empty() {
         return cache
             .coverage_violations
             .iter()
-            .map(|v| v.clone().into_violation())
+            .map(|v| {
+                let mut viol = v.clone().into_violation();
+                let key = (viol.file.clone(), viol.unit_name.clone(), viol.line);
+                let pct = if def_unreferenced.contains(&key) {
+                    unweighted_file_pcts.get(&viol.file).copied().unwrap_or(0)
+                } else {
+                    stored_coverage_pct(&viol.message).unwrap_or(0)
+                };
+                viol.message = refresh_coverage_violation_message(
+                    &viol.message,
+                    &kiss::cli_output::format_unreferenced_unit_coverage_message(pct),
+                );
+                viol
+            })
             .filter(|v| {
                 crate::analyze::is_focus_file(&v.file, focus)
                     && crate::analyze::is_coverage_report_target(
@@ -216,17 +234,34 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus: &FocusFilter) -> Vec<Vio
             .collect();
     }
 
-    let file_pcts = kiss::cli_output::file_coverage_map(&defs, &unreferenced);
     unreferenced
         .into_iter()
         .filter(|(path, name, _)| {
             crate::analyze::is_coverage_report_target(path, name, true)
         })
         .map(|(file, name, line)| {
-            let pct = file_pcts.get(&file).copied().unwrap_or(0);
+            let pct = unweighted_file_pcts.get(&file).copied().unwrap_or(0);
             coverage_violation(file, name, line, pct)
         })
         .collect()
+}
+
+fn stored_coverage_pct(message: &str) -> Option<usize> {
+    message
+        .split_whitespace()
+        .next()
+        .and_then(|token| token.strip_suffix('%'))
+        .and_then(|n| n.parse().ok())
+}
+
+fn refresh_coverage_violation_message(old_message: &str, new_base: &str) -> String {
+    const SUFFIX_ANCHOR: &str = "Add test coverage for this code unit.";
+    if let Some(idx) = old_message.find(SUFFIX_ANCHOR) {
+        let suffix = &old_message[idx + SUFFIX_ANCHOR.len()..];
+        format!("{new_base}{suffix}")
+    } else {
+        new_base.to_string()
+    }
 }
 
 pub fn try_run_cached_all(

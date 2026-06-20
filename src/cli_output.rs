@@ -11,6 +11,18 @@ use std::path::{Path, PathBuf};
 pub const VIOLATIONS_FIX_HINT: &str =
     "Run 'kiss rules' for more information about fixing violations.";
 
+/// Coverage message for a definition-level unreferenced code unit.
+///
+/// File-level percentages can read 100% under weighted overlays or integer rounding
+/// while individual helpers remain unreferenced; never claim full coverage on the unit line.
+pub fn format_unreferenced_unit_coverage_message(file_pct: usize) -> String {
+    if file_pct >= 100 {
+        "This code unit has no test reference. Add test coverage.".to_string()
+    } else {
+        format!("{file_pct}% covered. Add test coverage for this code unit.")
+    }
+}
+
 /// Format a candidate list for display, truncating to `max` items with ellipsis.
 pub fn format_candidate_list(candidates: &[String], max: usize) -> String {
     if candidates.len() > max {
@@ -139,8 +151,9 @@ pub fn print_coverage_gate_failure(ctx: &CoverageGateFailureCtx<'_>) {
     for (file, name, line) in ctx.unreferenced {
         let pct = ctx.file_pcts.get(file).copied().unwrap_or(0);
         if pct < threshold {
+            let message = format_unreferenced_unit_coverage_message(pct);
             println!(
-                "VIOLATION:test_coverage:{}:{}:{}: {pct}% covered. Add test coverage for this code unit.",
+                "VIOLATION:test_coverage:{}:{}:{}: {message}",
                 file.display(),
                 line,
                 name
@@ -313,6 +326,18 @@ mod tests {
     #[test]
     fn test_print_duplicates_empty() {
         print_duplicates("Test", &[]);
+    }
+
+    #[test]
+    fn test_format_unreferenced_unit_coverage_message_rounding_cliff() {
+        assert_eq!(
+            format_unreferenced_unit_coverage_message(100),
+            "This code unit has no test reference. Add test coverage."
+        );
+        assert_eq!(
+            format_unreferenced_unit_coverage_message(50),
+            "50% covered. Add test coverage for this code unit."
+        );
     }
 
     #[test]

@@ -161,6 +161,57 @@ use std::collections::HashSet;
     }
 
     #[test]
+    fn bypass_uses_unweighted_pct_when_weighted_overlay_disagrees() {
+        use crate::analyze::coverage::{GraphRefPair, build_viols_after_merge};
+        let module = PathBuf::from("src/module.rs");
+        let defs = [
+            (module.clone(), "covered".into(), 1),
+            (module.clone(), "uncovered".into(), 2),
+        ];
+        let unrefs = [(module.clone(), "uncovered".into(), 2)];
+        let focus =
+            crate::analyze::FocusFilter::restricting(std::iter::once(module.clone()).collect());
+        let definitions: Vec<CachedCoverageItem> = defs
+            .iter()
+            .map(|(f, n, l): &(PathBuf, String, usize)| CachedCoverageItem {
+                file: f.to_string_lossy().to_string(),
+                name: n.clone(),
+                line: *l,
+            })
+            .collect();
+        let unreferenced: Vec<CachedCoverageItem> = unrefs
+            .iter()
+            .map(|(f, n, l): &(PathBuf, String, usize)| CachedCoverageItem {
+                file: f.to_string_lossy().to_string(),
+                name: n.clone(),
+                line: *l,
+            })
+            .collect();
+        let mut weighted = HashMap::new();
+        weighted.insert(module.clone(), 100);
+        let graphs = GraphRefPair { py: None, rs: None };
+        let (viols, _, _) = build_viols_after_merge(
+            definitions,
+            unreferenced,
+            &focus,
+            graphs,
+            Some(&weighted),
+            true,
+        );
+        assert_eq!(viols.len(), 1);
+        assert!(
+            viols[0].message.contains("50% covered"),
+            "expected unweighted pct, got: {}",
+            viols[0].message
+        );
+        assert!(
+            !viols[0].message.contains("100% covered"),
+            "weighted overlay must not label unreferenced unit as 100% covered: {}",
+            viols[0].message
+        );
+    }
+
+    #[test]
     fn weighted_overlay_target_skips_test_paths() {
         use std::path::Path;
         assert!(!is_weighted_overlay_target(Path::new("tests/test_foo.py")));

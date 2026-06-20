@@ -1,6 +1,7 @@
 use super::*;
 use super::path_helpers::load_full_cache;
 use crate::analyze::FocusFilter;
+use kiss::Violation;
 use kiss::check_cache::CachedViolation;
 use kiss::check_universe_cache::CachedCoverageItem;
 use std::path::PathBuf;
@@ -69,6 +70,51 @@ fn cached_coverage_viols_skips_test_files_on_replay() {
     cache.coverage_violations = vec![cached];
     let focus = FocusFilter::restricting([file.clone()].into_iter().collect());
     assert!(cached_coverage_viols(&cache, &focus).is_empty());
+}
+
+#[test]
+fn cached_coverage_viols_refreshes_stale_100_pct_for_unreferenced_units() {
+    let file = PathBuf::from("src/module.py");
+    let cached = CachedViolation::from(&Violation {
+        file: file.clone(),
+        line: 1,
+        unit_name: "fn_a".into(),
+        metric: "test_coverage".to_string(),
+        value: 0,
+        threshold: 0,
+        message: "100% covered. Add test coverage for this code unit. No test module imports this module.".into(),
+        suggestion: String::new(),
+    });
+    let mut cache = empty_cache("stale_100_refresh");
+    cache.coverage_violations = vec![cached];
+    cache.definitions.push(CachedCoverageItem {
+        file: file.to_string_lossy().to_string(),
+        name: "fn_a".into(),
+        line: 1,
+    });
+    cache.definitions.push(CachedCoverageItem {
+        file: file.to_string_lossy().to_string(),
+        name: "fn_b".into(),
+        line: 2,
+    });
+    cache.unreferenced.push(CachedCoverageItem {
+        file: file.to_string_lossy().to_string(),
+        name: "fn_a".into(),
+        line: 1,
+    });
+    let focus = FocusFilter::unrestricted();
+    let viols = cached_coverage_viols(&cache, &focus);
+    assert_eq!(viols.len(), 1);
+    assert!(
+        viols[0].message.contains("50% covered"),
+        "expected unweighted pct on replay, got: {}",
+        viols[0].message
+    );
+    assert!(
+        viols[0].message.contains("No test module imports this module."),
+        "graph suffix should be preserved: {}",
+        viols[0].message
+    );
 }
 
 #[test]
