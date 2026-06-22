@@ -169,6 +169,12 @@ pub enum Commands {
         base_branch: Option<String>,
         #[arg(long)]
         dry_run: bool,
+        /// Force Python tests to rerun instead of reusing rslip cache entries
+        #[arg(long)]
+        force: bool,
+        /// Maximum number of Python test jobs to run concurrently
+        #[arg(short = 'j', long, default_value_t = 1)]
+        jobs: usize,
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
         #[arg(last = true)]

@@ -11,6 +11,8 @@ pub struct RunTestCmdArgs<'a> {
     pub main_branch_cli: Option<&'a str>,
     pub base_branch_cli: Option<&'a str>,
     pub dry_run: bool,
+    pub force_rerun: bool,
+    pub jobs: usize,
     pub extra: &'a [String],
     pub ignore: &'a [String],
     pub lang_filter: Option<Language>,
@@ -23,6 +25,8 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
         main_branch_cli,
         base_branch_cli,
         dry_run,
+        force_rerun,
+        jobs,
         extra,
         ignore,
         lang_filter,
@@ -36,7 +40,15 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
         lang_filter,
         config_main_branch,
     ) {
-        Ok(planned) => match run_selectors(&planned, dry_run, extra) {
+        Ok(planned) => match run_selectors(
+            &planned,
+            SelectorRunOptions {
+                dry_run,
+                force_rerun,
+                jobs,
+                extra,
+            },
+        ) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("{e}");
@@ -56,6 +68,13 @@ pub(crate) struct PlannedSelectors {
     pub rs_sel: Vec<String>,
 }
 
+pub(crate) struct SelectorRunOptions<'a> {
+    pub dry_run: bool,
+    pub force_rerun: bool,
+    pub jobs: usize,
+    pub extra: &'a [String],
+}
+
 pub(crate) fn plan_selectors(
     mode: TestChangeMode,
     main_branch_cli: Option<&str>,
@@ -66,7 +85,8 @@ pub(crate) fn plan_selectors(
 ) -> Result<PlannedSelectors, String> {
     let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
-    crate::test_git::assert_git_repo(&cwd).map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
+    crate::test_git::assert_git_repo(&cwd)
+        .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
     let repo_root = crate::test_git::git_repo_root(&cwd)?;
     let diff_target = crate::test_git::resolve_diff_target(
         &repo_root,
@@ -94,8 +114,13 @@ pub(crate) fn plan_selectors(
         }),
     );
     let (source_changed, test_changed) = runners::partition_changed_paths(&abs_paths);
-    let (py_sel, rs_sel) =
-        runners::combined_selectors(&repo_root, &source_changed, &test_changed, lang_filter, &ignore_norm)?;
+    let (py_sel, rs_sel) = runners::combined_selectors(
+        &repo_root,
+        &source_changed,
+        &test_changed,
+        lang_filter,
+        &ignore_norm,
+    )?;
     Ok(PlannedSelectors {
         repo_root,
         py_sel,
@@ -105,16 +130,18 @@ pub(crate) fn plan_selectors(
 
 pub(crate) fn run_selectors(
     planned: &PlannedSelectors,
-    dry_run: bool,
-    extra: &[String],
+    options: SelectorRunOptions<'_>,
 ) -> Result<i32, String> {
+    if options.jobs == 0 {
+        return Err("error: kiss test: jobs must be greater than zero".to_string());
+    }
     if planned.py_sel.is_empty() && planned.rs_sel.is_empty() {
         println!("{}", runners::NO_COVERING_TESTS_MSG);
         return Ok(0);
     }
-    let py_argv = runners::build_pytest_argv(&planned.py_sel, extra);
-    let rs_argv = runners::build_cargo_test_argv(&planned.rs_sel, extra);
-    if dry_run {
+    let py_argv = runners::build_pytest_argv(&planned.py_sel, options.extra);
+    let rs_argv = runners::build_cargo_test_argv(&planned.rs_sel, options.extra);
+    if options.dry_run {
         if !planned.py_sel.is_empty() {
             println!("{}", runners::shell_quote_line(&py_argv));
         }
@@ -125,10 +152,22 @@ pub(crate) fn run_selectors(
     }
     let mut code = 0i32;
     if !planned.py_sel.is_empty() {
-        code = runners::merge_exit_codes(code, runners::run_command_inherit(&py_argv, &planned.repo_root)?);
+        code = runners::merge_exit_codes(
+            code,
+            runners::run_rslip_selectors(
+                &planned.repo_root,
+                &planned.py_sel,
+                options.extra,
+                options.force_rerun,
+                options.jobs,
+            )?,
+        );
     }
     if !planned.rs_sel.is_empty() {
-        code = runners::merge_exit_codes(code, runners::run_command_inherit(&rs_argv, &planned.repo_root)?);
+        code = runners::merge_exit_codes(
+            code,
+            runners::run_command_inherit(&rs_argv, &planned.repo_root)?,
+        );
     }
     Ok(code)
 }
@@ -144,6 +183,8 @@ mod coverage_witness {
                 main_branch_cli: None,
                 base_branch_cli: None,
                 dry_run: true,
+                force_rerun: false,
+                jobs: 1,
                 extra: &[],
                 ignore: &[],
                 lang_filter: None,
@@ -162,10 +203,26 @@ mod coverage_witness {
         }
     }
 
+    impl SelectorRunOptions<'_> {
+        fn witness() -> Self {
+            Self {
+                dry_run: true,
+                force_rerun: false,
+                jobs: 1,
+                extra: &[],
+            }
+        }
+    }
+
     #[test]
     fn witness_test_runner_api() {
         let _ = RunTestCmdArgs::witness();
         let _ = PlannedSelectors::witness();
+        let opts = SelectorRunOptions::witness();
+        assert!(opts.dry_run);
+        assert!(!opts.force_rerun);
+        assert_eq!(opts.jobs, 1);
+        assert!(opts.extra.is_empty());
         assert_eq!(run_test(RunTestCmdArgs::witness()), 0);
     }
 }
@@ -189,11 +246,7 @@ mod plan_tests {
     }
 
     fn init(tmp: &TempDir) {
-        assert!(git_in(tmp.path())
-            .arg("init")
-            .status()
-            .unwrap()
-            .success());
+        assert!(git_in(tmp.path()).arg("init").status().unwrap().success());
         git_in(tmp.path())
             .args(["config", "user.email", "t@t.t"])
             .status()
@@ -210,10 +263,7 @@ mod plan_tests {
         let tmp = TempDir::new().unwrap();
         init(&tmp);
         std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-        git_in(tmp.path())
-            .args(["add", "."])
-            .status()
-            .unwrap();
+        git_in(tmp.path()).args(["add", "."]).status().unwrap();
         git_in(tmp.path())
             .args(["commit", "-m", "m"])
             .status()
@@ -221,21 +271,46 @@ mod plan_tests {
         std::fs::write(tmp.path().join("b.py"), "y=1\n").unwrap();
         let orig = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let planned: PlannedSelectors = plan_selectors(
-            TestChangeMode::Commit,
-            None,
-            None,
-            &[],
-            None,
-            None,
-        )
-        .unwrap();
+        let planned: PlannedSelectors =
+            plan_selectors(TestChangeMode::Commit, None, None, &[], None, None).unwrap();
         std::env::set_current_dir(orig).unwrap();
         assert_eq!(planned.repo_root, tmp.path().canonicalize().unwrap());
         assert!(planned.py_sel.is_empty());
         assert!(planned.rs_sel.is_empty());
-        let code = run_selectors(&planned, true, &[]).unwrap();
+        let code = run_selectors(
+            &planned,
+            SelectorRunOptions {
+                dry_run: true,
+                force_rerun: false,
+                jobs: 1,
+                extra: &[],
+            },
+        )
+        .unwrap();
         assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn run_selectors_rejects_zero_jobs() {
+        let tmp = TempDir::new().unwrap();
+        let planned = PlannedSelectors {
+            repo_root: tmp.path().to_path_buf(),
+            py_sel: vec!["tests/test_app.py::test_ok".to_string()],
+            rs_sel: Vec::new(),
+        };
+
+        let err = run_selectors(
+            &planned,
+            SelectorRunOptions {
+                dry_run: false,
+                force_rerun: false,
+                jobs: 0,
+                extra: &[],
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.contains("jobs"));
     }
 }
 

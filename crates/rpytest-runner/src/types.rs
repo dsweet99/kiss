@@ -94,6 +94,7 @@ impl PytestRunOutcome {
 #[derive(Debug, PartialEq, Eq)]
 pub enum PytestRunError {
     InvalidRequest(String),
+    Protocol(String),
     Spawn { program: PathBuf, message: String },
     Timeout(Duration),
     WorkerPanic,

@@ -170,6 +170,7 @@ fn fingerprint_path_duplicates_and_coverage_helpers() {
 fn fnv1a64_properties() {
     let h0 = 0xcbf2_9ce4_8422_2325_u64;
     assert_eq!(fnv1a64(h0, b""), h0);
+    assert_eq!(fnv1a64(h0, b"hello"), 0xa430_d846_80aa_bd0b);
     assert_eq!(fnv1a64(h0, b"hello"), fnv1a64(h0, b"hello"));
     assert_ne!(fnv1a64(h0, b"hello"), fnv1a64(h0, b"world"));
 }

@@ -132,7 +132,16 @@ fn should_skip_dir(path: &Path) -> bool {
         Some(
             ".git" | ".pytest_cache" | "__pycache__" | ".venv" | "venv" | "target" | ".rslip_cache"
         )
-    )
+    ) || is_kiss_rslip_cache_dir(path)
+}
+
+fn is_kiss_rslip_cache_dir(path: &Path) -> bool {
+    path.file_name().and_then(|name| name.to_str()) == Some("rslip_cache")
+        && path
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|name| name.to_str())
+            == Some(".kiss")
 }
 
 fn is_cache_input(path: &Path) -> bool {
@@ -187,11 +196,21 @@ mod tests {
     fn conservative_inputs_include_pytest_config_and_skip_cache_dirs() {
         let tmp = tempfile::tempdir().unwrap();
         fs::create_dir(tmp.path().join(".rslip_cache")).unwrap();
+        fs::create_dir(tmp.path().join(".kiss")).unwrap();
+        fs::create_dir(tmp.path().join(".kiss").join("rslip_cache")).unwrap();
         fs::write(tmp.path().join("pytest.ini"), "[pytest]\n").unwrap();
         fs::write(tmp.path().join("a.py"), "x = 1\n").unwrap();
         fs::write(
             tmp.path().join(".rslip_cache").join("ignored.py"),
             "x = 2\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path()
+                .join(".kiss")
+                .join("rslip_cache")
+                .join("ignored.py"),
+            "x = 3\n",
         )
         .unwrap();
 
@@ -204,12 +223,14 @@ mod tests {
         assert!(names.contains(Path::new("a.py")));
         assert!(names.contains(Path::new("pytest.ini")));
         assert!(!names.contains(Path::new(".rslip_cache/ignored.py")));
+        assert!(!names.contains(Path::new(".kiss/rslip_cache/ignored.py")));
     }
 
     #[test]
     fn helper_hash_and_temp_suffix_are_usable() {
         assert_ne!(unique_suffix(), "");
         assert_eq!(fnv1a64(0xcbf2_9ce4_8422_2325, b""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(fnv1a64(0xcbf2_9ce4_8422_2325, b"hello"), 0xa430_d846_80aa_bd0b);
         assert_ne!(
             fnv1a64(0xcbf2_9ce4_8422_2325, b"a"),
             fnv1a64(0xcbf2_9ce4_8422_2325, b"b")

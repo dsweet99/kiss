@@ -1,5 +1,4 @@
 use crate::bin_cli::mimic::run_mimic;
-use crate::bin_cli::util::default_check_ignore_prefixes;
 use kiss::{Config, ConfigLanguage, GateConfig};
 use std::path::{Path, PathBuf};
 
@@ -12,7 +11,7 @@ pub fn ensure_default_config_exists() {
         &[".".to_string()],
         Some(local_config),
         None,
-        &default_check_ignore_prefixes(),
+        &[],
     );
 }
 
@@ -137,5 +136,15 @@ mod tests {
         );
 
         std::env::set_current_dir(orig_dir).unwrap();
+    }
+
+    #[test]
+    fn test_load_test_section_config_defaults() {
+        let cfg = load_test_section_config(None, true);
+
+        assert_eq!(
+            cfg.main_branch,
+            kiss::TestSectionConfig::default().main_branch
+        );
     }
 }

@@ -91,7 +91,7 @@ fn filter_pairs_by_files(pairs: &mut Vec<DuplicatePair>, filter_files: &[String]
 
 #[cfg(test)]
 mod dry_helpers_test {
-    use super::{DryRunParams, filter_pairs_by_files, parse_py_for_dry, parse_rs_for_dry};
+    use super::{DryRunParams, filter_pairs_by_files, parse_py_for_dry, parse_rs_for_dry, run_dry};
     use kiss::{DuplicatePair, DuplicationConfig};
 
     impl<'a> DryRunParams<'a> {
@@ -133,5 +133,18 @@ mod dry_helpers_test {
     fn witness_dry_run_params_assoc() {
         let config = DuplicationConfig::default();
         let _ = DryRunParams::witness(&config);
+    }
+
+    #[test]
+    fn run_dry_handles_empty_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = DuplicationConfig::default();
+        run_dry(&DryRunParams {
+            path: tmp.path().to_str().unwrap(),
+            filter_files: &[],
+            config: &config,
+            ignore_prefixes: &[],
+            lang_filter: None,
+        });
     }
 }

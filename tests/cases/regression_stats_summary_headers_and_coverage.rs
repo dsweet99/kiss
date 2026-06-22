@@ -83,7 +83,12 @@ fn parse_violation_counts(stdout: &str) -> (usize, usize) {
 fn cli_stats_summary_emits_analyzed_header_with_five_global_metrics() {
     let tmp = TempDir::new().unwrap();
     build_corpus(tmp.path());
-    let output = kiss_binary().arg("stats").arg(tmp.path()).output().unwrap();
+    let output = kiss_binary()
+        .arg("stats")
+        .arg("--defaults")
+        .arg(tmp.path())
+        .output()
+        .unwrap();
     assert!(output.status.success(), "kiss stats should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -110,7 +115,12 @@ fn cli_stats_summary_emits_analyzed_header_with_five_global_metrics() {
 fn cli_stats_summary_emits_violations_header_with_duplicate_and_orphan_counts() {
     let tmp = TempDir::new().unwrap();
     build_corpus(tmp.path());
-    let output = kiss_binary().arg("stats").arg(tmp.path()).output().unwrap();
+    let output = kiss_binary()
+        .arg("stats")
+        .arg("--defaults")
+        .arg(tmp.path())
+        .output()
+        .unwrap();
     assert!(output.status.success(), "kiss stats should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -154,7 +164,12 @@ fn cli_stats_summary_emits_violations_header_with_duplicate_and_orphan_counts() 
 fn cli_stats_summary_table_includes_inv_test_coverage_row() {
     let tmp = TempDir::new().unwrap();
     build_corpus(tmp.path());
-    let output = kiss_binary().arg("stats").arg(tmp.path()).output().unwrap();
+    let output = kiss_binary()
+        .arg("stats")
+        .arg("--defaults")
+        .arg(tmp.path())
+        .output()
+        .unwrap();
     assert!(output.status.success(), "kiss stats should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
 

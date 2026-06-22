@@ -9,8 +9,8 @@ use crate::bin_cli::stats::{
     run_stats_summary, run_stats_table,
 };
 use crate::bin_cli::util::validate_paths;
-use kiss::normalize_ignore_prefixes;
 use kiss::Language;
+use kiss::normalize_ignore_prefixes;
 use kiss::truncate;
 use kiss::{Config, ConfigLanguage, GateConfig};
 

@@ -19,6 +19,8 @@ pub(crate) struct TestDispatchOptions<'a> {
     pub main_branch: Option<String>,
     pub base_branch: Option<String>,
     pub dry_run: bool,
+    pub force: bool,
+    pub jobs: usize,
     pub ignore: Vec<String>,
     pub extra: Vec<String>,
     pub test_cfg: &'a TestSectionConfig,

@@ -53,7 +53,7 @@ pub fn validate_min_similarity(value: f64) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{set_sigpipe_default, validate_min_similarity};
+    use super::{merge_check_ignore_prefixes, set_sigpipe_default, validate_min_similarity};
 
     #[test]
     fn set_sigpipe_default_is_callable() {
@@ -71,5 +71,11 @@ mod tests {
     fn validate_min_similarity_rejects_out_of_range() {
         assert!(validate_min_similarity(-0.1).is_err());
         assert!(validate_min_similarity(1.5).is_err());
+    }
+
+    #[test]
+    fn merge_check_ignore_prefixes_preserves_user_prefixes() {
+        let merged = merge_check_ignore_prefixes(&["custom/".to_string()]);
+        assert_eq!(merged, vec!["fake_", "custom"]);
     }
 }

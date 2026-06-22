@@ -1,8 +1,8 @@
 #![allow(clippy::let_unit_value)]
 
 use crate::bin_cli::mimic::run_mimic;
-use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::stats::{RunStatsArgs, run_stats};
+use crate::bin_cli::test_cmd::run_test_command;
 
 #[test]
 fn test_touch_for_static_test_coverage() {

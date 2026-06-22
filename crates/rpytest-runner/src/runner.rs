@@ -1,14 +1,22 @@
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::forkserver::ForkserverPytestRunner;
 use crate::{PytestRunError, PytestRunOutcome, PytestRunRequest, TestStatus};
 
+type PytestRunResult = Result<PytestRunOutcome, PytestRunError>;
+type RunOneFn = dyn Fn(PytestRunRequest) -> PytestRunResult;
+type RunManyFn = dyn Fn(Vec<PytestRunRequest>) -> Vec<PytestRunResult>;
+type RunManyBoundedFn = dyn Fn(Vec<PytestRunRequest>, usize) -> Vec<PytestRunResult>;
+
 pub struct PytestRunner {
-    run_one: Rc<dyn Fn(PytestRunRequest) -> Result<PytestRunOutcome, PytestRunError>>,
-    run_many: Box<dyn Fn(Vec<PytestRunRequest>) -> Vec<Result<PytestRunOutcome, PytestRunError>>>,
+    run_one: Rc<RunOneFn>,
+    run_many: Box<RunManyFn>,
+    run_many_bounded: Box<RunManyBoundedFn>,
 }
 
 impl PytestRunner {
@@ -16,12 +24,18 @@ impl PytestRunner {
     where
         F: Fn(PytestRunRequest) -> Result<PytestRunOutcome, PytestRunError> + 'static,
     {
-        let run_one: Rc<dyn Fn(PytestRunRequest) -> Result<PytestRunOutcome, PytestRunError>> =
-            Rc::new(run_one);
+        let run_one: Rc<RunOneFn> = Rc::new(run_one);
         let run_many_one = Rc::clone(&run_one);
+        let run_many_bounded_one = Rc::clone(&run_one);
         Self {
             run_one,
             run_many: Box::new(move |reqs| reqs.into_iter().map(|req| run_many_one(req)).collect()),
+            run_many_bounded: Box::new(move |reqs, max_jobs| {
+                assert!(max_jobs > 0, "max_jobs must be greater than zero");
+                reqs.into_iter()
+                    .map(|req| run_many_bounded_one(req))
+                    .collect()
+            }),
         }
     }
 
@@ -29,6 +43,19 @@ impl PytestRunner {
         Self {
             run_one: Rc::new(|req| SubprocessPytestRunner::new().run_one(req)),
             run_many: Box::new(|reqs| SubprocessPytestRunner::new().run_many(reqs)),
+            run_many_bounded: Box::new(|reqs, max_jobs| {
+                SubprocessPytestRunner::new().run_many_bounded(reqs, max_jobs)
+            }),
+        }
+    }
+
+    pub fn forkserver() -> Self {
+        Self {
+            run_one: Rc::new(|req| ForkserverPytestRunner::new().run_one(req)),
+            run_many: Box::new(|reqs| ForkserverPytestRunner::new().run_many(reqs)),
+            run_many_bounded: Box::new(|reqs, max_jobs| {
+                ForkserverPytestRunner::new().run_many_bounded(reqs, max_jobs)
+            }),
         }
     }
 
@@ -41,6 +68,14 @@ impl PytestRunner {
         reqs: Vec<PytestRunRequest>,
     ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
         (self.run_many)(reqs)
+    }
+
+    pub fn run_many_bounded(
+        &self,
+        reqs: Vec<PytestRunRequest>,
+        max_jobs: usize,
+    ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
+        (self.run_many_bounded)(reqs, max_jobs)
     }
 }
 
@@ -55,21 +90,7 @@ impl SubprocessPytestRunner {
 
 impl SubprocessPytestRunner {
     pub fn run_one(&self, req: PytestRunRequest) -> Result<PytestRunOutcome, PytestRunError> {
-        if req.nodeid.trim().is_empty() {
-            return Err(PytestRunError::InvalidRequest(
-                "pytest node id must not be empty".to_string(),
-            ));
-        }
-        if req.cwd.as_os_str().is_empty() {
-            return Err(PytestRunError::InvalidRequest(
-                "pytest cwd must not be empty".to_string(),
-            ));
-        }
-        if req.python.as_os_str().is_empty() {
-            return Err(PytestRunError::InvalidRequest(
-                "python executable must not be empty".to_string(),
-            ));
-        }
+        validate_request(&req)?;
         let started = Instant::now();
         let mut cmd = Command::new(&req.python);
         cmd.current_dir(&req.cwd);
@@ -104,19 +125,42 @@ impl SubprocessPytestRunner {
         &self,
         reqs: Vec<PytestRunRequest>,
     ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
-        let mut handles = Vec::with_capacity(reqs.len());
-        for (index, req) in reqs.into_iter().enumerate() {
-            handles.push(thread::spawn(move || {
-                (index, SubprocessPytestRunner.run_one(req))
-            }));
+        let max_jobs = reqs.len().max(1);
+        self.run_many_bounded(reqs, max_jobs)
+    }
+
+    pub fn run_many_bounded(
+        &self,
+        reqs: Vec<PytestRunRequest>,
+        max_jobs: usize,
+    ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
+        assert!(max_jobs > 0, "max_jobs must be greater than zero");
+        let len = reqs.len();
+        let mut out = Vec::new();
+        out.resize_with(len, || Err(PytestRunError::WorkerPanic));
+        if len == 0 {
+            return out;
         }
 
-        let mut out = Vec::new();
-        out.resize_with(handles.len(), || Err(PytestRunError::WorkerPanic));
-        for handle in handles {
-            match handle.join() {
-                Ok((index, result)) => out[index] = result,
-                Err(_) => out.push(Err(PytestRunError::WorkerPanic)),
+        let (tx, rx) = mpsc::channel();
+        let mut indexed_reqs = reqs.into_iter().enumerate();
+        let mut running = 0usize;
+        for _ in 0..max_jobs.min(len) {
+            if let Some((index, req)) = indexed_reqs.next() {
+                spawn_subprocess_job(index, req, tx.clone());
+                running += 1;
+            }
+        }
+
+        while running > 0 {
+            let Ok((index, result)) = rx.recv() else {
+                break;
+            };
+            running -= 1;
+            out[index] = result;
+            if let Some((next_index, next_req)) = indexed_reqs.next() {
+                spawn_subprocess_job(next_index, next_req, tx.clone());
+                running += 1;
             }
         }
         out
@@ -127,7 +171,26 @@ pub fn subprocess_pytest_runner() -> PytestRunner {
     PytestRunner::subprocess()
 }
 
-fn run_command(
+pub(crate) fn validate_request(req: &PytestRunRequest) -> Result<(), PytestRunError> {
+    if req.nodeid.trim().is_empty() {
+        return Err(PytestRunError::InvalidRequest(
+            "pytest node id must not be empty".to_string(),
+        ));
+    }
+    if req.cwd.as_os_str().is_empty() {
+        return Err(PytestRunError::InvalidRequest(
+            "pytest cwd must not be empty".to_string(),
+        ));
+    }
+    if req.python.as_os_str().is_empty() {
+        return Err(PytestRunError::InvalidRequest(
+            "python executable must not be empty".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn run_command(
     mut cmd: Command,
     program: &Path,
     timeout: Option<Duration>,
@@ -137,10 +200,12 @@ fn run_command(
         message: err.to_string(),
     })?;
     let Some(timeout) = timeout else {
-        return child.wait_with_output().map_err(|err| PytestRunError::Spawn {
-            program: program.to_path_buf(),
-            message: err.to_string(),
-        });
+        return child
+            .wait_with_output()
+            .map_err(|err| PytestRunError::Spawn {
+                program: program.to_path_buf(),
+                message: err.to_string(),
+            });
     };
     let started = Instant::now();
     loop {
@@ -160,14 +225,28 @@ fn run_command(
             message: err.to_string(),
         })? {
             Some(_) => {
-                return child.wait_with_output().map_err(|err| PytestRunError::Spawn {
-                    program: program.to_path_buf(),
-                    message: err.to_string(),
-                });
+                return child
+                    .wait_with_output()
+                    .map_err(|err| PytestRunError::Spawn {
+                        program: program.to_path_buf(),
+                        message: err.to_string(),
+                    });
             }
             None => thread::sleep(Duration::from_millis(5)),
         }
     }
+}
+
+pub(crate) fn spawn_subprocess_job(
+    index: usize,
+    req: PytestRunRequest,
+    tx: mpsc::Sender<(usize, Result<PytestRunOutcome, PytestRunError>)>,
+) {
+    thread::spawn(move || {
+        let result = std::panic::catch_unwind(|| SubprocessPytestRunner.run_one(req))
+            .unwrap_or(Err(PytestRunError::WorkerPanic));
+        let _ = tx.send((index, result));
+    });
 }
 
 const PYTEST_MAIN: &str = r#"

@@ -19,7 +19,12 @@ fn py_selector_class_method() {
 
 #[test]
 fn shell_quote_simple() {
-    let v = vec!["python".into(), "-m".into(), "pytest".into(), "a.py::t".into()];
+    let v = vec![
+        "python".into(),
+        "-m".into(),
+        "pytest".into(),
+        "a.py::t".into(),
+    ];
     let s = shell_quote_line(&v);
     assert!(s.contains("python"));
     assert!(s.contains("pytest"));
@@ -79,6 +84,61 @@ fn build_pytest_and_cargo_argv_non_empty() {
 }
 
 #[test]
+fn rslip_request_from_parts_uses_selector_and_kiss_cache() {
+    let tmp = TempDir::new().unwrap();
+    let req = rslip_request_from_parts(
+        tmp.path(),
+        "tests/test_app.py::test_ok",
+        &["-q".to_string()],
+        "3.12.1",
+        "8.2.0",
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(req.nodeid, "tests/test_app.py::test_ok");
+    assert_eq!(req.cwd, tmp.path());
+    assert_eq!(req.source_root, tmp.path());
+    assert_eq!(req.pytest_args, vec!["-q"]);
+    assert_eq!(req.python_version, "3.12.1");
+    assert_eq!(req.pytest_version, "8.2.0");
+    assert_eq!(req.cache_root, tmp.path().join(".kiss").join("rslip_cache"));
+    assert!(req.force_rerun);
+}
+
+#[test]
+fn rslip_request_from_parts_rejects_python_before_312() {
+    let tmp = TempDir::new().unwrap();
+    let err = rslip_request_from_parts(
+        tmp.path(),
+        "tests/test_app.py::test_ok",
+        &[],
+        "3.11.9",
+        "8.2.0",
+        false,
+    )
+    .unwrap_err();
+
+    assert!(err.contains("Python 3.12+"));
+}
+
+#[test]
+fn rslip_request_from_parts_accepts_python_after_312() {
+    let tmp = TempDir::new().unwrap();
+    let req = rslip_request_from_parts(
+        tmp.path(),
+        "tests/test_app.py::test_ok",
+        &[],
+        "3.13.0",
+        "8.2.0",
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(req.python_version, "3.13.0");
+}
+
+#[test]
 fn shlex_quote_spaces() {
     assert!(shlex_quote("a b").contains('\''));
 }
@@ -87,11 +147,8 @@ fn shlex_quote_spaces() {
 #[cfg(unix)]
 fn run_command_true_zero() {
     let tmp = TempDir::new().unwrap();
-    let code = run_command_inherit(
-        &["sh".into(), "-c".into(), "exit 0".into()],
-        tmp.path(),
-    )
-    .unwrap();
+    let code =
+        run_command_inherit(&["sh".into(), "-c".into(), "exit 0".into()], tmp.path()).unwrap();
     assert_eq!(code, 0);
 }
 
@@ -118,5 +175,8 @@ fn collect_selectors_from_defs_smoke() {
         Some(vec![(PathBuf::from("/x/test_a.py"), "test_f".into())]),
     )];
     let s = collect_selectors_from_defs(&defs);
-    assert!(s.iter().any(|(p, id)| p.ends_with("test_a.py") && id == "test_f"));
+    assert!(
+        s.iter()
+            .any(|(p, id)| p.ends_with("test_a.py") && id == "test_f")
+    );
 }

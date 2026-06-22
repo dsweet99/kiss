@@ -227,7 +227,10 @@ pub(super) fn decorate_file_units_with_coverage(
     }
 }
 
-pub(super) fn append_cycle_units(units: &mut Vec<kiss::UnitMetrics>, graph: &kiss::DependencyGraph) {
+pub(super) fn append_cycle_units(
+    units: &mut Vec<kiss::UnitMetrics>,
+    graph: &kiss::DependencyGraph,
+) {
     for cycle in graph.find_cycles().cycles {
         let Some(representative) = cycle.iter().min().cloned() else {
             continue;
@@ -337,3 +340,58 @@ where
     }
 }
 
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    #[test]
+    fn stats_top_args_preserves_cli_inputs() {
+        let paths = vec!["src".to_string()];
+        let ignore = vec!["target".to_string()];
+        let py = Config::python_defaults();
+        let rs = Config::rust_defaults();
+        let gate = GateConfig::default();
+        let args = StatsTopArgs {
+            paths: &paths,
+            lang_filter: Some(Language::Rust),
+            ignore: &ignore,
+            n: 7,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+        };
+
+        assert_eq!(args.paths, ["src"]);
+        assert_eq!(args.lang_filter, Some(Language::Rust));
+        assert_eq!(args.ignore, ["target"]);
+        assert_eq!(args.n, 7);
+        assert_eq!(args.py_config.lines_per_file, py.lines_per_file);
+        assert_eq!(args.rs_config.lines_per_file, rs.lines_per_file);
+        assert_eq!(
+            args.gate_config.test_coverage_threshold,
+            gate.test_coverage_threshold
+        );
+    }
+
+    #[test]
+    fn lang_collect_empty_input_short_circuits_without_parsing() {
+        let files: Vec<PathBuf> = Vec::new();
+        let (units, fresh) = collect_lang_units(LangCollect {
+            files: &files,
+            cached_coverage: None,
+            parse: |_| panic!("empty input must not parse"),
+            build_graph: |_| panic!("empty input must not build graph"),
+            analyze: |_: &[&()], _: &kiss::DependencyGraph| {
+                panic!("empty input must not analyze")
+            },
+            collect_detailed: |_: &[&()], _: Option<&kiss::DependencyGraph>| {
+                panic!("empty input must not collect metrics")
+            },
+            file_of: |_: &()| panic!("empty input has no definitions"),
+            item_of: |_: &()| panic!("empty input has no cache items"),
+        });
+
+        assert!(units.is_empty());
+        assert!(fresh.is_none());
+    }
+}
