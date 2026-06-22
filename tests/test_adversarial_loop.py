@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from click.testing import CliRunner
-
 import python.adversarial_loop as adv_loop
+from click.testing import CliRunner
 from ops.adversarial_loop import loop
 
 

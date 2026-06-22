@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-from click.testing import CliRunner
-
 import ops.adversarial_foil as foil_mod
+import pytest
 import python.adversarial as adv
 import python.adversarial_loop as adv_loop
+from click.testing import CliRunner
 from ops.adversarial_foil import foil
 from python.adversarial_foil_stubs import stub_foil_env
 

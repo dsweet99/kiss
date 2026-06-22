@@ -4,6 +4,7 @@ import csv
 import os
 from collections.abc import Mapping
 from typing import Any
+
 from common import serializer
 from common.sdatetime import now_isoformat
 

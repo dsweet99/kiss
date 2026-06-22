@@ -8,9 +8,8 @@ import subprocess
 import sys
 
 import click
-from click.testing import CliRunner
-
 import python.adversarial_common as cli
+from click.testing import CliRunner
 from ops.adversarial import _load_command, main
 
 

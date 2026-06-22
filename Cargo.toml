@@ -25,6 +25,14 @@ include = [
     "!tests/fixtures/mv/rust/**/Cargo.lock",
 ]
 
+[workspace]
+members = [
+    ".",
+    "crates/rpytest-runner",
+    "crates/rslip",
+]
+resolver = "3"
+
 [[bin]]
 name = "kiss"
 path = "src/main.rs"

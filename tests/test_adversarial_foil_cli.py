@@ -5,9 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
-
 import python.adversarial as adv
+from click.testing import CliRunner
 from ops.adversarial_foil import foil
 from python.adversarial_foil_stubs import stub_foil_env
 

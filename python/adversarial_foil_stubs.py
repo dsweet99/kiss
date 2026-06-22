@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import ops.adversarial_foil as foil_mod
 import pytest
 
-import python.adversarial_common as cli
-import ops.adversarial_foil as foil_mod
 import python.adversarial as adv
+import python.adversarial_common as cli
 
 
 def stub_foil_env(

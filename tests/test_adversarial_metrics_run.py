@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from python.adversarial_metrics_batch import run_metrics_batch
 from python.adversarial_metrics_stubs import (
     print_good_comparison_output,

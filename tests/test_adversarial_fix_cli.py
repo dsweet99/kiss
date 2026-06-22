@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import ops.adversarial_fix as fix_mod
 import pytest
 from click.testing import CliRunner
-
-import ops.adversarial_fix as fix_mod
 from ops.adversarial_fix import fix
 from python.adversarial import ParsedMetrics
 

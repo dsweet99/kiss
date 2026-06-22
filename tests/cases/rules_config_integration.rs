@@ -1,11 +1,9 @@
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
-
 fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
 }
-
 #[test]
 fn cli_rules_command_runs() {
     let output = kiss_binary().arg("rules").output().unwrap();
@@ -24,7 +22,6 @@ fn cli_rules_command_runs() {
         "Should output rules. stdout: {stdout}"
     );
 }
-
 #[test]
 fn cli_rules_shows_both_languages_by_default() {
     let output = kiss_binary().arg("rules").output().unwrap();
@@ -38,7 +35,6 @@ fn cli_rules_shows_both_languages_by_default() {
         "Should show Rust rules. stdout: {stdout}"
     );
 }
-
 #[test]
 fn cli_rules_with_defaults_flag() {
     let output = kiss_binary()
@@ -282,7 +278,10 @@ fn cli_missing_local_kissconfig_is_created_by_clamp() {
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(output.status.success(), "config should succeed. stderr: {stderr}");
+    assert!(
+        output.status.success(),
+        "config should succeed. stderr: {stderr}"
+    );
     assert!(
         repo.join(".kissconfig").exists(),
         "kiss should clamp-write ./.kissconfig when missing"

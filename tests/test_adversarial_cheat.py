@@ -5,11 +5,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-from click.testing import CliRunner
-
 import ops.adversarial_cheat as cheat_cli
+import pytest
 import python.adversarial_cheat as cheat_mod
+from click.testing import CliRunner
 from ops.adversarial_cheat import cheat_verify
 
 

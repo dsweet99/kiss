@@ -6,9 +6,8 @@ import random
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
-
 import python.coverage_metrics as metrics
+from click.testing import CliRunner
 from python.coverage_metrics import coverage_metrics_cli
 from python.coverage_metrics import coverage_metrics_cli as coverage_metrics_main
 

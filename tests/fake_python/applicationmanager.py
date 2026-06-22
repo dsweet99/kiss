@@ -1,15 +1,16 @@
 """A 'God Class' that does way too many unrelated things."""
 
+import re
 import smtplib
 import sqlite3
 import time
+from collections.abc import Mapping
 from email.mime.text import MIMEText
 from typing import Any, Optional
-from collections.abc import Mapping
-import re
 
 from common import serializer
 from common.sdatetime import now_isoformat
+
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 
 

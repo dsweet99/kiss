@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 import python.coverage_kiss as coverage_kiss
 import python.coverage_metrics as metrics
 
