@@ -281,7 +281,7 @@ fn collect_snapshot_entries(
 fn should_skip_snapshot_path(name: &OsStr) -> bool {
     matches!(
         name.to_string_lossy().as_ref(),
-        "__pycache__" | ".pytest_cache" | "target" | "Cargo.lock"
+        "__pycache__" | ".pytest_cache" | ".testmondata" | "target" | "Cargo.lock"
     )
 }
 

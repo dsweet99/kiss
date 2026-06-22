@@ -79,6 +79,7 @@ pub(crate) fn cache_fingerprint(req: &RslipRequest) -> io::Result<String> {
     let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
     h = fnv1a64(h, req.nodeid.as_bytes());
     h = fnv1a64(h, req.python.to_string_lossy().as_bytes());
+    h = fnv1a64(h, req.python_version.as_bytes());
     h = fnv1a64(h, req.pytest_version.as_bytes());
     h = fnv1a64(h, req.cwd.to_string_lossy().as_bytes());
     h = fnv1a64(h, req.source_root.to_string_lossy().as_bytes());
@@ -167,6 +168,18 @@ mod tests {
         let first = cache_fingerprint(&req).unwrap();
         fs::write(tmp.path().join("pkg.py"), "def value():\n    return 2\n").unwrap();
         let second = cache_fingerprint(&req).unwrap();
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn cache_fingerprint_changes_when_python_version_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("pkg.py"), "def value():\n    return 1\n").unwrap();
+        let mut req = crate::sample_request(tmp.path());
+        let first = cache_fingerprint(&req).unwrap();
+        req.python_version = "3.13.0".to_string();
+        let second = cache_fingerprint(&req).unwrap();
+
         assert_ne!(first, second);
     }
 

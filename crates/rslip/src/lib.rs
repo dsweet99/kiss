@@ -27,6 +27,7 @@ pub struct RslipRequest {
     pub cwd: PathBuf,
     pub source_root: PathBuf,
     pub python: PathBuf,
+    pub python_version: String,
     pub pytest_version: String,
     pub pytest_args: Vec<String>,
     pub env: BTreeMap<String, String>,
@@ -182,6 +183,11 @@ fn validate_request(req: &RslipRequest) -> Result<(), RslipError> {
             "pytest version must be part of the cache key".to_string(),
         ));
     }
+    if req.python_version.trim().is_empty() {
+        return Err(RslipError::InvalidRequest(
+            "python version must be part of the cache key".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -237,6 +243,7 @@ fn sample_request(root: &Path) -> RslipRequest {
         cwd: root.to_path_buf(),
         source_root: root.to_path_buf(),
         python: PathBuf::from("python"),
+        python_version: "3.12.0".to_string(),
         pytest_version: "8.0.0".to_string(),
         pytest_args: vec!["-q".to_string()],
         env: BTreeMap::new(),
@@ -247,13 +254,36 @@ fn sample_request(root: &Path) -> RslipRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rpytest_runner::subprocess_pytest_runner;
     use std::{cell::Cell, rc::Rc};
+    use std::process::Command;
+
+    fn python() -> PathBuf {
+        std::env::var_os("PYTHON")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("python"))
+    }
+
+    fn python_version(python: &Path) -> String {
+        let output = Command::new(python)
+            .arg("-c")
+            .arg("import sys; print('.'.join(map(str, sys.version_info[:3])))")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "python version command failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    }
 
     #[test]
     fn request_and_coverage_structs_expose_expected_fields() {
         let tmp = tempfile::tempdir().unwrap();
         let req = RslipRequest::witness(tmp.path());
         assert_eq!(req.nodeid, "test_sample.py::test_ok");
+        assert_eq!(req.python_version, "3.12.0");
         assert_eq!(req.pytest_version, "8.0.0");
         assert!(req.cache_root.ends_with(".rslip_cache"));
 
@@ -312,6 +342,47 @@ mod tests {
 
         assert_eq!(outcome.cache_status, CacheStatus::MissStored);
         assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn subprocess_run_records_executed_lines_and_reuses_cache() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join("app.py"),
+            "def choose(flag):\n    if flag:\n        return 1\n    return 2\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("test_app.py"),
+            "from app import choose\n\n\ndef test_choose_true():\n    assert choose(True) == 1\n",
+        )
+        .unwrap();
+        let python = python();
+        let req = RslipRequest {
+            nodeid: "test_app.py::test_choose_true".to_string(),
+            cwd: tmp.path().to_path_buf(),
+            source_root: tmp.path().to_path_buf(),
+            python_version: python_version(&python),
+            python,
+            pytest_version: "8.0.0".to_string(),
+            pytest_args: vec!["-q".to_string()],
+            env: BTreeMap::new(),
+            cache_root: tmp.path().join(".rslip_cache"),
+        };
+        let rslip = Rslip::new(subprocess_pytest_runner());
+
+        let first = rslip.run_or_reuse(req.clone()).unwrap();
+        let second = rslip.run_or_reuse(req).unwrap();
+        let app_path = tmp.path().join("app.py").canonicalize().unwrap();
+        let app_key = app_path.to_string_lossy().to_string();
+
+        assert_eq!(first.status, TestStatus::Passed);
+        assert_eq!(first.cache_status, CacheStatus::MissStored);
+        assert_eq!(second.cache_status, CacheStatus::Hit);
+        assert!(first.coverage.files[&app_key].contains(&1));
+        assert!(first.coverage.files[&app_key].contains(&2));
+        assert!(first.coverage.files[&app_key].contains(&3));
+        assert!(!first.coverage.files[&app_key].contains(&4));
     }
 
     fn fake_runner(calls: Rc<Cell<usize>>) -> PytestRunner {
