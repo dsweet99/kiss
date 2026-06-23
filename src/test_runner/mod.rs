@@ -215,15 +215,26 @@ mod coverage_witness {
     }
 
     #[test]
-    fn witness_test_runner_api() {
+    fn witness_test_runner_api_handles_empty_plan() {
         let _ = RunTestCmdArgs::witness();
-        let _ = PlannedSelectors::witness();
+        let planned = PlannedSelectors::witness();
         let opts = SelectorRunOptions::witness();
         assert!(opts.dry_run);
         assert!(!opts.force_rerun);
         assert_eq!(opts.jobs, 1);
         assert!(opts.extra.is_empty());
-        assert_eq!(run_test(RunTestCmdArgs::witness()), 0);
+        assert_eq!(run_selectors(&planned, opts).unwrap(), 0);
+    }
+
+    #[test]
+    fn run_test_rejects_non_git_directory_quickly() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let orig = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let code = run_test(RunTestCmdArgs::witness());
+        std::env::set_current_dir(orig).unwrap();
+        assert_eq!(code, 1);
     }
 }
 

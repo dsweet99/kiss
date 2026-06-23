@@ -40,16 +40,30 @@ fn test_language_and_config() {
 }
 
 #[test]
-fn test_clamp_ignore_aligns_with_check_floor_in_repo() {
-    let cwd = std::env::current_dir().unwrap();
-    if !cwd.join("src/lib.rs").exists() {
-        return;
-    }
+fn test_clamp_ignore_aligns_with_check_floor_for_fixture() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("app.py"),
+        "def covered():\n    return 1\n\ndef uncovered():\n    return 2\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("test_app.py"),
+        "from app import covered\n\ndef test_covered():\n    assert covered() == 1\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("fake_extra.py"),
+        "def ignored_uncovered():\n    return 3\n",
+    )
+    .unwrap();
+
     let ignore = crate::bin_cli::util::merge_check_ignore_prefixes(&[]);
-    let gate = kiss::config_gen::infer_gate_config_for_paths(&[".".to_string()], None, &ignore);
-    assert!(
-        gate.test_coverage_threshold <= 90,
-        "clamp should infer a floor at or below default gate threshold"
+    let path = tmp.path().to_string_lossy().to_string();
+    let gate = kiss::config_gen::infer_gate_config_for_paths(&[path], None, &ignore);
+    assert_eq!(
+        gate.test_coverage_threshold, 50,
+        "clamp should infer the floor from non-ignored source files"
     );
 }
 

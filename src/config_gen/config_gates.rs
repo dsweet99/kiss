@@ -106,12 +106,25 @@ fn test_defaults_appenders() {
 }
 
 #[test]
-fn test_infer_gate_threshold_matches_check_floor_when_in_repo() {
-    let cwd = std::env::current_dir().unwrap();
-    if !cwd.join("src/lib.rs").exists() {
-        return;
-    }
-    let paths = vec![".".to_string()];
+fn test_infer_gate_threshold_matches_check_floor_for_fixture() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("app.py"),
+        "def covered():\n    return 1\n\ndef uncovered():\n    return 2\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("test_app.py"),
+        "from app import covered\n\ndef test_covered():\n    assert covered() == 1\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("fake_extra.py"),
+        "def ignored_uncovered():\n    return 3\n",
+    )
+    .unwrap();
+
+    let paths = vec![tmp.path().to_string_lossy().to_string()];
     let ignore = vec!["fake_".to_string()];
     let (py_files, rs_files) = crate::discovery::gather_files_by_lang(&paths, None, &ignore);
     let py_parsed: Vec<_> = crate::parsing::parse_files(&py_files)
@@ -140,6 +153,7 @@ fn test_infer_gate_threshold_matches_check_floor_when_in_repo() {
     let mut worst = worst;
     worst.sort_by_key(|(_, pct)| *pct);
     if let Some((path, pct)) = worst.first() {
+        assert!(path.ends_with("app.py"), "worst gate file should be app.py");
         assert_eq!(
             gate.test_coverage_threshold, *pct,
             "threshold should match worst gate file {path} at {pct}%"
