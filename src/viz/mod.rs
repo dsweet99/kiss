@@ -27,15 +27,16 @@ fn mermaid_escape_label(s: &str) -> String {
 }
 
 fn mermaid_node_id(prefix: &str, name: &str) -> String {
-    // Mermaid identifiers should be simple; normalize to [a-z0-9_].
-    let mut out = String::with_capacity(prefix.len() + name.len() + 3);
+    // Mermaid identifiers should be simple; encode non-alphanumeric chars injectively.
+    let mut out = String::with_capacity(prefix.len() + name.len() * 2 + 3);
     out.push_str(prefix);
     out.push_str("__");
     for ch in name.chars() {
         if ch.is_ascii_alphanumeric() {
             out.push(ch.to_ascii_lowercase());
         } else {
-            out.push('_');
+            use std::fmt::Write as _;
+            let _ = write!(out, "_{:x}_", u32::from(ch));
         }
     }
     if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {

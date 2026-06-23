@@ -77,7 +77,7 @@ fn test_cli_and_commands() {
         Cli::try_parse_from(["kiss", "clamp"]).unwrap().command,
         Commands::Clamp { .. }
     ));
-    ensure_default_config_exists();
+    ensure_default_config_exists(&[".".to_string()], false);
 }
 
 #[test]

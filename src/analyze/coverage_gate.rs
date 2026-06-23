@@ -3,9 +3,8 @@ use std::path::{Path, PathBuf};
 
 use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::cli_output::{CoverageGateFailureCtx, file_coverage_map, print_coverage_gate_failure};
-use crate::analyze::coverage::compute_test_coverage_from_lists;
 use crate::analyze::coverage_types::CheckCoverageGateParams;
-use crate::analyze::focus::{FocusFilter, is_focus_file};
+use crate::analyze::focus::FocusFilter;
 
 type PathNameLine = (PathBuf, String, usize);
 type PerFileGateFailure = (Vec<PathNameLine>, std::collections::HashMap<PathBuf, usize>);
@@ -59,10 +58,9 @@ fn overlay_weighted_file_pcts(
     unreferenced_focus: &mut Vec<PathNameLine>,
     defs_focus: &[(PathBuf, String, usize)],
     weighted: &HashMap<PathBuf, usize>,
-    focus: &FocusFilter,
 ) {
     for (path, pct) in weighted {
-        if !is_focus_file(path, focus) || !is_weighted_overlay_target(path) {
+        if !is_weighted_overlay_target(path) {
             continue;
         }
         file_pcts.insert(path.clone(), *pct);
@@ -78,25 +76,28 @@ fn overlay_weighted_file_pcts(
 fn per_file_coverage_gate_fails(
     defs_t: &[(PathBuf, String, usize)],
     unrefs_t: &[(PathBuf, String, usize)],
-    focus: &FocusFilter,
+    _focus: &FocusFilter,
     threshold: usize,
     weighted_pcts: Option<&HashMap<PathBuf, usize>>,
 ) -> Option<PerFileGateFailure> {
-    let (_, _, _, mut unreferenced_focus) =
-        compute_test_coverage_from_lists(defs_t, unrefs_t, focus);
-    let defs_focus: Vec<_> = defs_t
+    let defs_gate: Vec<_> = defs_t
         .iter()
-        .filter(|(f, _, _)| is_focus_file(f, focus))
+        .filter(|(f, _, _)| is_coverage_gate_file(f))
         .cloned()
         .collect();
-    let mut file_pcts = file_coverage_map(&defs_focus, &unreferenced_focus);
+    let unrefs_gate: Vec<_> = unrefs_t
+        .iter()
+        .filter(|(f, _, _)| is_coverage_gate_file(f))
+        .cloned()
+        .collect();
+    let mut unreferenced_gate = unrefs_gate.clone();
+    let mut file_pcts = file_coverage_map(&defs_gate, &unreferenced_gate);
     if let Some(weighted) = weighted_pcts {
         overlay_weighted_file_pcts(
             &mut file_pcts,
-            &mut unreferenced_focus,
-            &defs_focus,
+            &mut unreferenced_gate,
+            &defs_gate,
             weighted,
-            focus,
         );
     }
     let gate_fails = file_pcts
@@ -107,11 +108,11 @@ fn per_file_coverage_gate_fails(
             .into_iter()
             .filter(|(path, _)| is_coverage_gate_file(path))
             .collect();
-        let unreferenced_focus: Vec<_> = unreferenced_focus
+        let unreferenced_gate: Vec<_> = unreferenced_gate
             .into_iter()
             .filter(|(path, _name, _)| is_coverage_gate_file(path))
             .collect();
-        Some((unreferenced_focus, file_pcts))
+        Some((unreferenced_gate, file_pcts))
     } else {
         None
     }

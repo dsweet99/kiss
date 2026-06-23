@@ -54,7 +54,7 @@ pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
     if py_files.is_empty() && rs_files.is_empty() {
         print_no_files_message(opts.lang_filter, universe_root);
         return AnalyzeResult {
-            success: true,
+            success: opts.lang_filter.is_none(),
             metrics: Some(empty_repo_metrics()),
         };
     }

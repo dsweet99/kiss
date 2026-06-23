@@ -106,10 +106,26 @@ fn parse_and_analyze_py_timed(
 
     let parsed: Vec<ParsedFile> = results.into_iter().filter_map(py_parsed_or_log).collect();
 
-    let (unit_count, stmt_count, viols) = parsed
+    let mut viols: Vec<Violation> = parsed
+        .iter()
+        .filter(|p| p.tree.root_node().has_error())
+        .map(|p| {
+            Violation::builder(&p.path)
+                .metric("syntax")
+                .value(1)
+                .threshold(0)
+                .message(format!("Syntax error in {}", p.path.display()))
+                .suggestion("Fix Python syntax so the file compiles.")
+                .build()
+        })
+        .collect();
+
+    let (unit_count, stmt_count, metric_viols) = parsed
         .par_iter()
         .map(|p| py_file_agg(p, config))
         .reduce(py_agg_empty, py_agg_merge);
+
+    viols.extend(metric_viols);
 
     let t2 = std::time::Instant::now();
     let timing = if show_timing {

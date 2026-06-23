@@ -1,19 +1,60 @@
+use crate::bin_cli::args::Commands;
 use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::util::default_check_ignore_prefixes;
-use kiss::{Config, ConfigLanguage, GateConfig};
+use kiss::{parse_target_arg, Config, ConfigLanguage, GateConfig};
 use std::path::{Path, PathBuf};
 
-pub fn ensure_default_config_exists() {
-    let local_config = Path::new(".kissconfig");
+pub fn command_paths(command: &Commands) -> Vec<String> {
+    match command {
+        Commands::Check { paths, .. }
+        | Commands::Stats { paths, .. }
+        | Commands::Mimic { paths, .. }
+        | Commands::Viz { paths, .. }
+        | Commands::Mv { paths, .. } => paths.clone(),
+        Commands::Shrink { paths, target, .. } => {
+            let mut out = paths.clone();
+            if let Some(t) = target
+                && parse_target_arg(t).is_err()
+            {
+                out.insert(0, t.clone());
+            }
+            out
+        }
+        Commands::Dry { path, .. } => vec![path.clone()],
+        Commands::Clamp { .. } | Commands::Rules | Commands::Config | Commands::Test { .. } => {
+            vec![".".to_string()]
+        }
+        Commands::Init { .. } => Vec::new(),
+    }
+}
+
+fn config_path_for_paths(paths: &[String]) -> PathBuf {
+    let first = paths.first().map(String::as_str).unwrap_or(".");
+    let anchor = Path::new(first);
+    if anchor.is_file() {
+        anchor
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join(".kissconfig")
+    } else {
+        anchor.join(".kissconfig")
+    }
+}
+
+pub fn ensure_default_config_exists(paths: &[String], use_defaults: bool) {
+    if use_defaults || paths.is_empty() {
+        return;
+    }
+    let local_config = config_path_for_paths(paths);
     if local_config.exists() {
         return;
     }
-    run_mimic(
-        &[".".to_string()],
-        Some(local_config),
-        None,
-        &default_check_ignore_prefixes(),
-    );
+    let ignore = default_check_ignore_prefixes();
+    let (py_files, rs_files) = kiss::discovery::gather_files_by_lang(paths, None, &ignore);
+    if py_files.is_empty() && rs_files.is_empty() {
+        return;
+    }
+    run_mimic(paths, Some(&local_config), None, &ignore);
 }
 
 pub fn run_init_command(repo_path: &Path) -> i32 {
@@ -130,10 +171,27 @@ mod tests {
         std::env::set_current_dir(tmp.path()).unwrap();
 
         assert!(!Path::new(".kissconfig").exists());
-        ensure_default_config_exists();
+        ensure_default_config_exists(&[".".to_string()], false);
         assert!(
             Path::new(".kissconfig").exists(),
             "missing local .kissconfig should be created by clamp"
+        );
+
+        std::env::set_current_dir(orig_dir).unwrap();
+    }
+
+    #[test]
+    fn test_ensure_default_config_skipped_with_defaults_flag() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("sample.py"), "def foo():\n    return 1\n").unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        ensure_default_config_exists(&[".".to_string()], true);
+        assert!(
+            !Path::new(".kissconfig").exists(),
+            "--defaults must not write .kissconfig"
         );
 
         std::env::set_current_dir(orig_dir).unwrap();

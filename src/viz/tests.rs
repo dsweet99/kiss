@@ -110,7 +110,8 @@ fn test_mermaid_escape_label() {
 #[test]
 fn test_mermaid_node_id() {
     assert_eq!(mermaid_node_id("rs", "Foo"), "rs__foo");
-    assert_eq!(mermaid_node_id("py", "bar-baz"), "py__bar_baz");
+    assert_eq!(mermaid_node_id("py", "bar-baz"), "py__bar_2d_baz");
+    assert_ne!(mermaid_node_id("py", "foo-bar"), mermaid_node_id("py", "foo_bar"));
 }
 
 #[test]

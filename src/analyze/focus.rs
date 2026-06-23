@@ -19,6 +19,7 @@ pub fn gather_files(
             _ => {}
         }
     }
+    let rs = kiss::expand_rust_files(rs);
     (py, rs)
 }
 

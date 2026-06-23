@@ -36,6 +36,8 @@ mod bug_indirect_dependencies_check;
 mod bug_test_coverage_aggregate_gate_masking;
 #[path = "cases/bug_test_coverage_violation_message.rs"]
 mod bug_test_coverage_violation_message;
+#[path = "cases/bugs_md_regressions.rs"]
+mod bugs_md_regressions;
 #[path = "cases/kpop_python_graph_metrics.rs"]
 mod kpop_python_graph_metrics;
 #[path = "cases/kpop_python_none.rs"]

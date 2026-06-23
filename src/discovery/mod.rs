@@ -1,4 +1,5 @@
 use ignore::{WalkBuilder, WalkState};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -99,12 +100,21 @@ pub fn gather_files_by_lang(
     ignore_prefixes: &[String],
 ) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let (mut py_files, mut rs_files) = (Vec::new(), Vec::new());
+    let (mut seen_py, mut seen_rs) = (HashSet::new(), HashSet::new());
     for path in paths {
         for sf in find_source_files_with_ignore(Path::new(path), ignore_prefixes) {
             let canonical = sf.path.canonicalize().unwrap_or(sf.path);
             match (sf.language, lang_filter) {
-                (Language::Python, None | Some(Language::Python)) => py_files.push(canonical),
-                (Language::Rust, None | Some(Language::Rust)) => rs_files.push(canonical),
+                (Language::Python, None | Some(Language::Python))
+                    if seen_py.insert(canonical.clone()) =>
+                {
+                    py_files.push(canonical);
+                }
+                (Language::Rust, None | Some(Language::Rust))
+                    if seen_rs.insert(canonical.clone()) =>
+                {
+                    rs_files.push(canonical);
+                }
                 _ => {}
             }
         }

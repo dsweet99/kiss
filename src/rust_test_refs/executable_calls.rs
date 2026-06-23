@@ -110,13 +110,44 @@ impl ExecutableCallReferenceVisitor<'_> {
         }
     }
 
-    fn visit_reachable_expr(&mut self, expr: &Expr) {
+    fn visit_struct_expr(&mut self, s: &syn::ExprStruct) {
+        insert_qualified_path_reference(&s.path, self.refs, self.qualified);
+        for field in &s.fields {
+            if let syn::Member::Named(_) = field.member {
+                self.visit_reachable_expr(&field.expr);
+            }
+        }
+    }
+
+    fn visit_qualified_path_expr(&mut self, p: &syn::ExprPath) {
+        if p.path.segments.len() >= 2 {
+            insert_qualified_path_reference(&p.path, self.refs, self.qualified);
+        }
+    }
+
+    fn visit_control_flow(&mut self, expr: &Expr) -> bool {
         match expr {
-            Expr::If(i) => self.visit_if(i),
-            Expr::Match(m) => self.visit_match(m),
+            Expr::If(i) => {
+                self.visit_if(i);
+                true
+            }
+            Expr::Match(m) => {
+                self.visit_match(m);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn visit_reachable_expr(&mut self, expr: &Expr) {
+        if self.visit_control_flow(expr) {
+            return;
+        }
+        match expr {
             Expr::While(_) | Expr::Loop(_) => self.visit_repeat(expr),
             Expr::Call(_) | Expr::MethodCall(_) => self.record_invocation(expr),
-            Expr::Block(b) => self.visit_reachable_block(&b.block),
+            Expr::Struct(s) => self.visit_struct_expr(s),
+            Expr::Path(p) => self.visit_qualified_path_expr(p),
             Expr::Closure(_) | Expr::Async(_) => {}
             Expr::Macro(m) => visit_macro_call_tokens(self, &m.mac.tokens),
             _ => syn::visit::visit_expr(self, expr),

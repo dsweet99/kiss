@@ -1,7 +1,6 @@
 use crate::analyze;
 use crate::analyze::GlobalMetricsInput;
-use crate::bin_cli::util::validate_paths;
-use kiss::normalize_ignore_prefixes;
+use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use kiss::{ShrinkState, ShrinkViolations, check_shrink_constraints, parse_target_arg};
 
 pub use super::shrink_analysis_types::{ShrinkAnalyzeArgs, ShrinkMetricsArgs};
@@ -27,7 +26,7 @@ pub fn run_shrink_start(
     ignore: &[String],
     ctx: &ShrinkStartContext<'_>,
 ) -> i32 {
-    let ignore = normalize_ignore_prefixes(ignore);
+    let ignore = merge_check_ignore_prefixes(ignore);
     validate_paths(paths);
 
     let (target, target_value) = match parse_target_arg(target_arg) {
@@ -90,7 +89,7 @@ pub fn run_shrink_start(
 }
 
 pub fn run_shrink_check(paths: &[String], ignore: &[String], ctx: &ShrinkFullContext<'_>) -> i32 {
-    let ignore = normalize_ignore_prefixes(ignore);
+    let ignore = merge_check_ignore_prefixes(ignore);
     validate_paths(paths);
 
     let Some(state) = ShrinkState::load() else {

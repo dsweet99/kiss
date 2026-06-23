@@ -161,9 +161,12 @@ fn test_find_source_files_with_ignore() {
 }
 
 #[test]
-fn test_gather_files_by_lang_empty_input() {
-    let (py, rs) = gather_files_by_lang(&[], None, &[]);
-    assert!(py.is_empty());
+fn test_gather_files_by_lang_deduplicates_paths() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.py"), "").unwrap();
+    let p = tmp.path().to_string_lossy().to_string();
+    let (py, rs) = gather_files_by_lang(&[p.clone(), p], None, &[]);
+    assert_eq!(py.len(), 1);
     assert!(rs.is_empty());
 }
 

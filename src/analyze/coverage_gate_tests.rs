@@ -16,12 +16,12 @@ use std::collections::HashSet;
     }
 
     #[test]
-    fn per_file_gate_ignores_files_outside_focus() {
+    fn per_file_gate_fails_for_files_outside_focus() {
         use std::path::PathBuf;
         let defs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
         let unrefs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
         let focus = crate::analyze::FocusFilter::restricting(std::iter::once(PathBuf::from("src/b.py")).collect());
-        assert!(per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90, None).is_none());
+        assert!(per_file_coverage_gate_fails(&defs, &unrefs, &focus, 90, None).is_some());
     }
 
     #[test]

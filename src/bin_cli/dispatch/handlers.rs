@@ -34,7 +34,8 @@ pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) 
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
+    validate_paths(&o.paths);
+    let ignore = merge_check_ignore_prefixes(&o.ignore);
     run_stats(RunStatsArgs {
         paths: &o.paths,
         lang_filter: o.lang,
@@ -49,7 +50,8 @@ pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_mimic(o: MimicDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
+    validate_paths(&o.paths);
+    let ignore = merge_check_ignore_prefixes(&o.ignore);
     run_mimic(&o.paths, o.out.as_deref(), o.lang, &ignore);
     0
 }
@@ -121,6 +123,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_viz(o: VizDispatchOptions) -> i32 {
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_shrink(o: ShrinkDispatchOptions<'_>) -> i32 {
+    let (target, paths) = normalize_shrink_target_and_paths(o.target, o.paths);
     let ctx = ShrinkFullContext {
         lang_filter: o.lang,
         py_config: o.cfg.py,
@@ -128,11 +131,30 @@ pub(in crate::bin_cli::dispatch) fn dispatch_shrink(o: ShrinkDispatchOptions<'_>
         gate_config: o.cfg.gate,
     };
     run_shrink(RunShrinkArgs {
-        target: o.target,
-        paths: &o.paths,
+        target,
+        paths: &paths,
         ignore: &o.ignore,
         ctx: &ctx,
     })
+}
+
+fn normalize_shrink_target_and_paths(
+    target: Option<String>,
+    paths: Vec<String>,
+) -> (Option<String>, Vec<String>) {
+    if let Some(ref t) = target
+        && kiss::parse_target_arg(t).is_err()
+    {
+        let paths = if paths.is_empty() || paths == [".".to_string()] {
+            vec![t.clone()]
+        } else {
+            let mut out = vec![t.clone()];
+            out.extend(paths);
+            out
+        };
+        return (None, paths);
+    }
+    (target, paths)
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) -> i32 {
