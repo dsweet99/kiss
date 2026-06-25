@@ -4,11 +4,11 @@ mod ast_models;
 mod ast_plan;
 mod ast_python;
 mod ast_python_walk;
-#[path = "ast_rust_span.rs"]
-mod ast_rust_span;
+mod ast_rust;
 #[path = "ast_rust_macros.rs"]
 mod ast_rust_macros;
-mod ast_rust;
+#[path = "ast_rust_span.rs"]
+mod ast_rust_span;
 #[path = "ast_rust_visitors.rs"]
 mod ast_rust_visitors;
 mod basics;

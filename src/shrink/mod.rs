@@ -141,9 +141,7 @@ mod coverage_witness {
 
     impl ShrinkViolations {
         fn witness() -> Self {
-            Self {
-                violations: vec![],
-            }
+            Self { violations: vec![] }
         }
     }
 

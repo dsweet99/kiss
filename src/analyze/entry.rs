@@ -10,9 +10,7 @@ fn empty_repo_metrics() -> kiss::GlobalMetrics {
     kiss::GlobalMetrics::default()
 }
 
-fn focus_filter_for_opts(
-    opts: &AnalyzeOptions<'_>,
-) -> FocusFilter {
+fn focus_filter_for_opts(opts: &AnalyzeOptions<'_>) -> FocusFilter {
     build_focus_filter(
         opts.focus_paths,
         opts.universe,
@@ -27,9 +25,7 @@ fn try_cache_hit(
     rs_files: &[std::path::PathBuf],
     focus: &FocusFilter,
 ) -> Option<AnalyzeResult> {
-    if opts.show_timing
-        || opts.suppress_final_status
-    {
+    if opts.show_timing || opts.suppress_final_status {
         return None;
     }
     crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus).map(|ok| {

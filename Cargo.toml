@@ -30,6 +30,7 @@ members = [
     ".",
     "crates/rpytest-runner",
     "crates/rslip",
+    "crates/rust-llvm-cov-runner",
 ]
 resolver = "3"
 
@@ -75,6 +76,7 @@ fa-leiden-cd = "0.1.0"
 bincode = "1.3"
 rpytest-runner = { path = "crates/rpytest-runner" }
 rslip = { path = "crates/rslip" }
+rust-llvm-cov-runner = { path = "crates/rust-llvm-cov-runner" }
 
 [dev-dependencies]
 tempfile = "3"

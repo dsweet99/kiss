@@ -5,11 +5,16 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 
+#[cfg(test)]
+pub(crate) use super::rust_llvm_cov::rust_llvm_cov_request_from_parts;
+pub(crate) use super::rust_llvm_cov::{
+    build_cargo_llvm_cov_dry_run_argv, run_rust_llvm_cov_selectors,
+};
 use crate::test_discovery::{self, args as disc_args};
 use kiss::test_refs::{is_in_test_directory, is_test_file};
 use kiss::{parse_files, parse_rust_files, rust_test_functions_in, test_functions_in};
 use rpytest_runner::subprocess_pytest_runner;
-use rslip::{CacheStatus, Rslip, RslipError, RslipOutcome, RslipRequest};
+use rslip::{CacheStatus as PyCacheStatus, Rslip, RslipError, RslipOutcome, RslipRequest};
 
 pub const NO_COVERING_TESTS_MSG: &str = "NO COVERING TESTS";
 
@@ -274,19 +279,19 @@ fn spawn_rslip_job(
 
 fn print_rslip_outcome(outcome: &RslipOutcome) {
     match (outcome.status, outcome.cache_status) {
-        (rpytest_runner::TestStatus::Passed, CacheStatus::Hit) => {
+        (rpytest_runner::TestStatus::Passed, PyCacheStatus::Hit) => {
             println!("PASSED (cached): {}", outcome.nodeid);
         }
-        (rpytest_runner::TestStatus::Passed, CacheStatus::MissStored) => {
+        (rpytest_runner::TestStatus::Passed, PyCacheStatus::MissStored) => {
             println!("PASSED: {}", outcome.nodeid);
         }
-        (rpytest_runner::TestStatus::Failed, CacheStatus::Hit) => {
+        (rpytest_runner::TestStatus::Failed, PyCacheStatus::Hit) => {
             println!("FAILED (cached): {}", outcome.nodeid);
             eprintln!(
                 "Failure output was not cached. Re-run with --force to reproduce stdout/stderr."
             );
         }
-        (rpytest_runner::TestStatus::Failed, CacheStatus::MissStored) => {
+        (rpytest_runner::TestStatus::Failed, PyCacheStatus::MissStored) => {
             println!("FAILED: {}", outcome.nodeid);
             if let Some(stderr) = &outcome.stderr
                 && !stderr.is_empty()
@@ -301,7 +306,7 @@ fn format_rslip_error(err: RslipError) -> String {
     format!("error: kiss test: rslip failed: {err:?}")
 }
 
-fn command_stdout(program: &Path, args: &[&str], cwd: &Path) -> Result<String, String> {
+pub(crate) fn command_stdout(program: &Path, args: &[&str], cwd: &Path) -> Result<String, String> {
     let output = Command::new(program)
         .args(args)
         .current_dir(cwd)
@@ -316,28 +321,6 @@ fn command_stdout(program: &Path, args: &[&str], cwd: &Path) -> Result<String, S
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-pub fn build_cargo_test_argv(selectors: &[String], extra: &[String]) -> Vec<String> {
-    let mut v = vec!["cargo".into(), "test".into(), "--".into()];
-    v.extend(selectors.iter().cloned());
-    v.extend(extra.iter().cloned());
-    v
-}
-
-pub fn run_command_inherit(argv: &[String], cwd: &Path) -> Result<i32, String> {
-    if argv.is_empty() {
-        return Ok(0);
-    }
-    let mut cmd = Command::new(&argv[0]);
-    cmd.args(&argv[1..]).current_dir(cwd);
-    cmd.stdin(Stdio::null());
-    cmd.stdout(Stdio::inherit());
-    cmd.stderr(Stdio::inherit());
-    let st = cmd
-        .status()
-        .map_err(|e| format!("failed to spawn {}: {e}", argv[0]))?;
-    Ok(st.code().unwrap_or_else(|| i32::from(!st.success())))
 }
 
 pub fn discover_for_paths(

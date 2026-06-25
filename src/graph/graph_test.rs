@@ -1,10 +1,9 @@
 use crate::graph::{
-    CycleInfo, DependencyGraph,
-    build_dependency_graph_from_import_lists, compute_cyclomatic_complexity, count_decision_points, extract_dynamic_import_module,
-    extract_imports_for_cache, extract_imports_recursive, extract_modules_from_import_from, get_module_path, is_decision_point,
-    is_crate_root_aggregator, is_entry_point,
-    is_orphan, push_dotted_segments,
-    qualified_module_name,
+    CycleInfo, DependencyGraph, build_dependency_graph_from_import_lists,
+    compute_cyclomatic_complexity, count_decision_points, extract_dynamic_import_module,
+    extract_imports_for_cache, extract_imports_recursive, extract_modules_from_import_from,
+    get_module_path, is_crate_root_aggregator, is_decision_point, is_entry_point, is_orphan,
+    push_dotted_segments, qualified_module_name,
 };
 use crate::parsing::create_parser;
 use std::io::Write;
@@ -174,11 +173,9 @@ fn test_helpers_imports_and_complexity() {
     );
     assert!(is_orphan(0, 0, "utils") && !is_orphan(1, 0, "utils"));
     let mut g = DependencyGraph::new();
-    g.paths
-        .insert("lib".into(), PathBuf::from("src/lib.rs"));
+    g.paths.insert("lib".into(), PathBuf::from("src/lib.rs"));
     assert!(is_crate_root_aggregator(&g, "lib"));
-    g.paths
-        .insert("entry".into(), PathBuf::from("entry.py"));
+    g.paths.insert("entry".into(), PathBuf::from("entry.py"));
     assert!(!is_crate_root_aggregator(&g, "entry"));
     g.path_to_module
         .insert(PathBuf::from("src/foo.py"), "foo".into());

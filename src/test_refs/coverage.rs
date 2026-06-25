@@ -17,9 +17,9 @@ pub(crate) fn is_method_covered_by_class_and_name(
     def: &CodeDefinition,
     usage_refs: &HashSet<String>,
 ) -> bool {
-    def.containing_class.as_ref().is_some_and(|cls| {
-        usage_refs.contains(cls) && usage_refs.contains(&def.name)
-    })
+    def.containing_class
+        .as_ref()
+        .is_some_and(|cls| usage_refs.contains(cls) && usage_refs.contains(&def.name))
 }
 
 pub(crate) fn is_definition_covered(def: &CodeDefinition, ctx: &CoverageContext<'_>) -> bool {
@@ -63,9 +63,9 @@ fn is_import_called(
         if call_refs.contains(&def.name) {
             return true;
         }
-        alias_bindings.iter().any(|(alias, original)| {
-            original == &def.name && call_refs.contains(alias)
-        })
+        alias_bindings
+            .iter()
+            .any(|(alias, original)| original == &def.name && call_refs.contains(alias))
     })
 }
 

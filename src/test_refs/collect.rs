@@ -1,6 +1,6 @@
-use super::scope::collect_py_scope;
-use super::detection::{is_abstract_method, is_protocol_class};
 use super::CodeDefinition;
+use super::detection::{is_abstract_method, is_protocol_class};
+use super::scope::collect_py_scope;
 use crate::units::{CodeUnitKind, get_child_by_field};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -301,8 +301,7 @@ pub(crate) fn extract_import_from_binding(
             }
             "aliased_import" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
-                    let original =
-                        source[name_node.start_byte()..name_node.end_byte()].to_string();
+                    let original = source[name_node.start_byte()..name_node.end_byte()].to_string();
                     names.insert(original.clone());
                     if let Some(alias_node) = child.child_by_field_name("alias") {
                         let alias =
@@ -322,7 +321,11 @@ pub(crate) fn extract_import_from_binding(
     }
 }
 
-pub(crate) fn collect_py_import_names_for_refs(node: Node, source: &str, refs: &mut HashSet<String>) {
+pub(crate) fn collect_py_import_names_for_refs(
+    node: Node,
+    source: &str,
+    refs: &mut HashSet<String>,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {

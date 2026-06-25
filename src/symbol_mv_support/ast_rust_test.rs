@@ -166,5 +166,9 @@ fn parses_stmt_macro_reference() {
     let ParseOutcome::Success(res) = parse_rust(src) else {
         panic!("parse should succeed");
     };
-    assert!(res.references.iter().any(|r| &src[r.start..r.end] == "helper"));
+    assert!(
+        res.references
+            .iter()
+            .any(|r| &src[r.start..r.end] == "helper")
+    );
 }

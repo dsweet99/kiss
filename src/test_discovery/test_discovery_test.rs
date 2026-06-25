@@ -80,7 +80,10 @@ fn test_discovery_rust() {
     let p = tmp.path().join("mymod.rs").to_string_lossy().to_string();
     let defs = discover(&universe, &[p]);
     let cov = covering_strings(&defs, "helper");
-    assert!(!cov.is_empty(), "expected covering tests for helper, got {defs:?}");
+    assert!(
+        !cov.is_empty(),
+        "expected covering tests for helper, got {defs:?}"
+    );
 }
 
 #[test]
@@ -243,7 +246,10 @@ fn discover_two_universe_roots_from_paths() {
     std::fs::write(u2.join("b.py"), "def fb():\n    pass\n").unwrap();
     let universe = u1.to_string_lossy().to_string();
     let p2 = u2.join("b.py").canonicalize().unwrap();
-    let paths = vec![u1.join("a.py").to_string_lossy().to_string(), p2.to_string_lossy().to_string()];
+    let paths = vec![
+        u1.join("a.py").to_string_lossy().to_string(),
+        p2.to_string_lossy().to_string(),
+    ];
     let defs = discover(&universe, &paths);
     assert!(defs.iter().any(|(_, n, _, _)| n == "fa"));
     assert!(defs.iter().any(|(_, n, _, _)| n == "fb"));

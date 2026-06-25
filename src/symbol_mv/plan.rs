@@ -210,8 +210,14 @@ mod plan_coverage {
     fn has_python_top_level_definition_detects_def_and_class() {
         assert!(has_python_top_level_definition("def foo(): pass\n", "foo"));
         assert!(has_python_top_level_definition("class Foo: pass\n", "Foo"));
-        assert!(!has_python_top_level_definition("def food(): pass\n", "foo"));
-        assert!(!has_python_top_level_definition("  def foo(): pass\n", "foo"));
+        assert!(!has_python_top_level_definition(
+            "def food(): pass\n",
+            "foo"
+        ));
+        assert!(!has_python_top_level_definition(
+            "  def foo(): pass\n",
+            "foo"
+        ));
     }
 
     #[test]

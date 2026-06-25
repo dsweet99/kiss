@@ -4,8 +4,8 @@
 //! `kiss check` must fail when any production file is below the threshold, even if
 //! aggregate coverage clears the gate (18/19 referenced with threshold 90).
 
-use std::fs;
 use std::fmt::Write as _;
+use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -38,11 +38,7 @@ fn write_aggregate_masking_corpus(root: &std::path::Path) {
         write!(good, "def f{i}():\n    return {i}\n\n").unwrap();
     }
     fs::write(root.join("good.py"), good).unwrap();
-    fs::write(
-        root.join("bad.py"),
-        "def orphan_func():\n    pass\n",
-    )
-    .unwrap();
+    fs::write(root.join("bad.py"), "def orphan_func():\n    pass\n").unwrap();
 
     let imports: String = (1..=COVERED_FUNCTION_COUNT)
         .map(|i| format!("f{i}"))
@@ -60,7 +56,11 @@ fn write_aggregate_masking_corpus(root: &std::path::Path) {
     write_permissive_config(root);
 }
 
-fn run_check_from_corpus_root(home: &std::path::Path, root: &std::path::Path, target: &str) -> std::process::Output {
+fn run_check_from_corpus_root(
+    home: &std::path::Path,
+    root: &std::path::Path,
+    target: &str,
+) -> std::process::Output {
     kiss_binary()
         .current_dir(root)
         .env("HOME", home)

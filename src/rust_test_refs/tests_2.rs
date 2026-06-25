@@ -266,10 +266,7 @@ mod tests {
     let parsed = parse_rust_file(&path).unwrap();
     let analysis = analyze_rust_test_refs(&[&parsed], None);
     assert!(
-        !analysis
-            .definitions
-            .iter()
-            .any(|d| d.name == "fmt"),
+        !analysis.definitions.iter().any(|d| d.name == "fmt"),
         "pure trait delegators should not be coverage units"
     );
     assert!(
@@ -318,30 +315,26 @@ fn test_qualified_production_refs_cover_dispatch_handlers() {
     )
     .unwrap();
     let test_path = tmp.path().join("table_integration.rs");
-    std::fs::write(
-        &test_path,
-        "#[test]\nfn smoke() { table::register(); }\n",
-    )
-    .unwrap();
+    std::fs::write(&test_path, "#[test]\nfn smoke() { table::register(); }\n").unwrap();
 
     let parsed_alpha = parse_rust_file(&alpha).unwrap();
     let parsed_beta = parse_rust_file(&beta).unwrap();
     let parsed_table = parse_rust_file(&table).unwrap();
     let parsed_test = parse_rust_file(&test_path).unwrap();
     let analysis = analyze_rust_test_refs(
-        &[
-            &parsed_alpha,
-            &parsed_beta,
-            &parsed_table,
-            &parsed_test,
-        ],
+        &[&parsed_alpha, &parsed_beta, &parsed_table, &parsed_test],
         None,
     );
 
     let uncovered: Vec<_> = analysis
         .unreferenced
         .iter()
-        .map(|d| (d.name.as_str(), d.file.file_name().unwrap().to_str().unwrap()))
+        .map(|d| {
+            (
+                d.name.as_str(),
+                d.file.file_name().unwrap().to_str().unwrap(),
+            )
+        })
         .collect();
     assert!(
         analysis
@@ -383,10 +376,7 @@ fn test_production_call_refs_cover_transitive_callees() {
     let parsed_test = parse_rust_file(&test_path).unwrap();
     let analysis = analyze_rust_test_refs(&[&parsed_lib, &parsed_test], None);
     assert!(
-        !analysis
-            .unreferenced
-            .iter()
-            .any(|d| d.name == "helper"),
+        !analysis.unreferenced.iter().any(|d| d.name == "helper"),
         "helper should be covered via production call from chain"
     );
 }

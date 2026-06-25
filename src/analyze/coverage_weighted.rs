@@ -19,10 +19,7 @@ pub(crate) fn merge_weighted_file_pcts(
         {
             weighted.insert(parsed.path.clone(), 0);
         } else if !weighted.contains_key(&parsed.path)
-            && !py_cov
-                .definitions
-                .iter()
-                .any(|d| d.file == parsed.path)
+            && !py_cov.definitions.iter().any(|d| d.file == parsed.path)
         {
             let pct = if parsed.path.file_name().and_then(|s| s.to_str()) == Some("__init__.py") {
                 kiss::test_refs::py_init_marker_pct(parsed)

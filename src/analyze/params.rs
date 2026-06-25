@@ -46,4 +46,3 @@ mod coverage_witness {
         GatedAnalysis::witness();
     }
 }
-

@@ -74,8 +74,8 @@ fn visit_macro_nested_token_groups(
 
 #[cfg(test)]
 mod ast_rust_macros_tests {
-    use crate::symbol_mv_support::ast_models::Reference;
     use super::*;
+    use crate::symbol_mv_support::ast_models::Reference;
 
     #[test]
     fn macro_parser_helpers_visit_token_streams() {
@@ -91,7 +91,12 @@ mod ast_rust_macros_tests {
 
         let list: proc_macro2::TokenStream = "a, b".parse().unwrap();
         let mut list_refs = Vec::<Reference>::new();
-        assert!(parse_macro_as_expr_list(&list, "a, b", &[0], &mut list_refs));
+        assert!(parse_macro_as_expr_list(
+            &list,
+            "a, b",
+            &[0],
+            &mut list_refs
+        ));
         assert!(!list_refs.is_empty());
 
         let nested: proc_macro2::TokenStream = "(helper())".parse().unwrap();

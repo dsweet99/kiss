@@ -18,7 +18,11 @@ pub(crate) fn count_py_branches(node: Node) -> usize {
     while let Some(n) = stack.pop() {
         if matches!(
             n.kind(),
-            "if_statement" | "elif_clause" | "case_clause" | "for_statement" | "while_statement"
+            "if_statement"
+                | "elif_clause"
+                | "case_clause"
+                | "for_statement"
+                | "while_statement"
                 | "async_for_statement"
         ) {
             count += 1;

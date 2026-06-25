@@ -12,8 +12,7 @@ pub(super) fn emit_cached_bypass(
     opts: &crate::analyze::AnalyzeOptions<'_>,
     focus: &FocusFilter,
 ) -> bool {
-    let (mut viols, py_dups, rs_dups, cache) =
-        cached_duplicates(cache, opts.gate_config, focus);
+    let (mut viols, py_dups, rs_dups, cache) = cached_duplicates(cache, opts.gate_config, focus);
     viols.extend(cached_coverage_viols(&cache, focus));
     print_cached_header(&cache);
     print_violations(&viols);

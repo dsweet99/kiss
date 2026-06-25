@@ -7,13 +7,18 @@
 mod cache;
 mod runtime;
 
+#[cfg(test)]
+mod cache_test;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use cache::{CacheEntry, cache_fingerprint, load_cache_entry, store_cache_entry};
+use cache::{
+    RslipCacheEntry, load_rslip_cache_entry, rslip_cache_fingerprint, store_rslip_cache_entry,
+};
 use rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, TestStatus,
 };
@@ -38,7 +43,7 @@ pub struct RslipRequest {
 #[cfg(test)]
 impl RslipRequest {
     fn witness(root: &Path) -> Self {
-        sample_request(root)
+        rslip_sample_request(root)
     }
 }
 
@@ -134,13 +139,13 @@ impl Rslip {
     }
 
     pub fn run_or_reuse(&self, req: RslipRequest) -> Result<RslipOutcome, RslipError> {
-        validate_request(&req)?;
+        validate_rslip_request(&req)?;
         fs::create_dir_all(&req.cache_root)?;
-        let fingerprint = cache_fingerprint(&req)?;
+        let fingerprint = rslip_cache_fingerprint(&req)?;
         if !req.force_rerun
-            && let Some(entry) = load_cache_entry(&req.cache_root, &fingerprint)
+            && let Some(entry) = load_rslip_cache_entry(&req.cache_root, &fingerprint)
         {
-            return Ok(outcome_from_cache(entry));
+            return Ok(rslip_outcome_from_cache(entry));
         }
 
         let run_dir = req.cache_root.join("runtime");
@@ -155,9 +160,9 @@ impl Rslip {
             fs::create_dir_all(parent)?;
         }
 
-        let runner_req = build_runner_request(&req, &run_dir, &artifact_path);
+        let runner_req = build_pytest_runner_request(&req, &run_dir, &artifact_path);
         let outcome = self.runner.run_one(runner_req)?;
-        let coverage = coverage_from_outcome(&outcome)?;
+        let coverage = rslip_coverage_from_outcome(&outcome)?;
         let rslip_outcome = RslipOutcome {
             nodeid: outcome.nodeid,
             status: outcome.status,
@@ -168,16 +173,16 @@ impl Rslip {
             stdout: Some(outcome.stdout),
             stderr: Some(outcome.stderr),
         };
-        store_cache_entry(
+        store_rslip_cache_entry(
             &req.cache_root,
             &fingerprint,
-            &CacheEntry::from(&rslip_outcome),
+            &RslipCacheEntry::from(&rslip_outcome),
         )?;
         Ok(rslip_outcome)
     }
 }
 
-fn outcome_from_cache(entry: CacheEntry) -> RslipOutcome {
+fn rslip_outcome_from_cache(entry: RslipCacheEntry) -> RslipOutcome {
     RslipOutcome {
         nodeid: entry.nodeid,
         status: entry.status,
@@ -190,7 +195,7 @@ fn outcome_from_cache(entry: CacheEntry) -> RslipOutcome {
     }
 }
 
-fn validate_request(req: &RslipRequest) -> Result<(), RslipError> {
+fn validate_rslip_request(req: &RslipRequest) -> Result<(), RslipError> {
     if req.nodeid.trim().is_empty() {
         return Err(RslipError::InvalidRequest(
             "pytest node id must not be empty".to_string(),
@@ -209,7 +214,7 @@ fn validate_request(req: &RslipRequest) -> Result<(), RslipError> {
     Ok(())
 }
 
-fn build_runner_request(
+fn build_pytest_runner_request(
     req: &RslipRequest,
     runtime_dir: &Path,
     artifact_path: &Path,
@@ -245,7 +250,7 @@ fn build_runner_request(
     }
 }
 
-fn coverage_from_outcome(outcome: &PytestRunOutcome) -> Result<LineCoverage, RslipError> {
+fn rslip_coverage_from_outcome(outcome: &PytestRunOutcome) -> Result<LineCoverage, RslipError> {
     let path = outcome
         .artifacts
         .get(runtime::COVERAGE_ARTIFACT)
@@ -255,7 +260,7 @@ fn coverage_from_outcome(outcome: &PytestRunOutcome) -> Result<LineCoverage, Rsl
 }
 
 #[cfg(test)]
-fn sample_request(root: &Path) -> RslipRequest {
+fn rslip_sample_request(root: &Path) -> RslipRequest {
     RslipRequest {
         nodeid: "test_sample.py::test_ok".to_string(),
         cwd: root.to_path_buf(),

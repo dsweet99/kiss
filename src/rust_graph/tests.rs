@@ -303,7 +303,13 @@ fn extract_imports_from_block_and_expr_directly() {
 #[test]
 fn resolve_import_ignores_unknown_modules() {
     let mut graph = DependencyGraph::default();
-    resolve_import("missing", "module", &HashSet::new(), &HashMap::new(), &mut graph);
+    resolve_import(
+        "missing",
+        "module",
+        &HashSet::new(),
+        &HashMap::new(),
+        &mut graph,
+    );
     assert!(graph.nodes.is_empty());
 }
 
@@ -318,7 +324,12 @@ fn rust_imports_and_push_include_edges() {
     let mut use_roots = Vec::new();
     let mut mod_decls = Vec::new();
     let mut include_literals = Vec::new();
-    extract_imports_from_items(&ast.items, &mut use_roots, &mut mod_decls, &mut include_literals);
+    extract_imports_from_items(
+        &ast.items,
+        &mut use_roots,
+        &mut mod_decls,
+        &mut include_literals,
+    );
     assert!(!use_roots.is_empty());
     let mac: syn::Macro = syn::parse_quote!(include!("child.rs"));
     super::extract_imports::push_include_edges(&mac, &mut mod_decls, &mut include_literals);

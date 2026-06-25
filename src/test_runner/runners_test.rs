@@ -75,12 +75,26 @@ fn combined_selectors_empty_without_sources() {
 }
 
 #[test]
-fn build_pytest_and_cargo_argv_non_empty() {
+fn build_pytest_argv_non_empty() {
     let py = build_pytest_argv(&["a.py::t".into()], &["-q".into()]);
     assert_eq!(py[0], "python");
     assert!(py.iter().any(|s| s == "pytest"));
-    let c = build_cargo_test_argv(&["smoke_sub".into()], &[]);
-    assert_eq!(c[0..4], ["cargo", "test", "--", "smoke_sub"]);
+}
+
+#[test]
+fn build_cargo_llvm_cov_dry_run_argv_places_selector_before_extra() {
+    let argv =
+        build_cargo_llvm_cov_dry_run_argv("smoke_sub", &["--exact".into(), "--nocapture".into()]);
+
+    assert_eq!(
+        argv[0..5],
+        ["cargo", "llvm-cov", "test", "--json", "--output-path"]
+    );
+    assert_eq!(argv[5], "<coverage.json>");
+    assert_eq!(argv[6], "smoke_sub");
+    assert_eq!(argv[7], "--");
+    assert_eq!(argv[8], "--exact");
+    assert_eq!(argv[9], "--nocapture");
 }
 
 #[test]
@@ -139,17 +153,35 @@ fn rslip_request_from_parts_accepts_python_after_312() {
 }
 
 #[test]
-fn shlex_quote_spaces() {
-    assert!(shlex_quote("a b").contains('\''));
+fn rust_llvm_cov_request_from_parts_uses_selector_extra_and_kiss_cache() {
+    let tmp = TempDir::new().unwrap();
+    let req = rust_llvm_cov_request_from_parts(
+        tmp.path(),
+        "smoke_sub",
+        &["--exact".to_string()],
+        "cargo-llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(req.selector, "smoke_sub");
+    assert_eq!(req.cwd, tmp.path());
+    assert_eq!(req.source_root, tmp.path());
+    assert_eq!(req.cargo_args, Vec::<String>::new());
+    assert_eq!(req.test_args, vec!["--exact"]);
+    assert_eq!(req.llvm_cov_version, "cargo-llvm-cov 0.6.0");
+    assert_eq!(req.rustc_version, "rustc 1.88.0");
+    assert_eq!(
+        req.cache_root,
+        tmp.path().join(".kiss").join("rust_llvm_cov_cache")
+    );
+    assert!(req.force_rerun);
 }
 
 #[test]
-#[cfg(unix)]
-fn run_command_true_zero() {
-    let tmp = TempDir::new().unwrap();
-    let code =
-        run_command_inherit(&["sh".into(), "-c".into(), "exit 0".into()], tmp.path()).unwrap();
-    assert_eq!(code, 0);
+fn shlex_quote_spaces() {
+    assert!(shlex_quote("a b").contains('\''));
 }
 
 #[test]

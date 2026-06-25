@@ -27,7 +27,8 @@ mod tests {
     #[test]
     fn count_rs_branches_includes_dead_control_flow() {
         let f: syn::ItemFn =
-            syn::parse_str("fn t() { if false { a(); } else { b(); } while false { c(); } }").unwrap();
+            syn::parse_str("fn t() { if false { a(); } else { b(); } while false { c(); } }")
+                .unwrap();
         assert_eq!(count_rs_branches(&f.block), 2);
     }
 

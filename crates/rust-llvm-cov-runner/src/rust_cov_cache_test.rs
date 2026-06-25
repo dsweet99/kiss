@@ -1,0 +1,166 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::io::Write;
+use std::path::Path;
+use std::time::Duration;
+
+use rpytest_runner::TestStatus;
+use tempfile::TempDir;
+
+use super::rust_cov_cache;
+use super::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome, rust_cov_sample_request};
+
+fn outcome() -> RustLlvmCovOutcome {
+    RustLlvmCovOutcome {
+        selector: "smoke_sub".to_string(),
+        status: TestStatus::Passed,
+        exit_code: Some(0),
+        duration: Duration::from_millis(3),
+        coverage: RustLineCoverage {
+            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1, 2]))]),
+        },
+        cache_status: RustCovCacheStatus::MissStored,
+        stdout: Some(b"out".to_vec()),
+        stderr: Some(b"err".to_vec()),
+    }
+}
+
+#[test]
+fn rust_cov_cache_round_trips_entries_atomically() {
+    let tmp = tempfile::tempdir().unwrap();
+    let entry = rust_cov_cache::RustCovCacheEntry::from(&outcome());
+
+    rust_cov_cache::store_rust_cov_cache_entry(tmp.path(), "abc123", &entry).unwrap();
+    let loaded = rust_cov_cache::load_rust_cov_cache_entry(tmp.path(), "abc123").unwrap();
+
+    assert_eq!(loaded.selector, "smoke_sub");
+    assert_eq!(loaded.status, TestStatus::Passed);
+    assert_eq!(loaded.coverage.files["src/lib.rs"], BTreeSet::from([1, 2]));
+    assert!(
+        rust_cov_cache::rust_cov_cache_entry_path(tmp.path(), "abc123")
+            .ends_with("entries/abc123.json")
+    );
+    assert!(rust_cov_cache::load_rust_cov_cache_entry(tmp.path(), "missing").is_none());
+}
+
+#[test]
+fn rust_cov_cache_rejects_duplicate_temp_file_creation() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("entry.tmp");
+
+    let mut file = rust_cov_cache::create_new_cache_file(&path).unwrap();
+    file.write_all(b"payload").unwrap();
+
+    assert!(rust_cov_cache::create_new_cache_file(&path).is_err());
+}
+
+#[test]
+fn rust_cov_rust_cov_fingerprint_tracks_source_metadata_and_versions() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::create_dir(tmp.path().join("src")).unwrap();
+    let lib = tmp.path().join("src").join("lib.rs");
+    fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
+    let req = rust_cov_sample_request(tmp.path());
+    let first = rust_cov_cache::rust_cov_fingerprint(&req).unwrap();
+    fs::write(&lib, "pub fn value() -> u32 { 2 }\n").unwrap();
+    let source_changed = rust_cov_cache::rust_cov_fingerprint(&req).unwrap();
+    let mut version_changed = req;
+    version_changed.llvm_cov_version.push_str(" changed");
+    let version_changed = rust_cov_cache::rust_cov_fingerprint(&version_changed).unwrap();
+
+    assert_ne!(first, source_changed);
+    assert_ne!(source_changed, version_changed);
+}
+
+#[test]
+fn rust_cov_cache_inputs_include_cargo_files_and_skip_generated_dirs() {
+    let tmp = rust_cov_input_fixture();
+
+    let names: BTreeSet<_> = rust_cov_cache::rust_cov_input_files(tmp.path())
+        .unwrap()
+        .into_iter()
+        .map(|path| path.strip_prefix(tmp.path()).unwrap().to_path_buf())
+        .collect();
+
+    assert!(names.contains(Path::new("Cargo.toml")));
+    assert!(names.contains(Path::new("Cargo.lock")));
+    assert!(names.contains(Path::new("rust-toolchain.toml")));
+    assert!(names.contains(Path::new(".cargo/config.toml")));
+    assert!(names.contains(Path::new("src/lib.rs")));
+    assert!(!names.contains(Path::new("target/ignored.rs")));
+    assert!(rust_cov_cache::should_skip_rust_cov_dir(
+        &tmp.path().join("target")
+    ));
+    assert!(rust_cov_cache::is_kiss_rust_cov_cache_dir(
+        &tmp.path().join(".kiss").join("rust_llvm_cov_cache")
+    ));
+}
+
+fn rust_cov_input_fixture() -> TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    create_rust_cov_input_dirs(tmp.path());
+    write_rust_cov_input_files(tmp.path());
+    tmp
+}
+
+fn create_rust_cov_input_dirs(root: &Path) {
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::create_dir_all(root.join(".cargo")).unwrap();
+    fs::create_dir_all(root.join("target")).unwrap();
+    fs::create_dir_all(root.join(".kiss").join("rust_llvm_cov_cache")).unwrap();
+}
+
+fn write_rust_cov_input_files(root: &Path) {
+    fs::write(root.join("Cargo.toml"), "[package]\n").unwrap();
+    fs::write(root.join("Cargo.lock"), "# lock\n").unwrap();
+    fs::write(root.join("rust-toolchain.toml"), "[toolchain]\n").unwrap();
+    fs::write(root.join(".cargo").join("config.toml"), "[build]\n").unwrap();
+    fs::write(root.join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
+    fs::write(root.join("target").join("ignored.rs"), "ignored\n").unwrap();
+}
+
+#[test]
+fn rust_cov_cache_input_predicates_match_supported_files() {
+    assert!(rust_cov_cache::is_rust_cov_cache_input(Path::new(
+        "src/lib.rs"
+    )));
+    assert!(rust_cov_cache::is_rust_cov_cache_input(Path::new(
+        "Cargo.toml"
+    )));
+    assert!(rust_cov_cache::is_rust_cov_cache_input(Path::new(
+        "Cargo.lock"
+    )));
+    assert!(rust_cov_cache::is_rust_cov_cache_input(Path::new(
+        "rust-toolchain"
+    )));
+    assert!(rust_cov_cache::is_cargo_config_input_path(Path::new(
+        ".cargo/config"
+    )));
+    assert!(rust_cov_cache::is_cargo_config_input_path(Path::new(
+        ".cargo/config.toml"
+    )));
+    assert!(rust_cov_cache::is_rust_toolchain_input_path(Path::new(
+        "rust-toolchain.toml"
+    )));
+    assert!(!rust_cov_cache::is_rust_cov_cache_input(Path::new(
+        "README.md"
+    )));
+}
+
+#[test]
+fn rust_cov_cache_hash_and_suffix_helpers_are_stable_enough_for_cache_keys() {
+    assert_ne!(rust_cov_cache::rust_cov_unique_suffix(), "");
+    assert_eq!(
+        rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"hello"),
+        0xa430_d846_80aa_bd0b
+    );
+    assert_ne!(
+        rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"a"),
+        rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"b")
+    );
+}

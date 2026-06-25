@@ -46,9 +46,7 @@ fn gather_files_with_path_expansion(
     (py_files, rs_files)
 }
 
-pub fn discover_covering_tests(
-    a: args::DiscoverArgs<'_>,
-) -> Result<Vec<DefEntry>, String> {
+pub fn discover_covering_tests(a: args::DiscoverArgs<'_>) -> Result<Vec<DefEntry>, String> {
     let args::DiscoverArgs {
         universe,
         paths,
@@ -60,9 +58,8 @@ pub fn discover_covering_tests(
     }
     let (py_files, rs_files) =
         gather_files_with_path_expansion(universe, paths, lang_filter, ignore);
-    let focus = analyze::FocusFilter::restricting(analyze::build_focus_set(
-        paths, lang_filter, ignore,
-    ));
+    let focus =
+        analyze::FocusFilter::restricting(analyze::build_focus_set(paths, lang_filter, ignore));
     if focus.is_active() && focus.paths().is_empty() {
         return Ok(Vec::new());
     }

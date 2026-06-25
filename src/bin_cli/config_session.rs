@@ -7,12 +7,7 @@ pub fn ensure_default_config_exists() {
     if local_config.exists() {
         return;
     }
-    run_mimic(
-        &[".".to_string()],
-        Some(local_config),
-        None,
-        &[],
-    );
+    run_mimic(&[".".to_string()], Some(local_config), None, &[]);
 }
 
 pub fn run_init_command(repo_path: &Path) -> i32 {

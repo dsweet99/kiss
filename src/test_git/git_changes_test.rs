@@ -39,10 +39,7 @@ fn repo_root_and_commit_changed_paths() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -60,10 +57,7 @@ fn diff_filter_drops_deleted_file() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("keep.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -104,10 +98,7 @@ fn subdir_cwd_still_resolves_paths() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("root.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -146,10 +137,7 @@ fn resolve_main_branch_name_finds_local_main() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("f.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -163,10 +151,7 @@ fn merge_base_timestamp_and_list_refs() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("f.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -183,10 +168,7 @@ fn changed_paths_since_head_includes_worktree() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -203,7 +185,12 @@ fn resolve_changed_respects_ignore_and_lang() {
     std::fs::write(tmp.path().join("skip_me.py"), "x=1\n").unwrap();
     let rel = vec!["skip_me.py".to_string()];
     let ign = vec!["skip_me.py".to_string()];
-    let out = resolve_changed_source_paths(&root, &rel, &ign, Some(crate::test_git::TestLangFilter::Rust));
+    let out = resolve_changed_source_paths(
+        &root,
+        &rel,
+        &ign,
+        Some(crate::test_git::TestLangFilter::Rust),
+    );
     assert!(out.is_empty());
 }
 
@@ -226,10 +213,7 @@ fn auto_detect_fork_with_two_branches() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("f.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -239,10 +223,7 @@ fn auto_detect_fork_with_two_branches() {
         .status()
         .unwrap();
     std::fs::write(tmp.path().join("g.py"), "y=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "f"])
         .status()

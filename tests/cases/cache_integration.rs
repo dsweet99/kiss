@@ -1,7 +1,7 @@
 use crate::common::list_full_check_cache_files;
 use std::fs;
-use std::path::Path;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::process::{Command, Output};
 use std::time::SystemTime;
 use tempfile::TempDir;

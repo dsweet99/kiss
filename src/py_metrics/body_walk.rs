@@ -90,7 +90,11 @@ pub(crate) fn update_body_counts(node: Node, agg: &mut BodyAgg) {
     }
     if matches!(
         node.kind(),
-        "if_statement" | "elif_clause" | "case_clause" | "for_statement" | "while_statement"
+        "if_statement"
+            | "elif_clause"
+            | "case_clause"
+            | "for_statement"
+            | "while_statement"
             | "async_for_statement"
     ) {
         agg.branches += 1;
@@ -158,11 +162,7 @@ mod coverage_witness {
     fn witness_body_summary() {
         let _ = BodySummary::witness();
         let parsed = parse_python_source("def f(): pass");
-        let func = parsed
-            .tree
-            .root_node()
-            .child(0)
-            .expect("function node");
+        let func = parsed.tree.root_node().child(0).expect("function node");
         let body = func.child_by_field_name("body").expect("body");
         let summary = analyze_body(body, &parsed.source);
         assert_eq!(summary.local_variables, 0);

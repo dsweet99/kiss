@@ -243,7 +243,9 @@ fn regression_stats_all_emits_cycle_size_when_corpus_has_cycle() {
         "expected at least one STAT:cycle_size: line for a 3-module cycle.\nstdout:\n{stdout}"
     );
     assert!(
-        cycle_lines.iter().any(|l| l.starts_with("STAT:cycle_size:3:")),
+        cycle_lines
+            .iter()
+            .any(|l| l.starts_with("STAT:cycle_size:3:")),
         "expected cycle_size value of 3 for the a → b → c → a cycle.\nlines: {cycle_lines:?}"
     );
 }

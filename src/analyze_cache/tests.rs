@@ -1,5 +1,5 @@
-use super::*;
 use super::path_helpers::load_full_cache;
+use super::*;
 use crate::analyze::FocusFilter;
 use kiss::Violation;
 use kiss::check_cache::CachedViolation;
@@ -60,12 +60,7 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
 #[test]
 fn cached_coverage_viols_skips_test_files_on_replay() {
     let file = PathBuf::from("/tmp/repo/tests/test_lib.py");
-    let cached = CachedViolation::from(&coverage_violation(
-        file.clone(),
-        "test_lib".into(),
-        1,
-        0,
-    ));
+    let cached = CachedViolation::from(&coverage_violation(file.clone(), "test_lib".into(), 1, 0));
     let mut cache = empty_cache("test_file_skip");
     cache.coverage_violations = vec![cached];
     let focus = FocusFilter::restricting([file.clone()].into_iter().collect());
@@ -111,7 +106,9 @@ fn cached_coverage_viols_refreshes_stale_100_pct_for_unreferenced_units() {
         viols[0].message
     );
     assert!(
-        viols[0].message.contains("No test module imports this module."),
+        viols[0]
+            .message
+            .contains("No test module imports this module."),
         "graph suffix should be preserved: {}",
         viols[0].message
     );
@@ -120,12 +117,7 @@ fn cached_coverage_viols_refreshes_stale_100_pct_for_unreferenced_units() {
 #[test]
 fn cached_coverage_viols_replays_weighted_overlay_pct() {
     let file = PathBuf::from("src/sparse_module.py");
-    let cached = CachedViolation::from(&coverage_violation(
-        file.clone(),
-        "fn_a".into(),
-        1,
-        17,
-    ));
+    let cached = CachedViolation::from(&coverage_violation(file.clone(), "fn_a".into(), 1, 17));
     let mut cache = empty_cache("weighted_overlay_replay");
     cache.coverage_violations = vec![cached];
     cache.definitions.push(CachedCoverageItem {

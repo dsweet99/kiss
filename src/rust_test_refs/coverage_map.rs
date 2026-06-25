@@ -1,5 +1,5 @@
-use super::{is_covered_by_executable_witnesses, RustCodeDefinition};
 use super::references::QualifiedModuleRef;
+use super::{RustCodeDefinition, is_covered_by_executable_witnesses};
 use crate::test_refs::CoveringTest;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;

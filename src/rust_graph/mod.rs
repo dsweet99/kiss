@@ -94,7 +94,9 @@ pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> Dependen
             .or_default()
             .push(qualified.clone());
         let file_path = crate::rust_include::canonical_path(&parsed.path);
-        graph.path_to_module.insert(file_path.clone(), qualified.clone());
+        graph
+            .path_to_module
+            .insert(file_path.clone(), qualified.clone());
         graph.paths.insert(qualified.clone(), file_path);
         graph.get_or_create_node(&qualified);
     }

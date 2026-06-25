@@ -131,7 +131,10 @@ fn include_inc_fragment_not_orphan_when_included() {
 
     assert!(
         !viols.iter().any(|v| {
-            v.metric == "orphan_module" && v.file.file_name().is_some_and(|n| n == "include_inc_fragment.inc")
+            v.metric == "orphan_module"
+                && v.file
+                    .file_name()
+                    .is_some_and(|n| n == "include_inc_fragment.inc")
         }),
         "included .inc fragment should not be orphan; got:\n{viols:#?}"
     );

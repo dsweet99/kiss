@@ -1,5 +1,5 @@
-use super::{RustCodeDefinition, RustTestRefAnalysis};
 use super::scope::count_rs_branches;
+use super::{RustCodeDefinition, RustTestRefAnalysis};
 use crate::rust_fn_metrics::{compute_rust_function_metrics, count_non_doc_attrs};
 use crate::rust_parsing::ParsedRustFile;
 use crate::test_refs::CoveringTest;
@@ -112,9 +112,7 @@ fn rs_import_surface_credit(
     let method_count = analysis
         .definitions
         .iter()
-        .filter(|d| {
-            d.file == def.file && d.impl_for_type.as_deref() == Some(type_name)
-        })
+        .filter(|d| d.file == def.file && d.impl_for_type.as_deref() == Some(type_name))
         .count()
         .max(1);
     let def_branches = metrics.branches.max(1);
@@ -212,21 +210,15 @@ fn rs_weighted_definition_credit(
         && !analysis.call_references.contains(&def.name)
         && !analysis.propagated_references.contains(&def.name)
     {
-        return rs_module_import_surface_credit(
-            analysis,
-            def,
-            metrics,
-            covering,
-            parsed_by_path,
-        )
-        .unwrap_or_else(|| {
-            rs_branch_credit(
-                metrics,
-                rs_call_witness(analysis, &def.file, &def.name),
-                covering,
-                parsed_by_path,
-            )
-        });
+        return rs_module_import_surface_credit(analysis, def, metrics, covering, parsed_by_path)
+            .unwrap_or_else(|| {
+                rs_branch_credit(
+                    metrics,
+                    rs_call_witness(analysis, &def.file, &def.name),
+                    covering,
+                    parsed_by_path,
+                )
+            });
     }
     rs_branch_credit(
         metrics,
@@ -259,11 +251,7 @@ fn flatten_use_tree_names(tree: &UseTree) -> Vec<String> {
         UseTree::Rename(r) => vec![r.ident.to_string()],
         UseTree::Glob(_) => Vec::new(),
         UseTree::Path(p) => flatten_use_tree_names(&p.tree),
-        UseTree::Group(g) => g
-            .items
-            .iter()
-            .flat_map(flatten_use_tree_names)
-            .collect(),
+        UseTree::Group(g) => g.items.iter().flat_map(flatten_use_tree_names).collect(),
     }
 }
 
@@ -322,15 +310,11 @@ pub fn compute_rs_weighted_file_pcts(
         let Some(located) = locate_fn(parsed, def) else {
             continue;
         };
-        let metrics = compute_rust_function_metrics(located.inputs, located.block, located.attr_count);
+        let metrics =
+            compute_rust_function_metrics(located.inputs, located.block, located.attr_count);
         let stmts = metrics.statements.max(1);
-        let credit = rs_weighted_definition_credit(
-            analysis,
-            &unref_set,
-            def,
-            &metrics,
-            &parsed_by_path,
-        );
+        let credit =
+            rs_weighted_definition_credit(analysis, &unref_set, def, &metrics, &parsed_by_path);
         accumulate_rs_weighted_mass(&mut by_file, def, stmts, credit);
     }
 

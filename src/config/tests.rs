@@ -1,7 +1,5 @@
 use super::ConfigError;
-use super::merge::{
-    apply_python, apply_rust, apply_shared, apply_thresholds,
-};
+use super::merge::{apply_python, apply_rust, apply_shared, apply_thresholds};
 use super::types::{Config, ConfigLanguage};
 use super::validation::{
     check_unknown_keys, check_unknown_sections, get_usize, validate_config_keys,

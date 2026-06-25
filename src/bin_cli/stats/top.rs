@@ -381,9 +381,7 @@ mod coverage_tests {
             cached_coverage: None,
             parse: |_| panic!("empty input must not parse"),
             build_graph: |_| panic!("empty input must not build graph"),
-            analyze: |_: &[&()], _: &kiss::DependencyGraph| {
-                panic!("empty input must not analyze")
-            },
+            analyze: |_: &[&()], _: &kiss::DependencyGraph| panic!("empty input must not analyze"),
             collect_detailed: |_: &[&()], _: Option<&kiss::DependencyGraph>| {
                 panic!("empty input must not collect metrics")
             },

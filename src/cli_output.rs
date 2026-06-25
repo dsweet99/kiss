@@ -248,7 +248,9 @@ mod tests {
     static STDOUT_CAPTURE: Mutex<()> = Mutex::new(());
 
     fn capture_stdout(f: impl FnOnce()) -> String {
-        let _lock = STDOUT_CAPTURE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _lock = STDOUT_CAPTURE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let path = tmp.path().to_path_buf();
         let file = OpenOptions::new()

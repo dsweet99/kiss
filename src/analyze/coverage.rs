@@ -6,9 +6,9 @@ use kiss::cli_output::{file_coverage_map, format_unreferenced_unit_coverage_mess
 use kiss::graph::is_entry_point;
 use kiss::{DependencyGraph, Violation};
 
+use crate::analyze::coverage_gate::{is_coverage_gate_file, is_coverage_report_target};
 pub(crate) use crate::analyze::coverage_types::{CoverageViolationSpec, PyRsTestCoverage};
 use crate::analyze::coverage_weighted::merge_weighted_file_pcts;
-use crate::analyze::coverage_gate::{is_coverage_gate_file, is_coverage_report_target};
 use crate::analyze::focus::{FocusFilter, is_focus_file};
 use crate::analyze::graph_api::graph_for_path;
 

@@ -115,10 +115,7 @@ pub fn is_focus_file(file: &Path, filter: &FocusFilter) -> bool {
     !filter.restrict || filter.paths.contains(file)
 }
 
-pub fn filter_viols_by_focus(
-    mut viols: Vec<Violation>,
-    filter: &FocusFilter,
-) -> Vec<Violation> {
+pub fn filter_viols_by_focus(mut viols: Vec<Violation>, filter: &FocusFilter) -> Vec<Violation> {
     viols.retain(|v| is_focus_file(&v.file, filter));
     viols
 }

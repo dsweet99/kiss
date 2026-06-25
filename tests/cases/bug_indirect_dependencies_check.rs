@@ -36,8 +36,7 @@ fn bug_check_reports_indirect_dependencies_for_fan_in_zero_entry() {
         .expect("kiss check should run");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("VIOLATION:indirect_dependencies")
-            && stdout.contains("entry"),
+        stdout.contains("VIOLATION:indirect_dependencies") && stdout.contains("entry"),
         "expected indirect_dependencies violation for entry module; stdout:\n{stdout}"
     );
 }

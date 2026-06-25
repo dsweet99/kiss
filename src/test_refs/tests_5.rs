@@ -169,16 +169,20 @@ fn test_file_to_module_suffix_basic() {
 
 #[test]
 fn test_module_suffix_matches_exact_and_suffix() {
-    use super::disambiguation::{
-        crate_qualified_module_matches_def, module_suffix_matches,
-    };
+    use super::disambiguation::{crate_qualified_module_matches_def, module_suffix_matches};
     assert!(module_suffix_matches("pkg.sub.mod", "pkg.sub.mod"));
     assert!(module_suffix_matches("pkg.sub.mod", "sub.mod"));
     assert!(module_suffix_matches("pkg.sub.mod", "mod"));
     assert!(!module_suffix_matches("pkg.sub.mod", "other.mod"));
     assert!(!module_suffix_matches("pkg.sub.mod", "ub.mod"));
-    assert!(crate_qualified_module_matches_def("hydrology", "vendor.pkg.hydrology"));
-    assert!(!crate_qualified_module_matches_def("pkg.sub.mod", "other.mod"));
+    assert!(crate_qualified_module_matches_def(
+        "hydrology",
+        "vendor.pkg.hydrology"
+    ));
+    assert!(!crate_qualified_module_matches_def(
+        "pkg.sub.mod",
+        "other.mod"
+    ));
 }
 
 // ---------------------------------------------------------------------------

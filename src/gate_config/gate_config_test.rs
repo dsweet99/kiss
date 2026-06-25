@@ -106,7 +106,8 @@ fn test_get_f64() {
 #[test]
 fn witness_try_merge_from_toml_and_int_to_f64() {
     let mut gate = GateConfig::default();
-    gate.try_merge_from_toml("[gate]\ntest_coverage_threshold = 75\n").unwrap();
+    gate.try_merge_from_toml("[gate]\ntest_coverage_threshold = 75\n")
+        .unwrap();
     assert_eq!(gate.test_coverage_threshold, 75);
     assert_eq!(int_to_f64(3), 3.0);
 }

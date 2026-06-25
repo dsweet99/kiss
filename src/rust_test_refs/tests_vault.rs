@@ -23,7 +23,11 @@ fn test_unreachable_pipeline_callees_not_covered() {
     let parsed_vault = parse_rust_file(&vault).unwrap();
     let parsed_lib = parse_rust_file(&lib).unwrap();
     let analysis = analyze_rust_test_refs(&[&parsed_vault, &parsed_lib], None);
-    let uncovered: Vec<_> = analysis.unreferenced.iter().map(|d| d.name.as_str()).collect();
+    let uncovered: Vec<_> = analysis
+        .unreferenced
+        .iter()
+        .map(|d| d.name.as_str())
+        .collect();
     assert!(
         uncovered.contains(&"run_pipeline")
             && uncovered.contains(&"stage_0")

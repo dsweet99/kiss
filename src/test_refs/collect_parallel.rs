@@ -92,12 +92,7 @@ pub(crate) fn collect_refs_parallel(
 #[must_use]
 pub fn test_functions_in(parsed: &ParsedFile) -> Vec<String> {
     let mut out = Vec::new();
-    collect_test_functions_with_refs(
-        parsed.tree.root_node(),
-        &parsed.source,
-        "",
-        &mut out,
-    );
+    collect_test_functions_with_refs(parsed.tree.root_node(), &parsed.source, "", &mut out);
     out.into_iter().map(|(id, _, _)| id).collect()
 }
 
@@ -141,14 +136,9 @@ mod collect_parallel_tests {
         assert!(test_refs.contains("helper"));
         assert!(call_refs.contains("helper"));
         assert_eq!(per_test.len(), 1);
-        assert!(
-            per_test[0]
-                .1
-                .iter()
-                .any(|(name, usage, call)| {
-                    name == "test_helper" && usage.contains("helper") && call.contains("helper")
-                })
-        );
+        assert!(per_test[0].1.iter().any(|(name, usage, call)| {
+            name == "test_helper" && usage.contains("helper") && call.contains("helper")
+        }));
     }
 }
 

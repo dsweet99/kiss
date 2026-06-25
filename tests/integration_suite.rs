@@ -8,14 +8,22 @@ mod support;
 mod break_c2_orphans;
 #[path = "cases/c2_break_test_coverage.rs"]
 mod break_c2_test_coverage;
+#[path = "cases/bug_indirect_dependencies_check.rs"]
+mod bug_indirect_dependencies_check;
+#[path = "cases/bug_test_coverage_aggregate_gate_masking.rs"]
+mod bug_test_coverage_aggregate_gate_masking;
+#[path = "cases/bug_test_coverage_violation_message.rs"]
+mod bug_test_coverage_violation_message;
 #[path = "cases/cache_integration.rs"]
 mod cache_integration;
-#[path = "cases/cli_integration.rs"]
-mod cli_integration;
 #[path = "cases/cli_check_hint.rs"]
 mod cli_check_hint;
+#[path = "cases/cli_integration.rs"]
+mod cli_integration;
 #[path = "cases/cli_integration_2.rs"]
 mod cli_integration_2;
+#[path = "cases/cli_kiss_test_smoke.rs"]
+mod cli_kiss_test_smoke;
 #[path = "cases/config_tests.rs"]
 mod config_tests;
 #[path = "cases/fix_h1_error_nodes.rs"]
@@ -28,14 +36,10 @@ mod journal_hypotheses;
 mod kpop_definitions;
 #[path = "cases/kpop_definitions_2.rs"]
 mod kpop_definitions_2;
+#[path = "cases/kpop_include_rollup_regressions.rs"]
+mod kpop_include_rollup_regressions;
 #[path = "cases/kpop_python_function_metrics.rs"]
 mod kpop_python_function_metrics;
-#[path = "cases/bug_indirect_dependencies_check.rs"]
-mod bug_indirect_dependencies_check;
-#[path = "cases/bug_test_coverage_aggregate_gate_masking.rs"]
-mod bug_test_coverage_aggregate_gate_masking;
-#[path = "cases/bug_test_coverage_violation_message.rs"]
-mod bug_test_coverage_violation_message;
 #[path = "cases/kpop_python_graph_metrics.rs"]
 mod kpop_python_graph_metrics;
 #[path = "cases/kpop_python_none.rs"]
@@ -50,16 +54,12 @@ mod kpop_rust_file_metrics_plan;
 mod kpop_rust_function_metrics;
 #[path = "cases/kpop_rust_graph_metrics.rs"]
 mod kpop_rust_graph_metrics;
-#[path = "cases/kpop_include_rollup_regressions.rs"]
-mod kpop_include_rollup_regressions;
 #[path = "cases/kpop_rust_none.rs"]
 mod kpop_rust_none;
 #[path = "cases/kpop_rust_none_graph_and_gates.rs"]
 mod kpop_rust_none_graph_and_gates;
 #[path = "cases/kpop_rust_syntactic_witness_coverage.rs"]
 mod kpop_rust_syntactic_witness_coverage;
-#[path = "cases/cli_kiss_test_smoke.rs"]
-mod cli_kiss_test_smoke;
 #[path = "cases/lib_integration.rs"]
 mod lib_integration;
 #[path = "cases/main_integration.rs"]
@@ -68,10 +68,10 @@ mod main_integration;
 mod py_metrics_tests;
 #[path = "cases/python_counts_violations.rs"]
 mod python_counts_violations;
-#[path = "cases/regression_check_cache_uncached_default.rs"]
-mod regression_check_cache_uncached_default;
 #[path = "cases/regression_check_all_ignores_test_file_sentinel.rs"]
 mod regression_check_all_ignores_test_file_sentinel;
+#[path = "cases/regression_check_cache_uncached_default.rs"]
+mod regression_check_cache_uncached_default;
 #[path = "cases/regression_check_default_warm_gate.rs"]
 mod regression_check_default_warm_gate;
 #[path = "cases/regression_check_default_writes_cache.rs"]
@@ -156,4 +156,3 @@ mod symbol_mv_regressions_8;
 mod symbol_mv_regressions_9;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;
-

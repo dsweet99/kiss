@@ -2,6 +2,7 @@ use crate::analyze::coverage::{
     CoverageOutputOpts, GraphRefPair, PyRsTestCoverage, collect_coverage_viols,
 };
 use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
+use crate::analyze::focus::FocusFilter;
 use crate::analyze::focus::filter_viols_by_focus;
 use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
 use crate::analyze::parallel::{ParallelPyIn, run_parallel_py_analysis, run_rust_analysis};
@@ -11,7 +12,6 @@ use crate::analyze_parse::{ParseAllTimedParams, ParseResult, parse_all_timed};
 use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::cli_output::file_coverage_map;
 use kiss::{DependencyGraph, DuplicateCluster, MetricStats, ParsedFile, ParsedRustFile};
-use crate::analyze::focus::FocusFilter;
 use std::path::PathBuf;
 use std::time::Instant;
 

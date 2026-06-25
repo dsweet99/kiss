@@ -160,7 +160,8 @@ fn coverage_build_viols_after_merge_with_unreferenced() {
         std::iter::once(PathBuf::from("/tmp/test.py")).collect(),
     );
     let graphs = GraphRefPair { py: None, rs: None };
-    let (viols, _, _) = build_viols_after_merge(definitions, unreferenced, &focus, graphs, None, false);
+    let (viols, _, _) =
+        build_viols_after_merge(definitions, unreferenced, &focus, graphs, None, false);
     assert_eq!(viols.len(), 1);
     assert!(viols[0].message.contains("0% covered"));
 }
@@ -184,21 +185,14 @@ fn coverage_weighted_sentinel_respects_focus_set() {
             line: 1,
         },
     ];
-    let focus = crate::analyze::FocusFilter::restricting(
-        std::iter::once(in_focus.clone()).collect(),
-    );
+    let focus =
+        crate::analyze::FocusFilter::restricting(std::iter::once(in_focus.clone()).collect());
     let mut weighted = HashMap::new();
     weighted.insert(out_of_focus.clone(), 0);
     weighted.insert(in_focus.clone(), 0);
     let graphs = GraphRefPair { py: None, rs: None };
-    let (viols, _, _) = build_viols_after_merge(
-        definitions,
-        vec![],
-        &focus,
-        graphs,
-        Some(&weighted),
-        false,
-    );
+    let (viols, _, _) =
+        build_viols_after_merge(definitions, vec![], &focus, graphs, Some(&weighted), false);
     assert_eq!(viols.len(), 1);
     assert_eq!(viols[0].file, in_focus);
 }

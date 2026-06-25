@@ -5,9 +5,8 @@ use crate::rust_test_refs::analyze_rust_test_refs;
 fn weighted_pct_for_sparse_impl(method_count: usize, test_body: &str) -> usize {
     let tmp = tempfile::TempDir::new().unwrap();
     let src = tmp.path().join("service.rs");
-    let mut body = String::from(
-        "pub struct Service;\nimpl Service {\n    pub fn new() -> Self { Service }\n",
-    );
+    let mut body =
+        String::from("pub struct Service;\nimpl Service {\n    pub fn new() -> Self { Service }\n");
     for i in 0..method_count {
         body.push_str(&format!(
             "    pub fn method_{i}(seed: u64) -> u64 {{\n        let mut acc = seed;\n        if seed == {i} {{ acc += 1; }} else if seed == {} {{ acc += 2; }}\n        acc\n    }}\n",
@@ -35,7 +34,10 @@ fn weighted_pct_monotone_in_unreferenced_method_count() {
         many <= few,
         "more unreferenced methods should not increase weighted pct, few={few}% many={many}%"
     );
-    assert!(many < 100, "sparse shallow coverage should stay below 100%, got {many}%");
+    assert!(
+        many < 100,
+        "sparse shallow coverage should stay below 100%, got {many}%"
+    );
 }
 
 #[test]
@@ -349,8 +351,7 @@ mod tests {
         "entry() call transitively executes inner::compute; both should be referenced, unref={unref_names:?}"
     );
     assert!(
-        analysis.call_references.contains("compute")
-            || analysis.call_references.contains("entry"),
+        analysis.call_references.contains("compute") || analysis.call_references.contains("entry"),
         "transitive production call refs should witness nested compute"
     );
 }

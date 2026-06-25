@@ -45,42 +45,42 @@ fn request_and_coverage_structs_expose_expected_fields() {
 }
 
 #[test]
-fn validate_request_rejects_missing_cache_key_parts() {
+fn validate_rslip_request_rejects_missing_cache_key_parts() {
     let tmp = tempfile::tempdir().unwrap();
-    let valid = sample_request(tmp.path());
-    assert!(validate_request(&valid).is_ok());
+    let valid = rslip_sample_request(tmp.path());
+    assert!(validate_rslip_request(&valid).is_ok());
 
     let mut missing_nodeid = valid.clone();
     missing_nodeid.nodeid.clear();
     assert!(matches!(
-        validate_request(&missing_nodeid),
+        validate_rslip_request(&missing_nodeid),
         Err(RslipError::InvalidRequest(message)) if message.contains("node id")
     ));
     let mut whitespace_nodeid = valid.clone();
     whitespace_nodeid.nodeid = " \t\n".to_string();
     assert!(matches!(
-        validate_request(&whitespace_nodeid),
+        validate_rslip_request(&whitespace_nodeid),
         Err(RslipError::InvalidRequest(message)) if message.contains("node id")
     ));
 
     let mut missing_pytest = valid.clone();
     missing_pytest.pytest_version.clear();
     assert!(matches!(
-        validate_request(&missing_pytest),
+        validate_rslip_request(&missing_pytest),
         Err(RslipError::InvalidRequest(message)) if message.contains("pytest version")
     ));
 
     let mut missing_python = valid;
     missing_python.python_version.clear();
     assert!(matches!(
-        validate_request(&missing_python),
+        validate_rslip_request(&missing_python),
         Err(RslipError::InvalidRequest(message)) if message.contains("python version")
     ));
     let tmp = tempfile::tempdir().unwrap();
-    let mut whitespace_versions = sample_request(tmp.path());
+    let mut whitespace_versions = rslip_sample_request(tmp.path());
     whitespace_versions.pytest_version = "  ".to_string();
     whitespace_versions.python_version = "\n".to_string();
-    assert!(validate_request(&whitespace_versions).is_err());
+    assert!(validate_rslip_request(&whitespace_versions).is_err());
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn run_or_reuse_uses_cache_on_second_call() {
     let calls = Rc::new(Cell::new(0));
     let runner = fake_runner(Rc::clone(&calls));
     let rslip = Rslip::new(runner);
-    let req = sample_request(tmp.path());
+    let req = rslip_sample_request(tmp.path());
 
     let first = rslip.run_or_reuse(req.clone()).unwrap();
     let second = rslip.run_or_reuse(req).unwrap();
@@ -119,7 +119,7 @@ fn force_rerun_skips_cache_and_returns_only_fresh_output() {
     let calls = Rc::new(Cell::new(0));
     let runner = fake_runner(Rc::clone(&calls));
     let rslip = Rslip::new(runner);
-    let req = sample_request(tmp.path());
+    let req = rslip_sample_request(tmp.path());
 
     let first = rslip.run_or_reuse(req.clone()).unwrap();
     let second = rslip.run_or_reuse(req.clone()).unwrap();
@@ -150,9 +150,9 @@ fn corrupt_cache_entry_is_treated_as_miss() {
         "def test_ok():\n    assert True\n",
     )
     .unwrap();
-    let req = sample_request(tmp.path());
-    let fingerprint = cache_fingerprint(&req).unwrap();
-    let path = cache::cache_path(&req.cache_root, &fingerprint);
+    let req = rslip_sample_request(tmp.path());
+    let fingerprint = rslip_cache_fingerprint(&req).unwrap();
+    let path = cache::rslip_cache_entry_path(&req.cache_root, &fingerprint);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, "{not json").unwrap();
 
@@ -163,6 +163,87 @@ fn corrupt_cache_entry_is_treated_as_miss() {
 
     assert_eq!(outcome.cache_status, CacheStatus::MissStored);
     assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn builds_pytest_runner_request_with_runtime_env_and_artifact() {
+    let tmp = tempfile::tempdir().unwrap();
+    let req = rslip_sample_request(tmp.path());
+    let runtime_dir = tmp.path().join("runtime");
+    let artifact = tmp.path().join("coverage.json");
+
+    let runner_req = build_pytest_runner_request(&req, &runtime_dir, &artifact);
+
+    assert_eq!(runner_req.nodeid, req.nodeid);
+    assert_eq!(runner_req.cwd, req.cwd);
+    assert_eq!(runner_req.python, req.python);
+    assert_eq!(runner_req.pytest_args, req.pytest_args);
+    assert_eq!(
+        runner_req.preload_modules,
+        vec![runtime::MODULE_NAME.to_string()]
+    );
+    assert_eq!(
+        runner_req.env["RSLIP_COVERAGE_OUT"],
+        artifact.to_string_lossy()
+    );
+    assert_eq!(
+        runner_req.env["RSLIP_SOURCE_ROOT"],
+        tmp.path().to_string_lossy()
+    );
+    assert_eq!(
+        runner_req.artifacts[0].name,
+        runtime::COVERAGE_ARTIFACT.to_string()
+    );
+    assert_eq!(runner_req.artifacts[0].path, artifact);
+}
+
+#[test]
+fn cached_rslip_outcome_omits_output_but_keeps_status_and_coverage() {
+    let outcome = RslipOutcome {
+        nodeid: "test_sample.py::test_ok".to_string(),
+        status: TestStatus::Passed,
+        exit_code: Some(0),
+        duration: Duration::from_millis(7),
+        coverage: LineCoverage {
+            files: BTreeMap::from([("app.py".to_string(), BTreeSet::from([1, 2]))]),
+        },
+        cache_status: CacheStatus::MissStored,
+        stdout: Some(b"fresh".to_vec()),
+        stderr: Some(b"err".to_vec()),
+    };
+    let cached = rslip_outcome_from_cache(cache::RslipCacheEntry::from(&outcome));
+
+    assert_eq!(cached.nodeid, "test_sample.py::test_ok");
+    assert_eq!(cached.status, TestStatus::Passed);
+    assert_eq!(cached.cache_status, CacheStatus::Hit);
+    assert_eq!(cached.stdout, None);
+    assert_eq!(cached.stderr, None);
+    assert_eq!(cached.coverage.files["app.py"], BTreeSet::from([1, 2]));
+}
+
+#[test]
+fn rslip_coverage_from_outcome_reads_named_artifact_and_reports_missing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let artifact = tmp.path().join("coverage.json");
+    fs::write(&artifact, r#"{"files":{"app.py":[1,3]}}"#).unwrap();
+    let mut outcome = PytestRunOutcome {
+        nodeid: "test_sample.py::test_ok".to_string(),
+        status: TestStatus::Passed,
+        exit_code: Some(0),
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        duration: Duration::from_millis(1),
+        artifacts: BTreeMap::from([(runtime::COVERAGE_ARTIFACT.to_string(), artifact)]),
+    };
+
+    let coverage = rslip_coverage_from_outcome(&outcome).unwrap();
+    outcome.artifacts.clear();
+    let missing = rslip_coverage_from_outcome(&outcome).unwrap_err();
+
+    assert_eq!(coverage.files["app.py"], BTreeSet::from([1, 3]));
+    assert!(
+        matches!(missing, RslipError::MissingArtifact(name) if name == runtime::COVERAGE_ARTIFACT)
+    );
 }
 
 #[test]

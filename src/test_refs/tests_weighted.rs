@@ -49,7 +49,10 @@ fn weighted_pct_monotone_in_branch_count() {
         high <= low,
         "more branches should not increase weighted pct, low={low}% high={high}%"
     );
-    assert!(high < 100, "many-branch module should stay below 100%, got {high}%");
+    assert!(
+        high < 100,
+        "many-branch module should stay below 100%, got {high}%"
+    );
 }
 
 #[test]

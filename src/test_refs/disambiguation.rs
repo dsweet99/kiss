@@ -188,7 +188,8 @@ pub(crate) fn crate_qualified_module_matches_def(def_suffix: &str, import_module
     if def_tail != import_tail {
         return false;
     }
-    let import_head = import_module.strip_suffix(&format!(".{import_tail}")).unwrap_or("");
-    import_head.contains('.')
-        && import_module.len() > def_tail.len() + import_head.len() + 1
+    let import_head = import_module
+        .strip_suffix(&format!(".{import_tail}"))
+        .unwrap_or("");
+    import_head.contains('.') && import_module.len() > def_tail.len() + import_head.len() + 1
 }

@@ -219,7 +219,9 @@ fn include_in_mod_block_resolves_and_rollup_counts_body() {
     assert!(
         !viols.iter().any(|v| {
             v.metric == "orphan_module"
-                && v.file.file_name().is_some_and(|n| n == "include_mod_block_body.inc")
+                && v.file
+                    .file_name()
+                    .is_some_and(|n| n == "include_mod_block_body.inc")
         }),
         "body included from mod block should not be orphan; got:\n{viols:#?}"
     );
@@ -229,8 +231,7 @@ fn include_in_mod_block_resolves_and_rollup_counts_body() {
     let viols = analyze_rust_file_include_rollup(&lib, &[&body], &cfg);
     assert!(
         viols.iter().any(|v| {
-            v.metric == "statements_per_file"
-                && v.message.contains("include_mod_block_body.inc")
+            v.metric == "statements_per_file" && v.message.contains("include_mod_block_body.inc")
         }),
         "rollup should cite mod-block include body; got:\n{viols:#?}"
     );
@@ -261,8 +262,13 @@ fn nested_include_chain_not_orphan() {
     assert!(
         !viols.iter().any(|v| {
             v.metric == "orphan_module"
-                && (v.file.file_name().is_some_and(|n| n == "include_nested_outer.inc")
-                    || v.file.file_name().is_some_and(|n| n == "include_nested_inner.inc"))
+                && (v
+                    .file
+                    .file_name()
+                    .is_some_and(|n| n == "include_nested_outer.inc")
+                    || v.file
+                        .file_name()
+                        .is_some_and(|n| n == "include_nested_inner.inc"))
         }),
         "nested include chain should not orphan fragments; got:\n{viols:#?}"
     );

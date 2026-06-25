@@ -133,10 +133,7 @@ impl Counter {{
     #[test]
     fn test_rust_parse_error_display_fmt() {
         for err in [
-            RustParseError::IoError(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "test",
-            )),
+            RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "test")),
             RustParseError::SynError(syn::Error::new(
                 proc_macro2::Span::call_site(),
                 "bad syntax",

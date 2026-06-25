@@ -185,12 +185,7 @@ pub(crate) fn extract_imports_from_expr(
             extract_imports_from_loop_expr(expr, use_roots, mod_decls, include_literals);
         }
         syn::Expr::Unsafe(unsafe_expr) => {
-            extract_imports_from_block(
-                &unsafe_expr.block,
-                use_roots,
-                mod_decls,
-                include_literals,
-            );
+            extract_imports_from_block(&unsafe_expr.block, use_roots, mod_decls, include_literals);
         }
         _ => {}
     }

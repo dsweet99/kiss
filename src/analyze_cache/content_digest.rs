@@ -12,12 +12,9 @@ pub(super) fn content_digests_for_paths(paths: &[PathBuf]) -> Vec<(String, u64)>
     let mut digests: Vec<(String, u64)> = paths
         .iter()
         .filter_map(|p| {
-            std::fs::read(p).ok().map(|bytes| {
-                (
-                    p.to_string_lossy().to_string(),
-                    content_digest(&bytes),
-                )
-            })
+            std::fs::read(p)
+                .ok()
+                .map(|bytes| (p.to_string_lossy().to_string(), content_digest(&bytes)))
         })
         .collect();
     digests.sort_by(|a, b| a.0.cmp(&b.0));
@@ -79,7 +76,11 @@ mod tests {
         let path = tmp.path().join("f.py");
         fs::write(&path, "def foo():\n    pass\n").unwrap();
         let stored = content_digests_for_paths(std::slice::from_ref(&path));
-        assert!(verify_content_digests(&stored, std::slice::from_ref(&path), &[]));
+        assert!(verify_content_digests(
+            &stored,
+            std::slice::from_ref(&path),
+            &[]
+        ));
 
         let mut perms = fs::metadata(&path).unwrap().permissions();
         perms.set_readonly(true);
@@ -119,7 +120,11 @@ mod tests {
 
         fs::write(&path, content1).unwrap();
         let stored = content_digests_for_paths(std::slice::from_ref(&path));
-        assert!(verify_content_digests(&stored, std::slice::from_ref(&path), &[]));
+        assert!(verify_content_digests(
+            &stored,
+            std::slice::from_ref(&path),
+            &[]
+        ));
 
         fs::write(&path, content2).unwrap();
         assert!(

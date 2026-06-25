@@ -1,5 +1,5 @@
+use super::references::{QualifiedModuleRef, insert_qualified_path_reference};
 use super::{has_cfg_test_attribute, has_test_attribute};
-use super::references::{insert_qualified_path_reference, QualifiedModuleRef};
 use crate::macro_expr_parser::{parse_expr_list, parse_single_expr};
 use std::collections::HashSet;
 use syn::visit::Visit;

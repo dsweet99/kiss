@@ -3,11 +3,11 @@ use kiss::{Config, GateConfig};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::analyze::FocusFilter;
 use super::fingerprint_for_check;
 use super::load_verified_full_cache;
 use super::path_helpers::{load_full_cache, same_cached_paths};
 use super::{FullCacheInputs, store_full_cache_from_run};
+use crate::analyze::FocusFilter;
 
 pub(crate) fn try_run_cached_stats_summary(
     py_files: &[PathBuf],
@@ -33,10 +33,8 @@ pub(crate) fn try_run_cached_stats_top(
     rs_config: &Config,
     gate_config: &GateConfig,
 ) -> Option<HashMap<PathBuf, usize>> {
-    let cache =
-        load_top_compatible_cache(py_files, rs_files, py_config, rs_config, gate_config).or_else(
-            || load_top_only_cache(py_files, rs_files, py_config, rs_config, gate_config),
-        )?;
+    let cache = load_top_compatible_cache(py_files, rs_files, py_config, rs_config, gate_config)
+        .or_else(|| load_top_only_cache(py_files, rs_files, py_config, rs_config, gate_config))?;
     if cache.definitions.is_empty() && cache.unreferenced.is_empty() {
         return None;
     }

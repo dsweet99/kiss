@@ -105,10 +105,8 @@ pub fn commit_timestamp(repo: &Path, sha: &str) -> Result<i64, String> {
 }
 
 pub fn current_branch_short(repo: &Path) -> String {
-    git_output(repo, &["rev-parse", "--abbrev-ref", "HEAD"]).map_or_else(
-        |_| "HEAD".into(),
-        |s| s.trim().to_string(),
-    )
+    git_output(repo, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .map_or_else(|_| "HEAD".into(), |s| s.trim().to_string())
 }
 
 pub fn list_other_refs(repo: &Path, current: &str) -> Result<Vec<String>, String> {
@@ -159,25 +157,28 @@ pub fn auto_detect_fork_commit(repo: &Path) -> Result<String, String> {
 
 pub fn changed_paths_commit(repo: &Path) -> Result<Vec<String>, String> {
     let mut names = Vec::new();
-    let d = git_output(
-        repo,
-        &["diff", "--name-only", "--diff-filter=AM", "HEAD"],
-    )?;
-    names.extend(d.lines().map(str::trim).filter(|s| !s.is_empty()).map(String::from));
+    let d = git_output(repo, &["diff", "--name-only", "--diff-filter=AM", "HEAD"])?;
+    names.extend(
+        d.lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+    );
     let u = git_output(repo, &["ls-files", "--others", "--exclude-standard"])?;
-    names.extend(u.lines().map(str::trim).filter(|s| !s.is_empty()).map(String::from));
+    names.extend(
+        u.lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+    );
     names.sort();
     names.dedup();
     Ok(names)
 }
 
 pub fn changed_paths_since(repo: &Path, rev: &str) -> Result<Vec<String>, String> {
-    let d = git_output(
-        repo,
-        &["diff", "--name-only", "--diff-filter=AM", rev],
-    )?;
-    Ok(d
-        .lines()
+    let d = git_output(repo, &["diff", "--name-only", "--diff-filter=AM", rev])?;
+    Ok(d.lines()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(String::from)
@@ -194,9 +195,7 @@ fn rel_path_ignored(rel: &str, ignore: &[String]) -> bool {
 fn lang_ok(path: &Path, lang_filter: Option<TestLangFilter>) -> bool {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     match lang_filter {
-        None => {
-            ext.eq_ignore_ascii_case("py") || kiss::Language::is_rust_path(path)
-        }
+        None => ext.eq_ignore_ascii_case("py") || kiss::Language::is_rust_path(path),
         Some(TestLangFilter::Python) => ext.eq_ignore_ascii_case("py"),
         Some(TestLangFilter::Rust) => kiss::Language::is_rust_path(path),
     }

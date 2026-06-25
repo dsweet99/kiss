@@ -5,13 +5,13 @@
 mod analyze;
 mod analyze_cache;
 mod analyze_parse;
-mod test_git;
-mod test_runner;
 mod bin_cli;
 #[cfg(test)]
 mod layout;
 mod rules;
 mod test_discovery;
+mod test_git;
+mod test_runner;
 mod viz;
 mod viz_coarsen;
 
@@ -37,6 +37,8 @@ pub(crate) mod cwd_test_lock {
     static MUTEX: Mutex<()> = Mutex::new(());
 
     pub fn lock() -> std::sync::MutexGuard<'static, ()> {
-        MUTEX.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }

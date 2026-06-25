@@ -326,7 +326,11 @@ mod coverage_witness {
         let mut refs = HashSet::new();
         let mut qualified = HashSet::new();
         let mut rv = ReferenceVisitor::coverage_witness_rv(&mut refs, &mut qualified);
-        let item: syn::Item = syn::parse_quote!(fn sample() { sample(); });
+        let item: syn::Item = syn::parse_quote!(
+            fn sample() {
+                sample();
+            }
+        );
         rv.visit_item(&item);
         {
             let mut cv = CallReferenceVisitor::coverage_witness_cv(&mut refs, &mut qualified);
@@ -349,6 +353,8 @@ fn witness_visit_item_skip_use_fn() {
         refs: &mut refs,
         qualified: &mut qualified,
     };
-    let item: syn::Item = syn::parse_quote!(use std;);
+    let item: syn::Item = syn::parse_quote!(
+        use std;
+    );
     visit_item_skip_use(&mut rv, &item);
 }

@@ -1,4 +1,5 @@
 mod runners;
+mod rust_llvm_cov;
 
 use std::path::PathBuf;
 
@@ -140,13 +141,17 @@ pub(crate) fn run_selectors(
         return Ok(0);
     }
     let py_argv = runners::build_pytest_argv(&planned.py_sel, options.extra);
-    let rs_argv = runners::build_cargo_test_argv(&planned.rs_sel, options.extra);
+    let rs_argv: Vec<_> = planned
+        .rs_sel
+        .iter()
+        .map(|selector| runners::build_cargo_llvm_cov_dry_run_argv(selector, options.extra))
+        .collect();
     if options.dry_run {
         if !planned.py_sel.is_empty() {
             println!("{}", runners::shell_quote_line(&py_argv));
         }
-        if !planned.rs_sel.is_empty() {
-            println!("{}", runners::shell_quote_line(&rs_argv));
+        for argv in &rs_argv {
+            println!("{}", runners::shell_quote_line(argv));
         }
         return Ok(0);
     }
@@ -166,7 +171,13 @@ pub(crate) fn run_selectors(
     if !planned.rs_sel.is_empty() {
         code = runners::merge_exit_codes(
             code,
-            runners::run_command_inherit(&rs_argv, &planned.repo_root)?,
+            runners::run_rust_llvm_cov_selectors(
+                &planned.repo_root,
+                &planned.rs_sel,
+                options.extra,
+                options.force_rerun,
+                options.jobs,
+            )?,
         );
     }
     Ok(code)

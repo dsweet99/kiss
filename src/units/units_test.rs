@@ -162,7 +162,5 @@ fn witness_code_unit_kind_display_and_unit() {
     };
     assert_eq!(unit.name, "f");
     let parsed = parse_python_source("x = 1");
-    assert!(
-        get_child_by_field(parsed.tree.root_node(), "missing", &parsed.source).is_none()
-    );
+    assert!(get_child_by_field(parsed.tree.root_node(), "missing", &parsed.source).is_none());
 }
