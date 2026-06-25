@@ -1,4 +1,6 @@
+mod run_logic;
 mod runners;
+mod rust_coverage_index;
 mod rust_llvm_cov;
 
 use std::path::PathBuf;
@@ -6,6 +8,7 @@ use std::path::PathBuf;
 use kiss::Language;
 
 use crate::test_git::TestChangeMode;
+pub(crate) use run_logic::run_selectors;
 
 pub struct RunTestCmdArgs<'a> {
     pub mode: TestChangeMode,
@@ -67,6 +70,9 @@ pub(crate) struct PlannedSelectors {
     pub repo_root: PathBuf,
     pub py_sel: Vec<String>,
     pub rs_sel: Vec<String>,
+    pub rust_source_paths: Vec<PathBuf>,
+    pub rust_source_population_paths: Vec<PathBuf>,
+    pub ignore: Vec<String>,
 }
 
 pub(crate) struct SelectorRunOptions<'a> {
@@ -115,7 +121,7 @@ pub(crate) fn plan_selectors(
         }),
     );
     let (source_changed, test_changed) = runners::partition_changed_paths(&abs_paths);
-    let (py_sel, rs_sel) = runners::combined_selectors(
+    let selector_plan = runners::combined_selectors(
         &repo_root,
         &source_changed,
         &test_changed,
@@ -124,71 +130,20 @@ pub(crate) fn plan_selectors(
     )?;
     Ok(PlannedSelectors {
         repo_root,
-        py_sel,
-        rs_sel,
+        py_sel: selector_plan.py_selectors,
+        rs_sel: selector_plan.rust_selectors,
+        rust_source_paths: selector_plan.rust_source_paths,
+        rust_source_population_paths: selector_plan.rust_source_population_paths,
+        ignore: ignore_norm,
     })
 }
 
-pub(crate) fn run_selectors(
-    planned: &PlannedSelectors,
-    options: SelectorRunOptions<'_>,
-) -> Result<i32, String> {
-    if options.jobs == 0 {
-        return Err("error: kiss test: jobs must be greater than zero".to_string());
-    }
-    if planned.py_sel.is_empty() && planned.rs_sel.is_empty() {
-        println!("{}", runners::NO_COVERING_TESTS_MSG);
-        return Ok(0);
-    }
-    let py_argv = runners::build_pytest_argv(&planned.py_sel, options.extra);
-    let rs_argv: Vec<_> = planned
-        .rs_sel
-        .iter()
-        .map(|selector| runners::build_cargo_llvm_cov_dry_run_argv(selector, options.extra))
-        .collect();
-    if options.dry_run {
-        if !planned.py_sel.is_empty() {
-            println!("{}", runners::shell_quote_line(&py_argv));
-        }
-        for argv in &rs_argv {
-            println!("{}", runners::shell_quote_line(argv));
-        }
-        return Ok(0);
-    }
-    let mut code = 0i32;
-    if !planned.py_sel.is_empty() {
-        code = runners::merge_exit_codes(
-            code,
-            runners::run_rslip_selectors(
-                &planned.repo_root,
-                &planned.py_sel,
-                options.extra,
-                options.force_rerun,
-                options.jobs,
-            )?,
-        );
-    }
-    if !planned.rs_sel.is_empty() {
-        code = runners::merge_exit_codes(
-            code,
-            runners::run_rust_llvm_cov_selectors(
-                &planned.repo_root,
-                &planned.rs_sel,
-                options.extra,
-                options.force_rerun,
-                options.jobs,
-            )?,
-        );
-    }
-    Ok(code)
-}
-
 #[cfg(test)]
-mod coverage_witness {
+mod run_api_tests {
     use super::*;
 
     impl RunTestCmdArgs<'_> {
-        fn witness() -> Self {
+        fn dry_run_commit() -> Self {
             Self {
                 mode: TestChangeMode::Commit,
                 main_branch_cli: None,
@@ -205,17 +160,20 @@ mod coverage_witness {
     }
 
     impl PlannedSelectors {
-        fn witness() -> Self {
+        fn empty(repo_root: PathBuf) -> Self {
             Self {
-                repo_root: std::env::current_dir().unwrap_or_default(),
+                repo_root,
                 py_sel: vec![],
                 rs_sel: vec![],
+                rust_source_paths: vec![],
+                rust_source_population_paths: vec![],
+                ignore: vec![],
             }
         }
     }
 
     impl SelectorRunOptions<'_> {
-        fn witness() -> Self {
+        fn dry_run() -> Self {
             Self {
                 dry_run: true,
                 force_rerun: false,
@@ -226,15 +184,12 @@ mod coverage_witness {
     }
 
     #[test]
-    fn witness_test_runner_api_handles_empty_plan() {
-        let _ = RunTestCmdArgs::witness();
-        let planned = PlannedSelectors::witness();
-        let opts = SelectorRunOptions::witness();
-        assert!(opts.dry_run);
-        assert!(!opts.force_rerun);
-        assert_eq!(opts.jobs, 1);
-        assert!(opts.extra.is_empty());
-        assert_eq!(run_selectors(&planned, opts).unwrap(), 0);
+    fn run_selectors_accepts_empty_plan() {
+        let planned = PlannedSelectors::empty(std::env::current_dir().unwrap_or_default());
+
+        let code = run_selectors(&planned, SelectorRunOptions::dry_run()).unwrap();
+
+        assert_eq!(code, 0);
     }
 
     #[test]
@@ -243,7 +198,7 @@ mod coverage_witness {
         let tmp = tempfile::TempDir::new().unwrap();
         let orig = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let code = run_test(RunTestCmdArgs::witness());
+        let code = run_test(RunTestCmdArgs::dry_run_commit());
         std::env::set_current_dir(orig).unwrap();
         assert_eq!(code, 1);
     }
@@ -319,6 +274,9 @@ mod plan_tests {
             repo_root: tmp.path().to_path_buf(),
             py_sel: vec!["tests/test_app.py::test_ok".to_string()],
             rs_sel: Vec::new(),
+            rust_source_paths: Vec::new(),
+            rust_source_population_paths: Vec::new(),
+            ignore: Vec::new(),
         };
 
         let err = run_selectors(

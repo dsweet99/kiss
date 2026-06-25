@@ -5,6 +5,7 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 
+use super::rust_coverage_index::select_rust_source_selectors_from_index;
 #[cfg(test)]
 pub(crate) use super::rust_llvm_cov::rust_llvm_cov_request_from_parts;
 pub(crate) use super::rust_llvm_cov::{
@@ -102,6 +103,29 @@ pub fn enumerate_tests_in_changed_files(
         }
     }
     Ok(out)
+}
+
+pub fn enumerate_workspace_rust_selectors(
+    repo_root: &Path,
+    ignore: &[String],
+) -> Result<Vec<String>, String> {
+    let root = repo_root.to_string_lossy().to_string();
+    let (_py_files, rs_files) =
+        kiss::gather_files_by_lang(&[root], Some(kiss::Language::Rust), ignore);
+    let parsed = parse_rust_files(&rs_files);
+    let mut selectors = BTreeSet::new();
+    for (path, result) in rs_files.iter().zip(parsed) {
+        let pf = result.map_err(|e| {
+            format!(
+                "error: kiss test: failed to parse Rust workspace file {}: {e}",
+                path.display()
+            )
+        })?;
+        for selector in rust_test_functions_in(&pf) {
+            selectors.insert(selector);
+        }
+    }
+    Ok(selectors.into_iter().collect())
 }
 
 pub fn shell_quote_line(argv: &[String]) -> String {
@@ -341,25 +365,51 @@ pub fn discover_for_paths(
     })
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SelectorPlan {
+    pub(crate) py_selectors: Vec<String>,
+    pub(crate) rust_selectors: Vec<String>,
+    pub(crate) rust_source_paths: Vec<PathBuf>,
+    pub(crate) rust_source_population_paths: Vec<PathBuf>,
+}
+
 pub fn combined_selectors(
     repo_root: &Path,
     source_paths: &[PathBuf],
     test_paths: &[PathBuf],
     lang_filter: Option<kiss::Language>,
     ignore: &[String],
-) -> Result<(Vec<String>, Vec<String>), String> {
-    let defs = if source_paths.is_empty() {
+) -> Result<SelectorPlan, String> {
+    let (py_source_paths, rust_source_paths): (Vec<_>, Vec<_>) = source_paths
+        .iter()
+        .cloned()
+        .partition(|path| !kiss::Language::is_rust_path(path));
+    let defs = if py_source_paths.is_empty() {
         Vec::new()
     } else {
-        discover_for_paths(repo_root, source_paths, lang_filter, ignore)?
+        let py_lang_filter = match lang_filter {
+            Some(kiss::Language::Rust) => Some(kiss::Language::Rust),
+            _ => Some(kiss::Language::Python),
+        };
+        discover_for_paths(repo_root, &py_source_paths, py_lang_filter, ignore)?
     };
     let mut py_sel = BTreeSet::new();
     let mut rs_sel = BTreeSet::new();
+    let mut rust_source_population_paths = Vec::new();
     for (tp, tid) in collect_selectors_from_defs(&defs) {
         if tp.extension().is_some_and(|e| e.eq_ignore_ascii_case("py")) {
             py_sel.insert(py_selector(&tp, &tid));
         } else if kiss::Language::is_rust_path(&tp) {
             rs_sel.insert(tid);
+        }
+    }
+    if !rust_source_paths.is_empty() {
+        if let Some(index_selectors) =
+            select_rust_source_selectors_from_index(repo_root, &rust_source_paths)
+        {
+            rs_sel.extend(index_selectors);
+        } else {
+            rust_source_population_paths = rust_source_paths.clone();
         }
     }
     for (tp, tid) in enumerate_tests_in_changed_files(test_paths)? {
@@ -369,5 +419,10 @@ pub fn combined_selectors(
             rs_sel.insert(tid);
         }
     }
-    Ok((py_sel.into_iter().collect(), rs_sel.into_iter().collect()))
+    Ok(SelectorPlan {
+        py_selectors: py_sel.into_iter().collect(),
+        rust_selectors: rs_sel.into_iter().collect(),
+        rust_source_paths,
+        rust_source_population_paths,
+    })
 }

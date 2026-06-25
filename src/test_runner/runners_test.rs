@@ -1,9 +1,13 @@
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
+use rpytest_runner::TestStatus;
+use rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
 use super::runners::*;
+use super::rust_coverage_index::{rebuild_rust_coverage_index, rust_coverage_cache_root};
 
 #[test]
 fn py_selector_uses_double_colon() {
@@ -60,6 +64,53 @@ fn enumerate_tests_in_changed_files_errors_on_bad_rs() {
 }
 
 #[test]
+fn enumerate_workspace_rust_selectors_finds_cfg_test_modules() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::create_dir(tmp.path().join("src")).unwrap();
+    fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        r#"
+pub fn value() -> u32 { 1 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn gets_value() {
+        assert_eq!(super::value(), 1);
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let selectors = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap();
+
+    assert_eq!(selectors, vec!["tests::gets_value".to_string()]);
+}
+
+#[test]
+fn enumerate_workspace_rust_selectors_fails_fast_on_invalid_syntax() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::create_dir(tmp.path().join("src")).unwrap();
+    fs::write(tmp.path().join("src").join("lib.rs"), "fn broken(\n").unwrap();
+
+    let err = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap_err();
+
+    assert!(err.contains("failed to parse Rust workspace file"));
+    assert!(err.contains("lib.rs"));
+}
+
+#[test]
 fn discover_for_paths_empty_paths_ok() {
     let tmp = TempDir::new().unwrap();
     let defs = discover_for_paths(tmp.path(), &[], None, &[]).unwrap();
@@ -67,11 +118,78 @@ fn discover_for_paths_empty_paths_ok() {
 }
 
 #[test]
+fn combined_selectors_uses_existing_rust_index_for_source_changes() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    let lib = src.join("lib.rs");
+    fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
+    write_rust_cov_entry(
+        tmp.path(),
+        "abc",
+        "tests::gets_value",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                lib.to_string_lossy().to_string(),
+                std::collections::BTreeSet::from([1]),
+            )]),
+        },
+    );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+
+    let plan = combined_selectors(tmp.path(), std::slice::from_ref(&lib), &[], None, &[]).unwrap();
+
+    assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
+    assert_eq!(plan.rust_source_paths, vec![lib]);
+    assert!(plan.rust_source_population_paths.is_empty());
+}
+
+#[test]
+fn combined_selectors_marks_missing_rust_index_for_population() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    let lib = src.join("lib.rs");
+    fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
+
+    let plan = combined_selectors(tmp.path(), std::slice::from_ref(&lib), &[], None, &[]).unwrap();
+
+    assert!(plan.rust_selectors.is_empty());
+    assert_eq!(plan.rust_source_paths, vec![lib.clone()]);
+    assert_eq!(plan.rust_source_population_paths, vec![lib]);
+}
+
+fn write_rust_cov_entry(
+    repo_root: &Path,
+    name: &str,
+    selector: &str,
+    status: TestStatus,
+    coverage: RustLineCoverage,
+) {
+    let path = rust_coverage_cache_root(repo_root)
+        .join("entries")
+        .join(format!("{name}.json"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let entry = serde_json::json!({
+        "schema_version": "rust-llvm-cov-cache-v1",
+        "selector": selector,
+        "status": status,
+        "exit_code": 0,
+        "duration": Duration::from_millis(1),
+        "coverage": coverage,
+    });
+    fs::write(path, serde_json::to_vec(&entry).unwrap()).unwrap();
+}
+
+#[test]
 fn combined_selectors_empty_without_sources() {
     let tmp = TempDir::new().unwrap();
-    let (py, rs) = combined_selectors(tmp.path(), &[], &[], None, &[]).unwrap();
-    assert!(py.is_empty());
-    assert!(rs.is_empty());
+    let plan = combined_selectors(tmp.path(), &[], &[], None, &[]).unwrap();
+    assert!(plan.py_selectors.is_empty());
+    assert!(plan.rust_selectors.is_empty());
+    assert!(plan.rust_source_paths.is_empty());
+    assert!(plan.rust_source_population_paths.is_empty());
 }
 
 #[test]
