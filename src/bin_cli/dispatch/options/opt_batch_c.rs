@@ -3,7 +3,7 @@ use kiss::TestSectionConfig;
 
 use super::TriConfig;
 
-use crate::test_git::TestChangeMode;
+use crate::bin_cli::args::TestCommandAction;
 
 pub(crate) struct ShrinkDispatchOptions<'a> {
     pub lang: Option<Language>,
@@ -15,13 +15,15 @@ pub(crate) struct ShrinkDispatchOptions<'a> {
 
 pub(crate) struct TestDispatchOptions<'a> {
     pub lang: Option<Language>,
-    pub mode: TestChangeMode,
+    pub action: TestCommandAction,
     pub main_branch: Option<String>,
     pub base_branch: Option<String>,
     pub dry_run: bool,
     pub force: bool,
+    pub metrics: bool,
     pub jobs: usize,
     pub ignore: Vec<String>,
+    pub fixture: Option<String>,
     pub extra: Vec<String>,
     pub test_cfg: &'a TestSectionConfig,
 }

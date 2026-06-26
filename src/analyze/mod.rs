@@ -36,6 +36,7 @@ pub use dry::{DryRunParams, run_dry};
 #[allow(unused_imports)] // Public API surface for `kiss` library consumers.
 pub use dup_detect::{detect_py_duplicates, detect_rs_duplicates};
 pub use entry::{run_analyze, run_analyze_with_result};
+#[allow(unused_imports)]
 pub use focus::{
     FocusFilter, build_focus_set, filter_duplicates_by_focus, filter_viols_by_focus, gather_files,
     is_focus_file,

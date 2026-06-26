@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
@@ -176,6 +177,50 @@ fn changed_paths_since_head_includes_worktree() {
     std::fs::write(tmp.path().join("a.py"), "x=2\n").unwrap();
     let names = changed_paths_since(tmp.path(), "HEAD").unwrap();
     assert!(names.iter().any(|n| n.contains("a.py")));
+}
+
+#[test]
+fn parse_unified_diff_changed_lines() {
+    let diff = "\
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1 +1,2 @@
++changed
+@@ -10,2 +11,0 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -4,0 +5 @@
++added
+";
+
+    let lines = parse_changed_lines_from_unified_diff(diff);
+
+    assert_eq!(lines["src/lib.rs"], BTreeSet::from([1, 2]));
+    assert_eq!(lines["src/main.rs"], BTreeSet::from([5]));
+}
+
+#[test]
+fn changed_lines_commit_reports_new_line_numbers() {
+    let tmp = TempDir::new().unwrap();
+    init_repo(&tmp);
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(tmp.path().join("src").join("lib.rs"), "one\ntwo\nthree\n").unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
+    git_in(tmp.path())
+        .args(["commit", "-m", "m"])
+        .status()
+        .unwrap();
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "one\ntwo changed\nthree\nfour\n",
+    )
+    .unwrap();
+
+    let lines = changed_lines_commit(tmp.path()).unwrap();
+
+    assert_eq!(lines["src/lib.rs"], BTreeSet::from([2, 4]));
 }
 
 #[test]

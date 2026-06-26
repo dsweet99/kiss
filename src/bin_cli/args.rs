@@ -38,6 +38,34 @@ pub fn parse_language(s: &str) -> Result<Language, String> {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TestCommandAction {
+    Run(TestChangeMode),
+    ValidateSelection(TestChangeMode),
+}
+
+pub fn parse_test_command_action(
+    mode: &str,
+    validation_mode: Option<TestChangeMode>,
+) -> Result<TestCommandAction, String> {
+    if mode == "validate-selection" {
+        return validation_mode
+            .map(TestCommandAction::ValidateSelection)
+            .ok_or_else(|| "validate-selection requires commit, base, or main".to_string());
+    }
+    if validation_mode.is_some() {
+        return Err("validation mode is only valid after validate-selection".to_string());
+    }
+    match mode {
+        "commit" => Ok(TestCommandAction::Run(TestChangeMode::Commit)),
+        "base" => Ok(TestCommandAction::Run(TestChangeMode::Base)),
+        "main" => Ok(TestCommandAction::Run(TestChangeMode::Main)),
+        other => Err(format!(
+            "unknown test mode '{other}'. Use commit, base, main, or validate-selection."
+        )),
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Analyze code for violations
@@ -160,9 +188,15 @@ pub enum Commands {
     /// Run pytest / cargo test for tests covering changed files (git-based)
     #[command(alias = "t")]
     Test {
-        /// What to diff against: commit, base, or main
-        #[arg(value_name = "commit|base|main")]
-        mode: TestChangeMode,
+        /// What to run: commit, base, main, or validate-selection
+        #[arg(value_name = "commit|base|main|validate-selection")]
+        mode: String,
+        /// Diff mode for `validate-selection`
+        #[arg(
+            value_name = "commit|base|main",
+            required_if_eq("mode", "validate-selection")
+        )]
+        validation_mode: Option<TestChangeMode>,
         #[arg(long, value_name = "BRANCH")]
         main_branch: Option<String>,
         #[arg(long, value_name = "BRANCH")]
@@ -172,11 +206,17 @@ pub enum Commands {
         /// Force Python tests to rerun instead of reusing rslip cache entries
         #[arg(long)]
         force: bool,
+        /// Print a local rubric metrics summary for this run
+        #[arg(long)]
+        metrics: bool,
         /// Maximum number of Python test jobs to run concurrently
         #[arg(short = 'j', long, default_value_t = 1)]
         jobs: usize,
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
+        /// Optional validation fixture name
+        #[arg(long, value_name = "NAME")]
+        fixture: Option<String>,
         #[arg(last = true)]
         extra: Vec<String>,
     },

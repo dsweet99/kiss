@@ -3,7 +3,7 @@ use super::{has_cfg_test_attribute, has_test_attribute};
 use crate::macro_expr_parser::{parse_expr_list, parse_single_expr};
 use std::collections::HashSet;
 use syn::visit::Visit;
-use syn::{Expr, ExprIf, ExprMatch, Item};
+use syn::{Expr, ExprIf, ExprMatch, ExprStruct, Item};
 
 fn is_const_bool(expr: &Expr, value: bool) -> bool {
     matches!(
@@ -71,6 +71,16 @@ impl ExecutableCallReferenceVisitor<'_> {
         }
     }
 
+    fn visit_struct(&mut self, s: &ExprStruct) {
+        insert_qualified_path_reference(&s.path, self.refs, self.qualified);
+        for field in &s.fields {
+            self.visit_reachable_expr(&field.expr);
+        }
+        if let Some(rest) = &s.rest {
+            self.visit_reachable_expr(rest);
+        }
+    }
+
     fn record_invocation(&mut self, expr: &Expr) {
         match expr {
             Expr::Call(c) => {
@@ -116,6 +126,7 @@ impl ExecutableCallReferenceVisitor<'_> {
             Expr::Match(m) => self.visit_match(m),
             Expr::While(_) | Expr::Loop(_) => self.visit_repeat(expr),
             Expr::Call(_) | Expr::MethodCall(_) => self.record_invocation(expr),
+            Expr::Struct(s) => self.visit_struct(s),
             Expr::Block(b) => self.visit_reachable_block(&b.block),
             Expr::Closure(_) | Expr::Async(_) => {}
             Expr::Macro(m) => visit_macro_call_tokens(self, &m.mac.tokens),
@@ -258,5 +269,19 @@ mod coverage_witness {
         let expr: syn::Expr = syn::parse_quote!(callee());
         visitor.visit_expr(&expr);
         assert!(refs.contains("callee"));
+    }
+
+    #[test]
+    fn reachable_struct_literal_is_executable_witness() {
+        let mut refs = HashSet::new();
+        let mut qualified = HashSet::new();
+        let mut visitor =
+            ExecutableCallReferenceVisitor::for_coverage_test(&mut refs, &mut qualified);
+        let expr: syn::Expr = syn::parse_quote!(Demo { value: helper() });
+
+        visitor.visit_expr(&expr);
+
+        assert!(refs.contains("Demo"));
+        assert!(refs.contains("helper"));
     }
 }

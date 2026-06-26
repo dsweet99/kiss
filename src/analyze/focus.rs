@@ -77,7 +77,8 @@ impl FocusFilter {
         self.restrict
     }
 
-    pub fn paths(&self) -> &HashSet<PathBuf> {
+    #[cfg(test)]
+    pub(crate) fn paths(&self) -> &HashSet<PathBuf> {
         &self.paths
     }
 

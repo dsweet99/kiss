@@ -15,7 +15,8 @@ use super::{
     CargoLlvmCovRunError, CargoLlvmCovRunOutcome, CargoLlvmCovRunRequest, CargoLlvmCovRunner,
     RustCovCacheStatus, RustLineCoverage, RustLlvmCov, RustLlvmCovError, RustLlvmCovOutcome,
     RustLlvmCovRequest, build_cargo_runner_request, build_llvm_cov_argv, rust_cov_cache,
-    rust_cov_outcome_from_cache, rust_cov_sample_request, validate_rust_cov_request,
+    rust_cov_outcome_from_cache, rust_cov_sample_request, rust_cov_worker_tmp_root,
+    validate_rust_cov_request,
 };
 
 #[test]
@@ -180,7 +181,11 @@ fn rust_llvm_cov_builds_isolated_cargo_runner_request() {
         run_req.env["CARGO_TARGET_DIR"],
         worker.join("target").to_string_lossy()
     );
-    assert_eq!(run_req.env["TMPDIR"], worker.join("tmp").to_string_lossy());
+    assert_eq!(
+        run_req.env["TMPDIR"],
+        rust_cov_worker_tmp_root(&req.cache_root, req.worker_slot).to_string_lossy()
+    );
+    assert!(!std::path::Path::new(&run_req.env["TMPDIR"]).starts_with(tmp.path()));
     assert!(run_req.env["LLVM_PROFILE_FILE"].contains("%m-%p.profraw"));
 }
 

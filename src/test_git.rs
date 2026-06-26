@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -185,6 +186,67 @@ pub fn changed_paths_since(repo: &Path, rev: &str) -> Result<Vec<String>, String
         .collect())
 }
 
+pub fn changed_lines_commit(repo: &Path) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
+    changed_lines_for_diff(repo, &["diff", "--unified=0", "--diff-filter=AM", "HEAD"])
+}
+
+pub fn changed_lines_since(
+    repo: &Path,
+    rev: &str,
+) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
+    changed_lines_for_diff(repo, &["diff", "--unified=0", "--diff-filter=AM", rev])
+}
+
+fn changed_lines_for_diff(
+    repo: &Path,
+    args: &[&str],
+) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
+    let diff = git_output(repo, args)?;
+    Ok(parse_changed_lines_from_unified_diff(&diff))
+}
+
+pub(crate) fn parse_changed_lines_from_unified_diff(diff: &str) -> BTreeMap<String, BTreeSet<u32>> {
+    let mut out = BTreeMap::new();
+    let mut current_file: Option<String> = None;
+    for line in diff.lines() {
+        if let Some(path) = line.strip_prefix("+++ ") {
+            current_file = path
+                .strip_prefix("b/")
+                .filter(|path| *path != "/dev/null")
+                .map(str::to_string);
+            continue;
+        }
+        if !line.starts_with("@@") {
+            continue;
+        }
+        let Some(file) = current_file.as_ref() else {
+            continue;
+        };
+        let Some(range) = line.split_whitespace().nth(2) else {
+            continue;
+        };
+        let Some((start, len)) = parse_unified_new_range(range) else {
+            continue;
+        };
+        if len == 0 {
+            continue;
+        }
+        let lines = out.entry(file.clone()).or_insert_with(BTreeSet::new);
+        for line_no in start..start.saturating_add(len) {
+            lines.insert(line_no);
+        }
+    }
+    out
+}
+
+fn parse_unified_new_range(range: &str) -> Option<(u32, u32)> {
+    let range = range.strip_prefix('+')?;
+    let (start, len) = range
+        .split_once(',')
+        .map_or((range, "1"), |(start, len)| (start, len));
+    Some((start.parse().ok()?, len.parse().ok()?))
+}
+
 fn rel_path_ignored(rel: &str, ignore: &[String]) -> bool {
     ignore.iter().any(|p| {
         let p = p.as_str();
@@ -228,6 +290,31 @@ pub fn resolve_changed_source_paths(
     }
     out.sort();
     out.dedup();
+    out
+}
+
+pub fn resolve_changed_line_paths(
+    repo_root: &Path,
+    rel_lines: &BTreeMap<String, BTreeSet<u32>>,
+    ignore: &[String],
+    lang_filter: Option<TestLangFilter>,
+) -> BTreeMap<PathBuf, BTreeSet<u32>> {
+    let mut out = BTreeMap::new();
+    for (rel, lines) in rel_lines {
+        if lines.is_empty() || rel_path_ignored(rel, ignore) {
+            continue;
+        }
+        let abs = repo_root.join(rel);
+        let Ok(meta) = abs.metadata() else {
+            continue;
+        };
+        if !meta.is_file() || !lang_ok(&abs, lang_filter) {
+            continue;
+        }
+        if let Ok(c) = abs.canonicalize() {
+            out.insert(c, lines.clone());
+        }
+    }
     out
 }
 

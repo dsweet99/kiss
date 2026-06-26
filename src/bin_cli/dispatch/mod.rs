@@ -6,7 +6,7 @@ mod options;
 #[cfg(test)]
 mod test_dispatch;
 
-use crate::bin_cli::args::{Cli, Commands};
+use crate::bin_cli::args::{Cli, Commands, parse_test_command_action};
 use crate::bin_cli::config_session::run_init_command;
 
 use handlers::{
@@ -124,27 +124,9 @@ fn dispatch_tools(
             ignore,
             cfg,
         }),
-        Commands::Test {
-            mode,
-            main_branch,
-            base_branch,
-            dry_run,
-            force,
-            jobs,
-            ignore,
-            extra,
-        } => dispatch_test(TestDispatchOptions {
-            lang,
-            mode,
-            main_branch,
-            base_branch,
-            dry_run,
-            force,
-            jobs,
-            ignore,
-            extra,
-            test_cfg: test_section,
-        }),
+        test_command @ Commands::Test { .. } => {
+            dispatch_test_command(lang, test_command, test_section)
+        }
         Commands::Mv {
             query,
             new_name,
@@ -164,6 +146,50 @@ fn dispatch_tools(
         }),
         _ => 2,
     }
+}
+
+fn dispatch_test_command(
+    lang: Option<kiss::Language>,
+    command: Commands,
+    test_section: &TestSectionConfig,
+) -> i32 {
+    let Commands::Test {
+        mode,
+        validation_mode,
+        main_branch,
+        base_branch,
+        dry_run,
+        force,
+        metrics,
+        jobs,
+        ignore,
+        fixture,
+        extra,
+    } = command
+    else {
+        return 2;
+    };
+    let action = match parse_test_command_action(&mode, validation_mode) {
+        Ok(action) => action,
+        Err(e) => {
+            eprintln!("error: kiss test: {e}");
+            return 2;
+        }
+    };
+    dispatch_test(TestDispatchOptions {
+        lang,
+        action,
+        main_branch,
+        base_branch,
+        dry_run,
+        force,
+        metrics,
+        jobs,
+        ignore,
+        fixture,
+        extra,
+        test_cfg: test_section,
+    })
 }
 
 #[allow(clippy::too_many_lines)]

@@ -136,18 +136,39 @@ pub(in crate::bin_cli::dispatch) fn dispatch_shrink(o: ShrinkDispatchOptions<'_>
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) -> i32 {
-    run_test_command(crate::bin_cli::test_cmd::TestCommandArgs {
-        mode: o.mode,
-        main_branch: o.main_branch.as_deref(),
-        base_branch: o.base_branch.as_deref(),
-        dry_run: o.dry_run,
-        force: o.force,
-        jobs: o.jobs,
-        ignore: &o.ignore,
-        extra: &o.extra,
-        lang_filter: o.lang,
-        test_cfg: o.test_cfg,
-    })
+    match o.action {
+        crate::bin_cli::args::TestCommandAction::Run(mode) => {
+            run_test_command(crate::bin_cli::test_cmd::TestCommandArgs {
+                mode,
+                main_branch: o.main_branch.as_deref(),
+                base_branch: o.base_branch.as_deref(),
+                dry_run: o.dry_run,
+                force: o.force,
+                metrics: o.metrics,
+                jobs: o.jobs,
+                ignore: &o.ignore,
+                extra: &o.extra,
+                lang_filter: o.lang,
+                test_cfg: o.test_cfg,
+            })
+        }
+        crate::bin_cli::args::TestCommandAction::ValidateSelection(mode) => {
+            crate::bin_cli::test_cmd::run_validate_selection_command(
+                crate::bin_cli::test_cmd::ValidateSelectionCommandArgs {
+                    mode,
+                    main_branch: o.main_branch.as_deref(),
+                    base_branch: o.base_branch.as_deref(),
+                    dry_run: o.dry_run,
+                    jobs: o.jobs,
+                    ignore: &o.ignore,
+                    extra: &o.extra,
+                    lang_filter: o.lang,
+                    fixture: o.fixture.as_deref(),
+                    test_cfg: o.test_cfg,
+                },
+            )
+        }
+    }
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_mv(o: MvDispatchOptions) -> i32 {

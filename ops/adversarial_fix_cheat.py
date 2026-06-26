@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import click
-
 from python.adversarial_common import ensure_import_path, repo_root
 from python.adversarial_multi_repo import normalize_repos
 

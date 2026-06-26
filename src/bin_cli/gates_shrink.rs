@@ -149,22 +149,37 @@ fn test_test_cli_parse() {
     use clap::Parser;
     assert!(Cli::try_parse_from(["kiss", "test"]).is_err());
 
-    let cli = Cli::try_parse_from(["kiss", "test", "base", "--dry-run"]).unwrap();
+    let cli = Cli::try_parse_from(["kiss", "test", "base", "--dry-run", "--metrics"]).unwrap();
     match cli.command {
         Commands::Test {
-            mode: crate::test_git::TestChangeMode::Base,
+            mode,
+            validation_mode: None,
             dry_run: true,
+            metrics: true,
             ..
-        } => {}
+        } => assert_eq!(mode, "base"),
         _ => panic!("expected Test base dry-run"),
     }
 
     let cli = Cli::try_parse_from(["kiss", "t", "main"]).unwrap();
     match cli.command {
         Commands::Test {
-            mode: crate::test_git::TestChangeMode::Main,
+            mode,
+            validation_mode: None,
             ..
-        } => {}
+        } => assert_eq!(mode, "main"),
         _ => panic!("expected Test main"),
+    }
+
+    let cli =
+        Cli::try_parse_from(["kiss", "test", "validate-selection", "commit", "--dry-run"]).unwrap();
+    match cli.command {
+        Commands::Test {
+            mode,
+            validation_mode: Some(crate::test_git::TestChangeMode::Commit),
+            dry_run: true,
+            ..
+        } => assert_eq!(mode, "validate-selection"),
+        _ => panic!("expected validate-selection commit dry-run"),
     }
 }

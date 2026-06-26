@@ -239,7 +239,9 @@ fn build_cargo_runner_request(
     );
     env.insert(
         "TMPDIR".to_string(),
-        worker_root.join("tmp").to_string_lossy().to_string(),
+        rust_cov_worker_tmp_root(&req.cache_root, req.worker_slot)
+            .to_string_lossy()
+            .to_string(),
     );
     CargoLlvmCovRunRequest {
         selector: req.selector.clone(),
@@ -268,6 +270,18 @@ fn rust_cov_outcome_from_cache(entry: RustCovCacheEntry) -> RustLlvmCovOutcome {
 fn rust_cov_worker_slot_root(cache_root: &Path, worker_slot: usize) -> PathBuf {
     cache_root
         .join("workers")
+        .join(format!("slot-{worker_slot}"))
+}
+
+fn rust_cov_worker_tmp_root(cache_root: &Path, worker_slot: usize) -> PathBuf {
+    let stable_cache_name: String = cache_root
+        .to_string_lossy()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect();
+    std::env::temp_dir()
+        .join("kiss-rust-llvm-cov")
+        .join(stable_cache_name)
         .join(format!("slot-{worker_slot}"))
 }
 

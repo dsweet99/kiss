@@ -99,13 +99,17 @@ fn call_handler_dispatchers(
     });
     let _ = handlers::dispatch_test(options::TestDispatchOptions {
         lang: None,
-        mode: crate::test_git::TestChangeMode::Commit,
+        action: crate::bin_cli::args::TestCommandAction::Run(
+            crate::test_git::TestChangeMode::Commit,
+        ),
         main_branch: None,
         base_branch: None,
         dry_run: true,
         force: false,
+        metrics: false,
         jobs: 1,
         ignore: vec![],
+        fixture: None,
         extra: vec![],
         test_cfg: test,
     });

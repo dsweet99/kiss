@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -7,7 +8,9 @@ use rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
 use super::runners::*;
-use super::rust_coverage_index::{rebuild_rust_coverage_index, rust_coverage_cache_root};
+use super::rust_coverage_index::{
+    rebuild_rust_coverage_index, rust_coverage_cache_root, write_rust_population_manifest_for_args,
+};
 
 #[test]
 fn py_selector_uses_double_colon() {
@@ -111,14 +114,151 @@ fn enumerate_workspace_rust_selectors_fails_fast_on_invalid_syntax() {
 }
 
 #[test]
-fn discover_for_paths_empty_paths_ok() {
+fn combined_selectors_uses_existing_rust_index_for_source_changes() {
     let tmp = TempDir::new().unwrap();
-    let defs = discover_for_paths(tmp.path(), &[], None, &[]).unwrap();
-    assert!(defs.is_empty());
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    let lib = src.join("lib.rs");
+    fs::write(
+        &lib,
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
+    write_rust_cov_entry(
+        tmp.path(),
+        "abc",
+        "tests::gets_value",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                lib.to_string_lossy().to_string(),
+                std::collections::BTreeSet::from([1]),
+            )]),
+        },
+    );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+    write_rust_population_manifest_for_args(tmp.path(), &["tests::gets_value".to_string()], &[])
+        .unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        &[],
+        &BTreeMap::new(),
+        &[],
+        None,
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
+    assert_eq!(plan.rust_source_paths, vec![lib]);
+    assert!(plan.rust_source_population_paths.is_empty());
 }
 
 #[test]
-fn combined_selectors_uses_existing_rust_index_for_source_changes() {
+fn combined_selectors_repopulates_when_rust_test_args_change() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    let lib = src.join("lib.rs");
+    fs::write(
+        &lib,
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
+    write_rust_cov_entry(
+        tmp.path(),
+        "abc",
+        "tests::gets_value",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                lib.to_string_lossy().to_string(),
+                std::collections::BTreeSet::from([1]),
+            )]),
+        },
+    );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+    write_rust_population_manifest_for_args(tmp.path(), &["tests::gets_value".to_string()], &[])
+        .unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        &[],
+        &BTreeMap::new(),
+        &["--exact".to_string()],
+        None,
+        &[],
+    )
+    .unwrap();
+
+    assert!(plan.rust_selectors.is_empty());
+    assert_eq!(plan.rust_source_population_paths, vec![lib]);
+}
+
+#[test]
+fn combined_selectors_prefers_rust_changed_line_matches() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    let lib = src.join("lib.rs");
+    fs::write(
+        &lib,
+        "pub fn first() {}\npub fn second() {}\n#[cfg(test)]\nmod tests { #[test] fn first() {} #[test] fn second() {} }\n",
+    )
+    .unwrap();
+    write_rust_cov_entry(
+        tmp.path(),
+        "line1",
+        "tests::first",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                lib.to_string_lossy().to_string(),
+                std::collections::BTreeSet::from([1]),
+            )]),
+        },
+    );
+    write_rust_cov_entry(
+        tmp.path(),
+        "line2",
+        "tests::second",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                lib.to_string_lossy().to_string(),
+                std::collections::BTreeSet::from([2]),
+            )]),
+        },
+    );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+    write_rust_population_manifest_for_args(
+        tmp.path(),
+        &["tests::first".to_string(), "tests::second".to_string()],
+        &[],
+    )
+    .unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        &[],
+        &BTreeMap::from([(lib.clone(), BTreeSet::from([2]))]),
+        &[],
+        None,
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(plan.rust_selectors, vec!["tests::second".to_string()]);
+    assert_eq!(plan.rust_source_paths, vec![lib]);
+    assert!(plan.rust_source_population_paths.is_empty());
+}
+
+#[test]
+fn combined_selectors_requires_complete_rust_population_manifest() {
     let tmp = TempDir::new().unwrap();
     let src = tmp.path().join("src");
     fs::create_dir(&src).unwrap();
@@ -138,11 +278,19 @@ fn combined_selectors_uses_existing_rust_index_for_source_changes() {
     );
     rebuild_rust_coverage_index(tmp.path()).unwrap();
 
-    let plan = combined_selectors(tmp.path(), std::slice::from_ref(&lib), &[], None, &[]).unwrap();
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        &[],
+        &BTreeMap::new(),
+        &[],
+        None,
+        &[],
+    )
+    .unwrap();
 
-    assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
-    assert_eq!(plan.rust_source_paths, vec![lib]);
-    assert!(plan.rust_source_population_paths.is_empty());
+    assert!(plan.rust_selectors.is_empty());
+    assert_eq!(plan.rust_source_population_paths, vec![lib]);
 }
 
 #[test]
@@ -153,7 +301,16 @@ fn combined_selectors_marks_missing_rust_index_for_population() {
     let lib = src.join("lib.rs");
     fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
 
-    let plan = combined_selectors(tmp.path(), std::slice::from_ref(&lib), &[], None, &[]).unwrap();
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        &[],
+        &BTreeMap::new(),
+        &[],
+        None,
+        &[],
+    )
+    .unwrap();
 
     assert!(plan.rust_selectors.is_empty());
     assert_eq!(plan.rust_source_paths, vec![lib.clone()]);
@@ -185,7 +342,7 @@ fn write_rust_cov_entry(
 #[test]
 fn combined_selectors_empty_without_sources() {
     let tmp = TempDir::new().unwrap();
-    let plan = combined_selectors(tmp.path(), &[], &[], None, &[]).unwrap();
+    let plan = combined_selectors(tmp.path(), &[], &[], &BTreeMap::new(), &[], None, &[]).unwrap();
     assert!(plan.py_selectors.is_empty());
     assert!(plan.rust_selectors.is_empty());
     assert!(plan.rust_source_paths.is_empty());
@@ -217,111 +374,6 @@ fn build_cargo_llvm_cov_dry_run_argv_places_selector_before_extra() {
 }
 
 #[test]
-fn rslip_request_from_parts_uses_selector_and_kiss_cache() {
-    let tmp = TempDir::new().unwrap();
-    let req = rslip_request_from_parts(
-        tmp.path(),
-        "tests/test_app.py::test_ok",
-        &["-q".to_string()],
-        "3.12.1",
-        "8.2.0",
-        true,
-    )
-    .unwrap();
-
-    assert_eq!(req.nodeid, "tests/test_app.py::test_ok");
-    assert_eq!(req.cwd, tmp.path());
-    assert_eq!(req.source_root, tmp.path());
-    assert_eq!(req.pytest_args, vec!["-q"]);
-    assert_eq!(req.python_version, "3.12.1");
-    assert_eq!(req.pytest_version, "8.2.0");
-    assert_eq!(req.cache_root, tmp.path().join(".kiss").join("rslip_cache"));
-    assert!(req.force_rerun);
-}
-
-#[test]
-fn rust_llvm_cov_request_from_parts_sets_default_worker_slot() {
-    let tmp = TempDir::new().unwrap();
-    let req = rust_llvm_cov_request_from_parts(
-        tmp.path(),
-        "tests::gets_value",
-        &["--exact".to_string()],
-        "cargo-llvm-cov 0.6.0",
-        "rustc 1.88.0",
-        true,
-    )
-    .unwrap();
-
-    assert_eq!(req.selector, "tests::gets_value");
-    assert_eq!(req.worker_slot, 0);
-    assert_eq!(
-        req.cache_root,
-        tmp.path().join(".kiss").join("rust_llvm_cov_cache")
-    );
-    assert_eq!(req.test_args, vec!["--exact"]);
-    assert!(req.force_rerun);
-}
-
-#[test]
-fn rslip_request_from_parts_rejects_python_before_312() {
-    let tmp = TempDir::new().unwrap();
-    let err = rslip_request_from_parts(
-        tmp.path(),
-        "tests/test_app.py::test_ok",
-        &[],
-        "3.11.9",
-        "8.2.0",
-        false,
-    )
-    .unwrap_err();
-
-    assert!(err.contains("Python 3.12+"));
-}
-
-#[test]
-fn rslip_request_from_parts_accepts_python_after_312() {
-    let tmp = TempDir::new().unwrap();
-    let req = rslip_request_from_parts(
-        tmp.path(),
-        "tests/test_app.py::test_ok",
-        &[],
-        "3.13.0",
-        "8.2.0",
-        false,
-    )
-    .unwrap();
-
-    assert_eq!(req.python_version, "3.13.0");
-}
-
-#[test]
-fn rust_llvm_cov_request_from_parts_uses_selector_extra_and_kiss_cache() {
-    let tmp = TempDir::new().unwrap();
-    let req = rust_llvm_cov_request_from_parts(
-        tmp.path(),
-        "smoke_sub",
-        &["--exact".to_string()],
-        "cargo-llvm-cov 0.6.0",
-        "rustc 1.88.0",
-        true,
-    )
-    .unwrap();
-
-    assert_eq!(req.selector, "smoke_sub");
-    assert_eq!(req.cwd, tmp.path());
-    assert_eq!(req.source_root, tmp.path());
-    assert_eq!(req.cargo_args, Vec::<String>::new());
-    assert_eq!(req.test_args, vec!["--exact"]);
-    assert_eq!(req.llvm_cov_version, "cargo-llvm-cov 0.6.0");
-    assert_eq!(req.rustc_version, "rustc 1.88.0");
-    assert_eq!(
-        req.cache_root,
-        tmp.path().join(".kiss").join("rust_llvm_cov_cache")
-    );
-    assert!(req.force_rerun);
-}
-
-#[test]
 fn shlex_quote_spaces() {
     assert!(shlex_quote("a b").contains('\''));
 }
@@ -331,26 +383,21 @@ fn partition_changed_paths_split() {
     let tmp = TempDir::new().unwrap();
     let lib = tmp.path().join("lib.py");
     let tst = tmp.path().join("test_lib.py");
+    let rust_src = tmp.path().join("lib.rs");
+    let rust_test = tmp.path().join("lib_test.rs");
     fs::write(&lib, "def f(): pass\n").unwrap();
     fs::write(&tst, "def test_f(): pass\n").unwrap();
-    let paths = vec![lib.clone(), tst.clone()];
+    fs::write(&rust_src, "fn f() {}\n").unwrap();
+    fs::write(&rust_test, "#[test]\nfn test_f() {}\n").unwrap();
+    let paths = vec![
+        lib.clone(),
+        tst.clone(),
+        rust_src.clone(),
+        rust_test.clone(),
+    ];
     let (src, tst_paths) = partition_changed_paths(&paths);
     assert!(src.iter().any(|p| p == &lib));
+    assert!(src.iter().any(|p| p == &rust_src));
     assert!(tst_paths.iter().any(|p| p == &tst));
-}
-
-#[test]
-fn collect_selectors_from_defs_smoke() {
-    use std::path::PathBuf;
-    let defs: Vec<crate::test_discovery::DefEntry> = vec![(
-        PathBuf::from("/x/a.py"),
-        "f".into(),
-        1,
-        Some(vec![(PathBuf::from("/x/test_a.py"), "test_f".into())]),
-    )];
-    let s = collect_selectors_from_defs(&defs);
-    assert!(
-        s.iter()
-            .any(|(p, id)| p.ends_with("test_a.py") && id == "test_f")
-    );
+    assert!(tst_paths.iter().any(|p| p == &rust_test));
 }

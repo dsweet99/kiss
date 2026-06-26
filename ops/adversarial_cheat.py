@@ -7,7 +7,6 @@ import tempfile
 from pathlib import Path
 
 import click
-
 from python.adversarial_common import (
     allocate_adversarial_id,
     ensure_import_path,

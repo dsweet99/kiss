@@ -9,7 +9,6 @@ mod bin_cli;
 #[cfg(test)]
 mod layout;
 mod rules;
-mod test_discovery;
 mod test_git;
 mod test_runner;
 mod viz;

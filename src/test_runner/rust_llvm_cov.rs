@@ -8,7 +8,8 @@ use rust_llvm_cov_runner::{
     RustLlvmCovRequest, build_llvm_cov_argv, subprocess_cargo_llvm_cov_runner,
 };
 
-use super::runners::{command_stdout, merge_exit_codes};
+use super::last_status::{record_statuses, rust_last_status_identity};
+use super::runners::{SelectorExecutionSummary, command_stdout};
 
 pub(crate) fn build_cargo_llvm_cov_dry_run_argv(selector: &str, extra: &[String]) -> Vec<String> {
     let mut req = CargoLlvmCovRunRequest::new(
@@ -27,9 +28,10 @@ pub(crate) fn run_rust_llvm_cov_selectors(
     extra: &[String],
     force_rerun: bool,
     jobs: usize,
-) -> Result<i32, String> {
+) -> Result<SelectorExecutionSummary, String> {
     assert!(jobs > 0, "jobs must be greater than zero");
     let (llvm_cov_version, rustc_version) = detect_rust_llvm_cov_versions(repo_root)?;
+    let identity = rust_last_status_identity(&llvm_cov_version, &rustc_version, extra);
     let reqs: Vec<_> = selectors
         .iter()
         .map(|selector| {
@@ -43,15 +45,20 @@ pub(crate) fn run_rust_llvm_cov_selectors(
             )
         })
         .collect::<Result<_, _>>()?;
-    let mut code = 0;
+    let mut summary = SelectorExecutionSummary::default();
+    let mut statuses = Vec::new();
     for result in run_rust_llvm_cov_requests_bounded(reqs, jobs) {
         let outcome = result.map_err(format_rust_llvm_cov_error)?;
         print_rust_llvm_cov_outcome(&outcome);
-        if outcome.status == rpytest_runner::TestStatus::Failed {
-            code = merge_exit_codes(code, outcome.exit_code.unwrap_or(1));
-        }
+        statuses.push((outcome.selector.clone(), outcome.status));
+        summary.record(
+            outcome.status,
+            outcome.cache_status == RustCovCacheStatus::Hit,
+            outcome.exit_code,
+        );
     }
-    Ok(code)
+    record_statuses(repo_root, kiss::Language::Rust, &identity, &statuses)?;
+    Ok(summary)
 }
 
 pub(crate) fn rust_llvm_cov_request_from_parts(

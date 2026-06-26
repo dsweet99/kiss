@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import click
-
 from python.adversarial_common import ensure_import_path
 
 
