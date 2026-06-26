@@ -14,6 +14,8 @@ mod cargo_runner_test;
 mod lib_test;
 #[cfg(test)]
 mod rust_cov_cache_test;
+#[cfg(test)]
+mod worker_cleanup_test;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -47,6 +49,7 @@ pub struct RustLlvmCovRequest {
     pub env: BTreeMap<String, String>,
     pub cache_root: PathBuf,
     pub force_rerun: bool,
+    pub worker_slot: usize,
 }
 
 #[cfg(test)]
@@ -148,6 +151,8 @@ impl RustLlvmCov {
             return Ok(rust_cov_outcome_from_cache(entry));
         }
 
+        cleanup_legacy_worker_dirs(&req.cache_root)?;
+        let worker_root = prepare_worker_slot(&req.cache_root, req.worker_slot)?;
         let artifact_path = req
             .cache_root
             .join("artifacts")
@@ -155,12 +160,22 @@ impl RustLlvmCov {
         if let Some(parent) = artifact_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let worker_root = req.cache_root.join("workers").join(&fingerprint);
-        fs::create_dir_all(&worker_root)?;
-        let run_req = build_cargo_runner_request(&req, &artifact_path, &worker_root);
-        let run = self.runner.run_one(run_req)?;
+        let run_req = build_cargo_runner_request(&req, &artifact_path);
+        let run = match self.runner.run_one(run_req) {
+            Ok(run) => run,
+            Err(err) => {
+                let _ = cleanup_worker_slot_transients(&worker_root);
+                return Err(err.into());
+            }
+        };
         let coverage = if run.status == TestStatus::Passed {
-            parse_llvm_cov_json_file(&run.artifact_path, &req.source_root)?
+            match parse_llvm_cov_json_file(&run.artifact_path, &req.source_root) {
+                Ok(coverage) => coverage,
+                Err(err) => {
+                    let _ = cleanup_worker_slot_transients(&worker_root);
+                    return Err(err);
+                }
+            }
         } else {
             RustLineCoverage {
                 files: BTreeMap::new(),
@@ -181,6 +196,8 @@ impl RustLlvmCov {
             &fingerprint,
             &RustCovCacheEntry::from(&outcome),
         )?;
+        let _ = fs::remove_file(&artifact_path);
+        let _ = cleanup_worker_slot_transients(&worker_root);
         Ok(outcome)
     }
 }
@@ -193,6 +210,7 @@ pub fn build_llvm_cov_argv(req: &CargoLlvmCovRunRequest) -> Vec<String> {
         "--json".to_string(),
         "--output-path".to_string(),
         req.artifact_path.to_string_lossy().to_string(),
+        "--no-clean".to_string(),
     ];
     argv.extend(req.cargo_args.iter().cloned());
     argv.push(req.selector.clone());
@@ -204,9 +222,9 @@ pub fn build_llvm_cov_argv(req: &CargoLlvmCovRunRequest) -> Vec<String> {
 fn build_cargo_runner_request(
     req: &RustLlvmCovRequest,
     artifact_path: &Path,
-    worker_root: &Path,
 ) -> CargoLlvmCovRunRequest {
     let mut env = req.env.clone();
+    let worker_root = rust_cov_worker_slot_root(&req.cache_root, req.worker_slot);
     env.insert(
         "CARGO_TARGET_DIR".to_string(),
         worker_root.join("target").to_string_lossy().to_string(),
@@ -247,6 +265,53 @@ fn rust_cov_outcome_from_cache(entry: RustCovCacheEntry) -> RustLlvmCovOutcome {
     }
 }
 
+fn rust_cov_worker_slot_root(cache_root: &Path, worker_slot: usize) -> PathBuf {
+    cache_root
+        .join("workers")
+        .join(format!("slot-{worker_slot}"))
+}
+
+fn cleanup_legacy_worker_dirs(cache_root: &Path) -> io::Result<()> {
+    let workers_root = cache_root.join("workers");
+    let Ok(entries) = fs::read_dir(&workers_root) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_legacy_dir = entry.file_type().is_ok_and(|file_type| file_type.is_dir())
+            && !entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with("slot-"));
+        if is_legacy_dir {
+            let _ = fs::remove_dir_all(path);
+        }
+    }
+    Ok(())
+}
+
+fn prepare_worker_slot(cache_root: &Path, worker_slot: usize) -> io::Result<PathBuf> {
+    let worker_root = rust_cov_worker_slot_root(cache_root, worker_slot);
+    fs::create_dir_all(&worker_root)?;
+    cleanup_worker_slot_transients(&worker_root)?;
+    Ok(worker_root)
+}
+
+fn cleanup_worker_slot_transients(worker_root: &Path) -> io::Result<()> {
+    for name in ["profile", "tmp"] {
+        let path = worker_root.join(name);
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.is_dir() {
+            let _ = fs::remove_dir_all(&path);
+        } else {
+            let _ = fs::remove_file(&path);
+        }
+    }
+    Ok(())
+}
+
 fn validate_rust_cov_request(req: &RustLlvmCovRequest) -> Result<(), RustLlvmCovError> {
     if req.selector.trim().is_empty() {
         return Err(RustLlvmCovError::InvalidRequest(
@@ -280,5 +345,6 @@ fn rust_cov_sample_request(root: &Path) -> RustLlvmCovRequest {
         env: BTreeMap::new(),
         cache_root: root.join(".rust_llvm_cov_cache"),
         force_rerun: false,
+        worker_slot: 0,
     }
 }

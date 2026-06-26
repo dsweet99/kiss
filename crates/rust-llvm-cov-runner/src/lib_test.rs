@@ -84,6 +84,7 @@ fn rust_llvm_cov_builds_cargo_llvm_cov_argv_with_selector_before_test_args() {
             "--json",
             "--output-path",
             &tmp.path().join("coverage.json").to_string_lossy(),
+            "--no-clean",
             "--workspace",
             "-p",
             "kiss-ai",
@@ -160,11 +161,18 @@ fn rust_llvm_cov_report_witness_preserves_file_segment_shape() {
 #[test]
 fn rust_llvm_cov_builds_isolated_cargo_runner_request() {
     let tmp = tempfile::tempdir().unwrap();
-    let req = rust_cov_sample_request(tmp.path());
+    let req = RustLlvmCovRequest {
+        worker_slot: 3,
+        ..rust_cov_sample_request(tmp.path())
+    };
     let artifact = tmp.path().join("coverage.json");
-    let worker = tmp.path().join("worker-1");
 
-    let run_req = build_cargo_runner_request(&req, &artifact, &worker);
+    let run_req = build_cargo_runner_request(&req, &artifact);
+    let worker = tmp
+        .path()
+        .join(".rust_llvm_cov_cache")
+        .join("workers")
+        .join("slot-3");
 
     assert_eq!(run_req.selector, req.selector);
     assert_eq!(run_req.artifact_path, artifact);

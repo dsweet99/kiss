@@ -209,10 +209,11 @@ fn build_cargo_llvm_cov_dry_run_argv_places_selector_before_extra() {
         ["cargo", "llvm-cov", "test", "--json", "--output-path"]
     );
     assert_eq!(argv[5], "<coverage.json>");
-    assert_eq!(argv[6], "smoke_sub");
-    assert_eq!(argv[7], "--");
-    assert_eq!(argv[8], "--exact");
-    assert_eq!(argv[9], "--nocapture");
+    assert_eq!(argv[6], "--no-clean");
+    assert_eq!(argv[7], "smoke_sub");
+    assert_eq!(argv[8], "--");
+    assert_eq!(argv[9], "--exact");
+    assert_eq!(argv[10], "--nocapture");
 }
 
 #[test]
@@ -235,6 +236,29 @@ fn rslip_request_from_parts_uses_selector_and_kiss_cache() {
     assert_eq!(req.python_version, "3.12.1");
     assert_eq!(req.pytest_version, "8.2.0");
     assert_eq!(req.cache_root, tmp.path().join(".kiss").join("rslip_cache"));
+    assert!(req.force_rerun);
+}
+
+#[test]
+fn rust_llvm_cov_request_from_parts_sets_default_worker_slot() {
+    let tmp = TempDir::new().unwrap();
+    let req = rust_llvm_cov_request_from_parts(
+        tmp.path(),
+        "tests::gets_value",
+        &["--exact".to_string()],
+        "cargo-llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(req.selector, "tests::gets_value");
+    assert_eq!(req.worker_slot, 0);
+    assert_eq!(
+        req.cache_root,
+        tmp.path().join(".kiss").join("rust_llvm_cov_cache")
+    );
+    assert_eq!(req.test_args, vec!["--exact"]);
     assert!(req.force_rerun);
 }
 

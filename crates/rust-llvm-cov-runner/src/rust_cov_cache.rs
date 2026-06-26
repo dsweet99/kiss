@@ -80,6 +80,8 @@ pub(crate) fn rust_cov_unique_suffix() -> String {
 
 pub(crate) fn rust_cov_fingerprint(req: &RustLlvmCovRequest) -> io::Result<String> {
     let mut h = rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
+    h = rust_cov_fnv1a64(h, b"cargo-llvm-cov-generated-args-v2");
+    h = rust_cov_fnv1a64(h, b"--json --output-path --no-clean");
     h = rust_cov_fnv1a64(h, req.selector.as_bytes());
     h = rust_cov_fnv1a64(h, req.cargo.to_string_lossy().as_bytes());
     h = rust_cov_fnv1a64(h, req.llvm_cov_version.as_bytes());

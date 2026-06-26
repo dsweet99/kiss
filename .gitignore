@@ -1,5 +1,4 @@
 target/
-ops/
 **/__pycache__/
 **/*.py[cod]
 **/*.rs.bk
@@ -9,3 +8,4 @@ ops/
 /log_2
 results/
 *.md~
+.kiss/
