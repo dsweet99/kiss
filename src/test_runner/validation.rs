@@ -91,6 +91,7 @@ pub(crate) struct ValidationReport {
     pub(crate) selected_rust: usize,
     pub(crate) full_python: usize,
     pub(crate) full_rust: usize,
+    pub(crate) python_population_required: bool,
     pub(crate) rust_population_required: bool,
 }
 
@@ -139,6 +140,10 @@ impl ValidationReport {
         self.rust_population_required
     }
 
+    pub(crate) fn python_population_required(&self) -> bool {
+        self.python_population_required
+    }
+
     pub(crate) fn print(&self, dry_run: bool) {
         println!("KISS TEST VALIDATION");
         println!("dry_run={dry_run}");
@@ -154,6 +159,10 @@ impl ValidationReport {
         println!("full_rust={}", self.full_for_language(Language::Rust));
         println!("selected_total={}", self.selected_total());
         println!("full_total={}", self.full_total());
+        println!(
+            "python_population_required={}",
+            self.python_population_required()
+        );
         println!(
             "rust_population_required={}",
             self.rust_population_required()
@@ -183,7 +192,11 @@ pub(crate) fn validation_report(
     };
     let mut selected_python: BTreeSet<String> = planned.py_sel.iter().cloned().collect();
     let mut selected_rust: BTreeSet<String> = planned.rs_sel.iter().cloned().collect();
+    let python_population_required = planned.python_population_required;
     let rust_population_required = !planned.rust_source_population_paths.is_empty();
+    if python_population_required {
+        selected_python.extend(full_python.iter().cloned());
+    }
     if rust_population_required {
         selected_rust.extend(full_rust.iter().cloned());
     }
@@ -198,6 +211,7 @@ pub(crate) fn validation_report(
         selected_rust: selected_rust.len(),
         full_python: full_python.len(),
         full_rust: full_rust.len(),
+        python_population_required,
         rust_population_required,
     })
 }

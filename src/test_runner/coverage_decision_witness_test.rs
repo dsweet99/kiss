@@ -33,6 +33,7 @@ fn witness_decision_plan_defaults_and_debug() {
     let selector = TestSelector::new(Language::Rust, "crate::tests::works");
     let selection = SelectionDecision {
         selectors: vec![selector.clone()],
+        complete: true,
     };
     let population = PopulationPlan {
         selectors: vec![selector],
@@ -51,6 +52,7 @@ fn witness_decision_plan_defaults_and_debug() {
     assert!(std::mem::size_of::<PopulationPlan>() > 0);
     assert!(std::mem::size_of::<CoverageDecisionPlan>() > 0);
     assert!(SelectionDecision::default().selectors.is_empty());
+    assert!(SelectionDecision::default().complete);
     assert!(PopulationPlan::default().selectors.is_empty());
     assert!(CoverageDecisionPlan::default().selected.is_empty());
     assert!(format!("{:?}", plan.clone()).contains("selected"));

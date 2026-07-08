@@ -259,14 +259,15 @@ fn selected_selector_sets(
         args.normalized_lang_filter(),
         None,
     )?;
+    let mut python = planned.py_sel.into_iter().collect::<BTreeSet<_>>();
+    if planned.python_population_required {
+        python.extend(full.python.iter().cloned());
+    }
     let mut rust = planned.rs_sel.into_iter().collect::<BTreeSet<_>>();
     if !planned.rust_source_population_paths.is_empty() {
         rust.extend(full.rust.iter().cloned());
     }
-    Ok(SelectorSets {
-        python: planned.py_sel.into_iter().collect(),
-        rust,
-    })
+    Ok(SelectorSets { python, rust })
 }
 
 fn selectors_if<F>(enabled: bool, f: F) -> Result<BTreeSet<String>, String>

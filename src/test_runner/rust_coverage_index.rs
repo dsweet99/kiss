@@ -6,6 +6,8 @@ use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::RustLineCoverage;
 use serde::Deserialize;
 
+use crate::test_runner::line_selection;
+
 pub(crate) const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v1";
 pub(crate) const INDEX_SCHEMA_VERSION: &str = "rust-llvm-cov-index-v1";
 pub(crate) const POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v1";
@@ -107,18 +109,14 @@ pub(crate) fn select_rust_source_selectors_hybrid(
     let mut selectors = BTreeSet::new();
     for source_path in source_paths {
         let rel = repo_relative_path(repo_root, source_path)?;
-        let file_selectors = index.get(&rel)?;
-        if file_selectors.is_empty() {
-            return None;
-        }
+        let Some(file_selectors) = index.get(&rel).filter(|selectors| !selectors.is_empty()) else {
+            continue;
+        };
         let selected_for_file = line_selectors_by_file
             .get(&rel)
             .filter(|selectors| !selectors.is_empty())
             .cloned()
             .unwrap_or_else(|| file_selectors.clone());
-        if selected_for_file.is_empty() {
-            return None;
-        }
         selectors.extend(selected_for_file);
     }
     Some(selectors)
@@ -128,16 +126,7 @@ fn changed_line_rels(
     repo_root: &Path,
     changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
 ) -> BTreeMap<String, BTreeSet<u32>> {
-    let mut out = BTreeMap::new();
-    for (path, lines) in changed_lines {
-        if lines.is_empty() {
-            continue;
-        }
-        if let Some(rel) = repo_relative_path(repo_root, path) {
-            out.insert(rel, lines.clone());
-        }
-    }
-    out
+    line_selection::changed_line_rels(repo_root, changed_lines, repo_relative_path)
 }
 
 fn selectors_by_changed_file_line(
@@ -174,10 +163,9 @@ pub(crate) fn selectors_for_source_paths(
     let mut selectors = BTreeSet::new();
     for source_path in source_paths {
         let rel = repo_relative_path(repo_root, source_path)?;
-        let file_selectors = index.get(&rel)?;
-        if file_selectors.is_empty() {
-            return None;
-        }
+        let Some(file_selectors) = index.get(&rel).filter(|selectors| !selectors.is_empty()) else {
+            continue;
+        };
         selectors.extend(file_selectors.iter().cloned());
     }
     Some(selectors)

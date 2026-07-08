@@ -96,9 +96,19 @@ impl CoverageFreshness {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SelectionDecision {
     pub(crate) selectors: Vec<TestSelector>,
+    pub(crate) complete: bool,
+}
+
+impl Default for SelectionDecision {
+    fn default() -> Self {
+        Self {
+            selectors: Vec::new(),
+            complete: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

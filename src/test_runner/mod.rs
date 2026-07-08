@@ -1,5 +1,7 @@
 mod coverage_decision;
 pub(crate) mod last_status;
+mod line_selection;
+mod python_coverage_index;
 mod run_logic;
 mod runners;
 mod rust_coverage_index;
@@ -124,6 +126,8 @@ pub(crate) struct PlannedSelectors {
     pub repo_root: PathBuf,
     pub py_sel: Vec<String>,
     pub rs_sel: Vec<String>,
+    pub python_population_required: bool,
+    pub python_population_selectors: Vec<String>,
     pub rust_source_paths: Vec<PathBuf>,
     pub rust_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
     pub rust_source_population_paths: Vec<PathBuf>,
@@ -214,6 +218,8 @@ pub(crate) fn plan_selectors(
         repo_root,
         py_sel: selector_plan.py_selectors,
         rs_sel: selector_plan.rust_selectors,
+        python_population_required: selector_plan.python_population_required,
+        python_population_selectors: selector_plan.python_population_selectors,
         rust_source_paths: selector_plan.rust_source_paths,
         rust_changed_lines: selector_plan.rust_changed_lines,
         rust_source_population_paths: selector_plan.rust_source_population_paths,
@@ -248,6 +254,7 @@ mod coverage_witness {
             selected_rust: 0,
             full_python: 1,
             full_rust: 1,
+            python_population_required: false,
             rust_population_required: false,
         };
         assert_eq!(report.selection_ratio(), Some(0.0));
@@ -262,6 +269,10 @@ mod mod_test;
 #[cfg(test)]
 #[path = "mod_run_api_test.rs"]
 mod mod_run_api_test;
+
+#[cfg(test)]
+#[path = "python_coverage_index_witness_test.rs"]
+mod python_coverage_index_witness_test;
 
 #[cfg(test)]
 #[path = "runners_test.rs"]

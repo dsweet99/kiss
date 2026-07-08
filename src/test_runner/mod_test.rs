@@ -29,6 +29,7 @@ fn validation_report_print_contract() {
         selected_rust: 2,
         full_python: 3,
         full_rust: 7,
+        python_population_required: false,
         rust_population_required: true,
     };
 
@@ -66,6 +67,7 @@ fn validation_types_expose_language_specific_counts() {
         selected_rust: 0,
         full_python: 1,
         full_rust: 3,
+        python_population_required: false,
         rust_population_required: false,
     };
     assert_eq!(report.selected_for_language(Language::Python), 0);
@@ -104,6 +106,7 @@ fn validation_report() {
         selected_rust: 0,
         full_python: 2,
         full_rust: 0,
+        python_population_required: false,
         rust_population_required: false,
     };
 
@@ -117,6 +120,7 @@ fn print() {
         selected_rust: 0,
         full_python: 0,
         full_rust: 0,
+        python_population_required: false,
         rust_population_required: false,
     };
 

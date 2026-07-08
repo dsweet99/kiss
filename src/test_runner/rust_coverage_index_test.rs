@@ -137,7 +137,7 @@ fn write_malformed_entries(repo_root: &Path) {
 }
 
 #[test]
-fn selectors_for_source_paths_requires_every_file_to_be_indexed() {
+fn selectors_for_source_paths_skips_uncovered_siblings() {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
@@ -153,9 +153,10 @@ fn selectors_for_source_paths_requires_every_file_to_be_indexed() {
         selectors_for_source_paths(tmp.path(), std::slice::from_ref(&lib), &index).unwrap(),
         BTreeSet::from(["test_lib".to_string()])
     );
-    assert!(
-        selectors_for_source_paths(tmp.path(), &[lib, missing], &index).is_none(),
-        "missing source files require population"
+    assert_eq!(
+        selectors_for_source_paths(tmp.path(), &[lib, missing], &index).unwrap(),
+        BTreeSet::from(["test_lib".to_string()]),
+        "uncovered source files contribute no selectors but do not abort siblings"
     );
 }
 

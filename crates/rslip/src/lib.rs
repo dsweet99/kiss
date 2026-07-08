@@ -24,7 +24,7 @@ use rpytest_runner::{
 };
 use serde::{Deserialize, Serialize};
 
-const CACHE_SCHEMA_VERSION: &str = "rslip-cache-v1";
+pub const CACHE_SCHEMA_VERSION: &str = "rslip-cache-v1";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RslipRequest {

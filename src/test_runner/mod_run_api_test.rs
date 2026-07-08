@@ -28,6 +28,8 @@ impl PlannedSelectors {
             repo_root,
             py_sel: vec![],
             rs_sel: vec![],
+            python_population_required: false,
+            python_population_selectors: Vec::new(),
             rust_source_paths: vec![],
             rust_changed_lines: BTreeMap::new(),
             rust_source_population_paths: vec![],
@@ -142,6 +144,7 @@ fn validation_report_totals_and_print_are_consistent() {
         selected_rust: 3,
         full_python: 4,
         full_rust: 6,
+        python_population_required: false,
         rust_population_required: false,
     };
 
@@ -162,6 +165,7 @@ fn validation_report_totals_and_print_are_consistent() {
         selected_rust: 0,
         full_python: 0,
         full_rust: 0,
+        python_population_required: false,
         rust_population_required: true,
     };
     assert_eq!(empty.selection_ratio(), None);
@@ -190,6 +194,8 @@ fn validation_report_counts_rust_population_as_selected() {
         repo_root: tmp.path().to_path_buf(),
         py_sel: Vec::new(),
         rs_sel: Vec::new(),
+        python_population_required: false,
+        python_population_selectors: Vec::new(),
         rust_source_paths: vec![lib.clone()],
         rust_changed_lines: BTreeMap::new(),
         rust_source_population_paths: vec![lib],
@@ -204,6 +210,39 @@ fn validation_report_counts_rust_population_as_selected() {
     assert_eq!(report.selected_rust, 1);
     assert_eq!(report.full_rust, 1);
     assert!(report.rust_population_required);
+}
+
+#[test]
+fn validation_report_counts_python_population_as_selected() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join("tests")).unwrap();
+    std::fs::write(tmp.path().join("app.py"), "def value():\n    return 1\n").unwrap();
+    std::fs::write(
+        tmp.path().join("tests").join("test_app.py"),
+        "from app import value\n\n\
+def test_value():\n    assert value() == 1\n",
+    )
+    .unwrap();
+    let planned = PlannedSelectors {
+        repo_root: tmp.path().to_path_buf(),
+        py_sel: Vec::new(),
+        rs_sel: Vec::new(),
+        python_population_required: true,
+        python_population_selectors: vec!["tests/test_app.py::test_value".to_string()],
+        rust_source_paths: Vec::new(),
+        rust_changed_lines: BTreeMap::new(),
+        rust_source_population_paths: Vec::new(),
+        python_prior_failure_selectors: Vec::new(),
+        rust_prior_failure_selectors: Vec::new(),
+        coverage_decision_engine_used: true,
+        ignore: Vec::new(),
+    };
+
+    let report = super::validation_report(&planned, Some(Language::Python)).unwrap();
+
+    assert_eq!(report.selected_python, 1);
+    assert_eq!(report.full_python, 1);
+    assert!(report.python_population_required);
 }
 
 #[test]
@@ -284,6 +323,8 @@ mod plan_tests {
             repo_root: tmp.path().to_path_buf(),
             py_sel: vec!["tests/test_app.py::test_ok".to_string()],
             rs_sel: Vec::new(),
+            python_population_required: false,
+            python_population_selectors: Vec::new(),
             rust_source_paths: Vec::new(),
             rust_changed_lines: BTreeMap::new(),
             rust_source_population_paths: Vec::new(),

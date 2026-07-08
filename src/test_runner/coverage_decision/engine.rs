@@ -34,9 +34,19 @@ impl CoverageDecisionEngine {
                 population.extend(prior_failures);
             } else {
                 let language_sources = diff.sources_for_language(backer.language());
-                selected.extend(backer.select(&language_sources)?.selectors);
-                selected.extend(changed_tests);
-                selected.extend(prior_failures);
+                let decision = backer.select(&language_sources)?;
+                if decision.complete {
+                    selected.extend(decision.selectors);
+                    selected.extend(changed_tests);
+                    selected.extend(prior_failures);
+                } else {
+                    if !population_languages.contains(&backer.language()) {
+                        population_languages.push(backer.language());
+                    }
+                    population.extend(backer.population_plan(&universe).selectors);
+                    population.extend(changed_tests);
+                    population.extend(prior_failures);
+                }
             }
         }
         selected.retain(|selector| !population.contains(selector));

@@ -15,6 +15,8 @@ pub(super) struct LocalRubricMetrics {
     pub(super) plan_duration: Duration,
     pub(super) total_duration: Duration,
     pub(super) selected_python: usize,
+    pub(super) python_population_required: bool,
+    pub(super) python_population_selectors: usize,
     pub(super) selected_rust_initial: usize,
     pub(super) rust_source_paths: usize,
     pub(super) rust_population_source_paths: usize,
@@ -46,6 +48,8 @@ impl LocalRubricMetrics {
             plan_duration: options.plan_duration,
             total_duration: Duration::ZERO,
             selected_python: planned.py_sel.len(),
+            python_population_required: planned.python_population_required,
+            python_population_selectors: planned.python_population_selectors.len(),
             selected_rust_initial: planned.rs_sel.len(),
             rust_source_paths: planned.rust_source_paths.len(),
             rust_population_source_paths: planned.rust_source_population_paths.len(),
@@ -98,6 +102,14 @@ fn print_oracle_metrics() {
 
 fn print_selection_metrics(metrics: &LocalRubricMetrics) {
     println!("selected_python={}", metrics.selected_python);
+    println!(
+        "python_population_required={}",
+        metrics.python_population_required
+    );
+    println!(
+        "python_population_selectors={}",
+        metrics.python_population_selectors
+    );
     println!("selected_rust_initial={}", metrics.selected_rust_initial);
     println!("rust_source_paths={}", metrics.rust_source_paths);
     println!(
@@ -234,6 +246,8 @@ mod tests {
             plan_duration: Duration::ZERO,
             total_duration: Duration::ZERO,
             selected_python: 0,
+            python_population_required: false,
+            python_population_selectors: 0,
             selected_rust_initial: 0,
             rust_source_paths: 0,
             rust_population_source_paths: 0,

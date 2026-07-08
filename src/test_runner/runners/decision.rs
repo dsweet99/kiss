@@ -1,10 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::{
-    enumerate_tests_in_changed_files, enumerate_workspace_python_selectors,
-    enumerate_workspace_rust_selectors, py_selector,
-};
+use super::{enumerate_tests_in_changed_files, enumerate_workspace_rust_selectors, py_selector};
 use crate::test_runner::coverage_decision::{
     ChangedDiff, ChangedSource, CoverageBacker, CoverageDecisionEngine, CoverageFreshness,
     PopulationPlan, SelectionDecision, TestSelector,
@@ -17,11 +14,18 @@ use crate::test_runner::rust_coverage_index::{
     select_rust_source_selectors_hybrid,
 };
 
+#[path = "python_backer.rs"]
+mod python_backer;
+use python_backer::python_population_backer;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SelectorPlan {
     pub(crate) py_selectors: Vec<String>,
     pub(crate) rust_selectors: Vec<String>,
+    pub(crate) python_population_required: bool,
+    pub(crate) python_population_selectors: Vec<String>,
     pub(crate) rust_source_paths: Vec<PathBuf>,
+    pub(crate) python_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
     pub(crate) rust_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
     pub(crate) rust_source_population_paths: Vec<PathBuf>,
     pub(crate) python_prior_failure_selectors: Vec<String>,
@@ -39,12 +43,14 @@ pub(crate) fn combined_selectors(
     ignore: &[String],
 ) -> Result<SelectorPlan, String> {
     let (py_source_paths, rust_source_paths) = split_source_paths(source_paths);
+    let python_changed_lines = changed_lines_for_sources(rust_changed_lines, &py_source_paths);
     let rust_changed_lines = rust_changed_lines_for_sources(rust_changed_lines, &rust_source_paths);
     let changed_tests = changed_test_selectors_by_language(test_paths)?;
     let changed_sources = changed_sources_for_engine(&py_source_paths, &rust_source_paths);
     let engine_backers = engine_backers(EngineBackerInputs {
         repo_root,
         py_source_paths: &py_source_paths,
+        python_changed_lines: &python_changed_lines,
         rust_source_paths: &rust_source_paths,
         rust_changed_lines: &rust_changed_lines,
         rust_test_args,
@@ -57,15 +63,12 @@ pub(crate) fn combined_selectors(
     let rust_prior_failure_selectors =
         selectors_for_language(&engine_backers.prior_failures, kiss::Language::Rust);
     let engine_plan = CoverageDecisionEngine::new(engine_backers.backers).plan(&changed_sources)?;
-    let mut executable_selectors = engine_plan.selected.clone();
-    executable_selectors.extend(
-        engine_plan
-            .population
-            .iter()
-            .filter(|selector| selector.language == kiss::Language::Python)
-            .cloned(),
-    );
-    let (py_sel, rs_sel) = selectors_by_language(&executable_selectors);
+    let (py_sel, rs_sel) = selectors_by_language(&engine_plan.selected);
+    let python_population_selectors =
+        selectors_for_language(&engine_plan.population, kiss::Language::Python);
+    let python_population_required = engine_plan
+        .population_languages
+        .contains(&kiss::Language::Python);
     let rust_source_population_paths = if engine_plan
         .population_languages
         .contains(&kiss::Language::Rust)
@@ -77,7 +80,10 @@ pub(crate) fn combined_selectors(
     Ok(SelectorPlan {
         py_selectors: py_sel,
         rust_selectors: rs_sel,
+        python_population_required,
+        python_population_selectors,
         rust_source_paths,
+        python_changed_lines: python_changed_lines.clone(),
         rust_changed_lines: rust_changed_lines.clone(),
         rust_source_population_paths,
         python_prior_failure_selectors,
@@ -89,6 +95,7 @@ pub(crate) fn combined_selectors(
 struct EngineBackerInputs<'a> {
     repo_root: &'a Path,
     py_source_paths: &'a [PathBuf],
+    python_changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
     rust_source_paths: &'a [PathBuf],
     rust_changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
     rust_test_args: &'a [String],
@@ -126,6 +133,8 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
         backers.push(python_population_backer(
             input.repo_root,
             input.py_source_paths,
+            input.python_changed_lines,
+            input.rust_test_args,
             input.ignore,
             &input.changed_tests.python,
             &python_prior_failures,
@@ -203,49 +212,6 @@ fn selectors_for_language(selectors: &[TestSelector], language: kiss::Language) 
         .collect()
 }
 
-fn python_population_backer(
-    repo_root: &Path,
-    py_source_paths: &[PathBuf],
-    ignore: &[String],
-    changed_tests: &[TestSelector],
-    prior_failures: &[TestSelector],
-) -> CoverageBacker {
-    let repo_root = repo_root.to_path_buf();
-    let py_source_paths = py_source_paths.to_vec();
-    let ignore = ignore.to_vec();
-    let changed_tests = changed_tests.to_vec();
-    let prior_failures = prior_failures.to_vec();
-    CoverageBacker::new(
-        kiss::Language::Python,
-        Box::new({
-            let repo_root = repo_root.clone();
-            let ignore = ignore.clone();
-            move || {
-                Ok(enumerate_workspace_python_selectors(&repo_root, &ignore)?
-                    .into_iter()
-                    .map(|id| TestSelector::new(kiss::Language::Python, id))
-                    .collect())
-            }
-        }),
-        Box::new(move |_diff: &ChangedDiff| changed_tests.clone()),
-        Box::new(move || prior_failures.clone()),
-        Box::new({
-            let py_source_paths = py_source_paths.clone();
-            move |_universe| {
-                if py_source_paths.is_empty() {
-                    Ok(CoverageFreshness::Fresh)
-                } else {
-                    Ok(CoverageFreshness::Unknown)
-                }
-            }
-        }),
-        Box::new(|universe| PopulationPlan {
-            selectors: universe.to_vec(),
-        }),
-        Box::new(move |_changed_sources| Ok(SelectionDecision::default())),
-    )
-}
-
 fn rust_llvm_cov_backer(
     repo_root: &Path,
     rust_source_paths: &[PathBuf],
@@ -303,16 +269,24 @@ fn rust_llvm_cov_backer(
             selectors: universe.to_vec(),
         }),
         Box::new(move |_changed_sources| {
-            let selectors = select_fresh_rust_source_selectors(
+            let Some(selector_ids) = select_fresh_rust_source_selectors(
                 &repo_root,
                 &rust_source_paths,
                 &rust_changed_lines,
-            )
-            .unwrap_or_default()
-            .into_iter()
-            .map(|id| TestSelector::new(kiss::Language::Rust, id))
-            .collect();
-            Ok(SelectionDecision { selectors })
+            ) else {
+                return Ok(SelectionDecision {
+                    selectors: Vec::new(),
+                    complete: false,
+                });
+            };
+            let selectors = selector_ids
+                .into_iter()
+                .map(|id| TestSelector::new(kiss::Language::Rust, id))
+                .collect();
+            Ok(SelectionDecision {
+                selectors,
+                complete: true,
+            })
         }),
     )
 }
@@ -387,9 +361,16 @@ fn rust_changed_lines_for_sources(
     rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     rust_source_paths: &[PathBuf],
 ) -> BTreeMap<PathBuf, BTreeSet<u32>> {
-    rust_changed_lines
+    changed_lines_for_sources(rust_changed_lines, rust_source_paths)
+}
+
+fn changed_lines_for_sources(
+    changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
+    source_paths: &[PathBuf],
+) -> BTreeMap<PathBuf, BTreeSet<u32>> {
+    changed_lines
         .iter()
-        .filter(|(path, _lines)| rust_source_paths.contains(path))
+        .filter(|(path, _lines)| source_paths.contains(path))
         .map(|(path, lines)| (path.clone(), lines.clone()))
         .collect()
 }

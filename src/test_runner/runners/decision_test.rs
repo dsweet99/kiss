@@ -1,4 +1,11 @@
 use super::*;
+use crate::test_runner::python_coverage_index::{
+    python_coverage_cache_root, rebuild_python_coverage_index,
+    write_python_population_manifest_for_args,
+};
+use rpytest_runner::TestStatus;
+use rslip::LineCoverage;
+use std::time::Duration;
 
 #[test]
 fn selector_plan_default_has_no_work_or_engine_claim() {
@@ -6,7 +13,10 @@ fn selector_plan_default_has_no_work_or_engine_claim() {
 
     assert!(plan.py_selectors.is_empty());
     assert!(plan.rust_selectors.is_empty());
+    assert!(!plan.python_population_required);
+    assert!(plan.python_population_selectors.is_empty());
     assert!(plan.rust_source_paths.is_empty());
+    assert!(plan.python_changed_lines.is_empty());
     assert!(plan.rust_changed_lines.is_empty());
     assert!(plan.rust_source_population_paths.is_empty());
     assert!(plan.python_prior_failure_selectors.is_empty());
@@ -18,10 +28,12 @@ fn selector_plan_default_has_no_work_or_engine_claim() {
 fn engine_backers_empty_when_no_language_has_work() {
     let tmp = tempfile::TempDir::new().unwrap();
     let changed_tests = ChangedTestSelectors::default();
+    let python_changed_lines = BTreeMap::new();
     let rust_changed_lines = BTreeMap::new();
     let input = EngineBackerInputs {
         repo_root: tmp.path(),
         py_source_paths: &[],
+        python_changed_lines: &python_changed_lines,
         rust_source_paths: &[],
         rust_changed_lines: &rust_changed_lines,
         rust_test_args: &[],
@@ -34,7 +46,7 @@ fn engine_backers_empty_when_no_language_has_work() {
 }
 
 #[test]
-fn python_source_change_populates_full_test_universe() {
+fn python_source_change_requires_population_without_selective_python() {
     let tmp = tempfile::TempDir::new().unwrap();
     let tests = tmp.path().join("tests");
     std::fs::create_dir(&tests).unwrap();
@@ -58,12 +70,92 @@ fn python_source_change_populates_full_test_universe() {
     )
     .unwrap();
 
+    assert!(plan.py_selectors.is_empty());
+    assert!(plan.python_population_required);
     assert_eq!(
-        plan.py_selectors,
+        plan.python_population_selectors,
         vec![
             py_selector(&test_app, "test_one"),
             py_selector(&test_app, "test_two")
         ]
     );
     assert!(plan.rust_selectors.is_empty());
+}
+
+#[test]
+fn warm_python_source_change_selects_covering_test_from_rslip_index() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let tests = tmp.path().join("tests");
+    std::fs::create_dir(&tests).unwrap();
+    let app = tmp.path().join("app.py");
+    let test_app = tests.join("test_app.py");
+    std::fs::write(&app, "def value():\n    return 1\n").unwrap();
+    std::fs::write(
+        &test_app,
+        "from app import value\n\n\
+def test_value():\n    assert value() == 1\n\n\
+def test_unrelated():\n    assert True\n",
+    )
+    .unwrap();
+    let covering = py_selector(&test_app, "test_value");
+    let unrelated = py_selector(&test_app, "test_unrelated");
+    write_python_entry(
+        tmp.path(),
+        "covering",
+        &covering,
+        LineCoverage {
+            files: BTreeMap::from([(app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+        },
+    );
+    write_python_entry(
+        tmp.path(),
+        "unrelated",
+        &unrelated,
+        LineCoverage {
+            files: BTreeMap::from([(test_app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+        },
+    );
+    rebuild_python_coverage_index(tmp.path()).unwrap();
+    write_python_population_manifest_for_args(
+        tmp.path(),
+        &[covering.clone(), unrelated.clone()],
+        &[],
+    )
+    .unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&app),
+        &[],
+        &BTreeMap::from([(app.clone(), BTreeSet::from([1]))]),
+        &[],
+        Some(kiss::Language::Python),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(plan.py_selectors, vec![covering]);
+    assert!(!plan.python_population_required);
+    assert!(plan.python_population_selectors.is_empty());
+}
+
+fn write_python_entry(
+    repo_root: &std::path::Path,
+    name: &str,
+    selector: &str,
+    coverage: LineCoverage,
+) {
+    let path = python_coverage_cache_root(repo_root)
+        .join("entries")
+        .join(format!("{name}.json"));
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let entry = serde_json::json!({
+        "schema_version": rslip::CACHE_SCHEMA_VERSION,
+        "nodeid": selector,
+        "status": TestStatus::Passed,
+        "exit_code": 0,
+        "duration": Duration::from_millis(1),
+        "coverage": coverage,
+    });
+    std::fs::write(path, serde_json::to_vec(&entry).unwrap()).unwrap();
 }

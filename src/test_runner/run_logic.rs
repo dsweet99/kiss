@@ -1,3 +1,6 @@
+use super::python_coverage_index::{
+    rebuild_python_coverage_index, write_python_population_manifest_for_args,
+};
 use super::rust_coverage_index::{
     rebuild_rust_coverage_index, select_rust_source_selectors_from_index,
     select_rust_source_selectors_hybrid, write_rust_population_manifest_for_args,
@@ -23,7 +26,7 @@ pub(crate) fn run_selectors(
     }
     let mut rs_sel = planned.rs_sel.clone();
     let needs_population = needs_rust_population(planned, &options);
-    let population_selectors = population_selectors_for_run(planned, needs_population)?;
+    let population_selectors = rust_population_selectors_for_run(planned, needs_population)?;
     if options.dry_run {
         return Ok(finish_dry_run(
             planned,
@@ -59,7 +62,7 @@ fn finish_no_work(
     0
 }
 
-fn population_selectors_for_run(
+fn rust_population_selectors_for_run(
     planned: &PlannedSelectors,
     needs_population: bool,
 ) -> Result<Vec<String>, String> {
@@ -116,9 +119,17 @@ fn run_selected_phases(
         rs_sel.len(),
     );
     let python_started = Instant::now();
-    metrics.python.summary = run_python_selectors(planned, options)?;
+    metrics.python.summary = run_python_phase(planned, options)?;
     metrics.python.duration = python_started.elapsed();
     let mut code = metrics.python.summary.exit_code;
+    if planned.python_population_required && code == 0 {
+        rebuild_python_coverage_index(&planned.repo_root)?;
+        write_python_population_manifest_for_args(
+            &planned.repo_root,
+            &planned.python_population_selectors,
+            options.extra,
+        )?;
+    }
     if needs_population {
         code = run_population_phase(planned, options, population_selectors, &mut metrics, code)?;
         if code != 0 {
@@ -196,7 +207,8 @@ fn run_final_rust_phase(
 }
 
 fn planned_has_work(planned: &PlannedSelectors) -> bool {
-    !planned.py_sel.is_empty()
+    planned.python_population_required
+        || !planned.py_sel.is_empty()
         || !planned.rs_sel.is_empty()
         || !planned.rust_source_population_paths.is_empty()
 }
@@ -214,7 +226,14 @@ fn print_dry_run(
     rs_sel: &[String],
 ) {
     let py_argv = runners::build_pytest_argv(&planned.py_sel, options.extra);
-    if !planned.py_sel.is_empty() {
+    if planned.python_population_required {
+        println!("PYTHON COVERAGE POPULATION");
+        if !planned.python_population_selectors.is_empty() {
+            let argv =
+                runners::build_pytest_argv(&planned.python_population_selectors, options.extra);
+            println!("{}", runners::shell_quote_line(&argv));
+        }
+    } else if !planned.py_sel.is_empty() {
         println!("{}", runners::shell_quote_line(&py_argv));
     }
     if needs_population {
@@ -237,6 +256,34 @@ fn run_python_selectors(
     runners::run_rslip_selectors(
         &planned.repo_root,
         &planned.py_sel,
+        options.extra,
+        force_rerun,
+        options.jobs,
+    )
+}
+
+fn run_python_phase(
+    planned: &PlannedSelectors,
+    options: &SelectorRunOptions<'_>,
+) -> Result<SelectorExecutionSummary, String> {
+    if planned.python_population_required {
+        run_python_population(planned, options)
+    } else {
+        run_python_selectors(planned, options)
+    }
+}
+
+fn run_python_population(
+    planned: &PlannedSelectors,
+    options: &SelectorRunOptions<'_>,
+) -> Result<SelectorExecutionSummary, String> {
+    if !planned.python_population_required {
+        return Ok(SelectorExecutionSummary::default());
+    }
+    let force_rerun = options.force_rerun || !planned.python_prior_failure_selectors.is_empty();
+    runners::run_rslip_selectors(
+        &planned.repo_root,
+        &planned.python_population_selectors,
         options.extra,
         force_rerun,
         options.jobs,
