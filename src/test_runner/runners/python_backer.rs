@@ -6,8 +6,8 @@ use crate::test_runner::coverage_decision::{
     ChangedDiff, CoverageBacker, CoverageFreshness, PopulationPlan, SelectionDecision, TestSelector,
 };
 use crate::test_runner::python_coverage_index::{
-    python_population_manifest_is_current_for_args, select_python_source_selectors_from_index,
-    select_python_source_selectors_hybrid,
+    PYTHON_COVERAGE_ENV_KEYS, python_population_manifest_is_current_for_args,
+    select_python_source_selectors_from_index, select_python_source_selectors_hybrid,
 };
 
 pub(super) fn python_population_backer(
@@ -26,7 +26,7 @@ pub(super) fn python_population_backer(
     let ignore = ignore.to_vec();
     let changed_tests = changed_tests.to_vec();
     let prior_failures = prior_failures.to_vec();
-    CoverageBacker::new(
+    let mut backer = CoverageBacker::new(
         kiss::Language::Python,
         Box::new({
             let repo_root = repo_root.clone();
@@ -85,7 +85,9 @@ pub(super) fn python_population_backer(
                 complete: true,
             })
         }),
-    )
+    );
+    backer.manifest_env_allowlist = PYTHON_COVERAGE_ENV_KEYS;
+    backer
 }
 
 fn select_fresh_python_source_selectors(

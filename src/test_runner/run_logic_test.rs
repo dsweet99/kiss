@@ -12,6 +12,7 @@ fn planned() -> PlannedSelectors {
         rs_sel: Vec::new(),
         python_population_required: false,
         python_population_selectors: Vec::new(),
+        rust_population_selectors: Vec::new(),
         rust_source_paths: Vec::new(),
         rust_source_population_paths: Vec::new(),
         python_prior_failure_selectors: Vec::new(),
@@ -54,6 +55,7 @@ fn rust_population_requirement_comes_from_population_paths() {
     let mut planned = planned();
     planned.rust_source_paths = vec![PathBuf::from("src/lib.rs")];
     planned.rust_source_population_paths = vec![PathBuf::from("src/lib.rs")];
+    planned.rust_population_selectors = vec!["crate::tests::test_population".to_string()];
     let options = options(false);
     let ctx = RunContext {
         planned: &planned,
@@ -62,7 +64,7 @@ fn rust_population_requirement_comes_from_population_paths() {
 
     assert!(matches!(
         execution_phase(&ExecutionModule::Rust, &ctx).unwrap(),
-        ExecutionPhase::Population(_)
+        ExecutionPhase::Population(selectors) if selectors == vec!["crate::tests::test_population".to_string()]
     ));
 }
 
@@ -72,6 +74,7 @@ fn rust_dry_run_is_population_xor_selective() {
     let mut planned = planned();
     planned.rs_sel = selective.clone();
     planned.rust_source_population_paths = vec![PathBuf::from("src/lib.rs")];
+    planned.rust_population_selectors = vec!["crate::population_test".to_string()];
     let options = options(false);
     let ctx = RunContext {
         planned: &planned,
@@ -84,6 +87,7 @@ fn rust_dry_run_is_population_xor_selective() {
     ));
 
     planned.rust_source_population_paths.clear();
+    planned.rust_population_selectors.clear();
     let ctx = RunContext {
         planned: &planned,
         options: &options,
@@ -165,4 +169,32 @@ fn language_phase_outcome_carries_phase_summary_and_timings() {
     assert_eq!(outcome.summary.total, 0);
     assert_eq!(outcome.phase_duration, Duration::ZERO);
     assert_eq!(outcome.index_rebuild_duration, Duration::ZERO);
+}
+
+#[test]
+fn python_outcome_records_index_rebuild_duration_in_metrics() {
+    let planned = planned();
+    let options = options(false);
+    let mut metrics = LocalRubricMetrics::new(&planned, &options, false, 0, 0);
+    let outcome = LanguagePhaseOutcome {
+        phase: ExecutionPhase::Selective(vec!["tests/test_app.py::test_ok".to_string()]),
+        summary: SelectorExecutionSummary {
+            total: 1,
+            cache_hits: 0,
+            cache_misses: 1,
+            failed: 0,
+            exit_code: 0,
+        },
+        phase_duration: Duration::from_millis(7),
+        index_rebuild_duration: Duration::from_millis(3),
+    };
+
+    record_python_outcome(&mut metrics, outcome);
+
+    assert_eq!(metrics.python.summary.total, 1);
+    assert_eq!(metrics.python.duration, Duration::from_millis(7));
+    assert_eq!(
+        metrics.python_index_rebuild_duration,
+        Duration::from_millis(3)
+    );
 }

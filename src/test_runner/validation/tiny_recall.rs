@@ -265,7 +265,7 @@ fn selected_selector_sets(
     }
     let mut rust = planned.rs_sel.into_iter().collect::<BTreeSet<_>>();
     if !planned.rust_source_population_paths.is_empty() {
-        rust.extend(full.rust.iter().cloned());
+        rust.extend(planned.rust_population_selectors);
     }
     Ok(SelectorSets { python, rust })
 }

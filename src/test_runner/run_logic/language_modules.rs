@@ -63,7 +63,7 @@ pub(super) fn rust_population_required(ctx: &RunContext<'_, '_>) -> bool {
 }
 
 pub(super) fn rust_population_selectors(ctx: &RunContext<'_, '_>) -> Result<Vec<String>, String> {
-    runners::enumerate_workspace_rust_selectors(&ctx.planned.repo_root, &ctx.planned.ignore)
+    Ok(ctx.planned.rust_population_selectors.clone())
 }
 
 pub(super) fn rust_selective_selectors(ctx: &RunContext<'_, '_>) -> Vec<String> {

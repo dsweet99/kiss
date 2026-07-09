@@ -104,8 +104,7 @@ fn run_selected_phases(
     let ctx = RunContext { planned, options };
     let python = ExecutionModule::Python;
     let python_outcome = execute_language_phase(&python, python_phase, &ctx)?;
-    metrics.python.duration = python_outcome.phase_duration;
-    metrics.python.summary = python_outcome.summary;
+    record_python_outcome(&mut metrics, python_outcome);
     let mut code = metrics.python.summary.exit_code;
     let rust = ExecutionModule::Rust;
     let rust_outcome = execute_language_phase(&rust, rust_phase, &ctx)?;
@@ -118,6 +117,12 @@ fn run_selected_phases(
         planned,
         options,
     ))
+}
+
+fn record_python_outcome(metrics: &mut LocalRubricMetrics, outcome: LanguagePhaseOutcome) {
+    metrics.python.summary = outcome.summary;
+    metrics.python.duration = outcome.phase_duration;
+    metrics.python_index_rebuild_duration += outcome.index_rebuild_duration;
 }
 
 fn record_rust_outcome(metrics: &mut LocalRubricMetrics, outcome: LanguagePhaseOutcome) {

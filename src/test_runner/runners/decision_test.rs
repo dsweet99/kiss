@@ -15,6 +15,7 @@ fn selector_plan_default_has_no_work_or_engine_claim() {
     assert!(plan.rust_selectors.is_empty());
     assert!(!plan.python_population_required);
     assert!(plan.python_population_selectors.is_empty());
+    assert!(plan.rust_population_selectors.is_empty());
     assert!(plan.rust_source_paths.is_empty());
     assert!(plan.python_changed_lines.is_empty());
     assert!(plan.rust_changed_lines.is_empty());
@@ -43,6 +44,43 @@ fn engine_backers_empty_when_no_language_has_work() {
     };
 
     assert!(engine_backers(input).unwrap().backers.is_empty());
+}
+
+#[test]
+fn engine_backers_expose_manifest_env_policy() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let app = tmp.path().join("app.py");
+    let lib = tmp.path().join("src").join("lib.rs");
+    std::fs::create_dir_all(lib.parent().unwrap()).unwrap();
+    std::fs::write(&app, "VALUE = 1\n").unwrap();
+    std::fs::write(&lib, "pub fn value() -> i32 { 1 }\n").unwrap();
+    let changed_tests = ChangedTestSelectors::default();
+    let python_changed_lines = BTreeMap::new();
+    let rust_changed_lines = BTreeMap::new();
+    let input = EngineBackerInputs {
+        repo_root: tmp.path(),
+        py_source_paths: std::slice::from_ref(&app),
+        python_changed_lines: &python_changed_lines,
+        rust_source_paths: std::slice::from_ref(&lib),
+        rust_changed_lines: &rust_changed_lines,
+        rust_test_args: &[],
+        lang_filter: None,
+        ignore: &[],
+        changed_tests: &changed_tests,
+    };
+
+    let backers = engine_backers(input).unwrap().backers;
+    let python = backers
+        .iter()
+        .find(|backer| backer.language() == kiss::Language::Python)
+        .unwrap();
+    let rust = backers
+        .iter()
+        .find(|backer| backer.language() == kiss::Language::Rust)
+        .unwrap();
+
+    assert_eq!(python.manifest_env_allowlist(), ["PYTHONPATH"]);
+    assert!(rust.manifest_env_allowlist().contains(&"RUSTFLAGS"));
 }
 
 #[test]

@@ -10,6 +10,7 @@ fn planned() -> PlannedSelectors {
         rs_sel: vec!["crate::tests::test_ok".to_string()],
         python_population_required: false,
         python_population_selectors: vec!["tests/test_app.py::test_population".to_string()],
+        rust_population_selectors: vec!["crate::tests::test_population".to_string()],
         rust_source_paths: Vec::new(),
         rust_source_population_paths: Vec::new(),
         python_prior_failure_selectors: Vec::new(),
@@ -62,6 +63,10 @@ fn rust_module_policy_reads_rust_selectors() {
     };
 
     assert!(rust_population_required(&ctx));
+    assert_eq!(
+        rust_population_selectors(&ctx).unwrap(),
+        vec!["crate::tests::test_population".to_string()]
+    );
     assert_eq!(
         rust_selective_selectors(&ctx),
         vec!["crate::tests::test_ok".to_string()]

@@ -196,6 +196,10 @@ fn combined_selectors_repopulates_when_rust_test_args_change() {
 
     assert!(plan.rust_selectors.is_empty());
     assert_eq!(plan.rust_source_population_paths, vec![lib]);
+    assert_eq!(
+        plan.rust_population_selectors,
+        vec!["tests::gets_value".to_string()]
+    );
 }
 
 #[test]
@@ -263,7 +267,11 @@ fn combined_selectors_requires_complete_rust_population_manifest() {
     let src = tmp.path().join("src");
     fs::create_dir(&src).unwrap();
     let lib = src.join("lib.rs");
-    fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
+    fs::write(
+        &lib,
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
     write_rust_cov_entry(
         tmp.path(),
         "abc",
@@ -291,6 +299,10 @@ fn combined_selectors_requires_complete_rust_population_manifest() {
 
     assert!(plan.rust_selectors.is_empty());
     assert_eq!(plan.rust_source_population_paths, vec![lib]);
+    assert_eq!(
+        plan.rust_population_selectors,
+        vec!["tests::gets_value".to_string()]
+    );
 }
 
 #[test]
@@ -315,6 +327,7 @@ fn combined_selectors_marks_missing_rust_index_for_population() {
     assert!(plan.rust_selectors.is_empty());
     assert_eq!(plan.rust_source_paths, vec![lib.clone()]);
     assert_eq!(plan.rust_source_population_paths, vec![lib]);
+    assert_eq!(plan.rust_population_selectors, Vec::<String>::new());
 }
 
 fn write_rust_cov_entry(
@@ -347,6 +360,7 @@ fn combined_selectors_empty_without_sources() {
     assert!(plan.rust_selectors.is_empty());
     assert!(plan.rust_source_paths.is_empty());
     assert!(plan.rust_source_population_paths.is_empty());
+    assert!(plan.rust_population_selectors.is_empty());
 }
 
 #[test]

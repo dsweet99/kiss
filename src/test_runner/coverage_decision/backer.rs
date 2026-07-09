@@ -19,6 +19,7 @@ pub(crate) struct CoverageBacker {
     freshness: Box<FreshnessFn>,
     population_plan: Box<PopulationFn>,
     select: Box<SelectFn>,
+    pub(crate) manifest_env_allowlist: &'static [&'static str],
 }
 
 impl CoverageBacker {
@@ -39,6 +40,7 @@ impl CoverageBacker {
             freshness,
             population_plan,
             select,
+            manifest_env_allowlist: &[],
         }
     }
 
@@ -68,5 +70,9 @@ impl CoverageBacker {
 
     pub(crate) fn select(&self) -> Result<SelectionDecision, String> {
         (self.select)()
+    }
+
+    pub(crate) fn manifest_env_allowlist(&self) -> &'static [&'static str] {
+        self.manifest_env_allowlist
     }
 }

@@ -10,8 +10,8 @@ use crate::test_runner::last_status::{
     has_language_records, prior_failures, python_last_status_identity, rust_last_status_identity,
 };
 use crate::test_runner::rust_coverage_index::{
-    rust_population_manifest_is_current_for_args, select_rust_source_selectors_from_index,
-    select_rust_source_selectors_hybrid,
+    RUST_COVERAGE_ENV_KEYS, rust_population_manifest_is_current_for_args,
+    select_rust_source_selectors_from_index, select_rust_source_selectors_hybrid,
 };
 
 #[path = "python_backer.rs"]
@@ -24,6 +24,7 @@ pub(crate) struct SelectorPlan {
     pub(crate) rust_selectors: Vec<String>,
     pub(crate) python_population_required: bool,
     pub(crate) python_population_selectors: Vec<String>,
+    pub(crate) rust_population_selectors: Vec<String>,
     pub(crate) rust_source_paths: Vec<PathBuf>,
     pub(crate) python_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
     pub(crate) rust_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
@@ -66,6 +67,8 @@ pub(crate) fn combined_selectors(
     let (py_sel, rs_sel) = selectors_by_language(&engine_plan.selected);
     let python_population_selectors =
         selectors_for_language(&engine_plan.population, kiss::Language::Python);
+    let rust_population_selectors =
+        selectors_for_language(&engine_plan.population, kiss::Language::Rust);
     let python_population_required = engine_plan
         .population_languages
         .contains(&kiss::Language::Python);
@@ -82,6 +85,7 @@ pub(crate) fn combined_selectors(
         rust_selectors: rs_sel,
         python_population_required,
         python_population_selectors,
+        rust_population_selectors,
         rust_source_paths,
         python_changed_lines: python_changed_lines.clone(),
         rust_changed_lines: rust_changed_lines.clone(),
@@ -228,7 +232,7 @@ fn rust_llvm_cov_backer(
     let ignore = ignore.to_vec();
     let changed_tests = changed_tests.to_vec();
     let prior_failures = prior_failures.to_vec();
-    CoverageBacker::new(
+    let mut backer = CoverageBacker::new(
         kiss::Language::Rust,
         Box::new({
             let repo_root = repo_root.clone();
@@ -288,7 +292,9 @@ fn rust_llvm_cov_backer(
                 complete: true,
             })
         }),
-    )
+    );
+    backer.manifest_env_allowlist = RUST_COVERAGE_ENV_KEYS;
+    backer
 }
 
 fn changed_sources_for_engine(

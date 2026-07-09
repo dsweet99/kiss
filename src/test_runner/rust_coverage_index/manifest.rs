@@ -12,7 +12,7 @@ use super::{
     workspace_input_fingerprint,
 };
 
-const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
+pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
     "RUSTFLAGS",
     "RUSTDOCFLAGS",
     "CARGO_TARGET_DIR",

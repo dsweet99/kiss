@@ -13,13 +13,14 @@ pub(crate) const POPULATION_SCHEMA_VERSION: &str = "rslip-python-population-v1";
 pub(crate) const PYTHON_SELECTOR_DISCOVERY_VERSION: &str = "python-selector-discovery-v1";
 
 mod manifest;
+pub(crate) use manifest::{
+    PYTHON_COVERAGE_ENV_KEYS, python_population_manifest_is_current_for_args,
+    write_python_population_manifest_for_args,
+};
 #[cfg(test)]
 pub(crate) use manifest::{
     PythonPopulationManifestIdentity, python_population_manifest_is_current_with_identity,
     read_python_population_manifest, write_python_population_manifest_with_identity,
-};
-pub(crate) use manifest::{
-    python_population_manifest_is_current_for_args, write_python_population_manifest_for_args,
 };
 
 mod storage;

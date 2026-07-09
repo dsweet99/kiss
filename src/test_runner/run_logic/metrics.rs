@@ -25,6 +25,7 @@ pub(super) struct LocalRubricMetrics {
     pub(super) rust_final_selectors: usize,
     pub(super) coverage_decision_engine_used: bool,
     pub(super) python: PhaseMetrics,
+    pub(super) python_index_rebuild_duration: Duration,
     pub(super) rust_population: PhaseMetrics,
     pub(super) rust_index_rebuild_duration: Duration,
     pub(super) rust_final: PhaseMetrics,
@@ -58,6 +59,7 @@ impl LocalRubricMetrics {
             rust_final_selectors,
             coverage_decision_engine_used: planned.coverage_decision_engine_used,
             python: PhaseMetrics::default(),
+            python_index_rebuild_duration: Duration::ZERO,
             rust_population: PhaseMetrics::default(),
             rust_index_rebuild_duration: Duration::ZERO,
             rust_final: PhaseMetrics::default(),
@@ -134,6 +136,10 @@ fn print_selection_metrics(metrics: &LocalRubricMetrics) {
 fn print_timing_metrics(metrics: &LocalRubricMetrics) {
     println!("phase_plan_ms={}", metrics.plan_duration.as_millis());
     println!("phase_python_ms={}", metrics.python.duration.as_millis());
+    println!(
+        "phase_python_index_rebuild_ms={}",
+        metrics.python_index_rebuild_duration.as_millis()
+    );
     println!(
         "phase_rust_population_ms={}",
         metrics.rust_population.duration.as_millis()
@@ -256,6 +262,7 @@ mod tests {
             rust_final_selectors: 0,
             coverage_decision_engine_used: true,
             python: PhaseMetrics::default(),
+            python_index_rebuild_duration: Duration::ZERO,
             rust_population: PhaseMetrics::default(),
             rust_index_rebuild_duration: Duration::ZERO,
             rust_final: PhaseMetrics::default(),

@@ -198,7 +198,7 @@ pub(crate) fn validation_report(
         selected_python.extend(full_python.iter().cloned());
     }
     if rust_population_required {
-        selected_rust.extend(full_rust.iter().cloned());
+        selected_rust.extend(planned.rust_population_selectors.iter().cloned());
     }
     if !include_python {
         selected_python.clear();

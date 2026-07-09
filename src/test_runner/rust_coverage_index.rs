@@ -15,14 +15,15 @@ pub(crate) const RUST_SELECTOR_DISCOVERY_VERSION: &str = "rust-selector-discover
 
 #[path = "rust_coverage_index/manifest.rs"]
 mod manifest;
+pub(crate) use manifest::{
+    RUST_COVERAGE_ENV_KEYS, rust_population_manifest_is_current_for_args,
+    write_rust_population_manifest_for_args,
+};
 #[cfg(test)]
 pub(crate) use manifest::{
     RustPopulationManifest, RustPopulationManifestIdentity,
     rust_population_manifest_is_current_with_identity,
     write_rust_population_manifest_with_identity,
-};
-pub(crate) use manifest::{
-    rust_population_manifest_is_current_for_args, write_rust_population_manifest_for_args,
 };
 #[path = "rust_coverage_index/storage.rs"]
 mod storage;

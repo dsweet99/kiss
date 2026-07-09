@@ -43,7 +43,7 @@ impl LanguagePlanner {
     }
 
     pub(crate) fn manifest_env_allowlist(&self) -> &'static [&'static str] {
-        &[]
+        self.backer.manifest_env_allowlist()
     }
 }
 
