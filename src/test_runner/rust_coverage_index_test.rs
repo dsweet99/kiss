@@ -22,7 +22,15 @@ fn rebuild_index_maps_covered_files_to_selectors() {
         "test_lib",
         TestStatus::Passed,
         RustLineCoverage {
-            files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+            files: BTreeMap::from([
+                (lib.to_string_lossy().to_string(), BTreeSet::from([1])),
+                ("<frozen rust runtime>".to_string(), BTreeSet::from([1])),
+                (
+                    ".kiss/rust_llvm_cov_cache/runtime.rs".to_string(),
+                    BTreeSet::from([1]),
+                ),
+                ("/outside.rs".to_string(), BTreeSet::from([1])),
+            ]),
         },
     );
     write_test_entry(
@@ -37,6 +45,10 @@ fn rebuild_index_maps_covered_files_to_selectors() {
 
     let index = rebuild_rust_coverage_index(tmp.path()).unwrap();
 
+    assert_eq!(
+        index.keys().cloned().collect::<Vec<_>>(),
+        vec!["src/lib.rs".to_string(), "src/other.rs".to_string()]
+    );
     assert_eq!(
         index["src/lib.rs"],
         BTreeSet::from(["test_lib".to_string()])

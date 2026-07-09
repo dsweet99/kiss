@@ -1,7 +1,7 @@
 use kiss::Language;
 
 use super::types::{
-    ChangedDiff, ChangedSource, CoverageFreshness, PopulationPlan, SelectionDecision, TestSelector,
+    ChangedDiff, CoverageFreshness, PopulationPlan, SelectionDecision, TestSelector,
 };
 
 type DiscoverFn = dyn Fn() -> Result<Vec<TestSelector>, String>;
@@ -9,7 +9,7 @@ type ChangedTestsFn = dyn Fn(&ChangedDiff) -> Vec<TestSelector>;
 type PriorFailuresFn = dyn Fn() -> Vec<TestSelector>;
 type FreshnessFn = dyn Fn(&[TestSelector]) -> Result<CoverageFreshness, String>;
 type PopulationFn = dyn Fn(&[TestSelector]) -> PopulationPlan;
-type SelectFn = dyn Fn(&[ChangedSource]) -> Result<SelectionDecision, String>;
+type SelectFn = dyn Fn() -> Result<SelectionDecision, String>;
 
 pub(crate) struct CoverageBacker {
     language: Language,
@@ -66,10 +66,7 @@ impl CoverageBacker {
         (self.population_plan)(universe)
     }
 
-    pub(crate) fn select(
-        &self,
-        changed_sources: &[ChangedSource],
-    ) -> Result<SelectionDecision, String> {
-        (self.select)(changed_sources)
+    pub(crate) fn select(&self) -> Result<SelectionDecision, String> {
+        (self.select)()
     }
 }

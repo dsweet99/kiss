@@ -122,7 +122,8 @@ pub(crate) fn create_new_file(path: &Path) -> io::Result<File> {
 }
 
 pub(crate) fn repo_relative_coverage_file(repo_root: &Path, file: &str) -> Option<String> {
-    repo_relative_path(repo_root, Path::new(file))
+    let rel = repo_relative_path(repo_root, Path::new(file))?;
+    (rel.ends_with(".rs") && !rel.starts_with(".kiss/") && !rel.starts_with('<')).then_some(rel)
 }
 
 pub(crate) fn repo_relative_path(repo_root: &Path, path: &Path) -> Option<String> {

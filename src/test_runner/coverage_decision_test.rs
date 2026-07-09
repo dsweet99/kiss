@@ -11,7 +11,7 @@ type ChangedTestsFn = Box<dyn Fn(&ChangedDiff) -> Vec<TestSelector>>;
 type PriorFailuresFn = Box<dyn Fn() -> Vec<TestSelector>>;
 type FreshnessFn = Box<dyn Fn(&[TestSelector]) -> Result<CoverageFreshness, String>>;
 type PopulationFn = Box<dyn Fn(&[TestSelector]) -> PopulationPlan>;
-type SelectFn = Box<dyn Fn(&[ChangedSource]) -> Result<SelectionDecision, String>>;
+type SelectFn = Box<dyn Fn() -> Result<SelectionDecision, String>>;
 
 struct FakeBacker {
     language: Language,
@@ -103,8 +103,7 @@ fn fake_select(
     selected: Vec<TestSelector>,
     complete: bool,
 ) -> SelectFn {
-    Box::new(move |changed_sources: &[ChangedSource]| {
-        assert!(!changed_sources.is_empty());
+    Box::new(move || {
         select_calls.set(select_calls.get() + 1);
         Ok(SelectionDecision {
             selectors: selected.clone(),
@@ -196,9 +195,8 @@ fn population_callback(seen: Rc<Cell<bool>>, universe: Vec<TestSelector>) -> Pop
 }
 
 fn select_callback(seen: Rc<Cell<bool>>, selected: TestSelector) -> SelectFn {
-    Box::new(move |changed_sources: &[ChangedSource]| {
+    Box::new(move || {
         seen.set(true);
-        assert_eq!(changed_sources.len(), 1);
         Ok(SelectionDecision {
             selectors: vec![selected.clone()],
             complete: true,
@@ -219,7 +217,7 @@ fn coverage_backer_new_sets_language_and_callbacks() {
         Box::new(Vec::new),
         Box::new(|_universe: &[TestSelector]| Ok(CoverageFreshness::Fresh)),
         Box::new(|_universe: &[TestSelector]| PopulationPlan::default()),
-        Box::new(|_sources: &[ChangedSource]| Ok(SelectionDecision::default())),
+        Box::new(|| Ok(SelectionDecision::default())),
     );
 
     assert_eq!(backer.language(), Language::Rust);
@@ -255,10 +253,7 @@ fn coverage_backer_forwards_to_callbacks() {
         fixture.universe
     );
     assert_eq!(
-        fixture
-            .backer
-            .select(&diff.sources_for_language(Language::Python))
-            .unwrap(),
+        fixture.backer.select().unwrap(),
         SelectionDecision {
             selectors: vec![fixture.selected],
             complete: true

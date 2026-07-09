@@ -8,7 +8,6 @@ mod rust_coverage_index;
 mod rust_llvm_cov;
 mod validation;
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -129,7 +128,6 @@ pub(crate) struct PlannedSelectors {
     pub python_population_required: bool,
     pub python_population_selectors: Vec<String>,
     pub rust_source_paths: Vec<PathBuf>,
-    pub rust_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
     pub rust_source_population_paths: Vec<PathBuf>,
     pub python_prior_failure_selectors: Vec<String>,
     pub rust_prior_failure_selectors: Vec<String>,
@@ -221,7 +219,6 @@ pub(crate) fn plan_selectors(
         python_population_required: selector_plan.python_population_required,
         python_population_selectors: selector_plan.python_population_selectors,
         rust_source_paths: selector_plan.rust_source_paths,
-        rust_changed_lines: selector_plan.rust_changed_lines,
         rust_source_population_paths: selector_plan.rust_source_population_paths,
         python_prior_failure_selectors: selector_plan.python_prior_failure_selectors,
         rust_prior_failure_selectors: selector_plan.rust_prior_failure_selectors,

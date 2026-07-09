@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -31,7 +30,6 @@ impl PlannedSelectors {
             python_population_required: false,
             python_population_selectors: Vec::new(),
             rust_source_paths: vec![],
-            rust_changed_lines: BTreeMap::new(),
             rust_source_population_paths: vec![],
             python_prior_failure_selectors: Vec::new(),
             rust_prior_failure_selectors: Vec::new(),
@@ -197,7 +195,6 @@ fn validation_report_counts_rust_population_as_selected() {
         python_population_required: false,
         python_population_selectors: Vec::new(),
         rust_source_paths: vec![lib.clone()],
-        rust_changed_lines: BTreeMap::new(),
         rust_source_population_paths: vec![lib],
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
@@ -230,7 +227,6 @@ def test_value():\n    assert value() == 1\n",
         python_population_required: true,
         python_population_selectors: vec!["tests/test_app.py::test_value".to_string()],
         rust_source_paths: Vec::new(),
-        rust_changed_lines: BTreeMap::new(),
         rust_source_population_paths: Vec::new(),
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
@@ -326,7 +322,6 @@ mod plan_tests {
             python_population_required: false,
             python_population_selectors: Vec::new(),
             rust_source_paths: Vec::new(),
-            rust_changed_lines: BTreeMap::new(),
             rust_source_population_paths: Vec::new(),
             python_prior_failure_selectors: Vec::new(),
             rust_prior_failure_selectors: Vec::new(),

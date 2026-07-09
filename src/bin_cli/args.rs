@@ -203,13 +203,13 @@ pub enum Commands {
         base_branch: Option<String>,
         #[arg(long)]
         dry_run: bool,
-        /// Force Python tests to rerun instead of reusing rslip cache entries
+        /// Force selected tests to rerun instead of reusing test-runner caches
         #[arg(long)]
         force: bool,
         /// Print a local rubric metrics summary for this run
         #[arg(long)]
         metrics: bool,
-        /// Maximum number of Python test jobs to run concurrently
+        /// Maximum number of test jobs to run concurrently
         #[arg(short = 'j', long, default_value_t = 1)]
         jobs: usize,
         #[arg(long, value_name = "PREFIX")]
@@ -249,7 +249,7 @@ pub enum Commands {
 #[cfg(test)]
 mod coverage_witness {
     use super::*;
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
 
     impl Cli {
         fn witness() -> Self {
@@ -268,5 +268,22 @@ mod coverage_witness {
         let _ = Cli::witness();
         let _ = Commands::witness();
         assert!(parse_language("python").is_ok());
+    }
+
+    #[test]
+    fn test_command_help_is_language_neutral_for_shared_options() {
+        let mut command = Cli::command();
+        let help = command
+            .find_subcommand_mut("test")
+            .expect("test subcommand exists")
+            .render_long_help()
+            .to_string();
+
+        assert!(
+            help.contains("Force selected tests to rerun instead of reusing test-runner caches")
+        );
+        assert!(help.contains("Maximum number of test jobs to run concurrently"));
+        assert!(!help.contains("Force Python tests"));
+        assert!(!help.contains("Maximum number of Python test jobs"));
     }
 }

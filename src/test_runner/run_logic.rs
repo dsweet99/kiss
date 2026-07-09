@@ -1,17 +1,18 @@
-use super::python_coverage_index::{
-    rebuild_python_coverage_index, write_python_population_manifest_for_args,
-};
-use super::rust_coverage_index::{
-    rebuild_rust_coverage_index, select_rust_source_selectors_from_index,
-    select_rust_source_selectors_hybrid, write_rust_population_manifest_for_args,
-};
 use super::{PlannedSelectors, SelectorRunOptions, runners};
+use crate::test_runner::coverage_decision::RunContext;
 use std::time::Instant;
 
+#[path = "run_logic/language_executor.rs"]
+mod language_executor;
+#[path = "run_logic/language_modules.rs"]
+mod language_modules;
 #[path = "run_logic/metrics.rs"]
 mod metrics;
+use language_executor::{
+    ExecutionModule, ExecutionPhase, LanguagePhaseOutcome, execute_language_phase, execution_phase,
+    population_selector_count, print_dry_run, selective_selector_count,
+};
 use metrics::LocalRubricMetrics;
-use runners::SelectorExecutionSummary;
 
 pub(crate) fn run_selectors(
     planned: &PlannedSelectors,
@@ -24,27 +25,24 @@ pub(crate) fn run_selectors(
     if !planned_has_work(planned) {
         return Ok(finish_no_work(planned, &options, total_started));
     }
-    let mut rs_sel = planned.rs_sel.clone();
-    let needs_population = needs_rust_population(planned, &options);
-    let population_selectors = rust_population_selectors_for_run(planned, needs_population)?;
+    let ctx = RunContext {
+        planned,
+        options: &options,
+    };
+    let python = ExecutionModule::Python;
+    let rust = ExecutionModule::Rust;
+    let python_phase = execution_phase(&python, &ctx)?;
+    let rust_phase = execution_phase(&rust, &ctx)?;
     if options.dry_run {
         return Ok(finish_dry_run(
             planned,
             &options,
             total_started,
-            needs_population,
-            &population_selectors,
-            &rs_sel,
+            &python_phase,
+            &rust_phase,
         ));
     }
-    run_selected_phases(
-        planned,
-        &options,
-        total_started,
-        needs_population,
-        &population_selectors,
-        &mut rs_sel,
-    )
+    run_selected_phases(planned, &options, total_started, &python_phase, &rust_phase)
 }
 
 fn finish_no_work(
@@ -62,39 +60,23 @@ fn finish_no_work(
     0
 }
 
-fn rust_population_selectors_for_run(
-    planned: &PlannedSelectors,
-    needs_population: bool,
-) -> Result<Vec<String>, String> {
-    if needs_population {
-        runners::enumerate_workspace_rust_selectors(&planned.repo_root, &planned.ignore)
-    } else {
-        Ok(Vec::new())
-    }
-}
-
 fn finish_dry_run(
     planned: &PlannedSelectors,
     options: &SelectorRunOptions<'_>,
     total_started: Instant,
-    needs_population: bool,
-    population_selectors: &[String],
-    rs_sel: &[String],
+    python_phase: &ExecutionPhase,
+    rust_phase: &ExecutionPhase,
 ) -> i32 {
-    print_dry_run(
-        planned,
-        options,
-        needs_population,
-        population_selectors,
-        rs_sel,
-    );
+    print_dry_run(options, python_phase, rust_phase);
     if options.metrics {
+        let rust_population_selectors = population_selector_count(rust_phase);
+        let rust_final_selectors = selective_selector_count(rust_phase);
         let mut metrics = LocalRubricMetrics::new(
             planned,
             options,
-            needs_population,
-            population_selectors.len(),
-            rs_sel.len(),
+            matches!(rust_phase, ExecutionPhase::Population(_)),
+            rust_population_selectors,
+            rust_final_selectors,
         );
         metrics.total_duration = total_started.elapsed();
         metrics.capture_cache_shape(&planned.repo_root);
@@ -107,56 +89,28 @@ fn run_selected_phases(
     planned: &PlannedSelectors,
     options: &SelectorRunOptions<'_>,
     total_started: Instant,
-    needs_population: bool,
-    population_selectors: &[String],
-    rs_sel: &mut Vec<String>,
+    python_phase: &ExecutionPhase,
+    rust_phase: &ExecutionPhase,
 ) -> Result<i32, String> {
+    let rust_population_selectors = population_selector_count(rust_phase);
+    let rust_final_selectors = selective_selector_count(rust_phase);
     let mut metrics = LocalRubricMetrics::new(
         planned,
         options,
-        needs_population,
-        population_selectors.len(),
-        rs_sel.len(),
+        matches!(rust_phase, ExecutionPhase::Population(_)),
+        rust_population_selectors,
+        rust_final_selectors,
     );
-    let python_started = Instant::now();
-    metrics.python.summary = run_python_phase(planned, options)?;
-    metrics.python.duration = python_started.elapsed();
+    let ctx = RunContext { planned, options };
+    let python = ExecutionModule::Python;
+    let python_outcome = execute_language_phase(&python, python_phase, &ctx)?;
+    metrics.python.duration = python_outcome.phase_duration;
+    metrics.python.summary = python_outcome.summary;
     let mut code = metrics.python.summary.exit_code;
-    if planned.python_population_required && code == 0 {
-        rebuild_python_coverage_index(&planned.repo_root)?;
-        write_python_population_manifest_for_args(
-            &planned.repo_root,
-            &planned.python_population_selectors,
-            options.extra,
-        )?;
-    }
-    if needs_population {
-        code = run_population_phase(planned, options, population_selectors, &mut metrics, code)?;
-        if code != 0 {
-            return Ok(finish_run_metrics(
-                metrics,
-                code,
-                total_started,
-                planned,
-                options,
-            ));
-        }
-        write_rust_population_manifest_for_args(
-            &planned.repo_root,
-            population_selectors,
-            options.extra,
-        )?;
-        extend_rust_source_selectors(planned, rs_sel);
-        metrics.rust_final_selectors = rs_sel.len();
-    }
-    code = run_final_rust_phase(planned, options, rs_sel, &mut metrics, code)?;
-    if needs_population && code == 0 {
-        write_rust_population_manifest_for_args(
-            &planned.repo_root,
-            population_selectors,
-            options.extra,
-        )?;
-    }
+    let rust = ExecutionModule::Rust;
+    let rust_outcome = execute_language_phase(&rust, rust_phase, &ctx)?;
+    record_rust_outcome(&mut metrics, rust_outcome);
+    code = runners::merge_exit_codes(code, rust_exit_code(&metrics, rust_phase));
     Ok(finish_run_metrics(
         metrics,
         code,
@@ -166,44 +120,28 @@ fn run_selected_phases(
     ))
 }
 
-fn run_population_phase(
-    planned: &PlannedSelectors,
-    options: &SelectorRunOptions<'_>,
-    population_selectors: &[String],
-    metrics: &mut LocalRubricMetrics,
-    code: i32,
-) -> Result<i32, String> {
-    let population_started = Instant::now();
-    metrics.rust_population.summary = run_rust_population(planned, options, population_selectors)?;
-    metrics.rust_population.duration = population_started.elapsed();
-    let index_started = Instant::now();
-    rebuild_rust_coverage_index(&planned.repo_root)?;
-    metrics.rust_index_rebuild_duration += index_started.elapsed();
-    Ok(runners::merge_exit_codes(
-        code,
-        metrics.rust_population.summary.exit_code,
-    ))
+fn record_rust_outcome(metrics: &mut LocalRubricMetrics, outcome: LanguagePhaseOutcome) {
+    match outcome.phase {
+        ExecutionPhase::Population(_) => {
+            metrics.rust_population.summary = outcome.summary;
+            metrics.rust_population.duration = outcome.phase_duration;
+            metrics.rust_index_rebuild_duration += outcome.index_rebuild_duration;
+        }
+        ExecutionPhase::Selective(_) => {
+            metrics.rust_final.summary = outcome.summary;
+            metrics.rust_final.duration = outcome.phase_duration;
+            metrics.rust_index_rebuild_duration += outcome.index_rebuild_duration;
+        }
+        ExecutionPhase::NoWork => {}
+    }
 }
 
-fn run_final_rust_phase(
-    planned: &PlannedSelectors,
-    options: &SelectorRunOptions<'_>,
-    rs_sel: &[String],
-    metrics: &mut LocalRubricMetrics,
-    code: i32,
-) -> Result<i32, String> {
-    let final_started = Instant::now();
-    metrics.rust_final.summary = run_final_rust_selectors(planned, options, rs_sel)?;
-    metrics.rust_final.duration = final_started.elapsed();
-    if metrics.rust_final.summary.total > 0 {
-        let index_started = Instant::now();
-        rebuild_rust_coverage_index(&planned.repo_root)?;
-        metrics.rust_index_rebuild_duration += index_started.elapsed();
+fn rust_exit_code(metrics: &LocalRubricMetrics, phase: &ExecutionPhase) -> i32 {
+    match phase {
+        ExecutionPhase::Population(_) => metrics.rust_population.summary.exit_code,
+        ExecutionPhase::Selective(_) => metrics.rust_final.summary.exit_code,
+        ExecutionPhase::NoWork => 0,
     }
-    Ok(runners::merge_exit_codes(
-        code,
-        metrics.rust_final.summary.exit_code,
-    ))
 }
 
 fn planned_has_work(planned: &PlannedSelectors) -> bool {
@@ -211,135 +149,6 @@ fn planned_has_work(planned: &PlannedSelectors) -> bool {
         || !planned.py_sel.is_empty()
         || !planned.rs_sel.is_empty()
         || !planned.rust_source_population_paths.is_empty()
-}
-
-fn needs_rust_population(planned: &PlannedSelectors, options: &SelectorRunOptions<'_>) -> bool {
-    !planned.rust_source_population_paths.is_empty()
-        || (options.force_rerun && !planned.rust_source_paths.is_empty())
-}
-
-fn print_dry_run(
-    planned: &PlannedSelectors,
-    options: &SelectorRunOptions<'_>,
-    needs_population: bool,
-    population_selectors: &[String],
-    rs_sel: &[String],
-) {
-    let py_argv = runners::build_pytest_argv(&planned.py_sel, options.extra);
-    if planned.python_population_required {
-        println!("PYTHON COVERAGE POPULATION");
-        if !planned.python_population_selectors.is_empty() {
-            let argv =
-                runners::build_pytest_argv(&planned.python_population_selectors, options.extra);
-            println!("{}", runners::shell_quote_line(&argv));
-        }
-    } else if !planned.py_sel.is_empty() {
-        println!("{}", runners::shell_quote_line(&py_argv));
-    }
-    if needs_population {
-        println!("RUST COVERAGE POPULATION");
-    }
-    for selector in population_selectors.iter().chain(rs_sel.iter()) {
-        let argv = runners::build_cargo_llvm_cov_dry_run_argv(selector, options.extra);
-        println!("{}", runners::shell_quote_line(&argv));
-    }
-}
-
-fn run_python_selectors(
-    planned: &PlannedSelectors,
-    options: &SelectorRunOptions<'_>,
-) -> Result<SelectorExecutionSummary, String> {
-    if planned.py_sel.is_empty() {
-        return Ok(SelectorExecutionSummary::default());
-    }
-    let force_rerun = options.force_rerun || !planned.python_prior_failure_selectors.is_empty();
-    runners::run_rslip_selectors(
-        &planned.repo_root,
-        &planned.py_sel,
-        options.extra,
-        force_rerun,
-        options.jobs,
-    )
-}
-
-fn run_python_phase(
-    planned: &PlannedSelectors,
-    options: &SelectorRunOptions<'_>,
-) -> Result<SelectorExecutionSummary, String> {
-    if planned.python_population_required {
-        run_python_population(planned, options)
-    } else {
-        run_python_selectors(planned, options)
-    }
-}
-
-fn run_python_population(
-    planned: &PlannedSelectors,
-    options: &SelectorRunOptions<'_>,
-) -> Result<SelectorExecutionSummary, String> {
-    if !planned.python_population_required {
-        return Ok(SelectorExecutionSummary::default());
-    }
-    let force_rerun = options.force_rerun || !planned.python_prior_failure_selectors.is_empty();
-    runners::run_rslip_selectors(
-        &planned.repo_root,
-        &planned.python_population_selectors,
-        options.extra,
-        force_rerun,
-        options.jobs,
-    )
-}
-
-fn run_rust_population(
-    planned: &PlannedSelectors,
-    options: &SelectorRunOptions<'_>,
-    population_selectors: &[String],
-) -> Result<SelectorExecutionSummary, String> {
-    let force_rerun = options.force_rerun || !planned.rust_prior_failure_selectors.is_empty();
-    runners::run_rust_llvm_cov_selectors(
-        &planned.repo_root,
-        population_selectors,
-        options.extra,
-        force_rerun,
-        options.jobs,
-    )
-}
-
-fn extend_rust_source_selectors(planned: &PlannedSelectors, rs_sel: &mut Vec<String>) {
-    let dynamic_selectors = if planned.rust_changed_lines.is_empty() {
-        select_rust_source_selectors_from_index(&planned.repo_root, &planned.rust_source_paths)
-    } else {
-        select_rust_source_selectors_hybrid(
-            &planned.repo_root,
-            &planned.rust_source_paths,
-            &planned.rust_changed_lines,
-        )
-        .or_else(|| {
-            select_rust_source_selectors_from_index(&planned.repo_root, &planned.rust_source_paths)
-        })
-    }
-    .unwrap_or_default();
-    rs_sel.extend(dynamic_selectors);
-    rs_sel.sort();
-    rs_sel.dedup();
-}
-
-fn run_final_rust_selectors(
-    planned: &PlannedSelectors,
-    options: &SelectorRunOptions<'_>,
-    rs_sel: &[String],
-) -> Result<SelectorExecutionSummary, String> {
-    if rs_sel.is_empty() {
-        return Ok(SelectorExecutionSummary::default());
-    }
-    let force_rerun = options.force_rerun || !planned.rust_prior_failure_selectors.is_empty();
-    runners::run_rust_llvm_cov_selectors(
-        &planned.repo_root,
-        rs_sel,
-        options.extra,
-        force_rerun,
-        options.jobs,
-    )
 }
 
 fn finish_run_metrics(
@@ -357,3 +166,7 @@ fn finish_run_metrics(
     }
     code
 }
+
+#[cfg(test)]
+#[path = "run_logic_test.rs"]
+mod tests;

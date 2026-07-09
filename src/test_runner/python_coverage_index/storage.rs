@@ -190,7 +190,12 @@ pub(crate) fn is_python_source_input_path(path: &Path) -> bool {
 }
 
 pub(crate) fn python_repo_relative_coverage_file(repo_root: &Path, file: &str) -> Option<String> {
-    python_repo_relative_path(repo_root, Path::new(file))
+    let rel = python_repo_relative_path(repo_root, Path::new(file))?;
+    is_python_indexable_coverage_rel(&rel).then_some(rel)
+}
+
+fn is_python_indexable_coverage_rel(rel: &str) -> bool {
+    rel.ends_with(".py") && !rel.starts_with(".kiss/") && !rel.starts_with('<')
 }
 
 pub(crate) fn python_repo_relative_path(repo_root: &Path, path: &Path) -> Option<String> {

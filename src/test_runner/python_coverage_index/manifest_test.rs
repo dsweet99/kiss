@@ -2,6 +2,28 @@ use super::*;
 use crate::test_runner::python_coverage_index::storage::normalized_python_repo_root;
 use std::collections::BTreeMap;
 
+struct EnvGuard {
+    key: &'static str,
+    old: Option<String>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let old = std::env::var(key).ok();
+        unsafe { std::env::set_var(key, value) };
+        Self { key, old }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        match &self.old {
+            Some(value) => unsafe { std::env::set_var(self.key, value) },
+            None => unsafe { std::env::remove_var(self.key) },
+        }
+    }
+}
+
 fn identity() -> PythonPopulationManifestIdentity {
     let mut env = BTreeMap::new();
     env.insert("PYTHONPATH".to_string(), "src".to_string());
@@ -13,6 +35,21 @@ fn identity() -> PythonPopulationManifestIdentity {
         pytest_args: vec!["-q".to_string()],
         env,
     }
+}
+
+#[test]
+fn python_coverage_env_tracks_only_pythonpath() {
+    let _lock = crate::cwd_test_lock::lock();
+    let _pythonpath = EnvGuard::set("PYTHONPATH", "src");
+    let _hashseed = EnvGuard::set("PYTHONHASHSEED", "123");
+    let _dontwrite = EnvGuard::set("PYTHONDONTWRITEBYTECODE", "1");
+
+    let env = relevant_python_coverage_env();
+
+    assert_eq!(
+        env,
+        BTreeMap::from([("PYTHONPATH".to_string(), "src".to_string())])
+    );
 }
 
 #[test]

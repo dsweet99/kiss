@@ -46,7 +46,18 @@ fn manifest_and_storage_helpers_are_referenced_from_external_tests() {
         "a",
         &selector,
         LineCoverage {
-            files: BTreeMap::from([(app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+            files: BTreeMap::from([
+                (app.to_string_lossy().to_string(), BTreeSet::from([1])),
+                (
+                    "<frozen importlib._bootstrap>".to_string(),
+                    BTreeSet::from([1]),
+                ),
+                (
+                    ".kiss/rslip_cache/rslip_runtime.py".to_string(),
+                    BTreeSet::from([1]),
+                ),
+                ("/outside.py".to_string(), BTreeSet::from([1])),
+            ]),
         },
     );
     let mut identity = identity();
@@ -101,6 +112,10 @@ fn selector_path_and_hash_helpers_are_referenced_from_external_tests() {
         selector
     );
     let index = build_python_coverage_index(tmp.path());
+    assert_eq!(
+        index.keys().cloned().collect::<Vec<_>>(),
+        vec!["app.py".to_string()]
+    );
     assert_eq!(
         python_selectors_for_source_paths(tmp.path(), &[app.clone(), other], &index).unwrap(),
         BTreeSet::from(["tests/test_app.py::test_value".to_string()])

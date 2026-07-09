@@ -268,7 +268,7 @@ fn rust_llvm_cov_backer(
         Box::new(|universe| PopulationPlan {
             selectors: universe.to_vec(),
         }),
-        Box::new(move |_changed_sources| {
+        Box::new(move || {
             let Some(selector_ids) = select_fresh_rust_source_selectors(
                 &repo_root,
                 &rust_source_paths,

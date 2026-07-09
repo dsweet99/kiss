@@ -11,7 +11,7 @@ use super::storage::{
 };
 use super::{POPULATION_SCHEMA_VERSION, PYTHON_SELECTOR_DISCOVERY_VERSION};
 
-const PYTHON_COVERAGE_ENV_KEYS: &[&str] = &[];
+const PYTHON_COVERAGE_ENV_KEYS: &[&str] = &["PYTHONPATH"];
 
 pub(crate) fn write_python_population_manifest_for_args(
     repo_root: &Path,

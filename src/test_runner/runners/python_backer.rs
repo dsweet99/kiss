@@ -66,7 +66,7 @@ pub(super) fn python_population_backer(
         Box::new(|universe| PopulationPlan {
             selectors: universe.to_vec(),
         }),
-        Box::new(move |_changed_sources| {
+        Box::new(move || {
             let Some(selector_ids) = select_fresh_python_source_selectors(
                 &repo_root,
                 &py_source_paths,

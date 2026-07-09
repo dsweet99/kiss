@@ -184,6 +184,8 @@ fn format_rslip_error(err: RslipError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rslip::LineCoverage;
+    use std::time::Duration;
 
     #[test]
     fn format_rslip_error_includes_context() {
@@ -191,5 +193,72 @@ mod tests {
 
         assert!(msg.contains("error: kiss test: rslip failed"));
         assert!(msg.contains("bad selector"));
+    }
+
+    #[test]
+    #[should_panic(expected = "jobs must be greater than zero")]
+    fn run_rslip_selectors_rejects_zero_jobs_before_spawning() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        let _ = run_rslip_selectors(tmp.path(), &[], &[], false, 0);
+    }
+
+    #[test]
+    fn rslip_request_and_version_contracts_are_explicit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let extra = vec!["-q".to_string()];
+        let req = rslip_request_from_parts(
+            tmp.path(),
+            "tests/test_app.py::test_ok",
+            &extra,
+            "3.12.1",
+            "8.3.0",
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(req.nodeid, "tests/test_app.py::test_ok");
+        assert_eq!(req.cwd, tmp.path());
+        assert_eq!(req.pytest_args, extra);
+        assert!(req.force_rerun);
+        assert!(python_version_supports_rslip("3.12.0"));
+        assert!(python_version_supports_rslip("4.0.0"));
+        assert!(!python_version_supports_rslip("3.11.9"));
+    }
+
+    #[test]
+    fn bounded_rslip_runner_handles_empty_queue() {
+        let results = run_rslip_requests_bounded(Vec::new(), 1);
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn print_rslip_outcome_accepts_all_status_cache_shapes() {
+        for (status, cache_status) in [
+            (rpytest_runner::TestStatus::Passed, PyCacheStatus::Hit),
+            (
+                rpytest_runner::TestStatus::Passed,
+                PyCacheStatus::MissStored,
+            ),
+            (rpytest_runner::TestStatus::Failed, PyCacheStatus::Hit),
+            (
+                rpytest_runner::TestStatus::Failed,
+                PyCacheStatus::MissStored,
+            ),
+        ] {
+            print_rslip_outcome(&RslipOutcome {
+                nodeid: "tests/test_app.py::test_ok".to_string(),
+                status,
+                exit_code: Some(i32::from(status == rpytest_runner::TestStatus::Failed)),
+                duration: Duration::from_millis(1),
+                coverage: LineCoverage {
+                    files: BTreeMap::new(),
+                },
+                cache_status,
+                stdout: None,
+                stderr: Some(Vec::new()),
+            });
+        }
     }
 }

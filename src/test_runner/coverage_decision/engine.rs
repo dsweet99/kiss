@@ -1,15 +1,17 @@
 use std::collections::BTreeSet;
 
 use super::backer::CoverageBacker;
+use super::language_module::LanguagePlanner;
 use super::types::{ChangedDiff, ChangedSource, CoverageDecisionPlan};
 
 pub(crate) struct CoverageDecisionEngine {
-    backers: Vec<CoverageBacker>,
+    planners: Vec<LanguagePlanner>,
 }
 
 impl CoverageDecisionEngine {
     pub(crate) fn new(backers: Vec<CoverageBacker>) -> Self {
-        Self { backers }
+        let planners = backers.into_iter().map(LanguagePlanner::new).collect();
+        Self { planners }
     }
 
     pub(crate) fn plan(
@@ -20,30 +22,29 @@ impl CoverageDecisionEngine {
         let mut selected = BTreeSet::new();
         let mut population = BTreeSet::new();
         let mut population_languages = Vec::new();
-        for backer in &self.backers {
-            let universe = backer.discover_test_universe()?;
-            let changed_tests = backer.changed_tests(&diff);
-            let prior_failures = backer.prior_failures();
-            let freshness = backer.freshness(&universe)?;
+        for planner in &self.planners {
+            let universe = planner.discover_universe()?;
+            let changed_tests = planner.changed_tests(&diff);
+            let prior_failures = planner.prior_failures();
+            let freshness = planner.freshness(&universe)?;
             if freshness.requires_population() {
-                if !population_languages.contains(&backer.language()) {
-                    population_languages.push(backer.language());
+                if !population_languages.contains(&planner.language()) {
+                    population_languages.push(planner.language());
                 }
-                population.extend(backer.population_plan(&universe).selectors);
+                population.extend(planner.population_plan(&universe).selectors);
                 population.extend(changed_tests);
                 population.extend(prior_failures);
             } else {
-                let language_sources = diff.sources_for_language(backer.language());
-                let decision = backer.select(&language_sources)?;
+                let decision = planner.select()?;
                 if decision.complete {
                     selected.extend(decision.selectors);
                     selected.extend(changed_tests);
                     selected.extend(prior_failures);
                 } else {
-                    if !population_languages.contains(&backer.language()) {
-                        population_languages.push(backer.language());
+                    if !population_languages.contains(&planner.language()) {
+                        population_languages.push(planner.language());
                     }
-                    population.extend(backer.population_plan(&universe).selectors);
+                    population.extend(planner.population_plan(&universe).selectors);
                     population.extend(changed_tests);
                     population.extend(prior_failures);
                 }

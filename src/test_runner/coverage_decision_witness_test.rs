@@ -98,7 +98,7 @@ fn prior_failures_are_selected_without_source_changes() {
         Box::new(move || vec![prior_failure.clone()]),
         Box::new(|_universe: &[TestSelector]| Ok(CoverageFreshness::Fresh)),
         Box::new(|_universe: &[TestSelector]| PopulationPlan::default()),
-        Box::new(|_sources: &[ChangedSource]| Ok(SelectionDecision::default())),
+        Box::new(|| Ok(SelectionDecision::default())),
     );
 
     let plan = CoverageDecisionEngine::new(vec![backer]).plan(&[]).unwrap();
@@ -120,7 +120,7 @@ fn prior_failures_are_populated_when_coverage_is_stale() {
         Box::new(|universe: &[TestSelector]| PopulationPlan {
             selectors: universe.to_vec(),
         }),
-        Box::new(|_sources: &[ChangedSource]| Ok(SelectionDecision::default())),
+        Box::new(|| Ok(SelectionDecision::default())),
     );
 
     let plan = CoverageDecisionEngine::new(vec![backer])
