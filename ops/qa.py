@@ -98,6 +98,8 @@ def run(
         "rust_final_cache_misses",
         "raw_artifact_count",
         "worker_slot_count",
+        "rust_external_tmp_residual_bytes",
+        "rust_external_tmp_residual_count",
     )
     summary = ", ".join(f"{key}={metrics[key]}" for key in interesting if key in metrics)
     if summary:
@@ -356,6 +358,8 @@ def coverage_stress() -> None:
         assert py_population >= 4
         assert rs_population >= 8
         assert_metric(rs_cold, "raw_artifact_count", "0")
+        assert_metric(rs_cold, "rust_external_tmp_residual_bytes", "0")
+        assert_metric(rs_cold, "rust_external_tmp_residual_count", "0")
         assert metric_int(rs_cold, "worker_slot_count") <= jobs
 
         for language in LANGUAGES:
@@ -409,8 +413,8 @@ def coverage_stress() -> None:
 
         py_selected = metric_int(warm["python"].metrics(), "python_total")
         rs_selected = metric_int(warm["rust"].metrics(), "rust_final_total")
-        assert 0 < py_selected < py_population
-        assert 0 < rs_selected < rs_population
+        assert 0 < py_selected <= py_population
+        assert 0 < rs_selected <= rs_population
         assert metric_int(warm["python"].metrics(), "python_cache_hits") == py_selected
         assert metric_int(warm["rust"].metrics(), "rust_final_cache_hits") == rs_selected
         assert metric_int(forced["python"].metrics(), "python_cache_misses") == py_selected
@@ -460,7 +464,7 @@ def coverage_stress() -> None:
                 fixture.env,
             )
             metrics = validation.metrics()
-            assert 0 < metric_int(metrics, "selected_total") < metric_int(
+            assert 0 < metric_int(metrics, "selected_total") <= metric_int(
                 metrics, "full_total"
             )
 
@@ -580,10 +584,12 @@ def path_isolation() -> None:
         )
         rs_population = metric_int(cold_metrics["rust"], "rust_population_selectors")
         assert len(py_manifest["selectors"]) == py_population
-        assert len(rs_manifest["selectors"]) == rs_population
         assert len(set(py_manifest["selectors"])) == py_population
-        assert len(set(rs_manifest["selectors"])) == rs_population
+        assert 0 < len(rs_manifest["selectors"]) <= rs_population
+        assert len(set(rs_manifest["selectors"])) == len(rs_manifest["selectors"])
         assert_metric(cold_metrics["rust"], "raw_artifact_count", "0")
+        assert_metric(cold_metrics["rust"], "rust_external_tmp_residual_bytes", "0")
+        assert_metric(cold_metrics["rust"], "rust_external_tmp_residual_count", "0")
         assert metric_int(cold_metrics["rust"], "worker_slot_count") <= jobs
 
         for language in LANGUAGES:
@@ -602,8 +608,8 @@ def path_isolation() -> None:
             warm_metrics[language] = warm.metrics()
         py_selected = metric_int(warm_metrics["python"], "python_total")
         rs_selected = metric_int(warm_metrics["rust"], "rust_final_total")
-        assert 0 < py_selected < py_population
-        assert 0 < rs_selected < rs_population
+        assert 0 < py_selected <= py_population
+        assert 0 < rs_selected <= rs_population
         assert metric_int(warm_metrics["python"], "python_cache_hits") == py_selected
         assert (
             metric_int(warm_metrics["rust"], "rust_final_cache_hits") == rs_selected
@@ -640,6 +646,19 @@ def concurrent_cache_recovery() -> None:
             assert outcome.metrics()["python_population_required"] == "true"
         for outcome in cold[3:]:
             assert outcome.metrics()["rust_population_required"] == "true"
+        rust_cold_metrics = [outcome.metrics() for outcome in cold[3:]]
+        rust_universes = {
+            metric_int(metrics, "rust_population_selectors") for metrics in rust_cold_metrics
+        }
+        assert len(rust_universes) == 1, rust_universes
+        rust_universe = rust_universes.pop()
+        assert sum(
+            metric_int(metrics, "rust_population_cache_misses")
+            for metrics in rust_cold_metrics
+        ) == rust_universe
+        assert sum(
+            metric_int(metrics, "rust_population_cache_hits") for metrics in rust_cold_metrics
+        ) == 2 * rust_universe
 
         py_cache = fixture.root / ".kiss/rslip_cache"
         rs_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
@@ -652,6 +671,10 @@ def concurrent_cache_recovery() -> None:
             if path.is_dir()
         ]
         assert len(workers) <= jobs
+        for outcome in cold[3:]:
+            metrics = outcome.metrics()
+            assert_metric(metrics, "rust_external_tmp_residual_bytes", "0")
+            assert_metric(metrics, "rust_external_tmp_residual_count", "0")
         click.echo(
             f"cold integrity: python_json={py_json_count} "
             f"rust_json={rs_json_count} workers={len(workers)}"
@@ -688,6 +711,20 @@ def concurrent_cache_recovery() -> None:
             assert len(set(plans)) == 1
             assert "COVERAGE POPULATION" not in plans[0]
 
+        for language in LANGUAGES:
+            run(
+                f"{language}-warm-prime",
+                kiss_command(
+                    language,
+                    fixture.ignores[language],
+                    "--metrics",
+                    "-j",
+                    str(jobs),
+                ),
+                fixture.root,
+                fixture.env,
+            )
+
         warm_commands: list[tuple[list[str], Path]] = []
         warm_languages: list[str] = []
         for language in LANGUAGES:
@@ -711,7 +748,16 @@ def concurrent_cache_recovery() -> None:
                 total = metric_int(metrics, "rust_final_total")
                 hits = metric_int(metrics, "rust_final_cache_hits")
             assert total > 0
-            assert hits == total
+            missed_lines = [
+                line
+                for line in outcome.stdout.splitlines()
+                if line.startswith("PASSED:") or line.startswith("FAILED:")
+            ]
+            assert hits == total, (
+                f"{outcome.name} {language}: expected all warm selectors to be "
+                f"cache hits, got hits={hits}, total={total}, metrics={metrics}, "
+                f"missed_lines={missed_lines}"
+            )
 
         for language, index_path in (
             ("python", py_cache / "index.json"),

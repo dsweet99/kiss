@@ -292,7 +292,13 @@ fn python_source_change_requires_population_without_selective_python() {
     )
     .unwrap();
 
-    assert!(plan.py_selectors.is_empty());
+    assert_eq!(
+        plan.py_selectors,
+        vec![
+            py_selector(&test_app, "test_one"),
+            py_selector(&test_app, "test_two"),
+        ]
+    );
     assert!(plan.python_population_required);
     assert!(plan.rust_selectors.is_empty());
     assert!(test_app.exists());

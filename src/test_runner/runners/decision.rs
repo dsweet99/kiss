@@ -60,7 +60,8 @@ pub(crate) fn combined_selectors(
     let rust_prior_failure_selectors =
         selectors_for_language(&engine_backers.prior_failures, kiss::Language::Rust);
     let engine_plan = CoverageDecisionEngine::new(engine_backers.backers).plan(&changed_sources)?;
-    let (py_sel, rs_sel) = selectors_by_language(&engine_plan.selected);
+    let (selected_py, selected_rs) = selectors_by_language(&engine_plan.selected);
+    let (population_py, population_rs) = selectors_by_language(&engine_plan.population);
     let python_population_required = engine_plan
         .population_languages
         .contains(&kiss::Language::Python);
@@ -68,8 +69,16 @@ pub(crate) fn combined_selectors(
         .population_languages
         .contains(&kiss::Language::Rust);
     Ok(SelectorPlan {
-        py_selectors: py_sel,
-        rust_selectors: rs_sel,
+        py_selectors: if python_population_required {
+            population_py
+        } else {
+            selected_py
+        },
+        rust_selectors: if rust_population_required {
+            population_rs
+        } else {
+            selected_rs
+        },
         python_population_required,
         rust_population_required,
         rust_source_paths,

@@ -94,6 +94,44 @@ fn rust_population_phase_uses_discover_universe() {
 }
 
 #[test]
+fn rust_population_phase_also_executes_current_selected_tests() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    std::fs::write(
+        src.join("lib.rs"),
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+
+    let selected = "external_selected::test_case".to_string();
+    let mut planned = planned();
+    planned.repo_root = tmp.path().to_path_buf();
+    planned.rust_source_paths = vec![src.join("lib.rs")];
+    planned.rust_population_required = true;
+    planned.rs_sel = vec![selected.clone()];
+    let options = options(false);
+    let ctx = RunContext {
+        planned: &planned,
+        options: &options,
+    };
+
+    let ExecutionPhase::Population(selectors) =
+        execution_phase(&execution_module_rust(&planned), &ctx).unwrap()
+    else {
+        panic!("rust should execute a population phase");
+    };
+
+    assert!(selectors.contains(&"tests::gets_value".to_string()));
+    assert!(selectors.contains(&selected));
+}
+
+#[test]
 fn rust_dry_run_is_population_xor_selective() {
     let tmp = tempfile::tempdir().unwrap();
     let src = tmp.path().join("src");
@@ -156,10 +194,7 @@ fn python_population_phase_uses_discover_universe() {
     let discovered = LanguagePlanner::discover_universe(&module).unwrap();
     let discovered_ids: Vec<String> = discovered.into_iter().map(|s| s.id).collect();
     assert!(!discovered_ids.is_empty());
-    assert_eq!(
-        discovered_ids,
-        vec![py_selector(&test_app, "test_value")]
-    );
+    assert_eq!(discovered_ids, vec![py_selector(&test_app, "test_value")]);
 
     assert!(matches!(
         execution_phase(&module, &ctx).unwrap(),

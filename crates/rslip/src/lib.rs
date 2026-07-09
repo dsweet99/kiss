@@ -17,7 +17,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use cache::{
-    RslipCacheEntry, load_rslip_cache_entry, rslip_cache_fingerprint, store_rslip_cache_entry,
+    RslipCacheEntry, load_rslip_cache_entry, rslip_cache_fingerprint, rslip_unique_suffix,
+    store_rslip_cache_entry,
 };
 use rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, TestStatus,
@@ -150,6 +151,7 @@ impl Rslip {
 
         let run_dir = req.cache_root.join("runtime");
         fs::create_dir_all(&run_dir)?;
+        fs::create_dir_all(req.cache_root.join("testmon"))?;
         let runtime_path = run_dir.join(format!("{}.py", runtime::MODULE_NAME));
         fs::write(&runtime_path, runtime::PYTHON_RUNTIME)?;
         let artifact_path = req
@@ -234,6 +236,14 @@ fn build_pytest_runner_request(
     env.insert(
         "RSLIP_SOURCE_ROOT".to_string(),
         req.source_root.to_string_lossy().to_string(),
+    );
+    env.insert(
+        "TESTMON_DATAFILE".to_string(),
+        req.cache_root
+            .join("testmon")
+            .join(format!("{}.testmondata", rslip_unique_suffix()))
+            .to_string_lossy()
+            .to_string(),
     );
     PytestRunRequest {
         nodeid: req.nodeid.clone(),

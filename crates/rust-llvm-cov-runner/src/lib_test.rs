@@ -14,9 +14,7 @@ use super::llvm_cov_json::{
 use super::{
     CargoLlvmCovRunError, CargoLlvmCovRunOutcome, CargoLlvmCovRunRequest, CargoLlvmCovRunner,
     RustCovCacheStatus, RustLineCoverage, RustLlvmCov, RustLlvmCovError, RustLlvmCovOutcome,
-    RustLlvmCovRequest, build_cargo_runner_request, build_llvm_cov_argv, rust_cov_cache,
-    rust_cov_outcome_from_cache, rust_cov_sample_request, rust_cov_worker_tmp_root,
-    validate_rust_cov_request,
+    RustLlvmCovRequest, finalize, rust_cov_cache, worker,
 };
 
 #[test]
@@ -38,23 +36,23 @@ fn rust_llvm_cov_request_outcome_and_coverage_types_expose_expected_fields() {
 #[test]
 fn rust_llvm_cov_validate_rust_cov_request_rejects_missing_selector_and_versions() {
     let tmp = tempfile::tempdir().unwrap();
-    let valid = rust_cov_sample_request(tmp.path());
-    assert!(validate_rust_cov_request(&valid).is_ok());
+    let valid = super::rust_cov_sample_request(tmp.path());
+    assert!(super::validate_rust_cov_request(&valid).is_ok());
 
     let mut missing_selector = valid.clone();
     missing_selector.selector.clear();
     assert!(matches!(
-        validate_rust_cov_request(&missing_selector),
+        super::validate_rust_cov_request(&missing_selector),
         Err(RustLlvmCovError::InvalidRequest(message)) if message.contains("selector")
     ));
 
     let mut missing_llvm_cov = valid.clone();
     missing_llvm_cov.llvm_cov_version.clear();
-    assert!(validate_rust_cov_request(&missing_llvm_cov).is_err());
+    assert!(super::validate_rust_cov_request(&missing_llvm_cov).is_err());
 
     let mut missing_rustc = valid;
     missing_rustc.rustc_version.clear();
-    assert!(validate_rust_cov_request(&missing_rustc).is_err());
+    assert!(super::validate_rust_cov_request(&missing_rustc).is_err());
 }
 
 #[test]
@@ -74,7 +72,7 @@ fn rust_llvm_cov_builds_cargo_llvm_cov_argv_with_selector_before_test_args() {
         artifact_path: tmp.path().join("coverage.json"),
     };
 
-    let argv = build_llvm_cov_argv(&run_req);
+    let argv = super::build_llvm_cov_argv(&run_req);
 
     assert_eq!(
         argv,
@@ -164,11 +162,11 @@ fn rust_llvm_cov_builds_isolated_cargo_runner_request() {
     let tmp = tempfile::tempdir().unwrap();
     let req = RustLlvmCovRequest {
         worker_slot: 3,
-        ..rust_cov_sample_request(tmp.path())
+        ..super::rust_cov_sample_request(tmp.path())
     };
     let artifact = tmp.path().join("coverage.json");
 
-    let run_req = build_cargo_runner_request(&req, &artifact);
+    let run_req = super::build_cargo_runner_request(&req, &artifact);
     let worker = tmp
         .path()
         .join(".rust_llvm_cov_cache")
@@ -183,7 +181,7 @@ fn rust_llvm_cov_builds_isolated_cargo_runner_request() {
     );
     assert_eq!(
         run_req.env["TMPDIR"],
-        rust_cov_worker_tmp_root(&req.cache_root, req.worker_slot).to_string_lossy()
+        worker::rust_cov_worker_tmp_root(&req.cache_root, req.worker_slot).to_string_lossy()
     );
     assert!(!std::path::Path::new(&run_req.env["TMPDIR"]).starts_with(tmp.path()));
     assert!(run_req.env["LLVM_PROFILE_FILE"].contains("%m-%p.profraw"));
@@ -202,7 +200,7 @@ fn rust_llvm_cov_cached_outcome_omits_output_but_keeps_status_and_coverage() {
         stderr: Some(b"err".to_vec()),
     });
 
-    let outcome = rust_cov_outcome_from_cache(entry);
+    let outcome = super::rust_cov_outcome_from_cache(entry);
 
     assert_eq!(outcome.selector, "smoke::passes");
     assert_eq!(outcome.status, TestStatus::Passed);
@@ -226,7 +224,7 @@ fn rust_llvm_cov_run_or_reuse_uses_cache_and_force_rerun() {
     let calls = Rc::new(Cell::new(0));
     let runner = fake_runner(Rc::clone(&calls), lib);
     let cov = RustLlvmCov::new(runner);
-    let req = rust_cov_sample_request(tmp.path());
+    let req = super::rust_cov_sample_request(tmp.path());
 
     let first = cov.run_or_reuse(req.clone()).unwrap();
     let second = cov.run_or_reuse(req.clone()).unwrap();
@@ -242,6 +240,141 @@ fn rust_llvm_cov_run_or_reuse_uses_cache_and_force_rerun() {
     assert_eq!(second.cache_status, RustCovCacheStatus::Hit);
     assert_eq!(second.stdout, None);
     assert_eq!(forced.cache_status, RustCovCacheStatus::MissStored);
+}
+
+#[test]
+fn rust_llvm_cov_digest_and_artifact_helpers_are_collision_resistant() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_root = tmp.path().join(".rust_llvm_cov_cache");
+    fs::create_dir_all(&cache_root).unwrap();
+
+    assert_eq!(worker::hex_lower(&[0x00, 0x7f, 0xff]), "007fff");
+    assert_eq!(
+        worker::os_str_bytes(std::ffi::OsStr::new("cache-root")),
+        b"cache-root".to_vec()
+    );
+    assert_eq!(worker::cache_root_digest(&cache_root).len(), 64);
+    let first = finalize::rust_cov_artifact_path(&cache_root, "abc");
+    let second = finalize::rust_cov_artifact_path(&cache_root, "abc");
+
+    assert_ne!(first, second);
+    assert!(first.starts_with(cache_root.join("artifacts")));
+    assert!(
+        first
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("abc.")
+    );
+}
+
+#[test]
+fn rust_llvm_cov_lock_helpers_create_persistent_lock_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_root = tmp.path().join(".rust_llvm_cov_cache");
+
+    drop(worker::lock_selector(&cache_root, "fingerprint").unwrap());
+    drop(worker::lock_legacy_cleanup(&cache_root).unwrap());
+    drop(worker::lock_worker(&cache_root, 3).unwrap());
+
+    assert!(cache_root.join("locks/selectors/fingerprint.lock").exists());
+    assert!(
+        cache_root
+            .join("locks/workers/legacy-cleanup.lock")
+            .exists()
+    );
+    assert!(cache_root.join("locks/workers/slot-3.lock").exists());
+}
+
+#[test]
+fn rust_llvm_cov_finalize_run_policies_store_and_cleanup_success_and_failure() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_demo_crate_source(tmp.path());
+    let mut req = super::rust_cov_sample_request(tmp.path());
+    req.cache_root = tmp.path().join(".rust_llvm_cov_cache");
+    fs::create_dir_all(&req.cache_root).unwrap();
+    let artifact = finalize::rust_cov_artifact_path(&req.cache_root, "passed");
+    fs::create_dir_all(artifact.parent().unwrap()).unwrap();
+    fs::write(
+        &artifact,
+        format!(
+            r#"{{"data":[{{"files":[{{"filename":"{}","segments":[[1,1,1,true,true,false]]}}]}}]}}"#,
+            tmp.path().join("src").join("lib.rs").display()
+        ),
+    )
+    .unwrap();
+    fs::create_dir_all(worker::rust_cov_worker_tmp_root(
+        &req.cache_root,
+        req.worker_slot,
+    ))
+    .unwrap();
+
+    let passed = finalize::finalize_run(
+        &req,
+        "passed",
+        Ok(CargoLlvmCovRunOutcome {
+            selector: req.selector.clone(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            artifact_path: artifact.clone(),
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(passed.cache_status, RustCovCacheStatus::MissStored);
+    assert!(!artifact.exists());
+    assert!(!worker::rust_cov_worker_tmp_root(&req.cache_root, req.worker_slot).exists());
+
+    let failed_artifact = finalize::rust_cov_artifact_path(&req.cache_root, "failed");
+    let failed = finalize::finalize_run(
+        &req,
+        "failed",
+        Ok(CargoLlvmCovRunOutcome {
+            selector: req.selector.clone(),
+            status: TestStatus::Failed,
+            exit_code: Some(1),
+            duration: Duration::from_millis(1),
+            stdout: b"failed".to_vec(),
+            stderr: Vec::new(),
+            artifact_path: failed_artifact,
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(failed.status, TestStatus::Failed);
+    assert!(failed.coverage.files.is_empty());
+}
+
+#[test]
+fn rust_llvm_cov_error_combiner_and_test_hook_preserve_failures() {
+    let primary = RustLlvmCovError::InvalidRequest("primary".to_string());
+    let combined = finalize::combine_primary_and_finalization(
+        primary,
+        vec![RustLlvmCovError::InvalidRequest("cleanup".to_string())],
+    );
+
+    assert!(matches!(
+        combined,
+        RustLlvmCovError::Composite { finalization, .. } if finalization.len() == 1
+    ));
+    assert!(worker::wait_at_unlocked_miss_hook().is_ok());
+}
+
+fn write_demo_crate_source(root: &std::path::Path) {
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::create_dir(root.join("src")).unwrap();
+    fs::write(
+        root.join("src").join("lib.rs"),
+        "pub fn value() -> u32 { 1 }\n",
+    )
+    .unwrap();
 }
 
 fn fake_runner(calls: Rc<Cell<usize>>, covered_file: PathBuf) -> CargoLlvmCovRunner {

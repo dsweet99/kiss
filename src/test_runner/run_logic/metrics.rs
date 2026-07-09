@@ -2,6 +2,8 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
+use rust_llvm_cov_runner::rust_cov_cache_tmp_parent;
+
 use super::runners::SelectorExecutionSummary;
 use super::{PlannedSelectors, SelectorRunOptions};
 
@@ -32,6 +34,9 @@ pub(super) struct LocalRubricMetrics {
     pub(super) rust_cache_residual_bytes: u64,
     pub(super) raw_artifact_count: usize,
     pub(super) worker_slot_count: usize,
+    pub(super) rust_external_tmp_residual_bytes: u64,
+    pub(super) rust_external_tmp_residual_count: usize,
+    pub(super) rust_external_tmp_metric_error: bool,
     pub(super) worker_slot_limit: usize,
     pub(super) exit_code: i32,
 }
@@ -66,6 +71,9 @@ impl LocalRubricMetrics {
             rust_cache_residual_bytes: 0,
             raw_artifact_count: 0,
             worker_slot_count: 0,
+            rust_external_tmp_residual_bytes: 0,
+            rust_external_tmp_residual_count: 0,
+            rust_external_tmp_metric_error: false,
             worker_slot_limit: options.jobs,
             exit_code: 0,
         }
@@ -78,6 +86,18 @@ impl LocalRubricMetrics {
         self.rust_cache_residual_bytes = path_size_bytes(&rust_cache);
         self.raw_artifact_count = count_json_files(&rust_cache.join("artifacts"));
         self.worker_slot_count = count_worker_slots(&rust_cache.join("workers"));
+        match path_size_and_count(&rust_cov_cache_tmp_parent(&rust_cache)) {
+            Ok((bytes, count)) => {
+                self.rust_external_tmp_residual_bytes = bytes;
+                self.rust_external_tmp_residual_count = count;
+                self.rust_external_tmp_metric_error = false;
+            }
+            Err(_) => {
+                self.rust_external_tmp_residual_bytes = u64::MAX;
+                self.rust_external_tmp_residual_count = usize::MAX;
+                self.rust_external_tmp_metric_error = true;
+            }
+        }
     }
 
     pub(super) fn print(&self) {
@@ -161,6 +181,14 @@ fn print_cache_metrics(metrics: &LocalRubricMetrics) {
     );
     println!("raw_artifact_count={}", metrics.raw_artifact_count);
     println!("worker_slot_count={}", metrics.worker_slot_count);
+    println!(
+        "rust_external_tmp_residual_bytes={}",
+        metrics.rust_external_tmp_residual_bytes
+    );
+    println!(
+        "rust_external_tmp_residual_count={}",
+        metrics.rust_external_tmp_residual_count
+    );
     println!("worker_slot_limit={}", metrics.worker_slot_limit);
     println!(
         "raw_artifact_residuals_pass={}",
@@ -169,6 +197,12 @@ fn print_cache_metrics(metrics: &LocalRubricMetrics) {
     println!(
         "worker_slot_bound_pass={}",
         metrics.worker_slot_count <= metrics.worker_slot_limit
+    );
+    println!(
+        "rust_external_tmp_residuals_pass={}",
+        !metrics.rust_external_tmp_metric_error
+            && metrics.rust_external_tmp_residual_bytes == 0
+            && metrics.rust_external_tmp_residual_count == 0
     );
 }
 
@@ -196,6 +230,29 @@ fn path_size_bytes(path: &Path) -> u64 {
         .flatten()
         .map(|entry| path_size_bytes(&entry.path()))
         .sum()
+}
+
+fn path_size_and_count(path: &Path) -> std::io::Result<(u64, usize)> {
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok((0, 0)),
+        Err(err) => return Err(err),
+    };
+    if meta.is_file() {
+        return Ok((meta.len(), 1));
+    }
+    if !meta.is_dir() {
+        return Ok((0, 1));
+    }
+    let mut bytes = 0;
+    let mut count = 0;
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let (child_bytes, child_count) = path_size_and_count(&entry.path())?;
+        bytes += child_bytes;
+        count += child_count;
+    }
+    Ok((bytes, count))
 }
 
 fn count_json_files(path: &Path) -> usize {
@@ -264,6 +321,9 @@ mod tests {
             rust_cache_residual_bytes: 0,
             raw_artifact_count: 0,
             worker_slot_count: 0,
+            rust_external_tmp_residual_bytes: 0,
+            rust_external_tmp_residual_count: 0,
+            rust_external_tmp_metric_error: false,
             worker_slot_limit: 1,
             exit_code: 0,
         };

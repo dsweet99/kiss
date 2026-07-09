@@ -70,3 +70,53 @@ fn population_manifest_requires_matching_selectors_and_inputs() {
         "selector universe changes invalidate population freshness"
     );
 }
+
+#[test]
+fn rust_forced_selective_entry_refresh_keeps_population_manifest_current_regression() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    let lib = tmp.path().join("src").join("lib.rs");
+    fs::write(&lib, "pub fn lib() {}\n").unwrap();
+    let selector = "test_lib".to_string();
+    let coverage = |lines| RustLineCoverage {
+        files: BTreeMap::from([(lib.to_string_lossy().to_string(), lines)]),
+    };
+    write_test_entry(
+        tmp.path(),
+        "selected",
+        &selector,
+        TestStatus::Passed,
+        coverage(BTreeSet::from([1])),
+    );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+    write_rust_population_manifest_for_args(tmp.path(), std::slice::from_ref(&selector), &[])
+        .unwrap();
+    assert!(rust_population_manifest_is_current_for_args(
+        tmp.path(),
+        std::slice::from_ref(&selector),
+        &[],
+    ));
+
+    write_test_entry(
+        tmp.path(),
+        "selected",
+        &selector,
+        TestStatus::Passed,
+        coverage(BTreeSet::from([1, 2])),
+    );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+
+    assert!(
+        rust_population_manifest_is_current_for_args(
+            tmp.path(),
+            std::slice::from_ref(&selector),
+            &[],
+        ),
+        "refreshing a selective Rust coverage entry must not stale the full-universe manifest"
+    );
+}

@@ -74,6 +74,10 @@ impl RustModule {
             prior_failures: Vec::new(),
         }
     }
+
+    pub(crate) fn population_manifest_selectors(&self) -> Result<Vec<String>, String> {
+        enumerate_workspace_rust_selectors(&self.repo_root, &self.ignore)
+    }
 }
 
 impl LanguagePlanner for RustModule {

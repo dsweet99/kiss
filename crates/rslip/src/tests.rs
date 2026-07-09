@@ -190,6 +190,12 @@ fn builds_pytest_runner_request_with_runtime_env_and_artifact() {
         runner_req.env["RSLIP_SOURCE_ROOT"],
         tmp.path().to_string_lossy()
     );
+    let testmon_datafile = PathBuf::from(&runner_req.env["TESTMON_DATAFILE"]);
+    assert!(testmon_datafile.starts_with(req.cache_root.join("testmon")));
+    assert_eq!(
+        testmon_datafile.extension().and_then(|ext| ext.to_str()),
+        Some("testmondata")
+    );
     assert_eq!(
         runner_req.artifacts[0].name,
         runtime::COVERAGE_ARTIFACT.to_string()

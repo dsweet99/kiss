@@ -1,8 +1,6 @@
 use std::time::Instant;
 
-use crate::test_runner::coverage_decision::{
-    LanguagePlanner, LanguageTestModule, RunContext,
-};
+use crate::test_runner::coverage_decision::{LanguagePlanner, LanguageTestModule, RunContext};
 use crate::test_runner::runners::SelectorExecutionSummary;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,7 +23,7 @@ pub(super) fn execution_phase(
 ) -> Result<ExecutionPhase, String> {
     if module.population_required(ctx) {
         let language = LanguagePlanner::language(module);
-        let selectors = LanguagePlanner::discover_universe(module)?
+        let mut selectors: Vec<_> = LanguagePlanner::discover_universe(module)?
             .into_iter()
             .map(|selector| {
                 assert_eq!(
@@ -35,6 +33,9 @@ pub(super) fn execution_phase(
                 selector.id
             })
             .collect();
+        selectors.extend(module.selective_selectors(ctx));
+        selectors.sort();
+        selectors.dedup();
         return Ok(ExecutionPhase::Population(selectors));
     }
     let selectors = module.selective_selectors(ctx);

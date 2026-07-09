@@ -114,10 +114,15 @@ impl LanguageExecutor for RustModule {
         Ok(())
     }
 
-    fn write_manifest(&self, selectors: &[String], ctx: &RunContext<'_, '_>) -> Result<(), String> {
+    fn write_manifest(
+        &self,
+        _selectors: &[String],
+        ctx: &RunContext<'_, '_>,
+    ) -> Result<(), String> {
+        let selectors = self.population_manifest_selectors()?;
         write_rust_population_manifest_for_args(
             &ctx.planned.repo_root,
-            selectors,
+            &selectors,
             ctx.options.extra,
         )
     }

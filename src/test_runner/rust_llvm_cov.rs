@@ -1,11 +1,11 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 
 use rust_llvm_cov_runner::{
     CargoLlvmCovRunRequest, RustCovCacheStatus, RustLlvmCov, RustLlvmCovError, RustLlvmCovOutcome,
-    RustLlvmCovRequest, build_llvm_cov_argv, subprocess_cargo_llvm_cov_runner,
+    RustLlvmCovRequest, build_llvm_cov_argv, cleanup_surplus_rust_cov_worker_slots,
+    subprocess_cargo_llvm_cov_runner,
 };
 
 use super::last_status::{record_statuses, rust_last_status_identity};
@@ -158,28 +158,8 @@ fn cleanup_surplus_worker_slots(reqs: &[RustLlvmCovRequest], jobs: usize) {
         cache_roots.push(req.cache_root.clone());
     }
     for cache_root in cache_roots {
-        let workers_root = cache_root.join("workers");
-        let Ok(entries) = fs::read_dir(workers_root) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if !file_type.is_dir() {
-                continue;
-            }
-            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-                continue;
-            };
-            let Some(slot_text) = name.strip_prefix("slot-") else {
-                continue;
-            };
-            let should_remove = slot_text.parse::<usize>().map_or(true, |slot| slot >= jobs);
-            if should_remove {
-                let _ = fs::remove_dir_all(entry.path());
-            }
-        }
+        cleanup_surplus_rust_cov_worker_slots(&cache_root, jobs)
+            .expect("coordinated rust llvm-cov worker cleanup failed");
     }
 }
 

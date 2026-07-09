@@ -5,13 +5,18 @@
 #![allow(clippy::must_use_candidate)]
 
 mod cargo_runner;
+mod file_lock;
+mod finalize;
 mod llvm_cov_json;
 mod rust_cov_cache;
+mod worker;
 
 #[cfg(test)]
 mod cargo_runner_test;
 #[cfg(test)]
 mod lib_test;
+#[cfg(test)]
+mod process_race_test;
 #[cfg(test)]
 mod rust_cov_cache_test;
 #[cfg(test)]
@@ -27,12 +32,18 @@ pub use cargo_runner::{
     CargoLlvmCovRunError, CargoLlvmCovRunOutcome, CargoLlvmCovRunRequest, CargoLlvmCovRunner,
     subprocess_cargo_llvm_cov_runner,
 };
-use llvm_cov_json::parse_llvm_cov_json_file;
+use finalize::{finalize_run, rust_cov_artifact_path};
 use rpytest_runner::TestStatus;
-use rust_cov_cache::{
-    RustCovCacheEntry, load_rust_cov_cache_entry, rust_cov_fingerprint, store_rust_cov_cache_entry,
-};
+use rust_cov_cache::{RustCovCacheEntry, load_rust_cov_cache_entry, rust_cov_fingerprint};
 use serde::{Deserialize, Serialize};
+use worker::{
+    cleanup_legacy_worker_dirs, lock_legacy_cleanup, lock_selector, lock_worker,
+    prepare_worker_slot, rust_cov_worker_slot_root, rust_cov_worker_tmp_root,
+};
+
+pub use worker::{
+    RustWorkerCleanupReport, cleanup_surplus_rust_cov_worker_slots, rust_cov_cache_tmp_parent,
+};
 
 const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v1";
 
@@ -109,6 +120,10 @@ pub enum RustLlvmCovError {
     Runner(CargoLlvmCovRunError),
     InvalidRequest(String),
     MissingArtifact(PathBuf),
+    Composite {
+        primary: Box<RustLlvmCovError>,
+        finalization: Vec<RustLlvmCovError>,
+    },
 }
 
 impl From<io::Error> for RustLlvmCovError {
@@ -151,54 +166,28 @@ impl RustLlvmCov {
             return Ok(rust_cov_outcome_from_cache(entry));
         }
 
-        cleanup_legacy_worker_dirs(&req.cache_root)?;
-        let worker_root = prepare_worker_slot(&req.cache_root, req.worker_slot)?;
-        let artifact_path = req
-            .cache_root
-            .join("artifacts")
-            .join(format!("{fingerprint}.json"));
+        #[cfg(test)]
+        worker::wait_at_unlocked_miss_hook()?;
+
+        let _selector_guard = lock_selector(&req.cache_root, &fingerprint)?;
+        if !req.force_rerun
+            && let Some(entry) = load_rust_cov_cache_entry(&req.cache_root, &fingerprint)
+        {
+            return Ok(rust_cov_outcome_from_cache(entry));
+        }
+        {
+            let _legacy_guard = lock_legacy_cleanup(&req.cache_root)?;
+            cleanup_legacy_worker_dirs(&req.cache_root)?;
+        }
+        let _worker_guard = lock_worker(&req.cache_root, req.worker_slot)?;
+        prepare_worker_slot(&req.cache_root, req.worker_slot)?;
+        let artifact_path = rust_cov_artifact_path(&req.cache_root, &fingerprint);
         if let Some(parent) = artifact_path.parent() {
             fs::create_dir_all(parent)?;
         }
         let run_req = build_cargo_runner_request(&req, &artifact_path);
-        let run = match self.runner.run_one(run_req) {
-            Ok(run) => run,
-            Err(err) => {
-                let _ = cleanup_worker_slot_transients(&worker_root);
-                return Err(err.into());
-            }
-        };
-        let coverage = if run.status == TestStatus::Passed {
-            match parse_llvm_cov_json_file(&run.artifact_path, &req.source_root) {
-                Ok(coverage) => coverage,
-                Err(err) => {
-                    let _ = cleanup_worker_slot_transients(&worker_root);
-                    return Err(err);
-                }
-            }
-        } else {
-            RustLineCoverage {
-                files: BTreeMap::new(),
-            }
-        };
-        let outcome = RustLlvmCovOutcome {
-            selector: run.selector,
-            status: run.status,
-            exit_code: run.exit_code,
-            duration: run.duration,
-            coverage,
-            cache_status: RustCovCacheStatus::MissStored,
-            stdout: Some(run.stdout),
-            stderr: Some(run.stderr),
-        };
-        store_rust_cov_cache_entry(
-            &req.cache_root,
-            &fingerprint,
-            &RustCovCacheEntry::from(&outcome),
-        )?;
-        let _ = fs::remove_file(&artifact_path);
-        let _ = cleanup_worker_slot_transients(&worker_root);
-        Ok(outcome)
+        let run = self.runner.run_one(run_req).map_err(RustLlvmCovError::from);
+        finalize_run(&req, &fingerprint, run)
     }
 }
 
@@ -265,65 +254,6 @@ fn rust_cov_outcome_from_cache(entry: RustCovCacheEntry) -> RustLlvmCovOutcome {
         stdout: None,
         stderr: None,
     }
-}
-
-fn rust_cov_worker_slot_root(cache_root: &Path, worker_slot: usize) -> PathBuf {
-    cache_root
-        .join("workers")
-        .join(format!("slot-{worker_slot}"))
-}
-
-fn rust_cov_worker_tmp_root(cache_root: &Path, worker_slot: usize) -> PathBuf {
-    let stable_cache_name: String = cache_root
-        .to_string_lossy()
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
-        .collect();
-    std::env::temp_dir()
-        .join("kiss-rust-llvm-cov")
-        .join(stable_cache_name)
-        .join(format!("slot-{worker_slot}"))
-}
-
-fn cleanup_legacy_worker_dirs(cache_root: &Path) -> io::Result<()> {
-    let workers_root = cache_root.join("workers");
-    let Ok(entries) = fs::read_dir(&workers_root) else {
-        return Ok(());
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let is_legacy_dir = entry.file_type().is_ok_and(|file_type| file_type.is_dir())
-            && !entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| name.starts_with("slot-"));
-        if is_legacy_dir {
-            let _ = fs::remove_dir_all(path);
-        }
-    }
-    Ok(())
-}
-
-fn prepare_worker_slot(cache_root: &Path, worker_slot: usize) -> io::Result<PathBuf> {
-    let worker_root = rust_cov_worker_slot_root(cache_root, worker_slot);
-    fs::create_dir_all(&worker_root)?;
-    cleanup_worker_slot_transients(&worker_root)?;
-    Ok(worker_root)
-}
-
-fn cleanup_worker_slot_transients(worker_root: &Path) -> io::Result<()> {
-    for name in ["profile", "tmp"] {
-        let path = worker_root.join(name);
-        let Ok(metadata) = fs::symlink_metadata(&path) else {
-            continue;
-        };
-        if metadata.is_dir() {
-            let _ = fs::remove_dir_all(&path);
-        } else {
-            let _ = fs::remove_file(&path);
-        }
-    }
-    Ok(())
 }
 
 fn validate_rust_cov_request(req: &RustLlvmCovRequest) -> Result<(), RustLlvmCovError> {

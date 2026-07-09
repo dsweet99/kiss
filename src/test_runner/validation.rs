@@ -180,18 +180,28 @@ pub(crate) fn validation_report(
 ) -> Result<ValidationReport, String> {
     let include_python = lang_filter != Some(Language::Rust);
     let include_rust = lang_filter != Some(Language::Python);
-    let full_python = if include_python {
+    let mut full_python: BTreeSet<String> = if include_python {
         runners::enumerate_workspace_python_selectors(&planned.repo_root, &planned.ignore)?
+            .into_iter()
+            .collect()
     } else {
-        Vec::new()
+        BTreeSet::new()
     };
-    let full_rust = if include_rust {
+    let mut full_rust: BTreeSet<String> = if include_rust {
         runners::enumerate_workspace_rust_selectors(&planned.repo_root, &planned.ignore)?
+            .into_iter()
+            .collect()
     } else {
-        Vec::new()
+        BTreeSet::new()
     };
     let mut selected_python: BTreeSet<String> = planned.py_sel.iter().cloned().collect();
     let mut selected_rust: BTreeSet<String> = planned.rs_sel.iter().cloned().collect();
+    if include_python {
+        full_python.extend(selected_python.iter().cloned());
+    }
+    if include_rust {
+        full_rust.extend(selected_rust.iter().cloned());
+    }
     let python_population_required = planned.python_population_required;
     let rust_population_required = planned.rust_population_required;
     if python_population_required {

@@ -274,5 +274,9 @@ mod python_coverage_index_witness_test;
 mod runners_test;
 
 #[cfg(test)]
+#[path = "runners_workspace_test.rs"]
+mod runners_workspace_test;
+
+#[cfg(test)]
 #[path = "runners_request_test.rs"]
 mod runners_request_test;

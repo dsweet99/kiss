@@ -239,6 +239,40 @@ def test_value():\n    assert value() == 1\n",
 }
 
 #[test]
+fn validation_report_counts_planned_selectors_in_full_universe() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    std::fs::create_dir(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
+    let planned = PlannedSelectors {
+        repo_root: tmp.path().to_path_buf(),
+        py_sel: Vec::new(),
+        rs_sel: vec!["external_changed_test".to_string()],
+        python_population_required: false,
+        rust_population_required: false,
+        rust_source_paths: Vec::new(),
+        python_prior_failure_selectors: Vec::new(),
+        rust_prior_failure_selectors: Vec::new(),
+        coverage_decision_engine_used: true,
+        ignore: Vec::new(),
+    };
+
+    let report = super::validation_report(&planned, Some(Language::Rust)).unwrap();
+
+    assert_eq!(report.selected_rust, 1);
+    assert_eq!(report.full_rust, 2);
+    assert_eq!(report.selection_ratio(), Some(0.5));
+}
+
+#[test]
 fn run_test_rejects_non_git_directory_quickly() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     let tmp = tempfile::TempDir::new().unwrap();

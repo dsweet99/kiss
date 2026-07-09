@@ -67,53 +67,6 @@ fn enumerate_tests_in_changed_files_errors_on_bad_rs() {
 }
 
 #[test]
-fn enumerate_workspace_rust_selectors_finds_cfg_test_modules() {
-    let tmp = TempDir::new().unwrap();
-    fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    fs::create_dir(tmp.path().join("src")).unwrap();
-    fs::write(
-        tmp.path().join("src").join("lib.rs"),
-        r#"
-pub fn value() -> u32 { 1 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn gets_value() {
-        assert_eq!(super::value(), 1);
-    }
-}
-"#,
-    )
-    .unwrap();
-
-    let selectors = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap();
-
-    assert_eq!(selectors, vec!["tests::gets_value".to_string()]);
-}
-
-#[test]
-fn enumerate_workspace_rust_selectors_fails_fast_on_invalid_syntax() {
-    let tmp = TempDir::new().unwrap();
-    fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    fs::create_dir(tmp.path().join("src")).unwrap();
-    fs::write(tmp.path().join("src").join("lib.rs"), "fn broken(\n").unwrap();
-
-    let err = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap_err();
-
-    assert!(err.contains("failed to parse Rust workspace file"));
-    assert!(err.contains("lib.rs"));
-}
-
-#[test]
 fn combined_selectors_uses_existing_rust_index_for_source_changes() {
     let tmp = TempDir::new().unwrap();
     let src = tmp.path().join("src");
@@ -194,7 +147,7 @@ fn combined_selectors_repopulates_when_rust_test_args_change() {
     )
     .unwrap();
 
-    assert!(plan.rust_selectors.is_empty());
+    assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
     assert!(plan.rust_population_required);
 }
 
@@ -293,8 +246,47 @@ fn combined_selectors_requires_complete_rust_population_manifest() {
     )
     .unwrap();
 
-    assert!(plan.rust_selectors.is_empty());
+    assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
     assert!(plan.rust_population_required);
+}
+
+#[test]
+fn combined_selectors_carries_changed_rust_tests_into_population_plan() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    let tests = tmp.path().join("tests");
+    fs::create_dir(&src).unwrap();
+    fs::create_dir(&tests).unwrap();
+    let lib = src.join("lib.rs");
+    let changed_test = tests.join("changed_test.rs");
+    fs::write(
+        &lib,
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
+    fs::write(&changed_test, "#[test]\nfn changed_extra() {}\n").unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        std::slice::from_ref(&changed_test),
+        &BTreeMap::new(),
+        &[],
+        None,
+        &[changed_test
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()],
+    )
+    .unwrap();
+
+    assert!(plan.rust_population_required);
+    assert!(
+        plan.rust_selectors
+            .contains(&"tests::gets_value".to_string())
+    );
+    assert!(plan.rust_selectors.contains(&"changed_extra".to_string()));
 }
 
 #[test]
