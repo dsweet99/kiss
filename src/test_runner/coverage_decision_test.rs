@@ -1,19 +1,12 @@
 use super::{
-    ChangedDiff, ChangedSource, CoverageBacker, CoverageDecisionEngine, CoverageFreshness,
-    PopulationPlan, SelectionDecision, TestSelector,
+    ChangedDiff, ChangedSource, CoverageDecisionEngine, CoverageFreshness, LanguagePlanner,
+    PopulationPlan, SelectionDecision, TestSelector, full_population_plan,
 };
 use kiss::Language;
 use std::cell::Cell;
 use std::rc::Rc;
 
-type DiscoverFn = Box<dyn Fn() -> Result<Vec<TestSelector>, String>>;
-type ChangedTestsFn = Box<dyn Fn(&ChangedDiff) -> Vec<TestSelector>>;
-type PriorFailuresFn = Box<dyn Fn() -> Vec<TestSelector>>;
-type FreshnessFn = Box<dyn Fn(&[TestSelector]) -> Result<CoverageFreshness, String>>;
-type PopulationFn = Box<dyn Fn(&[TestSelector]) -> PopulationPlan>;
-type SelectFn = Box<dyn Fn() -> Result<SelectionDecision, String>>;
-
-struct FakeBacker {
+struct FakePlanner {
     language: Language,
     universe: Vec<TestSelector>,
     changed_tests: Vec<TestSelector>,
@@ -25,7 +18,7 @@ struct FakeBacker {
     select_calls: Rc<Cell<usize>>,
 }
 
-impl FakeBacker {
+impl FakePlanner {
     fn fresh(language: Language, selected: Vec<TestSelector>) -> (Self, Rc<Cell<usize>>) {
         let select_calls = Rc::new(Cell::new(0));
         (
@@ -44,72 +37,58 @@ impl FakeBacker {
         )
     }
 
-    fn into_backer(self) -> CoverageBacker {
-        let language = self.language;
-        CoverageBacker::new(
-            language,
-            fake_discover(self.universe.clone()),
-            fake_changed_tests(language, self.changed_tests),
-            fake_prior_failures(self.prior_failures),
-            fake_freshness(self.universe.clone(), self.freshness),
-            fake_population(self.universe, self.population),
-            fake_select(
-                Rc::clone(&self.select_calls),
-                self.selected,
-                self.selection_complete,
-            ),
-        )
+    fn boxed(self) -> Box<dyn LanguagePlanner> {
+        Box::new(self)
     }
 }
 
-fn fake_discover(universe: Vec<TestSelector>) -> DiscoverFn {
-    Box::new(move || Ok(universe.clone()))
-}
+impl LanguagePlanner for FakePlanner {
+    fn language(&self) -> Language {
+        self.language
+    }
 
-fn fake_changed_tests(language: Language, changed_tests: Vec<TestSelector>) -> ChangedTestsFn {
-    Box::new(move |diff: &ChangedDiff| {
-        let changed_languages = diff
-            .sources
-            .iter()
-            .map(|source| source.language)
-            .collect::<Vec<_>>();
-        assert!(changed_languages.contains(&language));
-        changed_tests.clone()
-    })
-}
+    fn discover_universe(&self) -> Result<Vec<TestSelector>, String> {
+        Ok(self.universe.clone())
+    }
 
-fn fake_prior_failures(prior_failures: Vec<TestSelector>) -> PriorFailuresFn {
-    Box::new(move || prior_failures.clone())
-}
-
-fn fake_freshness(universe: Vec<TestSelector>, freshness: CoverageFreshness) -> FreshnessFn {
-    Box::new(move |actual: &[TestSelector]| {
-        assert_eq!(actual, universe.as_slice());
-        Ok(freshness)
-    })
-}
-
-fn fake_population(universe: Vec<TestSelector>, population: Vec<TestSelector>) -> PopulationFn {
-    Box::new(move |actual: &[TestSelector]| {
-        assert_eq!(actual, universe.as_slice());
-        PopulationPlan {
-            selectors: population.clone(),
+    fn changed_tests(&self, diff: &ChangedDiff) -> Vec<TestSelector> {
+        if !diff.sources.is_empty() {
+            assert!(
+                diff.sources
+                    .iter()
+                    .any(|source| source.language == self.language)
+            );
         }
-    })
-}
+        self.changed_tests.clone()
+    }
 
-fn fake_select(
-    select_calls: Rc<Cell<usize>>,
-    selected: Vec<TestSelector>,
-    complete: bool,
-) -> SelectFn {
-    Box::new(move || {
-        select_calls.set(select_calls.get() + 1);
+    fn prior_failures(&self) -> Vec<TestSelector> {
+        self.prior_failures.clone()
+    }
+
+    fn freshness(&self, universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
+        assert_eq!(universe, self.universe.as_slice());
+        Ok(self.freshness)
+    }
+
+    fn population_plan(&self, universe: &[TestSelector]) -> PopulationPlan {
+        assert_eq!(universe, self.universe.as_slice());
+        PopulationPlan {
+            selectors: self.population.clone(),
+        }
+    }
+
+    fn select(&self) -> Result<SelectionDecision, String> {
+        self.select_calls.set(self.select_calls.get() + 1);
         Ok(SelectionDecision {
-            selectors: selected.clone(),
-            complete,
+            selectors: self.selected.clone(),
+            complete: self.selection_complete,
         })
-    })
+    }
+
+    fn manifest_env_allowlist(&self) -> &'static [&'static str] {
+        &[]
+    }
 }
 
 fn selector(language: Language, id: &str) -> TestSelector {
@@ -120,157 +99,51 @@ fn source(language: Language, path: &str) -> ChangedSource {
     ChangedSource::new(language, path)
 }
 
-struct ForwardingFixture {
-    backer: CoverageBacker,
-    universe: Vec<TestSelector>,
-    changed_test: TestSelector,
-    selected: TestSelector,
-    changed_seen: Rc<Cell<bool>>,
-    freshness_seen: Rc<Cell<bool>>,
-    population_seen: Rc<Cell<bool>>,
-    select_seen: Rc<Cell<bool>>,
-}
-
-fn forwarding_fixture() -> ForwardingFixture {
-    let universe = vec![selector(Language::Python, "tests/test_app.py::test_app")];
-    let changed_test = selector(Language::Python, "tests/test_app.py::test_changed");
-    let selected = selector(Language::Python, "tests/test_app.py::test_selected");
-    let changed_seen = Rc::new(Cell::new(false));
-    let freshness_seen = Rc::new(Cell::new(false));
-    let population_seen = Rc::new(Cell::new(false));
-    let select_seen = Rc::new(Cell::new(false));
-    let backer = CoverageBacker::new(
-        Language::Python,
-        discover_callback(universe.clone()),
-        changed_tests_callback(Rc::clone(&changed_seen), changed_test.clone()),
-        prior_failures_callback(),
-        freshness_callback(Rc::clone(&freshness_seen), universe.clone()),
-        population_callback(Rc::clone(&population_seen), universe.clone()),
-        select_callback(Rc::clone(&select_seen), selected.clone()),
-    );
-    ForwardingFixture {
-        backer,
-        universe,
-        changed_test,
-        selected,
-        changed_seen,
-        freshness_seen,
-        population_seen,
-        select_seen,
-    }
-}
-
-fn discover_callback(universe: Vec<TestSelector>) -> DiscoverFn {
-    Box::new(move || Ok(universe.clone()))
-}
-
-fn changed_tests_callback(seen: Rc<Cell<bool>>, changed_test: TestSelector) -> ChangedTestsFn {
-    Box::new(move |diff: &ChangedDiff| {
-        seen.set(true);
-        assert_eq!(diff.sources_for_language(Language::Python).len(), 1);
-        vec![changed_test.clone()]
-    })
-}
-
-fn prior_failures_callback() -> PriorFailuresFn {
-    Box::new(Vec::new)
-}
-
-fn freshness_callback(seen: Rc<Cell<bool>>, universe: Vec<TestSelector>) -> FreshnessFn {
-    Box::new(move |actual: &[TestSelector]| {
-        seen.set(true);
-        assert_eq!(actual, universe.as_slice());
-        Ok(CoverageFreshness::Fresh)
-    })
-}
-
-fn population_callback(seen: Rc<Cell<bool>>, universe: Vec<TestSelector>) -> PopulationFn {
-    Box::new(move |actual: &[TestSelector]| {
-        seen.set(true);
-        assert_eq!(actual, universe.as_slice());
-        PopulationPlan {
-            selectors: actual.to_vec(),
-        }
-    })
-}
-
-fn select_callback(seen: Rc<Cell<bool>>, selected: TestSelector) -> SelectFn {
-    Box::new(move || {
-        seen.set(true);
-        Ok(SelectionDecision {
-            selectors: vec![selected.clone()],
-            complete: true,
-        })
-    })
-}
-
 #[test]
-fn coverage_backer_new_sets_language_and_callbacks() {
+fn fake_planner_exposes_trait_policy() {
     let universe = vec![selector(Language::Rust, "crate::tests::works")];
-    let backer = CoverageBacker::new(
-        Language::Rust,
-        Box::new({
-            let universe = universe.clone();
-            move || Ok(universe.clone())
-        }),
-        Box::new(|_diff: &ChangedDiff| Vec::new()),
-        Box::new(Vec::new),
-        Box::new(|_universe: &[TestSelector]| Ok(CoverageFreshness::Fresh)),
-        Box::new(|_universe: &[TestSelector]| PopulationPlan::default()),
-        Box::new(|| Ok(SelectionDecision::default())),
-    );
+    let planner = FakePlanner {
+        language: Language::Rust,
+        universe: universe.clone(),
+        changed_tests: Vec::new(),
+        prior_failures: Vec::new(),
+        freshness: CoverageFreshness::Fresh,
+        population: Vec::new(),
+        selected: Vec::new(),
+        selection_complete: true,
+        select_calls: Rc::new(Cell::new(0)),
+    };
 
-    assert_eq!(backer.language(), Language::Rust);
-    assert_eq!(backer.discover_test_universe().unwrap(), universe);
-    assert_eq!(backer.freshness(&[]).unwrap(), CoverageFreshness::Fresh);
+    assert_eq!(planner.language(), Language::Rust);
+    assert_eq!(planner.discover_universe().unwrap(), universe);
+    assert_eq!(
+        planner.freshness(&planner.universe).unwrap(),
+        CoverageFreshness::Fresh
+    );
     assert!(
-        backer
+        planner
             .changed_tests(&ChangedDiff::new(Vec::new()))
             .is_empty()
     );
 }
 
 #[test]
-fn coverage_backer_forwards_to_callbacks() {
-    let fixture = forwarding_fixture();
-    let diff = ChangedDiff::new(vec![source(Language::Python, "app.py")]);
-    assert_eq!(fixture.backer.language(), Language::Python);
-    assert_eq!(
-        fixture.backer.discover_test_universe().unwrap(),
-        fixture.universe
-    );
-    assert_eq!(
-        fixture.backer.changed_tests(&diff),
-        vec![fixture.changed_test]
-    );
-    assert!(fixture.backer.prior_failures().is_empty());
-    assert_eq!(
-        fixture.backer.freshness(&fixture.universe).unwrap(),
-        CoverageFreshness::Fresh
-    );
-    assert_eq!(
-        fixture.backer.population_plan(&fixture.universe).selectors,
-        fixture.universe
-    );
-    assert_eq!(
-        fixture.backer.select().unwrap(),
-        SelectionDecision {
-            selectors: vec![fixture.selected],
-            complete: true
-        }
-    );
-    assert!(fixture.changed_seen.get());
-    assert!(fixture.freshness_seen.get());
-    assert!(fixture.population_seen.get());
-    assert!(fixture.select_seen.get());
+#[allow(non_snake_case)]
+fn CoverageFreshness_and_full_population_plan_contracts() {
+    let selector = selector(Language::Python, "tests/test_app.py::test_value");
+    let plan = full_population_plan(std::slice::from_ref(&selector));
+
+    assert_eq!(plan.selectors, vec![selector]);
+    assert!(!CoverageFreshness::Fresh.requires_population());
+    assert!(CoverageFreshness::Stale.requires_population());
+    assert!(CoverageFreshness::Unknown.requires_population());
 }
 
 #[test]
 fn fresh_backer_selects_affected_tests() {
-    let (backer, select_calls) =
-        FakeBacker::fresh(Language::Rust, vec![selector(Language::Rust, "b")]);
-    let backer = backer.into_backer();
-    let plan = CoverageDecisionEngine::new(vec![backer])
+    let (planner, select_calls) =
+        FakePlanner::fresh(Language::Rust, vec![selector(Language::Rust, "b")]);
+    let plan = CoverageDecisionEngine::new(vec![planner.boxed()])
         .plan(&[source(Language::Rust, "src/lib.rs")])
         .unwrap();
     assert_eq!(plan.selected, vec![selector(Language::Rust, "b")]);
@@ -281,7 +154,7 @@ fn fresh_backer_selects_affected_tests() {
 #[test]
 fn fresh_incomplete_selection_escalates_to_population() {
     let select_calls = Rc::new(Cell::new(0));
-    let backer = FakeBacker {
+    let planner = FakePlanner {
         language: Language::Python,
         universe: vec![
             selector(Language::Python, "a"),
@@ -299,7 +172,7 @@ fn fresh_incomplete_selection_escalates_to_population() {
         select_calls: Rc::clone(&select_calls),
     };
 
-    let plan = CoverageDecisionEngine::new(vec![backer.into_backer()])
+    let plan = CoverageDecisionEngine::new(vec![planner.boxed()])
         .plan(&[source(Language::Python, "src/app.py")])
         .unwrap();
 
@@ -320,7 +193,7 @@ fn fresh_incomplete_selection_escalates_to_population() {
 #[test]
 fn stale_backer_returns_population_plan_without_selecting() {
     let select_calls = Rc::new(Cell::new(0));
-    let backer = FakeBacker {
+    let planner = FakePlanner {
         language: Language::Rust,
         universe: vec![selector(Language::Rust, "a"), selector(Language::Rust, "b")],
         changed_tests: vec![],
@@ -331,7 +204,7 @@ fn stale_backer_returns_population_plan_without_selecting() {
         selection_complete: true,
         select_calls: Rc::clone(&select_calls),
     };
-    let plan = CoverageDecisionEngine::new(vec![backer.into_backer()])
+    let plan = CoverageDecisionEngine::new(vec![planner.boxed()])
         .plan(&[source(Language::Rust, "src/lib.rs")])
         .unwrap();
     assert_eq!(
@@ -345,7 +218,7 @@ fn stale_backer_returns_population_plan_without_selecting() {
 #[test]
 fn unknown_freshness_returns_population_plan() {
     let select_calls = Rc::new(Cell::new(0));
-    let backer = FakeBacker {
+    let planner = FakePlanner {
         language: Language::Python,
         universe: vec![selector(Language::Python, "a")],
         changed_tests: vec![],
@@ -356,7 +229,7 @@ fn unknown_freshness_returns_population_plan() {
         selection_complete: true,
         select_calls,
     };
-    let plan = CoverageDecisionEngine::new(vec![backer.into_backer()])
+    let plan = CoverageDecisionEngine::new(vec![planner.boxed()])
         .plan(&[source(Language::Python, "src/app.py")])
         .unwrap();
     assert_eq!(plan.population, vec![selector(Language::Python, "a")]);
@@ -366,7 +239,7 @@ fn unknown_freshness_returns_population_plan() {
 #[test]
 fn changed_test_selectors_and_population_selectors_are_deduped() {
     let select_calls = Rc::new(Cell::new(0));
-    let backer = FakeBacker {
+    let planner = FakePlanner {
         language: Language::Rust,
         universe: vec![selector(Language::Rust, "a"), selector(Language::Rust, "b")],
         changed_tests: vec![selector(Language::Rust, "a"), selector(Language::Rust, "a")],
@@ -377,7 +250,7 @@ fn changed_test_selectors_and_population_selectors_are_deduped() {
         selection_complete: true,
         select_calls,
     };
-    let plan = CoverageDecisionEngine::new(vec![backer.into_backer()])
+    let plan = CoverageDecisionEngine::new(vec![planner.boxed()])
         .plan(&[source(Language::Rust, "src/lib_test.rs")])
         .unwrap();
     assert_eq!(
@@ -389,17 +262,16 @@ fn changed_test_selectors_and_population_selectors_are_deduped() {
 
 #[test]
 fn multiple_language_backers_combine_without_selector_collisions() {
-    let (rust_backer, _rust_calls) =
-        FakeBacker::fresh(Language::Rust, vec![selector(Language::Rust, "same")]);
-    let (python_backer, _python_calls) =
-        FakeBacker::fresh(Language::Python, vec![selector(Language::Python, "same")]);
-    let plan =
-        CoverageDecisionEngine::new(vec![rust_backer.into_backer(), python_backer.into_backer()])
-            .plan(&[
-                source(Language::Rust, "src/lib.rs"),
-                source(Language::Python, "app.py"),
-            ])
-            .unwrap();
+    let (rust_planner, _rust_calls) =
+        FakePlanner::fresh(Language::Rust, vec![selector(Language::Rust, "same")]);
+    let (python_planner, _python_calls) =
+        FakePlanner::fresh(Language::Python, vec![selector(Language::Python, "same")]);
+    let plan = CoverageDecisionEngine::new(vec![rust_planner.boxed(), python_planner.boxed()])
+        .plan(&[
+            source(Language::Rust, "src/lib.rs"),
+            source(Language::Python, "app.py"),
+        ])
+        .unwrap();
     assert_eq!(
         plan.selected,
         vec![

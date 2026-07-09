@@ -45,7 +45,7 @@ fn force_rerun_does_not_make_rust_population_required() {
     };
 
     assert!(matches!(
-        execution_phase(&ExecutionModule::Rust, &ctx).unwrap(),
+        execution_phase(&runners::rust_backer::RustModule::for_execution(), &ctx).unwrap(),
         ExecutionPhase::Selective(_)
     ));
 }
@@ -63,7 +63,7 @@ fn rust_population_requirement_comes_from_population_paths() {
     };
 
     assert!(matches!(
-        execution_phase(&ExecutionModule::Rust, &ctx).unwrap(),
+        execution_phase(&runners::rust_backer::RustModule::for_execution(), &ctx).unwrap(),
         ExecutionPhase::Population(selectors) if selectors == vec!["crate::tests::test_population".to_string()]
     ));
 }
@@ -82,7 +82,7 @@ fn rust_dry_run_is_population_xor_selective() {
     };
 
     assert!(matches!(
-        execution_phase(&ExecutionModule::Rust, &ctx).unwrap(),
+        execution_phase(&runners::rust_backer::RustModule::for_execution(), &ctx).unwrap(),
         ExecutionPhase::Population(_)
     ));
 
@@ -93,7 +93,7 @@ fn rust_dry_run_is_population_xor_selective() {
         options: &options,
     };
     assert_eq!(
-        execution_phase(&ExecutionModule::Rust, &ctx).unwrap(),
+        execution_phase(&runners::rust_backer::RustModule::for_execution(), &ctx).unwrap(),
         ExecutionPhase::Selective(selective)
     );
 }
@@ -105,22 +105,22 @@ fn language_modules_expose_language_and_indexable_source_policy() {
     std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
     std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
 
-    assert!(language_modules::python_is_indexable_source(
-        &tmp.path().join("app.py"),
-        tmp.path()
-    ));
-    assert!(!language_modules::python_is_indexable_source(
-        Path::new("<frozen importlib>"),
-        tmp.path()
-    ));
-    assert!(language_modules::rust_is_indexable_source(
-        &tmp.path().join("src").join("lib.rs"),
-        tmp.path()
-    ));
-    assert!(!language_modules::rust_is_indexable_source(
-        Path::new(".kiss/runtime.rs"),
-        tmp.path()
-    ));
+    assert!(
+        runners::python_backer::PythonModule::for_execution()
+            .is_indexable_source(&tmp.path().join("app.py"), tmp.path())
+    );
+    assert!(
+        !runners::python_backer::PythonModule::for_execution()
+            .is_indexable_source(Path::new("<frozen importlib>"), tmp.path())
+    );
+    assert!(
+        runners::rust_backer::RustModule::for_execution()
+            .is_indexable_source(&tmp.path().join("src").join("lib.rs"), tmp.path())
+    );
+    assert!(
+        !runners::rust_backer::RustModule::for_execution()
+            .is_indexable_source(Path::new(".kiss/runtime.rs"), tmp.path())
+    );
 }
 
 #[test]
@@ -140,8 +140,12 @@ fn empty_module_runs_return_default_summaries_without_spawning() {
         language_modules::run_rust_selectors_for_module(&[], &ctx).unwrap(),
         SelectorExecutionSummary::default()
     );
-    let outcome: LanguagePhaseOutcome =
-        execute_language_phase(&ExecutionModule::Python, &ExecutionPhase::NoWork, &ctx).unwrap();
+    let outcome: LanguagePhaseOutcome = execute_language_phase(
+        &runners::python_backer::PythonModule::for_execution(),
+        &ExecutionPhase::NoWork,
+        &ctx,
+    )
+    .unwrap();
     assert_eq!(outcome.summary, SelectorExecutionSummary::default());
     assert!(matches!(outcome.phase, ExecutionPhase::NoWork));
 }

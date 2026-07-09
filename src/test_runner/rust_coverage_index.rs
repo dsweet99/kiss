@@ -15,8 +15,10 @@ pub(crate) const RUST_SELECTOR_DISCOVERY_VERSION: &str = "rust-selector-discover
 
 #[path = "rust_coverage_index/manifest.rs"]
 mod manifest;
+#[cfg(test)]
+pub(crate) use manifest::rust_population_manifest_is_current_for_args;
 pub(crate) use manifest::{
-    RUST_COVERAGE_ENV_KEYS, rust_population_manifest_is_current_for_args,
+    RUST_COVERAGE_ENV_KEYS, rust_population_manifest_is_current_for_args_with_env_keys,
     write_rust_population_manifest_for_args,
 };
 #[cfg(test)]
@@ -41,8 +43,20 @@ pub(crate) use storage::{
 
 pub(crate) type RustCoverageIndex = BTreeMap<String, BTreeSet<String>>;
 
+#[cfg(test)]
 pub(crate) fn rebuild_rust_coverage_index(repo_root: &Path) -> Result<RustCoverageIndex, String> {
-    let index = build_rust_coverage_index(repo_root)?;
+    let index = build_rust_coverage_index_with_filter(repo_root, |path, repo_root| {
+        repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
+    })?;
+    write_rust_coverage_index(repo_root, &index)?;
+    Ok(index)
+}
+
+pub(crate) fn rebuild_rust_coverage_index_with_filter(
+    repo_root: &Path,
+    is_indexable: impl Fn(&Path, &Path) -> bool,
+) -> Result<RustCoverageIndex, String> {
+    let index = build_rust_coverage_index_with_filter(repo_root, is_indexable)?;
     write_rust_coverage_index(repo_root, &index)?;
     Ok(index)
 }
@@ -183,7 +197,10 @@ fn load_entries_for_line_selection(cache_root: &Path) -> Vec<(String, RustLineCo
         .collect()
 }
 
-fn build_rust_coverage_index(repo_root: &Path) -> Result<RustCoverageIndex, String> {
+fn build_rust_coverage_index_with_filter(
+    repo_root: &Path,
+    is_indexable: impl Fn(&Path, &Path) -> bool,
+) -> Result<RustCoverageIndex, String> {
     let cache_root = rust_coverage_cache_root(repo_root);
     let mut files: RustCoverageIndex = BTreeMap::new();
     for entry_path in rust_coverage_entry_paths(&cache_root) {
@@ -194,7 +211,10 @@ fn build_rust_coverage_index(repo_root: &Path) -> Result<RustCoverageIndex, Stri
             continue;
         }
         for file in coverage.files.keys() {
-            if let Some(rel) = repo_relative_coverage_file(repo_root, file) {
+            let path = Path::new(file);
+            if is_indexable(path, repo_root) {
+                let rel = repo_relative_coverage_file(repo_root, file)
+                    .expect("indexable Rust coverage path has repo-relative form");
                 files.entry(rel).or_default().insert(selector.clone());
             }
         }

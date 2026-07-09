@@ -8,6 +8,9 @@ use rust_llvm_cov_runner::RustLineCoverage;
 use super::test_support::write_test_entry;
 use super::*;
 
+#[path = "rust_coverage_index_manifest_integration_test.rs"]
+mod manifest_integration_tests;
+
 #[test]
 fn rebuild_index_maps_covered_files_to_selectors() {
     let tmp = tempfile::tempdir().unwrap();
@@ -59,6 +62,87 @@ fn rebuild_index_maps_covered_files_to_selectors() {
     );
     assert!(rust_coverage_index_path(tmp.path()).exists());
     assert_eq!(load_current_rust_coverage_index(tmp.path()).unwrap(), index);
+}
+
+#[test]
+fn filtered_rust_rebuild_uses_supplied_indexable_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    let lib = tmp.path().join("src").join("lib.rs");
+    let ignored = tmp.path().join("src").join("ignored.rs");
+    fs::write(&lib, "pub fn lib() {}\n").unwrap();
+    fs::write(&ignored, "pub fn ignored() {}\n").unwrap();
+    write_test_entry(
+        tmp.path(),
+        "a",
+        "test_lib",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: BTreeMap::from([
+                (lib.to_string_lossy().to_string(), BTreeSet::from([1])),
+                (ignored.to_string_lossy().to_string(), BTreeSet::from([1])),
+            ]),
+        },
+    );
+
+    let index = rebuild_rust_coverage_index_with_filter(tmp.path(), |path, _repo_root| {
+        path.file_name().is_some_and(|name| name == "lib.rs")
+    })
+    .unwrap();
+
+    assert_eq!(
+        index,
+        BTreeMap::from([(
+            "src/lib.rs".to_string(),
+            BTreeSet::from(["test_lib".to_string()])
+        )])
+    );
+}
+
+#[test]
+fn rust_selection_handles_empty_missing_and_hybrid_fallback_cases() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    let lib = tmp.path().join("src").join("lib.rs");
+    let other = tmp.path().join("src").join("other.rs");
+    fs::write(&lib, "pub fn lib() {}\n").unwrap();
+    fs::write(&other, "pub fn other() {}\n").unwrap();
+
+    assert_eq!(
+        select_rust_source_selectors_from_index(tmp.path(), &[]),
+        Some(BTreeSet::new())
+    );
+    assert!(
+        select_rust_source_selectors_from_index(tmp.path(), std::slice::from_ref(&lib)).is_none()
+    );
+
+    write_test_entry(
+        tmp.path(),
+        "lib",
+        "test_lib",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+        },
+    );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+
+    assert_eq!(
+        select_rust_source_selectors_hybrid(
+            tmp.path(),
+            std::slice::from_ref(&lib),
+            &BTreeMap::new()
+        ),
+        Some(BTreeSet::from(["test_lib".to_string()]))
+    );
+    assert_eq!(
+        select_rust_source_selectors_hybrid(
+            tmp.path(),
+            &[lib.clone(), other],
+            &BTreeMap::from([(lib, BTreeSet::from([1]))])
+        ),
+        Some(BTreeSet::from(["test_lib".to_string()]))
+    );
 }
 
 #[test]
@@ -306,60 +390,4 @@ fn stale_index_is_not_loaded() {
     .unwrap();
 
     assert!(load_current_rust_coverage_index(tmp.path()).is_none());
-}
-
-#[test]
-fn population_manifest_requires_matching_selectors_inputs_and_entries() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::create_dir_all(tmp.path().join("src")).unwrap();
-    let lib = tmp.path().join("src").join("lib.rs");
-    fs::write(&lib, "pub fn lib() {}\n").unwrap();
-    write_test_entry(
-        tmp.path(),
-        "a",
-        "test_lib",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
-        },
-    );
-
-    assert!(!rust_population_manifest_is_current_for_args(
-        tmp.path(),
-        &["test_lib".to_string()],
-        &[],
-    ));
-    write_rust_population_manifest_for_args(tmp.path(), &["test_lib".to_string()], &[]).unwrap();
-    assert!(rust_population_manifest_is_current_for_args(
-        tmp.path(),
-        &["test_lib".to_string()],
-        &[],
-    ));
-    assert!(!rust_population_manifest_is_current_for_args(
-        tmp.path(),
-        &["other_test".to_string()],
-        &[],
-    ));
-
-    fs::write(&lib, "pub fn lib() {}\npub fn changed() {}\n").unwrap();
-    assert!(
-        !rust_population_manifest_is_current_for_args(tmp.path(), &["test_lib".to_string()], &[],),
-        "source changes invalidate population freshness"
-    );
-
-    fs::write(&lib, "pub fn lib() {}\n").unwrap();
-    write_rust_population_manifest_for_args(tmp.path(), &["test_lib".to_string()], &[]).unwrap();
-    write_test_entry(
-        tmp.path(),
-        "b",
-        "test_other",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
-        },
-    );
-    assert!(
-        !rust_population_manifest_is_current_for_args(tmp.path(), &["test_lib".to_string()], &[],),
-        "cache entry changes invalidate the manifest"
-    );
 }

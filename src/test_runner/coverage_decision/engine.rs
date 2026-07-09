@@ -1,16 +1,14 @@
 use std::collections::BTreeSet;
 
-use super::backer::CoverageBacker;
 use super::language_module::LanguagePlanner;
 use super::types::{ChangedDiff, ChangedSource, CoverageDecisionPlan};
 
 pub(crate) struct CoverageDecisionEngine {
-    planners: Vec<LanguagePlanner>,
+    planners: Vec<Box<dyn LanguagePlanner>>,
 }
 
 impl CoverageDecisionEngine {
-    pub(crate) fn new(backers: Vec<CoverageBacker>) -> Self {
-        let planners = backers.into_iter().map(LanguagePlanner::new).collect();
+    pub(crate) fn new(planners: Vec<Box<dyn LanguagePlanner>>) -> Self {
         Self { planners }
     }
 

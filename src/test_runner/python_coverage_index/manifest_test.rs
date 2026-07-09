@@ -44,11 +44,45 @@ fn python_coverage_env_tracks_only_pythonpath() {
     let _hashseed = EnvGuard::set("PYTHONHASHSEED", "123");
     let _dontwrite = EnvGuard::set("PYTHONDONTWRITEBYTECODE", "1");
 
-    let env = relevant_python_coverage_env();
+    let env = relevant_python_coverage_env(PYTHON_COVERAGE_ENV_KEYS);
 
     assert_eq!(
         env,
         BTreeMap::from([("PYTHONPATH".to_string(), "src".to_string())])
+    );
+}
+
+#[test]
+fn python_manifest_current_with_env_keys_uses_supplied_allowlist() {
+    let _lock = crate::cwd_test_lock::lock();
+    let _pythonpath = EnvGuard::set("PYTHONPATH", "src");
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
+    let selector = "tests/test_app.py::test_value".to_string();
+    let identity =
+        current_python_population_manifest_identity_with_env_keys(tmp.path(), &[], &[]).unwrap();
+    write_python_population_manifest_with_identity(
+        tmp.path(),
+        std::slice::from_ref(&selector),
+        &identity,
+    )
+    .unwrap();
+
+    assert!(
+        python_population_manifest_is_current_for_args_with_env_keys(
+            tmp.path(),
+            std::slice::from_ref(&selector),
+            &[],
+            &[],
+        )
+    );
+    assert!(
+        !python_population_manifest_is_current_for_args_with_env_keys(
+            tmp.path(),
+            std::slice::from_ref(&selector),
+            &[],
+            PYTHON_COVERAGE_ENV_KEYS,
+        )
     );
 }
 

@@ -166,3 +166,84 @@ fn selector_path_and_hash_helpers_are_referenced_from_external_tests() {
         python_fnv1a64(0xcbf2_9ce4_8422_2325, b"b")
     );
 }
+
+#[test]
+fn filtered_python_rebuild_uses_supplied_indexable_policy() {
+    let tmp = tempfile::tempdir().unwrap();
+    let app = tmp.path().join("app.py");
+    let ignored = tmp.path().join("ignored.py");
+    fs::write(&app, "def value():\n    return 1\n").unwrap();
+    fs::write(&ignored, "VALUE = 2\n").unwrap();
+    write_entry(
+        tmp.path(),
+        "a",
+        "tests/test_app.py::test_value",
+        LineCoverage {
+            files: BTreeMap::from([
+                (app.to_string_lossy().to_string(), BTreeSet::from([1])),
+                (ignored.to_string_lossy().to_string(), BTreeSet::from([1])),
+            ]),
+        },
+    );
+
+    let index = rebuild_python_coverage_index_with_filter(tmp.path(), |path, _repo_root| {
+        path.file_name().is_some_and(|name| name == "app.py")
+    })
+    .unwrap();
+
+    assert_eq!(
+        index,
+        BTreeMap::from([(
+            "app.py".to_string(),
+            BTreeSet::from(["tests/test_app.py::test_value".to_string()])
+        )])
+    );
+}
+
+#[test]
+fn python_selection_handles_empty_missing_and_hybrid_fallback_cases() {
+    let tmp = tempfile::tempdir().unwrap();
+    let app = tmp.path().join("app.py");
+    let other = tmp.path().join("other.py");
+    fs::write(&app, "def value():\n    return 1\n").unwrap();
+    fs::write(&other, "VALUE = 2\n").unwrap();
+
+    assert_eq!(
+        select_python_source_selectors_from_index(tmp.path(), &[]),
+        Some(BTreeSet::new())
+    );
+    assert!(
+        select_python_source_selectors_from_index(tmp.path(), std::slice::from_ref(&app)).is_none()
+    );
+
+    write_entry(
+        tmp.path(),
+        "app",
+        "tests/test_app.py::test_value",
+        LineCoverage {
+            files: BTreeMap::from([(app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+        },
+    );
+    rebuild_python_coverage_index(tmp.path()).unwrap();
+
+    assert_eq!(
+        select_python_source_selectors_hybrid(
+            tmp.path(),
+            std::slice::from_ref(&app),
+            &BTreeMap::new()
+        ),
+        Some(BTreeSet::from(
+            ["tests/test_app.py::test_value".to_string()]
+        ))
+    );
+    assert_eq!(
+        select_python_source_selectors_hybrid(
+            tmp.path(),
+            &[app.clone(), other],
+            &BTreeMap::from([(app, BTreeSet::from([1]))])
+        ),
+        Some(BTreeSet::from(
+            ["tests/test_app.py::test_value".to_string()]
+        ))
+    );
+}

@@ -22,12 +22,15 @@ pub(crate) fn write_python_population_manifest_for_args(
     write_python_population_manifest_with_identity(repo_root, selectors, &identity)
 }
 
-pub(crate) fn python_population_manifest_is_current_for_args(
+pub(crate) fn python_population_manifest_is_current_for_args_with_env_keys(
     repo_root: &Path,
     selectors: &[String],
     test_args: &[String],
+    env_keys: &[&str],
 ) -> bool {
-    let Ok(identity) = current_python_population_manifest_identity(repo_root, test_args) else {
+    let Ok(identity) =
+        current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
+    else {
         return false;
     };
     python_population_manifest_is_current_with_identity(repo_root, selectors, &identity)
@@ -118,6 +121,18 @@ fn current_python_population_manifest_identity(
     repo_root: &Path,
     test_args: &[String],
 ) -> Result<PythonPopulationManifestIdentity, String> {
+    current_python_population_manifest_identity_with_env_keys(
+        repo_root,
+        test_args,
+        PYTHON_COVERAGE_ENV_KEYS,
+    )
+}
+
+fn current_python_population_manifest_identity_with_env_keys(
+    repo_root: &Path,
+    test_args: &[String],
+    env_keys: &[&str],
+) -> Result<PythonPopulationManifestIdentity, String> {
     let python = PathBuf::from("python");
     Ok(PythonPopulationManifestIdentity {
         cache_schema_version: rslip::CACHE_SCHEMA_VERSION.to_string(),
@@ -136,12 +151,12 @@ fn current_python_population_manifest_identity(
             repo_root,
         )?,
         pytest_args: test_args.to_vec(),
-        env: relevant_python_coverage_env(),
+        env: relevant_python_coverage_env(env_keys),
     })
 }
 
-fn relevant_python_coverage_env() -> BTreeMap<String, String> {
-    PYTHON_COVERAGE_ENV_KEYS
+fn relevant_python_coverage_env(env_keys: &[&str]) -> BTreeMap<String, String> {
+    env_keys
         .iter()
         .filter_map(|key| {
             std::env::var(key)

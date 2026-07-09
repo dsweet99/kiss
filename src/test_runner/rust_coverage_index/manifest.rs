@@ -66,12 +66,29 @@ pub(crate) fn write_rust_population_manifest_with_identity(
     fs::rename(tmp_path, path).map_err(|e| e.to_string())
 }
 
+#[cfg(test)]
 pub(crate) fn rust_population_manifest_is_current_for_args(
     repo_root: &Path,
     selectors: &[String],
     test_args: &[String],
 ) -> bool {
-    let Ok(identity) = current_rust_population_manifest_identity(repo_root, test_args) else {
+    rust_population_manifest_is_current_for_args_with_env_keys(
+        repo_root,
+        selectors,
+        test_args,
+        RUST_COVERAGE_ENV_KEYS,
+    )
+}
+
+pub(crate) fn rust_population_manifest_is_current_for_args_with_env_keys(
+    repo_root: &Path,
+    selectors: &[String],
+    test_args: &[String],
+    env_keys: &[&str],
+) -> bool {
+    let Ok(identity) =
+        current_rust_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
+    else {
         return false;
     };
     rust_population_manifest_is_current_with_identity(repo_root, selectors, &identity)
@@ -139,6 +156,18 @@ fn current_rust_population_manifest_identity(
     repo_root: &Path,
     test_args: &[String],
 ) -> Result<RustPopulationManifestIdentity, String> {
+    current_rust_population_manifest_identity_with_env_keys(
+        repo_root,
+        test_args,
+        RUST_COVERAGE_ENV_KEYS,
+    )
+}
+
+fn current_rust_population_manifest_identity_with_env_keys(
+    repo_root: &Path,
+    test_args: &[String],
+    env_keys: &[&str],
+) -> Result<RustPopulationManifestIdentity, String> {
     let cargo = PathBuf::from("cargo");
     let rustc = PathBuf::from("rustc");
     Ok(RustPopulationManifestIdentity {
@@ -149,12 +178,12 @@ fn current_rust_population_manifest_identity(
         cargo_llvm_cov_version: command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?,
         cargo_args: Vec::new(),
         test_args: test_args.to_vec(),
-        env: relevant_rust_coverage_env(),
+        env: relevant_rust_coverage_env(env_keys),
     })
 }
 
-fn relevant_rust_coverage_env() -> BTreeMap<String, String> {
-    RUST_COVERAGE_ENV_KEYS
+fn relevant_rust_coverage_env(env_keys: &[&str]) -> BTreeMap<String, String> {
+    env_keys
         .iter()
         .filter_map(|key| {
             std::env::var(key)

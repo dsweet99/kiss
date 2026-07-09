@@ -1,22 +1,20 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::{enumerate_tests_in_changed_files, enumerate_workspace_rust_selectors, py_selector};
+use super::{enumerate_tests_in_changed_files, py_selector};
 use crate::test_runner::coverage_decision::{
-    ChangedDiff, ChangedSource, CoverageBacker, CoverageDecisionEngine, CoverageFreshness,
-    PopulationPlan, SelectionDecision, TestSelector,
+    ChangedSource, CoverageDecisionEngine, LanguagePlanner, TestSelector,
 };
 use crate::test_runner::last_status::{
     has_language_records, prior_failures, python_last_status_identity, rust_last_status_identity,
 };
-use crate::test_runner::rust_coverage_index::{
-    RUST_COVERAGE_ENV_KEYS, rust_population_manifest_is_current_for_args,
-    select_rust_source_selectors_from_index, select_rust_source_selectors_hybrid,
-};
 
-#[path = "python_backer.rs"]
-mod python_backer;
-use python_backer::python_population_backer;
+#[cfg(test)]
+use super::python_backer;
+use super::python_backer::python_population_backer;
+use super::rust_backer::rust_llvm_cov_backer;
+#[cfg(test)]
+use super::rust_backer::{RustModule, select_fresh_rust_source_selectors};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SelectorPlan {
@@ -109,8 +107,17 @@ struct EngineBackerInputs<'a> {
 }
 
 struct EngineBackers {
-    backers: Vec<CoverageBacker>,
+    backers: Vec<Box<dyn LanguagePlanner>>,
     prior_failures: Vec<TestSelector>,
+}
+
+impl EngineBackers {
+    fn new(backers: Vec<Box<dyn LanguagePlanner>>, prior_failures: Vec<TestSelector>) -> Self {
+        EngineBackers {
+            backers,
+            prior_failures,
+        }
+    }
 }
 
 fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String> {
@@ -161,10 +168,7 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
     }
     let mut prior_failures = python_prior_failures;
     prior_failures.extend(rust_prior_failures);
-    Ok(EngineBackers {
-        backers,
-        prior_failures,
-    })
+    Ok(EngineBackers::new(backers, prior_failures))
 }
 
 fn prior_failures_for_language(
@@ -214,87 +218,6 @@ fn selectors_for_language(selectors: &[TestSelector], language: kiss::Language) 
         .filter(|selector| selector.language == language)
         .map(|selector| selector.id.clone())
         .collect()
-}
-
-fn rust_llvm_cov_backer(
-    repo_root: &Path,
-    rust_source_paths: &[PathBuf],
-    rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
-    rust_test_args: &[String],
-    ignore: &[String],
-    changed_tests: &[TestSelector],
-    prior_failures: &[TestSelector],
-) -> CoverageBacker {
-    let repo_root = repo_root.to_path_buf();
-    let rust_source_paths = rust_source_paths.to_vec();
-    let rust_changed_lines = rust_changed_lines.clone();
-    let rust_test_args = rust_test_args.to_vec();
-    let ignore = ignore.to_vec();
-    let changed_tests = changed_tests.to_vec();
-    let prior_failures = prior_failures.to_vec();
-    let mut backer = CoverageBacker::new(
-        kiss::Language::Rust,
-        Box::new({
-            let repo_root = repo_root.clone();
-            let ignore = ignore.clone();
-            move || {
-                Ok(enumerate_workspace_rust_selectors(&repo_root, &ignore)?
-                    .into_iter()
-                    .map(|id| TestSelector::new(kiss::Language::Rust, id))
-                    .collect())
-            }
-        }),
-        Box::new(move |_diff: &ChangedDiff| changed_tests.clone()),
-        Box::new(move || prior_failures.clone()),
-        Box::new({
-            let repo_root = repo_root.clone();
-            let rust_source_paths = rust_source_paths.clone();
-            let rust_test_args = rust_test_args.clone();
-            move |universe| {
-                if rust_source_paths.is_empty() {
-                    return Ok(CoverageFreshness::Fresh);
-                }
-                let universe_ids = universe
-                    .iter()
-                    .map(|selector| selector.id.clone())
-                    .collect::<Vec<_>>();
-                if rust_population_manifest_is_current_for_args(
-                    &repo_root,
-                    &universe_ids,
-                    &rust_test_args,
-                ) {
-                    Ok(CoverageFreshness::Fresh)
-                } else {
-                    Ok(CoverageFreshness::Stale)
-                }
-            }
-        }),
-        Box::new(|universe| PopulationPlan {
-            selectors: universe.to_vec(),
-        }),
-        Box::new(move || {
-            let Some(selector_ids) = select_fresh_rust_source_selectors(
-                &repo_root,
-                &rust_source_paths,
-                &rust_changed_lines,
-            ) else {
-                return Ok(SelectionDecision {
-                    selectors: Vec::new(),
-                    complete: false,
-                });
-            };
-            let selectors = selector_ids
-                .into_iter()
-                .map(|id| TestSelector::new(kiss::Language::Rust, id))
-                .collect();
-            Ok(SelectionDecision {
-                selectors,
-                complete: true,
-            })
-        }),
-    );
-    backer.manifest_env_allowlist = RUST_COVERAGE_ENV_KEYS;
-    backer
 }
 
 fn changed_sources_for_engine(
@@ -379,20 +302,6 @@ fn changed_lines_for_sources(
         .filter(|(path, _lines)| source_paths.contains(path))
         .map(|(path, lines)| (path.clone(), lines.clone()))
         .collect()
-}
-
-fn select_fresh_rust_source_selectors(
-    repo_root: &Path,
-    rust_source_paths: &[PathBuf],
-    rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
-) -> Option<BTreeSet<String>> {
-    if !rust_changed_lines.is_empty()
-        && let Some(line_selectors) =
-            select_rust_source_selectors_hybrid(repo_root, rust_source_paths, rust_changed_lines)
-    {
-        return Some(line_selectors);
-    }
-    select_rust_source_selectors_from_index(repo_root, rust_source_paths)
 }
 
 #[cfg(test)]

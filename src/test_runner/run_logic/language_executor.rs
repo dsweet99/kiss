@@ -1,8 +1,6 @@
 use std::time::Instant;
 
-use super::language_modules;
-use super::runners;
-use crate::test_runner::coverage_decision::RunContext;
+use crate::test_runner::coverage_decision::{LanguageTestModule, RunContext};
 use crate::test_runner::runners::SelectorExecutionSummary;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -19,72 +17,8 @@ pub(super) struct LanguagePhaseOutcome {
     pub(super) index_rebuild_duration: std::time::Duration,
 }
 
-pub(super) enum ExecutionModule {
-    Python,
-    Rust,
-}
-
-impl ExecutionModule {
-    fn population_required(&self, ctx: &RunContext<'_, '_>) -> bool {
-        match self {
-            Self::Python => language_modules::python_population_required(ctx),
-            Self::Rust => language_modules::rust_population_required(ctx),
-        }
-    }
-
-    fn population_selectors(&self, ctx: &RunContext<'_, '_>) -> Result<Vec<String>, String> {
-        match self {
-            Self::Python => language_modules::python_population_selectors(ctx),
-            Self::Rust => language_modules::rust_population_selectors(ctx),
-        }
-    }
-
-    fn selective_selectors(&self, ctx: &RunContext<'_, '_>) -> Vec<String> {
-        match self {
-            Self::Python => language_modules::python_selective_selectors(ctx),
-            Self::Rust => language_modules::rust_selective_selectors(ctx),
-        }
-    }
-
-    fn run_population(
-        &self,
-        selectors: &[String],
-        ctx: &RunContext<'_, '_>,
-    ) -> Result<SelectorExecutionSummary, String> {
-        match self {
-            Self::Python => language_modules::python_run_population(selectors, ctx),
-            Self::Rust => language_modules::rust_run_population(selectors, ctx),
-        }
-    }
-
-    fn run_selective(
-        &self,
-        selectors: &[String],
-        ctx: &RunContext<'_, '_>,
-    ) -> Result<SelectorExecutionSummary, String> {
-        match self {
-            Self::Python => language_modules::python_run_selective(selectors, ctx),
-            Self::Rust => language_modules::rust_run_selective(selectors, ctx),
-        }
-    }
-
-    fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        match self {
-            Self::Python => language_modules::python_rebuild_index(ctx),
-            Self::Rust => language_modules::rust_rebuild_index(ctx),
-        }
-    }
-
-    fn write_manifest(&self, selectors: &[String], ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        match self {
-            Self::Python => language_modules::python_write_manifest(selectors, ctx),
-            Self::Rust => language_modules::rust_write_manifest(selectors, ctx),
-        }
-    }
-}
-
 pub(super) fn execution_phase(
-    module: &ExecutionModule,
+    module: &dyn LanguageTestModule,
     ctx: &RunContext<'_, '_>,
 ) -> Result<ExecutionPhase, String> {
     if module.population_required(ctx) {
@@ -101,7 +35,7 @@ pub(super) fn execution_phase(
 }
 
 pub(super) fn execute_language_phase(
-    module: &ExecutionModule,
+    module: &dyn LanguageTestModule,
     phase: &ExecutionPhase,
     ctx: &RunContext<'_, '_>,
 ) -> Result<LanguagePhaseOutcome, String> {
@@ -156,39 +90,16 @@ pub(super) fn selective_selector_count(phase: &ExecutionPhase) -> usize {
 
 pub(super) fn print_dry_run(
     options: &crate::test_runner::SelectorRunOptions<'_>,
-    python_phase: &ExecutionPhase,
-    rust_phase: &ExecutionPhase,
+    phases: &[(&dyn LanguageTestModule, ExecutionPhase)],
 ) {
-    match python_phase {
-        ExecutionPhase::Population(selectors) => {
-            println!("PYTHON COVERAGE POPULATION");
-            if !selectors.is_empty() {
-                let argv = runners::build_pytest_argv(selectors, options.extra);
-                println!("{}", runners::shell_quote_line(&argv));
-            }
+    for (module, phase) in phases {
+        let (selectors, population) = match phase {
+            ExecutionPhase::NoWork => continue,
+            ExecutionPhase::Population(selectors) => (selectors.as_slice(), true),
+            ExecutionPhase::Selective(selectors) => (selectors.as_slice(), false),
+        };
+        for line in module.dry_run_lines(selectors, population, options.extra) {
+            println!("{line}");
         }
-        ExecutionPhase::Selective(selectors) => {
-            let argv = runners::build_pytest_argv(selectors, options.extra);
-            println!("{}", runners::shell_quote_line(&argv));
-        }
-        ExecutionPhase::NoWork => {}
-    }
-    match rust_phase {
-        ExecutionPhase::Population(selectors) => {
-            println!("RUST COVERAGE POPULATION");
-            print_rust_dry_run_selectors(selectors, options);
-        }
-        ExecutionPhase::Selective(selectors) => print_rust_dry_run_selectors(selectors, options),
-        ExecutionPhase::NoWork => {}
-    }
-}
-
-fn print_rust_dry_run_selectors(
-    selectors: &[String],
-    options: &crate::test_runner::SelectorRunOptions<'_>,
-) {
-    for selector in selectors {
-        let argv = runners::build_cargo_llvm_cov_dry_run_argv(selector, options.extra);
-        println!("{}", runners::shell_quote_line(&argv));
     }
 }

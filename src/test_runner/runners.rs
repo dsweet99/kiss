@@ -14,6 +14,11 @@ use kiss::{parse_files, parse_rust_files, rust_test_functions_in, test_functions
 mod decision;
 pub(crate) use decision::combined_selectors;
 
+#[path = "runners/python_backer.rs"]
+pub(crate) mod python_backer;
+#[path = "runners/rust_backer.rs"]
+pub(crate) mod rust_backer;
+
 #[path = "runners/rslip.rs"]
 mod rslip;
 #[cfg(test)]

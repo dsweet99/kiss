@@ -1,5 +1,5 @@
 use super::{PlannedSelectors, SelectorRunOptions, runners};
-use crate::test_runner::coverage_decision::RunContext;
+use crate::test_runner::coverage_decision::{LanguageExecutor, LanguageTestModule, RunContext};
 use std::time::Instant;
 
 #[path = "run_logic/language_executor.rs"]
@@ -9,7 +9,7 @@ mod language_modules;
 #[path = "run_logic/metrics.rs"]
 mod metrics;
 use language_executor::{
-    ExecutionModule, ExecutionPhase, LanguagePhaseOutcome, execute_language_phase, execution_phase,
+    ExecutionPhase, LanguagePhaseOutcome, execute_language_phase, execution_phase,
     population_selector_count, print_dry_run, selective_selector_count,
 };
 use metrics::LocalRubricMetrics;
@@ -29,20 +29,16 @@ pub(crate) fn run_selectors(
         planned,
         options: &options,
     };
-    let python = ExecutionModule::Python;
-    let rust = ExecutionModule::Rust;
-    let python_phase = execution_phase(&python, &ctx)?;
-    let rust_phase = execution_phase(&rust, &ctx)?;
+    let python = runners::python_backer::PythonModule::for_execution();
+    let rust = runners::rust_backer::RustModule::for_execution();
+    let modules: [(&dyn LanguageTestModule, ExecutionPhase); 2] = [
+        (&python, execution_phase(&python, &ctx)?),
+        (&rust, execution_phase(&rust, &ctx)?),
+    ];
     if options.dry_run {
-        return Ok(finish_dry_run(
-            planned,
-            &options,
-            total_started,
-            &python_phase,
-            &rust_phase,
-        ));
+        return Ok(finish_dry_run(planned, &options, total_started, &modules));
     }
-    run_selected_phases(planned, &options, total_started, &python_phase, &rust_phase)
+    run_selected_phases(planned, &options, total_started, &modules)
 }
 
 fn finish_no_work(
@@ -64,11 +60,11 @@ fn finish_dry_run(
     planned: &PlannedSelectors,
     options: &SelectorRunOptions<'_>,
     total_started: Instant,
-    python_phase: &ExecutionPhase,
-    rust_phase: &ExecutionPhase,
+    modules: &[(&dyn LanguageTestModule, ExecutionPhase)],
 ) -> i32 {
-    print_dry_run(options, python_phase, rust_phase);
+    print_dry_run(options, modules);
     if options.metrics {
+        let rust_phase = phase_for_language(modules, kiss::Language::Rust);
         let rust_population_selectors = population_selector_count(rust_phase);
         let rust_final_selectors = selective_selector_count(rust_phase);
         let mut metrics = LocalRubricMetrics::new(
@@ -89,9 +85,9 @@ fn run_selected_phases(
     planned: &PlannedSelectors,
     options: &SelectorRunOptions<'_>,
     total_started: Instant,
-    python_phase: &ExecutionPhase,
-    rust_phase: &ExecutionPhase,
+    modules: &[(&dyn LanguageTestModule, ExecutionPhase)],
 ) -> Result<i32, String> {
+    let rust_phase = phase_for_language(modules, kiss::Language::Rust);
     let rust_population_selectors = population_selector_count(rust_phase);
     let rust_final_selectors = selective_selector_count(rust_phase);
     let mut metrics = LocalRubricMetrics::new(
@@ -102,13 +98,11 @@ fn run_selected_phases(
         rust_final_selectors,
     );
     let ctx = RunContext { planned, options };
-    let python = ExecutionModule::Python;
-    let python_outcome = execute_language_phase(&python, python_phase, &ctx)?;
-    record_python_outcome(&mut metrics, python_outcome);
+    for (module, phase) in modules {
+        let outcome = execute_language_phase(*module, phase, &ctx)?;
+        record_language_outcome(&mut metrics, LanguageExecutor::language(*module), outcome);
+    }
     let mut code = metrics.python.summary.exit_code;
-    let rust = ExecutionModule::Rust;
-    let rust_outcome = execute_language_phase(&rust, rust_phase, &ctx)?;
-    record_rust_outcome(&mut metrics, rust_outcome);
     code = runners::merge_exit_codes(code, rust_exit_code(&metrics, rust_phase));
     Ok(finish_run_metrics(
         metrics,
@@ -117,6 +111,17 @@ fn run_selected_phases(
         planned,
         options,
     ))
+}
+
+fn record_language_outcome(
+    metrics: &mut LocalRubricMetrics,
+    language: kiss::Language,
+    outcome: LanguagePhaseOutcome,
+) {
+    match language {
+        kiss::Language::Python => record_python_outcome(metrics, outcome),
+        kiss::Language::Rust => record_rust_outcome(metrics, outcome),
+    }
 }
 
 fn record_python_outcome(metrics: &mut LocalRubricMetrics, outcome: LanguagePhaseOutcome) {
@@ -147,6 +152,18 @@ fn rust_exit_code(metrics: &LocalRubricMetrics, phase: &ExecutionPhase) -> i32 {
         ExecutionPhase::Selective(_) => metrics.rust_final.summary.exit_code,
         ExecutionPhase::NoWork => 0,
     }
+}
+
+fn phase_for_language<'a>(
+    modules: &'a [(&dyn LanguageTestModule, ExecutionPhase)],
+    language: kiss::Language,
+) -> &'a ExecutionPhase {
+    modules
+        .iter()
+        .find_map(|(module, phase)| {
+            (LanguageExecutor::language(*module) == language).then_some(phase)
+        })
+        .expect("run logic constructs a phase for each supported language")
 }
 
 fn planned_has_work(planned: &PlannedSelectors) -> bool {

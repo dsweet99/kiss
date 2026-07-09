@@ -14,7 +14,7 @@ pub(crate) const PYTHON_SELECTOR_DISCOVERY_VERSION: &str = "python-selector-disc
 
 mod manifest;
 pub(crate) use manifest::{
-    PYTHON_COVERAGE_ENV_KEYS, python_population_manifest_is_current_for_args,
+    PYTHON_COVERAGE_ENV_KEYS, python_population_manifest_is_current_for_args_with_env_keys,
     write_python_population_manifest_for_args,
 };
 #[cfg(test)]
@@ -39,10 +39,20 @@ pub(crate) use storage::{
 
 pub(crate) type PythonCoverageIndex = BTreeMap<String, BTreeSet<String>>;
 
+#[cfg(test)]
 pub(crate) fn rebuild_python_coverage_index(
     repo_root: &Path,
 ) -> Result<PythonCoverageIndex, String> {
     let index = build_python_coverage_index(repo_root);
+    write_python_coverage_index(repo_root, &index)?;
+    Ok(index)
+}
+
+pub(crate) fn rebuild_python_coverage_index_with_filter(
+    repo_root: &Path,
+    is_indexable: impl Fn(&Path, &Path) -> bool,
+) -> Result<PythonCoverageIndex, String> {
+    let index = build_python_coverage_index_with_filter(repo_root, is_indexable);
     write_python_coverage_index(repo_root, &index)?;
     Ok(index)
 }
@@ -85,7 +95,17 @@ pub(crate) fn select_python_source_selectors_hybrid(
     Some(selectors)
 }
 
+#[cfg(test)]
 pub(crate) fn build_python_coverage_index(repo_root: &Path) -> PythonCoverageIndex {
+    build_python_coverage_index_with_filter(repo_root, |path, repo_root| {
+        repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
+    })
+}
+
+fn build_python_coverage_index_with_filter(
+    repo_root: &Path,
+    is_indexable: impl Fn(&Path, &Path) -> bool,
+) -> PythonCoverageIndex {
     let cache_root = python_coverage_cache_root(repo_root);
     let mut files: PythonCoverageIndex = BTreeMap::new();
     for entry_path in storage::python_coverage_entry_paths(&cache_root) {
@@ -96,7 +116,10 @@ pub(crate) fn build_python_coverage_index(repo_root: &Path) -> PythonCoverageInd
             continue;
         }
         for file in coverage.files.keys() {
-            if let Some(rel) = repo_relative_coverage_file(repo_root, file) {
+            let path = Path::new(file);
+            if is_indexable(path, repo_root) {
+                let rel = repo_relative_coverage_file(repo_root, file)
+                    .expect("indexable Python coverage path has repo-relative form");
                 files.entry(rel).or_default().insert(selector.clone());
             }
         }

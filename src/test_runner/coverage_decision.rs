@@ -1,16 +1,14 @@
-// Step 4 adds the policy engine before production planning is routed through it.
-#![allow(dead_code)]
-
-mod backer;
 mod engine;
 mod language_module;
 mod types;
 
-pub(crate) use backer::CoverageBacker;
 pub(crate) use engine::CoverageDecisionEngine;
-pub(crate) use language_module::RunContext;
+pub(crate) use language_module::{
+    LanguageExecutor, LanguagePlanner, LanguageTestModule, RunContext,
+};
 pub(crate) use types::{
     ChangedDiff, ChangedSource, CoverageFreshness, PopulationPlan, SelectionDecision, TestSelector,
+    full_population_plan,
 };
 #[cfg(test)]
 pub(crate) use types::{ChangedTestSelector, CoverageDecisionPlan};

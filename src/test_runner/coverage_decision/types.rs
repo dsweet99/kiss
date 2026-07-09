@@ -53,11 +53,13 @@ impl ChangedSource {
     }
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ChangedTestSelector {
     pub(crate) selector: TestSelector,
 }
 
+#[cfg(test)]
 impl ChangedTestSelector {
     pub(crate) fn new(selector: TestSelector) -> Self {
         Self { selector }
@@ -74,6 +76,7 @@ impl ChangedDiff {
         Self { sources }
     }
 
+    #[cfg(test)]
     pub(crate) fn sources_for_language(&self, language: Language) -> Vec<ChangedSource> {
         self.sources
             .iter()
@@ -87,6 +90,7 @@ impl ChangedDiff {
 pub(crate) enum CoverageFreshness {
     Fresh,
     Stale,
+    #[allow(dead_code)]
     Unknown,
 }
 
@@ -114,6 +118,12 @@ impl Default for SelectionDecision {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct PopulationPlan {
     pub(crate) selectors: Vec<TestSelector>,
+}
+
+pub(crate) fn full_population_plan(universe: &[TestSelector]) -> PopulationPlan {
+    PopulationPlan {
+        selectors: universe.to_vec(),
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
