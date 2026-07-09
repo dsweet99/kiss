@@ -193,12 +193,12 @@ pub(crate) fn validation_report(
     let mut selected_python: BTreeSet<String> = planned.py_sel.iter().cloned().collect();
     let mut selected_rust: BTreeSet<String> = planned.rs_sel.iter().cloned().collect();
     let python_population_required = planned.python_population_required;
-    let rust_population_required = !planned.rust_source_population_paths.is_empty();
+    let rust_population_required = planned.rust_population_required;
     if python_population_required {
         selected_python.extend(full_python.iter().cloned());
     }
     if rust_population_required {
-        selected_rust.extend(planned.rust_population_selectors.iter().cloned());
+        selected_rust.extend(full_rust.iter().cloned());
     }
     if !include_python {
         selected_python.clear();

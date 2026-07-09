@@ -153,7 +153,7 @@ fn combined_selectors_uses_existing_rust_index_for_source_changes() {
 
     assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
     assert_eq!(plan.rust_source_paths, vec![lib]);
-    assert!(plan.rust_source_population_paths.is_empty());
+    assert!(!plan.rust_population_required);
 }
 
 #[test]
@@ -195,11 +195,7 @@ fn combined_selectors_repopulates_when_rust_test_args_change() {
     .unwrap();
 
     assert!(plan.rust_selectors.is_empty());
-    assert_eq!(plan.rust_source_population_paths, vec![lib]);
-    assert_eq!(
-        plan.rust_population_selectors,
-        vec!["tests::gets_value".to_string()]
-    );
+    assert!(plan.rust_population_required);
 }
 
 #[test]
@@ -258,7 +254,7 @@ fn combined_selectors_prefers_rust_changed_line_matches() {
 
     assert_eq!(plan.rust_selectors, vec!["tests::second".to_string()]);
     assert_eq!(plan.rust_source_paths, vec![lib]);
-    assert!(plan.rust_source_population_paths.is_empty());
+    assert!(!plan.rust_population_required);
 }
 
 #[test]
@@ -298,11 +294,7 @@ fn combined_selectors_requires_complete_rust_population_manifest() {
     .unwrap();
 
     assert!(plan.rust_selectors.is_empty());
-    assert_eq!(plan.rust_source_population_paths, vec![lib]);
-    assert_eq!(
-        plan.rust_population_selectors,
-        vec!["tests::gets_value".to_string()]
-    );
+    assert!(plan.rust_population_required);
 }
 
 #[test]
@@ -325,9 +317,8 @@ fn combined_selectors_marks_missing_rust_index_for_population() {
     .unwrap();
 
     assert!(plan.rust_selectors.is_empty());
-    assert_eq!(plan.rust_source_paths, vec![lib.clone()]);
-    assert_eq!(plan.rust_source_population_paths, vec![lib]);
-    assert_eq!(plan.rust_population_selectors, Vec::<String>::new());
+    assert_eq!(plan.rust_source_paths, vec![lib]);
+    assert!(plan.rust_population_required);
 }
 
 fn write_rust_cov_entry(
@@ -359,8 +350,7 @@ fn combined_selectors_empty_without_sources() {
     assert!(plan.py_selectors.is_empty());
     assert!(plan.rust_selectors.is_empty());
     assert!(plan.rust_source_paths.is_empty());
-    assert!(plan.rust_source_population_paths.is_empty());
-    assert!(plan.rust_population_selectors.is_empty());
+    assert!(!plan.rust_population_required);
 }
 
 #[test]

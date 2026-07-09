@@ -21,10 +21,6 @@ impl LanguageExecutor for PythonModule {
         ctx.planned.python_population_required
     }
 
-    fn population_selectors(&self, ctx: &RunContext<'_, '_>) -> Result<Vec<String>, String> {
-        Ok(ctx.planned.python_population_selectors.clone())
-    }
-
     fn selective_selectors(&self, ctx: &RunContext<'_, '_>) -> Vec<String> {
         ctx.planned.py_sel.clone()
     }
@@ -88,11 +84,7 @@ impl LanguageExecutor for RustModule {
     }
 
     fn population_required(&self, ctx: &RunContext<'_, '_>) -> bool {
-        !ctx.planned.rust_source_population_paths.is_empty()
-    }
-
-    fn population_selectors(&self, ctx: &RunContext<'_, '_>) -> Result<Vec<String>, String> {
-        Ok(ctx.planned.rust_population_selectors.clone())
+        ctx.planned.rust_population_required
     }
 
     fn selective_selectors(&self, ctx: &RunContext<'_, '_>) -> Vec<String> {

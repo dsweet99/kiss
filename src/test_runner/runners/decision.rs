@@ -21,12 +21,10 @@ pub(crate) struct SelectorPlan {
     pub(crate) py_selectors: Vec<String>,
     pub(crate) rust_selectors: Vec<String>,
     pub(crate) python_population_required: bool,
-    pub(crate) python_population_selectors: Vec<String>,
-    pub(crate) rust_population_selectors: Vec<String>,
+    pub(crate) rust_population_required: bool,
     pub(crate) rust_source_paths: Vec<PathBuf>,
     pub(crate) python_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
     pub(crate) rust_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
-    pub(crate) rust_source_population_paths: Vec<PathBuf>,
     pub(crate) python_prior_failure_selectors: Vec<String>,
     pub(crate) rust_prior_failure_selectors: Vec<String>,
     pub(crate) coverage_decision_engine_used: bool,
@@ -63,31 +61,20 @@ pub(crate) fn combined_selectors(
         selectors_for_language(&engine_backers.prior_failures, kiss::Language::Rust);
     let engine_plan = CoverageDecisionEngine::new(engine_backers.backers).plan(&changed_sources)?;
     let (py_sel, rs_sel) = selectors_by_language(&engine_plan.selected);
-    let python_population_selectors =
-        selectors_for_language(&engine_plan.population, kiss::Language::Python);
-    let rust_population_selectors =
-        selectors_for_language(&engine_plan.population, kiss::Language::Rust);
     let python_population_required = engine_plan
         .population_languages
         .contains(&kiss::Language::Python);
-    let rust_source_population_paths = if engine_plan
+    let rust_population_required = engine_plan
         .population_languages
-        .contains(&kiss::Language::Rust)
-    {
-        rust_source_paths.clone()
-    } else {
-        Vec::new()
-    };
+        .contains(&kiss::Language::Rust);
     Ok(SelectorPlan {
         py_selectors: py_sel,
         rust_selectors: rs_sel,
         python_population_required,
-        python_population_selectors,
-        rust_population_selectors,
+        rust_population_required,
         rust_source_paths,
         python_changed_lines: python_changed_lines.clone(),
         rust_changed_lines: rust_changed_lines.clone(),
-        rust_source_population_paths,
         python_prior_failure_selectors,
         rust_prior_failure_selectors,
         coverage_decision_engine_used: true,

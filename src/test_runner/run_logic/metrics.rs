@@ -19,7 +19,6 @@ pub(super) struct LocalRubricMetrics {
     pub(super) python_population_selectors: usize,
     pub(super) selected_rust_initial: usize,
     pub(super) rust_source_paths: usize,
-    pub(super) rust_population_source_paths: usize,
     pub(super) rust_population_required: bool,
     pub(super) rust_population_selectors: usize,
     pub(super) rust_final_selectors: usize,
@@ -41,6 +40,7 @@ impl LocalRubricMetrics {
     pub(super) fn new(
         planned: &PlannedSelectors,
         options: &SelectorRunOptions<'_>,
+        python_population_selectors: usize,
         rust_population_required: bool,
         rust_population_selectors: usize,
         rust_final_selectors: usize,
@@ -50,10 +50,9 @@ impl LocalRubricMetrics {
             total_duration: Duration::ZERO,
             selected_python: planned.py_sel.len(),
             python_population_required: planned.python_population_required,
-            python_population_selectors: planned.python_population_selectors.len(),
+            python_population_selectors,
             selected_rust_initial: planned.rs_sel.len(),
             rust_source_paths: planned.rust_source_paths.len(),
-            rust_population_source_paths: planned.rust_source_population_paths.len(),
             rust_population_required,
             rust_population_selectors,
             rust_final_selectors,
@@ -114,10 +113,6 @@ fn print_selection_metrics(metrics: &LocalRubricMetrics) {
     );
     println!("selected_rust_initial={}", metrics.selected_rust_initial);
     println!("rust_source_paths={}", metrics.rust_source_paths);
-    println!(
-        "rust_population_source_paths={}",
-        metrics.rust_population_source_paths
-    );
     println!(
         "rust_population_required={}",
         metrics.rust_population_required
@@ -256,7 +251,6 @@ mod tests {
             python_population_selectors: 0,
             selected_rust_initial: 0,
             rust_source_paths: 0,
-            rust_population_source_paths: 0,
             rust_population_required: false,
             rust_population_selectors: 0,
             rust_final_selectors: 0,

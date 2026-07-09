@@ -29,8 +29,9 @@ pub(crate) fn run_selectors(
         planned,
         options: &options,
     };
-    let python = runners::python_backer::PythonModule::for_execution();
-    let rust = runners::rust_backer::RustModule::for_execution();
+    let python =
+        runners::python_backer::PythonModule::for_execution(&planned.repo_root, &planned.ignore);
+    let rust = runners::rust_backer::RustModule::for_execution(&planned.repo_root, &planned.ignore);
     let modules: [(&dyn LanguageTestModule, ExecutionPhase); 2] = [
         (&python, execution_phase(&python, &ctx)?),
         (&rust, execution_phase(&rust, &ctx)?),
@@ -48,7 +49,8 @@ fn finish_no_work(
 ) -> i32 {
     println!("{}", runners::NO_COVERING_TESTS_MSG);
     if options.metrics {
-        let mut metrics = LocalRubricMetrics::new(planned, options, false, 0, planned.rs_sel.len());
+        let mut metrics =
+            LocalRubricMetrics::new(planned, options, 0, false, 0, planned.rs_sel.len());
         metrics.total_duration = total_started.elapsed();
         metrics.capture_cache_shape(&planned.repo_root);
         metrics.print();
@@ -64,15 +66,15 @@ fn finish_dry_run(
 ) -> i32 {
     print_dry_run(options, modules);
     if options.metrics {
+        let python_phase = phase_for_language(modules, kiss::Language::Python);
         let rust_phase = phase_for_language(modules, kiss::Language::Rust);
-        let rust_population_selectors = population_selector_count(rust_phase);
-        let rust_final_selectors = selective_selector_count(rust_phase);
         let mut metrics = LocalRubricMetrics::new(
             planned,
             options,
+            population_selector_count(python_phase),
             matches!(rust_phase, ExecutionPhase::Population(_)),
-            rust_population_selectors,
-            rust_final_selectors,
+            population_selector_count(rust_phase),
+            selective_selector_count(rust_phase),
         );
         metrics.total_duration = total_started.elapsed();
         metrics.capture_cache_shape(&planned.repo_root);
@@ -87,15 +89,15 @@ fn run_selected_phases(
     total_started: Instant,
     modules: &[(&dyn LanguageTestModule, ExecutionPhase)],
 ) -> Result<i32, String> {
+    let python_phase = phase_for_language(modules, kiss::Language::Python);
     let rust_phase = phase_for_language(modules, kiss::Language::Rust);
-    let rust_population_selectors = population_selector_count(rust_phase);
-    let rust_final_selectors = selective_selector_count(rust_phase);
     let mut metrics = LocalRubricMetrics::new(
         planned,
         options,
+        population_selector_count(python_phase),
         matches!(rust_phase, ExecutionPhase::Population(_)),
-        rust_population_selectors,
-        rust_final_selectors,
+        population_selector_count(rust_phase),
+        selective_selector_count(rust_phase),
     );
     let ctx = RunContext { planned, options };
     for (module, phase) in modules {
@@ -168,9 +170,9 @@ fn phase_for_language<'a>(
 
 fn planned_has_work(planned: &PlannedSelectors) -> bool {
     planned.python_population_required
+        || planned.rust_population_required
         || !planned.py_sel.is_empty()
         || !planned.rs_sel.is_empty()
-        || !planned.rust_source_population_paths.is_empty()
 }
 
 fn finish_run_metrics(

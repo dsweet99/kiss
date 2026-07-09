@@ -3,7 +3,9 @@ use kiss::Language;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::test_runner::coverage_decision::LanguagePlanner;
 use crate::test_runner::runners::SelectorExecutionSummary;
+use crate::test_runner::runners::{py_selector, python_backer, rust_backer};
 
 fn planned() -> PlannedSelectors {
     PlannedSelectors {
@@ -11,10 +13,8 @@ fn planned() -> PlannedSelectors {
         py_sel: Vec::new(),
         rs_sel: Vec::new(),
         python_population_required: false,
-        python_population_selectors: Vec::new(),
-        rust_population_selectors: Vec::new(),
+        rust_population_required: false,
         rust_source_paths: Vec::new(),
-        rust_source_population_paths: Vec::new(),
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
         coverage_decision_engine_used: true,
@@ -33,6 +33,14 @@ fn options(force_rerun: bool) -> SelectorRunOptions<'static> {
     }
 }
 
+fn execution_module_rust(planned: &PlannedSelectors) -> rust_backer::RustModule {
+    rust_backer::RustModule::for_execution(&planned.repo_root, &planned.ignore)
+}
+
+fn execution_module_python(planned: &PlannedSelectors) -> python_backer::PythonModule {
+    python_backer::PythonModule::for_execution(&planned.repo_root, &planned.ignore)
+}
+
 #[test]
 fn force_rerun_does_not_make_rust_population_required() {
     let mut planned = planned();
@@ -45,36 +53,67 @@ fn force_rerun_does_not_make_rust_population_required() {
     };
 
     assert!(matches!(
-        execution_phase(&runners::rust_backer::RustModule::for_execution(), &ctx).unwrap(),
+        execution_phase(&execution_module_rust(&planned), &ctx).unwrap(),
         ExecutionPhase::Selective(_)
     ));
 }
 
 #[test]
-fn rust_population_requirement_comes_from_population_paths() {
+fn rust_population_phase_uses_discover_universe() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    std::fs::write(
+        src.join("lib.rs"),
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+
     let mut planned = planned();
-    planned.rust_source_paths = vec![PathBuf::from("src/lib.rs")];
-    planned.rust_source_population_paths = vec![PathBuf::from("src/lib.rs")];
-    planned.rust_population_selectors = vec!["crate::tests::test_population".to_string()];
+    planned.repo_root = tmp.path().to_path_buf();
+    planned.rust_source_paths = vec![src.join("lib.rs")];
+    planned.rust_population_required = true;
     let options = options(false);
     let ctx = RunContext {
         planned: &planned,
         options: &options,
     };
+    let module = execution_module_rust(&planned);
+    let discovered = LanguagePlanner::discover_universe(&module).unwrap();
+    let discovered_ids: Vec<String> = discovered.into_iter().map(|s| s.id).collect();
 
     assert!(matches!(
-        execution_phase(&runners::rust_backer::RustModule::for_execution(), &ctx).unwrap(),
-        ExecutionPhase::Population(selectors) if selectors == vec!["crate::tests::test_population".to_string()]
+        execution_phase(&module, &ctx).unwrap(),
+        ExecutionPhase::Population(selectors) if selectors == discovered_ids
     ));
 }
 
 #[test]
 fn rust_dry_run_is_population_xor_selective() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    std::fs::write(
+        src.join("lib.rs"),
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+
     let selective = vec!["crate::selective_test".to_string()];
     let mut planned = planned();
+    planned.repo_root = tmp.path().to_path_buf();
     planned.rs_sel = selective.clone();
-    planned.rust_source_population_paths = vec![PathBuf::from("src/lib.rs")];
-    planned.rust_population_selectors = vec!["crate::population_test".to_string()];
+    planned.rust_population_required = true;
     let options = options(false);
     let ctx = RunContext {
         planned: &planned,
@@ -82,20 +121,104 @@ fn rust_dry_run_is_population_xor_selective() {
     };
 
     assert!(matches!(
-        execution_phase(&runners::rust_backer::RustModule::for_execution(), &ctx).unwrap(),
+        execution_phase(&execution_module_rust(&planned), &ctx).unwrap(),
         ExecutionPhase::Population(_)
     ));
 
-    planned.rust_source_population_paths.clear();
-    planned.rust_population_selectors.clear();
+    planned.rust_population_required = false;
     let ctx = RunContext {
         planned: &planned,
         options: &options,
     };
     assert_eq!(
-        execution_phase(&runners::rust_backer::RustModule::for_execution(), &ctx).unwrap(),
+        execution_phase(&execution_module_rust(&planned), &ctx).unwrap(),
         ExecutionPhase::Selective(selective)
     );
+}
+
+#[test]
+fn python_population_phase_uses_discover_universe() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tests = tmp.path().join("tests");
+    std::fs::create_dir(&tests).unwrap();
+    let test_app = tests.join("test_app.py");
+    std::fs::write(&test_app, "def test_value():\n    assert True\n").unwrap();
+
+    let mut planned = planned();
+    planned.repo_root = tmp.path().to_path_buf();
+    planned.python_population_required = true;
+    let options = options(false);
+    let ctx = RunContext {
+        planned: &planned,
+        options: &options,
+    };
+    let module = execution_module_python(&planned);
+    let discovered = LanguagePlanner::discover_universe(&module).unwrap();
+    let discovered_ids: Vec<String> = discovered.into_iter().map(|s| s.id).collect();
+    assert!(!discovered_ids.is_empty());
+    assert_eq!(
+        discovered_ids,
+        vec![py_selector(&test_app, "test_value")]
+    );
+
+    assert!(matches!(
+        execution_phase(&module, &ctx).unwrap(),
+        ExecutionPhase::Population(selectors) if selectors == discovered_ids
+    ));
+}
+
+#[test]
+fn selective_execution_does_not_require_discoverable_repo() {
+    let mut planned = planned();
+    planned.repo_root = PathBuf::from("/nonexistent/repo/for/selective");
+    planned.py_sel = vec!["tests/test_app.py::test_ok".to_string()];
+    planned.rs_sel = vec!["crate::tests::test_ok".to_string()];
+    let options = options(false);
+    let ctx = RunContext {
+        planned: &planned,
+        options: &options,
+    };
+
+    assert_eq!(
+        execution_phase(&execution_module_python(&planned), &ctx).unwrap(),
+        ExecutionPhase::Selective(vec!["tests/test_app.py::test_ok".to_string()])
+    );
+    assert_eq!(
+        execution_phase(&execution_module_rust(&planned), &ctx).unwrap(),
+        ExecutionPhase::Selective(vec!["crate::tests::test_ok".to_string()])
+    );
+}
+
+#[test]
+fn planned_selectors_carry_population_decisions_without_selector_vectors() {
+    let planned = PlannedSelectors {
+        repo_root: PathBuf::from("."),
+        py_sel: Vec::new(),
+        rs_sel: Vec::new(),
+        python_population_required: true,
+        rust_population_required: true,
+        rust_source_paths: Vec::new(),
+        python_prior_failure_selectors: Vec::new(),
+        rust_prior_failure_selectors: Vec::new(),
+        coverage_decision_engine_used: true,
+        ignore: Vec::new(),
+    };
+    assert!(planned.python_population_required);
+    assert!(planned.rust_population_required);
+}
+
+#[test]
+fn population_selector_count_comes_from_execution_phase() {
+    let phase = ExecutionPhase::Population(vec![
+        "tests/test_app.py::test_a".to_string(),
+        "tests/test_app.py::test_b".to_string(),
+    ]);
+    assert_eq!(population_selector_count(&phase), 2);
+    assert_eq!(
+        population_selector_count(&ExecutionPhase::Selective(vec!["x".to_string()])),
+        0
+    );
+    assert_eq!(population_selector_count(&ExecutionPhase::NoWork), 0);
 }
 
 #[test]
@@ -104,21 +227,22 @@ fn language_modules_expose_language_and_indexable_source_policy() {
     std::fs::create_dir_all(tmp.path().join("src")).unwrap();
     std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
     std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
+    let ignore = Vec::<String>::new();
 
     assert!(
-        runners::python_backer::PythonModule::for_execution()
+        python_backer::PythonModule::for_execution(tmp.path(), &ignore)
             .is_indexable_source(&tmp.path().join("app.py"), tmp.path())
     );
     assert!(
-        !runners::python_backer::PythonModule::for_execution()
+        !python_backer::PythonModule::for_execution(tmp.path(), &ignore)
             .is_indexable_source(Path::new("<frozen importlib>"), tmp.path())
     );
     assert!(
-        runners::rust_backer::RustModule::for_execution()
+        rust_backer::RustModule::for_execution(tmp.path(), &ignore)
             .is_indexable_source(&tmp.path().join("src").join("lib.rs"), tmp.path())
     );
     assert!(
-        !runners::rust_backer::RustModule::for_execution()
+        !rust_backer::RustModule::for_execution(tmp.path(), &ignore)
             .is_indexable_source(Path::new(".kiss/runtime.rs"), tmp.path())
     );
 }
@@ -141,7 +265,7 @@ fn empty_module_runs_return_default_summaries_without_spawning() {
         SelectorExecutionSummary::default()
     );
     let outcome: LanguagePhaseOutcome = execute_language_phase(
-        &runners::python_backer::PythonModule::for_execution(),
+        &execution_module_python(&planned),
         &ExecutionPhase::NoWork,
         &ctx,
     )
@@ -179,7 +303,7 @@ fn language_phase_outcome_carries_phase_summary_and_timings() {
 fn python_outcome_records_index_rebuild_duration_in_metrics() {
     let planned = planned();
     let options = options(false);
-    let mut metrics = LocalRubricMetrics::new(&planned, &options, false, 0, 0);
+    let mut metrics = LocalRubricMetrics::new(&planned, &options, 0, false, 0, 0);
     let outcome = LanguagePhaseOutcome {
         phase: ExecutionPhase::Selective(vec!["tests/test_app.py::test_ok".to_string()]),
         summary: SelectorExecutionSummary {

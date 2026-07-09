@@ -1,6 +1,8 @@
 use std::time::Instant;
 
-use crate::test_runner::coverage_decision::{LanguageTestModule, RunContext};
+use crate::test_runner::coverage_decision::{
+    LanguagePlanner, LanguageTestModule, RunContext,
+};
 use crate::test_runner::runners::SelectorExecutionSummary;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,9 +24,18 @@ pub(super) fn execution_phase(
     ctx: &RunContext<'_, '_>,
 ) -> Result<ExecutionPhase, String> {
     if module.population_required(ctx) {
-        return Ok(ExecutionPhase::Population(
-            module.population_selectors(ctx)?,
-        ));
+        let language = LanguagePlanner::language(module);
+        let selectors = LanguagePlanner::discover_universe(module)?
+            .into_iter()
+            .map(|selector| {
+                assert_eq!(
+                    selector.language, language,
+                    "discover_universe must return only selectors for the module language"
+                );
+                selector.id
+            })
+            .collect();
+        return Ok(ExecutionPhase::Population(selectors));
     }
     let selectors = module.selective_selectors(ctx);
     if selectors.is_empty() {

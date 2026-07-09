@@ -63,13 +63,13 @@ impl RustModule {
         }
     }
 
-    pub(crate) fn for_execution() -> Self {
+    pub(crate) fn for_execution(repo_root: &Path, ignore: &[String]) -> Self {
         RustModule {
-            repo_root: PathBuf::new(),
+            repo_root: repo_root.to_path_buf(),
             rust_source_paths: Vec::new(),
             rust_changed_lines: BTreeMap::new(),
             rust_test_args: Vec::new(),
-            ignore: Vec::new(),
+            ignore: ignore.to_vec(),
             changed_tests: Vec::new(),
             prior_failures: Vec::new(),
         }

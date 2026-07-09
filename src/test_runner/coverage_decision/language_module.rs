@@ -22,8 +22,6 @@ macro_rules! define_language_policy_traits {
         pub(crate) trait LanguageExecutor {
             fn language(&self) -> Language;
             fn population_required(&self, ctx: &RunContext<'_, '_>) -> bool;
-            fn population_selectors(&self, ctx: &RunContext<'_, '_>)
-            -> Result<Vec<String>, String>;
             fn selective_selectors(&self, ctx: &RunContext<'_, '_>) -> Vec<String>;
             fn run_population(
                 &self,

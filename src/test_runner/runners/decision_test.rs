@@ -21,12 +21,10 @@ fn selector_plan_default_has_no_work_or_engine_claim() {
     assert!(plan.py_selectors.is_empty());
     assert!(plan.rust_selectors.is_empty());
     assert!(!plan.python_population_required);
-    assert!(plan.python_population_selectors.is_empty());
-    assert!(plan.rust_population_selectors.is_empty());
+    assert!(!plan.rust_population_required);
     assert!(plan.rust_source_paths.is_empty());
     assert!(plan.python_changed_lines.is_empty());
     assert!(plan.rust_changed_lines.is_empty());
-    assert!(plan.rust_source_population_paths.is_empty());
     assert!(plan.python_prior_failure_selectors.is_empty());
     assert!(plan.rust_prior_failure_selectors.is_empty());
     assert!(!plan.coverage_decision_engine_used);
@@ -296,14 +294,8 @@ fn python_source_change_requires_population_without_selective_python() {
 
     assert!(plan.py_selectors.is_empty());
     assert!(plan.python_population_required);
-    assert_eq!(
-        plan.python_population_selectors,
-        vec![
-            py_selector(&test_app, "test_one"),
-            py_selector(&test_app, "test_two")
-        ]
-    );
     assert!(plan.rust_selectors.is_empty());
+    assert!(test_app.exists());
 }
 
 #[test]
@@ -360,7 +352,6 @@ def test_unrelated():\n    assert True\n",
 
     assert_eq!(plan.py_selectors, vec![covering]);
     assert!(!plan.python_population_required);
-    assert!(plan.python_population_selectors.is_empty());
 }
 
 fn write_python_entry(
