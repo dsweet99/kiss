@@ -84,12 +84,8 @@ pub(crate) fn python_population_manifest_is_current_with_identity(
     let Ok(input_fingerprint) = python_source_input_fingerprint(repo_root) else {
         return false;
     };
-    let Ok(entries_fp) = python_entries_fingerprint(&python_coverage_cache_root(repo_root)) else {
-        return false;
-    };
     manifest.matches_python_identity(identity, &normalized_python_repo_root(repo_root))
         && manifest.input_fingerprint == input_fingerprint
-        && manifest.entries_fingerprint == entries_fp
         && manifest.matches_python_selectors(selectors)
 }
 

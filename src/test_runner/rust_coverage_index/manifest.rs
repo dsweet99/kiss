@@ -105,12 +105,8 @@ pub(crate) fn rust_population_manifest_is_current_with_identity(
     let Ok(input_fingerprint) = workspace_input_fingerprint(repo_root) else {
         return false;
     };
-    let Ok(entries_fp) = entries_fingerprint(&rust_coverage_cache_root(repo_root)) else {
-        return false;
-    };
     manifest.matches_identity(identity, &normalized_repo_root(repo_root))
         && manifest.input_fingerprint == input_fingerprint
-        && manifest.entries_fingerprint == entries_fp
         && manifest.matches_selectors(selectors)
 }
 

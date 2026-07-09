@@ -8,7 +8,7 @@ use super::test_support::write_test_entry;
 use super::*;
 
 #[test]
-fn population_manifest_requires_matching_selectors_inputs_and_entries() {
+fn population_manifest_requires_matching_selectors_and_inputs() {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
@@ -58,7 +58,15 @@ fn population_manifest_requires_matching_selectors_inputs_and_entries() {
         },
     );
     assert!(
-        !rust_population_manifest_is_current_for_args(tmp.path(), &["test_lib".to_string()], &[],),
-        "cache entry changes invalidate the manifest"
+        rust_population_manifest_is_current_for_args(tmp.path(), &["test_lib".to_string()], &[],),
+        "cache-only entry changes do not invalidate population freshness"
+    );
+    assert!(
+        !rust_population_manifest_is_current_for_args(
+            tmp.path(),
+            &["test_lib".to_string(), "test_other".to_string()],
+            &[],
+        ),
+        "selector universe changes invalidate population freshness"
     );
 }
