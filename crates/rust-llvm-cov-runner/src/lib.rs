@@ -6,6 +6,7 @@
 
 mod batch_plan;
 mod batch_plan_nextest_config;
+mod batch_plan_publish;
 mod cargo_runner;
 mod file_lock;
 mod finalize;
@@ -44,6 +45,7 @@ pub use batch_plan::{
     RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
     validate_supported_rust_cargo_args, validate_supported_rust_test_args,
 };
+pub use batch_plan_publish::publish_generated_nextest_config;
 pub use cargo_runner::{
     CargoLlvmCovRunError, CargoLlvmCovRunOutcome, CargoLlvmCovRunRequest, CargoLlvmCovRunner,
     subprocess_cargo_llvm_cov_runner,

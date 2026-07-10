@@ -32,7 +32,7 @@ impl RustCoverageBatchRequest {
             env: BTreeMap::from([("KEEP_ME".to_string(), "1".to_string())]),
             force_rerun: true,
             jobs: 4,
-            generated_config: PathBuf::from("/repo/.kiss/runs/nextest.toml"),
+            generated_config: PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/runs/nextest.toml"),
         }
     }
 }
@@ -42,6 +42,7 @@ pub struct RustCoverageBatchPlan {
     pub build_target: PathBuf,
     pub env: BTreeMap<String, String>,
     pub argv: Vec<String>,
+    pub generated_config: PathBuf,
     pub generated_config_toml: String,
 }
 
@@ -120,6 +121,7 @@ pub fn build_rust_coverage_batch_plan(
         build_target,
         env,
         argv,
+        generated_config: req.generated_config.clone(),
         generated_config_toml,
     })
 }

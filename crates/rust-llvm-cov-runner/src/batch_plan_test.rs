@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use super::{RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan};
+use super::{
+    RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
+    publish_generated_nextest_config,
+};
 
 fn request() -> RustCoverageBatchRequest {
     RustCoverageBatchRequest::witness()
@@ -28,7 +31,7 @@ fn batch_request_public_data_contract_preserves_every_field() {
     assert_eq!(req.jobs, 4);
     assert_eq!(
         req.generated_config,
-        PathBuf::from("/repo/.kiss/runs/nextest.toml")
+        PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/runs/nextest.toml")
     );
 }
 
@@ -104,15 +107,40 @@ fn batch_plan_constructs_nextest_command_without_legacy_no_clean() {
             .windows(2)
             .any(|args| args == ["--message-format-version", "0.1"])
     );
-    assert!(
-        plan.argv
-            .windows(2)
-            .any(|args| args == ["--config-file", "/repo/.kiss/runs/nextest.toml"])
-    );
+    assert!(plan.argv.windows(2).any(|args| args
+        == [
+            "--config-file",
+            "/repo/.kiss/rust_llvm_cov_cache/runs/nextest.toml",
+        ]));
     assert_eq!(
         &plan.argv[plan.argv.len() - 3..],
         ["--workspace", "--", "--exact"]
     );
+}
+
+#[test]
+fn publish_generated_nextest_config_writes_run_scoped_config_atomically() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut req = request();
+    req.cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    req.generated_config = req
+        .cache_root
+        .join("runs")
+        .join("run-123")
+        .join("nextest.toml");
+    let plan = build_rust_coverage_batch_plan(&req).unwrap();
+
+    publish_generated_nextest_config(&plan).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(&plan.generated_config).unwrap(),
+        plan.generated_config_toml
+    );
+    assert!(
+        plan.generated_config
+            .starts_with(req.cache_root.join("runs"))
+    );
+    assert!(!plan.generated_config.to_string_lossy().contains("slot-"));
 }
 
 #[test]
