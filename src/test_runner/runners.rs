@@ -236,6 +236,7 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         cargo_args: Vec::new(),
         test_args: extra.to_vec(),
         env: BTreeMap::new(),
+        force_rerun: false,
         jobs,
         generated_config: PathBuf::from("<generated-filter>"),
     };

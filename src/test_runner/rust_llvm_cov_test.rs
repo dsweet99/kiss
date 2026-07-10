@@ -65,6 +65,39 @@ fn rust_llvm_cov_request_contract_preserves_selector_and_cache_root() {
 }
 
 #[test]
+fn rust_coverage_batch_request_from_parts_preserves_selector_occurrences() {
+    let tmp = tempfile::tempdir().unwrap();
+    let selectors = vec![
+        "tests::case".to_string(),
+        "tests::case".to_string(),
+        "tests::other".to_string(),
+    ];
+    let extra = vec!["--exact".to_string()];
+
+    let req =
+        rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &extra, true, 3).unwrap();
+
+    assert_eq!(req.cwd, tmp.path());
+    assert_eq!(req.source_root, tmp.path());
+    assert_eq!(
+        req.cache_root,
+        tmp.path().join(".kiss").join("rust_llvm_cov_cache")
+    );
+    assert_eq!(req.logical_selectors, selectors);
+    assert_eq!(req.test_args, extra);
+    assert!(req.force_rerun);
+    assert_eq!(req.jobs, 3);
+    assert_eq!(
+        req.generated_config,
+        tmp.path()
+            .join(".kiss")
+            .join("rust_llvm_cov_cache")
+            .join("runs")
+            .join("nextest.toml")
+    );
+}
+
+#[test]
 fn rust_llvm_cov_request_rejects_unsupported_test_args() {
     let tmp = tempfile::tempdir().unwrap();
     let err = rust_llvm_cov_request_from_parts(

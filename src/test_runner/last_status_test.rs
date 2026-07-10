@@ -79,7 +79,13 @@ fn identity_mismatch_does_not_select_prior_failure() {
 #[test]
 fn rust_records_are_language_scoped_and_deduped() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let rust_identity = rust_last_status_identity("cargo-llvm-cov 0.6.0", "rustc 1.88.0", &[]);
+    let rust_identity = rust_last_status_identity(
+        "cargo 1.88.0",
+        "cargo-llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        "cargo-nextest 0.9.99",
+        &[],
+    );
     let selector = "crate::tests::failed".to_string();
 
     record_statuses(
@@ -104,6 +110,24 @@ fn rust_records_are_language_scoped_and_deduped() {
     );
     assert!(has_language_records(tmp.path(), Language::Rust).unwrap());
     assert!(!has_language_records(tmp.path(), Language::Python).unwrap());
+}
+
+#[test]
+fn rust_identity_includes_nextest_version() {
+    let identity = rust_last_status_identity(
+        "cargo 1.88.0",
+        "cargo-llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        "cargo-nextest 0.9.99",
+        &["--exact".to_string()],
+    );
+    let serialized = serde_json::to_string(&identity).unwrap();
+
+    assert!(serialized.contains("cargo 1.88.0"));
+    assert!(serialized.contains("cargo-llvm-cov 0.6.0"));
+    assert!(serialized.contains("rustc 1.88.0"));
+    assert!(serialized.contains("cargo-nextest 0.9.99"));
+    assert!(serialized.contains("--exact"));
 }
 
 #[test]

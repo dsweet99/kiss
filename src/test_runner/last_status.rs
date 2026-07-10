@@ -49,14 +49,21 @@ pub(crate) fn python_last_status_identity(
 }
 
 pub(crate) fn rust_last_status_identity(
+    cargo_version: &str,
     llvm_cov_version: &str,
     rustc_version: &str,
+    cargo_nextest_version: &str,
     test_args: &[String],
 ) -> LastStatusIdentity {
     LastStatusIdentity::new(
         BTreeMap::from([
+            ("cargo".to_string(), cargo_version.to_string()),
             ("cargo-llvm-cov".to_string(), llvm_cov_version.to_string()),
             ("rustc".to_string(), rustc_version.to_string()),
+            (
+                "cargo-nextest".to_string(),
+                cargo_nextest_version.to_string(),
+            ),
         ]),
         test_args,
         BTreeMap::new(),

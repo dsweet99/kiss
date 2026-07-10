@@ -45,13 +45,7 @@ fn overlapping_forced_same_selector_runs_are_serialized_with_distinct_artifacts(
     let mut processes: Vec<_> = children
         .iter()
         .map(|child| {
-            spawn_forced_selector_child(
-                tmp.path(),
-                "smoke::passes",
-                0,
-                &race_paths,
-                child,
-            )
+            spawn_forced_selector_child(tmp.path(), "smoke::passes", 0, &race_paths, child)
         })
         .collect();
 
@@ -98,20 +92,8 @@ fn different_selectors_on_same_worker_slot_do_not_overlap_runner_sections() {
         },
     ];
     let mut processes = vec![
-        spawn_forced_selector_child(
-            tmp.path(),
-            "smoke::slot_a",
-            0,
-            &race_paths,
-            &children[0],
-        ),
-        spawn_forced_selector_child(
-            tmp.path(),
-            "smoke::slot_b",
-            0,
-            &race_paths,
-            &children[1],
-        ),
+        spawn_forced_selector_child(tmp.path(), "smoke::slot_a", 0, &race_paths, &children[0]),
+        spawn_forced_selector_child(tmp.path(), "smoke::slot_b", 0, &race_paths, &children[1]),
     ];
 
     wait_for_children_ready(&children);
@@ -147,20 +129,8 @@ fn different_worker_slots_can_overlap_runner_sections() {
         },
     ];
     let mut processes = vec![
-        spawn_forced_selector_child(
-            tmp.path(),
-            "smoke::slot_a",
-            0,
-            &race_paths,
-            &children[0],
-        ),
-        spawn_forced_selector_child(
-            tmp.path(),
-            "smoke::slot_b",
-            1,
-            &race_paths,
-            &children[1],
-        ),
+        spawn_forced_selector_child(tmp.path(), "smoke::slot_a", 0, &race_paths, &children[0]),
+        spawn_forced_selector_child(tmp.path(), "smoke::slot_b", 1, &race_paths, &children[1]),
     ];
 
     wait_for_children_ready(&children);

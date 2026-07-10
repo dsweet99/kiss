@@ -196,10 +196,19 @@ fn prior_failures_for_language(
         kiss::Language::Rust => {
             let cargo = PathBuf::from("cargo");
             let rustc = PathBuf::from("rustc");
+            let cargo_version = super::command_stdout(&cargo, &["--version"], repo_root)?;
             let llvm_cov_version =
                 super::command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?;
+            let cargo_nextest_version =
+                super::command_stdout(&cargo, &["nextest", "--version"], repo_root)?;
             let rustc_version = super::command_stdout(&rustc, &["-Vv"], repo_root)?;
-            rust_last_status_identity(&llvm_cov_version, &rustc_version, test_args)
+            rust_last_status_identity(
+                &cargo_version,
+                &llvm_cov_version,
+                &rustc_version,
+                &cargo_nextest_version,
+                test_args,
+            )
         }
     };
     Ok(prior_failures(repo_root, language, &identity)?

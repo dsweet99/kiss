@@ -24,6 +24,7 @@ fn batch_request_public_data_contract_preserves_every_field() {
     assert_eq!(req.cargo_args, ["--workspace"]);
     assert_eq!(req.test_args, ["--exact"]);
     assert_eq!(req.env["KEEP_ME"], "1");
+    assert!(req.force_rerun);
     assert_eq!(req.jobs, 4);
     assert_eq!(
         req.generated_config,
@@ -88,6 +89,7 @@ fn batch_plan_public_data_contract_preserves_every_field() {
     );
     assert_eq!(plan.env["KEEP_ME"], "1");
     assert_eq!(plan.argv[0], "cargo");
+    assert!(plan.generated_config_toml.contains("[profile.kiss]"));
 }
 
 #[test]
@@ -114,6 +116,32 @@ fn batch_plan_constructs_nextest_command_without_legacy_no_clean() {
 }
 
 #[test]
+fn batch_plan_generates_escaped_nextest_filter_config() {
+    let mut req = request();
+    req.logical_selectors = vec![
+        "alpha::case".to_string(),
+        "quote\"slash\\case".to_string(),
+        "line\nbreak".to_string(),
+        "foo\") | all() | test(\"bar".to_string(),
+    ];
+    req.test_args = Vec::new();
+
+    let plan = build_rust_coverage_batch_plan(&req).unwrap();
+
+    assert!(plan.generated_config_toml.contains("[profile.kiss]"));
+    assert!(plan.generated_config_toml.contains(
+        r#"default-filter = "test(~\"alpha::case\") | test(~\"quote\\\"slash\\\\case\") | test(~\"line\\nbreak\") | test(~\"foo\\\") | all() | test(\\\"bar\")""#
+    ));
+
+    req.test_args = vec!["--exact".to_string()];
+    let exact_plan = build_rust_coverage_batch_plan(&req).unwrap();
+
+    assert!(exact_plan.generated_config_toml.contains(
+        r#"default-filter = "test(=\"alpha::case\") | test(=\"quote\\\"slash\\\\case\") | test(=\"line\\nbreak\") | test(=\"foo\\\") | all() | test(\\\"bar\")""#
+    ));
+}
+
+#[test]
 fn batch_plan_rejects_zero_jobs_and_empty_selectors_before_mutation() {
     let mut zero_jobs = request();
     zero_jobs.jobs = 0;
@@ -121,6 +149,14 @@ fn batch_plan_rejects_zero_jobs_and_empty_selectors_before_mutation() {
         build_rust_coverage_batch_plan(&zero_jobs)
             .unwrap_err()
             .contains("jobs")
+    );
+
+    let mut no_selectors = request();
+    no_selectors.logical_selectors = Vec::new();
+    assert!(
+        build_rust_coverage_batch_plan(&no_selectors)
+            .unwrap_err()
+            .contains("selectors")
     );
 
     let mut empty_selector = request();
@@ -231,7 +267,10 @@ fn batch_plan_accepts_safe_cargo_config_values() {
     for cargo_args in [
         vec!["--config".to_string(), "/tmp/other-config.toml".to_string()],
         vec!["--config=/tmp/other-config.toml".to_string()],
-        vec!["--config".to_string(), "net.git-fetch-with-cli=true".to_string()],
+        vec![
+            "--config".to_string(),
+            "net.git-fetch-with-cli=true".to_string(),
+        ],
         vec![
             "--config".to_string(),
             r#""bui\u006cd"."rust\u0066lags" = ["--cfg", "kiss"]"#.to_string(),

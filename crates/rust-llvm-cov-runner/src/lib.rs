@@ -5,6 +5,7 @@
 #![allow(clippy::must_use_candidate)]
 
 mod batch_plan;
+mod batch_plan_nextest_config;
 mod cargo_runner;
 mod file_lock;
 mod finalize;

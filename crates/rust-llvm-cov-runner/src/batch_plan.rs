@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use crate::batch_plan_nextest_config::build_nextest_config_toml;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RustCoverageBatchRequest {
     pub cwd: PathBuf,
@@ -11,6 +13,7 @@ pub struct RustCoverageBatchRequest {
     pub cargo_args: Vec<String>,
     pub test_args: Vec<String>,
     pub env: BTreeMap<String, String>,
+    pub force_rerun: bool,
     pub jobs: usize,
     pub generated_config: PathBuf,
 }
@@ -27,6 +30,7 @@ impl RustCoverageBatchRequest {
             cargo_args: vec!["--workspace".to_string()],
             test_args: vec!["--exact".to_string()],
             env: BTreeMap::from([("KEEP_ME".to_string(), "1".to_string())]),
+            force_rerun: true,
             jobs: 4,
             generated_config: PathBuf::from("/repo/.kiss/runs/nextest.toml"),
         }
@@ -38,6 +42,7 @@ pub struct RustCoverageBatchPlan {
     pub build_target: PathBuf,
     pub env: BTreeMap<String, String>,
     pub argv: Vec<String>,
+    pub generated_config_toml: String,
 }
 
 #[cfg(test)]
@@ -110,10 +115,12 @@ pub fn build_rust_coverage_batch_plan(
         argv.extend(req.test_args.iter().cloned());
     }
 
+    let generated_config_toml = build_nextest_config_toml(req);
     Ok(RustCoverageBatchPlan {
         build_target,
         env,
         argv,
+        generated_config_toml,
     })
 }
 
@@ -121,10 +128,11 @@ fn validate_batch_request(req: &RustCoverageBatchRequest) -> Result<(), String> 
     if req.jobs == 0 {
         return Err("jobs must be greater than zero".to_string());
     }
-    if req
-        .logical_selectors
-        .iter()
-        .any(|selector| selector.is_empty())
+    if req.logical_selectors.is_empty()
+        || req
+            .logical_selectors
+            .iter()
+            .any(|selector| selector.is_empty())
     {
         return Err("logical selectors must not be empty".to_string());
     }
