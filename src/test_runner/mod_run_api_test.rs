@@ -61,6 +61,29 @@ fn run_selectors_accepts_empty_plan() {
 }
 
 #[test]
+fn dry_run_rejects_unsupported_rust_test_args_without_panic() {
+    let mut planned = PlannedSelectors::empty(std::env::current_dir().unwrap_or_default());
+    planned.rs_sel = vec!["tests::case".to_string()];
+    let extra = vec!["--format".to_string(), "json".to_string()];
+
+    let err = run_selectors(
+        &planned,
+        SelectorRunOptions {
+            dry_run: true,
+            force_rerun: false,
+            metrics: false,
+            jobs: 1,
+            extra: &extra,
+            plan_duration: Duration::ZERO,
+        },
+    )
+    .unwrap_err();
+
+    assert!(err.contains("unsupported Rust test argument"));
+    assert!(err.contains("--format"));
+}
+
+#[test]
 fn validate_selection_accepts_tiny_recall_fixture_execution() {
     let args: ValidateSelectionCmdArgs<'_> = ValidateSelectionCmdArgs {
         mode: TestChangeMode::Commit,

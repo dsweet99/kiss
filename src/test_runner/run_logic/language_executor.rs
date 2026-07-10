@@ -103,15 +103,16 @@ pub(super) fn selective_selector_count(phase: &ExecutionPhase) -> usize {
 pub(super) fn print_dry_run(
     options: &crate::test_runner::SelectorRunOptions<'_>,
     phases: &[(&dyn LanguageTestModule, ExecutionPhase)],
-) {
+) -> Result<(), String> {
     for (module, phase) in phases {
         let (selectors, population) = match phase {
             ExecutionPhase::NoWork => continue,
             ExecutionPhase::Population(selectors) => (selectors.as_slice(), true),
             ExecutionPhase::Selective(selectors) => (selectors.as_slice(), false),
         };
-        for line in module.dry_run_lines(selectors, population, options.extra) {
+        for line in module.dry_run_lines(selectors, population, options.extra, options.jobs)? {
             println!("{line}");
         }
     }
+    Ok(())
 }

@@ -370,6 +370,34 @@ fn build_cargo_llvm_cov_dry_run_argv_places_selector_before_extra() {
 }
 
 #[test]
+fn rust_coverage_batch_dry_run_lines_render_one_nextest_batch() {
+    let selectors = vec!["alpha".to_string(), "beta".to_string()];
+    let lines =
+        build_rust_coverage_batch_dry_run_lines(&selectors, &["--exact".into()], 8).unwrap();
+
+    assert_eq!(lines[0], "RUST BATCH selectors=2 jobs=8");
+    assert!(lines[1].starts_with("cargo llvm-cov nextest"));
+    assert!(lines[1].contains("'--build-jobs' 8"));
+    assert!(lines[1].contains("'--test-threads' 8"));
+    assert!(lines[1].contains("'--message-format-version' 0.1"));
+    assert!(!lines[1].contains("llvm-cov test"));
+    assert!(!lines[1].contains("--no-clean"));
+    assert_eq!(lines[2], "RUST SELECTOR alpha");
+    assert_eq!(lines[3], "RUST SELECTOR beta");
+}
+
+#[test]
+fn rust_coverage_batch_dry_run_lines_return_unsupported_argument_error() {
+    let selectors = vec!["alpha".to_string()];
+    let err =
+        build_rust_coverage_batch_dry_run_lines(&selectors, &["--format".into(), "json".into()], 8)
+            .unwrap_err();
+
+    assert!(err.contains("unsupported Rust test argument"));
+    assert!(err.contains("--format"));
+}
+
+#[test]
 fn shlex_quote_spaces() {
     assert!(shlex_quote("a b").contains('\''));
 }

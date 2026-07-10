@@ -4,6 +4,7 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::must_use_candidate)]
 
+mod batch_plan;
 mod cargo_runner;
 mod file_lock;
 mod finalize;
@@ -11,6 +12,8 @@ mod llvm_cov_json;
 mod rust_cov_cache;
 mod worker;
 
+#[cfg(test)]
+mod batch_plan_test;
 #[cfg(test)]
 mod cargo_runner_test;
 #[cfg(test)]
@@ -36,6 +39,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+pub use batch_plan::{
+    RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
+    validate_supported_rust_test_args,
+};
 pub use cargo_runner::{
     CargoLlvmCovRunError, CargoLlvmCovRunOutcome, CargoLlvmCovRunRequest, CargoLlvmCovRunner,
     subprocess_cargo_llvm_cov_runner,
@@ -84,6 +91,7 @@ pub use llvm_cov_json::RustLineCoverage;
 pub enum RustCovCacheStatus {
     Hit,
     MissStored,
+    FreshUnstored,
 }
 
 #[cfg(test)]

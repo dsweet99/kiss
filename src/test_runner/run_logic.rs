@@ -37,7 +37,7 @@ pub(crate) fn run_selectors(
         (&rust, execution_phase(&rust, &ctx)?),
     ];
     if options.dry_run {
-        return Ok(finish_dry_run(planned, &options, total_started, &modules));
+        return finish_dry_run(planned, &options, total_started, &modules);
     }
     run_selected_phases(planned, &options, total_started, &modules)
 }
@@ -63,8 +63,8 @@ fn finish_dry_run(
     options: &SelectorRunOptions<'_>,
     total_started: Instant,
     modules: &[(&dyn LanguageTestModule, ExecutionPhase)],
-) -> i32 {
-    print_dry_run(options, modules);
+) -> Result<i32, String> {
+    print_dry_run(options, modules)?;
     if options.metrics {
         let python_phase = phase_for_language(modules, kiss::Language::Python);
         let rust_phase = phase_for_language(modules, kiss::Language::Rust);
@@ -80,7 +80,7 @@ fn finish_dry_run(
         metrics.capture_cache_shape(&planned.repo_root);
         metrics.print();
     }
-    0
+    Ok(0)
 }
 
 fn run_selected_phases(

@@ -27,6 +27,23 @@ fn run_rust_llvm_cov_selectors_rejects_zero_jobs_before_spawning() {
 }
 
 #[test]
+fn run_rust_llvm_cov_selectors_rejects_unsupported_test_args_before_tool_detection() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    let err = run_rust_llvm_cov_selectors(
+        tmp.path(),
+        &["tests::case".to_string()],
+        &["--format".to_string(), "json".to_string()],
+        false,
+        1,
+    )
+    .unwrap_err();
+
+    assert!(err.contains("unsupported Rust test argument"));
+    assert!(err.contains("--format"));
+}
+
+#[test]
 fn rust_llvm_cov_request_contract_preserves_selector_and_cache_root() {
     let tmp = tempfile::tempdir().unwrap();
     let extra = vec!["--exact".to_string()];
@@ -48,6 +65,23 @@ fn rust_llvm_cov_request_contract_preserves_selector_and_cache_root() {
 }
 
 #[test]
+fn rust_llvm_cov_request_rejects_unsupported_test_args() {
+    let tmp = tempfile::tempdir().unwrap();
+    let err = rust_llvm_cov_request_from_parts(
+        tmp.path(),
+        "tests::case",
+        &["--test-threads".to_string(), "8".to_string()],
+        "llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        false,
+    )
+    .unwrap_err();
+
+    assert!(err.contains("unsupported Rust test argument"));
+    assert!(err.contains("--test-threads"));
+}
+
+#[test]
 fn bounded_rust_llvm_cov_wrapper_handles_empty_queue() {
     let results = run_rust_llvm_cov_requests_bounded(Vec::new(), 1).unwrap();
 
@@ -62,10 +96,18 @@ fn print_rust_llvm_cov_outcome_accepts_all_status_cache_shapes() {
             rpytest_runner::TestStatus::Passed,
             RustCovCacheStatus::MissStored,
         ),
+        (
+            rpytest_runner::TestStatus::Passed,
+            RustCovCacheStatus::FreshUnstored,
+        ),
         (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::Hit),
         (
             rpytest_runner::TestStatus::Failed,
             RustCovCacheStatus::MissStored,
+        ),
+        (
+            rpytest_runner::TestStatus::Failed,
+            RustCovCacheStatus::FreshUnstored,
         ),
     ] {
         print_rust_llvm_cov_outcome(&RustLlvmCovOutcome {

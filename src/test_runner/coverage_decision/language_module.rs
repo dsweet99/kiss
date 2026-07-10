@@ -45,7 +45,8 @@ macro_rules! define_language_policy_traits {
                 selectors: &[String],
                 population: bool,
                 extra: &[String],
-            ) -> Vec<String>;
+                jobs: usize,
+            ) -> Result<Vec<String>, String>;
         }
 
         pub(crate) trait LanguageTestModule: LanguagePlanner + LanguageExecutor {}

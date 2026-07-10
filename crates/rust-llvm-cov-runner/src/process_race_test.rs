@@ -224,6 +224,7 @@ fn run_same_selector_child() {
     let text = match outcome.cache_status {
         RustCovCacheStatus::Hit => "Hit",
         RustCovCacheStatus::MissStored => "MissStored",
+        RustCovCacheStatus::FreshUnstored => "FreshUnstored",
     };
     fs::write(outcome_path, text).unwrap();
 }

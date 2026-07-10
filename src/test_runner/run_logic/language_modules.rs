@@ -65,7 +65,8 @@ impl LanguageExecutor for PythonModule {
         selectors: &[String],
         population: bool,
         extra: &[String],
-    ) -> Vec<String> {
+        _jobs: usize,
+    ) -> Result<Vec<String>, String> {
         let mut lines = Vec::new();
         if population {
             lines.push("PYTHON COVERAGE POPULATION".to_string());
@@ -74,7 +75,7 @@ impl LanguageExecutor for PythonModule {
             let argv = runners::build_pytest_argv(selectors, extra);
             lines.push(runners::shell_quote_line(&argv));
         }
-        lines
+        Ok(lines)
     }
 }
 
@@ -136,16 +137,16 @@ impl LanguageExecutor for RustModule {
         selectors: &[String],
         population: bool,
         extra: &[String],
-    ) -> Vec<String> {
+        jobs: usize,
+    ) -> Result<Vec<String>, String> {
         let mut lines = Vec::new();
         if population {
             lines.push("RUST COVERAGE POPULATION".to_string());
         }
-        for selector in selectors {
-            let argv = runners::build_cargo_llvm_cov_dry_run_argv(selector, extra);
-            lines.push(runners::shell_quote_line(&argv));
-        }
-        lines
+        lines.extend(runners::build_rust_coverage_batch_dry_run_lines(
+            selectors, extra, jobs,
+        )?);
+        Ok(lines)
     }
 }
 

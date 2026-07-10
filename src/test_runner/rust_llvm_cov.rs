@@ -2,15 +2,18 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 
+#[cfg(test)]
+use rust_llvm_cov_runner::{CargoLlvmCovRunRequest, build_llvm_cov_argv};
 use rust_llvm_cov_runner::{
-    CargoLlvmCovRunRequest, RustCovCacheStatus, RustLlvmCov, RustLlvmCovError, RustLlvmCovOutcome,
-    RustLlvmCovRequest, build_llvm_cov_argv, cleanup_surplus_rust_cov_worker_slots,
-    subprocess_cargo_llvm_cov_runner,
+    RustCovCacheStatus, RustLlvmCov, RustLlvmCovError, RustLlvmCovOutcome, RustLlvmCovRequest,
+    cleanup_surplus_rust_cov_worker_slots, subprocess_cargo_llvm_cov_runner,
+    validate_supported_rust_test_args,
 };
 
 use super::last_status::{record_statuses, rust_last_status_identity};
 use super::runners::{SelectorExecutionSummary, command_stdout};
 
+#[cfg(test)]
 pub(crate) fn build_cargo_llvm_cov_dry_run_argv(selector: &str, extra: &[String]) -> Vec<String> {
     let mut req = CargoLlvmCovRunRequest::new(
         selector,
@@ -30,6 +33,7 @@ pub(crate) fn run_rust_llvm_cov_selectors(
     jobs: usize,
 ) -> Result<SelectorExecutionSummary, String> {
     assert!(jobs > 0, "jobs must be greater than zero");
+    validate_supported_rust_test_args(extra)?;
     let (llvm_cov_version, rustc_version) = detect_rust_llvm_cov_versions(repo_root)?;
     let identity = rust_last_status_identity(&llvm_cov_version, &rustc_version, extra);
     let reqs: Vec<_> = selectors
@@ -71,6 +75,7 @@ pub(crate) fn rust_llvm_cov_request_from_parts(
     rustc_version: &str,
     force_rerun: bool,
 ) -> Result<RustLlvmCovRequest, String> {
+    validate_supported_rust_test_args(extra)?;
     Ok(RustLlvmCovRequest {
         selector: selector.to_string(),
         cwd: repo_root.to_path_buf(),
@@ -189,6 +194,9 @@ fn print_rust_llvm_cov_outcome(outcome: &RustLlvmCovOutcome) {
         (rpytest_runner::TestStatus::Passed, RustCovCacheStatus::MissStored) => {
             println!("PASSED: {}", outcome.selector);
         }
+        (rpytest_runner::TestStatus::Passed, RustCovCacheStatus::FreshUnstored) => {
+            println!("PASSED (not cached): {}", outcome.selector);
+        }
         (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::Hit) => {
             println!("FAILED (cached): {}", outcome.selector);
             eprintln!(
@@ -197,6 +205,14 @@ fn print_rust_llvm_cov_outcome(outcome: &RustLlvmCovOutcome) {
         }
         (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::MissStored) => {
             println!("FAILED: {}", outcome.selector);
+            if let Some(stderr) = &outcome.stderr
+                && !stderr.is_empty()
+            {
+                eprint!("{}", String::from_utf8_lossy(stderr));
+            }
+        }
+        (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::FreshUnstored) => {
+            println!("FAILED (not cached): {}", outcome.selector);
             if let Some(stderr) = &outcome.stderr
                 && !stderr.is_empty()
             {

@@ -1,14 +1,19 @@
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+#[cfg(not(test))]
+pub(crate) use super::rust_llvm_cov::run_rust_llvm_cov_selectors;
 #[cfg(test)]
 pub(crate) use super::rust_llvm_cov::rust_llvm_cov_request_from_parts;
+#[cfg(test)]
 pub(crate) use super::rust_llvm_cov::{
     build_cargo_llvm_cov_dry_run_argv, run_rust_llvm_cov_selectors,
 };
 use kiss::test_refs::{is_in_test_directory, is_test_file};
 use kiss::{parse_files, parse_rust_files, rust_test_functions_in, test_functions_in};
+use rust_llvm_cov_runner::{RustCoverageBatchRequest, build_rust_coverage_batch_plan};
 
 #[path = "runners/decision.rs"]
 mod decision;
@@ -212,6 +217,39 @@ pub fn build_pytest_argv(selectors: &[String], extra: &[String]) -> Vec<String> 
     v.extend(selectors.iter().cloned());
     v.extend(extra.iter().cloned());
     v
+}
+
+pub(crate) fn build_rust_coverage_batch_dry_run_lines(
+    selectors: &[String],
+    extra: &[String],
+    jobs: usize,
+) -> Result<Vec<String>, String> {
+    if selectors.is_empty() {
+        return Ok(Vec::new());
+    }
+    let req = RustCoverageBatchRequest {
+        cwd: PathBuf::from("."),
+        source_root: PathBuf::from("."),
+        cargo: PathBuf::from("cargo"),
+        cache_root: PathBuf::from("<cache>/rust_llvm_cov_cache"),
+        logical_selectors: selectors.to_vec(),
+        cargo_args: Vec::new(),
+        test_args: extra.to_vec(),
+        env: BTreeMap::new(),
+        jobs,
+        generated_config: PathBuf::from("<generated-filter>"),
+    };
+    let plan = build_rust_coverage_batch_plan(&req)?;
+    let mut lines = vec![
+        format!("RUST BATCH selectors={} jobs={jobs}", selectors.len()),
+        shell_quote_line(&plan.argv),
+    ];
+    lines.extend(
+        selectors
+            .iter()
+            .map(|selector| format!("RUST SELECTOR {selector}")),
+    );
+    Ok(lines)
 }
 
 pub(crate) fn command_stdout(program: &Path, args: &[&str], cwd: &Path) -> Result<String, String> {
