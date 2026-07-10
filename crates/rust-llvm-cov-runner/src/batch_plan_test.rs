@@ -162,3 +162,52 @@ fn batch_plan_rejects_unsupported_test_arguments_before_mutation() {
         assert!(err.contains("unsupported Rust test argument") || err.contains("--skip"));
     }
 }
+
+#[test]
+fn batch_plan_rejects_cargo_args_that_override_compile_once_controls() {
+    for cargo_args in [
+        vec!["--target-dir".to_string(), "/tmp/other-target".to_string()],
+        vec!["--target-dir=/tmp/other-target".to_string()],
+        vec!["--jobs".to_string(), "99".to_string()],
+        vec!["-j".to_string(), "99".to_string()],
+        vec!["-j99".to_string()],
+        vec![
+            "--config".to_string(),
+            "build.target-dir='/tmp/other'".to_string(),
+        ],
+        vec![
+            "--config".to_string(),
+            "[build]\ntarget-dir = '/tmp/other'".to_string(),
+        ],
+        vec![
+            "--config".to_string(),
+            "[build]\nrustflags = []\ntarget-dir = '/tmp/other'".to_string(),
+        ],
+        vec!["--config=build.jobs=99".to_string()],
+        vec!["--config=build = { jobs = 99 }".to_string()],
+        vec!["--config=build = { rustflags = [], jobs = 99 }".to_string()],
+    ] {
+        let mut req = request();
+        req.cargo_args = cargo_args;
+
+        let err = build_rust_coverage_batch_plan(&req).unwrap_err();
+
+        assert!(err.contains("unsupported Rust cargo argument"));
+    }
+}
+
+#[test]
+fn batch_plan_rejects_empty_cargo_config_values_before_mutation() {
+    for cargo_args in [
+        vec!["--config".to_string()],
+        vec!["--config".to_string(), String::new()],
+        vec!["--config=".to_string()],
+    ] {
+        let mut req = request();
+        req.cargo_args = cargo_args;
+
+        let err = build_rust_coverage_batch_plan(&req).unwrap_err();
+
+        assert!(err.contains("--config requires a non-empty value"));
+    }
+}

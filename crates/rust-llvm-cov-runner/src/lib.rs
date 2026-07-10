@@ -41,7 +41,7 @@ use std::time::Duration;
 
 pub use batch_plan::{
     RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
-    validate_supported_rust_test_args,
+    validate_supported_rust_cargo_args, validate_supported_rust_test_args,
 };
 pub use cargo_runner::{
     CargoLlvmCovRunError, CargoLlvmCovRunOutcome, CargoLlvmCovRunRequest, CargoLlvmCovRunner,

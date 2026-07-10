@@ -127,8 +127,121 @@ fn validate_batch_request(req: &RustCoverageBatchRequest) -> Result<(), String> 
     {
         return Err("logical selectors must not be empty".to_string());
     }
+    validate_supported_rust_cargo_args(&req.cargo_args)?;
     validate_supported_rust_test_args(&req.test_args)?;
     Ok(())
+}
+
+pub fn validate_supported_rust_cargo_args(cargo_args: &[String]) -> Result<(), String> {
+    let mut index = 0;
+    while index < cargo_args.len() {
+        index = next_supported_cargo_arg_index(cargo_args, index)?;
+    }
+    Ok(())
+}
+
+fn next_supported_cargo_arg_index(cargo_args: &[String], index: usize) -> Result<usize, String> {
+    let arg = &cargo_args[index];
+    match arg.as_str() {
+        "--target-dir" | "--jobs" | "-j" => Err(unsupported_cargo_arg_error(arg)),
+        "--config" => validate_split_cargo_config_arg(cargo_args, index),
+        _ if arg.starts_with("--target-dir=")
+            || arg.starts_with("--jobs=")
+            || (arg.starts_with("-j") && arg.len() > "-j".len()) =>
+        {
+            Err(unsupported_cargo_arg_error(arg))
+        }
+        _ if arg.starts_with("--config=") => validate_inline_cargo_config_arg(arg, index),
+        _ => Ok(index + 1),
+    }
+}
+
+fn validate_split_cargo_config_arg(
+    cargo_args: &[String],
+    index: usize,
+) -> Result<usize, String> {
+    match cargo_args.get(index + 1) {
+        Some(value) => {
+            validate_cargo_config_value("--config", value)?;
+            Ok(index + 2)
+        }
+        None => Err(cargo_config_value_error()),
+    }
+}
+
+fn validate_inline_cargo_config_arg(arg: &str, index: usize) -> Result<usize, String> {
+    let value = arg.trim_start_matches("--config=");
+    validate_cargo_config_value(arg, value)?;
+    Ok(index + 1)
+}
+
+fn validate_cargo_config_value(arg: &str, value: &str) -> Result<(), String> {
+    if value.is_empty() {
+        Err(cargo_config_value_error())
+    } else if cargo_config_overrides_compile_once_controls(value) {
+        Err(unsupported_cargo_arg_error(arg))
+    } else {
+        Ok(())
+    }
+}
+
+fn cargo_config_overrides_compile_once_controls(value: &str) -> bool {
+    let compact: String = value
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace() && *ch != '"' && *ch != '\'')
+        .collect();
+    has_compile_once_key(&compact)
+        || build_table_overrides_compile_once_controls(value)
+        || inline_build_table_overrides_compile_once_controls(&compact)
+}
+
+fn has_compile_once_key(value: &str) -> bool {
+    value.contains("build.target-dir=") || value.contains("build.jobs=")
+}
+
+fn build_table_overrides_compile_once_controls(value: &str) -> bool {
+    let mut in_build_table = false;
+    for line in value.lines() {
+        let compact = compact_cargo_config_line(line);
+        if compact.starts_with('[') {
+            in_build_table = compact == "[build]";
+        } else if in_build_table && contains_compile_once_field(&compact) {
+            return true;
+        }
+    }
+    false
+}
+
+fn inline_build_table_overrides_compile_once_controls(value: &str) -> bool {
+    let Some(start) = value.find("build={") else {
+        return false;
+    };
+    let rest = &value[start + "build={".len()..];
+    let end = rest.find('}').unwrap_or(rest.len());
+    contains_compile_once_field(&rest[..end])
+}
+
+fn contains_compile_once_field(value: &str) -> bool {
+    value.starts_with("target-dir=")
+        || value.starts_with("jobs=")
+        || value.contains(",target-dir=")
+        || value.contains(",jobs=")
+}
+
+fn compact_cargo_config_line(line: &str) -> String {
+    line.chars()
+        .filter(|ch| !ch.is_ascii_whitespace() && *ch != '"' && *ch != '\'')
+        .collect()
+}
+
+fn unsupported_cargo_arg_error(arg: &str) -> String {
+    format!(
+        "unsupported Rust cargo argument `{arg}`; KISS controls the target directory and job budget for compile-once coverage"
+    )
+}
+
+fn cargo_config_value_error() -> String {
+    "--config requires a non-empty value".to_string()
 }
 
 pub fn validate_supported_rust_test_args(test_args: &[String]) -> Result<(), String> {

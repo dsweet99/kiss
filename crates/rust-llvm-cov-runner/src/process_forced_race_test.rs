@@ -31,6 +31,7 @@ fn overlapping_forced_same_selector_runs_are_serialized_with_distinct_artifacts(
     fs::create_dir_all(&releases).unwrap();
     let go = control.join("go");
     let overlap = control.join("overlap");
+    let race_paths = ForcedRacePaths::new(&invocations, &releases, &go, &overlap);
     let children = [
         ChildSpec {
             ready: control.join("ready-forced-0"),
@@ -48,24 +49,17 @@ fn overlapping_forced_same_selector_runs_are_serialized_with_distinct_artifacts(
                 tmp.path(),
                 "smoke::passes",
                 0,
-                &invocations,
-                &releases,
-                &go,
-                &overlap,
+                &race_paths,
                 child,
             )
         })
         .collect();
 
-    for child in &children {
-        wait_for_path(&child.ready);
-    }
+    wait_for_children_ready(&children);
     fs::write(&go, b"go").unwrap();
     release_ready_invocations(&invocations, &releases, 1);
     release_ready_invocations(&invocations, &releases, 2);
-    for child in &mut processes {
-        wait_child(child);
-    }
+    wait_for_processes(&mut processes);
 
     let statuses: Vec<_> = children
         .iter()
@@ -92,6 +86,7 @@ fn different_selectors_on_same_worker_slot_do_not_overlap_runner_sections() {
     fs::create_dir_all(&releases).unwrap();
     let go = control.join("go");
     let overlap = control.join("overlap");
+    let race_paths = ForcedRacePaths::new(&invocations, &releases, &go, &overlap);
     let children = [
         ChildSpec {
             ready: control.join("ready-same-slot-0"),
@@ -107,33 +102,23 @@ fn different_selectors_on_same_worker_slot_do_not_overlap_runner_sections() {
             tmp.path(),
             "smoke::slot_a",
             0,
-            &invocations,
-            &releases,
-            &go,
-            &overlap,
+            &race_paths,
             &children[0],
         ),
         spawn_forced_selector_child(
             tmp.path(),
             "smoke::slot_b",
             0,
-            &invocations,
-            &releases,
-            &go,
-            &overlap,
+            &race_paths,
             &children[1],
         ),
     ];
 
-    for child in &children {
-        wait_for_path(&child.ready);
-    }
+    wait_for_children_ready(&children);
     fs::write(&go, b"go").unwrap();
     release_ready_invocations(&invocations, &releases, 1);
     release_ready_invocations(&invocations, &releases, 2);
-    for child in &mut processes {
-        wait_child(child);
-    }
+    wait_for_processes(&mut processes);
 
     assert!(!overlap.exists(), "same worker-slot runners overlapped");
     assert_eq!(ready_artifact_paths(&invocations).len(), 2);
@@ -150,6 +135,7 @@ fn different_worker_slots_can_overlap_runner_sections() {
     fs::create_dir_all(&releases).unwrap();
     let go = control.join("go");
     let overlap = control.join("overlap");
+    let race_paths = ForcedRacePaths::new(&invocations, &releases, &go, &overlap);
     let children = [
         ChildSpec {
             ready: control.join("ready-different-slot-0"),
@@ -165,27 +151,19 @@ fn different_worker_slots_can_overlap_runner_sections() {
             tmp.path(),
             "smoke::slot_a",
             0,
-            &invocations,
-            &releases,
-            &go,
-            &overlap,
+            &race_paths,
             &children[0],
         ),
         spawn_forced_selector_child(
             tmp.path(),
             "smoke::slot_b",
             1,
-            &invocations,
-            &releases,
-            &go,
-            &overlap,
+            &race_paths,
             &children[1],
         ),
     ];
 
-    for child in &children {
-        wait_for_path(&child.ready);
-    }
+    wait_for_children_ready(&children);
     fs::write(&go, b"go").unwrap();
     wait_for_ready_invocation_count(&invocations, 2);
     assert!(
@@ -193,9 +171,7 @@ fn different_worker_slots_can_overlap_runner_sections() {
         "different worker-slot runners did not overlap"
     );
     release_ready_invocations(&invocations, &releases, 2);
-    for child in &mut processes {
-        wait_child(child);
-    }
+    wait_for_processes(&mut processes);
 }
 
 struct ChildSpec {
@@ -203,14 +179,41 @@ struct ChildSpec {
     outcome: PathBuf,
 }
 
+struct ForcedRacePaths<'a> {
+    invocations: &'a Path,
+    releases: &'a Path,
+    go: &'a Path,
+    overlap: &'a Path,
+}
+
+impl<'a> ForcedRacePaths<'a> {
+    fn new(invocations: &'a Path, releases: &'a Path, go: &'a Path, overlap: &'a Path) -> Self {
+        Self {
+            invocations,
+            releases,
+            go,
+            overlap,
+        }
+    }
+}
+
+fn wait_for_children_ready(children: &[ChildSpec]) {
+    for child in children {
+        wait_for_path(&child.ready);
+    }
+}
+
+fn wait_for_processes(processes: &mut [Child]) {
+    for child in processes {
+        wait_child(child);
+    }
+}
+
 fn spawn_forced_selector_child(
     root: &Path,
     selector: &str,
     worker_slot: usize,
-    invocations: &Path,
-    releases: &Path,
-    go: &Path,
-    overlap: &Path,
+    race_paths: &ForcedRacePaths<'_>,
     child: &ChildSpec,
 ) -> Child {
     Command::new(std::env::current_exe().unwrap())
@@ -221,12 +224,12 @@ fn spawn_forced_selector_child(
         .env("KISS_RUST_COV_ROOT", root)
         .env("KISS_RUST_COV_SELECTOR", selector)
         .env("KISS_RUST_COV_WORKER_SLOT", worker_slot.to_string())
-        .env("KISS_RUST_COV_INVOCATIONS", invocations)
-        .env("KISS_RUST_COV_RELEASES", releases)
-        .env("KISS_RUST_COV_OVERLAP", overlap)
+        .env("KISS_RUST_COV_INVOCATIONS", race_paths.invocations)
+        .env("KISS_RUST_COV_RELEASES", race_paths.releases)
+        .env("KISS_RUST_COV_OVERLAP", race_paths.overlap)
         .env("KISS_RUST_COV_OUTCOME", &child.outcome)
         .env("KISS_RUST_COV_UNLOCKED_MISS_READY", &child.ready)
-        .env("KISS_RUST_COV_UNLOCKED_MISS_GO", go)
+        .env("KISS_RUST_COV_UNLOCKED_MISS_GO", race_paths.go)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
