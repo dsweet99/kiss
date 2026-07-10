@@ -72,12 +72,7 @@ fn finalize_passed_run(
     if finalization.is_empty() {
         Ok(outcome)
     } else {
-        Err(RustLlvmCovError::Composite {
-            primary: Box::new(RustLlvmCovError::InvalidRequest(
-                "rust llvm-cov finalization failed after successful execution".to_string(),
-            )),
-            finalization,
-        })
+        Err(finalization_only(finalization))
     }
 }
 
@@ -105,22 +100,18 @@ fn finalize_nonzero_run(
         &RustCovCacheEntry::from(&outcome),
     ) {
         finalization.push(RustLlvmCovError::Io(err));
-    }
-    match fs::remove_file(&run.artifact_path) {
-        Ok(()) => {}
-        Err(err) if err.kind() == io::ErrorKind::NotFound => {}
-        Err(err) => finalization.push(RustLlvmCovError::Io(err)),
+    } else {
+        match fs::remove_file(&run.artifact_path) {
+            Ok(()) => {}
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+            Err(err) => finalization.push(RustLlvmCovError::Io(err)),
+        }
     }
     finalization.extend(collect_cleanup_errors(req));
     if finalization.is_empty() {
         Ok(outcome)
     } else {
-        Err(RustLlvmCovError::Composite {
-            primary: Box::new(RustLlvmCovError::InvalidRequest(
-                "rust llvm-cov finalization failed after nonzero test execution".to_string(),
-            )),
-            finalization,
-        })
+        Err(finalization_only(finalization))
     }
 }
 
@@ -144,4 +135,12 @@ pub(crate) fn combine_primary_and_finalization(
             finalization,
         }
     }
+}
+
+fn finalization_only(finalization: Vec<RustLlvmCovError>) -> RustLlvmCovError {
+    assert!(
+        !finalization.is_empty(),
+        "finalization-only error must contain at least one failure"
+    );
+    RustLlvmCovError::Finalization(finalization)
 }

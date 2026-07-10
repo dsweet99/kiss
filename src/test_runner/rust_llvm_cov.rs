@@ -47,7 +47,9 @@ pub(crate) fn run_rust_llvm_cov_selectors(
         .collect::<Result<_, _>>()?;
     let mut summary = SelectorExecutionSummary::default();
     let mut statuses = Vec::new();
-    for result in run_rust_llvm_cov_requests_bounded(reqs, jobs) {
+    for result in
+        run_rust_llvm_cov_requests_bounded(reqs, jobs).map_err(format_rust_llvm_cov_error)?
+    {
         let outcome = result.map_err(format_rust_llvm_cov_error)?;
         print_rust_llvm_cov_outcome(&outcome);
         statuses.push((outcome.selector.clone(), outcome.status));
@@ -96,7 +98,7 @@ fn detect_rust_llvm_cov_versions(repo_root: &Path) -> Result<(String, String), S
 fn run_rust_llvm_cov_requests_bounded(
     reqs: Vec<RustLlvmCovRequest>,
     jobs: usize,
-) -> Vec<Result<RustLlvmCovOutcome, RustLlvmCovError>> {
+) -> Result<Vec<Result<RustLlvmCovOutcome, RustLlvmCovError>>, RustLlvmCovError> {
     run_rust_llvm_cov_requests_bounded_with_spawner(reqs, jobs, spawn_rust_llvm_cov_job)
 }
 
@@ -106,7 +108,7 @@ fn run_rust_llvm_cov_requests_bounded_with_spawner<F>(
     reqs: Vec<RustLlvmCovRequest>,
     jobs: usize,
     mut spawn_job: F,
-) -> Vec<Result<RustLlvmCovOutcome, RustLlvmCovError>>
+) -> Result<Vec<Result<RustLlvmCovOutcome, RustLlvmCovError>>, RustLlvmCovError>
 where
     F: FnMut(usize, usize, RustLlvmCovRequest, mpsc::Sender<RustLlvmCovJobResult>),
 {
@@ -119,10 +121,10 @@ where
         ))
     });
     if len == 0 {
-        return out;
+        return Ok(out);
     }
 
-    cleanup_surplus_worker_slots(&reqs, jobs);
+    cleanup_surplus_worker_slots(&reqs, jobs)?;
     let (tx, rx) = mpsc::channel();
     let mut indexed_reqs = reqs.into_iter().enumerate();
     let mut running = 0usize;
@@ -146,10 +148,13 @@ where
             running += 1;
         }
     }
-    out
+    Ok(out)
 }
 
-fn cleanup_surplus_worker_slots(reqs: &[RustLlvmCovRequest], jobs: usize) {
+fn cleanup_surplus_worker_slots(
+    reqs: &[RustLlvmCovRequest],
+    jobs: usize,
+) -> Result<(), RustLlvmCovError> {
     let mut cache_roots = Vec::new();
     for req in reqs {
         if cache_roots.iter().any(|root| root == &req.cache_root) {
@@ -158,9 +163,9 @@ fn cleanup_surplus_worker_slots(reqs: &[RustLlvmCovRequest], jobs: usize) {
         cache_roots.push(req.cache_root.clone());
     }
     for cache_root in cache_roots {
-        cleanup_surplus_rust_cov_worker_slots(&cache_root, jobs)
-            .expect("coordinated rust llvm-cov worker cleanup failed");
+        cleanup_surplus_rust_cov_worker_slots(&cache_root, jobs)?;
     }
+    Ok(())
 }
 
 fn spawn_rust_llvm_cov_job(

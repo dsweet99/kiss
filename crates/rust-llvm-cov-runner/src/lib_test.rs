@@ -16,6 +16,7 @@ use super::{
     RustCovCacheStatus, RustLineCoverage, RustLlvmCov, RustLlvmCovError, RustLlvmCovOutcome,
     RustLlvmCovRequest, finalize, rust_cov_cache, worker,
 };
+use crate::test_support::write_demo_crate_source;
 
 #[test]
 fn rust_llvm_cov_request_outcome_and_coverage_types_expose_expected_fields() {
@@ -361,20 +362,6 @@ fn rust_llvm_cov_error_combiner_and_test_hook_preserve_failures() {
         RustLlvmCovError::Composite { finalization, .. } if finalization.len() == 1
     ));
     assert!(worker::wait_at_unlocked_miss_hook().is_ok());
-}
-
-fn write_demo_crate_source(root: &std::path::Path) {
-    fs::write(
-        root.join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    fs::create_dir(root.join("src")).unwrap();
-    fs::write(
-        root.join("src").join("lib.rs"),
-        "pub fn value() -> u32 { 1 }\n",
-    )
-    .unwrap();
 }
 
 fn fake_runner(calls: Rc<Cell<usize>>, covered_file: PathBuf) -> CargoLlvmCovRunner {

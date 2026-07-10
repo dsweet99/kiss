@@ -8,6 +8,9 @@ use sha2::{Digest, Sha256};
 use crate::RustLlvmCovError;
 use crate::file_lock::FileLockGuard;
 
+#[cfg(test)]
+pub(crate) mod lock_failure_injection;
+
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
@@ -175,29 +178,37 @@ fn remove_path_if_exists(path: &Path) -> io::Result<()> {
 }
 
 pub(crate) fn lock_selector(cache_root: &Path, fingerprint: &str) -> io::Result<FileLockGuard> {
-    FileLockGuard::lock(
-        &cache_root
-            .join("locks")
-            .join("selectors")
-            .join(format!("{fingerprint}.lock")),
-    )
+    let path = cache_root
+        .join("locks")
+        .join("selectors")
+        .join(format!("{fingerprint}.lock"));
+    #[cfg(test)]
+    lock_failure_injection::fail_if_injected(&path)?;
+    FileLockGuard::lock(&path)
 }
 
 pub(crate) fn lock_legacy_cleanup(cache_root: &Path) -> io::Result<FileLockGuard> {
-    FileLockGuard::lock(
-        &cache_root
-            .join("locks")
-            .join("workers")
-            .join("legacy-cleanup.lock"),
-    )
+    let path = cache_root
+        .join("locks")
+        .join("workers")
+        .join("legacy-cleanup.lock");
+    #[cfg(test)]
+    lock_failure_injection::fail_if_injected(&path)?;
+    FileLockGuard::lock(&path)
 }
 
 pub(crate) fn lock_worker(cache_root: &Path, worker_slot: usize) -> io::Result<FileLockGuard> {
-    FileLockGuard::lock(&worker_lock_path(cache_root, worker_slot))
+    let path = worker_lock_path(cache_root, worker_slot);
+    #[cfg(test)]
+    lock_failure_injection::fail_if_injected(&path)?;
+    FileLockGuard::lock(&path)
 }
 
 fn try_lock_worker(cache_root: &Path, worker_slot: usize) -> io::Result<Option<FileLockGuard>> {
-    FileLockGuard::try_lock(&worker_lock_path(cache_root, worker_slot))
+    let path = worker_lock_path(cache_root, worker_slot);
+    #[cfg(test)]
+    lock_failure_injection::fail_if_injected(&path)?;
+    FileLockGuard::try_lock(&path)
 }
 
 fn worker_lock_path(cache_root: &Path, worker_slot: usize) -> PathBuf {

@@ -49,7 +49,7 @@ fn rust_llvm_cov_request_contract_preserves_selector_and_cache_root() {
 
 #[test]
 fn bounded_rust_llvm_cov_wrapper_handles_empty_queue() {
-    let results = run_rust_llvm_cov_requests_bounded(Vec::new(), 1);
+    let results = run_rust_llvm_cov_requests_bounded(Vec::new(), 1).unwrap();
 
     assert!(results.is_empty());
 }
@@ -122,7 +122,8 @@ fn bounded_runner_assigns_and_reuses_worker_slots() {
                 stderr: None,
             };
             tx.send((index, slot, Ok(outcome))).unwrap();
-        });
+        })
+        .unwrap();
 
     assert!(results.iter().all(Result::is_ok));
     assert_eq!(&*seen_slots.borrow(), &[0, 1, 0, 1, 0]);
@@ -173,12 +174,47 @@ fn bounded_runner_removes_surplus_worker_slots() {
                 stderr: None,
             };
             tx.send((index, slot, Ok(outcome))).unwrap();
-        });
+        })
+        .unwrap();
 
     assert!(results.iter().all(Result::is_ok));
     assert!(cache_root.join("workers").join("slot-0").exists());
     assert!(cache_root.join("workers").join("slot-1").exists());
     assert!(!cache_root.join("workers").join("slot-2").exists());
+}
+
+#[test]
+fn bounded_runner_returns_cleanup_failure_before_spawning_jobs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    fs::create_dir_all(cache_root.parent().unwrap()).unwrap();
+    fs::write(&cache_root, b"not a directory").unwrap();
+    let req = RustLlvmCovRequest {
+        selector: "tests::case".to_string(),
+        cwd: tmp.path().to_path_buf(),
+        source_root: tmp.path().to_path_buf(),
+        cargo: PathBuf::from("cargo"),
+        llvm_cov_version: "cargo-llvm-cov 0.6.0".to_string(),
+        rustc_version: "rustc 1.88.0".to_string(),
+        cargo_args: Vec::new(),
+        test_args: Vec::new(),
+        env: BTreeMap::new(),
+        cache_root,
+        force_rerun: false,
+        worker_slot: usize::MAX,
+    };
+    let spawned = Rc::new(RefCell::new(0usize));
+    let spawned_for_spawner = Rc::clone(&spawned);
+
+    let err = run_rust_llvm_cov_requests_bounded_with_spawner(vec![req], 1, move |_, _, _, _| {
+        *spawned_for_spawner.borrow_mut() += 1;
+    })
+    .unwrap_err();
+
+    assert!(matches!(err, RustLlvmCovError::Io(_)));
+    assert_eq!(*spawned.borrow(), 0);
+    let msg = format_rust_llvm_cov_error(err);
+    assert!(msg.contains("rust llvm-cov failed"));
 }
 
 #[test]

@@ -334,4 +334,23 @@ mod tests {
         print_cache_metrics(&metrics);
         metrics.print();
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn path_size_and_count_returns_error_for_unreadable_directory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let blocked = tmp.path().join("blocked");
+        fs::create_dir(&blocked).unwrap();
+        let original_permissions = fs::metadata(&blocked).unwrap().permissions();
+        let mut blocked_permissions = original_permissions.clone();
+        blocked_permissions.set_mode(0o000);
+        fs::set_permissions(&blocked, blocked_permissions).unwrap();
+
+        let result = path_size_and_count(&blocked);
+
+        fs::set_permissions(&blocked, original_permissions).unwrap();
+        assert!(result.is_err());
+    }
 }

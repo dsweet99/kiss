@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use rpytest_runner::TestStatus;
 
@@ -9,6 +9,9 @@ use super::{
     CargoLlvmCovRunOutcome, CargoLlvmCovRunner, RustCovCacheStatus, RustLlvmCov,
     cleanup_surplus_rust_cov_worker_slots, rust_cov_cache_tmp_parent, rust_cov_sample_request,
     worker,
+};
+use crate::test_support::{
+    llvm_cov_json_for_file, wait_child, wait_for_path, write_demo_crate_source,
 };
 
 #[test]
@@ -236,55 +239,6 @@ fn run_hold_worker_lock_child() {
     let _guard = worker::lock_worker(&cache_root, worker_slot).unwrap();
     fs::write(ready, b"ready").unwrap();
     wait_for_path(&release);
-}
-
-fn write_demo_crate_source(root: &Path) {
-    fs::write(
-        root.join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    fs::create_dir(root.join("src")).unwrap();
-    fs::write(
-        root.join("src").join("lib.rs"),
-        "pub fn value() -> u32 { 1 }\n",
-    )
-    .unwrap();
-}
-
-fn llvm_cov_json_for_file(file: &Path) -> String {
-    format!(
-        r#"{{"data":[{{"files":[{{"filename":"{}","segments":[[1,1,1,true,true,false]]}}]}}]}}"#,
-        file.display()
-    )
-}
-
-fn wait_for_path(path: &Path) {
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while !path.exists() {
-        assert!(
-            Instant::now() < deadline,
-            "timed out waiting for {}",
-            path.display()
-        );
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
-fn wait_child(child: &mut Child) {
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        if let Some(status) = child.try_wait().unwrap() {
-            assert!(status.success(), "child exited with {status}");
-            return;
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!("child timed out");
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
 }
 
 fn has_entries(path: &Path) -> bool {

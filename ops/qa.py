@@ -758,6 +758,10 @@ def concurrent_cache_recovery() -> None:
                 f"cache hits, got hits={hits}, total={total}, metrics={metrics}, "
                 f"missed_lines={missed_lines}"
             )
+            if language == "rust":
+                assert_metric(metrics, "rust_external_tmp_residual_bytes", "0")
+                assert_metric(metrics, "rust_external_tmp_residual_count", "0")
+                assert_metric(metrics, "rust_external_tmp_residuals_pass", "true")
 
         for language, index_path in (
             ("python", py_cache / "index.json"),

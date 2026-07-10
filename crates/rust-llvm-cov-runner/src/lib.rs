@@ -14,11 +14,19 @@ mod worker;
 #[cfg(test)]
 mod cargo_runner_test;
 #[cfg(test)]
+mod finalize_test;
+#[cfg(test)]
 mod lib_test;
+#[cfg(test)]
+mod lock_failure_test;
+#[cfg(test)]
+mod process_forced_race_test;
 #[cfg(test)]
 mod process_race_test;
 #[cfg(test)]
 mod rust_cov_cache_test;
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod worker_cleanup_test;
 
@@ -120,6 +128,7 @@ pub enum RustLlvmCovError {
     Runner(CargoLlvmCovRunError),
     InvalidRequest(String),
     MissingArtifact(PathBuf),
+    Finalization(Vec<RustLlvmCovError>),
     Composite {
         primary: Box<RustLlvmCovError>,
         finalization: Vec<RustLlvmCovError>,
@@ -169,6 +178,13 @@ impl RustLlvmCov {
         #[cfg(test)]
         worker::wait_at_unlocked_miss_hook()?;
 
+        // Global lock order while the cache is live:
+        // 1. selector lock;
+        // 2. optional legacy-cleanup lock;
+        // 3. worker-slot lock.
+        // Surplus cleanup takes only a nonblocking worker-slot lock, and lock
+        // files stay on disk because deleting live lock files can break mutual
+        // exclusion across processes that already opened them.
         let _selector_guard = lock_selector(&req.cache_root, &fingerprint)?;
         if !req.force_rerun
             && let Some(entry) = load_rust_cov_cache_entry(&req.cache_root, &fingerprint)
