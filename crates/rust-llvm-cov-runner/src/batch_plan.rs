@@ -66,6 +66,7 @@ pub fn build_rust_coverage_batch_plan(
     env.insert("CARGO_LLVM_COV_BUILD_DIR".to_string(), build_target_value);
 
     let jobs = req.jobs.to_string();
+    let test_threads = nextest_test_threads(req);
     let mut argv = vec![
         req.cargo.to_string_lossy().to_string(),
         "llvm-cov".to_string(),
@@ -74,7 +75,7 @@ pub fn build_rust_coverage_batch_plan(
         "--build-jobs".to_string(),
         jobs.clone(),
         "--test-threads".to_string(),
-        jobs,
+        test_threads,
         "--no-fail-fast".to_string(),
         "--retries".to_string(),
         "0".to_string(),
@@ -152,14 +153,12 @@ fn next_supported_cargo_arg_index(cargo_args: &[String], index: usize) -> Result
             Err(unsupported_cargo_arg_error(arg))
         }
         _ if arg.starts_with("--config=") => validate_inline_cargo_config_arg(arg, index),
+        _ if overrides_nextest_batch_controls(arg) => Err(unsupported_cargo_arg_error(arg)),
         _ => Ok(index + 1),
     }
 }
 
-fn validate_split_cargo_config_arg(
-    cargo_args: &[String],
-    index: usize,
-) -> Result<usize, String> {
+fn validate_split_cargo_config_arg(cargo_args: &[String], index: usize) -> Result<usize, String> {
     match cargo_args.get(index + 1) {
         Some(value) => {
             validate_cargo_config_value("--config", value)?;
@@ -178,21 +177,98 @@ fn validate_inline_cargo_config_arg(arg: &str, index: usize) -> Result<usize, St
 fn validate_cargo_config_value(arg: &str, value: &str) -> Result<(), String> {
     if value.is_empty() {
         Err(cargo_config_value_error())
-    } else if cargo_config_overrides_compile_once_controls(value) {
+    } else if cargo_config_value_is_unsupported(value) {
         Err(unsupported_cargo_arg_error(arg))
     } else {
         Ok(())
     }
 }
 
+fn cargo_config_value_is_unsupported(value: &str) -> bool {
+    cargo_config_overrides_compile_once_controls(value)
+}
+
+fn overrides_nextest_batch_controls(arg: &str) -> bool {
+    let flag = arg.split_once('=').map_or(arg, |(flag, _)| flag);
+    matches!(
+        flag,
+        "--build-jobs"
+            | "--test-threads"
+            | "--no-fail-fast"
+            | "--retries"
+            | "--no-tests"
+            | "--cargo-message-format"
+            | "--message-format"
+            | "--message-format-version"
+            | "--show-progress"
+            | "--status-level"
+            | "--final-status-level"
+            | "--failure-output"
+            | "--success-output"
+            | "--user-config-file"
+            | "--config-file"
+            | "--profile"
+            | "--no-report"
+    )
+}
+
 fn cargo_config_overrides_compile_once_controls(value: &str) -> bool {
-    let compact: String = value
+    let normalized = normalize_toml_unicode_escapes(value);
+    let compact: String = normalized
         .chars()
         .filter(|ch| !ch.is_ascii_whitespace() && *ch != '"' && *ch != '\'')
         .collect();
     has_compile_once_key(&compact)
-        || build_table_overrides_compile_once_controls(value)
+        || build_table_overrides_compile_once_controls(&normalized)
         || inline_build_table_overrides_compile_once_controls(&compact)
+}
+
+fn normalize_toml_unicode_escapes(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            normalized.push_str(&normalize_toml_escape(&mut chars));
+        } else {
+            normalized.push(ch);
+        }
+    }
+    normalized
+}
+
+fn normalize_toml_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+    let Some(prefix) = chars.peek().copied() else {
+        return "\\".to_string();
+    };
+    let hex_len = match prefix {
+        'u' => 4,
+        'U' => 8,
+        _ => return "\\".to_string(),
+    };
+    chars.next();
+    decode_toml_unicode_escape(chars, prefix, hex_len)
+}
+
+fn decode_toml_unicode_escape(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    prefix: char,
+    hex_len: usize,
+) -> String {
+    let mut hex = String::with_capacity(hex_len);
+    for _ in 0..hex_len {
+        let Some(hex_ch) = chars.peek().copied() else {
+            return format!("\\{prefix}{hex}");
+        };
+        if !hex_ch.is_ascii_hexdigit() {
+            return format!("\\{prefix}{hex}");
+        }
+        hex.push(hex_ch);
+        chars.next();
+    }
+    u32::from_str_radix(&hex, 16)
+        .ok()
+        .and_then(char::from_u32)
+        .map_or_else(|| format!("\\{prefix}{hex}"), |ch| ch.to_string())
 }
 
 fn has_compile_once_key(value: &str) -> bool {
@@ -217,8 +293,21 @@ fn inline_build_table_overrides_compile_once_controls(value: &str) -> bool {
         return false;
     };
     let rest = &value[start + "build={".len()..];
-    let end = rest.find('}').unwrap_or(rest.len());
+    let end = matching_inline_table_end(rest).unwrap_or(rest.len());
     contains_compile_once_field(&rest[..end])
+}
+
+fn matching_inline_table_end(value: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, ch) in value.char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' if depth == 0 => return Some(index),
+            '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    None
 }
 
 fn contains_compile_once_field(value: &str) -> bool {
@@ -242,6 +331,18 @@ fn unsupported_cargo_arg_error(arg: &str) -> String {
 
 fn cargo_config_value_error() -> String {
     "--config requires a non-empty value".to_string()
+}
+
+fn nextest_test_threads(req: &RustCoverageBatchRequest) -> String {
+    if req
+        .test_args
+        .iter()
+        .any(|arg| matches!(arg.as_str(), "--nocapture" | "--no-capture"))
+    {
+        "1".to_string()
+    } else {
+        req.jobs.to_string()
+    }
 }
 
 pub fn validate_supported_rust_test_args(test_args: &[String]) -> Result<(), String> {

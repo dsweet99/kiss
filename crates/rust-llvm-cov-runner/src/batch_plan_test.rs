@@ -55,6 +55,27 @@ fn batch_plan_uses_one_shared_build_target_and_bounded_nextest_jobs() {
 }
 
 #[test]
+fn batch_plan_uses_serial_nextest_threads_when_nocapture_is_requested() {
+    for no_capture_arg in ["--nocapture", "--no-capture"] {
+        let mut req = request();
+        req.test_args = vec![no_capture_arg.to_string()];
+
+        let plan = build_rust_coverage_batch_plan(&req).unwrap();
+
+        assert!(
+            plan.argv
+                .windows(2)
+                .any(|args| args == ["--build-jobs", "4"])
+        );
+        assert!(
+            plan.argv
+                .windows(2)
+                .any(|args| args == ["--test-threads", "1"])
+        );
+    }
+}
+
+#[test]
 fn batch_plan_public_data_contract_preserves_every_field() {
     let plan = RustCoverageBatchPlan::witness();
     let cloned = plan.clone();
@@ -186,6 +207,59 @@ fn batch_plan_rejects_cargo_args_that_override_compile_once_controls() {
         vec!["--config=build.jobs=99".to_string()],
         vec!["--config=build = { jobs = 99 }".to_string()],
         vec!["--config=build = { rustflags = [], jobs = 99 }".to_string()],
+        vec!["--config=build = { env = { RUSTFLAGS = '' }, jobs = 99 }".to_string()],
+        vec![
+            "--config".to_string(),
+            r#""bui\u006cd"."jo\u0062s" = 99"#.to_string(),
+        ],
+        vec![
+            "--config".to_string(),
+            r#""b\U00000075ild"."jobs" = 99"#.to_string(),
+        ],
+    ] {
+        let mut req = request();
+        req.cargo_args = cargo_args;
+
+        let err = build_rust_coverage_batch_plan(&req).unwrap_err();
+
+        assert!(err.contains("unsupported Rust cargo argument"));
+    }
+}
+
+#[test]
+fn batch_plan_accepts_safe_cargo_config_values() {
+    for cargo_args in [
+        vec!["--config".to_string(), "/tmp/other-config.toml".to_string()],
+        vec!["--config=/tmp/other-config.toml".to_string()],
+        vec!["--config".to_string(), "net.git-fetch-with-cli=true".to_string()],
+        vec![
+            "--config".to_string(),
+            r#""bui\u006cd"."rust\u0066lags" = ["--cfg", "kiss"]"#.to_string(),
+        ],
+    ] {
+        let mut req = request();
+        req.cargo_args = cargo_args;
+
+        build_rust_coverage_batch_plan(&req).unwrap();
+    }
+}
+
+#[test]
+fn batch_plan_rejects_cargo_args_that_override_nextest_controls() {
+    for cargo_args in [
+        vec!["--profile".to_string(), "other".to_string()],
+        vec!["--profile=other".to_string()],
+        vec!["--config-file".to_string(), "/tmp/nextest.toml".to_string()],
+        vec!["--message-format".to_string(), "human".to_string()],
+        vec!["--message-format=json".to_string()],
+        vec!["--message-format-version".to_string(), "0.2".to_string()],
+        vec!["--message-format-version=0.2".to_string()],
+        vec!["--test-threads".to_string(), "99".to_string()],
+        vec!["--test-threads=99".to_string()],
+        vec!["--no-fail-fast".to_string()],
+        vec!["--retries".to_string(), "3".to_string()],
+        vec!["--no-tests".to_string(), "fail".to_string()],
+        vec!["--no-tests=fail".to_string()],
     ] {
         let mut req = request();
         req.cargo_args = cargo_args;
