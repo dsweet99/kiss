@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(test)]
 use rust_llvm_cov_runner::{CargoLlvmCovRunRequest, build_llvm_cov_argv};
@@ -13,7 +15,7 @@ use rust_llvm_cov_runner::{
 };
 
 use super::last_status::{LastStatusIdentity, record_statuses, rust_last_status_identity};
-use super::runners::{SelectorExecutionSummary, command_stdout};
+use super::runners::{SelectorCacheRecord, SelectorExecutionSummary, command_stdout};
 
 #[cfg(test)]
 pub(crate) fn build_cargo_llvm_cov_dry_run_argv(selector: &str, extra: &[String]) -> Vec<String> {
@@ -190,12 +192,26 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
         env: BTreeMap::new(),
         force_rerun,
         jobs,
-        generated_config: repo_root
-            .join(".kiss")
-            .join("rust_llvm_cov_cache")
-            .join("runs")
-            .join("nextest.toml"),
+        generated_config: unique_rust_coverage_batch_config_path(repo_root),
     })
+}
+
+fn unique_rust_coverage_batch_config_path(repo_root: &Path) -> PathBuf {
+    static NEXT_RUN_ID: AtomicU64 = AtomicU64::new(0);
+    let run_id = NEXT_RUN_ID.fetch_add(1, Ordering::Relaxed);
+    let timestamp_nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time must be after Unix epoch")
+        .as_nanos();
+    repo_root
+        .join(".kiss")
+        .join("rust_llvm_cov_cache")
+        .join("runs")
+        .join(format!(
+            "run-{}-{timestamp_nanos}-{run_id}",
+            std::process::id()
+        ))
+        .join("nextest.toml")
 }
 
 fn detect_rust_coverage_tool_versions(
@@ -362,15 +378,17 @@ fn finish_rust_coverage_batch_result(
     result: RustCoverageBatchResult,
 ) -> Result<SelectorExecutionSummary, String> {
     let mut summary = SelectorExecutionSummary::default();
+    summary.record_rust_batch_counters(&result.counters);
     let mut statuses = Vec::new();
     for outcome in &result.completed {
         print_rust_llvm_cov_outcome(outcome);
         statuses.push((outcome.selector.clone(), outcome.status));
-        summary.record(
-            outcome.status,
-            outcome.cache_status == RustCovCacheStatus::Hit,
-            outcome.exit_code,
-        );
+        let cache_record = match outcome.cache_status {
+            RustCovCacheStatus::Hit => SelectorCacheRecord::Hit,
+            RustCovCacheStatus::MissStored => SelectorCacheRecord::MissStored,
+            RustCovCacheStatus::FreshUnstored => SelectorCacheRecord::MissUnstored,
+        };
+        summary.record(outcome.status, cache_record, outcome.exit_code);
     }
     record_statuses(repo_root, kiss::Language::Rust, identity, &statuses)?;
     if let Some(err) = result.batch_error {

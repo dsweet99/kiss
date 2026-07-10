@@ -345,8 +345,10 @@ fn python_outcome_records_index_rebuild_duration_in_metrics() {
             total: 1,
             cache_hits: 0,
             cache_misses: 1,
+            cache_unstored: 0,
             failed: 0,
             exit_code: 0,
+            ..SelectorExecutionSummary::default()
         },
         phase_duration: Duration::from_millis(7),
         index_rebuild_duration: Duration::from_millis(3),

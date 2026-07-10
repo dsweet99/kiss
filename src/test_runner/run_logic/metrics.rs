@@ -32,12 +32,15 @@ pub(super) struct LocalRubricMetrics {
     pub(super) rust_final: PhaseMetrics,
     pub(super) kiss_cache_residual_bytes: u64,
     pub(super) rust_cache_residual_bytes: u64,
+    pub(super) rust_entry_cache_bytes: u64,
+    pub(super) rust_build_target_bytes: u64,
     pub(super) raw_artifact_count: usize,
-    pub(super) worker_slot_count: usize,
+    pub(super) rust_build_target_count: usize,
+    pub(super) rust_transient_residual_count: usize,
     pub(super) rust_external_tmp_residual_bytes: u64,
     pub(super) rust_external_tmp_residual_count: usize,
     pub(super) rust_external_tmp_metric_error: bool,
-    pub(super) worker_slot_limit: usize,
+    pub(super) rust_concurrency_budget: usize,
     pub(super) exit_code: i32,
 }
 
@@ -69,12 +72,15 @@ impl LocalRubricMetrics {
             rust_final: PhaseMetrics::default(),
             kiss_cache_residual_bytes: 0,
             rust_cache_residual_bytes: 0,
+            rust_entry_cache_bytes: 0,
+            rust_build_target_bytes: 0,
             raw_artifact_count: 0,
-            worker_slot_count: 0,
+            rust_build_target_count: 0,
+            rust_transient_residual_count: 0,
             rust_external_tmp_residual_bytes: 0,
             rust_external_tmp_residual_count: 0,
             rust_external_tmp_metric_error: false,
-            worker_slot_limit: options.jobs,
+            rust_concurrency_budget: options.jobs,
             exit_code: 0,
         }
     }
@@ -84,18 +90,22 @@ impl LocalRubricMetrics {
         let rust_cache = kiss_cache.join("rust_llvm_cov_cache");
         self.kiss_cache_residual_bytes = path_size_bytes(&kiss_cache);
         self.rust_cache_residual_bytes = path_size_bytes(&rust_cache);
+        self.rust_entry_cache_bytes = path_size_bytes(&rust_cache.join("entries"));
+        self.rust_build_target_bytes = path_size_bytes(&rust_cache.join("build").join("target"));
         self.raw_artifact_count = count_json_files(&rust_cache.join("artifacts"));
-        self.worker_slot_count = count_worker_slots(&rust_cache.join("workers"));
+        self.rust_build_target_count = count_build_targets(&rust_cache.join("build"));
         match path_size_and_count(&rust_cov_cache_tmp_parent(&rust_cache)) {
             Ok((bytes, count)) => {
                 self.rust_external_tmp_residual_bytes = bytes;
                 self.rust_external_tmp_residual_count = count;
                 self.rust_external_tmp_metric_error = false;
+                self.rust_transient_residual_count = self.raw_artifact_count + count;
             }
             Err(_) => {
                 self.rust_external_tmp_residual_bytes = u64::MAX;
                 self.rust_external_tmp_residual_count = usize::MAX;
                 self.rust_external_tmp_metric_error = true;
+                self.rust_transient_residual_count = usize::MAX;
             }
         }
     }
@@ -179,8 +189,32 @@ fn print_cache_metrics(metrics: &LocalRubricMetrics) {
         "rust_cache_residual_bytes={}",
         metrics.rust_cache_residual_bytes
     );
+    println!("rust_entry_cache_bytes={}", metrics.rust_entry_cache_bytes);
+    println!(
+        "rust_concurrency_budget={}",
+        metrics.rust_concurrency_budget
+    );
+    println!("rust_build_invocations={}", rust_build_invocations(metrics));
+    println!(
+        "rust_build_target_count={}",
+        metrics.rust_build_target_count
+    );
+    println!(
+        "rust_build_target_bytes={}",
+        metrics.rust_build_target_bytes
+    );
+    println!("rust_test_instances={}", rust_test_instances(metrics));
+    println!("rust_export_jobs={}", rust_export_jobs(metrics));
+    println!(
+        "rust_max_active_test_instances={}",
+        rust_max_active_test_instances(metrics)
+    );
+    println!(
+        "rust_max_active_exports={}",
+        rust_max_active_exports(metrics)
+    );
+    println!("rust_cache_unstored={}", rust_cache_unstored(metrics));
     println!("raw_artifact_count={}", metrics.raw_artifact_count);
-    println!("worker_slot_count={}", metrics.worker_slot_count);
     println!(
         "rust_external_tmp_residual_bytes={}",
         metrics.rust_external_tmp_residual_bytes
@@ -189,14 +223,17 @@ fn print_cache_metrics(metrics: &LocalRubricMetrics) {
         "rust_external_tmp_residual_count={}",
         metrics.rust_external_tmp_residual_count
     );
-    println!("worker_slot_limit={}", metrics.worker_slot_limit);
+    println!(
+        "rust_transient_residual_count={}",
+        metrics.rust_transient_residual_count
+    );
     println!(
         "raw_artifact_residuals_pass={}",
         metrics.raw_artifact_count == 0
     );
     println!(
-        "worker_slot_bound_pass={}",
-        metrics.worker_slot_count <= metrics.worker_slot_limit
+        "rust_build_target_bound_pass={}",
+        metrics.rust_build_target_count <= 1
     );
     println!(
         "rust_external_tmp_residuals_pass={}",
@@ -210,7 +247,42 @@ fn print_phase_metrics(name: &str, phase: &PhaseMetrics) {
     println!("{name}_total={}", phase.summary.total);
     println!("{name}_cache_hits={}", phase.summary.cache_hits);
     println!("{name}_cache_misses={}", phase.summary.cache_misses);
+    println!("{name}_cache_unstored={}", phase.summary.cache_unstored);
     println!("{name}_failed={}", phase.summary.failed);
+}
+
+fn rust_cache_unstored(metrics: &LocalRubricMetrics) -> usize {
+    metrics.rust_population.summary.cache_unstored + metrics.rust_final.summary.cache_unstored
+}
+
+fn rust_build_invocations(metrics: &LocalRubricMetrics) -> usize {
+    metrics.rust_population.summary.rust_build_invocations
+        + metrics.rust_final.summary.rust_build_invocations
+}
+
+fn rust_test_instances(metrics: &LocalRubricMetrics) -> usize {
+    metrics.rust_population.summary.rust_test_instances
+        + metrics.rust_final.summary.rust_test_instances
+}
+
+fn rust_export_jobs(metrics: &LocalRubricMetrics) -> usize {
+    metrics.rust_population.summary.rust_export_jobs + metrics.rust_final.summary.rust_export_jobs
+}
+
+fn rust_max_active_test_instances(metrics: &LocalRubricMetrics) -> usize {
+    metrics
+        .rust_population
+        .summary
+        .rust_max_active_test_instances
+        .max(metrics.rust_final.summary.rust_max_active_test_instances)
+}
+
+fn rust_max_active_exports(metrics: &LocalRubricMetrics) -> usize {
+    metrics
+        .rust_population
+        .summary
+        .rust_max_active_exports
+        .max(metrics.rust_final.summary.rust_max_active_exports)
 }
 
 fn path_size_bytes(path: &Path) -> u64 {
@@ -270,87 +342,10 @@ fn count_json_files(path: &Path) -> usize {
         .count()
 }
 
-fn count_worker_slots(path: &Path) -> usize {
-    let Ok(entries) = fs::read_dir(path) else {
-        return 0;
-    };
-    entries
-        .flatten()
-        .filter(|entry| entry.file_type().is_ok_and(|file_type| file_type.is_dir()))
-        .filter(|entry| {
-            entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| name.starts_with("slot-"))
-        })
-        .count()
+fn count_build_targets(path: &Path) -> usize {
+    usize::from(path.join("target").is_dir())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn phase_metrics_prints_zero_summary() {
-        let phase = PhaseMetrics::default();
-
-        assert_eq!(phase.summary.total, 0);
-        print_phase_metrics("phase", &phase);
-    }
-
-    #[test]
-    fn metrics_print_helpers_accept_empty_metrics() {
-        let metrics = LocalRubricMetrics {
-            plan_duration: Duration::ZERO,
-            total_duration: Duration::ZERO,
-            selected_python: 0,
-            python_population_required: false,
-            python_population_selectors: 0,
-            selected_rust_initial: 0,
-            rust_source_paths: 0,
-            rust_population_required: false,
-            rust_population_selectors: 0,
-            rust_final_selectors: 0,
-            coverage_decision_engine_used: true,
-            python: PhaseMetrics::default(),
-            python_index_rebuild_duration: Duration::ZERO,
-            rust_population: PhaseMetrics::default(),
-            rust_index_rebuild_duration: Duration::ZERO,
-            rust_final: PhaseMetrics::default(),
-            kiss_cache_residual_bytes: 0,
-            rust_cache_residual_bytes: 0,
-            raw_artifact_count: 0,
-            worker_slot_count: 0,
-            rust_external_tmp_residual_bytes: 0,
-            rust_external_tmp_residual_count: 0,
-            rust_external_tmp_metric_error: false,
-            worker_slot_limit: 1,
-            exit_code: 0,
-        };
-
-        print_oracle_metrics();
-        print_selection_metrics(&metrics);
-        print_timing_metrics(&metrics);
-        print_cache_metrics(&metrics);
-        metrics.print();
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn path_size_and_count_returns_error_for_unreadable_directory() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let tmp = tempfile::tempdir().unwrap();
-        let blocked = tmp.path().join("blocked");
-        fs::create_dir(&blocked).unwrap();
-        let original_permissions = fs::metadata(&blocked).unwrap().permissions();
-        let mut blocked_permissions = original_permissions.clone();
-        blocked_permissions.set_mode(0o000);
-        fs::set_permissions(&blocked, blocked_permissions).unwrap();
-
-        let result = path_size_and_count(&blocked);
-
-        fs::set_permissions(&blocked, original_permissions).unwrap();
-        assert!(result.is_err());
-    }
-}
+#[path = "metrics_test.rs"]
+mod tests;

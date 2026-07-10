@@ -13,7 +13,9 @@ pub(crate) use super::rust_llvm_cov::{
 };
 use kiss::test_refs::{is_in_test_directory, is_test_file};
 use kiss::{parse_files, parse_rust_files, rust_test_functions_in, test_functions_in};
-use rust_llvm_cov_runner::{RustCoverageBatchRequest, build_rust_coverage_batch_plan};
+use rust_llvm_cov_runner::{
+    RustCoverageBatchCounters, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
+};
 
 #[path = "runners/decision.rs"]
 mod decision;
@@ -46,26 +48,56 @@ pub(crate) struct SelectorExecutionSummary {
     pub(crate) total: usize,
     pub(crate) cache_hits: usize,
     pub(crate) cache_misses: usize,
+    pub(crate) cache_unstored: usize,
     pub(crate) failed: usize,
+    pub(crate) rust_build_invocations: usize,
+    pub(crate) rust_test_instances: usize,
+    pub(crate) rust_export_jobs: usize,
+    pub(crate) rust_batch_cache_hits: usize,
+    pub(crate) rust_max_active_test_instances: usize,
+    pub(crate) rust_max_active_exports: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SelectorCacheRecord {
+    Hit,
+    MissStored,
+    MissUnstored,
 }
 
 impl SelectorExecutionSummary {
     pub(crate) fn record(
         &mut self,
         status: rpytest_runner::TestStatus,
-        cache_hit: bool,
+        cache_record: SelectorCacheRecord,
         exit_code: Option<i32>,
     ) {
         self.total += 1;
-        if cache_hit {
-            self.cache_hits += 1;
-        } else {
-            self.cache_misses += 1;
+        match cache_record {
+            SelectorCacheRecord::Hit => self.cache_hits += 1,
+            SelectorCacheRecord::MissStored => self.cache_misses += 1,
+            SelectorCacheRecord::MissUnstored => {
+                self.cache_misses += 1;
+                self.cache_unstored += 1;
+            }
         }
         if status == rpytest_runner::TestStatus::Failed {
             self.failed += 1;
             self.exit_code = merge_exit_codes(self.exit_code, exit_code.unwrap_or(1));
         }
+    }
+
+    pub(crate) fn record_rust_batch_counters(&mut self, counters: &RustCoverageBatchCounters) {
+        self.rust_build_invocations += counters.build_invocations;
+        self.rust_test_instances += counters.test_instances;
+        self.rust_export_jobs += counters.export_jobs;
+        self.rust_batch_cache_hits += counters.cache_hits;
+        self.rust_max_active_test_instances = self
+            .rust_max_active_test_instances
+            .max(counters.max_active_test_instances);
+        self.rust_max_active_exports = self
+            .rust_max_active_exports
+            .max(counters.max_active_exports);
     }
 }
 

@@ -57,6 +57,74 @@ fn batch_result_records_completed_outcomes_before_returning_late_error() {
 }
 
 #[test]
+fn fresh_unstored_batch_outcome_is_counted_explicitly() {
+    let tmp = tempfile::tempdir().unwrap();
+    let identity = rust_last_status_identity(
+        "cargo 1.88.0",
+        "cargo-llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        "cargo-nextest 0.9.0",
+        &[],
+    );
+    let result = RustCoverageBatchResult {
+        completed: vec![RustLlvmCovOutcome {
+            selector: "tests::passed_but_unstored".to_string(),
+            status: rpytest_runner::TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
+            cache_status: RustCovCacheStatus::FreshUnstored,
+            stdout: None,
+            stderr: None,
+        }],
+        batch_error: None,
+        counters: RustCoverageBatchCounters::default(),
+    };
+
+    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
+
+    assert_eq!(summary.total, 1);
+    assert_eq!(summary.cache_misses, 1);
+    assert_eq!(summary.cache_unstored, 1);
+}
+
+#[test]
+fn batch_counters_are_preserved_for_rust_metrics() {
+    let tmp = tempfile::tempdir().unwrap();
+    let identity = rust_last_status_identity(
+        "cargo 1.88.0",
+        "cargo-llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        "cargo-nextest 0.9.0",
+        &[],
+    );
+    let counters = RustCoverageBatchCounters {
+        build_invocations: 1,
+        test_instances: 7,
+        export_jobs: 5,
+        cache_hits: 2,
+        max_active_test_instances: 3,
+        max_active_exports: 4,
+    };
+    let result = RustCoverageBatchResult {
+        completed: Vec::new(),
+        batch_error: None,
+        counters,
+    };
+
+    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
+
+    assert_eq!(summary.rust_build_invocations, 1);
+    assert_eq!(summary.rust_test_instances, 7);
+    assert_eq!(summary.rust_export_jobs, 5);
+    assert_eq!(summary.rust_batch_cache_hits, 2);
+    assert_eq!(summary.rust_max_active_test_instances, 3);
+    assert_eq!(summary.rust_max_active_exports, 4);
+}
+
+#[test]
 fn rust_selector_path_submits_one_batch_request_to_executor() {
     let tmp = tempfile::tempdir().unwrap();
     let selectors = vec![
@@ -213,14 +281,37 @@ fn rust_coverage_batch_request_from_parts_preserves_selector_occurrences() {
     assert_eq!(req.test_args, extra);
     assert!(req.force_rerun);
     assert_eq!(req.jobs, 3);
-    assert_eq!(
-        req.generated_config,
+    assert!(
+        req.generated_config.starts_with(
+            tmp.path()
+                .join(".kiss")
+                .join("rust_llvm_cov_cache")
+                .join("runs")
+        )
+    );
+    assert_eq!(req.generated_config.file_name().unwrap(), "nextest.toml");
+    assert_ne!(
+        req.generated_config.parent().unwrap(),
         tmp.path()
             .join(".kiss")
             .join("rust_llvm_cov_cache")
             .join("runs")
-            .join("nextest.toml")
     );
+}
+
+#[test]
+fn rust_coverage_batch_request_uses_unique_run_scoped_config_paths() {
+    let tmp = tempfile::tempdir().unwrap();
+    let selectors = vec!["tests::case".to_string()];
+
+    let first =
+        rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &[], false, 2).unwrap();
+    let second =
+        rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &[], false, 2).unwrap();
+
+    assert_ne!(first.generated_config, second.generated_config);
+    assert_eq!(first.generated_config.file_name().unwrap(), "nextest.toml");
+    assert_eq!(second.generated_config.file_name().unwrap(), "nextest.toml");
 }
 
 #[test]

@@ -97,7 +97,9 @@ def run(
         "rust_final_cache_hits",
         "rust_final_cache_misses",
         "raw_artifact_count",
-        "worker_slot_count",
+        "rust_concurrency_budget",
+        "rust_build_target_count",
+        "rust_transient_residual_count",
         "rust_external_tmp_residual_bytes",
         "rust_external_tmp_residual_count",
     )
@@ -360,7 +362,8 @@ def coverage_stress() -> None:
         assert_metric(rs_cold, "raw_artifact_count", "0")
         assert_metric(rs_cold, "rust_external_tmp_residual_bytes", "0")
         assert_metric(rs_cold, "rust_external_tmp_residual_count", "0")
-        assert metric_int(rs_cold, "worker_slot_count") <= jobs
+        assert metric_int(rs_cold, "rust_build_target_count") <= 1
+        assert metric_int(rs_cold, "rust_transient_residual_count") == 0
 
         for language in LANGUAGES:
             command = kiss_command(
@@ -590,7 +593,8 @@ def path_isolation() -> None:
         assert_metric(cold_metrics["rust"], "raw_artifact_count", "0")
         assert_metric(cold_metrics["rust"], "rust_external_tmp_residual_bytes", "0")
         assert_metric(cold_metrics["rust"], "rust_external_tmp_residual_count", "0")
-        assert metric_int(cold_metrics["rust"], "worker_slot_count") <= jobs
+        assert metric_int(cold_metrics["rust"], "rust_build_target_count") <= 1
+        assert metric_int(cold_metrics["rust"], "rust_transient_residual_count") == 0
 
         for language in LANGUAGES:
             warm = run(

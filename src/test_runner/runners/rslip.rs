@@ -6,7 +6,7 @@ use std::thread;
 use rpytest_runner::subprocess_pytest_runner;
 use rslip::{CacheStatus as PyCacheStatus, Rslip, RslipError, RslipOutcome, RslipRequest};
 
-use super::{SelectorExecutionSummary, command_stdout};
+use super::{SelectorCacheRecord, SelectorExecutionSummary, command_stdout};
 use crate::test_runner::last_status::{python_last_status_identity, record_statuses};
 
 pub(crate) fn run_rslip_selectors(
@@ -40,7 +40,11 @@ pub(crate) fn run_rslip_selectors(
         statuses.push((outcome.nodeid.clone(), outcome.status));
         summary.record(
             outcome.status,
-            outcome.cache_status == PyCacheStatus::Hit,
+            if outcome.cache_status == PyCacheStatus::Hit {
+                SelectorCacheRecord::Hit
+            } else {
+                SelectorCacheRecord::MissStored
+            },
             outcome.exit_code,
         );
     }
