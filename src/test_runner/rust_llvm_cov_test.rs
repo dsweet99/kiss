@@ -1,13 +1,13 @@
 use super::*;
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 use std::rc::Rc;
-use std::sync::mpsc;
 use std::time::Duration;
 
-use rust_llvm_cov_runner::RustLineCoverage;
+use rust_llvm_cov_runner::{RustCoverageBatchCounters, RustLineCoverage};
+
+use crate::test_runner::last_status::prior_failures;
 
 #[test]
 fn format_rust_llvm_cov_error_preserves_context_and_message() {
@@ -16,6 +16,102 @@ fn format_rust_llvm_cov_error_preserves_context_and_message() {
 
     assert!(msg.contains("rust llvm-cov failed"));
     assert!(msg.contains("bad selector"));
+}
+
+#[test]
+fn batch_result_records_completed_outcomes_before_returning_late_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let identity = rust_last_status_identity(
+        "cargo 1.88.0",
+        "cargo-llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        "cargo-nextest 0.9.0",
+        &[],
+    );
+    let result = RustCoverageBatchResult {
+        completed: vec![RustLlvmCovOutcome {
+            selector: "tests::failing_case".to_string(),
+            status: rpytest_runner::TestStatus::Failed,
+            exit_code: Some(1),
+            duration: Duration::from_millis(1),
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
+            cache_status: RustCovCacheStatus::FreshUnstored,
+            stdout: Some(b"fresh stdout".to_vec()),
+            stderr: Some(b"fresh stderr".to_vec()),
+        }],
+        batch_error: Some(RustLlvmCovError::InvalidRequest(
+            "late derived publication failed".to_string(),
+        )),
+        counters: RustCoverageBatchCounters::default(),
+    };
+
+    let err = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap_err();
+
+    assert!(err.contains("late derived publication failed"));
+    assert_eq!(
+        prior_failures(tmp.path(), kiss::Language::Rust, &identity).unwrap(),
+        ["tests::failing_case"]
+    );
+}
+
+#[test]
+fn rust_selector_path_submits_one_batch_request_to_executor() {
+    let tmp = tempfile::tempdir().unwrap();
+    let selectors = vec![
+        "tests::case".to_string(),
+        "tests::case".to_string(),
+        "tests::other".to_string(),
+    ];
+    let detector_calls = Rc::new(Cell::new(0usize));
+    let detector_calls_for_closure = Rc::clone(&detector_calls);
+    let executor_calls = Rc::new(Cell::new(0usize));
+    let executor_calls_for_closure = Rc::clone(&executor_calls);
+    let expected_selectors = selectors.clone();
+    let expected_repo_root = tmp.path().to_path_buf();
+
+    let summary = run_rust_llvm_cov_selectors_with_deps(
+        tmp.path(),
+        &selectors,
+        &["--exact".to_string()],
+        true,
+        7,
+        move |repo_root| {
+            detector_calls_for_closure.set(detector_calls_for_closure.get() + 1);
+            assert_eq!(repo_root, expected_repo_root);
+            Ok(RustCoverageToolVersions {
+                cargo: "cargo 1.88.0".to_string(),
+                llvm_cov: "cargo-llvm-cov 0.6.0".to_string(),
+                rustc: "rustc 1.88.0".to_string(),
+                cargo_nextest: "cargo-nextest 0.9.0".to_string(),
+            })
+        },
+        move |batch_req, versions| {
+            executor_calls_for_closure.set(executor_calls_for_closure.get() + 1);
+            assert_eq!(batch_req.logical_selectors, expected_selectors);
+            assert_eq!(batch_req.test_args, ["--exact"]);
+            assert_eq!(batch_req.jobs, 7);
+            assert!(batch_req.force_rerun);
+            assert_eq!(versions.llvm_cov, "cargo-llvm-cov 0.6.0");
+            Ok(RustCoverageBatchResult {
+                completed: batch_req
+                    .logical_selectors
+                    .iter()
+                    .cloned()
+                    .map(passed_rust_llvm_cov_outcome)
+                    .collect(),
+                batch_error: None,
+                counters: RustCoverageBatchCounters::default(),
+            })
+        },
+    )
+    .unwrap();
+
+    assert_eq!(detector_calls.get(), 1);
+    assert_eq!(executor_calls.get(), 1);
+    assert_eq!(summary.total, 3);
+    assert_eq!(summary.cache_misses, 3);
 }
 
 #[test]
@@ -65,6 +161,36 @@ fn rust_llvm_cov_request_contract_preserves_selector_and_cache_root() {
 }
 
 #[test]
+fn rust_llvm_cov_request_from_batch_parts_preserves_batch_execution_inputs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let batch_req = rust_coverage_batch_request_from_parts(
+        tmp.path(),
+        &["tests::case".to_string()],
+        &["--exact".to_string()],
+        true,
+        3,
+    )
+    .unwrap();
+
+    let req = rust_llvm_cov_request_from_batch_parts(
+        &batch_req,
+        "tests::case",
+        "cargo-llvm-cov 0.6.0",
+        "rustc 1.88.0",
+    )
+    .unwrap();
+
+    assert_eq!(req.selector, "tests::case");
+    assert_eq!(req.cwd, batch_req.cwd);
+    assert_eq!(req.source_root, batch_req.source_root);
+    assert_eq!(req.cargo, batch_req.cargo);
+    assert_eq!(req.test_args, batch_req.test_args);
+    assert_eq!(req.cache_root, batch_req.cache_root);
+    assert!(req.force_rerun);
+    assert_eq!(req.worker_slot, 0);
+}
+
+#[test]
 fn rust_coverage_batch_request_from_parts_preserves_selector_occurrences() {
     let tmp = tempfile::tempdir().unwrap();
     let selectors = vec![
@@ -98,6 +224,45 @@ fn rust_coverage_batch_request_from_parts_preserves_selector_occurrences() {
 }
 
 #[test]
+fn compatibility_batch_executor_returns_batch_error_without_completed_outcomes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut batch_req = rust_coverage_batch_request_from_parts(
+        tmp.path(),
+        &["tests::case".to_string()],
+        &[],
+        true,
+        1,
+    )
+    .unwrap();
+    batch_req.cargo = "/definitely/not/cargo".into();
+    let versions = RustCoverageToolVersions {
+        cargo: "cargo 1.88.0".to_string(),
+        llvm_cov: "cargo-llvm-cov 0.6.0".to_string(),
+        rustc: "rustc 1.88.0".to_string(),
+        cargo_nextest: "cargo-nextest 0.9.0".to_string(),
+    };
+
+    let result = execute_rust_coverage_batch_compat(&batch_req, &versions).unwrap();
+
+    assert!(result.completed.is_empty());
+    assert!(matches!(
+        result.batch_error,
+        Some(RustLlvmCovError::Runner(_))
+    ));
+}
+
+#[test]
+fn detect_rust_coverage_tool_versions_reports_installed_tools() {
+    let versions = detect_rust_coverage_tool_versions(Path::new(env!("CARGO_MANIFEST_DIR")))
+        .expect("Rust coverage tools are installed for the quality gates");
+
+    assert!(versions.cargo.contains("cargo"));
+    assert!(versions.llvm_cov.contains("cargo-llvm-cov"));
+    assert!(versions.rustc.contains("rustc"));
+    assert!(versions.cargo_nextest.contains("cargo-nextest"));
+}
+
+#[test]
 fn rust_llvm_cov_request_rejects_unsupported_test_args() {
     let tmp = tempfile::tempdir().unwrap();
     let err = rust_llvm_cov_request_from_parts(
@@ -112,13 +277,6 @@ fn rust_llvm_cov_request_rejects_unsupported_test_args() {
 
     assert!(err.contains("unsupported Rust test argument"));
     assert!(err.contains("--test-threads"));
-}
-
-#[test]
-fn bounded_rust_llvm_cov_wrapper_handles_empty_queue() {
-    let results = run_rust_llvm_cov_requests_bounded(Vec::new(), 1).unwrap();
-
-    assert!(results.is_empty());
 }
 
 #[test]
@@ -156,165 +314,4 @@ fn print_rust_llvm_cov_outcome_accepts_all_status_cache_shapes() {
             stderr: Some(Vec::new()),
         });
     }
-}
-
-#[test]
-fn bounded_runner_assigns_and_reuses_worker_slots() {
-    let tmp = tempfile::tempdir().unwrap();
-    let reqs: Vec<_> = (0..5)
-        .map(|index| RustLlvmCovRequest {
-            selector: format!("tests::case_{index}"),
-            cwd: tmp.path().to_path_buf(),
-            source_root: tmp.path().to_path_buf(),
-            cargo: PathBuf::from("cargo"),
-            llvm_cov_version: "cargo-llvm-cov 0.6.0".to_string(),
-            rustc_version: "rustc 1.88.0".to_string(),
-            cargo_args: Vec::new(),
-            test_args: Vec::new(),
-            env: BTreeMap::new(),
-            cache_root: tmp.path().join(".kiss").join("rust_llvm_cov_cache"),
-            force_rerun: false,
-            worker_slot: usize::MAX,
-        })
-        .collect();
-    let seen_slots = Rc::new(RefCell::new(Vec::new()));
-    let seen_slots_for_spawner = Rc::clone(&seen_slots);
-
-    let results =
-        run_rust_llvm_cov_requests_bounded_with_spawner(reqs, 2, move |index, slot, req, tx| {
-            assert_eq!(req.worker_slot, slot);
-            seen_slots_for_spawner.borrow_mut().push(slot);
-            let outcome = RustLlvmCovOutcome {
-                selector: req.selector,
-                status: rpytest_runner::TestStatus::Passed,
-                exit_code: Some(0),
-                duration: Duration::from_millis(1),
-                coverage: RustLineCoverage {
-                    files: BTreeMap::new(),
-                },
-                cache_status: RustCovCacheStatus::MissStored,
-                stdout: None,
-                stderr: None,
-            };
-            tx.send((index, slot, Ok(outcome))).unwrap();
-        })
-        .unwrap();
-
-    assert!(results.iter().all(Result::is_ok));
-    assert_eq!(&*seen_slots.borrow(), &[0, 1, 0, 1, 0]);
-}
-
-#[test]
-fn bounded_runner_removes_surplus_worker_slots() {
-    let tmp = tempfile::tempdir().unwrap();
-    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
-    for slot in 0..3 {
-        fs::create_dir_all(
-            cache_root
-                .join("workers")
-                .join(format!("slot-{slot}"))
-                .join("target"),
-        )
-        .unwrap();
-    }
-    let reqs: Vec<_> = (0..2)
-        .map(|index| RustLlvmCovRequest {
-            selector: format!("tests::case_{index}"),
-            cwd: tmp.path().to_path_buf(),
-            source_root: tmp.path().to_path_buf(),
-            cargo: PathBuf::from("cargo"),
-            llvm_cov_version: "cargo-llvm-cov 0.6.0".to_string(),
-            rustc_version: "rustc 1.88.0".to_string(),
-            cargo_args: Vec::new(),
-            test_args: Vec::new(),
-            env: BTreeMap::new(),
-            cache_root: cache_root.clone(),
-            force_rerun: false,
-            worker_slot: usize::MAX,
-        })
-        .collect();
-
-    let results =
-        run_rust_llvm_cov_requests_bounded_with_spawner(reqs, 2, move |index, slot, req, tx| {
-            let outcome = RustLlvmCovOutcome {
-                selector: req.selector,
-                status: rpytest_runner::TestStatus::Passed,
-                exit_code: Some(0),
-                duration: Duration::from_millis(1),
-                coverage: RustLineCoverage {
-                    files: BTreeMap::new(),
-                },
-                cache_status: RustCovCacheStatus::MissStored,
-                stdout: None,
-                stderr: None,
-            };
-            tx.send((index, slot, Ok(outcome))).unwrap();
-        })
-        .unwrap();
-
-    assert!(results.iter().all(Result::is_ok));
-    assert!(cache_root.join("workers").join("slot-0").exists());
-    assert!(cache_root.join("workers").join("slot-1").exists());
-    assert!(!cache_root.join("workers").join("slot-2").exists());
-}
-
-#[test]
-fn bounded_runner_returns_cleanup_failure_before_spawning_jobs() {
-    let tmp = tempfile::tempdir().unwrap();
-    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
-    fs::create_dir_all(cache_root.parent().unwrap()).unwrap();
-    fs::write(&cache_root, b"not a directory").unwrap();
-    let req = RustLlvmCovRequest {
-        selector: "tests::case".to_string(),
-        cwd: tmp.path().to_path_buf(),
-        source_root: tmp.path().to_path_buf(),
-        cargo: PathBuf::from("cargo"),
-        llvm_cov_version: "cargo-llvm-cov 0.6.0".to_string(),
-        rustc_version: "rustc 1.88.0".to_string(),
-        cargo_args: Vec::new(),
-        test_args: Vec::new(),
-        env: BTreeMap::new(),
-        cache_root,
-        force_rerun: false,
-        worker_slot: usize::MAX,
-    };
-    let spawned = Rc::new(RefCell::new(0usize));
-    let spawned_for_spawner = Rc::clone(&spawned);
-
-    let err = run_rust_llvm_cov_requests_bounded_with_spawner(vec![req], 1, move |_, _, _, _| {
-        *spawned_for_spawner.borrow_mut() += 1;
-    })
-    .unwrap_err();
-
-    assert!(matches!(err, RustLlvmCovError::Io(_)));
-    assert_eq!(*spawned.borrow(), 0);
-    let msg = format_rust_llvm_cov_error(err);
-    assert!(msg.contains("rust llvm-cov failed"));
-}
-
-#[test]
-fn spawn_rust_llvm_cov_job_reports_runner_errors_with_index_and_slot() {
-    let tmp = tempfile::tempdir().unwrap();
-    let req = RustLlvmCovRequest {
-        selector: "tests::case".to_string(),
-        cwd: tmp.path().to_path_buf(),
-        source_root: tmp.path().to_path_buf(),
-        cargo: PathBuf::from("/definitely/not/cargo"),
-        llvm_cov_version: "cargo-llvm-cov 0.6.0".to_string(),
-        rustc_version: "rustc 1.88.0".to_string(),
-        cargo_args: Vec::new(),
-        test_args: Vec::new(),
-        env: BTreeMap::new(),
-        cache_root: tmp.path().join(".kiss").join("rust_llvm_cov_cache"),
-        force_rerun: true,
-        worker_slot: 4,
-    };
-    let (tx, rx) = mpsc::channel();
-
-    spawn_rust_llvm_cov_job(7, 4, req, tx);
-    let (index, slot, result) = rx.recv_timeout(Duration::from_secs(2)).unwrap();
-
-    assert_eq!(index, 7);
-    assert_eq!(slot, 4);
-    assert!(matches!(result, Err(RustLlvmCovError::Runner(_))));
 }
