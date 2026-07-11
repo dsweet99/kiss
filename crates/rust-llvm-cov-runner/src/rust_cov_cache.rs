@@ -7,11 +7,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rpytest_runner::TestStatus;
 use serde::{Deserialize, Serialize};
 
-use crate::{CACHE_SCHEMA_VERSION, RustLineCoverage, RustLlvmCovOutcome, RustLlvmCovRequest};
+#[cfg(any(test, feature = "legacy-test-api"))]
+use crate::RustLlvmCovRequest;
+use crate::{CACHE_SCHEMA_VERSION, RustLineCoverage, RustLlvmCovOutcome};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct RustCovCacheEntry {
-    schema_version: String,
+pub struct RustCovCacheEntry {
+    pub(crate) schema_version: String,
+    #[serde(default)]
+    pub generation_fingerprint: String,
     pub(crate) selector: String,
     pub(crate) status: TestStatus,
     pub(crate) exit_code: Option<i32>,
@@ -19,16 +23,23 @@ pub(crate) struct RustCovCacheEntry {
     pub(crate) coverage: RustLineCoverage,
 }
 
-impl From<&RustLlvmCovOutcome> for RustCovCacheEntry {
-    fn from(outcome: &RustLlvmCovOutcome) -> Self {
+impl RustCovCacheEntry {
+    pub fn from_outcome(outcome: &RustLlvmCovOutcome, generation_fingerprint: &str) -> Self {
         Self {
             schema_version: CACHE_SCHEMA_VERSION.to_string(),
+            generation_fingerprint: generation_fingerprint.to_string(),
             selector: outcome.selector.clone(),
             status: outcome.status,
             exit_code: outcome.exit_code,
             duration: outcome.duration,
             coverage: outcome.coverage.clone(),
         }
+    }
+}
+
+impl From<&RustLlvmCovOutcome> for RustCovCacheEntry {
+    fn from(outcome: &RustLlvmCovOutcome) -> Self {
+        Self::from_outcome(outcome, "")
     }
 }
 
@@ -42,7 +53,62 @@ pub(crate) fn load_rust_cov_cache_entry(
     (entry.schema_version == CACHE_SCHEMA_VERSION).then_some(entry)
 }
 
-pub(crate) fn store_rust_cov_cache_entry(
+pub fn repo_relative_coverage_file(source_root: &Path, file: &str) -> Option<String> {
+    let rel = repo_relative_path(source_root, Path::new(file))?;
+    (rel.ends_with(".rs") && !rel.starts_with(".kiss/") && !rel.starts_with('<')).then_some(rel)
+}
+
+pub fn repo_relative_path(source_root: &Path, path: &Path) -> Option<String> {
+    let root = source_root
+        .canonicalize()
+        .unwrap_or_else(|_| source_root.to_path_buf());
+    let candidate = if path.is_absolute() {
+        path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    } else {
+        let joined = root.join(path);
+        joined.canonicalize().unwrap_or(joined)
+    };
+    let rel = candidate.strip_prefix(&root).ok()?;
+    if rel.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::ParentDir | std::path::Component::Prefix(_)
+        )
+    }) {
+        return None;
+    }
+    Some(rel.to_string_lossy().replace('\\', "/"))
+}
+
+pub fn generation_entries_fingerprint(cache_root: &Path, generation: &str) -> io::Result<String> {
+    let entries_dir = cache_root.join("entries");
+    let mut names = Vec::new();
+    if entries_dir.is_dir() {
+        for entry in fs::read_dir(&entries_dir)? {
+            let path = entry?.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(parsed) = serde_json::from_slice::<RustCovCacheEntry>(&fs::read(&path)?) else {
+                continue;
+            };
+            if parsed.generation_fingerprint == generation
+                && let Some(name) = path.file_name().and_then(|name| name.to_str())
+            {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names.sort();
+    let mut h = rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
+    for name in &names {
+        h = rust_cov_fnv1a64(h, name.as_bytes());
+        h = rust_cov_fnv1a64(h, &[0]);
+    }
+    Ok(format!("{h:016x}"))
+}
+
+pub fn store_rust_cov_cache_entry(
     cache_root: &Path,
     fingerprint: &str,
     entry: &RustCovCacheEntry,
@@ -78,6 +144,7 @@ pub(crate) fn rust_cov_unique_suffix() -> String {
     format!("{}.{}", process::id(), nanos)
 }
 
+#[cfg(any(test, feature = "legacy-test-api"))]
 pub(crate) fn rust_cov_fingerprint(req: &RustLlvmCovRequest) -> io::Result<String> {
     let mut h = rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
     h = rust_cov_fnv1a64(h, b"cargo-llvm-cov-generated-args-v2");
@@ -102,84 +169,13 @@ pub(crate) fn rust_cov_fingerprint(req: &RustLlvmCovRequest) -> io::Result<Strin
         h = rust_cov_fnv1a64(h, value.as_bytes());
         h = rust_cov_fnv1a64(h, &[0]);
     }
-    for file in rust_cov_input_files(&req.cwd)? {
+    for file in crate::shared_input::rust_cov_input_files(&req.cwd)? {
         h = rust_cov_fnv1a64(h, file.to_string_lossy().as_bytes());
         h = rust_cov_fnv1a64(h, &[0]);
         h = rust_cov_fnv1a64(h, &fs::read(file)?);
         h = rust_cov_fnv1a64(h, &[0]);
     }
     Ok(format!("{h:016x}"))
-}
-
-pub(crate) fn rust_cov_input_files(root: &Path) -> io::Result<Vec<PathBuf>> {
-    let mut out = Vec::new();
-    visit_rust_cov_inputs(root, &mut out)?;
-    out.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
-    Ok(out)
-}
-
-fn visit_rust_cov_inputs(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            if should_skip_rust_cov_dir(&path) {
-                continue;
-            }
-            visit_rust_cov_inputs(&path, out)?;
-        } else if file_type.is_file() && is_rust_cov_cache_input(&path) {
-            out.push(path);
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn should_skip_rust_cov_dir(path: &Path) -> bool {
-    matches!(
-        path.file_name().and_then(|name| name.to_str()),
-        Some(".git" | "target" | ".rust_llvm_cov_cache")
-    ) || is_kiss_rust_cov_cache_dir(path)
-}
-
-pub(crate) fn is_kiss_rust_cov_cache_dir(path: &Path) -> bool {
-    path.file_name().and_then(|name| name.to_str()) == Some("rust_llvm_cov_cache")
-        && path
-            .parent()
-            .and_then(|parent| parent.file_name())
-            .and_then(|name| name.to_str())
-            == Some(".kiss")
-}
-
-pub(crate) fn is_rust_cov_cache_input(path: &Path) -> bool {
-    if path
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
-    {
-        return true;
-    }
-    matches!(
-        path.file_name().and_then(|name| name.to_str()),
-        Some("Cargo.toml" | "Cargo.lock" | "config.toml")
-    ) || is_cargo_config_input_path(path)
-        || is_rust_toolchain_input_path(path)
-}
-
-pub(crate) fn is_cargo_config_input_path(path: &Path) -> bool {
-    path.parent()
-        .and_then(|parent| parent.file_name())
-        .and_then(|name| name.to_str())
-        == Some(".cargo")
-        && matches!(
-            path.file_name().and_then(|name| name.to_str()),
-            Some("config" | "config.toml")
-        )
-}
-
-pub(crate) fn is_rust_toolchain_input_path(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.starts_with("rust-toolchain"))
 }
 
 pub(crate) fn rust_cov_fnv1a64(h: u64, bytes: &[u8]) -> u64 {
@@ -270,7 +266,7 @@ mod tests {
         )
         .unwrap();
 
-        let names: BTreeSet<_> = rust_cov_input_files(tmp.path())
+        let names: BTreeSet<_> = crate::shared_input::rust_cov_input_files(tmp.path())
             .unwrap()
             .into_iter()
             .map(|path| path.strip_prefix(tmp.path()).unwrap().to_path_buf())
@@ -283,8 +279,10 @@ mod tests {
         assert!(names.contains(Path::new("src/lib.rs")));
         assert!(!names.contains(Path::new("target/ignored.rs")));
         assert!(!names.contains(Path::new(".kiss/rust_llvm_cov_cache/ignored.rs")));
-        assert!(should_skip_rust_cov_dir(&tmp.path().join("target")));
-        assert!(is_kiss_rust_cov_cache_dir(
+        assert!(crate::shared_input::should_skip_rust_cov_dir(
+            &tmp.path().join("target")
+        ));
+        assert!(crate::shared_input::is_kiss_rust_cov_cache_dir(
             &tmp.path().join(".kiss").join("rust_llvm_cov_cache")
         ));
     }

@@ -1,13 +1,26 @@
 use super::*;
 use std::cell::Cell;
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-use rust_llvm_cov_runner::{RustCoverageBatchCounters, RustLineCoverage};
+use rust_llvm_cov_runner::{
+    CargoLlvmCovRunRequest, RustCoverageBatchCounters, RustLineCoverage, build_llvm_cov_argv,
+};
 
 use crate::test_runner::last_status::prior_failures;
+
+pub(crate) fn build_cargo_llvm_cov_dry_run_argv(selector: &str, extra: &[String]) -> Vec<String> {
+    let mut req = CargoLlvmCovRunRequest::new(
+        selector,
+        PathBuf::from("."),
+        PathBuf::from("cargo"),
+        PathBuf::from("<coverage.json>"),
+    );
+    req.test_args = extra.to_vec();
+    build_llvm_cov_argv(&req)
+}
 
 #[test]
 fn format_rust_llvm_cov_error_preserves_context_and_message() {
@@ -27,6 +40,7 @@ fn batch_result_records_completed_outcomes_before_returning_late_error() {
         "rustc 1.88.0",
         "cargo-nextest 0.9.0",
         &[],
+        "0000000000000000",
     );
     let result = RustCoverageBatchResult {
         completed: vec![RustLlvmCovOutcome {
@@ -65,6 +79,7 @@ fn fresh_unstored_batch_outcome_is_counted_explicitly() {
         "rustc 1.88.0",
         "cargo-nextest 0.9.0",
         &[],
+        "0000000000000000",
     );
     let result = RustCoverageBatchResult {
         completed: vec![RustLlvmCovOutcome {
@@ -91,40 +106,6 @@ fn fresh_unstored_batch_outcome_is_counted_explicitly() {
 }
 
 #[test]
-fn batch_counters_are_preserved_for_rust_metrics() {
-    let tmp = tempfile::tempdir().unwrap();
-    let identity = rust_last_status_identity(
-        "cargo 1.88.0",
-        "cargo-llvm-cov 0.6.0",
-        "rustc 1.88.0",
-        "cargo-nextest 0.9.0",
-        &[],
-    );
-    let counters = RustCoverageBatchCounters {
-        build_invocations: 1,
-        test_instances: 7,
-        export_jobs: 5,
-        cache_hits: 2,
-        max_active_test_instances: 3,
-        max_active_exports: 4,
-    };
-    let result = RustCoverageBatchResult {
-        completed: Vec::new(),
-        batch_error: None,
-        counters,
-    };
-
-    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
-
-    assert_eq!(summary.rust_build_invocations, 1);
-    assert_eq!(summary.rust_test_instances, 7);
-    assert_eq!(summary.rust_export_jobs, 5);
-    assert_eq!(summary.rust_batch_cache_hits, 2);
-    assert_eq!(summary.rust_max_active_test_instances, 3);
-    assert_eq!(summary.rust_max_active_exports, 4);
-}
-
-#[test]
 fn rust_selector_path_submits_one_batch_request_to_executor() {
     let tmp = tempfile::tempdir().unwrap();
     let selectors = vec![
@@ -145,6 +126,7 @@ fn rust_selector_path_submits_one_batch_request_to_executor() {
         &["--exact".to_string()],
         true,
         7,
+        None,
         move |repo_root| {
             detector_calls_for_closure.set(detector_calls_for_closure.get() + 1);
             assert_eq!(repo_root, expected_repo_root);
@@ -187,7 +169,7 @@ fn rust_selector_path_submits_one_batch_request_to_executor() {
 fn run_rust_llvm_cov_selectors_rejects_zero_jobs_before_spawning() {
     let tmp = tempfile::tempdir().unwrap();
 
-    let _ = run_rust_llvm_cov_selectors(tmp.path(), &[], &[], false, 0);
+    let _ = run_rust_llvm_cov_selectors(tmp.path(), &[], &[], false, 0, None);
 }
 
 #[test]
@@ -200,6 +182,7 @@ fn run_rust_llvm_cov_selectors_rejects_unsupported_test_args_before_tool_detecti
         &["--format".to_string(), "json".to_string()],
         false,
         1,
+        None,
     )
     .unwrap_err();
 
@@ -237,6 +220,7 @@ fn rust_llvm_cov_request_from_batch_parts_preserves_batch_execution_inputs() {
         &["--exact".to_string()],
         true,
         3,
+        None,
     )
     .unwrap();
 
@@ -268,8 +252,8 @@ fn rust_coverage_batch_request_from_parts_preserves_selector_occurrences() {
     ];
     let extra = vec!["--exact".to_string()];
 
-    let req =
-        rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &extra, true, 3).unwrap();
+    let req = rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &extra, true, 3, None)
+        .unwrap();
 
     assert_eq!(req.cwd, tmp.path());
     assert_eq!(req.source_root, tmp.path());
@@ -304,10 +288,11 @@ fn rust_coverage_batch_request_uses_unique_run_scoped_config_paths() {
     let tmp = tempfile::tempdir().unwrap();
     let selectors = vec!["tests::case".to_string()];
 
-    let first =
-        rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &[], false, 2).unwrap();
+    let first = rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &[], false, 2, None)
+        .unwrap();
     let second =
-        rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &[], false, 2).unwrap();
+        rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &[], false, 2, None)
+            .unwrap();
 
     assert_ne!(first.generated_config, second.generated_config);
     assert_eq!(first.generated_config.file_name().unwrap(), "nextest.toml");
@@ -315,14 +300,20 @@ fn rust_coverage_batch_request_uses_unique_run_scoped_config_paths() {
 }
 
 #[test]
-fn compatibility_batch_executor_returns_batch_error_without_completed_outcomes() {
+fn compatibility_batch_executor_returns_error_on_spawn_failure() {
     let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"spawn-fail\"\n",
+    )
+    .unwrap();
     let mut batch_req = rust_coverage_batch_request_from_parts(
         tmp.path(),
         &["tests::case".to_string()],
         &[],
         true,
         1,
+        None,
     )
     .unwrap();
     batch_req.cargo = "/definitely/not/cargo".into();
@@ -333,13 +324,14 @@ fn compatibility_batch_executor_returns_batch_error_without_completed_outcomes()
         cargo_nextest: "cargo-nextest 0.9.0".to_string(),
     };
 
-    let result = execute_rust_coverage_batch_compat(&batch_req, &versions).unwrap();
+    let err = execute_rust_coverage_batch_compat(&batch_req, &versions).unwrap_err();
 
-    assert!(result.completed.is_empty());
-    assert!(matches!(
-        result.batch_error,
-        Some(RustLlvmCovError::Runner(_))
-    ));
+    assert!(
+        err.contains("failed to spawn")
+            || err.contains("cargo metadata failed")
+            || err.contains("No such file or directory"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

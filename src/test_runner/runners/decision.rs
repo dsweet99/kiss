@@ -202,12 +202,17 @@ fn prior_failures_for_language(
             let cargo_nextest_version =
                 super::command_stdout(&cargo, &["nextest", "--version"], repo_root)?;
             let rustc_version = super::command_stdout(&rustc, &["-Vv"], repo_root)?;
+            let runner_map_fingerprint =
+                crate::test_runner::rust_coverage_index::current_rust_runner_map_fingerprint(
+                    repo_root, test_args,
+                )?;
             rust_last_status_identity(
                 &cargo_version,
                 &llvm_cov_version,
                 &rustc_version,
                 &cargo_nextest_version,
                 test_args,
+                &runner_map_fingerprint,
             )
         }
     };

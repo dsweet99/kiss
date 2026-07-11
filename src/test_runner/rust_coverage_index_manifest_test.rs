@@ -6,7 +6,7 @@ use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::RustLineCoverage;
 
 use super::manifest::{RustPopulationManifest, RustPopulationManifestIdentity};
-use super::test_support::write_test_entry;
+use super::test_support::{test_entries_fingerprint, write_test_entry, write_test_entry_with_args};
 use super::*;
 
 fn fake_manifest_identity() -> RustPopulationManifestIdentity {
@@ -42,7 +42,7 @@ fn rust_population_manifest_identity() {
 fn rust_population_manifest() {
     let identity = fake_manifest_identity();
     let manifest = RustPopulationManifest {
-        schema_version: POPULATION_SCHEMA_VERSION.to_string(),
+        schema_version: LEGACY_POPULATION_SCHEMA_VERSION.to_string(),
         cache_schema_version: identity.cache_schema_version.clone(),
         source_root: "root".to_string(),
         selector_discovery_version: identity.selector_discovery_version.clone(),
@@ -62,9 +62,14 @@ fn rust_population_manifest() {
 }
 
 #[test]
-fn population_manifest_requires_matching_tool_versions_and_coverage_args() {
+fn write_rust_population_manifest_for_args_marks_population_current() {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
     fs::write(&lib, "pub fn lib() {}\n").unwrap();
     write_test_entry(
@@ -76,7 +81,47 @@ fn population_manifest_requires_matching_tool_versions_and_coverage_args() {
             files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
         },
     );
+    write_rust_population_manifest_for_args(tmp.path(), &["test_lib".to_string()], &[]).unwrap();
+    assert!(rust_population_manifest_is_current_for_args(
+        tmp.path(),
+        &["test_lib".to_string()],
+        &[],
+    ));
+    assert!(!rust_population_manifest_is_current_for_args(
+        tmp.path(),
+        &["missing_selector".to_string()],
+        &[],
+    ));
+}
+
+#[test]
+fn batch_population_manifest_is_current_rejects_missing_batch_identity() {
+    let tmp = tempfile::tempdir().unwrap();
     let identity = fake_manifest_identity();
+    assert!(!rust_population_manifest_is_current_with_identity(
+        tmp.path(),
+        &["test_lib".to_string()],
+        &identity,
+    ));
+}
+
+#[test]
+fn population_manifest_requires_matching_generation_and_selectors() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    let lib = tmp.path().join("src").join("lib.rs");
+    fs::write(&lib, "pub fn lib() {}\n").unwrap();
+    let identity = fake_manifest_identity();
+    write_test_entry_with_args(
+        tmp.path(),
+        "a",
+        "test_lib",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+        },
+        &identity.test_args,
+    );
 
     write_rust_population_manifest_with_identity(tmp.path(), &["test_lib".to_string()], &identity)
         .unwrap();
@@ -86,39 +131,6 @@ fn population_manifest_requires_matching_tool_versions_and_coverage_args() {
         &["test_lib".to_string()],
         &identity
     ));
-
-    let mut changed = identity.clone();
-    changed.rustc_version.push_str("\nrelease: changed");
-    assert!(
-        !rust_population_manifest_is_current_with_identity(
-            tmp.path(),
-            &["test_lib".to_string()],
-            &changed,
-        ),
-        "rustc -Vv changes invalidate population freshness"
-    );
-
-    let mut changed = identity.clone();
-    changed.cargo_version = "cargo 1.89.0".to_string();
-    assert!(
-        !rust_population_manifest_is_current_with_identity(
-            tmp.path(),
-            &["test_lib".to_string()],
-            &changed,
-        ),
-        "cargo --version changes invalidate population freshness"
-    );
-
-    let mut changed = identity.clone();
-    changed.cargo_llvm_cov_version = "cargo-llvm-cov 0.7.0".to_string();
-    assert!(
-        !rust_population_manifest_is_current_with_identity(
-            tmp.path(),
-            &["test_lib".to_string()],
-            &changed,
-        ),
-        "cargo llvm-cov --version changes invalidate population freshness"
-    );
 
     let mut changed = identity.clone();
     changed.test_args.push("--nocapture".to_string());
@@ -131,17 +143,13 @@ fn population_manifest_requires_matching_tool_versions_and_coverage_args() {
         "coverage-affecting test args invalidate population freshness"
     );
 
-    let mut changed = identity;
-    changed
-        .env
-        .insert("RUSTDOCFLAGS".to_string(), "-Dwarnings".to_string());
     assert!(
         !rust_population_manifest_is_current_with_identity(
             tmp.path(),
-            &["test_lib".to_string()],
-            &changed,
+            &["other_selector".to_string()],
+            &identity,
         ),
-        "coverage-affecting env changes invalidate population freshness"
+        "selector population mismatch invalidates population freshness"
     );
 }
 
@@ -150,7 +158,7 @@ fn empty_sources_and_empty_cache_have_empty_selection_contracts() {
     let tmp = tempfile::tempdir().unwrap();
 
     let index = rebuild_rust_coverage_index(tmp.path()).unwrap();
-    let selected = select_rust_source_selectors_from_index(tmp.path(), &[]).unwrap();
+    let selected = select_rust_source_selectors_from_index(tmp.path(), &[], &[]).unwrap();
 
     assert!(index.is_empty());
     assert!(selected.is_empty());
@@ -164,33 +172,33 @@ fn bad_index_files_are_rejected() {
     let index_path = rust_coverage_index_path(tmp.path());
     fs::create_dir_all(index_path.parent().unwrap()).unwrap();
     fs::write(&index_path, "{not json").unwrap();
-    assert!(load_current_rust_coverage_index(tmp.path()).is_none());
+    assert!(load_current_rust_coverage_index(tmp.path(), &[]).is_none());
 
     fs::write(
         &index_path,
         serde_json::json!({
             "schema_version": "old",
             "source_root": normalized_repo_root(tmp.path()),
-            "entries_fingerprint": entries_fingerprint(&rust_coverage_cache_root(tmp.path())).unwrap(),
+            "entries_fingerprint": test_entries_fingerprint(tmp.path(), &[]),
             "files": {}
         })
         .to_string(),
     )
     .unwrap();
-    assert!(load_current_rust_coverage_index(tmp.path()).is_none());
+    assert!(load_current_rust_coverage_index(tmp.path(), &[]).is_none());
 
     fs::write(
         &index_path,
         serde_json::json!({
-            "schema_version": INDEX_SCHEMA_VERSION,
+            "schema_version": LEGACY_INDEX_SCHEMA_VERSION,
             "source_root": "/not/this/repo",
-            "entries_fingerprint": entries_fingerprint(&rust_coverage_cache_root(tmp.path())).unwrap(),
+            "entries_fingerprint": test_entries_fingerprint(tmp.path(), &[]),
             "files": {}
         })
         .to_string(),
     )
     .unwrap();
-    assert!(load_current_rust_coverage_index(tmp.path()).is_none());
+    assert!(load_current_rust_coverage_index(tmp.path(), &[]).is_none());
 }
 
 #[test]
@@ -213,7 +221,7 @@ fn path_fingerprint_and_temp_file_helpers_have_contracts() {
     );
     assert!(repo_relative_path(tmp.path(), &outside_file).is_none());
 
-    let first = entries_fingerprint(&rust_coverage_cache_root(tmp.path())).unwrap();
+    let first = test_entries_fingerprint(tmp.path(), &[]);
     write_test_entry(
         tmp.path(),
         "a",
@@ -223,7 +231,7 @@ fn path_fingerprint_and_temp_file_helpers_have_contracts() {
             files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
         },
     );
-    let second = entries_fingerprint(&rust_coverage_cache_root(tmp.path())).unwrap();
+    let second = test_entries_fingerprint(tmp.path(), &[]);
     assert_ne!(first, second);
 
     let temp_path = tmp.path().join("created-once.tmp");
@@ -239,7 +247,7 @@ fn manifest_identity_and_private_helpers_have_contracts() {
 
     assert_eq!(identity.cache_schema_version, CACHE_SCHEMA_VERSION);
     let manifest = RustPopulationManifest {
-        schema_version: POPULATION_SCHEMA_VERSION.to_string(),
+        schema_version: LEGACY_POPULATION_SCHEMA_VERSION.to_string(),
         cache_schema_version: identity.cache_schema_version.clone(),
         source_root: "root".to_string(),
         selector_discovery_version: identity.selector_discovery_version.clone(),
@@ -265,6 +273,4 @@ fn manifest_identity_and_private_helpers_have_contracts() {
     assert!(is_cargo_config_input_path(Path::new(".cargo/config")));
     assert!(is_cargo_config_input_path(Path::new(".cargo/config.toml")));
     assert!(!is_cargo_config_input_path(Path::new("config.toml")));
-
-    assert_ne!(fnv1a64(0xcbf2_9ce4_8422_2325, b"a"), 0xcbf2_9ce4_8422_2325);
 }

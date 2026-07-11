@@ -280,3 +280,11 @@ mod runners_workspace_test;
 #[cfg(test)]
 #[path = "runners_request_test.rs"]
 mod runners_request_test;
+
+#[cfg(test)]
+#[path = "rust_batch_witness_test.rs"]
+mod rust_batch_witness_test;
+
+#[cfg(test)]
+#[path = "rust_batch_witness_derived_test.rs"]
+mod rust_batch_witness_derived_test;

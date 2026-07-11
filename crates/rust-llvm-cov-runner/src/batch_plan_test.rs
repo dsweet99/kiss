@@ -31,7 +31,7 @@ fn batch_request_public_data_contract_preserves_every_field() {
     assert_eq!(req.jobs, 4);
     assert_eq!(
         req.generated_config,
-        PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/runs/nextest.toml")
+        PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/nextest.toml")
     );
 }
 
@@ -46,6 +46,10 @@ fn batch_plan_uses_one_shared_build_target_and_bounded_nextest_jobs() {
     assert_eq!(plan.env["CARGO_LLVM_COV_BUILD_DIR"], build_target);
     assert_eq!(plan.env["NEXTEST_EXPERIMENTAL_LIBTEST_JSON"], "1");
     assert_eq!(plan.env["KEEP_ME"], "1");
+    assert!(
+        plan.target_runner_cargo_config_toml
+            .contains("__rust-llvm-cov-target-runner")
+    );
     assert!(
         plan.argv
             .windows(2)
@@ -90,9 +94,22 @@ fn batch_plan_public_data_contract_preserves_every_field() {
         plan.build_target,
         PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/build/target")
     );
+    assert_eq!(
+        plan.target_runner_output_dir,
+        PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/instances")
+    );
     assert_eq!(plan.env["KEEP_ME"], "1");
     assert_eq!(plan.argv[0], "cargo");
     assert!(plan.generated_config_toml.contains("[profile.kiss]"));
+    assert!(plan.target_runner_cargo_config_toml.contains("runner = ["));
+    assert!(
+        plan.target_runner_cargo_config_toml
+            .contains("__rust-llvm-cov-target-runner")
+    );
+    assert!(plan.argv.windows(2).any(|args| {
+        args[0] == "--config"
+            && args[1] == "/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/cargo-runner.toml"
+    }));
 }
 
 #[test]
@@ -110,7 +127,7 @@ fn batch_plan_constructs_nextest_command_without_legacy_no_clean() {
     assert!(plan.argv.windows(2).any(|args| args
         == [
             "--config-file",
-            "/repo/.kiss/rust_llvm_cov_cache/runs/nextest.toml",
+            "/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/nextest.toml",
         ]));
     assert_eq!(
         &plan.argv[plan.argv.len() - 3..],
@@ -158,14 +175,14 @@ fn batch_plan_generates_escaped_nextest_filter_config() {
 
     assert!(plan.generated_config_toml.contains("[profile.kiss]"));
     assert!(plan.generated_config_toml.contains(
-        r#"default-filter = "test(~\"alpha::case\") | test(~\"quote\\\"slash\\\\case\") | test(~\"line\\nbreak\") | test(~\"foo\\\") | all() | test(\\\"bar\")""#
+        r#"default-filter = "test(/alpha::case/) | test(/quote\"slash\\\\case/) | test(/line\\nbreak/) | test(/foo\"\\) \\| all\\(\\) \\| test\\(\"bar/)""#
     ));
 
     req.test_args = vec!["--exact".to_string()];
     let exact_plan = build_rust_coverage_batch_plan(&req).unwrap();
 
     assert!(exact_plan.generated_config_toml.contains(
-        r#"default-filter = "test(=\"alpha::case\") | test(=\"quote\\\"slash\\\\case\") | test(=\"line\\nbreak\") | test(=\"foo\\\") | all() | test(\\\"bar\")""#
+        r#"default-filter = "test(/(^|\\$)alpha::case$/) | test(/(^|\\$)quote\"slash\\\\case$/) | test(/(^|\\$)line\\nbreak$/) | test(/(^|\\$)foo\"\\) \\| all\\(\\) \\| test\\(\"bar$/)""#
     ));
 }
 

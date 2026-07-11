@@ -1,33 +1,26 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(test)]
 use std::sync::mpsc;
+#[cfg(test)]
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[cfg(test)]
-use rust_llvm_cov_runner::{CargoLlvmCovRunRequest, build_llvm_cov_argv};
 use rust_llvm_cov_runner::{
-    RustCovCacheStatus, RustCoverageBatchRequest, RustCoverageBatchResult, RustLlvmCov,
-    RustLlvmCovError, RustLlvmCovOutcome, RustLlvmCovRequest, build_rust_coverage_batch_plan,
-    cleanup_surplus_rust_cov_worker_slots, subprocess_cargo_llvm_cov_runner,
-    validate_supported_rust_test_args,
+    RustCovCacheStatus, RustCoverageBatchRequest, RustCoverageBatchResult,
+    RustCoverageToolIdentity, RustLlvmCovError, RustLlvmCovOutcome, build_rust_coverage_batch_plan,
+    execute_rust_coverage_batch, resolve_batch_request_runners, validate_supported_rust_test_args,
+};
+#[cfg(test)]
+use rust_llvm_cov_runner::{
+    RustLlvmCov, RustLlvmCovRequest, cleanup_surplus_rust_cov_worker_slots,
+    subprocess_cargo_llvm_cov_runner,
 };
 
 use super::last_status::{LastStatusIdentity, record_statuses, rust_last_status_identity};
 use super::runners::{SelectorCacheRecord, SelectorExecutionSummary, command_stdout};
-
-#[cfg(test)]
-pub(crate) fn build_cargo_llvm_cov_dry_run_argv(selector: &str, extra: &[String]) -> Vec<String> {
-    let mut req = CargoLlvmCovRunRequest::new(
-        selector,
-        PathBuf::from("."),
-        PathBuf::from("cargo"),
-        PathBuf::from("<coverage.json>"),
-    );
-    req.test_args = extra.to_vec();
-    build_llvm_cov_argv(&req)
-}
+use crate::test_runner::rust_coverage_index::relevant_rust_batch_env;
 
 pub(crate) fn run_rust_llvm_cov_selectors(
     repo_root: &Path,
@@ -35,6 +28,7 @@ pub(crate) fn run_rust_llvm_cov_selectors(
     extra: &[String],
     force_rerun: bool,
     jobs: usize,
+    population_publication_selectors: Option<Vec<String>>,
 ) -> Result<SelectorExecutionSummary, String> {
     run_rust_llvm_cov_selectors_with_deps(
         repo_root,
@@ -42,6 +36,7 @@ pub(crate) fn run_rust_llvm_cov_selectors(
         extra,
         force_rerun,
         jobs,
+        population_publication_selectors,
         detect_rust_coverage_tool_versions,
         execute_rust_coverage_batch_compat,
     )
@@ -55,12 +50,14 @@ struct RustCoverageToolVersions {
     cargo_nextest: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_rust_llvm_cov_selectors_with_deps<D, E>(
     repo_root: &Path,
     selectors: &[String],
     extra: &[String],
     force_rerun: bool,
     jobs: usize,
+    population_publication_selectors: Option<Vec<String>>,
     detect_versions: D,
     execute_batch: E,
 ) -> Result<SelectorExecutionSummary, String>
@@ -76,8 +73,14 @@ where
     if selectors.is_empty() {
         return Ok(SelectorExecutionSummary::default());
     }
-    let batch_req =
-        rust_coverage_batch_request_from_parts(repo_root, selectors, extra, force_rerun, jobs)?;
+    let batch_req = rust_coverage_batch_request_from_parts(
+        repo_root,
+        selectors,
+        extra,
+        force_rerun,
+        jobs,
+        population_publication_selectors,
+    )?;
     build_rust_coverage_batch_plan(&batch_req)?;
     let versions = detect_versions(repo_root)?;
     let identity = rust_last_status_identity(
@@ -86,6 +89,7 @@ where
         &versions.rustc,
         &versions.cargo_nextest,
         extra,
+        &batch_req.runner_map_fingerprint,
     );
     let result = execute_batch(&batch_req, &versions)?;
     finish_rust_coverage_batch_result(repo_root, &identity, result)
@@ -95,34 +99,13 @@ fn execute_rust_coverage_batch_compat(
     batch_req: &RustCoverageBatchRequest,
     versions: &RustCoverageToolVersions,
 ) -> Result<RustCoverageBatchResult, String> {
-    let reqs: Vec<_> = batch_req
-        .logical_selectors
-        .iter()
-        .map(|selector| {
-            rust_llvm_cov_request_from_batch_parts(
-                batch_req,
-                selector,
-                &versions.llvm_cov,
-                &versions.rustc,
-            )
-        })
-        .collect::<Result<_, _>>()?;
-    let mut completed = Vec::new();
-    let mut batch_error = None;
-    for result in run_rust_llvm_cov_requests_bounded(reqs, batch_req.jobs)
-        .map_err(format_rust_llvm_cov_error)?
-    {
-        match result {
-            Ok(outcome) => completed.push(outcome),
-            Err(err) if batch_error.is_none() => batch_error = Some(err),
-            Err(_) => {}
-        }
-    }
-    Ok(RustCoverageBatchResult {
-        completed,
-        batch_error,
-        counters: Default::default(),
-    })
+    let tools = RustCoverageToolIdentity {
+        cargo_version: versions.cargo.clone(),
+        llvm_cov_version: versions.llvm_cov.clone(),
+        rustc_version: versions.rustc.clone(),
+        cargo_nextest_version: versions.cargo_nextest.clone(),
+    };
+    execute_rust_coverage_batch(batch_req, &tools).map_err(format_rust_llvm_cov_error)
 }
 
 #[cfg(test)]
@@ -151,6 +134,7 @@ pub(crate) fn rust_llvm_cov_request_from_parts(
     })
 }
 
+#[cfg(test)]
 fn rust_llvm_cov_request_from_batch_parts(
     batch_req: &RustCoverageBatchRequest,
     selector: &str,
@@ -179,9 +163,10 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
     extra: &[String],
     force_rerun: bool,
     jobs: usize,
+    population_publication_selectors: Option<Vec<String>>,
 ) -> Result<RustCoverageBatchRequest, String> {
     validate_supported_rust_test_args(extra)?;
-    Ok(RustCoverageBatchRequest {
+    let mut req = RustCoverageBatchRequest {
         cwd: repo_root.to_path_buf(),
         source_root: repo_root.to_path_buf(),
         cargo: PathBuf::from("cargo"),
@@ -189,11 +174,17 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
         logical_selectors: selectors.to_vec(),
         cargo_args: Vec::new(),
         test_args: extra.to_vec(),
-        env: BTreeMap::new(),
+        env: relevant_rust_batch_env(),
         force_rerun,
         jobs,
         generated_config: unique_rust_coverage_batch_config_path(repo_root),
-    })
+        population_publication_selectors,
+        delegated_runners: BTreeMap::new(),
+        runner_map_fingerprint: String::new(),
+        host_platform: String::new(),
+    };
+    resolve_batch_request_runners(&mut req).map_err(format_rust_llvm_cov_error)?;
+    Ok(req)
 }
 
 fn unique_rust_coverage_batch_config_path(repo_root: &Path) -> PathBuf {
@@ -231,6 +222,7 @@ fn detect_rust_coverage_tool_versions(
     })
 }
 
+#[cfg(test)]
 fn run_rust_llvm_cov_requests_bounded(
     reqs: Vec<RustLlvmCovRequest>,
     jobs: usize,
@@ -238,9 +230,12 @@ fn run_rust_llvm_cov_requests_bounded(
     run_rust_llvm_cov_requests_bounded_with_spawner(reqs, jobs, spawn_rust_llvm_cov_job)
 }
 
+#[cfg(test)]
 type RustLlvmCovJobResult = (usize, usize, Result<RustLlvmCovOutcome, RustLlvmCovError>);
+#[cfg(test)]
 type RustLlvmCovIndexedRequests = std::iter::Enumerate<std::vec::IntoIter<RustLlvmCovRequest>>;
 
+#[cfg(test)]
 fn run_rust_llvm_cov_requests_bounded_with_spawner<F>(
     reqs: Vec<RustLlvmCovRequest>,
     jobs: usize,
@@ -285,6 +280,7 @@ where
     Ok(out)
 }
 
+#[cfg(test)]
 fn spawn_next_rust_llvm_cov_job<F>(
     indexed_reqs: &mut RustLlvmCovIndexedRequests,
     slot: usize,
@@ -306,6 +302,7 @@ where
     true
 }
 
+#[cfg(test)]
 fn cleanup_surplus_worker_slots(
     reqs: &[RustLlvmCovRequest],
     jobs: usize,
@@ -323,6 +320,7 @@ fn cleanup_surplus_worker_slots(
     Ok(())
 }
 
+#[cfg(test)]
 fn spawn_rust_llvm_cov_job(
     index: usize,
     slot: usize,
@@ -418,9 +416,13 @@ fn passed_rust_llvm_cov_outcome(selector: String) -> RustLlvmCovOutcome {
 }
 
 #[cfg(test)]
+#[path = "rust_llvm_cov_metrics_test.rs"]
+mod metrics_tests;
+#[cfg(test)]
 #[path = "rust_llvm_cov_test.rs"]
 mod tests;
-
+#[cfg(test)]
+pub(crate) use tests::build_cargo_llvm_cov_dry_run_argv;
 #[cfg(test)]
 #[path = "rust_llvm_cov_bounded_test.rs"]
 mod bounded_tests;

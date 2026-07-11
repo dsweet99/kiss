@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
-use std::time::Duration;
 
 use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::RustLineCoverage;
@@ -9,7 +8,7 @@ use tempfile::TempDir;
 
 use super::runners::*;
 use super::rust_coverage_index::{
-    rebuild_rust_coverage_index, rust_coverage_cache_root, write_rust_population_manifest_for_args,
+    rebuild_rust_coverage_index, write_rust_population_manifest_for_args, write_test_entry,
 };
 
 #[test]
@@ -77,7 +76,7 @@ fn combined_selectors_uses_existing_rust_index_for_source_changes() {
         "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
     )
     .unwrap();
-    write_rust_cov_entry(
+    write_test_entry(
         tmp.path(),
         "abc",
         "tests::gets_value",
@@ -120,7 +119,7 @@ fn combined_selectors_repopulates_when_rust_test_args_change() {
         "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
     )
     .unwrap();
-    write_rust_cov_entry(
+    write_test_entry(
         tmp.path(),
         "abc",
         "tests::gets_value",
@@ -162,7 +161,7 @@ fn combined_selectors_prefers_rust_changed_line_matches() {
         "pub fn first() {}\npub fn second() {}\n#[cfg(test)]\nmod tests { #[test] fn first() {} #[test] fn second() {} }\n",
     )
     .unwrap();
-    write_rust_cov_entry(
+    write_test_entry(
         tmp.path(),
         "line1",
         "tests::first",
@@ -174,7 +173,7 @@ fn combined_selectors_prefers_rust_changed_line_matches() {
             )]),
         },
     );
-    write_rust_cov_entry(
+    write_test_entry(
         tmp.path(),
         "line2",
         "tests::second",
@@ -221,7 +220,7 @@ fn combined_selectors_requires_complete_rust_population_manifest() {
         "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
     )
     .unwrap();
-    write_rust_cov_entry(
+    write_test_entry(
         tmp.path(),
         "abc",
         "tests::gets_value",
@@ -233,7 +232,6 @@ fn combined_selectors_requires_complete_rust_population_manifest() {
             )]),
         },
     );
-    rebuild_rust_coverage_index(tmp.path()).unwrap();
 
     let plan = combined_selectors(
         tmp.path(),
@@ -311,28 +309,6 @@ fn combined_selectors_marks_missing_rust_index_for_population() {
     assert!(plan.rust_selectors.is_empty());
     assert_eq!(plan.rust_source_paths, vec![lib]);
     assert!(plan.rust_population_required);
-}
-
-fn write_rust_cov_entry(
-    repo_root: &Path,
-    name: &str,
-    selector: &str,
-    status: TestStatus,
-    coverage: RustLineCoverage,
-) {
-    let path = rust_coverage_cache_root(repo_root)
-        .join("entries")
-        .join(format!("{name}.json"));
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let entry = serde_json::json!({
-        "schema_version": "rust-llvm-cov-cache-v1",
-        "selector": selector,
-        "status": status,
-        "exit_code": 0,
-        "duration": Duration::from_millis(1),
-        "coverage": coverage,
-    });
-    fs::write(path, serde_json::to_vec(&entry).unwrap()).unwrap();
 }
 
 #[test]

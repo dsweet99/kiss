@@ -61,7 +61,10 @@ fn rebuild_index_maps_covered_files_to_selectors() {
         BTreeSet::from(["test_other".to_string()])
     );
     assert!(rust_coverage_index_path(tmp.path()).exists());
-    assert_eq!(load_current_rust_coverage_index(tmp.path()).unwrap(), index);
+    assert_eq!(
+        load_current_rust_coverage_index(tmp.path(), &[]).unwrap(),
+        index
+    );
 }
 
 #[test]
@@ -85,10 +88,11 @@ fn filtered_rust_rebuild_uses_supplied_indexable_policy() {
         },
     );
 
-    let index = rebuild_rust_coverage_index_with_filter(tmp.path(), |path, _repo_root| {
+    let index = super::build_rust_coverage_index_with_filter(tmp.path(), |path, _repo_root| {
         path.file_name().is_some_and(|name| name == "lib.rs")
     })
     .unwrap();
+    super::write_rust_coverage_index(tmp.path(), &index).unwrap();
 
     assert_eq!(
         index,
@@ -109,11 +113,12 @@ fn rust_selection_handles_empty_missing_and_hybrid_fallback_cases() {
     fs::write(&other, "pub fn other() {}\n").unwrap();
 
     assert_eq!(
-        select_rust_source_selectors_from_index(tmp.path(), &[]),
+        select_rust_source_selectors_from_index(tmp.path(), &[], &[]),
         Some(BTreeSet::new())
     );
     assert!(
-        select_rust_source_selectors_from_index(tmp.path(), std::slice::from_ref(&lib)).is_none()
+        select_rust_source_selectors_from_index(tmp.path(), std::slice::from_ref(&lib), &[])
+            .is_none()
     );
 
     write_test_entry(
@@ -131,7 +136,8 @@ fn rust_selection_handles_empty_missing_and_hybrid_fallback_cases() {
         select_rust_source_selectors_hybrid(
             tmp.path(),
             std::slice::from_ref(&lib),
-            &BTreeMap::new()
+            &BTreeMap::new(),
+            &[]
         ),
         Some(BTreeSet::from(["test_lib".to_string()]))
     );
@@ -139,7 +145,8 @@ fn rust_selection_handles_empty_missing_and_hybrid_fallback_cases() {
         select_rust_source_selectors_hybrid(
             tmp.path(),
             &[lib.clone(), other],
-            &BTreeMap::from([(lib, BTreeSet::from([1]))])
+            &BTreeMap::from([(lib, BTreeSet::from([1]))]),
+            &[]
         ),
         Some(BTreeSet::from(["test_lib".to_string()]))
     );
@@ -360,6 +367,7 @@ fn hybrid_selection_falls_back_per_file() {
             (precise, BTreeSet::from([2])),
             (fallback, BTreeSet::from([99])),
         ]),
+        &[],
     )
     .unwrap();
 
@@ -380,7 +388,7 @@ fn stale_index_is_not_loaded() {
     fs::write(
         index_path,
         serde_json::json!({
-            "schema_version": INDEX_SCHEMA_VERSION,
+            "schema_version": LEGACY_INDEX_SCHEMA_VERSION,
             "source_root": normalized_repo_root(tmp.path()),
             "entries_fingerprint": "stale",
             "files": {}
@@ -389,5 +397,5 @@ fn stale_index_is_not_loaded() {
     )
     .unwrap();
 
-    assert!(load_current_rust_coverage_index(tmp.path()).is_none());
+    assert!(load_current_rust_coverage_index(tmp.path(), &[]).is_none());
 }

@@ -71,7 +71,7 @@ proc-macro2 = { version = "1", features = ["span-locations"] }
 petgraph = "0.7"
 
 # Configuration file parsing
-toml = "0.8"
+toml = "1"
 fa-leiden-cd = "0.1.0"
 bincode = "1.3"
 rpytest-runner = { path = "crates/rpytest-runner" }
@@ -79,6 +79,7 @@ rslip = { path = "crates/rslip" }
 rust-llvm-cov-runner = { path = "crates/rust-llvm-cov-runner" }
 
 [dev-dependencies]
+rust-llvm-cov-runner = { path = "crates/rust-llvm-cov-runner", features = ["legacy-test-api"] }
 tempfile = "3"
 
 [profile.test]

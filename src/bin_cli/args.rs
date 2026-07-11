@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use kiss::Language;
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use crate::test_git::TestChangeMode;
@@ -219,6 +220,18 @@ pub enum Commands {
         fixture: Option<String>,
         #[arg(last = true)]
         extra: Vec<String>,
+    },
+    /// Internal target-runner shim for compile-once Rust coverage.
+    #[command(name = "__rust-llvm-cov-target-runner", hide = true)]
+    RustLlvmCovTargetRunner {
+        #[arg(long, value_name = "DIR")]
+        output_dir: PathBuf,
+        #[arg(long, value_name = "PATH")]
+        runner_map: PathBuf,
+        #[arg(long, value_name = "TRIPLE")]
+        platform: String,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<OsString>,
     },
     /// Semantic rename/move for Python and Rust symbols (beta)
     Mv {

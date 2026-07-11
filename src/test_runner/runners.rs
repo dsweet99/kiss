@@ -56,6 +56,17 @@ pub(crate) struct SelectorExecutionSummary {
     pub(crate) rust_batch_cache_hits: usize,
     pub(crate) rust_max_active_test_instances: usize,
     pub(crate) rust_max_active_exports: usize,
+    pub(crate) rust_unmatched_selectors: usize,
+    pub(crate) rust_max_objects_per_export: usize,
+    pub(crate) rust_build_target_baseline_bytes: u64,
+    pub(crate) phase_rust_export_ms: u128,
+    pub(crate) rust_derived_state_published: bool,
+    pub(crate) rust_derived_repair: bool,
+    pub(crate) rust_entry_generation_count: usize,
+    pub(crate) rust_current_index_generation: String,
+    pub(crate) rust_cache_pruned_entries: usize,
+    pub(crate) rust_process_residual_count: usize,
+    pub(crate) rust_legacy_cleanup_deferred: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,6 +109,31 @@ impl SelectorExecutionSummary {
         self.rust_max_active_exports = self
             .rust_max_active_exports
             .max(counters.max_active_exports);
+        self.rust_unmatched_selectors += counters.unmatched_selectors;
+        self.rust_max_objects_per_export = self
+            .rust_max_objects_per_export
+            .max(counters.max_objects_per_export);
+        self.rust_build_target_baseline_bytes = self
+            .rust_build_target_baseline_bytes
+            .max(counters.build_target_baseline_bytes);
+        self.phase_rust_export_ms += counters.export_phase_ms;
+        if counters.derived_state_published {
+            self.rust_derived_state_published = true;
+        }
+        if counters.derived_repair {
+            self.rust_derived_repair = true;
+        }
+        self.rust_entry_generation_count = self
+            .rust_entry_generation_count
+            .max(counters.entry_generation_count);
+        if !counters.current_index_generation.is_empty() {
+            self.rust_current_index_generation = counters.current_index_generation.clone();
+        }
+        self.rust_cache_pruned_entries += counters.cache_pruned_entries;
+        self.rust_process_residual_count += counters.process_residual_count;
+        if counters.legacy_cleanup_deferred {
+            self.rust_legacy_cleanup_deferred = true;
+        }
     }
 }
 
@@ -259,6 +295,8 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
     if selectors.is_empty() {
         return Ok(Vec::new());
     }
+    let (delegated_runners, runner_map_fingerprint, host_platform) =
+        rust_llvm_cov_runner::placeholder_delegated_runner_fields();
     let req = RustCoverageBatchRequest {
         cwd: PathBuf::from("."),
         source_root: PathBuf::from("."),
@@ -271,6 +309,10 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         force_rerun: false,
         jobs,
         generated_config: PathBuf::from("<generated-filter>"),
+        population_publication_selectors: None,
+        delegated_runners,
+        runner_map_fingerprint,
+        host_platform,
     };
     let plan = build_rust_coverage_batch_plan(&req)?;
     let mut lines = vec![

@@ -14,6 +14,17 @@ pub fn run_cli_entrypoint() -> i32 {
 pub use run_cli_entrypoint as run;
 
 pub(crate) fn run_with_cli(cli: Cli) -> i32 {
+    if let Commands::RustLlvmCovTargetRunner {
+        output_dir,
+        runner_map,
+        platform,
+        command,
+    } = &cli.command
+    {
+        return rust_llvm_cov_runner::run_target_runner_shim(
+            output_dir, runner_map, platform, command,
+        );
+    }
     if let Commands::Init { repo_path } = &cli.command {
         return run_init_command(repo_path);
     }
@@ -47,6 +58,7 @@ where
 mod run_coverage {
     use super::{parse_cli_from, run_cli_entrypoint, run_with_cli};
     use crate::bin_cli::args::{Cli, Commands};
+    use std::fs;
 
     #[test]
     fn run_entrypoint_and_explicit_cli_paths_return_success() {
@@ -96,4 +108,49 @@ mod run_coverage {
             "init should write a default config into the requested repo"
         );
     }
+
+    #[test]
+    fn hidden_rust_llvm_cov_target_runner_dispatches_before_config_loading() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("shim-child.sh");
+        fs::write(&script, "#!/bin/sh\nexit 6\n").unwrap();
+        make_executable(&script);
+        let output_dir = tmp.path().join("instances");
+
+        let runner_map = tmp.path().join("runner-map.json");
+        fs::write(&runner_map, b"{}").unwrap();
+        let code = run_with_cli(Cli {
+            config: None,
+            lang: None,
+            defaults: true,
+            command: Commands::RustLlvmCovTargetRunner {
+                output_dir: output_dir.clone(),
+                runner_map,
+                platform: "x86_64-unknown-linux-gnu".to_string(),
+                command: vec![script.into_os_string()],
+            },
+        });
+
+        assert_eq!(code, 6);
+        assert!(fs::read_dir(output_dir).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                == Some("json")
+        }));
+    }
+
+    #[cfg(unix)]
+    fn make_executable(path: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
+    #[cfg(not(unix))]
+    fn make_executable(_path: &std::path::Path) {}
 }

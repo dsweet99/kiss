@@ -6,7 +6,7 @@ use crate::test_runner::coverage_decision::{
     TestSelector, full_population_plan,
 };
 use crate::test_runner::rust_coverage_index::{
-    RUST_COVERAGE_ENV_KEYS, rust_population_manifest_is_current_for_args_with_env_keys,
+    RUST_COVERAGE_ENV_KEYS, load_current_rust_population_state,
     select_rust_source_selectors_from_index, select_rust_source_selectors_hybrid,
 };
 
@@ -110,12 +110,13 @@ impl LanguagePlanner for RustModule {
             .iter()
             .map(|selector| selector.id.clone())
             .collect::<Vec<_>>();
-        if rust_population_manifest_is_current_for_args_with_env_keys(
+        if load_current_rust_population_state(
             &self.repo_root,
-            &universe_ids,
+            Some(&universe_ids),
             &self.rust_test_args,
-            self.manifest_env_allowlist(),
-        ) {
+        )
+        .is_some()
+        {
             Ok(CoverageFreshness::Fresh)
         } else {
             Ok(CoverageFreshness::Stale)
@@ -131,6 +132,7 @@ impl LanguagePlanner for RustModule {
             &self.repo_root,
             &self.rust_source_paths,
             &self.rust_changed_lines,
+            &self.rust_test_args,
         ) else {
             return Ok(SelectionDecision {
                 selectors: Vec::new(),
@@ -156,12 +158,17 @@ pub(crate) fn select_fresh_rust_source_selectors(
     repo_root: &Path,
     rust_source_paths: &[PathBuf],
     rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
+    rust_test_args: &[String],
 ) -> Option<BTreeSet<String>> {
     if !rust_changed_lines.is_empty()
-        && let Some(line_selectors) =
-            select_rust_source_selectors_hybrid(repo_root, rust_source_paths, rust_changed_lines)
+        && let Some(line_selectors) = select_rust_source_selectors_hybrid(
+            repo_root,
+            rust_source_paths,
+            rust_changed_lines,
+            rust_test_args,
+        )
     {
         return Some(line_selectors);
     }
-    select_rust_source_selectors_from_index(repo_root, rust_source_paths)
+    select_rust_source_selectors_from_index(repo_root, rust_source_paths, rust_test_args)
 }

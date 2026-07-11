@@ -182,3 +182,84 @@ fn spawn_rust_llvm_cov_job_reports_runner_errors_with_index_and_slot() {
     assert_eq!(slot, 4);
     assert!(matches!(result, Err(RustLlvmCovError::Runner(_))));
 }
+
+#[test]
+fn passed_rust_llvm_cov_outcome_helper_builds_passed_shape() {
+    let outcome = passed_rust_llvm_cov_outcome("tests::case".to_string());
+    assert_eq!(outcome.selector, "tests::case");
+    assert_eq!(outcome.status, rpytest_runner::TestStatus::Passed);
+    assert_eq!(outcome.exit_code, Some(0));
+}
+
+#[test]
+fn spawn_next_rust_llvm_cov_job_reports_last_queue_item() {
+    use std::sync::mpsc;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let req = rust_llvm_cov_request_from_parts(
+        tmp.path(),
+        "tests::only",
+        &[],
+        "llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        false,
+    )
+    .unwrap();
+    let mut indexed = vec![req].into_iter().enumerate();
+    let (tx, rx) = mpsc::channel();
+    let mut parent_tx = Some(tx);
+    let mut spawn_job =
+        |index: usize, slot: usize, req: RustLlvmCovRequest, tx: mpsc::Sender<_>| {
+            tx.send((index, slot, Ok(passed_rust_llvm_cov_outcome(req.selector))))
+                .unwrap();
+        };
+
+    assert!(spawn_next_rust_llvm_cov_job(
+        &mut indexed,
+        0,
+        &mut parent_tx,
+        &mut spawn_job
+    ));
+    assert!(parent_tx.is_none());
+
+    let (index, slot, result) = rx.recv_timeout(Duration::from_secs(1)).unwrap();
+    assert_eq!(index, 0);
+    assert_eq!(slot, 0);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn cleanup_surplus_worker_slots_deduplicates_cache_roots() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    fs::create_dir_all(cache_root.join("workers").join("slot-0")).unwrap();
+    fs::create_dir_all(cache_root.join("workers").join("slot-1")).unwrap();
+    fs::create_dir_all(cache_root.join("workers").join("slot-2")).unwrap();
+
+    let mut req_a = rust_llvm_cov_request_from_parts(
+        tmp.path(),
+        "tests::a",
+        &[],
+        "llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        false,
+    )
+    .unwrap();
+    let mut req_b = rust_llvm_cov_request_from_parts(
+        tmp.path(),
+        "tests::b",
+        &[],
+        "llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        false,
+    )
+    .unwrap();
+    req_a.cache_root = cache_root.clone();
+    req_b.cache_root = cache_root.clone();
+
+    cleanup_surplus_worker_slots(&[req_a, req_b], 1).unwrap();
+
+    assert!(cache_root.join("workers").join("slot-0").exists());
+    assert!(!cache_root.join("workers").join("slot-1").exists());
+    assert!(!cache_root.join("workers").join("slot-2").exists());
+}

@@ -1,16 +1,23 @@
+#[cfg(test)]
 use std::collections::BTreeMap;
-use std::fs;
-use std::io::Write;
+#[cfg(test)]
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+use super::storage::write_test_json_atomically;
+#[cfg(test)]
+use super::{CACHE_SCHEMA_VERSION, RUST_SELECTOR_DISCOVERY_VERSION, command_stdout};
+#[cfg(test)]
 use super::{
-    CACHE_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION, RUST_SELECTOR_DISCOVERY_VERSION,
-    command_stdout, create_new_file, entries_fingerprint, normalized_repo_root,
-    rust_coverage_cache_root, rust_population_manifest_path, unique_suffix,
-    workspace_input_fingerprint,
+    LEGACY_POPULATION_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION, normalized_repo_root,
+    rust_coverage_cache_root, rust_coverage_index_path, rust_population_manifest_path,
+    unique_suffix,
 };
+#[cfg(test)]
+use std::fs;
 
 pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
     "RUSTFLAGS",
@@ -19,6 +26,7 @@ pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
     "LLVM_PROFILE_FILE",
 ];
 
+#[cfg(test)]
 pub(crate) fn write_rust_population_manifest_for_args(
     repo_root: &Path,
     selectors: &[String],
@@ -28,6 +36,42 @@ pub(crate) fn write_rust_population_manifest_for_args(
     write_rust_population_manifest_with_identity(repo_root, selectors, &identity)
 }
 
+#[cfg(test)]
+fn write_test_derived_state_files(
+    repo_root: &Path,
+    batch_identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    entries_fingerprint: &str,
+    selectors: &[String],
+) -> Result<(), String> {
+    let cache_root = rust_coverage_cache_root(repo_root);
+    fs::create_dir_all(&cache_root).map_err(|e| e.to_string())?;
+    let index_files = super::build_test_rust_coverage_index(repo_root)?;
+    write_test_json_atomically(
+        &cache_root.join(format!(".index.{}.tmp", unique_suffix())),
+        &rust_coverage_index_path(repo_root),
+        &serde_json::json!({
+            "schema_version": super::INDEX_SCHEMA_VERSION,
+            "source_root": normalized_repo_root(repo_root),
+            "generation_fingerprint": batch_identity.generation_fingerprint,
+            "entries_fingerprint": entries_fingerprint,
+            "files": index_files,
+        }),
+    )?;
+    write_test_json_atomically(
+        &cache_root.join(format!(".population.{}.tmp", unique_suffix())),
+        &rust_population_manifest_path(repo_root),
+        &serde_json::json!({
+            "schema_version": POPULATION_SCHEMA_VERSION,
+            "source_root": normalized_repo_root(repo_root),
+            "input_fingerprint": batch_identity.input_digest,
+            "generation_fingerprint": batch_identity.generation_fingerprint,
+            "entries_fingerprint": entries_fingerprint,
+            "selectors": selectors,
+        }),
+    )
+}
+
+#[cfg(test)]
 pub(crate) fn write_rust_population_manifest_with_identity(
     repo_root: &Path,
     selectors: &[String],
@@ -36,34 +80,14 @@ pub(crate) fn write_rust_population_manifest_with_identity(
     let mut selectors = selectors.to_vec();
     selectors.sort();
     selectors.dedup();
-    let path = rust_population_manifest_path(repo_root);
-    let parent = path.parent().ok_or_else(|| {
-        "error: kiss test: Rust population manifest path has no parent".to_string()
-    })?;
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let tmp_path = parent.join(format!(".population.{}.tmp", unique_suffix()));
-    let mut file = create_new_file(&tmp_path).map_err(|e| e.to_string())?;
-    let payload = RustPopulationManifest {
-        schema_version: POPULATION_SCHEMA_VERSION.to_string(),
-        cache_schema_version: identity.cache_schema_version.clone(),
-        source_root: normalized_repo_root(repo_root),
-        selector_discovery_version: identity.selector_discovery_version.clone(),
-        rustc_version: identity.rustc_version.clone(),
-        cargo_version: identity.cargo_version.clone(),
-        cargo_llvm_cov_version: identity.cargo_llvm_cov_version.clone(),
-        cargo_args: identity.cargo_args.clone(),
-        test_args: identity.test_args.clone(),
-        env: identity.env.clone(),
-        input_fingerprint: workspace_input_fingerprint(repo_root).map_err(|e| e.to_string())?,
-        entries_fingerprint: entries_fingerprint(&rust_coverage_cache_root(repo_root))
-            .map_err(|e| e.to_string())?,
-        selectors,
-    };
-    serde_json::to_writer_pretty(&mut file, &payload).map_err(|e| e.to_string())?;
-    file.write_all(b"\n").map_err(|e| e.to_string())?;
-    file.sync_all().map_err(|e| e.to_string())?;
-    drop(file);
-    fs::rename(tmp_path, path).map_err(|e| e.to_string())
+    let batch_identity =
+        super::current_rust_coverage_batch_identity(repo_root, &identity.test_args)?;
+    let entries_fingerprint = rust_llvm_cov_runner::generation_entries_fingerprint(
+        &rust_coverage_cache_root(repo_root),
+        &batch_identity.generation_fingerprint,
+    )
+    .map_err(|e| e.to_string())?;
+    write_test_derived_state_files(repo_root, &batch_identity, &entries_fingerprint, &selectors)
 }
 
 #[cfg(test)]
@@ -80,6 +104,7 @@ pub(crate) fn rust_population_manifest_is_current_for_args(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn rust_population_manifest_is_current_for_args_with_env_keys(
     repo_root: &Path,
     selectors: &[String],
@@ -94,28 +119,40 @@ pub(crate) fn rust_population_manifest_is_current_for_args_with_env_keys(
     rust_population_manifest_is_current_with_identity(repo_root, selectors, &identity)
 }
 
+#[cfg(test)]
 pub(crate) fn rust_population_manifest_is_current_with_identity(
     repo_root: &Path,
     selectors: &[String],
     identity: &RustPopulationManifestIdentity,
 ) -> bool {
-    let Some(manifest) = read_population_manifest(repo_root) else {
-        return false;
-    };
-    let Ok(input_fingerprint) = workspace_input_fingerprint(repo_root) else {
-        return false;
-    };
-    manifest.matches_identity(identity, &normalized_repo_root(repo_root))
-        && manifest.input_fingerprint == input_fingerprint
-        && manifest.matches_selectors(selectors)
+    batch_population_manifest_is_current(repo_root, selectors, identity)
 }
 
-fn read_population_manifest(repo_root: &Path) -> Option<RustPopulationManifest> {
-    fs::read(rust_population_manifest_path(repo_root))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<RustPopulationManifest>(&bytes).ok())
+#[cfg(test)]
+fn batch_population_manifest_is_current(
+    repo_root: &Path,
+    selectors: &[String],
+    identity: &RustPopulationManifestIdentity,
+) -> bool {
+    let Ok(current_identity) =
+        super::current_rust_coverage_batch_identity(repo_root, &identity.test_args)
+    else {
+        return false;
+    };
+    let mut expected = selectors.to_vec();
+    expected.sort();
+    expected.dedup();
+    let cache_root = super::rust_coverage_cache_root(repo_root);
+    rust_llvm_cov_runner::load_current_population_state(
+        &cache_root,
+        repo_root,
+        &current_identity,
+        Some(&expected),
+    )
+    .is_some()
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct RustPopulationManifestIdentity {
     pub(crate) cache_schema_version: String,
@@ -128,7 +165,9 @@ pub(crate) struct RustPopulationManifestIdentity {
     pub(crate) env: BTreeMap<String, String>,
 }
 
+#[cfg(test)]
 impl RustPopulationManifestIdentity {
+    #[cfg(test)]
     pub(crate) fn tool_versions(&self) -> [&str; 3] {
         [
             self.rustc_version.as_str(),
@@ -137,17 +176,20 @@ impl RustPopulationManifestIdentity {
         ]
     }
 
+    #[cfg(test)]
     pub(crate) fn has_tool_versions(&self) -> bool {
         self.tool_versions()
             .iter()
             .all(|version| !version.trim().is_empty())
     }
 
+    #[cfg(test)]
     pub(crate) fn args_match(&self, cargo_args: &[String], test_args: &[String]) -> bool {
         self.cargo_args == cargo_args && self.test_args == test_args
     }
 }
 
+#[cfg(test)]
 fn current_rust_population_manifest_identity(
     repo_root: &Path,
     test_args: &[String],
@@ -159,6 +201,7 @@ fn current_rust_population_manifest_identity(
     )
 }
 
+#[cfg(test)]
 fn current_rust_population_manifest_identity_with_env_keys(
     repo_root: &Path,
     test_args: &[String],
@@ -178,6 +221,7 @@ fn current_rust_population_manifest_identity_with_env_keys(
     })
 }
 
+#[cfg(test)]
 fn relevant_rust_coverage_env(env_keys: &[&str]) -> BTreeMap<String, String> {
     env_keys
         .iter()
@@ -189,6 +233,7 @@ fn relevant_rust_coverage_env(env_keys: &[&str]) -> BTreeMap<String, String> {
         .collect()
 }
 
+#[cfg(test)]
 #[derive(Deserialize, Serialize)]
 pub(crate) struct RustPopulationManifest {
     pub(crate) schema_version: String,
@@ -206,6 +251,7 @@ pub(crate) struct RustPopulationManifest {
     pub(crate) selectors: Vec<String>,
 }
 
+#[cfg(test)]
 impl RustPopulationManifest {
     pub(crate) fn matches_identity(
         &self,
@@ -213,7 +259,7 @@ impl RustPopulationManifest {
         source_root: &str,
     ) -> bool {
         identity.has_tool_versions()
-            && self.schema_version == POPULATION_SCHEMA_VERSION
+            && self.schema_version == LEGACY_POPULATION_SCHEMA_VERSION
             && self.cache_schema_version == identity.cache_schema_version
             && self.source_root == source_root
             && self.selector_discovery_version == identity.selector_discovery_version
@@ -229,56 +275,6 @@ impl RustPopulationManifest {
         expected.sort();
         expected.dedup();
         self.selectors == expected
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn identity() -> RustPopulationManifestIdentity {
-        RustPopulationManifestIdentity {
-            cache_schema_version: CACHE_SCHEMA_VERSION.to_string(),
-            selector_discovery_version: RUST_SELECTOR_DISCOVERY_VERSION.to_string(),
-            rustc_version: "rustc".to_string(),
-            cargo_version: "cargo".to_string(),
-            cargo_llvm_cov_version: "llvm-cov".to_string(),
-            cargo_args: Vec::new(),
-            test_args: Vec::new(),
-            env: BTreeMap::new(),
-        }
-    }
-
-    #[test]
-    fn rust_population_manifest_identity() {
-        let identity = identity();
-
-        assert!(identity.has_tool_versions());
-        assert_eq!(identity.tool_versions(), ["rustc", "cargo", "llvm-cov"]);
-        assert!(identity.args_match(&[], &[]));
-    }
-
-    #[test]
-    fn rust_population_manifest() {
-        let identity = identity();
-        let manifest = RustPopulationManifest {
-            schema_version: POPULATION_SCHEMA_VERSION.to_string(),
-            cache_schema_version: identity.cache_schema_version.clone(),
-            source_root: "root".to_string(),
-            selector_discovery_version: identity.selector_discovery_version.clone(),
-            rustc_version: identity.rustc_version.clone(),
-            cargo_version: identity.cargo_version.clone(),
-            cargo_llvm_cov_version: identity.cargo_llvm_cov_version.clone(),
-            cargo_args: Vec::new(),
-            test_args: Vec::new(),
-            env: BTreeMap::new(),
-            input_fingerprint: "input".to_string(),
-            entries_fingerprint: "entries".to_string(),
-            selectors: vec!["a".to_string(), "b".to_string()],
-        };
-
-        assert!(manifest.matches_identity(&identity, "root"));
-        assert!(manifest.matches_selectors(&["a".to_string(), "b".to_string()]));
     }
 }
 

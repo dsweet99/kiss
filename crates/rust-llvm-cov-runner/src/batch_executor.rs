@@ -1,0 +1,181 @@
+use crate::batch_derived::{population_derived_state_stale, try_publish_population_derived_state};
+use crate::batch_executor_fresh::execute_fresh_batch_with_exporter;
+use crate::batch_export::SubprocessInstanceExporter;
+use crate::batch_export_tools::resolve_export_tools_from_rustc;
+use crate::batch_fingerprint::{
+    RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity, entry_fingerprint,
+};
+use crate::batch_lock::lock_batch;
+use crate::batch_plan::{
+    RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
+};
+use crate::batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult};
+use crate::batch_run::default_batch_subprocess_runner;
+use crate::rust_cov_cache::{RustCovCacheEntry, load_rust_cov_cache_entry};
+use crate::worker::cleanup_legacy_worker_data_nonblocking;
+use crate::{RustCovCacheStatus, RustLlvmCovError, RustLlvmCovOutcome};
+
+fn default_instance_exporter(
+    req: &RustCoverageBatchRequest,
+    plan: &RustCoverageBatchPlan,
+) -> Result<SubprocessInstanceExporter, RustLlvmCovError> {
+    let export_tools = resolve_export_tools_from_rustc(std::ffi::OsStr::new("rustc"))?;
+    let ignore_filename_regex =
+        crate::batch_export_ignore::resolve_ignore_filename_regex(req, &plan.build_target)?;
+    Ok(SubprocessInstanceExporter::new(
+        export_tools,
+        ignore_filename_regex,
+    ))
+}
+
+pub fn execute_rust_coverage_batch(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
+    let identity = batch_identity(req, tools)?;
+    let plan = build_rust_coverage_batch_plan(req)
+        .map_err(|message| RustLlvmCovError::InvalidRequest(format!("batch plan: {message}")))?;
+
+    if !req.force_rerun
+        && let Some(result) = try_all_hit_fast_path(req, tools, &identity)?
+    {
+        return maybe_publish_derived_after_all_hit(req, tools, &identity, result);
+    }
+
+    let _batch_guard = lock_batch(&req.cache_root)?;
+    let legacy_cleanup = cleanup_legacy_worker_data_nonblocking(&req.cache_root)?;
+
+    if !req.force_rerun
+        && let Some(result) = try_all_hit_after_lock(req, tools, &identity)?
+    {
+        return maybe_publish_derived_after_all_hit(req, tools, &identity, result).map(
+            |mut result| {
+                result.counters.legacy_cleanup_deferred = legacy_cleanup.deferred;
+                result
+            },
+        );
+    }
+
+    execute_fresh_batch_with_exporter(
+        req,
+        tools,
+        &identity,
+        &plan,
+        &default_batch_subprocess_runner(),
+        default_instance_exporter(req, &plan)?,
+    )
+    .and_then(|mut result| {
+        apply_population_derived_publication(req, tools, &identity, &mut result)?;
+        result.counters.legacy_cleanup_deferred = legacy_cleanup.deferred;
+        Ok(result)
+    })
+}
+
+fn maybe_publish_derived_after_all_hit(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+    mut result: RustCoverageBatchResult,
+) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
+    apply_population_derived_publication(req, tools, identity, &mut result)?;
+    Ok(result)
+}
+
+fn apply_population_derived_publication(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+    result: &mut RustCoverageBatchResult,
+) -> Result<(), RustLlvmCovError> {
+    if result.batch_error.is_some() {
+        return Ok(());
+    }
+    let Some(selectors) = req.population_publication_selectors.as_deref() else {
+        return Ok(());
+    };
+    if let Some(publish) = try_publish_population_derived_state(req, tools, identity, selectors)? {
+        result.counters.derived_state_published = true;
+        result.counters.derived_repair = publish.derived_repair;
+        result.counters.entry_generation_count = publish.entry_generation_count;
+        result.counters.current_index_generation = publish.current_index_generation;
+        result.counters.cache_pruned_entries = publish.cache_pruned_entries;
+    }
+    Ok(())
+}
+
+fn try_all_hit_fast_path(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+) -> Result<Option<RustCoverageBatchResult>, RustLlvmCovError> {
+    if population_derived_state_stale(req, tools, identity)? {
+        return Ok(None);
+    }
+    all_hit_batch_result(req, tools, identity)
+}
+
+fn try_all_hit_after_lock(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+) -> Result<Option<RustCoverageBatchResult>, RustLlvmCovError> {
+    all_hit_batch_result(req, tools, identity)
+}
+
+fn all_hit_batch_result(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+) -> Result<Option<RustCoverageBatchResult>, RustLlvmCovError> {
+    let Some(completed) = all_hit_outcomes(req, tools, identity)? else {
+        return Ok(None);
+    };
+    Ok(Some(RustCoverageBatchResult {
+        completed,
+        batch_error: None,
+        counters: RustCoverageBatchCounters {
+            cache_hits: req.logical_selectors.len(),
+            ..Default::default()
+        },
+    }))
+}
+
+fn all_hit_outcomes(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+) -> Result<Option<Vec<RustLlvmCovOutcome>>, RustLlvmCovError> {
+    let mut completed = Vec::with_capacity(req.logical_selectors.len());
+    for selector in &req.logical_selectors {
+        let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, selector);
+        let Some(entry) = load_rust_cov_cache_entry(&req.cache_root, &fingerprint) else {
+            return Ok(None);
+        };
+        completed.push(outcome_from_entry(entry, RustCovCacheStatus::Hit));
+    }
+    Ok(Some(completed))
+}
+
+fn outcome_from_entry(
+    entry: RustCovCacheEntry,
+    cache_status: RustCovCacheStatus,
+) -> RustLlvmCovOutcome {
+    RustLlvmCovOutcome {
+        selector: entry.selector,
+        status: entry.status,
+        exit_code: entry.exit_code,
+        duration: entry.duration,
+        coverage: entry.coverage,
+        cache_status,
+        stdout: None,
+        stderr: None,
+    }
+}
+
+#[cfg(test)]
+#[path = "batch_executor_test.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "batch_executor_fresh_test.rs"]
+mod fresh_tests;

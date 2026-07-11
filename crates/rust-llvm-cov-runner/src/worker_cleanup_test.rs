@@ -11,6 +11,7 @@ use super::{
     RustLlvmCov, RustLlvmCovError, cleanup_legacy_worker_dirs, prepare_worker_slot,
     rust_cov_sample_request,
 };
+use crate::worker::{cleanup_legacy_worker_data_nonblocking, lock_worker};
 
 #[test]
 fn rust_llvm_cov_cleans_legacy_workers_and_slot_transients() {
@@ -33,6 +34,42 @@ fn rust_llvm_cov_cleans_legacy_workers_and_slot_transients() {
     assert!(slot.join("target").join("kept").exists());
     assert!(!slot.join("profile").exists());
     assert!(!slot.join("tmp").exists());
+}
+
+#[test]
+fn batch_legacy_cleanup_defers_when_worker_slot_is_leased() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_root = tmp.path().join(".rust_llvm_cov_cache");
+    let slot = cache_root.join("workers").join("slot-0");
+    fs::create_dir_all(slot.join("target")).unwrap();
+    let _slot_guard = lock_worker(&cache_root, 0).unwrap();
+
+    let report = cleanup_legacy_worker_data_nonblocking(&cache_root).unwrap();
+
+    assert!(report.deferred);
+    assert!(slot.join("target").exists());
+}
+
+#[test]
+fn batch_legacy_cleanup_removes_idle_worker_slots_without_deleting_locks() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_root = tmp.path().join(".rust_llvm_cov_cache");
+    let slot = cache_root.join("workers").join("slot-0");
+    fs::create_dir_all(slot.join("target")).unwrap();
+    fs::write(slot.join("target").join("old"), "compiled").unwrap();
+    drop(lock_worker(&cache_root, 0).unwrap());
+
+    let report = cleanup_legacy_worker_data_nonblocking(&cache_root).unwrap();
+
+    assert!(!report.deferred);
+    assert!(!slot.exists());
+    assert!(
+        cache_root
+            .join("locks")
+            .join("workers")
+            .join("slot-0.lock")
+            .exists()
+    );
 }
 
 #[test]

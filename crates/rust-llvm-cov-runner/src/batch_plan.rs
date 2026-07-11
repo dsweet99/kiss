@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use crate::batch_plan_env::ensure_coverage_link_build_id;
 use crate::batch_plan_nextest_config::build_nextest_config_toml;
+use crate::batch_plan_test_args::validate_supported_rust_test_args;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RustCoverageBatchRequest {
@@ -16,6 +18,10 @@ pub struct RustCoverageBatchRequest {
     pub force_rerun: bool,
     pub jobs: usize,
     pub generated_config: PathBuf,
+    pub population_publication_selectors: Option<Vec<String>>,
+    pub delegated_runners: crate::batch_runner_resolve::DelegatedRunnerMap,
+    pub runner_map_fingerprint: String,
+    pub host_platform: String,
 }
 
 #[cfg(test)]
@@ -32,7 +38,16 @@ impl RustCoverageBatchRequest {
             env: BTreeMap::from([("KEEP_ME".to_string(), "1".to_string())]),
             force_rerun: true,
             jobs: 4,
-            generated_config: PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/runs/nextest.toml"),
+            generated_config: PathBuf::from(
+                "/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/nextest.toml",
+            ),
+            population_publication_selectors: None,
+            delegated_runners: BTreeMap::from([(
+                "x86_64-unknown-linux-gnu".to_string(),
+                Vec::new(),
+            )]),
+            runner_map_fingerprint: "0000000000000000".to_string(),
+            host_platform: "x86_64-unknown-linux-gnu".to_string(),
         }
     }
 }
@@ -40,10 +55,15 @@ impl RustCoverageBatchRequest {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RustCoverageBatchPlan {
     pub build_target: PathBuf,
+    pub target_runner_output_dir: PathBuf,
+    pub runner_map_path: PathBuf,
     pub env: BTreeMap<String, String>,
     pub argv: Vec<String>,
     pub generated_config: PathBuf,
     pub generated_config_toml: String,
+    pub target_runner_cargo_config: PathBuf,
+    pub target_runner_cargo_config_toml: String,
+    pub output_channel_relay_live: bool,
 }
 
 #[cfg(test)]
@@ -58,7 +78,10 @@ pub fn build_rust_coverage_batch_plan(
 ) -> Result<RustCoverageBatchPlan, String> {
     validate_batch_request(req)?;
     let build_target = req.cache_root.join("build").join("target");
+    let target_runner_output_dir = target_runner_output_dir(req);
+    let runner_map_path = super::batch_plan_nextest_config::runner_map_path_for_request(req);
     let mut env = req.env.clone();
+    ensure_coverage_link_build_id(&mut env);
     let build_target_value = build_target.to_string_lossy().to_string();
     env.insert(
         "NEXTEST_EXPERIMENTAL_LIBTEST_JSON".to_string(),
@@ -70,9 +93,18 @@ pub fn build_rust_coverage_batch_plan(
         build_target_value.clone(),
     );
     env.insert("CARGO_LLVM_COV_BUILD_DIR".to_string(), build_target_value);
+    super::batch_plan_nextest_config::apply_target_runner_env(&mut env, req, &runner_map_path);
+
+    let target_runner_cargo_config =
+        super::batch_plan_nextest_config::target_runner_cargo_config_path(req);
+    let target_runner_cargo_config_toml =
+        super::batch_plan_nextest_config::build_target_runner_cargo_config_toml(
+            req,
+            &runner_map_path,
+        );
 
     let jobs = req.jobs.to_string();
-    let test_threads = nextest_test_threads(req);
+    let test_threads = super::batch_plan_nextest_config::nextest_test_threads(req);
     let mut argv = vec![
         req.cargo.to_string_lossy().to_string(),
         "llvm-cov".to_string(),
@@ -105,6 +137,8 @@ pub fn build_rust_coverage_batch_plan(
         "never".to_string(),
         "--user-config-file".to_string(),
         "none".to_string(),
+        "--config".to_string(),
+        target_runner_cargo_config.to_string_lossy().to_string(),
         "--config-file".to_string(),
         req.generated_config.to_string_lossy().to_string(),
         "--profile".to_string(),
@@ -116,14 +150,28 @@ pub fn build_rust_coverage_batch_plan(
         argv.extend(req.test_args.iter().cloned());
     }
 
-    let generated_config_toml = build_nextest_config_toml(req);
+    let generated_config_toml = build_nextest_config_toml(req, &runner_map_path);
     Ok(RustCoverageBatchPlan {
         build_target,
+        target_runner_output_dir,
+        runner_map_path,
         env,
         argv,
         generated_config: req.generated_config.clone(),
         generated_config_toml,
+        target_runner_cargo_config,
+        target_runner_cargo_config_toml,
+        output_channel_relay_live: super::batch_plan_nextest_config::test_args_request_nocapture(
+            &req.test_args,
+        ),
     })
+}
+
+pub(crate) fn target_runner_output_dir(req: &RustCoverageBatchRequest) -> PathBuf {
+    req.generated_config
+        .parent()
+        .map(|path| path.join("instances"))
+        .unwrap_or_else(|| req.cache_root.join("runs").join("instances"))
 }
 
 fn validate_batch_request(req: &RustCoverageBatchRequest) -> Result<(), String> {
@@ -341,48 +389,6 @@ fn unsupported_cargo_arg_error(arg: &str) -> String {
 
 fn cargo_config_value_error() -> String {
     "--config requires a non-empty value".to_string()
-}
-
-fn nextest_test_threads(req: &RustCoverageBatchRequest) -> String {
-    if req
-        .test_args
-        .iter()
-        .any(|arg| matches!(arg.as_str(), "--nocapture" | "--no-capture"))
-    {
-        "1".to_string()
-    } else {
-        req.jobs.to_string()
-    }
-}
-
-pub fn validate_supported_rust_test_args(test_args: &[String]) -> Result<(), String> {
-    let mut index = 0;
-    while index < test_args.len() {
-        let arg = &test_args[index];
-        match arg.as_str() {
-            "--exact" | "--nocapture" | "--no-capture" | "--ignored" | "--include-ignored" => {
-                index += 1;
-            }
-            "--skip" => {
-                let Some(pattern) = test_args.get(index + 1) else {
-                    return Err("--skip requires a non-empty pattern".to_string());
-                };
-                if pattern.is_empty() {
-                    return Err("--skip requires a non-empty pattern".to_string());
-                }
-                index += 2;
-            }
-            _ if arg.starts_with("--skip=") && arg.len() > "--skip=".len() => {
-                index += 1;
-            }
-            _ => {
-                return Err(format!(
-                    "unsupported Rust test argument `{arg}`; supported forms are --exact, --nocapture, --no-capture, --ignored, --include-ignored, and repeated --skip <pattern>"
-                ));
-            }
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

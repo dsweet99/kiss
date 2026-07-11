@@ -24,6 +24,205 @@ pub(crate) fn llvm_cov_json_for_file(file: &Path) -> String {
     )
 }
 
+#[cfg(test)]
+pub(crate) fn batch_executor_fixture_repo() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='batch-executor-fixture'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+    tmp
+}
+
+#[cfg(test)]
+pub(crate) fn batch_executor_request(repo: &Path) -> crate::RustCoverageBatchRequest {
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    use crate::batch_runner_resolve::placeholder_delegated_runner_fields;
+
+    let (delegated_runners, runner_map_fingerprint, host_platform) =
+        placeholder_delegated_runner_fields();
+    crate::RustCoverageBatchRequest {
+        cwd: repo.to_path_buf(),
+        source_root: repo.to_path_buf(),
+        cargo: PathBuf::from("cargo"),
+        cache_root: repo.join(".kiss").join("rust_llvm_cov_cache"),
+        logical_selectors: vec!["alpha".to_string(), "beta".to_string()],
+        cargo_args: Vec::new(),
+        test_args: Vec::new(),
+        env: BTreeMap::new(),
+        force_rerun: false,
+        jobs: 2,
+        generated_config: repo
+            .join(".kiss")
+            .join("rust_llvm_cov_cache")
+            .join("runs")
+            .join("run-test")
+            .join("nextest.toml"),
+        population_publication_selectors: None,
+        delegated_runners,
+        runner_map_fingerprint,
+        host_platform,
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn store_batch_executor_selector(
+    _repo: &Path,
+    req: &crate::RustCoverageBatchRequest,
+    selector: &str,
+) {
+    use std::collections::BTreeMap;
+    use std::time::Duration;
+
+    use rpytest_runner::TestStatus;
+
+    use crate::batch_fingerprint::{batch_identity, entry_fingerprint};
+    use crate::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
+    use crate::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
+
+    let tools = witness_batch_tools();
+    let identity = batch_identity(req, &tools).unwrap();
+    let fingerprint = entry_fingerprint(&identity.input_digest, req, &tools, selector);
+    let entry = RustCovCacheEntry::from_outcome(
+        &RustLlvmCovOutcome {
+            selector: selector.to_string(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        },
+        &identity.generation_fingerprint,
+    );
+    store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &entry).unwrap();
+}
+
+#[cfg(test)]
+pub(crate) fn witness_batch_tools() -> crate::RustCoverageToolIdentity {
+    crate::RustCoverageToolIdentity {
+        cargo_version: "cargo 1.88".to_string(),
+        llvm_cov_version: "cargo-llvm-cov 0.8".to_string(),
+        rustc_version: "rustc 1.88".to_string(),
+        cargo_nextest_version: "cargo-nextest 0.9".to_string(),
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct PublishedAlphaFixture {
+    pub repo: tempfile::TempDir,
+    pub req: crate::RustCoverageBatchRequest,
+    pub tools: crate::RustCoverageToolIdentity,
+    pub identity: crate::RustCoverageBatchIdentity,
+}
+
+#[cfg(test)]
+pub(crate) fn published_alpha_derived_fixture() -> PublishedAlphaFixture {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::time::Duration;
+
+    use rpytest_runner::TestStatus;
+
+    use crate::batch_fingerprint::{batch_identity, entry_fingerprint};
+    use crate::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
+    use crate::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
+
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname='derived-fixture'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src/lib.rs"), "pub fn x() {}\n").unwrap();
+    let req = derived_fixture_request(repo.path());
+    let tools = witness_batch_tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
+    let entry = RustCovCacheEntry::from_outcome(
+        &RustLlvmCovOutcome {
+            selector: "alpha".to_string(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            coverage: RustLineCoverage {
+                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+            },
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        },
+        &identity.generation_fingerprint,
+    );
+    store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &entry).unwrap();
+    crate::publish_derived_state(&req, &tools, &identity, &["alpha".to_string()], false).unwrap();
+    PublishedAlphaFixture {
+        repo,
+        req,
+        tools,
+        identity,
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn tamper_json_file(
+    cache_root: &Path,
+    relative: &str,
+    edit: impl FnOnce(&mut serde_json::Value),
+) {
+    let path = cache_root.join(relative);
+    let mut value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    edit(&mut value);
+    fs::write(&path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+}
+
+#[cfg(test)]
+pub(crate) fn make_executable(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn derived_fixture_request(repo: &Path) -> crate::RustCoverageBatchRequest {
+    use std::path::PathBuf;
+
+    use crate::batch_runner_resolve::placeholder_delegated_runner_fields;
+
+    let (delegated_runners, runner_map_fingerprint, host_platform) =
+        placeholder_delegated_runner_fields();
+    crate::RustCoverageBatchRequest {
+        cwd: repo.to_path_buf(),
+        source_root: repo.to_path_buf(),
+        cargo: PathBuf::from("cargo"),
+        cache_root: repo.join(".kiss").join("rust_llvm_cov_cache"),
+        logical_selectors: vec!["alpha".to_string()],
+        cargo_args: Vec::new(),
+        test_args: Vec::new(),
+        env: std::collections::BTreeMap::new(),
+        force_rerun: false,
+        jobs: 1,
+        generated_config: repo.join(".kiss/rust_llvm_cov_cache/runs/run-test/nextest.toml"),
+        population_publication_selectors: Some(vec!["alpha".to_string()]),
+        delegated_runners,
+        runner_map_fingerprint,
+        host_platform,
+    }
+}
+
 pub(crate) fn wait_for_path(path: &Path) {
     let deadline = Instant::now() + Duration::from_secs(2);
     while !path.exists() {

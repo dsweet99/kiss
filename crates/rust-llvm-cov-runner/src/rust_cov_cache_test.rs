@@ -8,7 +8,11 @@ use rpytest_runner::TestStatus;
 use tempfile::TempDir;
 
 use super::rust_cov_cache;
-use super::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome, rust_cov_sample_request};
+use super::shared_input;
+use super::{
+    RustCovCacheEntry, RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome,
+    rust_cov_sample_request,
+};
 
 fn outcome() -> RustLlvmCovOutcome {
     RustLlvmCovOutcome {
@@ -81,7 +85,7 @@ fn rust_cov_rust_cov_fingerprint_tracks_source_metadata_and_versions() {
 fn rust_cov_cache_inputs_include_cargo_files_and_skip_generated_dirs() {
     let tmp = rust_cov_input_fixture();
 
-    let names: BTreeSet<_> = rust_cov_cache::rust_cov_input_files(tmp.path())
+    let names: BTreeSet<_> = shared_input::rust_cov_input_files(tmp.path())
         .unwrap()
         .into_iter()
         .map(|path| path.strip_prefix(tmp.path()).unwrap().to_path_buf())
@@ -93,10 +97,10 @@ fn rust_cov_cache_inputs_include_cargo_files_and_skip_generated_dirs() {
     assert!(names.contains(Path::new(".cargo/config.toml")));
     assert!(names.contains(Path::new("src/lib.rs")));
     assert!(!names.contains(Path::new("target/ignored.rs")));
-    assert!(rust_cov_cache::should_skip_rust_cov_dir(
+    assert!(shared_input::should_skip_rust_cov_dir(
         &tmp.path().join("target")
     ));
-    assert!(rust_cov_cache::is_kiss_rust_cov_cache_dir(
+    assert!(shared_input::is_kiss_rust_cov_cache_dir(
         &tmp.path().join(".kiss").join("rust_llvm_cov_cache")
     ));
 }
@@ -126,28 +130,28 @@ fn write_rust_cov_input_files(root: &Path) {
 
 #[test]
 fn rust_cov_cache_input_predicates_match_supported_files() {
-    assert!(rust_cov_cache::is_rust_cov_cache_input(Path::new(
+    assert!(shared_input::is_rust_cov_cache_input(Path::new(
         "src/lib.rs"
     )));
-    assert!(rust_cov_cache::is_rust_cov_cache_input(Path::new(
+    assert!(shared_input::is_rust_cov_cache_input(Path::new(
         "Cargo.toml"
     )));
-    assert!(rust_cov_cache::is_rust_cov_cache_input(Path::new(
+    assert!(shared_input::is_rust_cov_cache_input(Path::new(
         "Cargo.lock"
     )));
-    assert!(rust_cov_cache::is_rust_cov_cache_input(Path::new(
+    assert!(shared_input::is_rust_cov_cache_input(Path::new(
         "rust-toolchain"
     )));
-    assert!(rust_cov_cache::is_cargo_config_input_path(Path::new(
+    assert!(shared_input::is_cargo_config_input_path(Path::new(
         ".cargo/config"
     )));
-    assert!(rust_cov_cache::is_cargo_config_input_path(Path::new(
+    assert!(shared_input::is_cargo_config_input_path(Path::new(
         ".cargo/config.toml"
     )));
-    assert!(rust_cov_cache::is_rust_toolchain_input_path(Path::new(
+    assert!(shared_input::is_rust_toolchain_input_path(Path::new(
         "rust-toolchain.toml"
     )));
-    assert!(!rust_cov_cache::is_rust_cov_cache_input(Path::new(
+    assert!(!shared_input::is_rust_cov_cache_input(Path::new(
         "README.md"
     )));
 }
@@ -163,4 +167,27 @@ fn rust_cov_cache_hash_and_suffix_helpers_are_stable_enough_for_cache_keys() {
         rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"a"),
         rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"b")
     );
+}
+
+#[test]
+fn repo_relative_and_generation_entry_fingerprint_helpers() {
+    let repo = tempfile::tempdir().unwrap();
+    let source = repo.path().join("src").join("lib.rs");
+    fs::create_dir_all(source.parent().unwrap()).unwrap();
+    fs::write(&source, "pub fn x() {}\n").unwrap();
+    assert_eq!(
+        rust_cov_cache::repo_relative_path(repo.path(), &source).as_deref(),
+        Some("src/lib.rs")
+    );
+    assert_eq!(
+        rust_cov_cache::repo_relative_coverage_file(repo.path(), &source.to_string_lossy())
+            .as_deref(),
+        Some("src/lib.rs")
+    );
+    let cache_root = repo.path().join(".kiss").join("rust_llvm_cov_cache");
+    fs::create_dir_all(cache_root.join("entries")).unwrap();
+    let entry = RustCovCacheEntry::from_outcome(&outcome(), "gen-a");
+    rust_cov_cache::store_rust_cov_cache_entry(&cache_root, "abc123", &entry).unwrap();
+    let fingerprint = rust_cov_cache::generation_entries_fingerprint(&cache_root, "gen-a").unwrap();
+    assert!(!fingerprint.is_empty());
 }

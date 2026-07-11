@@ -7,8 +7,7 @@ use rust_llvm_cov_runner::RustLineCoverage;
 use super::test_support::write_test_entry;
 use super::*;
 
-#[test]
-fn population_manifest_requires_matching_selectors_and_inputs() {
+fn sample_repo() -> (tempfile::TempDir, std::path::PathBuf) {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
@@ -22,6 +21,12 @@ fn population_manifest_requires_matching_selectors_and_inputs() {
             files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
         },
     );
+    (tmp, lib)
+}
+
+#[test]
+fn population_manifest_requires_matching_selectors() {
+    let (tmp, _lib) = sample_repo();
 
     assert!(!rust_population_manifest_is_current_for_args(
         tmp.path(),
@@ -39,14 +44,23 @@ fn population_manifest_requires_matching_selectors_and_inputs() {
         &["other_test".to_string()],
         &[],
     ));
+}
+
+#[test]
+fn population_manifest_invalidates_on_source_change() {
+    let (tmp, lib) = sample_repo();
+    write_rust_population_manifest_for_args(tmp.path(), &["test_lib".to_string()], &[]).unwrap();
 
     fs::write(&lib, "pub fn lib() {}\npub fn changed() {}\n").unwrap();
     assert!(
         !rust_population_manifest_is_current_for_args(tmp.path(), &["test_lib".to_string()], &[],),
         "source changes invalidate population freshness"
     );
+}
 
-    fs::write(&lib, "pub fn lib() {}\n").unwrap();
+#[test]
+fn population_manifest_invalidates_on_new_entries() {
+    let (tmp, lib) = sample_repo();
     write_rust_population_manifest_for_args(tmp.path(), &["test_lib".to_string()], &[]).unwrap();
     write_test_entry(
         tmp.path(),
@@ -58,8 +72,8 @@ fn population_manifest_requires_matching_selectors_and_inputs() {
         },
     );
     assert!(
-        rust_population_manifest_is_current_for_args(tmp.path(), &["test_lib".to_string()], &[],),
-        "cache-only entry changes do not invalidate population freshness"
+        !rust_population_manifest_is_current_for_args(tmp.path(), &["test_lib".to_string()], &[],),
+        "new cache entries invalidate derived population state until repair"
     );
     assert!(
         !rust_population_manifest_is_current_for_args(
@@ -117,6 +131,6 @@ fn rust_forced_selective_entry_refresh_keeps_population_manifest_current_regress
             std::slice::from_ref(&selector),
             &[],
         ),
-        "refreshing a selective Rust coverage entry must not stale the full-universe manifest"
+        "rebuilding derived state after selective entry refresh restores population freshness"
     );
 }

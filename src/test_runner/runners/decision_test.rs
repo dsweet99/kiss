@@ -4,9 +4,7 @@ use crate::test_runner::python_coverage_index::{
     python_coverage_cache_root, rebuild_python_coverage_index,
     write_python_population_manifest_for_args,
 };
-use crate::test_runner::rust_coverage_index::{
-    CACHE_SCHEMA_VERSION, rebuild_rust_coverage_index, rust_coverage_cache_root,
-};
+use crate::test_runner::rust_coverage_index::rebuild_rust_coverage_index;
 use rpytest_runner::TestStatus;
 use rslip::LineCoverage;
 use std::time::Duration;
@@ -222,6 +220,7 @@ fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_c
             tmp.path(),
             std::slice::from_ref(&lib),
             &BTreeMap::from([(lib.clone(), BTreeSet::from([1]))]),
+            &[],
         ),
         Some(BTreeSet::from(["crate::tests::test_value".to_string()]))
     );
@@ -387,17 +386,11 @@ fn write_rust_entry(
     selector: &str,
     coverage: rust_llvm_cov_runner::RustLineCoverage,
 ) {
-    let path = rust_coverage_cache_root(repo_root)
-        .join("entries")
-        .join(format!("{name}.json"));
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let entry = serde_json::json!({
-        "schema_version": CACHE_SCHEMA_VERSION,
-        "selector": selector,
-        "status": TestStatus::Passed,
-        "exit_code": 0,
-        "duration": Duration::from_millis(1),
-        "coverage": coverage,
-    });
-    std::fs::write(path, serde_json::to_vec(&entry).unwrap()).unwrap();
+    crate::test_runner::rust_coverage_index::write_test_entry(
+        repo_root,
+        name,
+        selector,
+        TestStatus::Passed,
+        coverage,
+    );
 }

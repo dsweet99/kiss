@@ -1,4 +1,12 @@
+use super::super::metrics_rust::{
+    phase_rust_export_ms, rust_build_invocations, rust_build_target_baseline_bytes,
+    rust_cache_pruned_entries, rust_current_index_generation, rust_derived_repair,
+    rust_entry_generation_count, rust_export_jobs, rust_legacy_cleanup_deferred,
+    rust_max_active_exports, rust_max_active_test_instances, rust_max_objects_per_export,
+    rust_process_residual_count, rust_test_instances, rust_unmatched_selectors,
+};
 use super::*;
+use rust_llvm_cov_runner::RustCoverageBatchCounters;
 
 #[test]
 fn phase_metrics_prints_zero_summary() {
@@ -19,26 +27,91 @@ fn rust_cache_unstored_sums_population_and_final_phases() {
 
 #[test]
 fn rust_batch_metric_helpers_merge_population_and_final_phases() {
-    let mut metrics = empty_metrics();
-    metrics.rust_population.summary.rust_build_invocations = 1;
-    metrics.rust_final.summary.rust_build_invocations = 2;
-    metrics.rust_population.summary.rust_test_instances = 3;
-    metrics.rust_final.summary.rust_test_instances = 4;
-    metrics.rust_population.summary.rust_export_jobs = 5;
-    metrics.rust_final.summary.rust_export_jobs = 6;
-    metrics
-        .rust_population
-        .summary
-        .rust_max_active_test_instances = 7;
-    metrics.rust_final.summary.rust_max_active_test_instances = 8;
-    metrics.rust_population.summary.rust_max_active_exports = 9;
-    metrics.rust_final.summary.rust_max_active_exports = 10;
+    let metrics = metrics_with_batch_counters();
 
     assert_eq!(rust_build_invocations(&metrics), 3);
     assert_eq!(rust_test_instances(&metrics), 7);
     assert_eq!(rust_export_jobs(&metrics), 11);
     assert_eq!(rust_max_active_test_instances(&metrics), 8);
     assert_eq!(rust_max_active_exports(&metrics), 10);
+    assert_eq!(rust_unmatched_selectors(&metrics), 3);
+    assert_eq!(rust_max_objects_per_export(&metrics), 12);
+    assert_eq!(rust_build_target_baseline_bytes(&metrics), 90);
+    assert_eq!(phase_rust_export_ms(&metrics), 150);
+}
+
+#[test]
+fn rust_batch_derived_metric_helpers_merge_population_and_final_phases() {
+    let metrics = metrics_with_batch_counters();
+
+    assert!(rust_derived_repair(&metrics));
+    assert_eq!(rust_entry_generation_count(&metrics), 3);
+    assert_eq!(rust_current_index_generation(&metrics), "gen-b");
+    assert_eq!(rust_cache_pruned_entries(&metrics), 9);
+    assert_eq!(rust_process_residual_count(&metrics), 13);
+    assert!(rust_legacy_cleanup_deferred(&metrics));
+}
+
+fn metrics_with_batch_counters() -> LocalRubricMetrics {
+    let mut metrics = empty_metrics();
+    metrics.rust_population.summary = population_rust_summary();
+    metrics.rust_final.summary = final_rust_summary();
+    metrics
+}
+
+#[test]
+fn rust_batch_counters_record_process_and_cleanup_metrics() {
+    let mut summary = SelectorExecutionSummary::default();
+    let counters = RustCoverageBatchCounters {
+        process_residual_count: 2,
+        legacy_cleanup_deferred: true,
+        ..RustCoverageBatchCounters::default()
+    };
+
+    summary.record_rust_batch_counters(&counters);
+
+    assert_eq!(summary.rust_process_residual_count, 2);
+    assert!(summary.rust_legacy_cleanup_deferred);
+}
+
+fn population_rust_summary() -> SelectorExecutionSummary {
+    SelectorExecutionSummary {
+        rust_build_invocations: 1,
+        rust_test_instances: 3,
+        rust_export_jobs: 5,
+        rust_max_active_test_instances: 7,
+        rust_max_active_exports: 9,
+        rust_unmatched_selectors: 1,
+        rust_max_objects_per_export: 11,
+        rust_build_target_baseline_bytes: 80,
+        phase_rust_export_ms: 100,
+        rust_derived_repair: true,
+        rust_entry_generation_count: 2,
+        rust_current_index_generation: "gen-a".to_string(),
+        rust_cache_pruned_entries: 4,
+        rust_process_residual_count: 6,
+        ..SelectorExecutionSummary::default()
+    }
+}
+
+fn final_rust_summary() -> SelectorExecutionSummary {
+    SelectorExecutionSummary {
+        rust_build_invocations: 2,
+        rust_test_instances: 4,
+        rust_export_jobs: 6,
+        rust_max_active_test_instances: 8,
+        rust_max_active_exports: 10,
+        rust_unmatched_selectors: 2,
+        rust_max_objects_per_export: 12,
+        rust_build_target_baseline_bytes: 90,
+        phase_rust_export_ms: 50,
+        rust_entry_generation_count: 3,
+        rust_current_index_generation: "gen-b".to_string(),
+        rust_cache_pruned_entries: 5,
+        rust_process_residual_count: 7,
+        rust_legacy_cleanup_deferred: true,
+        ..SelectorExecutionSummary::default()
+    }
 }
 
 #[test]
@@ -94,6 +167,7 @@ fn empty_metrics() -> LocalRubricMetrics {
         rust_cache_residual_bytes: 0,
         rust_entry_cache_bytes: 0,
         rust_build_target_bytes: 0,
+        rust_build_target_baseline_bytes: 0,
         raw_artifact_count: 0,
         rust_build_target_count: 0,
         rust_transient_residual_count: 0,

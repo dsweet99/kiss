@@ -200,129 +200,23 @@ fn subprocess_runner_run_many_preserves_order_for_real_nodes() {
 
 #[test]
 fn subprocess_runner_run_many_bounded_limits_concurrency_and_preserves_order() {
-    let tmp = tempfile::tempdir().unwrap();
-    let state_path = tmp.path().join("active.txt");
-    let max_path = tmp.path().join("active.txt.max");
-    let lock_path = tmp.path().join("active.lock");
-    fs::write(&state_path, "0").unwrap();
-    fs::write(&max_path, "0").unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        r#"
-import fcntl
-import os
-import time
-
-
-STATE = os.environ["STATE_PATH"]
-LOCK = os.environ["LOCK_PATH"]
-MAX_STATE = STATE + ".max"
-
-
-def read_int(path):
-    try:
-        with open(path) as f:
-            return int(f.read() or "0")
-    except FileNotFoundError:
-        return 0
-
-
-def write_int(path, value):
-    with open(path, "w") as f:
-        f.write(str(value))
-
-
-def change_active(delta):
-    with open(LOCK, "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        active = read_int(STATE) + delta
-        assert active >= 0
-        write_int(STATE, active)
-        write_int(MAX_STATE, max(read_int(MAX_STATE), active))
-        fcntl.flock(lock, fcntl.LOCK_UN)
-
-
-def mark():
-    change_active(1)
-    try:
-        time.sleep(0.08)
-    finally:
-        change_active(-1)
-
-
-def test_a():
-    mark()
-
-
-def test_b():
-    mark()
-
-
-def test_c():
-    mark()
-
-
-def test_d():
-    mark()
-"#,
-    )
-    .unwrap();
-    let mut env = BTreeMap::new();
-    env.insert(
-        "STATE_PATH".to_string(),
-        state_path.to_string_lossy().to_string(),
-    );
-    env.insert(
-        "LOCK_PATH".to_string(),
-        lock_path.to_string_lossy().to_string(),
-    );
-    let req = |nodeid: &str| PytestRunRequest {
-        nodeid: nodeid.to_string(),
-        cwd: tmp.path().to_path_buf(),
-        python: python!(),
-        pytest_args: vec!["-q".to_string()],
-        env: env.clone(),
-        preload_modules: Vec::new(),
-        artifacts: Vec::new(),
-        timeout: None,
+    use crate::bounded_concurrency_test_support::{
+        assert_bounded_concurrency, setup_concurrency_fixture,
     };
 
-    let outcomes = SubprocessPytestRunner::new().run_many_bounded(
-        vec![
-            req("test_sample.py::test_a"),
-            req("test_sample.py::test_b"),
-            req("test_sample.py::test_c"),
-            req("test_sample.py::test_d"),
-        ],
-        2,
-    );
-
-    let nodeids: Vec<_> = outcomes
-        .iter()
-        .map(|outcome| outcome.as_ref().unwrap().nodeid.as_str())
-        .collect();
-    assert_eq!(
-        nodeids,
-        vec![
+    let fixture = setup_concurrency_fixture();
+    assert_bounded_concurrency(
+        &fixture,
+        &[
             "test_sample.py::test_a",
             "test_sample.py::test_b",
             "test_sample.py::test_c",
             "test_sample.py::test_d",
-        ]
+        ],
+        2,
+        "pytest",
+        &|reqs, jobs| SubprocessPytestRunner::new().run_many_bounded(reqs, jobs),
     );
-    for outcome in &outcomes {
-        let outcome = outcome.as_ref().unwrap();
-        assert_eq!(
-            outcome.status,
-            TestStatus::Passed,
-            "{}\nstdout:\n{}\nstderr:\n{}",
-            outcome.nodeid,
-            String::from_utf8_lossy(&outcome.stdout),
-            String::from_utf8_lossy(&outcome.stderr)
-        );
-    }
-    let max_active: usize = fs::read_to_string(max_path).unwrap().parse().unwrap();
-    assert_eq!(max_active, 2);
 }
 
 #[test]

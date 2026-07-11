@@ -12,6 +12,11 @@ mod runner;
 mod types;
 
 #[cfg(test)]
+mod bounded_concurrency_test_support;
+#[cfg(test)]
+#[path = "bounded_concurrency_test_support_test.rs"]
+mod bounded_concurrency_test_support_test;
+#[cfg(test)]
 mod forkserver_test;
 #[cfg(test)]
 mod runner_test;

@@ -5,23 +5,32 @@ use crate::RustCoverageBatchPlan;
 use crate::rust_cov_cache::rust_cov_unique_suffix;
 
 pub fn publish_generated_nextest_config(plan: &RustCoverageBatchPlan) -> io::Result<()> {
-    let parent = plan
-        .generated_config
+    publish_generated_config_file(
+        &plan.generated_config,
+        plan.generated_config_toml.as_bytes(),
+    )?;
+    publish_generated_config_file(
+        &plan.target_runner_cargo_config,
+        plan.target_runner_cargo_config_toml.as_bytes(),
+    )
+}
+
+fn publish_generated_config_file(path: &std::path::Path, contents: &[u8]) -> io::Result<()> {
+    let parent = path
         .parent()
-        .ok_or_else(|| io::Error::other("generated nextest config path has no parent"))?;
+        .ok_or_else(|| io::Error::other("generated config path has no parent"))?;
     fs::create_dir_all(parent)?;
-    let file_name = plan
-        .generated_config
+    let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| io::Error::other("generated nextest config path has no file name"))?;
+        .ok_or_else(|| io::Error::other("generated config path has no file name"))?;
     let tmp_path = parent.join(format!(".{file_name}.{}.tmp", rust_cov_unique_suffix()));
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&tmp_path)?;
-    file.write_all(plan.generated_config_toml.as_bytes())?;
+    file.write_all(contents)?;
     file.sync_all()?;
     drop(file);
-    fs::rename(tmp_path, &plan.generated_config)
+    fs::rename(tmp_path, path)
 }

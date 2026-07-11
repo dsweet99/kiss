@@ -7,10 +7,6 @@ use crate::test_runner::python_coverage_index::{
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::runners::python_backer::PythonModule;
 use crate::test_runner::runners::rust_backer::RustModule;
-use crate::test_runner::rust_coverage_index::repo_relative_coverage_file as rust_repo_relative_coverage_file;
-use crate::test_runner::rust_coverage_index::{
-    rebuild_rust_coverage_index_with_filter, write_rust_population_manifest_for_args,
-};
 
 impl LanguageExecutor for PythonModule {
     fn language(&self) -> kiss::Language {
@@ -97,7 +93,8 @@ impl LanguageExecutor for RustModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
-        run_rust_selectors_for_module(selectors, ctx)
+        let manifest_selectors = self.population_manifest_selectors()?;
+        run_rust_selectors_for_module(selectors, ctx, Some(manifest_selectors))
     }
 
     fn run_selective(
@@ -105,31 +102,27 @@ impl LanguageExecutor for RustModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
-        run_rust_selectors_for_module(selectors, ctx)
+        run_rust_selectors_for_module(selectors, ctx, None)
     }
 
-    fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        rebuild_rust_coverage_index_with_filter(&ctx.planned.repo_root, |path, repo_root| {
-            self.is_indexable_source(path, repo_root)
-        })?;
+    fn rebuild_index(&self, _ctx: &RunContext<'_, '_>) -> Result<(), String> {
         Ok(())
     }
 
     fn write_manifest(
         &self,
         _selectors: &[String],
-        ctx: &RunContext<'_, '_>,
+        _ctx: &RunContext<'_, '_>,
     ) -> Result<(), String> {
-        let selectors = self.population_manifest_selectors()?;
-        write_rust_population_manifest_for_args(
-            &ctx.planned.repo_root,
-            &selectors,
-            ctx.options.extra,
-        )
+        Ok(())
     }
 
     fn is_indexable_source(&self, path: &std::path::Path, repo_root: &std::path::Path) -> bool {
-        rust_repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
+        crate::test_runner::rust_coverage_index::repo_relative_coverage_file(
+            repo_root,
+            &path.to_string_lossy(),
+        )
+        .is_some()
     }
 
     fn dry_run_lines(
@@ -171,6 +164,7 @@ pub(super) fn run_rslip_selectors_for_module(
 pub(super) fn run_rust_selectors_for_module(
     selectors: &[String],
     ctx: &RunContext<'_, '_>,
+    population_publication_selectors: Option<Vec<String>>,
 ) -> Result<SelectorExecutionSummary, String> {
     if selectors.is_empty() {
         return Ok(SelectorExecutionSummary::default());
@@ -183,6 +177,7 @@ pub(super) fn run_rust_selectors_for_module(
         ctx.options.extra,
         force_rerun,
         ctx.options.jobs,
+        population_publication_selectors,
     )
 }
 

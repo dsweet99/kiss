@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use rust_llvm_cov_runner::rust_cov_cache_tmp_parent;
 
+use super::metrics_rust::{print_rust_batch_metrics, rust_cache_unstored};
 use super::runners::SelectorExecutionSummary;
 use super::{PlannedSelectors, SelectorRunOptions};
 
@@ -34,6 +35,7 @@ pub(super) struct LocalRubricMetrics {
     pub(super) rust_cache_residual_bytes: u64,
     pub(super) rust_entry_cache_bytes: u64,
     pub(super) rust_build_target_bytes: u64,
+    pub(super) rust_build_target_baseline_bytes: u64,
     pub(super) raw_artifact_count: usize,
     pub(super) rust_build_target_count: usize,
     pub(super) rust_transient_residual_count: usize,
@@ -74,6 +76,7 @@ impl LocalRubricMetrics {
             rust_cache_residual_bytes: 0,
             rust_entry_cache_bytes: 0,
             rust_build_target_bytes: 0,
+            rust_build_target_baseline_bytes: 0,
             raw_artifact_count: 0,
             rust_build_target_count: 0,
             rust_transient_residual_count: 0,
@@ -194,25 +197,7 @@ fn print_cache_metrics(metrics: &LocalRubricMetrics) {
         "rust_concurrency_budget={}",
         metrics.rust_concurrency_budget
     );
-    println!("rust_build_invocations={}", rust_build_invocations(metrics));
-    println!(
-        "rust_build_target_count={}",
-        metrics.rust_build_target_count
-    );
-    println!(
-        "rust_build_target_bytes={}",
-        metrics.rust_build_target_bytes
-    );
-    println!("rust_test_instances={}", rust_test_instances(metrics));
-    println!("rust_export_jobs={}", rust_export_jobs(metrics));
-    println!(
-        "rust_max_active_test_instances={}",
-        rust_max_active_test_instances(metrics)
-    );
-    println!(
-        "rust_max_active_exports={}",
-        rust_max_active_exports(metrics)
-    );
+    print_rust_batch_metrics(metrics);
     println!("rust_cache_unstored={}", rust_cache_unstored(metrics));
     println!("raw_artifact_count={}", metrics.raw_artifact_count);
     println!(
@@ -249,40 +234,6 @@ fn print_phase_metrics(name: &str, phase: &PhaseMetrics) {
     println!("{name}_cache_misses={}", phase.summary.cache_misses);
     println!("{name}_cache_unstored={}", phase.summary.cache_unstored);
     println!("{name}_failed={}", phase.summary.failed);
-}
-
-fn rust_cache_unstored(metrics: &LocalRubricMetrics) -> usize {
-    metrics.rust_population.summary.cache_unstored + metrics.rust_final.summary.cache_unstored
-}
-
-fn rust_build_invocations(metrics: &LocalRubricMetrics) -> usize {
-    metrics.rust_population.summary.rust_build_invocations
-        + metrics.rust_final.summary.rust_build_invocations
-}
-
-fn rust_test_instances(metrics: &LocalRubricMetrics) -> usize {
-    metrics.rust_population.summary.rust_test_instances
-        + metrics.rust_final.summary.rust_test_instances
-}
-
-fn rust_export_jobs(metrics: &LocalRubricMetrics) -> usize {
-    metrics.rust_population.summary.rust_export_jobs + metrics.rust_final.summary.rust_export_jobs
-}
-
-fn rust_max_active_test_instances(metrics: &LocalRubricMetrics) -> usize {
-    metrics
-        .rust_population
-        .summary
-        .rust_max_active_test_instances
-        .max(metrics.rust_final.summary.rust_max_active_test_instances)
-}
-
-fn rust_max_active_exports(metrics: &LocalRubricMetrics) -> usize {
-    metrics
-        .rust_population
-        .summary
-        .rust_max_active_exports
-        .max(metrics.rust_final.summary.rust_max_active_exports)
 }
 
 fn path_size_bytes(path: &Path) -> u64 {

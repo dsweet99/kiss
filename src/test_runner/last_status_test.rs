@@ -85,6 +85,7 @@ fn rust_records_are_language_scoped_and_deduped() {
         "rustc 1.88.0",
         "cargo-nextest 0.9.99",
         &[],
+        "0000000000000000",
     );
     let selector = "crate::tests::failed".to_string();
 
@@ -120,6 +121,7 @@ fn rust_identity_includes_nextest_version() {
         "rustc 1.88.0",
         "cargo-nextest 0.9.99",
         &["--exact".to_string()],
+        "0000000000000000",
     );
     let serialized = serde_json::to_string(&identity).unwrap();
 
@@ -127,6 +129,9 @@ fn rust_identity_includes_nextest_version() {
     assert!(serialized.contains("cargo-llvm-cov 0.6.0"));
     assert!(serialized.contains("rustc 1.88.0"));
     assert!(serialized.contains("cargo-nextest 0.9.99"));
+    assert!(serialized.contains("cache-schema"));
+    assert!(serialized.contains("execution-policy"));
+    assert!(serialized.contains("runner-map"));
     assert!(serialized.contains("--exact"));
 }
 

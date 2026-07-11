@@ -50,6 +50,15 @@ fn runner_helpers_validate_and_run_commands_directly() {
         TestStatus::Passed
     );
     assert!(String::from_utf8_lossy(&output.stdout).contains("runner helper"));
+
+    let mut no_timeout_cmd = Command::new(python!());
+    no_timeout_cmd
+        .arg("-c")
+        .arg("print('no timeout')")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let no_timeout_output = run_command(no_timeout_cmd, &python!(), None).unwrap();
+    assert!(no_timeout_output.status.success());
 }
 
 #[test]

@@ -8,6 +8,8 @@ mod language_executor;
 mod language_modules;
 #[path = "run_logic/metrics.rs"]
 mod metrics;
+#[path = "run_logic/metrics_rust.rs"]
+mod metrics_rust;
 use language_executor::{
     ExecutionPhase, LanguagePhaseOutcome, execute_language_phase, execution_phase,
     population_selector_count, print_dry_run, selective_selector_count,

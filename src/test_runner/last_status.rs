@@ -54,6 +54,7 @@ pub(crate) fn rust_last_status_identity(
     rustc_version: &str,
     cargo_nextest_version: &str,
     test_args: &[String],
+    runner_map_fingerprint: &str,
 ) -> LastStatusIdentity {
     LastStatusIdentity::new(
         BTreeMap::from([
@@ -64,6 +65,15 @@ pub(crate) fn rust_last_status_identity(
                 "cargo-nextest".to_string(),
                 cargo_nextest_version.to_string(),
             ),
+            (
+                "cache-schema".to_string(),
+                rust_llvm_cov_runner::CACHE_SCHEMA_VERSION.to_string(),
+            ),
+            (
+                "execution-policy".to_string(),
+                rust_llvm_cov_runner::BATCH_EXECUTION_POLICY_VERSION.to_string(),
+            ),
+            ("runner-map".to_string(), runner_map_fingerprint.to_string()),
         ]),
         test_args,
         BTreeMap::new(),

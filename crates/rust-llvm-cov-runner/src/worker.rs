@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+#[cfg(any(test, feature = "legacy-test-api"))]
 use crate::RustLlvmCovError;
 use crate::file_lock::FileLockGuard;
 
@@ -15,11 +16,18 @@ pub(crate) mod lock_failure_injection;
 use std::os::unix::ffi::OsStrExt;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg(any(test, feature = "legacy-test-api"))]
 pub struct RustWorkerCleanupReport {
     pub removed_slots: Vec<usize>,
     pub skipped_slots: Vec<usize>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct RustLegacyCleanupAttempt {
+    pub(crate) deferred: bool,
+}
+
+#[cfg(any(test, feature = "legacy-test-api"))]
 pub fn cleanup_surplus_rust_cov_worker_slots(
     cache_root: &Path,
     jobs: usize,
@@ -122,6 +130,29 @@ pub(crate) fn cleanup_legacy_worker_dirs(cache_root: &Path) -> io::Result<()> {
     Ok(())
 }
 
+pub(crate) fn cleanup_legacy_worker_data_nonblocking(
+    cache_root: &Path,
+) -> io::Result<RustLegacyCleanupAttempt> {
+    let Some(_legacy_guard) = try_lock_legacy_cleanup(cache_root)? else {
+        return Ok(RustLegacyCleanupAttempt { deferred: true });
+    };
+    let slots = legacy_worker_slots(cache_root)?;
+    let mut slot_guards = Vec::with_capacity(slots.len());
+    for slot in &slots {
+        let Some(guard) = try_lock_worker(cache_root, *slot)? else {
+            return Ok(RustLegacyCleanupAttempt { deferred: true });
+        };
+        slot_guards.push(guard);
+    }
+    for slot in slots {
+        remove_worker_slot_roots(cache_root, slot)?;
+    }
+    cleanup_legacy_worker_dirs(cache_root)?;
+    drop(slot_guards);
+    Ok(RustLegacyCleanupAttempt { deferred: false })
+}
+
+#[cfg(any(test, feature = "legacy-test-api"))]
 pub(crate) fn prepare_worker_slot(cache_root: &Path, worker_slot: usize) -> io::Result<PathBuf> {
     let worker_root = rust_cov_worker_slot_root(cache_root, worker_slot);
     fs::create_dir_all(&worker_root)?;
@@ -129,6 +160,7 @@ pub(crate) fn prepare_worker_slot(cache_root: &Path, worker_slot: usize) -> io::
     Ok(worker_root)
 }
 
+#[cfg(any(test, feature = "legacy-test-api"))]
 pub(crate) fn cleanup_worker_slot_transients(
     cache_root: &Path,
     worker_slot: usize,
@@ -177,6 +209,7 @@ fn remove_path_if_exists(path: &Path) -> io::Result<()> {
     }
 }
 
+#[cfg(any(test, feature = "legacy-test-api"))]
 pub(crate) fn lock_selector(cache_root: &Path, fingerprint: &str) -> io::Result<FileLockGuard> {
     let path = cache_root
         .join("locks")
@@ -187,6 +220,7 @@ pub(crate) fn lock_selector(cache_root: &Path, fingerprint: &str) -> io::Result<
     FileLockGuard::lock(&path)
 }
 
+#[cfg(any(test, feature = "legacy-test-api"))]
 pub(crate) fn lock_legacy_cleanup(cache_root: &Path) -> io::Result<FileLockGuard> {
     let path = cache_root
         .join("locks")
@@ -197,6 +231,17 @@ pub(crate) fn lock_legacy_cleanup(cache_root: &Path) -> io::Result<FileLockGuard
     FileLockGuard::lock(&path)
 }
 
+fn try_lock_legacy_cleanup(cache_root: &Path) -> io::Result<Option<FileLockGuard>> {
+    let path = cache_root
+        .join("locks")
+        .join("workers")
+        .join("legacy-cleanup.lock");
+    #[cfg(test)]
+    lock_failure_injection::fail_if_injected(&path)?;
+    FileLockGuard::try_lock(&path)
+}
+
+#[cfg(any(test, feature = "legacy-test-api"))]
 pub(crate) fn lock_worker(cache_root: &Path, worker_slot: usize) -> io::Result<FileLockGuard> {
     let path = worker_lock_path(cache_root, worker_slot);
     #[cfg(test)]
@@ -216,6 +261,25 @@ fn worker_lock_path(cache_root: &Path, worker_slot: usize) -> PathBuf {
         .join("locks")
         .join("workers")
         .join(format!("slot-{worker_slot}.lock"))
+}
+
+fn legacy_worker_slots(cache_root: &Path) -> io::Result<Vec<usize>> {
+    let workers_root = cache_root.join("workers");
+    let Ok(entries) = fs::read_dir(&workers_root) else {
+        return Ok(Vec::new());
+    };
+    let mut slots = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        if let Some(slot) = parse_worker_slot_name(&entry.file_name()) {
+            slots.push(slot);
+        }
+    }
+    slots.sort_unstable();
+    Ok(slots)
 }
 
 fn parse_worker_slot_name(name: &OsStr) -> Option<usize> {

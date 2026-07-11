@@ -6,11 +6,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
+import statistics
 import subprocess
 import tempfile
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Iterator
 
@@ -31,6 +33,7 @@ class Outcome:
     stdout: str
     stderr: str
     elapsed: float
+    observation: "ProcessObservation | None" = None
 
     @property
     def combined(self) -> str:
@@ -51,6 +54,145 @@ class Fixture:
     nested: Path
     env: dict[str, str]
     ignores: dict[str, list[str]]
+
+
+@dataclass
+class ProcessInfo:
+    ppid: int
+    threads: int
+    rss_kib: int
+    cpu_ticks: int
+    command: str
+
+
+@dataclass
+class ProcessObservation:
+    peak_process_count: int = 0
+    peak_thread_count: int = 0
+    peak_rss_kib: int = 0
+    sampled_cpu_seconds: float = 0.0
+    samples: int = 0
+    command_peaks: dict[str, int] = field(default_factory=dict)
+
+
+class LinuxProcessObserver:
+    def __init__(self, root_pid: int) -> None:
+        self.root_pid = root_pid
+        self.clock_ticks = os.sysconf("SC_CLK_TCK")
+        self.cpu_ticks_by_pid: dict[int, int] = {}
+        self.total_cpu_ticks = 0
+        self.observation = ProcessObservation()
+
+    def sample(self) -> None:
+        snapshot = read_proc_snapshot()
+        pids = descendant_pids(snapshot, self.root_pid)
+        if not pids:
+            return
+        self.observation.samples += 1
+        self.observation.peak_process_count = max(
+            self.observation.peak_process_count,
+            len(pids),
+        )
+        thread_count = 0
+        rss_kib = 0
+        commands: dict[str, int] = {}
+        for pid in pids:
+            info = snapshot[pid]
+            thread_count += info.threads
+            rss_kib += info.rss_kib
+            previous = self.cpu_ticks_by_pid.get(pid)
+            if previous is not None and info.cpu_ticks >= previous:
+                self.total_cpu_ticks += info.cpu_ticks - previous
+            self.cpu_ticks_by_pid[pid] = info.cpu_ticks
+            command = observed_command_name(info.command)
+            if command:
+                commands[command] = commands.get(command, 0) + 1
+        self.observation.peak_thread_count = max(
+            self.observation.peak_thread_count,
+            thread_count,
+        )
+        self.observation.peak_rss_kib = max(self.observation.peak_rss_kib, rss_kib)
+        self.observation.sampled_cpu_seconds = self.total_cpu_ticks / self.clock_ticks
+        for command, count in commands.items():
+            self.observation.command_peaks[command] = max(
+                self.observation.command_peaks.get(command, 0),
+                count,
+            )
+
+
+@dataclass
+class ThroughputSample:
+    jobs: int
+    phase: str
+    outcome: Outcome
+    cache_bytes: int
+
+
+def read_proc_snapshot() -> dict[int, ProcessInfo]:
+    result: dict[int, ProcessInfo] = {}
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return result
+    for pid_path in proc.iterdir():
+        if not pid_path.name.isdecimal():
+            continue
+        pid = int(pid_path.name)
+        try:
+            stat = (pid_path / "stat").read_text()
+            status = (pid_path / "status").read_text()
+            cmdline = (pid_path / "cmdline").read_bytes()
+        except OSError:
+            continue
+        right_paren = stat.rfind(")")
+        if right_paren < 0:
+            continue
+        fields = stat[right_paren + 2 :].split()
+        if len(fields) < 13:
+            continue
+        threads = 0
+        rss_kib = 0
+        for line in status.splitlines():
+            if line.startswith("Threads:"):
+                threads = int(line.split()[1])
+            elif line.startswith("VmRSS:"):
+                rss_kib = int(line.split()[1])
+        command = " ".join(part.decode(errors="replace") for part in cmdline.split(b"\0") if part)
+        result[pid] = ProcessInfo(
+            ppid=int(fields[1]),
+            threads=threads,
+            rss_kib=rss_kib,
+            cpu_ticks=int(fields[11]) + int(fields[12]),
+            command=command,
+        )
+    return result
+
+
+def descendant_pids(snapshot: dict[int, ProcessInfo], root_pid: int) -> set[int]:
+    children: dict[int, list[int]] = {}
+    for pid, info in snapshot.items():
+        children.setdefault(info.ppid, []).append(pid)
+    result: set[int] = set()
+    pending = [root_pid]
+    while pending:
+        pid = pending.pop()
+        if pid in result or pid not in snapshot:
+            continue
+        result.add(pid)
+        pending.extend(children.get(pid, []))
+    return result
+
+
+def observed_command_name(command: str) -> str | None:
+    if not command:
+        return None
+    executable = Path(command.split()[0]).name
+    if executable == "cargo" and " llvm-cov " in f" {command} ":
+        return "cargo-llvm-cov"
+    if "nextest" in executable or " nextest " in f" {command} ":
+        return "cargo-nextest"
+    if executable in {"cargo", "llvm-profdata", "llvm-cov", "kiss"}:
+        return executable
+    return None
 
 
 def run(
@@ -99,6 +241,8 @@ def run(
         "raw_artifact_count",
         "rust_concurrency_budget",
         "rust_build_target_count",
+        "rust_max_active_test_instances",
+        "rust_max_active_exports",
         "rust_transient_residual_count",
         "rust_external_tmp_residual_bytes",
         "rust_external_tmp_residual_count",
@@ -111,6 +255,132 @@ def run(
             f"{name}: expected rc={expected}, got {outcome.returncode}\n"
             f"stdout:\n{outcome.stdout}\nstderr:\n{outcome.stderr}"
         )
+    return outcome
+
+
+def run_observed(
+    name: str,
+    argv: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    expected: int | None = 0,
+    timeout: int = 1_200,
+    sample_interval: float = 0.1,
+) -> Outcome:
+    started = time.monotonic()
+    with (
+        tempfile.TemporaryFile("w+t") as stdout_file,
+        tempfile.TemporaryFile("w+t") as stderr_file,
+    ):
+        process = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=stdout_file,
+            stderr=stderr_file,
+        )
+        observer = LinuxProcessObserver(process.pid)
+        deadline = started + timeout
+        while process.poll() is None:
+            observer.sample()
+            if time.monotonic() > deadline:
+                process.kill()
+                process.wait()
+                raise subprocess.TimeoutExpired(argv, timeout)
+            time.sleep(sample_interval)
+        observer.sample()
+        stdout_file.seek(0)
+        stderr_file.seek(0)
+        outcome = Outcome(
+            name,
+            process.returncode,
+            stdout_file.read(),
+            stderr_file.read(),
+            time.monotonic() - started,
+            observer.observation,
+        )
+    click.echo(
+        f"{name}: rc={outcome.returncode} elapsed={outcome.elapsed:.2f}s "
+        f"peak_processes={outcome.observation.peak_process_count} "
+        f"peak_threads={outcome.observation.peak_thread_count}"
+    )
+    if expected is not None and outcome.returncode != expected:
+        raise AssertionError(
+            f"{name}: expected rc={expected}, got {outcome.returncode}\n"
+            f"stdout:\n{outcome.stdout}\nstderr:\n{outcome.stderr}"
+        )
+    return outcome
+
+
+def lingering_processes_matching(substrings: tuple[str, ...]) -> list[str]:
+    snapshot = read_proc_snapshot()
+    matches: list[str] = []
+    for pid, info in snapshot.items():
+        if pid <= 1:
+            continue
+        command = info.command
+        if command and all(part in command for part in substrings):
+            matches.append(f"pid={pid} {command}")
+    return matches
+
+
+def run_interrupted(
+    name: str,
+    argv: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    signal_after: float,
+    sig: signal.Signals = signal.SIGINT,
+    settle: float = 2.0,
+    timeout: int = 1_200,
+) -> Outcome:
+    started = time.monotonic()
+    with (
+        tempfile.TemporaryFile("w+t") as stdout_file,
+        tempfile.TemporaryFile("w+t") as stderr_file,
+    ):
+        process = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            start_new_session=True,
+        )
+        deadline = started + timeout
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                break
+            if time.monotonic() - started >= signal_after:
+                os.kill(process.pid, sig)
+                break
+            time.sleep(0.05)
+        else:
+            process.kill()
+            process.wait()
+            raise subprocess.TimeoutExpired(argv, timeout)
+        try:
+            process.wait(timeout=max(1.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            raise
+        time.sleep(settle)
+        stdout_file.seek(0)
+        stderr_file.seek(0)
+        outcome = Outcome(
+            name,
+            process.returncode,
+            stdout_file.read(),
+            stderr_file.read(),
+            time.monotonic() - started,
+        )
+    click.echo(
+        f"{name}: rc={outcome.returncode} elapsed={outcome.elapsed:.2f}s "
+        f"(interrupted after {signal_after:.2f}s)"
+    )
     return outcome
 
 
@@ -176,6 +446,19 @@ def changed_text(path: Path, old: str, new: str) -> None:
     path.write_text(text.replace(old, new))
 
 
+def directory_size_bytes(path: Path) -> int:
+    if not path.exists():
+        return 0
+    total = 0
+    for child in path.rglob("*"):
+        try:
+            if child.is_file() and not child.is_symlink():
+                total += child.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
 def copy_fixture(destination: Path) -> None:
     ignored = shutil.ignore_patterns(
         "target",
@@ -221,8 +504,13 @@ def language_ignores(root: Path, language: str) -> list[str]:
     return result
 
 
-def kiss_command(language: str, ignores: list[str], *options: str) -> list[str]:
-    return [
+def kiss_command(
+    language: str,
+    ignores: list[str],
+    *options: str,
+    trailing_test_args: tuple[str, ...] = (),
+) -> list[str]:
+    argv = [
         str(KISS),
         "--defaults",
         "--lang",
@@ -232,6 +520,10 @@ def kiss_command(language: str, ignores: list[str], *options: str) -> list[str]:
         *options,
         *ignores,
     ]
+    if trailing_test_args:
+        argv.append("--")
+        argv.extend(trailing_test_args)
+    return argv
 
 
 def validate_command(language: str, ignores: list[str], jobs: int) -> list[str]:
@@ -309,6 +601,58 @@ def assert_json_integrity(cache_root: Path) -> int:
     temporary = sorted(cache_root.rglob("*.tmp"))
     assert not temporary, f"temporary files survived: {temporary}"
     return len(json_paths)
+
+
+def assert_rust_batch_invariants(outcome: Outcome, jobs: int) -> None:
+    metrics = outcome.metrics()
+    assert_metric(metrics, "rust_concurrency_budget", str(jobs))
+    assert metric_int(metrics, "rust_build_target_count") <= 1
+    assert metric_int(metrics, "rust_transient_residual_count") == 0
+    assert_metric(metrics, "rust_external_tmp_residual_bytes", "0")
+    assert_metric(metrics, "rust_external_tmp_residual_count", "0")
+    active_tests = metric_int(metrics, "rust_max_active_test_instances")
+    active_exports = metric_int(metrics, "rust_max_active_exports")
+    assert active_tests <= jobs, (
+        f"rust_max_active_test_instances={active_tests} exceeds jobs={jobs}"
+    )
+    assert active_exports <= jobs, (
+        f"rust_max_active_exports={active_exports} exceeds jobs={jobs}"
+    )
+    assert metric_int(metrics, "rust_process_residual_count") == 0
+    assert metric_int(metrics, "rust_entry_generation_count") <= 2
+    max_objects = metric_int(metrics, "rust_max_objects_per_export")
+    build_invocations = metric_int(metrics, "rust_build_invocations")
+    if build_invocations > 0:
+        assert max_objects > 0, (
+            "fresh Rust batch should report per-export object scope"
+        )
+
+
+def echo_throughput_sample(sample: ThroughputSample) -> None:
+    observation = sample.outcome.observation
+    assert observation is not None
+    peaks = ", ".join(
+        f"{name}={count}" for name, count in sorted(observation.command_peaks.items())
+    )
+    click.echo(
+        f"  {sample.phase} -j{sample.jobs}: elapsed={sample.outcome.elapsed:.2f}s "
+        f"cache_bytes={sample.cache_bytes} peak_processes="
+        f"{observation.peak_process_count} peak_threads="
+        f"{observation.peak_thread_count} peak_rss_kib={observation.peak_rss_kib} "
+        f"sampled_cpu_s={observation.sampled_cpu_seconds:.2f}"
+    )
+    if peaks:
+        click.echo(f"    command_peaks: {peaks}")
+
+
+def median_elapsed(samples: list[ThroughputSample], jobs: int, phase: str) -> float:
+    values = [
+        sample.outcome.elapsed
+        for sample in samples
+        if sample.jobs == jobs and sample.phase == phase
+    ]
+    assert values, f"missing {phase} samples for -j{jobs}"
+    return statistics.median(values)
 
 
 @click.group()
@@ -533,6 +877,99 @@ def coverage_stress() -> None:
         click.echo("QA PASS: coverage lifecycle and oracle recall held.")
 
 
+@cli.command("rust-throughput")
+@click.option("--runs", default=3, show_default=True, help="Samples per job value.")
+@click.option(
+    "--jobs",
+    "job_values",
+    multiple=True,
+    type=int,
+    default=(1, 2, 4, 32),
+    show_default=True,
+    help="KISS -j values to measure.",
+)
+@click.option(
+    "--legacy-cold-j1-median",
+    type=float,
+    default=None,
+    help="Optional legacy cold -j1 median seconds for acceptance comparison.",
+)
+def rust_throughput(
+    runs: int,
+    job_values: tuple[int, ...],
+    legacy_cold_j1_median: float | None,
+) -> None:
+    """Measure Rust coverage throughput and external process-tree bounds."""
+    assert runs > 0, runs
+    assert job_values, "at least one --jobs value is required"
+    assert all(jobs > 0 for jobs in job_values), job_values
+    samples: list[ThroughputSample] = []
+    with qa_fixture("kiss-qa-rust-throughput-") as fixture:
+        rust_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
+        for sample_index in range(runs):
+            for jobs in job_values:
+                shutil.rmtree(rust_cache, ignore_errors=True)
+                command = kiss_command(
+                    "rust",
+                    fixture.ignores["rust"],
+                    "--metrics",
+                    "-j",
+                    str(jobs),
+                )
+                cold = run_observed(
+                    f"rust-throughput-cold-{sample_index + 1}-j{jobs}",
+                    command,
+                    fixture.root,
+                    fixture.env,
+                )
+                assert_rust_batch_invariants(cold, jobs)
+                cold_sample = ThroughputSample(
+                    jobs,
+                    "cold",
+                    cold,
+                    directory_size_bytes(rust_cache),
+                )
+                samples.append(cold_sample)
+                echo_throughput_sample(cold_sample)
+
+                warm = run_observed(
+                    f"rust-throughput-warm-{sample_index + 1}-j{jobs}",
+                    command,
+                    fixture.root,
+                    fixture.env,
+                )
+                assert_rust_batch_invariants(warm, jobs)
+                warm_sample = ThroughputSample(
+                    jobs,
+                    "warm",
+                    warm,
+                    directory_size_bytes(rust_cache),
+                )
+                samples.append(warm_sample)
+                echo_throughput_sample(warm_sample)
+
+    click.echo("Rust throughput medians:")
+    for jobs in job_values:
+        cold_median = median_elapsed(samples, jobs, "cold")
+        warm_median = median_elapsed(samples, jobs, "warm")
+        click.echo(f"  -j{jobs}: cold_median={cold_median:.2f}s warm_median={warm_median:.2f}s")
+
+    if legacy_cold_j1_median is not None and 32 in job_values:
+        batch_j32 = median_elapsed(samples, 32, "cold")
+        required = legacy_cold_j1_median * 0.70
+        assert batch_j32 <= required, (
+            f"batch cold -j32 median {batch_j32:.2f}s is not at least 30% faster "
+            f"than legacy cold -j1 median {legacy_cold_j1_median:.2f}s"
+        )
+        click.echo(
+            "QA PASS: Rust throughput median met the legacy cold -j1 acceptance threshold."
+        )
+    else:
+        click.echo(
+            "QA PASS: Rust throughput medians and external process-tree bounds recorded."
+        )
+
+
 @cli.command("path-isolation")
 def path_isolation() -> None:
     """Test nested-CWD plans and persisted coverage-path isolation."""
@@ -674,7 +1111,11 @@ def concurrent_cache_recovery() -> None:
             for path in (rs_cache / "workers").glob("slot-*")
             if path.is_dir()
         ]
-        assert len(workers) <= jobs
+        assert len(workers) == 0, (
+            f"legacy worker slots must be absent after batch migration: {workers}"
+        )
+        build_target = rs_cache / "build" / "target"
+        assert build_target.is_dir(), f"missing batch build target: {build_target}"
         for outcome in cold[3:]:
             metrics = outcome.metrics()
             assert_metric(metrics, "rust_external_tmp_residual_bytes", "0")
@@ -806,6 +1247,142 @@ def concurrent_cache_recovery() -> None:
         assert not list((rs_cache / "artifacts").glob("*"))
         click.echo(
             "QA PASS: concurrent cold/warm races and malformed-index recovery held."
+        )
+
+
+@cli.command("rust-batch-e2e")
+def rust_batch_e2e() -> None:
+    """E2E batch QA: nocapture relay, forced serialization, derived repair, Ctrl-C."""
+    jobs = 2
+    with qa_fixture("kiss-qa-rust-e2e-") as fixture:
+        rust_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
+        population_command = kiss_command(
+            "rust",
+            fixture.ignores["rust"],
+            "--metrics",
+            "-j",
+            str(jobs),
+        )
+
+        cold = run(
+            "rust-e2e-cold-population",
+            population_command,
+            fixture.root,
+            fixture.env,
+        )
+        assert_metric(cold.metrics(), "rust_population_required", "true")
+        assert_json_integrity(rust_cache)
+
+        nocapture_dry = run(
+            "rust-e2e-nocapture-dry",
+            kiss_command(
+                "rust",
+                fixture.ignores["rust"],
+                "--dry-run",
+                "-j",
+                str(jobs),
+                trailing_test_args=("--nocapture",),
+            ),
+            fixture.root,
+            fixture.env,
+        )
+        assert "'--test-threads' 1" in nocapture_dry.stdout, (
+            "nocapture must plan serial nextest test threads"
+        )
+
+        nocapture = run_observed(
+            "rust-e2e-nocapture",
+            kiss_command(
+                "rust",
+                fixture.ignores["rust"],
+                "--metrics",
+                "--force",
+                "-j",
+                str(jobs),
+                trailing_test_args=("--nocapture",),
+            ),
+            fixture.root,
+            fixture.env,
+        )
+        nocapture_metrics = nocapture.metrics()
+        assert nocapture.returncode == 0, nocapture.combined
+        assert "KISS TEST METRICS" in nocapture.stdout
+        assert_rust_batch_invariants(nocapture, jobs)
+        assert metric_int(nocapture_metrics, "rust_population_cache_misses") > 0
+
+        forced_commands = [
+            (
+                kiss_command(
+                    "rust",
+                    fixture.ignores["rust"],
+                    "--metrics",
+                    "--force",
+                    "-j",
+                    str(jobs),
+                ),
+                fixture.root,
+            ),
+            (
+                kiss_command(
+                    "rust",
+                    fixture.ignores["rust"],
+                    "--metrics",
+                    "--force",
+                    "-j",
+                    str(jobs),
+                ),
+                fixture.root,
+            ),
+        ]
+        forced = run_concurrent("rust-e2e-concurrent-forced", forced_commands, fixture.env)
+        for outcome in forced:
+            metrics = outcome.metrics()
+            population = metric_int(metrics, "rust_population_selectors")
+            misses = metric_int(metrics, "rust_population_cache_misses")
+            assert misses == population, (
+                f"{outcome.name}: forced fresh batch should miss every selector, "
+                f"misses={misses}, population={population}"
+            )
+            assert_rust_batch_invariants(outcome, jobs)
+
+        population_path = rust_cache / "population.json"
+        population_path.write_text("{ deliberately broken")
+        repaired = run(
+            "rust-e2e-derived-repair-population",
+            population_command,
+            fixture.root,
+            fixture.env,
+        )
+        repair_metrics = repaired.metrics()
+        assert_metric(repair_metrics, "rust_derived_repair", "true")
+        assert metric_int(repair_metrics, "rust_build_invocations") == 0
+        assert metric_int(repair_metrics, "rust_population_cache_misses") == 0
+        json.loads(population_path.read_text())
+
+        interrupted = run_interrupted(
+            "rust-e2e-interrupt",
+            population_command,
+            fixture.root,
+            fixture.env,
+            signal_after=0.75,
+        )
+        assert interrupted.returncode != 0, "interrupted batch should fail"
+        residual = lingering_processes_matching(
+            (str(fixture.root), "rust_llvm_cov_cache")
+        )
+        assert not residual, f"batch descendants survived interruption: {residual}"
+        recovered = run(
+            "rust-e2e-recover-after-interrupt",
+            population_command,
+            fixture.root,
+            fixture.env,
+        )
+        assert recovered.returncode == 0, recovered.combined
+        assert metric_int(recovered.metrics(), "rust_process_residual_count") == 0
+        assert_json_integrity(rust_cache)
+        click.echo(
+            "QA PASS: nocapture relay, concurrent forced batches, derived repair, "
+            "and Ctrl-C recovery held."
         )
 
 
