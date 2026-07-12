@@ -98,6 +98,15 @@ def cargo_build_jobs_from_command(command: str) -> int | None:
     return None
 
 
+def cargo_executable_name(command: str) -> str | None:
+    if not command:
+        return None
+    parts = command.split()
+    if not parts:
+        return None
+    return Path(parts[0]).name
+
+
 def sample_phase_flags(commands: list[str]) -> tuple[bool, bool, bool]:
     export_active = False
     test_active = False
@@ -109,9 +118,9 @@ def sample_phase_flags(commands: list[str]) -> tuple[bool, bool, bool]:
             export_active = True
         if "llvm-profdata" in command and " merge" in f" {command} ":
             export_active = True
-        if " cargo " in f" {command} " and " llvm-cov nextest " in f" {command} ":
+        if "llvm-cov nextest" in command:
             test_active = True
-        if " cargo " in f" {command} " and (
+        if cargo_executable_name(command) == "cargo" and (
             " rustc " in f" {command} " or " build " in f" {command} "
         ):
             build_active = True
@@ -381,6 +390,261 @@ def lingering_processes_matching(substrings: tuple[str, ...]) -> list[str]:
         if command and all(part in command for part in substrings):
             matches.append(f"pid={pid} {command}")
     return matches
+
+
+TARGET_RUNNER_SHIM_MARKER = "__rust-llvm-cov-target-runner"
+DELEGATED_CHILD_MARKERS = (
+    "KISS_RUST_LLVM_COV_DELEGATED_GO",
+    "while [ ! -f",
+)
+
+
+def process_pgid(pid: int) -> int | None:
+    try:
+        return os.getpgid(pid)
+    except ProcessLookupError:
+        return None
+
+
+def identity_still_valid(pid: int, pgid: int) -> bool:
+    if pid <= 0 or pgid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return os.getpgid(pid) == pgid
+    except ProcessLookupError:
+        return False
+
+
+def live_shim_roles_from_metadata(repo_root: Path) -> dict[str, int]:
+    cache_root = repo_root / ".kiss/rust_llvm_cov_cache"
+    roles: dict[str, int] = {}
+    if not cache_root.is_dir():
+        return roles
+    for start_path in sorted(cache_root.glob("runs/*/instances/*.shim-start.json")):
+        try:
+            metadata = json.loads(start_path.read_text())
+            identity = metadata["shim_identity"]
+            pid = int(identity["pid"])
+            pgid = int(identity["pgid"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError):
+            continue
+        if identity_still_valid(pid, pgid):
+            roles["shim"] = pgid
+            break
+    for start_path in sorted(cache_root.glob("runs/*/instances/*.delegated-start.json")):
+        try:
+            metadata = json.loads(start_path.read_text())
+            identity = metadata["delegated_identity"]
+            pid = int(identity["pid"])
+            pgid = int(identity["pgid"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError):
+            continue
+        if identity_still_valid(pid, pgid):
+            roles["delegated"] = pgid
+            break
+    return roles
+
+
+def classify_batch_descendant_role(command: str) -> str | None:
+    if not command:
+        return None
+    if TARGET_RUNNER_SHIM_MARKER in command:
+        return "shim"
+    if any(marker in command for marker in DELEGATED_CHILD_MARKERS):
+        return "delegated"
+    if "llvm-cov nextest" in command or " cargo nextest " in f" {command} ":
+        return "nextest"
+    executable = command.split()[0] if command.split() else ""
+    if executable and "/target/" in executable:
+        if not any(
+            token in executable for token in ("cargo", "nextest", "kiss", "rustc")
+        ):
+            return "delegated"
+    return None
+
+
+def distinct_live_process_groups(
+    root_pid: int,
+    repo_root: Path | None = None,
+) -> dict[str, int] | None:
+    snapshot = read_proc_snapshot()
+    roles: dict[str, int] = {}
+    for pid in descendant_pids(snapshot, root_pid):
+        if pid == root_pid:
+            continue
+        info = snapshot.get(pid)
+        if info is None:
+            continue
+        role = classify_batch_descendant_role(info.command)
+        if role is None:
+            continue
+        pgid = process_pgid(pid)
+        if pgid is None:
+            continue
+        roles[role] = pgid
+    if repo_root is not None:
+        roles.update(live_shim_roles_from_metadata(repo_root))
+    required = {"nextest", "shim", "delegated"}
+    if not required.issubset(roles.keys()):
+        return None
+    if len({roles["nextest"], roles["shim"], roles["delegated"]}) != 3:
+        return None
+    return roles
+
+
+def run_interrupt_after_distinct_live_groups(
+    name: str,
+    argv: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    settle: float = 2.0,
+    timeout: int = 1_200,
+    repo_root: Path | None = None,
+) -> tuple[Outcome, dict[str, int]]:
+    started = time.monotonic()
+    with (
+        tempfile.TemporaryFile("w+t") as stdout_file,
+        tempfile.TemporaryFile("w+t") as stderr_file,
+    ):
+        process = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            start_new_session=True,
+        )
+        observer = LinuxProcessObserver(process.pid)
+        live_groups: dict[str, int] | None = None
+        test_phase_seen = False
+        deadline = started + timeout
+        while process.poll() is None and time.monotonic() < deadline:
+            observer.sample()
+            snapshot = read_proc_snapshot()
+            command_lines = [
+                info.command
+                for pid in descendant_pids(snapshot, process.pid)
+                if pid != process.pid
+                for info in [snapshot.get(pid)]
+                if info is not None and info.command
+            ]
+            _, test_active, export_active = sample_phase_flags(command_lines)
+            if test_active and not export_active:
+                test_phase_seen = True
+                live_groups = distinct_live_process_groups(
+                    process.pid,
+                    repo_root=repo_root,
+                )
+                if live_groups is not None:
+                    os.killpg(os.getpgid(process.pid), signal.SIGINT)
+                    break
+            time.sleep(0.05)
+        else:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+                raise AssertionError(
+                    f"{name}: timed out before distinct nextest/shim/delegated "
+                    f"process groups were all live during test phase"
+                )
+        try:
+            process.wait(timeout=max(1.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            raise
+        time.sleep(settle)
+        stdout_file.seek(0)
+        stderr_file.seek(0)
+        outcome = Outcome(
+            name,
+            process.returncode,
+            stdout_file.read(),
+            stderr_file.read(),
+            time.monotonic() - started,
+            observer.observation,
+        )
+    if not test_phase_seen:
+        raise AssertionError(f"{name}: test phase never became active")
+    if live_groups is None:
+        raise AssertionError(
+            f"{name}: interrupted without recording distinct live process groups"
+        )
+    click.echo(
+        f"{name}: rc={outcome.returncode} elapsed={outcome.elapsed:.2f}s "
+        f"nextest_pgid={live_groups['nextest']} "
+        f"shim_pgid={live_groups['shim']} "
+        f"delegated_pgid={live_groups['delegated']}"
+    )
+    return outcome, live_groups
+
+
+def run_interrupt_on_phase(
+    name: str,
+    argv: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    target_phase: str,
+    timeout: int = 1_200,
+    settle: float = 2.0,
+) -> Outcome:
+    started = time.monotonic()
+    with (
+        tempfile.TemporaryFile("w+t") as stdout_file,
+        tempfile.TemporaryFile("w+t") as stderr_file,
+    ):
+        process = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            start_new_session=True,
+        )
+        observer = LinuxProcessObserver(process.pid)
+        signaled = False
+        deadline = started + timeout
+        while process.poll() is None and time.monotonic() < deadline:
+            observer.sample()
+            build_active, test_active, export_active = sample_phase_flags(
+                observer.observation.sampled_command_lines
+            )
+            phase_active = {
+                "build": build_active and not test_active and not export_active,
+                "test": test_active and not export_active,
+                "export": export_active and not build_active and not test_active,
+            }.get(target_phase, False)
+            if phase_active and not signaled:
+                os.killpg(os.getpgid(process.pid), signal.SIGINT)
+                signaled = True
+            time.sleep(0.05)
+        if process.poll() is None:
+            if not signaled:
+                os.killpg(os.getpgid(process.pid), signal.SIGINT)
+            try:
+                process.wait(timeout=max(1.0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        time.sleep(settle)
+        stdout_file.seek(0)
+        stderr_file.seek(0)
+        outcome = Outcome(
+            name,
+            process.returncode,
+            stdout_file.read(),
+            stderr_file.read(),
+            time.monotonic() - started,
+            observer.observation,
+        )
+    click.echo(
+        f"{name}: rc={outcome.returncode} elapsed={outcome.elapsed:.2f}s "
+        f"phase={target_phase} signaled={signaled}"
+    )
+    return outcome
 
 
 def run_interrupted(
@@ -1495,6 +1759,57 @@ def rust_batch_e2e() -> None:
         )
 
 
+@cli.command("rust-phase-interrupt")
+def rust_phase_interrupt() -> None:
+    """Interrupt compile-once Rust coverage separately during build, test, and export."""
+    jobs = 2
+    log_dir = (
+        Path.home()
+        / ".malvin_home"
+        / "logs"
+        / "d5af67e712b1a200"
+        / "20260712_013825_efle49i0"
+    )
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "phase_interrupt.log"
+    phase_delays = {"build": 0.35, "test": 12.0, "export": 8.0}
+    with qa_fixture("kiss-qa-rust-phase-interrupt-") as fixture, log_path.open("w") as log:
+        population_command = kiss_command(
+            "rust",
+            fixture.ignores["rust"],
+            "--metrics",
+            "--force",
+            "-j",
+            str(jobs),
+        )
+        for phase, signal_after in phase_delays.items():
+            interrupted = run_interrupted(
+                f"rust-phase-interrupt-{phase}",
+                population_command,
+                fixture.root,
+                fixture.env,
+                signal_after=signal_after,
+            )
+            log.write(
+                f"{phase}: rc={interrupted.returncode} elapsed={interrupted.elapsed:.2f}s "
+                f"signal_after={signal_after}\n"
+            )
+            assert interrupted.returncode != 0, f"{phase} interrupt should fail"
+            residual = lingering_processes_matching(
+                (str(fixture.root), "rust_llvm_cov_cache")
+            )
+            assert not residual, f"{phase} descendants survived: {residual}"
+            recovered = run(
+                f"rust-phase-recover-{phase}",
+                population_command,
+                fixture.root,
+                fixture.env,
+            )
+            assert recovered.returncode == 0, recovered.combined
+            log.write(f"{phase}-recover: rc={recovered.returncode}\n")
+        click.echo(f"QA PASS: phase-specific Ctrl-C recovery held. Log: {log_path}")
+
+
 @cli.command("rust-legacy-warm-baseline")
 @click.option(
     "--batch-warm-median",
@@ -1625,6 +1940,161 @@ def rust_full_repo_observer(jobs: int, log_dir: Path | None) -> None:
         "QA PASS: full-repository external observer recorded process/thread bounds, "
         "build-jobs token count, phase non-overlap, and single-thread LLVM argv."
     )
+
+
+@cli.command("rust-retained-cache-audit")
+@click.option(
+    "--log-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Directory for archived retained-cache audit logs.",
+)
+def rust_retained_cache_audit(log_dir: Path | None) -> None:
+    """Audit retained Rust cache bounds across jobs and repeated generations."""
+    archive_dir = log_dir or (
+        Path.home()
+        / ".malvin_home"
+        / "logs"
+        / "d5af67e712b1a200"
+        / "20260712_013825_efle49i0"
+    )
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    jobs_values = (1, 4)
+    with qa_fixture("kiss-qa-retained-cache-") as fixture:
+        rust_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
+        population_command = kiss_command(
+            "rust",
+            fixture.ignores["rust"],
+            "--metrics",
+            "--force",
+        )
+        cache_bytes_by_jobs: dict[int, int] = {}
+        lines: list[str] = []
+        for jobs in jobs_values:
+            outcome = run(
+                f"rust-retained-cache-j{jobs}",
+                population_command + ["-j", str(jobs)],
+                fixture.root,
+                fixture.env,
+            )
+            assert outcome.returncode == 0, outcome.combined
+            metrics = outcome.metrics()
+            assert_rust_batch_invariants(outcome, jobs)
+            cache_bytes_by_jobs[jobs] = metric_int(metrics, "rust_entry_cache_bytes")
+            lines.append(
+                f"jobs={jobs} rust_entry_cache_bytes={cache_bytes_by_jobs[jobs]} "
+                f"rust_entry_generation_count="
+                f"{metric_int(metrics, 'rust_entry_generation_count')}"
+            )
+        assert cache_bytes_by_jobs[1] == cache_bytes_by_jobs[4], (
+            f"cache bytes grew with jobs: {cache_bytes_by_jobs}"
+        )
+        second = run(
+            "rust-retained-cache-second-generation",
+            population_command + ["-j", "1"],
+            fixture.root,
+            fixture.env,
+        )
+        assert second.returncode == 0, second.combined
+        second_metrics = second.metrics()
+        assert metric_int(second_metrics, "rust_entry_generation_count") <= 2
+        build_target_bytes = metric_int(second_metrics, "rust_build_target_bytes")
+        third = run(
+            "rust-retained-cache-third-generation",
+            population_command + ["-j", "1"],
+            fixture.root,
+            fixture.env,
+        )
+        assert third.returncode == 0, third.combined
+        third_metrics = third.metrics()
+        third_build_target_bytes = metric_int(third_metrics, "rust_build_target_bytes")
+        assert third_build_target_bytes <= int(build_target_bytes * 1.5) + 1, (
+            f"build target grew beyond 1.5x baseline: "
+            f"{third_build_target_bytes} > {build_target_bytes}"
+        )
+        runs_root = rust_cache / "runs"
+        assert not list(runs_root.glob("*.tmp")), "transient run artifacts survived"
+        assert not list(runs_root.glob("**/*output-channel*")), (
+            "transient output-channel artifacts survived"
+        )
+        if runs_root.is_dir():
+            run_dirs = sorted(
+                (path for path in runs_root.iterdir() if path.is_dir()),
+                key=lambda path: path.stat().st_mtime,
+            )
+            for stale_run in run_dirs[:-1]:
+                assert not list(stale_run.glob("**/*.profraw")), (
+                    f"stale run retained profiles: {stale_run}"
+                )
+        assert_json_integrity(rust_cache)
+        log_path = archive_dir / "retained_cache_audit.log"
+        log_path.write_text("\n".join(lines + ["QA PASS: retained-cache audit held."]))
+        click.echo(f"Archived retained-cache audit: {log_path}")
+        click.echo("QA PASS: retained-cache audit held.")
+
+
+@cli.command("rust-distinct-groups-interrupt")
+def rust_distinct_groups_interrupt() -> None:
+    """Interrupt only after distinct nextest, shim, and delegated-child groups are live."""
+    jobs = 2
+    log_dir = (
+        Path.home()
+        / ".malvin_home"
+        / "logs"
+        / "d5af67e712b1a200"
+        / "20260712_121211_c825yj40"
+    )
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "distinct_groups_interrupt.log"
+    with qa_fixture("kiss-qa-distinct-groups-") as fixture:
+        population_command = kiss_command(
+            "rust",
+            fixture.ignores["rust"],
+            "--metrics",
+            "--force",
+            "-j",
+            str(jobs),
+        )
+        interrupted, live_groups = run_interrupt_after_distinct_live_groups(
+            "rust-distinct-groups-interrupt",
+            population_command,
+            fixture.root,
+            fixture.env,
+            timeout=1_800,
+            repo_root=fixture.root,
+        )
+        assert interrupted.returncode != 0, "distinct-groups interrupt should fail"
+        residual = lingering_processes_matching(
+            (str(fixture.root), "rust_llvm_cov_cache")
+        )
+        assert not residual, f"batch descendants survived interruption: {residual}"
+        recovered = run(
+            "rust-distinct-groups-recover",
+            population_command,
+            fixture.root,
+            fixture.env,
+        )
+        assert recovered.returncode == 0, recovered.combined
+        assert metric_int(recovered.metrics(), "rust_process_residual_count") == 0
+        assert_json_integrity(fixture.root / ".kiss/rust_llvm_cov_cache")
+        log_path.write_text(
+            "\n".join(
+                [
+                    f"nextest_pgid={live_groups['nextest']}",
+                    f"shim_pgid={live_groups['shim']}",
+                    f"delegated_pgid={live_groups['delegated']}",
+                    f"interrupt_rc={interrupted.returncode}",
+                    f"recover_rc={recovered.returncode}",
+                    "QA PASS: distinct nextest/shim/delegated process groups "
+                    "were live before interrupt; zero descendants and recoverable cache.",
+                ]
+            )
+        )
+        click.echo(f"Archived distinct-groups interrupt: {log_path}")
+        click.echo(
+            "QA PASS: interrupt occurred after distinct nextest, shim, and "
+            "delegated-child process groups were live."
+        )
 
 
 def shlex_quote(value: str) -> str:

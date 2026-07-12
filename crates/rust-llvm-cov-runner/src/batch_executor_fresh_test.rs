@@ -6,8 +6,7 @@ use crate::batch_executor_fresh::execute_fresh_batch_with_export_fn;
 use crate::batch_export::{FakeInstanceExporter, write_fake_profile};
 use crate::batch_plan::{RustCoverageBatchRequest, build_rust_coverage_batch_plan};
 use crate::batch_result::RustCoverageBatchResult;
-use crate::batch_run::{
-    BatchSubprocessRunner, BuildIdentityFile, BuildIdentityPreparation, build_identity_input,
+use crate::batch_run::{self, BatchSubprocessRunner, BuildIdentityFile, BuildIdentityPreparation, build_identity_input,
     path_size_bytes, prepare_build_target_for_identity,
 };
 use crate::batch_shim::BatchShimMetadata;
@@ -93,6 +92,7 @@ fn write_shim_metadata(output_dir: &Path, id: &str) {
         delegated_identity: None,
         stdout: None,
         stderr: None,
+        output_frame_count: None,
     };
     fs::write(
         output_dir.join(format!("{id}.json")),
@@ -301,6 +301,64 @@ fn partial_miss_falls_through_to_fresh_execution() {
             .iter()
             .any(|outcome| outcome.selector == "beta")
     );
+}
+
+#[test]
+fn apply_non_primary_cleanup_error_preserves_primary_batch_error() {
+    let result = RustCoverageBatchResult {
+        completed: Vec::new(),
+        batch_error: Some(RustLlvmCovError::InvalidRequest("primary".into())),
+        counters: Default::default(),
+    };
+    let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "cleanup");
+    let applied = crate::batch_executor_fresh::apply_non_primary_cleanup_error(
+        result,
+        Some(err),
+    )
+    .expect("preserve primary");
+    assert!(applied.batch_error.is_some());
+}
+
+#[test]
+fn stale_run_directory_cleanup_failure_preserves_primary_store_error() {
+    let repo = batch_executor_fixture_repo();
+    let mut req = batch_executor_request(repo.path());
+    let cache_root = req.cache_root.clone();
+    let stale = cache_root.join("runs").join("run-stale");
+    fs::create_dir_all(&stale).unwrap();
+    fs::write(stale.join("marker"), b"x").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stale, fs::Permissions::from_mode(0o555)).unwrap();
+    }
+    fs::create_dir_all(cache_root.join("entries")).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(
+            cache_root.join("entries"),
+            fs::Permissions::from_mode(0o444),
+        )
+        .unwrap();
+    }
+    let result = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
+    assert!(result.batch_error.is_some());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stale, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(
+            cache_root.join("entries"),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+    }
+    batch_run::remove_stale_run_directories(&cache_root, &req.generated_config.parent().unwrap())
+        .unwrap();
+    req.force_rerun = true;
+    let recovered = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
+    assert!(recovered.batch_error.is_none());
 }
 
 #[test]

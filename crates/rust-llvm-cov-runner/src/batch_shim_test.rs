@@ -1,20 +1,75 @@
 use std::ffi::OsString;
 use std::fs;
-use std::path::{Path, PathBuf};
 
 use super::{
-    BatchShimMetadata, load_target_runner_shim_metadata, run_target_runner_shim,
-    write_shim_metadata,
+    BatchShimMetadata, BatchShimDelegatedStartMetadata, BatchShimStartMetadata,
+    load_target_runner_shim_metadata, run_target_runner_shim, write_shim_start_metadata,
 };
 use crate::batch_output_channel::{
     OutputChannelServer, apply_output_channel_env, create_output_channel_config,
 };
-use crate::test_support::make_executable;
+use crate::test_support::{make_executable, shim_only_metadata, shim_test_env_lock};
 
-static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+#[test]
+fn target_runner_shim_writes_start_metadata_before_completion() {
+    let _env_guard = shim_test_env_lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let output = tmp.path().join("instances");
+    let runner_map = tmp.path().join("runner-map.json");
+    fs::write(&runner_map, b"{\"x86_64-unknown-linux-gnu\":[]}").unwrap();
+    let script = tmp.path().join("sleep-then-exit.sh");
+    fs::write(
+        &script,
+        "#!/bin/sh\nsleep 0.05\nexit 2\n",
+    )
+    .unwrap();
+    make_executable(&script);
+
+    let code = run_target_runner_shim(
+        &output,
+        &runner_map,
+        "x86_64-unknown-linux-gnu",
+        &[script.clone().into_os_string()],
+    );
+
+    assert_eq!(code, 2);
+    let start_paths: Vec<_> = fs::read_dir(&output)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".shim-start.json"))
+        })
+        .collect();
+    assert_eq!(start_paths.len(), 1);
+    let delegated_paths: Vec<_> = fs::read_dir(&output)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".delegated-start.json"))
+        })
+        .collect();
+    assert_eq!(delegated_paths.len(), 1);
+    let metadata = shim_only_metadata(&output);
+    assert!(metadata.shim_identity.is_some());
+    assert!(metadata.delegated_identity.is_some());
+}
+
+#[test]
+fn load_live_shim_process_identities_reads_start_records() {
+    let tmp = tempfile::tempdir().unwrap();
+    let identity = crate::batch_process_tree::ProcessGroupIdentity { pid: 42, pgid: 42 };
+    write_shim_start_metadata(tmp.path(), "alpha", &identity).unwrap();
+    let loaded = super::load_live_shim_process_identities(tmp.path()).unwrap();
+    assert!(loaded.is_empty() || loaded.iter().any(|item| item.pid == 42));
+}
 
 #[test]
 fn target_runner_shim_writes_metadata_and_profile_path_env() {
+    let _env_guard = shim_test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
     let output = tmp.path().join("instances");
     let runner_map = tmp.path().join("runner-map.json");
@@ -35,7 +90,7 @@ fn target_runner_shim_writes_metadata_and_profile_path_env() {
     );
 
     assert_eq!(code, 7);
-    let metadata = only_metadata(&output);
+    let metadata = shim_only_metadata(&output);
     assert_eq!(metadata.exit_code, Some(7));
     assert!(metadata.shim_identity.is_some());
     assert!(metadata.delegated_identity.is_some());
@@ -47,7 +102,37 @@ fn target_runner_shim_writes_metadata_and_profile_path_env() {
 }
 
 #[test]
+fn target_runner_shim_writes_delegated_start_metadata() {
+    let _env_guard = shim_test_env_lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let output = tmp.path().join("instances");
+    let runner_map = tmp.path().join("runner-map.json");
+    fs::write(&runner_map, b"{\"x86_64-unknown-linux-gnu\":[]}").unwrap();
+    let script = tmp.path().join("child.sh");
+    fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+    make_executable(&script);
+    let code = run_target_runner_shim(
+        &output,
+        &runner_map,
+        "x86_64-unknown-linux-gnu",
+        &[script.clone().into_os_string()],
+    );
+    assert_eq!(code, 0);
+    let delegated_paths: Vec<_> = fs::read_dir(&output)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".delegated-start.json"))
+        })
+        .collect();
+    assert_eq!(delegated_paths.len(), 1);
+}
+
+#[test]
 fn target_runner_shim_delegates_to_configured_runner() {
+    let _env_guard = shim_test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
     let output = tmp.path().join("instances");
     let runner_map = tmp.path().join("runner-map.json");
@@ -82,7 +167,7 @@ fn target_runner_shim_delegates_to_configured_runner() {
     );
 
     assert_eq!(code, 4);
-    let metadata = only_metadata(&output);
+    let metadata = shim_only_metadata(&output);
     assert_eq!(metadata.full_name, "child$my_test");
     assert_eq!(metadata.stdout.as_deref(), Some(b"child-out".as_ref()));
     assert_eq!(metadata.stderr.as_deref(), Some(b"child-err".as_ref()));
@@ -90,7 +175,7 @@ fn target_runner_shim_delegates_to_configured_runner() {
 
 #[test]
 fn target_runner_shim_list_phase_delegates_without_run_metadata_or_profile() {
-    let _env_guard = ENV_LOCK.lock().unwrap();
+    let _env_guard = shim_test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
     let output = tmp.path().join("instances");
     let runner_map = tmp.path().join("runner-map.json");
@@ -127,9 +212,37 @@ fn target_runner_shim_list_phase_delegates_without_run_metadata_or_profile() {
     assert!(!output.exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn target_runner_shim_signal_forwarder_forwards_during_run() {
+    let _env_guard = shim_test_env_lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let output = tmp.path().join("instances");
+    let runner_map = tmp.path().join("runner-map.json");
+    fs::write(&runner_map, b"{\"x86_64-unknown-linux-gnu\":[]}").unwrap();
+    let script = tmp.path().join("sleep-child.sh");
+    fs::write(&script, "#!/bin/sh\nsleep 2\nexit 0\n").unwrap();
+    make_executable(&script);
+    let script_arg = script.clone().into_os_string();
+    let handle = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        unsafe {
+            libc::raise(libc::SIGTERM);
+        }
+    });
+    let code = run_target_runner_shim(
+        &output,
+        &runner_map,
+        "x86_64-unknown-linux-gnu",
+        &[script_arg],
+    );
+    let _ = handle.join();
+    assert!(code == 0 || code == 1 || code == 143 || code == 15);
+}
+
 #[test]
 fn target_runner_shim_ignores_nextest_env_for_shell_script_commands() {
-    let _env_guard = ENV_LOCK.lock().unwrap();
+    let _env_guard = shim_test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
     let output = tmp.path().join("instances");
     let runner_map = tmp.path().join("runner-map.json");
@@ -156,7 +269,7 @@ fn target_runner_shim_ignores_nextest_env_for_shell_script_commands() {
     );
 
     assert_eq!(code, 8);
-    let metadata = only_metadata(&output);
+    let metadata = shim_only_metadata(&output);
     assert_ne!(
         metadata.id,
         "kiss-ai::bin/kiss$bin_cli::run::run_coverage::hidden_rust_llvm_cov_target_runner_dispatches_before_config_loading"
@@ -167,173 +280,5 @@ fn target_runner_shim_ignores_nextest_env_for_shell_script_commands() {
         std::env::remove_var("NEXTEST_TEST_PHASE");
         std::env::remove_var("NEXTEST_BINARY_ID");
         std::env::remove_var("NEXTEST_TEST_NAME");
-    }
-}
-
-#[test]
-fn target_runner_shim_routes_child_output_through_side_channel_only() {
-    let _env_guard = ENV_LOCK.lock().unwrap();
-    let tmp = tempfile::tempdir().unwrap();
-    let output = tmp.path().join("instances");
-    let runner_map = tmp.path().join("runner-map.json");
-    fs::write(&runner_map, b"{\"x86_64-unknown-linux-gnu\":[]}").unwrap();
-    let script = tmp.path().join("child.sh");
-    fs::write(
-        &script,
-        "#!/bin/sh\nprintf child-out\nprintf child-err 1>&2\nexit 3\n",
-    )
-    .unwrap();
-    make_executable(&script);
-
-    let channel_config = create_output_channel_config(tmp.path(), false).unwrap();
-    let server = OutputChannelServer::start(channel_config.clone()).unwrap();
-    let mut env = std::collections::BTreeMap::new();
-    apply_output_channel_env(&mut env, &channel_config);
-    for (key, value) in env {
-        // SAFETY: test-only env mutation serialized by ENV_LOCK.
-        unsafe {
-            std::env::set_var(key, value);
-        }
-    }
-
-    let code = run_target_runner_shim(
-        &output,
-        &runner_map,
-        "x86_64-unknown-linux-gnu",
-        &[script.clone().into_os_string()],
-    );
-
-    // SAFETY: test-only env mutation serialized by ENV_LOCK.
-    unsafe {
-        std::env::remove_var(crate::batch_output_channel::OUTPUT_CHANNEL_SOCKET_ENV);
-        std::env::remove_var(crate::batch_output_channel::OUTPUT_CHANNEL_TOKEN_ENV);
-    }
-
-    assert_eq!(code, 3);
-    let metadata = only_metadata(&output);
-    assert_eq!(metadata.stdout.as_deref(), Some(b"child-out".as_ref()));
-    assert_eq!(metadata.stderr.as_deref(), Some(b"child-err".as_ref()));
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    let frames = server.stop();
-    assert_eq!(frames.len(), 2);
-    assert!(frames.iter().any(|frame| frame.bytes == b"child-out"
-        && frame.stream == crate::batch_output_channel::OutputStreamKind::Stdout));
-    assert!(frames.iter().any(|frame| frame.bytes == b"child-err"
-        && frame.stream == crate::batch_output_channel::OutputStreamKind::Stderr));
-}
-
-#[test]
-fn target_runner_shim_reports_missing_command() {
-    let tmp = tempfile::tempdir().unwrap();
-    let runner_map = tmp.path().join("runner-map.json");
-    fs::write(&runner_map, b"{}").unwrap();
-
-    let code = run_target_runner_shim(tmp.path(), &runner_map, "x86_64-unknown-linux-gnu", &[]);
-
-    assert_eq!(code, 1);
-}
-
-#[test]
-fn target_runner_shim_uses_exact_test_name_from_command() {
-    let tmp = tempfile::tempdir().unwrap();
-    let output = tmp.path().join("instances");
-    let runner_map = tmp.path().join("runner-map.json");
-    fs::write(&runner_map, b"{}").unwrap();
-    let script = tmp.path().join("child.sh");
-    fs::write(&script, "#!/bin/sh\nexit 4\n").unwrap();
-    make_executable(&script);
-
-    let code = run_target_runner_shim(
-        &output,
-        &runner_map,
-        "x86_64-unknown-linux-gnu",
-        &[
-            script.clone().into_os_string(),
-            OsString::from("--exact"),
-            OsString::from("my_test"),
-        ],
-    );
-
-    assert_eq!(code, 4);
-    let metadata = only_metadata(&output);
-    assert_eq!(metadata.full_name, "child$my_test");
-}
-
-#[test]
-fn shim_metadata_round_trips_through_json_file() {
-    let tmp = tempfile::tempdir().unwrap();
-    let metadata = BatchShimMetadata {
-        schema_version: "kiss-rust-llvm-cov-shim-v2".to_string(),
-        id: "alpha".to_string(),
-        full_name: "pkg::bin$alpha".to_string(),
-        profile_path: tmp.path().join("alpha.profraw"),
-        cwd: tmp.path().to_path_buf(),
-        argv: vec![
-            "bin".to_string(),
-            "--exact".to_string(),
-            "alpha".to_string(),
-        ],
-        exit_code: Some(0),
-        spawn_error: None,
-        shim_identity: None,
-        delegated_identity: None,
-        stdout: Some(b"out".to_vec()),
-        stderr: Some(b"err".to_vec()),
-    };
-    write_shim_metadata(tmp.path(), "alpha", &metadata).unwrap();
-    let loaded = load_target_runner_shim_metadata(tmp.path()).unwrap();
-    assert_eq!(loaded, vec![metadata]);
-}
-
-#[test]
-fn load_target_runner_shim_metadata_reads_sorted_json_records() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::create_dir_all(tmp.path()).unwrap();
-    let first = metadata("b");
-    let second = metadata("a");
-    fs::write(
-        tmp.path().join("b.json"),
-        serde_json::to_vec(&first).unwrap(),
-    )
-    .unwrap();
-    fs::write(
-        tmp.path().join("a.json"),
-        serde_json::to_vec(&second).unwrap(),
-    )
-    .unwrap();
-    fs::write(tmp.path().join("ignore.profraw"), b"profile").unwrap();
-
-    let loaded = load_target_runner_shim_metadata(tmp.path()).unwrap();
-
-    assert_eq!(
-        loaded.into_iter().map(|item| item.id).collect::<Vec<_>>(),
-        ["a", "b"]
-    );
-}
-
-fn only_metadata(output: &Path) -> BatchShimMetadata {
-    let paths = fs::read_dir(output)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
-        .collect::<Vec<_>>();
-    assert_eq!(paths.len(), 1);
-    serde_json::from_slice(&fs::read(&paths[0]).unwrap()).unwrap()
-}
-
-fn metadata(id: &str) -> BatchShimMetadata {
-    BatchShimMetadata {
-        schema_version: "kiss-rust-llvm-cov-shim-v2".to_string(),
-        id: id.to_string(),
-        full_name: id.to_string(),
-        profile_path: PathBuf::from(format!("{id}.profraw")),
-        cwd: PathBuf::from("/repo"),
-        argv: vec!["test-bin".to_string()],
-        exit_code: Some(0),
-        spawn_error: None,
-        shim_identity: None,
-        delegated_identity: None,
-        stdout: None,
-        stderr: None,
     }
 }

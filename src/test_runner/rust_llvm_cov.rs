@@ -9,82 +9,6 @@ use rust_llvm_cov_runner::{
     execute_rust_coverage_batch, resolve_batch_request_runners, validate_supported_rust_test_args,
 };
 
-#[cfg(test)]
-mod rust_llvm_cov_request {
-    use std::collections::BTreeMap;
-    use std::path::PathBuf;
-
-    use rust_llvm_cov_runner::{RustCoverageBatchRequest, validate_supported_rust_test_args};
-
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    pub(crate) struct RustLlvmCovRequest {
-        pub selector: String,
-        pub cwd: PathBuf,
-        pub source_root: PathBuf,
-        pub cargo: PathBuf,
-        pub llvm_cov_version: String,
-        pub rustc_version: String,
-        pub cargo_args: Vec<String>,
-        pub test_args: Vec<String>,
-        pub env: BTreeMap<String, String>,
-        pub cache_root: PathBuf,
-        pub force_rerun: bool,
-        pub worker_slot: usize,
-    }
-
-    pub(crate) fn rust_llvm_cov_request_from_parts(
-        repo_root: &std::path::Path,
-        selector: &str,
-        extra: &[String],
-        llvm_cov_version: &str,
-        rustc_version: &str,
-        force_rerun: bool,
-    ) -> Result<RustLlvmCovRequest, String> {
-        validate_supported_rust_test_args(extra)?;
-        Ok(RustLlvmCovRequest {
-            selector: selector.to_string(),
-            cwd: repo_root.to_path_buf(),
-            source_root: repo_root.to_path_buf(),
-            cargo: PathBuf::from("cargo"),
-            llvm_cov_version: llvm_cov_version.to_string(),
-            rustc_version: rustc_version.to_string(),
-            cargo_args: Vec::new(),
-            test_args: extra.to_vec(),
-            env: Default::default(),
-            cache_root: repo_root.join(".kiss").join("rust_llvm_cov_cache"),
-            force_rerun,
-            worker_slot: 0,
-        })
-    }
-
-    pub(crate) fn rust_llvm_cov_request_from_batch_parts(
-        batch_req: &RustCoverageBatchRequest,
-        selector: &str,
-        llvm_cov_version: &str,
-        rustc_version: &str,
-    ) -> Result<RustLlvmCovRequest, String> {
-        Ok(RustLlvmCovRequest {
-            selector: selector.to_string(),
-            cwd: batch_req.cwd.clone(),
-            source_root: batch_req.source_root.clone(),
-            cargo: batch_req.cargo.clone(),
-            llvm_cov_version: llvm_cov_version.to_string(),
-            rustc_version: rustc_version.to_string(),
-            cargo_args: batch_req.cargo_args.clone(),
-            test_args: batch_req.test_args.clone(),
-            env: batch_req.env.clone(),
-            cache_root: batch_req.cache_root.clone(),
-            force_rerun: batch_req.force_rerun,
-            worker_slot: 0,
-        })
-    }
-}
-
-#[cfg(test)]
-pub(crate) use rust_llvm_cov_request::{
-    rust_llvm_cov_request_from_batch_parts, rust_llvm_cov_request_from_parts,
-};
-
 use super::last_status::{LastStatusIdentity, record_statuses, rust_last_status_identity};
 use super::runners::{SelectorCacheRecord, SelectorExecutionSummary, command_stdout};
 use crate::test_runner::rust_coverage_index::relevant_rust_batch_env;
@@ -311,5 +235,3 @@ mod metrics_tests;
 #[cfg(test)]
 #[path = "rust_llvm_cov_test.rs"]
 mod tests;
-#[cfg(test)]
-pub(crate) use tests::build_cargo_llvm_cov_dry_run_argv;

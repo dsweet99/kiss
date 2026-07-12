@@ -86,6 +86,36 @@ pub(crate) fn parity_matrix_cases() -> &'static [ParityMatrixCase] {
             test_args: &[],
             jobs: 2,
         },
+        ParityMatrixCase {
+            name: "unmatched-selector",
+            selectors: &["selector_that_matches_nothing_in_fixture"],
+            test_args: &[],
+            jobs: 1,
+        },
+        ParityMatrixCase {
+            name: "mixed-matched-unmatched",
+            selectors: &["invokes_helper_in_process", "selector_that_matches_nothing_in_fixture"],
+            test_args: &[],
+            jobs: 1,
+        },
+        ParityMatrixCase {
+            name: "exact-prefix-zero-instances",
+            selectors: &["invokes"],
+            test_args: &["--exact"],
+            jobs: 1,
+        },
+        ParityMatrixCase {
+            name: "nocapture-live-output",
+            selectors: &["prints_stdout_and_stderr"],
+            test_args: &["--nocapture"],
+            jobs: 1,
+        },
+        ParityMatrixCase {
+            name: "suite-failure-status-agreement",
+            selectors: &["fails_assertion_for_parity", "invokes_helper_in_process"],
+            test_args: &[],
+            jobs: 1,
+        },
     ]
 }
 

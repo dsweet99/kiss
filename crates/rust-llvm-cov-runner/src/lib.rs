@@ -32,6 +32,8 @@ mod batch_result;
 mod batch_run;
 mod batch_runner_resolve;
 mod batch_shim;
+#[cfg(unix)]
+mod batch_shim_delegated;
 mod file_lock;
 mod llvm_cov_json;
 mod rust_cov_cache;

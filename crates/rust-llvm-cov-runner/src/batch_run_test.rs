@@ -6,6 +6,32 @@ use crate::batch_plan::RustCoverageBatchRequest;
 use crate::{BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION, RustLlvmCovError};
 
 #[test]
+fn remove_stale_run_directories_failure_is_recoverable_on_next_run() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    let keep = cache_root.join("runs").join("run-keep");
+    let stale = cache_root.join("runs").join("run-stale");
+    fs::create_dir_all(&keep).unwrap();
+    fs::create_dir_all(&stale).unwrap();
+    fs::write(stale.join("marker"), b"x").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stale, fs::Permissions::from_mode(0o555)).unwrap();
+    }
+    let first = remove_stale_run_directories(&cache_root, &keep);
+    assert!(first.is_err());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stale, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    remove_stale_run_directories(&cache_root, &keep).unwrap();
+    assert!(keep.is_dir());
+    assert!(!stale.exists());
+}
+
+#[test]
 fn remove_stale_run_directories_keeps_current_run() {
     let tmp = tempfile::tempdir().unwrap();
     let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");

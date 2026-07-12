@@ -24,7 +24,8 @@ pub(crate) fn execute_fresh_batch_with_exporter(
     crate::batch_platform::ensure_batch_platform_supported()?;
     let build_identity = batch_run::prepare_build_target_for_identity(req, tools, plan)?;
     let run_root = batch_run::prepare_batch_run_layout(plan)?;
-    batch_run::remove_stale_run_directories(&req.cache_root, &run_root)?;
+    let stale_cleanup_error =
+        batch_run::remove_stale_run_directories(&req.cache_root, &run_root).err();
     crate::batch_runner_resolve::write_runner_map(&plan.runner_map_path, &req.delegated_runners)?;
     crate::batch_plan_publish::publish_generated_nextest_config(plan)?;
     let run = runner.run(&req.cwd, plan).map_err(RustLlvmCovError::from)?;
@@ -84,6 +85,7 @@ pub(crate) fn execute_fresh_batch_with_exporter(
             process_residual_count: run.process_residual_count,
         },
     )
+    .and_then(|result| apply_non_primary_cleanup_error(result, stale_cleanup_error))
 }
 
 #[cfg(test)]
@@ -101,7 +103,8 @@ pub(crate) fn execute_fresh_batch_with_export_fn(
     crate::batch_platform::ensure_batch_platform_supported()?;
     let build_identity = batch_run::prepare_build_target_for_identity(req, tools, plan)?;
     let run_root = batch_run::prepare_batch_run_layout(plan)?;
-    batch_run::remove_stale_run_directories(&req.cache_root, &run_root)?;
+    let stale_cleanup_error =
+        batch_run::remove_stale_run_directories(&req.cache_root, &run_root).err();
     crate::batch_runner_resolve::write_runner_map(&plan.runner_map_path, &req.delegated_runners)?;
     crate::batch_plan_publish::publish_generated_nextest_config(plan)?;
     let run = runner.run(&req.cwd, plan).map_err(RustLlvmCovError::from)?;
@@ -160,6 +163,20 @@ pub(crate) fn execute_fresh_batch_with_export_fn(
             process_residual_count: run.process_residual_count,
         },
     )
+    .and_then(|result| apply_non_primary_cleanup_error(result, stale_cleanup_error))
+}
+
+pub(crate) fn apply_non_primary_cleanup_error(
+    result: RustCoverageBatchResult,
+    stale_cleanup_error: Option<std::io::Error>,
+) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
+    if result.batch_error.is_some() {
+        return Ok(result);
+    }
+    if let Some(err) = stale_cleanup_error {
+        return Err(RustLlvmCovError::Io(err));
+    }
+    Ok(result)
 }
 
 fn reject_nonzero_without_terminal_events(

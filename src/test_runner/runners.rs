@@ -6,11 +6,7 @@ use std::process::{Command, Stdio};
 #[cfg(not(test))]
 pub(crate) use super::rust_llvm_cov::run_rust_llvm_cov_selectors;
 #[cfg(test)]
-pub(crate) use super::rust_llvm_cov::rust_llvm_cov_request_from_parts;
-#[cfg(test)]
-pub(crate) use super::rust_llvm_cov::{
-    build_cargo_llvm_cov_dry_run_argv, run_rust_llvm_cov_selectors,
-};
+pub(crate) use super::rust_llvm_cov::run_rust_llvm_cov_selectors;
 use kiss::test_refs::{is_in_test_directory, is_test_file};
 use kiss::{parse_files, parse_rust_files, rust_test_functions_in, test_functions_in};
 use rust_llvm_cov_runner::{

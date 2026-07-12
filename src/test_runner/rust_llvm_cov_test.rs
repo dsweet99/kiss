@@ -27,22 +27,6 @@ pub(crate) fn passed_rust_llvm_cov_outcome(selector: String) -> RustLlvmCovOutco
     }
 }
 
-pub(crate) fn build_cargo_llvm_cov_dry_run_argv(selector: &str, extra: &[String]) -> Vec<String> {
-    let mut argv = vec![
-        "cargo".to_string(),
-        "llvm-cov".to_string(),
-        "test".to_string(),
-        "--json".to_string(),
-        "--output-path".to_string(),
-        "<coverage.json>".to_string(),
-        "--no-clean".to_string(),
-    ];
-    argv.push(selector.to_string());
-    argv.push("--".to_string());
-    argv.extend(extra.iter().cloned());
-    argv
-}
-
 #[test]
 fn format_rust_llvm_cov_error_preserves_context_and_message() {
     let msg =
@@ -212,58 +196,6 @@ fn run_rust_llvm_cov_selectors_rejects_unsupported_test_args_before_tool_detecti
 }
 
 #[test]
-fn rust_llvm_cov_request_contract_preserves_selector_and_cache_root() {
-    let tmp = tempfile::tempdir().unwrap();
-    let extra = vec!["--exact".to_string()];
-    let req = rust_llvm_cov_request_from_parts(
-        tmp.path(),
-        "tests::case",
-        &extra,
-        "llvm-cov 0.6.0",
-        "rustc 1.88.0",
-        true,
-    )
-    .unwrap();
-
-    assert_eq!(req.selector, "tests::case");
-    assert_eq!(req.cwd, tmp.path());
-    assert_eq!(req.test_args, extra);
-    assert!(req.force_rerun);
-    assert!(req.cache_root.ends_with("rust_llvm_cov_cache"));
-}
-
-#[test]
-fn rust_llvm_cov_request_from_batch_parts_preserves_batch_execution_inputs() {
-    let tmp = tempfile::tempdir().unwrap();
-    let batch_req = rust_coverage_batch_request_from_parts(
-        tmp.path(),
-        &["tests::case".to_string()],
-        &["--exact".to_string()],
-        true,
-        3,
-        None,
-    )
-    .unwrap();
-
-    let req = rust_llvm_cov_request_from_batch_parts(
-        &batch_req,
-        "tests::case",
-        "cargo-llvm-cov 0.6.0",
-        "rustc 1.88.0",
-    )
-    .unwrap();
-
-    assert_eq!(req.selector, "tests::case");
-    assert_eq!(req.cwd, batch_req.cwd);
-    assert_eq!(req.source_root, batch_req.source_root);
-    assert_eq!(req.cargo, batch_req.cargo);
-    assert_eq!(req.test_args, batch_req.test_args);
-    assert_eq!(req.cache_root, batch_req.cache_root);
-    assert!(req.force_rerun);
-    assert_eq!(req.worker_slot, 0);
-}
-
-#[test]
 fn rust_coverage_batch_request_from_parts_preserves_selector_occurrences() {
     let tmp = tempfile::tempdir().unwrap();
     let selectors = vec![
@@ -367,15 +299,15 @@ fn detect_rust_coverage_tool_versions_reports_installed_tools() {
 }
 
 #[test]
-fn rust_llvm_cov_request_rejects_unsupported_test_args() {
+fn rust_coverage_batch_request_rejects_unsupported_test_args() {
     let tmp = tempfile::tempdir().unwrap();
-    let err = rust_llvm_cov_request_from_parts(
+    let err = rust_coverage_batch_request_from_parts(
         tmp.path(),
-        "tests::case",
+        &["tests::case".to_string()],
         &["--test-threads".to_string(), "8".to_string()],
-        "llvm-cov 0.6.0",
-        "rustc 1.88.0",
         false,
+        1,
+        None,
     )
     .unwrap_err();
 

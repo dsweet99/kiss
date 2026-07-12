@@ -288,3 +288,7 @@ fn runner_value_to_argv(value: &toml::Value) -> Result<Option<Vec<String>>, Rust
 #[cfg(test)]
 #[path = "batch_runner_resolve_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "batch_runner_resolve_config_test.rs"]
+mod config_tests;

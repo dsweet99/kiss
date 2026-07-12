@@ -47,26 +47,35 @@ impl ProcessTreeRegistry {
 pub struct BatchProcessTreeGuard {
     registry: Arc<ProcessTreeRegistry>,
     interrupted: Arc<AtomicBool>,
-    #[cfg(target_os = "linux")]
-    _subreaper: LinuxSubreaper,
 }
 
 impl BatchProcessTreeGuard {
     pub fn install() -> io::Result<Self> {
         let registry = Arc::new(ProcessTreeRegistry::default());
         let interrupted = Arc::new(AtomicBool::new(false));
+        #[cfg(unix)]
         install_sigint_handler(Arc::clone(&registry), Arc::clone(&interrupted))?;
+        #[cfg(target_os = "linux")]
+        {
+            let rc = unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) };
+            if rc != 0 {
+                return Err(io::Error::last_os_error());
+            }
+        }
         Ok(Self {
             registry,
             interrupted,
-            #[cfg(target_os = "linux")]
-            _subreaper: LinuxSubreaper::install()?,
         })
     }
 
     #[allow(dead_code)]
     pub fn interrupted(&self) -> bool {
         self.interrupted.load(Ordering::SeqCst)
+    }
+
+    #[cfg(test)]
+    pub fn set_interrupted_for_test(&self, value: bool) {
+        self.interrupted.store(value, Ordering::SeqCst);
     }
 
     pub fn registry(&self) -> Arc<ProcessTreeRegistry> {
@@ -98,7 +107,7 @@ impl BatchProcessTreeGuard {
         self.interrupted.store(true, Ordering::SeqCst);
         let identities = self.registry.identities();
         for identity in &identities {
-            signal_process_group(identity.pgid, libc::SIGTERM);
+            signal_validated_process_group(identity, libc::SIGTERM);
         }
         let deadline = Instant::now() + grace;
         while Instant::now() < deadline {
@@ -108,7 +117,7 @@ impl BatchProcessTreeGuard {
             std::thread::sleep(Duration::from_millis(25));
         }
         for identity in &identities {
-            signal_process_group(identity.pgid, libc::SIGKILL);
+            signal_validated_process_group(identity, libc::SIGKILL);
         }
         reap_zombies();
         self.registry.residual_count()
@@ -126,11 +135,7 @@ impl Drop for BatchProcessTreeGuard {
 static SIGINT_STATE: OnceLock<Mutex<Option<SigintHandlerState>>> = OnceLock::new();
 
 #[cfg(unix)]
-#[derive(Clone)]
-struct SigintHandlerState {
-    registry: Arc<ProcessTreeRegistry>,
-    interrupted: Arc<AtomicBool>,
-}
+type SigintHandlerState = (Arc<ProcessTreeRegistry>, Arc<AtomicBool>);
 
 #[cfg(unix)]
 extern "C" fn handle_sigint(_signal: libc::c_int) {
@@ -139,19 +144,20 @@ extern "C" fn handle_sigint(_signal: libc::c_int) {
         .and_then(|slot| slot.lock().ok())
         .and_then(|slot| slot.as_ref().cloned())
     {
-        state.interrupted.store(true, Ordering::SeqCst);
-        for identity in state.registry.identities() {
-            signal_process_group(identity.pgid, libc::SIGTERM);
+        let (registry, interrupted) = state;
+        interrupted.store(true, Ordering::SeqCst);
+        for identity in registry.identities() {
+            signal_validated_process_group(&identity, libc::SIGTERM);
         }
         let deadline = Instant::now() + Duration::from_millis(250);
         while Instant::now() < deadline {
-            if state.registry.residual_count() == 0 {
+            if registry.residual_count() == 0 {
                 return;
             }
             std::thread::sleep(Duration::from_millis(25));
         }
-        for identity in state.registry.identities() {
-            signal_process_group(identity.pgid, libc::SIGKILL);
+        for identity in registry.identities() {
+            signal_validated_process_group(&identity, libc::SIGKILL);
         }
         reap_zombies();
     }
@@ -166,10 +172,7 @@ fn install_sigint_handler(
     *slot
         .lock()
         .map_err(|_| io::Error::other("sigint registry lock poisoned"))? =
-        Some(SigintHandlerState {
-            registry,
-            interrupted,
-        });
+        Some((registry, interrupted));
     let previous = unsafe {
         let mut action: libc::sigaction = std::mem::zeroed();
         action.sa_sigaction = handle_sigint as usize;
@@ -204,14 +207,6 @@ fn clear_sigint_handler() {
     }
 }
 
-#[cfg(not(unix))]
-fn install_sigint_handler(
-    _registry: Arc<ProcessTreeRegistry>,
-    _interrupted: Arc<AtomicBool>,
-) -> io::Result<()> {
-    Ok(())
-}
-
 pub fn record_child_process_group(registry: &ProcessTreeRegistry, child: &Child) {
     #[cfg(unix)]
     {
@@ -229,6 +224,32 @@ pub fn record_child_process_group(registry: &ProcessTreeRegistry, child: &Child)
     #[cfg(not(unix))]
     {
         let _ = (registry, child);
+    }
+}
+
+pub(crate) fn identity_still_valid(identity: &ProcessGroupIdentity) -> bool {
+    if identity.pid == 0 || identity.pgid == 0 {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        let pid = identity.pid as i32;
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return false;
+        }
+        let pgid = unsafe { libc::getpgid(pid) };
+        pgid > 0 && pgid as u32 == identity.pgid
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = identity;
+        false
+    }
+}
+
+pub(crate) fn signal_validated_process_group(identity: &ProcessGroupIdentity, signal: i32) {
+    if identity_still_valid(identity) {
+        signal_process_group(identity.pgid, signal);
     }
 }
 
@@ -254,33 +275,6 @@ fn reap_zombies() {
         if pid <= 0 {
             break;
         }
-    }
-}
-
-#[cfg(target_os = "linux")]
-struct LinuxSubreaper;
-
-#[cfg(target_os = "linux")]
-impl LinuxSubreaper {
-    fn install() -> io::Result<Self> {
-        let rc = unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) };
-        if rc != 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(Self)
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-struct LinuxSubreaper;
-
-#[cfg(not(target_os = "linux"))]
-impl LinuxSubreaper {
-    fn install() -> io::Result<Self> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "process-tree subreaper is only supported on Linux",
-        ))
     }
 }
 

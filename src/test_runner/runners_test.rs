@@ -329,23 +329,6 @@ fn build_pytest_argv_non_empty() {
 }
 
 #[test]
-fn build_cargo_llvm_cov_dry_run_argv_places_selector_before_extra() {
-    let argv =
-        build_cargo_llvm_cov_dry_run_argv("smoke_sub", &["--exact".into(), "--nocapture".into()]);
-
-    assert_eq!(
-        argv[0..5],
-        ["cargo", "llvm-cov", "test", "--json", "--output-path"]
-    );
-    assert_eq!(argv[5], "<coverage.json>");
-    assert_eq!(argv[6], "--no-clean");
-    assert_eq!(argv[7], "smoke_sub");
-    assert_eq!(argv[8], "--");
-    assert_eq!(argv[9], "--exact");
-    assert_eq!(argv[10], "--nocapture");
-}
-
-#[test]
 fn rust_coverage_batch_dry_run_lines_render_one_nextest_batch() {
     let selectors = vec!["alpha".to_string(), "beta".to_string()];
     let lines =

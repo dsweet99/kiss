@@ -250,3 +250,82 @@ pub(crate) fn wait_child(child: &mut Child) {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[cfg(test)]
+pub(crate) fn runner_resolve_base_request(repo: &Path) -> crate::RustCoverageBatchRequest {
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    use crate::batch_runner_resolve::placeholder_delegated_runner_fields;
+
+    let (delegated_runners, runner_map_fingerprint, host_platform) =
+        placeholder_delegated_runner_fields();
+    crate::RustCoverageBatchRequest {
+        cwd: repo.to_path_buf(),
+        source_root: repo.to_path_buf(),
+        cargo: PathBuf::from("cargo"),
+        cache_root: repo.join(".kiss/rust_llvm_cov_cache"),
+        logical_selectors: vec!["alpha".to_string()],
+        cargo_args: Vec::new(),
+        test_args: Vec::new(),
+        env: BTreeMap::new(),
+        force_rerun: false,
+        jobs: 1,
+        generated_config: repo.join(".kiss/rust_llvm_cov_cache/runs/run-test/nextest.toml"),
+        population_publication_selectors: None,
+        delegated_runners,
+        runner_map_fingerprint,
+        host_platform,
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn runner_resolve_toml_string(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+#[cfg(test)]
+pub(crate) fn shim_test_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    ENV_LOCK.lock().unwrap()
+}
+
+#[cfg(test)]
+pub(crate) fn shim_only_metadata(output: &Path) -> crate::batch_shim::BatchShimMetadata {
+    let paths = fs::read_dir(output)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    name.ends_with(".json")
+                        && !name.ends_with(".shim-start.json")
+                        && !name.ends_with(".delegated-start.json")
+                })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(paths.len(), 1);
+    serde_json::from_slice(&fs::read(&paths[0]).unwrap()).unwrap()
+}
+
+#[cfg(test)]
+pub(crate) fn shim_metadata(id: &str) -> crate::batch_shim::BatchShimMetadata {
+    use std::path::PathBuf;
+
+    crate::batch_shim::BatchShimMetadata {
+        schema_version: "kiss-rust-llvm-cov-shim-v2".to_string(),
+        id: id.to_string(),
+        full_name: id.to_string(),
+        profile_path: PathBuf::from(format!("{id}.profraw")),
+        cwd: PathBuf::from("/repo"),
+        argv: vec!["test-bin".to_string()],
+        exit_code: Some(0),
+        spawn_error: None,
+        shim_identity: None,
+        delegated_identity: None,
+        stdout: None,
+        stderr: None,
+        output_frame_count: None,
+    }
+}
