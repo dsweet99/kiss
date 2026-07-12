@@ -98,6 +98,34 @@ fn batch_process_tree_guard_sigint_handler_terminates_recorded_child() {
     assert!(guard.interrupted());
 }
 
+#[cfg(unix)]
+#[test]
+fn batch_process_tree_guard_terminates_signal_ignoring_descendant() {
+    let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
+    let registry = guard.registry();
+    let mut command = Command::new("/bin/sh");
+    command
+        .arg("-c")
+        .arg("trap '' INT; sleep 60");
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::null());
+    command.stderr(Stdio::null());
+    let mut child = guard
+        .spawn_batch_command(&mut command)
+        .expect("spawn child");
+    record_child_process_group(registry.as_ref(), &child);
+    let residuals = guard.terminate_descendants(Duration::from_millis(500));
+    match child.wait() {
+        Ok(_) => {}
+        Err(err) if err.raw_os_error() == Some(libc::ECHILD) => {}
+        Err(err) => panic!("wait terminated child: {err}"),
+    }
+    assert_eq!(
+        residuals, 0,
+        "SIG_IGN intermediary must still be reaped via escalation"
+    );
+}
+
 #[test]
 fn batch_process_tree_guard_terminates_sleeping_descendant() {
     let guard = BatchProcessTreeGuard::install().expect("install process tree guard");

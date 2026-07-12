@@ -37,6 +37,8 @@ fn target_runner_shim_writes_metadata_and_profile_path_env() {
     assert_eq!(code, 7);
     let metadata = only_metadata(&output);
     assert_eq!(metadata.exit_code, Some(7));
+    assert!(metadata.shim_identity.is_some());
+    assert!(metadata.delegated_identity.is_some());
     assert_eq!(metadata.argv, [script.to_string_lossy().to_string()]);
     assert_eq!(
         fs::read_to_string(metadata.profile_path).unwrap(),
@@ -273,6 +275,8 @@ fn shim_metadata_round_trips_through_json_file() {
         ],
         exit_code: Some(0),
         spawn_error: None,
+        shim_identity: None,
+        delegated_identity: None,
         stdout: Some(b"out".to_vec()),
         stderr: Some(b"err".to_vec()),
     };
@@ -327,6 +331,8 @@ fn metadata(id: &str) -> BatchShimMetadata {
         argv: vec!["test-bin".to_string()],
         exit_code: Some(0),
         spawn_error: None,
+        shim_identity: None,
+        delegated_identity: None,
         stdout: None,
         stderr: None,
     }

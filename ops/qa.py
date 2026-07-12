@@ -73,6 +73,49 @@ class ProcessObservation:
     sampled_cpu_seconds: float = 0.0
     samples: int = 0
     command_peaks: dict[str, int] = field(default_factory=dict)
+    phase_overlap_samples: int = 0
+    llvm_single_thread_violations: int = 0
+    build_jobs_mismatch: bool = False
+    observed_build_jobs: int | None = None
+    sampled_command_lines: list[str] = field(default_factory=list)
+
+
+def llvm_tool_uses_single_thread(command: str) -> bool:
+    if "llvm-cov" in command and " export" in f" {command} ":
+        return "--threads=1" in command
+    if "llvm-profdata" in command and " merge" in f" {command} ":
+        return "--num-threads=1" in command
+    return True
+
+
+def cargo_build_jobs_from_command(command: str) -> int | None:
+    parts = command.split()
+    for index, part in enumerate(parts):
+        if part == "--build-jobs" and index + 1 < len(parts):
+            return int(parts[index + 1])
+        if part.startswith("--build-jobs="):
+            return int(part.split("=", 1)[1])
+    return None
+
+
+def sample_phase_flags(commands: list[str]) -> tuple[bool, bool, bool]:
+    export_active = False
+    test_active = False
+    build_active = False
+    for command in commands:
+        if not command:
+            continue
+        if "llvm-cov" in command and " export" in f" {command} ":
+            export_active = True
+        if "llvm-profdata" in command and " merge" in f" {command} ":
+            export_active = True
+        if " cargo " in f" {command} " and " llvm-cov nextest " in f" {command} ":
+            test_active = True
+        if " cargo " in f" {command} " and (
+            " rustc " in f" {command} " or " build " in f" {command} "
+        ):
+            build_active = True
+    return build_active, test_active, export_active
 
 
 class LinuxProcessObserver:
@@ -96,6 +139,7 @@ class LinuxProcessObserver:
         thread_count = 0
         rss_kib = 0
         commands: dict[str, int] = {}
+        command_lines: list[str] = []
         for pid in pids:
             info = snapshot[pid]
             thread_count += info.threads
@@ -107,6 +151,20 @@ class LinuxProcessObserver:
             command = observed_command_name(info.command)
             if command:
                 commands[command] = commands.get(command, 0) + 1
+            if info.command:
+                command_lines.append(info.command)
+                if not llvm_tool_uses_single_thread(info.command):
+                    self.observation.llvm_single_thread_violations += 1
+                build_jobs = cargo_build_jobs_from_command(info.command)
+                if build_jobs is not None:
+                    self.observation.observed_build_jobs = build_jobs
+        build_active, test_active, export_active = sample_phase_flags(command_lines)
+        if (build_active and test_active) or (build_active and export_active) or (
+            test_active and export_active
+        ):
+            self.observation.phase_overlap_samples += 1
+        if command_lines:
+            self.observation.sampled_command_lines.extend(command_lines[:8])
         self.observation.peak_thread_count = max(
             self.observation.peak_thread_count,
             thread_count,
@@ -354,7 +412,7 @@ def run_interrupted(
             if process.poll() is not None:
                 break
             if time.monotonic() - started >= signal_after:
-                os.kill(process.pid, sig)
+                os.killpg(os.getpgid(process.pid), sig)
                 break
             time.sleep(0.05)
         else:
@@ -601,6 +659,23 @@ def assert_json_integrity(cache_root: Path) -> int:
     temporary = sorted(cache_root.rglob("*.tmp"))
     assert not temporary, f"temporary files survived: {temporary}"
     return len(json_paths)
+
+
+def assert_rust_observer_strictness(outcome: Outcome, jobs: int) -> None:
+    observation = outcome.observation
+    assert observation is not None, "observed run missing process observation"
+    assert observation.llvm_single_thread_violations == 0, (
+        "llvm-cov/llvm-profdata child missing single-thread flags: "
+        f"{observation.llvm_single_thread_violations} violations"
+    )
+    assert observation.phase_overlap_samples == 0, (
+        "build/test/export phases overlapped in "
+        f"{observation.phase_overlap_samples} /proc samples"
+    )
+    assert observation.observed_build_jobs == jobs, (
+        "cargo llvm-cov nextest --build-jobs mismatch: "
+        f"expected {jobs}, observed {observation.observed_build_jobs}"
+    )
 
 
 def assert_rust_batch_invariants(outcome: Outcome, jobs: int) -> None:
@@ -1380,10 +1455,184 @@ def rust_batch_e2e() -> None:
         assert recovered.returncode == 0, recovered.combined
         assert metric_int(recovered.metrics(), "rust_process_residual_count") == 0
         assert_json_integrity(rust_cache)
+
+        forced_population_command = kiss_command(
+            "rust",
+            fixture.ignores["rust"],
+            "--metrics",
+            "--force",
+            "-j",
+            str(jobs),
+        )
+        signal_ignoring = run_interrupted(
+            "rust-e2e-interrupt-signal-ignoring",
+            [
+                "/bin/sh",
+                "-c",
+                (
+                    "trap '' INT; "
+                    + " ".join(shlex_quote(part) for part in forced_population_command)
+                ),
+            ],
+            fixture.root,
+            fixture.env,
+            signal_after=1.5,
+        )
+        assert signal_ignoring.returncode != 0, "signal-ignoring interrupt should fail"
+        residual = lingering_processes_matching((str(fixture.root), "sleep"))
+        assert not residual, f"signal-ignoring descendants survived: {residual}"
+        recovered_after_signal = run(
+            "rust-e2e-recover-after-signal-ignoring",
+            population_command,
+            fixture.root,
+            fixture.env,
+        )
+        assert recovered_after_signal.returncode == 0, recovered_after_signal.combined
+        assert_json_integrity(rust_cache)
         click.echo(
             "QA PASS: nocapture relay, concurrent forced batches, derived repair, "
-            "and Ctrl-C recovery held."
+            "Ctrl-C recovery, and signal-ignoring escalation held."
         )
+
+
+@cli.command("rust-legacy-warm-baseline")
+@click.option(
+    "--batch-warm-median",
+    type=float,
+    default=3.86,
+    show_default=True,
+    help="Batch warm all-hit median seconds for <=10% regression check.",
+)
+@click.option(
+    "--log-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Directory for archived baseline logs.",
+)
+def rust_legacy_warm_baseline(batch_warm_median: float, log_dir: Path | None) -> None:
+    """Verify batch warm all-hit median against archived legacy baseline."""
+    archive_dir = log_dir or (
+        Path.home()
+        / ".malvin_home"
+        / "logs"
+        / "d5af67e712b1a200"
+        / "20260711_175351_ua0kwyo6"
+    )
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    log_path = archive_dir / "legacy_warm_baseline.log"
+    assert log_path.is_file(), (
+        f"missing archived legacy warm baseline at {log_path}; "
+        "record it before removing the legacy backend"
+    )
+    legacy_median = None
+    for line in log_path.read_text().splitlines():
+        if line.startswith("legacy_warm_median_s="):
+            legacy_median = float(line.split("=", 1)[1].split()[0])
+    assert legacy_median is not None, (
+        "archived legacy warm baseline did not contain legacy_warm_median_s="
+    )
+    allowed = legacy_median * 1.10
+    assert batch_warm_median <= allowed, (
+        f"batch warm median {batch_warm_median:.2f}s regressed more than 10% "
+        f"vs legacy warm median {legacy_median:.2f}s (allowed {allowed:.2f}s)"
+    )
+    click.echo(f"Using archived legacy warm baseline: {log_path}")
+    click.echo(
+        f"QA PASS: batch warm median {batch_warm_median:.2f}s within 10% of "
+        f"legacy warm median {legacy_median:.2f}s."
+    )
+
+
+@cli.command("rust-full-repo-observer")
+@click.option("--jobs", default=32, show_default=True, help="KISS -j value for cold population.")
+@click.option(
+    "--log-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Directory for archived observer logs.",
+)
+def rust_full_repo_observer(jobs: int, log_dir: Path | None) -> None:
+    """Observe full-repository cold Rust population process/thread bounds."""
+    archive_dir = log_dir or (
+        Path.home()
+        / ".malvin_home"
+        / "logs"
+        / "d5af67e712b1a200"
+        / "20260711_175351_ua0kwyo6"
+    )
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    release_kiss = ROOT / "target" / "release" / "kiss"
+    kiss_bin = release_kiss if release_kiss.is_file() else KISS
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT)
+    rust_cache = ROOT / ".kiss" / "rust_llvm_cov_cache"
+    shutil.rmtree(rust_cache, ignore_errors=True)
+    command = [
+        str(kiss_bin),
+        "--defaults",
+        "--lang",
+        "rust",
+        "test",
+        "commit",
+        "--metrics",
+        "-j",
+        str(jobs),
+    ]
+    outcome = run_observed(
+        "rust-full-repo-observer-cold",
+        command,
+        ROOT,
+        env,
+        timeout=2_400,
+    )
+    assert_rust_batch_invariants(outcome, jobs)
+    assert_rust_observer_strictness(outcome, jobs)
+    metrics = outcome.metrics()
+    observation = outcome.observation
+    assert observation is not None
+    active_tests = metric_int(metrics, "rust_max_active_test_instances")
+    active_exports = metric_int(metrics, "rust_max_active_exports")
+    assert active_tests <= jobs
+    assert active_exports <= jobs
+    log_path = archive_dir / f"full_repo_observer_j{jobs}.log"
+    peaks = ", ".join(
+        f"{name}={count}"
+        for name, count in sorted(observation.command_peaks.items())
+    )
+    log_path.write_text(
+        "\n".join(
+            [
+                f"elapsed={outcome.elapsed:.2f}",
+                f"peak_processes={observation.peak_process_count}",
+                f"peak_threads={observation.peak_thread_count}",
+                f"peak_rss_kib={observation.peak_rss_kib}",
+                f"sampled_cpu_s={observation.sampled_cpu_seconds:.2f}",
+                f"command_peaks={peaks}",
+                f"rust_max_active_test_instances={active_tests}",
+                f"rust_max_active_exports={active_exports}",
+                f"phase_rust_export_ms={metrics.get('phase_rust_export_ms', 'missing')}",
+                f"phase_overlap_samples={observation.phase_overlap_samples}",
+                f"llvm_single_thread_violations={observation.llvm_single_thread_violations}",
+                f"observed_build_jobs={observation.observed_build_jobs}",
+                "",
+                outcome.stdout,
+                outcome.stderr,
+            ]
+        )
+    )
+    click.echo(f"Archived observer evidence: {log_path}")
+    click.echo(
+        "QA PASS: full-repository external observer recorded process/thread bounds, "
+        "build-jobs token count, phase non-overlap, and single-thread LLVM argv."
+    )
+
+
+def shlex_quote(value: str) -> str:
+    if not value:
+        return "''"
+    if all(ch.isalnum() or ch in "/._-:" for ch in value):
+        return value
+    return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ use crate::batch_output_channel::{
 };
 use crate::batch_plan::RustCoverageBatchPlan;
 use crate::batch_plan::RustCoverageBatchRequest;
-use crate::batch_process_tree::{BatchProcessTreeGuard, record_child_process_group, wait_child};
+use crate::batch_process_tree::{BatchProcessTreeGuard, record_child_process_group};
 use crate::{BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION, RustLlvmCovError};
 use serde::{Deserialize, Serialize};
 
@@ -140,12 +140,17 @@ pub fn run_batch_subprocess(
             output_channel.errors.join("; "),
         ));
     }
+    let process_residual_count = if process_tree.interrupted() {
+        process_tree.terminate_descendants(Duration::from_millis(250))
+    } else {
+        process_tree.registry().residual_count()
+    };
     Ok(BatchSubprocessRunOutcome {
         exit_code: output.status.code(),
         stdout: output.stdout,
         stderr: output.stderr,
         duration: started.elapsed(),
-        process_residual_count: process_tree.registry().residual_count(),
+        process_residual_count,
     })
 }
 
@@ -213,8 +218,8 @@ fn run_tracked_batch_command(
         .ok_or_else(|| spawn_component_error(&program, "missing stderr pipe".to_string()))?;
     let stdout_handle = std::thread::spawn(move || read_pipe_to_end(stdout_pipe));
     let stderr_handle = std::thread::spawn(move || read_pipe_to_end(stderr_pipe));
-    let status =
-        wait_child(&mut child).map_err(|err| spawn_component_error(&program, err.to_string()))?;
+    let status = wait_child_with_interruption(&mut child, process_tree)
+        .map_err(|err| spawn_component_error(&program, err.to_string()))?;
     let stdout = join_pipe_reader(stdout_handle, &program, "stdout")?;
     let stderr = join_pipe_reader(stderr_handle, &program, "stderr")?;
     Ok(std::process::Output {
@@ -222,6 +227,32 @@ fn run_tracked_batch_command(
         stdout,
         stderr,
     })
+}
+
+fn wait_child_with_interruption(
+    child: &mut std::process::Child,
+    process_tree: &BatchProcessTreeGuard,
+) -> io::Result<std::process::ExitStatus> {
+    loop {
+        if let Some(status) = child.try_wait()? {
+            if process_tree.interrupted() {
+                return Err(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "batch interrupted",
+                ));
+            }
+            return Ok(status);
+        }
+        if process_tree.interrupted() {
+            let _ = process_tree.terminate_descendants(Duration::from_millis(250));
+            let _ = child.wait();
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "batch interrupted",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 fn join_pipe_reader(

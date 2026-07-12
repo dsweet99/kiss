@@ -79,7 +79,6 @@ rslip = { path = "crates/rslip" }
 rust-llvm-cov-runner = { path = "crates/rust-llvm-cov-runner" }
 
 [dev-dependencies]
-rust-llvm-cov-runner = { path = "crates/rust-llvm-cov-runner", features = ["legacy-test-api"] }
 tempfile = "3"
 
 [profile.test]

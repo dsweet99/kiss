@@ -1,7 +1,8 @@
-use std::fs::{self, File, OpenOptions};
+use std::fs;
+use std::fs::OpenOptions;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{self, Command, Stdio};
+use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(test)]
@@ -25,19 +26,13 @@ pub(crate) fn rust_coverage_cache_root(repo_root: &Path) -> PathBuf {
     repo_root.join(".kiss").join("rust_llvm_cov_cache")
 }
 
-pub(crate) fn command_stdout(program: &Path, args: &[&str], cwd: &Path) -> Result<String, String> {
-    let output = Command::new(program)
-        .args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| format!("failed to spawn {}: {e}", program.display()))?;
-    if !output.status.success() {
-        return Err(command_failure_message(program, &output.stderr));
-    }
-    Ok(command_output_text(&output.stdout))
+pub(crate) use crate::test_runner::runners::command_stdout;
+
+pub(crate) fn create_new_file(path: &Path) -> io::Result<std::fs::File> {
+    OpenOptions::new().write(true).create_new(true).open(path)
 }
 
+#[cfg(test)]
 pub(crate) fn command_failure_message(program: &Path, stderr: &[u8]) -> String {
     format!(
         "error: kiss test: {} failed: {}",
@@ -46,6 +41,7 @@ pub(crate) fn command_failure_message(program: &Path, stderr: &[u8]) -> String {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn command_output_text(stdout: &[u8]) -> String {
     String::from_utf8_lossy(stdout).trim().to_string()
 }
@@ -170,10 +166,6 @@ pub(crate) fn rust_coverage_entry_paths(cache_root: &Path) -> Vec<PathBuf> {
         .collect();
     paths.sort();
     paths
-}
-
-pub(crate) fn create_new_file(path: &Path) -> io::Result<File> {
-    OpenOptions::new().write(true).create_new(true).open(path)
 }
 
 #[cfg(test)]

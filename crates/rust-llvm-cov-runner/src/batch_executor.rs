@@ -32,6 +32,7 @@ pub fn execute_rust_coverage_batch(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
+    crate::batch_platform::ensure_batch_platform_supported()?;
     let identity = batch_identity(req, tools)?;
     let plan = build_rust_coverage_batch_plan(req)
         .map_err(|message| RustLlvmCovError::InvalidRequest(format!("batch plan: {message}")))?;

@@ -5,62 +5,14 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-#[cfg(any(test, feature = "legacy-test-api"))]
-use crate::RustLlvmCovError;
 use crate::file_lock::FileLockGuard;
-
-#[cfg(test)]
-pub(crate) mod lock_failure_injection;
 
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-#[cfg(any(test, feature = "legacy-test-api"))]
-pub struct RustWorkerCleanupReport {
-    pub removed_slots: Vec<usize>,
-    pub skipped_slots: Vec<usize>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct RustLegacyCleanupAttempt {
     pub(crate) deferred: bool,
-}
-
-#[cfg(any(test, feature = "legacy-test-api"))]
-pub fn cleanup_surplus_rust_cov_worker_slots(
-    cache_root: &Path,
-    jobs: usize,
-) -> Result<RustWorkerCleanupReport, RustLlvmCovError> {
-    assert!(jobs > 0, "jobs must be greater than zero");
-    fs::create_dir_all(cache_root)?;
-    let workers_root = cache_root.join("workers");
-    let Ok(entries) = fs::read_dir(&workers_root) else {
-        return Ok(RustWorkerCleanupReport::default());
-    };
-    let mut report = RustWorkerCleanupReport::default();
-    for entry in entries {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
-            continue;
-        }
-        let Some(slot) = parse_worker_slot_name(&entry.file_name()) else {
-            continue;
-        };
-        if slot < jobs {
-            continue;
-        }
-        match try_lock_worker(cache_root, slot)? {
-            Some(_guard) => {
-                remove_worker_slot_roots(cache_root, slot)?;
-                report.removed_slots.push(slot);
-            }
-            None => report.skipped_slots.push(slot),
-        }
-    }
-    report.removed_slots.sort_unstable();
-    report.skipped_slots.sort_unstable();
-    Ok(report)
 }
 
 pub fn rust_cov_cache_tmp_parent(cache_root: &Path) -> PathBuf {
@@ -152,107 +104,16 @@ pub(crate) fn cleanup_legacy_worker_data_nonblocking(
     Ok(RustLegacyCleanupAttempt { deferred: false })
 }
 
-#[cfg(any(test, feature = "legacy-test-api"))]
-pub(crate) fn prepare_worker_slot(cache_root: &Path, worker_slot: usize) -> io::Result<PathBuf> {
-    let worker_root = rust_cov_worker_slot_root(cache_root, worker_slot);
-    fs::create_dir_all(&worker_root)?;
-    cleanup_worker_slot_transients(cache_root, worker_slot)?;
-    Ok(worker_root)
-}
-
-#[cfg(any(test, feature = "legacy-test-api"))]
-pub(crate) fn cleanup_worker_slot_transients(
-    cache_root: &Path,
-    worker_slot: usize,
-) -> io::Result<()> {
-    let worker_root = rust_cov_worker_slot_root(cache_root, worker_slot);
-    for name in ["profile", "tmp"] {
-        let path = worker_root.join(name);
-        remove_path_if_exists(&path)?;
-    }
-    remove_path_if_exists(&rust_cov_worker_tmp_root(cache_root, worker_slot))?;
-    cleanup_empty_tmp_parent(cache_root)?;
-    Ok(())
-}
-
-fn cleanup_empty_tmp_parent(cache_root: &Path) -> io::Result<()> {
-    match fs::remove_dir(rust_cov_cache_tmp_parent(cache_root)) {
-        Ok(()) => Ok(()),
-        Err(err)
-            if matches!(
-                err.kind(),
-                io::ErrorKind::NotFound | io::ErrorKind::DirectoryNotEmpty
-            ) =>
-        {
-            Ok(())
-        }
-        Err(err) => Err(err),
-    }
-}
-
-fn remove_worker_slot_roots(cache_root: &Path, worker_slot: usize) -> io::Result<()> {
-    remove_path_if_exists(&rust_cov_worker_slot_root(cache_root, worker_slot))?;
-    remove_path_if_exists(&rust_cov_worker_tmp_root(cache_root, worker_slot))?;
-    cleanup_empty_tmp_parent(cache_root)
-}
-
-fn remove_path_if_exists(path: &Path) -> io::Result<()> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(err) => return Err(err),
-    };
-    if metadata.is_dir() {
-        fs::remove_dir_all(path)
-    } else {
-        fs::remove_file(path)
-    }
-}
-
-#[cfg(any(test, feature = "legacy-test-api"))]
-pub(crate) fn lock_selector(cache_root: &Path, fingerprint: &str) -> io::Result<FileLockGuard> {
-    let path = cache_root
-        .join("locks")
-        .join("selectors")
-        .join(format!("{fingerprint}.lock"));
-    #[cfg(test)]
-    lock_failure_injection::fail_if_injected(&path)?;
-    FileLockGuard::lock(&path)
-}
-
-#[cfg(any(test, feature = "legacy-test-api"))]
-pub(crate) fn lock_legacy_cleanup(cache_root: &Path) -> io::Result<FileLockGuard> {
-    let path = cache_root
-        .join("locks")
-        .join("workers")
-        .join("legacy-cleanup.lock");
-    #[cfg(test)]
-    lock_failure_injection::fail_if_injected(&path)?;
-    FileLockGuard::lock(&path)
-}
-
 fn try_lock_legacy_cleanup(cache_root: &Path) -> io::Result<Option<FileLockGuard>> {
     let path = cache_root
         .join("locks")
         .join("workers")
         .join("legacy-cleanup.lock");
-    #[cfg(test)]
-    lock_failure_injection::fail_if_injected(&path)?;
     FileLockGuard::try_lock(&path)
-}
-
-#[cfg(any(test, feature = "legacy-test-api"))]
-pub(crate) fn lock_worker(cache_root: &Path, worker_slot: usize) -> io::Result<FileLockGuard> {
-    let path = worker_lock_path(cache_root, worker_slot);
-    #[cfg(test)]
-    lock_failure_injection::fail_if_injected(&path)?;
-    FileLockGuard::lock(&path)
 }
 
 fn try_lock_worker(cache_root: &Path, worker_slot: usize) -> io::Result<Option<FileLockGuard>> {
     let path = worker_lock_path(cache_root, worker_slot);
-    #[cfg(test)]
-    lock_failure_injection::fail_if_injected(&path)?;
     FileLockGuard::try_lock(&path)
 }
 
@@ -287,22 +148,40 @@ fn parse_worker_slot_name(name: &OsStr) -> Option<usize> {
 }
 
 #[cfg(test)]
-pub(crate) fn wait_at_unlocked_miss_hook() -> io::Result<()> {
-    let Ok(ready_path) = std::env::var("KISS_RUST_COV_UNLOCKED_MISS_READY") else {
-        return Ok(());
-    };
-    let go_path = std::env::var("KISS_RUST_COV_UNLOCKED_MISS_GO")
-        .map_err(|_| io::Error::other("missing unlocked miss go path"))?;
-    fs::write(&ready_path, b"ready")?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    while !Path::new(&go_path).exists() {
-        if std::time::Instant::now() >= deadline {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "timed out waiting at unlocked miss hook",
-            ));
+pub(crate) fn lock_worker_for_test(cache_root: &Path, worker_slot: usize) -> io::Result<FileLockGuard> {
+    FileLockGuard::lock(&worker_lock_path(cache_root, worker_slot))
+}
+
+fn remove_worker_slot_roots(cache_root: &Path, worker_slot: usize) -> io::Result<()> {
+    remove_path_if_exists(&rust_cov_worker_slot_root(cache_root, worker_slot))?;
+    remove_path_if_exists(&rust_cov_worker_tmp_root(cache_root, worker_slot))?;
+    cleanup_empty_tmp_parent(cache_root)
+}
+
+fn cleanup_empty_tmp_parent(cache_root: &Path) -> io::Result<()> {
+    match fs::remove_dir(rust_cov_cache_tmp_parent(cache_root)) {
+        Ok(()) => Ok(()),
+        Err(err)
+            if matches!(
+                err.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            Ok(())
         }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        Err(err) => Err(err),
     }
-    Ok(())
+}
+
+fn remove_path_if_exists(path: &Path) -> io::Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err),
+    };
+    if metadata.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    }
 }

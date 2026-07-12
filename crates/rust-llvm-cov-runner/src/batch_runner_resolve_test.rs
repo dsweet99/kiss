@@ -236,6 +236,124 @@ fn resolve_delegated_runners_preserves_relative_runner_with_args_and_build_targe
 }
 
 #[test]
+fn resolve_delegated_runners_reads_runner_from_cargo_home_env() {
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+
+    let cargo_home = tempfile::tempdir().unwrap();
+    let wrapper = cargo_home.path().join("env-runner.sh");
+    fs::write(&wrapper, "#!/bin/sh\nexec \"$@\"\n").unwrap();
+    make_executable(&wrapper);
+
+    let mut req = base_request(repo.path());
+    let host = resolve_delegated_runners(&req).unwrap().host_platform;
+    fs::write(
+        cargo_home.path().join("config.toml"),
+        format!(
+            "[target.{}]\nrunner = [{}]\n",
+            host,
+            toml_string(&wrapper.to_string_lossy())
+        ),
+    )
+    .unwrap();
+    req.env
+        .insert("CARGO_HOME".to_string(), cargo_home.path().to_string_lossy().to_string());
+
+    let resolved = resolve_delegated_runners(&req).unwrap();
+    assert_eq!(
+        resolved.map.get(&host),
+        Some(&vec![wrapper.to_string_lossy().to_string()])
+    );
+}
+
+#[test]
+fn resolve_delegated_runners_reads_cfg_target_runner_section() {
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.path().join(".cargo")).unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+    let wrapper = repo.path().join("cfg-runner.sh");
+    fs::write(&wrapper, "#!/bin/sh\nexec \"$@\"\n").unwrap();
+    make_executable(&wrapper);
+
+    let base = base_request(repo.path());
+    let host = resolve_delegated_runners(&base).unwrap().host_platform;
+    fs::write(
+        repo.path().join(".cargo/config.toml"),
+        format!(
+            "[target.'cfg(unix)']\nrunner = [{}, \"--from-cfg\"]\n",
+            toml_string(&wrapper.to_string_lossy())
+        ),
+    )
+    .unwrap();
+
+    let resolved = resolve_delegated_runners(&base).unwrap();
+    assert_eq!(
+        resolved.map.get(&host),
+        Some(&vec![
+            wrapper.to_string_lossy().to_string(),
+            "--from-cfg".to_string(),
+        ])
+    );
+}
+
+#[test]
+fn resolve_delegated_runners_cli_config_overrides_repository_runner() {
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.path().join(".cargo")).unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+    let repo_runner = repo.path().join("repo-runner.sh");
+    fs::write(&repo_runner, "#!/bin/sh\nexec \"$@\"\n").unwrap();
+    make_executable(&repo_runner);
+    let cli_runner = repo.path().join("cli-runner.sh");
+    fs::write(&cli_runner, "#!/bin/sh\nexec \"$@\"\n").unwrap();
+    make_executable(&cli_runner);
+
+    let mut req = base_request(repo.path());
+    let host = resolve_delegated_runners(&req).unwrap().host_platform;
+    fs::write(
+        repo.path().join(".cargo/config.toml"),
+        format!(
+            "[target.{}]\nrunner = [{}]\n",
+            host,
+            toml_string(&repo_runner.to_string_lossy())
+        ),
+    )
+    .unwrap();
+    req.cargo_args = vec![
+        "--config".to_string(),
+        format!(
+            "[target.{}]\nrunner = [{}]\n",
+            host,
+            toml_string(&cli_runner.to_string_lossy())
+        ),
+    ];
+
+    let resolved = resolve_delegated_runners(&req).unwrap();
+    assert_eq!(
+        resolved.map.get(&host),
+        Some(&vec![cli_runner.to_string_lossy().to_string()])
+    );
+}
+
+#[test]
 fn runner_map_fingerprint_changes_when_delegated_runner_changes() {
     let mut left = BTreeMap::from([("host".to_string(), vec!["a".to_string()])]);
     let mut right = left.clone();

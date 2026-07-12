@@ -1,5 +1,5 @@
 use std::io;
-use std::process::{Child, Command, ExitStatus};
+use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProcessGroupIdentity {
     pub pid: u32,
     pub pgid: u32,
@@ -143,6 +143,17 @@ extern "C" fn handle_sigint(_signal: libc::c_int) {
         for identity in state.registry.identities() {
             signal_process_group(identity.pgid, libc::SIGTERM);
         }
+        let deadline = Instant::now() + Duration::from_millis(250);
+        while Instant::now() < deadline {
+            if state.registry.residual_count() == 0 {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        for identity in state.registry.identities() {
+            signal_process_group(identity.pgid, libc::SIGKILL);
+        }
+        reap_zombies();
     }
 }
 
@@ -160,13 +171,19 @@ fn install_sigint_handler(
             interrupted,
         });
     let previous = unsafe {
-        libc::signal(
-            libc::SIGINT,
-            handle_sigint as *const () as libc::sighandler_t,
-        )
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = handle_sigint as usize;
+        action.sa_flags = 0;
+        libc::sigemptyset(&mut action.sa_mask);
+        let mut old = std::mem::zeroed();
+        let rc = libc::sigaction(libc::SIGINT, &action, &mut old);
+        if rc != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        old.sa_sigaction
     };
-    if previous == libc::SIG_ERR {
-        return Err(io::Error::last_os_error());
+    if previous == 0 {
+        // Handler installed from default/ignored disposition.
     }
     Ok(())
 }
@@ -176,7 +193,9 @@ fn clear_sigint_handler() {
     {
         if SIGINT_STATE.get().is_some() {
             unsafe {
-                libc::signal(libc::SIGINT, libc::SIG_DFL);
+                let mut action: libc::sigaction = std::mem::zeroed();
+                action.sa_sigaction = libc::SIG_DFL;
+                libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut());
             }
             if let Ok(mut slot) = SIGINT_STATE.get().expect("sigint registry").lock() {
                 *slot = None;
@@ -211,10 +230,6 @@ pub fn record_child_process_group(registry: &ProcessTreeRegistry, child: &Child)
     {
         let _ = (registry, child);
     }
-}
-
-pub(crate) fn wait_child(child: &mut Child) -> io::Result<ExitStatus> {
-    child.wait()
 }
 
 fn signal_process_group(pgid: u32, signal: i32) {

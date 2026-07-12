@@ -1,25 +1,46 @@
 use super::*;
 use std::cell::Cell;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
 use rust_llvm_cov_runner::{
-    CargoLlvmCovRunRequest, RustCoverageBatchCounters, RustLineCoverage, build_llvm_cov_argv,
+    RustCoverageBatchCounters, RustCovCacheStatus, RustLineCoverage, RustLlvmCovError,
+    RustLlvmCovOutcome,
 };
 
 use crate::test_runner::last_status::prior_failures;
 
-pub(crate) fn build_cargo_llvm_cov_dry_run_argv(selector: &str, extra: &[String]) -> Vec<String> {
-    let mut req = CargoLlvmCovRunRequest::new(
+pub(crate) fn passed_rust_llvm_cov_outcome(selector: String) -> RustLlvmCovOutcome {
+    RustLlvmCovOutcome {
         selector,
-        PathBuf::from("."),
-        PathBuf::from("cargo"),
-        PathBuf::from("<coverage.json>"),
-    );
-    req.test_args = extra.to_vec();
-    build_llvm_cov_argv(&req)
+        status: rpytest_runner::TestStatus::Passed,
+        exit_code: Some(0),
+        duration: std::time::Duration::from_millis(1),
+        coverage: rust_llvm_cov_runner::RustLineCoverage {
+            files: BTreeMap::new(),
+        },
+        cache_status: RustCovCacheStatus::MissStored,
+        stdout: None,
+        stderr: None,
+    }
+}
+
+pub(crate) fn build_cargo_llvm_cov_dry_run_argv(selector: &str, extra: &[String]) -> Vec<String> {
+    let mut argv = vec![
+        "cargo".to_string(),
+        "llvm-cov".to_string(),
+        "test".to_string(),
+        "--json".to_string(),
+        "--output-path".to_string(),
+        "<coverage.json>".to_string(),
+        "--no-clean".to_string(),
+    ];
+    argv.push(selector.to_string());
+    argv.push("--".to_string());
+    argv.extend(extra.iter().cloned());
+    argv
 }
 
 #[test]

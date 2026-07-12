@@ -50,6 +50,12 @@ impl BinaryIdObjectMap {
     pub fn lookup(&self, id: &str) -> Option<&PathBuf> {
         self.id_to_object.get(id)
     }
+
+    pub fn lookup_by_object(&self, object: &Path) -> Option<&str> {
+        self.id_to_object
+            .iter()
+            .find_map(|(id, path)| (path == object).then_some(id.as_str()))
+    }
 }
 
 pub(crate) fn resolve_objects_for_profdata(

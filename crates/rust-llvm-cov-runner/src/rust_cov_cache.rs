@@ -7,8 +7,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rpytest_runner::TestStatus;
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(test, feature = "legacy-test-api"))]
-use crate::RustLlvmCovRequest;
 use crate::{CACHE_SCHEMA_VERSION, RustLineCoverage, RustLlvmCovOutcome};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -142,40 +140,6 @@ pub(crate) fn rust_cov_unique_suffix() -> String {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_nanos());
     format!("{}.{}", process::id(), nanos)
-}
-
-#[cfg(any(test, feature = "legacy-test-api"))]
-pub(crate) fn rust_cov_fingerprint(req: &RustLlvmCovRequest) -> io::Result<String> {
-    let mut h = rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
-    h = rust_cov_fnv1a64(h, b"cargo-llvm-cov-generated-args-v2");
-    h = rust_cov_fnv1a64(h, b"--json --output-path --no-clean");
-    h = rust_cov_fnv1a64(h, req.selector.as_bytes());
-    h = rust_cov_fnv1a64(h, req.cargo.to_string_lossy().as_bytes());
-    h = rust_cov_fnv1a64(h, req.llvm_cov_version.as_bytes());
-    h = rust_cov_fnv1a64(h, req.rustc_version.as_bytes());
-    h = rust_cov_fnv1a64(h, req.cwd.to_string_lossy().as_bytes());
-    h = rust_cov_fnv1a64(h, req.source_root.to_string_lossy().as_bytes());
-    for arg in &req.cargo_args {
-        h = rust_cov_fnv1a64(h, arg.as_bytes());
-        h = rust_cov_fnv1a64(h, &[0]);
-    }
-    for arg in &req.test_args {
-        h = rust_cov_fnv1a64(h, arg.as_bytes());
-        h = rust_cov_fnv1a64(h, &[0]);
-    }
-    for (key, value) in &req.env {
-        h = rust_cov_fnv1a64(h, key.as_bytes());
-        h = rust_cov_fnv1a64(h, b"=");
-        h = rust_cov_fnv1a64(h, value.as_bytes());
-        h = rust_cov_fnv1a64(h, &[0]);
-    }
-    for file in crate::shared_input::rust_cov_input_files(&req.cwd)? {
-        h = rust_cov_fnv1a64(h, file.to_string_lossy().as_bytes());
-        h = rust_cov_fnv1a64(h, &[0]);
-        h = rust_cov_fnv1a64(h, &fs::read(file)?);
-        h = rust_cov_fnv1a64(h, &[0]);
-    }
-    Ok(format!("{h:016x}"))
 }
 
 pub(crate) fn rust_cov_fnv1a64(h: u64, bytes: &[u8]) -> u64 {

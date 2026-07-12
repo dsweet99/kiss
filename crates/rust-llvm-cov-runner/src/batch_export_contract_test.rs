@@ -9,15 +9,7 @@ use crate::batch_export_tools::resolve_export_tools_from_rustc;
 use crate::execute_rust_coverage_batch;
 use crate::llvm_cov_json::parse_llvm_cov_json;
 
-use crate::batch_export_contract_fixture::{
-    EnvVarGuard, FIXTURE_ROOT, TARGET_RUNNER_ENV_LOCK, TARGET_RUNNER_SHIM_ENV,
-    assert_direct_export_matches_oracle, assert_export_uses_seed_objects_only,
-    assert_outcomes_match, batch_profile_debug, batch_request, build_helper_bin, build_kiss_binary,
-    collect_object_files, discover_compiler_artifacts, discover_integration_test_executable,
-    discover_profraw_files, discover_seed_objects, export_merged_profile,
-    fixture_relative_coverage, helper_bin_path, merge_profraws_for_test, real_tool_identity,
-    real_tool_tests_enabled, run_cargo_llvm_cov_json, run_legacy_selector,
-};
+use crate::batch_export_contract_fixture::*;
 
 #[test]
 #[ignore = "requires cargo llvm-cov and LLVM tools; set KISS_REAL_TOOL_TESTS=1"]
@@ -122,5 +114,136 @@ fn real_tool_legacy_and_batch_outputs_match_on_fixture() {
             fixture_root,
             &debug,
         );
+    }
+}
+
+fn run_parity_matrix_case(
+    case: &ParityMatrixCase,
+    tools: &crate::RustCoverageToolIdentity,
+    fixture_root: &Path,
+) {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let helper_target = tmp.path().join(format!("helper-target-{}", case.name));
+    build_helper_bin(&helper_target);
+    let helper_bin = helper_bin_path(&helper_target);
+    let selectors: Vec<String> = case.selectors.iter().map(|s| (*s).to_string()).collect();
+    let test_args: Vec<String> = case.test_args.iter().map(|s| (*s).to_string()).collect();
+    let legacy = collect_legacy_outcomes(&selectors, tools, &helper_bin, tmp.path(), case, &test_args);
+    let batch_req = batch_request_with_args(
+        tmp.path(),
+        &selectors,
+        &helper_bin,
+        &test_args,
+        case.jobs,
+    );
+    let batch = execute_rust_coverage_batch(&batch_req, tools)
+        .unwrap_or_else(|err| panic!("batch parity case `{}` failed: {err:?}", case.name));
+    assert_parity_batch_result(case, &batch, &selectors, &legacy, &batch_req, fixture_root);
+}
+
+fn collect_legacy_outcomes(
+    selectors: &[String],
+    tools: &crate::RustCoverageToolIdentity,
+    helper_bin: &Path,
+    tmp: &Path,
+    case: &ParityMatrixCase,
+    test_args: &[String],
+) -> BTreeMap<String, crate::RustLlvmCovOutcome> {
+    selectors
+        .iter()
+        .map(|selector| {
+            let outcome = run_legacy_selector_with_args(
+                selector,
+                tools,
+                helper_bin,
+                tmp.join(format!("legacy-cache-{}", case.name)).join(selector),
+                test_args,
+            );
+            (selector.clone(), outcome)
+        })
+        .collect()
+}
+
+fn assert_parity_batch_result(
+    case: &ParityMatrixCase,
+    batch: &crate::RustCoverageBatchResult,
+    selectors: &[String],
+    legacy: &BTreeMap<String, crate::RustLlvmCovOutcome>,
+    batch_req: &crate::RustCoverageBatchRequest,
+    fixture_root: &Path,
+) {
+    assert!(
+        batch.batch_error.is_none(),
+        "batch error in case `{}`: {:?}",
+        case.name,
+        batch.batch_error
+    );
+    assert_eq!(batch.completed.len(), selectors.len(), "case `{}`", case.name);
+    let debug = format!(
+        "case={}\n{}\nbatch counters: test_instances={} unmatched_selectors={} export_jobs={} max_active_test_instances={} max_active_exports={} max_objects_per_export={}",
+        case.name,
+        batch_profile_debug(batch_req),
+        batch.counters.test_instances,
+        batch.counters.unmatched_selectors,
+        batch.counters.export_jobs,
+        batch.counters.max_active_test_instances,
+        batch.counters.max_active_exports,
+        batch.counters.max_objects_per_export
+    );
+    if case.name == "concurrency-bound" {
+        assert!(
+            batch.counters.max_active_test_instances <= case.jobs,
+            "{debug}"
+        );
+        assert!(batch.counters.max_active_exports <= case.jobs, "{debug}");
+    }
+    if case.name == "diagnostic-exit-37" {
+        assert_eq!(batch.completed.len(), 1);
+        let outcome = &batch.completed[0];
+        assert_eq!(outcome.selector, "exits_with_diagnostic_code_37");
+        assert_eq!(outcome.status, rpytest_runner::TestStatus::Failed);
+        assert_eq!(outcome.exit_code, Some(1));
+        assert!(outcome.coverage.files.is_empty());
+        let metadata = crate::batch_shim::load_target_runner_shim_metadata(
+            &batch_req
+                .generated_config
+                .parent()
+                .expect("run root")
+                .join("instances"),
+        )
+        .expect("shim metadata");
+        assert!(
+            metadata
+                .iter()
+                .any(|item| item.exit_code == Some(37)),
+            "shim must preserve diagnostic child exit 37\n{debug}"
+        );
+        return;
+    }
+    for batch_outcome in &batch.completed {
+        let selector = &batch_outcome.selector;
+        let legacy_outcome = legacy
+            .get(selector)
+            .unwrap_or_else(|| panic!("missing legacy outcome for {selector} in {}", case.name));
+        assert_outcomes_match(selector, legacy_outcome, batch_outcome, fixture_root, &debug);
+    }
+}
+
+#[test]
+#[ignore = "requires cargo llvm-cov, cargo nextest, LLVM tools, and a built kiss shim"]
+fn real_tool_legacy_and_batch_parity_matrix_on_fixture() {
+    if !real_tool_tests_enabled() {
+        return;
+    }
+    let _env_lock = TARGET_RUNNER_ENV_LOCK
+        .lock()
+        .expect("target runner env lock");
+    let fixture_root = Path::new(FIXTURE_ROOT);
+    let tools = real_tool_identity(fixture_root);
+    let kiss_bin = build_kiss_binary();
+    let _shim_guard = EnvVarGuard::set(TARGET_RUNNER_SHIM_ENV, &kiss_bin);
+
+    for case in parity_matrix_cases() {
+        run_parity_matrix_case(case, &tools, fixture_root);
     }
 }

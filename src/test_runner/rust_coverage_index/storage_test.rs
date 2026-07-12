@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 use rpytest_runner::TestStatus;
@@ -52,6 +53,28 @@ fn command_stdout_reports_success_and_failure() {
             Path::new(".")
         )
         .is_err()
+    );
+    assert_eq!(
+        crate::test_runner::rust_coverage_index::storage::command_stdout(
+            Path::new("false"),
+            &[],
+            Path::new(".")
+        )
+        .unwrap_err(),
+        "error: kiss test: false failed: "
+    );
+}
+
+#[test]
+fn create_new_file_rejects_duplicate_paths() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("entry.json");
+    crate::test_runner::rust_coverage_index::storage::create_new_file(&path)
+        .unwrap()
+        .write_all(b"{}")
+        .unwrap();
+    assert!(
+        crate::test_runner::rust_coverage_index::storage::create_new_file(&path).is_err()
     );
 }
 

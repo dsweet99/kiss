@@ -11,7 +11,6 @@ use super::rust_cov_cache;
 use super::shared_input;
 use super::{
     RustCovCacheEntry, RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome,
-    rust_cov_sample_request,
 };
 
 fn outcome() -> RustLlvmCovOutcome {
@@ -56,29 +55,6 @@ fn rust_cov_cache_rejects_duplicate_temp_file_creation() {
     file.write_all(b"payload").unwrap();
 
     assert!(rust_cov_cache::create_new_cache_file(&path).is_err());
-}
-
-#[test]
-fn rust_cov_rust_cov_fingerprint_tracks_source_metadata_and_versions() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    fs::create_dir(tmp.path().join("src")).unwrap();
-    let lib = tmp.path().join("src").join("lib.rs");
-    fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
-    let req = rust_cov_sample_request(tmp.path());
-    let first = rust_cov_cache::rust_cov_fingerprint(&req).unwrap();
-    fs::write(&lib, "pub fn value() -> u32 { 2 }\n").unwrap();
-    let source_changed = rust_cov_cache::rust_cov_fingerprint(&req).unwrap();
-    let mut version_changed = req;
-    version_changed.llvm_cov_version.push_str(" changed");
-    let version_changed = rust_cov_cache::rust_cov_fingerprint(&version_changed).unwrap();
-
-    assert_ne!(first, source_changed);
-    assert_ne!(source_changed, version_changed);
 }
 
 #[test]

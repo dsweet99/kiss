@@ -182,6 +182,85 @@ fn publish_derived_state_prunes_stale_generation_entries() {
     assert_eq!(counters.cache_pruned_entries, 1);
 }
 
+fn store_alpha_entry(
+    cache_root: &Path,
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+    files: BTreeMap<String, BTreeSet<u32>>,
+) {
+    let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, "alpha");
+    let entry = RustCovCacheEntry::from_outcome(
+        &RustLlvmCovOutcome {
+            selector: "alpha".to_string(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            coverage: RustLineCoverage { files },
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        },
+        &identity.generation_fingerprint,
+    );
+    store_rust_cov_cache_entry(cache_root, &fingerprint, &entry).unwrap();
+}
+
+fn write_generation_transition_repo(repo: &Path) {
+    std::fs::create_dir_all(repo.join("src")).unwrap();
+    std::fs::write(repo.join("Cargo.toml"), "[package]\n").unwrap();
+    std::fs::write(repo.join("src").join("a.rs"), "pub fn a() {}\n").unwrap();
+    std::fs::write(repo.join("src").join("b.rs"), "pub fn b() {}\n").unwrap();
+}
+
+#[test]
+fn generation_transition_index_excludes_prior_generation_files() {
+    let repo = tempfile::tempdir().unwrap();
+    write_generation_transition_repo(repo.path());
+    let req = derived_fixture_request(repo.path());
+    let tools = witness_batch_tools();
+    let gen_a = crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    store_alpha_entry(
+        &req.cache_root,
+        &req,
+        &tools,
+        &gen_a,
+        BTreeMap::from([("src/a.rs".to_string(), BTreeSet::from([1]))]),
+    );
+    publish_derived_state(&req, &tools, &gen_a, &["alpha".to_string()], false).unwrap();
+    assert!(index_contains_file(&req.cache_root, "src/a.rs"));
+
+    let req_b = req.clone();
+    std::fs::write(repo.path().join("src").join("b.rs"), "pub fn b() {}\npub fn c() {}\n")
+        .unwrap();
+    let gen_b = crate::batch_fingerprint::batch_identity(&req_b, &tools).unwrap();
+    assert_ne!(gen_a.generation_fingerprint, gen_b.generation_fingerprint);
+    store_alpha_entry(
+        &req.cache_root,
+        &req_b,
+        &tools,
+        &gen_b,
+        BTreeMap::from([("src/b.rs".to_string(), BTreeSet::from([1]))]),
+    );
+    publish_derived_state(&req_b, &tools, &gen_b, &["alpha".to_string()], true).unwrap();
+    assert!(!index_contains_file(&req.cache_root, "src/a.rs"));
+    assert!(index_contains_file(&req.cache_root, "src/b.rs"));
+    assert_eq!(
+        read_index_json(&req.cache_root)["generation_fingerprint"].as_str(),
+        Some(gen_b.generation_fingerprint.as_str())
+    );
+}
+
+fn index_contains_file(cache_root: &Path, file: &str) -> bool {
+    read_index_json(cache_root)["files"]
+        .as_object()
+        .is_some_and(|files| files.contains_key(file))
+}
+
+fn read_index_json(cache_root: &Path) -> serde_json::Value {
+    serde_json::from_slice(&std::fs::read(cache_root.join("index.json")).unwrap()).unwrap()
+}
+
 #[test]
 fn try_publish_all_hit_repair_when_manifest_stale() {
     let repo = tempfile::tempdir().unwrap();

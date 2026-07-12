@@ -89,6 +89,8 @@ fn write_shim_metadata(output_dir: &Path, id: &str) {
         argv: vec!["/tmp/bin".to_string()],
         exit_code: Some(0),
         spawn_error: None,
+        shim_identity: None,
+        delegated_identity: None,
         stdout: None,
         stderr: None,
     };
@@ -299,4 +301,35 @@ fn partial_miss_falls_through_to_fresh_execution() {
             .iter()
             .any(|outcome| outcome.selector == "beta")
     );
+}
+
+#[test]
+fn fresh_batch_plan_keeps_repository_target_untouched() {
+    let repo = batch_executor_fixture_repo();
+    let repo_target = repo.path().join("target");
+    fs::create_dir_all(&repo_target).unwrap();
+    let marker = repo_target.join("ordinary-target-marker");
+    fs::write(&marker, b"untouched").unwrap();
+    let before = fs::read(&marker).unwrap();
+
+    let req = batch_executor_request(repo.path());
+    let cache_root = req.cache_root.clone();
+    let plan = build_rust_coverage_batch_plan(&req).unwrap();
+    assert!(
+        plan.build_target.starts_with(&cache_root),
+        "batch build target must live under cache root, not repository target/"
+    );
+    assert_ne!(
+        plan.build_target,
+        repo_target,
+        "batch must not use repository target/"
+    );
+    assert_eq!(
+        plan.env.get("CARGO_TARGET_DIR").map(String::as_str),
+        Some(plan.build_target.to_string_lossy().as_ref())
+    );
+
+    let _ = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
+    assert_eq!(fs::read(&marker).unwrap(), before);
+    assert!(repo_target.is_dir());
 }

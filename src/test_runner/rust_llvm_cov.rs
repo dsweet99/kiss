@@ -1,10 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-#[cfg(test)]
-use std::sync::mpsc;
-#[cfg(test)]
-use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rust_llvm_cov_runner::{
@@ -12,10 +8,81 @@ use rust_llvm_cov_runner::{
     RustCoverageToolIdentity, RustLlvmCovError, RustLlvmCovOutcome, build_rust_coverage_batch_plan,
     execute_rust_coverage_batch, resolve_batch_request_runners, validate_supported_rust_test_args,
 };
+
 #[cfg(test)]
-use rust_llvm_cov_runner::{
-    RustLlvmCov, RustLlvmCovRequest, cleanup_surplus_rust_cov_worker_slots,
-    subprocess_cargo_llvm_cov_runner,
+mod rust_llvm_cov_request {
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
+    use rust_llvm_cov_runner::{RustCoverageBatchRequest, validate_supported_rust_test_args};
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub(crate) struct RustLlvmCovRequest {
+        pub selector: String,
+        pub cwd: PathBuf,
+        pub source_root: PathBuf,
+        pub cargo: PathBuf,
+        pub llvm_cov_version: String,
+        pub rustc_version: String,
+        pub cargo_args: Vec<String>,
+        pub test_args: Vec<String>,
+        pub env: BTreeMap<String, String>,
+        pub cache_root: PathBuf,
+        pub force_rerun: bool,
+        pub worker_slot: usize,
+    }
+
+    pub(crate) fn rust_llvm_cov_request_from_parts(
+        repo_root: &std::path::Path,
+        selector: &str,
+        extra: &[String],
+        llvm_cov_version: &str,
+        rustc_version: &str,
+        force_rerun: bool,
+    ) -> Result<RustLlvmCovRequest, String> {
+        validate_supported_rust_test_args(extra)?;
+        Ok(RustLlvmCovRequest {
+            selector: selector.to_string(),
+            cwd: repo_root.to_path_buf(),
+            source_root: repo_root.to_path_buf(),
+            cargo: PathBuf::from("cargo"),
+            llvm_cov_version: llvm_cov_version.to_string(),
+            rustc_version: rustc_version.to_string(),
+            cargo_args: Vec::new(),
+            test_args: extra.to_vec(),
+            env: Default::default(),
+            cache_root: repo_root.join(".kiss").join("rust_llvm_cov_cache"),
+            force_rerun,
+            worker_slot: 0,
+        })
+    }
+
+    pub(crate) fn rust_llvm_cov_request_from_batch_parts(
+        batch_req: &RustCoverageBatchRequest,
+        selector: &str,
+        llvm_cov_version: &str,
+        rustc_version: &str,
+    ) -> Result<RustLlvmCovRequest, String> {
+        Ok(RustLlvmCovRequest {
+            selector: selector.to_string(),
+            cwd: batch_req.cwd.clone(),
+            source_root: batch_req.source_root.clone(),
+            cargo: batch_req.cargo.clone(),
+            llvm_cov_version: llvm_cov_version.to_string(),
+            rustc_version: rustc_version.to_string(),
+            cargo_args: batch_req.cargo_args.clone(),
+            test_args: batch_req.test_args.clone(),
+            env: batch_req.env.clone(),
+            cache_root: batch_req.cache_root.clone(),
+            force_rerun: batch_req.force_rerun,
+            worker_slot: 0,
+        })
+    }
+}
+
+#[cfg(test)]
+pub(crate) use rust_llvm_cov_request::{
+    rust_llvm_cov_request_from_batch_parts, rust_llvm_cov_request_from_parts,
 };
 
 use super::last_status::{LastStatusIdentity, record_statuses, rust_last_status_identity};
@@ -108,55 +175,6 @@ fn execute_rust_coverage_batch_compat(
     execute_rust_coverage_batch(batch_req, &tools).map_err(format_rust_llvm_cov_error)
 }
 
-#[cfg(test)]
-pub(crate) fn rust_llvm_cov_request_from_parts(
-    repo_root: &Path,
-    selector: &str,
-    extra: &[String],
-    llvm_cov_version: &str,
-    rustc_version: &str,
-    force_rerun: bool,
-) -> Result<RustLlvmCovRequest, String> {
-    validate_supported_rust_test_args(extra)?;
-    Ok(RustLlvmCovRequest {
-        selector: selector.to_string(),
-        cwd: repo_root.to_path_buf(),
-        source_root: repo_root.to_path_buf(),
-        cargo: PathBuf::from("cargo"),
-        llvm_cov_version: llvm_cov_version.to_string(),
-        rustc_version: rustc_version.to_string(),
-        cargo_args: Vec::new(),
-        test_args: extra.to_vec(),
-        env: Default::default(),
-        cache_root: repo_root.join(".kiss").join("rust_llvm_cov_cache"),
-        force_rerun,
-        worker_slot: 0,
-    })
-}
-
-#[cfg(test)]
-fn rust_llvm_cov_request_from_batch_parts(
-    batch_req: &RustCoverageBatchRequest,
-    selector: &str,
-    llvm_cov_version: &str,
-    rustc_version: &str,
-) -> Result<RustLlvmCovRequest, String> {
-    Ok(RustLlvmCovRequest {
-        selector: selector.to_string(),
-        cwd: batch_req.cwd.clone(),
-        source_root: batch_req.source_root.clone(),
-        cargo: batch_req.cargo.clone(),
-        llvm_cov_version: llvm_cov_version.to_string(),
-        rustc_version: rustc_version.to_string(),
-        cargo_args: batch_req.cargo_args.clone(),
-        test_args: batch_req.test_args.clone(),
-        env: batch_req.env.clone(),
-        cache_root: batch_req.cache_root.clone(),
-        force_rerun: batch_req.force_rerun,
-        worker_slot: 0,
-    })
-}
-
 pub(crate) fn rust_coverage_batch_request_from_parts(
     repo_root: &Path,
     selectors: &[String],
@@ -220,118 +238,6 @@ fn detect_rust_coverage_tool_versions(
         rustc: rustc_version,
         cargo_nextest: cargo_nextest_version,
     })
-}
-
-#[cfg(test)]
-fn run_rust_llvm_cov_requests_bounded(
-    reqs: Vec<RustLlvmCovRequest>,
-    jobs: usize,
-) -> Result<Vec<Result<RustLlvmCovOutcome, RustLlvmCovError>>, RustLlvmCovError> {
-    run_rust_llvm_cov_requests_bounded_with_spawner(reqs, jobs, spawn_rust_llvm_cov_job)
-}
-
-#[cfg(test)]
-type RustLlvmCovJobResult = (usize, usize, Result<RustLlvmCovOutcome, RustLlvmCovError>);
-#[cfg(test)]
-type RustLlvmCovIndexedRequests = std::iter::Enumerate<std::vec::IntoIter<RustLlvmCovRequest>>;
-
-#[cfg(test)]
-fn run_rust_llvm_cov_requests_bounded_with_spawner<F>(
-    reqs: Vec<RustLlvmCovRequest>,
-    jobs: usize,
-    mut spawn_job: F,
-) -> Result<Vec<Result<RustLlvmCovOutcome, RustLlvmCovError>>, RustLlvmCovError>
-where
-    F: FnMut(usize, usize, RustLlvmCovRequest, mpsc::Sender<RustLlvmCovJobResult>),
-{
-    assert!(jobs > 0, "jobs must be greater than zero");
-    let len = reqs.len();
-    let mut out = Vec::new();
-    out.resize_with(len, || {
-        Err(RustLlvmCovError::InvalidRequest(
-            "rust llvm-cov worker did not report a result".to_string(),
-        ))
-    });
-    if len == 0 {
-        return Ok(out);
-    }
-
-    cleanup_surplus_worker_slots(&reqs, jobs)?;
-    let (tx, rx) = mpsc::channel();
-    let mut parent_tx = Some(tx);
-    let mut indexed_reqs = reqs.into_iter().enumerate();
-    let mut running = 0usize;
-    for slot in 0..jobs.min(len) {
-        if spawn_next_rust_llvm_cov_job(&mut indexed_reqs, slot, &mut parent_tx, &mut spawn_job) {
-            running += 1;
-        }
-    }
-
-    while running > 0 {
-        let Ok((index, slot, result)) = rx.recv() else {
-            break;
-        };
-        running -= 1;
-        out[index] = result;
-        if spawn_next_rust_llvm_cov_job(&mut indexed_reqs, slot, &mut parent_tx, &mut spawn_job) {
-            running += 1;
-        }
-    }
-    Ok(out)
-}
-
-#[cfg(test)]
-fn spawn_next_rust_llvm_cov_job<F>(
-    indexed_reqs: &mut RustLlvmCovIndexedRequests,
-    slot: usize,
-    parent_tx: &mut Option<mpsc::Sender<RustLlvmCovJobResult>>,
-    spawn_job: &mut F,
-) -> bool
-where
-    F: FnMut(usize, usize, RustLlvmCovRequest, mpsc::Sender<RustLlvmCovJobResult>),
-{
-    let Some((index, mut req)) = indexed_reqs.next() else {
-        return false;
-    };
-    req.worker_slot = slot;
-    let tx = parent_tx.as_ref().expect("sender is live while spawning");
-    spawn_job(index, slot, req, tx.clone());
-    if indexed_reqs.len() == 0 {
-        drop(parent_tx.take());
-    }
-    true
-}
-
-#[cfg(test)]
-fn cleanup_surplus_worker_slots(
-    reqs: &[RustLlvmCovRequest],
-    jobs: usize,
-) -> Result<(), RustLlvmCovError> {
-    let mut cache_roots = Vec::new();
-    for req in reqs {
-        if cache_roots.iter().any(|root| root == &req.cache_root) {
-            continue;
-        }
-        cache_roots.push(req.cache_root.clone());
-    }
-    for cache_root in cache_roots {
-        cleanup_surplus_rust_cov_worker_slots(&cache_root, jobs)?;
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-fn spawn_rust_llvm_cov_job(
-    index: usize,
-    slot: usize,
-    req: RustLlvmCovRequest,
-    tx: mpsc::Sender<RustLlvmCovJobResult>,
-) {
-    thread::spawn(move || {
-        let runner = RustLlvmCov::new(subprocess_cargo_llvm_cov_runner());
-        let result = runner.run_or_reuse(req);
-        let _ = tx.send((index, slot, result));
-    });
 }
 
 fn print_rust_llvm_cov_outcome(outcome: &RustLlvmCovOutcome) {
@@ -400,22 +306,6 @@ fn format_rust_llvm_cov_error(err: RustLlvmCovError) -> String {
 }
 
 #[cfg(test)]
-fn passed_rust_llvm_cov_outcome(selector: String) -> RustLlvmCovOutcome {
-    RustLlvmCovOutcome {
-        selector,
-        status: rpytest_runner::TestStatus::Passed,
-        exit_code: Some(0),
-        duration: std::time::Duration::from_millis(1),
-        coverage: rust_llvm_cov_runner::RustLineCoverage {
-            files: BTreeMap::new(),
-        },
-        cache_status: RustCovCacheStatus::MissStored,
-        stdout: None,
-        stderr: None,
-    }
-}
-
-#[cfg(test)]
 #[path = "rust_llvm_cov_metrics_test.rs"]
 mod metrics_tests;
 #[cfg(test)]
@@ -423,6 +313,3 @@ mod metrics_tests;
 mod tests;
 #[cfg(test)]
 pub(crate) use tests::build_cargo_llvm_cov_dry_run_argv;
-#[cfg(test)]
-#[path = "rust_llvm_cov_bounded_test.rs"]
-mod bounded_tests;

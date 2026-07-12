@@ -21,6 +21,7 @@ pub(crate) fn execute_fresh_batch_with_exporter(
     runner: &BatchSubprocessRunner,
     exporter: SubprocessInstanceExporter,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
+    crate::batch_platform::ensure_batch_platform_supported()?;
     let build_identity = batch_run::prepare_build_target_for_identity(req, tools, plan)?;
     let run_root = batch_run::prepare_batch_run_layout(plan)?;
     batch_run::remove_stale_run_directories(&req.cache_root, &run_root)?;
@@ -97,6 +98,7 @@ pub(crate) fn execute_fresh_batch_with_export_fn(
     runner: &BatchSubprocessRunner,
     export_fn: crate::batch_export::BatchInstanceExportFn,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
+    crate::batch_platform::ensure_batch_platform_supported()?;
     let build_identity = batch_run::prepare_build_target_for_identity(req, tools, plan)?;
     let run_root = batch_run::prepare_batch_run_layout(plan)?;
     batch_run::remove_stale_run_directories(&req.cache_root, &run_root)?;

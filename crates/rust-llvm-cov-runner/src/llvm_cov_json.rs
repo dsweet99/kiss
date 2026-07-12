@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-#[cfg(any(test, feature = "legacy-test-api"))]
+#[cfg(test)]
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -21,7 +21,7 @@ impl RustLineCoverage {
     }
 }
 
-#[cfg(any(test, feature = "legacy-test-api"))]
+#[cfg(test)]
 pub(crate) fn parse_llvm_cov_json_file(
     path: &Path,
     source_root: &Path,

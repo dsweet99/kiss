@@ -192,8 +192,6 @@ fn resolve_objects_for_profdata_resolves_profile_binary_ids() {
     let _ = std::fs::remove_dir_all(&target);
     run_export_contract_fixture(&target);
     let profdata = target.join("instance.profdata");
-    let profraw = find_profraw(&target.join("llvm-cov-target")).expect("profraw");
-    merge_profraw(&tools, &profraw, &profdata);
     let deps = target.join("llvm-cov-target/debug/deps");
     let integration = find_deps_artifact(&deps, |name| {
         name.starts_with("integration-") && !name.ends_with(".d")
@@ -204,6 +202,16 @@ fn resolve_objects_for_profdata_resolves_profile_binary_ids() {
     let catalog = vec![integration.clone(), rlib.clone()];
     let seed = vec![integration.clone(), rlib];
     let map = BinaryIdObjectMap::build(&tools, &catalog).expect("binary id map");
+    let integration_id = map
+        .lookup_by_object(&integration)
+        .expect("integration build id");
+    let profraw = find_profraw_for_binary_id(
+        &tools,
+        &target.join("llvm-cov-target"),
+        integration_id,
+    )
+    .expect("integration profraw");
+    merge_profraw(&tools, &profraw, &profdata);
     let resolved = resolve_objects_for_profdata(&tools, &profdata, &catalog, &seed, Some(&map))
         .expect("resolved");
     assert_eq!(resolved, vec![integration]);
@@ -242,13 +250,19 @@ fn run_export_contract_fixture(target: &Path) {
     );
 }
 
-fn merge_profraw(tools: &ExportTools, profraw: &Path, profdata: &Path) {
-    let merge = std::process::Command::new(&tools.llvm_profdata)
-        .args(["merge", "-sparse", profraw.to_str().unwrap(), "-o"])
-        .arg(profdata)
-        .status()
-        .expect("llvm-profdata merge");
+fn merge_profraws(tools: &ExportTools, profraws: &[PathBuf], profdata: &Path) {
+    let mut command = std::process::Command::new(&tools.llvm_profdata);
+    command.arg("merge").arg("-sparse");
+    for profraw in profraws {
+        command.arg(profraw);
+    }
+    command.arg("-o").arg(profdata);
+    let merge = command.status().expect("llvm-profdata merge");
     assert!(merge.success());
+}
+
+fn merge_profraw(tools: &ExportTools, profraw: &Path, profdata: &Path) {
+    merge_profraws(tools, &[profraw.to_path_buf()], profdata);
 }
 
 fn find_deps_artifact(deps: &Path, matches: impl Fn(&str) -> bool + Clone) -> Option<PathBuf> {
@@ -262,20 +276,51 @@ fn find_deps_artifact(deps: &Path, matches: impl Fn(&str) -> bool + Clone) -> Op
         })
 }
 
-fn find_profraw(root: &Path) -> Option<PathBuf> {
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        let entries = std::fs::read_dir(&dir).ok()?;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().and_then(|ext| ext.to_str()) == Some("profraw") {
-                return Some(path);
-            }
+fn find_profraw_for_binary_id(
+    tools: &ExportTools,
+    root: &Path,
+    expected_id: &str,
+) -> Option<PathBuf> {
+    let tmp_profdata = std::env::temp_dir().join(format!(
+        "kiss-export-profraw-probe-{}-{}.profdata",
+        std::process::id(),
+        expected_id
+    ));
+    for profraw in find_all_profraws(root) {
+        merge_profraw(tools, &profraw, &tmp_profdata);
+        let ids = crate::batch_export_tools::read_profdata_binary_ids(tools, &tmp_profdata).ok()?;
+        if ids == [expected_id] {
+            let _ = std::fs::remove_file(&tmp_profdata);
+            return Some(profraw);
         }
     }
+    let _ = std::fs::remove_file(&tmp_profdata);
     None
+}
+
+fn find_all_profraws(root: &Path) -> Vec<PathBuf> {
+    let mut profraws = Vec::new();
+    collect_profraws(root, &mut profraws);
+    profraws.sort();
+    profraws
+}
+
+fn collect_profraws(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_profraws(&path, out);
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("profraw") {
+            out.push(path);
+        }
+    }
+}
+
+fn find_profraw(root: &Path) -> Option<PathBuf> {
+    find_all_profraws(root).into_iter().next()
 }
 
 #[cfg(unix)]

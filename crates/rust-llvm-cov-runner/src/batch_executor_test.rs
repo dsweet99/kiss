@@ -60,7 +60,7 @@ fn all_hit_derived_repair_reports_deferred_legacy_cleanup() {
     population_req.population_publication_selectors =
         Some(vec!["alpha".to_string(), "beta".to_string()]);
     fs::create_dir_all(population_req.cache_root.join("workers").join("slot-0")).unwrap();
-    let _slot_guard = crate::worker::lock_worker(&population_req.cache_root, 0).unwrap();
+    let _slot_guard = crate::worker::lock_worker_for_test(&population_req.cache_root, 0).unwrap();
 
     let result = execute_rust_coverage_batch(&population_req, &tools()).unwrap();
 

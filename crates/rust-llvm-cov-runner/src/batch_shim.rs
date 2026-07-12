@@ -5,11 +5,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 use serde::{Deserialize, Serialize};
 
 use crate::batch_output_channel::{
     OutputChannelClient, OutputStreamKind, output_channel_config_from_env,
 };
+use crate::batch_process_tree::ProcessGroupIdentity;
 use crate::batch_runner_resolve::read_runner_map;
 
 pub const TARGET_RUNNER_SHIM_SUBCOMMAND: &str = "__rust-llvm-cov-target-runner";
@@ -24,6 +28,10 @@ pub struct BatchShimMetadata {
     pub argv: Vec<String>,
     pub exit_code: Option<i32>,
     pub spawn_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shim_identity: Option<ProcessGroupIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegated_identity: Option<ProcessGroupIdentity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stdout: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -90,10 +98,11 @@ fn run_target_runner_shim_inner(
         return run_delegated_list_child(&delegated, command);
     }
     fs::create_dir_all(output_dir)?;
+    let shim_identity = current_process_group_identity();
     let full_name = instance_full_name(command);
     let id = filesystem_safe_instance_id(&full_name);
     let profile_path = output_dir.join(format!("{id}.profraw"));
-    let (exit_code, spawn_error, stdout, stderr) =
+    let (exit_code, spawn_error, delegated_identity, stdout, stderr) =
         run_delegated_child(&delegated, command, &profile_path, &id)?;
     let metadata = BatchShimMetadata {
         schema_version: "kiss-rust-llvm-cov-shim-v2".to_string(),
@@ -107,6 +116,8 @@ fn run_target_runner_shim_inner(
             .collect(),
         exit_code,
         spawn_error,
+        shim_identity,
+        delegated_identity,
         stdout: Some(stdout),
         stderr: Some(stderr),
     };
@@ -114,7 +125,13 @@ fn run_target_runner_shim_inner(
     Ok(exit_code.unwrap_or(1))
 }
 
-type DelegatedChildOutcome = (Option<i32>, Option<String>, Vec<u8>, Vec<u8>);
+type DelegatedChildOutcome = (
+    Option<i32>,
+    Option<String>,
+    Option<ProcessGroupIdentity>,
+    Vec<u8>,
+    Vec<u8>,
+);
 
 fn is_nextest_list_phase() -> bool {
     std::env::var("NEXTEST_TEST_PHASE").ok().as_deref() == Some("list")
@@ -133,26 +150,97 @@ fn run_delegated_child(
     profile_path: &Path,
     instance_id: &str,
 ) -> io::Result<DelegatedChildOutcome> {
-    let mut child = match spawn_delegated_piped_child(delegated, command, profile_path) {
-        Ok(child) => child,
-        Err(err) => return Ok((Some(1), Some(err.to_string()), Vec::new(), Vec::new())),
-    };
+    let (mut child, delegated_identity) =
+        match spawn_delegated_piped_child(delegated, command, profile_path) {
+            Ok(pair) => pair,
+            Err(err) => {
+                return Ok((
+                    Some(1),
+                    Some(err.to_string()),
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                ));
+            }
+        };
     let (stdout, stderr) = collect_delegated_child_output(&mut child, instance_id)?;
     let status = child.wait()?;
-    Ok((status.code().or(Some(1)), None, stdout, stderr))
+    Ok((
+        status.code().or(Some(1)),
+        None,
+        delegated_identity,
+        stdout,
+        stderr,
+    ))
 }
 
 fn spawn_delegated_piped_child(
     delegated: &[String],
     command: &[OsString],
     profile_path: &Path,
-) -> io::Result<std::process::Child> {
-    let mut child = build_delegated_command(delegated, command);
-    child.env("LLVM_PROFILE_FILE", profile_path);
-    child.stdout(Stdio::piped());
-    child.stderr(Stdio::piped());
-    child.stdin(Stdio::null());
-    child.spawn()
+) -> io::Result<(std::process::Child, Option<ProcessGroupIdentity>)> {
+    #[cfg(unix)]
+    {
+        let mut command = build_delegated_command(delegated, command);
+        command.env("LLVM_PROFILE_FILE", profile_path);
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+        command.stdin(Stdio::null());
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setpgid(0, 0) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let child = command.spawn()?;
+        let delegated_identity = record_spawned_child_identity(&child);
+        Ok((child, delegated_identity))
+    }
+    #[cfg(not(unix))]
+    {
+        let mut child = build_delegated_command(delegated, command);
+        child.env("LLVM_PROFILE_FILE", profile_path);
+        child.stdout(Stdio::piped());
+        child.stderr(Stdio::piped());
+        child.stdin(Stdio::null());
+        Ok((child.spawn()?, None))
+    }
+}
+
+#[cfg(unix)]
+fn record_spawned_child_identity(child: &std::process::Child) -> Option<ProcessGroupIdentity> {
+    let pid = child.id();
+    if pid == 0 {
+        return None;
+    }
+    let pgid = unsafe { libc::getpgid(pid as i32) };
+    if pgid <= 0 {
+        return None;
+    }
+    Some(ProcessGroupIdentity {
+        pid,
+        pgid: pgid as u32,
+    })
+}
+
+#[cfg(unix)]
+fn current_process_group_identity() -> Option<ProcessGroupIdentity> {
+    let pid = std::process::id();
+    let pgid = unsafe { libc::getpgid(pid as i32) };
+    if pgid <= 0 {
+        return None;
+    }
+    Some(ProcessGroupIdentity {
+        pid,
+        pgid: pgid as u32,
+    })
+}
+
+#[cfg(not(unix))]
+fn current_process_group_identity() -> Option<ProcessGroupIdentity> {
+    None
 }
 
 fn build_delegated_command(delegated: &[String], command: &[OsString]) -> Command {

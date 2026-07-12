@@ -122,6 +122,9 @@ fn load_cargo_config(req: &RustCoverageBatchRequest) -> Result<Config, RustLlvmC
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone())),
         );
+        if let Some(cargo_home) = req.env.get("CARGO_HOME") {
+            options = options.cargo_home(PathBuf::from(cargo_home));
+        }
     }
     Config::load_with_options(&req.cwd, options).map_err(|err| {
         RustLlvmCovError::InvalidRequest(format!("failed to load Cargo configuration: {err}"))
