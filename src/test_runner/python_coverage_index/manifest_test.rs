@@ -38,6 +38,29 @@ fn identity() -> PythonPopulationManifestIdentity {
 }
 
 #[test]
+fn python_manifest_rejects_v1_selector_discovery_version() {
+    let _lock = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let selector = "tests/test_app.py::test_value".to_string();
+    let mut identity = identity();
+    identity.selector_discovery_version = "python-selector-discovery-v1".to_string();
+    write_python_population_manifest_with_identity(
+        tmp.path(),
+        std::slice::from_ref(&selector),
+        &identity,
+    )
+    .unwrap();
+    assert!(
+        !python_population_manifest_is_current_for_args_with_env_keys(
+            tmp.path(),
+            std::slice::from_ref(&selector),
+            &[],
+            PYTHON_COVERAGE_ENV_KEYS,
+        )
+    );
+}
+
+#[test]
 fn python_coverage_env_tracks_only_pythonpath() {
     let _lock = crate::cwd_test_lock::lock();
     let _pythonpath = EnvGuard::set("PYTHONPATH", "src");
@@ -118,4 +141,25 @@ fn manifest_identity_and_matching_helpers_have_contracts() {
         std::slice::from_ref(&selector),
         &identity
     ));
+}
+
+#[test]
+fn stored_python_universe_selectors_reads_current_manifest() {
+    let _lock = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
+    let selector = "tests/test_app.py::test_value".to_string();
+    assert!(
+        stored_python_universe_selectors(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none()
+    );
+    write_python_population_manifest_for_args(tmp.path(), std::slice::from_ref(&selector), &[])
+        .unwrap();
+    let stored =
+        stored_python_universe_selectors(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).unwrap();
+    assert_eq!(stored, vec![selector]);
+
+    std::fs::write(tmp.path().join("new.py"), "x = 2\n").unwrap();
+    assert!(
+        stored_python_universe_selectors(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none()
+    );
 }

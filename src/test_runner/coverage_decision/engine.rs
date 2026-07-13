@@ -22,8 +22,13 @@ impl CoverageDecisionEngine {
         let mut population_languages = Vec::new();
         for planner in &self.planners {
             let universe = planner.discover_universe()?;
+            let universe_ids = universe
+                .iter()
+                .map(|selector| selector.id.clone())
+                .collect::<BTreeSet<_>>();
             let changed_tests = planner.changed_tests(&diff);
-            let prior_failures = planner.prior_failures();
+            let prior_failures =
+                filter_selectors_to_universe(planner.prior_failures(), &universe_ids);
             let freshness = planner.freshness(&universe)?;
             if freshness.requires_population() {
                 if !population_languages.contains(&planner.language()) {
@@ -55,4 +60,14 @@ impl CoverageDecisionEngine {
             population_languages,
         })
     }
+}
+
+fn filter_selectors_to_universe(
+    selectors: Vec<super::types::TestSelector>,
+    universe_ids: &BTreeSet<String>,
+) -> Vec<super::types::TestSelector> {
+    selectors
+        .into_iter()
+        .filter(|selector| universe_ids.contains(&selector.id))
+        .collect()
 }

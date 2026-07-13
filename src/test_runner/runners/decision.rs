@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::{enumerate_tests_in_changed_files, py_selector};
+use super::enumerate_tests_in_changed_files;
 use crate::test_runner::coverage_decision::{
     ChangedSource, CoverageDecisionEngine, LanguagePlanner, TestSelector,
 };
@@ -42,7 +42,7 @@ pub(crate) fn combined_selectors(
     let (py_source_paths, rust_source_paths) = split_source_paths(source_paths);
     let python_changed_lines = changed_lines_for_sources(rust_changed_lines, &py_source_paths);
     let rust_changed_lines = rust_changed_lines_for_sources(rust_changed_lines, &rust_source_paths);
-    let changed_tests = changed_test_selectors_by_language(test_paths)?;
+    let changed_tests = changed_test_selectors_by_language(repo_root, test_paths)?;
     let changed_sources = changed_sources_for_engine(&py_source_paths, &rust_source_paths);
     let engine_backers = engine_backers(EngineBackerInputs {
         repo_root,
@@ -252,19 +252,18 @@ struct ChangedTestSelectors {
 }
 
 fn changed_test_selectors_by_language(
+    repo_root: &Path,
     test_paths: &[PathBuf],
 ) -> Result<ChangedTestSelectors, String> {
+    let enumerated = enumerate_tests_in_changed_files(repo_root, test_paths)?;
     let mut changed = ChangedTestSelectors::default();
-    for (path, id) in enumerate_tests_in_changed_files(test_paths)? {
-        if path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("py"))
-        {
-            changed.python.push(TestSelector::new(
-                kiss::Language::Python,
-                py_selector(&path, &id),
-            ));
-        } else if kiss::Language::is_rust_path(&path) {
+    for nodeid in enumerated.python_nodeids {
+        changed
+            .python
+            .push(TestSelector::new(kiss::Language::Python, nodeid));
+    }
+    for (path, id) in enumerated.rust_tests {
+        if kiss::Language::is_rust_path(&path) {
             changed
                 .rust
                 .push(TestSelector::new(kiss::Language::Rust, id));

@@ -7,9 +7,14 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::must_use_candidate)]
 
+mod collector;
 mod forkserver;
 mod runner;
 mod types;
+
+#[cfg(test)]
+#[path = "collector_test.rs"]
+mod collector_test;
 
 #[cfg(test)]
 mod bounded_concurrency_test_support;
@@ -23,6 +28,10 @@ mod runner_test;
 #[cfg(test)]
 mod tests;
 
+pub use collector::{
+    PytestCollectError, PytestCollectOutcome, PytestCollectRequest, SubprocessPytestCollector,
+    collect_pytest_nodeids, subprocess_pytest_collector,
+};
 pub use forkserver::{ForkserverPytestRunner, forkserver_pytest_runner};
 pub use runner::{PytestRunner, SubprocessPytestRunner, subprocess_pytest_runner};
 pub use types::{

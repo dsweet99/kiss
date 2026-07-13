@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::test_runner::coverage_decision::LanguagePlanner;
 use crate::test_runner::runners::SelectorExecutionSummary;
-use crate::test_runner::runners::{py_selector, python_backer, rust_backer};
+use crate::test_runner::runners::{python_backer, rust_backer};
 
 fn planned() -> PlannedSelectors {
     PlannedSelectors {
@@ -194,7 +194,10 @@ fn python_population_phase_uses_discover_universe() {
     let discovered = LanguagePlanner::discover_universe(&module).unwrap();
     let discovered_ids: Vec<String> = discovered.into_iter().map(|s| s.id).collect();
     assert!(!discovered_ids.is_empty());
-    assert_eq!(discovered_ids, vec![py_selector(&test_app, "test_value")]);
+    assert_eq!(
+        discovered_ids,
+        vec!["tests/test_app.py::test_value".to_string()]
+    );
 
     assert!(matches!(
         execution_phase(&module, &ctx).unwrap(),

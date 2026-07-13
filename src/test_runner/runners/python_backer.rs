@@ -9,6 +9,7 @@ use crate::test_runner::coverage_decision::{
 use crate::test_runner::python_coverage_index::{
     PYTHON_COVERAGE_ENV_KEYS, python_population_manifest_is_current_for_args_with_env_keys,
     select_python_source_selectors_from_index, select_python_source_selectors_hybrid,
+    stored_python_universe_selectors,
 };
 
 pub(crate) struct PythonModule {
@@ -61,6 +62,16 @@ impl LanguagePlanner for PythonModule {
     }
 
     fn discover_universe(&self) -> Result<Vec<TestSelector>, String> {
+        if let Some(selectors) = stored_python_universe_selectors(
+            &self.repo_root,
+            &self.test_args,
+            self.manifest_env_allowlist(),
+        ) {
+            return Ok(selectors
+                .into_iter()
+                .map(|id| TestSelector::new(kiss::Language::Python, id))
+                .collect());
+        }
         Ok(
             enumerate_workspace_python_selectors(&self.repo_root, &self.ignore)?
                 .into_iter()

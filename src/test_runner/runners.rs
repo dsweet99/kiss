@@ -8,7 +8,7 @@ pub(crate) use super::rust_llvm_cov::run_rust_llvm_cov_selectors;
 #[cfg(test)]
 pub(crate) use super::rust_llvm_cov::run_rust_llvm_cov_selectors;
 use kiss::test_refs::{is_in_test_directory, is_test_file};
-use kiss::{parse_files, parse_rust_files, rust_test_functions_in, test_functions_in};
+use kiss::{parse_rust_files, rust_test_functions_in};
 use rust_llvm_cov_runner::{
     RustCoverageBatchCounters, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
 };
@@ -19,6 +19,15 @@ pub(crate) use decision::combined_selectors;
 
 #[path = "runners/python_backer.rs"]
 pub(crate) mod python_backer;
+#[cfg(test)]
+#[path = "runners/python_collect_acceptance_test.rs"]
+mod python_collect_acceptance_test;
+#[path = "runners/python_collect.rs"]
+mod python_collect;
+use python_collect::collect_python_nodeids;
+#[cfg(test)]
+#[path = "runners/python_collect_test.rs"]
+mod python_collect_test;
 #[path = "runners/rust_backer.rs"]
 pub(crate) mod rust_backer;
 
@@ -30,7 +39,8 @@ pub(crate) use rslip::run_rslip_selectors;
 
 pub const NO_COVERING_TESTS_MSG: &str = "NO COVERING TESTS";
 
-pub fn py_selector(test_path: &Path, test_id: &str) -> String {
+#[cfg(test)]
+pub(crate) fn py_selector(test_path: &Path, test_id: &str) -> String {
     format!("{}::{}", test_path.display(), test_id)
 }
 
@@ -156,10 +166,17 @@ pub fn partition_changed_paths(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>
     (source, test)
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ChangedFileTests {
+    pub python_nodeids: BTreeSet<String>,
+    pub rust_tests: BTreeSet<(PathBuf, String)>,
+}
+
 pub fn enumerate_tests_in_changed_files(
+    repo_root: &Path,
     test_paths: &[PathBuf],
-) -> Result<BTreeSet<(PathBuf, String)>, String> {
-    let mut out = BTreeSet::new();
+) -> Result<ChangedFileTests, String> {
+    let mut out = ChangedFileTests::default();
     let py: Vec<_> = test_paths
         .iter()
         .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("py")))
@@ -171,15 +188,8 @@ pub fn enumerate_tests_in_changed_files(
         .cloned()
         .collect();
     if !py.is_empty() {
-        let parsed = parse_files(&py).map_err(|e| e.to_string())?;
-        for (path, r) in py.iter().zip(parsed) {
-            let pf = r.map_err(|e| {
-                format!("error: kiss test: failed to parse {}: {e}", path.display())
-            })?;
-            let ids = test_functions_in(&pf);
-            for id in ids {
-                out.insert((pf.path.clone(), id));
-            }
+        for nodeid in collect_python_nodeids(repo_root, Some(&py), &[])? {
+            out.python_nodeids.insert(nodeid);
         }
     }
     if !rs.is_empty() {
@@ -190,7 +200,7 @@ pub fn enumerate_tests_in_changed_files(
             })?;
             let ids = rust_test_functions_in(&pf);
             for id in ids {
-                out.insert((pf.path.clone(), id));
+                out.rust_tests.insert((pf.path.clone(), id));
             }
         }
     }
@@ -222,29 +232,9 @@ pub fn enumerate_workspace_rust_selectors(
 
 pub fn enumerate_workspace_python_selectors(
     repo_root: &Path,
-    ignore: &[String],
+    _ignore: &[String],
 ) -> Result<Vec<String>, String> {
-    let root = repo_root.to_string_lossy().to_string();
-    let (py_files, _rs_files) =
-        kiss::gather_files_by_lang(&[root], Some(kiss::Language::Python), ignore);
-    let test_files: Vec<_> = py_files
-        .into_iter()
-        .filter(|path| is_test_file(path) || is_in_test_directory(path))
-        .collect();
-    let parsed = parse_files(&test_files).map_err(|e| e.to_string())?;
-    let mut selectors = BTreeSet::new();
-    for (path, result) in test_files.iter().zip(parsed) {
-        let pf = result.map_err(|e| {
-            format!(
-                "error: kiss test: failed to parse Python test file {}: {e}",
-                path.display()
-            )
-        })?;
-        for selector in test_functions_in(&pf) {
-            selectors.insert(py_selector(&pf.path, &selector));
-        }
-    }
-    Ok(selectors.into_iter().collect())
+    collect_python_nodeids(repo_root, None, &[])
 }
 
 pub fn shell_quote_line(argv: &[String]) -> String {

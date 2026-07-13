@@ -152,6 +152,32 @@ fn fresh_backer_selects_affected_tests() {
 }
 
 #[test]
+fn prior_failures_outside_pytest_universe_are_dropped() {
+    let universe = vec![selector(Language::Python, "tests/test_app.py::test_ok")];
+    let planner = FakePlanner {
+        language: Language::Python,
+        universe: universe.clone(),
+        changed_tests: vec![],
+        prior_failures: vec![selector(
+            Language::Python,
+            "/abs/tests/fixtures/mv/python/test.py::test_stale",
+        )],
+        freshness: CoverageFreshness::Fresh,
+        population: universe,
+        selected: vec![selector(Language::Python, "tests/test_app.py::test_ok")],
+        selection_complete: true,
+        select_calls: Rc::new(Cell::new(0)),
+    };
+    let plan = CoverageDecisionEngine::new(vec![planner.boxed()])
+        .plan(&[])
+        .unwrap();
+    assert_eq!(
+        plan.selected,
+        vec![selector(Language::Python, "tests/test_app.py::test_ok")]
+    );
+}
+
+#[test]
 fn fresh_incomplete_selection_escalates_to_population() {
     let select_calls = Rc::new(Cell::new(0));
     let planner = FakePlanner {
@@ -159,6 +185,8 @@ fn fresh_incomplete_selection_escalates_to_population() {
         universe: vec![
             selector(Language::Python, "a"),
             selector(Language::Python, "b"),
+            selector(Language::Python, "changed"),
+            selector(Language::Python, "failed"),
         ],
         changed_tests: vec![selector(Language::Python, "changed")],
         prior_failures: vec![selector(Language::Python, "failed")],

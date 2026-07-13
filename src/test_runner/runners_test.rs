@@ -45,14 +45,15 @@ fn merge_exit_codes_max() {
 #[test]
 fn enumerate_tests_in_changed_files_finds_py() {
     let tmp = TempDir::new().unwrap();
-    fs::write(
-        tmp.path().join("test_z.py"),
-        "def test_one():\n    assert 1\n",
-    )
-    .unwrap();
-    let paths = vec![tmp.path().join("test_z.py")];
-    let got = enumerate_tests_in_changed_files(&paths).unwrap();
-    assert!(got.iter().any(|(_, id)| id == "test_one"));
+    let tests = tmp.path().join("tests");
+    fs::create_dir(&tests).unwrap();
+    let test_file = tests.join("test_z.py");
+    fs::write(&test_file, "def test_one():\n    assert 1\n").unwrap();
+    let paths = vec![test_file];
+    let got = enumerate_tests_in_changed_files(tmp.path(), &paths).unwrap();
+    assert!(got
+        .python_nodeids
+        .contains("tests/test_z.py::test_one"));
 }
 
 #[test]
@@ -60,7 +61,7 @@ fn enumerate_tests_in_changed_files_errors_on_bad_rs() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("broken.rs"), "fn broken(\n").unwrap();
     let paths = vec![tmp.path().join("broken.rs")];
-    let err = enumerate_tests_in_changed_files(&paths).unwrap_err();
+    let err = enumerate_tests_in_changed_files(tmp.path(), &paths).unwrap_err();
     assert!(err.contains("failed to parse"));
     assert!(err.contains("broken.rs"));
 }

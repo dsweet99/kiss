@@ -135,7 +135,7 @@ fn prior_failures_are_selected_without_source_changes() {
     let selected_prior_failure = prior_failure.clone();
     let planner = StaticPlanner {
         language: Language::Python,
-        universe: Vec::new(),
+        universe: vec![prior_failure.clone()],
         prior_failures: vec![prior_failure.clone()],
         freshness: CoverageFreshness::Fresh,
     };
@@ -154,7 +154,10 @@ fn prior_failures_are_populated_when_coverage_is_stale() {
     let selected_prior_failure = prior_failure.clone();
     let planner = StaticPlanner {
         language: Language::Rust,
-        universe: vec![selector(Language::Rust, "crate::tests::covered")],
+        universe: vec![
+            selector(Language::Rust, "crate::tests::covered"),
+            prior_failure.clone(),
+        ],
         prior_failures: vec![prior_failure.clone()],
         freshness: CoverageFreshness::Stale,
     };

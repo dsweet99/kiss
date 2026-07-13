@@ -97,6 +97,25 @@ pub(crate) fn read_python_population_manifest(
         .and_then(|bytes| serde_json::from_slice::<PythonPopulationManifest>(&bytes).ok())
 }
 
+pub(crate) fn stored_python_universe_selectors(
+    repo_root: &Path,
+    test_args: &[String],
+    env_keys: &[&str],
+) -> Option<Vec<String>> {
+    let identity =
+        current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
+            .ok()?;
+    let manifest = read_python_population_manifest(repo_root)?;
+    let input_fingerprint = python_source_input_fingerprint(repo_root).ok()?;
+    if manifest.matches_python_identity(&identity, &normalized_python_repo_root(repo_root))
+        && manifest.input_fingerprint == input_fingerprint
+    {
+        Some(manifest.selectors.clone())
+    } else {
+        None
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct PythonPopulationManifestIdentity {
     pub(crate) cache_schema_version: String,

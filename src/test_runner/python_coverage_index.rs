@@ -10,12 +10,12 @@ use crate::test_runner::line_selection;
 
 pub(crate) const INDEX_SCHEMA_VERSION: &str = "rslip-python-index-v1";
 pub(crate) const POPULATION_SCHEMA_VERSION: &str = "rslip-python-population-v1";
-pub(crate) const PYTHON_SELECTOR_DISCOVERY_VERSION: &str = "python-selector-discovery-v1";
+pub(crate) const PYTHON_SELECTOR_DISCOVERY_VERSION: &str = "python-selector-discovery-v2";
 
 mod manifest;
 pub(crate) use manifest::{
     PYTHON_COVERAGE_ENV_KEYS, python_population_manifest_is_current_for_args_with_env_keys,
-    write_python_population_manifest_for_args,
+    stored_python_universe_selectors, write_python_population_manifest_for_args,
 };
 #[cfg(test)]
 pub(crate) use manifest::{

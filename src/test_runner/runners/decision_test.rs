@@ -1,8 +1,12 @@
 use super::*;
-use crate::test_runner::coverage_decision::{ChangedDiff, SelectionDecision};
+use crate::test_runner::coverage_decision::{ChangedDiff, LanguagePlanner, SelectionDecision};
 use crate::test_runner::python_coverage_index::{
     python_coverage_cache_root, rebuild_python_coverage_index,
     write_python_population_manifest_for_args,
+};
+use crate::test_runner::runners::python_collect::{
+    full_suite_subprocess_collects_for_tests, reset_full_suite_subprocess_collects_for_tests,
+    reset_python_collect_memo_for_tests,
 };
 use crate::test_runner::rust_coverage_index::rebuild_rust_coverage_index;
 use rpytest_runner::TestStatus;
@@ -106,7 +110,7 @@ fn PythonModule_and_RustModule_expose_discovery_and_static_policy_inputs() {
     std::fs::write(&test_app, "def test_value():\n    assert True\n").unwrap();
     std::fs::write(&lib, "#[test]\nfn rust_value() {}\n").unwrap();
     let py_changed =
-        TestSelector::new(kiss::Language::Python, py_selector(&test_app, "test_value"));
+        TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_value".to_string());
     let rs_changed = TestSelector::new(kiss::Language::Rust, "rust_value");
     let py_prior = TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_prior");
     let rs_prior = TestSelector::new(kiss::Language::Rust, "crate::tests::test_prior");
@@ -294,8 +298,8 @@ fn python_source_change_requires_population_without_selective_python() {
     assert_eq!(
         plan.py_selectors,
         vec![
-            py_selector(&test_app, "test_one"),
-            py_selector(&test_app, "test_two"),
+            "tests/test_app.py::test_one".to_string(),
+            "tests/test_app.py::test_two".to_string(),
         ]
     );
     assert!(plan.python_population_required);
@@ -305,7 +309,24 @@ fn python_source_change_requires_population_without_selective_python() {
 
 #[test]
 fn warm_python_source_change_selects_covering_test_from_rslip_index() {
+    reset_python_collect_memo_for_tests();
+    reset_full_suite_subprocess_collects_for_tests();
     let tmp = tempfile::TempDir::new().unwrap();
+    let (app, covering) = setup_warm_python_index(&tmp);
+
+    let plan = python_source_change_plan(tmp.path(), &app);
+    assert_eq!(plan.py_selectors, vec![covering.clone()]);
+    assert!(!plan.python_population_required);
+    assert_eq!(full_suite_subprocess_collects_for_tests(), 0);
+
+    reset_python_collect_memo_for_tests();
+    let plan_twice = python_source_change_plan(tmp.path(), &app);
+    assert_eq!(plan_twice.py_selectors, vec![covering]);
+    assert!(!plan_twice.python_population_required);
+    assert_eq!(full_suite_subprocess_collects_for_tests(), 0);
+}
+
+fn setup_warm_python_index(tmp: &tempfile::TempDir) -> (std::path::PathBuf, String) {
     let tests = tmp.path().join("tests");
     std::fs::create_dir(&tests).unwrap();
     let app = tmp.path().join("app.py");
@@ -318,8 +339,8 @@ def test_value():\n    assert value() == 1\n\n\
 def test_unrelated():\n    assert True\n",
     )
     .unwrap();
-    let covering = py_selector(&test_app, "test_value");
-    let unrelated = py_selector(&test_app, "test_unrelated");
+    let covering = "tests/test_app.py::test_value".to_string();
+    let unrelated = "tests/test_app.py::test_unrelated".to_string();
     write_python_entry(
         tmp.path(),
         "covering",
@@ -339,24 +360,28 @@ def test_unrelated():\n    assert True\n",
     rebuild_python_coverage_index(tmp.path()).unwrap();
     write_python_population_manifest_for_args(
         tmp.path(),
-        &[covering.clone(), unrelated.clone()],
+        &[covering.clone(), unrelated],
         &[],
     )
     .unwrap();
+    (app, covering)
+}
 
-    let plan = combined_selectors(
-        tmp.path(),
-        std::slice::from_ref(&app),
+fn python_source_change_plan(
+    repo_root: &std::path::Path,
+    app: &std::path::Path,
+) -> SelectorPlan {
+    let app_path = app.to_path_buf();
+    combined_selectors(
+        repo_root,
+        std::slice::from_ref(&app_path),
         &[],
-        &BTreeMap::from([(app.clone(), BTreeSet::from([1]))]),
+        &BTreeMap::from([(app_path.clone(), BTreeSet::from([1]))]),
         &[],
         Some(kiss::Language::Python),
         &[],
     )
-    .unwrap();
-
-    assert_eq!(plan.py_selectors, vec![covering]);
-    assert!(!plan.python_population_required);
+    .unwrap()
 }
 
 fn write_python_entry(
