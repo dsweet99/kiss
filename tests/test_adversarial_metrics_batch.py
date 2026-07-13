@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
+from ops.adversarial_metrics import metrics as adversarial_metrics_command
 from python.adversarial_metrics_batch import (
     RepoMetricsRow,
     format_metric,
@@ -86,3 +88,23 @@ def test_run_metrics_batch_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         "python.adversarial_common.repo_root", lambda: kiss, raising=False
     )
     assert run_metrics_batch() == 0
+
+
+def test_metrics_cli_delegates_to_batch_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = {"ensure": False, "batch": False}
+
+    monkeypatch.setattr(
+        "ops.adversarial_metrics.ensure_import_path",
+        lambda: called.__setitem__("ensure", True),
+    )
+    monkeypatch.setattr(
+        "python.adversarial_metrics_batch.run_metrics_batch",
+        lambda: called.__setitem__("batch", True) or 5,
+    )
+
+    result = CliRunner().invoke(adversarial_metrics_command)
+
+    assert result.exit_code == 5
+    assert called == {"ensure": True, "batch": True}

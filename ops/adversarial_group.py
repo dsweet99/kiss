@@ -21,13 +21,7 @@ class AdversarialGroup(click.Group):
         super().__init__(**attrs)
         self._specs = specs
         self._loader = loader
-
-    def list_commands(self, ctx: click.Context) -> list[str]:
-        return sorted(self._specs)
-
-    def get_command(
-        self, ctx: click.Context, cmd_name: str
-    ) -> click.Command | None:
-        if cmd_name not in self._specs:
-            return None
-        return self._loader(cmd_name)
+        self.list_commands = lambda _ctx: sorted(self._specs)
+        self.get_command = lambda _ctx, name: (
+            self._loader(name) if name in self._specs else None
+        )
