@@ -1,0 +1,8 @@
+[package]
+name = "export-contract-helper"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "helper-bin"
+path = "src/main.rs"
