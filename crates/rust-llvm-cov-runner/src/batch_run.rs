@@ -1,16 +1,25 @@
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::batch_plan::RustCoverageBatchPlan;
 use crate::RustLlvmCovError;
 
+#[path = "batch_run_cleanup.rs"]
+mod batch_run_cleanup;
 #[path = "batch_run_identity.rs"]
 mod batch_run_identity;
 #[path = "batch_run_subprocess.rs"]
 mod batch_run_subprocess;
+
+pub(crate) use batch_run_cleanup::{CurrentRunCleanup, FreshBatchRunScope};
+pub(crate) use crate::batch_process_tree::batch_scope_interrupted;
+#[cfg(test)]
+pub(crate) use batch_run_cleanup::finalize_batch_result;
 
 #[allow(unused_imports)]
 pub(crate) use batch_run_identity::{
@@ -79,6 +88,7 @@ pub fn default_batch_subprocess_runner() -> BatchSubprocessRunner {
     BatchSubprocessRunner::from_fn(run_batch_subprocess)
 }
 
+#[cfg(test)]
 pub fn prepare_batch_run_layout(plan: &RustCoverageBatchPlan) -> io::Result<PathBuf> {
     let run_root = plan
         .generated_config

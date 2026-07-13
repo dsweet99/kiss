@@ -14,6 +14,33 @@ use crate::batch_shim::load_live_shim_process_identities;
 
 use super::{BatchSubprocessRunError, BatchSubprocessRunOutcome};
 
+struct OutputChannelShutdown {
+    server: Option<OutputChannelServer>,
+}
+
+impl OutputChannelShutdown {
+    fn new(server: OutputChannelServer) -> Self {
+        Self {
+            server: Some(server),
+        }
+    }
+
+    fn stop_with_errors(mut self) -> crate::batch_output_channel::OutputChannelStop {
+        self.server
+            .take()
+            .expect("output channel server present")
+            .stop_with_errors()
+    }
+}
+
+impl Drop for OutputChannelShutdown {
+    fn drop(&mut self) {
+        if let Some(server) = self.server.take() {
+            let _ = server.stop_with_errors();
+        }
+    }
+}
+
 pub(crate) fn run_batch_subprocess(
     cwd: &Path,
     plan: &RustCoverageBatchPlan,
@@ -21,6 +48,7 @@ pub(crate) fn run_batch_subprocess(
     ensure_batch_env_dirs(plan)?;
     let run_root = batch_run_root(plan)?;
     let (output_server, env) = start_output_channel_for_batch(run_root, plan)?;
+    let output_server = OutputChannelShutdown::new(output_server);
     let process_tree = install_process_tree_guard()?;
     let started = std::time::Instant::now();
     let output = run_tracked_batch_command(cwd, plan, &env, &process_tree)?;
@@ -116,15 +144,15 @@ fn run_tracked_batch_command(
     let stderr_handle = std::thread::spawn(move || read_pipe_to_end(stderr_pipe));
     let output_dir = plan.target_runner_output_dir.clone();
     let mut seen_shim_metadata = HashSet::new();
-    let status = wait_child_with_interruption(
+    let wait_result = wait_child_with_interruption(
         &mut child,
         process_tree,
         &output_dir,
         &mut seen_shim_metadata,
-    )
-    .map_err(|err| spawn_component_error(&program, err.to_string()))?;
+    );
     let stdout = join_pipe_reader(stdout_handle, &program, "stdout")?;
     let stderr = join_pipe_reader(stderr_handle, &program, "stderr")?;
+    let status = wait_result.map_err(|err| spawn_component_error(&program, err.to_string()))?;
     Ok(std::process::Output {
         status,
         stdout,

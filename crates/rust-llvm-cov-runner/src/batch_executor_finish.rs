@@ -29,14 +29,6 @@ impl FreshBatchFinishContext {
     }
 }
 
-#[cfg(test)]
-#[test]
-fn fresh_batch_finish_context_witness_is_constructible() {
-    let ctx = FreshBatchFinishContext::witness();
-    assert_eq!(ctx.build_target_baseline_bytes, 42);
-    assert_eq!(ctx.process_residual_count, 0);
-}
-
 pub(crate) fn build_instance_results(
     started_tests: &[crate::batch_events::BatchTestStarted],
     ignored_tests: &[crate::batch_events::BatchTestStarted],
@@ -283,3 +275,7 @@ fn store_completed_outcomes(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "batch_executor_finish_test.rs"]
+mod tests;

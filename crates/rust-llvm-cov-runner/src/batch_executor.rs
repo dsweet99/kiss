@@ -176,7 +176,3 @@ fn outcome_from_entry(
 #[cfg(test)]
 #[path = "batch_executor_test.rs"]
 mod tests;
-
-#[cfg(test)]
-#[path = "batch_executor_fresh_test.rs"]
-mod fresh_tests;

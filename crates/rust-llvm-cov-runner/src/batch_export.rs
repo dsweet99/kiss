@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::Duration;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -291,23 +292,40 @@ fn clone_export_context(context: &_ExportJobContext) -> _ExportJobContext {
 
 fn drain_export_results(drain: &mut ExportDrainState<'_>) -> Result<(), RustLlvmCovError> {
     while *drain.running > 0 {
-        let Ok((index, outcome)) = drain.rx.recv() else {
-            break;
-        };
-        *drain.running -= 1;
-        let (id, coverage) = outcome?;
-        drain.results[index] = (id, coverage);
-        if *drain.next_index < drain.requests.len() {
-            spawn_export_job(
-                *drain.next_index,
-                &drain.requests[*drain.next_index],
-                clone_export_context(drain.context),
-            );
-            *drain.running += 1;
-            *drain.next_index += 1;
-            let active_count = *drain.active.lock().expect("active lock");
-            drain.counters.max_active_exports = drain.counters.max_active_exports.max(active_count);
+        if crate::batch_process_tree::batch_scope_interrupted() {
+            return Err(RustLlvmCovError::InvalidRequest(
+                "batch interrupted".into(),
+            ));
         }
+        match drain
+            .rx
+            .recv_timeout(Duration::from_millis(25))
+        {
+            Ok((index, outcome)) => {
+                *drain.running -= 1;
+                let (id, coverage) = outcome?;
+                drain.results[index] = (id, coverage);
+                if *drain.next_index < drain.requests.len() {
+                    spawn_export_job(
+                        *drain.next_index,
+                        &drain.requests[*drain.next_index],
+                        clone_export_context(drain.context),
+                    );
+                    *drain.running += 1;
+                    *drain.next_index += 1;
+                    let active_count = *drain.active.lock().expect("active lock");
+                    drain.counters.max_active_exports =
+                        drain.counters.max_active_exports.max(active_count);
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    if crate::batch_process_tree::batch_scope_interrupted() {
+        return Err(RustLlvmCovError::InvalidRequest(
+            "batch interrupted".into(),
+        ));
     }
     Ok(())
 }

@@ -1,11 +1,11 @@
+#[path = "batch_process_tree_reap.rs"]
+mod batch_process_tree_reap;
+
 use std::io;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-
-#[cfg(unix)]
-use std::sync::OnceLock;
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -47,24 +47,53 @@ impl ProcessTreeRegistry {
 pub struct BatchProcessTreeGuard {
     registry: Arc<ProcessTreeRegistry>,
     interrupted: Arc<AtomicBool>,
+    owns_sigint_handler: bool,
+}
+
+pub struct BatchScopeInterruptGuard;
+
+impl BatchScopeInterruptGuard {
+    pub fn install() -> io::Result<Self> {
+        let registry = Arc::new(ProcessTreeRegistry::default());
+        let interrupted = Arc::new(AtomicBool::new(false));
+        register_batch_scope_sigint(Arc::clone(&registry), Arc::clone(&interrupted))?;
+        #[cfg(unix)]
+        install_sigint_handler(Arc::clone(&registry), Arc::clone(&interrupted))?;
+        Ok(Self)
+    }
+}
+
+impl Drop for BatchScopeInterruptGuard {
+    fn drop(&mut self) {
+        clear_batch_scope_sigint();
+    }
+}
+
+pub fn batch_scope_interrupted() -> bool {
+    batch_scope_sigint_state()
+        .map(|(_, interrupted)| interrupted.load(Ordering::SeqCst))
+        .unwrap_or(false)
 }
 
 impl BatchProcessTreeGuard {
     pub fn install() -> io::Result<Self> {
+        if let Some((registry, interrupted)) = batch_scope_sigint_state() {
+            install_child_subreaper()?;
+            return Ok(Self {
+                registry,
+                interrupted,
+                owns_sigint_handler: false,
+            });
+        }
         let registry = Arc::new(ProcessTreeRegistry::default());
         let interrupted = Arc::new(AtomicBool::new(false));
         #[cfg(unix)]
         install_sigint_handler(Arc::clone(&registry), Arc::clone(&interrupted))?;
-        #[cfg(target_os = "linux")]
-        {
-            let rc = unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) };
-            if rc != 0 {
-                return Err(io::Error::last_os_error());
-            }
-        }
+        install_child_subreaper()?;
         Ok(Self {
             registry,
             interrupted,
+            owns_sigint_handler: true,
         })
     }
 
@@ -104,7 +133,11 @@ impl BatchProcessTreeGuard {
     }
 
     pub fn terminate_descendants(&self, grace: Duration) -> usize {
-        self.interrupted.store(true, Ordering::SeqCst);
+        // Scope-level guards share this flag with `BatchScopeInterruptGuard`; only
+        // standalone subprocess guards may mark interruption during descendant teardown.
+        if self.owns_sigint_handler {
+            self.interrupted.store(true, Ordering::SeqCst);
+        }
         let identities = self.registry.identities();
         for identity in &identities {
             signal_validated_process_group(identity, libc::SIGTERM);
@@ -119,20 +152,63 @@ impl BatchProcessTreeGuard {
         for identity in &identities {
             signal_validated_process_group(identity, libc::SIGKILL);
         }
-        reap_zombies();
+        batch_process_tree_reap::reap_zombies();
         self.registry.residual_count()
     }
 }
 
 impl Drop for BatchProcessTreeGuard {
     fn drop(&mut self) {
-        clear_sigint_handler();
+        if self.owns_sigint_handler {
+            clear_sigint_handler();
+        }
         let _ = self.terminate_descendants(Duration::from_millis(250));
     }
 }
 
 #[cfg(unix)]
 static SIGINT_STATE: OnceLock<Mutex<Option<SigintHandlerState>>> = OnceLock::new();
+
+type BatchScopeSigintState = (Arc<ProcessTreeRegistry>, Arc<AtomicBool>);
+static BATCH_SCOPE_SIGINT: OnceLock<Mutex<Option<BatchScopeSigintState>>> = OnceLock::new();
+
+fn batch_scope_sigint_state() -> Option<(Arc<ProcessTreeRegistry>, Arc<AtomicBool>)> {
+    BATCH_SCOPE_SIGINT
+        .get()
+        .and_then(|slot| slot.lock().ok())
+        .and_then(|slot| slot.clone())
+}
+
+fn register_batch_scope_sigint(
+    registry: Arc<ProcessTreeRegistry>,
+    interrupted: Arc<AtomicBool>,
+) -> io::Result<()> {
+    let slot = BATCH_SCOPE_SIGINT.get_or_init(|| Mutex::new(None));
+    *slot
+        .lock()
+        .map_err(|_| io::Error::other("batch scope sigint lock poisoned"))? = Some((registry, interrupted));
+    Ok(())
+}
+
+fn clear_batch_scope_sigint() {
+    clear_sigint_handler();
+    if let Some(slot) = BATCH_SCOPE_SIGINT.get()
+        && let Ok(mut state) = slot.lock()
+    {
+        *state = None;
+    }
+}
+
+fn install_child_subreaper() -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let rc = unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) };
+        if rc != 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}
 
 #[cfg(unix)]
 type SigintHandlerState = (Arc<ProcessTreeRegistry>, Arc<AtomicBool>);
@@ -159,7 +235,7 @@ extern "C" fn handle_sigint(_signal: libc::c_int) {
         for identity in registry.identities() {
             signal_validated_process_group(&identity, libc::SIGKILL);
         }
-        reap_zombies();
+        batch_process_tree_reap::reap_zombies();
     }
 }
 
@@ -269,15 +345,10 @@ fn process_group_alive(pgid: u32) -> bool {
     unsafe { libc::killpg(pgid as i32, 0) == 0 }
 }
 
-fn reap_zombies() {
-    loop {
-        let pid = unsafe { libc::waitpid(-1, std::ptr::null_mut(), libc::WNOHANG) };
-        if pid <= 0 {
-            break;
-        }
-    }
-}
-
 #[cfg(test)]
 #[path = "batch_process_tree_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "batch_process_tree_sigint_test.rs"]
+mod sigint_tests;

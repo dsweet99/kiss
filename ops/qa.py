@@ -925,6 +925,14 @@ def assert_json_integrity(cache_root: Path) -> int:
     return len(json_paths)
 
 
+def assert_no_transient_run_directories(rust_cache: Path) -> None:
+    runs_root = rust_cache / "runs"
+    if not runs_root.is_dir():
+        return
+    run_dirs = sorted(path for path in runs_root.iterdir() if path.is_dir())
+    assert not run_dirs, f"transient run directories survived: {run_dirs[:3]}"
+
+
 def assert_rust_observer_strictness(outcome: Outcome, jobs: int) -> None:
     observation = outcome.observation
     assert observation is not None, "observed run missing process observation"
@@ -1700,7 +1708,14 @@ def rust_batch_e2e() -> None:
 
         interrupted = run_interrupted(
             "rust-e2e-interrupt",
-            population_command,
+            kiss_command(
+                "rust",
+                fixture.ignores["rust"],
+                "--metrics",
+                "--force",
+                "-j",
+                str(jobs),
+            ),
             fixture.root,
             fixture.env,
             signal_after=0.75,
@@ -1710,6 +1725,7 @@ def rust_batch_e2e() -> None:
             (str(fixture.root), "rust_llvm_cov_cache")
         )
         assert not residual, f"batch descendants survived interruption: {residual}"
+        assert_no_transient_run_directories(rust_cache)
         recovered = run(
             "rust-e2e-recover-after-interrupt",
             population_command,
@@ -1799,6 +1815,7 @@ def rust_phase_interrupt() -> None:
                 (str(fixture.root), "rust_llvm_cov_cache")
             )
             assert not residual, f"{phase} descendants survived: {residual}"
+            assert_no_transient_run_directories(fixture.root / ".kiss/rust_llvm_cov_cache")
             recovered = run(
                 f"rust-phase-recover-{phase}",
                 population_command,
@@ -2018,14 +2035,23 @@ def rust_retained_cache_audit(log_dir: Path | None) -> None:
             "transient output-channel artifacts survived"
         )
         if runs_root.is_dir():
-            run_dirs = sorted(
-                (path for path in runs_root.iterdir() if path.is_dir()),
-                key=lambda path: path.stat().st_mtime,
+            transient_globs = (
+                "**/*.profraw",
+                "**/nextest.toml",
+                "**/runner-map.json",
+                "**/cargo-runner.toml",
+                "**/instances/**",
+                "**/*.tmp",
             )
-            for stale_run in run_dirs[:-1]:
-                assert not list(stale_run.glob("**/*.profraw")), (
-                    f"stale run retained profiles: {stale_run}"
-                )
+            for run_dir in runs_root.iterdir():
+                if not run_dir.is_dir():
+                    continue
+                for pattern in transient_globs:
+                    matches = list(run_dir.glob(pattern))
+                    assert not matches, (
+                        f"run directory retained transient artifacts ({pattern}): "
+                        f"{run_dir} -> {matches[:3]}"
+                    )
         assert_json_integrity(rust_cache)
         log_path = archive_dir / "retained_cache_audit.log"
         log_path.write_text("\n".join(lines + ["QA PASS: retained-cache audit held."]))
