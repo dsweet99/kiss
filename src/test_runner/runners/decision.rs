@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use super::enumerate_tests_in_changed_files;
 use crate::test_runner::coverage_decision::{
-    ChangedSource, CoverageDecisionEngine, LanguagePlanner, TestSelector,
+    ChangedSource, CoverageDecisionEngine, LanguagePlanner, RustSelectionBasis, TestSelector,
 };
 use crate::test_runner::last_status::{
     has_language_records, prior_failures, python_last_status_identity, rust_last_status_identity,
@@ -28,6 +28,7 @@ pub(crate) struct SelectorPlan {
     pub(crate) python_prior_failure_selectors: Vec<String>,
     pub(crate) rust_prior_failure_selectors: Vec<String>,
     pub(crate) coverage_decision_engine_used: bool,
+    pub(crate) rust_selection_basis: RustSelectionBasis,
 }
 
 pub(crate) fn combined_selectors(
@@ -59,6 +60,7 @@ pub(crate) fn combined_selectors(
         selectors_for_language(&engine_backers.prior_failures, kiss::Language::Python);
     let rust_prior_failure_selectors =
         selectors_for_language(&engine_backers.prior_failures, kiss::Language::Rust);
+    let pre_rust_selection_basis = rust_selection_basis_from_backers(&engine_backers.backers);
     let engine_plan = CoverageDecisionEngine::new(engine_backers.backers).plan(&changed_sources)?;
     let (selected_py, selected_rs) = selectors_by_language(&engine_plan.selected);
     let (population_py, population_rs) = selectors_by_language(&engine_plan.population);
@@ -68,6 +70,11 @@ pub(crate) fn combined_selectors(
     let rust_population_required = engine_plan
         .population_languages
         .contains(&kiss::Language::Rust);
+    let rust_selection_basis = if rust_population_required {
+        RustSelectionBasis::Population
+    } else {
+        pre_rust_selection_basis
+    };
     Ok(SelectorPlan {
         py_selectors: if python_population_required {
             population_py
@@ -87,7 +94,17 @@ pub(crate) fn combined_selectors(
         python_prior_failure_selectors,
         rust_prior_failure_selectors,
         coverage_decision_engine_used: true,
+        rust_selection_basis,
     })
+}
+
+fn rust_selection_basis_from_backers(backers: &[Box<dyn LanguagePlanner>]) -> RustSelectionBasis {
+    for backer in backers {
+        if let Some(basis) = backer.rust_selection_basis() {
+            return basis;
+        }
+    }
+    RustSelectionBasis::Current
 }
 
 struct EngineBackerInputs<'a> {

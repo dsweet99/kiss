@@ -10,6 +10,7 @@ use serde::Serialize;
 #[cfg(test)]
 use std::io::Write;
 
+#[cfg(test)]
 use super::RustCoverageIndex;
 
 #[cfg(test)]
@@ -46,6 +47,7 @@ pub(crate) fn command_output_text(stdout: &[u8]) -> String {
     String::from_utf8_lossy(stdout).trim().to_string()
 }
 
+#[cfg(test)]
 pub(crate) fn load_current_rust_coverage_index(
     repo_root: &Path,
     test_args: &[String],
@@ -64,6 +66,20 @@ pub(crate) fn load_current_rust_population_state(
         repo_root,
         &identity,
         selectors,
+    )
+}
+
+pub(crate) fn load_reusable_prior_rust_population_state(
+    repo_root: &Path,
+    selectors: Option<&[String]>,
+    test_args: &[String],
+) -> Option<rust_llvm_cov_runner::RustPopulationState> {
+    let identity = super::current_rust_coverage_batch_identity(repo_root, test_args).ok()?;
+    rust_llvm_cov_runner::load_reusable_prior_population_state(
+        &rust_coverage_cache_root(repo_root),
+        repo_root,
+        selectors,
+        &identity.selection_context_fingerprint,
     )
 }
 
@@ -113,6 +129,7 @@ pub(crate) fn write_rust_coverage_index(
         source_root: String,
         input_fingerprint: String,
         generation_fingerprint: String,
+        selection_context_fingerprint: String,
         entries_fingerprint: String,
         selectors: Vec<String>,
     }
@@ -125,6 +142,7 @@ pub(crate) fn write_rust_coverage_index(
             source_root,
             input_fingerprint: batch_identity.input_digest,
             generation_fingerprint: generation,
+            selection_context_fingerprint: batch_identity.selection_context_fingerprint,
             entries_fingerprint,
             selectors: index
                 .values()

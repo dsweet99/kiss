@@ -14,6 +14,7 @@ mod batch_executor_fresh;
 mod batch_export;
 mod batch_export_catalog;
 mod batch_export_ignore;
+mod cargo_workspace_metadata;
 mod batch_export_resolve;
 mod batch_export_tools;
 mod batch_fingerprint;
@@ -66,10 +67,12 @@ pub use batch_aggregate::{AggregationCounters, InstanceResult, aggregate_logical
 pub use batch_derived::{
     DerivedPublishCounters, INDEX_SCHEMA_VERSION as BATCH_INDEX_SCHEMA_VERSION,
     POPULATION_SCHEMA_VERSION as BATCH_POPULATION_SCHEMA_VERSION, population_derived_state_stale,
-    population_manifest_state_is_current, publish_derived_state,
+    population_manifest_state_is_current, prune_obsolete_selective_generations,
+    publish_derived_state,
 };
 pub use batch_derived_index::{
     RustPopulationState, load_current_generation_line_index, load_current_population_state,
+    load_reusable_prior_population_state,
 };
 pub use batch_events::{
     BatchCompilerArtifact, BatchEventStream, BatchTestTerminal, aggregate_selectors_for_test,
@@ -107,7 +110,10 @@ pub use rust_cov_cache::{
     repo_relative_path, store_rust_cov_cache_entry,
 };
 use serde::{Deserialize, Serialize};
-pub use shared_input::{is_cargo_config_input_path, rust_cov_input_files, workspace_input_digest};
+pub use shared_input::{
+    is_cargo_config_input_path, rust_cov_input_files, selection_context_source_digest,
+    workspace_input_digest,
+};
 pub use worker::rust_cov_cache_tmp_parent;
 
 pub const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v2";

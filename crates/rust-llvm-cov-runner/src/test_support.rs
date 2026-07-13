@@ -173,6 +173,39 @@ pub(crate) fn published_alpha_derived_fixture() -> PublishedAlphaFixture {
 }
 
 #[cfg(test)]
+pub(crate) fn store_alpha_entry(
+    cache_root: &Path,
+    req: &crate::RustCoverageBatchRequest,
+    tools: &crate::RustCoverageToolIdentity,
+    identity: &crate::RustCoverageBatchIdentity,
+    files: std::collections::BTreeMap<String, std::collections::BTreeSet<u32>>,
+) {
+    use std::time::Duration;
+
+    use rpytest_runner::TestStatus;
+
+    use crate::batch_fingerprint::entry_fingerprint;
+    use crate::rust_cov_cache::store_rust_cov_cache_entry;
+    use crate::{RustCovCacheEntry, RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
+
+    let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, "alpha");
+    let entry = RustCovCacheEntry::from_outcome(
+        &RustLlvmCovOutcome {
+            selector: "alpha".to_string(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            coverage: RustLineCoverage { files },
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        },
+        &identity.generation_fingerprint,
+    );
+    store_rust_cov_cache_entry(cache_root, &fingerprint, &entry).unwrap();
+}
+
+#[cfg(test)]
 pub(crate) fn tamper_json_file(
     cache_root: &Path,
     relative: &str,

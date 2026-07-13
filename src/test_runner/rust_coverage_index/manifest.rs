@@ -65,6 +65,7 @@ fn write_test_derived_state_files(
             "source_root": normalized_repo_root(repo_root),
             "input_fingerprint": batch_identity.input_digest,
             "generation_fingerprint": batch_identity.generation_fingerprint,
+            "selection_context_fingerprint": batch_identity.selection_context_fingerprint,
             "entries_fingerprint": entries_fingerprint,
             "selectors": selectors,
         }),

@@ -54,21 +54,38 @@ fn repo_root_and_commit_changed_paths() {
 }
 
 #[test]
-fn diff_filter_drops_deleted_file() {
+fn diff_includes_deleted_tracked_file() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
     std::fs::write(tmp.path().join("keep.py"), "x=1\n").unwrap();
+    std::fs::write(tmp.path().join("src").join("gone.rs"), "x=1\n").unwrap();
     git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
         .unwrap();
     std::fs::remove_file(tmp.path().join("keep.py")).unwrap();
+    std::fs::remove_file(tmp.path().join("src").join("gone.rs")).unwrap();
     let names = changed_paths_commit(tmp.path()).unwrap();
     assert!(
-        !names.iter().any(|n| n.contains("keep.py")),
-        "deleted tracked file should not appear with AM filter, got {names:?}"
+        names.iter().any(|n| n.contains("keep.py")),
+        "deleted tracked file should appear with D filter, got {names:?}"
     );
+    assert!(
+        names.iter().any(|n| n.ends_with("gone.rs")),
+        "deleted rust source should appear for population planning, got {names:?}"
+    );
+}
+
+#[test]
+fn resolve_changed_includes_missing_deleted_rust_path() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let rel = vec!["src/gone.rs".to_string()];
+    let out = resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Rust));
+    assert_eq!(out, vec![root.join("src/gone.rs")]);
+    assert!(resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Python)).is_empty());
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use super::{
     ChangedDiff, ChangedSource, ChangedTestSelector, CoverageDecisionEngine, CoverageDecisionPlan,
-    CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionDecision, TestSelector,
-    full_population_plan,
+    CoverageFreshness, LanguagePlanner, PopulationPlan, RustSelectionBasis, SelectionDecision,
+    TestSelector, full_population_plan,
 };
 use kiss::Language;
 
@@ -119,14 +119,20 @@ fn witness_changed_diff_and_freshness_are_exhaustive() {
 
     for freshness in [
         CoverageFreshness::Fresh,
+        CoverageFreshness::ReusablePrior,
         CoverageFreshness::Stale,
         CoverageFreshness::Unknown,
     ] {
         assert!(matches!(
             freshness,
-            CoverageFreshness::Fresh | CoverageFreshness::Stale | CoverageFreshness::Unknown
+            CoverageFreshness::Fresh
+                | CoverageFreshness::ReusablePrior
+                | CoverageFreshness::Stale
+                | CoverageFreshness::Unknown
         ));
     }
+    assert_eq!(RustSelectionBasis::default(), RustSelectionBasis::Current);
+    assert_ne!(RustSelectionBasis::ReusablePrior, RustSelectionBasis::Population);
 }
 
 #[test]

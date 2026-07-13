@@ -40,18 +40,33 @@ fn witness_changed_line_rels() {
 fn witness_changed_line_selection_ignores_retained_prior_generation_entries() {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
-    fs::write(&lib, "pub fn a() {}\npub fn b() {}\n").unwrap();
-    let current_generation = super::test_support::test_generation_fingerprint(tmp.path());
+    fs::write(
+        &lib,
+        "pub fn a() {}\npub fn b() {}\n#[cfg(test)] mod tests { #[test] fn test_current_line() {} #[test] fn test_stale_line() {} }\n",
+    )
+    .unwrap();
+    let _ = super::current_rust_coverage_batch_identity(tmp.path(), &[]);
     super::test_support::write_test_entry(
         tmp.path(),
         "current",
-        "test_current_line",
+        "tests::test_current_line",
         rpytest_runner::TestStatus::Passed,
         rust_llvm_cov_runner::RustLineCoverage {
-            files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([2]))]),
+            files: BTreeMap::from([(
+                "src/lib.rs".to_string(),
+                BTreeSet::from([2]),
+            )]),
         },
     );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+    write_rust_population_manifest_for_args(tmp.path(), &["tests::test_current_line".to_string()], &[])
+        .unwrap();
     let stale_path = rust_coverage_cache_root(tmp.path())
         .join("entries")
         .join("stale.json");
@@ -60,25 +75,19 @@ fn witness_changed_line_selection_ignores_retained_prior_generation_entries() {
         serde_json::json!({
             "schema_version": CACHE_SCHEMA_VERSION,
             "generation_fingerprint": "prior-complete-generation",
-            "selector": "test_stale_line",
+            "selector": "tests::test_stale_line",
             "status": rpytest_runner::TestStatus::Passed,
             "exit_code": 0,
             "duration": 1,
             "coverage": {
                 "files": {
-                    lib.to_string_lossy().to_string(): [1]
+                    "src/lib.rs": [1]
                 }
             },
         })
         .to_string(),
     )
     .unwrap();
-    assert_ne!(current_generation, "prior-complete-generation");
-    let index = BTreeMap::from([(
-        "src/lib.rs".to_string(),
-        BTreeSet::from(["test_current_line".to_string()]),
-    )]);
-    super::storage::write_rust_coverage_index(tmp.path(), &index).unwrap();
 
     let selected = select_rust_source_selectors_for_changed_lines(
         tmp.path(),
@@ -96,7 +105,7 @@ fn witness_changed_line_selection_ignores_retained_prior_generation_entries() {
             &BTreeMap::from([(lib.clone(), BTreeSet::from([1]))]),
             &[],
         ),
-        Some(BTreeSet::from(["test_current_line".to_string()]))
+        Some(BTreeSet::from(["tests::test_current_line".to_string()]))
     );
 }
 

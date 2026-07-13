@@ -179,11 +179,13 @@ pub fn enumerate_tests_in_changed_files(
     let mut out = ChangedFileTests::default();
     let py: Vec<_> = test_paths
         .iter()
+        .filter(|p| p.is_file())
         .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("py")))
         .cloned()
         .collect();
     let rs: Vec<_> = test_paths
         .iter()
+        .filter(|p| p.is_file())
         .filter(|p| kiss::Language::is_rust_path(p))
         .cloned()
         .collect();

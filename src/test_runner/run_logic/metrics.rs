@@ -25,6 +25,7 @@ pub(super) struct LocalRubricMetrics {
     pub(super) rust_population_required: bool,
     pub(super) rust_population_selectors: usize,
     pub(super) rust_final_selectors: usize,
+    pub(super) rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis,
     pub(super) coverage_decision_engine_used: bool,
     pub(super) python: PhaseMetrics,
     pub(super) python_index_rebuild_duration: Duration,
@@ -54,6 +55,7 @@ impl LocalRubricMetrics {
         rust_population_required: bool,
         rust_population_selectors: usize,
         rust_final_selectors: usize,
+        rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis,
     ) -> Self {
         Self {
             plan_duration: options.plan_duration,
@@ -66,6 +68,7 @@ impl LocalRubricMetrics {
             rust_population_required,
             rust_population_selectors,
             rust_final_selectors,
+            rust_selection_basis,
             coverage_decision_engine_used: planned.coverage_decision_engine_used,
             python: PhaseMetrics::default(),
             python_index_rebuild_duration: Duration::ZERO,
@@ -156,9 +159,41 @@ fn print_selection_metrics(metrics: &LocalRubricMetrics) {
     );
     println!("rust_final_selectors={}", metrics.rust_final_selectors);
     println!(
+        "rust_selection_basis={}",
+        rust_selection_basis_label(metrics.rust_selection_basis)
+    );
+    println!(
         "coverage_decision_engine_used={}",
         metrics.coverage_decision_engine_used
     );
+}
+
+fn rust_selection_basis_label(basis: crate::test_runner::coverage_decision::RustSelectionBasis) -> &'static str {
+    use crate::test_runner::coverage_decision::RustSelectionBasis;
+    match basis {
+        RustSelectionBasis::Current => "current",
+        RustSelectionBasis::ReusablePrior => "reusable_prior",
+        RustSelectionBasis::Population => "population",
+    }
+}
+
+#[cfg(test)]
+mod basis_label_tests {
+    use super::rust_selection_basis_label;
+    use crate::test_runner::coverage_decision::RustSelectionBasis;
+
+    #[test]
+    fn rust_selection_basis_metrics_label_all_planning_modes() {
+        assert_eq!(rust_selection_basis_label(RustSelectionBasis::Current), "current");
+        assert_eq!(
+            rust_selection_basis_label(RustSelectionBasis::ReusablePrior),
+            "reusable_prior"
+        );
+        assert_eq!(
+            rust_selection_basis_label(RustSelectionBasis::Population),
+            "population"
+        );
+    }
 }
 
 fn print_timing_metrics(metrics: &LocalRubricMetrics) {

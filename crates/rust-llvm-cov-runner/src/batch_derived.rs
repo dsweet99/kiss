@@ -16,7 +16,7 @@ use crate::rust_cov_cache::{
 use crate::{CACHE_SCHEMA_VERSION, RustLineCoverage, RustLlvmCovError};
 
 pub const INDEX_SCHEMA_VERSION: &str = "rust-llvm-cov-index-v2";
-pub const POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v2";
+pub const POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v3";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DerivedPublishCounters {
@@ -165,13 +165,48 @@ fn prune_non_current_generations(
     cache_root: &Path,
     current_generation: &str,
 ) -> Result<usize, RustLlvmCovError> {
+    prune_generations_except(cache_root, current_generation, retained_population_generation(cache_root))
+}
+
+pub fn prune_obsolete_selective_generations(
+    cache_root: &Path,
+    current_generation: &str,
+) -> Result<usize, RustLlvmCovError> {
+    prune_generations_except(cache_root, current_generation, retained_population_generation(cache_root))
+}
+
+/// Selective runs prune obsolete result generations only after a successful batch.
+/// Failed or interrupted runs must retain the complete population snapshot generation.
+pub(crate) fn maybe_prune_obsolete_selective_after_batch(
+    req: &RustCoverageBatchRequest,
+    identity: &RustCoverageBatchIdentity,
+    result: &mut crate::RustCoverageBatchResult,
+) -> Result<(), RustLlvmCovError> {
+    if result.batch_error.is_some() || req.population_publication_selectors.is_some() {
+        return Ok(());
+    }
+    let pruned =
+        prune_obsolete_selective_generations(&req.cache_root, &identity.generation_fingerprint)?;
+    result.counters.cache_pruned_entries += pruned;
+    Ok(())
+}
+
+fn retained_population_generation(cache_root: &Path) -> Option<String> {
+    read_population_generation(cache_root)
+}
+
+fn prune_generations_except(
+    cache_root: &Path,
+    current_generation: &str,
+    population_generation: Option<String>,
+) -> Result<usize, RustLlvmCovError> {
     let entries_dir = cache_root.join("entries");
     if !entries_dir.is_dir() {
         return Ok(0);
     }
     let mut retained = BTreeSet::from([current_generation.to_string()]);
     if let Some(previous) =
-        read_population_generation(cache_root).filter(|generation| generation != current_generation)
+        population_generation.filter(|generation| generation != current_generation)
     {
         retained.insert(previous);
     }
@@ -197,6 +232,14 @@ fn prune_non_current_generations(
         pruned += 1;
     }
     Ok(pruned)
+}
+
+pub(crate) fn derived_generation_line_index(
+    cache_root: &Path,
+    source_root: &Path,
+    generation: &str,
+) -> Result<RustCoverageIndex, RustLlvmCovError> {
+    build_generation_index(cache_root, source_root, generation)
 }
 
 fn build_generation_index(
@@ -320,6 +363,7 @@ fn write_population_manifest(
         source_root: String,
         generation_fingerprint: &'a str,
         input_fingerprint: &'a str,
+        selection_context_fingerprint: &'a str,
         entries_fingerprint: &'a str,
         selectors: &'a [String],
     }
@@ -341,6 +385,7 @@ fn write_population_manifest(
             .to_string(),
         generation_fingerprint: &identity.generation_fingerprint,
         input_fingerprint: &identity.input_digest,
+        selection_context_fingerprint: &identity.selection_context_fingerprint,
         entries_fingerprint,
         selectors,
     };
@@ -356,6 +401,14 @@ fn write_population_manifest(
 #[cfg(test)]
 #[path = "batch_derived_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "batch_derived_selective_test.rs"]
+mod selective_tests;
+
+#[cfg(test)]
+#[path = "batch_derived_real_cache_probe_test.rs"]
+mod real_cache_probe_tests;
 
 #[cfg(test)]
 #[path = "batch_derived_state_test.rs"]

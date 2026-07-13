@@ -33,6 +33,7 @@ impl PlannedSelectors {
             python_prior_failure_selectors: Vec::new(),
             rust_prior_failure_selectors: Vec::new(),
             coverage_decision_engine_used: true,
+            rust_selection_basis: Default::default(),
             ignore: vec![],
         }
     }
@@ -220,6 +221,7 @@ fn validation_report_counts_rust_population_as_selected() {
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
         coverage_decision_engine_used: true,
+        rust_selection_basis: Default::default(),
         ignore: Vec::new(),
     };
 
@@ -251,6 +253,7 @@ def test_value():\n    assert value() == 1\n",
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
         coverage_decision_engine_used: true,
+        rust_selection_basis: Default::default(),
         ignore: Vec::new(),
     };
 
@@ -285,6 +288,7 @@ fn validation_report_counts_planned_selectors_in_full_universe() {
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
         coverage_decision_engine_used: true,
+        rust_selection_basis: Default::default(),
         ignore: Vec::new(),
     };
 
@@ -379,6 +383,7 @@ mod plan_tests {
             python_prior_failure_selectors: Vec::new(),
             rust_prior_failure_selectors: Vec::new(),
             coverage_decision_engine_used: true,
+            rust_selection_basis: Default::default(),
             ignore: Vec::new(),
         };
 

@@ -53,19 +53,6 @@ impl ChangedSource {
     }
 }
 
-#[cfg(test)]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ChangedTestSelector {
-    pub(crate) selector: TestSelector,
-}
-
-#[cfg(test)]
-impl ChangedTestSelector {
-    pub(crate) fn new(selector: TestSelector) -> Self {
-        Self { selector }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ChangedDiff {
     pub(crate) sources: Vec<ChangedSource>,
@@ -89,6 +76,7 @@ impl ChangedDiff {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CoverageFreshness {
     Fresh,
+    ReusablePrior,
     Stale,
     #[allow(dead_code)]
     Unknown,
@@ -98,6 +86,14 @@ impl CoverageFreshness {
     pub(crate) fn requires_population(self) -> bool {
         matches!(self, Self::Stale | Self::Unknown)
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(crate) enum RustSelectionBasis {
+    #[default]
+    Current,
+    ReusablePrior,
+    Population,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

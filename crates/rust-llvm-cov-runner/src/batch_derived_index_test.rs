@@ -47,7 +47,9 @@ fn load_current_population_state_validates_selectors_and_returns_index() {
         .contains_key("src/lib.rs")
     );
     let expected = RustPopulationState {
+        input_fingerprint: state.input_fingerprint.clone(),
         generation_fingerprint: state.generation_fingerprint.clone(),
+        selection_context_fingerprint: state.selection_context_fingerprint.clone(),
         entries_fingerprint: state.entries_fingerprint.clone(),
         selectors: state.selectors.clone(),
         line_index: state.line_index.clone(),
@@ -114,6 +116,19 @@ fn load_current_generation_line_index_rejects_generation_fingerprint_mismatch() 
 }
 
 #[test]
+fn load_current_generation_line_index_rejects_tampered_index_files() {
+    let fixture = published_alpha_derived_fixture();
+    tamper_json_file(&fixture.req.cache_root, "index.json", |value| {
+        if let Some(files) = value.get_mut("files") {
+            *files = serde_json::json!({});
+        }
+    });
+    assert!(
+        load_current_generation_line_index(&fixture.req.cache_root, fixture.repo.path()).is_none()
+    );
+}
+
+#[test]
 fn read_population_and_index_loaders_handle_missing_and_invalid_json() {
     let tmp = tempfile::tempdir().unwrap();
     assert!(read_population_manifest(tmp.path()).is_none());
@@ -135,6 +150,7 @@ fn read_population_and_index_loaders_handle_missing_and_invalid_json() {
         schema_version: POPULATION_SCHEMA_VERSION.to_string(),
         generation_fingerprint: "gen".to_string(),
         input_fingerprint: "input".to_string(),
+        selection_context_fingerprint: "context".to_string(),
         entries_fingerprint: "entries".to_string(),
         selectors: vec!["alpha".to_string()],
     };
@@ -187,10 +203,87 @@ fn rust_population_state_exposes_generation_and_index_fields() {
     assert_eq!(on_disk.entries_fingerprint, state.entries_fingerprint);
     assert!(on_disk.files.contains_key("src/lib.rs"));
     let literal = RustPopulationState {
+        input_fingerprint: state.input_fingerprint.clone(),
         generation_fingerprint: state.generation_fingerprint.clone(),
+        selection_context_fingerprint: state.selection_context_fingerprint.clone(),
         entries_fingerprint: state.entries_fingerprint.clone(),
         selectors: state.selectors.clone(),
         line_index: state.line_index.clone(),
     };
     assert_eq!(state, literal);
+}
+
+#[test]
+fn manifest_generation_entries_complete_rejects_duplicate_selectors() {
+    let fixture = published_alpha_derived_fixture();
+    let duplicate = fixture.req.cache_root.join("entries/duplicate.json");
+    let entry = std::fs::read_to_string(
+        fixture
+            .req
+            .cache_root
+            .join("entries")
+            .read_dir()
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .is_some_and(|ext| ext == "json")
+            })
+            .expect("entry")
+            .path(),
+    )
+    .unwrap();
+    std::fs::write(&duplicate, entry).unwrap();
+    assert!(
+        load_current_population_state(
+            &fixture.req.cache_root,
+            fixture.repo.path(),
+            &fixture.identity,
+            Some(&["alpha".to_string()]),
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn on_disk_index_with_files_round_trips_through_loader() {
+    let fixture = published_alpha_derived_fixture();
+    let index = read_on_disk_index_with_files(&fixture.req.cache_root).expect("index");
+    assert_eq!(index.schema_version, INDEX_SCHEMA_VERSION);
+    assert_eq!(
+        index.source_root,
+        fixture
+            .repo
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+    );
+    assert!(!index.generation_fingerprint.is_empty());
+    assert!(!index.entries_fingerprint.is_empty());
+    assert!(index.files.contains_key("src/lib.rs"));
+    let disk = read_coverage_index(&fixture.req.cache_root).expect("disk index");
+    assert_eq!(disk.generation_fingerprint, index.generation_fingerprint);
+}
+
+#[test]
+fn malformed_entry_files_do_not_invalidate_complete_population() {
+    let fixture = published_alpha_derived_fixture();
+    std::fs::write(
+        fixture.req.cache_root.join("entries/bad.json"),
+        b"{not-json",
+    )
+    .unwrap();
+    assert!(
+        load_current_population_state(
+            &fixture.req.cache_root,
+            fixture.repo.path(),
+            &fixture.identity,
+            Some(&["alpha".to_string()]),
+        )
+        .is_some()
+    );
 }

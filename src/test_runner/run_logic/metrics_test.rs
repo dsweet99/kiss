@@ -7,6 +7,7 @@ use super::super::metrics_rust::{
 };
 use super::*;
 use rust_llvm_cov_runner::RustCoverageBatchCounters;
+use std::path::PathBuf;
 
 #[test]
 fn phase_metrics_prints_zero_summary() {
@@ -157,6 +158,7 @@ fn empty_metrics() -> LocalRubricMetrics {
         rust_population_required: false,
         rust_population_selectors: 0,
         rust_final_selectors: 0,
+        rust_selection_basis: Default::default(),
         coverage_decision_engine_used: true,
         python: PhaseMetrics::default(),
         python_index_rebuild_duration: Duration::ZERO,
@@ -177,6 +179,45 @@ fn empty_metrics() -> LocalRubricMetrics {
         rust_concurrency_budget: 1,
         exit_code: 0,
     }
+}
+
+#[test]
+fn local_rubric_metrics_carry_reusable_prior_selection_basis() {
+    use crate::test_runner::coverage_decision::RustSelectionBasis;
+    use crate::test_runner::{PlannedSelectors, SelectorRunOptions};
+
+    let planned = PlannedSelectors {
+        repo_root: PathBuf::from("/repo"),
+        py_sel: Vec::new(),
+        rs_sel: vec!["tests::gets_value".to_string()],
+        python_population_required: false,
+        rust_population_required: false,
+        rust_source_paths: vec![PathBuf::from("src/lib.rs")],
+        python_prior_failure_selectors: Vec::new(),
+        rust_prior_failure_selectors: Vec::new(),
+        coverage_decision_engine_used: true,
+        rust_selection_basis: RustSelectionBasis::ReusablePrior,
+        ignore: Vec::new(),
+    };
+    let options = SelectorRunOptions {
+        dry_run: true,
+        jobs: 1,
+        plan_duration: Duration::ZERO,
+        force_rerun: false,
+        metrics: false,
+        extra: &[],
+    };
+    let metrics = LocalRubricMetrics::new(
+        &planned,
+        &options,
+        0,
+        false,
+        0,
+        planned.rs_sel.len(),
+        planned.rust_selection_basis,
+    );
+    assert_eq!(metrics.rust_selection_basis, RustSelectionBasis::ReusablePrior);
+    assert!(!metrics.rust_population_required);
 }
 
 #[cfg(unix)]

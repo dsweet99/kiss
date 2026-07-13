@@ -1,13 +1,14 @@
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::test_runner::coverage_decision::{
-    ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionDecision,
-    TestSelector, full_population_plan,
+    ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan, RustSelectionBasis,
+    SelectionDecision, TestSelector, full_population_plan,
 };
 use crate::test_runner::rust_coverage_index::{
-    RUST_COVERAGE_ENV_KEYS, load_current_rust_population_state,
-    select_rust_source_selectors_from_index, select_rust_source_selectors_hybrid,
+    RUST_COVERAGE_ENV_KEYS, ResolvedRustPopulation, resolve_rust_population_state,
+    select_rust_source_selectors_for_basis,
 };
 
 use super::enumerate_workspace_rust_selectors;
@@ -40,6 +41,7 @@ pub(crate) struct RustModule {
     ignore: Vec<String>,
     changed_tests: Vec<TestSelector>,
     prior_failures: Vec<TestSelector>,
+    resolved: OnceCell<Result<ResolvedRustPopulation, String>>,
 }
 
 impl RustModule {
@@ -60,6 +62,7 @@ impl RustModule {
             ignore: ignore.to_vec(),
             changed_tests: changed_tests.to_vec(),
             prior_failures: prior_failures.to_vec(),
+            resolved: OnceCell::new(),
         }
     }
 
@@ -72,11 +75,33 @@ impl RustModule {
             ignore: ignore.to_vec(),
             changed_tests: Vec::new(),
             prior_failures: Vec::new(),
+            resolved: OnceCell::new(),
         }
     }
 
     pub(crate) fn population_manifest_selectors(&self) -> Result<Vec<String>, String> {
         enumerate_workspace_rust_selectors(&self.repo_root, &self.ignore)
+    }
+
+    pub(crate) fn selection_basis(&self) -> Result<RustSelectionBasis, String> {
+        if self.rust_source_paths.is_empty() {
+            return Ok(RustSelectionBasis::Current);
+        }
+        Ok(self.resolved_state()?.basis)
+    }
+
+    fn resolved_state(&self) -> Result<&ResolvedRustPopulation, String> {
+        self.resolved
+            .get_or_init(|| {
+                resolve_rust_population_state(
+                    &self.repo_root,
+                    &self.ignore,
+                    &self.rust_source_paths,
+                    &self.rust_test_args,
+                )
+            })
+            .as_ref()
+            .map_err(|err| err.clone())
     }
 }
 
@@ -110,17 +135,13 @@ impl LanguagePlanner for RustModule {
             .iter()
             .map(|selector| selector.id.clone())
             .collect::<Vec<_>>();
-        if load_current_rust_population_state(
-            &self.repo_root,
-            Some(&universe_ids),
-            &self.rust_test_args,
-        )
-        .is_some()
+        let resolved = self.resolved_state()?;
+        if let Some(selectors) = Some(&universe_ids)
+            && resolved.state.as_ref().is_some_and(|state| state.selectors != *selectors)
         {
-            Ok(CoverageFreshness::Fresh)
-        } else {
-            Ok(CoverageFreshness::Stale)
+            return Ok(CoverageFreshness::Stale);
         }
+        Ok(resolved.freshness)
     }
 
     fn population_plan(&self, universe: &[TestSelector]) -> PopulationPlan {
@@ -128,12 +149,15 @@ impl LanguagePlanner for RustModule {
     }
 
     fn select(&self) -> Result<SelectionDecision, String> {
-        let Some(selector_ids) = select_fresh_rust_source_selectors(
+        let resolved = self.resolved_state()?;
+        let selector_ids = select_rust_source_selectors_for_basis(
             &self.repo_root,
             &self.rust_source_paths,
             &self.rust_changed_lines,
             &self.rust_test_args,
-        ) else {
+            resolved,
+        );
+        let Some(selector_ids) = selector_ids else {
             return Ok(SelectionDecision {
                 selectors: Vec::new(),
                 complete: false,
@@ -152,23 +176,25 @@ impl LanguagePlanner for RustModule {
     fn manifest_env_allowlist(&self) -> &'static [&'static str] {
         RUST_COVERAGE_ENV_KEYS
     }
+
+    fn rust_selection_basis(&self) -> Option<RustSelectionBasis> {
+        self.selection_basis().ok()
+    }
 }
 
+#[cfg(test)]
 pub(crate) fn select_fresh_rust_source_selectors(
     repo_root: &Path,
     rust_source_paths: &[PathBuf],
     rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     rust_test_args: &[String],
 ) -> Option<BTreeSet<String>> {
-    if !rust_changed_lines.is_empty()
-        && let Some(line_selectors) = select_rust_source_selectors_hybrid(
-            repo_root,
-            rust_source_paths,
-            rust_changed_lines,
-            rust_test_args,
-        )
-    {
-        return Some(line_selectors);
-    }
-    select_rust_source_selectors_from_index(repo_root, rust_source_paths, rust_test_args)
+    let resolved = resolve_rust_population_state(repo_root, &[], rust_source_paths, rust_test_args).ok()?;
+    select_rust_source_selectors_for_basis(
+        repo_root,
+        rust_source_paths,
+        rust_changed_lines,
+        rust_test_args,
+        &resolved,
+    )
 }

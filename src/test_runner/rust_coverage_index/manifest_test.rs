@@ -103,6 +103,7 @@ fn batch_population_manifest_is_current_after_derived_state_write() {
     .unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
     std::fs::write(&lib, "pub fn lib() {}\n").unwrap();
+    let _ = super::super::current_rust_coverage_batch_identity(tmp.path(), &[]);
     write_test_entry(
         tmp.path(),
         "a",

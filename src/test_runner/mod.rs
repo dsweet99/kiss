@@ -131,6 +131,7 @@ pub(crate) struct PlannedSelectors {
     pub python_prior_failure_selectors: Vec<String>,
     pub rust_prior_failure_selectors: Vec<String>,
     pub coverage_decision_engine_used: bool,
+    pub rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis,
     pub ignore: Vec<String>,
 }
 
@@ -221,6 +222,7 @@ pub(crate) fn plan_selectors(
         python_prior_failure_selectors: selector_plan.python_prior_failure_selectors,
         rust_prior_failure_selectors: selector_plan.rust_prior_failure_selectors,
         coverage_decision_engine_used: selector_plan.coverage_decision_engine_used,
+        rust_selection_basis: selector_plan.rust_selection_basis,
         ignore: ignore_norm,
     })
 }
@@ -272,6 +274,15 @@ mod python_coverage_index_witness_test;
 #[cfg(test)]
 #[path = "runners_test.rs"]
 mod runners_test;
+#[cfg(test)]
+#[path = "runners_reusable_prior_test.rs"]
+mod runners_reusable_prior_test;
+#[cfg(test)]
+#[path = "runners_reusable_prior_compile_time_test.rs"]
+mod runners_reusable_prior_compile_time_test;
+#[cfg(test)]
+#[path = "runners_reusable_prior_cli_acceptance_test.rs"]
+mod runners_reusable_prior_cli_acceptance_test;
 
 #[cfg(test)]
 #[path = "runners_workspace_test.rs"]

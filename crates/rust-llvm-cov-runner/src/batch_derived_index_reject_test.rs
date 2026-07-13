@@ -64,6 +64,24 @@ fn load_current_population_state_rejects_stale_manifest_fields() {
 }
 
 #[test]
+fn load_current_population_state_rejects_selection_context_mismatch() {
+    let fixture = published_alpha_derived_fixture();
+    tamper_json_file(&fixture.req.cache_root, "population.json", |value| {
+        value["selection_context_fingerprint"] =
+            serde_json::Value::String("wrong-context".to_string());
+    });
+    assert!(
+        load_current_population_state(
+            &fixture.req.cache_root,
+            fixture.repo.path(),
+            &fixture.identity,
+            Some(&["alpha".to_string()]),
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn load_current_population_state_rejects_index_fingerprint_mismatch() {
     let fixture = published_alpha_derived_fixture();
     tamper_json_file(&fixture.req.cache_root, "index.json", |value| {

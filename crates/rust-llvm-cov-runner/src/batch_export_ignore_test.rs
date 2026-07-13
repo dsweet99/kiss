@@ -217,13 +217,13 @@ fn load_cargo_metadata_for_fixture_workspace() {
 #[test]
 fn cargo_metadata_witness_exercises_package_and_resolve_fields() {
     let metadata = super::cargo_metadata_witness_for_test();
-    assert_eq!(metadata.test_packages()[0].id, "pkg-id");
+    assert_eq!(metadata.packages()[0].id, "pkg-id");
     assert_eq!(
-        metadata.test_packages()[0].manifest_path,
+        metadata.packages()[0].manifest_path,
         "/repo/Cargo.toml"
     );
-    assert_eq!(metadata.test_workspace_root(), Some("/repo"));
-    assert_eq!(metadata.test_workspace_members(), &["pkg-id".to_string()]);
+    assert_eq!(metadata.workspace_root_path(), Some("/repo"));
+    assert_eq!(metadata.workspace_member_ids(), &["pkg-id".to_string()]);
 }
 
 #[test]

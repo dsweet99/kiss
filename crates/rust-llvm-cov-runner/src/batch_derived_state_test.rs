@@ -158,6 +158,7 @@ fn read_population_and_index_loaders_reject_invalid_json() {
         schema_version: POPULATION_SCHEMA_VERSION.to_string(),
         generation_fingerprint: "gen".to_string(),
         input_fingerprint: "input".to_string(),
+        selection_context_fingerprint: "context".to_string(),
         entries_fingerprint: "entries".to_string(),
         selectors: vec!["alpha".to_string()],
     };

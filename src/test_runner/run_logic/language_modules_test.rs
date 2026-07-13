@@ -16,6 +16,7 @@ fn planned() -> PlannedSelectors {
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
         coverage_decision_engine_used: true,
+        rust_selection_basis: Default::default(),
         ignore: Vec::new(),
     }
 }

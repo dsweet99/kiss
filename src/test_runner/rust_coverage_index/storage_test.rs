@@ -108,7 +108,13 @@ fn write_generation_scoped_derived_artifacts(
     identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
     generation: &str,
     entries_fingerprint: &str,
+    selectors: &[&str],
 ) {
+    let selectors_json = selectors
+        .iter()
+        .map(|selector| format!("\"{selector}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
     let index_payload = format!(
         r#"{{
   "schema_version": "{schema}",
@@ -127,12 +133,14 @@ fn write_generation_scoped_derived_artifacts(
   "source_root": "{}",
   "input_fingerprint": "{input_fingerprint}",
   "generation_fingerprint": "{generation}",
+  "selection_context_fingerprint": "{selection_context_fingerprint}",
   "entries_fingerprint": "{entries_fingerprint}",
-  "selectors": []
+  "selectors": [{selectors_json}]
 }}"#,
         tmp.canonicalize().unwrap().display(),
         population_schema = rust_llvm_cov_runner::BATCH_POPULATION_SCHEMA_VERSION,
         input_fingerprint = identity.input_digest,
+        selection_context_fingerprint = identity.selection_context_fingerprint,
     );
     fs::write(
         crate::test_runner::rust_coverage_index::storage::rust_population_manifest_path(tmp),
@@ -190,6 +198,7 @@ fn generation_scoped_index_helpers_validate_entries_and_paths() {
         &identity,
         &generation,
         &entries_fingerprint,
+        &["alpha"],
     );
     let loaded = load_current_rust_coverage_index(tmp.path(), &[]).expect("generation index");
     assert!(loaded.contains_key("src/lib.rs"));
@@ -224,6 +233,7 @@ fn current_index_loader_uses_requested_rust_test_args() {
         &identity,
         &identity.generation_fingerprint,
         &entries_fingerprint,
+        &["alpha"],
     );
 
     assert!(load_current_rust_coverage_index(tmp.path(), &[]).is_none());

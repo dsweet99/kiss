@@ -52,7 +52,7 @@ fn finish_no_work(
     println!("{}", runners::NO_COVERING_TESTS_MSG);
     if options.metrics {
         let mut metrics =
-            LocalRubricMetrics::new(planned, options, 0, false, 0, planned.rs_sel.len());
+            LocalRubricMetrics::new(planned, options, 0, false, 0, planned.rs_sel.len(), planned.rust_selection_basis);
         metrics.total_duration = total_started.elapsed();
         metrics.capture_cache_shape(&planned.repo_root);
         metrics.print();
@@ -77,6 +77,7 @@ fn finish_dry_run(
             matches!(rust_phase, ExecutionPhase::Population(_)),
             population_selector_count(rust_phase),
             selective_selector_count(rust_phase),
+            planned.rust_selection_basis,
         );
         metrics.total_duration = total_started.elapsed();
         metrics.capture_cache_shape(&planned.repo_root);
@@ -100,6 +101,7 @@ fn run_selected_phases(
         matches!(rust_phase, ExecutionPhase::Population(_)),
         population_selector_count(rust_phase),
         selective_selector_count(rust_phase),
+        planned.rust_selection_basis,
     );
     let ctx = RunContext { planned, options };
     for (module, phase) in modules {

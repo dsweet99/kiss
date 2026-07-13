@@ -121,7 +121,9 @@ fn witness_population_state_loaders(
     );
 
     let literal = RustPopulationState {
+        input_fingerprint: state.input_fingerprint.clone(),
         generation_fingerprint: state.generation_fingerprint.clone(),
+        selection_context_fingerprint: state.selection_context_fingerprint.clone(),
         entries_fingerprint: state.entries_fingerprint.clone(),
         selectors: state.selectors.clone(),
         line_index: state.line_index.clone(),

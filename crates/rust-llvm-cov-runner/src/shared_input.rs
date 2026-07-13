@@ -2,12 +2,57 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::RustLlvmCovError;
+use crate::batch_plan::RustCoverageBatchRequest;
+use crate::cargo_workspace_metadata::workspace_metadata_from_cargo;
+
 pub fn workspace_input_digest(root: &Path) -> io::Result<String> {
+    digest_input_files(root, &rust_cov_input_files(root)?)
+}
+
+fn selection_context_input_files(
+    root: &Path,
+    req: &RustCoverageBatchRequest,
+) -> Result<Vec<PathBuf>, RustLlvmCovError> {
+    let files = rust_cov_input_files(root)?;
+    let metadata = workspace_metadata_from_cargo(&req.cwd, &req.cargo, &req.cargo_args).ok();
+    let mut selected = Vec::new();
+    for file in files {
+        if file
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
+        {
+            let include = match metadata.as_ref() {
+                Some(metadata) => metadata
+                    .rs_compile_time_classification(root, &file)
+                    .unwrap_or(true),
+                None => true,
+            };
+            if include {
+                selected.push(file);
+            }
+        } else {
+            selected.push(file);
+        }
+    }
+    Ok(selected)
+}
+
+pub fn selection_context_source_digest(
+    root: &Path,
+    req: &RustCoverageBatchRequest,
+) -> Result<String, RustLlvmCovError> {
+    let selected = selection_context_input_files(root, req)?;
+    digest_input_files(root, &selected).map_err(RustLlvmCovError::Io)
+}
+
+fn digest_input_files(root: &Path, files: &[PathBuf]) -> io::Result<String> {
+    let _ = root;
     let mut h = super::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"shared-input-v1");
-    for file in rust_cov_input_files(root)? {
+    for file in files {
         h = super::rust_cov_cache::rust_cov_fnv1a64(h, file.to_string_lossy().as_bytes());
         h = super::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
-        h = super::rust_cov_cache::rust_cov_fnv1a64(h, &fs::read(&file)?);
+        h = super::rust_cov_cache::rust_cov_fnv1a64(h, &fs::read(file)?);
         h = super::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
     }
     Ok(format!("{h:016x}"))
@@ -88,6 +133,85 @@ pub(crate) fn is_rust_toolchain_input_path(path: &Path) -> bool {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn selection_context_input_file_set_is_stable_across_ordinary_lib_rs_edits() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        .unwrap();
+        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let mut req = crate::batch_plan::RustCoverageBatchRequest::witness();
+        req.cwd = tmp.path().to_path_buf();
+        req.source_root = tmp.path().to_path_buf();
+        req.cargo_args.clear();
+        let _ = crate::cargo_workspace_metadata::workspace_metadata_from_cargo(
+            &req.cwd,
+            &req.cargo,
+            &req.cargo_args,
+        );
+        let before = selection_context_input_files(tmp.path(), &req).unwrap();
+        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
+        let after = selection_context_input_files(tmp.path(), &req).unwrap();
+        assert_eq!(before, after);
+        assert!(!before.iter().any(|path| path.ends_with("lib.rs")));
+    }
+
+    #[test]
+    fn selection_context_input_files_exclude_ordinary_lib_rs() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        .unwrap();
+        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let mut req = crate::batch_plan::RustCoverageBatchRequest::witness();
+        req.cwd = tmp.path().to_path_buf();
+        req.source_root = tmp.path().to_path_buf();
+        req.cargo_args.clear();
+        let metadata =
+            crate::cargo_workspace_metadata::workspace_metadata_from_cargo(&req.cwd, &req.cargo, &req.cargo_args)
+                .expect("metadata");
+        let files = rust_cov_input_files(tmp.path()).unwrap();
+        let lib = files
+            .iter()
+            .find(|path| path.ends_with("lib.rs"))
+            .expect("lib.rs");
+        assert_eq!(
+            metadata.rs_compile_time_classification(tmp.path(), lib),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn selection_context_source_digest_ignores_ordinary_lib_rs_edits() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        .unwrap();
+        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let mut req = crate::batch_plan::RustCoverageBatchRequest::witness();
+        req.cwd = tmp.path().to_path_buf();
+        req.source_root = tmp.path().to_path_buf();
+        req.cargo_args.clear();
+        let _ = crate::cargo_workspace_metadata::workspace_metadata_from_cargo(
+            &req.cwd,
+            &req.cargo,
+            &req.cargo_args,
+        );
+        let before = selection_context_source_digest(tmp.path(), &req).unwrap();
+        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
+        let after = selection_context_source_digest(tmp.path(), &req).unwrap();
+        assert_eq!(before, after);
+    }
 
     #[test]
     fn workspace_input_digest_scans_once_and_is_stable() {
@@ -200,6 +324,42 @@ mod tests {
                 .any(|path| path.ends_with("src/deep/mod.rs"))
         );
         assert_eq!(rust_cov_input_files(tmp.path()).unwrap(), collected);
+    }
+
+    #[test]
+    fn unclassifiable_repository_rs_is_included_in_selection_context_inputs() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("crate").join("src")).unwrap();
+        fs::create_dir_all(tmp.path().join("misc")).unwrap();
+        fs::write(
+            tmp.path().join("crate").join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("crate").join("src").join("lib.rs"),
+            "pub fn x() {}\n",
+        )
+        .unwrap();
+        fs::write(tmp.path().join("misc").join("orphan.rs"), "pub fn orphan() {}\n").unwrap();
+        let mut req = crate::batch_plan::RustCoverageBatchRequest::witness();
+        req.cwd = tmp.path().join("crate");
+        req.source_root = tmp.path().to_path_buf();
+        req.cargo_args.clear();
+        let metadata = crate::cargo_workspace_metadata::workspace_metadata_from_cargo(
+            &req.cwd,
+            &req.cargo,
+            &req.cargo_args,
+        )
+        .expect("metadata");
+        let orphan = tmp.path().join("misc").join("orphan.rs");
+        assert_eq!(
+            metadata.rs_compile_time_classification(tmp.path(), &orphan),
+            None
+        );
+        let files = selection_context_input_files(tmp.path(), &req).unwrap();
+        assert!(files.iter().any(|path| path.ends_with("misc/orphan.rs")));
+        assert!(!files.iter().any(|path| path.ends_with("crate/src/lib.rs")));
     }
 
     #[test]

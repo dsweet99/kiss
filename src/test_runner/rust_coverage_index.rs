@@ -60,7 +60,7 @@ fn resolved_rust_batch_request_parts(
     String,
 > {
     use rust_llvm_cov_runner::{
-        RustCoverageBatchRequest, RustCoverageToolIdentity, placeholder_delegated_runner_fields,
+        RustCoverageBatchRequest, placeholder_delegated_runner_fields,
         resolve_batch_request_runners,
     };
 
@@ -84,19 +84,47 @@ fn resolved_rust_batch_request_parts(
         host_platform,
     };
     resolve_batch_request_runners(&mut req).map_err(|err| format!("{err:?}"))?;
+    let tools = cached_rust_coverage_tool_identity(repo_root)?;
+    Ok((req, tools))
+}
+
+fn cached_rust_coverage_tool_identity(
+    repo_root: &Path,
+) -> Result<rust_llvm_cov_runner::RustCoverageToolIdentity, String> {
+    use std::sync::OnceLock;
+
+    use rust_llvm_cov_runner::RustCoverageToolIdentity;
+
+    static TOOLS: OnceLock<RustCoverageToolIdentity> = OnceLock::new();
+    if let Some(tools) = TOOLS.get() {
+        return Ok(tools.clone());
+    }
+    let tools = detect_rust_coverage_tool_identity(repo_root)?;
+    Ok(TOOLS.get_or_init(|| tools).clone())
+}
+
+fn detect_rust_coverage_tool_identity(
+    repo_root: &Path,
+) -> Result<rust_llvm_cov_runner::RustCoverageToolIdentity, String> {
+    use rust_llvm_cov_runner::RustCoverageToolIdentity;
+
     let cargo = PathBuf::from("cargo");
     let rustc = PathBuf::from("rustc");
-    let tools = RustCoverageToolIdentity {
+    Ok(RustCoverageToolIdentity {
         cargo_version: command_stdout(&cargo, &["--version"], repo_root)?,
         llvm_cov_version: command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?,
         rustc_version: command_stdout(&rustc, &["-Vv"], repo_root)?,
         cargo_nextest_version: command_stdout(&cargo, &["nextest", "--version"], repo_root)?,
-    };
-    Ok((req, tools))
+    })
 }
 
 #[path = "rust_coverage_index/manifest.rs"]
 mod manifest;
+#[path = "rust_coverage_index/selection.rs"]
+mod selection;
+pub(crate) use selection::{
+    resolve_rust_population_state, select_rust_source_selectors_for_basis, ResolvedRustPopulation,
+};
 pub(crate) use manifest::RUST_COVERAGE_ENV_KEYS;
 #[cfg(test)]
 pub(crate) use manifest::{
@@ -115,10 +143,12 @@ pub(crate) use storage::write_rust_coverage_index;
 #[cfg(test)]
 pub(crate) use storage::{command_failure_message, command_output_text, rust_coverage_index_path};
 pub(crate) use storage::{
-    command_stdout, create_new_file, load_current_rust_coverage_index,
-    load_current_rust_population_state, rust_coverage_cache_root, rust_coverage_entry_paths,
-    unique_suffix,
+    command_stdout, create_new_file, load_current_rust_population_state,
+    load_reusable_prior_rust_population_state, rust_coverage_cache_root,
+    rust_coverage_entry_paths, unique_suffix,
 };
+#[cfg(test)]
+pub(crate) use storage::load_current_rust_coverage_index;
 #[cfg(test)]
 pub(crate) use storage::{normalized_repo_root, rust_population_manifest_path};
 
@@ -142,6 +172,7 @@ pub(crate) fn rebuild_rust_coverage_index(repo_root: &Path) -> Result<RustCovera
     Ok(index)
 }
 
+#[cfg(test)]
 pub(crate) fn select_rust_source_selectors_from_index(
     repo_root: &Path,
     source_paths: &[PathBuf],
@@ -195,6 +226,7 @@ pub(crate) fn select_rust_source_selectors_for_changed_lines(
     Some(selectors)
 }
 
+#[cfg(test)]
 pub(crate) fn select_rust_source_selectors_hybrid(
     repo_root: &Path,
     source_paths: &[PathBuf],
@@ -354,6 +386,10 @@ mod coverage_witness;
 #[cfg(test)]
 #[path = "rust_coverage_index_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "rust_coverage_index_reusable_test.rs"]
+mod reusable_tests;
 
 #[cfg(test)]
 #[path = "rust_coverage_index/test_support.rs"]

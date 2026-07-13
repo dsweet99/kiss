@@ -72,6 +72,7 @@ fn write_rust_population_manifest_for_args_marks_population_current() {
     .unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
     fs::write(&lib, "pub fn lib() {}\n").unwrap();
+    let _ = super::current_rust_coverage_batch_identity(tmp.path(), &[]);
     write_test_entry(
         tmp.path(),
         "a",

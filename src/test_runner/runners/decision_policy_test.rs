@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
 
+use rpytest_runner::TestStatus;
+use rust_llvm_cov_runner::RustLineCoverage;
+
 use crate::test_runner::coverage_decision::{
     CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionDecision, TestSelector,
 };
@@ -9,7 +12,7 @@ use crate::test_runner::python_coverage_index::{
 use crate::test_runner::runners::python_backer;
 use crate::test_runner::runners::rust_backer::RustModule;
 use crate::test_runner::rust_coverage_index::{
-    rebuild_rust_coverage_index, write_rust_population_manifest_for_args,
+    rebuild_rust_coverage_index, write_rust_population_manifest_for_args, write_test_entry,
 };
 
 struct PlannerParityCase {
@@ -32,6 +35,15 @@ fn planner_parity_cases(
     universe: &[TestSelector; 2],
 ) -> Vec<PlannerParityCase> {
     rebuild_python_coverage_index(repo_root).unwrap();
+    write_test_entry(
+        repo_root,
+        "value",
+        &universe[1].id,
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: BTreeMap::new(),
+        },
+    );
     rebuild_rust_coverage_index(repo_root).unwrap();
     write_python_population_manifest_for_args(repo_root, &[universe[0].id.clone()], &[]).unwrap();
     write_rust_population_manifest_for_args(repo_root, &[universe[1].id.clone()], &[]).unwrap();
@@ -142,10 +154,14 @@ fn concrete_language_planners_keep_policy_parity() {
     let lib = tmp.path().join("src").join("lib.rs");
     std::fs::create_dir_all(lib.parent().unwrap()).unwrap();
     std::fs::write(&app, "VALUE = 1\n").unwrap();
-    std::fs::write(&lib, "pub fn value() -> i32 { 1 }\n").unwrap();
+    std::fs::write(
+        &lib,
+        "pub fn value() -> i32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn test_value() { assert_eq!(super::value(), 1); } }\n",
+    )
+    .unwrap();
     let universe = [
         TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_value"),
-        TestSelector::new(kiss::Language::Rust, "crate::tests::test_value"),
+        TestSelector::new(kiss::Language::Rust, "tests::test_value"),
     ];
 
     for case in planner_parity_cases(tmp.path(), &app, &lib, &universe) {

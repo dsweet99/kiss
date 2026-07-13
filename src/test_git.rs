@@ -157,14 +157,8 @@ pub fn auto_detect_fork_commit(repo: &Path) -> Result<String, String> {
 }
 
 pub fn changed_paths_commit(repo: &Path) -> Result<Vec<String>, String> {
-    let mut names = Vec::new();
-    let d = git_output(repo, &["diff", "--name-only", "--diff-filter=AM", "HEAD"])?;
-    names.extend(
-        d.lines()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from),
-    );
+    let mut names = BTreeSet::new();
+    names.extend(changed_paths_from_diff(repo, &["diff"], Some("HEAD"))?);
     let u = git_output(repo, &["ls-files", "--others", "--exclude-standard"])?;
     names.extend(
         u.lines()
@@ -172,18 +166,34 @@ pub fn changed_paths_commit(repo: &Path) -> Result<Vec<String>, String> {
             .filter(|s| !s.is_empty())
             .map(String::from),
     );
-    names.sort();
-    names.dedup();
-    Ok(names)
+    Ok(names.into_iter().collect())
 }
 
 pub fn changed_paths_since(repo: &Path, rev: &str) -> Result<Vec<String>, String> {
-    let d = git_output(repo, &["diff", "--name-only", "--diff-filter=AM", rev])?;
-    Ok(d.lines()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect())
+    changed_paths_from_diff(repo, &["diff"], Some(rev))
+}
+
+fn changed_paths_from_diff(
+    repo: &Path,
+    diff_prefix: &[&str],
+    rev: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let mut names = BTreeSet::new();
+    for filter in ["AM", "D"] {
+        let mut args: Vec<&str> = diff_prefix.to_vec();
+        args.extend(["--name-only", "--diff-filter", filter]);
+        if let Some(rev) = rev {
+            args.push(rev);
+        }
+        let out = git_output(repo, &args)?;
+        names.extend(
+            out.lines()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+        );
+    }
+    Ok(names.into_iter().collect())
 }
 
 pub fn changed_lines_commit(repo: &Path) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
@@ -275,17 +285,22 @@ pub fn resolve_changed_source_paths(
             continue;
         }
         let abs = repo_root.join(rel);
-        let Ok(meta) = abs.metadata() else {
-            continue;
-        };
-        if !meta.is_file() {
-            continue;
-        }
-        if !lang_ok(&abs, lang_filter) {
-            continue;
-        }
-        if let Ok(c) = abs.canonicalize() {
-            out.push(c);
+        let include_missing_rust = matches!(lang_filter, None | Some(TestLangFilter::Rust))
+            && kiss::Language::is_rust_path(&abs)
+            && !kiss::is_rust_test_file(&abs);
+        match abs.metadata() {
+            Ok(meta) if meta.is_file() => {
+                if !lang_ok(&abs, lang_filter) {
+                    continue;
+                }
+                if let Ok(c) = abs.canonicalize() {
+                    out.push(c);
+                }
+            }
+            _ if include_missing_rust && lang_ok(&abs, lang_filter) => {
+                out.push(abs);
+            }
+            _ => continue,
         }
     }
     out.sort();

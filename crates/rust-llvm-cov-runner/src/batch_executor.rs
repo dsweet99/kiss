@@ -32,6 +32,36 @@ pub fn execute_rust_coverage_batch(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
+    execute_rust_coverage_batch_with_fresh(req, tools, |req, tools, identity, plan| {
+        execute_fresh_batch_with_exporter(
+            req,
+            tools,
+            identity,
+            plan,
+            &default_batch_subprocess_runner(),
+            default_instance_exporter(req, plan)?,
+        )
+    })
+}
+
+/// Shared executor body used by production and regression tests.
+///
+/// After a fresh batch returns a result, this always routes through
+/// `finalize_after_fresh_batch` so publication and selective pruning stay bound
+/// to `execute_rust_coverage_batch` (including failed selective runs).
+pub(crate) fn execute_rust_coverage_batch_with_fresh<F>(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    fresh: F,
+) -> Result<RustCoverageBatchResult, RustLlvmCovError>
+where
+    F: FnOnce(
+        &RustCoverageBatchRequest,
+        &RustCoverageToolIdentity,
+        &RustCoverageBatchIdentity,
+        &RustCoverageBatchPlan,
+    ) -> Result<RustCoverageBatchResult, RustLlvmCovError>,
+{
     crate::batch_platform::ensure_batch_platform_supported()?;
     let identity = batch_identity(req, tools)?;
     let plan = build_rust_coverage_batch_plan(req)
@@ -57,19 +87,23 @@ pub fn execute_rust_coverage_batch(
         );
     }
 
-    execute_fresh_batch_with_exporter(
-        req,
-        tools,
-        &identity,
-        &plan,
-        &default_batch_subprocess_runner(),
-        default_instance_exporter(req, &plan)?,
-    )
-    .and_then(|mut result| {
-        apply_population_derived_publication(req, tools, &identity, &mut result)?;
-        result.counters.legacy_cleanup_deferred = legacy_cleanup.deferred;
+    fresh(req, tools, &identity, &plan).and_then(|mut result| {
+        finalize_after_fresh_batch(req, tools, &identity, legacy_cleanup.deferred, &mut result)?;
         Ok(result)
     })
+}
+
+fn finalize_after_fresh_batch(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+    legacy_cleanup_deferred: bool,
+    result: &mut RustCoverageBatchResult,
+) -> Result<(), RustLlvmCovError> {
+    apply_population_derived_publication(req, tools, identity, result)?;
+    crate::batch_derived::maybe_prune_obsolete_selective_after_batch(req, identity, result)?;
+    result.counters.legacy_cleanup_deferred = legacy_cleanup_deferred;
+    Ok(())
 }
 
 fn maybe_publish_derived_after_all_hit(

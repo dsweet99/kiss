@@ -18,6 +18,7 @@ fn planned() -> PlannedSelectors {
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
         coverage_decision_engine_used: true,
+        rust_selection_basis: Default::default(),
         ignore: Vec::new(),
     }
 }
@@ -239,6 +240,7 @@ fn planned_selectors_carry_population_decisions_without_selector_vectors() {
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
         coverage_decision_engine_used: true,
+        rust_selection_basis: Default::default(),
         ignore: Vec::new(),
     };
     assert!(planned.python_population_required);
@@ -341,7 +343,7 @@ fn language_phase_outcome_carries_phase_summary_and_timings() {
 fn python_outcome_records_index_rebuild_duration_in_metrics() {
     let planned = planned();
     let options = options(false);
-    let mut metrics = LocalRubricMetrics::new(&planned, &options, 0, false, 0, 0);
+    let mut metrics = LocalRubricMetrics::new(&planned, &options, 0, false, 0, 0, Default::default());
     let outcome = LanguagePhaseOutcome {
         phase: ExecutionPhase::Selective(vec!["tests/test_app.py::test_ok".to_string()]),
         summary: SelectorExecutionSummary {

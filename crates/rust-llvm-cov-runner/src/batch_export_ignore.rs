@@ -1,15 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::RustLlvmCovError;
 use crate::batch_plan::RustCoverageBatchRequest;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct WorkspacePackage {
-    id: String,
-    name: String,
-    manifest_dir: PathBuf,
-}
+use crate::cargo_workspace_metadata::{WorkspacePackage, load_cargo_metadata};
 
 pub(crate) fn resolve_ignore_filename_regex(
     req: &RustCoverageBatchRequest,
@@ -17,8 +10,7 @@ pub(crate) fn resolve_ignore_filename_regex(
 ) -> Result<Option<String>, RustLlvmCovError> {
     let metadata = load_cargo_metadata(&req.cwd, &req.cargo, &req.cargo_args)?;
     let workspace_root = metadata
-        .workspace_root
-        .as_deref()
+        .workspace_root_path()
         .map(PathBuf::from)
         .unwrap_or_else(|| req.cwd.clone());
     let packages = metadata.workspace_packages();
@@ -29,7 +21,7 @@ pub(crate) fn resolve_ignore_filename_regex(
     let current_package = metadata.current_package_id(&req.cwd, &req.cargo_args);
     let included = resolve_included_packages(
         &packages,
-        &metadata.workspace_members,
+        metadata.workspace_member_ids(),
         current_package.as_deref(),
         workspace,
         &package_filters,
@@ -46,119 +38,6 @@ pub(crate) fn resolve_ignore_filename_regex(
     )))
 }
 
-fn load_cargo_metadata(
-    cwd: &Path,
-    cargo: &Path,
-    cargo_args: &[String],
-) -> Result<CargoMetadata, RustLlvmCovError> {
-    let manifest_path = effective_manifest_path(cwd, cargo_args);
-    let output = Command::new(cargo)
-        .args([
-            "metadata",
-            "--format-version",
-            "1",
-            "--no-deps",
-            "--manifest-path",
-        ])
-        .arg(&manifest_path)
-        .current_dir(cwd)
-        .output()
-        .map_err(RustLlvmCovError::Io)?;
-    if !output.status.success() {
-        return Err(RustLlvmCovError::InvalidRequest(format!(
-            "cargo metadata failed in {}: {}",
-            cwd.display(),
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-    serde_json::from_slice(&output.stdout).map_err(|err| {
-        RustLlvmCovError::InvalidRequest(format!("cargo metadata json parse failed: {err}"))
-    })
-}
-
-#[derive(serde::Deserialize)]
-pub(crate) struct CargoMetadata {
-    packages: Vec<CargoMetadataPackage>,
-    #[serde(default)]
-    workspace_members: Vec<String>,
-    #[serde(default)]
-    workspace_root: Option<String>,
-}
-
-#[derive(serde::Deserialize)]
-pub(crate) struct CargoMetadataPackage {
-    id: String,
-    name: String,
-    manifest_path: String,
-}
-
-impl CargoMetadata {
-    fn workspace_packages(&self) -> Vec<WorkspacePackage> {
-        self.packages
-            .iter()
-            .map(|pkg| WorkspacePackage {
-                id: pkg.id.clone(),
-                name: pkg.name.clone(),
-                manifest_dir: PathBuf::from(&pkg.manifest_path)
-                    .parent()
-                    .map(Path::to_path_buf)
-                    .unwrap_or_else(|| PathBuf::from(".")),
-            })
-            .collect()
-    }
-}
-
-impl CargoMetadata {
-    fn current_package_id(&self, cwd: &Path, cargo_args: &[String]) -> Option<String> {
-        let manifest_path = effective_manifest_path(cwd, cargo_args);
-        let manifest = manifest_path
-            .canonicalize()
-            .unwrap_or(manifest_path)
-            .to_string_lossy()
-            .to_string();
-        self.packages.iter().find_map(|pkg| {
-            let package_manifest = PathBuf::from(&pkg.manifest_path)
-                .canonicalize()
-                .unwrap_or_else(|_| PathBuf::from(&pkg.manifest_path))
-                .to_string_lossy()
-                .to_string();
-            (package_manifest == manifest).then(|| pkg.id.clone())
-        })
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn cargo_metadata_witness_for_test() -> CargoMetadata {
-    CargoMetadata {
-        packages: vec![CargoMetadataPackage {
-            id: "pkg-id".to_string(),
-            name: "pkg".to_string(),
-            manifest_path: "/repo/Cargo.toml".to_string(),
-        }],
-        workspace_members: vec!["pkg-id".to_string()],
-        workspace_root: Some("/repo".to_string()),
-    }
-}
-
-fn effective_manifest_path(cwd: &Path, cargo_args: &[String]) -> PathBuf {
-    let mut index = 0usize;
-    while index < cargo_args.len() {
-        match cargo_args[index].as_str() {
-            "--manifest-path" => {
-                if let Some(value) = cargo_args.get(index + 1) {
-                    return PathBuf::from(value);
-                }
-            }
-            _ => {
-                if let Some(value) = cargo_args[index].strip_prefix("--manifest-path=") {
-                    return PathBuf::from(value);
-                }
-            }
-        }
-        index += 1;
-    }
-    cwd.join("Cargo.toml")
-}
 
 fn parse_cargo_scope_args(cargo_args: &[String]) -> (bool, Vec<String>, Vec<String>) {
     let mut workspace = false;
@@ -319,36 +198,21 @@ pub(crate) fn resolve_included_packages_for_test(
 }
 
 #[cfg(test)]
-pub(crate) fn workspace_package_for_test(
-    id: &str,
-    name: &str,
-    manifest_dir: PathBuf,
-) -> WorkspacePackage {
-    WorkspacePackage {
-        id: id.to_string(),
-        name: name.to_string(),
-        manifest_dir,
-    }
-}
+use crate::cargo_workspace_metadata::{CargoMetadata, CargoMetadataPackage};
 
 #[cfg(test)]
-impl CargoMetadata {
-    pub(crate) fn test_packages(&self) -> &[CargoMetadataPackage] {
-        &self.packages
-    }
-
-    pub(crate) fn test_workspace_root(&self) -> Option<&str> {
-        self.workspace_root.as_deref()
-    }
-
-    pub(crate) fn test_workspace_members(&self) -> &[String] {
-        &self.workspace_members
-    }
-}
+pub(crate) use crate::cargo_workspace_metadata::{
+    cargo_metadata_witness_for_test, effective_manifest_path as effective_manifest_path_for_test,
+    workspace_package_for_test,
+};
 
 #[cfg(test)]
-pub(crate) fn effective_manifest_path_for_test(cwd: &Path, cargo_args: &[String]) -> PathBuf {
-    effective_manifest_path(cwd, cargo_args)
+pub(crate) fn load_cargo_metadata_for_test(
+    cwd: &Path,
+    cargo: &Path,
+    cargo_args: &[String],
+) -> Result<CargoMetadata, RustLlvmCovError> {
+    load_cargo_metadata(cwd, cargo, cargo_args)
 }
 
 #[cfg(test)]
@@ -384,15 +248,6 @@ pub(crate) fn ignore_filename_regex_for_workspace_packages(
 }
 
 #[cfg(test)]
-pub(crate) fn load_cargo_metadata_for_test(
-    cwd: &Path,
-    cargo: &Path,
-    cargo_args: &[String],
-) -> Result<CargoMetadata, RustLlvmCovError> {
-    load_cargo_metadata(cwd, cargo, cargo_args)
-}
-
-#[cfg(test)]
 mod inline_coverage_tests {
     use super::*;
 
@@ -403,20 +258,12 @@ mod inline_coverage_tests {
             name: "pkg".to_string(),
             manifest_dir: PathBuf::from("/repo"),
         };
-        let metadata_package = CargoMetadataPackage {
-            id: package.id.clone(),
-            name: package.name.clone(),
-            manifest_path: "/repo/Cargo.toml".to_string(),
-        };
-        let metadata = CargoMetadata {
-            packages: vec![metadata_package],
-            workspace_members: vec![package.id.clone()],
-            workspace_root: Some("/repo".to_string()),
-        };
+        let metadata = cargo_metadata_witness_for_test();
         assert_eq!(
             metadata.workspace_packages()[0].manifest_dir,
             PathBuf::from("/repo")
         );
+        assert_eq!(package.id, "pkg-id");
     }
 }
 

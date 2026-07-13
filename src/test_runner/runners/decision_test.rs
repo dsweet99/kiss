@@ -189,7 +189,11 @@ fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_c
     let lib = tmp.path().join("src").join("lib.rs");
     std::fs::create_dir_all(lib.parent().unwrap()).unwrap();
     std::fs::write(&app, "def value():\n    return 1\n").unwrap();
-    std::fs::write(&lib, "pub fn value() -> i32 { 1 }\n").unwrap();
+    std::fs::write(
+        &lib,
+        "pub fn value() -> i32 { 1 }\n#[cfg(test)] mod tests { #[test] fn test_value() {} }\n",
+    )
+    .unwrap();
     write_python_entry(
         tmp.path(),
         "py",
@@ -201,7 +205,7 @@ fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_c
     write_rust_entry(
         tmp.path(),
         "rs",
-        "crate::tests::test_value",
+        "tests::test_value",
         rust_llvm_cov_runner::RustLineCoverage {
             files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
         },
@@ -226,7 +230,7 @@ fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_c
             &BTreeMap::from([(lib.clone(), BTreeSet::from([1]))]),
             &[],
         ),
-        Some(BTreeSet::from(["crate::tests::test_value".to_string()]))
+        Some(BTreeSet::from(["tests::test_value".to_string()]))
     );
 
     let python = python_backer::PythonModule::new(
@@ -263,7 +267,7 @@ fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_c
         SelectionDecision {
             selectors: vec![TestSelector::new(
                 kiss::Language::Rust,
-                "crate::tests::test_value"
+                "tests::test_value"
             )],
             complete: true,
         }

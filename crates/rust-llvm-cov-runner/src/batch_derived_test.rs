@@ -1,7 +1,7 @@
 use super::*;
 use crate::batch_fingerprint::entry_fingerprint;
 use crate::rust_cov_cache::store_rust_cov_cache_entry;
-use crate::test_support::{derived_fixture_request, witness_batch_tools};
+use crate::test_support::{derived_fixture_request, store_alpha_entry, witness_batch_tools};
 use crate::{RustCovCacheStatus, RustLlvmCovOutcome};
 use std::path::Path;
 use std::time::Duration;
@@ -182,30 +182,6 @@ fn publish_derived_state_prunes_stale_generation_entries() {
     assert_eq!(counters.cache_pruned_entries, 1);
 }
 
-fn store_alpha_entry(
-    cache_root: &Path,
-    req: &RustCoverageBatchRequest,
-    tools: &RustCoverageToolIdentity,
-    identity: &RustCoverageBatchIdentity,
-    files: BTreeMap<String, BTreeSet<u32>>,
-) {
-    let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, "alpha");
-    let entry = RustCovCacheEntry::from_outcome(
-        &RustLlvmCovOutcome {
-            selector: "alpha".to_string(),
-            status: TestStatus::Passed,
-            exit_code: Some(0),
-            duration: Duration::from_millis(1),
-            coverage: RustLineCoverage { files },
-            cache_status: RustCovCacheStatus::MissStored,
-            stdout: None,
-            stderr: None,
-        },
-        &identity.generation_fingerprint,
-    );
-    store_rust_cov_cache_entry(cache_root, &fingerprint, &entry).unwrap();
-}
-
 fn write_generation_transition_repo(repo: &Path) {
     std::fs::create_dir_all(repo.join("src")).unwrap();
     std::fs::write(repo.join("Cargo.toml"), "[package]\n").unwrap();
@@ -293,4 +269,63 @@ fn try_publish_all_hit_repair_when_manifest_stale() {
             .expect("stale derived state should publish");
     assert!(publish.derived_repair);
     assert_eq!(publish.entry_generation_count, 1);
+}
+
+#[test]
+fn prune_obsolete_selective_generations_retains_population_and_current() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(repo.path().join("src")).unwrap();
+    std::fs::write(repo.path().join("Cargo.toml"), "[package]\n").unwrap();
+    std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+    let req = derived_fixture_request(repo.path());
+    let tools = witness_batch_tools();
+    let population_identity =
+        crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    publish_derived_state(
+        &req,
+        &tools,
+        &population_identity,
+        &["alpha".to_string()],
+        false,
+    )
+    .unwrap();
+    let population_generation = population_identity.generation_fingerprint.clone();
+    let stale = RustCovCacheEntry::from_outcome(
+        &RustLlvmCovOutcome {
+            selector: "stale".to_string(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        },
+        "obsolete-generation",
+    );
+    store_rust_cov_cache_entry(&req.cache_root, "deadbeefdeadbeef", &stale).unwrap();
+    std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
+    let selective_identity =
+        crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let pruned = prune_obsolete_selective_generations(
+        &req.cache_root,
+        &selective_identity.generation_fingerprint,
+    )
+    .unwrap();
+    assert_eq!(pruned, 1);
+    assert!(
+        req.cache_root
+            .join("entries")
+            .join("deadbeefdeadbeef.json")
+            .exists()
+            == false
+    );
+    let manifest = crate::batch_derived_index::read_population_manifest(&req.cache_root)
+        .expect("population manifest");
+    assert_eq!(
+        manifest.generation_fingerprint,
+        population_generation
+    );
 }

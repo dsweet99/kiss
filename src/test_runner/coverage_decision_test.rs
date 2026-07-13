@@ -135,8 +135,23 @@ fn CoverageFreshness_and_full_population_plan_contracts() {
 
     assert_eq!(plan.selectors, vec![selector]);
     assert!(!CoverageFreshness::Fresh.requires_population());
+    assert!(!CoverageFreshness::ReusablePrior.requires_population());
     assert!(CoverageFreshness::Stale.requires_population());
     assert!(CoverageFreshness::Unknown.requires_population());
+}
+
+#[test]
+fn reusable_prior_backer_selects_without_population() {
+    let (planner, select_calls) =
+        FakePlanner::fresh(Language::Rust, vec![selector(Language::Rust, "b")]);
+    let mut planner = planner;
+    planner.freshness = CoverageFreshness::ReusablePrior;
+    let plan = CoverageDecisionEngine::new(vec![planner.boxed()])
+        .plan(&[source(Language::Rust, "src/lib.rs")])
+        .unwrap();
+    assert_eq!(plan.selected, vec![selector(Language::Rust, "b")]);
+    assert!(plan.population.is_empty());
+    assert_eq!(select_calls.get(), 1);
 }
 
 #[test]

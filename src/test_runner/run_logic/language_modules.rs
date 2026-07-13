@@ -93,6 +93,7 @@ impl LanguageExecutor for RustModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
+        assert!(ctx.options.jobs > 0, "jobs must be greater than zero");
         let manifest_selectors = self.population_manifest_selectors()?;
         run_rust_selectors_for_module(selectors, ctx, Some(manifest_selectors))
     }
@@ -102,6 +103,7 @@ impl LanguageExecutor for RustModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
+        assert!(ctx.options.jobs > 0, "jobs must be greater than zero");
         run_rust_selectors_for_module(selectors, ctx, None)
     }
 
