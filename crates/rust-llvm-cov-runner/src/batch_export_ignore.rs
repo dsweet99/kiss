@@ -38,7 +38,6 @@ pub(crate) fn resolve_ignore_filename_regex(
     )))
 }
 
-
 fn parse_cargo_scope_args(cargo_args: &[String]) -> (bool, Vec<String>, Vec<String>) {
     let mut workspace = false;
     let mut packages = Vec::new();

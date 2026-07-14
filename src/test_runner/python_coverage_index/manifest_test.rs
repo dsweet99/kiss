@@ -149,9 +149,7 @@ fn stored_python_universe_selectors_reads_current_manifest() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
     let selector = "tests/test_app.py::test_value".to_string();
-    assert!(
-        stored_python_universe_selectors(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none()
-    );
+    assert!(stored_python_universe_selectors(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none());
     write_python_population_manifest_for_args(tmp.path(), std::slice::from_ref(&selector), &[])
         .unwrap();
     let stored =
@@ -159,7 +157,5 @@ fn stored_python_universe_selectors_reads_current_manifest() {
     assert_eq!(stored, vec![selector]);
 
     std::fs::write(tmp.path().join("new.py"), "x = 2\n").unwrap();
-    assert!(
-        stored_python_universe_selectors(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none()
-    );
+    assert!(stored_python_universe_selectors(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none());
 }

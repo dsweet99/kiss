@@ -129,14 +129,10 @@ fn run_parity_matrix_case(
     let helper_bin = helper_bin_path(&helper_target);
     let selectors: Vec<String> = case.selectors.iter().map(|s| (*s).to_string()).collect();
     let test_args: Vec<String> = case.test_args.iter().map(|s| (*s).to_string()).collect();
-    let legacy = collect_legacy_outcomes(&selectors, tools, &helper_bin, tmp.path(), case, &test_args);
-    let batch_req = batch_request_with_args(
-        tmp.path(),
-        &selectors,
-        &helper_bin,
-        &test_args,
-        case.jobs,
-    );
+    let legacy =
+        collect_legacy_outcomes(&selectors, tools, &helper_bin, tmp.path(), case, &test_args);
+    let batch_req =
+        batch_request_with_args(tmp.path(), &selectors, &helper_bin, &test_args, case.jobs);
     let batch = execute_rust_coverage_batch(&batch_req, tools)
         .unwrap_or_else(|err| panic!("batch parity case `{}` failed: {err:?}", case.name));
     assert_parity_batch_result(case, &batch, &selectors, &legacy, &batch_req, fixture_root);
@@ -157,7 +153,8 @@ fn collect_legacy_outcomes(
                 selector,
                 tools,
                 helper_bin,
-                tmp.join(format!("legacy-cache-{}", case.name)).join(selector),
+                tmp.join(format!("legacy-cache-{}", case.name))
+                    .join(selector),
                 test_args,
             );
             (selector.clone(), outcome)
@@ -179,7 +176,12 @@ fn assert_parity_batch_result(
         case.name,
         batch.batch_error
     );
-    assert_eq!(batch.completed.len(), selectors.len(), "case `{}`", case.name);
+    assert_eq!(
+        batch.completed.len(),
+        selectors.len(),
+        "case `{}`",
+        case.name
+    );
     let debug = parity_debug(case, batch, batch_req);
     if assert_parity_special_case(case, batch, selectors, legacy, batch_req, &debug) {
         return;
@@ -275,9 +277,7 @@ fn assert_diagnostic_exit_37(
     assert!(outcome.coverage.files.is_empty());
     let metadata = shim_metadata_for_batch(batch_req);
     assert!(
-        metadata
-            .iter()
-            .any(|item| item.exit_code == Some(37)),
+        metadata.iter().any(|item| item.exit_code == Some(37)),
         "shim must preserve diagnostic child exit 37\n{debug}"
     );
 }
@@ -312,11 +312,17 @@ fn assert_exact_prefix_zero_instances(
     selectors: &[String],
     debug: &str,
 ) {
-    assert_eq!(batch.counters.unmatched_selectors, selectors.len(), "{debug}");
-    assert!(batch
-        .completed
-        .iter()
-        .all(|outcome| outcome.coverage.files.is_empty()));
+    assert_eq!(
+        batch.counters.unmatched_selectors,
+        selectors.len(),
+        "{debug}"
+    );
+    assert!(
+        batch
+            .completed
+            .iter()
+            .all(|outcome| outcome.coverage.files.is_empty())
+    );
 }
 
 fn assert_nocapture_live_output(
@@ -326,7 +332,9 @@ fn assert_nocapture_live_output(
 ) {
     let metadata = shim_metadata_for_batch(batch_req);
     assert!(
-        metadata.iter().any(|item| item.output_frame_count.unwrap_or(0) > 0),
+        metadata
+            .iter()
+            .any(|item| item.output_frame_count.unwrap_or(0) > 0),
         "nocapture must relay live separated output frames\n{debug}"
     );
 }

@@ -94,7 +94,10 @@ pub(crate) fn parity_matrix_cases() -> &'static [ParityMatrixCase] {
         },
         ParityMatrixCase {
             name: "mixed-matched-unmatched",
-            selectors: &["invokes_helper_in_process", "selector_that_matches_nothing_in_fixture"],
+            selectors: &[
+                "invokes_helper_in_process",
+                "selector_that_matches_nothing_in_fixture",
+            ],
             test_args: &[],
             jobs: 1,
         },

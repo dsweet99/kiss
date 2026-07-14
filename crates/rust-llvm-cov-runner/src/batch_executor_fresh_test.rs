@@ -229,11 +229,8 @@ fn apply_non_primary_cleanup_error_preserves_primary_batch_error() {
         counters: Default::default(),
     };
     let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "cleanup");
-    let applied = crate::batch_executor_fresh::apply_non_primary_cleanup_error(
-        result,
-        Some(err),
-    )
-    .expect("preserve primary");
+    let applied = crate::batch_executor_fresh::apply_non_primary_cleanup_error(result, Some(err))
+        .expect("preserve primary");
     let message = format!("{:?}", applied.batch_error.unwrap());
     assert!(message.contains("primary"));
     assert!(message.contains("cleanup"));
@@ -274,8 +271,7 @@ fn stale_run_directory_cleanup_failure_preserves_primary_store_error() {
         )
         .unwrap();
     }
-    remove_stale_run_directories(&cache_root, &req.generated_config.parent().unwrap())
-        .unwrap();
+    remove_stale_run_directories(&cache_root, &req.generated_config.parent().unwrap()).unwrap();
     req.force_rerun = true;
     let recovered = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
     assert!(recovered.batch_error.is_none());
@@ -298,8 +294,7 @@ fn fresh_batch_plan_keeps_repository_target_untouched() {
         "batch build target must live under cache root, not repository target/"
     );
     assert_ne!(
-        plan.build_target,
-        repo_target,
+        plan.build_target, repo_target,
         "batch must not use repository target/"
     );
     assert_eq!(

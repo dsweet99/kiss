@@ -67,9 +67,7 @@ impl CurrentRunLifecycleGuard {
             return None;
         }
         self.cleaned.set(true);
-        self.cleanup
-            .remove(&self.cache_root, &self.run_root)
-            .err()
+        self.cleanup.remove(&self.cache_root, &self.run_root).err()
     }
 }
 
@@ -92,8 +90,7 @@ impl FreshBatchRunScope {
         cleanup: CurrentRunCleanup,
     ) -> io::Result<Self> {
         let interrupt_guard = BatchScopeInterruptGuard::install()?;
-        let stale_cleanup_error =
-            super::remove_stale_run_directories(cache_root, &run_root).err();
+        let stale_cleanup_error = super::remove_stale_run_directories(cache_root, &run_root).err();
         Ok(Self {
             stale_cleanup_error,
             lifecycle: CurrentRunLifecycleGuard::with_cleanup(
@@ -125,7 +122,8 @@ impl FreshBatchRunScope {
         let current_cleanup_error = self.lifecycle.cleanup();
         match outcome {
             Ok(value) => {
-                if let Some(err) = sole_cleanup_error(self.stale_cleanup_error, current_cleanup_error)
+                if let Some(err) =
+                    sole_cleanup_error(self.stale_cleanup_error, current_cleanup_error)
                 {
                     return Err(err.into());
                 }
@@ -261,12 +259,10 @@ pub fn remove_current_run_directory(cache_root: &Path, run_root: &Path) -> io::R
 
 pub fn append_cleanup_error(primary: RustLlvmCovError, cleanup: io::Error) -> RustLlvmCovError {
     match primary {
-        RustLlvmCovError::InvalidRequest(message) => RustLlvmCovError::InvalidRequest(format!(
-            "{message}; cleanup failed: {cleanup}"
-        )),
-        other => RustLlvmCovError::InvalidRequest(format!(
-            "{other:?}; cleanup failed: {cleanup}"
-        )),
+        RustLlvmCovError::InvalidRequest(message) => {
+            RustLlvmCovError::InvalidRequest(format!("{message}; cleanup failed: {cleanup}"))
+        }
+        other => RustLlvmCovError::InvalidRequest(format!("{other:?}; cleanup failed: {cleanup}")),
     }
 }
 
@@ -322,10 +318,9 @@ fn sole_cleanup_error(
     match (stale_cleanup, current_cleanup) {
         (None, None) => None,
         (Some(err), None) | (None, Some(err)) => Some(err),
-        (Some(stale), Some(current)) => Some(io::Error::new(
-            stale.kind(),
-            format!("{stale}; {current}"),
-        )),
+        (Some(stale), Some(current)) => {
+            Some(io::Error::new(stale.kind(), format!("{stale}; {current}")))
+        }
     }
 }
 

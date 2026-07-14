@@ -21,14 +21,20 @@ fn normalize_nodeid_converts_absolute_paths_to_repo_relative() {
 fn normalize_nodeid_rejects_escaping_paths() {
     let repo = Path::new("/repo");
     let err = normalize_nodeid("../outside.py::test_value", repo).unwrap_err();
-    assert!(matches!(err, PytestCollectError::NodeidNormalization { .. }));
+    assert!(matches!(
+        err,
+        PytestCollectError::NodeidNormalization { .. }
+    ));
 }
 
 #[test]
 fn normalize_nodeid_rejects_absolute_paths_outside_repo() {
     let repo = Path::new("/repo");
     let err = normalize_nodeid("/other/tests/test_app.py::test_value", repo).unwrap_err();
-    assert!(matches!(err, PytestCollectError::NodeidNormalization { .. }));
+    assert!(matches!(
+        err,
+        PytestCollectError::NodeidNormalization { .. }
+    ));
 }
 
 #[test]
@@ -56,10 +62,12 @@ fn collect_subprocess_returns_pytest_nodeids_from_temp_repo() {
     let tmp = TempDir::new().unwrap();
     let tests = tmp.path().join("tests");
     fs::create_dir_all(&tests).unwrap();
-    fs::write(tests.join("test_ok.py"), "def test_ok():\n    assert True\n").unwrap();
-    let python = PathBuf::from(
-        std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()),
-    );
+    fs::write(
+        tests.join("test_ok.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    let python = PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()));
     let outcome = SubprocessPytestCollector::new()
         .collect(PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
@@ -77,12 +85,14 @@ fn collect_pytest_nodeids_public_api_delegates_to_subprocess_collector() {
     let tmp = TempDir::new().unwrap();
     let tests = tmp.path().join("tests");
     fs::create_dir_all(&tests).unwrap();
-    fs::write(tests.join("test_api.py"), "def test_api():\n    assert True\n").unwrap();
+    fs::write(
+        tests.join("test_api.py"),
+        "def test_api():\n    assert True\n",
+    )
+    .unwrap();
     let outcome = super::collect_pytest_nodeids(PytestCollectRequest {
         cwd: tmp.path().to_path_buf(),
-        python: PathBuf::from(
-            std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()),
-        ),
+        python: PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string())),
         paths: Vec::new(),
         pytest_args: Vec::new(),
         env: BTreeMap::new(),
@@ -147,7 +157,8 @@ sys.stdout.write("KISS_COLLECT_JSON:" + json.dumps({"nodeids": []}) + "\n")
     }
 
     let observed: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(tmp.path().join("observed.json")).unwrap()).unwrap();
+        serde_json::from_str(&fs::read_to_string(tmp.path().join("observed.json")).unwrap())
+            .unwrap();
     assert!(observed["PYTEST_ADDOPTS"].is_null());
     assert_eq!(
         observed["PYTEST_DISABLE_PLUGIN_AUTOLOAD"].as_str(),

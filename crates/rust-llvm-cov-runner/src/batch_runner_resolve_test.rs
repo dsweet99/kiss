@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 use std::fs;
 
-use crate::batch_runner_resolve::{
-    delegated_runner_for_platform, resolve_delegated_runners,
+use crate::batch_runner_resolve::{delegated_runner_for_platform, resolve_delegated_runners};
+use crate::test_support::{
+    make_executable, runner_resolve_base_request, runner_resolve_toml_string,
 };
-use crate::test_support::{make_executable, runner_resolve_base_request, runner_resolve_toml_string};
 
 #[test]
 fn resolved_delegated_runners_struct_round_trips() {

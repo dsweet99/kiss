@@ -89,10 +89,9 @@ fn shim_start_and_delegated_start_metadata_round_trip() {
     let loaded_start: BatchShimStartMetadata =
         serde_json::from_slice(&fs::read(tmp.path().join("alpha.shim-start.json")).unwrap())
             .unwrap();
-    let loaded_delegated: BatchShimDelegatedStartMetadata = serde_json::from_slice(
-        &fs::read(tmp.path().join("alpha.delegated-start.json")).unwrap(),
-    )
-    .unwrap();
+    let loaded_delegated: BatchShimDelegatedStartMetadata =
+        serde_json::from_slice(&fs::read(tmp.path().join("alpha.delegated-start.json")).unwrap())
+            .unwrap();
     assert_eq!(loaded_start, start);
     assert_eq!(loaded_delegated, delegated);
 }

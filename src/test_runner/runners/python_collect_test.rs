@@ -63,11 +63,10 @@ fn collection_import_error_surfaces_actionable_planning_error() {
         "import definitely_missing_module\n\ndef test_bad():\n    pass\n",
     )
     .unwrap();
-    let err = collect_python_nodeids(tmp.path(), Some(std::slice::from_ref(&bad)), &[]).unwrap_err();
+    let err =
+        collect_python_nodeids(tmp.path(), Some(std::slice::from_ref(&bad)), &[]).unwrap_err();
     assert!(err.contains("pytest collection failed"));
-    assert!(
-        err.contains("definitely_missing_module") || err.contains("ModuleNotFoundError")
-    );
+    assert!(err.contains("definitely_missing_module") || err.contains("ModuleNotFoundError"));
 }
 
 #[test]
@@ -115,7 +114,11 @@ fn collection_memoization_avoids_second_child_process() {
     let tmp = TempDir::new().unwrap();
     let tests = tmp.path().join("tests");
     fs::create_dir_all(&tests).unwrap();
-    fs::write(tests.join("test_one.py"), "def test_ok():\n    assert True\n").unwrap();
+    fs::write(
+        tests.join("test_one.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
     let first = collect_python_nodeids(tmp.path(), None, &[]).unwrap();
     let second = collect_python_nodeids(tmp.path(), None, &[]).unwrap();
     assert_eq!(first, second);
@@ -146,35 +149,47 @@ fn collection_invalid_request_surfaces_planning_error() {
 
 #[test]
 fn format_collect_error_maps_all_collector_failures() {
-    use rpytest_runner::PytestCollectError;
     use super::python_collect::format_collect_error_for_test;
+    use rpytest_runner::PytestCollectError;
 
-    assert!(format_collect_error_for_test(PytestCollectError::InvalidRequest("bad".into()))
-        .contains("invalid pytest collection request"));
-    assert!(format_collect_error_for_test(PytestCollectError::Spawn {
-        program: "python".into(),
-        message: "nope".into(),
-    })
-    .contains("failed to spawn"));
-    assert!(format_collect_error_for_test(PytestCollectError::CollectionFailed {
-        exit_code: Some(2),
-        stderr: "stderr detail".into(),
-        stdout: String::new(),
-    })
-    .contains("stderr detail"));
-    assert!(format_collect_error_for_test(PytestCollectError::CollectionFailed {
-        exit_code: Some(2),
-        stderr: String::new(),
-        stdout: "stdout detail".into(),
-    })
-    .contains("stdout detail"));
-    assert!(format_collect_error_for_test(PytestCollectError::InvalidOutput("bad json".into()))
-        .contains("invalid pytest collection output"));
-    assert!(format_collect_error_for_test(PytestCollectError::NodeidNormalization {
-        nodeid: "x".into(),
-        message: "bad path".into(),
-    })
-    .contains("invalid pytest nodeid"));
+    assert!(
+        format_collect_error_for_test(PytestCollectError::InvalidRequest("bad".into()))
+            .contains("invalid pytest collection request")
+    );
+    assert!(
+        format_collect_error_for_test(PytestCollectError::Spawn {
+            program: "python".into(),
+            message: "nope".into(),
+        })
+        .contains("failed to spawn")
+    );
+    assert!(
+        format_collect_error_for_test(PytestCollectError::CollectionFailed {
+            exit_code: Some(2),
+            stderr: "stderr detail".into(),
+            stdout: String::new(),
+        })
+        .contains("stderr detail")
+    );
+    assert!(
+        format_collect_error_for_test(PytestCollectError::CollectionFailed {
+            exit_code: Some(2),
+            stderr: String::new(),
+            stdout: "stdout detail".into(),
+        })
+        .contains("stdout detail")
+    );
+    assert!(
+        format_collect_error_for_test(PytestCollectError::InvalidOutput("bad json".into()))
+            .contains("invalid pytest collection output")
+    );
+    assert!(
+        format_collect_error_for_test(PytestCollectError::NodeidNormalization {
+            nodeid: "x".into(),
+            message: "bad path".into(),
+        })
+        .contains("invalid pytest nodeid")
+    );
 }
 
 #[test]
@@ -252,11 +267,7 @@ fn pytest_collector_spawn_and_invalid_request_errors_are_actionable() {
 fn pytest_collector_invalid_json_and_nodeid_errors_are_actionable() {
     let tmp = TempDir::new().unwrap();
     let fake_python = tmp.path().join("fake_invalid_json");
-    fs::write(
-        &fake_python,
-        "#!/usr/bin/env python3\nprint('no marker')\n",
-    )
-    .unwrap();
+    fs::write(&fake_python, "#!/usr/bin/env python3\nprint('no marker')\n").unwrap();
     make_executable(&fake_python);
     let invalid_output = rpytest_runner::subprocess_pytest_collector()
         .collect(rpytest_runner::PytestCollectRequest {
@@ -347,20 +358,24 @@ fn collect_pytest_nodeids_public_wrapper_is_used() {
     let tmp = TempDir::new().unwrap();
     let tests = tmp.path().join("tests");
     fs::create_dir_all(&tests).unwrap();
-    fs::write(tests.join("test_wrap.py"), "def test_wrap():\n    assert True\n").unwrap();
+    fs::write(
+        tests.join("test_wrap.py"),
+        "def test_wrap():\n    assert True\n",
+    )
+    .unwrap();
     let outcome = rpytest_runner::collect_pytest_nodeids(rpytest_runner::PytestCollectRequest {
         cwd: tmp.path().to_path_buf(),
-        python: PathBuf::from(
-            std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()),
-        ),
+        python: PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string())),
         paths: Vec::new(),
         pytest_args: Vec::new(),
         env: BTreeMap::new(),
     })
     .unwrap();
-    assert!(outcome
-        .nodeids
-        .contains(&"tests/test_wrap.py::test_wrap".to_string()));
+    assert!(
+        outcome
+            .nodeids
+            .contains(&"tests/test_wrap.py::test_wrap".to_string())
+    );
 }
 
 #[test]

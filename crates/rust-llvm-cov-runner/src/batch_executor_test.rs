@@ -6,8 +6,8 @@ use crate::batch_lock::lock_batch;
 use crate::publish_derived_state;
 use crate::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
 use crate::test_support::{
-    batch_executor_fixture_repo, batch_executor_request, store_alpha_entry, store_batch_executor_selector,
-    witness_batch_tools,
+    batch_executor_fixture_repo, batch_executor_request, store_alpha_entry,
+    store_batch_executor_selector, witness_batch_tools,
 };
 use rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
@@ -166,9 +166,8 @@ fn failed_selective_fresh_batch_preserves_population_through_executor() {
             .join("obsoleteselective01.json")
             .is_file()
     );
-    let manifest =
-        crate::batch_derived_index::read_population_manifest(&selective.cache_root)
-            .expect("population manifest");
+    let manifest = crate::batch_derived_index::read_population_manifest(&selective.cache_root)
+        .expect("population manifest");
     assert_eq!(
         manifest.generation_fingerprint,
         population_identity.generation_fingerprint

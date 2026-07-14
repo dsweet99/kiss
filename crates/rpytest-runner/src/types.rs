@@ -28,7 +28,7 @@ pub struct PytestRunRequest {
     pub python: PathBuf,
     pub pytest_args: Vec<String>,
     pub env: BTreeMap<String, String>,
-    pub preload_modules: Vec<String>,
+    pub child_preload_modules: Vec<String>,
     pub artifacts: Vec<RequestedArtifact>,
     pub timeout: Option<Duration>,
 }
@@ -42,7 +42,7 @@ impl PytestRunRequest {
             python: PathBuf::from("python"),
             pytest_args: vec!["-q".to_string()],
             env: BTreeMap::from([("A".to_string(), "B".to_string())]),
-            preload_modules: vec!["preload_mod".to_string()],
+            child_preload_modules: vec!["preload_mod".to_string()],
             artifacts: vec![RequestedArtifact::witness()],
             timeout: Some(Duration::from_secs(1)),
         }

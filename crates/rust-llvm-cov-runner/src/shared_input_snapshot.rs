@@ -20,26 +20,31 @@ pub(crate) fn rust_input_snapshot(
 ) -> Result<RustInputSnapshot, RustLlvmCovError> {
     let files = super::rust_cov_input_files(root).map_err(RustLlvmCovError::Io)?;
     let metadata = workspace_metadata_from_cargo(&req.cwd, &req.cargo, &req.cargo_args).ok();
-    digest_input_file_snapshot(root, &files, |path| fs::read(path), |file| {
-        if !super::is_rust_cov_cache_input(file)
-            || !file
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("rs") || ext.eq_ignore_ascii_case("inc"))
-        {
-            return Ok(false);
-        }
-        let Some(metadata) = metadata.as_ref() else {
-            return Ok(false);
-        };
-        let is_inc = file
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("inc"));
-        match metadata.rs_compile_time_classification(root, file) {
-            Some(false) => Ok(true),
-            Some(true) => Ok(false),
-            None => Ok(is_inc),
-        }
-    })
+    digest_input_file_snapshot(
+        root,
+        &files,
+        |path| fs::read(path),
+        |file| {
+            if !super::is_rust_cov_cache_input(file)
+                || !file.extension().is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("rs") || ext.eq_ignore_ascii_case("inc")
+                })
+            {
+                return Ok(false);
+            }
+            let Some(metadata) = metadata.as_ref() else {
+                return Ok(false);
+            };
+            let is_inc = file
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("inc"));
+            match metadata.rs_compile_time_classification(root, file) {
+                Some(false) => Ok(true),
+                Some(true) => Ok(false),
+                None => Ok(is_inc),
+            }
+        },
+    )
 }
 
 pub(crate) fn digest_input_file_snapshot(
@@ -135,8 +140,13 @@ mod tests {
         let manifest = tmp.path().join("Cargo.toml");
         fs::write(&manifest, "[package]\n").unwrap();
 
-        let err = digest_input_file_snapshot(tmp.path(), &[manifest], |path| fs::read(path), |_| Ok(true))
-            .unwrap_err();
+        let err = digest_input_file_snapshot(
+            tmp.path(),
+            &[manifest],
+            |path| fs::read(path),
+            |_| Ok(true),
+        )
+        .unwrap_err();
 
         assert!(format!("{err:?}").contains("repository-relative Rust path"));
     }

@@ -1,4 +1,7 @@
-"""Compare kiss static test-reference coverage to runtime line coverage."""
+"""Compare kiss static test-reference coverage to runtime line coverage.
+
+This module is also a cache-invalidation probe for Python selection.
+"""
 
 from __future__ import annotations
 

@@ -10,7 +10,7 @@ use crate::batch_runner_resolve::resolve_batch_request_runners;
 use crate::batch_shim::load_target_runner_shim_metadata;
 use crate::llvm_cov_json::parse_llvm_cov_json_file;
 use crate::{
-    RustCoverageBatchRequest, RustCoverageToolIdentity, RustCovCacheStatus, RustLineCoverage,
+    RustCovCacheStatus, RustCoverageBatchRequest, RustCoverageToolIdentity, RustLineCoverage,
     RustLlvmCovOutcome,
 };
 
@@ -168,9 +168,8 @@ fn run_per_selector_cargo_llvm_cov_oracle(
     let source_root = PathBuf::from(FIXTURE_ROOT).join("runner");
     let coverage = if status == rpytest_runner::TestStatus::Passed {
         if artifact_path.is_file() {
-            parse_llvm_cov_json_file(&artifact_path, &source_root).unwrap_or_else(|_| {
-                parse_oracle_stdout_coverage(&output.stdout, &source_root)
-            })
+            parse_llvm_cov_json_file(&artifact_path, &source_root)
+                .unwrap_or_else(|_| parse_oracle_stdout_coverage(&output.stdout, &source_root))
         } else {
             parse_oracle_stdout_coverage(&output.stdout, &source_root)
         }

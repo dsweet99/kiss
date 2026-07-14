@@ -1,8 +1,12 @@
 use std::collections::BTreeMap;
 use std::fs;
 
-use crate::batch_runner_resolve::{resolve_delegated_runners, runner_map_fingerprint, write_runner_map};
-use crate::test_support::{make_executable, runner_resolve_base_request, runner_resolve_toml_string};
+use crate::batch_runner_resolve::{
+    resolve_delegated_runners, runner_map_fingerprint, write_runner_map,
+};
+use crate::test_support::{
+    make_executable, runner_resolve_base_request, runner_resolve_toml_string,
+};
 
 #[test]
 fn resolve_delegated_runners_reads_runner_from_cargo_home_env() {
@@ -31,8 +35,10 @@ fn resolve_delegated_runners_reads_runner_from_cargo_home_env() {
         ),
     )
     .unwrap();
-    req.env
-        .insert("CARGO_HOME".to_string(), cargo_home.path().to_string_lossy().to_string());
+    req.env.insert(
+        "CARGO_HOME".to_string(),
+        cargo_home.path().to_string_lossy().to_string(),
+    );
 
     let resolved = resolve_delegated_runners(&req).unwrap();
     assert_eq!(

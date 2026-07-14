@@ -85,7 +85,9 @@ fn resolve_changed_includes_missing_deleted_rust_path() {
     let rel = vec!["src/gone.rs".to_string()];
     let out = resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Rust));
     assert_eq!(out, vec![root.join("src/gone.rs")]);
-    assert!(resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Python)).is_empty());
+    assert!(
+        resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Python)).is_empty()
+    );
 }
 
 #[test]
@@ -104,7 +106,9 @@ fn resolve_changed_includes_rust_compile_time_inputs() {
     assert!(rust.iter().any(|path| path.ends_with("Cargo.toml")));
     assert!(rust.iter().any(|path| path.ends_with(".cargo/config.toml")));
     assert!(rust.iter().any(|path| path.ends_with("Cargo.lock")));
-    assert!(resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Python)).is_empty());
+    assert!(
+        resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Python)).is_empty()
+    );
 }
 
 #[test]

@@ -113,12 +113,7 @@ pub(crate) fn load_cargo_metadata(
 ) -> Result<CargoMetadata, RustLlvmCovError> {
     let manifest_path = effective_manifest_path(cwd, cargo_args);
     let output = Command::new(cargo)
-        .args([
-            "metadata",
-            "--format-version",
-            "1",
-            "--manifest-path",
-        ])
+        .args(["metadata", "--format-version", "1", "--manifest-path"])
         .arg(&manifest_path)
         .current_dir(cwd)
         .output()
@@ -346,16 +341,20 @@ mod coverage_witness {
                 id: "pkg".to_string(),
                 name: "name".to_string(),
                 manifest_path: "/repo/Cargo.toml".to_string(),
-                targets: vec![serde_json::from_value(serde_json::json!({
-                    "kind": ["lib"],
-                    "crate_types": ["lib"]
-                }))
-                .unwrap()],
-                dependencies: vec![serde_json::from_value(serde_json::json!({
-                    "name": "dep",
-                    "path": "/repo/dep"
-                }))
-                .unwrap()],
+                targets: vec![
+                    serde_json::from_value(serde_json::json!({
+                        "kind": ["lib"],
+                        "crate_types": ["lib"]
+                    }))
+                    .unwrap(),
+                ],
+                dependencies: vec![
+                    serde_json::from_value(serde_json::json!({
+                        "name": "dep",
+                        "path": "/repo/dep"
+                    }))
+                    .unwrap(),
+                ],
             }],
             workspace_members: vec!["pkg".to_string()],
             workspace_root: Some("/repo".to_string()),

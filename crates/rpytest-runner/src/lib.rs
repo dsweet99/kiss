@@ -9,6 +9,7 @@
 
 mod collector;
 mod forkserver;
+mod forkserver_controller;
 mod runner;
 mod types;
 

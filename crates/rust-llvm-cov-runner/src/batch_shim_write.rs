@@ -43,11 +43,7 @@ pub(crate) fn write_delegated_start_metadata(
         id: id.to_string(),
         delegated_identity: delegated_identity.clone(),
     };
-    write_metadata_atomically(
-        output_dir,
-        &format!("{id}.delegated-start.json"),
-        &metadata,
-    )
+    write_metadata_atomically(output_dir, &format!("{id}.delegated-start.json"), &metadata)
 }
 
 fn write_metadata_atomically<T: Serialize>(

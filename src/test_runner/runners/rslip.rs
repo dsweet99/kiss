@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
-use std::thread;
 
-use rpytest_runner::subprocess_pytest_runner;
+use rpytest_runner::PytestRunner;
 use rslip::{CacheStatus as PyCacheStatus, Rslip, RslipError, RslipOutcome, RslipRequest};
 
 use super::{SelectorCacheRecord, SelectorExecutionSummary, command_stdout};
@@ -15,6 +13,24 @@ pub(crate) fn run_rslip_selectors(
     extra: &[String],
     force_rerun: bool,
     jobs: usize,
+) -> Result<SelectorExecutionSummary, String> {
+    run_rslip_selectors_with_runner(
+        repo_root,
+        selectors,
+        extra,
+        force_rerun,
+        jobs,
+        selected_rslip_pytest_runner(),
+    )
+}
+
+fn run_rslip_selectors_with_runner(
+    repo_root: &Path,
+    selectors: &[String],
+    extra: &[String],
+    force_rerun: bool,
+    jobs: usize,
+    runner: PytestRunner,
 ) -> Result<SelectorExecutionSummary, String> {
     assert!(jobs > 0, "jobs must be greater than zero");
     let (python_version, pytest_version) = detect_rslip_versions(repo_root)?;
@@ -32,9 +48,10 @@ pub(crate) fn run_rslip_selectors(
             )
         })
         .collect::<Result<_, _>>()?;
+    let rslip = Rslip::new(runner);
     let mut summary = SelectorExecutionSummary::default();
     let mut statuses = Vec::new();
-    for result in run_rslip_requests_bounded(reqs, jobs) {
+    for result in rslip.run_or_reuse_many_bounded(reqs, jobs) {
         let outcome = result.map_err(format_rslip_error)?;
         print_rslip_outcome(&outcome);
         statuses.push((outcome.nodeid.clone(), outcome.status));
@@ -50,6 +67,16 @@ pub(crate) fn run_rslip_selectors(
     }
     record_statuses(repo_root, kiss::Language::Python, &identity, &statuses)?;
     Ok(summary)
+}
+
+#[cfg(target_os = "linux")]
+fn selected_rslip_pytest_runner() -> PytestRunner {
+    rpytest_runner::forkserver_pytest_runner()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn selected_rslip_pytest_runner() -> PytestRunner {
+    rpytest_runner::subprocess_pytest_runner()
 }
 
 pub(crate) fn rslip_request_from_parts(
@@ -104,58 +131,6 @@ fn python_version_supports_rslip(version: &str) -> bool {
     matches!((major, minor), (Some(major), Some(minor)) if major > 3 || (major == 3 && minor >= 12))
 }
 
-fn run_rslip_requests_bounded(
-    reqs: Vec<RslipRequest>,
-    jobs: usize,
-) -> Vec<Result<RslipOutcome, RslipError>> {
-    assert!(jobs > 0, "jobs must be greater than zero");
-    let len = reqs.len();
-    let mut out = Vec::new();
-    out.resize_with(len, || {
-        Err(RslipError::InvalidRequest(
-            "rslip worker did not report a result".to_string(),
-        ))
-    });
-    if len == 0 {
-        return out;
-    }
-
-    let (tx, rx) = mpsc::channel();
-    let mut indexed_reqs = reqs.into_iter().enumerate();
-    let mut running = 0usize;
-    for _ in 0..jobs.min(len) {
-        if let Some((index, req)) = indexed_reqs.next() {
-            spawn_rslip_job(index, req, tx.clone());
-            running += 1;
-        }
-    }
-
-    while running > 0 {
-        let Ok((index, result)) = rx.recv() else {
-            break;
-        };
-        running -= 1;
-        out[index] = result;
-        if let Some((next_index, next_req)) = indexed_reqs.next() {
-            spawn_rslip_job(next_index, next_req, tx.clone());
-            running += 1;
-        }
-    }
-    out
-}
-
-fn spawn_rslip_job(
-    index: usize,
-    req: RslipRequest,
-    tx: mpsc::Sender<(usize, Result<RslipOutcome, RslipError>)>,
-) {
-    thread::spawn(move || {
-        let rslip = Rslip::new(subprocess_pytest_runner());
-        let result = rslip.run_or_reuse(req);
-        let _ = tx.send((index, result));
-    });
-}
-
 fn print_rslip_outcome(outcome: &RslipOutcome) {
     match (outcome.status, outcome.cache_status) {
         (rpytest_runner::TestStatus::Passed, PyCacheStatus::Hit) => {
@@ -188,7 +163,11 @@ fn format_rslip_error(err: RslipError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rpytest_runner::{PytestRunOutcome, TestStatus};
     use rslip::LineCoverage;
+    use std::cell::{Cell, RefCell};
+    use std::fs;
+    use std::rc::Rc;
     use std::time::Duration;
 
     #[test]
@@ -232,9 +211,98 @@ mod tests {
 
     #[test]
     fn bounded_rslip_runner_handles_empty_queue() {
-        let results = run_rslip_requests_bounded(Vec::new(), 1);
+        let results = Rslip::new(PytestRunner::from_fn(|_| {
+            panic!("empty batch should not invoke runner")
+        }))
+        .run_or_reuse_many_bounded(Vec::new(), 1);
 
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn run_rslip_selectors_submits_misses_as_single_bounded_batch() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join("test_sample.py"),
+            "def test_a():\n    assert True\n\n\
+def test_b():\n    assert False\n",
+        )
+        .unwrap();
+        let selectors = vec![
+            "test_sample.py::test_a".to_string(),
+            "test_sample.py::test_b".to_string(),
+        ];
+        let batch_calls = Rc::new(Cell::new(0));
+        let observed_jobs = Rc::new(Cell::new(0));
+        let observed_nodeids = Rc::new(RefCell::new(Vec::new()));
+        let batch_calls_for_runner = Rc::clone(&batch_calls);
+        let observed_jobs_for_runner = Rc::clone(&observed_jobs);
+        let observed_nodeids_for_runner = Rc::clone(&observed_nodeids);
+        let runner = PytestRunner::from_bounded_fn(move |reqs, jobs| {
+            batch_calls_for_runner.set(batch_calls_for_runner.get() + 1);
+            observed_jobs_for_runner.set(jobs);
+            observed_nodeids_for_runner
+                .borrow_mut()
+                .extend(reqs.iter().map(|req| req.nodeid.clone()));
+            reqs.into_iter()
+                .map(|req| {
+                    let path = req.artifacts[0].path.clone();
+                    let artifact_name = req.artifacts[0].name.clone();
+                    fs::write(&path, r#"{"files":{"/project/app.py":[1]}}"#).unwrap();
+                    let failed = req.nodeid.ends_with("test_b");
+                    Ok(PytestRunOutcome {
+                        nodeid: req.nodeid,
+                        status: if failed {
+                            TestStatus::Failed
+                        } else {
+                            TestStatus::Passed
+                        },
+                        exit_code: Some(i32::from(failed)),
+                        stdout: Vec::new(),
+                        stderr: Vec::new(),
+                        duration: Duration::from_millis(1),
+                        artifacts: BTreeMap::from([(artifact_name, path)]),
+                    })
+                })
+                .collect()
+        });
+
+        let summary =
+            run_rslip_selectors_with_runner(tmp.path(), &selectors, &[], false, 3, runner).unwrap();
+
+        assert_eq!(batch_calls.get(), 1);
+        assert_eq!(observed_jobs.get(), 3);
+        assert_eq!(*observed_nodeids.borrow(), selectors);
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.cache_misses, 2);
+        assert_eq!(summary.cache_hits, 0);
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.exit_code, 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_run_rslip_selectors_uses_isolated_forkserver_children() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("stateful.py"), "VALUE = 0\n").unwrap();
+        fs::write(
+            tmp.path().join("test_sample.py"),
+            "import stateful\n\n\
+def test_mutate_global():\n    stateful.VALUE = 1\n    assert stateful.VALUE == 1\n\n\
+def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
+        )
+        .unwrap();
+        let selectors = vec![
+            "test_sample.py::test_mutate_global".to_string(),
+            "test_sample.py::test_global_starts_clean".to_string(),
+        ];
+
+        let summary =
+            run_rslip_selectors(tmp.path(), &selectors, &["-q".to_string()], true, 1).unwrap();
+
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.cache_misses, 2);
     }
 
     #[test]

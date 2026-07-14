@@ -129,7 +129,10 @@ where
         .map_err(RustLlvmCovError::from)?;
     let build_identity = batch_run::prepare_build_target_for_identity(req, tools, plan)?;
     let outcome = (|| -> Result<RustCoverageBatchResult, RustLlvmCovError> {
-        crate::batch_runner_resolve::write_runner_map(&plan.runner_map_path, &req.delegated_runners)?;
+        crate::batch_runner_resolve::write_runner_map(
+            &plan.runner_map_path,
+            &req.delegated_runners,
+        )?;
         crate::batch_plan_publish::publish_generated_nextest_config(plan)?;
         let run = runner.run(&req.cwd, plan).map_err(RustLlvmCovError::from)?;
         let parsed = parse_batch_event_stream(&run.stdout)?;
@@ -142,9 +145,7 @@ where
         }
         reject_nonzero_without_terminal_events(&run, &parsed)?;
         if batch_run::batch_scope_interrupted() {
-            return Err(RustLlvmCovError::InvalidRequest(
-                "batch interrupted".into(),
-            ));
+            return Err(RustLlvmCovError::InvalidRequest("batch interrupted".into()));
         }
         let build_target_baseline_bytes = batch_run::publish_successful_build_identity(
             req,
@@ -162,11 +163,8 @@ where
             exact,
             req,
         )?;
-        let export_requests = build_instance_export_requests(
-            &instances,
-            &shim_metadata,
-            &parsed.compiler_artifacts,
-        )?;
+        let export_requests =
+            build_instance_export_requests(&instances, &shim_metadata, &parsed.compiler_artifacts)?;
         let object_catalog = crate::batch_export_catalog::build_object_catalog(
             &parsed.compiler_artifacts,
             &plan.build_target,
@@ -174,12 +172,8 @@ where
             &req.env,
         );
         let export_started = std::time::Instant::now();
-        let (exported, export_counters) = export_step(
-            req,
-            &req.source_root,
-            &object_catalog,
-            export_requests,
-        )?;
+        let (exported, export_counters) =
+            export_step(req, &req.source_root, &object_catalog, export_requests)?;
         finish_fresh_batch_after_export(
             req,
             tools,
@@ -270,8 +264,9 @@ pub(crate) mod fresh_test_helpers {
     ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
         let tools = tools();
         let identity = batch_identity(req, &tools)?;
-        let plan = build_rust_coverage_batch_plan(req)
-            .map_err(|message| RustLlvmCovError::InvalidRequest(format!("batch plan: {message}")))?;
+        let plan = build_rust_coverage_batch_plan(req).map_err(|message| {
+            RustLlvmCovError::InvalidRequest(format!("batch plan: {message}"))
+        })?;
         let _batch_guard = lock_batch(&req.cache_root)?;
         let mut coverage = BTreeMap::new();
         coverage.insert(

@@ -5,8 +5,7 @@ pub fn ensure_batch_platform_supported() -> Result<(), RustLlvmCovError> {
     #[cfg(not(target_os = "linux"))]
     {
         return Err(RustLlvmCovError::InvalidRequest(
-            "compile-once Rust coverage batch execution requires Linux process-tree support"
-                .into(),
+            "compile-once Rust coverage batch execution requires Linux process-tree support".into(),
         ));
     }
     #[cfg(not(unix))]

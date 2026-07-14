@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::time::Duration;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use crate::batch_events::BatchCompilerArtifact;
 use crate::batch_export_resolve::{BinaryIdObjectMap, resolve_objects_for_profdata};
@@ -293,14 +293,9 @@ fn clone_export_context(context: &_ExportJobContext) -> _ExportJobContext {
 fn drain_export_results(drain: &mut ExportDrainState<'_>) -> Result<(), RustLlvmCovError> {
     while *drain.running > 0 {
         if crate::batch_process_tree::batch_scope_interrupted() {
-            return Err(RustLlvmCovError::InvalidRequest(
-                "batch interrupted".into(),
-            ));
+            return Err(RustLlvmCovError::InvalidRequest("batch interrupted".into()));
         }
-        match drain
-            .rx
-            .recv_timeout(Duration::from_millis(25))
-        {
+        match drain.rx.recv_timeout(Duration::from_millis(25)) {
             Ok((index, outcome)) => {
                 *drain.running -= 1;
                 let (id, coverage) = outcome?;
@@ -323,9 +318,7 @@ fn drain_export_results(drain: &mut ExportDrainState<'_>) -> Result<(), RustLlvm
         }
     }
     if crate::batch_process_tree::batch_scope_interrupted() {
-        return Err(RustLlvmCovError::InvalidRequest(
-            "batch interrupted".into(),
-        ));
+        return Err(RustLlvmCovError::InvalidRequest("batch interrupted".into()));
     }
     Ok(())
 }

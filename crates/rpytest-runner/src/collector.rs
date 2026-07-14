@@ -48,14 +48,20 @@ pub struct PytestCollectOutcome {
 #[derive(Debug, PartialEq, Eq)]
 pub enum PytestCollectError {
     InvalidRequest(String),
-    Spawn { program: PathBuf, message: String },
+    Spawn {
+        program: PathBuf,
+        message: String,
+    },
     CollectionFailed {
         exit_code: Option<i32>,
         stderr: String,
         stdout: String,
     },
     InvalidOutput(String),
-    NodeidNormalization { nodeid: String, message: String },
+    NodeidNormalization {
+        nodeid: String,
+        message: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -192,11 +198,10 @@ fn parse_collect_payload(stdout: &str) -> Result<CollectPayload, PytestCollectEr
                 "pytest collection output did not include a JSON payload".to_string(),
             )
         })?;
-    let json = line
-        .strip_prefix(COLLECT_JSON_PREFIX)
-        .ok_or_else(|| PytestCollectError::InvalidOutput("invalid collection prefix".to_string()))?;
-    serde_json::from_str(json)
-        .map_err(|err| PytestCollectError::InvalidOutput(err.to_string()))
+    let json = line.strip_prefix(COLLECT_JSON_PREFIX).ok_or_else(|| {
+        PytestCollectError::InvalidOutput("invalid collection prefix".to_string())
+    })?;
+    serde_json::from_str(json).map_err(|err| PytestCollectError::InvalidOutput(err.to_string()))
 }
 
 pub(crate) fn normalize_nodeids(
@@ -221,15 +226,12 @@ pub(crate) fn normalize_nodeid(
     };
     let file_path = Path::new(file_part);
     let relative = if file_path.is_absolute() {
-        file_path.strip_prefix(repo_root).map_err(|_| {
-            PytestCollectError::NodeidNormalization {
+        file_path
+            .strip_prefix(repo_root)
+            .map_err(|_| PytestCollectError::NodeidNormalization {
                 nodeid: nodeid.to_string(),
-                message: format!(
-                    "nodeid path is not under repo root {}",
-                    repo_root.display()
-                ),
-            }
-        })?
+                message: format!("nodeid path is not under repo root {}", repo_root.display()),
+            })?
     } else {
         file_path
     };
@@ -265,25 +267,33 @@ mod coverage_witness {
         assert!(config.contains("tests/t.py"));
         let decoded: CollectConfigPayload = serde_json::from_str(&config).unwrap();
         assert_eq!(decoded.paths, vec!["tests/t.py".to_string()]);
-        assert_eq!(CollectConfigPayload::witness().pytest_args, vec!["-q".to_string()]);
-        let payload = parse_collect_payload("KISS_COLLECT_JSON:{\"nodeids\":[\"tests/a.py::t\"]}")
-            .unwrap();
+        assert_eq!(
+            CollectConfigPayload::witness().pytest_args,
+            vec!["-q".to_string()]
+        );
+        let payload =
+            parse_collect_payload("KISS_COLLECT_JSON:{\"nodeids\":[\"tests/a.py::t\"]}").unwrap();
         assert_eq!(payload.nodeids, vec!["tests/a.py::t".to_string()]);
         assert!(parse_collect_payload("KISS_COLLECT_JSON:{bad").is_err());
         let empty: CollectPayload = serde_json::from_str("{\"nodeids\":[]}").unwrap();
         assert!(empty.nodeids.is_empty());
-        assert_eq!(CollectPayload::witness().nodeids, vec!["tests/a.py::t".to_string()]);
+        assert_eq!(
+            CollectPayload::witness().nodeids,
+            vec!["tests/a.py::t".to_string()]
+        );
         assert!(is_empty_collection_success(Some(5), &empty));
         assert!(!is_empty_collection_success(Some(2), &empty));
         let _ = subprocess_pytest_collector();
-        assert!(validate_collect_request(&PytestCollectRequest {
-            cwd: PathBuf::from("."),
-            python: PathBuf::from("python"),
-            paths: Vec::new(),
-            pytest_args: Vec::new(),
-            env: BTreeMap::new(),
-        })
-        .is_ok());
+        assert!(
+            validate_collect_request(&PytestCollectRequest {
+                cwd: PathBuf::from("."),
+                python: PathBuf::from("python"),
+                paths: Vec::new(),
+                pytest_args: Vec::new(),
+                env: BTreeMap::new(),
+            })
+            .is_ok()
+        );
     }
 
     #[test]
@@ -291,10 +301,13 @@ mod coverage_witness {
         let tmp = tempfile::tempdir().unwrap();
         let tests = tmp.path().join("tests");
         fs::create_dir_all(&tests).unwrap();
-        fs::write(tests.join("test_ok.py"), "def test_ok():\n    assert True\n").unwrap();
-        let python = PathBuf::from(
-            std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()),
-        );
+        fs::write(
+            tests.join("test_ok.py"),
+            "def test_ok():\n    assert True\n",
+        )
+        .unwrap();
+        let python =
+            PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()));
         let request = PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
             python: python.clone(),
@@ -303,7 +316,10 @@ mod coverage_witness {
             env: BTreeMap::from([("KISS_COLLECT_ENV".into(), "1".into())]),
         };
         let success = collect_subprocess(request).unwrap();
-        assert_eq!(success.nodeids, vec!["tests/test_ok.py::test_ok".to_string()]);
+        assert_eq!(
+            success.nodeids,
+            vec!["tests/test_ok.py::test_ok".to_string()]
+        );
 
         let full_suite = collect_subprocess(PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),

@@ -9,9 +9,7 @@ use tempfile::TempDir;
 
 use super::rust_cov_cache;
 use super::shared_input;
-use super::{
-    RustCovCacheEntry, RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome,
-};
+use super::{RustCovCacheEntry, RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
 
 fn outcome() -> RustLlvmCovOutcome {
     RustLlvmCovOutcome {
@@ -102,7 +100,11 @@ fn write_rust_cov_input_files(root: &Path) {
     fs::write(root.join("rust-toolchain.toml"), "[toolchain]\n").unwrap();
     fs::write(root.join(".cargo").join("config.toml"), "[build]\n").unwrap();
     fs::write(root.join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
-    fs::write(root.join("src").join("fragment.inc"), "pub fn fragment() {}\n").unwrap();
+    fs::write(
+        root.join("src").join("fragment.inc"),
+        "pub fn fragment() {}\n",
+    )
+    .unwrap();
     fs::write(root.join("target").join("ignored.rs"), "ignored\n").unwrap();
 }
 

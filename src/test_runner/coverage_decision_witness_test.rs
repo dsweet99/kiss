@@ -132,7 +132,10 @@ fn witness_changed_diff_and_freshness_are_exhaustive() {
         ));
     }
     assert_eq!(RustSelectionBasis::default(), RustSelectionBasis::Current);
-    assert_ne!(RustSelectionBasis::ReusablePrior, RustSelectionBasis::Population);
+    assert_ne!(
+        RustSelectionBasis::ReusablePrior,
+        RustSelectionBasis::Population
+    );
 }
 
 #[test]

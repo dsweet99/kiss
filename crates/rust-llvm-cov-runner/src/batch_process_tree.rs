@@ -186,7 +186,8 @@ fn register_batch_scope_sigint(
     let slot = BATCH_SCOPE_SIGINT.get_or_init(|| Mutex::new(None));
     *slot
         .lock()
-        .map_err(|_| io::Error::other("batch scope sigint lock poisoned"))? = Some((registry, interrupted));
+        .map_err(|_| io::Error::other("batch scope sigint lock poisoned"))? =
+        Some((registry, interrupted));
     Ok(())
 }
 

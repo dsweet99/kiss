@@ -2,9 +2,9 @@ use std::ffi::OsString;
 use std::io::{self, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
 #[cfg(unix)]
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::batch_output_channel::{
     OutputChannelClient, OutputStreamKind, output_channel_config_from_env,
@@ -12,11 +12,11 @@ use crate::batch_output_channel::{
 use crate::batch_process_tree::{ProcessGroupIdentity, signal_validated_process_group};
 use crate::batch_runner_resolve::read_runner_map;
 
+use super::BatchShimMetadata;
+use super::batch_shim_write::{filesystem_safe_instance_id, instance_full_name};
 use super::batch_shim_write::{
     write_delegated_start_metadata, write_shim_metadata, write_shim_start_metadata,
 };
-use super::batch_shim_write::{filesystem_safe_instance_id, instance_full_name};
-use super::BatchShimMetadata;
 
 pub(crate) type DelegatedChildOutcome = (
     Option<i32>,
@@ -59,9 +59,8 @@ pub(crate) fn run_target_runner_shim_inner(
             return Err(io::Error::last_os_error());
         }
     }
-    let shim_identity = current_process_group_identity().ok_or_else(|| {
-        io::Error::other("failed to resolve shim process group identity")
-    })?;
+    let shim_identity = current_process_group_identity()
+        .ok_or_else(|| io::Error::other("failed to resolve shim process group identity"))?;
     let full_name = instance_full_name(command);
     let id = filesystem_safe_instance_id(&full_name);
     let profile_path = output_dir.join(format!("{id}.profraw"));
@@ -369,10 +368,7 @@ extern "C" fn shim_forward_signal(signal: libc::c_int) {
     if pgid == 0 {
         return;
     }
-    let identity = ProcessGroupIdentity {
-        pid: pgid,
-        pgid,
-    };
+    let identity = ProcessGroupIdentity { pid: pgid, pgid };
     signal_validated_process_group(&identity, signal);
 }
 

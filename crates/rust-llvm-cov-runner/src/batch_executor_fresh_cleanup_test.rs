@@ -1,8 +1,8 @@
-use super::*;
 use super::fresh_test_helpers::{
     execute_rust_coverage_batch_fresh_with_fake, fake_runner, run_root_for, tools,
     write_shim_metadata,
 };
+use super::*;
 use crate::RustLineCoverage;
 use crate::RustLlvmCovError;
 use crate::batch_executor_fresh::{
@@ -147,7 +147,12 @@ fn fresh_batch_allows_nonzero_exit_when_terminal_events_exist() {
         })
     });
     let result = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap();
-    assert!(result.completed.iter().any(|outcome| outcome.selector == "alpha"));
+    assert!(
+        result
+            .completed
+            .iter()
+            .any(|outcome| outcome.selector == "alpha")
+    );
 }
 
 #[test]
@@ -186,9 +191,7 @@ fn export_failure_attempts_current_run_cleanup() {
         &identity,
         &plan,
         &fake_runner(),
-        Arc::new(|_, _, _, _| {
-            Err(RustLlvmCovError::InvalidRequest("export failed".into()))
-        }),
+        Arc::new(|_, _, _, _| Err(RustLlvmCovError::InvalidRequest("export failed".into()))),
     )
     .unwrap_err();
     assert!(

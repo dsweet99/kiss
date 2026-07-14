@@ -13,8 +13,7 @@ struct CollectMemoKey {
     pytest_args: Vec<String>,
 }
 
-static COLLECT_MEMO: Mutex<BTreeMap<CollectMemoKey, Vec<String>>> =
-    Mutex::new(BTreeMap::new());
+static COLLECT_MEMO: Mutex<BTreeMap<CollectMemoKey, Vec<String>>> = Mutex::new(BTreeMap::new());
 
 #[cfg(test)]
 static FULL_SUITE_SUBPROCESS_COLLECTS: AtomicUsize = AtomicUsize::new(0);
@@ -24,9 +23,7 @@ pub(crate) fn collect_python_nodeids(
     paths: Option<&[PathBuf]>,
     pytest_args: &[String],
 ) -> Result<Vec<String>, String> {
-    let normalized_paths = paths
-        .map(normalize_collect_paths)
-        .unwrap_or_default();
+    let normalized_paths = paths.map(normalize_collect_paths).unwrap_or_default();
     let key = CollectMemoKey {
         repo_root: repo_root.to_path_buf(),
         paths: normalized_paths.clone(),
@@ -91,9 +88,7 @@ fn format_collect_error(err: rpytest_runner::PytestCollectError) -> String {
             format!("error: kiss test: invalid pytest collection output: {message}")
         }
         PytestCollectError::NodeidNormalization { nodeid, message } => {
-            format!(
-                "error: kiss test: invalid pytest nodeid '{nodeid}': {message}"
-            )
+            format!("error: kiss test: invalid pytest nodeid '{nodeid}': {message}")
         }
     }
 }
@@ -131,8 +126,10 @@ mod coverage_witness {
             pytest_args: vec!["-q".into()],
         };
         let _ = key;
-        assert!(format_collect_error(PytestCollectError::InvalidRequest("x".into()))
-            .contains("invalid pytest collection request"));
+        assert!(
+            format_collect_error(PytestCollectError::InvalidRequest("x".into()))
+                .contains("invalid pytest collection request")
+        );
         reset_python_collect_memo_for_tests();
     }
 }

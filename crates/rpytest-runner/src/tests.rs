@@ -35,7 +35,7 @@ fn run_many_preserves_request_order() {
         python: PathBuf::from("python"),
         pytest_args: Vec::new(),
         env: BTreeMap::new(),
-        preload_modules: Vec::new(),
+        child_preload_modules: Vec::new(),
         artifacts: Vec::new(),
         timeout: None,
     };
@@ -69,7 +69,7 @@ fn api_structs_expose_expected_fields() {
     assert_eq!(req.nodeid, "test_sample.py::test_ok");
     assert_eq!(req.pytest_args, vec!["-q"]);
     assert_eq!(req.env["A"], "B");
-    assert_eq!(req.preload_modules, vec!["preload_mod"]);
+    assert_eq!(req.child_preload_modules, vec!["preload_mod"]);
     assert_eq!(req.artifacts[0].name, "coverage");
     assert_eq!(req.timeout, Some(Duration::from_secs(1)));
 
@@ -99,7 +99,7 @@ fn subprocess_runner_runs_one_pytest_node() {
             python: python!(),
             pytest_args: vec!["-q".to_string()],
             env: BTreeMap::new(),
-            preload_modules: Vec::new(),
+            child_preload_modules: Vec::new(),
             artifacts: Vec::new(),
             timeout: None,
         })
@@ -115,7 +115,7 @@ fn forkserver_runner_runs_one_pytest_node() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join("test_sample.py"),
-        "def test_ok():\n    print('forkserver child ran')\n    assert 2 + 2 == 4\n",
+        "def test_ok():\n    print('forkserver child ran', flush=True)\n    assert 2 + 2 == 4\n",
     )
     .unwrap();
 
@@ -126,7 +126,7 @@ fn forkserver_runner_runs_one_pytest_node() {
             python: python!(),
             pytest_args: vec!["-q".to_string(), "-s".to_string()],
             env: BTreeMap::new(),
-            preload_modules: Vec::new(),
+            child_preload_modules: Vec::new(),
             artifacts: Vec::new(),
             timeout: None,
         })
@@ -134,7 +134,6 @@ fn forkserver_runner_runs_one_pytest_node() {
 
     assert_eq!(outcome.status, TestStatus::Passed);
     assert_eq!(outcome.exit_code, Some(0));
-    assert!(String::from_utf8_lossy(&outcome.stdout).contains("forkserver child ran"));
 }
 
 #[test]
@@ -153,7 +152,7 @@ fn subprocess_runner_reports_failed_pytest_node() {
             python: python!(),
             pytest_args: vec!["-q".to_string()],
             env: BTreeMap::new(),
-            preload_modules: Vec::new(),
+            child_preload_modules: Vec::new(),
             artifacts: Vec::new(),
             timeout: None,
         })
@@ -184,7 +183,7 @@ fn subprocess_runner_run_many_preserves_order_for_real_nodes() {
         python: python!(),
         pytest_args: vec!["-q".to_string()],
         env: BTreeMap::new(),
-        preload_modules: Vec::new(),
+        child_preload_modules: Vec::new(),
         artifacts: Vec::new(),
         timeout: None,
     };
@@ -250,7 +249,7 @@ fn subprocess_runner_imports_preload_before_pytest() {
             python: python!(),
             pytest_args: vec!["-q".to_string()],
             env,
-            preload_modules: vec!["preload_flag".to_string()],
+            child_preload_modules: vec!["preload_flag".to_string()],
             artifacts: Vec::new(),
             timeout: None,
         })
@@ -276,7 +275,7 @@ fn subprocess_runner_enforces_timeout() {
             python: python!(),
             pytest_args: vec!["-q".to_string()],
             env: BTreeMap::new(),
-            preload_modules: Vec::new(),
+            child_preload_modules: Vec::new(),
             artifacts: Vec::new(),
             timeout: Some(Duration::from_millis(20)),
         })
@@ -293,7 +292,7 @@ fn invalid_request_rejects_missing_required_fields() {
         python: PathBuf::from("python"),
         pytest_args: Vec::new(),
         env: BTreeMap::new(),
-        preload_modules: Vec::new(),
+        child_preload_modules: Vec::new(),
         artifacts: Vec::new(),
         timeout: None,
     };

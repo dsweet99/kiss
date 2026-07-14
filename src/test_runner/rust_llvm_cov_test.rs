@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use rust_llvm_cov_runner::{
-    RustCoverageBatchCounters, RustCovCacheStatus, RustLineCoverage, RustLlvmCovError,
+    RustCovCacheStatus, RustCoverageBatchCounters, RustLineCoverage, RustLlvmCovError,
     RustLlvmCovOutcome,
 };
 

@@ -51,8 +51,15 @@ fn finish_no_work(
 ) -> i32 {
     println!("{}", runners::NO_COVERING_TESTS_MSG);
     if options.metrics {
-        let mut metrics =
-            LocalRubricMetrics::new(planned, options, 0, false, 0, planned.rs_sel.len(), planned.rust_selection_basis);
+        let mut metrics = LocalRubricMetrics::new(
+            planned,
+            options,
+            0,
+            false,
+            0,
+            planned.rs_sel.len(),
+            planned.rust_selection_basis,
+        );
         metrics.total_duration = total_started.elapsed();
         metrics.capture_cache_shape(&planned.repo_root);
         metrics.print();

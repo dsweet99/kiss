@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::forkserver_controller::FORKSERVER_CONTROLLER;
 use crate::runner::validate_request;
 use crate::{PytestRunError, PytestRunOutcome, PytestRunRequest, TestStatus};
 
@@ -164,6 +165,11 @@ impl ForkserverController {
                 .collect(),
         })
     }
+
+    #[cfg(test)]
+    pub(crate) fn controller_pid(&self) -> u32 {
+        self.child.id()
+    }
 }
 
 impl Drop for ForkserverController {
@@ -215,7 +221,7 @@ pub(crate) struct WireRequest {
     pub(crate) cwd: String,
     pub(crate) pytest_args: Vec<String>,
     pub(crate) env: BTreeMap<String, String>,
-    pub(crate) preload_modules: Vec<String>,
+    pub(crate) child_preload_modules: Vec<String>,
     pub(crate) artifacts: Vec<WireArtifact>,
     pub(crate) timeout_ms: Option<u64>,
 }
@@ -228,7 +234,7 @@ impl WireRequest {
             cwd: req.cwd.to_string_lossy().to_string(),
             pytest_args: req.pytest_args.clone(),
             env: req.env.clone(),
-            preload_modules: req.preload_modules.clone(),
+            child_preload_modules: req.child_preload_modules.clone(),
             artifacts: req
                 .artifacts
                 .iter()
@@ -303,112 +309,3 @@ impl WireResponse {
 pub(crate) fn duration_millis_u64(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
-
-const FORKSERVER_CONTROLLER: &str = r#"
-import importlib
-import json
-import os
-import signal
-import sys
-import tempfile
-import traceback
-
-import pytest
-
-
-def _respond(obj):
-    sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
-    sys.stdout.flush()
-
-
-def _read_file(path):
-    try:
-        with open(path, "rb") as f:
-            return list(f.read())
-    except FileNotFoundError:
-        return []
-
-
-def _run_child(req, stdout_path, stderr_path):
-    try:
-        os.chdir(req["cwd"])
-        os.environ.update(req.get("env", {}))
-        stdout_fd = os.open(stdout_path, os.O_WRONLY | os.O_TRUNC)
-        stderr_fd = os.open(stderr_path, os.O_WRONLY | os.O_TRUNC)
-        os.dup2(stdout_fd, 1)
-        os.dup2(stderr_fd, 2)
-        os.close(stdout_fd)
-        os.close(stderr_fd)
-
-        timeout_ms = req.get("timeout_ms")
-        if timeout_ms is not None:
-            def _timeout(_signum, _frame):
-                print("pytest timed out", file=sys.stderr, flush=True)
-                os._exit(124)
-            signal.signal(signal.SIGALRM, _timeout)
-            signal.setitimer(signal.ITIMER_REAL, max(timeout_ms / 1000.0, 0.001))
-
-        for module_name in req.get("preload_modules", []):
-            importlib.import_module(module_name)
-
-        args = [req["nodeid"]] + list(req.get("pytest_args", []))
-        os._exit(int(pytest.main(args)))
-    except BaseException:
-        traceback.print_exc()
-        os._exit(1)
-
-
-def _handle(req):
-    stdout_fd, stdout_path = tempfile.mkstemp(prefix="rpytest-forkserver-out-")
-    stderr_fd, stderr_path = tempfile.mkstemp(prefix="rpytest-forkserver-err-")
-    os.close(stdout_fd)
-    os.close(stderr_fd)
-    try:
-        pid = os.fork()
-        if pid == 0:
-            _run_child(req, stdout_path, stderr_path)
-        _pid, status = os.waitpid(pid, 0)
-        if os.WIFEXITED(status):
-            exit_code = os.WEXITSTATUS(status)
-        elif os.WIFSIGNALED(status):
-            exit_code = 128 + os.WTERMSIG(status)
-        else:
-            exit_code = 1
-        timed_out = req.get("timeout_ms") is not None and exit_code == 124
-        artifacts = {a["name"]: a["path"] for a in req.get("artifacts", [])}
-        return {
-            "id": req["id"],
-            "nodeid": req.get("nodeid", ""),
-            "status": "passed" if exit_code == 0 else "failed",
-            "exit_code": exit_code,
-            "stdout": _read_file(stdout_path),
-            "stderr": _read_file(stderr_path),
-            "artifacts": artifacts,
-            "timeout": timed_out,
-            "error": None,
-        }
-    finally:
-        for path in (stdout_path, stderr_path):
-            try:
-                os.unlink(path)
-            except FileNotFoundError:
-                pass
-
-
-for line in sys.stdin:
-    try:
-        request = json.loads(line)
-        _respond(_handle(request))
-    except BaseException as exc:
-        _respond({
-            "id": request.get("id", 0) if "request" in locals() else 0,
-            "nodeid": request.get("nodeid", "") if "request" in locals() else "",
-            "status": "failed",
-            "exit_code": None,
-            "stdout": [],
-            "stderr": [],
-            "artifacts": {},
-            "timeout": False,
-            "error": "controller protocol error: " + repr(exc),
-        })
-"#;

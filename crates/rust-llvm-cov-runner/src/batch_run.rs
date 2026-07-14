@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::batch_plan::RustCoverageBatchPlan;
 use crate::RustLlvmCovError;
+use crate::batch_plan::RustCoverageBatchPlan;
 
 #[path = "batch_run_cleanup.rs"]
 mod batch_run_cleanup;
@@ -16,10 +16,10 @@ mod batch_run_identity;
 #[path = "batch_run_subprocess.rs"]
 mod batch_run_subprocess;
 
-pub(crate) use batch_run_cleanup::{CurrentRunCleanup, FreshBatchRunScope};
 pub(crate) use crate::batch_process_tree::batch_scope_interrupted;
 #[cfg(test)]
 pub(crate) use batch_run_cleanup::finalize_batch_result;
+pub(crate) use batch_run_cleanup::{CurrentRunCleanup, FreshBatchRunScope};
 
 #[allow(unused_imports)]
 pub(crate) use batch_run_identity::{

@@ -9,9 +9,7 @@ fn batch_process_tree_guard_sigint_handler_escalates_signal_ignoring_child() {
     let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
     let registry = guard.registry();
     let mut command = Command::new("/bin/sh");
-    command
-        .arg("-c")
-        .arg("trap '' TERM INT; sleep 60");
+    command.arg("-c").arg("trap '' TERM INT; sleep 60");
     command.stdin(Stdio::null());
     command.stdout(Stdio::null());
     command.stderr(Stdio::null());
@@ -41,8 +39,8 @@ fn batch_process_tree_guard_sigint_handler_escalates_signal_ignoring_child() {
 
 #[test]
 fn sigint_handler_install_and_clear_direct() {
-    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
     super::install_sigint_handler(
         Arc::new(super::ProcessTreeRegistry::default()),
         Arc::new(AtomicBool::new(false)),
@@ -53,8 +51,8 @@ fn sigint_handler_install_and_clear_direct() {
 
 #[test]
 fn register_batch_scope_sigint_and_clear_batch_scope_sigint_direct() {
-    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
     let registry = Arc::new(super::ProcessTreeRegistry::default());
     let interrupted = Arc::new(AtomicBool::new(false));
     super::register_batch_scope_sigint(Arc::clone(&registry), Arc::clone(&interrupted))
@@ -133,9 +131,7 @@ fn batch_scope_sigint_escalates_signal_ignoring_child() {
     let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
     let registry = guard.registry();
     let mut command = Command::new("/bin/sh");
-    command
-        .arg("-c")
-        .arg("trap '' TERM INT; sleep 60");
+    command.arg("-c").arg("trap '' TERM INT; sleep 60");
     command.stdin(Stdio::null());
     command.stdout(Stdio::null());
     command.stderr(Stdio::null());

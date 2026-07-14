@@ -148,7 +148,10 @@ fn parse_worker_slot_name(name: &OsStr) -> Option<usize> {
 }
 
 #[cfg(test)]
-pub(crate) fn lock_worker_for_test(cache_root: &Path, worker_slot: usize) -> io::Result<FileLockGuard> {
+pub(crate) fn lock_worker_for_test(
+    cache_root: &Path,
+    worker_slot: usize,
+) -> io::Result<FileLockGuard> {
     FileLockGuard::lock(&worker_lock_path(cache_root, worker_slot))
 }
 

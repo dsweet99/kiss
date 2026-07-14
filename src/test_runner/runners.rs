@@ -19,11 +19,11 @@ pub(crate) use decision::combined_selectors;
 
 #[path = "runners/python_backer.rs"]
 pub(crate) mod python_backer;
+#[path = "runners/python_collect.rs"]
+mod python_collect;
 #[cfg(test)]
 #[path = "runners/python_collect_acceptance_test.rs"]
 mod python_collect_acceptance_test;
-#[path = "runners/python_collect.rs"]
-mod python_collect;
 use python_collect::collect_python_nodeids;
 #[cfg(test)]
 #[path = "runners/python_collect_test.rs"]

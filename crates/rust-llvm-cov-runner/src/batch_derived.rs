@@ -1,9 +1,3 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::io::Write;
-use std::path::Path;
-use rpytest_runner::TestStatus;
-use serde::Serialize;
 use crate::batch_derived_index::read_population_generation;
 use crate::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
 use crate::batch_plan::RustCoverageBatchRequest;
@@ -12,6 +6,12 @@ use crate::rust_cov_cache::{
     load_rust_cov_cache_entry, repo_relative_coverage_file, rust_cov_unique_suffix,
 };
 use crate::{CACHE_SCHEMA_VERSION, RustLineCoverage, RustLlvmCovError};
+use rpytest_runner::TestStatus;
+use serde::Serialize;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::io::Write;
+use std::path::Path;
 pub const INDEX_SCHEMA_VERSION: &str = "rust-llvm-cov-index-v2";
 pub const POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v4";
 

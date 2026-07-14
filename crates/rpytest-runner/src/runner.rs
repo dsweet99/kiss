@@ -39,6 +39,31 @@ impl PytestRunner {
         }
     }
 
+    pub fn from_bounded_fn<F>(run_many_bounded: F) -> Self
+    where
+        F: Fn(Vec<PytestRunRequest>, usize) -> Vec<PytestRunResult> + 'static,
+    {
+        let run_many_bounded: Rc<RunManyBoundedFn> = Rc::new(run_many_bounded);
+        let run_one_bounded = Rc::clone(&run_many_bounded);
+        let run_many_bounded_default = Rc::clone(&run_many_bounded);
+        Self {
+            run_one: Rc::new(move |req| {
+                run_one_bounded(vec![req], 1)
+                    .into_iter()
+                    .next()
+                    .unwrap_or(Err(PytestRunError::WorkerPanic))
+            }),
+            run_many: Box::new(move |reqs| {
+                let max_jobs = reqs.len().max(1);
+                run_many_bounded_default(reqs, max_jobs)
+            }),
+            run_many_bounded: Box::new(move |reqs, max_jobs| {
+                assert!(max_jobs > 0, "max_jobs must be greater than zero");
+                run_many_bounded(reqs, max_jobs)
+            }),
+        }
+    }
+
     pub fn subprocess() -> Self {
         Self {
             run_one: Rc::new(|req| SubprocessPytestRunner::new().run_one(req)),
@@ -98,7 +123,7 @@ impl SubprocessPytestRunner {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
         cmd.arg("-c").arg(PYTEST_MAIN);
-        cmd.arg(req.preload_modules.join("\x1f"));
+        cmd.arg(req.child_preload_modules.join("\x1f"));
         cmd.arg(&req.nodeid);
         cmd.args(&req.pytest_args);
 

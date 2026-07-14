@@ -12,7 +12,9 @@ use crate::batch_fingerprint::{batch_identity, entry_fingerprint};
 use crate::batch_plan::{RustCoverageBatchRequest, build_rust_coverage_batch_plan};
 use crate::batch_shim::BatchShimMetadata;
 use crate::rust_cov_cache::load_rust_cov_cache_entry;
-use crate::test_support::{batch_executor_fixture_repo, batch_executor_request, witness_batch_tools};
+use crate::test_support::{
+    batch_executor_fixture_repo, batch_executor_request, witness_batch_tools,
+};
 
 #[test]
 fn fresh_batch_finish_context_witness_is_constructible() {
@@ -81,10 +83,7 @@ fn finish_fresh_batch_after_export_stores_completed_outcomes() {
             files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
         },
     }];
-    let exported = vec![(
-        "pkg::bin$alpha".to_string(),
-        instances[0].coverage.clone(),
-    )];
+    let exported = vec![("pkg::bin$alpha".to_string(), instances[0].coverage.clone())];
     let result = finish_fresh_batch_after_export(
         &req,
         &tools,

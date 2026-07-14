@@ -29,8 +29,14 @@ fn process_tree_registry_records_and_counts_residuals() {
 
 #[test]
 fn identity_still_valid_rejects_zero_pid_or_pgid() {
-    assert!(!super::identity_still_valid(&ProcessGroupIdentity { pid: 0, pgid: 1 }));
-    assert!(!super::identity_still_valid(&ProcessGroupIdentity { pid: 1, pgid: 0 }));
+    assert!(!super::identity_still_valid(&ProcessGroupIdentity {
+        pid: 0,
+        pgid: 1
+    }));
+    assert!(!super::identity_still_valid(&ProcessGroupIdentity {
+        pid: 1,
+        pgid: 0
+    }));
 }
 
 #[test]
@@ -81,9 +87,7 @@ fn batch_process_tree_guard_terminates_signal_ignoring_descendant() {
     let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
     let registry = guard.registry();
     let mut command = Command::new("/bin/sh");
-    command
-        .arg("-c")
-        .arg("trap '' INT; sleep 60");
+    command.arg("-c").arg("trap '' INT; sleep 60");
     command.stdin(Stdio::null());
     command.stdout(Stdio::null());
     command.stderr(Stdio::null());

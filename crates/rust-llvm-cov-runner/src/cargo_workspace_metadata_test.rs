@@ -99,16 +99,20 @@ fn compile_time_closure_includes_proc_macro_local_dependency() {
                 id: "macro-pkg".to_string(),
                 name: "macro_pkg".to_string(),
                 manifest_path: "/repo/macro/Cargo.toml".to_string(),
-                targets: vec![serde_json::from_value(serde_json::json!({
-                    "kind": ["lib"],
-                    "crate_types": ["proc-macro"]
-                }))
-                .unwrap()],
-                dependencies: vec![serde_json::from_value(serde_json::json!({
-                    "name": "helper",
-                    "path": "/repo/helper"
-                }))
-                .unwrap()],
+                targets: vec![
+                    serde_json::from_value(serde_json::json!({
+                        "kind": ["lib"],
+                        "crate_types": ["proc-macro"]
+                    }))
+                    .unwrap(),
+                ],
+                dependencies: vec![
+                    serde_json::from_value(serde_json::json!({
+                        "name": "helper",
+                        "path": "/repo/helper"
+                    }))
+                    .unwrap(),
+                ],
             },
             crate::cargo_workspace_metadata::CargoMetadataPackage {
                 id: "helper-pkg".to_string(),
@@ -134,20 +138,20 @@ fn compile_time_closure_includes_custom_build_package() {
             id: "build-pkg".to_string(),
             name: "build_pkg".to_string(),
             manifest_path: "/repo/Cargo.toml".to_string(),
-            targets: vec![serde_json::from_value(serde_json::json!({
-                "kind": ["custom-build"],
-                "crate_types": []
-            }))
-            .unwrap()],
+            targets: vec![
+                serde_json::from_value(serde_json::json!({
+                    "kind": ["custom-build"],
+                    "crate_types": []
+                }))
+                .unwrap(),
+            ],
             dependencies: vec![],
         }],
         workspace_members: vec!["build-pkg".to_string()],
         workspace_root: Some("/repo".to_string()),
     };
     let workspace = WorkspaceMetadata::from_cargo_metadata(&metadata);
-    assert!(workspace
-        .compile_time_package_ids()
-        .contains("build-pkg"));
+    assert!(workspace.compile_time_package_ids().contains("build-pkg"));
 }
 
 #[test]
@@ -157,11 +161,13 @@ fn proc_macro_crate_rs_classifies_as_compile_time() {
             id: "macro-pkg".to_string(),
             name: "macro_pkg".to_string(),
             manifest_path: "/repo/macro/Cargo.toml".to_string(),
-            targets: vec![serde_json::from_value(serde_json::json!({
-                "kind": ["lib"],
-                "crate_types": ["proc-macro"]
-            }))
-            .unwrap()],
+            targets: vec![
+                serde_json::from_value(serde_json::json!({
+                    "kind": ["lib"],
+                    "crate_types": ["proc-macro"]
+                }))
+                .unwrap(),
+            ],
             dependencies: vec![],
         }],
         workspace_members: vec!["macro-pkg".to_string()],
@@ -239,11 +245,13 @@ fn ordinary_rs_outside_compile_time_closure_classifies_as_non_compile_time() {
             id: "app-pkg".to_string(),
             name: "app".to_string(),
             manifest_path: "/repo/Cargo.toml".to_string(),
-            targets: vec![serde_json::from_value(serde_json::json!({
-                "kind": ["lib"],
-                "crate_types": ["lib"]
-            }))
-            .unwrap()],
+            targets: vec![
+                serde_json::from_value(serde_json::json!({
+                    "kind": ["lib"],
+                    "crate_types": ["lib"]
+                }))
+                .unwrap(),
+            ],
             dependencies: vec![],
         }],
         workspace_members: vec!["app-pkg".to_string()],

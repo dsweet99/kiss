@@ -1,27 +1,7 @@
 use super::*;
+use crate::cache::rslip_cache_fingerprint;
 use rpytest_runner::subprocess_pytest_runner;
-use std::process::Command;
 use std::{cell::Cell, rc::Rc};
-
-fn python() -> PathBuf {
-    std::env::var_os("PYTHON")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("python"))
-}
-
-fn python_version(python: &Path) -> String {
-    let output = Command::new(python)
-        .arg("-c")
-        .arg("import sys; print('.'.join(map(str, sys.version_info[:3])))")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "python version command failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
 
 #[test]
 fn request_and_coverage_structs_expose_expected_fields() {
@@ -166,6 +146,55 @@ fn corrupt_cache_entry_is_treated_as_miss() {
 }
 
 #[test]
+fn missing_cache_entry_is_treated_as_miss() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let runner = fake_runner(Rc::clone(&calls));
+    let rslip = Rslip::new(runner);
+
+    let outcome = rslip
+        .run_or_reuse(rslip_sample_request(tmp.path()))
+        .unwrap();
+
+    assert_eq!(outcome.cache_status, CacheStatus::MissStored);
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn force_rerun_bypasses_cache_only_for_that_request_in_mixed_batch() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_a():\n    assert True\n\n\
+def test_b():\n    assert True\n",
+    )
+    .unwrap();
+    let calls = Rc::new(Cell::new(0));
+    let rslip = Rslip::new(fake_runner(Rc::clone(&calls)));
+    let mut cached_req = rslip_sample_request(tmp.path());
+    cached_req.nodeid = "test_sample.py::test_a".to_string();
+    let mut forced_req = rslip_sample_request(tmp.path());
+    forced_req.nodeid = "test_sample.py::test_b".to_string();
+
+    rslip.run_or_reuse(cached_req.clone()).unwrap();
+    rslip.run_or_reuse(forced_req.clone()).unwrap();
+    forced_req.force_rerun = true;
+    let outcomes = rslip.run_or_reuse_many_bounded(vec![cached_req, forced_req], 2);
+
+    assert_eq!(outcomes[0].as_ref().unwrap().cache_status, CacheStatus::Hit);
+    assert_eq!(
+        outcomes[1].as_ref().unwrap().cache_status,
+        CacheStatus::MissStored
+    );
+    assert_eq!(calls.get(), 3);
+}
+
+#[test]
 fn builds_pytest_runner_request_with_runtime_env_and_artifact() {
     let tmp = tempfile::tempdir().unwrap();
     let req = rslip_sample_request(tmp.path());
@@ -179,7 +208,7 @@ fn builds_pytest_runner_request_with_runtime_env_and_artifact() {
     assert_eq!(runner_req.python, req.python);
     assert_eq!(runner_req.pytest_args, req.pytest_args);
     assert_eq!(
-        runner_req.preload_modules,
+        runner_req.child_preload_modules,
         vec![runtime::MODULE_NAME.to_string()]
     );
     assert_eq!(
@@ -292,24 +321,4 @@ fn subprocess_run_records_executed_lines_and_reuses_cache() {
     assert!(first.coverage.files[&app_key].contains(&2));
     assert!(first.coverage.files[&app_key].contains(&3));
     assert!(!first.coverage.files[&app_key].contains(&4));
-}
-
-fn fake_runner(calls: Rc<Cell<usize>>) -> PytestRunner {
-    PytestRunner::from_fn(move |req| {
-        calls.set(calls.get() + 1);
-        assert_eq!(req.preload_modules, vec![runtime::MODULE_NAME.to_string()]);
-        assert!(req.env.contains_key("RSLIP_COVERAGE_OUT"));
-        assert!(req.env.contains_key("RSLIP_SOURCE_ROOT"));
-        let path = req.artifacts[0].path.clone();
-        fs::write(&path, r#"{"files":{"/project/app.py":[1,3]}}"#).unwrap();
-        Ok(PytestRunOutcome {
-            nodeid: req.nodeid,
-            status: TestStatus::Passed,
-            exit_code: Some(0),
-            stdout: format!("fresh stdout {}", calls.get()).into_bytes(),
-            stderr: format!("fresh stderr {}", calls.get()).into_bytes(),
-            duration: Duration::from_millis(7),
-            artifacts: BTreeMap::from([(runtime::COVERAGE_ARTIFACT.to_string(), path)]),
-        })
-    })
 }

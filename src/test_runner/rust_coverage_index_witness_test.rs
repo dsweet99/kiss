@@ -58,15 +58,16 @@ fn witness_changed_line_selection_ignores_retained_prior_generation_entries() {
         "tests::test_current_line",
         rpytest_runner::TestStatus::Passed,
         rust_llvm_cov_runner::RustLineCoverage {
-            files: BTreeMap::from([(
-                "src/lib.rs".to_string(),
-                BTreeSet::from([2]),
-            )]),
+            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([2]))]),
         },
     );
     rebuild_rust_coverage_index(tmp.path()).unwrap();
-    write_rust_population_manifest_for_args(tmp.path(), &["tests::test_current_line".to_string()], &[])
-        .unwrap();
+    write_rust_population_manifest_for_args(
+        tmp.path(),
+        &["tests::test_current_line".to_string()],
+        &[],
+    )
+    .unwrap();
     let stale_path = rust_coverage_cache_root(tmp.path())
         .join("entries")
         .join("stale.json");

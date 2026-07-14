@@ -358,7 +358,8 @@ fn validate_ordinary_source_digests(
 }
 
 fn valid_ordinary_source_path(path: &str) -> bool {
-    if path.is_empty() || !(path.ends_with(".rs") || path.ends_with(".inc")) || path.contains('\\') {
+    if path.is_empty() || !(path.ends_with(".rs") || path.ends_with(".inc")) || path.contains('\\')
+    {
         return false;
     }
     let path = Path::new(path);

@@ -106,7 +106,7 @@ pub(crate) fn concurrency_request(
         python: PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python".to_string())),
         pytest_args: vec!["-q".to_string()],
         env: env.clone(),
-        preload_modules: Vec::new(),
+        child_preload_modules: Vec::new(),
         artifacts: Vec::new(),
         timeout: None,
     }

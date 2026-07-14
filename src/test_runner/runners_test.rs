@@ -51,9 +51,7 @@ fn enumerate_tests_in_changed_files_finds_py() {
     fs::write(&test_file, "def test_one():\n    assert 1\n").unwrap();
     let paths = vec![test_file];
     let got = enumerate_tests_in_changed_files(tmp.path(), &paths).unwrap();
-    assert!(got
-        .python_nodeids
-        .contains("tests/test_z.py::test_one"));
+    assert!(got.python_nodeids.contains("tests/test_z.py::test_one"));
 }
 
 #[test]

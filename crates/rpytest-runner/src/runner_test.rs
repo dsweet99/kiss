@@ -75,7 +75,7 @@ fn subprocess_worker_sends_indexed_result() {
         python: python!(),
         pytest_args: vec!["-q".to_string()],
         env: BTreeMap::new(),
-        preload_modules: Vec::new(),
+        child_preload_modules: Vec::new(),
         artifacts: Vec::new(),
         timeout: None,
     };

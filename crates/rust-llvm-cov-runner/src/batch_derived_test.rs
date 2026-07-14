@@ -207,8 +207,11 @@ fn generation_transition_index_excludes_prior_generation_files() {
     assert!(index_contains_file(&req.cache_root, "src/a.rs"));
 
     let req_b = req.clone();
-    std::fs::write(repo.path().join("src").join("b.rs"), "pub fn b() {}\npub fn c() {}\n")
-        .unwrap();
+    std::fs::write(
+        repo.path().join("src").join("b.rs"),
+        "pub fn b() {}\npub fn c() {}\n",
+    )
+    .unwrap();
     let gen_b = crate::batch_fingerprint::batch_identity(&req_b, &tools).unwrap();
     assert_ne!(gen_a.generation_fingerprint, gen_b.generation_fingerprint);
     store_alpha_entry(
@@ -279,8 +282,7 @@ fn prune_obsolete_selective_generations_retains_population_and_current() {
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let population_identity =
-        crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let population_identity = crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     publish_derived_state(
         &req,
         &tools,
@@ -307,8 +309,7 @@ fn prune_obsolete_selective_generations_retains_population_and_current() {
     );
     store_rust_cov_cache_entry(&req.cache_root, "deadbeefdeadbeef", &stale).unwrap();
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
-    let selective_identity =
-        crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let selective_identity = crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let pruned = prune_obsolete_selective_generations(
         &req.cache_root,
         &selective_identity.generation_fingerprint,
@@ -324,8 +325,5 @@ fn prune_obsolete_selective_generations_retains_population_and_current() {
     );
     let manifest = crate::batch_derived_index::read_population_manifest(&req.cache_root)
         .expect("population manifest");
-    assert_eq!(
-        manifest.generation_fingerprint,
-        population_generation
-    );
+    assert_eq!(manifest.generation_fingerprint, population_generation);
 }

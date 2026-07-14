@@ -4,9 +4,12 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::must_use_candidate)]
 
+mod batch;
 mod cache;
 mod runtime;
 
+#[cfg(test)]
+mod batch_test;
 #[cfg(test)]
 mod cache_test;
 
@@ -16,10 +19,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use cache::{
-    RslipCacheEntry, load_rslip_cache_entry, rslip_cache_fingerprint, rslip_unique_suffix,
-    store_rslip_cache_entry,
-};
+use cache::{RslipCacheEntry, rslip_unique_suffix};
 use rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, TestStatus,
 };
@@ -140,47 +140,10 @@ impl Rslip {
     }
 
     pub fn run_or_reuse(&self, req: RslipRequest) -> Result<RslipOutcome, RslipError> {
-        validate_rslip_request(&req)?;
-        fs::create_dir_all(&req.cache_root)?;
-        let fingerprint = rslip_cache_fingerprint(&req)?;
-        if !req.force_rerun
-            && let Some(entry) = load_rslip_cache_entry(&req.cache_root, &fingerprint)
-        {
-            return Ok(rslip_outcome_from_cache(entry));
-        }
-
-        let run_dir = req.cache_root.join("runtime");
-        fs::create_dir_all(&run_dir)?;
-        fs::create_dir_all(req.cache_root.join("testmon"))?;
-        let runtime_path = run_dir.join(format!("{}.py", runtime::MODULE_NAME));
-        fs::write(&runtime_path, runtime::PYTHON_RUNTIME)?;
-        let artifact_path = req
-            .cache_root
-            .join("artifacts")
-            .join(format!("{fingerprint}.json"));
-        if let Some(parent) = artifact_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let runner_req = build_pytest_runner_request(&req, &run_dir, &artifact_path);
-        let outcome = self.runner.run_one(runner_req)?;
-        let coverage = rslip_coverage_from_outcome(&outcome)?;
-        let rslip_outcome = RslipOutcome {
-            nodeid: outcome.nodeid,
-            status: outcome.status,
-            exit_code: outcome.exit_code,
-            duration: outcome.duration,
-            coverage,
-            cache_status: CacheStatus::MissStored,
-            stdout: Some(outcome.stdout),
-            stderr: Some(outcome.stderr),
-        };
-        store_rslip_cache_entry(
-            &req.cache_root,
-            &fingerprint,
-            &RslipCacheEntry::from(&rslip_outcome),
-        )?;
-        Ok(rslip_outcome)
+        self.run_or_reuse_many_bounded(vec![req], 1)
+            .into_iter()
+            .next()
+            .expect("one-request batch returned one result")
     }
 }
 
@@ -251,7 +214,7 @@ fn build_pytest_runner_request(
         python: req.python.clone(),
         pytest_args: req.pytest_args.clone(),
         env,
-        preload_modules: vec![runtime::MODULE_NAME.to_string()],
+        child_preload_modules: vec![runtime::MODULE_NAME.to_string()],
         artifacts: vec![RequestedArtifact {
             name: runtime::COVERAGE_ARTIFACT.to_string(),
             path: artifact_path.to_path_buf(),
@@ -283,6 +246,48 @@ fn rslip_sample_request(root: &Path) -> RslipRequest {
         cache_root: root.join(".rslip_cache"),
         force_rerun: false,
     }
+}
+
+#[cfg(test)]
+fn fake_runner(calls: std::rc::Rc<std::cell::Cell<usize>>) -> PytestRunner {
+    PytestRunner::from_fn(move |req| {
+        calls.set(calls.get() + 1);
+        assert_eq!(
+            req.child_preload_modules,
+            vec![runtime::MODULE_NAME.to_string()]
+        );
+        assert!(req.env.contains_key("RSLIP_COVERAGE_OUT"));
+        assert!(req.env.contains_key("RSLIP_SOURCE_ROOT"));
+        let path = req.artifacts[0].path.clone();
+        fs::write(&path, r#"{"files":{"/project/app.py":[1,3]}}"#).unwrap();
+        Ok(PytestRunOutcome {
+            nodeid: req.nodeid,
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            stdout: format!("fresh stdout {}", calls.get()).into_bytes(),
+            stderr: format!("fresh stderr {}", calls.get()).into_bytes(),
+            duration: Duration::from_millis(7),
+            artifacts: BTreeMap::from([(runtime::COVERAGE_ARTIFACT.to_string(), path)]),
+        })
+    })
+}
+
+#[cfg(test)]
+fn python() -> PathBuf {
+    std::env::var_os("PYTHON")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("python"))
+}
+
+#[cfg(test)]
+fn python_version(python: &Path) -> String {
+    let output = std::process::Command::new(python)
+        .arg("-c")
+        .arg("import sys; print('.'.join(map(str, sys.version_info[:3])))")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
 #[cfg(test)]

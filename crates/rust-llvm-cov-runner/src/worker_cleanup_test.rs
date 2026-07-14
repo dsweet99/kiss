@@ -1,7 +1,9 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use crate::worker::{cleanup_legacy_worker_data_nonblocking, cleanup_legacy_worker_dirs, lock_worker_for_test};
+use crate::worker::{
+    cleanup_legacy_worker_data_nonblocking, cleanup_legacy_worker_dirs, lock_worker_for_test,
+};
 
 #[test]
 fn rust_llvm_cov_cleans_legacy_worker_dirs_without_touching_slot_dirs() {

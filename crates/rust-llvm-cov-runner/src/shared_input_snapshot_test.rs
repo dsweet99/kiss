@@ -49,7 +49,11 @@ fn rust_input_snapshot_tracks_inc_sources_without_selection_context_churn() {
     )
     .unwrap();
     fs::write(tmp.path().join("Cargo.lock"), "# lock\n").unwrap();
-    fs::write(tmp.path().join("src").join("lib.rs"), "include!(\"part.inc\");\n").unwrap();
+    fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "include!(\"part.inc\");\n",
+    )
+    .unwrap();
     fs::write(tmp.path().join("src").join("part.inc"), "pub fn x() {}\n").unwrap();
     let mut req = crate::batch_plan::RustCoverageBatchRequest::witness();
     req.cwd = tmp.path().to_path_buf();

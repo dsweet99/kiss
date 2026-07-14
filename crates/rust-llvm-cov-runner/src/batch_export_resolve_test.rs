@@ -205,12 +205,9 @@ fn resolve_objects_for_profdata_resolves_profile_binary_ids() {
     let integration_id = map
         .lookup_by_object(&integration)
         .expect("integration build id");
-    let profraw = find_profraw_for_binary_id(
-        &tools,
-        &target.join("llvm-cov-target"),
-        integration_id,
-    )
-    .expect("integration profraw");
+    let profraw =
+        find_profraw_for_binary_id(&tools, &target.join("llvm-cov-target"), integration_id)
+            .expect("integration profraw");
     merge_profraw(&tools, &profraw, &profdata);
     let resolved = resolve_objects_for_profdata(&tools, &profdata, &catalog, &seed, Some(&map))
         .expect("resolved");

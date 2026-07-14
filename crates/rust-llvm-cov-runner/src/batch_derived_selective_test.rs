@@ -7,12 +7,10 @@ use rpytest_runner::TestStatus;
 use crate::batch_fingerprint::entry_fingerprint;
 use crate::batch_plan::RustCoverageBatchRequest;
 use crate::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
-use crate::test_support::{
-    derived_fixture_request, store_alpha_entry, witness_batch_tools,
-};
+use crate::test_support::{derived_fixture_request, store_alpha_entry, witness_batch_tools};
 use crate::{
-    publish_derived_state, RustCovCacheStatus, RustCoverageBatchIdentity, RustCoverageToolIdentity,
-    RustLineCoverage, RustLlvmCovOutcome,
+    RustCovCacheStatus, RustCoverageBatchIdentity, RustCoverageToolIdentity, RustLineCoverage,
+    RustLlvmCovOutcome, publish_derived_state,
 };
 
 #[test]
@@ -24,8 +22,7 @@ fn selective_generation_store_leaves_population_manifest_unchanged() {
     let population_identity = publish_warm_alpha_population(&req, &tools);
     let before = std::fs::read(req.cache_root.join("population.json")).unwrap();
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
-    let selective_identity =
-        crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let selective_identity = crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     store_lib_alpha(&req, &tools, &selective_identity);
     let after = std::fs::read(req.cache_root.join("population.json")).unwrap();
     assert_eq!(before, after);
@@ -39,12 +36,7 @@ fn selective_generation_store_leaves_population_manifest_unchanged() {
 fn selective_generation_entry_hits_on_unchanged_tree() {
     let (req, tools, selective_identity) = published_then_selective_edit();
     store_lib_alpha(&req, &tools, &selective_identity);
-    let fingerprint = entry_fingerprint(
-        &selective_identity.input_digest,
-        &req,
-        &tools,
-        "alpha",
-    );
+    let fingerprint = entry_fingerprint(&selective_identity.input_digest, &req, &tools, "alpha");
     let loaded = crate::rust_cov_cache::load_rust_cov_cache_entry(&req.cache_root, &fingerprint)
         .expect("selective entry");
     assert_eq!(loaded.selector, "alpha");
@@ -60,8 +52,7 @@ fn consecutive_selective_edits_reuse_complete_population_snapshot() {
     write_minimal_crate(repo.path(), "pub fn a() {}\n");
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let population_identity =
-        crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let population_identity = crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     publish_derived_state(
         &req,
         &tools,
@@ -94,10 +85,14 @@ fn failed_selective_run_skips_prune_and_preserves_population_snapshot() {
     let before_population = std::fs::read(req.cache_root.join("population.json")).unwrap();
     let before_index = std::fs::read(req.cache_root.join("index.json")).unwrap();
     let population_generation = population_identity.generation_fingerprint.clone();
-    store_obsolete_entry(&req.cache_root, "obsolete", "obsolete-selective-generation", "obsoleteselective01");
+    store_obsolete_entry(
+        &req.cache_root,
+        "obsolete",
+        "obsolete-selective-generation",
+        "obsoleteselective01",
+    );
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
-    let selective_identity =
-        crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let selective_identity = crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let selective_req = selective_request(&req);
 
     assert_failed_prune_preserves(
@@ -127,15 +122,23 @@ fn consecutive_selective_edits_beyond_retention_keep_only_population_and_current
     let before = std::fs::read(req.cache_root.join("population.json")).unwrap();
 
     let mut latest_generation = String::new();
-    for (i, body) in ["pub fn b() {}\n", "pub fn c() {}\n", "pub fn d() {}\n", "pub fn e() {}\n"]
-        .into_iter()
-        .enumerate()
+    for (i, body) in [
+        "pub fn b() {}\n",
+        "pub fn c() {}\n",
+        "pub fn d() {}\n",
+        "pub fn e() {}\n",
+    ]
+    .into_iter()
+    .enumerate()
     {
         latest_generation =
             rewrite_lib_store_selective_and_prune(repo.path(), &req, &tools, body, i);
     }
 
-    assert_eq!(std::fs::read(req.cache_root.join("population.json")).unwrap(), before);
+    assert_eq!(
+        std::fs::read(req.cache_root.join("population.json")).unwrap(),
+        before
+    );
     assert_eq!(
         entry_generations(&req.cache_root),
         BTreeSet::from([population_generation, latest_generation])
@@ -166,8 +169,7 @@ fn publish_warm_alpha_population(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> RustCoverageBatchIdentity {
-    let population_identity =
-        crate::batch_fingerprint::batch_identity(req, tools).unwrap();
+    let population_identity = crate::batch_fingerprint::batch_identity(req, tools).unwrap();
     store_lib_alpha(req, tools, &population_identity);
     publish_derived_state(
         req,
@@ -180,12 +182,7 @@ fn publish_warm_alpha_population(
     population_identity
 }
 
-fn store_obsolete_entry(
-    cache_root: &Path,
-    selector: &str,
-    generation: &str,
-    fingerprint: &str,
-) {
+fn store_obsolete_entry(cache_root: &Path, selector: &str, generation: &str, fingerprint: &str) {
     let obsolete = RustCovCacheEntry::from_outcome(
         &RustLlvmCovOutcome {
             selector: selector.to_string(),
@@ -239,7 +236,12 @@ fn assert_failed_prune_preserves(
         std::fs::read(cache_root.join("index.json")).unwrap(),
         before_index
     );
-    assert!(cache_root.join("entries").join("obsoleteselective01.json").is_file());
+    assert!(
+        cache_root
+            .join("entries")
+            .join("obsoleteselective01.json")
+            .is_file()
+    );
     let manifest = crate::batch_derived_index::read_population_manifest(cache_root)
         .expect("population manifest");
     assert_eq!(manifest.generation_fingerprint, population_generation);
@@ -264,7 +266,12 @@ fn assert_success_prune_removes_obsolete(
     )
     .unwrap();
     assert_eq!(succeeded.counters.cache_pruned_entries, 1);
-    assert!(!cache_root.join("entries").join("obsoleteselective01.json").is_file());
+    assert!(
+        !cache_root
+            .join("entries")
+            .join("obsoleteselective01.json")
+            .is_file()
+    );
     assert_eq!(
         std::fs::read(cache_root.join("population.json")).unwrap(),
         before_population
@@ -278,8 +285,7 @@ fn rewrite_lib_and_store_selective(
     body: &str,
 ) {
     std::fs::write(root.join("src").join("lib.rs"), body).unwrap();
-    let selective_identity =
-        crate::batch_fingerprint::batch_identity(req, tools).unwrap();
+    let selective_identity = crate::batch_fingerprint::batch_identity(req, tools).unwrap();
     store_lib_alpha(req, tools, &selective_identity);
     let _ = crate::batch_derived::prune_obsolete_selective_generations(
         &req.cache_root,
@@ -296,8 +302,7 @@ fn rewrite_lib_store_selective_and_prune(
     obsolete_index: usize,
 ) -> String {
     std::fs::write(root.join("src").join("lib.rs"), body).unwrap();
-    let selective_identity =
-        crate::batch_fingerprint::batch_identity(req, tools).unwrap();
+    let selective_identity = crate::batch_fingerprint::batch_identity(req, tools).unwrap();
     store_lib_alpha(req, tools, &selective_identity);
     store_obsolete_entry(
         &req.cache_root,
@@ -334,8 +339,7 @@ fn published_then_selective_edit() -> (
     write_minimal_crate(repo.path(), "pub fn x() {}\n");
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let population_identity =
-        crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let population_identity = crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     publish_derived_state(
         &req,
         &tools,
@@ -345,7 +349,6 @@ fn published_then_selective_edit() -> (
     )
     .unwrap();
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
-    let selective_identity =
-        crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let selective_identity = crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     (req, tools, selective_identity)
 }

@@ -111,8 +111,10 @@ fn PythonModule_and_RustModule_expose_discovery_and_static_policy_inputs() {
     let lib = src.join("lib.rs");
     std::fs::write(&test_app, "def test_value():\n    assert True\n").unwrap();
     std::fs::write(&lib, "#[test]\nfn rust_value() {}\n").unwrap();
-    let py_changed =
-        TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_value".to_string());
+    let py_changed = TestSelector::new(
+        kiss::Language::Python,
+        "tests/test_app.py::test_value".to_string(),
+    );
     let rs_changed = TestSelector::new(kiss::Language::Rust, "rust_value");
     let py_prior = TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_prior");
     let rs_prior = TestSelector::new(kiss::Language::Rust, "crate::tests::test_prior");
@@ -267,10 +269,7 @@ fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_c
     assert_eq!(
         <RustModule as LanguagePlanner>::select(&rust).unwrap(),
         SelectionDecision {
-            selectors: vec![TestSelector::new(
-                kiss::Language::Rust,
-                "tests::test_value"
-            )],
+            selectors: vec![TestSelector::new(kiss::Language::Rust, "tests::test_value")],
             complete: true,
         }
     );
@@ -364,19 +363,12 @@ def test_unrelated():\n    assert True\n",
         },
     );
     rebuild_python_coverage_index(tmp.path()).unwrap();
-    write_python_population_manifest_for_args(
-        tmp.path(),
-        &[covering.clone(), unrelated],
-        &[],
-    )
-    .unwrap();
+    write_python_population_manifest_for_args(tmp.path(), &[covering.clone(), unrelated], &[])
+        .unwrap();
     (app, covering)
 }
 
-fn python_source_change_plan(
-    repo_root: &std::path::Path,
-    app: &std::path::Path,
-) -> SelectorPlan {
+fn python_source_change_plan(repo_root: &std::path::Path, app: &std::path::Path) -> SelectorPlan {
     let app_path = app.to_path_buf();
     combined_selectors(
         repo_root,

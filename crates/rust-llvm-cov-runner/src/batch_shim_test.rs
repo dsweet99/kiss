@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::fs;
 
 use super::{
-    BatchShimMetadata, BatchShimDelegatedStartMetadata, BatchShimStartMetadata,
+    BatchShimDelegatedStartMetadata, BatchShimMetadata, BatchShimStartMetadata,
     load_target_runner_shim_metadata, run_target_runner_shim, write_shim_start_metadata,
 };
 use crate::batch_output_channel::{
@@ -18,11 +18,7 @@ fn target_runner_shim_writes_start_metadata_before_completion() {
     let runner_map = tmp.path().join("runner-map.json");
     fs::write(&runner_map, b"{\"x86_64-unknown-linux-gnu\":[]}").unwrap();
     let script = tmp.path().join("sleep-then-exit.sh");
-    fs::write(
-        &script,
-        "#!/bin/sh\nsleep 0.05\nexit 2\n",
-    )
-    .unwrap();
+    fs::write(&script, "#!/bin/sh\nsleep 0.05\nexit 2\n").unwrap();
     make_executable(&script);
 
     let code = run_target_runner_shim(

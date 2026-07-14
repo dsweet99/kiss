@@ -146,12 +146,12 @@ fn begin_with_layout_cleans_run_root_when_instances_dir_creation_fails() {
     let instances = run_root.join("instances");
     fs::create_dir_all(&run_root).unwrap();
     fs::write(&instances, b"not-a-directory").unwrap();
-    let result = FreshBatchRunScope::begin_with_layout(
-        &cache_root,
-        &plan,
-        CurrentRunCleanup::default(),
+    let result =
+        FreshBatchRunScope::begin_with_layout(&cache_root, &plan, CurrentRunCleanup::default());
+    assert!(
+        result.is_err(),
+        "instances path should not be creatable as directory"
     );
-    assert!(result.is_err(), "instances path should not be creatable as directory");
     assert!(!run_root.exists());
 }
 
