@@ -73,10 +73,11 @@ fn reusable_loader_rejects_tampered_index_files() {
 }
 
 #[test]
-fn v2_manifest_is_unavailable_for_reusable_loading() {
+fn v3_manifest_is_unavailable_for_reusable_loading() {
     let fixture = published_alpha_derived_fixture();
     tamper_json_file(&fixture.req.cache_root, "population.json", |value| {
-        value["schema_version"] = serde_json::Value::String("rust-llvm-cov-population-v2".to_string());
+        value["schema_version"] =
+            serde_json::Value::String("rust-llvm-cov-population-v3".to_string());
     });
     assert!(
         load_reusable_prior_population_state(
@@ -87,5 +88,5 @@ fn v2_manifest_is_unavailable_for_reusable_loading() {
         )
         .is_none()
     );
-    assert_eq!(POPULATION_SCHEMA_VERSION, "rust-llvm-cov-population-v3");
+    assert_eq!(POPULATION_SCHEMA_VERSION, "rust-llvm-cov-population-v4");
 }

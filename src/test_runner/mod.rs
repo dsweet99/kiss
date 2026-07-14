@@ -128,6 +128,9 @@ pub(crate) struct PlannedSelectors {
     pub python_population_required: bool,
     pub rust_population_required: bool,
     pub rust_source_paths: Vec<PathBuf>,
+    pub rust_vcs_source_paths: usize,
+    pub rust_snapshot_delta_modified: usize,
+    pub rust_snapshot_delta_structural: bool,
     pub python_prior_failure_selectors: Vec<String>,
     pub rust_prior_failure_selectors: Vec<String>,
     pub coverage_decision_engine_used: bool,
@@ -219,6 +222,9 @@ pub(crate) fn plan_selectors(
         python_population_required: selector_plan.python_population_required,
         rust_population_required: selector_plan.rust_population_required,
         rust_source_paths: selector_plan.rust_source_paths,
+        rust_vcs_source_paths: selector_plan.rust_vcs_source_paths,
+        rust_snapshot_delta_modified: selector_plan.rust_snapshot_delta_modified,
+        rust_snapshot_delta_structural: selector_plan.rust_snapshot_delta_structural,
         python_prior_failure_selectors: selector_plan.python_prior_failure_selectors,
         rust_prior_failure_selectors: selector_plan.rust_prior_failure_selectors,
         coverage_decision_engine_used: selector_plan.coverage_decision_engine_used,
@@ -272,17 +278,17 @@ mod mod_run_api_test;
 mod python_coverage_index_witness_test;
 
 #[cfg(test)]
-#[path = "runners_test.rs"]
-mod runners_test;
-#[cfg(test)]
-#[path = "runners_reusable_prior_test.rs"]
-mod runners_reusable_prior_test;
+#[path = "runners_reusable_prior_cli_acceptance_test.rs"]
+mod runners_reusable_prior_cli_acceptance_test;
 #[cfg(test)]
 #[path = "runners_reusable_prior_compile_time_test.rs"]
 mod runners_reusable_prior_compile_time_test;
 #[cfg(test)]
-#[path = "runners_reusable_prior_cli_acceptance_test.rs"]
-mod runners_reusable_prior_cli_acceptance_test;
+#[path = "runners_reusable_prior_test.rs"]
+mod runners_reusable_prior_test;
+#[cfg(test)]
+#[path = "runners_test.rs"]
+mod runners_test;
 
 #[cfg(test)]
 #[path = "runners_workspace_test.rs"]

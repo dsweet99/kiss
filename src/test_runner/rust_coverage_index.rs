@@ -122,9 +122,6 @@ fn detect_rust_coverage_tool_identity(
 mod manifest;
 #[path = "rust_coverage_index/selection.rs"]
 mod selection;
-pub(crate) use selection::{
-    resolve_rust_population_state, select_rust_source_selectors_for_basis, ResolvedRustPopulation,
-};
 pub(crate) use manifest::RUST_COVERAGE_ENV_KEYS;
 #[cfg(test)]
 pub(crate) use manifest::{
@@ -133,22 +130,26 @@ pub(crate) use manifest::{
     rust_population_manifest_is_current_with_identity, write_rust_population_manifest_for_args,
     write_rust_population_manifest_with_identity,
 };
+pub(crate) use selection::{
+    ResolvedRustPopulation, resolve_rust_population_state, select_rust_source_selectors_for_basis,
+};
 #[path = "rust_coverage_index/storage.rs"]
 mod storage;
 #[cfg(test)]
 pub(crate) use rust_llvm_cov_runner::is_cargo_config_input_path;
 pub(crate) use rust_llvm_cov_runner::{repo_relative_coverage_file, repo_relative_path};
 #[cfg(test)]
+pub(crate) use storage::load_current_rust_coverage_index;
+#[cfg(test)]
+pub(crate) use storage::load_current_rust_population_state;
+#[cfg(test)]
 pub(crate) use storage::write_rust_coverage_index;
 #[cfg(test)]
 pub(crate) use storage::{command_failure_message, command_output_text, rust_coverage_index_path};
 pub(crate) use storage::{
-    command_stdout, create_new_file, load_current_rust_population_state,
-    load_reusable_prior_rust_population_state, rust_coverage_cache_root,
-    rust_coverage_entry_paths, unique_suffix,
+    command_stdout, create_new_file, rust_coverage_cache_root, rust_coverage_entry_paths,
+    unique_suffix,
 };
-#[cfg(test)]
-pub(crate) use storage::load_current_rust_coverage_index;
 #[cfg(test)]
 pub(crate) use storage::{normalized_repo_root, rust_population_manifest_path};
 
@@ -333,8 +334,7 @@ fn build_rust_coverage_index_with_filter(
     let cache_root = rust_coverage_cache_root(repo_root);
     let mut files: RustCoverageIndex = BTreeMap::new();
     for entry_path in rust_coverage_entry_paths(&cache_root) {
-        let Some((selector, status, coverage)) =
-            load_entry_for_line_selection(&entry_path, "")
+        let Some((selector, status, coverage)) = load_entry_for_line_selection(&entry_path, "")
         else {
             continue;
         };
@@ -371,8 +371,7 @@ fn load_entry_for_line_selection(
     if entry.schema_version != CACHE_SCHEMA_VERSION {
         return None;
     }
-    if !generation_fingerprint.is_empty()
-        && entry.generation_fingerprint != generation_fingerprint
+    if !generation_fingerprint.is_empty() && entry.generation_fingerprint != generation_fingerprint
     {
         return None;
     }

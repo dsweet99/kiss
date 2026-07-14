@@ -73,9 +73,7 @@ fn create_new_file_rejects_duplicate_paths() {
         .unwrap()
         .write_all(b"{}")
         .unwrap();
-    assert!(
-        crate::test_runner::rust_coverage_index::storage::create_new_file(&path).is_err()
-    );
+    assert!(crate::test_runner::rust_coverage_index::storage::create_new_file(&path).is_err());
 }
 
 #[test]
@@ -115,6 +113,12 @@ fn write_generation_scoped_derived_artifacts(
         .map(|selector| format!("\"{selector}\""))
         .collect::<Vec<_>>()
         .join(", ");
+    let ordinary_source_digests_json = identity
+        .ordinary_source_digests
+        .iter()
+        .map(|(path, digest)| format!(r#"{{ "path": "{path}", "digest": "{digest}" }}"#))
+        .collect::<Vec<_>>()
+        .join(", ");
     let index_payload = format!(
         r#"{{
   "schema_version": "{schema}",
@@ -135,7 +139,8 @@ fn write_generation_scoped_derived_artifacts(
   "generation_fingerprint": "{generation}",
   "selection_context_fingerprint": "{selection_context_fingerprint}",
   "entries_fingerprint": "{entries_fingerprint}",
-  "selectors": [{selectors_json}]
+  "selectors": [{selectors_json}],
+  "ordinary_source_digests": [{ordinary_source_digests_json}]
 }}"#,
         tmp.canonicalize().unwrap().display(),
         population_schema = rust_llvm_cov_runner::BATCH_POPULATION_SCHEMA_VERSION,

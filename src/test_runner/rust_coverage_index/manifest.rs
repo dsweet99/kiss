@@ -68,6 +68,11 @@ fn write_test_derived_state_files(
             "selection_context_fingerprint": batch_identity.selection_context_fingerprint,
             "entries_fingerprint": entries_fingerprint,
             "selectors": selectors,
+            "ordinary_source_digests": batch_identity
+                .ordinary_source_digests
+                .iter()
+                .map(|(path, digest)| serde_json::json!({ "path": path, "digest": digest }))
+                .collect::<Vec<_>>(),
         }),
     )
 }

@@ -50,6 +50,7 @@ fn EngineBackers_empty_when_no_language_has_work() {
         lang_filter: None,
         ignore: &[],
         changed_tests: &changed_tests,
+        rust_resolved: None,
     };
 
     let backers = engine_backers(input).unwrap();
@@ -78,6 +79,7 @@ fn engine_backers_expose_manifest_env_policy() {
         lang_filter: None,
         ignore: &[],
         changed_tests: &changed_tests,
+        rust_resolved: None,
     };
 
     let engine_backers = engine_backers(input).unwrap();

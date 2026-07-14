@@ -1,15 +1,13 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-
-use rpytest_runner::TestStatus;
-use rust_llvm_cov_runner::RustLineCoverage;
-
 use crate::test_runner::coverage_decision::{CoverageFreshness, RustSelectionBasis};
 use crate::test_runner::rust_coverage_index::{
-    current_rust_coverage_batch_identity, rebuild_rust_coverage_index, ResolvedRustPopulation,
+    ResolvedRustPopulation, current_rust_coverage_batch_identity, rebuild_rust_coverage_index,
     resolve_rust_population_state, select_rust_source_selectors_for_basis,
     write_rust_population_manifest_for_args, write_test_entry,
 };
+use rpytest_runner::TestStatus;
+use rust_llvm_cov_runner::RustLineCoverage;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 
 #[test]
 fn resolve_reusable_prior_population_after_ordinary_source_edit() {
@@ -33,10 +31,7 @@ fn resolve_reusable_prior_population_after_ordinary_source_edit() {
         "tests::gets_value",
         TestStatus::Passed,
         RustLineCoverage {
-            files: BTreeMap::from([(
-                "src/lib.rs".to_string(),
-                BTreeSet::from([1]),
-            )]),
+            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
         },
     );
     rebuild_rust_coverage_index(tmp.path()).unwrap();
@@ -49,13 +44,9 @@ fn resolve_reusable_prior_population_after_ordinary_source_edit() {
     )
     .unwrap();
 
-    let resolved: ResolvedRustPopulation = resolve_rust_population_state(
-        tmp.path(),
-        &[],
-        std::slice::from_ref(&lib),
-        &[],
-    )
-    .expect("resolved population");
+    let resolved: ResolvedRustPopulation =
+        resolve_rust_population_state(tmp.path(), &[], std::slice::from_ref(&lib), &[])
+            .expect("resolved population");
     assert_eq!(resolved.freshness, CoverageFreshness::ReusablePrior);
     assert_eq!(resolved.basis, RustSelectionBasis::ReusablePrior);
     let selected = select_rust_source_selectors_for_basis(
@@ -92,11 +83,13 @@ fn reusable_prior_selection_fails_on_missing_index_row() {
             "src/lib.rs".to_string(),
             BTreeSet::from(["tests::gets_value".to_string()]),
         )]),
+        ordinary_source_digests: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
         basis: RustSelectionBasis::ReusablePrior,
         state: Some(population),
+        snapshot_delta: None,
     };
     assert!(
         select_rust_source_selectors_for_basis(
@@ -123,11 +116,13 @@ fn reusable_prior_selection_fails_on_empty_index_row() {
         entries_fingerprint: String::new(),
         selectors: Vec::new(),
         line_index: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::new())]),
+        ordinary_source_digests: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
         basis: RustSelectionBasis::ReusablePrior,
         state: Some(population),
+        snapshot_delta: None,
     };
     assert!(
         select_rust_source_selectors_for_basis(
@@ -160,11 +155,13 @@ fn reusable_prior_selects_all_file_level_selectors_for_affected_file() {
                 "tests::covers_line_two".to_string(),
             ]),
         )]),
+        ordinary_source_digests: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
         basis: RustSelectionBasis::ReusablePrior,
         state: Some(population),
+        snapshot_delta: None,
     };
     let selected = select_rust_source_selectors_for_basis(
         tmp.path(),
@@ -207,11 +204,13 @@ fn reusable_prior_unions_selectors_from_multiple_affected_files() {
                 BTreeSet::from(["tests::covers_b".to_string()]),
             ),
         ]),
+        ordinary_source_digests: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
         basis: RustSelectionBasis::ReusablePrior,
         state: Some(population),
+        snapshot_delta: None,
     };
     let selected = select_rust_source_selectors_for_basis(
         tmp.path(),
@@ -243,11 +242,13 @@ fn reusable_prior_uses_file_level_selectors_without_line_coordinate_matching() {
             "src/lib.rs".to_string(),
             BTreeSet::from(["tests::covers_old_line".to_string()]),
         )]),
+        ordinary_source_digests: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
         basis: RustSelectionBasis::ReusablePrior,
         state: Some(population),
+        snapshot_delta: None,
     };
     let changed_lines = BTreeMap::from([(lib.clone(), BTreeSet::from([99u32]))]);
     let selected = select_rust_source_selectors_for_basis(
@@ -258,7 +259,10 @@ fn reusable_prior_uses_file_level_selectors_without_line_coordinate_matching() {
         &resolved,
     )
     .expect("reusable-prior ignores changed-line coordinates");
-    assert_eq!(selected, BTreeSet::from(["tests::covers_old_line".to_string()]));
+    assert_eq!(
+        selected,
+        BTreeSet::from(["tests::covers_old_line".to_string()])
+    );
 }
 
 #[test]
@@ -274,11 +278,13 @@ fn reusable_prior_selection_fails_on_non_rust_extension() {
         entries_fingerprint: String::new(),
         selectors: Vec::new(),
         line_index: BTreeMap::new(),
+        ordinary_source_digests: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
         basis: RustSelectionBasis::ReusablePrior,
         state: Some(population),
+        snapshot_delta: None,
     };
     assert!(
         select_rust_source_selectors_for_basis(
@@ -298,16 +304,13 @@ fn resolve_stale_population_when_no_manifest_matches() {
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
     fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
-    let resolved: ResolvedRustPopulation = resolve_rust_population_state(
-        tmp.path(),
-        &[],
-        std::slice::from_ref(&lib),
-        &[],
-    )
-    .expect("resolved population");
+    let resolved: ResolvedRustPopulation =
+        resolve_rust_population_state(tmp.path(), &[], std::slice::from_ref(&lib), &[])
+            .expect("resolved population");
     assert_eq!(resolved.freshness, CoverageFreshness::Stale);
     assert_eq!(resolved.basis, RustSelectionBasis::Population);
     assert!(resolved.state.is_none());
+    assert!(resolved.snapshot_delta.is_none());
 }
 
 #[test]
@@ -328,11 +331,13 @@ fn reusable_prior_is_not_claimed_complete_behavioral_impact_analysis() {
             "src/x.rs".to_string(),
             BTreeSet::from(["tests::covers_x_only".to_string()]),
         )]),
+        ordinary_source_digests: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
         basis: RustSelectionBasis::ReusablePrior,
         state: Some(population),
+        snapshot_delta: None,
     };
     let selected = select_rust_source_selectors_for_basis(
         tmp.path(),
@@ -353,7 +358,10 @@ fn reusable_prior_is_not_claimed_complete_behavioral_impact_analysis() {
         &resolved,
     )
     .expect("prior attribution exists for x.rs");
-    assert_eq!(selected_x, BTreeSet::from(["tests::covers_x_only".to_string()]));
+    assert_eq!(
+        selected_x,
+        BTreeSet::from(["tests::covers_x_only".to_string()])
+    );
 }
 
 #[test]
@@ -375,11 +383,13 @@ fn added_deleted_and_missing_rust_paths_require_population() {
             "src/lib.rs".to_string(),
             BTreeSet::from(["tests::gets_value".to_string()]),
         )]),
+        ordinary_source_digests: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
         basis: RustSelectionBasis::ReusablePrior,
         state: Some(population),
+        snapshot_delta: None,
     };
     assert!(
         select_rust_source_selectors_for_basis(

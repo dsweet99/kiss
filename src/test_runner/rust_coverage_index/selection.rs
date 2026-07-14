@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use crate::test_runner::coverage_decision::{CoverageFreshness, RustSelectionBasis};
 
 use super::{
-    changed_line_rels, load_current_rust_population_state, load_reusable_prior_rust_population_state,
-    repo_relative_path, selectors_by_changed_file_line, selectors_for_source_paths,
+    changed_line_rels, current_rust_coverage_batch_identity, repo_relative_path,
+    rust_coverage_cache_root, selectors_by_changed_file_line, selectors_for_source_paths,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -13,6 +13,7 @@ pub(crate) struct ResolvedRustPopulation {
     pub(crate) freshness: CoverageFreshness,
     pub(crate) basis: RustSelectionBasis,
     pub(crate) state: Option<rust_llvm_cov_runner::RustPopulationState>,
+    pub(crate) snapshot_delta: Option<rust_llvm_cov_runner::RustSnapshotDelta>,
 }
 
 pub(crate) fn resolve_rust_population_state(
@@ -21,34 +22,56 @@ pub(crate) fn resolve_rust_population_state(
     rust_source_paths: &[PathBuf],
     test_args: &[String],
 ) -> Result<ResolvedRustPopulation, String> {
-    if rust_source_paths.is_empty() {
-        return Ok(ResolvedRustPopulation {
-            freshness: CoverageFreshness::Fresh,
-            basis: RustSelectionBasis::Current,
-            state: None,
-        });
-    }
+    let _ = rust_source_paths;
     let universe = super::super::runners::enumerate_workspace_rust_selectors(repo_root, ignore)?;
-    let current = load_current_rust_population_state(repo_root, Some(&universe), test_args);
+    let identity = current_rust_coverage_batch_identity(repo_root, test_args)?;
+    let cache_root = rust_coverage_cache_root(repo_root);
+    let current = rust_llvm_cov_runner::load_current_population_state(
+        &cache_root,
+        repo_root,
+        &identity,
+        Some(&universe),
+    );
     if current.is_some() {
         return Ok(ResolvedRustPopulation {
             freshness: CoverageFreshness::Fresh,
             basis: RustSelectionBasis::Current,
             state: current,
+            snapshot_delta: None,
         });
     }
-    let reusable = load_reusable_prior_rust_population_state(repo_root, Some(&universe), test_args);
-    if reusable.is_some() {
+    let reusable = rust_llvm_cov_runner::load_reusable_prior_population_state(
+        &cache_root,
+        repo_root,
+        Some(&universe),
+        &identity.selection_context_fingerprint,
+    );
+    if let Some(reusable) = reusable {
+        let delta = rust_llvm_cov_runner::reusable_snapshot_delta(
+            repo_root,
+            &reusable.ordinary_source_digests,
+            &identity.ordinary_source_digests,
+        );
+        if delta == rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange {
+            return Ok(ResolvedRustPopulation {
+                freshness: CoverageFreshness::Stale,
+                basis: RustSelectionBasis::Population,
+                state: None,
+                snapshot_delta: Some(delta),
+            });
+        }
         return Ok(ResolvedRustPopulation {
             freshness: CoverageFreshness::ReusablePrior,
             basis: RustSelectionBasis::ReusablePrior,
-            state: reusable,
+            state: Some(reusable),
+            snapshot_delta: Some(delta),
         });
     }
     Ok(ResolvedRustPopulation {
         freshness: CoverageFreshness::Stale,
         basis: RustSelectionBasis::Population,
         state: None,
+        snapshot_delta: None,
     })
 }
 
@@ -147,6 +170,7 @@ mod coverage_witness {
             freshness: CoverageFreshness::ReusablePrior,
             basis: RustSelectionBasis::ReusablePrior,
             state: None,
+            snapshot_delta: None,
         };
         assert_eq!(resolved.basis, RustSelectionBasis::ReusablePrior);
     }

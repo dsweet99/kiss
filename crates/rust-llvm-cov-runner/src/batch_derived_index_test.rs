@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::RustPopulationState;
 use crate::batch_derived::{INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION};
 use crate::batch_derived_index::{
-    OnDiskIndex, OnDiskIndexWithFiles, PopulationManifestOnDisk,
+    OnDiskIndex, OnDiskIndexWithFiles, PopulationManifestOnDisk, RustSnapshotDelta,
     load_current_generation_line_index, load_current_population_state, read_coverage_index,
-    read_population_generation, read_population_manifest,
+    read_population_generation, read_population_manifest, reusable_snapshot_delta,
 };
 use crate::test_support::{published_alpha_derived_fixture, tamper_json_file};
 
@@ -53,6 +53,7 @@ fn load_current_population_state_validates_selectors_and_returns_index() {
         entries_fingerprint: state.entries_fingerprint.clone(),
         selectors: state.selectors.clone(),
         line_index: state.line_index.clone(),
+        ordinary_source_digests: state.ordinary_source_digests.clone(),
     };
     assert_eq!(state, expected);
     let on_disk: OnDiskIndexWithFiles =
@@ -153,6 +154,7 @@ fn read_population_and_index_loaders_handle_missing_and_invalid_json() {
         selection_context_fingerprint: "context".to_string(),
         entries_fingerprint: "entries".to_string(),
         selectors: vec!["alpha".to_string()],
+        ordinary_source_digests: BTreeMap::new(),
     };
     assert_eq!(
         index.generation_fingerprint,
@@ -209,6 +211,7 @@ fn rust_population_state_exposes_generation_and_index_fields() {
         entries_fingerprint: state.entries_fingerprint.clone(),
         selectors: state.selectors.clone(),
         line_index: state.line_index.clone(),
+        ordinary_source_digests: state.ordinary_source_digests.clone(),
     };
     assert_eq!(state, literal);
 }
@@ -225,12 +228,7 @@ fn manifest_generation_entries_complete_rejects_duplicate_selectors() {
             .read_dir()
             .unwrap()
             .filter_map(Result::ok)
-            .find(|entry| {
-                entry
-                    .path()
-                    .extension()
-                    .is_some_and(|ext| ext == "json")
-            })
+            .find(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
             .expect("entry")
             .path(),
     )
@@ -285,5 +283,46 @@ fn malformed_entry_files_do_not_invalidate_complete_population() {
             Some(&["alpha".to_string()]),
         )
         .is_some()
+    );
+}
+
+#[test]
+fn reusable_snapshot_delta_reports_unchanged_modified_and_structural_cases() {
+    let root = std::path::Path::new("/repo");
+    let prior = BTreeMap::from([
+        ("src/a.rs".to_string(), "aaaaaaaaaaaaaaaa".to_string()),
+        ("src/b.rs".to_string(), "bbbbbbbbbbbbbbbb".to_string()),
+    ]);
+    assert_eq!(
+        reusable_snapshot_delta(root, &prior, &prior),
+        RustSnapshotDelta::Unchanged
+    );
+
+    let current = BTreeMap::from([
+        ("src/a.rs".to_string(), "cccccccccccccccc".to_string()),
+        ("src/b.rs".to_string(), "dddddddddddddddd".to_string()),
+    ]);
+    assert_eq!(
+        reusable_snapshot_delta(root, &prior, &current),
+        RustSnapshotDelta::Modified(vec![root.join("src/a.rs"), root.join("src/b.rs")])
+    );
+
+    let added = BTreeMap::from([
+        ("src/a.rs".to_string(), "aaaaaaaaaaaaaaaa".to_string()),
+        ("src/b.rs".to_string(), "bbbbbbbbbbbbbbbb".to_string()),
+        ("src/c.rs".to_string(), "cccccccccccccccc".to_string()),
+    ]);
+    assert_eq!(
+        reusable_snapshot_delta(root, &prior, &added),
+        RustSnapshotDelta::StructuralChange
+    );
+
+    let renamed = BTreeMap::from([
+        ("src/a.rs".to_string(), "aaaaaaaaaaaaaaaa".to_string()),
+        ("src/c.rs".to_string(), "bbbbbbbbbbbbbbbb".to_string()),
+    ]);
+    assert_eq!(
+        reusable_snapshot_delta(root, &prior, &renamed),
+        RustSnapshotDelta::StructuralChange
     );
 }

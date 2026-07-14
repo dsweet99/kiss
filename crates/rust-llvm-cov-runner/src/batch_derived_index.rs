@@ -1,16 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
-use serde::Deserialize;
-
+use crate::CACHE_SCHEMA_VERSION;
 use crate::batch_derived::{INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION};
 use crate::batch_fingerprint::RustCoverageBatchIdentity;
 use crate::rust_cov_cache::{RustCovCacheEntry, generation_entries_fingerprint};
-use crate::CACHE_SCHEMA_VERSION;
-
+use serde::Deserialize;
 type RustCoverageIndex = BTreeMap<String, BTreeSet<String>>;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RustPopulationState {
     pub input_fingerprint: String,
@@ -19,8 +16,14 @@ pub struct RustPopulationState {
     pub entries_fingerprint: String,
     pub selectors: Vec<String>,
     pub line_index: RustCoverageIndex,
+    pub ordinary_source_digests: BTreeMap<String, String>,
 }
-
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RustSnapshotDelta {
+    Unchanged,
+    Modified(Vec<PathBuf>),
+    StructuralChange,
+}
 pub fn load_current_population_state(
     cache_root: &Path,
     source_root: &Path,
@@ -38,7 +41,6 @@ pub fn load_current_population_state(
         },
     )
 }
-
 pub fn load_reusable_prior_population_state(
     cache_root: &Path,
     source_root: &Path,
@@ -54,7 +56,6 @@ pub fn load_reusable_prior_population_state(
         },
     )
 }
-
 enum PopulationLoadMode {
     Current {
         input_fingerprint: String,
@@ -65,7 +66,6 @@ enum PopulationLoadMode {
         selection_context_fingerprint: String,
     },
 }
-
 fn load_validated_population_state(
     cache_root: &Path,
     source_root: &Path,
@@ -91,6 +91,7 @@ fn load_validated_population_state(
         entries_fingerprint: manifest.entries_fingerprint,
         selectors: manifest.selectors,
         line_index: index.files,
+        ordinary_source_digests: manifest.ordinary_source_digests,
     })
 }
 
@@ -233,6 +234,26 @@ pub fn load_current_generation_line_index(
     Some(index.files)
 }
 
+pub fn reusable_snapshot_delta(
+    source_root: &Path,
+    prior: &BTreeMap<String, String>,
+    current: &BTreeMap<String, String>,
+) -> RustSnapshotDelta {
+    if prior.keys().ne(current.keys()) {
+        return RustSnapshotDelta::StructuralChange;
+    }
+    let modified = prior
+        .iter()
+        .filter(|(path, digest)| current.get(*path) != Some(*digest))
+        .map(|(path, _digest)| source_root.join(path))
+        .collect::<Vec<_>>();
+    if modified.is_empty() {
+        RustSnapshotDelta::Unchanged
+    } else {
+        RustSnapshotDelta::Modified(modified)
+    }
+}
+
 fn normalized_source_root(source_root: &Path) -> String {
     source_root
         .canonicalize()
@@ -269,7 +290,23 @@ pub(crate) struct OnDiskIndex {
     pub(crate) entries_fingerprint: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct OrdinarySourceDigestRecord {
+    pub(crate) path: String,
+    pub(crate) digest: String,
+}
+
 #[derive(Deserialize)]
+struct PopulationManifestRaw {
+    schema_version: String,
+    generation_fingerprint: String,
+    input_fingerprint: String,
+    selection_context_fingerprint: String,
+    entries_fingerprint: String,
+    selectors: Vec<String>,
+    ordinary_source_digests: Vec<OrdinarySourceDigestRecord>,
+}
+
 pub(crate) struct PopulationManifestOnDisk {
     pub(crate) schema_version: String,
     pub(crate) generation_fingerprint: String,
@@ -277,11 +314,65 @@ pub(crate) struct PopulationManifestOnDisk {
     pub(crate) selection_context_fingerprint: String,
     pub(crate) entries_fingerprint: String,
     pub(crate) selectors: Vec<String>,
+    pub(crate) ordinary_source_digests: BTreeMap<String, String>,
 }
 
 pub(crate) fn read_population_manifest(cache_root: &Path) -> Option<PopulationManifestOnDisk> {
     let bytes = fs::read(cache_root.join("population.json")).ok()?;
-    serde_json::from_slice(&bytes).ok()
+    let raw: PopulationManifestRaw = serde_json::from_slice(&bytes).ok()?;
+    if raw.schema_version != POPULATION_SCHEMA_VERSION {
+        return None;
+    }
+    let ordinary_source_digests = validate_ordinary_source_digests(raw.ordinary_source_digests)?;
+    Some(PopulationManifestOnDisk {
+        schema_version: raw.schema_version,
+        generation_fingerprint: raw.generation_fingerprint,
+        input_fingerprint: raw.input_fingerprint,
+        selection_context_fingerprint: raw.selection_context_fingerprint,
+        entries_fingerprint: raw.entries_fingerprint,
+        selectors: raw.selectors,
+        ordinary_source_digests,
+    })
+}
+
+fn validate_ordinary_source_digests(
+    records: Vec<OrdinarySourceDigestRecord>,
+) -> Option<BTreeMap<String, String>> {
+    let mut out = BTreeMap::new();
+    let mut previous: Option<String> = None;
+    for record in records {
+        if previous.as_ref().is_some_and(|prev| record.path <= *prev) {
+            return None;
+        }
+        if !valid_ordinary_source_path(&record.path)
+            || !valid_ordinary_source_digest(&record.digest)
+        {
+            return None;
+        }
+        if out.insert(record.path.clone(), record.digest).is_some() {
+            return None;
+        }
+        previous = Some(record.path);
+    }
+    Some(out)
+}
+
+fn valid_ordinary_source_path(path: &str) -> bool {
+    if path.is_empty() || !(path.ends_with(".rs") || path.ends_with(".inc")) || path.contains('\\') {
+        return false;
+    }
+    let path = Path::new(path);
+    !path.is_absolute()
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn valid_ordinary_source_digest(digest: &str) -> bool {
+    digest.len() == 16
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 pub(crate) fn read_population_generation(cache_root: &Path) -> Option<String> {

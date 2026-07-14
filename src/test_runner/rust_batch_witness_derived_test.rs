@@ -127,6 +127,7 @@ fn witness_population_state_loaders(
         entries_fingerprint: state.entries_fingerprint.clone(),
         selectors: state.selectors.clone(),
         line_index: state.line_index.clone(),
+        ordinary_source_digests: state.ordinary_source_digests.clone(),
     };
     assert_eq!(state, literal);
 }

@@ -6,7 +6,9 @@ use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
-use crate::test_runner::coverage_decision::{CoverageFreshness, LanguagePlanner, RustSelectionBasis};
+use crate::test_runner::coverage_decision::{
+    CoverageFreshness, LanguagePlanner, RustSelectionBasis,
+};
 use crate::test_runner::runners::rust_backer::RustModule;
 use crate::test_runner::runners::{combined_selectors, enumerate_workspace_rust_selectors};
 use crate::test_runner::rust_coverage_index::{
@@ -25,7 +27,7 @@ fn reusable_prior_real_cache_fixture() {
     let manifest =
         serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&population).unwrap())
             .unwrap();
-    assert_eq!(manifest["schema_version"], "rust-llvm-cov-population-v3");
+    assert_eq!(manifest["schema_version"], "rust-llvm-cov-population-v4");
     let cli = repo.join("src/cli_output.rs");
     let plan = combined_selectors(
         repo,
@@ -102,6 +104,66 @@ fn combined_selectors_uses_reusable_prior_after_ordinary_source_edit() {
     assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
     assert!(!plan.rust_population_required);
     assert_eq!(plan.rust_selection_basis, RustSelectionBasis::ReusablePrior);
+}
+
+#[test]
+fn reusable_prior_uses_snapshot_delta_instead_of_historical_vcs_sources() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    let lib = src.join("lib.rs");
+    let historical = src.join("historical.rs");
+    fs::write(
+        &lib,
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() { assert_eq!(super::value(), 1); } }\n",
+    )
+    .unwrap();
+    fs::write(&historical, "pub fn historical() -> u32 { 1 }\n").unwrap();
+    let _ = current_rust_coverage_batch_identity(tmp.path(), &[]);
+    write_test_entry(
+        tmp.path(),
+        "abc",
+        "tests::gets_value",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: BTreeMap::from([(
+                "src/lib.rs".to_string(),
+                std::collections::BTreeSet::from([1]),
+            )]),
+        },
+    );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+    write_rust_population_manifest_for_args(tmp.path(), &["tests::gets_value".to_string()], &[])
+        .unwrap();
+    fs::write(
+        &lib,
+        "pub fn value() -> u32 { 2 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() { assert_eq!(super::value(), 2); } }\n",
+    )
+    .unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        &[historical, lib.clone()],
+        &[],
+        &BTreeMap::new(),
+        &[],
+        None,
+        &[],
+    )
+    .unwrap();
+
+    assert!(!plan.rust_population_required);
+    assert_eq!(plan.rust_selection_basis, RustSelectionBasis::ReusablePrior);
+    assert_eq!(plan.rust_source_paths, vec![lib]);
+    assert_eq!(plan.rust_vcs_source_paths, 2);
+    assert_eq!(plan.rust_snapshot_delta_modified, 1);
+    assert!(!plan.rust_snapshot_delta_structural);
+    assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
 }
 
 #[test]

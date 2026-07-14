@@ -22,6 +22,9 @@ pub(super) struct LocalRubricMetrics {
     pub(super) python_population_selectors: usize,
     pub(super) selected_rust_initial: usize,
     pub(super) rust_source_paths: usize,
+    pub(super) rust_vcs_source_paths: usize,
+    pub(super) rust_snapshot_delta_modified: usize,
+    pub(super) rust_snapshot_delta_structural: bool,
     pub(super) rust_population_required: bool,
     pub(super) rust_population_selectors: usize,
     pub(super) rust_final_selectors: usize,
@@ -65,6 +68,9 @@ impl LocalRubricMetrics {
             python_population_selectors,
             selected_rust_initial: planned.rs_sel.len(),
             rust_source_paths: planned.rust_source_paths.len(),
+            rust_vcs_source_paths: planned.rust_vcs_source_paths,
+            rust_snapshot_delta_modified: planned.rust_snapshot_delta_modified,
+            rust_snapshot_delta_structural: planned.rust_snapshot_delta_structural,
             rust_population_required,
             rust_population_selectors,
             rust_final_selectors,
@@ -148,7 +154,16 @@ fn print_selection_metrics(metrics: &LocalRubricMetrics) {
         metrics.python_population_selectors
     );
     println!("selected_rust_initial={}", metrics.selected_rust_initial);
+    println!("rust_vcs_source_paths={}", metrics.rust_vcs_source_paths);
     println!("rust_source_paths={}", metrics.rust_source_paths);
+    println!(
+        "rust_snapshot_delta_modified={}",
+        metrics.rust_snapshot_delta_modified
+    );
+    println!(
+        "rust_snapshot_delta_structural={}",
+        metrics.rust_snapshot_delta_structural
+    );
     println!(
         "rust_population_required={}",
         metrics.rust_population_required
@@ -168,7 +183,9 @@ fn print_selection_metrics(metrics: &LocalRubricMetrics) {
     );
 }
 
-fn rust_selection_basis_label(basis: crate::test_runner::coverage_decision::RustSelectionBasis) -> &'static str {
+fn rust_selection_basis_label(
+    basis: crate::test_runner::coverage_decision::RustSelectionBasis,
+) -> &'static str {
     use crate::test_runner::coverage_decision::RustSelectionBasis;
     match basis {
         RustSelectionBasis::Current => "current",
@@ -184,7 +201,10 @@ mod basis_label_tests {
 
     #[test]
     fn rust_selection_basis_metrics_label_all_planning_modes() {
-        assert_eq!(rust_selection_basis_label(RustSelectionBasis::Current), "current");
+        assert_eq!(
+            rust_selection_basis_label(RustSelectionBasis::Current),
+            "current"
+        );
         assert_eq!(
             rust_selection_basis_label(RustSelectionBasis::ReusablePrior),
             "reusable_prior"

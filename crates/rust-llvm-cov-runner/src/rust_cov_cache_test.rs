@@ -72,6 +72,7 @@ fn rust_cov_cache_inputs_include_cargo_files_and_skip_generated_dirs() {
     assert!(names.contains(Path::new("rust-toolchain.toml")));
     assert!(names.contains(Path::new(".cargo/config.toml")));
     assert!(names.contains(Path::new("src/lib.rs")));
+    assert!(names.contains(Path::new("src/fragment.inc")));
     assert!(!names.contains(Path::new("target/ignored.rs")));
     assert!(shared_input::should_skip_rust_cov_dir(
         &tmp.path().join("target")
@@ -101,6 +102,7 @@ fn write_rust_cov_input_files(root: &Path) {
     fs::write(root.join("rust-toolchain.toml"), "[toolchain]\n").unwrap();
     fs::write(root.join(".cargo").join("config.toml"), "[build]\n").unwrap();
     fs::write(root.join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
+    fs::write(root.join("src").join("fragment.inc"), "pub fn fragment() {}\n").unwrap();
     fs::write(root.join("target").join("ignored.rs"), "ignored\n").unwrap();
 }
 
@@ -108,6 +110,9 @@ fn write_rust_cov_input_files(root: &Path) {
 fn rust_cov_cache_input_predicates_match_supported_files() {
     assert!(shared_input::is_rust_cov_cache_input(Path::new(
         "src/lib.rs"
+    )));
+    assert!(shared_input::is_rust_cov_cache_input(Path::new(
+        "src/fragment.inc"
     )));
     assert!(shared_input::is_rust_cov_cache_input(Path::new(
         "Cargo.toml"

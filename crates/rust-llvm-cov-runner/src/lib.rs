@@ -14,7 +14,6 @@ mod batch_executor_fresh;
 mod batch_export;
 mod batch_export_catalog;
 mod batch_export_ignore;
-mod cargo_workspace_metadata;
 mod batch_export_resolve;
 mod batch_export_tools;
 mod batch_fingerprint;
@@ -22,12 +21,12 @@ mod batch_lock;
 mod batch_output_channel;
 mod batch_output_channel_frame;
 mod batch_output_channel_token;
-mod batch_platform;
 mod batch_plan;
 mod batch_plan_env;
 mod batch_plan_nextest_config;
 mod batch_plan_publish;
 mod batch_plan_test_args;
+mod batch_platform;
 mod batch_process_tree;
 mod batch_result;
 mod batch_run;
@@ -35,6 +34,7 @@ mod batch_runner_resolve;
 mod batch_shim;
 #[cfg(unix)]
 mod batch_shim_delegated;
+mod cargo_workspace_metadata;
 mod file_lock;
 mod llvm_cov_json;
 mod rust_cov_cache;
@@ -71,8 +71,8 @@ pub use batch_derived::{
     publish_derived_state,
 };
 pub use batch_derived_index::{
-    RustPopulationState, load_current_generation_line_index, load_current_population_state,
-    load_reusable_prior_population_state,
+    RustPopulationState, RustSnapshotDelta, load_current_generation_line_index,
+    load_current_population_state, load_reusable_prior_population_state, reusable_snapshot_delta,
 };
 pub use batch_events::{
     BatchCompilerArtifact, BatchEventStream, BatchTestTerminal, aggregate_selectors_for_test,
@@ -111,8 +111,8 @@ pub use rust_cov_cache::{
 };
 use serde::{Deserialize, Serialize};
 pub use shared_input::{
-    is_cargo_config_input_path, rust_cov_input_files, selection_context_source_digest,
-    workspace_input_digest,
+    is_cargo_config_input_path, is_rust_cov_cache_input, rust_cov_input_files,
+    selection_context_source_digest, workspace_input_digest,
 };
 pub use worker::rust_cov_cache_tmp_parent;
 

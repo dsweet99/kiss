@@ -148,7 +148,7 @@ pub fn partition_changed_paths(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>
     let mut test = Vec::new();
     for p in paths {
         let is_py = p.extension().is_some_and(|e| e.eq_ignore_ascii_case("py"));
-        let is_rs = kiss::Language::is_rust_path(p);
+        let is_rs = is_rust_planning_source_path(p);
         if is_py {
             if is_test_file(p) || is_in_test_directory(p) {
                 test.push(p.clone());
@@ -164,6 +164,10 @@ pub fn partition_changed_paths(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>
         }
     }
     (source, test)
+}
+
+pub(crate) fn is_rust_planning_source_path(path: &Path) -> bool {
+    kiss::Language::is_rust_path(path) || rust_llvm_cov_runner::is_rust_cov_cache_input(path)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

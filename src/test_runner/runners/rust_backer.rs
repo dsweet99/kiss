@@ -13,24 +13,19 @@ use crate::test_runner::rust_coverage_index::{
 
 use super::enumerate_workspace_rust_selectors;
 
-pub(crate) fn rust_llvm_cov_backer(
-    repo_root: &Path,
-    rust_source_paths: &[PathBuf],
-    rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
-    rust_test_args: &[String],
-    ignore: &[String],
-    changed_tests: &[TestSelector],
-    prior_failures: &[TestSelector],
-) -> Box<dyn LanguagePlanner> {
-    Box::new(RustModule::new(
-        repo_root,
-        rust_source_paths,
-        rust_changed_lines,
-        rust_test_args,
-        ignore,
-        changed_tests,
-        prior_failures,
-    ))
+pub(crate) struct RustBackerInput<'a> {
+    pub(crate) repo_root: &'a Path,
+    pub(crate) rust_source_paths: &'a [PathBuf],
+    pub(crate) rust_changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
+    pub(crate) rust_test_args: &'a [String],
+    pub(crate) ignore: &'a [String],
+    pub(crate) changed_tests: &'a [TestSelector],
+    pub(crate) prior_failures: &'a [TestSelector],
+    pub(crate) resolved: Option<ResolvedRustPopulation>,
+}
+
+pub(crate) fn rust_llvm_cov_backer(input: RustBackerInput<'_>) -> Box<dyn LanguagePlanner> {
+    Box::new(RustModule::new_with_resolved(input))
 }
 
 pub(crate) struct RustModule {
@@ -45,6 +40,7 @@ pub(crate) struct RustModule {
 }
 
 impl RustModule {
+    #[cfg(test)]
     pub(crate) fn new(
         repo_root: &Path,
         rust_source_paths: &[PathBuf],
@@ -54,15 +50,32 @@ impl RustModule {
         changed_tests: &[TestSelector],
         prior_failures: &[TestSelector],
     ) -> Self {
+        Self::new_with_resolved(RustBackerInput {
+            repo_root,
+            rust_source_paths,
+            rust_changed_lines,
+            rust_test_args,
+            ignore,
+            changed_tests,
+            prior_failures,
+            resolved: None,
+        })
+    }
+
+    pub(crate) fn new_with_resolved(input: RustBackerInput<'_>) -> Self {
+        let resolved_cell = OnceCell::new();
+        if let Some(resolved) = input.resolved {
+            let _ = resolved_cell.set(Ok(resolved));
+        }
         RustModule {
-            repo_root: repo_root.to_path_buf(),
-            rust_source_paths: rust_source_paths.to_vec(),
-            rust_changed_lines: rust_changed_lines.clone(),
-            rust_test_args: rust_test_args.to_vec(),
-            ignore: ignore.to_vec(),
-            changed_tests: changed_tests.to_vec(),
-            prior_failures: prior_failures.to_vec(),
-            resolved: OnceCell::new(),
+            repo_root: input.repo_root.to_path_buf(),
+            rust_source_paths: input.rust_source_paths.to_vec(),
+            rust_changed_lines: input.rust_changed_lines.clone(),
+            rust_test_args: input.rust_test_args.to_vec(),
+            ignore: input.ignore.to_vec(),
+            changed_tests: input.changed_tests.to_vec(),
+            prior_failures: input.prior_failures.to_vec(),
+            resolved: resolved_cell,
         }
     }
 
@@ -84,7 +97,10 @@ impl RustModule {
     }
 
     pub(crate) fn selection_basis(&self) -> Result<RustSelectionBasis, String> {
-        if self.rust_source_paths.is_empty() {
+        if self.rust_source_paths.is_empty()
+            && self.changed_tests.is_empty()
+            && self.resolved.get().is_none()
+        {
             return Ok(RustSelectionBasis::Current);
         }
         Ok(self.resolved_state()?.basis)
@@ -128,7 +144,10 @@ impl LanguagePlanner for RustModule {
     }
 
     fn freshness(&self, universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
-        if self.rust_source_paths.is_empty() {
+        if self.rust_source_paths.is_empty()
+            && self.changed_tests.is_empty()
+            && self.resolved.get().is_none()
+        {
             return Ok(CoverageFreshness::Fresh);
         }
         let universe_ids = universe
@@ -137,7 +156,10 @@ impl LanguagePlanner for RustModule {
             .collect::<Vec<_>>();
         let resolved = self.resolved_state()?;
         if let Some(selectors) = Some(&universe_ids)
-            && resolved.state.as_ref().is_some_and(|state| state.selectors != *selectors)
+            && resolved
+                .state
+                .as_ref()
+                .is_some_and(|state| state.selectors != *selectors)
         {
             return Ok(CoverageFreshness::Stale);
         }
@@ -189,7 +211,8 @@ pub(crate) fn select_fresh_rust_source_selectors(
     rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     rust_test_args: &[String],
 ) -> Option<BTreeSet<String>> {
-    let resolved = resolve_rust_population_state(repo_root, &[], rust_source_paths, rust_test_args).ok()?;
+    let resolved =
+        resolve_rust_population_state(repo_root, &[], rust_source_paths, rust_test_args).ok()?;
     select_rust_source_selectors_for_basis(
         repo_root,
         rust_source_paths,

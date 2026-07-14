@@ -8,6 +8,7 @@ use crate::violation::Violation;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+// Cache-invalidation probe for rebuilt selective Rust testing.
 pub const VIOLATIONS_FIX_HINT: &str =
     "Run 'kiss rules' for more information about fixing violations.";
 

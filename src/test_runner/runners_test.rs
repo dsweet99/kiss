@@ -368,20 +368,28 @@ fn partition_changed_paths_split() {
     let lib = tmp.path().join("lib.py");
     let tst = tmp.path().join("test_lib.py");
     let rust_src = tmp.path().join("lib.rs");
+    let rust_inc = tmp.path().join("fragment.inc");
+    let cargo = tmp.path().join("Cargo.toml");
     let rust_test = tmp.path().join("lib_test.rs");
     fs::write(&lib, "def f(): pass\n").unwrap();
     fs::write(&tst, "def test_f(): pass\n").unwrap();
     fs::write(&rust_src, "fn f() {}\n").unwrap();
+    fs::write(&rust_inc, "fn included() {}\n").unwrap();
+    fs::write(&cargo, "[package]\n").unwrap();
     fs::write(&rust_test, "#[test]\nfn test_f() {}\n").unwrap();
     let paths = vec![
         lib.clone(),
         tst.clone(),
         rust_src.clone(),
+        rust_inc.clone(),
+        cargo.clone(),
         rust_test.clone(),
     ];
     let (src, tst_paths) = partition_changed_paths(&paths);
     assert!(src.iter().any(|p| p == &lib));
     assert!(src.iter().any(|p| p == &rust_src));
+    assert!(src.iter().any(|p| p == &rust_inc));
+    assert!(src.iter().any(|p| p == &cargo));
     assert!(tst_paths.iter().any(|p| p == &tst));
     assert!(tst_paths.iter().any(|p| p == &rust_test));
 }

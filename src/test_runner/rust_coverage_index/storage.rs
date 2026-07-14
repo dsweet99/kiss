@@ -55,6 +55,7 @@ pub(crate) fn load_current_rust_coverage_index(
     load_current_rust_population_state(repo_root, None, test_args).map(|state| state.line_index)
 }
 
+#[cfg(test)]
 pub(crate) fn load_current_rust_population_state(
     repo_root: &Path,
     selectors: Option<&[String]>,
@@ -66,20 +67,6 @@ pub(crate) fn load_current_rust_population_state(
         repo_root,
         &identity,
         selectors,
-    )
-}
-
-pub(crate) fn load_reusable_prior_rust_population_state(
-    repo_root: &Path,
-    selectors: Option<&[String]>,
-    test_args: &[String],
-) -> Option<rust_llvm_cov_runner::RustPopulationState> {
-    let identity = super::current_rust_coverage_batch_identity(repo_root, test_args).ok()?;
-    rust_llvm_cov_runner::load_reusable_prior_population_state(
-        &rust_coverage_cache_root(repo_root),
-        repo_root,
-        selectors,
-        &identity.selection_context_fingerprint,
     )
 }
 
@@ -132,6 +119,7 @@ pub(crate) fn write_rust_coverage_index(
         selection_context_fingerprint: String,
         entries_fingerprint: String,
         selectors: Vec<String>,
+        ordinary_source_digests: Vec<serde_json::Value>,
     }
     let population_path = rust_population_manifest_path(repo_root);
     write_test_json_atomically(
@@ -150,6 +138,11 @@ pub(crate) fn write_rust_coverage_index(
                 .cloned()
                 .collect::<std::collections::BTreeSet<_>>()
                 .into_iter()
+                .collect(),
+            ordinary_source_digests: batch_identity
+                .ordinary_source_digests
+                .iter()
+                .map(|(path, digest)| serde_json::json!({ "path": path, "digest": digest }))
                 .collect(),
         },
     )

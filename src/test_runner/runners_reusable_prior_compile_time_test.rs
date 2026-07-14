@@ -58,6 +58,35 @@ fn build_script_edit_forces_population_while_ordinary_lib_stays_reusable() {
 }
 
 #[test]
+fn manifest_only_compile_time_edit_forces_population() {
+    let tmp = TempDir::new().unwrap();
+    let _lib = warm_app_builder_workspace(tmp.path());
+    let manifest = tmp.path().join("builder").join("Cargo.toml");
+    fs::write(
+        &manifest,
+        "[package]\nname='builder'\nversion='0.1.1'\nedition='2024'\nbuild='build.rs'\n",
+    )
+    .unwrap();
+
+    let compile_time = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&manifest),
+        &[],
+        &BTreeMap::new(),
+        &[],
+        None,
+        &[],
+    )
+    .unwrap();
+
+    assert!(compile_time.rust_population_required);
+    assert_eq!(
+        compile_time.rust_selection_basis,
+        RustSelectionBasis::Population
+    );
+}
+
+#[test]
 fn proc_macro_edit_forces_population_while_ordinary_lib_stays_reusable() {
     let tmp = TempDir::new().unwrap();
     let lib = warm_app_proc_macro_workspace(tmp.path());

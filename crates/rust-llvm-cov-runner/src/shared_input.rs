@@ -6,6 +6,10 @@ use crate::RustLlvmCovError;
 use crate::batch_plan::RustCoverageBatchRequest;
 use crate::cargo_workspace_metadata::workspace_metadata_from_cargo;
 
+#[path = "shared_input_snapshot.rs"]
+mod shared_input_snapshot;
+pub(crate) use shared_input_snapshot::rust_input_snapshot;
+
 pub fn workspace_input_digest(root: &Path) -> io::Result<String> {
     digest_input_files(root, &rust_cov_input_files(root)?)
 }
@@ -98,10 +102,10 @@ pub(crate) fn is_kiss_rust_cov_cache_dir(path: &Path) -> bool {
             == Some(".kiss")
 }
 
-pub(crate) fn is_rust_cov_cache_input(path: &Path) -> bool {
+pub fn is_rust_cov_cache_input(path: &Path) -> bool {
     if path
         .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("rs") || ext.eq_ignore_ascii_case("inc"))
     {
         return true;
     }
@@ -174,9 +178,12 @@ mod tests {
         req.cwd = tmp.path().to_path_buf();
         req.source_root = tmp.path().to_path_buf();
         req.cargo_args.clear();
-        let metadata =
-            crate::cargo_workspace_metadata::workspace_metadata_from_cargo(&req.cwd, &req.cargo, &req.cargo_args)
-                .expect("metadata");
+        let metadata = crate::cargo_workspace_metadata::workspace_metadata_from_cargo(
+            &req.cwd,
+            &req.cargo,
+            &req.cargo_args,
+        )
+        .expect("metadata");
         let files = rust_cov_input_files(tmp.path()).unwrap();
         let lib = files
             .iter()
@@ -341,7 +348,11 @@ mod tests {
             "pub fn x() {}\n",
         )
         .unwrap();
-        fs::write(tmp.path().join("misc").join("orphan.rs"), "pub fn orphan() {}\n").unwrap();
+        fs::write(
+            tmp.path().join("misc").join("orphan.rs"),
+            "pub fn orphan() {}\n",
+        )
+        .unwrap();
         let mut req = crate::batch_plan::RustCoverageBatchRequest::witness();
         req.cwd = tmp.path().join("crate");
         req.source_root = tmp.path().to_path_buf();
@@ -372,3 +383,7 @@ mod tests {
         assert!(!rejects_root_config);
     }
 }
+
+#[cfg(test)]
+#[path = "shared_input_snapshot_test.rs"]
+mod snapshot_tests;

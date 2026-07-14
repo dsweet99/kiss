@@ -155,6 +155,9 @@ fn empty_metrics() -> LocalRubricMetrics {
         python_population_selectors: 0,
         selected_rust_initial: 0,
         rust_source_paths: 0,
+        rust_vcs_source_paths: 0,
+        rust_snapshot_delta_modified: 0,
+        rust_snapshot_delta_structural: false,
         rust_population_required: false,
         rust_population_selectors: 0,
         rust_final_selectors: 0,
@@ -193,6 +196,9 @@ fn local_rubric_metrics_carry_reusable_prior_selection_basis() {
         python_population_required: false,
         rust_population_required: false,
         rust_source_paths: vec![PathBuf::from("src/lib.rs")],
+        rust_vcs_source_paths: 168,
+        rust_snapshot_delta_modified: 1,
+        rust_snapshot_delta_structural: false,
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
         coverage_decision_engine_used: true,
@@ -216,7 +222,13 @@ fn local_rubric_metrics_carry_reusable_prior_selection_basis() {
         planned.rs_sel.len(),
         planned.rust_selection_basis,
     );
-    assert_eq!(metrics.rust_selection_basis, RustSelectionBasis::ReusablePrior);
+    assert_eq!(
+        metrics.rust_selection_basis,
+        RustSelectionBasis::ReusablePrior
+    );
+    assert_eq!(metrics.rust_vcs_source_paths, 168);
+    assert_eq!(metrics.rust_snapshot_delta_modified, 1);
+    assert!(!metrics.rust_snapshot_delta_structural);
     assert!(!metrics.rust_population_required);
 }
 

@@ -2,10 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-
 use rpytest_runner::TestStatus;
 use serde::Serialize;
-
 use crate::batch_derived_index::read_population_generation;
 use crate::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
 use crate::batch_plan::RustCoverageBatchRequest;
@@ -14,9 +12,8 @@ use crate::rust_cov_cache::{
     load_rust_cov_cache_entry, repo_relative_coverage_file, rust_cov_unique_suffix,
 };
 use crate::{CACHE_SCHEMA_VERSION, RustLineCoverage, RustLlvmCovError};
-
 pub const INDEX_SCHEMA_VERSION: &str = "rust-llvm-cov-index-v2";
-pub const POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v3";
+pub const POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v4";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DerivedPublishCounters {
@@ -27,7 +24,6 @@ pub struct DerivedPublishCounters {
 }
 
 type RustCoverageIndex = BTreeMap<String, BTreeSet<String>>;
-
 pub(crate) fn try_publish_population_derived_state(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
@@ -52,7 +48,6 @@ pub(crate) fn try_publish_population_derived_state(
     }
     publish_derived_state(req, tools, identity, selectors, repair).map(Some)
 }
-
 pub fn population_derived_state_stale(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
@@ -63,7 +58,6 @@ pub fn population_derived_state_stale(
     };
     derived_state_stale(req, tools, identity, selectors)
 }
-
 fn derived_state_stale(
     req: &RustCoverageBatchRequest,
     _tools: &RustCoverageToolIdentity,
@@ -72,7 +66,6 @@ fn derived_state_stale(
 ) -> Result<bool, RustLlvmCovError> {
     Ok(!population_state_is_current(req, identity, selectors)?)
 }
-
 fn population_state_is_current(
     req: &RustCoverageBatchRequest,
     identity: &RustCoverageBatchIdentity,
@@ -80,7 +73,6 @@ fn population_state_is_current(
 ) -> Result<bool, RustLlvmCovError> {
     population_manifest_state_is_current(&req.cache_root, &req.source_root, identity, selectors)
 }
-
 pub fn population_manifest_state_is_current(
     cache_root: &Path,
     source_root: &Path,
@@ -95,7 +87,6 @@ pub fn population_manifest_state_is_current(
     )
     .is_some())
 }
-
 fn all_entries_hit(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
@@ -114,7 +105,6 @@ fn all_entries_hit(
     }
     Ok(true)
 }
-
 fn selectors_for_publication(
     req: &RustCoverageBatchRequest,
 ) -> Result<&[String], RustLlvmCovError> {
@@ -122,7 +112,6 @@ fn selectors_for_publication(
         .as_deref()
         .ok_or_else(|| RustLlvmCovError::InvalidRequest("missing population selectors".into()))
 }
-
 pub fn publish_derived_state(
     req: &RustCoverageBatchRequest,
     _tools: &RustCoverageToolIdentity,
@@ -165,14 +154,22 @@ fn prune_non_current_generations(
     cache_root: &Path,
     current_generation: &str,
 ) -> Result<usize, RustLlvmCovError> {
-    prune_generations_except(cache_root, current_generation, retained_population_generation(cache_root))
+    prune_generations_except(
+        cache_root,
+        current_generation,
+        retained_population_generation(cache_root),
+    )
 }
 
 pub fn prune_obsolete_selective_generations(
     cache_root: &Path,
     current_generation: &str,
 ) -> Result<usize, RustLlvmCovError> {
-    prune_generations_except(cache_root, current_generation, retained_population_generation(cache_root))
+    prune_generations_except(
+        cache_root,
+        current_generation,
+        retained_population_generation(cache_root),
+    )
 }
 
 /// Selective runs prune obsolete result generations only after a successful batch.
@@ -357,6 +354,12 @@ fn write_population_manifest(
     entries_fingerprint: &str,
 ) -> Result<(), RustLlvmCovError> {
     #[derive(Serialize)]
+    struct OrdinarySourceDigestRecord<'a> {
+        path: &'a str,
+        digest: &'a str,
+    }
+
+    #[derive(Serialize)]
     struct PopulationManifest<'a> {
         schema_version: &'a str,
         cache_schema_version: &'a str,
@@ -366,6 +369,7 @@ fn write_population_manifest(
         selection_context_fingerprint: &'a str,
         entries_fingerprint: &'a str,
         selectors: &'a [String],
+        ordinary_source_digests: Vec<OrdinarySourceDigestRecord<'a>>,
     }
 
     let path = cache_root.join("population.json");
@@ -375,6 +379,14 @@ fn write_population_manifest(
     fs::create_dir_all(parent).map_err(RustLlvmCovError::Io)?;
     let tmp_path = parent.join(format!(".population.{}.tmp", rust_cov_unique_suffix()));
     let mut file = create_new_cache_file(&tmp_path).map_err(RustLlvmCovError::Io)?;
+    let ordinary_source_digests = identity
+        .ordinary_source_digests
+        .iter()
+        .map(|(path, digest)| OrdinarySourceDigestRecord {
+            path: path.as_str(),
+            digest: digest.as_str(),
+        })
+        .collect();
     let payload = PopulationManifest {
         schema_version: POPULATION_SCHEMA_VERSION,
         cache_schema_version: CACHE_SCHEMA_VERSION,
@@ -388,6 +400,7 @@ fn write_population_manifest(
         selection_context_fingerprint: &identity.selection_context_fingerprint,
         entries_fingerprint,
         selectors,
+        ordinary_source_digests,
     };
     serde_json::to_writer_pretty(&mut file, &payload).map_err(|err| {
         RustLlvmCovError::InvalidRequest(format!("failed to write index json: {err}"))

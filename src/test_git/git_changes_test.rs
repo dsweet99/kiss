@@ -89,6 +89,25 @@ fn resolve_changed_includes_missing_deleted_rust_path() {
 }
 
 #[test]
+fn resolve_changed_includes_rust_compile_time_inputs() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    std::fs::create_dir_all(root.join(".cargo")).unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[package]\n").unwrap();
+    std::fs::write(root.join(".cargo").join("config.toml"), "[build]\n").unwrap();
+    let rel = vec![
+        "Cargo.toml".to_string(),
+        ".cargo/config.toml".to_string(),
+        "Cargo.lock".to_string(),
+    ];
+    let rust = resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Rust));
+    assert!(rust.iter().any(|path| path.ends_with("Cargo.toml")));
+    assert!(rust.iter().any(|path| path.ends_with(".cargo/config.toml")));
+    assert!(rust.iter().any(|path| path.ends_with("Cargo.lock")));
+    assert!(resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Python)).is_empty());
+}
+
+#[test]
 fn resolve_changed_skips_dir_prefix_ignore() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().canonicalize().unwrap();

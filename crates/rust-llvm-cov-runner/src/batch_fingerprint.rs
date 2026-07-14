@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::io;
 
 use crate::batch_plan::RustCoverageBatchRequest;
-use crate::shared_input::{selection_context_source_digest, workspace_input_digest};
+use crate::shared_input::rust_input_snapshot;
 use crate::{BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -18,31 +18,32 @@ pub struct RustCoverageBatchIdentity {
     pub input_digest: String,
     pub generation_fingerprint: String,
     pub selection_context_fingerprint: String,
+    pub ordinary_source_digests: BTreeMap<String, String>,
 }
 
 pub fn batch_identity(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> io::Result<RustCoverageBatchIdentity> {
-    let input_digest = workspace_input_digest(&req.source_root)?;
-    let selection_context_source = selection_context_source_digest(&req.source_root, req)
+    let snapshot = rust_input_snapshot(&req.source_root, req)
         .map_err(|err| io::Error::other(format!("{err:?}")))?;
     let generation_fingerprint = generation_fingerprint(
-        &input_digest,
+        &snapshot.input_digest,
         req,
         tools,
         BATCH_EXECUTION_POLICY_VERSION,
     );
     let selection_context_fingerprint = selection_context_fingerprint(
-        &selection_context_source,
+        &snapshot.selection_context_source_digest,
         req,
         tools,
         BATCH_EXECUTION_POLICY_VERSION,
     );
     Ok(RustCoverageBatchIdentity {
-        input_digest,
+        input_digest: snapshot.input_digest,
         generation_fingerprint,
         selection_context_fingerprint,
+        ordinary_source_digests: snapshot.ordinary_source_digests,
     })
 }
 
@@ -88,7 +89,8 @@ fn generation_hash(
     tools: &RustCoverageToolIdentity,
     execution_policy: &str,
 ) -> u64 {
-    let mut h = crate::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"batch-fingerprint-v1");
+    let mut h =
+        crate::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"batch-fingerprint-v1");
     for part in [
         CACHE_SCHEMA_VERSION.as_bytes(),
         source_digest.as_bytes(),
@@ -239,6 +241,12 @@ mod tests {
         let after = batch_identity(&req, &tools()).unwrap();
         assert_ne!(before.input_digest, after.input_digest);
         assert_ne!(before.generation_fingerprint, after.generation_fingerprint);
+        assert_eq!(before.ordinary_source_digests.len(), 1);
+        assert_eq!(after.ordinary_source_digests.len(), 1);
+        assert_ne!(
+            before.ordinary_source_digests.get("src/lib.rs"),
+            after.ordinary_source_digests.get("src/lib.rs")
+        );
         assert_eq!(
             before.selection_context_fingerprint,
             after.selection_context_fingerprint
@@ -328,9 +336,11 @@ mod tests {
         let mut req = request();
         req.source_root = tmp.path().to_path_buf();
         req.cwd = tmp.path().to_path_buf();
-        req.env.insert("BUILD_SCRIPT_INPUT".to_string(), "alpha".to_string());
+        req.env
+            .insert("BUILD_SCRIPT_INPUT".to_string(), "alpha".to_string());
         let before = batch_identity(&req, &tools()).unwrap();
-        req.env.insert("BUILD_SCRIPT_INPUT".to_string(), "beta".to_string());
+        req.env
+            .insert("BUILD_SCRIPT_INPUT".to_string(), "beta".to_string());
         let after = batch_identity(&req, &tools()).unwrap();
         assert_ne!(
             before.selection_context_fingerprint,
@@ -347,7 +357,11 @@ mod tests {
             "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\nbuild='build.rs'\n",
         )
         .unwrap();
-        fs::write(tmp.path().join("build.rs"), "fn main() { println!(\"cargo:rerun-if-env-changed=BUILD_SCRIPT_INPUT\"); }\n").unwrap();
+        fs::write(
+            tmp.path().join("build.rs"),
+            "fn main() { println!(\"cargo:rerun-if-env-changed=BUILD_SCRIPT_INPUT\"); }\n",
+        )
+        .unwrap();
         fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
 
         let mut req = request();
@@ -360,7 +374,11 @@ mod tests {
             &req.cargo_args,
         );
         let before = batch_identity(&req, &tools()).unwrap();
-        fs::write(tmp.path().join("build.rs"), "fn main() { println!(\"cargo:rerun-if-changed=build.rs\"); }\n").unwrap();
+        fs::write(
+            tmp.path().join("build.rs"),
+            "fn main() { println!(\"cargo:rerun-if-changed=build.rs\"); }\n",
+        )
+        .unwrap();
         let after = batch_identity(&req, &tools()).unwrap();
         assert_ne!(
             before.selection_context_fingerprint,
@@ -381,6 +399,7 @@ mod tests {
             input_digest: "abc".to_string(),
             generation_fingerprint: "def".to_string(),
             selection_context_fingerprint: "ghi".to_string(),
+            ordinary_source_digests: BTreeMap::new(),
         };
         assert_eq!(tools.rustc_version, "rustc");
         assert_eq!(identity.input_digest, "abc");

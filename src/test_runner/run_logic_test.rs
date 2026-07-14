@@ -15,6 +15,9 @@ fn planned() -> PlannedSelectors {
         python_population_required: false,
         rust_population_required: false,
         rust_source_paths: Vec::new(),
+        rust_vcs_source_paths: 0,
+        rust_snapshot_delta_modified: 0,
+        rust_snapshot_delta_structural: false,
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
         coverage_decision_engine_used: true,
@@ -237,6 +240,9 @@ fn planned_selectors_carry_population_decisions_without_selector_vectors() {
         python_population_required: true,
         rust_population_required: true,
         rust_source_paths: Vec::new(),
+        rust_vcs_source_paths: 0,
+        rust_snapshot_delta_modified: 0,
+        rust_snapshot_delta_structural: false,
         python_prior_failure_selectors: Vec::new(),
         rust_prior_failure_selectors: Vec::new(),
         coverage_decision_engine_used: true,
@@ -343,7 +349,8 @@ fn language_phase_outcome_carries_phase_summary_and_timings() {
 fn python_outcome_records_index_rebuild_duration_in_metrics() {
     let planned = planned();
     let options = options(false);
-    let mut metrics = LocalRubricMetrics::new(&planned, &options, 0, false, 0, 0, Default::default());
+    let mut metrics =
+        LocalRubricMetrics::new(&planned, &options, 0, false, 0, 0, Default::default());
     let outcome = LanguagePhaseOutcome {
         phase: ExecutionPhase::Selective(vec!["tests/test_app.py::test_ok".to_string()]),
         summary: SelectorExecutionSummary {

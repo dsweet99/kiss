@@ -267,10 +267,14 @@ fn rel_path_ignored(rel: &str, ignore: &[String]) -> bool {
 fn lang_ok(path: &Path, lang_filter: Option<TestLangFilter>) -> bool {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     match lang_filter {
-        None => ext.eq_ignore_ascii_case("py") || kiss::Language::is_rust_path(path),
+        None => ext.eq_ignore_ascii_case("py") || is_rust_planning_path(path),
         Some(TestLangFilter::Python) => ext.eq_ignore_ascii_case("py"),
-        Some(TestLangFilter::Rust) => kiss::Language::is_rust_path(path),
+        Some(TestLangFilter::Rust) => is_rust_planning_path(path),
     }
+}
+
+fn is_rust_planning_path(path: &Path) -> bool {
+    kiss::Language::is_rust_path(path) || rust_llvm_cov_runner::is_rust_cov_cache_input(path)
 }
 
 pub fn resolve_changed_source_paths(
@@ -286,7 +290,7 @@ pub fn resolve_changed_source_paths(
         }
         let abs = repo_root.join(rel);
         let include_missing_rust = matches!(lang_filter, None | Some(TestLangFilter::Rust))
-            && kiss::Language::is_rust_path(&abs)
+            && is_rust_planning_path(&abs)
             && !kiss::is_rust_test_file(&abs);
         match abs.metadata() {
             Ok(meta) if meta.is_file() => {
