@@ -1,6 +1,7 @@
 mod coverage_decision;
 pub(crate) mod last_status;
 mod line_selection;
+mod python_cache_path;
 mod python_coverage_index;
 mod run_logic;
 mod runners;
@@ -19,6 +20,31 @@ pub use validation::ValidateSelectionCmdArgs;
 #[cfg(test)]
 pub(crate) use validation::ValidationReport;
 pub(crate) use validation::validation_report;
+
+#[cfg(test)]
+pub(crate) struct TestEnvVarGuard {
+    key: &'static str,
+    old: Option<String>,
+}
+
+#[cfg(test)]
+impl TestEnvVarGuard {
+    pub(crate) fn set(key: &'static str, value: &str) -> Self {
+        let old = std::env::var(key).ok();
+        unsafe { std::env::set_var(key, value) };
+        Self { key, old }
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestEnvVarGuard {
+    fn drop(&mut self) {
+        match &self.old {
+            Some(value) => unsafe { std::env::set_var(self.key, value) },
+            None => unsafe { std::env::remove_var(self.key) },
+        }
+    }
+}
 
 pub struct RunTestCmdArgs<'a> {
     pub mode: TestChangeMode,

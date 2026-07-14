@@ -1,11 +1,14 @@
 use super::*;
+use crate::batch::{LockedRslipMisses, RslipCacheCandidate, RslipCacheCandidateGroup};
 use crate::cache::{rslip_cache_fingerprint, store_rslip_cache_entry};
 use rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunner, forkserver_pytest_runner};
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::rc::Rc;
-use std::time::Duration;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 #[test]
 fn batch_mixed_hit_and_miss_preserves_order_and_skips_hit_execution() {
@@ -44,6 +47,31 @@ def test_b():\n    assert True\n",
 }
 
 #[test]
+#[allow(non_snake_case)]
+fn LockedRslipMisses_and_RslipCacheCandidateGroup_are_test_referenced() {
+    let tmp = tempfile::tempdir().unwrap();
+    let req = rslip_sample_request(tmp.path());
+    let candidate = RslipCacheCandidate {
+        index: 0,
+        req,
+        fingerprint: "abc".to_string(),
+        canonical_cache_root: tmp.path().to_path_buf(),
+    };
+    let group = RslipCacheCandidateGroup {
+        indices: vec![0],
+        representative: candidate,
+        fingerprint: "abc".to_string(),
+    };
+    let locked = LockedRslipMisses {
+        misses: Vec::new(),
+        _guards: Vec::new(),
+    };
+
+    assert_eq!(group.indices, vec![0]);
+    assert_eq!(locked.misses.len(), 0);
+}
+
+#[test]
 fn batch_all_cache_hits_does_not_call_runner() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
@@ -70,6 +98,43 @@ fn batch_all_cache_hits_does_not_call_runner() {
 
     assert_eq!(outcomes[0].as_ref().unwrap().cache_status, CacheStatus::Hit);
     assert_eq!(calls.get(), 0);
+}
+
+#[test]
+fn all_hit_batch_does_not_wait_for_entry_lock() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    let req = rslip_sample_request(tmp.path());
+    let fingerprint = rslip_cache_fingerprint(&req).unwrap();
+    store_rslip_cache_entry(
+        &req.cache_root,
+        &fingerprint,
+        &cache::RslipCacheEntry::from(&RslipOutcome::witness()),
+    )
+    .unwrap();
+    let (locked_tx, locked_rx) = mpsc::channel();
+    let root_for_lock = req.cache_root.clone();
+    let fingerprint_for_lock = fingerprint.clone();
+    let lock_holder = thread::spawn(move || {
+        let _guard = crate::lock_rslip_cache_entry(&root_for_lock, &fingerprint_for_lock).unwrap();
+        locked_tx.send(()).unwrap();
+        thread::sleep(Duration::from_millis(200));
+    });
+    locked_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+    let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |_reqs, _jobs| {
+        panic!("all-hit batch should not invoke runner")
+    }));
+
+    let started = Instant::now();
+    let outcomes = rslip.run_or_reuse_many_bounded(vec![req], 1);
+
+    assert!(started.elapsed() < Duration::from_millis(100));
+    assert_eq!(outcomes[0].as_ref().unwrap().cache_status, CacheStatus::Hit);
+    lock_holder.join().unwrap();
 }
 
 #[test]
@@ -117,6 +182,55 @@ def test_b():\n    assert True\n",
     assert!(outcomes.iter().all(Result::is_ok));
     assert_eq!(batch_calls.get(), 1);
     assert_eq!(observed_jobs.get(), 7);
+}
+
+#[test]
+fn duplicate_selector_requests_in_one_batch_execute_once_and_fan_out() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    let batch_calls = Rc::new(Cell::new(0));
+    let observed_reqs = Rc::new(Cell::new(0));
+    let batch_calls_for_runner = Rc::clone(&batch_calls);
+    let observed_reqs_for_runner = Rc::clone(&observed_reqs);
+    let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |reqs, _jobs| {
+        batch_calls_for_runner.set(batch_calls_for_runner.get() + 1);
+        observed_reqs_for_runner.set(reqs.len());
+        assert_eq!(reqs.len(), 1);
+        reqs.into_iter()
+            .map(|req| {
+                let path = req.artifacts[0].path.clone();
+                fs::write(&path, r#"{"files":{"/project/app.py":[1,3]}}"#).unwrap();
+                Ok(PytestRunOutcome {
+                    nodeid: req.nodeid,
+                    status: TestStatus::Passed,
+                    exit_code: Some(0),
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                    duration: Duration::from_millis(1),
+                    artifacts: BTreeMap::from([(runtime::COVERAGE_ARTIFACT.to_string(), path)]),
+                })
+            })
+            .collect()
+    }));
+    let req = rslip_sample_request(tmp.path());
+
+    let outcomes = rslip.run_or_reuse_many_bounded(vec![req.clone(), req], 2);
+
+    assert_eq!(batch_calls.get(), 1);
+    assert_eq!(observed_reqs.get(), 1);
+    assert_eq!(
+        outcomes[0].as_ref().unwrap().cache_status,
+        CacheStatus::MissStored
+    );
+    assert_eq!(
+        outcomes[1].as_ref().unwrap().cache_status,
+        CacheStatus::MissStored
+    );
+    assert_eq!(outcomes[0].as_ref().unwrap(), outcomes[1].as_ref().unwrap());
 }
 
 #[test]

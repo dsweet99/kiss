@@ -59,16 +59,17 @@ pub(super) fn execute_language_phase(
     };
     let phase_duration = started.elapsed();
     let mut index_rebuild_duration = std::time::Duration::ZERO;
-    if should_rebuild_index(phase, &summary) {
-        let index_started = Instant::now();
-        module.rebuild_index(ctx)?;
-        index_rebuild_duration = index_started.elapsed();
-    }
     if matches!(phase, ExecutionPhase::Population(_))
         && summary.exit_code == 0
         && let ExecutionPhase::Population(selectors) = phase
     {
+        let index_started = Instant::now();
         module.write_manifest(selectors, ctx)?;
+        index_rebuild_duration = index_started.elapsed();
+    } else if should_rebuild_index(phase, &summary) {
+        let index_started = Instant::now();
+        module.rebuild_index(ctx)?;
+        index_rebuild_duration = index_started.elapsed();
     }
     Ok(LanguagePhaseOutcome {
         phase: phase.clone(),

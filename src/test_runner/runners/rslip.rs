@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::env;
 use std::path::{Path, PathBuf};
 
 use rpytest_runner::PytestRunner;
@@ -6,6 +7,9 @@ use rslip::{CacheStatus as PyCacheStatus, Rslip, RslipError, RslipOutcome, Rslip
 
 use super::{SelectorCacheRecord, SelectorExecutionSummary, command_stdout};
 use crate::test_runner::last_status::{python_last_status_identity, record_statuses};
+use crate::test_runner::python_coverage_index::{
+    PYTHON_COVERAGE_ENV_KEYS, python_coverage_cache_root,
+};
 
 pub(crate) fn run_rslip_selectors(
     repo_root: &Path,
@@ -92,18 +96,31 @@ pub(crate) fn rslip_request_from_parts(
             "error: kiss test: rslip requires Python 3.12+, found {python_version}"
         ));
     }
+    let repo_root = repo_root.canonicalize().map_err(|err| {
+        format!(
+            "error: kiss test: failed to canonicalize repository root {}: {err}",
+            repo_root.display()
+        )
+    })?;
     Ok(RslipRequest {
         nodeid: selector.to_string(),
-        cwd: repo_root.to_path_buf(),
-        source_root: repo_root.to_path_buf(),
+        cwd: repo_root.clone(),
+        source_root: repo_root.clone(),
         python: PathBuf::from("python"),
         python_version: python_version.to_string(),
         pytest_version: pytest_version.to_string(),
         pytest_args: extra.to_vec(),
-        env: BTreeMap::new(),
-        cache_root: repo_root.join(".kiss").join("rslip_cache"),
+        env: relevant_rslip_env(PYTHON_COVERAGE_ENV_KEYS),
+        cache_root: python_coverage_cache_root(&repo_root)?,
         force_rerun,
     })
+}
+
+fn relevant_rslip_env(env_keys: &[&str]) -> BTreeMap<String, String> {
+    env_keys
+        .iter()
+        .filter_map(|key| env::var(key).ok().map(|value| ((*key).to_string(), value)))
+        .collect()
 }
 
 fn detect_rslip_versions(repo_root: &Path) -> Result<(String, String), String> {

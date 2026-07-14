@@ -13,6 +13,7 @@ use super::{POPULATION_SCHEMA_VERSION, PYTHON_SELECTOR_DISCOVERY_VERSION};
 
 pub(crate) const PYTHON_COVERAGE_ENV_KEYS: &[&str] = &["PYTHONPATH"];
 
+#[cfg(test)]
 pub(crate) fn write_python_population_manifest_for_args(
     repo_root: &Path,
     selectors: &[String],
@@ -36,15 +37,32 @@ pub(crate) fn python_population_manifest_is_current_for_args_with_env_keys(
     python_population_manifest_is_current_with_identity(repo_root, selectors, &identity)
 }
 
+#[cfg(test)]
 pub(crate) fn write_python_population_manifest_with_identity(
     repo_root: &Path,
     selectors: &[String],
     identity: &PythonPopulationManifestIdentity,
 ) -> Result<(), String> {
+    let entries_fingerprint = python_entries_fingerprint(&python_coverage_cache_root(repo_root)?)
+        .map_err(|e| e.to_string())?;
+    write_python_population_manifest_with_identity_and_entries_fingerprint(
+        repo_root,
+        selectors,
+        identity,
+        &entries_fingerprint,
+    )
+}
+
+pub(crate) fn write_python_population_manifest_with_identity_and_entries_fingerprint(
+    repo_root: &Path,
+    selectors: &[String],
+    identity: &PythonPopulationManifestIdentity,
+    entries_fingerprint: &str,
+) -> Result<(), String> {
     let mut selectors = selectors.to_vec();
     selectors.sort();
     selectors.dedup();
-    let path = python_population_manifest_path(repo_root);
+    let path = python_population_manifest_path(repo_root)?;
     let parent = path.parent().ok_or_else(|| {
         "error: kiss test: Python population manifest path has no parent".to_string()
     })?;
@@ -61,8 +79,7 @@ pub(crate) fn write_python_population_manifest_with_identity(
         pytest_args: identity.pytest_args.clone(),
         env: identity.env.clone(),
         input_fingerprint: python_source_input_fingerprint(repo_root).map_err(|e| e.to_string())?,
-        entries_fingerprint: python_entries_fingerprint(&python_coverage_cache_root(repo_root))
-            .map_err(|e| e.to_string())?,
+        entries_fingerprint: entries_fingerprint.to_string(),
         selectors,
     };
     serde_json::to_writer_pretty(&mut file, &payload).map_err(|e| e.to_string())?;
@@ -84,15 +101,19 @@ pub(crate) fn python_population_manifest_is_current_with_identity(
     let Ok(input_fingerprint) = python_source_input_fingerprint(repo_root) else {
         return false;
     };
+    let Some(entries_fingerprint) = current_python_entries_fingerprint(repo_root) else {
+        return false;
+    };
     manifest.matches_python_identity(identity, &normalized_python_repo_root(repo_root))
         && manifest.input_fingerprint == input_fingerprint
+        && manifest.entries_fingerprint == entries_fingerprint
         && manifest.matches_python_selectors(selectors)
 }
 
 pub(crate) fn read_python_population_manifest(
     repo_root: &Path,
 ) -> Option<PythonPopulationManifest> {
-    fs::read(python_population_manifest_path(repo_root))
+    fs::read(python_population_manifest_path(repo_root).ok()?)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<PythonPopulationManifest>(&bytes).ok())
 }
@@ -107,13 +128,20 @@ pub(crate) fn stored_python_universe_selectors(
             .ok()?;
     let manifest = read_python_population_manifest(repo_root)?;
     let input_fingerprint = python_source_input_fingerprint(repo_root).ok()?;
+    let entries_fingerprint = current_python_entries_fingerprint(repo_root)?;
     if manifest.matches_python_identity(&identity, &normalized_python_repo_root(repo_root))
         && manifest.input_fingerprint == input_fingerprint
+        && manifest.entries_fingerprint == entries_fingerprint
     {
         Some(manifest.selectors.clone())
     } else {
         None
     }
+}
+
+fn current_python_entries_fingerprint(repo_root: &Path) -> Option<String> {
+    let cache_root = python_coverage_cache_root(repo_root).ok()?;
+    python_entries_fingerprint(&cache_root).ok()
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -132,7 +160,7 @@ impl PythonPopulationManifestIdentity {
     }
 }
 
-fn current_python_population_manifest_identity(
+pub(crate) fn current_python_population_manifest_identity(
     repo_root: &Path,
     test_args: &[String],
 ) -> Result<PythonPopulationManifestIdentity, String> {

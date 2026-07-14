@@ -894,6 +894,13 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
+def python_rslip_cache_root(repo_root: Path) -> Path:
+    machine_id = Path("/etc/machine-id").read_text().strip()
+    assert machine_id, "Linux machine id must not be empty"
+    host_component = machine_id.encode("ascii").hex()
+    return repo_root / ".kiss" / "rslip_cache" / "hosts" / host_component
+
+
 def assert_repo_relative_index(index: dict, expected_source: str) -> None:
     source_root = Path(index["source_root"])
     assert source_root.is_absolute(), source_root
@@ -1355,7 +1362,7 @@ def path_isolation() -> None:
             )
             cold_metrics[language] = cold.metrics()
 
-        py_cache = fixture.root / ".kiss/rslip_cache"
+        py_cache = python_rslip_cache_root(fixture.root)
         rs_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
         py_index = load_json(py_cache / "index.json")
         rs_index = load_json(rs_cache / "index.json")
@@ -1448,7 +1455,7 @@ def concurrent_cache_recovery() -> None:
             metric_int(metrics, "rust_population_cache_hits") for metrics in rust_cold_metrics
         ) == 2 * rust_universe
 
-        py_cache = fixture.root / ".kiss/rslip_cache"
+        py_cache = python_rslip_cache_root(fixture.root)
         rs_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
         py_json_count = assert_json_integrity(py_cache)
         rs_json_count = assert_json_integrity(rs_cache)

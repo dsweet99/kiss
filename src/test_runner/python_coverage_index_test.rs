@@ -3,6 +3,8 @@ use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
 use rpytest_runner::TestStatus;
@@ -21,6 +23,7 @@ fn identity() -> PythonPopulationManifestIdentity {
 
 fn write_entry(repo_root: &Path, name: &str, selector: &str, coverage: LineCoverage) {
     let path = python_coverage_cache_root(repo_root)
+        .unwrap()
         .join("entries")
         .join(format!("{name}.json"));
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -87,10 +90,10 @@ fn manifest_and_storage_helpers_are_referenced_from_external_tests() {
     ));
 }
 
-// Regression for `_kpop/exp_log_kiss_coverage_stress_qa.md`: a forced
-// selective cache refresh made the next unchanged-tree run require population.
+// Selective cache refreshes update the index but not the population manifest;
+// the manifest must fail closed if it names an older entries snapshot.
 #[test]
-fn forced_selective_entry_refresh_keeps_population_manifest_current_regression() {
+fn selective_entry_refresh_stales_population_manifest_entries_snapshot() {
     let tmp = tempfile::tempdir().unwrap();
     let app = tmp.path().join("app.py");
     fs::write(&app, "def value():\n    return 1\n").unwrap();
@@ -128,14 +131,11 @@ fn forced_selective_entry_refresh_keeps_population_manifest_current_regression()
     );
     rebuild_python_coverage_index(tmp.path()).unwrap();
 
-    assert!(
-        python_population_manifest_is_current_with_identity(
-            tmp.path(),
-            std::slice::from_ref(&selector),
-            &identity
-        ),
-        "refreshing a selective coverage entry must not stale the full-universe manifest"
-    );
+    assert!(!python_population_manifest_is_current_with_identity(
+        tmp.path(),
+        std::slice::from_ref(&selector),
+        &identity
+    ));
 }
 
 #[test]
@@ -156,6 +156,7 @@ fn selector_path_and_hash_helpers_are_referenced_from_external_tests() {
     );
 
     let entry_path = python_coverage_cache_root(tmp.path())
+        .unwrap()
         .join("entries")
         .join("a.json");
     assert_eq!(
@@ -189,11 +190,12 @@ fn selector_path_and_hash_helpers_are_referenced_from_external_tests() {
         )])
     );
     assert_eq!(
-        load_python_entries_for_line_selection(&python_coverage_cache_root(tmp.path())).len(),
+        load_python_entries_for_line_selection(&python_coverage_cache_root(tmp.path()).unwrap())
+            .len(),
         1
     );
     assert_ne!(
-        python_entries_fingerprint(&python_coverage_cache_root(tmp.path())).unwrap(),
+        python_entries_fingerprint(&python_coverage_cache_root(tmp.path()).unwrap()).unwrap(),
         ""
     );
     assert!(is_kiss_rslip_cache_dir(
@@ -249,6 +251,54 @@ fn filtered_python_rebuild_uses_supplied_indexable_policy() {
             BTreeSet::from(["tests/test_app.py::test_value".to_string()])
         )])
     );
+}
+
+#[test]
+fn legacy_unscoped_python_cache_entries_are_ignored() {
+    let tmp = tempfile::tempdir().unwrap();
+    let app = tmp.path().join("app.py");
+    fs::write(&app, "def value():\n    return 1\n").unwrap();
+    let legacy_entry = tmp
+        .path()
+        .join(".kiss")
+        .join("rslip_cache")
+        .join("entries")
+        .join("legacy.json");
+    fs::create_dir_all(legacy_entry.parent().unwrap()).unwrap();
+    let entry = serde_json::json!({
+        "schema_version": rslip::CACHE_SCHEMA_VERSION,
+        "nodeid": "tests/test_app.py::test_value",
+        "status": TestStatus::Passed,
+        "exit_code": 0,
+        "duration": Duration::from_millis(1),
+        "coverage": LineCoverage {
+            files: BTreeMap::from([(app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+        },
+    });
+    fs::write(legacy_entry, serde_json::to_vec(&entry).unwrap()).unwrap();
+
+    let index = rebuild_python_coverage_index(tmp.path()).unwrap();
+
+    assert!(index.is_empty());
+}
+
+#[test]
+fn derived_state_publication_waits_for_derived_lock() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("app.py"), "def value():\n    return 1\n").unwrap();
+    let cache_root = python_coverage_cache_root(tmp.path()).unwrap();
+    let guard = rslip::lock_rslip_derived_state(&cache_root).unwrap();
+    let repo_root = tmp.path().to_path_buf();
+    let (tx, rx) = mpsc::channel();
+    let publisher = thread::spawn(move || {
+        let result = publish_python_derived_state_with_filter(&repo_root, None, &[], |_, _| true);
+        tx.send(result).unwrap();
+    });
+
+    assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
+    drop(guard);
+    rx.recv_timeout(Duration::from_secs(1)).unwrap().unwrap();
+    publisher.join().unwrap();
 }
 
 #[test]

@@ -14,17 +14,23 @@ use crate::{
     rslip_coverage_from_outcome, rslip_outcome_from_cache, runtime, validate_rslip_request,
 };
 
-struct RslipCacheCandidate {
-    index: usize,
-    req: RslipRequest,
-    fingerprint: String,
+pub(crate) struct RslipCacheCandidate {
+    pub(crate) index: usize,
+    pub(crate) req: RslipRequest,
+    pub(crate) fingerprint: String,
+    pub(crate) canonical_cache_root: PathBuf,
 }
 
-struct RslipMiss {
-    index: usize,
-    req: RslipRequest,
-    fingerprint: String,
-    runner_req: PytestRunRequest,
+pub(crate) struct RslipMiss {
+    pub(crate) indices: Vec<usize>,
+    pub(crate) req: RslipRequest,
+    pub(crate) fingerprint: String,
+    pub(crate) runner_req: PytestRunRequest,
+}
+
+pub(crate) struct LockedRslipMisses {
+    pub(crate) misses: Vec<RslipMiss>,
+    pub(crate) _guards: Vec<crate::LocalRslipLockGuard>,
 }
 
 enum PublishedRuntime {
@@ -61,7 +67,10 @@ impl Rslip {
             }
         }
 
-        let runner_misses = prepare_rslip_misses(misses, &mut out);
+        let LockedRslipMisses {
+            misses: runner_misses,
+            _guards: _entry_guards,
+        } = prepare_rslip_misses(misses, &mut out);
         if runner_misses.is_empty() {
             return finalize_rslip_batch_results(out);
         }
@@ -72,8 +81,9 @@ impl Rslip {
         let runner_outcomes = self.runner.run_many_bounded(runner_reqs, jobs);
 
         for (miss, result) in runner_misses.into_iter().zip(runner_outcomes) {
-            let index = miss.index;
-            out[index] = Some(handle_rslip_miss_result(miss, result));
+            for (index, result) in handle_rslip_miss_result(miss, result) {
+                out[index] = Some(result);
+            }
         }
 
         finalize_rslip_batch_results(out)
@@ -86,41 +96,112 @@ fn prepare_rslip_cache_candidate(
 ) -> Result<RslipCacheCandidate, RslipError> {
     validate_rslip_request(&req)?;
     fs::create_dir_all(&req.cache_root)?;
+    let canonical_cache_root = req.cache_root.canonicalize()?;
     let fingerprint = rslip_cache_fingerprint(&req)?;
     Ok(RslipCacheCandidate {
         index,
         req,
         fingerprint,
+        canonical_cache_root,
     })
 }
 
 fn prepare_rslip_misses(
     misses: Vec<RslipCacheCandidate>,
     out: &mut [Option<Result<RslipOutcome, RslipError>>],
-) -> Vec<RslipMiss> {
+) -> LockedRslipMisses {
+    let mut guards = Vec::new();
+    let misses = lock_and_filter_rslip_misses(misses, out, &mut guards);
     let mut roots = BTreeSet::new();
     for miss in &misses {
-        roots.insert(miss.req.cache_root.clone());
+        roots.insert(miss.representative.req.cache_root.clone());
     }
     let runtimes = publish_rslip_runtimes(roots);
     let mut runner_misses = Vec::new();
     for miss in misses {
         let runtime = runtimes
-            .get(&miss.req.cache_root)
+            .get(&miss.representative.req.cache_root)
             .expect("runtime publication attempted for every miss root");
         let runtime_dir = match runtime {
             PublishedRuntime::Ready(path) => path,
             PublishedRuntime::Error(kind, message) => {
-                out[miss.index] = Some(Err(RslipError::Io(io::Error::new(*kind, message.clone()))));
+                for index in miss.indices {
+                    out[index] = Some(Err(RslipError::Io(io::Error::new(*kind, message.clone()))));
+                }
                 continue;
             }
         };
         match prepare_rslip_runner_miss(miss, runtime_dir) {
             Ok(runner_miss) => runner_misses.push(runner_miss),
-            Err((index, err)) => out[index] = Some(Err(err)),
+            Err((indices, err)) => {
+                for index in indices {
+                    out[index] = Some(Err(clone_rslip_error(&err)));
+                }
+            }
         }
     }
-    runner_misses
+    LockedRslipMisses {
+        misses: runner_misses,
+        _guards: guards,
+    }
+}
+
+fn lock_and_filter_rslip_misses(
+    misses: Vec<RslipCacheCandidate>,
+    out: &mut [Option<Result<RslipOutcome, RslipError>>],
+    guards: &mut Vec<crate::LocalRslipLockGuard>,
+) -> Vec<RslipCacheCandidateGroup> {
+    let mut groups: BTreeMap<(PathBuf, String), Vec<RslipCacheCandidate>> = BTreeMap::new();
+    for miss in misses {
+        groups
+            .entry((miss.canonical_cache_root.clone(), miss.fingerprint.clone()))
+            .or_default()
+            .push(miss);
+    }
+    let mut runner_groups = Vec::new();
+    for ((_canonical_root, fingerprint), candidates) in groups {
+        let first = candidates
+            .first()
+            .expect("rslip miss group contains at least one candidate");
+        match crate::lock_rslip_cache_entry(&first.req.cache_root, &fingerprint) {
+            Ok(guard) => {
+                let force_rerun = candidates.iter().any(|candidate| candidate.req.force_rerun);
+                if !force_rerun
+                    && let Some(entry) = load_rslip_cache_entry(&first.req.cache_root, &fingerprint)
+                {
+                    for candidate in candidates {
+                        out[candidate.index] = Some(Ok(rslip_outcome_from_cache(entry.clone())));
+                    }
+                } else {
+                    guards.push(guard);
+                    runner_groups.push(RslipCacheCandidateGroup {
+                        indices: candidates.iter().map(|candidate| candidate.index).collect(),
+                        representative: candidates
+                            .into_iter()
+                            .next()
+                            .expect("rslip miss group contains a representative"),
+                        fingerprint,
+                    });
+                }
+            }
+            Err(err) => {
+                for candidate in candidates {
+                    out[candidate.index] = Some(Err(RslipError::Io(io::Error::new(
+                        err.kind(),
+                        err.to_string(),
+                    ))));
+                }
+            }
+        }
+    }
+    runner_groups.sort_by_key(|group| group.indices.first().copied().unwrap_or(usize::MAX));
+    runner_groups
+}
+
+pub(crate) struct RslipCacheCandidateGroup {
+    pub(crate) indices: Vec<usize>,
+    pub(crate) representative: RslipCacheCandidate,
+    pub(crate) fingerprint: String,
 }
 
 fn publish_rslip_runtimes(cache_roots: BTreeSet<PathBuf>) -> BTreeMap<PathBuf, PublishedRuntime> {
@@ -150,23 +231,24 @@ fn finalize_rslip_batch_results(
 }
 
 fn prepare_rslip_runner_miss(
-    miss: RslipCacheCandidate,
+    miss: RslipCacheCandidateGroup,
     runtime_dir: &Path,
-) -> Result<RslipMiss, (usize, RslipError)> {
-    fs::create_dir_all(miss.req.cache_root.join("testmon"))
-        .map_err(|err| (miss.index, RslipError::Io(err)))?;
-    let artifact_path = miss.req.cache_root.join("artifacts").join(format!(
+) -> Result<RslipMiss, (Vec<usize>, RslipError)> {
+    let req = miss.representative.req;
+    fs::create_dir_all(req.cache_root.join("testmon"))
+        .map_err(|err| (miss.indices.clone(), RslipError::Io(err)))?;
+    let artifact_path = req.cache_root.join("artifacts").join(format!(
         "{}.{}.json",
         miss.fingerprint,
         rslip_unique_suffix()
     ));
     if let Some(parent) = artifact_path.parent() {
-        fs::create_dir_all(parent).map_err(|err| (miss.index, RslipError::Io(err)))?;
+        fs::create_dir_all(parent).map_err(|err| (miss.indices.clone(), RslipError::Io(err)))?;
     }
-    let runner_req = build_pytest_runner_request(&miss.req, runtime_dir, &artifact_path);
+    let runner_req = build_pytest_runner_request(&req, runtime_dir, &artifact_path);
     Ok(RslipMiss {
-        index: miss.index,
-        req: miss.req,
+        indices: miss.indices,
+        req,
         fingerprint: miss.fingerprint,
         runner_req,
     })
@@ -195,6 +277,17 @@ fn publish_rslip_runtime(cache_root: &Path) -> io::Result<PathBuf> {
 fn handle_rslip_miss_result(
     miss: RslipMiss,
     result: Result<PytestRunOutcome, PytestRunError>,
+) -> Vec<(usize, Result<RslipOutcome, RslipError>)> {
+    let result = handle_rslip_miss_result_once(&miss, result);
+    miss.indices
+        .into_iter()
+        .map(|index| (index, clone_rslip_result(&result)))
+        .collect()
+}
+
+fn handle_rslip_miss_result_once(
+    miss: &RslipMiss,
+    result: Result<PytestRunOutcome, PytestRunError>,
 ) -> Result<RslipOutcome, RslipError> {
     let outcome = result?;
     let coverage = rslip_coverage_from_outcome(&outcome)?;
@@ -214,6 +307,40 @@ fn handle_rslip_miss_result(
         &RslipCacheEntry::from(&rslip_outcome),
     )?;
     Ok(rslip_outcome)
+}
+
+fn clone_rslip_result(
+    result: &Result<RslipOutcome, RslipError>,
+) -> Result<RslipOutcome, RslipError> {
+    match result {
+        Ok(outcome) => Ok(outcome.clone()),
+        Err(err) => Err(clone_rslip_error(err)),
+    }
+}
+
+fn clone_rslip_error(err: &RslipError) -> RslipError {
+    match err {
+        RslipError::Io(err) => RslipError::Io(io::Error::new(err.kind(), err.to_string())),
+        RslipError::Json(err) => {
+            RslipError::Json(serde_json::Error::io(io::Error::other(err.to_string())))
+        }
+        RslipError::Runner(err) => RslipError::Runner(clone_pytest_error(err)),
+        RslipError::MissingArtifact(name) => RslipError::MissingArtifact(name.clone()),
+        RslipError::InvalidRequest(message) => RslipError::InvalidRequest(message.clone()),
+    }
+}
+
+fn clone_pytest_error(err: &PytestRunError) -> PytestRunError {
+    match err {
+        PytestRunError::InvalidRequest(message) => PytestRunError::InvalidRequest(message.clone()),
+        PytestRunError::Protocol(message) => PytestRunError::Protocol(message.clone()),
+        PytestRunError::Spawn { program, message } => PytestRunError::Spawn {
+            program: program.clone(),
+            message: message.clone(),
+        },
+        PytestRunError::Timeout(timeout) => PytestRunError::Timeout(*timeout),
+        PytestRunError::WorkerPanic => PytestRunError::WorkerPanic,
+    }
 }
 
 #[cfg(test)]
@@ -245,17 +372,26 @@ mod tests {
             index: 3,
             req: req.clone(),
             fingerprint: "abc".to_string(),
+            canonical_cache_root: req.cache_root.clone(),
         };
         let miss = RslipMiss {
-            index: candidate.index,
+            indices: vec![candidate.index],
             req: candidate.req,
             fingerprint: candidate.fingerprint,
             runner_req,
         };
 
-        assert_eq!(miss.index, 3);
+        assert_eq!(miss.indices, vec![3]);
         assert_eq!(miss.req.nodeid, req.nodeid);
         assert_eq!(miss.fingerprint, "abc");
         assert_eq!(miss.runner_req.artifacts[0].name, "coverage");
+    }
+
+    #[test]
+    fn locked_rslip_misses_and_candidate_group_types_are_test_referenced() {
+        assert!(std::any::type_name::<LockedRslipMisses>().contains("LockedRslipMisses"));
+        assert!(
+            std::any::type_name::<RslipCacheCandidateGroup>().contains("RslipCacheCandidateGroup")
+        );
     }
 }

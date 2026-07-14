@@ -1,6 +1,7 @@
 use tempfile::TempDir;
 
 use super::runners::*;
+use crate::test_runner::TestEnvVarGuard;
 
 #[test]
 fn rslip_request_from_parts_uses_selector_and_kiss_cache() {
@@ -21,8 +22,34 @@ fn rslip_request_from_parts_uses_selector_and_kiss_cache() {
     assert_eq!(req.pytest_args, vec!["-q"]);
     assert_eq!(req.python_version, "3.12.1");
     assert_eq!(req.pytest_version, "8.2.0");
-    assert_eq!(req.cache_root, tmp.path().join(".kiss").join("rslip_cache"));
+    assert!(
+        req.cache_root
+            .starts_with(tmp.path().join(".kiss/rslip_cache/hosts"))
+    );
+    assert_eq!(
+        req.cache_root.components().count(),
+        tmp.path().components().count() + 4
+    );
     assert!(req.force_rerun);
+}
+
+#[test]
+fn rslip_request_from_parts_tracks_pythonpath_in_cache_env() {
+    let _lock = crate::cwd_test_lock::lock();
+    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", "/repo/src");
+    let tmp = TempDir::new().unwrap();
+
+    let req = rslip_request_from_parts(
+        tmp.path(),
+        "tests/test_app.py::test_ok",
+        &[],
+        "3.12.1",
+        "8.2.0",
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(req.env.get("PYTHONPATH"), Some(&"/repo/src".to_string()));
 }
 
 #[test]
@@ -55,4 +82,37 @@ fn rslip_request_from_parts_accepts_python_after_312() {
     .unwrap();
 
     assert_eq!(req.python_version, "3.13.0");
+}
+
+#[cfg(unix)]
+#[test]
+fn rslip_request_from_parts_canonicalizes_repo_identity() {
+    let tmp = TempDir::new().unwrap();
+    let repo = tmp.path().join("repo");
+    let link = tmp.path().join("repo-link");
+    std::fs::create_dir(&repo).unwrap();
+    std::os::unix::fs::symlink(&repo, &link).unwrap();
+
+    let direct = rslip_request_from_parts(
+        &repo,
+        "tests/test_app.py::test_ok",
+        &[],
+        "3.12.1",
+        "8.2.0",
+        false,
+    )
+    .unwrap();
+    let symlinked = rslip_request_from_parts(
+        &link,
+        "tests/test_app.py::test_ok",
+        &[],
+        "3.12.1",
+        "8.2.0",
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(direct.cwd, symlinked.cwd);
+    assert_eq!(direct.source_root, symlinked.source_root);
+    assert_eq!(direct.cache_root, symlinked.cache_root);
 }

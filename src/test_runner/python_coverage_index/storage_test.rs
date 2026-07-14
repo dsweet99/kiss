@@ -24,24 +24,23 @@ fn storage_paths_hashes_and_input_filters_have_contracts() {
         "VALUE = 3\n",
     )
     .unwrap();
+    let cache_root = python_coverage_cache_root(tmp.path()).unwrap();
 
     assert_eq!(
-        python_coverage_cache_root(tmp.path()),
-        tmp.path().join(".kiss").join("rslip_cache")
-    );
-    assert_eq!(
-        python_coverage_index_path(tmp.path()),
+        cache_root,
         tmp.path()
             .join(".kiss")
             .join("rslip_cache")
-            .join("index.json")
+            .join("hosts")
+            .join(cache_root.file_name().unwrap())
     );
     assert_eq!(
-        python_population_manifest_path(tmp.path()),
-        tmp.path()
-            .join(".kiss")
-            .join("rslip_cache")
-            .join("population.json")
+        python_coverage_index_path(tmp.path()).unwrap(),
+        cache_root.join("index.json")
+    );
+    assert_eq!(
+        python_population_manifest_path(tmp.path()).unwrap(),
+        cache_root.join("population.json")
     );
     assert!(is_kiss_rslip_cache_dir(
         &tmp.path().join(".kiss").join("rslip_cache")
@@ -73,11 +72,8 @@ fn storage_paths_hashes_and_input_filters_have_contracts() {
         normalized_python_repo_root(tmp.path()),
         tmp.path().canonicalize().unwrap().display().to_string()
     );
-    assert_eq!(
-        python_coverage_entry_paths(&python_coverage_cache_root(tmp.path())).len(),
-        0
-    );
-    assert!(python_entries_fingerprint(&python_coverage_cache_root(tmp.path())).is_ok());
+    assert_eq!(python_coverage_entry_paths(&cache_root).len(), 0);
+    assert!(python_entries_fingerprint(&cache_root).is_ok());
     let created = tmp.path().join("created.txt");
     create_new_python_file(&created).unwrap();
     assert!(create_new_python_file(&created).is_err());
@@ -86,4 +82,35 @@ fn storage_paths_hashes_and_input_filters_have_contracts() {
         python_fnv1a64(0xcbf2_9ce4_8422_2325, b"a"),
         python_fnv1a64(0xcbf2_9ce4_8422_2325, b"b")
     );
+}
+
+#[test]
+fn stale_entries_fingerprint_makes_python_index_fail_closed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_root = python_coverage_cache_root(tmp.path()).unwrap();
+    let stale_fingerprint = python_entries_fingerprint(&cache_root).unwrap();
+    let entry = cache_root.join("entries").join("new.json");
+    std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
+    std::fs::write(
+        entry,
+        serde_json::json!({
+            "schema_version": rslip::CACHE_SCHEMA_VERSION,
+            "nodeid": "tests/test_app.py::test_value",
+            "status": "passed",
+            "exit_code": 0,
+            "duration": {"secs": 0, "nanos": 1},
+            "coverage": {"files": {}},
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    write_python_coverage_index_with_entries_fingerprint(
+        tmp.path(),
+        &PythonCoverageIndex::new(),
+        &stale_fingerprint,
+    )
+    .unwrap();
+
+    assert!(load_current_python_coverage_index(tmp.path()).is_none());
 }

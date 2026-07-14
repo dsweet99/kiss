@@ -389,6 +389,7 @@ fn write_python_entry(
     coverage: LineCoverage,
 ) {
     let path = python_coverage_cache_root(repo_root)
+        .unwrap()
         .join("entries")
         .join(format!("{name}.json"));
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();

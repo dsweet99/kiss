@@ -19,6 +19,7 @@ use crate::test_runner::python_coverage_index::{
 
 fn write_entry(repo_root: &Path, name: &str, selector: &str, coverage: LineCoverage) {
     let path = python_coverage_cache_root(repo_root)
+        .unwrap()
         .join("entries")
         .join(format!("{name}.json"));
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -87,13 +88,15 @@ fn python_coverage_index_witnesses_storage_helpers() {
     );
 
     let entry_path = python_coverage_cache_root(tmp.path())
+        .unwrap()
         .join("entries")
         .join("a.json");
     let loaded_entry = load_python_entry_for_index(&entry_path).unwrap();
     assert_eq!(loaded_entry.0, selector);
-    let entry_paths = python_coverage_entry_paths(&python_coverage_cache_root(tmp.path()));
+    let cache_root = python_coverage_cache_root(tmp.path()).unwrap();
+    let entry_paths = python_coverage_entry_paths(&cache_root);
     assert_eq!(entry_paths.len(), 1);
-    let entries_fp = python_entries_fingerprint(&python_coverage_cache_root(tmp.path()));
+    let entries_fp = python_entries_fingerprint(&cache_root);
     assert!(entries_fp.is_ok());
     let is_cache_dir = is_kiss_rslip_cache_dir(&tmp.path().join(".kiss").join("rslip_cache"));
     assert!(is_cache_dir);
@@ -150,6 +153,6 @@ fn python_coverage_index_witnesses_selection_helpers() {
         BTreeMap::from([("app.py".to_string(), BTreeSet::from([selector]))])
     );
     let line_entries =
-        load_python_entries_for_line_selection(&python_coverage_cache_root(tmp.path()));
+        load_python_entries_for_line_selection(&python_coverage_cache_root(tmp.path()).unwrap());
     assert_eq!(line_entries.len(), 1);
 }

@@ -6,12 +6,19 @@
 
 mod batch;
 mod cache;
+mod lock;
 mod runtime;
 
+#[cfg(test)]
+mod batch_error_test;
+#[cfg(test)]
+mod batch_process_test;
 #[cfg(test)]
 mod batch_test;
 #[cfg(test)]
 mod cache_test;
+#[cfg(test)]
+mod lock_test;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -20,6 +27,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use cache::{RslipCacheEntry, rslip_unique_suffix};
+pub use lock::{LocalRslipLockGuard, lock_rslip_cache_entry, lock_rslip_derived_state};
 use rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, TestStatus,
 };

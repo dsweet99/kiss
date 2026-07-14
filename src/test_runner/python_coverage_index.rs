@@ -15,16 +15,16 @@ pub(crate) const PYTHON_SELECTOR_DISCOVERY_VERSION: &str = "python-selector-disc
 mod manifest;
 pub(crate) use manifest::{
     PYTHON_COVERAGE_ENV_KEYS, python_population_manifest_is_current_for_args_with_env_keys,
-    stored_python_universe_selectors, write_python_population_manifest_for_args,
+    stored_python_universe_selectors,
 };
 #[cfg(test)]
 pub(crate) use manifest::{
     PythonPopulationManifestIdentity, python_population_manifest_is_current_with_identity,
-    read_python_population_manifest, write_python_population_manifest_with_identity,
+    read_python_population_manifest, write_python_population_manifest_for_args,
+    write_python_population_manifest_with_identity,
 };
 
 mod storage;
-pub(crate) use storage::write_python_coverage_index;
 #[cfg(test)]
 pub(crate) use storage::{
     create_new_python_file, is_kiss_rslip_cache_dir, normalized_python_repo_root,
@@ -43,18 +43,63 @@ pub(crate) type PythonCoverageIndex = BTreeMap<String, BTreeSet<String>>;
 pub(crate) fn rebuild_python_coverage_index(
     repo_root: &Path,
 ) -> Result<PythonCoverageIndex, String> {
-    let index = build_python_coverage_index(repo_root);
-    write_python_coverage_index(repo_root, &index)?;
-    Ok(index)
+    publish_python_derived_state_with_filter(repo_root, None, &[], |path, repo_root| {
+        repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
+    })
 }
 
+#[cfg(test)]
 pub(crate) fn rebuild_python_coverage_index_with_filter(
     repo_root: &Path,
     is_indexable: impl Fn(&Path, &Path) -> bool,
 ) -> Result<PythonCoverageIndex, String> {
-    let index = build_python_coverage_index_with_filter(repo_root, is_indexable);
-    write_python_coverage_index(repo_root, &index)?;
+    publish_python_derived_state_with_filter(repo_root, None, &[], is_indexable)
+}
+
+pub(crate) fn publish_python_derived_state_with_filter(
+    repo_root: &Path,
+    population_selectors: Option<&[String]>,
+    test_args: &[String],
+    is_indexable: impl Fn(&Path, &Path) -> bool,
+) -> Result<PythonCoverageIndex, String> {
+    let cache_root = python_coverage_cache_root(repo_root)?;
+    let _guard = rslip::lock_rslip_derived_state(&cache_root).map_err(|err| err.to_string())?;
+    let (index, entries_fingerprint) =
+        build_stable_python_coverage_index(repo_root, &cache_root, is_indexable)?;
+    storage::write_python_coverage_index_with_entries_fingerprint(
+        repo_root,
+        &index,
+        &entries_fingerprint,
+    )?;
+    if let Some(selectors) = population_selectors {
+        let identity = manifest::current_python_population_manifest_identity(repo_root, test_args)?;
+        manifest::write_python_population_manifest_with_identity_and_entries_fingerprint(
+            repo_root,
+            selectors,
+            &identity,
+            &entries_fingerprint,
+        )?;
+    }
     Ok(index)
+}
+
+fn build_stable_python_coverage_index(
+    repo_root: &Path,
+    cache_root: &Path,
+    is_indexable: impl Fn(&Path, &Path) -> bool,
+) -> Result<(PythonCoverageIndex, String), String> {
+    for _ in 0..3 {
+        let before = storage::python_entries_fingerprint(cache_root).map_err(|e| e.to_string())?;
+        let index = build_python_coverage_index_with_filter(repo_root, &is_indexable);
+        let after = storage::python_entries_fingerprint(cache_root).map_err(|e| e.to_string())?;
+        if before == after {
+            return Ok((index, after));
+        }
+    }
+    Err(
+        "error: kiss test: Python rslip entries changed during derived-state publication"
+            .to_string(),
+    )
 }
 
 pub(crate) fn select_python_source_selectors_from_index(
@@ -106,7 +151,9 @@ fn build_python_coverage_index_with_filter(
     repo_root: &Path,
     is_indexable: impl Fn(&Path, &Path) -> bool,
 ) -> PythonCoverageIndex {
-    let cache_root = python_coverage_cache_root(repo_root);
+    let Ok(cache_root) = python_coverage_cache_root(repo_root) else {
+        return BTreeMap::new();
+    };
     let mut files: PythonCoverageIndex = BTreeMap::new();
     for entry_path in storage::python_coverage_entry_paths(&cache_root) {
         let Some((selector, status, coverage)) = load_python_entry_for_index(&entry_path) else {
@@ -177,7 +224,9 @@ pub(crate) fn python_selectors_by_changed_file_line(
     if changed_rels.is_empty() {
         return BTreeMap::new();
     }
-    let cache_root = python_coverage_cache_root(repo_root);
+    let Ok(cache_root) = python_coverage_cache_root(repo_root) else {
+        return BTreeMap::new();
+    };
     let entries = load_python_entries_for_line_selection(&cache_root);
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (selector, coverage) in entries {

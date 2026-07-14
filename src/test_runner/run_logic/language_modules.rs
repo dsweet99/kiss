@@ -1,9 +1,7 @@
 use super::runners;
 use crate::test_runner::coverage_decision::{LanguageExecutor, RunContext};
+use crate::test_runner::python_coverage_index::publish_python_derived_state_with_filter;
 use crate::test_runner::python_coverage_index::repo_relative_coverage_file as python_repo_relative_coverage_file;
-use crate::test_runner::python_coverage_index::{
-    rebuild_python_coverage_index_with_filter, write_python_population_manifest_for_args,
-};
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::runners::python_backer::PythonModule;
 use crate::test_runner::runners::rust_backer::RustModule;
@@ -38,18 +36,23 @@ impl LanguageExecutor for PythonModule {
     }
 
     fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        rebuild_python_coverage_index_with_filter(&ctx.planned.repo_root, |path, repo_root| {
-            self.is_indexable_source(path, repo_root)
-        })?;
+        publish_python_derived_state_with_filter(
+            &ctx.planned.repo_root,
+            None,
+            ctx.options.extra,
+            |path, repo_root| self.is_indexable_source(path, repo_root),
+        )?;
         Ok(())
     }
 
     fn write_manifest(&self, selectors: &[String], ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        write_python_population_manifest_for_args(
+        publish_python_derived_state_with_filter(
             &ctx.planned.repo_root,
-            selectors,
+            Some(selectors),
             ctx.options.extra,
-        )
+            |path, repo_root| self.is_indexable_source(path, repo_root),
+        )?;
+        Ok(())
     }
 
     fn is_indexable_source(&self, path: &std::path::Path, repo_root: &std::path::Path) -> bool {

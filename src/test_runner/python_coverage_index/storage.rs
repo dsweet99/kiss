@@ -6,23 +6,26 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::test_runner::python_cache_path::python_rslip_cache_root;
+
 use super::{INDEX_SCHEMA_VERSION, PythonCoverageIndex};
 
-pub(crate) fn python_coverage_cache_root(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join("rslip_cache")
+pub(crate) fn python_coverage_cache_root(repo_root: &Path) -> Result<PathBuf, String> {
+    python_rslip_cache_root(repo_root)
 }
 
-pub(crate) fn python_coverage_index_path(repo_root: &Path) -> PathBuf {
-    python_coverage_cache_root(repo_root).join("index.json")
+pub(crate) fn python_coverage_index_path(repo_root: &Path) -> Result<PathBuf, String> {
+    Ok(python_coverage_cache_root(repo_root)?.join("index.json"))
 }
 
-pub(crate) fn python_population_manifest_path(repo_root: &Path) -> PathBuf {
-    python_coverage_cache_root(repo_root).join("population.json")
+pub(crate) fn python_population_manifest_path(repo_root: &Path) -> Result<PathBuf, String> {
+    Ok(python_coverage_cache_root(repo_root)?.join("population.json"))
 }
 
-pub(crate) fn write_python_coverage_index(
+pub(crate) fn write_python_coverage_index_with_entries_fingerprint(
     repo_root: &Path,
     index: &PythonCoverageIndex,
+    entries_fingerprint: &str,
 ) -> Result<(), String> {
     #[derive(Serialize)]
     struct OnDiskIndex<'a> {
@@ -32,7 +35,7 @@ pub(crate) fn write_python_coverage_index(
         files: &'a PythonCoverageIndex,
     }
 
-    let path = python_coverage_index_path(repo_root);
+    let path = python_coverage_index_path(repo_root)?;
     let parent = path
         .parent()
         .ok_or_else(|| "error: kiss test: Python coverage index path has no parent".to_string())?;
@@ -42,8 +45,7 @@ pub(crate) fn write_python_coverage_index(
     let payload = OnDiskIndex {
         schema_version: INDEX_SCHEMA_VERSION,
         source_root: normalized_python_repo_root(repo_root),
-        entries_fingerprint: python_entries_fingerprint(&python_coverage_cache_root(repo_root))
-            .map_err(|e| e.to_string())?,
+        entries_fingerprint: entries_fingerprint.to_string(),
         files: index,
     };
     serde_json::to_writer_pretty(&mut file, &payload).map_err(|e| e.to_string())?;
@@ -62,7 +64,7 @@ pub(crate) fn load_current_python_coverage_index(repo_root: &Path) -> Option<Pyt
         files: PythonCoverageIndex,
     }
 
-    let bytes = fs::read(python_coverage_index_path(repo_root)).ok()?;
+    let bytes = fs::read(python_coverage_index_path(repo_root).ok()?).ok()?;
     let index: OnDiskIndex = serde_json::from_slice(&bytes).ok()?;
     if index.schema_version != INDEX_SCHEMA_VERSION {
         return None;
@@ -71,7 +73,7 @@ pub(crate) fn load_current_python_coverage_index(repo_root: &Path) -> Option<Pyt
         return None;
     }
     let current_fingerprint =
-        python_entries_fingerprint(&python_coverage_cache_root(repo_root)).ok()?;
+        python_entries_fingerprint(&python_coverage_cache_root(repo_root).ok()?).ok()?;
     (index.entries_fingerprint == current_fingerprint).then_some(index.files)
 }
 
