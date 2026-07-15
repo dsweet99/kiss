@@ -1,4 +1,5 @@
 use super::cli_integration::create_god_class_file;
+use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -11,6 +12,7 @@ fn kiss_binary() -> Command {
 fn cli_with_lang_filter_python() {
     let tmp = TempDir::new().unwrap();
     create_god_class_file(tmp.path());
+    seed_python_runtime_coverage(tmp.path(), &[("tests/test_god.py::test_god", vec![])]);
     let output = kiss_binary()
         .arg("check")
         .arg(tmp.path())

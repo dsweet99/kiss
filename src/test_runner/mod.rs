@@ -1,3 +1,5 @@
+pub(crate) mod check_line_coverage;
+pub(crate) mod check_runtime_refresh;
 mod coverage_decision;
 pub(crate) mod last_status;
 mod line_selection;

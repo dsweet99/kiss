@@ -236,9 +236,7 @@ mod tests {
     use std::collections::HashSet;
     use std::process::{Command, Stdio};
 
-    use crate::batch_process_tree::{
-        BatchProcessTreeGuard, ProcessGroupIdentity, record_child_process_group,
-    };
+    use crate::batch_process_tree::{BatchProcessTreeGuard, record_child_process_group};
     use crate::batch_shim::write_shim_start_metadata;
 
     use super::{ingest_live_shim_identities, wait_child_with_interruption};
@@ -254,7 +252,7 @@ mod tests {
             command.stdin(Stdio::null());
             command.stdout(Stdio::null());
             command.stderr(Stdio::null());
-            let mut child = guard
+            let child = guard
                 .spawn_batch_command(&mut command)
                 .expect("spawn child");
             record_child_process_group(guard.registry().as_ref(), &child);

@@ -123,7 +123,7 @@ fn relevant_rslip_env(env_keys: &[&str]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn detect_rslip_versions(repo_root: &Path) -> Result<(String, String), String> {
+pub(crate) fn detect_rslip_versions(repo_root: &Path) -> Result<(String, String), String> {
     let python = PathBuf::from("python");
     let python_version = command_stdout(
         &python,

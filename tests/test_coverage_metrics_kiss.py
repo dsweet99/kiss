@@ -16,8 +16,8 @@ def test_run_kiss_check_all_parses_violations(tmp_path: Path, monkeypatch: pytes
     repo = tmp_path / "repo"
     repo.mkdir()
     violation = (
-        "VIOLATION:test_coverage:pkg/a.py:10:foo: 42% covered. "
-        "Add test coverage for this code unit."
+        "VIOLATION:test_coverage:pkg/a.py:10:<file>: 42% covered. "
+        "Add test coverage for this file."
     )
 
     def fake_run(cmd, **kwargs):

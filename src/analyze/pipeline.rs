@@ -1,9 +1,10 @@
 use crate::analyze::coverage::{
     CoverageOutputOpts, GraphRefPair, PyRsTestCoverage, collect_coverage_viols,
+    collect_line_coverage_viols, merge_coverage_results,
 };
 use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
-use crate::analyze::focus::FocusFilter;
-use crate::analyze::focus::filter_viols_by_focus;
+use crate::analyze::focus::{FocusFilter, filter_viols_by_focus};
+use crate::analyze::line_coverage::{LineCoverageRecord, RuntimeCoverageSnapshot};
 use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
 use crate::analyze::parallel::{ParallelPyIn, run_parallel_py_analysis, run_rust_analysis};
 use crate::analyze::params::RunAnalyzeUncached;
@@ -11,7 +12,7 @@ use crate::analyze::print::log_parse_timing;
 use crate::analyze_parse::{ParseAllTimedParams, ParseResult, parse_all_timed};
 use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::cli_output::file_coverage_map;
-use kiss::{DependencyGraph, DuplicateCluster, MetricStats, ParsedFile, ParsedRustFile};
+use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -24,11 +25,13 @@ pub(crate) struct FullPipelineResult {
     pub graph_viols_all: Vec<kiss::Violation>,
     pub cov_viols: Vec<kiss::Violation>,
     pub py_cov: kiss::TestRefAnalysis,
-    pub py_dups_all: Vec<DuplicateCluster>,
-    pub rs_dups_all: Vec<DuplicateCluster>,
-    pub py_stats: MetricStats,
-    pub rs_stats: MetricStats,
+    pub py_dups_all: Vec<kiss::DuplicateCluster>,
+    pub rs_dups_all: Vec<kiss::DuplicateCluster>,
+    pub py_stats: kiss::MetricStats,
+    pub rs_stats: kiss::MetricStats,
     pub coverage_cache_lists: Option<(Vec<CachedCoverageItem>, Vec<CachedCoverageItem>)>,
+    pub runtime_coverage_snapshot: Option<RuntimeCoverageSnapshot>,
+    pub runtime_line_coverage: Option<Vec<LineCoverageRecord>>,
     pub timings: (Instant, Instant, Instant),
 }
 
@@ -37,6 +40,8 @@ pub(crate) struct FullPipelineInput<'a> {
     pub py_files: &'a [PathBuf],
     pub rs_files: &'a [PathBuf],
     pub focus: &'a FocusFilter,
+    pub runtime_coverage_snapshot: Option<RuntimeCoverageSnapshot>,
+    pub runtime_line_coverage: Option<Vec<LineCoverageRecord>>,
     pub t0: Instant,
     pub t1: Instant,
     pub t2: Instant,
@@ -49,9 +54,9 @@ fn build_metric_stats<T, FCollect, FPath>(
     unreferenced: Vec<(PathBuf, String, usize)>,
     path_of: FPath,
     init: FCollect,
-) -> MetricStats
+) -> kiss::MetricStats
 where
-    FCollect: Fn(&[T]) -> MetricStats,
+    FCollect: Fn(&[T]) -> kiss::MetricStats,
     FPath: Fn(&T) -> &PathBuf,
 {
     let mut stats = init(parsed);
@@ -71,7 +76,7 @@ fn build_python_metric_stats(
     parsed: &[ParsedFile],
     graph: Option<&DependencyGraph>,
     coverage: &kiss::TestRefAnalysis,
-) -> MetricStats {
+) -> kiss::MetricStats {
     let defs = coverage
         .definitions
         .iter()
@@ -90,7 +95,7 @@ fn build_python_metric_stats(
         |item| &item.path,
         |files| {
             let refs: Vec<_> = files.iter().collect();
-            MetricStats::collect(&refs)
+            kiss::MetricStats::collect(&refs)
         },
     )
 }
@@ -99,7 +104,7 @@ fn build_rust_metric_stats(
     parsed: &[ParsedRustFile],
     graph: Option<&DependencyGraph>,
     coverage: &kiss::RustTestRefAnalysis,
-) -> MetricStats {
+) -> kiss::MetricStats {
     let defs = coverage
         .definitions
         .iter()
@@ -118,7 +123,7 @@ fn build_rust_metric_stats(
         |item| &item.path,
         |files| {
             let refs: Vec<_> = files.iter().collect();
-            MetricStats::collect_rust(&refs)
+            kiss::MetricStats::collect_rust(&refs)
         },
     )
 }
@@ -136,6 +141,8 @@ pub(crate) fn run_full_pipeline(in_: FullPipelineInput<'_>) -> FullPipelineResul
         focus: in_.focus,
         result,
         parse_timing,
+        runtime_coverage_snapshot: in_.runtime_coverage_snapshot,
+        runtime_line_coverage: in_.runtime_line_coverage,
         timings: (in_.t0, in_.t1, in_.t2),
     })
 }
@@ -145,12 +152,16 @@ struct FullPipelineWithParseInput<'a> {
     focus: &'a FocusFilter,
     result: ParseResult,
     parse_timing: String,
+    runtime_coverage_snapshot: Option<RuntimeCoverageSnapshot>,
+    runtime_line_coverage: Option<Vec<LineCoverageRecord>>,
     timings: (Instant, Instant, Instant),
 }
 
 fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipelineResult {
     let opts = in_.opts;
     let focus = in_.focus;
+    let runtime_coverage_snapshot = in_.runtime_coverage_snapshot;
+    let runtime_line_coverage = in_.runtime_line_coverage;
     let timings = in_.timings;
     log_parse_timing(opts.show_timing, &in_.parse_timing);
     let result = in_.result;
@@ -172,6 +183,11 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
 
     let (cov_viols, coverage_cache_lists) = if opts.show_timing {
         (Vec::new(), None)
+    } else if let Some(records) = runtime_line_coverage.as_ref() {
+        (
+            collect_line_coverage_viols(records, focus, opts.bypass_gate),
+            Some(merge_coverage_results(py_cov.clone(), rs.cov.clone())),
+        )
     } else {
         let (cov_viols, cache_lists) = collect_coverage_viols(
             PyRsTestCoverage {
@@ -207,6 +223,8 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
         py_stats,
         rs_stats,
         coverage_cache_lists,
+        runtime_coverage_snapshot,
+        runtime_line_coverage,
         timings,
     }
 }
@@ -217,6 +235,8 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
         py_files,
         rs_files,
         focus,
+        runtime_coverage_snapshot,
+        runtime_line_coverage,
         t0,
         t1,
     } = in_;
@@ -228,7 +248,19 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
         show_timing: opts.show_timing,
     });
 
-    if !opts.bypass_gate && opts.gate_config.test_coverage_threshold > 0 {
+    if !opts.bypass_gate
+        && opts.gate_config.test_coverage_threshold > 0
+        && let Some(records) = runtime_line_coverage.as_ref()
+    {
+        if let Some(early) = crate::analyze::coverage_gate::evaluate_line_gate(
+            records,
+            focus,
+            opts.gate_config.test_coverage_threshold,
+        ) {
+            log_parse_timing(opts.show_timing, &parse_timing);
+            return early;
+        }
+    } else if !opts.bypass_gate && opts.gate_config.test_coverage_threshold > 0 {
         let py_refs = result.py_parsed.iter().collect::<Vec<_>>();
         let rs_refs = result.rs_parsed.iter().collect::<Vec<_>>();
         let py_graph = crate::analyze::graph_api::build_py_graph(&result.py_parsed);
@@ -253,6 +285,8 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
         focus,
         result,
         parse_timing,
+        runtime_coverage_snapshot,
+        runtime_line_coverage,
         timings: (t0, t1, Instant::now()),
     });
 
@@ -268,6 +302,8 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
             py_cov: pipeline.py_cov,
             cov_viols: pipeline.cov_viols,
             coverage_cache_lists: pipeline.coverage_cache_lists,
+            runtime_coverage_snapshot: pipeline.runtime_coverage_snapshot,
+            runtime_line_coverage: pipeline.runtime_line_coverage,
             py_stats: Some(pipeline.py_stats),
             rs_stats: Some(pipeline.rs_stats),
             rs: pipeline.rs,

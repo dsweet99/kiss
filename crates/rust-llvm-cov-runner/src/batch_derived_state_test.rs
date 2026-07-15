@@ -149,12 +149,12 @@ fn read_population_and_index_loaders_reject_invalid_json() {
     let counters = DerivedPublishCounters::default();
     assert_eq!(counters.cache_pruned_entries, 0);
 
-    let index = crate::batch_derived_index::OnDiskIndex {
+    let index = crate::batch_derived_index_types::OnDiskIndex {
         schema_version: INDEX_SCHEMA_VERSION.to_string(),
         generation_fingerprint: "gen".to_string(),
         entries_fingerprint: "entries".to_string(),
     };
-    let manifest = crate::batch_derived_index::PopulationManifestOnDisk {
+    let manifest = crate::batch_derived_index_types::PopulationManifestOnDisk {
         schema_version: POPULATION_SCHEMA_VERSION.to_string(),
         generation_fingerprint: "gen".to_string(),
         input_fingerprint: "input".to_string(),
@@ -191,6 +191,7 @@ fn write_minimal_derived_repo(repo: &Path) {
     std::fs::write(repo.join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
 }
 
+#[allow(dead_code)]
 fn read_index_json(cache_root: &Path) -> serde_json::Value {
     serde_json::from_slice(&std::fs::read(cache_root.join("index.json")).unwrap()).unwrap()
 }

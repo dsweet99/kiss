@@ -28,7 +28,9 @@ pub(crate) fn test_args_request_nocapture(test_args: &[String]) -> bool {
 }
 
 pub(crate) fn nextest_test_threads(req: &RustCoverageBatchRequest) -> String {
-    if test_args_request_nocapture(&req.test_args) {
+    if test_args_request_nocapture(&req.test_args)
+        || std::env::var_os("KISS_CHECK_RUNTIME_REFRESH_ACTIVE").is_some()
+    {
         "1".to_string()
     } else {
         req.jobs.to_string()

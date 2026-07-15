@@ -123,6 +123,20 @@ pub(crate) fn stored_python_universe_selectors(
     test_args: &[String],
     env_keys: &[&str],
 ) -> Option<Vec<String>> {
+    stored_python_universe_population(repo_root, test_args, env_keys)
+        .map(|population| population.selectors)
+}
+
+pub(crate) struct StoredPythonPopulation {
+    pub(crate) selectors: Vec<String>,
+    pub(crate) identity: String,
+}
+
+pub(crate) fn stored_python_universe_population(
+    repo_root: &Path,
+    test_args: &[String],
+    env_keys: &[&str],
+) -> Option<StoredPythonPopulation> {
     let identity =
         current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
             .ok()?;
@@ -133,10 +147,66 @@ pub(crate) fn stored_python_universe_selectors(
         && manifest.input_fingerprint == input_fingerprint
         && manifest.entries_fingerprint == entries_fingerprint
     {
-        Some(manifest.selectors.clone())
+        valid_stored_selectors(&manifest.selectors)?;
+        let identity = stable_population_identity(&manifest);
+        Some(StoredPythonPopulation {
+            selectors: manifest.selectors.clone(),
+            identity,
+        })
     } else {
         None
     }
+}
+
+pub(crate) fn python_population_environment_mismatch(
+    repo_root: &Path,
+    test_args: &[String],
+    env_keys: &[&str],
+) -> Option<(BTreeMap<String, String>, BTreeMap<String, String>)> {
+    let identity =
+        current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
+            .ok()?;
+    let manifest = read_python_population_manifest(repo_root)?;
+    (manifest.env != identity.env).then_some((manifest.env, identity.env))
+}
+
+fn valid_stored_selectors(selectors: &[String]) -> Option<()> {
+    selectors
+        .windows(2)
+        .all(|pair| pair[0] < pair[1])
+        .then_some(())
+}
+
+fn stable_population_identity(manifest: &PythonPopulationManifest) -> String {
+    let mut h =
+        super::storage::python_fnv1a64(0xcbf2_9ce4_8422_2325, b"kiss-python-runtime-population-v1");
+    for value in [
+        manifest.schema_version.as_str(),
+        manifest.cache_schema_version.as_str(),
+        manifest.source_root.as_str(),
+        manifest.selector_discovery_version.as_str(),
+        manifest.python_version.as_str(),
+        manifest.pytest_version.as_str(),
+        manifest.input_fingerprint.as_str(),
+    ] {
+        h = super::storage::python_fnv1a64(h, value.as_bytes());
+        h = super::storage::python_fnv1a64(h, &[0]);
+    }
+    for arg in &manifest.pytest_args {
+        h = super::storage::python_fnv1a64(h, arg.as_bytes());
+        h = super::storage::python_fnv1a64(h, &[0]);
+    }
+    for (key, value) in &manifest.env {
+        h = super::storage::python_fnv1a64(h, key.as_bytes());
+        h = super::storage::python_fnv1a64(h, b"=");
+        h = super::storage::python_fnv1a64(h, value.as_bytes());
+        h = super::storage::python_fnv1a64(h, &[0]);
+    }
+    for selector in &manifest.selectors {
+        h = super::storage::python_fnv1a64(h, selector.as_bytes());
+        h = super::storage::python_fnv1a64(h, &[0]);
+    }
+    format!("{h:016x}")
 }
 
 fn current_python_entries_fingerprint(repo_root: &Path) -> Option<String> {

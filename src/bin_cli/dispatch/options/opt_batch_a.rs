@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use kiss::GateConfig;
 use kiss::Language;
+use kiss::TestSectionConfig;
 
 pub(crate) struct TriConfig<'a> {
     pub py: &'a kiss::Config,
@@ -15,7 +16,9 @@ pub(crate) struct CheckDispatchOptions<'a> {
     pub bypass_gate: bool,
     pub ignore: Vec<String>,
     pub timing: bool,
+    pub jobs: Option<usize>,
     pub cfg: &'a TriConfig<'a>,
+    pub test_cfg: &'a TestSectionConfig,
 }
 
 pub(crate) struct StatsDispatchOptions<'a> {

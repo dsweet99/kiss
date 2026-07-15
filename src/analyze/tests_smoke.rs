@@ -35,6 +35,8 @@ fn test_structs() {
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
+        coverage_source: crate::analyze::CoverageSource::StaticReferences,
+        runtime_coverage_jobs: 1,
     };
     let _ = ParseResult {
         py_parsed: vec![],
@@ -136,6 +138,8 @@ fn test_run_analyze_no_files() {
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
+        coverage_source: crate::analyze::CoverageSource::StaticReferences,
+        runtime_coverage_jobs: 1,
     };
     assert!(run_analyze(&opts));
 

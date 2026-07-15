@@ -39,6 +39,16 @@ pub fn parse_language(s: &str) -> Result<Language, String> {
     }
 }
 
+pub fn parse_positive_usize(s: &str) -> Result<usize, String> {
+    let value = s
+        .parse::<usize>()
+        .map_err(|_| format!("expected a positive integer, got '{s}'"))?;
+    if value == 0 {
+        return Err("expected a positive integer, got '0'".to_string());
+    }
+    Ok(value)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TestCommandAction {
     Run(TestChangeMode),
@@ -83,6 +93,9 @@ pub enum Commands {
         /// Show timing breakdown for performance analysis
         #[arg(long)]
         timing: bool,
+        /// Maximum test jobs when refreshing runtime coverage
+        #[arg(short = 'j', long, value_name = "JOBS", value_parser = parse_positive_usize)]
+        jobs: Option<usize>,
     },
     /// Show metric statistics for codebase
     Stats {
@@ -281,6 +294,17 @@ mod coverage_witness {
         let _ = Cli::witness();
         let _ = Commands::witness();
         assert!(parse_language("python").is_ok());
+    }
+
+    #[test]
+    fn check_accepts_jobs_override() {
+        let cli = Cli::parse_from(["kiss", "check", "-j", "7"]);
+        assert!(matches!(cli.command, Commands::Check { jobs: Some(7), .. }));
+    }
+
+    #[test]
+    fn check_rejects_zero_jobs_override() {
+        assert!(Cli::try_parse_from(["kiss", "check", "-j", "0"]).is_err());
     }
 
     #[test]

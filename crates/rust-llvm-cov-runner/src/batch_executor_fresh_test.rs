@@ -1,11 +1,9 @@
-use super::fresh_test_helpers::{
-    execute_rust_coverage_batch_fresh_with_fake, fake_runner, tools, write_shim_metadata,
-};
+use super::fresh_test_helpers::{execute_rust_coverage_batch_fresh_with_fake, fake_runner, tools};
 use super::*;
 use crate::RustCovCacheStatus;
 use crate::RustLlvmCovError;
 use crate::batch_fingerprint::batch_identity;
-use crate::batch_plan::{RustCoverageBatchRequest, build_rust_coverage_batch_plan};
+use crate::batch_plan::build_rust_coverage_batch_plan;
 use crate::batch_result::RustCoverageBatchResult;
 use crate::batch_run::{
     BatchSubprocessRunner, BuildIdentityFile, BuildIdentityPreparation, build_identity_input,

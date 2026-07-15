@@ -165,7 +165,7 @@ pub static RULES: &[Rule] = &[
     },
     Rule {
         category: RuleCategory::Testing,
-        template: "Maintain ≥ {}% test reference coverage (static check: name must appear in a test file)",
+        template: "Maintain ≥ {}% cached runtime line coverage",
         get_threshold: |_, g| g.test_coverage_threshold,
         applicability: Applicability::Both,
     },

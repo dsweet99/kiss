@@ -18,6 +18,8 @@ _events = sys.monitoring.events.LINE
 
 
 def _in_source_root(filename):
+    if not filename or filename.startswith("<"):
+        return False
     try:
         path = os.path.abspath(filename)
         return path == _source_root or path.startswith(_source_root + os.sep)
@@ -58,5 +60,6 @@ mod tests {
     fn runtime_shim_uses_sys_monitoring_and_disable() {
         assert!(PYTHON_RUNTIME.contains("sys.monitoring.set_events"));
         assert!(PYTHON_RUNTIME.contains("sys.monitoring.DISABLE"));
+        assert!(PYTHON_RUNTIME.contains("filename.startswith(\"<\")"));
     }
 }

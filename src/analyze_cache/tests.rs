@@ -28,6 +28,8 @@ fn empty_cache(fp: &str) -> FullCheckCache {
         rs_duplicates: Vec::new(),
         definitions: Vec::new(),
         unreferenced: Vec::new(),
+        runtime_coverage_identity: None,
+        runtime_line_coverage: Vec::new(),
         file_content_digests: Vec::new(),
     }
 }
@@ -42,6 +44,8 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
         violations: &[],
         graph_viols_all: &[],
         coverage_violations: &[],
+        runtime_coverage_identity: None,
+        runtime_line_coverage: Vec::new(),
         py_graph: None,
         rs_graph: None,
         py_stats: None,

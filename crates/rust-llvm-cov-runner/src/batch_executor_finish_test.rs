@@ -106,6 +106,56 @@ fn finish_fresh_batch_after_export_stores_completed_outcomes() {
 }
 
 #[test]
+fn population_finish_rejects_unmatched_selectors_before_storing() {
+    let repo = batch_executor_fixture_repo();
+    let mut req = batch_executor_request(repo.path());
+    req.population_publication_selectors = Some(req.logical_selectors.clone());
+    let tools = witness_batch_tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let instances = vec![crate::batch_aggregate::InstanceResult {
+        full_name: "pkg::bin$alpha".to_string(),
+        passed: true,
+        exit_code: Some(0),
+        duration: Duration::from_millis(1),
+        stdout: None,
+        stderr: None,
+        coverage: RustLineCoverage {
+            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+        },
+    }];
+    let result = finish_fresh_batch_after_export(
+        &req,
+        &tools,
+        &identity,
+        false,
+        instances,
+        vec![(
+            "pkg::bin$alpha".to_string(),
+            RustLineCoverage {
+                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+            },
+        )],
+        ExportCounters {
+            export_jobs: 1,
+            max_active_exports: 1,
+            max_objects_per_export: 1,
+        },
+        FreshBatchFinishContext::witness(),
+    )
+    .expect("finish should return a batch error result");
+
+    assert!(result.completed.is_empty());
+    assert!(matches!(
+        result.batch_error,
+        Some(crate::RustLlvmCovError::InvalidRequest(ref message))
+            if message.contains("did not execute 1 requested Rust selector")
+    ));
+    assert_eq!(result.counters.unmatched_selectors, 1);
+    let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
+    assert!(load_rust_cov_cache_entry(&req.cache_root, &fingerprint).is_none());
+}
+
+#[test]
 fn reject_missing_terminal_events_and_instance_profile_path_are_exercised() {
     let repo = batch_executor_fixture_repo();
     let req = batch_executor_request(repo.path());

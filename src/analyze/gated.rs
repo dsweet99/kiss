@@ -136,6 +136,8 @@ pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
             py_cov,
             cov_viols: Vec::new(),
             coverage_cache_lists: None,
+            runtime_coverage_snapshot: None,
+            runtime_line_coverage: None,
             py_stats: None,
             rs_stats: None,
             rs,
@@ -184,6 +186,8 @@ mod gated_tests {
                 ignore_prefixes: &[],
                 show_timing: false,
                 suppress_final_status: false,
+                coverage_source: crate::analyze::options::CoverageSource::StaticReferences,
+                runtime_coverage_jobs: 1,
             }
         }
 

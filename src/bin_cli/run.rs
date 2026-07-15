@@ -31,7 +31,13 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
     ensure_default_config_exists();
     let (py_config, rs_config) = load_configs(cli.config.as_ref(), cli.defaults);
     let gate_config = load_gate_config(cli.config.as_ref(), cli.defaults);
-    let test_section = load_test_section_config(cli.config.as_ref(), cli.defaults);
+    let test_section = match load_test_section_config(cli.config.as_ref(), cli.defaults) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("Error: {err}");
+            return 2;
+        }
+    };
     dispatch(cli, &py_config, &rs_config, &gate_config, &test_section)
 }
 
@@ -140,6 +146,30 @@ mod run_coverage {
                 .and_then(|ext| ext.to_str())
                 == Some("json")
         }));
+    }
+
+    #[test]
+    fn run_with_cli_rejects_invalid_test_num_jobs_config() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join(".kissconfig"),
+            "[test]\nnum_jobs = 0\n[gate]\ntest_coverage_threshold = 0\n",
+        )
+        .unwrap();
+        fs::write(tmp.path().join("sample.py"), "def f():\n    return 1\n").unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let code = run_with_cli(Cli {
+            config: None,
+            lang: None,
+            defaults: false,
+            command: Commands::Rules,
+        });
+
+        std::env::set_current_dir(original).unwrap();
+        assert_eq!(code, 2);
     }
 
     #[cfg(unix)]

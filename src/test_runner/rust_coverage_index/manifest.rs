@@ -221,7 +221,7 @@ fn current_rust_population_manifest_identity_with_env_keys(
         rustc_version: command_stdout(&rustc, &["-Vv"], repo_root)?,
         cargo_version: command_stdout(&cargo, &["--version"], repo_root)?,
         cargo_llvm_cov_version: command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?,
-        cargo_args: Vec::new(),
+        cargo_args: vec!["--workspace".to_string()],
         test_args: test_args.to_vec(),
         env: relevant_rust_coverage_env(env_keys),
     })

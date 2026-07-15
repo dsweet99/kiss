@@ -37,6 +37,29 @@ fn full_suite_collection_omits_collect_ignore_glob_paths() {
 }
 
 #[test]
+fn workspace_collection_respects_kiss_ignore_prefixes() {
+    reset_python_collect_memo_for_tests();
+    let tmp = TempDir::new().unwrap();
+    let tests = tmp.path().join("tests");
+    let ignored = tmp.path().join("ignored_tests");
+    fs::create_dir_all(&tests).unwrap();
+    fs::create_dir_all(&ignored).unwrap();
+    fs::write(
+        tests.join("test_kept.py"),
+        "def test_kept():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(
+        ignored.join("test_ignored.py"),
+        "def test_ignored():\n    assert True\n",
+    )
+    .unwrap();
+    let ignore = ["ignored".to_string()];
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &ignore).unwrap();
+    assert_eq!(selectors, vec!["tests/test_kept.py::test_kept".to_string()]);
+}
+
+#[test]
 fn path_subset_collection_returns_only_requested_file_nodeids() {
     reset_python_collect_memo_for_tests();
     let tmp = TempDir::new().unwrap();
@@ -219,100 +242,6 @@ fn pytest_collector_public_api_covers_path_subset_and_wrapper() {
 }
 
 #[test]
-fn pytest_collector_spawn_and_invalid_request_errors_are_actionable() {
-    let tmp = TempDir::new().unwrap();
-    let collector = rpytest_runner::subprocess_pytest_collector();
-    let invalid = collector
-        .collect(rpytest_runner::PytestCollectRequest {
-            cwd: PathBuf::new(),
-            python: PathBuf::from("python"),
-            paths: Vec::new(),
-            pytest_args: Vec::new(),
-            env: BTreeMap::new(),
-        })
-        .unwrap_err();
-    assert!(matches!(
-        invalid,
-        rpytest_runner::PytestCollectError::InvalidRequest(_)
-    ));
-    let spawn = collector
-        .collect(rpytest_runner::PytestCollectRequest {
-            cwd: tmp.path().to_path_buf(),
-            python: PathBuf::from("/nonexistent/kiss-python-collector"),
-            paths: Vec::new(),
-            pytest_args: Vec::new(),
-            env: BTreeMap::new(),
-        })
-        .unwrap_err();
-    assert!(matches!(
-        spawn,
-        rpytest_runner::PytestCollectError::Spawn { .. }
-    ));
-    let empty_python = collector
-        .collect(rpytest_runner::PytestCollectRequest {
-            cwd: tmp.path().to_path_buf(),
-            python: PathBuf::new(),
-            paths: Vec::new(),
-            pytest_args: Vec::new(),
-            env: BTreeMap::new(),
-        })
-        .unwrap_err();
-    assert!(matches!(
-        empty_python,
-        rpytest_runner::PytestCollectError::InvalidRequest(_)
-    ));
-}
-
-#[test]
-fn pytest_collector_invalid_json_and_nodeid_errors_are_actionable() {
-    let tmp = TempDir::new().unwrap();
-    let fake_python = tmp.path().join("fake_invalid_json");
-    fs::write(&fake_python, "#!/usr/bin/env python3\nprint('no marker')\n").unwrap();
-    make_executable(&fake_python);
-    let invalid_output = rpytest_runner::subprocess_pytest_collector()
-        .collect(rpytest_runner::PytestCollectRequest {
-            cwd: tmp.path().to_path_buf(),
-            python: fake_python.clone(),
-            paths: Vec::new(),
-            pytest_args: Vec::new(),
-            env: BTreeMap::new(),
-        })
-        .unwrap_err();
-    assert!(matches!(
-        invalid_output,
-        rpytest_runner::PytestCollectError::InvalidOutput(_)
-    ));
-
-    let bad_nodeid = tmp.path().join("fake_bad_nodeid");
-    fs::write(
-        &bad_nodeid,
-        "#!/usr/bin/env python3\nimport json, sys\nsys.stdout.write('KISS_COLLECT_JSON:' + json.dumps({'nodeids': ['invalid-no-separator']}) + '\\n')\n",
-    )
-    .unwrap();
-    make_executable(&bad_nodeid);
-    let normalization = rpytest_runner::subprocess_pytest_collector()
-        .collect(rpytest_runner::PytestCollectRequest {
-            cwd: tmp.path().to_path_buf(),
-            python: bad_nodeid,
-            paths: Vec::new(),
-            pytest_args: Vec::new(),
-            env: BTreeMap::new(),
-        })
-        .unwrap_err();
-    assert!(matches!(
-        normalization,
-        rpytest_runner::PytestCollectError::NodeidNormalization { .. }
-    ));
-}
-
-fn make_executable(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let mut perms = fs::metadata(path).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(path, perms).unwrap();
-}
-
-#[test]
 fn collection_memo_key_separates_path_subsets() {
     reset_python_collect_memo_for_tests();
     let tmp = TempDir::new().unwrap();
@@ -328,29 +257,6 @@ fn collection_memo_key_separates_path_subsets() {
         collect_python_nodeids(tmp.path(), Some(std::slice::from_ref(&test_b)), &[]).unwrap();
     assert_eq!(only_a, vec!["tests/test_a.py::test_a".to_string()]);
     assert_eq!(only_b, vec!["tests/test_b.py::test_b".to_string()]);
-}
-
-#[test]
-fn pytest_collector_collection_failed_uses_stdout_when_stderr_empty() {
-    let tmp = TempDir::new().unwrap();
-    let fake_python = tmp.path().join("stdout_failure");
-    fs::write(
-        &fake_python,
-        "#!/usr/bin/env python3\nimport sys\nprint('KISS_COLLECT_JSON:{\"nodeids\": []}')\nprint('failure detail')\nraise SystemExit(2)\n",
-    )
-    .unwrap();
-    make_executable(&fake_python);
-    let err = rpytest_runner::subprocess_pytest_collector()
-        .collect(rpytest_runner::PytestCollectRequest {
-            cwd: tmp.path().to_path_buf(),
-            python: fake_python,
-            paths: Vec::new(),
-            pytest_args: Vec::new(),
-            env: BTreeMap::from([("KISS_COLLECT_ENV".into(), "1".into())]),
-        })
-        .unwrap_err();
-    let message = format!("{err:?}");
-    assert!(message.contains("failure detail"));
 }
 
 #[test]

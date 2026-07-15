@@ -6,9 +6,11 @@ min_similarity = 0.9
 duplication_enabled = true
 orphan_module_enabled = true
 
+[test]
 # Optional trunk name for `kiss test` main-mode resolution (see `kiss test --help`).
-# [test]
 # main_branch = "main"
+# Maximum jobs used to refresh runtime coverage during `kiss check`.
+num_jobs = 4
 
 [python]
 boolean_parameters = 1

@@ -13,6 +13,7 @@ mod finalize_types;
 mod focus;
 mod gated;
 mod graph_api;
+pub(crate) mod line_coverage;
 mod metrics_global;
 mod options;
 mod parallel;
@@ -23,12 +24,14 @@ mod print;
 // `pub use` items are re-exports for `crate::analyze::*`; the RHS is otherwise unused in this module.
 #[allow(unused_imports)]
 pub(crate) use cache::{FullCacheStoreInput, maybe_store_full_cache};
+pub(crate) use coverage::collect_line_coverage_viols;
 #[allow(unused_imports)]
 pub use coverage::compute_test_coverage_from_lists;
 #[allow(unused_imports)] // Public API surface (`crate::analyze::check_coverage_gate`).
 pub use coverage_gate::check_coverage_gate;
 #[allow(unused_imports)] // Public API surface for cached-coverage-gate checks.
 pub(crate) use coverage_gate::evaluate_cached_gate;
+pub(crate) use coverage_gate::evaluate_line_gate;
 pub(crate) use coverage_gate::is_coverage_report_target;
 #[allow(unused_imports)]
 pub use coverage_types::CheckCoverageGateParams;
@@ -47,7 +50,7 @@ pub use graph_api::{
     build_rs_graph_from_files, graph_for_path,
 };
 pub use metrics_global::{GlobalMetricsInput, compute_global_metrics};
-pub use options::{AnalyzeOptions, AnalyzeResult};
+pub use options::{AnalyzeOptions, AnalyzeResult, CoverageSource};
 #[allow(unused_imports)]
 pub(crate) use pipeline::{FullPipelineInput, FullPipelineResult, run_full_pipeline};
 #[cfg(test)]

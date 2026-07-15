@@ -47,13 +47,13 @@ pub fn run_init_command(repo_path: &Path) -> i32 {
 pub fn load_test_section_config(
     config_path: Option<&PathBuf>,
     use_defaults: bool,
-) -> kiss::TestSectionConfig {
+) -> Result<kiss::TestSectionConfig, kiss::ConfigError> {
     if use_defaults {
-        kiss::TestSectionConfig::default()
+        Ok(kiss::TestSectionConfig::default())
     } else if let Some(path) = config_path {
-        kiss::TestSectionConfig::load_from(path)
+        kiss::TestSectionConfig::try_load_from(path)
     } else {
-        kiss::TestSectionConfig::load()
+        kiss::TestSectionConfig::try_load()
     }
 }
 
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn test_load_test_section_config_defaults() {
-        let cfg = load_test_section_config(None, true);
+        let cfg = load_test_section_config(None, true).unwrap();
 
         assert_eq!(
             cfg.main_branch,

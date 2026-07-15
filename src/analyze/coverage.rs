@@ -11,6 +11,7 @@ pub(crate) use crate::analyze::coverage_types::{CoverageViolationSpec, PyRsTestC
 use crate::analyze::coverage_weighted::merge_weighted_file_pcts;
 use crate::analyze::focus::{FocusFilter, is_focus_file};
 use crate::analyze::graph_api::graph_for_path;
+use crate::analyze::line_coverage::LineCoverageRecord;
 
 /// Graph pair for coverage / orphan resolution.
 #[derive(Clone, Copy)]
@@ -273,6 +274,33 @@ pub(crate) fn collect_coverage_viols(
     } else {
         (Vec::new(), cache_lists)
     }
+}
+
+pub(crate) fn collect_line_coverage_viols(
+    records: &[LineCoverageRecord],
+    focus: &FocusFilter,
+    bypass_gate: bool,
+) -> Vec<Violation> {
+    if !bypass_gate {
+        return Vec::new();
+    }
+    records
+        .iter()
+        .filter(|record| is_focus_file(&record.file, focus) && record.percent < 100)
+        .map(|record| Violation {
+            file: record.file.clone(),
+            line: record.first_uncovered_line.unwrap_or(1),
+            unit_name: "<file>".to_string(),
+            metric: "test_coverage".to_string(),
+            value: record.percent,
+            threshold: 100,
+            message: format!(
+                "{}% covered. Add test coverage for this file.",
+                record.percent
+            ),
+            suggestion: String::new(),
+        })
+        .collect()
 }
 
 #[cfg(test)]

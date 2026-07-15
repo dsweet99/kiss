@@ -57,7 +57,17 @@ fn two_process_same_host_cold_cache_contention_executes_once_and_reuses_hit() {
 }
 
 fn spawn_two_process_contention_child(exe: &Path, root: &Path, child_id: &str) -> Child {
-    Command::new(exe)
+    let mut command = Command::new(exe);
+    configure_two_process_contention_child(&mut command, root, child_id);
+    command.spawn().unwrap()
+}
+
+fn configure_two_process_contention_child<'a>(
+    command: &'a mut Command,
+    root: &Path,
+    child_id: &str,
+) -> &'a mut Command {
+    command
         .arg("--exact")
         .arg(
             "batch_process_test::two_process_same_host_cold_cache_contention_executes_once_and_reuses_hit",
@@ -65,8 +75,24 @@ fn spawn_two_process_contention_child(exe: &Path, root: &Path, child_id: &str) -
         .arg("--nocapture")
         .env("RSLIP_TWO_PROCESS_CONTENTION_CHILD", child_id)
         .env("RSLIP_TWO_PROCESS_CONTENTION_ROOT", root)
-        .spawn()
-        .unwrap()
+        // Both children would otherwise write the parent test's profile
+        // concurrently, producing an invalid profraw file.
+        .env_remove("LLVM_PROFILE_FILE")
+}
+
+#[test]
+fn contention_children_do_not_inherit_the_parent_coverage_profile() {
+    let mut command = Command::new("rslip-test-child");
+    configure_two_process_contention_child(&mut command, Path::new("/tmp/root"), "first");
+
+    assert_eq!(
+        command
+            .get_envs()
+            .find(|(key, _)| *key == "LLVM_PROFILE_FILE")
+            .unwrap()
+            .1,
+        None
+    );
 }
 
 fn run_two_process_contention_child() {

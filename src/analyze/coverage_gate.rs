@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::analyze::coverage::compute_test_coverage_from_lists;
 use crate::analyze::coverage_types::CheckCoverageGateParams;
 use crate::analyze::focus::{FocusFilter, is_focus_file};
+use crate::analyze::line_coverage::LineCoverageRecord;
 use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::cli_output::{CoverageGateFailureCtx, file_coverage_map, print_coverage_gate_failure};
 
@@ -173,6 +174,44 @@ pub(crate) fn evaluate_cached_gate(
         });
     }
     None
+}
+
+pub(crate) fn evaluate_line_gate(
+    records: &[LineCoverageRecord],
+    focus: &FocusFilter,
+    threshold: usize,
+) -> Option<crate::analyze::options::AnalyzeResult> {
+    if threshold == 0 {
+        return None;
+    }
+    let file_pcts: HashMap<_, _> = records
+        .iter()
+        .filter(|record| is_focus_file(&record.file, focus))
+        .map(|record| (record.file.clone(), record.percent))
+        .collect();
+    if !file_pcts.values().any(|pct| *pct < threshold) {
+        return None;
+    }
+    let unreferenced = records
+        .iter()
+        .filter(|record| is_focus_file(&record.file, focus) && record.percent < threshold)
+        .map(|record| {
+            (
+                record.file.clone(),
+                "<file>".to_string(),
+                record.first_uncovered_line.unwrap_or(1),
+            )
+        })
+        .collect::<Vec<_>>();
+    print_coverage_gate_failure(&CoverageGateFailureCtx {
+        threshold,
+        unreferenced: &unreferenced,
+        file_pcts: &file_pcts,
+    });
+    Some(crate::analyze::options::AnalyzeResult {
+        success: false,
+        metrics: None,
+    })
 }
 
 #[allow(dead_code)] // Called from unit tests and via `crate::analyze::check_coverage_gate`; not all builds reference it.

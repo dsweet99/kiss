@@ -259,7 +259,6 @@ mod coverage_witness {
 
     #[test]
     fn witness_collector_helpers() {
-        let repo = Path::new("/repo");
         assert_eq!(posix_path(Path::new("tests/a.py")), "tests/a.py");
         let payload = parse_collect_payload("KISS_COLLECT_JSON:{\"nodeids\":[]}").unwrap();
         assert!(payload.nodeids.is_empty());

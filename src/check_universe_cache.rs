@@ -17,6 +17,15 @@ pub struct CachedCoverageItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedLineCoverageRecord {
+    pub file: String,
+    pub total_lines: usize,
+    pub covered_lines: usize,
+    pub percent: usize,
+    pub first_uncovered_line: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FullCheckCache {
     pub fingerprint: String,
     #[serde(default)]
@@ -49,6 +58,10 @@ pub struct FullCheckCache {
 
     pub definitions: Vec<CachedCoverageItem>,
     pub unreferenced: Vec<CachedCoverageItem>,
+    #[serde(default)]
+    pub runtime_coverage_identity: Option<String>,
+    #[serde(default)]
+    pub runtime_line_coverage: Vec<CachedLineCoverageRecord>,
     /// Per-file content digests captured at cache-write time; verified on replay.
     #[serde(default)]
     pub file_content_digests: Vec<(String, u64)>,
@@ -122,6 +135,8 @@ mod tests {
                 rs_duplicates: Vec::new(),
                 definitions: Vec::new(),
                 unreferenced: Vec::new(),
+                runtime_coverage_identity: None,
+                runtime_line_coverage: Vec::new(),
                 file_content_digests: Vec::new(),
             }
         }

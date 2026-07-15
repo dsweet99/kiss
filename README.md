@@ -3,7 +3,7 @@
 Global code feedback for LLM coding agents
 
 ## tl;dr
-`kiss check` provides feedback to LLMs about code complexity, duplication, and coverage. Add an AI coder rule (e.g., a Cursor rule) like
+`kiss check` provides feedback to LLMs about code complexity, duplication, and cached runtime line coverage. Add an AI coder rule (e.g., a Cursor rule) like
 ```
 When you write code, always make sure `pytest -sv tests`, `ruff check`, and `kiss check` pass.
 Iterate until they do.
@@ -14,7 +14,7 @@ kiss will help your LLM/agent produce simpler, clearer, more maintainable code. 
 ## The Problem: Missing Global Context
 LLMs operate locally, focusing on whatever code they are editing plus bits and pieces of other, relevant code. They ignore the overall structure of the codebase because they don't see it. Over time, code tends to be a little more tangled, a little less DRY, harder to read and harder to update. To counteract this, LLMs need global information about the codebase.
 
-kiss attempts to provide that in the form of stats about files, functions, etc., code-graph metrics, detected duplication, and low test coverage. kiss's output is compact, so it won't bloat context. It's structured for easy LLM consumption. And it's fast, so kiss can sit in your inner loop.
+kiss attempts to provide that in the form of stats about files, functions, etc., code-graph metrics, detected duplication, and low runtime line coverage. kiss's output is compact, so it won't bloat context. It's structured for easy LLM consumption. And it's fast, so kiss can sit in your inner loop.
 
 ## Installation
 
@@ -134,7 +134,7 @@ RULE: [Python] [imported_names_per_file < 30] imported_names_per_file is the max
 RULE: [Python] [cycle_size < 0] cycle_size is the maximum allowed number of modules participating in an import cycle.
 RULE: [Python] [indirect_dependencies < 10] indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).
 RULE: [Python] [dependency_depth < 3] dependency_depth is the maximum length of an import chain in the dependency graph.
-RULE: [Python] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).
+RULE: [Python] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of physical source lines per Python file covered by cached rslip runtime coverage. `kiss check` uses a current cache without running tests; when Python coverage is missing or stale, it refreshes the full Python test population before enforcing the gate.
 RULE: [Python] [min_similarity >= 0.90] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 RULE: [Rust] [statements_per_function < 35] statements_per_function is the maximum number of statements in a Rust function/method body.
 RULE: [Rust] [positional_args < 8] positional_args is the maximum number of non-self parameters in a Rust function/method signature.
@@ -156,7 +156,7 @@ RULE: [Rust] [imported_names_per_file < 50] imported_names_per_file is the maxim
 RULE: [Rust] [cycle_size < 0] cycle_size is the maximum allowed number of modules participating in a dependency cycle.
 RULE: [Rust] [indirect_dependencies < 10] indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).
 RULE: [Rust] [dependency_depth < 3] dependency_depth is the maximum length of a module dependency chain in the dependency graph.
-RULE: [Rust] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of code units per file whose names must appear in a test file (static check).
+RULE: [Rust] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of physical source lines per Rust file covered by cached llvm-cov runtime coverage. `kiss check` uses a current cache without running tests; when Rust coverage is missing or stale, it refreshes the full Rust test population before enforcing the gate.
 RULE: [Rust] [min_similarity >= 0.90] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 ```
 

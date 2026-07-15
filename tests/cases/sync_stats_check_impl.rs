@@ -1,3 +1,4 @@
+use crate::common::seed_python_runtime_coverage;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::process::Command;
@@ -362,6 +363,7 @@ pub(super) fn sync_stats_test_body(
     home: &std::path::Path,
 ) -> (String, String, String) {
     build_sync_corpus(tmp);
+    seed_python_runtime_coverage(tmp, &[("test_big_module.py::test_complex", vec![])]);
 
     let config_path = tmp.join(".kissconfig");
     write_zero_threshold_config(&config_path);

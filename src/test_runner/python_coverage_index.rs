@@ -14,8 +14,9 @@ pub(crate) const PYTHON_SELECTOR_DISCOVERY_VERSION: &str = "python-selector-disc
 
 mod manifest;
 pub(crate) use manifest::{
-    PYTHON_COVERAGE_ENV_KEYS, python_population_manifest_is_current_for_args_with_env_keys,
-    stored_python_universe_selectors,
+    PYTHON_COVERAGE_ENV_KEYS, python_population_environment_mismatch,
+    python_population_manifest_is_current_for_args_with_env_keys,
+    stored_python_universe_population, stored_python_universe_selectors,
 };
 #[cfg(test)]
 pub(crate) use manifest::{

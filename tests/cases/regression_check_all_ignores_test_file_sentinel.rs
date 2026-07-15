@@ -1,6 +1,7 @@
 //! `kiss check --all` must not emit coverage violations for test modules.
 //! Test files are witness sources, not production gate targets.
 
+use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -57,6 +58,10 @@ fn write_corpus(dir: &std::path::Path) {
 fn kiss_check_all_passes_without_test_module_violations() {
     let corpus = TempDir::new().unwrap();
     write_corpus(corpus.path());
+    seed_python_runtime_coverage(
+        corpus.path(),
+        &[("tests/test_lib.py::test_add", vec![("lib.py", vec![1, 2])])],
+    );
 
     let home = TempDir::new().unwrap();
 

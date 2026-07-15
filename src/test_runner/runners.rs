@@ -24,6 +24,9 @@ mod python_collect;
 #[cfg(test)]
 #[path = "runners/python_collect_acceptance_test.rs"]
 mod python_collect_acceptance_test;
+#[cfg(test)]
+#[path = "runners/python_collect_error_test.rs"]
+mod python_collect_error_test;
 use python_collect::collect_python_nodeids;
 #[cfg(test)]
 #[path = "runners/python_collect_test.rs"]
@@ -33,9 +36,8 @@ pub(crate) mod rust_backer;
 
 #[path = "runners/rslip.rs"]
 mod rslip;
-#[cfg(test)]
-pub(crate) use rslip::rslip_request_from_parts;
 pub(crate) use rslip::run_rslip_selectors;
+pub(crate) use rslip::{detect_rslip_versions, rslip_request_from_parts};
 
 pub const NO_COVERING_TESTS_MSG: &str = "NO COVERING TESTS";
 
@@ -238,8 +240,18 @@ pub fn enumerate_workspace_rust_selectors(
 
 pub fn enumerate_workspace_python_selectors(
     repo_root: &Path,
-    _ignore: &[String],
+    ignore: &[String],
 ) -> Result<Vec<String>, String> {
+    if !ignore.is_empty() {
+        let root = repo_root.to_string_lossy().to_string();
+        let (py_files, _rs_files) =
+            kiss::gather_files_by_lang(&[root], Some(kiss::Language::Python), ignore);
+        let test_paths = py_files
+            .into_iter()
+            .filter(|path| is_test_file(path) || is_in_test_directory(path))
+            .collect::<Vec<_>>();
+        return collect_python_nodeids(repo_root, Some(&test_paths), &[]);
+    }
     collect_python_nodeids(repo_root, None, &[])
 }
 

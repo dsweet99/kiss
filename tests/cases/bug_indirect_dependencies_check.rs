@@ -1,3 +1,4 @@
+use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -13,6 +14,7 @@ fn bug_check_reports_indirect_dependencies_for_fan_in_zero_entry() {
     fs::write(root.join("entry.py"), "import hub\n").unwrap();
     fs::write(root.join("hub.py"), "import leaf\n").unwrap();
     fs::write(root.join("leaf.py"), "VALUE = 1\n").unwrap();
+    seed_python_runtime_coverage(root, &[("tests/test_entry.py::test_entry", vec![])]);
     fs::write(
         root.join(".kissconfig"),
         "[gate]\n\

@@ -4,6 +4,7 @@
 //! `kiss check` must fail when any production file is below the threshold, even if
 //! aggregate coverage clears the gate (18/19 referenced with threshold 90).
 
+use crate::common::seed_python_runtime_coverage;
 use std::fmt::Write as _;
 use std::fs;
 use std::process::Command;
@@ -53,6 +54,13 @@ fn write_aggregate_masking_corpus(root: &std::path::Path) {
         format!("from good import {imports}\n\ndef test_all():\n    {calls}\n"),
     )
     .unwrap();
+    seed_python_runtime_coverage(
+        root,
+        &[(
+            "test_good.py::test_all",
+            vec![("good.py", (1..=56).collect::<Vec<_>>())],
+        )],
+    );
     write_permissive_config(root);
 }
 

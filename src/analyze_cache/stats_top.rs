@@ -106,6 +106,8 @@ pub(crate) fn maybe_store_stats_top_cache(
         violations: &[],
         graph_viols_all: &[],
         coverage_violations: &[],
+        runtime_coverage_identity: None,
+        runtime_line_coverage: Vec::new(),
         py_graph: None,
         rs_graph: None,
         py_stats: None,

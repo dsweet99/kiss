@@ -1,4 +1,5 @@
 use crate::common::list_full_check_cache_files;
+use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -36,6 +37,7 @@ fn check_all_cache_hit_replays_on_second_run() {
 
     let src = repo.path().join("simple.py");
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
+    seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
     let out1 = run_python_check_all(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
@@ -64,12 +66,56 @@ fn check_all_cache_hit_replays_on_second_run() {
 }
 
 #[test]
+fn check_all_cache_invalidates_when_runtime_coverage_changes() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+
+    let src = repo.path().join("simple.py");
+    fs::write(&src, "def foo():\n    return 1\n").unwrap();
+    seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
+
+    let out1 = run_python_check_all(repo.path(), home.path());
+    let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
+    assert!(
+        stdout1.contains("0% covered"),
+        "sanity: first run should report the seeded 0% coverage. stdout:\n{stdout1}"
+    );
+    assert!(!list_full_check_cache_files(home.path()).is_empty());
+
+    seed_python_runtime_coverage(
+        repo.path(),
+        &[(
+            "test_simple.py::test_simple",
+            vec![("simple.py", vec![1, 2])],
+        )],
+    );
+
+    let out2 = run_python_check_all(repo.path(), home.path());
+    let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
+    assert!(
+        out2.status.success(),
+        "refreshed runtime coverage should satisfy --all. stdout:\n{stdout2}\nstderr:\n{}",
+        String::from_utf8_lossy(&out2.stderr)
+    );
+    assert!(
+        !stdout2.contains("0% covered"),
+        "runtime coverage refresh should be visible instead of replaying stale cache. \
+         stdout1:\n{stdout1}\nstdout2:\n{stdout2}"
+    );
+    assert_ne!(
+        stdout2, stdout1,
+        "unchanged source with changed runtime coverage must miss the old full-check cache"
+    );
+}
+
+#[test]
 fn check_all_cache_invalidates_when_sources_unreadable() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
     let src = repo.path().join("simple.py");
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
+    seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
     let out1 = run_python_check_all(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
@@ -92,6 +138,7 @@ fn check_all_cache_invalidates_on_mtime_or_size_change() {
 
     let src = repo.path().join("simple.py");
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
+    seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
     let out1 = run_python_check_all(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
@@ -119,10 +166,11 @@ fn check_all_cache_invalidates_on_same_size_content_change() {
     let home = TempDir::new().unwrap();
 
     let src = repo.path().join("simple.py");
-    let content1 = "def foo():\n    return 1\n";
-    let content2 = "def bar():\n    return 2\n";
+    let content1 = "def foo():\n    return 1\n# padding!!\n";
+    let content2 = "def a():\n    pass\ndef b():\n    pass\n";
     assert_eq!(content1.len(), content2.len());
     fs::write(&src, content1).unwrap();
+    seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
     let out1 = run_python_check_all(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();

@@ -1,4 +1,4 @@
-"""Compare kiss static test-reference coverage to runtime line coverage.
+"""Compare kiss cached runtime line coverage to independently collected coverage.
 
 This module is also a cache-invalidation probe for Python selection.
 """

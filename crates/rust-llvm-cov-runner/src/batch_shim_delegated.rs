@@ -9,6 +9,18 @@ use crate::batch_process_tree::ProcessGroupIdentity;
 
 pub(crate) const DELEGATED_GO_ENV: &str = "KISS_RUST_LLVM_COV_DELEGATED_GO";
 
+const COVERAGE_BUILD_ENV_KEYS: &[&str] = &[
+    "RUSTC_WRAPPER",
+    "RUSTC_WORKSPACE_WRAPPER",
+    "RUSTFLAGS",
+    "CARGO_ENCODED_RUSTFLAGS",
+    "RUSTDOCFLAGS",
+    "CARGO_TARGET_DIR",
+    "CARGO_LLVM_COV_TARGET_DIR",
+    "CARGO_LLVM_COV_BUILD_DIR",
+    "KISS_CHECK_RUNTIME_REFRESH_ACTIVE",
+];
+
 pub(crate) fn spawn_delegated_piped_child(
     delegated: &[String],
     command: &[OsString],
@@ -16,6 +28,7 @@ pub(crate) fn spawn_delegated_piped_child(
     go_path: &Path,
 ) -> io::Result<(std::process::Child, Option<ProcessGroupIdentity>)> {
     let mut command = build_handshake_wrapped_command(delegated, command, go_path);
+    scrub_coverage_build_env(&mut command);
     command.env("LLVM_PROFILE_FILE", profile_path);
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -31,6 +44,12 @@ pub(crate) fn spawn_delegated_piped_child(
     let child = command.spawn()?;
     let delegated_identity = record_spawned_child_identity(&child);
     Ok((child, delegated_identity))
+}
+
+pub(crate) fn scrub_coverage_build_env(command: &mut Command) {
+    for key in COVERAGE_BUILD_ENV_KEYS {
+        command.env_remove(key);
+    }
 }
 
 pub(crate) fn release_delegated_child_handshake(go_path: &Path) -> io::Result<()> {
@@ -72,4 +91,56 @@ fn record_spawned_child_identity(child: &std::process::Child) -> Option<ProcessG
         pid,
         pgid: pgid as u32,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct EnvVarGuard {
+        key: &'static str,
+        prior: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prior = std::env::var_os(key);
+            unsafe { std::env::set_var(key, value) };
+            Self { key, prior }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(prior) = &self.prior {
+                unsafe { std::env::set_var(self.key, prior) };
+            } else {
+                unsafe { std::env::remove_var(self.key) };
+            }
+        }
+    }
+
+    #[test]
+    fn delegated_child_scrubs_coverage_build_environment() {
+        let _lock = crate::test_support::shim_test_env_lock();
+        let _rustflags = EnvVarGuard::set("RUSTFLAGS", "-Cinstrument-coverage");
+        let _target_dir = EnvVarGuard::set("CARGO_TARGET_DIR", "/outer-target");
+        let _check_refresh = EnvVarGuard::set("KISS_CHECK_RUNTIME_REFRESH_ACTIVE", "1");
+        let tmp = tempfile::tempdir().unwrap();
+        let go_path = tmp.path().join("go");
+        let profile_path = tmp.path().join("fresh.profraw");
+        let command = vec![OsString::from("/usr/bin/env")];
+
+        let (child, _) =
+            spawn_delegated_piped_child(&[], &command, &profile_path, &go_path).unwrap();
+        release_delegated_child_handshake(&go_path).unwrap();
+        let output = child.wait_with_output().unwrap();
+        let env = String::from_utf8(output.stdout).unwrap();
+
+        assert!(output.status.success());
+        assert!(!env.contains("RUSTFLAGS="));
+        assert!(!env.contains("CARGO_TARGET_DIR="));
+        assert!(!env.contains("KISS_CHECK_RUNTIME_REFRESH_ACTIVE="));
+        assert!(env.contains(&format!("LLVM_PROFILE_FILE={}", profile_path.display())));
+    }
 }

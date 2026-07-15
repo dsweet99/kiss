@@ -153,6 +153,16 @@ pub(crate) fn finish_fresh_batch_after_export(
         process_residual_count: finish.process_residual_count,
         ..Default::default()
     };
+    if req.population_publication_selectors.is_some() && agg_counters.unmatched_selectors > 0 {
+        return Ok(RustCoverageBatchResult {
+            completed: Vec::new(),
+            batch_error: Some(RustLlvmCovError::InvalidRequest(format!(
+                "population coverage batch did not execute {} requested Rust selector(s)",
+                agg_counters.unmatched_selectors
+            ))),
+            counters,
+        });
+    }
     match store_completed_outcomes(req, tools, identity, &mut completed) {
         Ok(()) => Ok(RustCoverageBatchResult {
             completed,

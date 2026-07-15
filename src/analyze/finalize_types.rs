@@ -5,6 +5,7 @@ use kiss::Violation;
 use kiss::check_universe_cache::CachedCoverageItem;
 
 use crate::analyze::focus::FocusFilter;
+use crate::analyze::line_coverage::{LineCoverageRecord, RuntimeCoverageSnapshot};
 
 use crate::analyze::options::AnalyzeOptions;
 use crate::analyze::parallel::RustAnalysis;
@@ -19,6 +20,8 @@ pub(crate) struct AnalysisProducts {
     pub py_cov: kiss::TestRefAnalysis,
     pub cov_viols: Vec<Violation>,
     pub coverage_cache_lists: Option<CoverageCachePair>,
+    pub runtime_coverage_snapshot: Option<RuntimeCoverageSnapshot>,
+    pub runtime_line_coverage: Option<Vec<LineCoverageRecord>>,
     pub py_stats: Option<kiss::MetricStats>,
     pub rs_stats: Option<kiss::MetricStats>,
     pub rs: RustAnalysis,
@@ -57,6 +60,8 @@ pub(crate) struct CovDupPhase<'a> {
     pub rs_graph: Option<&'a kiss::DependencyGraph>,
     pub precomputed_cov_viols: Vec<Violation>,
     pub precomputed_coverage_cache_lists: Option<CoverageCachePair>,
+    pub runtime_coverage_snapshot: Option<RuntimeCoverageSnapshot>,
+    pub runtime_line_coverage: Option<Vec<LineCoverageRecord>>,
     pub graph_viols_all: &'a [Violation],
     pub py_dups_all: &'a [kiss::DuplicateCluster],
     pub rs_dups_all: &'a [kiss::DuplicateCluster],
@@ -65,6 +70,8 @@ pub(crate) struct CovDupPhase<'a> {
 pub(crate) struct CovDupOutcome {
     pub cov_viols: Vec<Violation>,
     pub coverage_cache_lists: Option<CoverageCachePair>,
+    pub runtime_coverage_snapshot: Option<RuntimeCoverageSnapshot>,
+    pub runtime_line_coverage: Option<Vec<LineCoverageRecord>>,
     pub t_phase2: Instant,
     pub py_dups: Vec<kiss::DuplicateCluster>,
     pub rs_dups: Vec<kiss::DuplicateCluster>,
@@ -84,6 +91,8 @@ pub(crate) struct StorePrintPhase<'a> {
     pub py_dups_all: &'a [kiss::DuplicateCluster],
     pub rs_dups_all: &'a [kiss::DuplicateCluster],
     pub coverage_cache_lists: Option<CoverageCachePair>,
+    pub runtime_coverage_snapshot: Option<&'a RuntimeCoverageSnapshot>,
+    pub runtime_line_coverage: Option<&'a [LineCoverageRecord]>,
     pub py_stats: Option<&'a kiss::MetricStats>,
     pub rs_stats: Option<&'a kiss::MetricStats>,
     pub py_dups: &'a [kiss::DuplicateCluster],
@@ -120,6 +129,8 @@ mod coverage_witness {
                 },
                 cov_viols: vec![],
                 coverage_cache_lists: None,
+                runtime_coverage_snapshot: None,
+                runtime_line_coverage: None,
                 py_stats: None,
                 rs_stats: None,
                 rs: RustAnalysis {
@@ -158,6 +169,8 @@ mod coverage_witness {
             Self {
                 cov_viols: vec![],
                 coverage_cache_lists: None,
+                runtime_coverage_snapshot: None,
+                runtime_line_coverage: None,
                 t_phase2: Instant::now(),
                 py_dups: vec![],
                 rs_dups: vec![],

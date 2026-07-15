@@ -4,8 +4,9 @@ use crate::analyze::FocusFilter;
 use kiss::check_universe_cache::FullCheckCache;
 use kiss::cli_output::{print_duplicates, print_final_status, print_violations};
 
-use super::{cached_coverage_viols, cached_duplicates};
-use crate::analyze::evaluate_cached_gate;
+use super::{cached_coverage_viols, cached_duplicates, cached_runtime_coverage_viols};
+use crate::analyze::line_coverage::line_records_from_cache;
+use crate::analyze::{evaluate_cached_gate, evaluate_line_gate};
 
 pub(super) fn emit_cached_bypass(
     cache: FullCheckCache,
@@ -13,7 +14,11 @@ pub(super) fn emit_cached_bypass(
     focus: &FocusFilter,
 ) -> bool {
     let (mut viols, py_dups, rs_dups, cache) = cached_duplicates(cache, opts.gate_config, focus);
-    viols.extend(cached_coverage_viols(&cache, focus));
+    if cache.runtime_coverage_identity.is_some() {
+        viols.extend(cached_runtime_coverage_viols(&cache, focus));
+    } else {
+        viols.extend(cached_coverage_viols(&cache, focus));
+    }
     print_cached_header(&cache);
     print_violations(&viols);
     print_duplicates("Python", &py_dups);
@@ -32,7 +37,12 @@ pub(super) fn emit_cached_gated(
     opts: &crate::analyze::AnalyzeOptions<'_>,
     focus: &FocusFilter,
 ) -> bool {
-    if evaluate_cached_gate(
+    if cache.runtime_coverage_identity.is_some() {
+        let records = line_records_from_cache(&cache.runtime_line_coverage);
+        if evaluate_line_gate(&records, focus, opts.gate_config.test_coverage_threshold).is_some() {
+            return false;
+        }
+    } else if evaluate_cached_gate(
         &cache.definitions,
         &cache.unreferenced,
         focus,

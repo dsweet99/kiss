@@ -22,20 +22,28 @@ use options::{
 use kiss::GateConfig;
 use kiss::TestSectionConfig;
 
-fn dispatch_analyze(lang: Option<kiss::Language>, command: Commands, cfg: &TriConfig<'_>) -> i32 {
+fn dispatch_analyze(
+    lang: Option<kiss::Language>,
+    command: Commands,
+    cfg: &TriConfig<'_>,
+    test_section: &TestSectionConfig,
+) -> i32 {
     match command {
         Commands::Check {
             paths,
             all,
             ignore,
             timing,
+            jobs,
         } => dispatch_check(CheckDispatchOptions {
             lang,
             paths,
             bypass_gate: all,
             ignore,
             timing,
+            jobs,
             cfg,
+            test_cfg: test_section,
         }),
         Commands::Stats {
             paths,
@@ -216,7 +224,7 @@ pub fn dispatch(
         | Commands::Stats { .. }
         | Commands::Mimic { .. }
         | Commands::Clamp { .. }
-        | Commands::Init { .. } => dispatch_analyze(lang, command, &cfg),
+        | Commands::Init { .. } => dispatch_analyze(lang, command, &cfg, test_section),
         _ => dispatch_tools(lang, defaults, config, command, &cfg, test_section),
     }
 }

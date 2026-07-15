@@ -6,6 +6,7 @@ use std::time::Instant;
 use kiss::Violation;
 
 use crate::analyze::focus::FocusFilter;
+use crate::analyze::line_coverage::{LineCoverageRecord, RuntimeCoverageSnapshot};
 use crate::analyze::options::AnalyzeOptions;
 
 /// Inputs for [`crate::analyze::pipeline::run_analyze_uncached`].
@@ -14,6 +15,8 @@ pub(crate) struct RunAnalyzeUncached<'a> {
     pub py_files: &'a [PathBuf],
     pub rs_files: &'a [PathBuf],
     pub focus: &'a FocusFilter,
+    pub runtime_coverage_snapshot: Option<RuntimeCoverageSnapshot>,
+    pub runtime_line_coverage: Option<Vec<LineCoverageRecord>>,
     pub t0: Instant,
     pub t1: Instant,
 }

@@ -26,14 +26,17 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use cache::{RslipCacheEntry, rslip_unique_suffix};
+use cache::{
+    RslipCacheEntry, load_rslip_cache_entry, rslip_cache_fingerprint_from_context,
+    rslip_request_context_fingerprint, rslip_unique_suffix,
+};
 pub use lock::{LocalRslipLockGuard, lock_rslip_cache_entry, lock_rslip_derived_state};
 use rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, TestStatus,
 };
 use serde::{Deserialize, Serialize};
 
-pub const CACHE_SCHEMA_VERSION: &str = "rslip-cache-v1";
+pub const CACHE_SCHEMA_VERSION: &str = "rslip-cache-v2";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RslipRequest {
@@ -153,6 +156,52 @@ impl Rslip {
             .next()
             .expect("one-request batch returned one result")
     }
+}
+
+pub fn load_cached_outcomes_many(
+    reqs: &[RslipRequest],
+) -> Vec<Result<Option<RslipOutcome>, RslipError>> {
+    let Some(first) = reqs.first() else {
+        return Vec::new();
+    };
+    let shared_context = match rslip_request_context_fingerprint(first) {
+        Ok(context) => context,
+        Err(err) => {
+            return reqs
+                .iter()
+                .map(|_| Err(RslipError::Io(io::Error::new(err.kind(), err.to_string()))))
+                .collect();
+        }
+    };
+    reqs.iter()
+        .map(|req| {
+            validate_rslip_request(req)?;
+            if !rslip_requests_share_context(first, req) {
+                let context = rslip_request_context_fingerprint(req)?;
+                let fingerprint = rslip_cache_fingerprint_from_context(&context, &req.nodeid);
+                return Ok(load_rslip_cache_entry(&req.cache_root, &fingerprint)
+                    .map(rslip_outcome_from_cache));
+            }
+            let fingerprint = rslip_cache_fingerprint_from_context(&shared_context, &req.nodeid);
+            Ok(load_rslip_cache_entry(&req.cache_root, &fingerprint).map(rslip_outcome_from_cache))
+        })
+        .collect()
+}
+
+pub fn cache_fingerprint_for_request(req: &RslipRequest) -> Result<String, RslipError> {
+    validate_rslip_request(req)?;
+    Ok(cache::rslip_cache_fingerprint(req)?)
+}
+
+fn rslip_requests_share_context(first: &RslipRequest, other: &RslipRequest) -> bool {
+    first.cwd == other.cwd
+        && first.source_root == other.source_root
+        && first.python == other.python
+        && first.python_version == other.python_version
+        && first.pytest_version == other.pytest_version
+        && first.pytest_args == other.pytest_args
+        && first.env == other.env
+        && first.cache_root == other.cache_root
 }
 
 fn rslip_outcome_from_cache(entry: RslipCacheEntry) -> RslipOutcome {
@@ -300,3 +349,7 @@ fn python_version(python: &Path) -> String {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_subprocess;
+#[cfg(test)]
+mod tests_types;

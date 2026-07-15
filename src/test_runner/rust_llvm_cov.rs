@@ -114,7 +114,7 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
         cargo: PathBuf::from("cargo"),
         cache_root: repo_root.join(".kiss").join("rust_llvm_cov_cache"),
         logical_selectors: selectors.to_vec(),
-        cargo_args: Vec::new(),
+        cargo_args: vec!["--workspace".to_string()],
         test_args: extra.to_vec(),
         env: relevant_rust_batch_env(),
         force_rerun,

@@ -1,3 +1,4 @@
+use crate::common::seed_python_runtime_coverage;
 use kiss::cli_output::VIOLATIONS_FIX_HINT;
 use std::fs;
 use std::process::Command;
@@ -11,6 +12,7 @@ fn kiss_binary() -> Command {
 fn cli_check_default_gate_emits_hint_on_coverage_failure() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("orphan.py"), "def orphan():\n    pass\n").unwrap();
+    seed_python_runtime_coverage(tmp.path(), &[("tests/test_orphan.py::test_orphan", vec![])]);
     let output = kiss_binary()
         .arg("check")
         .arg("--defaults")

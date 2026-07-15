@@ -197,7 +197,7 @@ pub(crate) fn resolve_included_packages_for_test(
 }
 
 #[cfg(test)]
-use crate::cargo_workspace_metadata::{CargoMetadata, CargoMetadataPackage};
+use crate::cargo_workspace_metadata::CargoMetadata;
 
 #[cfg(test)]
 pub(crate) use crate::cargo_workspace_metadata::{

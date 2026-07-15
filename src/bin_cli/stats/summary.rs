@@ -61,6 +61,8 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         ignore_prefixes: input.ignore,
         show_timing: false,
         suppress_final_status: false,
+        coverage_source: crate::analyze::CoverageSource::StaticReferences,
+        runtime_coverage_jobs: 1,
     };
 
     let pipeline = crate::analyze::run_full_pipeline(crate::analyze::FullPipelineInput {
@@ -68,6 +70,8 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         py_files: input.py_files,
         rs_files: input.rs_files,
         focus: &focus_filter,
+        runtime_coverage_snapshot: None,
+        runtime_line_coverage: None,
         t0: now,
         t1: now,
         t2: now,
@@ -80,6 +84,8 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         result: &pipeline.result,
         graph_viols_all: &pipeline.graph_viols_all,
         coverage_violations: &pipeline.cov_viols,
+        runtime_coverage_snapshot: None,
+        runtime_line_coverage: None,
         py_graph: pipeline.py_graph.as_ref(),
         rs_graph: pipeline.rs.graph.as_ref(),
         py_dups_all: &pipeline.py_dups_all,
@@ -251,6 +257,8 @@ mod summary_tests {
             rs_duplicates: vec![],
             definitions: vec![],
             unreferenced: vec![],
+            runtime_coverage_identity: None,
+            runtime_line_coverage: vec![],
             file_content_digests: vec![],
         };
         print_cached_summary(&[".".into()], &cache);

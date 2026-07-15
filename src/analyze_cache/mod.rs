@@ -2,8 +2,10 @@ mod content_digest;
 mod emit;
 
 use crate::analyze::FocusFilter;
+use crate::analyze::line_coverage::{RuntimeCoverageSnapshot, line_records_from_cache};
 use crate::analyze::{
-    compute_test_coverage_from_lists, filter_duplicates_by_focus, filter_viols_by_focus,
+    collect_line_coverage_viols, compute_test_coverage_from_lists, filter_duplicates_by_focus,
+    filter_viols_by_focus,
 };
 use emit::{emit_cached_bypass, emit_cached_gated};
 use kiss::check_cache;
@@ -25,7 +27,7 @@ pub(crate) use stats_top::{
 };
 pub use store_full::{FullCacheInputs, store_full_cache_from_run};
 
-const CACHE_SCHEMA_VERSION: &str = "v9";
+const CACHE_SCHEMA_VERSION: &str = "v10";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -240,6 +242,11 @@ fn cached_coverage_viols(cache: &FullCheckCache, focus: &FocusFilter) -> Vec<Vio
         .collect()
 }
 
+fn cached_runtime_coverage_viols(cache: &FullCheckCache, focus: &FocusFilter) -> Vec<Violation> {
+    let records = line_records_from_cache(&cache.runtime_line_coverage);
+    collect_line_coverage_viols(&records, focus, true)
+}
+
 fn stored_coverage_pct(message: &str) -> Option<usize> {
     message
         .split_whitespace()
@@ -263,6 +270,7 @@ pub fn try_run_cached_all(
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
     focus: &FocusFilter,
+    runtime_coverage_snapshot: Option<&RuntimeCoverageSnapshot>,
 ) -> Option<bool> {
     let fp = fingerprint_for_check(
         py_files,
@@ -273,6 +281,11 @@ pub fn try_run_cached_all(
     );
     let cache = load_verified_full_cache(&fp, py_files, rs_files)?;
     if !same_cached_paths(py_files, rs_files, focus, &cache) {
+        return None;
+    }
+    if let Some(snapshot) = runtime_coverage_snapshot
+        && cache.runtime_coverage_identity.as_deref() != Some(snapshot.identity.as_str())
+    {
         return None;
     }
 

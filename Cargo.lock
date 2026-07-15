@@ -410,6 +410,7 @@ dependencies = [
  "bincode",
  "clap",
  "fa-leiden-cd",
+ "fs2",
  "ignore",
  "libc",
  "petgraph",

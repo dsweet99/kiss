@@ -29,6 +29,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) 
         bypass_gate: o.bypass_gate,
         ignore: &o.ignore,
         timing: o.timing,
+        jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
     };
     run_check_command(&args)
 }

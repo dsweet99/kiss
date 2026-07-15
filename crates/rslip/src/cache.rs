@@ -79,8 +79,12 @@ pub(crate) fn rslip_unique_suffix() -> String {
 }
 
 pub(crate) fn rslip_cache_fingerprint(req: &RslipRequest) -> io::Result<String> {
+    let context = rslip_request_context_fingerprint(req)?;
+    Ok(rslip_cache_fingerprint_from_context(&context, &req.nodeid))
+}
+
+pub(crate) fn rslip_request_context_fingerprint(req: &RslipRequest) -> io::Result<String> {
     let mut h = rslip_fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
-    h = rslip_fnv1a64(h, req.nodeid.as_bytes());
     h = rslip_fnv1a64(h, req.python.to_string_lossy().as_bytes());
     h = rslip_fnv1a64(h, req.python_version.as_bytes());
     h = rslip_fnv1a64(h, req.pytest_version.as_bytes());
@@ -103,6 +107,17 @@ pub(crate) fn rslip_cache_fingerprint(req: &RslipRequest) -> io::Result<String> 
         h = rslip_fnv1a64(h, &[0]);
     }
     Ok(format!("{h:016x}"))
+}
+
+pub(crate) fn rslip_cache_fingerprint_from_context(
+    context_fingerprint: &str,
+    nodeid: &str,
+) -> String {
+    let mut h = rslip_fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
+    h = rslip_fnv1a64(h, context_fingerprint.as_bytes());
+    h = rslip_fnv1a64(h, &[0]);
+    h = rslip_fnv1a64(h, nodeid.as_bytes());
+    format!("{h:016x}")
 }
 
 pub(crate) fn rslip_input_files(root: &Path) -> io::Result<Vec<PathBuf>> {

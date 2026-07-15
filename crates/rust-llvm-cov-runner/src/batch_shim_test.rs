@@ -1,13 +1,7 @@
 use std::ffi::OsString;
 use std::fs;
 
-use super::{
-    BatchShimDelegatedStartMetadata, BatchShimMetadata, BatchShimStartMetadata,
-    load_target_runner_shim_metadata, run_target_runner_shim, write_shim_start_metadata,
-};
-use crate::batch_output_channel::{
-    OutputChannelServer, apply_output_channel_env, create_output_channel_config,
-};
+use super::{run_target_runner_shim, write_shim_start_metadata};
 use crate::test_support::{make_executable, shim_only_metadata, shim_test_env_lock};
 
 #[test]

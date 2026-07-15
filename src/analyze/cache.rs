@@ -3,6 +3,9 @@ use kiss::stats::MetricStats;
 use kiss::{DuplicateCluster, Violation};
 
 use crate::analyze::focus::FocusFilter;
+use crate::analyze::line_coverage::{
+    LineCoverageRecord, RuntimeCoverageSnapshot, cached_line_records,
+};
 use crate::analyze::options::AnalyzeOptions;
 use crate::analyze_parse::ParseResult;
 
@@ -14,6 +17,8 @@ pub(crate) struct FullCacheStoreInput<'a> {
     pub result: &'a ParseResult,
     pub graph_viols_all: &'a [Violation],
     pub coverage_violations: &'a [Violation],
+    pub runtime_coverage_snapshot: Option<&'a RuntimeCoverageSnapshot>,
+    pub runtime_line_coverage: Option<&'a [LineCoverageRecord]>,
     pub py_graph: Option<&'a kiss::DependencyGraph>,
     pub rs_graph: Option<&'a kiss::DependencyGraph>,
     pub py_dups_all: &'a [DuplicateCluster],
@@ -68,6 +73,13 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
         violations: &inp.result.violations,
         graph_viols_all: inp.graph_viols_all,
         coverage_violations: inp.coverage_violations,
+        runtime_coverage_identity: inp
+            .runtime_coverage_snapshot
+            .map(|snapshot| snapshot.identity.clone()),
+        runtime_line_coverage: inp
+            .runtime_line_coverage
+            .map(cached_line_records)
+            .unwrap_or_default(),
         py_graph: inp.py_graph,
         rs_graph: inp.rs_graph,
         py_dups_all: inp.py_dups_all,

@@ -5,6 +5,18 @@ use crate::batch_export_tools::{
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
+const ENCLOSING_COVERAGE_ENV_KEYS: &[&str] = &[
+    "LLVM_PROFILE_FILE",
+    "RUSTC_WRAPPER",
+    "RUSTC_WORKSPACE_WRAPPER",
+    "RUSTFLAGS",
+    "CARGO_ENCODED_RUSTFLAGS",
+    "RUSTDOCFLAGS",
+    "CARGO_TARGET_DIR",
+    "CARGO_LLVM_COV_TARGET_DIR",
+    "CARGO_LLVM_COV_BUILD_DIR",
+];
+
 #[test]
 #[cfg(unix)]
 fn binary_id_object_map_prefers_deps_path_for_duplicate_build_ids() {
@@ -220,7 +232,9 @@ fn run_export_contract_fixture(target: &Path) {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/export_contract"
     ));
-    let output = std::process::Command::new("cargo")
+    let mut command = std::process::Command::new("cargo");
+    scrub_enclosing_coverage_environment(&mut command);
+    command
         .args([
             "llvm-cov",
             "test",
@@ -237,14 +251,37 @@ fn run_export_contract_fixture(target: &Path) {
             "RUSTFLAGS",
             "-Cinstrument-coverage -Clink-arg=-Wl,--build-id=sha1",
         )
-        .current_dir(fixture)
-        .output()
-        .expect("cargo llvm-cov test");
+        .current_dir(fixture);
+    let output = command.output().expect("cargo llvm-cov test");
     assert!(
         output.status.success(),
         "fixture coverage run failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn export_contract_fixture_scrubs_enclosing_coverage_environment() {
+    let mut command = std::process::Command::new("cargo");
+    scrub_enclosing_coverage_environment(&mut command);
+
+    for key in ENCLOSING_COVERAGE_ENV_KEYS {
+        assert_eq!(
+            command
+                .get_envs()
+                .find(|(candidate, _)| candidate == key)
+                .unwrap()
+                .1,
+            None,
+            "{key} must not leak into the nested coverage command"
+        );
+    }
+}
+
+fn scrub_enclosing_coverage_environment(command: &mut std::process::Command) {
+    for key in ENCLOSING_COVERAGE_ENV_KEYS {
+        command.env_remove(key);
+    }
 }
 
 fn merge_profraws(tools: &ExportTools, profraws: &[PathBuf], profdata: &Path) {
@@ -316,6 +353,7 @@ fn collect_profraws(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+#[allow(dead_code)]
 fn find_profraw(root: &Path) -> Option<PathBuf> {
     find_all_profraws(root).into_iter().next()
 }

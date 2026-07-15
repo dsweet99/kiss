@@ -57,6 +57,35 @@ fn python_coverage_env_tracks_only_pythonpath() {
 }
 
 #[test]
+fn python_population_environment_mismatch_reports_recorded_and_current_values() {
+    let _lock = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let selector = "tests/test_app.py::test_value".to_string();
+    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", "recorded");
+    let identity = current_python_population_manifest_identity_with_env_keys(
+        tmp.path(),
+        &[],
+        PYTHON_COVERAGE_ENV_KEYS,
+    )
+    .unwrap();
+    write_python_population_manifest_with_identity(
+        tmp.path(),
+        std::slice::from_ref(&selector),
+        &identity,
+    )
+    .unwrap();
+    unsafe { std::env::remove_var("PYTHONPATH") };
+
+    assert_eq!(
+        python_population_environment_mismatch(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS),
+        Some((
+            BTreeMap::from([("PYTHONPATH".to_string(), "recorded".to_string())]),
+            BTreeMap::new(),
+        ))
+    );
+}
+
+#[test]
 fn python_manifest_current_with_env_keys_uses_supplied_allowlist() {
     let _lock = crate::cwd_test_lock::lock();
     let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", "src");
@@ -159,4 +188,46 @@ fn stored_python_universe_selectors_reads_current_manifest() {
 
     std::fs::write(tmp.path().join("new.py"), "x = 2\n").unwrap();
     assert!(stored_python_universe_selectors(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none());
+}
+
+#[test]
+fn stored_python_population_identity_tracks_validated_context() {
+    let _lock = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
+    let selector = "tests/test_app.py::test_value".to_string();
+    write_python_population_manifest_for_args(tmp.path(), std::slice::from_ref(&selector), &[])
+        .unwrap();
+
+    let population =
+        stored_python_universe_population(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).unwrap();
+    let mut manifest = read_python_population_manifest(tmp.path()).unwrap();
+    let original = stable_population_identity(&manifest);
+    manifest.input_fingerprint = "different".to_string();
+
+    assert_eq!(population.selectors, vec![selector]);
+    assert_eq!(population.identity, original);
+    assert_ne!(stable_population_identity(&manifest), original);
+}
+
+#[test]
+fn stored_python_population_rejects_duplicate_or_unsorted_selectors() {
+    let _lock = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
+    let selector_a = "tests/test_app.py::test_a".to_string();
+    let selector_b = "tests/test_app.py::test_b".to_string();
+    write_python_population_manifest_for_args(
+        tmp.path(),
+        &[selector_a.clone(), selector_b.clone()],
+        &[],
+    )
+    .unwrap();
+    let path = python_population_manifest_path(tmp.path()).unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    value["selectors"] = serde_json::json!([selector_b, selector_a]);
+    std::fs::write(&path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+
+    assert!(stored_python_universe_population(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none());
 }

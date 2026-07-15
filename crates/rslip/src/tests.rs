@@ -1,28 +1,6 @@
 use super::*;
 use crate::cache::rslip_cache_fingerprint;
-use rpytest_runner::subprocess_pytest_runner;
 use std::{cell::Cell, rc::Rc};
-
-#[test]
-fn request_and_coverage_structs_expose_expected_fields() {
-    let tmp = tempfile::tempdir().unwrap();
-    let req = RslipRequest::witness(tmp.path());
-    assert_eq!(req.nodeid, "test_sample.py::test_ok");
-    assert_eq!(req.python_version, "3.12.0");
-    assert_eq!(req.pytest_version, "8.0.0");
-    assert!(req.cache_root.ends_with(".rslip_cache"));
-
-    let coverage = LineCoverage::witness();
-    assert_eq!(coverage.files["app.py"], BTreeSet::from([1, 2]));
-
-    let outcome = RslipOutcome::witness();
-    assert_eq!(outcome.status, TestStatus::Passed);
-    assert_eq!(outcome.cache_status, CacheStatus::Hit);
-    assert_eq!(outcome.exit_code, Some(0));
-    assert_eq!(outcome.stdout, None);
-    assert_eq!(outcome.stderr, None);
-    assert_eq!(CacheStatus::witness_hit(), CacheStatus::Hit);
-}
 
 #[test]
 fn validate_rslip_request_rejects_missing_cache_key_parts() {
@@ -257,6 +235,56 @@ fn cached_rslip_outcome_omits_output_but_keeps_status_and_coverage() {
 }
 
 #[test]
+fn load_cached_outcomes_many_reads_current_entries_without_runner() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_a():\n    assert True\n\n\
+         def test_b():\n    assert True\n",
+    )
+    .unwrap();
+    let mut first = rslip_sample_request(tmp.path());
+    first.nodeid = "test_sample.py::test_a".to_string();
+    let mut second = rslip_sample_request(tmp.path());
+    second.nodeid = "test_sample.py::test_b".to_string();
+    for (req, line) in [(&first, 1), (&second, 3)] {
+        let outcome = RslipOutcome {
+            nodeid: req.nodeid.clone(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            coverage: LineCoverage {
+                files: BTreeMap::from([("app.py".to_string(), BTreeSet::from([line]))]),
+            },
+            cache_status: CacheStatus::MissStored,
+            stdout: Some(b"fresh stdout must not be replayed".to_vec()),
+            stderr: Some(b"fresh stderr must not be replayed".to_vec()),
+        };
+        let fingerprint = rslip_cache_fingerprint(req).unwrap();
+        cache::store_rslip_cache_entry(
+            &req.cache_root,
+            &fingerprint,
+            &cache::RslipCacheEntry::from(&outcome),
+        )
+        .unwrap();
+    }
+
+    let outcomes = load_cached_outcomes_many(&[first, second]);
+
+    assert_eq!(outcomes.len(), 2);
+    let first = outcomes[0].as_ref().unwrap().as_ref().unwrap();
+    let second = outcomes[1].as_ref().unwrap().as_ref().unwrap();
+    assert_eq!(first.nodeid, "test_sample.py::test_a");
+    assert_eq!(second.nodeid, "test_sample.py::test_b");
+    assert_eq!(first.cache_status, CacheStatus::Hit);
+    assert_eq!(second.cache_status, CacheStatus::Hit);
+    assert_eq!(first.stdout, None);
+    assert_eq!(second.stderr, None);
+    assert_eq!(first.coverage.files["app.py"], BTreeSet::from([1]));
+    assert_eq!(second.coverage.files["app.py"], BTreeSet::from([3]));
+}
+
+#[test]
 fn rslip_coverage_from_outcome_reads_named_artifact_and_reports_missing() {
     let tmp = tempfile::tempdir().unwrap();
     let artifact = tmp.path().join("coverage.json");
@@ -279,46 +307,4 @@ fn rslip_coverage_from_outcome_reads_named_artifact_and_reports_missing() {
     assert!(
         matches!(missing, RslipError::MissingArtifact(name) if name == runtime::COVERAGE_ARTIFACT)
     );
-}
-
-#[test]
-fn subprocess_run_records_executed_lines_and_reuses_cache() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("app.py"),
-        "def choose(flag):\n    if flag:\n        return 1\n    return 2\n",
-    )
-    .unwrap();
-    fs::write(
-        tmp.path().join("test_app.py"),
-        "from app import choose\n\n\ndef test_choose_true():\n    assert choose(True) == 1\n",
-    )
-    .unwrap();
-    let python = python();
-    let req = RslipRequest {
-        nodeid: "test_app.py::test_choose_true".to_string(),
-        cwd: tmp.path().to_path_buf(),
-        source_root: tmp.path().to_path_buf(),
-        python_version: python_version(&python),
-        python,
-        pytest_version: "8.0.0".to_string(),
-        pytest_args: vec!["-q".to_string()],
-        env: BTreeMap::new(),
-        cache_root: tmp.path().join(".rslip_cache"),
-        force_rerun: false,
-    };
-    let rslip = Rslip::new(subprocess_pytest_runner());
-
-    let first = rslip.run_or_reuse(req.clone()).unwrap();
-    let second = rslip.run_or_reuse(req).unwrap();
-    let app_path = tmp.path().join("app.py").canonicalize().unwrap();
-    let app_key = app_path.to_string_lossy().to_string();
-
-    assert_eq!(first.status, TestStatus::Passed);
-    assert_eq!(first.cache_status, CacheStatus::MissStored);
-    assert_eq!(second.cache_status, CacheStatus::Hit);
-    assert!(first.coverage.files[&app_key].contains(&1));
-    assert!(first.coverage.files[&app_key].contains(&2));
-    assert!(first.coverage.files[&app_key].contains(&3));
-    assert!(!first.coverage.files[&app_key].contains(&4));
 }

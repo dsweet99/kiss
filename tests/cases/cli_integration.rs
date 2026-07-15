@@ -1,3 +1,4 @@
+use crate::common::seed_python_runtime_coverage;
 use kiss::cli_output::VIOLATIONS_FIX_HINT;
 use std::fs;
 use std::process::Command;
@@ -99,6 +100,7 @@ pub fn create_god_class_file(dir: &std::path::Path) {
 fn cli_analyze_runs_on_python() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("simple.py"), "def foo(): pass").unwrap();
+    seed_python_runtime_coverage(tmp.path(), &[("tests/test_simple.py::test_simple", vec![])]);
     let output = kiss_binary()
         .arg("check")
         .arg(tmp.path())
@@ -116,6 +118,7 @@ fn cli_analyze_runs_on_python() {
 fn cli_analyze_reports_violations_on_god_class() {
     let tmp = TempDir::new().unwrap();
     create_god_class_file(tmp.path());
+    seed_python_runtime_coverage(tmp.path(), &[("tests/test_god.py::test_god", vec![])]);
     let output = kiss_binary()
         .arg("check")
         .arg(tmp.path())

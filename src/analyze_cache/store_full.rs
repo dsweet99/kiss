@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use kiss::check_cache::{CachedCodeChunk, CachedViolation};
-use kiss::check_universe_cache::{CachedCoverageItem, CachedDuplicateCluster, FullCheckCache};
+use kiss::check_universe_cache::{
+    CachedCoverageItem, CachedDuplicateCluster, CachedLineCoverageRecord, FullCheckCache,
+};
 use kiss::stats::MetricStats;
 use kiss::{DependencyGraph, DuplicateCluster, Violation};
 
@@ -17,6 +19,8 @@ pub struct FullCacheInputs<'a> {
     pub violations: &'a [Violation],
     pub graph_viols_all: &'a [Violation],
     pub coverage_violations: &'a [Violation],
+    pub runtime_coverage_identity: Option<String>,
+    pub runtime_line_coverage: Vec<CachedLineCoverageRecord>,
     pub py_graph: Option<&'a DependencyGraph>,
     pub rs_graph: Option<&'a DependencyGraph>,
     pub py_stats: Option<&'a MetricStats>,
@@ -68,6 +72,8 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
             .iter()
             .map(CachedViolation::from)
             .collect(),
+        runtime_coverage_identity: inputs.runtime_coverage_identity,
+        runtime_line_coverage: inputs.runtime_line_coverage,
         py_duplicates: inputs
             .py_dups_all
             .iter()

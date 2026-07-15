@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::cargo_workspace_metadata::{
-    CargoMetadata, CargoMetadataDependency, CargoMetadataPackage, CargoMetadataTarget,
-    WorkspaceMetadata, WorkspacePackageRecord, workspace_package_for_test,
+    CargoMetadata, CargoMetadataDependency, CargoMetadataTarget, WorkspaceMetadata,
+    workspace_package_for_test,
 };
 
 #[test]

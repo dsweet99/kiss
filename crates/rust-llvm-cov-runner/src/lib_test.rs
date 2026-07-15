@@ -10,7 +10,6 @@ use super::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovError, RustLlvmCovO
 
 #[test]
 fn rust_llvm_cov_request_outcome_and_coverage_types_expose_expected_fields() {
-    let tmp = tempfile::tempdir().unwrap();
     let coverage = RustLineCoverage::witness();
     let outcome = RustLlvmCovOutcome::witness();
 

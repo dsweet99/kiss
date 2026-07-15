@@ -7,6 +7,7 @@
 mod batch_aggregate;
 mod batch_derived;
 mod batch_derived_index;
+mod batch_derived_index_types;
 mod batch_events;
 mod batch_executor;
 mod batch_executor_finish;
@@ -42,6 +43,8 @@ mod shared_input;
 mod worker;
 
 #[cfg(test)]
+mod batch_derived_index_witness_test;
+#[cfg(test)]
 mod batch_export_contract_fixture;
 #[cfg(test)]
 #[path = "batch_export_contract_test.rs"]
@@ -71,7 +74,8 @@ pub use batch_derived::{
     publish_derived_state,
 };
 pub use batch_derived_index::{
-    RustPopulationState, RustSnapshotDelta, load_current_generation_line_index,
+    RustGenerationCoverageSnapshot, RustPopulationState, RustSnapshotDelta,
+    load_current_generation_coverage_snapshot, load_current_generation_line_index,
     load_current_population_state, load_reusable_prior_population_state, reusable_snapshot_delta,
 };
 pub use batch_events::{

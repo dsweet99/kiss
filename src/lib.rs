@@ -119,3 +119,14 @@ pub use shrink::{
     GlobalMetrics, ShrinkState, ShrinkTarget, ShrinkViolation, ShrinkViolations,
     check_shrink_constraints, parse_target_arg,
 };
+
+#[cfg(test)]
+pub mod cwd_test_lock {
+    use std::sync::Mutex;
+
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    pub fn lock() -> std::sync::MutexGuard<'static, ()> {
+        LOCK.lock().unwrap()
+    }
+}

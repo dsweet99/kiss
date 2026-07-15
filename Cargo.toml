@@ -52,6 +52,7 @@ serde_json = "1"
 
 # Ignore BrokenPipe panics on Unix by restoring SIGPIPE default behavior
 libc = "0.2"
+fs2 = "0.4"
 
 # Parallel iteration
 rayon = "1.10"

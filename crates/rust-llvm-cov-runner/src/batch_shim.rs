@@ -19,10 +19,7 @@ pub(crate) use batch_shim_child::{
     trigger_shim_forward_signal_for_test,
 };
 #[cfg(test)]
-pub(crate) use batch_shim_write::{
-    filesystem_safe_instance_id, instance_full_name, write_delegated_start_metadata,
-    write_shim_metadata, write_shim_start_metadata,
-};
+pub(crate) use batch_shim_write::{write_shim_metadata, write_shim_start_metadata};
 
 pub const TARGET_RUNNER_SHIM_SUBCOMMAND: &str = "__rust-llvm-cov-target-runner";
 pub(crate) const SHIM_START_SCHEMA: &str = "kiss-rust-llvm-cov-shim-start-v1";

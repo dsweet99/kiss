@@ -215,6 +215,7 @@ fn rust_coverage_batch_request_from_parts_preserves_selector_occurrences() {
         tmp.path().join(".kiss").join("rust_llvm_cov_cache")
     );
     assert_eq!(req.logical_selectors, selectors);
+    assert_eq!(req.cargo_args, ["--workspace"]);
     assert_eq!(req.test_args, extra);
     assert!(req.force_rerun);
     assert_eq!(req.jobs, 3);

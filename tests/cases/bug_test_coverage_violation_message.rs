@@ -1,9 +1,7 @@
-//! Regression: unreferenced unit violations must not read "100% covered".
-//!
-//! `kiss check --all` can compute weighted file percentages that disagree with
-//! definition-level unreferenced detection. Violation lines must use unweighted
-//! percentages (or a distinct template) so gate and bypass modes stay interpretable.
+//! Regression: runtime line-coverage violations must not read "100% covered".
 
+use crate::common::seed_python_runtime_coverage;
+use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -11,19 +9,22 @@ fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
 }
 
-/// Canonical repro from `bug_report.md`: co-located `#[test]` functions inflate
-/// weighted file coverage while helpers remain unreferenced.
 #[test]
 fn bug_check_all_never_claims_100_percent_on_unreferenced_unit() {
     let home = TempDir::new().unwrap();
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let target = "src/analyze/tests_coverage.rs";
+    let repo = TempDir::new().unwrap();
+    fs::write(repo.path().join("lib.py"), "def helper():\n    return 1\n").unwrap();
+    seed_python_runtime_coverage(
+        repo.path(),
+        &[("test_lib.py::test_helper", vec![("lib.py", vec![1])])],
+    );
 
     let out = kiss_binary()
-        .current_dir(manifest_dir)
         .arg("check")
         .arg("--all")
-        .arg(target)
+        .arg("--lang")
+        .arg("python")
+        .arg(repo.path())
         .env("HOME", home.path())
         .output()
         .expect("kiss check --all should run");

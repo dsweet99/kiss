@@ -4,8 +4,9 @@ use crate::RustPopulationState;
 use crate::batch_derived::{INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION};
 use crate::batch_derived_index::{
     OnDiskIndex, OnDiskIndexWithFiles, PopulationManifestOnDisk, RustSnapshotDelta,
-    load_current_generation_line_index, load_current_population_state, read_coverage_index,
-    read_population_generation, read_population_manifest, reusable_snapshot_delta,
+    load_current_generation_coverage_snapshot, load_current_generation_line_index,
+    load_current_population_state, read_coverage_index, read_population_generation,
+    read_population_manifest, reusable_snapshot_delta,
 };
 use crate::test_support::{published_alpha_derived_fixture, tamper_json_file};
 
@@ -81,6 +82,25 @@ fn load_current_generation_line_index_returns_published_files() {
     let index = load_current_generation_line_index(&fixture.req.cache_root, fixture.repo.path())
         .expect("current generation index");
     assert!(index.contains_key("src/lib.rs"));
+}
+
+#[test]
+fn load_current_generation_coverage_snapshot_returns_published_lines() {
+    let fixture = published_alpha_derived_fixture();
+    let snapshot = load_current_generation_coverage_snapshot(
+        &fixture.req.cache_root,
+        fixture.repo.path(),
+        &fixture.identity,
+        Some(&["alpha".to_string()]),
+    )
+    .expect("current generation coverage snapshot");
+
+    assert_eq!(snapshot.population.selectors, vec!["alpha".to_string()]);
+    assert_eq!(
+        snapshot.covered_lines["src/lib.rs"],
+        BTreeSet::from([1_u32])
+    );
+    assert!(!snapshot.identity.is_empty());
 }
 
 #[test]

@@ -10,7 +10,7 @@
 //! both commands produce the same fingerprint and share one cache file.
 //! See `_kpop/exp_log_check_stats_share.md` (round 2).
 
-use crate::common::list_full_check_cache_files;
+use crate::common::{list_full_check_cache_files, seed_python_runtime_coverage};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -32,6 +32,13 @@ fn regression_check_stats_share_cache_with_relative_path() {
         "from share import covered_function\n\ndef test_covered_function():\n    assert covered_function(2) == 4\n",
     )
     .unwrap();
+    seed_python_runtime_coverage(
+        repo.path(),
+        &[(
+            "test_share.py::test_covered_function",
+            vec![("share.py", vec![1, 2])],
+        )],
+    );
 
     let run = |cmd: &str| {
         kiss_binary()

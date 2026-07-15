@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI entry point: compare kiss static test-reference coverage to runtime line coverage."""
+"""CLI entry point: compare kiss cached line coverage to independent coverage."""
 
 from __future__ import annotations
 

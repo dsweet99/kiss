@@ -39,7 +39,9 @@ fn call_handler_dispatchers(
         bypass_gate: true,
         ignore: vec![],
         timing: false,
+        jobs: None,
         cfg,
+        test_cfg: test,
     });
     let _ = handlers::dispatch_stats(options::StatsDispatchOptions {
         lang: None,
@@ -141,8 +143,10 @@ fn call_router_dispatchers(
             all: true,
             ignore: vec![],
             timing: false,
+            jobs: None,
         },
         cfg,
+        test,
     );
     assert_eq!(
         dispatch_tools(None, true, None, Commands::Rules, cfg, test),
