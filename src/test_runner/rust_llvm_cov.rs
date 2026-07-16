@@ -4,10 +4,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rust_llvm_cov_runner::{
-    RustCovCacheStatus, RustCoverageBatchRequest, RustCoverageBatchResult,
-    RustCoverageToolIdentity, RustLlvmCovError, RustLlvmCovOutcome, RustTestExecutableIndex,
-    build_rust_coverage_batch_plan, build_rust_test_executable_index, execute_rust_coverage_batch,
-    resolve_batch_request_runners, validate_supported_rust_test_args,
+    CheckAggregateRepairPublication, CoverageOutputMode, RustCovCacheStatus,
+    RustCoverageBatchRequest, RustCoverageBatchResult, RustCoverageToolIdentity, RustLlvmCovError,
+    RustLlvmCovOutcome, RustTestExecutableIndex, build_rust_coverage_batch_plan,
+    build_rust_test_executable_index, execute_rust_coverage_batch, resolve_batch_request_runners,
+    validate_supported_rust_test_args,
 };
 
 use super::last_status::{LastStatusIdentity, record_statuses, rust_last_status_identity};
@@ -25,10 +26,39 @@ pub(crate) fn run_rust_llvm_cov_selectors(
     run_rust_llvm_cov_selectors_with_deps(
         repo_root,
         selectors,
-        extra,
-        force_rerun,
-        jobs,
-        population_publication_selectors,
+        RustCoverageRunOptions {
+            extra,
+            force_rerun,
+            jobs,
+            population_publication_selectors,
+            coverage_output_mode: CoverageOutputMode::SelectorEntries,
+        },
+        detect_rust_coverage_tool_versions,
+        execute_rust_coverage_batch_compat,
+    )
+}
+
+pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
+    repo_root: &Path,
+    selectors: &[String],
+    extra: &[String],
+    jobs: usize,
+    publication_binary_ids: Option<std::collections::BTreeSet<String>>,
+    repair_publication: Option<CheckAggregateRepairPublication>,
+) -> Result<SelectorExecutionSummary, String> {
+    run_rust_llvm_cov_selectors_with_deps(
+        repo_root,
+        selectors,
+        RustCoverageRunOptions {
+            extra,
+            force_rerun: true,
+            jobs,
+            population_publication_selectors: None,
+            coverage_output_mode: CoverageOutputMode::CheckAggregate {
+                publication_binary_ids,
+                repair_publication,
+            },
+        },
         detect_rust_coverage_tool_versions,
         execute_rust_coverage_batch_compat,
     )
@@ -42,14 +72,19 @@ struct RustCoverageToolVersions {
     cargo_nextest: String,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn run_rust_llvm_cov_selectors_with_deps<D, E>(
-    repo_root: &Path,
-    selectors: &[String],
-    extra: &[String],
+#[derive(Clone, Debug)]
+struct RustCoverageRunOptions<'a> {
+    extra: &'a [String],
     force_rerun: bool,
     jobs: usize,
     population_publication_selectors: Option<Vec<String>>,
+    coverage_output_mode: CoverageOutputMode,
+}
+
+fn run_rust_llvm_cov_selectors_with_deps<D, E>(
+    repo_root: &Path,
+    selectors: &[String],
+    options: RustCoverageRunOptions<'_>,
     detect_versions: D,
     execute_batch: E,
 ) -> Result<SelectorExecutionSummary, String>
@@ -60,18 +95,19 @@ where
         &RustCoverageToolVersions,
     ) -> Result<RustCoverageBatchResult, String>,
 {
-    assert!(jobs > 0, "jobs must be greater than zero");
-    validate_supported_rust_test_args(extra)?;
+    assert!(options.jobs > 0, "jobs must be greater than zero");
+    validate_supported_rust_test_args(options.extra)?;
     if selectors.is_empty() {
         return Ok(SelectorExecutionSummary::default());
     }
     let batch_req = rust_coverage_batch_request_from_parts(
         repo_root,
         selectors,
-        extra,
-        force_rerun,
-        jobs,
-        population_publication_selectors,
+        options.extra,
+        options.force_rerun,
+        options.jobs,
+        options.population_publication_selectors,
+        options.coverage_output_mode,
     )?;
     build_rust_coverage_batch_plan(&batch_req)?;
     let versions = detect_versions(repo_root)?;
@@ -80,7 +116,7 @@ where
         &versions.llvm_cov,
         &versions.rustc,
         &versions.cargo_nextest,
-        extra,
+        options.extra,
         &batch_req.runner_map_fingerprint,
     );
     let result = execute_batch(&batch_req, &versions)?;
@@ -107,6 +143,7 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
     force_rerun: bool,
     jobs: usize,
     population_publication_selectors: Option<Vec<String>>,
+    coverage_output_mode: CoverageOutputMode,
 ) -> Result<RustCoverageBatchRequest, String> {
     validate_supported_rust_test_args(extra)?;
     let mut req = RustCoverageBatchRequest {
@@ -125,11 +162,13 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
         delegated_runners: BTreeMap::new(),
         runner_map_fingerprint: String::new(),
         host_platform: String::new(),
+        coverage_output_mode,
     };
     resolve_batch_request_runners(&mut req).map_err(format_rust_llvm_cov_error)?;
     Ok(req)
 }
 
+#[allow(dead_code)]
 pub(crate) struct RustExecutableIndexBuild {
     pub(crate) request: RustCoverageBatchRequest,
     pub(crate) tools: RustCoverageToolIdentity,
@@ -137,6 +176,7 @@ pub(crate) struct RustExecutableIndexBuild {
     pub(crate) index: RustTestExecutableIndex,
 }
 
+#[allow(dead_code)]
 pub(crate) fn build_current_rust_test_executable_index(
     repo_root: &Path,
     selectors: &[String],
@@ -151,6 +191,7 @@ pub(crate) fn build_current_rust_test_executable_index(
         false,
         jobs,
         Some(selectors.to_vec()),
+        CoverageOutputMode::SelectorEntries,
     )?;
     let plan = build_rust_coverage_batch_plan(&request)?;
     let versions = detect_rust_coverage_tool_versions(repo_root)?;
@@ -167,6 +208,7 @@ pub(crate) fn build_current_rust_test_executable_index(
     })
 }
 
+#[allow(dead_code)]
 fn rust_coverage_tool_identity_from_versions(
     versions: &RustCoverageToolVersions,
 ) -> RustCoverageToolIdentity {

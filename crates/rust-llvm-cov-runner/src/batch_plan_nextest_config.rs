@@ -28,9 +28,7 @@ pub(crate) fn test_args_request_nocapture(test_args: &[String]) -> bool {
 }
 
 pub(crate) fn nextest_test_threads(req: &RustCoverageBatchRequest) -> String {
-    if test_args_request_nocapture(&req.test_args)
-        || std::env::var_os("KISS_CHECK_RUNTIME_REFRESH_ACTIVE").is_some()
-    {
+    if test_args_request_nocapture(&req.test_args) {
         "1".to_string()
     } else {
         req.jobs.to_string()
@@ -145,7 +143,7 @@ fn target_runner_shim_program() -> String {
 mod tests {
     use super::{
         build_target_runner_cargo_config_toml, escape_nextest_regex, nextest_filter_string,
-        target_runner_shim_program, toml_basic_string,
+        nextest_test_threads, target_runner_shim_program, toml_basic_string,
     };
 
     #[test]
@@ -186,5 +184,27 @@ mod tests {
         unsafe {
             std::env::remove_var("KISS_RUST_LLVM_COV_TARGET_RUNNER_SHIM");
         }
+    }
+
+    #[test]
+    fn refresh_guard_does_not_serialize_nextest_threads() {
+        let req = crate::batch_plan::RustCoverageBatchRequest::witness();
+        // SAFETY: this test observes the variable immediately and restores it
+        // before returning; scheduling must not depend on this guard.
+        unsafe {
+            std::env::set_var("KISS_CHECK_RUNTIME_REFRESH_ACTIVE", "1");
+        }
+        assert_eq!(nextest_test_threads(&req), req.jobs.to_string());
+        // SAFETY: see the set_var note above.
+        unsafe {
+            std::env::remove_var("KISS_CHECK_RUNTIME_REFRESH_ACTIVE");
+        }
+    }
+
+    #[test]
+    fn no_capture_serializes_nextest_threads() {
+        let mut req = crate::batch_plan::RustCoverageBatchRequest::witness();
+        req.test_args = vec!["--nocapture".to_string()];
+        assert_eq!(nextest_test_threads(&req), "1");
     }
 }

@@ -10,7 +10,8 @@ pub(crate) use super::rust_llvm_cov::run_rust_llvm_cov_selectors;
 use kiss::test_refs::{is_in_test_directory, is_test_file};
 use kiss::{parse_rust_files, rust_test_functions_in};
 use rust_llvm_cov_runner::{
-    RustCoverageBatchCounters, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
+    CoverageOutputMode, RustCoverageBatchCounters, RustCoverageBatchRequest,
+    build_rust_coverage_batch_plan,
 };
 
 #[path = "runners/decision.rs"]
@@ -61,6 +62,8 @@ pub(crate) struct SelectorExecutionSummary {
     pub(crate) rust_build_invocations: usize,
     pub(crate) rust_test_instances: usize,
     pub(crate) rust_export_jobs: usize,
+    pub(crate) rust_aggregate_binaries: usize,
+    pub(crate) rust_aggregate_exports: usize,
     pub(crate) rust_batch_cache_hits: usize,
     pub(crate) rust_max_active_test_instances: usize,
     pub(crate) rust_max_active_exports: usize,
@@ -110,6 +113,8 @@ impl SelectorExecutionSummary {
         self.rust_build_invocations += counters.build_invocations;
         self.rust_test_instances += counters.test_instances;
         self.rust_export_jobs += counters.export_jobs;
+        self.rust_aggregate_binaries += counters.aggregate_binaries;
+        self.rust_aggregate_exports += counters.aggregate_exports;
         self.rust_batch_cache_hits += counters.cache_hits;
         self.rust_max_active_test_instances = self
             .rust_max_active_test_instances
@@ -317,6 +322,7 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         delegated_runners,
         runner_map_fingerprint,
         host_platform,
+        coverage_output_mode: CoverageOutputMode::SelectorEntries,
     };
     let plan = build_rust_coverage_batch_plan(&req)?;
     let mut lines = vec![

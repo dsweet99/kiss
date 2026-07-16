@@ -68,7 +68,7 @@ fn load_runtime_coverage_for_check(
         python: !py_files.is_empty(),
         rust: !rs_files.is_empty(),
     };
-    let snapshot = match load_check_runtime_coverage(&repo_root, required) {
+    let snapshot = match load_check_runtime_coverage(&repo_root, required, opts.ignore_prefixes) {
         Ok(snapshot) => snapshot,
         Err(_) => {
             if let Err(err) = ensure_check_runtime_coverage(
@@ -83,7 +83,7 @@ fn load_runtime_coverage_for_check(
                     metrics: None,
                 });
             }
-            match load_check_runtime_coverage(&repo_root, required) {
+            match load_check_runtime_coverage(&repo_root, required, opts.ignore_prefixes) {
                 Ok(snapshot) => snapshot,
                 Err(err) => {
                     eprintln!("{err}");

@@ -5,6 +5,8 @@ pub struct RustCoverageBatchCounters {
     pub build_invocations: usize,
     pub test_instances: usize,
     pub export_jobs: usize,
+    pub aggregate_binaries: usize,
+    pub aggregate_exports: usize,
     pub cache_hits: usize,
     pub max_active_test_instances: usize,
     pub max_active_exports: usize,

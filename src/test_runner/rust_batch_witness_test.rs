@@ -53,6 +53,7 @@ pub(super) fn sample_batch_request(root: &Path) -> RustCoverageBatchRequest {
         delegated_runners,
         runner_map_fingerprint,
         host_platform,
+        coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
     }
 }
 

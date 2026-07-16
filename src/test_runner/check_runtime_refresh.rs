@@ -13,7 +13,20 @@ use crate::test_runner::python_coverage_index::{
     repo_relative_coverage_file as python_repo_relative_coverage_file,
 };
 
+#[path = "check_runtime_refresh_repair.rs"]
+mod check_runtime_refresh_repair;
+use check_runtime_refresh_repair::{CheckAggregateRepairDecision, classify_check_aggregate_repair};
+
 pub(crate) const CHECK_RUNTIME_REFRESH_ACTIVE_ENV: &str = "KISS_CHECK_RUNTIME_REFRESH_ACTIVE";
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CoverageRefreshStats {
+    pub(crate) rust_test_instances: usize,
+    pub(crate) rust_aggregate_binaries: usize,
+    pub(crate) rust_aggregate_exports: usize,
+    pub(crate) rust_identity_only_repair: bool,
+    pub(crate) rust_full_refresh: bool,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum CoverageRefreshError {
@@ -222,32 +235,51 @@ fn ensure_rust_runtime_coverage(
     ignore: &[String],
     jobs: usize,
 ) -> Result<(), CoverageRefreshError> {
+    ensure_rust_runtime_coverage_with_stats(repo_root, ignore, jobs).map(|_| ())
+}
+
+fn ensure_rust_runtime_coverage_with_stats(
+    repo_root: &Path,
+    ignore: &[String],
+    jobs: usize,
+) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     let _guard = lock_refresh(repo_root, "Rust")?;
-    if load_rust_runtime_coverage(repo_root).is_ok() {
-        return Ok(());
+    if load_rust_runtime_coverage(repo_root, ignore).is_ok() {
+        return Ok(CoverageRefreshStats::default());
     }
     let selectors =
         crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
             .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
-    if try_incremental_rust_runtime_coverage(repo_root, &selectors, jobs)? {
-        return load_rust_runtime_coverage(repo_root)
-            .map(|_| ())
-            .map_err(|err| CoverageRefreshError::validation("Rust", err));
+    if let Some(stats) = try_repair_rust_check_aggregate(repo_root, ignore, &selectors, jobs)? {
+        return Ok(stats);
     }
+    refresh_full_rust_check_aggregate(repo_root, ignore, &selectors, jobs)
+}
+
+fn refresh_full_rust_check_aggregate(
+    repo_root: &Path,
+    ignore: &[String],
+    selectors: &[String],
+    jobs: usize,
+) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     eprintln!(
         "kiss check: refreshing Rust runtime coverage ({} tests)",
         selectors.len()
     );
     let _refresh_env = ScopedRefreshEnvGuard::set();
-    let summary = crate::test_runner::runners::run_rust_llvm_cov_selectors(
+    let summary = crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_check_aggregate_selectors(
         repo_root,
-        &selectors,
+        selectors,
         &[],
-        false,
         jobs,
-        Some(selectors.clone()),
+        None,
+        None,
     )
     .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
+    eprintln!(
+        "kiss check: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports={}",
+        summary.rust_aggregate_binaries, summary.rust_aggregate_exports
+    );
     if summary.exit_code != 0 {
         return Err(CoverageRefreshError::TestExecution {
             language: "Rust",
@@ -256,16 +288,24 @@ fn ensure_rust_runtime_coverage(
             exit_code: summary.exit_code,
         });
     }
-    load_rust_runtime_coverage(repo_root)
+    load_rust_runtime_coverage(repo_root, ignore)
         .map(|_| ())
-        .map_err(|err| CoverageRefreshError::validation("Rust", err))
+        .map_err(|err| CoverageRefreshError::validation("Rust", err))?;
+    Ok(CoverageRefreshStats {
+        rust_test_instances: summary.rust_test_instances,
+        rust_aggregate_binaries: summary.rust_aggregate_binaries,
+        rust_aggregate_exports: summary.rust_aggregate_exports,
+        rust_full_refresh: true,
+        ..Default::default()
+    })
 }
 
-fn try_incremental_rust_runtime_coverage(
+fn try_repair_rust_check_aggregate(
     repo_root: &Path,
+    ignore: &[String],
     selectors: &[String],
     jobs: usize,
-) -> Result<bool, CoverageRefreshError> {
+) -> Result<Option<CoverageRefreshStats>, CoverageRefreshError> {
     let current_identity =
         crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
             repo_root,
@@ -273,28 +313,23 @@ fn try_incremental_rust_runtime_coverage(
         )
         .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
     let cache_root = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root);
-    let Some(prior) = rust_llvm_cov_runner::load_reusable_prior_population_state(
+    let Some(prior) = rust_llvm_cov_runner::load_reusable_prior_check_aggregate(
         &cache_root,
         repo_root,
-        Some(selectors),
+        selectors,
         &current_identity.selection_context_fingerprint,
     ) else {
-        return Ok(false);
+        return Ok(None);
     };
-    match rust_llvm_cov_runner::reusable_snapshot_delta(
+    match rust_llvm_cov_runner::reusable_check_aggregate_delta(
         repo_root,
         &prior.ordinary_source_digests,
         &current_identity.ordinary_source_digests,
     ) {
-        rust_llvm_cov_runner::RustSnapshotDelta::Unchanged => return Ok(false),
-        rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => return Ok(false),
-        rust_llvm_cov_runner::RustSnapshotDelta::Modified(_) => {}
+        rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => return Ok(None),
+        rust_llvm_cov_runner::RustSnapshotDelta::Unchanged
+        | rust_llvm_cov_runner::RustSnapshotDelta::Modified(_) => {}
     }
-    let Some(prior_entries) =
-        rust_llvm_cov_runner::load_reusable_prior_selector_entries(&cache_root, &prior)
-    else {
-        return Ok(false);
-    };
     let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
         repo_root,
         selectors,
@@ -302,95 +337,90 @@ fn try_incremental_rust_runtime_coverage(
         jobs,
     )
     .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
-    let current_binary_digest = build
-        .index
-        .test_binaries
-        .iter()
-        .map(|binary| (binary.id.clone(), binary.digest.clone()))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    let (retained, invalid) = classify_incremental_rust_selectors(
+    let decision = classify_check_aggregate_repair(
         selectors,
         &prior,
-        &prior_entries,
         &build.index.selector_binary_ids,
-        &current_binary_digest,
+        &build.index.test_binaries,
     );
-    eprintln!(
-        "kiss check: incrementally refreshing Rust runtime coverage ({} reused, {} rerun)",
-        retained.len(),
-        invalid.len()
-    );
-    if !invalid.is_empty() {
-        let _refresh_env = ScopedRefreshEnvGuard::set();
-        let summary = crate::test_runner::runners::run_rust_llvm_cov_selectors(
-            repo_root,
-            &invalid,
-            &[],
-            false,
-            jobs,
-            None,
-        )
-        .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
-        if summary.exit_code != 0 {
-            return Err(CoverageRefreshError::TestExecution {
-                language: "Rust",
-                total: summary.total,
-                failed: summary.failed,
-                exit_code: summary.exit_code,
-            });
+    match decision {
+        CheckAggregateRepairDecision::FullRefresh => Ok(None),
+        CheckAggregateRepairDecision::IdentityOnly {
+            retained_binary_line_maps,
+        } => {
+            let aggregate = rust_llvm_cov_runner::build_check_aggregate(
+                &build.request,
+                &build.identity,
+                selectors,
+                build.index.selector_binary_ids,
+                &build.index.test_binaries,
+                retained_binary_line_maps,
+            )
+            .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
+            rust_llvm_cov_runner::publish_check_aggregate(&build.request, &aggregate)
+                .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
+            load_rust_runtime_coverage(repo_root, ignore)
+                .map(|_| ())
+                .map_err(|err| CoverageRefreshError::validation("Rust", err))?;
+            eprintln!(
+                "kiss check: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports=0",
+                aggregate.binaries.len()
+            );
+            Ok(Some(CoverageRefreshStats {
+                rust_aggregate_binaries: aggregate.binaries.len(),
+                rust_identity_only_repair: true,
+                ..Default::default()
+            }))
+        }
+        CheckAggregateRepairDecision::Rerun {
+            rerun_selectors,
+            replacement_binary_ids,
+            retained_binary_line_maps,
+        } => {
+            eprintln!(
+                "kiss check: incrementally refreshing Rust runtime coverage ({} tests, {} replacement binaries)",
+                rerun_selectors.len(),
+                replacement_binary_ids.len()
+            );
+            let _refresh_env = ScopedRefreshEnvGuard::set();
+            let repair_publication = rust_llvm_cov_runner::CheckAggregateRepairPublication {
+                selector_binary_ids: build.index.selector_binary_ids,
+                test_binaries: build.index.test_binaries,
+                retained_binary_line_maps,
+            };
+            let summary =
+                crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_check_aggregate_selectors(
+                    repo_root,
+                    &rerun_selectors,
+                    &[],
+                    jobs,
+                    Some(replacement_binary_ids),
+                    Some(repair_publication),
+                )
+                .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
+            eprintln!(
+                "kiss check: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports={}",
+                summary.rust_aggregate_binaries, summary.rust_aggregate_exports
+            );
+            if summary.exit_code != 0 {
+                return Err(CoverageRefreshError::TestExecution {
+                    language: "Rust",
+                    total: summary.total,
+                    failed: summary.failed,
+                    exit_code: summary.exit_code,
+                });
+            }
+            load_rust_runtime_coverage(repo_root, ignore)
+                .map(|_| ())
+                .map_err(|err| CoverageRefreshError::validation("Rust", err))?;
+            Ok(Some(CoverageRefreshStats {
+                rust_test_instances: summary.rust_test_instances,
+                rust_aggregate_binaries: summary.rust_aggregate_binaries,
+                rust_aggregate_exports: summary.rust_aggregate_exports,
+                ..Default::default()
+            }))
         }
     }
-    rust_llvm_cov_runner::publish_incremental_derived_state(
-        &build.request,
-        &build.tools,
-        &build.identity,
-        rust_llvm_cov_runner::IncrementalPublishPlan {
-            prior_generation: &prior.generation_fingerprint,
-            selectors,
-            retained_selectors: &retained,
-            expected_selector_binaries: &build.index.selector_binary_ids,
-            test_binaries: &build.index.test_binaries,
-        },
-    )
-    .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
-    Ok(true)
-}
-
-fn classify_incremental_rust_selectors(
-    selectors: &[String],
-    prior: &rust_llvm_cov_runner::RustPopulationState,
-    prior_entries: &std::collections::BTreeMap<
-        String,
-        rust_llvm_cov_runner::RustReusableSelectorEntry,
-    >,
-    current_selector_binaries: &std::collections::BTreeMap<String, Vec<String>>,
-    current_binary_digest: &std::collections::BTreeMap<String, String>,
-) -> (Vec<String>, Vec<String>) {
-    let mut retained = Vec::new();
-    let mut invalid = Vec::new();
-    for selector in selectors {
-        let Some(entry) = prior_entries.get(selector) else {
-            invalid.push(selector.clone());
-            continue;
-        };
-        let current_ids = current_selector_binaries
-            .get(selector)
-            .cloned()
-            .unwrap_or_default();
-        if entry.status != rpytest_runner::TestStatus::Passed
-            || entry.test_binary_ids != current_ids
-            || current_ids.iter().any(|id| {
-                let prior_digest = prior.test_binaries.get(id).map(|binary| &binary.digest);
-                let current_digest = current_binary_digest.get(id);
-                prior_digest != current_digest
-            })
-        {
-            invalid.push(selector.clone());
-        } else {
-            retained.push(selector.clone());
-        }
-    }
-    (retained, invalid)
 }
 
 #[cfg(test)]

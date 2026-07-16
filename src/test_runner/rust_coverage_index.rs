@@ -60,7 +60,7 @@ fn resolved_rust_batch_request_parts(
     String,
 > {
     use rust_llvm_cov_runner::{
-        RustCoverageBatchRequest, placeholder_delegated_runner_fields,
+        CoverageOutputMode, RustCoverageBatchRequest, placeholder_delegated_runner_fields,
         resolve_batch_request_runners,
     };
 
@@ -82,6 +82,7 @@ fn resolved_rust_batch_request_parts(
         delegated_runners,
         runner_map_fingerprint,
         host_platform,
+        coverage_output_mode: CoverageOutputMode::SelectorEntries,
     };
     resolve_batch_request_runners(&mut req).map_err(|err| format!("{err:?}"))?;
     let tools = cached_rust_coverage_tool_identity(repo_root)?;

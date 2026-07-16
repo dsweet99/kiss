@@ -6,11 +6,15 @@ use crate::{
     RustCovCacheStatus, RustLineCoverage, RustLlvmCovError, RustLlvmCovOutcome,
     RustTestBinaryIdentity,
     batch_aggregate::{InstanceResult, aggregate_logical_selectors},
+    batch_check_aggregate::{
+        build_check_aggregate, publish_check_aggregate, selector_binary_ids_from_outcomes,
+    },
     batch_export::{InstanceExportRequest, object_paths_for_executable},
     batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity, entry_fingerprint},
-    batch_plan::RustCoverageBatchRequest,
+    batch_plan::{CheckAggregateRepairPublication, RustCoverageBatchRequest},
     batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult},
     batch_shim::BatchShimMetadata,
+    batch_shim_lookup::resolve_shim_metadata,
     rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry},
 };
 
@@ -19,6 +23,7 @@ pub(crate) struct FreshBatchFinishContext {
     pub(crate) build_target_baseline_bytes: u64,
     pub(crate) process_residual_count: usize,
     pub(crate) test_binaries: Vec<RustTestBinaryIdentity>,
+    pub(crate) repair_publication: Option<CheckAggregateRepairPublication>,
 }
 
 #[cfg(test)]
@@ -29,6 +34,7 @@ impl FreshBatchFinishContext {
             build_target_baseline_bytes: 42,
             process_residual_count: 0,
             test_binaries: Vec::new(),
+            repair_publication: None,
         }
     }
 }
@@ -185,36 +191,94 @@ pub(crate) fn finish_fresh_batch_after_export(
     }
 }
 
-fn resolve_shim_metadata<'a>(
-    metadata_by_full_name: &BTreeMap<String, &'a BatchShimMetadata>,
-    shim_metadata: &'a [BatchShimMetadata],
-    test_full_name: &str,
-) -> Result<&'a BatchShimMetadata, RustLlvmCovError> {
-    if let Some(item) = metadata_by_full_name.get(test_full_name) {
-        return Ok(*item);
-    }
-    let Some((_, test_name)) = test_full_name.rsplit_once('$') else {
-        return Err(RustLlvmCovError::InvalidRequest(format!(
-            "missing target-runner metadata for test instance `{test_full_name}`"
-        )));
+pub(crate) fn finish_fresh_check_aggregate_after_export(
+    req: &RustCoverageBatchRequest,
+    identity: &RustCoverageBatchIdentity,
+    exact: bool,
+    instances: Vec<InstanceResult>,
+    exported: BTreeMap<String, RustLineCoverage>,
+    export_counters: crate::batch_export::ExportCounters,
+    finish: FreshBatchFinishContext,
+) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
+    let export_phase_ms = finish.export_started.elapsed().as_millis();
+    let (completed, agg_counters) =
+        aggregate_logical_selectors(&req.logical_selectors, exact, &instances);
+    let mut counters = RustCoverageBatchCounters {
+        build_invocations: 1,
+        test_instances: agg_counters.test_instances,
+        aggregate_binaries: exported.len(),
+        aggregate_exports: export_counters.export_jobs,
+        max_active_test_instances: agg_counters.test_instances.min(req.jobs),
+        max_active_exports: export_counters.max_active_exports,
+        unmatched_selectors: agg_counters.unmatched_selectors,
+        max_objects_per_export: export_counters.max_objects_per_export,
+        build_target_baseline_bytes: finish.build_target_baseline_bytes,
+        export_phase_ms,
+        process_residual_count: finish.process_residual_count,
+        ..Default::default()
     };
-    let matches: Vec<_> = shim_metadata
-        .iter()
-        .filter(|item| {
-            item.full_name
-                .rsplit_once('$')
-                .is_some_and(|(_, name)| name == test_name)
-        })
-        .collect();
-    match matches.len() {
-        0 => Err(RustLlvmCovError::InvalidRequest(format!(
-            "missing target-runner metadata for test instance `{test_full_name}`"
-        ))),
-        1 => Ok(matches[0]),
-        _ => Err(RustLlvmCovError::InvalidRequest(format!(
-            "ambiguous target-runner metadata for test instance `{test_full_name}`"
-        ))),
+    if agg_counters.unmatched_selectors > 0 {
+        return Ok(RustCoverageBatchResult {
+            completed: Vec::new(),
+            batch_error: Some(RustLlvmCovError::InvalidRequest(format!(
+                "check aggregate batch did not execute {} requested Rust selector(s)",
+                agg_counters.unmatched_selectors
+            ))),
+            counters,
+            test_binaries: Vec::new(),
+        });
     }
+    if completed
+        .iter()
+        .any(|outcome| outcome.status != rpytest_runner::TestStatus::Passed)
+    {
+        return Ok(RustCoverageBatchResult {
+            completed,
+            batch_error: None,
+            counters,
+            test_binaries: finish.test_binaries,
+        });
+    }
+    let (aggregate_selectors, selector_binary_ids, test_binaries, binary_line_maps) =
+        match finish.repair_publication.clone() {
+            Some(repair) => {
+                let selectors = repair
+                    .selector_binary_ids
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let mut maps = repair.retained_binary_line_maps;
+                maps.extend(exported);
+                (
+                    selectors,
+                    repair.selector_binary_ids,
+                    repair.test_binaries,
+                    maps,
+                )
+            }
+            None => (
+                req.logical_selectors.clone(),
+                selector_binary_ids_from_outcomes(&completed),
+                finish.test_binaries.clone(),
+                exported,
+            ),
+        };
+    let aggregate = build_check_aggregate(
+        req,
+        identity,
+        &aggregate_selectors,
+        selector_binary_ids,
+        &test_binaries,
+        binary_line_maps,
+    )?;
+    publish_check_aggregate(req, &aggregate)?;
+    counters.aggregate_binaries = aggregate.binaries.len();
+    Ok(RustCoverageBatchResult {
+        completed,
+        batch_error: None,
+        counters,
+        test_binaries: finish.test_binaries,
+    })
 }
 
 fn reject_missing_terminal_events(

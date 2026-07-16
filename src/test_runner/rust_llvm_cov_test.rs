@@ -133,10 +133,13 @@ fn rust_selector_path_submits_one_batch_request_to_executor() {
     let summary = run_rust_llvm_cov_selectors_with_deps(
         tmp.path(),
         &selectors,
-        &["--exact".to_string()],
-        true,
-        7,
-        None,
+        RustCoverageRunOptions {
+            extra: &["--exact".to_string()],
+            force_rerun: true,
+            jobs: 7,
+            population_publication_selectors: None,
+            coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        },
         move |repo_root| {
             detector_calls_for_closure.set(detector_calls_for_closure.get() + 1);
             assert_eq!(repo_root, expected_repo_root);
@@ -211,8 +214,16 @@ fn rust_coverage_batch_request_from_parts_preserves_selector_occurrences() {
     ];
     let extra = vec!["--exact".to_string()];
 
-    let req = rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &extra, true, 3, None)
-        .unwrap();
+    let req = rust_coverage_batch_request_from_parts(
+        tmp.path(),
+        &selectors,
+        &extra,
+        true,
+        3,
+        None,
+        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+    )
+    .unwrap();
 
     assert_eq!(req.cwd, tmp.path());
     assert_eq!(req.source_root, tmp.path());
@@ -248,11 +259,26 @@ fn rust_coverage_batch_request_uses_unique_run_scoped_config_paths() {
     let tmp = tempfile::tempdir().unwrap();
     let selectors = vec!["tests::case".to_string()];
 
-    let first = rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &[], false, 2, None)
-        .unwrap();
-    let second =
-        rust_coverage_batch_request_from_parts(tmp.path(), &selectors, &[], false, 2, None)
-            .unwrap();
+    let first = rust_coverage_batch_request_from_parts(
+        tmp.path(),
+        &selectors,
+        &[],
+        false,
+        2,
+        None,
+        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+    )
+    .unwrap();
+    let second = rust_coverage_batch_request_from_parts(
+        tmp.path(),
+        &selectors,
+        &[],
+        false,
+        2,
+        None,
+        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+    )
+    .unwrap();
 
     assert_ne!(first.generated_config, second.generated_config);
     assert_eq!(first.generated_config.file_name().unwrap(), "nextest.toml");
@@ -274,6 +300,7 @@ fn compatibility_batch_executor_returns_error_on_spawn_failure() {
         true,
         1,
         None,
+        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
     )
     .unwrap();
     batch_req.cargo = "/definitely/not/cargo".into();
@@ -315,6 +342,7 @@ fn rust_coverage_batch_request_rejects_unsupported_test_args() {
         false,
         1,
         None,
+        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
     )
     .unwrap_err();
 

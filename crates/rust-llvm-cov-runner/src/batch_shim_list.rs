@@ -5,10 +5,10 @@ use std::process::Stdio;
 
 use super::BatchShimListMetadata;
 use super::batch_shim_child::build_delegated_command;
-use crate::batch_shim_delegated::scrub_coverage_build_env;
 use super::batch_shim_write::{
     filesystem_safe_instance_id, list_binary_id, list_full_name, write_shim_list_metadata,
 };
+use crate::batch_shim_delegated::scrub_coverage_build_env;
 
 pub(crate) fn run_delegated_list_child(
     output_dir: &Path,

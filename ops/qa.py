@@ -711,6 +711,7 @@ def run_concurrent(
     commands: list[tuple[list[str], Path]],
     env: dict[str, str],
     timeout: int = 1_200,
+    allow_failures: bool = False,
 ) -> list[Outcome]:
     started = time.monotonic()
     processes = [
@@ -742,8 +743,9 @@ def run_concurrent(
         if outcome.returncode != 0:
             click.echo(outcome.stdout)
             click.echo(outcome.stderr, err=True)
-    failed = [outcome for outcome in outcomes if outcome.returncode != 0]
-    assert not failed, f"{name}: {len(failed)} concurrent process(es) failed"
+    if not allow_failures:
+        failed = [outcome for outcome in outcomes if outcome.returncode != 0]
+        assert not failed, f"{name}: {len(failed)} concurrent process(es) failed"
     return outcomes
 
 
@@ -892,6 +894,149 @@ def qa_fixture(prefix: str) -> Iterator[Fixture]:
 def load_json(path: Path) -> dict:
     assert path.is_file(), f"missing persisted artifact: {path}"
     return json.loads(path.read_text())
+
+
+def parse_rust_aggregate_refresh(stderr: str) -> tuple[int, int] | None:
+    prefix = "kiss check: refreshed Rust runtime coverage "
+    for line in stderr.splitlines():
+        if not line.startswith(prefix):
+            continue
+        fields = line.removeprefix(prefix).split()
+        values: dict[str, int] = {}
+        for item in fields:
+            key, separator, value = item.partition("=")
+            if separator:
+                values[key] = int(value)
+        if "rust_aggregate_binaries" in values and "rust_aggregate_exports" in values:
+            return values["rust_aggregate_binaries"], values["rust_aggregate_exports"]
+    return None
+
+
+def assert_check_gate_allowed(outcome: Outcome) -> None:
+    assert outcome.returncode == 0 or "GATE_FAILED:test_coverage" in outcome.stdout, (
+        f"{outcome.name}: unexpected check result\nstdout:\n{outcome.stdout}\nstderr:\n{outcome.stderr}"
+    )
+
+
+def reset_rust_check_aggregate_outputs(repo: Path) -> None:
+    rust_cache = repo / ".kiss/rust_llvm_cov_cache"
+    (rust_cache / "check_aggregate.json").unlink(missing_ok=True)
+    shutil.rmtree(rust_cache / "runs", ignore_errors=True)
+
+
+def write_aggregate_benchmark_repo(repo: Path) -> None:
+    (repo / "src").mkdir(parents=True)
+    (repo / "tests").mkdir(parents=True)
+    (repo / ".kissconfig").write_text(
+        "[gate]\n"
+        "test_coverage_threshold = 0\n"
+        "duplication_enabled = false\n"
+        "orphan_module_enabled = false\n",
+    )
+    (repo / "Cargo.toml").write_text(
+        "[package]\n"
+        "name = \"aggregate_benchmark\"\n"
+        "version = \"0.1.0\"\n"
+        "edition = \"2024\"\n",
+    )
+    (repo / "src/lib.rs").write_text("pub fn value() -> i32 { 1 }\n")
+    (repo / "tests/slow.rs").write_text(
+        "use std::fs;\n"
+        "use std::path::PathBuf;\n"
+        "use std::time::Duration;\n\n"
+        "fn observe_active(name: &str) {\n"
+        "    let root = PathBuf::from(std::env::var(\"KISS_AGG_BENCH_DIR\").unwrap());\n"
+        "    let active = root.join(\"active\");\n"
+        "    fs::create_dir_all(&active).unwrap();\n"
+        "    let marker = active.join(format!(\"{}-{}\", std::process::id(), name));\n"
+        "    fs::write(&marker, b\"1\").unwrap();\n"
+        "    std::thread::sleep(Duration::from_millis(100));\n"
+        "    let count = fs::read_dir(&active).unwrap().count();\n"
+        "    let max_path = root.join(\"max_active\");\n"
+        "    let previous = fs::read_to_string(&max_path)\n"
+        "        .ok()\n"
+        "        .and_then(|text| text.parse::<usize>().ok())\n"
+        "        .unwrap_or(0);\n"
+        "    if count > previous {\n"
+        "        fs::write(&max_path, count.to_string()).unwrap();\n"
+        "    }\n"
+        "    std::thread::sleep(Duration::from_millis(900));\n"
+        "    let _ = fs::remove_file(marker);\n"
+        "}\n\n"
+        "#[test]\nfn slow_a() { observe_active(\"a\"); assert_eq!(aggregate_benchmark::value(), 1); }\n"
+        "#[test]\nfn slow_b() { observe_active(\"b\"); assert_eq!(aggregate_benchmark::value(), 1); }\n"
+        "#[test]\nfn slow_c() { observe_active(\"c\"); assert_eq!(aggregate_benchmark::value(), 1); }\n"
+        "#[test]\nfn slow_d() { observe_active(\"d\"); assert_eq!(aggregate_benchmark::value(), 1); }\n",
+    )
+    subprocess.run(
+        ["cargo", "generate-lockfile"],
+        cwd=repo,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+
+def run_aggregate_benchmark_trial(
+    repo: Path,
+    env: dict[str, str],
+    jobs: int,
+    trial: int,
+) -> Outcome:
+    reset_rust_check_aggregate_outputs(repo)
+    bench_dir = repo / ".kiss/aggregate_benchmark_active"
+    shutil.rmtree(bench_dir, ignore_errors=True)
+    bench_dir.mkdir(parents=True)
+    trial_env = env.copy()
+    trial_env["KISS_AGG_BENCH_DIR"] = str(bench_dir)
+    outcome = run(
+        f"rust-aggregate-benchmark-j{jobs}-{trial}",
+        [
+            str(KISS),
+            "--defaults",
+            "--lang",
+            "rust",
+            "check",
+            "-j",
+            str(jobs),
+            str(repo),
+        ],
+        repo,
+        trial_env,
+        expected=0,
+    )
+    counts = parse_rust_aggregate_refresh(outcome.stderr)
+    assert counts is not None, outcome.stderr
+    binaries, exports = counts
+    assert binaries == 1 and exports == 1, outcome.stderr
+    max_active = int((bench_dir / "max_active").read_text())
+    if jobs > 1:
+        assert max_active > 1, f"expected active test overlap for -j{jobs}, got {max_active}"
+    return outcome
+
+
+def assert_aggregate_parallel_benchmark() -> None:
+    with tempfile.TemporaryDirectory(prefix="kiss-qa-rust-aggregate-bench-") as tmp:
+        repo = Path(tmp) / "repo"
+        repo.mkdir()
+        write_aggregate_benchmark_repo(repo)
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(ROOT)
+        env.pop("RUSTFLAGS", None)
+        warm = run_aggregate_benchmark_trial(repo, env, 4, 0)
+        click.echo(f"rust-aggregate-benchmark-warmup elapsed={warm.elapsed:.2f}s")
+        serial = [run_aggregate_benchmark_trial(repo, env, 1, i) for i in range(1, 4)]
+        parallel = [run_aggregate_benchmark_trial(repo, env, 4, i) for i in range(1, 4)]
+        serial_median = statistics.median(outcome.elapsed for outcome in serial)
+        parallel_median = statistics.median(outcome.elapsed for outcome in parallel)
+        click.echo(
+            "Rust aggregate benchmark medians: "
+            f"serial_j1={serial_median:.2f}s parallel_j4={parallel_median:.2f}s"
+        )
+        assert parallel_median < serial_median * 0.70, (
+            f"parallel median {parallel_median:.2f}s is not < 70% of "
+            f"serial median {serial_median:.2f}s"
+        )
 
 
 def python_rslip_cache_root(repo_root: Path) -> Path:
@@ -1779,6 +1924,160 @@ def rust_batch_e2e() -> None:
         click.echo(
             "QA PASS: nocapture relay, concurrent forced batches, derived repair, "
             "Ctrl-C recovery, and signal-ignoring escalation held."
+        )
+
+
+@cli.command("aggregate-coverage")
+def aggregate_coverage() -> None:
+    """QA for Rust check aggregate publication, warm reuse, and repair."""
+    jobs = 4
+    with qa_fixture("kiss-qa-rust-aggregate-") as fixture:
+        command = [
+            str(KISS),
+            "--defaults",
+            "--lang",
+            "rust",
+            "check",
+            "-j",
+            str(jobs),
+            *fixture.ignores["rust"],
+            str(fixture.root),
+        ]
+        cold = run(
+            "rust-aggregate-cold-check",
+            command,
+            fixture.root,
+            fixture.env,
+            expected=None,
+        )
+        assert "GATE_FAILED:test_coverage" in cold.stdout or cold.returncode == 0, cold.combined
+        cold_counts = parse_rust_aggregate_refresh(cold.stderr)
+        assert cold_counts is not None, cold.stderr
+        cold_binaries, cold_exports = cold_counts
+        assert cold_binaries > 0, cold.stderr
+        assert 0 < cold_exports <= cold_binaries, cold.stderr
+        aggregate = fixture.root / ".kiss/rust_llvm_cov_cache/check_aggregate.json"
+        data = load_json(aggregate)
+        assert data["schema_version"] == "rust-check-aggregate-v1"
+        assert data["binaries"], "aggregate must contain at least one binary record"
+        selector_count = len(data["selector_binary_ids"])
+        if selector_count > 1:
+            assert cold_exports < selector_count, (
+                "aggregate should export per binary, not per selected test instance: "
+                f"selectors={selector_count} exports={cold_exports}"
+            )
+        cold_maps = {
+            record["id"]: record["line_map"]
+            for record in data["binaries"]
+        }
+
+        warm = run(
+            "rust-aggregate-warm-check",
+            command,
+            fixture.root,
+            fixture.env,
+            expected=None,
+        )
+        assert "GATE_FAILED:test_coverage" in warm.stdout or warm.returncode == 0, warm.combined
+        assert "refreshing Rust runtime coverage" not in warm.stderr, warm.stderr
+
+        source = fixture.root / RS_SOURCE
+        source.write_text(source.read_text() + "\n// aggregate coverage identity repair\n")
+        identity = run(
+            "rust-aggregate-identity-repair",
+            command,
+            fixture.root,
+            fixture.env,
+            expected=None,
+        )
+        assert "GATE_FAILED:test_coverage" in identity.stdout or identity.returncode == 0, (
+            identity.combined
+        )
+        identity_counts = parse_rust_aggregate_refresh(identity.stderr)
+        assert identity_counts is not None, identity.stderr
+        identity_binaries, identity_exports = identity_counts
+        assert identity_binaries == cold_binaries, identity.stderr
+        assert identity_exports == 0, identity.stderr
+
+        changed_text(source, "if 100 <= file_pct {", "if file_pct >= 100 {")
+        repair = run(
+            "rust-aggregate-code-repair",
+            command,
+            fixture.root,
+            fixture.env,
+            expected=None,
+        )
+        assert "GATE_FAILED:test_coverage" in repair.stdout or repair.returncode == 0, (
+            repair.combined
+        )
+        repair_counts = parse_rust_aggregate_refresh(repair.stderr)
+        assert repair_counts is not None, repair.stderr
+        repair_binaries, repair_exports = repair_counts
+        assert repair_binaries == cold_binaries, repair.stderr
+        assert 0 < repair_exports <= repair_binaries, repair.stderr
+        repaired = load_json(aggregate)
+        repaired_maps = {
+            record["id"]: record["line_map"]
+            for record in repaired["binaries"]
+        }
+        assert set(repaired_maps) == set(cold_maps), "repair changed aggregate binary set"
+        retained_maps = sum(
+            1 for binary_id, line_map in cold_maps.items()
+            if repaired_maps.get(binary_id) == line_map
+        )
+        assert retained_maps >= cold_binaries - repair_exports, (
+            "repair should retain unchanged binary maps exactly: "
+            f"retained={retained_maps} binaries={cold_binaries} exports={repair_exports}"
+        )
+
+        final_warm = run(
+            "rust-aggregate-final-warm-check",
+            command,
+            fixture.root,
+            fixture.env,
+            expected=None,
+        )
+        assert "GATE_FAILED:test_coverage" in final_warm.stdout or final_warm.returncode == 0, (
+            final_warm.combined
+        )
+        assert "refreshing Rust runtime coverage" not in final_warm.stderr, final_warm.stderr
+        aggregate.unlink()
+        shutil.rmtree(fixture.root / ".kiss/rust_llvm_cov_cache/runs", ignore_errors=True)
+        concurrent = run_concurrent(
+            "rust-aggregate-concurrent-check",
+            [(command, fixture.root), (command, fixture.root)],
+            fixture.env,
+            allow_failures=True,
+        )
+        for outcome in concurrent:
+            assert_check_gate_allowed(outcome)
+        refreshers = sum(
+            "refreshing Rust runtime coverage" in outcome.stderr
+            for outcome in concurrent
+        )
+        assert refreshers == 1, (
+            "concurrent refresh should have exactly one writer and one waiter/reloader: "
+            f"{[outcome.stderr for outcome in concurrent]}"
+        )
+        assert aggregate.is_file(), "concurrent refresh should leave a published aggregate"
+        concurrent_data = load_json(aggregate)
+        assert concurrent_data["binaries"], "concurrent refresh published an empty aggregate"
+        post_concurrent = run(
+            "rust-aggregate-post-concurrent-warm-check",
+            command,
+            fixture.root,
+            fixture.env,
+            expected=None,
+        )
+        assert_check_gate_allowed(post_concurrent)
+        assert "refreshing Rust runtime coverage" not in post_concurrent.stderr, (
+            post_concurrent.stderr
+        )
+        assert_aggregate_parallel_benchmark()
+        click.echo(
+            "QA PASS: Rust check aggregate cold publication, warm reuse, "
+            "identity repair, code repair, retained maps, concurrent refresh, "
+            "and serial/parallel benchmark held."
         )
 
 

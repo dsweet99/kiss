@@ -1,15 +1,22 @@
 use crate::{
-    RustLlvmCovError,
-    batch_events::parse_batch_event_stream,
+    InstanceResult, RustLlvmCovError, RustTestBinaryIdentity,
+    batch_check_aggregate::{
+        build_check_aggregate_export_requests, export_check_aggregates_bounded,
+    },
+    batch_events::{BatchEventStream, parse_batch_event_stream},
     batch_executor_finish::{
         FreshBatchFinishContext, build_instance_export_requests, build_instance_results,
-        finish_fresh_batch_after_export, test_binaries_from_shim_metadata,
+        finish_fresh_batch_after_export, finish_fresh_check_aggregate_after_export,
+        test_binaries_from_shim_metadata,
     },
     batch_export::{SubprocessInstanceExporter, export_instances_bounded},
     batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity},
-    batch_plan::{RustCoverageBatchPlan, RustCoverageBatchRequest},
+    batch_plan::{CoverageOutputMode, RustCoverageBatchPlan, RustCoverageBatchRequest},
     batch_result::RustCoverageBatchResult,
-    batch_run::{self, BatchSubprocessRunner, CurrentRunCleanup, FreshBatchRunScope},
+    batch_run::{
+        self, BatchSubprocessRunner, BuildIdentityPreparation, CurrentRunCleanup,
+        FreshBatchRunScope,
+    },
     batch_shim::load_target_runner_shim_metadata,
 };
 
@@ -129,72 +136,156 @@ where
         .map_err(RustLlvmCovError::from)?;
     let build_identity = batch_run::prepare_build_target_for_identity(req, tools, plan)?;
     let outcome = (|| -> Result<RustCoverageBatchResult, RustLlvmCovError> {
-        crate::batch_runner_resolve::write_runner_map(
-            &plan.runner_map_path,
-            &req.delegated_runners,
-        )?;
-        crate::batch_plan_publish::publish_generated_nextest_config(plan)?;
-        let run = runner.run(&req.cwd, plan).map_err(RustLlvmCovError::from)?;
-        let parsed = parse_batch_event_stream(&run.stdout)?;
-        let build_succeeded = parsed.build_succeeded.unwrap_or(false);
-        if !build_succeeded {
-            let detail = String::from_utf8_lossy(&run.stderr);
-            return Err(RustLlvmCovError::InvalidRequest(format!(
-                "nextest batch build failed before test execution: {detail}"
-            )));
-        }
-        reject_nonzero_without_terminal_events(&run, &parsed)?;
-        if batch_run::batch_scope_interrupted() {
-            return Err(RustLlvmCovError::InvalidRequest("batch interrupted".into()));
-        }
-        let build_target_baseline_bytes = batch_run::publish_successful_build_identity(
-            req,
-            tools,
-            plan,
-            build_identity.previous_baseline_bytes,
-        )?;
-        let exact = req.test_args.iter().any(|arg| arg == "--exact");
-        let shim_metadata = load_target_runner_shim_metadata(&plan.target_runner_output_dir)?;
-        let test_binaries = test_binaries_from_shim_metadata(&shim_metadata)?;
-        let instances = build_instance_results(
-            &parsed.started_tests,
-            &parsed.ignored_tests,
-            &parsed.terminal_tests,
-            &shim_metadata,
-            exact,
-            req,
-        )?;
-        let export_requests =
-            build_instance_export_requests(&instances, &shim_metadata, &parsed.compiler_artifacts)?;
-        let object_catalog = crate::batch_export_catalog::build_object_catalog(
-            &parsed.compiler_artifacts,
-            &plan.build_target,
-            &export_requests,
-            &req.env,
-        );
+        let prepared = prepare_fresh_batch_run(req, tools, plan, runner, build_identity)?;
         let export_started = std::time::Instant::now();
-        let (exported, export_counters) =
-            export_step(req, &req.source_root, &object_catalog, export_requests)?;
-        finish_fresh_batch_after_export(
-            req,
-            tools,
-            identity,
-            exact,
-            instances,
-            exported,
-            export_counters,
-            FreshBatchFinishContext {
-                export_started,
-                build_target_baseline_bytes,
-                process_residual_count: run.process_residual_count,
-                test_binaries,
-            },
-        )
+        match &req.coverage_output_mode {
+            CoverageOutputMode::SelectorEntries => {
+                let export_requests = build_instance_export_requests(
+                    &prepared.instances,
+                    &prepared.shim_metadata,
+                    &prepared.parsed.compiler_artifacts,
+                )?;
+                let object_catalog = crate::batch_export_catalog::build_object_catalog(
+                    &prepared.parsed.compiler_artifacts,
+                    &plan.build_target,
+                    &export_requests,
+                    &req.env,
+                );
+                let (exported, export_counters) =
+                    export_step(req, &req.source_root, &object_catalog, export_requests)?;
+                finish_fresh_batch_after_export(
+                    req,
+                    tools,
+                    identity,
+                    prepared.exact,
+                    prepared.instances,
+                    exported,
+                    export_counters,
+                    FreshBatchFinishContext {
+                        export_started,
+                        build_target_baseline_bytes: prepared.build_target_baseline_bytes,
+                        process_residual_count: prepared.process_residual_count,
+                        test_binaries: prepared.test_binaries,
+                        repair_publication: None,
+                    },
+                )
+            }
+            CoverageOutputMode::CheckAggregate {
+                publication_binary_ids,
+                repair_publication,
+            } => {
+                let aggregate_requests = build_check_aggregate_export_requests(
+                    &prepared.instances,
+                    &prepared.shim_metadata,
+                    &prepared.parsed.compiler_artifacts,
+                    publication_binary_ids.as_ref(),
+                )?;
+                let mut object_catalog = crate::batch_export_catalog::build_object_catalog(
+                    &prepared.parsed.compiler_artifacts,
+                    &plan.build_target,
+                    &[],
+                    &req.env,
+                );
+                for request in &aggregate_requests {
+                    object_catalog.extend(request.objects.iter().cloned());
+                }
+                object_catalog.sort();
+                object_catalog.dedup();
+                let (exported, export_counters) = export_check_aggregates_bounded(
+                    req.jobs,
+                    &req.source_root,
+                    &object_catalog,
+                    aggregate_requests,
+                )?;
+                finish_fresh_check_aggregate_after_export(
+                    req,
+                    identity,
+                    prepared.exact,
+                    prepared.instances,
+                    exported,
+                    export_counters,
+                    FreshBatchFinishContext {
+                        export_started,
+                        build_target_baseline_bytes: prepared.build_target_baseline_bytes,
+                        process_residual_count: prepared.process_residual_count,
+                        test_binaries: prepared.test_binaries,
+                        repair_publication: repair_publication.clone(),
+                    },
+                )
+            }
+        }
     })();
     match outcome {
         Ok(result) => scope.finish_batch_result(result),
         Err(err) => scope.finish(Err(err)),
     }
+}
+
+struct PreparedFreshBatchRun {
+    parsed: BatchEventStream,
+    exact: bool,
+    shim_metadata: Vec<crate::batch_shim::BatchShimMetadata>,
+    test_binaries: Vec<RustTestBinaryIdentity>,
+    instances: Vec<InstanceResult>,
+    build_target_baseline_bytes: u64,
+    process_residual_count: usize,
+}
+
+fn prepare_fresh_batch_run(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    plan: &RustCoverageBatchPlan,
+    runner: &BatchSubprocessRunner,
+    build_identity: BuildIdentityPreparation,
+) -> Result<PreparedFreshBatchRun, RustLlvmCovError> {
+    crate::batch_runner_resolve::write_runner_map(&plan.runner_map_path, &req.delegated_runners)?;
+    crate::batch_plan_publish::publish_generated_nextest_config(plan)?;
+    let run = runner.run(&req.cwd, plan).map_err(RustLlvmCovError::from)?;
+    let parsed = parse_batch_event_stream(&run.stdout)?;
+    reject_failed_build_without_tests(&run, &parsed)?;
+    reject_nonzero_without_terminal_events(&run, &parsed)?;
+    if batch_run::batch_scope_interrupted() {
+        return Err(RustLlvmCovError::InvalidRequest("batch interrupted".into()));
+    }
+    let build_target_baseline_bytes = batch_run::publish_successful_build_identity(
+        req,
+        tools,
+        plan,
+        build_identity.previous_baseline_bytes,
+    )?;
+    let exact = req.test_args.iter().any(|arg| arg == "--exact");
+    let shim_metadata = load_target_runner_shim_metadata(&plan.target_runner_output_dir)?;
+    let test_binaries = test_binaries_from_shim_metadata(&shim_metadata)?;
+    let instances = build_instance_results(
+        &parsed.started_tests,
+        &parsed.ignored_tests,
+        &parsed.terminal_tests,
+        &shim_metadata,
+        exact,
+        req,
+    )?;
+    Ok(PreparedFreshBatchRun {
+        parsed,
+        exact,
+        shim_metadata,
+        test_binaries,
+        instances,
+        build_target_baseline_bytes,
+        process_residual_count: run.process_residual_count,
+    })
+}
+
+fn reject_failed_build_without_tests(
+    run: &crate::batch_run::BatchSubprocessRunOutcome,
+    parsed: &BatchEventStream,
+) -> Result<(), RustLlvmCovError> {
+    if parsed.build_succeeded.unwrap_or(false) {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(&run.stderr);
+    Err(RustLlvmCovError::InvalidRequest(format!(
+        "nextest batch build failed before test execution: {detail}"
+    )))
 }
 
 #[cfg(test)]

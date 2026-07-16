@@ -5,6 +5,9 @@
 #![allow(clippy::must_use_candidate)]
 
 mod batch_aggregate;
+mod batch_check_aggregate;
+mod batch_check_aggregate_export;
+mod batch_check_aggregate_identity;
 mod batch_derived;
 mod batch_derived_entries;
 mod batch_derived_incremental;
@@ -39,6 +42,7 @@ mod batch_runner_resolve;
 mod batch_shim;
 #[cfg(unix)]
 mod batch_shim_delegated;
+mod batch_shim_lookup;
 mod cargo_workspace_metadata;
 mod file_lock;
 mod llvm_cov_json;
@@ -71,6 +75,11 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub use batch_aggregate::{AggregationCounters, InstanceResult, aggregate_logical_selectors};
+pub use batch_check_aggregate::{
+    CHECK_AGGREGATE_SCHEMA_VERSION, CheckAggregateBinaryRecord, CheckAggregateSnapshot,
+    ValidatedCheckAggregate, build_check_aggregate, load_current_check_aggregate_snapshot,
+    load_reusable_prior_check_aggregate, publish_check_aggregate, reusable_check_aggregate_delta,
+};
 pub use batch_derived::{
     DerivedPublishCounters, INDEX_SCHEMA_VERSION as BATCH_INDEX_SCHEMA_VERSION,
     POPULATION_SCHEMA_VERSION as BATCH_POPULATION_SCHEMA_VERSION, population_derived_state_stale,
@@ -104,8 +113,8 @@ pub use batch_fingerprint::{
     RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity, entry_fingerprint,
 };
 pub use batch_plan::{
-    RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
-    validate_supported_rust_cargo_args,
+    CheckAggregateRepairPublication, CoverageOutputMode, RustCoverageBatchPlan,
+    RustCoverageBatchRequest, build_rust_coverage_batch_plan, validate_supported_rust_cargo_args,
 };
 pub use batch_plan_publish::publish_generated_nextest_config;
 pub use batch_plan_test_args::validate_supported_rust_test_args;

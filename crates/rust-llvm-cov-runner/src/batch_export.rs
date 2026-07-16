@@ -325,30 +325,43 @@ fn drain_export_results(drain: &mut ExportDrainState<'_>) -> Result<(), RustLlvm
 
 type ExportJobResult = Result<(String, RustLineCoverage), RustLlvmCovError>;
 
-fn merge_instance_profile(
+pub(crate) fn merge_profiles(
     tools: &ExportTools,
-    profile_input: &Path,
+    profile_inputs: &[PathBuf],
     profdata_output: &Path,
 ) -> Result<(), RustLlvmCovError> {
+    if profile_inputs.is_empty() {
+        return Err(RustLlvmCovError::InvalidRequest(
+            "profile merge requires at least one input".into(),
+        ));
+    }
     let status = Command::new(&tools.llvm_profdata)
         .arg("merge")
         .arg("-sparse")
         .arg("--num-threads=1")
-        .arg(profile_input)
+        .args(profile_inputs)
         .arg("-o")
         .arg(profdata_output)
         .status()
         .map_err(RustLlvmCovError::Io)?;
     if !status.success() {
         return Err(RustLlvmCovError::InvalidRequest(format!(
-            "llvm-profdata merge failed for {}",
-            profile_input.display()
+            "llvm-profdata merge failed for {} profile input(s)",
+            profile_inputs.len()
         )));
     }
     Ok(())
 }
 
-fn export_instance_coverage(
+fn merge_instance_profile(
+    tools: &ExportTools,
+    profile_input: &Path,
+    profdata_output: &Path,
+) -> Result<(), RustLlvmCovError> {
+    merge_profiles(tools, &[profile_input.to_path_buf()], profdata_output)
+}
+
+pub(crate) fn export_instance_coverage(
     tools: &ExportTools,
     profdata: &Path,
     source_root: &Path,

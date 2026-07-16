@@ -7,7 +7,8 @@ use crate::batch_fingerprint::{
 };
 use crate::batch_lock::lock_batch;
 use crate::batch_plan::{
-    RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
+    CoverageOutputMode, RustCoverageBatchPlan, RustCoverageBatchRequest,
+    build_rust_coverage_batch_plan,
 };
 use crate::batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult};
 use crate::batch_run::default_batch_subprocess_runner;
@@ -67,7 +68,10 @@ where
     let plan = build_rust_coverage_batch_plan(req)
         .map_err(|message| RustLlvmCovError::InvalidRequest(format!("batch plan: {message}")))?;
 
-    if !req.force_rerun
+    if matches!(
+        req.coverage_output_mode,
+        CoverageOutputMode::SelectorEntries
+    ) && !req.force_rerun
         && let Some(result) = try_all_hit_fast_path(req, tools, &identity)?
     {
         return maybe_publish_derived_after_all_hit(req, tools, &identity, result);
@@ -76,7 +80,10 @@ where
     let _batch_guard = lock_batch(&req.cache_root)?;
     let legacy_cleanup = cleanup_legacy_worker_data_nonblocking(&req.cache_root)?;
 
-    if !req.force_rerun
+    if matches!(
+        req.coverage_output_mode,
+        CoverageOutputMode::SelectorEntries
+    ) && !req.force_rerun
         && let Some(result) = try_all_hit_after_lock(req, tools, &identity)?
     {
         return maybe_publish_derived_after_all_hit(req, tools, &identity, result).map(
@@ -100,6 +107,13 @@ fn finalize_after_fresh_batch(
     legacy_cleanup_deferred: bool,
     result: &mut RustCoverageBatchResult,
 ) -> Result<(), RustLlvmCovError> {
+    if !matches!(
+        req.coverage_output_mode,
+        CoverageOutputMode::SelectorEntries
+    ) {
+        result.counters.legacy_cleanup_deferred = legacy_cleanup_deferred;
+        return Ok(());
+    }
     apply_population_derived_publication(req, tools, identity, result)?;
     crate::batch_derived::maybe_prune_obsolete_selective_after_batch(req, identity, result)?;
     result.counters.legacy_cleanup_deferred = legacy_cleanup_deferred;

@@ -1,9 +1,26 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::batch_plan_env::ensure_coverage_link_build_id;
 use crate::batch_plan_nextest_config::build_nextest_config_toml;
 use crate::batch_plan_test_args::validate_supported_rust_test_args;
+use crate::{RustLineCoverage, RustTestBinaryIdentity};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CoverageOutputMode {
+    SelectorEntries,
+    CheckAggregate {
+        publication_binary_ids: Option<BTreeSet<String>>,
+        repair_publication: Option<CheckAggregateRepairPublication>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckAggregateRepairPublication {
+    pub selector_binary_ids: BTreeMap<String, Vec<String>>,
+    pub test_binaries: Vec<RustTestBinaryIdentity>,
+    pub retained_binary_line_maps: BTreeMap<String, RustLineCoverage>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RustCoverageBatchRequest {
@@ -22,6 +39,7 @@ pub struct RustCoverageBatchRequest {
     pub delegated_runners: crate::batch_runner_resolve::DelegatedRunnerMap,
     pub runner_map_fingerprint: String,
     pub host_platform: String,
+    pub coverage_output_mode: CoverageOutputMode,
 }
 
 #[cfg(test)]
@@ -48,6 +66,7 @@ impl RustCoverageBatchRequest {
             )]),
             runner_map_fingerprint: "0000000000000000".to_string(),
             host_platform: "x86_64-unknown-linux-gnu".to_string(),
+            coverage_output_mode: CoverageOutputMode::SelectorEntries,
         }
     }
 }
@@ -392,29 +411,5 @@ fn cargo_config_value_error() -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan};
-
-    #[test]
-    fn batch_request_witness_exercises_public_contract_in_module() {
-        let req = RustCoverageBatchRequest::witness();
-        let cloned = req.clone();
-
-        assert_eq!(cloned, req);
-        assert!(format!("{req:?}").contains("RustCoverageBatchRequest"));
-        assert_eq!(req.logical_selectors.len(), 2);
-        assert_eq!(req.jobs, 4);
-        assert!(build_rust_coverage_batch_plan(&req).is_ok());
-    }
-
-    #[test]
-    fn batch_plan_witness_exercises_public_contract_in_module() {
-        let plan = RustCoverageBatchPlan::witness();
-        let cloned = plan.clone();
-
-        assert_eq!(cloned, plan);
-        assert!(format!("{plan:?}").contains("RustCoverageBatchPlan"));
-        assert_eq!(plan.argv[0], "cargo");
-        assert_eq!(plan.env["NEXTEST_EXPERIMENTAL_LIBTEST_JSON"], "1");
-    }
-}
+#[path = "batch_plan_public_test.rs"]
+mod tests;

@@ -151,11 +151,13 @@ fn compile_time_closure_does_not_treat_custom_build_package_lib_as_compile_time(
     let workspace = WorkspaceMetadata::from_cargo_metadata(&metadata);
     assert!(!workspace.compile_time_package_ids().contains("build-pkg"));
     assert_eq!(
-        workspace.rs_compile_time_classification(&PathBuf::from("/repo"), Path::new("/repo/build.rs")),
+        workspace
+            .rs_compile_time_classification(&PathBuf::from("/repo"), Path::new("/repo/build.rs")),
         Some(true)
     );
     assert_eq!(
-        workspace.rs_compile_time_classification(&PathBuf::from("/repo"), Path::new("/repo/src/lib.rs")),
+        workspace
+            .rs_compile_time_classification(&PathBuf::from("/repo"), Path::new("/repo/src/lib.rs")),
         Some(false)
     );
 }

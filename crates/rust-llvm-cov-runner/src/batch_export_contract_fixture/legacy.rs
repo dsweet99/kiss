@@ -252,6 +252,7 @@ pub(crate) fn batch_request_with_args(
         delegated_runners: BTreeMap::new(),
         runner_map_fingerprint: String::new(),
         host_platform: String::new(),
+        coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
     };
     resolve_batch_request_runners(&mut req).expect("resolve delegated runners");
     req

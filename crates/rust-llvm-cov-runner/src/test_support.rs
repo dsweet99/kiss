@@ -78,6 +78,7 @@ pub(crate) fn batch_executor_request(repo: &Path) -> crate::RustCoverageBatchReq
         delegated_runners,
         runner_map_fingerprint,
         host_platform,
+        coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
     }
 }
 
@@ -268,6 +269,7 @@ pub(crate) fn derived_fixture_request(repo: &Path) -> crate::RustCoverageBatchRe
         delegated_runners,
         runner_map_fingerprint,
         host_platform,
+        coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
     }
 }
 
@@ -326,6 +328,7 @@ pub(crate) fn runner_resolve_base_request(repo: &Path) -> crate::RustCoverageBat
         delegated_runners,
         runner_map_fingerprint,
         host_platform,
+        coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
     }
 }
 

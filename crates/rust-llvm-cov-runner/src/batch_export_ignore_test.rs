@@ -110,6 +110,7 @@ fn resolve_ignore_filename_regex_fails_for_missing_manifest() {
         delegated_runners: Default::default(),
         runner_map_fingerprint: String::new(),
         host_platform: String::new(),
+        coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
     };
     assert!(resolve_ignore_filename_regex(&req, &req.cache_root.join("build/target")).is_err());
 }
@@ -140,6 +141,7 @@ fn resolve_ignore_filename_regex_for_kiss_repo_root() {
         delegated_runners: Default::default(),
         runner_map_fingerprint: String::new(),
         host_platform: String::new(),
+        coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
     };
     let regex = resolve_ignore_filename_regex(&req, &req.cache_root.join("build/target"))
         .expect("kiss ignore regex")
@@ -378,6 +380,7 @@ fn resolve_ignore_filename_regex_for_fixture_package_filter() {
         delegated_runners: Default::default(),
         runner_map_fingerprint: String::new(),
         host_platform: String::new(),
+        coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
     };
     let regex = super::resolve_ignore_filename_regex(&req, &req.cache_root.join("build/target"))
         .expect("ignore regex");

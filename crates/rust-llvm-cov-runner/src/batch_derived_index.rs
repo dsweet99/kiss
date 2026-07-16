@@ -367,7 +367,7 @@ pub fn reusable_snapshot_delta(
     }
 }
 
-fn normalized_source_root(source_root: &Path) -> String {
+pub(crate) fn normalized_source_root(source_root: &Path) -> String {
     source_root
         .canonicalize()
         .unwrap_or_else(|_| source_root.to_path_buf())
