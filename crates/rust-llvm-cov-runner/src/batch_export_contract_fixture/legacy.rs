@@ -185,6 +185,7 @@ fn run_per_selector_cargo_llvm_cov_oracle(
         exit_code,
         duration: started.elapsed(),
         coverage,
+        test_binary_ids: vec!["test-bin".to_string()],
         cache_status: RustCovCacheStatus::FreshUnstored,
         stdout: Some(output.stdout),
         stderr: Some(output.stderr),

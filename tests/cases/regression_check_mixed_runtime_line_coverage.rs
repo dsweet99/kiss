@@ -1,4 +1,4 @@
-use crate::common::{seed_python_runtime_coverage, seed_rust_runtime_coverage};
+use crate::common::{generate_lockfile, seed_python_runtime_coverage, seed_rust_runtime_coverage};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -8,7 +8,7 @@ fn mixed_python_and_rust_runtime_line_coverage_can_pass_together() {
     let home = TempDir::new().unwrap();
     let repo = TempDir::new().unwrap();
     write_mixed_runtime_repo(&repo);
-    generate_lockfile(&repo);
+    generate_lockfile(repo.path());
     seed_python_runtime_coverage(
         repo.path(),
         &[("test_app.py::test_py_value", vec![("app.py", vec![1, 2])])],
@@ -77,19 +77,6 @@ fn write_mixed_runtime_repo(repo: &TempDir) {
          }\n",
     )
     .unwrap();
-}
-
-fn generate_lockfile(repo: &TempDir) {
-    let lockfile = Command::new("cargo")
-        .arg("generate-lockfile")
-        .current_dir(repo.path())
-        .output()
-        .expect("cargo generate-lockfile should run");
-    assert!(
-        lockfile.status.success(),
-        "cargo generate-lockfile failed: {}",
-        String::from_utf8_lossy(&lockfile.stderr)
-    );
 }
 
 fn run_kiss_check_all(home: &TempDir, repo: &TempDir) -> std::process::Output {

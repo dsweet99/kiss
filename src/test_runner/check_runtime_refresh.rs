@@ -229,6 +229,11 @@ fn ensure_rust_runtime_coverage(
     let selectors =
         crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
             .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
+    if try_incremental_rust_runtime_coverage(repo_root, &selectors, jobs)? {
+        return load_rust_runtime_coverage(repo_root)
+            .map(|_| ())
+            .map_err(|err| CoverageRefreshError::validation("Rust", err));
+    }
     eprintln!(
         "kiss check: refreshing Rust runtime coverage ({} tests)",
         selectors.len()
@@ -255,3 +260,139 @@ fn ensure_rust_runtime_coverage(
         .map(|_| ())
         .map_err(|err| CoverageRefreshError::validation("Rust", err))
 }
+
+fn try_incremental_rust_runtime_coverage(
+    repo_root: &Path,
+    selectors: &[String],
+    jobs: usize,
+) -> Result<bool, CoverageRefreshError> {
+    let current_identity =
+        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+            repo_root,
+            &[],
+        )
+        .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
+    let cache_root = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root);
+    let Some(prior) = rust_llvm_cov_runner::load_reusable_prior_population_state(
+        &cache_root,
+        repo_root,
+        Some(selectors),
+        &current_identity.selection_context_fingerprint,
+    ) else {
+        return Ok(false);
+    };
+    match rust_llvm_cov_runner::reusable_snapshot_delta(
+        repo_root,
+        &prior.ordinary_source_digests,
+        &current_identity.ordinary_source_digests,
+    ) {
+        rust_llvm_cov_runner::RustSnapshotDelta::Unchanged => return Ok(false),
+        rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => return Ok(false),
+        rust_llvm_cov_runner::RustSnapshotDelta::Modified(_) => {}
+    }
+    let Some(prior_entries) =
+        rust_llvm_cov_runner::load_reusable_prior_selector_entries(&cache_root, &prior)
+    else {
+        return Ok(false);
+    };
+    let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
+        repo_root,
+        selectors,
+        &[],
+        jobs,
+    )
+    .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
+    let current_binary_digest = build
+        .index
+        .test_binaries
+        .iter()
+        .map(|binary| (binary.id.clone(), binary.digest.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let (retained, invalid) = classify_incremental_rust_selectors(
+        selectors,
+        &prior,
+        &prior_entries,
+        &build.index.selector_binary_ids,
+        &current_binary_digest,
+    );
+    eprintln!(
+        "kiss check: incrementally refreshing Rust runtime coverage ({} reused, {} rerun)",
+        retained.len(),
+        invalid.len()
+    );
+    if !invalid.is_empty() {
+        let _refresh_env = ScopedRefreshEnvGuard::set();
+        let summary = crate::test_runner::runners::run_rust_llvm_cov_selectors(
+            repo_root,
+            &invalid,
+            &[],
+            false,
+            jobs,
+            None,
+        )
+        .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
+        if summary.exit_code != 0 {
+            return Err(CoverageRefreshError::TestExecution {
+                language: "Rust",
+                total: summary.total,
+                failed: summary.failed,
+                exit_code: summary.exit_code,
+            });
+        }
+    }
+    rust_llvm_cov_runner::publish_incremental_derived_state(
+        &build.request,
+        &build.tools,
+        &build.identity,
+        rust_llvm_cov_runner::IncrementalPublishPlan {
+            prior_generation: &prior.generation_fingerprint,
+            selectors,
+            retained_selectors: &retained,
+            expected_selector_binaries: &build.index.selector_binary_ids,
+            test_binaries: &build.index.test_binaries,
+        },
+    )
+    .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
+    Ok(true)
+}
+
+fn classify_incremental_rust_selectors(
+    selectors: &[String],
+    prior: &rust_llvm_cov_runner::RustPopulationState,
+    prior_entries: &std::collections::BTreeMap<
+        String,
+        rust_llvm_cov_runner::RustReusableSelectorEntry,
+    >,
+    current_selector_binaries: &std::collections::BTreeMap<String, Vec<String>>,
+    current_binary_digest: &std::collections::BTreeMap<String, String>,
+) -> (Vec<String>, Vec<String>) {
+    let mut retained = Vec::new();
+    let mut invalid = Vec::new();
+    for selector in selectors {
+        let Some(entry) = prior_entries.get(selector) else {
+            invalid.push(selector.clone());
+            continue;
+        };
+        let current_ids = current_selector_binaries
+            .get(selector)
+            .cloned()
+            .unwrap_or_default();
+        if entry.status != rpytest_runner::TestStatus::Passed
+            || entry.test_binary_ids != current_ids
+            || current_ids.iter().any(|id| {
+                let prior_digest = prior.test_binaries.get(id).map(|binary| &binary.digest);
+                let current_digest = current_binary_digest.get(id);
+                prior_digest != current_digest
+            })
+        {
+            invalid.push(selector.clone());
+        } else {
+            retained.push(selector.clone());
+        }
+    }
+    (retained, invalid)
+}
+
+#[cfg(test)]
+#[path = "check_runtime_refresh_test.rs"]
+mod tests;

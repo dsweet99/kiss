@@ -8,11 +8,15 @@ use crate::test_runner::runners::python_collect::{
     full_suite_subprocess_collects_for_tests, reset_full_suite_subprocess_collects_for_tests,
     reset_python_collect_memo_for_tests,
 };
-use crate::test_runner::rust_coverage_index::rebuild_rust_coverage_index;
+use crate::test_runner::rust_coverage_index::{
+    rebuild_rust_coverage_index, write_rust_population_manifest_for_args,
+};
 use rpytest_runner::TestStatus;
 use rslip::LineCoverage;
 use std::time::Duration;
 
+#[path = "decision_line_coverage_test.rs"]
+mod line_coverage_tests;
 #[path = "decision_policy_test.rs"]
 mod policy_tests;
 
@@ -182,97 +186,6 @@ fn PythonModule_and_RustModule_expose_discovery_and_static_policy_inputs() {
         vec![rs_prior]
     );
     assert!(<RustModule as LanguagePlanner>::manifest_env_allowlist(&rust).contains(&"RUSTFLAGS"));
-}
-
-#[test]
-fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_changed_line_coverage()
- {
-    // Covers select_fresh_python_source_selectors and select_fresh_rust_source_selectors.
-    let tmp = tempfile::TempDir::new().unwrap();
-    let app = tmp.path().join("app.py");
-    let lib = tmp.path().join("src").join("lib.rs");
-    std::fs::create_dir_all(lib.parent().unwrap()).unwrap();
-    std::fs::write(&app, "def value():\n    return 1\n").unwrap();
-    std::fs::write(
-        &lib,
-        "pub fn value() -> i32 { 1 }\n#[cfg(test)] mod tests { #[test] fn test_value() {} }\n",
-    )
-    .unwrap();
-    write_python_entry(
-        tmp.path(),
-        "py",
-        "tests/test_app.py::test_value",
-        LineCoverage {
-            files: BTreeMap::from([(app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
-        },
-    );
-    write_rust_entry(
-        tmp.path(),
-        "rs",
-        "tests::test_value",
-        rust_llvm_cov_runner::RustLineCoverage {
-            files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
-        },
-    );
-    rebuild_python_coverage_index(tmp.path()).unwrap();
-    rebuild_rust_coverage_index(tmp.path()).unwrap();
-
-    assert_eq!(
-        python_backer::select_fresh_python_source_selectors(
-            tmp.path(),
-            std::slice::from_ref(&app),
-            &BTreeMap::from([(app.clone(), BTreeSet::from([1]))]),
-        ),
-        Some(BTreeSet::from(
-            ["tests/test_app.py::test_value".to_string()]
-        ))
-    );
-    assert_eq!(
-        select_fresh_rust_source_selectors(
-            tmp.path(),
-            std::slice::from_ref(&lib),
-            &BTreeMap::from([(lib.clone(), BTreeSet::from([1]))]),
-            &[],
-        ),
-        Some(BTreeSet::from(["tests::test_value".to_string()]))
-    );
-
-    let python = python_backer::PythonModule::new(
-        tmp.path(),
-        std::slice::from_ref(&app),
-        &BTreeMap::from([(app.clone(), BTreeSet::from([1]))]),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
-    let rust = RustModule::new(
-        tmp.path(),
-        std::slice::from_ref(&lib),
-        &BTreeMap::from([(lib.clone(), BTreeSet::from([1]))]),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
-
-    assert_eq!(
-        <python_backer::PythonModule as LanguagePlanner>::select(&python).unwrap(),
-        SelectionDecision {
-            selectors: vec![TestSelector::new(
-                kiss::Language::Python,
-                "tests/test_app.py::test_value"
-            )],
-            complete: true,
-        }
-    );
-    assert_eq!(
-        <RustModule as LanguagePlanner>::select(&rust).unwrap(),
-        SelectionDecision {
-            selectors: vec![TestSelector::new(kiss::Language::Rust, "tests::test_value")],
-            complete: true,
-        }
-    );
 }
 
 #[test]

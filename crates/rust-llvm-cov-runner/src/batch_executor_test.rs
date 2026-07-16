@@ -143,6 +143,7 @@ fn failed_selective_fresh_batch_preserves_population_through_executor() {
                 batch_error: Some(RustLlvmCovError::InvalidRequest(
                     "injected selective failure through executor".to_string(),
                 )),
+                test_binaries: Vec::new(),
             })
         },
     )
@@ -184,6 +185,7 @@ fn store_obsolete_selective_entry(cache_root: &std::path::Path) {
             coverage: RustLineCoverage {
                 files: BTreeMap::new(),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,

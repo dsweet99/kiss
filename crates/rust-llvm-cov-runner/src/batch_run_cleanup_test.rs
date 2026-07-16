@@ -76,6 +76,7 @@ fn finalize_batch_result_reports_cleanup_only_failure_as_batch_error() {
         completed: Vec::new(),
         batch_error: None,
         counters: Default::default(),
+        test_binaries: Vec::new(),
     };
     let cleanup = io::Error::new(io::ErrorKind::PermissionDenied, "cleanup denied");
     let finalized = finalize_batch_result(result, None, Some(cleanup)).unwrap();
@@ -88,6 +89,7 @@ fn finalize_batch_result_appends_cleanup_to_primary_batch_error() {
         completed: Vec::new(),
         batch_error: Some(RustLlvmCovError::InvalidRequest("primary".into())),
         counters: Default::default(),
+        test_binaries: Vec::new(),
     };
     let cleanup = io::Error::new(io::ErrorKind::PermissionDenied, "cleanup denied");
     let finalized = finalize_batch_result(result, None, Some(cleanup)).unwrap();

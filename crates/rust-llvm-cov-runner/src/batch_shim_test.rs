@@ -164,7 +164,7 @@ fn target_runner_shim_delegates_to_configured_runner() {
 }
 
 #[test]
-fn target_runner_shim_list_phase_delegates_without_run_metadata_or_profile() {
+fn target_runner_shim_list_phase_delegates_with_list_metadata_without_profile() {
     let _env_guard = shim_test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
     let output = tmp.path().join("instances");
@@ -199,7 +199,25 @@ fn target_runner_shim_list_phase_delegates_without_run_metadata_or_profile() {
 
     assert_eq!(code, 0);
     assert_eq!(fs::read_to_string(marker).unwrap(), "listed");
-    assert!(!output.exists());
+    let list = super::load_target_runner_list_metadata(&output).unwrap();
+    assert_eq!(list.len(), 1);
+    assert!(
+        list[0]
+            .test_names
+            .iter()
+            .any(|name| name.ends_with("$alpha"))
+    );
+    assert!(
+        super::load_target_runner_shim_metadata(&output)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        fs::read_dir(&output)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .all(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
+    );
 }
 
 #[cfg(unix)]

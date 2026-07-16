@@ -73,6 +73,11 @@ fn write_test_derived_state_files(
                 .iter()
                 .map(|(path, digest)| serde_json::json!({ "path": path, "digest": digest }))
                 .collect::<Vec<_>>(),
+            "test_binaries": [{
+                "id": "test-bin",
+                "executable": "test-bin",
+                "digest": "0000000000000000",
+            }],
         }),
     )
 }

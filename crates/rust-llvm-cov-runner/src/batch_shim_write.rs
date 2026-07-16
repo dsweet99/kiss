@@ -8,8 +8,8 @@ use serde::Serialize;
 use crate::batch_process_tree::ProcessGroupIdentity;
 
 use super::{
-    BatchShimDelegatedStartMetadata, BatchShimMetadata, BatchShimStartMetadata,
-    DELEGATED_START_SCHEMA, SHIM_START_SCHEMA,
+    BatchShimDelegatedStartMetadata, BatchShimListMetadata, BatchShimMetadata,
+    BatchShimStartMetadata, DELEGATED_START_SCHEMA, SHIM_START_SCHEMA,
 };
 
 pub(crate) fn write_shim_metadata(
@@ -44,6 +44,14 @@ pub(crate) fn write_delegated_start_metadata(
         delegated_identity: delegated_identity.clone(),
     };
     write_metadata_atomically(output_dir, &format!("{id}.delegated-start.json"), &metadata)
+}
+
+pub(crate) fn write_shim_list_metadata(
+    output_dir: &Path,
+    id: &str,
+    metadata: &BatchShimListMetadata,
+) -> io::Result<()> {
+    write_metadata_atomically(output_dir, &format!("{id}.list.json"), metadata)
 }
 
 fn write_metadata_atomically<T: Serialize>(
@@ -83,8 +91,37 @@ pub(crate) fn instance_full_name(command: &[std::ffi::OsString]) -> String {
     unique_shim_id()
 }
 
+pub(crate) fn list_binary_id(command: &[std::ffi::OsString]) -> String {
+    if should_use_nextest_env_for_list(command)
+        && let Some(binary_id) = std::env::var("NEXTEST_BINARY_ID").ok()
+    {
+        return binary_id;
+    }
+    command
+        .first()
+        .map(std::path::PathBuf::from)
+        .and_then(|binary| {
+            binary
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().to_string())
+        })
+        .unwrap_or_else(unique_shim_id)
+}
+
+pub(crate) fn list_full_name(binary_id: &str, test_name: &str) -> String {
+    format!("{binary_id}${test_name}")
+}
+
 fn should_use_nextest_env_for_instance(command: &[std::ffi::OsString]) -> bool {
     std::env::var("NEXTEST_TEST_PHASE").ok().as_deref() == Some("run")
+        && command.first().is_some_and(|arg| {
+            let path = arg.to_string_lossy();
+            !path.ends_with(".sh") && !path.ends_with(".bat")
+        })
+}
+
+fn should_use_nextest_env_for_list(command: &[std::ffi::OsString]) -> bool {
+    std::env::var("NEXTEST_TEST_PHASE").ok().as_deref() == Some("list")
         && command.first().is_some_and(|arg| {
             let path = arg.to_string_lossy();
             !path.ends_with(".sh") && !path.ends_with(".bat")

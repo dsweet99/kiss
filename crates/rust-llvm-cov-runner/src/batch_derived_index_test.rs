@@ -55,6 +55,7 @@ fn load_current_population_state_validates_selectors_and_returns_index() {
         selectors: state.selectors.clone(),
         line_index: state.line_index.clone(),
         ordinary_source_digests: state.ordinary_source_digests.clone(),
+        test_binaries: state.test_binaries.clone(),
     };
     assert_eq!(state, expected);
     let on_disk: OnDiskIndexWithFiles =
@@ -175,6 +176,7 @@ fn read_population_and_index_loaders_handle_missing_and_invalid_json() {
         entries_fingerprint: "entries".to_string(),
         selectors: vec!["alpha".to_string()],
         ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
     };
     assert_eq!(
         index.generation_fingerprint,
@@ -232,6 +234,7 @@ fn rust_population_state_exposes_generation_and_index_fields() {
         selectors: state.selectors.clone(),
         line_index: state.line_index.clone(),
         ordinary_source_digests: state.ordinary_source_digests.clone(),
+        test_binaries: state.test_binaries.clone(),
     };
     assert_eq!(state, literal);
 }

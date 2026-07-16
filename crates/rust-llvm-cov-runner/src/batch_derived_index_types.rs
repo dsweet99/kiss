@@ -28,6 +28,13 @@ pub(crate) struct OrdinarySourceDigestRecord {
     pub(crate) digest: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct TestBinaryRecord {
+    pub(crate) id: String,
+    pub(crate) executable: String,
+    pub(crate) digest: String,
+}
+
 #[derive(Deserialize)]
 pub(crate) struct PopulationManifestRaw {
     pub(crate) schema_version: String,
@@ -37,6 +44,7 @@ pub(crate) struct PopulationManifestRaw {
     pub(crate) entries_fingerprint: String,
     pub(crate) selectors: Vec<String>,
     pub(crate) ordinary_source_digests: Vec<OrdinarySourceDigestRecord>,
+    pub(crate) test_binaries: Vec<TestBinaryRecord>,
 }
 
 pub(crate) struct PopulationManifestOnDisk {
@@ -47,6 +55,7 @@ pub(crate) struct PopulationManifestOnDisk {
     pub(crate) entries_fingerprint: String,
     pub(crate) selectors: Vec<String>,
     pub(crate) ordinary_source_digests: BTreeMap<String, String>,
+    pub(crate) test_binaries: BTreeMap<String, crate::RustTestBinaryIdentity>,
 }
 
 pub(crate) fn validate_ordinary_source_digests(
@@ -67,6 +76,34 @@ pub(crate) fn validate_ordinary_source_digests(
             return None;
         }
         previous = Some(record.path);
+    }
+    Some(out)
+}
+
+pub(crate) fn validate_test_binaries(
+    records: Vec<TestBinaryRecord>,
+) -> Option<BTreeMap<String, crate::RustTestBinaryIdentity>> {
+    let mut out = BTreeMap::new();
+    let mut previous: Option<String> = None;
+    for record in records {
+        if previous.as_ref().is_some_and(|prev| record.id <= *prev) {
+            return None;
+        }
+        if record.id.is_empty()
+            || record.executable.is_empty()
+            || !valid_ordinary_source_digest(&record.digest)
+        {
+            return None;
+        }
+        let item = crate::RustTestBinaryIdentity {
+            id: record.id.clone(),
+            executable: record.executable,
+            digest: record.digest,
+        };
+        if out.insert(record.id.clone(), item).is_some() {
+            return None;
+        }
+        previous = Some(record.id);
     }
     Some(out)
 }

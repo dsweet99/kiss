@@ -120,6 +120,7 @@ pub(crate) fn write_rust_coverage_index(
         entries_fingerprint: String,
         selectors: Vec<String>,
         ordinary_source_digests: Vec<serde_json::Value>,
+        test_binaries: Vec<serde_json::Value>,
     }
     let population_path = rust_population_manifest_path(repo_root);
     write_test_json_atomically(
@@ -144,6 +145,11 @@ pub(crate) fn write_rust_coverage_index(
                 .iter()
                 .map(|(path, digest)| serde_json::json!({ "path": path, "digest": digest }))
                 .collect(),
+            test_binaries: vec![serde_json::json!({
+                "id": "test-bin",
+                "executable": "test-bin",
+                "digest": "0000000000000000",
+            })],
         },
     )
 }

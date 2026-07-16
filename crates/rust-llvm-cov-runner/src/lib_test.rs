@@ -77,6 +77,7 @@ fn rust_cov_cache_entry_round_trips_outcome_fields() {
         coverage: RustLineCoverage {
             files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
         },
+        test_binary_ids: vec!["test-bin".to_string()],
         cache_status: RustCovCacheStatus::MissStored,
         stdout: None,
         stderr: None,

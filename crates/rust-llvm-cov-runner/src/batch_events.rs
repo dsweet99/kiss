@@ -29,6 +29,7 @@ pub struct BatchTestStarted {
 pub struct BatchEventStream {
     pub build_succeeded: Option<bool>,
     pub compiler_artifacts: Vec<BatchCompilerArtifact>,
+    pub discovered_tests: Vec<BatchTestStarted>,
     pub started_tests: Vec<BatchTestStarted>,
     pub ignored_tests: Vec<BatchTestStarted>,
     pub terminal_tests: Vec<BatchTestTerminal>,
@@ -107,6 +108,13 @@ fn ingest_libtest_event(
     let record = serde_json::from_value::<LibtestRecord>(value.clone())
         .map_err(|err| json_shape_error(line_no, err))?;
     match record.event.as_str() {
+        "discovered" => {
+            let (full_name, test_name) = split_libtest_name(&record.name, line_no)?;
+            stream.discovered_tests.push(BatchTestStarted {
+                full_name,
+                test_name,
+            });
+        }
         "started" => {
             let (full_name, test_name) = split_libtest_name(&record.name, line_no)?;
             stream.started_tests.push(BatchTestStarted {
@@ -213,6 +221,7 @@ mod tests {
     fn sample_stream_bytes() -> Vec<u8> {
         br#"{"reason":"compiler-artifact","executable":"/tmp/bin","filenames":["/tmp/bin"],"fresh":false}
 {"reason":"build-finished","success":true}
+{"type":"test","event":"discovered","name":"pkg::bin$alpha_case"}
 {"type":"test","event":"started","name":"pkg::bin$alpha_case"}
 {"type":"test","event":"ok","name":"pkg::bin$alpha_case","exec_time":0.002}
 {"type":"test","event":"failed","name":"pkg::bin$beta_case","exec_time":0.003,"stdout":"boom"}
@@ -231,6 +240,7 @@ mod tests {
             parsed.compiler_artifacts[0].executable.as_deref(),
             Some("/tmp/bin")
         );
+        assert_eq!(parsed.discovered_tests.len(), 1);
         assert_eq!(parsed.started_tests.len(), 1);
         assert_eq!(parsed.started_tests[0].full_name, "pkg::bin$alpha_case");
         assert_eq!(parsed.terminal_tests.len(), 2);

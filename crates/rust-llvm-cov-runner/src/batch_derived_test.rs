@@ -26,6 +26,7 @@ fn derived_repair_rebuilds_index_from_current_generation_only() {
             exit_code: Some(0),
             duration: Duration::from_millis(1),
             coverage: RustLineCoverage { files: coverage },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
@@ -82,6 +83,7 @@ fn try_publish_skips_when_derived_state_current() {
             coverage: RustLineCoverage {
                 files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
@@ -115,6 +117,7 @@ fn publish_derived_state_retains_one_previous_complete_generation() {
             coverage: RustLineCoverage {
                 files: BTreeMap::new(),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
@@ -170,6 +173,7 @@ fn publish_derived_state_prunes_stale_generation_entries() {
             coverage: RustLineCoverage {
                 files: BTreeMap::new(),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
@@ -259,6 +263,7 @@ fn try_publish_all_hit_repair_when_manifest_stale() {
             coverage: RustLineCoverage {
                 files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
@@ -301,6 +306,7 @@ fn prune_obsolete_selective_generations_retains_population_and_current() {
             coverage: RustLineCoverage {
                 files: BTreeMap::new(),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,

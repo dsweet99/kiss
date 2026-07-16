@@ -6,9 +6,13 @@
 
 mod batch_aggregate;
 mod batch_derived;
+mod batch_derived_entries;
+mod batch_derived_incremental;
 mod batch_derived_index;
 mod batch_derived_index_types;
+mod batch_derived_manifest;
 mod batch_events;
+mod batch_executable_index;
 mod batch_executor;
 mod batch_executor_finish;
 mod batch_executor_fresh;
@@ -71,8 +75,10 @@ pub use batch_derived::{
     DerivedPublishCounters, INDEX_SCHEMA_VERSION as BATCH_INDEX_SCHEMA_VERSION,
     POPULATION_SCHEMA_VERSION as BATCH_POPULATION_SCHEMA_VERSION, population_derived_state_stale,
     population_manifest_state_is_current, prune_obsolete_selective_generations,
-    publish_derived_state,
+    publish_derived_state, publish_derived_state_with_binaries,
 };
+pub use batch_derived_entries::{RustReusableSelectorEntry, load_reusable_prior_selector_entries};
+pub use batch_derived_incremental::{IncrementalPublishPlan, publish_incremental_derived_state};
 pub use batch_derived_index::{
     RustGenerationCoverageSnapshot, RustPopulationState, RustSnapshotDelta,
     load_current_generation_coverage_snapshot, load_current_generation_line_index,
@@ -82,6 +88,7 @@ pub use batch_events::{
     BatchCompilerArtifact, BatchEventStream, BatchTestTerminal, aggregate_selectors_for_test,
     parse_batch_event_stream, selector_matches_test,
 };
+pub use batch_executable_index::{RustTestExecutableIndex, build_rust_test_executable_index};
 pub use batch_executor::execute_rust_coverage_batch;
 #[cfg(test)]
 pub use batch_export::FakeInstanceExporter;
@@ -120,7 +127,7 @@ pub use shared_input::{
 };
 pub use worker::rust_cov_cache_tmp_parent;
 
-pub const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v2";
+pub const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v3";
 pub const BATCH_EXECUTION_POLICY_VERSION: &str = "rust-batch-execution-v1";
 
 pub use llvm_cov_json::RustLineCoverage;
@@ -146,9 +153,17 @@ pub struct RustLlvmCovOutcome {
     pub exit_code: Option<i32>,
     pub duration: Duration,
     pub coverage: RustLineCoverage,
+    pub test_binary_ids: Vec<String>,
     pub cache_status: RustCovCacheStatus,
     pub stdout: Option<Vec<u8>>,
     pub stderr: Option<Vec<u8>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RustTestBinaryIdentity {
+    pub id: String,
+    pub executable: String,
+    pub digest: String,
 }
 
 #[cfg(test)]
@@ -160,6 +175,7 @@ impl RustLlvmCovOutcome {
             exit_code: Some(0),
             duration: Duration::from_millis(1),
             coverage: RustLineCoverage::witness(),
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::Hit,
             stdout: None,
             stderr: None,

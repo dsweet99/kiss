@@ -192,6 +192,7 @@ fn store_obsolete_entry(cache_root: &Path, selector: &str, generation: &str, fin
             coverage: RustLineCoverage {
                 files: BTreeMap::new(),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
@@ -221,6 +222,7 @@ fn assert_failed_prune_preserves(
         batch_error: Some(crate::RustLlvmCovError::InvalidRequest(
             "injected selective failure".to_string(),
         )),
+        test_binaries: Vec::new(),
     };
     crate::batch_derived::maybe_prune_obsolete_selective_after_batch(
         selective_req,
@@ -258,6 +260,7 @@ fn assert_success_prune_removes_obsolete(
         completed: Vec::new(),
         counters: crate::RustCoverageBatchCounters::default(),
         batch_error: None,
+        test_binaries: Vec::new(),
     };
     crate::batch_derived::maybe_prune_obsolete_selective_after_batch(
         selective_req,

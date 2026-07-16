@@ -105,6 +105,7 @@ fn witness_batch_export() {
 
     let instances = vec![InstanceResult {
         full_name: "pkg::bin$alpha".to_string(),
+        test_binary_id: "/tmp/bin".to_string(),
         passed: true,
         exit_code: Some(0),
         duration: Duration::from_millis(1),

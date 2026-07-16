@@ -19,6 +19,7 @@ pub struct RustCovCacheEntry {
     pub(crate) exit_code: Option<i32>,
     pub(crate) duration: std::time::Duration,
     pub(crate) coverage: RustLineCoverage,
+    pub(crate) test_binary_ids: Vec<String>,
 }
 
 impl RustCovCacheEntry {
@@ -31,6 +32,7 @@ impl RustCovCacheEntry {
             exit_code: outcome.exit_code,
             duration: outcome.duration,
             coverage: outcome.coverage.clone(),
+            test_binary_ids: outcome.test_binary_ids.clone(),
         }
     }
 }
@@ -164,6 +166,7 @@ mod tests {
             coverage: RustLineCoverage {
                 files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1, 2]))]),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: crate::RustCovCacheStatus::MissStored,
             stdout: Some(b"out".to_vec()),
             stderr: Some(b"err".to_vec()),
@@ -198,6 +201,7 @@ mod tests {
             "status": "Passed",
             "exit_code": 0,
             "duration": { "secs": 0, "nanos": 1 },
+            "test_binary_ids": ["test-bin"],
             "coverage": { "files": {} }
         });
         fs::write(

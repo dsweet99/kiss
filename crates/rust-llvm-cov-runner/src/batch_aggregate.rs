@@ -9,6 +9,7 @@ use crate::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
 #[derive(Clone, Debug, PartialEq)]
 pub struct InstanceResult {
     pub full_name: String,
+    pub test_binary_id: String,
     pub passed: bool,
     pub exit_code: Option<i32>,
     pub duration: Duration,
@@ -57,6 +58,7 @@ fn successful_empty_outcome(selector: &str) -> RustLlvmCovOutcome {
         coverage: RustLineCoverage {
             files: BTreeMap::new(),
         },
+        test_binary_ids: Vec::new(),
         cache_status: RustCovCacheStatus::MissStored,
         stdout: None,
         stderr: None,
@@ -91,6 +93,7 @@ fn aggregate_one_selector(selector: &str, matched: &[&InstanceResult]) -> RustLl
             coverage: RustLineCoverage {
                 files: BTreeMap::new(),
             },
+            test_binary_ids: test_binary_ids(&ordered),
             cache_status: RustCovCacheStatus::MissStored,
             stdout: concat_parts(stdout_parts),
             stderr: concat_parts(stderr_parts),
@@ -102,10 +105,21 @@ fn aggregate_one_selector(selector: &str, matched: &[&InstanceResult]) -> RustLl
         exit_code: Some(0),
         duration,
         coverage: union_coverage(&ordered),
+        test_binary_ids: test_binary_ids(&ordered),
         cache_status: RustCovCacheStatus::MissStored,
         stdout: concat_parts(stdout_parts),
         stderr: concat_parts(stderr_parts),
     }
+}
+
+fn test_binary_ids(matched: &[&InstanceResult]) -> Vec<String> {
+    let mut ids = matched
+        .iter()
+        .map(|instance| instance.test_binary_id.clone())
+        .collect::<Vec<_>>();
+    ids.sort();
+    ids.dedup();
+    ids
 }
 
 fn union_coverage(matched: &[&InstanceResult]) -> RustLineCoverage {
@@ -143,6 +157,7 @@ mod tests {
     fn instance(full_name: &str, passed: bool, line: u32) -> InstanceResult {
         InstanceResult {
             full_name: full_name.to_string(),
+            test_binary_id: "test-bin".to_string(),
             passed,
             exit_code: Some(if passed { 0 } else { 1 }),
             duration: Duration::from_millis(2),
@@ -223,6 +238,7 @@ mod tests {
         };
         let instance = InstanceResult {
             full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "test-bin".to_string(),
             passed: true,
             exit_code: Some(0),
             duration: Duration::from_millis(3),

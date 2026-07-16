@@ -163,3 +163,34 @@ fn load_current_population_state_accepts_inc_source_digest_records() {
         Some(&"aaaaaaaaaaaaaaaa".to_string())
     );
 }
+
+#[test]
+fn load_current_population_state_rejects_empty_test_binary_ids() {
+    let fixture = published_alpha_derived_fixture();
+    tamper_only_cached_entry(&fixture.req.cache_root, |value| {
+        value["test_binary_ids"] = serde_json::json!([]);
+    });
+    assert!(
+        load_current_population_state(
+            &fixture.req.cache_root,
+            fixture.repo.path(),
+            &fixture.identity,
+            Some(&["alpha".to_string()]),
+        )
+        .is_none()
+    );
+}
+
+fn tamper_only_cached_entry(
+    cache_root: &std::path::Path,
+    edit: impl FnOnce(&mut serde_json::Value),
+) {
+    let entries_dir = cache_root.join("entries");
+    let paths = std::fs::read_dir(entries_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
+    assert_eq!(paths.len(), 1);
+    let relative = paths[0].strip_prefix(cache_root).unwrap().to_string_lossy();
+    tamper_json_file(cache_root, &relative, edit);
+}

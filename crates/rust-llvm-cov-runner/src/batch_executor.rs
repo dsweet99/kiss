@@ -1,4 +1,4 @@
-use crate::batch_derived::{population_derived_state_stale, try_publish_population_derived_state};
+use crate::batch_derived::population_derived_state_stale;
 use crate::batch_executor_fresh::execute_fresh_batch_with_exporter;
 use crate::batch_export::SubprocessInstanceExporter;
 use crate::batch_export_tools::resolve_export_tools_from_rustc;
@@ -128,7 +128,13 @@ fn apply_population_derived_publication(
     let Some(selectors) = req.population_publication_selectors.as_deref() else {
         return Ok(());
     };
-    if let Some(publish) = try_publish_population_derived_state(req, tools, identity, selectors)? {
+    if let Some(publish) = crate::batch_derived::try_publish_population_derived_state_with_binaries(
+        req,
+        tools,
+        identity,
+        selectors,
+        &result.test_binaries,
+    )? {
         result.counters.derived_state_published = true;
         result.counters.derived_repair = publish.derived_repair;
         result.counters.entry_generation_count = publish.entry_generation_count;
@@ -154,6 +160,9 @@ fn try_all_hit_after_lock(
     tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
 ) -> Result<Option<RustCoverageBatchResult>, RustLlvmCovError> {
+    if population_derived_state_stale(req, tools, identity)? {
+        return Ok(None);
+    }
     all_hit_batch_result(req, tools, identity)
 }
 
@@ -172,6 +181,7 @@ fn all_hit_batch_result(
             cache_hits: req.logical_selectors.len(),
             ..Default::default()
         },
+        test_binaries: Vec::new(),
     }))
 }
 
@@ -201,6 +211,7 @@ fn outcome_from_entry(
         exit_code: entry.exit_code,
         duration: entry.duration,
         coverage: entry.coverage,
+        test_binary_ids: entry.test_binary_ids,
         cache_status,
         stdout: None,
         stderr: None,

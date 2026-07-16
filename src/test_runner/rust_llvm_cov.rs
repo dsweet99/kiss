@@ -5,8 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rust_llvm_cov_runner::{
     RustCovCacheStatus, RustCoverageBatchRequest, RustCoverageBatchResult,
-    RustCoverageToolIdentity, RustLlvmCovError, RustLlvmCovOutcome, build_rust_coverage_batch_plan,
-    execute_rust_coverage_batch, resolve_batch_request_runners, validate_supported_rust_test_args,
+    RustCoverageToolIdentity, RustLlvmCovError, RustLlvmCovOutcome, RustTestExecutableIndex,
+    build_rust_coverage_batch_plan, build_rust_test_executable_index, execute_rust_coverage_batch,
+    resolve_batch_request_runners, validate_supported_rust_test_args,
 };
 
 use super::last_status::{LastStatusIdentity, record_statuses, rust_last_status_identity};
@@ -127,6 +128,54 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
     };
     resolve_batch_request_runners(&mut req).map_err(format_rust_llvm_cov_error)?;
     Ok(req)
+}
+
+pub(crate) struct RustExecutableIndexBuild {
+    pub(crate) request: RustCoverageBatchRequest,
+    pub(crate) tools: RustCoverageToolIdentity,
+    pub(crate) identity: rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    pub(crate) index: RustTestExecutableIndex,
+}
+
+pub(crate) fn build_current_rust_test_executable_index(
+    repo_root: &Path,
+    selectors: &[String],
+    extra: &[String],
+    jobs: usize,
+) -> Result<RustExecutableIndexBuild, String> {
+    validate_supported_rust_test_args(extra)?;
+    let request = rust_coverage_batch_request_from_parts(
+        repo_root,
+        selectors,
+        extra,
+        false,
+        jobs,
+        Some(selectors.to_vec()),
+    )?;
+    let plan = build_rust_coverage_batch_plan(&request)?;
+    let versions = detect_rust_coverage_tool_versions(repo_root)?;
+    let tools = rust_coverage_tool_identity_from_versions(&versions);
+    let identity = rust_llvm_cov_runner::batch_identity(&request, &tools)
+        .map_err(|err| format!("batch identity: {err}"))?;
+    let index = build_rust_test_executable_index(&request, &tools, &identity, &plan)
+        .map_err(format_rust_llvm_cov_error)?;
+    Ok(RustExecutableIndexBuild {
+        request,
+        tools,
+        identity,
+        index,
+    })
+}
+
+fn rust_coverage_tool_identity_from_versions(
+    versions: &RustCoverageToolVersions,
+) -> RustCoverageToolIdentity {
+    RustCoverageToolIdentity {
+        cargo_version: versions.cargo.clone(),
+        llvm_cov_version: versions.llvm_cov.clone(),
+        rustc_version: versions.rustc.clone(),
+        cargo_nextest_version: versions.cargo_nextest.clone(),
+    }
 }
 
 fn unique_rust_coverage_batch_config_path(repo_root: &Path) -> PathBuf {

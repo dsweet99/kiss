@@ -29,6 +29,7 @@ pub(super) fn witness_batch_derived(
             exit_code: Some(0),
             duration: Duration::from_millis(1),
             coverage: RustLineCoverage { files: coverage },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
@@ -128,6 +129,7 @@ fn witness_population_state_loaders(
         selectors: state.selectors.clone(),
         line_index: state.line_index.clone(),
         ordinary_source_digests: state.ordinary_source_digests.clone(),
+        test_binaries: state.test_binaries.clone(),
     };
     assert_eq!(state, literal);
 }

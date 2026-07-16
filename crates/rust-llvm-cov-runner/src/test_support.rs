@@ -108,6 +108,7 @@ pub(crate) fn store_batch_executor_selector(
             coverage: RustLineCoverage {
                 files: BTreeMap::new(),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
@@ -168,6 +169,7 @@ pub(crate) fn published_alpha_derived_fixture() -> PublishedAlphaFixture {
             coverage: RustLineCoverage {
                 files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
@@ -208,6 +210,7 @@ pub(crate) fn store_alpha_entry(
             exit_code: Some(0),
             duration: Duration::from_millis(1),
             coverage: RustLineCoverage { files },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,

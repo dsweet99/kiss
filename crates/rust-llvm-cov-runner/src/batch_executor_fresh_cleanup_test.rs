@@ -133,14 +133,16 @@ fn fresh_batch_allows_nonzero_exit_when_terminal_events_exist() {
     let req = batch_executor_request(repo.path());
     let runner = BatchSubprocessRunner::from_fn(|_, plan| {
         fs::create_dir_all(&plan.build_target).unwrap();
-        write_shim_metadata(&plan.target_runner_output_dir, "pkg::bin$alpha");
+        let bin = plan.build_target.join("bin");
+        fs::write(&bin, b"binary").unwrap();
+        write_shim_metadata(&plan.target_runner_output_dir, "pkg::bin$alpha", &bin);
         Ok(crate::batch_run::BatchSubprocessRunOutcome {
             exit_code: Some(1),
-            stdout: br#"{"reason":"compiler-artifact","executable":"/tmp/bin","filenames":["/tmp/a.o"],"fresh":false}
-{"reason":"build-finished","success":true}
-{"type":"test","event":"failed","name":"pkg::bin$alpha","exec_time":0.001}
-"#
-            .to_vec(),
+            stdout: format!(
+                "{{\"reason\":\"compiler-artifact\",\"executable\":\"{}\",\"filenames\":[\"/tmp/a.o\"],\"fresh\":false}}\n{{\"reason\":\"build-finished\",\"success\":true}}\n{{\"type\":\"test\",\"event\":\"failed\",\"name\":\"pkg::bin$alpha\",\"exec_time\":0.001}}\n",
+                bin.display()
+            )
+            .into_bytes(),
             stderr: Vec::new(),
             duration: Duration::from_millis(1),
             process_residual_count: 0,

@@ -5,7 +5,6 @@ use super::{
     FreshBatchFinishContext, build_instance_export_requests, build_instance_results,
     finish_fresh_batch_after_export,
 };
-use crate::RustLineCoverage;
 use crate::batch_events::{BatchCompilerArtifact, BatchTestStarted, BatchTestTerminal};
 use crate::batch_export::ExportCounters;
 use crate::batch_fingerprint::{batch_identity, entry_fingerprint};
@@ -15,6 +14,7 @@ use crate::rust_cov_cache::load_rust_cov_cache_entry;
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, witness_batch_tools,
 };
+use crate::{RustLineCoverage, RustTestBinaryIdentity};
 
 #[test]
 fn fresh_batch_finish_context_witness_is_constructible() {
@@ -74,6 +74,7 @@ fn finish_fresh_batch_after_export_stores_completed_outcomes() {
     let identity = batch_identity(&req, &tools).unwrap();
     let instances = vec![crate::batch_aggregate::InstanceResult {
         full_name: "pkg::bin$alpha".to_string(),
+        test_binary_id: "/tmp/bin".to_string(),
         passed: true,
         exit_code: Some(0),
         duration: Duration::from_millis(1),
@@ -96,7 +97,7 @@ fn finish_fresh_batch_after_export_stores_completed_outcomes() {
             max_active_exports: 1,
             max_objects_per_export: 1,
         },
-        FreshBatchFinishContext::witness(),
+        finish_context(),
     )
     .expect("finish_fresh_batch_after_export");
     assert!(result.batch_error.is_none());
@@ -114,6 +115,7 @@ fn population_finish_rejects_unmatched_selectors_before_storing() {
     let identity = batch_identity(&req, &tools).unwrap();
     let instances = vec![crate::batch_aggregate::InstanceResult {
         full_name: "pkg::bin$alpha".to_string(),
+        test_binary_id: "/tmp/bin".to_string(),
         passed: true,
         exit_code: Some(0),
         duration: Duration::from_millis(1),
@@ -140,7 +142,7 @@ fn population_finish_rejects_unmatched_selectors_before_storing() {
             max_active_exports: 1,
             max_objects_per_export: 1,
         },
-        FreshBatchFinishContext::witness(),
+        finish_context(),
     )
     .expect("finish should return a batch error result");
 
@@ -153,6 +155,21 @@ fn population_finish_rejects_unmatched_selectors_before_storing() {
     assert_eq!(result.counters.unmatched_selectors, 1);
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     assert!(load_rust_cov_cache_entry(&req.cache_root, &fingerprint).is_none());
+}
+
+fn test_binary() -> RustTestBinaryIdentity {
+    RustTestBinaryIdentity {
+        id: "/tmp/bin".to_string(),
+        executable: "/tmp/bin".to_string(),
+        digest: "0000000000000000".to_string(),
+    }
+}
+
+fn finish_context() -> FreshBatchFinishContext {
+    FreshBatchFinishContext {
+        test_binaries: vec![test_binary()],
+        ..FreshBatchFinishContext::witness()
+    }
 }
 
 #[test]

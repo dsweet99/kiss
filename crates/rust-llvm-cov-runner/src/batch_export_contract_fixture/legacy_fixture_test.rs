@@ -114,6 +114,7 @@ fn failure_outcome_matching_allows_legacy_non_one_exit_codes() {
         coverage: RustLineCoverage {
             files: BTreeMap::new(),
         },
+        test_binary_ids: vec!["test-bin".to_string()],
         cache_status: RustCovCacheStatus::MissStored,
         stdout: None,
         stderr: None,
@@ -126,6 +127,7 @@ fn failure_outcome_matching_allows_legacy_non_one_exit_codes() {
         coverage: RustLineCoverage {
             files: BTreeMap::new(),
         },
+        test_binary_ids: vec!["test-bin".to_string()],
         cache_status: RustCovCacheStatus::MissStored,
         stdout: None,
         stderr: None,

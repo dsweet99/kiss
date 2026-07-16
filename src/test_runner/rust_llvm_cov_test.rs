@@ -21,6 +21,7 @@ pub(crate) fn passed_rust_llvm_cov_outcome(selector: String) -> RustLlvmCovOutco
         coverage: rust_llvm_cov_runner::RustLineCoverage {
             files: BTreeMap::new(),
         },
+        test_binary_ids: vec!["test-bin".to_string()],
         cache_status: RustCovCacheStatus::MissStored,
         stdout: None,
         stderr: None,
@@ -56,6 +57,7 @@ fn batch_result_records_completed_outcomes_before_returning_late_error() {
             coverage: RustLineCoverage {
                 files: BTreeMap::new(),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::FreshUnstored,
             stdout: Some(b"fresh stdout".to_vec()),
             stderr: Some(b"fresh stderr".to_vec()),
@@ -64,6 +66,7 @@ fn batch_result_records_completed_outcomes_before_returning_late_error() {
             "late derived publication failed".to_string(),
         )),
         counters: RustCoverageBatchCounters::default(),
+        test_binaries: Vec::new(),
     };
 
     let err = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap_err();
@@ -95,12 +98,14 @@ fn fresh_unstored_batch_outcome_is_counted_explicitly() {
             coverage: RustLineCoverage {
                 files: BTreeMap::new(),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::FreshUnstored,
             stdout: None,
             stderr: None,
         }],
         batch_error: None,
         counters: RustCoverageBatchCounters::default(),
+        test_binaries: Vec::new(),
     };
 
     let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
@@ -158,6 +163,7 @@ fn rust_selector_path_submits_one_batch_request_to_executor() {
                     .collect(),
                 batch_error: None,
                 counters: RustCoverageBatchCounters::default(),
+                test_binaries: Vec::new(),
             })
         },
     )
@@ -346,6 +352,7 @@ fn print_rust_llvm_cov_outcome_accepts_all_status_cache_shapes() {
             coverage: RustLineCoverage {
                 files: BTreeMap::new(),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status,
             stdout: None,
             stderr: Some(Vec::new()),

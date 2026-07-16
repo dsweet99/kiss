@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::io::{self, Read};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 #[cfg(unix)]
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -50,7 +50,7 @@ pub(crate) fn run_target_runner_shim_inner(
         .cloned()
         .unwrap_or_default();
     if is_nextest_list_phase() {
-        return run_delegated_list_child(&delegated, command);
+        return super::batch_shim_list::run_delegated_list_child(output_dir, &delegated, command);
     }
     std::fs::create_dir_all(output_dir)?;
     #[cfg(unix)]
@@ -92,13 +92,6 @@ pub(crate) fn run_target_runner_shim_inner(
 
 fn is_nextest_list_phase() -> bool {
     std::env::var("NEXTEST_TEST_PHASE").ok().as_deref() == Some("list")
-}
-
-fn run_delegated_list_child(delegated: &[String], command: &[OsString]) -> io::Result<i32> {
-    let status = build_delegated_command(delegated, command)
-        .stdin(Stdio::null())
-        .status()?;
-    Ok(status.code().unwrap_or(1))
 }
 
 fn run_delegated_child(
@@ -189,7 +182,7 @@ fn current_process_group_identity() -> Option<ProcessGroupIdentity> {
     None
 }
 
-fn build_delegated_command(delegated: &[String], command: &[OsString]) -> Command {
+pub(crate) fn build_delegated_command(delegated: &[String], command: &[OsString]) -> Command {
     if delegated.is_empty() {
         let mut cmd = Command::new(&command[0]);
         cmd.args(&command[1..]);

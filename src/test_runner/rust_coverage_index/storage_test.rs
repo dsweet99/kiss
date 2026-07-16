@@ -140,7 +140,12 @@ fn write_generation_scoped_derived_artifacts(
   "selection_context_fingerprint": "{selection_context_fingerprint}",
   "entries_fingerprint": "{entries_fingerprint}",
   "selectors": [{selectors_json}],
-  "ordinary_source_digests": [{ordinary_source_digests_json}]
+  "ordinary_source_digests": [{ordinary_source_digests_json}],
+  "test_binaries": [{{
+    "id": "test-bin",
+    "executable": "test-bin",
+    "digest": "0000000000000000"
+  }}]
 }}"#,
         tmp.canonicalize().unwrap().display(),
         population_schema = rust_llvm_cov_runner::BATCH_POPULATION_SCHEMA_VERSION,
@@ -189,6 +194,7 @@ fn generation_scoped_index_helpers_validate_entries_and_paths() {
             coverage: RustLineCoverage {
                 files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,

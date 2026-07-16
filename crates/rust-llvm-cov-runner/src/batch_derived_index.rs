@@ -1,17 +1,16 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::path::{Path, PathBuf};
-
 use crate::batch_derived::{INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION};
 #[cfg(test)]
 use crate::batch_derived_index_types::OnDiskIndex;
 use crate::batch_derived_index_types::{
     OnDiskIndexWithFiles, PopulationManifestOnDisk, PopulationManifestRaw, RustCoverageIndex,
-    validate_ordinary_source_digests,
+    validate_ordinary_source_digests, validate_test_binaries,
 };
 use crate::batch_fingerprint::RustCoverageBatchIdentity;
 use crate::rust_cov_cache::{RustCovCacheEntry, generation_entries_fingerprint};
 use crate::{CACHE_SCHEMA_VERSION, RustLineCoverage};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RustPopulationState {
@@ -22,7 +21,9 @@ pub struct RustPopulationState {
     pub selectors: Vec<String>,
     pub line_index: RustCoverageIndex,
     pub ordinary_source_digests: BTreeMap<String, String>,
+    pub test_binaries: BTreeMap<String, crate::RustTestBinaryIdentity>,
 }
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RustGenerationCoverageSnapshot {
     pub identity: String,
@@ -118,6 +119,7 @@ fn load_validated_population_state(
         selectors: manifest.selectors,
         line_index: index.files,
         ordinary_source_digests: manifest.ordinary_source_digests,
+        test_binaries: manifest.test_binaries,
     })
 }
 
@@ -234,6 +236,14 @@ fn manifest_generation_entries_complete(
         {
             continue;
         }
+        if parsed.test_binary_ids.is_empty()
+            || parsed
+                .test_binary_ids
+                .iter()
+                .any(|id| !manifest.test_binaries.contains_key(id))
+        {
+            return false;
+        }
         if !seen.insert(parsed.selector.clone()) {
             return false;
         }
@@ -245,7 +255,6 @@ fn manifest_generation_entries_complete(
     actual.sort();
     actual == expected
 }
-
 fn load_manifest_generation_entries(
     cache_root: &Path,
     source_root: &Path,
@@ -384,6 +393,7 @@ pub(crate) fn read_population_manifest(cache_root: &Path) -> Option<PopulationMa
         return None;
     }
     let ordinary_source_digests = validate_ordinary_source_digests(raw.ordinary_source_digests)?;
+    let test_binaries = validate_test_binaries(raw.test_binaries)?;
     Some(PopulationManifestOnDisk {
         schema_version: raw.schema_version,
         generation_fingerprint: raw.generation_fingerprint,
@@ -392,6 +402,7 @@ pub(crate) fn read_population_manifest(cache_root: &Path) -> Option<PopulationMa
         entries_fingerprint: raw.entries_fingerprint,
         selectors: raw.selectors,
         ordinary_source_digests,
+        test_binaries,
     })
 }
 

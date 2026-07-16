@@ -3,7 +3,7 @@ use crate::{
     batch_events::parse_batch_event_stream,
     batch_executor_finish::{
         FreshBatchFinishContext, build_instance_export_requests, build_instance_results,
-        finish_fresh_batch_after_export,
+        finish_fresh_batch_after_export, test_binaries_from_shim_metadata,
     },
     batch_export::{SubprocessInstanceExporter, export_instances_bounded},
     batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity},
@@ -155,6 +155,7 @@ where
         )?;
         let exact = req.test_args.iter().any(|arg| arg == "--exact");
         let shim_metadata = load_target_runner_shim_metadata(&plan.target_runner_output_dir)?;
+        let test_binaries = test_binaries_from_shim_metadata(&shim_metadata)?;
         let instances = build_instance_results(
             &parsed.started_tests,
             &parsed.ignored_tests,
@@ -186,6 +187,7 @@ where
                 export_started,
                 build_target_baseline_bytes,
                 process_residual_count: run.process_residual_count,
+                test_binaries,
             },
         )
     })();
@@ -243,14 +245,16 @@ pub(crate) mod fresh_test_helpers {
         BatchSubprocessRunner::from_fn(|_, plan| {
             fs::create_dir_all(&plan.build_target).unwrap();
             fs::write(plan.build_target.join("artifact"), b"target").unwrap();
-            write_shim_metadata(&plan.target_runner_output_dir, "pkg::bin$alpha");
+            let bin = plan.build_target.join("bin");
+            fs::write(&bin, b"binary").unwrap();
+            write_shim_metadata(&plan.target_runner_output_dir, "pkg::bin$alpha", &bin);
             Ok(crate::batch_run::BatchSubprocessRunOutcome {
                 exit_code: Some(0),
-                stdout: br#"{"reason":"compiler-artifact","executable":"/tmp/bin","filenames":["/tmp/a.o"],"fresh":false}
-{"reason":"build-finished","success":true}
-{"type":"test","event":"ok","name":"pkg::bin$alpha","exec_time":0.001}
-"#
-                .to_vec(),
+                stdout: format!(
+                    "{{\"reason\":\"compiler-artifact\",\"executable\":\"{}\",\"filenames\":[\"/tmp/a.o\"],\"fresh\":false}}\n{{\"reason\":\"build-finished\",\"success\":true}}\n{{\"type\":\"test\",\"event\":\"ok\",\"name\":\"pkg::bin$alpha\",\"exec_time\":0.001}}\n",
+                    bin.display()
+                )
+                .into_bytes(),
                 stderr: Vec::new(),
                 duration: Duration::from_millis(1),
                 process_residual_count: 0,
@@ -293,7 +297,7 @@ pub(crate) mod fresh_test_helpers {
         )
     }
 
-    pub(crate) fn write_shim_metadata(output_dir: &Path, id: &str) {
+    pub(crate) fn write_shim_metadata(output_dir: &Path, id: &str, bin: &Path) {
         fs::create_dir_all(output_dir).unwrap();
         let profile_path = output_dir.join(format!("{id}.profraw"));
         write_fake_profile(&profile_path, b"profile").unwrap();
@@ -303,7 +307,7 @@ pub(crate) mod fresh_test_helpers {
             full_name: id.to_string(),
             profile_path,
             cwd: output_dir.to_path_buf(),
-            argv: vec!["/tmp/bin".to_string()],
+            argv: vec![bin.to_string_lossy().to_string()],
             exit_code: Some(0),
             spawn_error: None,
             shim_identity: None,

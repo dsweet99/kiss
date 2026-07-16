@@ -1,8 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::{
     RustCovCacheStatus, RustLineCoverage, RustLlvmCovError, RustLlvmCovOutcome,
+    RustTestBinaryIdentity,
     batch_aggregate::{InstanceResult, aggregate_logical_selectors},
     batch_export::{InstanceExportRequest, object_paths_for_executable},
     batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity, entry_fingerprint},
@@ -16,6 +18,7 @@ pub(crate) struct FreshBatchFinishContext {
     pub(crate) export_started: std::time::Instant,
     pub(crate) build_target_baseline_bytes: u64,
     pub(crate) process_residual_count: usize,
+    pub(crate) test_binaries: Vec<RustTestBinaryIdentity>,
 }
 
 #[cfg(test)]
@@ -25,6 +28,7 @@ impl FreshBatchFinishContext {
             export_started: std::time::Instant::now(),
             build_target_baseline_bytes: 42,
             process_residual_count: 0,
+            test_binaries: Vec::new(),
         }
     }
 }
@@ -57,6 +61,7 @@ pub(crate) fn build_instance_results(
         let exit_code = shim.exit_code.or(Some(if test.passed { 0 } else { 1 }));
         instances.push(InstanceResult {
             full_name: test.full_name.clone(),
+            test_binary_id: test_binary_id_for_argv(&shim.argv)?,
             passed: test.passed,
             exit_code,
             duration: Duration::from_secs_f64(test.exec_time_secs),
@@ -161,6 +166,7 @@ pub(crate) fn finish_fresh_batch_after_export(
                 agg_counters.unmatched_selectors
             ))),
             counters,
+            test_binaries: Vec::new(),
         });
     }
     match store_completed_outcomes(req, tools, identity, &mut completed) {
@@ -168,11 +174,13 @@ pub(crate) fn finish_fresh_batch_after_export(
             completed,
             batch_error: None,
             counters,
+            test_binaries: finish.test_binaries,
         }),
         Err(store_err) => Ok(RustCoverageBatchResult {
             completed,
             batch_error: Some(store_err),
             counters,
+            test_binaries: Vec::new(),
         }),
     }
 }
@@ -284,6 +292,49 @@ fn store_completed_outcomes(
         }
     }
     Ok(())
+}
+
+pub(crate) fn test_binary_id_for_argv(argv: &[String]) -> Result<String, RustLlvmCovError> {
+    let executable = argv
+        .first()
+        .ok_or_else(|| RustLlvmCovError::InvalidRequest("missing test binary argv".into()))?;
+    Ok(test_binary_id_for_path(Path::new(executable)))
+}
+
+pub(crate) fn test_binary_id_for_path(path: &Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .to_string()
+}
+
+pub(crate) fn digest_test_binary(path: &Path) -> Result<String, RustLlvmCovError> {
+    let bytes = std::fs::read(path).map_err(RustLlvmCovError::Io)?;
+    let h = crate::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
+    Ok(format!("{h:016x}"))
+}
+
+pub(crate) fn test_binaries_from_shim_metadata(
+    shim_metadata: &[BatchShimMetadata],
+) -> Result<Vec<RustTestBinaryIdentity>, RustLlvmCovError> {
+    let mut by_id = BTreeMap::new();
+    for item in shim_metadata {
+        let Some(executable) = item.argv.first() else {
+            continue;
+        };
+        let path = PathBuf::from(executable);
+        let id = test_binary_id_for_path(&path);
+        let digest = digest_test_binary(&path)?;
+        let next = RustTestBinaryIdentity {
+            id: id.clone(),
+            executable: path.to_string_lossy().to_string(),
+            digest,
+        };
+        if by_id.insert(id.clone(), next).is_some() {
+            continue;
+        }
+    }
+    Ok(by_id.into_values().collect())
 }
 
 #[cfg(test)]

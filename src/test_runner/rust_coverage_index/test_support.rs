@@ -55,6 +55,7 @@ pub(crate) fn write_test_entry_with_args(
         "exit_code": 0,
         "duration": Duration::from_millis(1),
         "coverage": coverage,
+        "test_binary_ids": ["test-bin"],
     });
     fs::write(path, serde_json::to_vec(&entry).unwrap()).unwrap();
 }

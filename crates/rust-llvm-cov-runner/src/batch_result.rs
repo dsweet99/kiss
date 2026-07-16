@@ -1,4 +1,4 @@
-use crate::{RustLlvmCovError, RustLlvmCovOutcome};
+use crate::{RustLlvmCovError, RustLlvmCovOutcome, RustTestBinaryIdentity};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RustCoverageBatchCounters {
@@ -26,4 +26,5 @@ pub struct RustCoverageBatchResult {
     pub completed: Vec<RustLlvmCovOutcome>,
     pub batch_error: Option<RustLlvmCovError>,
     pub counters: RustCoverageBatchCounters,
+    pub test_binaries: Vec<RustTestBinaryIdentity>,
 }

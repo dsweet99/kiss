@@ -29,6 +29,7 @@ fn batch_counters_are_preserved_for_rust_metrics() {
         completed: Vec::new(),
         batch_error: None,
         counters,
+        test_binaries: Vec::new(),
     };
 
     let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();

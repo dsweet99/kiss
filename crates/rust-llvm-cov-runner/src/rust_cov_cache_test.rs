@@ -20,6 +20,7 @@ fn outcome() -> RustLlvmCovOutcome {
         coverage: RustLineCoverage {
             files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1, 2]))]),
         },
+        test_binary_ids: vec!["test-bin".to_string()],
         cache_status: RustCovCacheStatus::MissStored,
         stdout: Some(b"out".to_vec()),
         stderr: Some(b"err".to_vec()),

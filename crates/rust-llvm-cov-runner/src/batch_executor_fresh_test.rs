@@ -225,6 +225,7 @@ fn apply_non_primary_cleanup_error_preserves_primary_batch_error() {
         completed: Vec::new(),
         batch_error: Some(RustLlvmCovError::InvalidRequest("primary".into())),
         counters: Default::default(),
+        test_binaries: Vec::new(),
     };
     let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "cleanup");
     let applied = crate::batch_executor_fresh::apply_non_primary_cleanup_error(result, Some(err))

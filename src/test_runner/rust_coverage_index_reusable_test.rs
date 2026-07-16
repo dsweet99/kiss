@@ -1,64 +1,9 @@
 use crate::test_runner::coverage_decision::{CoverageFreshness, RustSelectionBasis};
 use crate::test_runner::rust_coverage_index::{
-    ResolvedRustPopulation, current_rust_coverage_batch_identity, rebuild_rust_coverage_index,
-    resolve_rust_population_state, select_rust_source_selectors_for_basis,
-    write_rust_population_manifest_for_args, write_test_entry,
+    ResolvedRustPopulation, resolve_rust_population_state, select_rust_source_selectors_for_basis,
 };
-use rpytest_runner::TestStatus;
-use rust_llvm_cov_runner::RustLineCoverage;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-
-#[test]
-fn resolve_reusable_prior_population_after_ordinary_source_edit() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::create_dir_all(tmp.path().join("src")).unwrap();
-    fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    let lib = tmp.path().join("src").join("lib.rs");
-    fs::write(
-        &lib,
-        "pub fn value() -> u32 { 1 }\n#[cfg(test)] mod tests { #[test] fn gets_value() { assert_eq!(super::value(), 1); } }\n",
-    )
-    .unwrap();
-    let _ = current_rust_coverage_batch_identity(tmp.path(), &[]);
-    write_test_entry(
-        tmp.path(),
-        "value",
-        "tests::gets_value",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
-        },
-    );
-    rebuild_rust_coverage_index(tmp.path()).unwrap();
-    write_rust_population_manifest_for_args(tmp.path(), &["tests::gets_value".to_string()], &[])
-        .unwrap();
-
-    fs::write(
-        &lib,
-        "pub fn value() -> u32 { 2 }\n#[cfg(test)] mod tests { #[test] fn gets_value() { assert_eq!(super::value(), 2); } }\n",
-    )
-    .unwrap();
-
-    let resolved: ResolvedRustPopulation =
-        resolve_rust_population_state(tmp.path(), &[], std::slice::from_ref(&lib), &[])
-            .expect("resolved population");
-    assert_eq!(resolved.freshness, CoverageFreshness::ReusablePrior);
-    assert_eq!(resolved.basis, RustSelectionBasis::ReusablePrior);
-    let selected = select_rust_source_selectors_for_basis(
-        tmp.path(),
-        std::slice::from_ref(&lib),
-        &BTreeMap::new(),
-        &[],
-        &resolved,
-    )
-    .expect("reusable-prior selectors");
-    assert_eq!(selected, BTreeSet::from(["tests::gets_value".to_string()]));
-}
 
 #[test]
 fn reusable_prior_selection_fails_on_missing_index_row() {
@@ -84,6 +29,7 @@ fn reusable_prior_selection_fails_on_missing_index_row() {
             BTreeSet::from(["tests::gets_value".to_string()]),
         )]),
         ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
@@ -117,6 +63,7 @@ fn reusable_prior_selection_fails_on_empty_index_row() {
         selectors: Vec::new(),
         line_index: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::new())]),
         ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
@@ -156,6 +103,7 @@ fn reusable_prior_selects_all_file_level_selectors_for_affected_file() {
             ]),
         )]),
         ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
@@ -205,6 +153,7 @@ fn reusable_prior_unions_selectors_from_multiple_affected_files() {
             ),
         ]),
         ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
@@ -243,6 +192,7 @@ fn reusable_prior_uses_file_level_selectors_without_line_coordinate_matching() {
             BTreeSet::from(["tests::covers_old_line".to_string()]),
         )]),
         ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
@@ -279,6 +229,7 @@ fn reusable_prior_selection_fails_on_non_rust_extension() {
         selectors: Vec::new(),
         line_index: BTreeMap::new(),
         ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
@@ -332,6 +283,7 @@ fn reusable_prior_is_not_claimed_complete_behavioral_impact_analysis() {
             BTreeSet::from(["tests::covers_x_only".to_string()]),
         )]),
         ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,
@@ -384,6 +336,7 @@ fn added_deleted_and_missing_rust_paths_require_population() {
             BTreeSet::from(["tests::gets_value".to_string()]),
         )]),
         ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
     };
     let resolved = ResolvedRustPopulation {
         freshness: CoverageFreshness::ReusablePrior,

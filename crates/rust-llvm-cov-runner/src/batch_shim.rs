@@ -9,6 +9,8 @@ use crate::batch_process_tree::{ProcessGroupIdentity, identity_still_valid};
 
 #[path = "batch_shim_child.rs"]
 mod batch_shim_child;
+#[path = "batch_shim_list.rs"]
+mod batch_shim_list;
 #[path = "batch_shim_write.rs"]
 mod batch_shim_write;
 
@@ -24,6 +26,7 @@ pub(crate) use batch_shim_write::{write_shim_metadata, write_shim_start_metadata
 pub const TARGET_RUNNER_SHIM_SUBCOMMAND: &str = "__rust-llvm-cov-target-runner";
 pub(crate) const SHIM_START_SCHEMA: &str = "kiss-rust-llvm-cov-shim-start-v1";
 pub(crate) const DELEGATED_START_SCHEMA: &str = "kiss-rust-llvm-cov-shim-delegated-start-v1";
+pub(crate) const SHIM_LIST_SCHEMA: &str = "kiss-rust-llvm-cov-shim-list-v1";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BatchShimStartMetadata {
@@ -59,6 +62,15 @@ pub struct BatchShimMetadata {
     pub stderr: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_frame_count: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BatchShimListMetadata {
+    pub schema_version: String,
+    pub id: String,
+    pub binary_id: String,
+    pub argv: Vec<String>,
+    pub test_names: Vec<String>,
 }
 
 pub fn run_target_runner_shim(
@@ -98,6 +110,28 @@ pub(crate) fn load_target_runner_shim_metadata(
     Ok(metadata)
 }
 
+pub(crate) fn load_target_runner_list_metadata(
+    output_dir: &Path,
+) -> io::Result<Vec<BatchShimListMetadata>> {
+    if !output_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut metadata = Vec::new();
+    for entry in fs::read_dir(output_dir)? {
+        let path = entry?.path();
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".list.json") {
+            continue;
+        }
+        let bytes = fs::read(path)?;
+        metadata.push(serde_json::from_slice(&bytes).map_err(io::Error::other)?);
+    }
+    metadata.sort_by(|left: &BatchShimListMetadata, right| left.id.cmp(&right.id));
+    Ok(metadata)
+}
+
 pub(crate) fn load_live_shim_process_identities(
     output_dir: &Path,
 ) -> io::Result<Vec<ProcessGroupIdentity>> {
@@ -134,6 +168,7 @@ fn is_completion_metadata_path(name: &str) -> bool {
     name.ends_with(".json")
         && !name.ends_with(".shim-start.json")
         && !name.ends_with(".delegated-start.json")
+        && !name.ends_with(".list.json")
         && !name.ends_with(".json.tmp")
 }
 

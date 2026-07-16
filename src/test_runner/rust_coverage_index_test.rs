@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::RustLineCoverage;
@@ -325,6 +325,29 @@ fn selectors_for_changed_lines_require_every_changed_file_to_match() {
 
 #[test]
 fn hybrid_selection_falls_back_per_file() {
+    let (tmp, precise, fallback) = hybrid_selection_fixture();
+
+    let selected = select_rust_source_selectors_hybrid(
+        tmp.path(),
+        &[precise.clone(), fallback.clone()],
+        &BTreeMap::from([
+            (precise, BTreeSet::from([2])),
+            (fallback, BTreeSet::from([99])),
+        ]),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(
+        selected,
+        BTreeSet::from([
+            "test_precise_2".to_string(),
+            "test_fallback_file".to_string()
+        ])
+    );
+}
+
+fn hybrid_selection_fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     let precise = tmp.path().join("src").join("precise.rs");
@@ -359,25 +382,17 @@ fn hybrid_selection_falls_back_per_file() {
         },
     );
     rebuild_rust_coverage_index(tmp.path()).unwrap();
-
-    let selected = select_rust_source_selectors_hybrid(
+    write_rust_population_manifest_for_args(
         tmp.path(),
-        &[precise.clone(), fallback.clone()],
-        &BTreeMap::from([
-            (precise, BTreeSet::from([2])),
-            (fallback, BTreeSet::from([99])),
-        ]),
+        &[
+            "test_precise_1".to_string(),
+            "test_precise_2".to_string(),
+            "test_fallback_file".to_string(),
+        ],
         &[],
     )
     .unwrap();
-
-    assert_eq!(
-        selected,
-        BTreeSet::from([
-            "test_precise_2".to_string(),
-            "test_fallback_file".to_string()
-        ])
-    );
+    (tmp, precise, fallback)
 }
 
 #[test]

@@ -149,6 +149,7 @@ fn store_test_lib_coverage(
             coverage: RustLineCoverage {
                 files: BTreeMap::from([("src/lib.rs".to_string(), lines)]),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,

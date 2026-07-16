@@ -84,6 +84,8 @@ mod regression_check_ignore_filename;
 mod regression_check_mixed_runtime_line_coverage;
 #[path = "cases/regression_check_perf.rs"]
 mod regression_check_perf;
+#[path = "cases/regression_check_rust_incremental_runtime_coverage.rs"]
+mod regression_check_rust_incremental_runtime_coverage;
 #[path = "cases/regression_check_stats_share_relative.rs"]
 mod regression_check_stats_share_relative;
 #[path = "cases/regression_check_synthetic_python_coverage_paths.rs"]

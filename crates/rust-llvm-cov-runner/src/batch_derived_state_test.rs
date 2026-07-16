@@ -107,6 +107,7 @@ fn derived_publish_counters_and_manifest_loader_are_exercised() {
             coverage: RustLineCoverage {
                 files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
             },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
@@ -162,6 +163,7 @@ fn read_population_and_index_loaders_reject_invalid_json() {
         entries_fingerprint: "entries".to_string(),
         selectors: vec!["alpha".to_string()],
         ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
     };
     assert_eq!(
         index.generation_fingerprint,
@@ -177,6 +179,7 @@ fn alpha_entry(generation: &str, files: BTreeMap<String, BTreeSet<u32>>) -> Rust
             exit_code: Some(0),
             duration: Duration::from_millis(1),
             coverage: RustLineCoverage { files },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,

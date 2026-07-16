@@ -48,6 +48,19 @@ pub fn list_full_check_cache_files(home: &Path) -> Vec<PathBuf> {
     out
 }
 
+pub fn generate_lockfile(repo: &Path) {
+    let lockfile = Command::new("cargo")
+        .arg("generate-lockfile")
+        .current_dir(repo)
+        .output()
+        .expect("cargo generate-lockfile should run");
+    assert!(
+        lockfile.status.success(),
+        "cargo generate-lockfile failed: {}",
+        String::from_utf8_lossy(&lockfile.stderr)
+    );
+}
+
 pub type PythonRuntimeCoverageSeed<'a> = (&'a str, Vec<(&'a str, Vec<u32>)>);
 pub type RustRuntimeCoverageSeed<'a> = (&'a str, Vec<(&'a str, Vec<u32>)>);
 
@@ -156,6 +169,7 @@ pub fn seed_rust_runtime_coverage(repo: &Path, entries: &[RustRuntimeCoverageSee
             exit_code: Some(0),
             duration: std::time::Duration::from_millis(1),
             coverage: rust_llvm_cov_runner::RustLineCoverage { files },
+            test_binary_ids: vec!["test-bin".to_string()],
             cache_status: rust_llvm_cov_runner::RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
