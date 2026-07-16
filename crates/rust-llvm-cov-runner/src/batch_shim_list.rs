@@ -5,6 +5,7 @@ use std::process::Stdio;
 
 use super::BatchShimListMetadata;
 use super::batch_shim_child::build_delegated_command;
+use crate::batch_shim_delegated::scrub_coverage_build_env;
 use super::batch_shim_write::{
     filesystem_safe_instance_id, list_binary_id, list_full_name, write_shim_list_metadata,
 };
@@ -14,7 +15,9 @@ pub(crate) fn run_delegated_list_child(
     delegated: &[String],
     command: &[OsString],
 ) -> io::Result<i32> {
-    let output = build_delegated_command(delegated, command)
+    let mut delegated_command = build_delegated_command(delegated, command);
+    scrub_coverage_build_env(&mut delegated_command);
+    let output = delegated_command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

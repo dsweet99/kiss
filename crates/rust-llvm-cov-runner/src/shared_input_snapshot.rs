@@ -18,8 +18,8 @@ pub(crate) fn rust_input_snapshot(
     root: &Path,
     req: &RustCoverageBatchRequest,
 ) -> Result<RustInputSnapshot, RustLlvmCovError> {
-    let files = super::rust_cov_input_files(root).map_err(RustLlvmCovError::Io)?;
     let metadata = workspace_metadata_from_cargo(&req.cwd, &req.cargo, &req.cargo_args).ok();
+    let files = super::rust_cov_input_files(root).map_err(RustLlvmCovError::Io)?;
     digest_input_file_snapshot(
         root,
         &files,
@@ -32,19 +32,25 @@ pub(crate) fn rust_input_snapshot(
             {
                 return Ok(false);
             }
-            let Some(metadata) = metadata.as_ref() else {
-                return Ok(false);
-            };
             let is_inc = file
                 .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("inc"));
+            let Some(metadata) = metadata.as_ref() else {
+                return Ok(is_inc || is_default_ordinary_rust_source(file));
+            };
             match metadata.rs_compile_time_classification(root, file) {
                 Some(false) => Ok(true),
                 Some(true) => Ok(false),
-                None => Ok(is_inc),
+                None => Ok(is_inc || is_default_ordinary_rust_source(file)),
             }
         },
     )
+}
+
+fn is_default_ordinary_rust_source(file: &Path) -> bool {
+    file.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
+        && file.file_name().and_then(|name| name.to_str()) != Some("build.rs")
 }
 
 pub(crate) fn digest_input_file_snapshot(

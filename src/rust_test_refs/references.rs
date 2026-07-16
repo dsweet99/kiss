@@ -42,6 +42,10 @@ pub fn rust_test_functions_in(parsed: &crate::rust_parsing::ParsedRustFile) -> V
         .collect()
 }
 
+fn has_ignore_attribute(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|a| a.path().is_ident("ignore"))
+}
+
 pub(crate) fn collect_per_test_usage_from_items(
     items: &[syn::Item],
     prefix: &str,
@@ -60,7 +64,7 @@ pub(crate) fn collect_per_test_usage_from_items(
                     collect_per_test_usage_from_items(mod_items, &mod_prefix, out);
                 }
             }
-            Item::Fn(f) if has_test_attribute(&f.attrs) => {
+            Item::Fn(f) if has_test_attribute(&f.attrs) && !has_ignore_attribute(&f.attrs) => {
                 let fn_name = f.sig.ident.to_string();
                 let refs = collect_rust_references_for_fn(f);
                 let test_id = if prefix.is_empty() {
@@ -341,6 +345,28 @@ mod coverage_witness {
             }
         }
         assert!(refs.contains("sample"));
+    }
+
+    #[test]
+    fn ignored_tests_are_not_executable_selectors() {
+        let ast: syn::File = syn::parse_quote!(
+            #[test]
+            fn kept() {
+                kept_target();
+            }
+
+            #[test]
+            #[ignore = "manual"]
+            fn ignored() {
+                ignored_target();
+            }
+        );
+
+        let usage = collect_per_test_usage(&ast);
+
+        assert_eq!(usage.len(), 1);
+        assert_eq!(usage[0].0, "kept");
+        assert!(usage[0].1.contains("kept_target"));
     }
 }
 

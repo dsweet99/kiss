@@ -128,6 +128,7 @@ fn run_kiss_check_rust(home: &TempDir, repo: &TempDir) -> std::process::Output {
         .arg(repo.path())
         .current_dir(repo.path())
         .env("HOME", home.path())
+        .env_remove("LLVM_PROFILE_FILE")
         .output()
         .expect("kiss check should run")
 }

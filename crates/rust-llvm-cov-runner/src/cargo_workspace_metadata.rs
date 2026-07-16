@@ -20,7 +20,6 @@ pub struct WorkspaceMetadata {
 #[derive(Clone, Debug)]
 pub(crate) struct WorkspacePackageRecord {
     package: WorkspacePackage,
-    has_custom_build: bool,
     has_proc_macro: bool,
 }
 
@@ -46,6 +45,7 @@ pub(crate) struct CargoMetadataPackage {
 
 #[derive(serde::Deserialize, Default)]
 pub(crate) struct CargoMetadataTarget {
+    #[allow(dead_code)]
     #[serde(default)]
     kind: Vec<String>,
     #[serde(default)]
@@ -152,10 +152,6 @@ impl WorkspaceMetadata {
                         .map(Path::to_path_buf)
                         .unwrap_or_else(|| PathBuf::from(".")),
                 },
-                has_custom_build: pkg
-                    .targets
-                    .iter()
-                    .any(|target| target.kind.iter().any(|kind| kind == "custom-build")),
                 has_proc_macro: pkg.targets.iter().any(|target| {
                     target
                         .crate_types
@@ -197,7 +193,7 @@ impl WorkspaceMetadata {
     pub(crate) fn compile_time_package_ids(&self) -> BTreeSet<String> {
         let mut seeds = BTreeSet::new();
         for record in &self.packages {
-            if record.has_custom_build || record.has_proc_macro {
+            if record.has_proc_macro {
                 seeds.insert(record.package.id.clone());
             }
         }
@@ -226,6 +222,9 @@ impl WorkspaceMetadata {
             .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
         {
             return Some(false);
+        }
+        if file.file_name().and_then(|name| name.to_str()) == Some("build.rs") {
+            return Some(true);
         }
         let root = source_root
             .canonicalize()

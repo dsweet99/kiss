@@ -160,9 +160,6 @@ fn try_all_hit_after_lock(
     tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
 ) -> Result<Option<RustCoverageBatchResult>, RustLlvmCovError> {
-    if population_derived_state_stale(req, tools, identity)? {
-        return Ok(None);
-    }
     all_hit_batch_result(req, tools, identity)
 }
 

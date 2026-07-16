@@ -16,10 +16,8 @@ fn default_target_and_dependency_structs_are_empty() {
 fn workspace_package_record_fields_are_accessible_to_tests() {
     let record = crate::cargo_workspace_metadata::WorkspacePackageRecord {
         package: workspace_package_for_test("pkg", "name", PathBuf::from("/repo")),
-        has_custom_build: true,
         has_proc_macro: false,
     };
-    assert!(record.has_custom_build);
     assert!(!record.has_proc_macro);
 }
 
@@ -132,7 +130,7 @@ fn compile_time_closure_includes_proc_macro_local_dependency() {
 }
 
 #[test]
-fn compile_time_closure_includes_custom_build_package() {
+fn compile_time_closure_does_not_treat_custom_build_package_lib_as_compile_time() {
     let metadata = CargoMetadata {
         packages: vec![crate::cargo_workspace_metadata::CargoMetadataPackage {
             id: "build-pkg".to_string(),
@@ -151,7 +149,15 @@ fn compile_time_closure_includes_custom_build_package() {
         workspace_root: Some("/repo".to_string()),
     };
     let workspace = WorkspaceMetadata::from_cargo_metadata(&metadata);
-    assert!(workspace.compile_time_package_ids().contains("build-pkg"));
+    assert!(!workspace.compile_time_package_ids().contains("build-pkg"));
+    assert_eq!(
+        workspace.rs_compile_time_classification(&PathBuf::from("/repo"), Path::new("/repo/build.rs")),
+        Some(true)
+    );
+    assert_eq!(
+        workspace.rs_compile_time_classification(&PathBuf::from("/repo"), Path::new("/repo/src/lib.rs")),
+        Some(false)
+    );
 }
 
 #[test]

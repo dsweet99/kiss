@@ -48,7 +48,7 @@ fn fresh_batch_stores_passed_selector_entries() {
     }));
     assert_eq!(result.counters.build_invocations, 1);
     assert_eq!(result.counters.export_jobs, 1);
-    assert_eq!(result.counters.build_target_baseline_bytes, 6);
+    assert_eq!(result.counters.build_target_baseline_bytes, 12);
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn fresh_build_identity_removes_incompatible_target_and_sizes_nested_files() {
     let identity = batch_identity(&req, &tools).unwrap();
     let plan = build_rust_coverage_batch_plan(&req).unwrap();
     let _ = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
-    assert_eq!(path_size_bytes(&plan.build_target).unwrap(), 6);
+    assert_eq!(path_size_bytes(&plan.build_target).unwrap(), 12);
 
     req.cargo_args.push("--features=changed".to_string());
     let changed_plan = build_rust_coverage_batch_plan(&req).unwrap();

@@ -80,13 +80,16 @@ fn collect_instrumented_objects_from_dir(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn is_instrumented_catalog_executable(path: &Path) -> bool {
+    if !path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| !name.ends_with(".d") && !name.contains('.'))
+    {
+        return false;
+    }
     path.parent()
         .and_then(|parent| parent.file_name())
-        .is_some_and(|name| name == "deps")
-        && path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| !name.ends_with(".d") && !name.contains('.'))
+        .is_some_and(|name| name == "deps" || name == "debug" || name == "release")
 }
 
 fn is_instrumented_catalog_object(path: &Path) -> bool {

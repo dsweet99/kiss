@@ -14,10 +14,10 @@ pub fn set_sigpipe_default() {
 pub fn set_sigpipe_default() {}
 
 /// Directory or filename prefixes excluded from `kiss check` by default.
-/// Intentionally-violating fixtures live under `tests/fake_python/` and
-/// `tests/fake_rust/`; they are analyzed directly in integration tests but
-/// must not fail the repo's own quality gate.
-pub const DEFAULT_CHECK_IGNORE_PREFIXES: &[&str] = &["fake_"];
+/// Intentionally-violating fixtures live under `tests/fake_python/`,
+/// `tests/fake_rust/`, and `tests/fixtures/`; they are analyzed directly in
+/// integration tests but must not fail the repo's own quality gate.
+pub const DEFAULT_CHECK_IGNORE_PREFIXES: &[&str] = &["fake_", "fixtures"];
 
 pub fn default_check_ignore_prefixes() -> Vec<String> {
     DEFAULT_CHECK_IGNORE_PREFIXES
@@ -76,6 +76,6 @@ mod tests {
     #[test]
     fn merge_check_ignore_prefixes_preserves_user_prefixes() {
         let merged = merge_check_ignore_prefixes(&["custom/".to_string()]);
-        assert_eq!(merged, vec!["fake_", "custom"]);
+        assert_eq!(merged, vec!["fake_", "fixtures", "custom"]);
     }
 }

@@ -10,6 +10,7 @@ use crate::batch_process_tree::ProcessGroupIdentity;
 pub(crate) const DELEGATED_GO_ENV: &str = "KISS_RUST_LLVM_COV_DELEGATED_GO";
 
 const COVERAGE_BUILD_ENV_KEYS: &[&str] = &[
+    "LLVM_PROFILE_FILE",
     "RUSTC_WRAPPER",
     "RUSTC_WORKSPACE_WRAPPER",
     "RUSTFLAGS",
@@ -120,6 +121,16 @@ mod tests {
         }
     }
 
+    fn env_has_key(env: &str, key: &str) -> bool {
+        let prefix = format!("{key}=");
+        env.lines().any(|line| line.starts_with(&prefix))
+    }
+
+    fn env_has_binding(env: &str, key: &str, value: &str) -> bool {
+        let expected = format!("{key}={value}");
+        env.lines().any(|line| line == expected)
+    }
+
     #[test]
     fn delegated_child_scrubs_coverage_build_environment() {
         let _lock = crate::test_support::shim_test_env_lock();
@@ -138,9 +149,14 @@ mod tests {
         let env = String::from_utf8(output.stdout).unwrap();
 
         assert!(output.status.success());
-        assert!(!env.contains("RUSTFLAGS="));
-        assert!(!env.contains("CARGO_TARGET_DIR="));
-        assert!(!env.contains("KISS_CHECK_RUNTIME_REFRESH_ACTIVE="));
-        assert!(env.contains(&format!("LLVM_PROFILE_FILE={}", profile_path.display())));
+        assert!(!env_has_key(&env, "RUSTFLAGS"));
+        assert!(!env_has_key(&env, "CARGO_ENCODED_RUSTFLAGS"));
+        assert!(!env_has_key(&env, "CARGO_TARGET_DIR"));
+        assert!(!env_has_key(&env, "KISS_CHECK_RUNTIME_REFRESH_ACTIVE"));
+        assert!(env_has_binding(
+            &env,
+            "LLVM_PROFILE_FILE",
+            &profile_path.display().to_string()
+        ));
     }
 }
