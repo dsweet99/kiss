@@ -172,6 +172,109 @@ mod run_coverage {
         assert_eq!(code, 2);
     }
 
+    #[test]
+    fn run_with_cli_exercises_primary_commands_on_mixed_fixture() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join(".kissconfig"),
+            "[gate]\ntest_coverage_threshold = 0\nduplication_enabled = false\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("app.py"),
+            "import helper\n\n\ndef f(x):\n    return helper.g(x) + 1\n",
+        )
+        .unwrap();
+        fs::write(tmp.path().join("helper.py"), "def g(x):\n    return x\n").unwrap();
+        fs::write(
+            tmp.path().join("lib.rs"),
+            "mod helper;\npub fn f(x: i32) -> i32 { helper::g(x) + 1 }\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("helper.rs"),
+            "pub fn g(x: i32) -> i32 { x }\n",
+        )
+        .unwrap();
+
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        for command in [
+            Commands::Check {
+                paths: vec![".".to_string()],
+                all: false,
+                ignore: Vec::new(),
+                timing: true,
+                jobs: Some(1),
+            },
+            Commands::Stats {
+                paths: vec![".".to_string()],
+                all: Some(3),
+                table: true,
+                ignore: Vec::new(),
+            },
+            Commands::Dry {
+                path: ".".to_string(),
+                filter_files: Vec::new(),
+                shingle_size: 3,
+                minhash_size: 8,
+                lsh_bands: 2,
+                min_similarity: 0.9,
+                ignore: Vec::new(),
+            },
+            Commands::Config,
+            Commands::Rules,
+        ] {
+            assert_eq!(
+                run_with_cli(Cli {
+                    config: None,
+                    lang: None,
+                    defaults: false,
+                    command,
+                }),
+                0
+            );
+        }
+
+        let mimic_out = tmp.path().join("mimic.toml");
+        assert_eq!(
+            run_with_cli(Cli {
+                config: None,
+                lang: None,
+                defaults: false,
+                command: Commands::Mimic {
+                    paths: vec![".".to_string()],
+                    out: Some(mimic_out.clone()),
+                    ignore: Vec::new(),
+                },
+            }),
+            0
+        );
+        assert!(fs::read_to_string(&mimic_out).unwrap().contains("[gate]"));
+
+        let viz_out = tmp.path().join("graph.mmd");
+        assert_eq!(
+            run_with_cli(Cli {
+                config: None,
+                lang: None,
+                defaults: false,
+                command: Commands::Viz {
+                    out: viz_out.clone(),
+                    paths: vec![".".to_string()],
+                    zoom: 1.0,
+                    num_nodes: None,
+                    ignore: Vec::new(),
+                },
+            }),
+            0
+        );
+        assert!(fs::read_to_string(&viz_out).unwrap().contains("graph"));
+
+        std::env::set_current_dir(original).unwrap();
+    }
+
     #[cfg(unix)]
     fn make_executable(path: &std::path::Path) {
         use std::os::unix::fs::PermissionsExt;

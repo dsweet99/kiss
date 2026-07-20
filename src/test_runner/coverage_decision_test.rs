@@ -141,6 +141,30 @@ fn CoverageFreshness_and_full_population_plan_contracts() {
 }
 
 #[test]
+fn test_selector_ordering_groups_python_before_rust_and_selection_defaults_complete() {
+    let mut selectors = vec![
+        selector(Language::Rust, "crate::tests::b"),
+        selector(Language::Python, "tests/test_app.py::test_b"),
+        selector(Language::Python, "tests/test_app.py::test_a"),
+        selector(Language::Rust, "crate::tests::a"),
+    ];
+    selectors.sort();
+    assert_eq!(
+        selectors,
+        vec![
+            selector(Language::Python, "tests/test_app.py::test_a"),
+            selector(Language::Python, "tests/test_app.py::test_b"),
+            selector(Language::Rust, "crate::tests::a"),
+            selector(Language::Rust, "crate::tests::b"),
+        ]
+    );
+
+    let decision = SelectionDecision::default();
+    assert!(decision.complete);
+    assert!(decision.selectors.is_empty());
+}
+
+#[test]
 fn reusable_prior_backer_selects_without_population() {
     let (planner, select_calls) =
         FakePlanner::fresh(Language::Rust, vec![selector(Language::Rust, "b")]);

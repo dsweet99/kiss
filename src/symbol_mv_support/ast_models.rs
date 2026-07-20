@@ -83,6 +83,7 @@ pub(super) enum ParseOutcome {
 #[derive(Clone, Debug)]
 pub(super) enum FallbackReason {
     ParseFailed,
+    #[allow(dead_code)]
     ParserUnavailable,
 }
 

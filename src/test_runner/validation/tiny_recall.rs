@@ -331,4 +331,72 @@ mod tests {
             BTreeSet::from(["rust:tests::test_b".to_string()])
         );
     }
+
+    #[test]
+    fn report_prints_full_recall_summary_without_missing_rows() {
+        let report = TinyRecallReport::new(
+            2,
+            2,
+            BTreeSet::from(["python:test_a.py::test_a".to_string()]),
+            BTreeSet::from(["python:test_a.py::test_a".to_string()]),
+        );
+
+        assert!(report.has_full_recall());
+        report.print();
+    }
+
+    #[test]
+    fn selector_sets_and_selectors_if_cover_enabled_and_disabled_paths() {
+        let sets = SelectorSets {
+            python: BTreeSet::from(["tests/test_a.py::test_a".to_string()]),
+            rust: BTreeSet::from(["tests::test_b".to_string()]),
+        };
+        assert_eq!(sets.total(), 2);
+
+        let enabled = selectors_if(true, || Ok(vec!["b".to_string(), "a".to_string()])).unwrap();
+        assert_eq!(enabled, BTreeSet::from(["a".to_string(), "b".to_string()]));
+
+        let disabled = selectors_if(false, || Err("should not run".to_string())).unwrap();
+        assert!(disabled.is_empty());
+    }
+
+    #[test]
+    fn tiny_recall_commands_include_repo_selector_and_extra_args() {
+        let tmp = tempfile::tempdir().unwrap();
+        let extra = vec!["--exact".to_string()];
+
+        let py = python_command(tmp.path(), "tests/test_a.py::test_a", &extra);
+        let py_debug = format!("{py:?}");
+        assert!(py_debug.contains("pytest"));
+        assert!(py_debug.contains("tests/test_a.py::test_a"));
+        assert!(py_debug.contains("--exact"));
+
+        let rs = rust_command(tmp.path(), "tests::test_b", &extra);
+        let rs_debug = format!("{rs:?}");
+        assert!(rs_debug.contains("cargo"));
+        assert!(rs_debug.contains("tests::test_b"));
+        assert!(rs_debug.contains("--exact"));
+    }
+
+    #[test]
+    fn tiny_recall_fixture_runs_end_to_end() {
+        let args = ValidateSelectionCmdArgs {
+            mode: TestChangeMode::Commit,
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run: false,
+            jobs: 1,
+            extra: &[],
+            ignore: &[],
+            lang_filter: Some(Language::Python),
+            fixture: Some("tiny-recall"),
+            config_main_branch: None,
+        };
+
+        let report = run_tiny_recall_fixture(&args).unwrap();
+
+        assert!(report.full_count > 0);
+        assert!(report.selected_count > 0);
+        assert!(report.has_full_recall());
+    }
 }

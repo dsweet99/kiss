@@ -146,6 +146,25 @@ fn cache_shape_records_entry_and_build_target_bytes() {
     assert_eq!(metrics.rust_build_target_bytes, 4);
 }
 
+#[test]
+fn cache_shape_records_external_tmp_residuals() {
+    let tmp = tempfile::tempdir().unwrap();
+    let rust_cache = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    fs::create_dir_all(&rust_cache).unwrap();
+    let external = rust_cov_cache_tmp_parent(&rust_cache);
+    fs::create_dir_all(&external).unwrap();
+    fs::write(external.join("residual.profraw"), b"abcde").unwrap();
+    let mut metrics = empty_metrics();
+
+    metrics.capture_cache_shape(tmp.path());
+
+    assert_eq!(metrics.rust_external_tmp_residual_bytes, 5);
+    assert_eq!(metrics.rust_external_tmp_residual_count, 1);
+    assert!(!metrics.rust_external_tmp_metric_error);
+    assert_eq!(metrics.rust_transient_residual_count, 1);
+    fs::remove_dir_all(external).unwrap();
+}
+
 fn empty_metrics() -> LocalRubricMetrics {
     LocalRubricMetrics {
         plan_duration: Duration::ZERO,

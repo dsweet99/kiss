@@ -33,6 +33,7 @@ mod batch_plan;
 mod batch_plan_env;
 mod batch_plan_nextest_config;
 mod batch_plan_publish;
+mod batch_plan_target_runner_program;
 mod batch_plan_test_args;
 mod batch_platform;
 mod batch_process_tree;

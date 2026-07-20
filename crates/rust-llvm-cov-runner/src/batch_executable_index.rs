@@ -161,6 +161,11 @@ fn test_name_from_list_line(line: &str, binary_id: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::batch_shim::{BatchShimListMetadata, SHIM_LIST_SCHEMA};
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
     #[test]
     fn list_plan_skips_every_test_without_no_run() {
         let mut plan = crate::RustCoverageBatchPlan::witness();
@@ -181,5 +186,138 @@ mod tests {
             super::test_name_from_list_line("module::bench: bench", "/tmp/bin"),
             None
         );
+    }
+
+    #[test]
+    fn executable_index_rejects_missing_list_metadata() {
+        let tmp = tempfile::tempdir().unwrap();
+        let req = crate::RustCoverageBatchRequest::witness();
+        let mut plan = crate::RustCoverageBatchPlan::witness();
+        plan.target_runner_output_dir = tmp.path().join("missing");
+
+        let err = super::executable_index_from_list_metadata(&req, &plan).unwrap_err();
+
+        assert!(format!("{err:?}").contains("no Rust test executable metadata produced"));
+    }
+
+    #[test]
+    fn executable_index_rejects_list_metadata_without_argv() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target_runner_output_dir = tmp.path().join("instances");
+        std::fs::create_dir(&target_runner_output_dir).unwrap();
+        let metadata = BatchShimListMetadata {
+            schema_version: SHIM_LIST_SCHEMA.to_string(),
+            id: "list-a".to_string(),
+            binary_id: "unused-by-index".to_string(),
+            argv: Vec::new(),
+            test_names: Vec::new(),
+        };
+        std::fs::write(
+            target_runner_output_dir.join("list-a.list.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+        let req = crate::RustCoverageBatchRequest::witness();
+        let mut plan = crate::RustCoverageBatchPlan::witness();
+        plan.target_runner_output_dir = target_runner_output_dir;
+
+        let err = super::executable_index_from_list_metadata(&req, &plan).unwrap_err();
+
+        assert!(format!("{err:?}").contains("missing list executable"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn builds_executable_index_from_target_runner_list_metadata() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("test-bin");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\nif [ \"$1\" = \"--list\" ]; then printf 'alpha::passes: test\\nbeta::passes: test\\n'; fi\n",
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&bin).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&bin, permissions).unwrap();
+
+        let target_runner_output_dir = tmp.path().join("instances");
+        std::fs::create_dir(&target_runner_output_dir).unwrap();
+        let metadata = BatchShimListMetadata {
+            schema_version: SHIM_LIST_SCHEMA.to_string(),
+            id: "list-a".to_string(),
+            binary_id: "unused-by-index".to_string(),
+            argv: vec![bin.to_string_lossy().to_string()],
+            test_names: Vec::new(),
+        };
+        std::fs::write(
+            target_runner_output_dir.join("list-a.list.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+
+        let mut req = crate::RustCoverageBatchRequest::witness();
+        req.logical_selectors = vec!["alpha::passes".to_string(), "gamma::missing".to_string()];
+        req.test_args = Vec::new();
+        let mut plan = crate::RustCoverageBatchPlan::witness();
+        plan.target_runner_output_dir = target_runner_output_dir;
+
+        let index = super::executable_index_from_list_metadata(&req, &plan).unwrap();
+        let binary_id = crate::batch_executor_finish::test_binary_id_for_path(&bin);
+
+        assert_eq!(
+            index.selector_binary_ids,
+            std::collections::BTreeMap::from([(
+                "alpha::passes".to_string(),
+                vec![binary_id.clone()]
+            )])
+        );
+        assert_eq!(index.test_binaries.len(), 1);
+        assert_eq!(index.test_binaries[0].id, binary_id);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn executable_index_reports_failing_list_executable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("test-bin");
+        std::fs::write(&bin, "#!/bin/sh\necho bad >&2\nexit 7\n").unwrap();
+        let mut permissions = std::fs::metadata(&bin).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&bin, permissions).unwrap();
+
+        let err = super::list_test_names_from_executable(&bin, "bin-id").unwrap_err();
+
+        assert!(format!("{err:?}").contains("test binary list failed"));
+        assert!(format!("{err:?}").contains("bad"));
+    }
+
+    #[test]
+    fn build_rust_test_executable_index_fails_when_run_layout_cannot_begin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut req = crate::RustCoverageBatchRequest::witness();
+        req.cwd = tmp.path().to_path_buf();
+        req.source_root = tmp.path().to_path_buf();
+        req.cache_root = tmp.path().join("cache");
+        let tools = crate::batch_fingerprint::RustCoverageToolIdentity {
+            cargo_version: "c".into(),
+            llvm_cov_version: "l".into(),
+            rustc_version: "r".into(),
+            cargo_nextest_version: "n".into(),
+        };
+        let identity = crate::batch_fingerprint::RustCoverageBatchIdentity {
+            input_digest: "i".into(),
+            generation_fingerprint: "g".into(),
+            selection_context_fingerprint: "s".into(),
+            ordinary_source_digests: Default::default(),
+        };
+        let mut plan = crate::RustCoverageBatchPlan::witness();
+        plan.build_target = tmp.path().join("build");
+        plan.target_runner_output_dir = tmp.path().join("runner");
+        plan.runner_map_path = tmp.path().join("runner_map.json");
+        plan.generated_config = tmp.path().join("nextest.toml");
+        let err =
+            super::build_rust_test_executable_index(&req, &tools, &identity, &plan).unwrap_err();
+        let rendered = format!("{err:?}");
+        assert!(!rendered.is_empty());
     }
 }

@@ -17,6 +17,12 @@ use crate::test_runner::python_coverage_index::{
 mod check_runtime_refresh_repair;
 use check_runtime_refresh_repair::{CheckAggregateRepairDecision, classify_check_aggregate_repair};
 
+#[path = "check_runtime_refresh_apply.rs"]
+mod check_runtime_refresh_apply;
+pub(crate) use check_runtime_refresh_apply::{
+    apply_identity_only_repair, apply_rerun_repair, finalize_population_summary,
+};
+
 pub(crate) const CHECK_RUNTIME_REFRESH_ACTIVE_ENV: &str = "KISS_CHECK_RUNTIME_REFRESH_ACTIVE";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -55,28 +61,28 @@ pub(crate) enum CoverageRefreshError {
 }
 
 impl CoverageRefreshError {
-    fn lock(language: &'static str, err: impl ToString) -> Self {
+    pub(crate) fn lock(language: &'static str, err: impl ToString) -> Self {
         Self::Lock {
             language,
             reason: err.to_string(),
         }
     }
 
-    fn discovery(language: &'static str, err: impl ToString) -> Self {
+    pub(crate) fn discovery(language: &'static str, err: impl ToString) -> Self {
         Self::Discovery {
             language,
             reason: err.to_string(),
         }
     }
 
-    fn publication(language: &'static str, err: impl ToString) -> Self {
+    pub(crate) fn publication(language: &'static str, err: impl ToString) -> Self {
         Self::Publication {
             language,
             reason: err.to_string(),
         }
     }
 
-    fn validation(language: &'static str, err: RuntimeCoverageLoadError) -> Self {
+    pub(crate) fn validation(language: &'static str, err: RuntimeCoverageLoadError) -> Self {
         Self::PostRefreshValidation {
             language,
             reason: err.reason,
@@ -135,12 +141,12 @@ struct RefreshLockGuard {
     _file: File,
 }
 
-struct ScopedRefreshEnvGuard {
+pub(crate) struct ScopedRefreshEnvGuard {
     old: Option<std::ffi::OsString>,
 }
 
 impl ScopedRefreshEnvGuard {
-    fn set() -> Self {
+    pub(crate) fn set() -> Self {
         let old = std::env::var_os(CHECK_RUNTIME_REFRESH_ACTIVE_ENV);
         // SAFETY: `kiss check` sets this process-wide guard only around its
         // synchronous population runner call, before waiting for child tests.
@@ -151,16 +157,17 @@ impl ScopedRefreshEnvGuard {
 
 impl Drop for ScopedRefreshEnvGuard {
     fn drop(&mut self) {
-        match &self.old {
-            Some(value) => {
-                // SAFETY: restores the guard set by `ScopedRefreshEnvGuard::set`.
-                unsafe { std::env::set_var(CHECK_RUNTIME_REFRESH_ACTIVE_ENV, value) };
-            }
-            None => {
-                // SAFETY: restores the absence of the guard set above.
-                unsafe { std::env::remove_var(CHECK_RUNTIME_REFRESH_ACTIVE_ENV) };
-            }
-        }
+        restore_refresh_active_env(self.old.take());
+    }
+}
+
+pub(crate) fn restore_refresh_active_env(old: Option<std::ffi::OsString>) {
+    let key = CHECK_RUNTIME_REFRESH_ACTIVE_ENV;
+    match old {
+        // SAFETY: restores the guard set by `ScopedRefreshEnvGuard::set`.
+        Some(value) => unsafe { std::env::set_var(key, value) },
+        // SAFETY: restores the absence of the guard set above.
+        None => unsafe { std::env::remove_var(key) },
     }
 }
 
@@ -244,16 +251,20 @@ fn ensure_rust_runtime_coverage_with_stats(
     jobs: usize,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     let _guard = lock_refresh(repo_root, "Rust")?;
-    if load_rust_runtime_coverage(repo_root, ignore).is_ok() {
-        return Ok(CoverageRefreshStats::default());
+    match load_rust_runtime_coverage(repo_root, ignore) {
+        Ok(_) => Ok(CoverageRefreshStats::default()),
+        Err(_) => {
+            let selectors =
+                crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
+                    .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
+            if let Some(stats) =
+                try_repair_rust_check_aggregate(repo_root, ignore, &selectors, jobs)?
+            {
+                return Ok(stats);
+            }
+            refresh_full_rust_check_aggregate(repo_root, ignore, &selectors, jobs)
+        }
     }
-    let selectors =
-        crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
-            .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
-    if let Some(stats) = try_repair_rust_check_aggregate(repo_root, ignore, &selectors, jobs)? {
-        return Ok(stats);
-    }
-    refresh_full_rust_check_aggregate(repo_root, ignore, &selectors, jobs)
 }
 
 fn refresh_full_rust_check_aggregate(
@@ -276,31 +287,10 @@ fn refresh_full_rust_check_aggregate(
         None,
     )
     .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
-    eprintln!(
-        "kiss check: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports={}",
-        summary.rust_aggregate_binaries, summary.rust_aggregate_exports
-    );
-    if summary.exit_code != 0 {
-        return Err(CoverageRefreshError::TestExecution {
-            language: "Rust",
-            total: summary.total,
-            failed: summary.failed,
-            exit_code: summary.exit_code,
-        });
-    }
-    load_rust_runtime_coverage(repo_root, ignore)
-        .map(|_| ())
-        .map_err(|err| CoverageRefreshError::validation("Rust", err))?;
-    Ok(CoverageRefreshStats {
-        rust_test_instances: summary.rust_test_instances,
-        rust_aggregate_binaries: summary.rust_aggregate_binaries,
-        rust_aggregate_exports: summary.rust_aggregate_exports,
-        rust_full_refresh: true,
-        ..Default::default()
-    })
+    finalize_population_summary(repo_root, ignore, &summary, true)
 }
 
-fn try_repair_rust_check_aggregate(
+pub(crate) fn try_repair_rust_check_aggregate(
     repo_root: &Path,
     ignore: &[String],
     selectors: &[String],
@@ -347,82 +337,33 @@ fn try_repair_rust_check_aggregate(
         CheckAggregateRepairDecision::FullRefresh => Ok(None),
         CheckAggregateRepairDecision::IdentityOnly {
             retained_binary_line_maps,
-        } => {
-            let aggregate = rust_llvm_cov_runner::build_check_aggregate(
-                &build.request,
-                &build.identity,
-                selectors,
-                build.index.selector_binary_ids,
-                &build.index.test_binaries,
-                retained_binary_line_maps,
-            )
-            .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
-            rust_llvm_cov_runner::publish_check_aggregate(&build.request, &aggregate)
-                .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
-            load_rust_runtime_coverage(repo_root, ignore)
-                .map(|_| ())
-                .map_err(|err| CoverageRefreshError::validation("Rust", err))?;
-            eprintln!(
-                "kiss check: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports=0",
-                aggregate.binaries.len()
-            );
-            Ok(Some(CoverageRefreshStats {
-                rust_aggregate_binaries: aggregate.binaries.len(),
-                rust_identity_only_repair: true,
-                ..Default::default()
-            }))
-        }
+        } => Ok(Some(apply_identity_only_repair(
+            repo_root,
+            ignore,
+            &build,
+            selectors,
+            retained_binary_line_maps,
+        )?)),
         CheckAggregateRepairDecision::Rerun {
             rerun_selectors,
             replacement_binary_ids,
             retained_binary_line_maps,
-        } => {
-            eprintln!(
-                "kiss check: incrementally refreshing Rust runtime coverage ({} tests, {} replacement binaries)",
-                rerun_selectors.len(),
-                replacement_binary_ids.len()
-            );
-            let _refresh_env = ScopedRefreshEnvGuard::set();
-            let repair_publication = rust_llvm_cov_runner::CheckAggregateRepairPublication {
-                selector_binary_ids: build.index.selector_binary_ids,
-                test_binaries: build.index.test_binaries,
-                retained_binary_line_maps,
-            };
-            let summary =
-                crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_check_aggregate_selectors(
-                    repo_root,
-                    &rerun_selectors,
-                    &[],
-                    jobs,
-                    Some(replacement_binary_ids),
-                    Some(repair_publication),
-                )
-                .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
-            eprintln!(
-                "kiss check: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports={}",
-                summary.rust_aggregate_binaries, summary.rust_aggregate_exports
-            );
-            if summary.exit_code != 0 {
-                return Err(CoverageRefreshError::TestExecution {
-                    language: "Rust",
-                    total: summary.total,
-                    failed: summary.failed,
-                    exit_code: summary.exit_code,
-                });
-            }
-            load_rust_runtime_coverage(repo_root, ignore)
-                .map(|_| ())
-                .map_err(|err| CoverageRefreshError::validation("Rust", err))?;
-            Ok(Some(CoverageRefreshStats {
-                rust_test_instances: summary.rust_test_instances,
-                rust_aggregate_binaries: summary.rust_aggregate_binaries,
-                rust_aggregate_exports: summary.rust_aggregate_exports,
-                ..Default::default()
-            }))
-        }
+        } => Ok(Some(apply_rerun_repair(
+            repo_root,
+            ignore,
+            &build,
+            rerun_selectors,
+            replacement_binary_ids,
+            retained_binary_line_maps,
+            jobs,
+        )?)),
     }
 }
 
 #[cfg(test)]
 #[path = "check_runtime_refresh_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "check_runtime_refresh_apply_test.rs"]
+mod apply_tests;

@@ -1,9 +1,11 @@
 use super::path_helpers::load_full_cache;
 use super::*;
+use crate::analyze::CoverageSource;
 use crate::analyze::FocusFilter;
 use kiss::Violation;
 use kiss::check_cache::CachedViolation;
 use kiss::check_universe_cache::CachedCoverageItem;
+use kiss::check_universe_cache::CachedLineCoverageRecord;
 use std::path::PathBuf;
 
 fn empty_cache(fp: &str) -> FullCheckCache {
@@ -58,6 +60,27 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
         rs_dups_all: &[],
         definitions: Vec::new(),
         unreferenced: Vec::new(),
+    }
+}
+
+fn test_analyze_options<'a>(
+    py_config: &'a Config,
+    rs_config: &'a Config,
+    gate_config: &'a GateConfig,
+) -> crate::analyze::AnalyzeOptions<'a> {
+    crate::analyze::AnalyzeOptions {
+        universe: ".",
+        focus_paths: &[],
+        py_config,
+        rs_config,
+        lang_filter: None,
+        bypass_gate: false,
+        gate_config,
+        ignore_prefixes: &[],
+        show_timing: false,
+        suppress_final_status: false,
+        coverage_source: CoverageSource::StaticReferences,
+        runtime_coverage_jobs: 1,
     }
 }
 
@@ -137,6 +160,59 @@ fn cached_coverage_viols_replays_weighted_overlay_pct() {
 }
 
 #[test]
+fn emit_cached_gated_fails_on_static_cached_coverage_gate() {
+    let mut cache = empty_cache("static_gate_fail");
+    cache.definitions.push(CachedCoverageItem {
+        file: "src/module.py".into(),
+        name: "covered".into(),
+        line: 1,
+    });
+    cache.definitions.push(CachedCoverageItem {
+        file: "src/module.py".into(),
+        name: "missing".into(),
+        line: 2,
+    });
+    cache.unreferenced.push(CachedCoverageItem {
+        file: "src/module.py".into(),
+        name: "missing".into(),
+        line: 2,
+    });
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig::default();
+    let opts = test_analyze_options(&py, &rs, &gate);
+
+    assert!(!emit_cached_gated(
+        cache,
+        &opts,
+        &FocusFilter::unrestricted()
+    ));
+}
+
+#[test]
+fn emit_cached_gated_fails_on_runtime_line_coverage_gate() {
+    let mut cache = empty_cache("runtime_gate_fail");
+    cache.runtime_coverage_identity = Some("runtime-id".into());
+    cache.runtime_line_coverage.push(CachedLineCoverageRecord {
+        file: "src/module.py".into(),
+        total_lines: 10,
+        covered_lines: 8,
+        percent: 80,
+        first_uncovered_line: Some(9),
+    });
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig::default();
+    let opts = test_analyze_options(&py, &rs, &gate);
+
+    assert!(!emit_cached_gated(
+        cache,
+        &opts,
+        &FocusFilter::unrestricted()
+    ));
+}
+
+#[test]
 fn fingerprint_path_duplicates_and_coverage_helpers() {
     let fp = fingerprint_for_check(
         &[],
@@ -160,6 +236,34 @@ fn fingerprint_path_duplicates_and_coverage_helpers() {
         cached_duplicates(empty_cache("deadbeef"), &GateConfig::default(), &focus);
     assert!(py_dups.is_empty() && rs_dups.is_empty());
     assert!(cached_coverage_viols(&cache, &focus).is_empty());
+}
+
+#[test]
+fn same_cached_paths_checks_focus_and_language_paths_without_order_sensitivity() {
+    let mut cache = empty_cache("paths");
+    cache.py_paths = vec!["b.py".to_string(), "a.py".to_string()];
+    cache.rs_paths = vec!["src/lib.rs".to_string()];
+    let py = vec![PathBuf::from("a.py"), PathBuf::from("b.py")];
+    let rs = vec![PathBuf::from("src/lib.rs")];
+    let focus = FocusFilter::unrestricted();
+    assert!(super::path_helpers::same_cached_paths(
+        &py, &rs, &focus, &cache
+    ));
+
+    cache.focus_restrict = true;
+    cache.focus_paths = vec!["a.py".to_string()];
+    let focus = FocusFilter::restricting([PathBuf::from("a.py")].into_iter().collect());
+    assert!(super::path_helpers::same_cached_paths(
+        &py, &rs, &focus, &cache
+    ));
+
+    let wrong_focus = FocusFilter::restricting([PathBuf::from("b.py")].into_iter().collect());
+    assert!(!super::path_helpers::same_cached_paths(
+        &py,
+        &rs,
+        &wrong_focus,
+        &cache
+    ));
 }
 
 #[test]

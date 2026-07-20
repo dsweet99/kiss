@@ -68,7 +68,14 @@ fn has_test_naming_pattern(path: &Path) -> bool {
     path.file_stem()
         .and_then(|n| n.to_str())
         .is_some_and(|name| {
-            name.ends_with("_test") || name.starts_with("test_") || name.ends_with("_integration")
+            name == "tests"
+                || name.ends_with("_test")
+                || name.ends_with("_tests")
+                || name.ends_with("_integration")
+                || name.ends_with("_test_1")
+                || name.ends_with("_test_2")
+                || name.starts_with("test_")
+                || name.starts_with("tests_")
         })
 }
 

@@ -1,9 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use rpytest_runner::TestStatus;
-use rust_llvm_cov_runner::RustLineCoverage;
+use rust_llvm_cov_runner::{
+    CoverageOutputMode, RustCoverageToolIdentity, RustCoverageBatchRequest, RustLineCoverage,
+    placeholder_delegated_runner_fields, resolve_batch_request_runners,
+};
 use serde::Deserialize;
 
 use crate::test_runner::line_selection;
@@ -52,18 +56,7 @@ pub(crate) fn current_rust_runner_map_fingerprint(
 fn resolved_rust_batch_request_parts(
     repo_root: &Path,
     test_args: &[String],
-) -> Result<
-    (
-        rust_llvm_cov_runner::RustCoverageBatchRequest,
-        rust_llvm_cov_runner::RustCoverageToolIdentity,
-    ),
-    String,
-> {
-    use rust_llvm_cov_runner::{
-        CoverageOutputMode, RustCoverageBatchRequest, placeholder_delegated_runner_fields,
-        resolve_batch_request_runners,
-    };
-
+) -> Result<(RustCoverageBatchRequest, RustCoverageToolIdentity), String> {
     let (delegated_runners, runner_map_fingerprint, host_platform) =
         placeholder_delegated_runner_fields();
     let mut req = RustCoverageBatchRequest {
@@ -91,11 +84,7 @@ fn resolved_rust_batch_request_parts(
 
 fn cached_rust_coverage_tool_identity(
     repo_root: &Path,
-) -> Result<rust_llvm_cov_runner::RustCoverageToolIdentity, String> {
-    use std::sync::OnceLock;
-
-    use rust_llvm_cov_runner::RustCoverageToolIdentity;
-
+) -> Result<RustCoverageToolIdentity, String> {
     static TOOLS: OnceLock<RustCoverageToolIdentity> = OnceLock::new();
     if let Some(tools) = TOOLS.get() {
         return Ok(tools.clone());
@@ -106,9 +95,7 @@ fn cached_rust_coverage_tool_identity(
 
 fn detect_rust_coverage_tool_identity(
     repo_root: &Path,
-) -> Result<rust_llvm_cov_runner::RustCoverageToolIdentity, String> {
-    use rust_llvm_cov_runner::RustCoverageToolIdentity;
-
+) -> Result<RustCoverageToolIdentity, String> {
     let cargo = PathBuf::from("cargo");
     let rustc = PathBuf::from("rustc");
     Ok(RustCoverageToolIdentity {
@@ -249,15 +236,14 @@ pub(crate) fn select_rust_source_selectors_hybrid(
     let mut selectors = BTreeSet::new();
     for source_path in source_paths {
         let rel = repo_relative_path(repo_root, source_path)?;
-        let Some(file_selectors) = index.get(&rel).filter(|selectors| !selectors.is_empty()) else {
-            continue;
-        };
-        let selected_for_file = line_selectors_by_file
-            .get(&rel)
-            .filter(|selectors| !selectors.is_empty())
-            .cloned()
-            .unwrap_or_else(|| file_selectors.clone());
-        selectors.extend(selected_for_file);
+        if let Some(file_selectors) = index.get(&rel).filter(|selectors| !selectors.is_empty()) {
+            let selected_for_file = line_selectors_by_file
+                .get(&rel)
+                .filter(|selectors| !selectors.is_empty())
+                .cloned()
+                .unwrap_or_else(|| file_selectors.clone());
+            selectors.extend(selected_for_file);
+        }
     }
     Some(selectors)
 }
@@ -282,13 +268,10 @@ fn selectors_by_changed_file_line(
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (selector, coverage) in entries {
         for (file, covered_lines) in coverage.files {
-            let Some(rel) = repo_relative_coverage_file(repo_root, &file) else {
-                continue;
-            };
-            let Some(wanted_lines) = changed_rels.get(&rel) else {
-                continue;
-            };
-            if !wanted_lines.is_disjoint(&covered_lines) {
+            if let Some(rel) = repo_relative_coverage_file(repo_root, &file)
+                && let Some(wanted_lines) = changed_rels.get(&rel)
+                && !wanted_lines.is_disjoint(&covered_lines)
+            {
                 out.entry(rel).or_default().insert(selector.clone());
             }
         }
@@ -304,10 +287,9 @@ pub(crate) fn selectors_for_source_paths(
     let mut selectors = BTreeSet::new();
     for source_path in source_paths {
         let rel = repo_relative_path(repo_root, source_path)?;
-        let Some(file_selectors) = index.get(&rel).filter(|selectors| !selectors.is_empty()) else {
-            continue;
-        };
-        selectors.extend(file_selectors.iter().cloned());
+        if let Some(file_selectors) = index.get(&rel).filter(|selectors| !selectors.is_empty()) {
+            selectors.extend(file_selectors.iter().cloned());
+        }
     }
     Some(selectors)
 }
@@ -386,6 +368,9 @@ mod coverage_witness;
 #[cfg(test)]
 #[path = "rust_coverage_index_test.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "rust_coverage_index_b_test.rs"]
+mod tests_b;
 
 #[cfg(test)]
 #[path = "rust_coverage_index_reusable_test.rs"]

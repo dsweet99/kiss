@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import python.adversarial_common as cli
+from ops import run_adversarial
 
 
 def test_main_help() -> None:
@@ -47,3 +48,19 @@ def test_ensure_import_path_inserts_repo_root() -> None:
     sys.path[:] = [p for p in sys.path if p != root]
     cli.ensure_import_path()
     assert root in sys.path
+
+
+def test_run_adversarial_import_path_and_run(monkeypatch) -> None:
+    root = str(cli.repo_root())
+    sys.path[:] = [p for p in sys.path if p != root]
+    run_adversarial._ensure_import_path()
+    assert root in sys.path
+
+    called = []
+
+    def fake_main() -> None:
+        called.append(True)
+
+    monkeypatch.setattr("ops.adversarial.main", fake_main)
+    run_adversarial._run()
+    assert called == [True]

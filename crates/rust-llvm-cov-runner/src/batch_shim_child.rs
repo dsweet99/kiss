@@ -33,6 +33,9 @@ pub(crate) fn run_target_runner_shim_inner(
     platform: &str,
     command: &[OsString],
 ) -> io::Result<i32> {
+    // Instrumented shim hosts must not dump coverage into an inherited outer
+    // LLVM_PROFILE_FILE; only the delegated test child should write profiles.
+    clear_inherited_llvm_profile_file();
     if command.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -53,12 +56,7 @@ pub(crate) fn run_target_runner_shim_inner(
         return super::batch_shim_list::run_delegated_list_child(output_dir, &delegated, command);
     }
     std::fs::create_dir_all(output_dir)?;
-    #[cfg(unix)]
-    {
-        if unsafe { libc::setpgid(0, 0) } != 0 {
-            return Err(io::Error::last_os_error());
-        }
-    }
+    set_current_process_group()?;
     let shim_identity = current_process_group_identity()
         .ok_or_else(|| io::Error::other("failed to resolve shim process group identity"))?;
     let full_name = instance_full_name(command);
@@ -90,8 +88,15 @@ pub(crate) fn run_target_runner_shim_inner(
     Ok(exit_code.unwrap_or(1))
 }
 
-fn is_nextest_list_phase() -> bool {
+pub(super) fn is_nextest_list_phase() -> bool {
     std::env::var("NEXTEST_TEST_PHASE").ok().as_deref() == Some("list")
+}
+
+pub(crate) fn clear_inherited_llvm_profile_file() {
+    // SAFETY: shim entry clears this process-local coverage sink before spawn.
+    unsafe {
+        std::env::remove_var("LLVM_PROFILE_FILE");
+    }
 }
 
 fn run_delegated_child(
@@ -162,6 +167,19 @@ fn delegated_child_spawn(
         child.stdin(Stdio::null());
         Ok((child.spawn()?, None))
     }
+}
+
+#[cfg(unix)]
+fn set_current_process_group() -> io::Result<()> {
+    if unsafe { libc::setpgid(0, 0) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_current_process_group() -> io::Result<()> {
+    Ok(())
 }
 
 #[cfg(unix)]

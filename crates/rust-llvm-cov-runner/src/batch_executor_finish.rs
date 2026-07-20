@@ -54,35 +54,34 @@ pub(crate) fn build_instance_results(
         .collect();
     let mut instances = Vec::new();
     for test in terminal_tests {
-        if crate::batch_events::aggregate_selectors_for_test(
+        if !crate::batch_events::aggregate_selectors_for_test(
             &test.full_name,
             &req.logical_selectors,
             exact,
         )
         .is_empty()
         {
-            continue;
+            let shim = resolve_shim_metadata(&metadata_by_id, shim_metadata, &test.full_name)?;
+            let exit_code = shim.exit_code.or(Some(if test.passed { 0 } else { 1 }));
+            instances.push(InstanceResult {
+                full_name: test.full_name.clone(),
+                test_binary_id: test_binary_id_for_argv(&shim.argv)?,
+                passed: test.passed,
+                exit_code,
+                duration: Duration::from_secs_f64(test.exec_time_secs),
+                stdout: shim
+                    .stdout
+                    .clone()
+                    .or_else(|| test.stdout.as_ref().map(|value| value.as_bytes().to_vec())),
+                stderr: shim
+                    .stderr
+                    .clone()
+                    .or_else(|| test.reason.as_ref().map(|value| value.as_bytes().to_vec())),
+                coverage: RustLineCoverage {
+                    files: BTreeMap::new(),
+                },
+            });
         }
-        let shim = resolve_shim_metadata(&metadata_by_id, shim_metadata, &test.full_name)?;
-        let exit_code = shim.exit_code.or(Some(if test.passed { 0 } else { 1 }));
-        instances.push(InstanceResult {
-            full_name: test.full_name.clone(),
-            test_binary_id: test_binary_id_for_argv(&shim.argv)?,
-            passed: test.passed,
-            exit_code,
-            duration: Duration::from_secs_f64(test.exec_time_secs),
-            stdout: shim
-                .stdout
-                .clone()
-                .or_else(|| test.stdout.as_ref().map(|value| value.as_bytes().to_vec())),
-            stderr: shim
-                .stderr
-                .clone()
-                .or_else(|| test.reason.as_ref().map(|value| value.as_bytes().to_vec())),
-            coverage: RustLineCoverage {
-                files: BTreeMap::new(),
-            },
-        });
     }
     instances.sort_by(|left, right| left.full_name.cmp(&right.full_name));
     Ok(instances)
@@ -383,19 +382,21 @@ pub(crate) fn test_binaries_from_shim_metadata(
 ) -> Result<Vec<RustTestBinaryIdentity>, RustLlvmCovError> {
     let mut by_id = BTreeMap::new();
     for item in shim_metadata {
-        let Some(executable) = item.argv.first() else {
-            continue;
-        };
-        let path = PathBuf::from(executable);
-        let id = test_binary_id_for_path(&path);
-        let digest = digest_test_binary(&path)?;
-        let next = RustTestBinaryIdentity {
-            id: id.clone(),
-            executable: path.to_string_lossy().to_string(),
-            digest,
-        };
-        if by_id.insert(id.clone(), next).is_some() {
-            continue;
+        if let Some(executable) = item.argv.first() {
+            let path = PathBuf::from(executable);
+            let id = test_binary_id_for_path(&path);
+            // Digest once per binary id; re-reading a fat executable per shim row is O(N×size).
+            if !by_id.contains_key(&id) {
+                let digest = digest_test_binary(&path)?;
+                by_id.insert(
+                    id.clone(),
+                    RustTestBinaryIdentity {
+                        id,
+                        executable: path.to_string_lossy().to_string(),
+                        digest,
+                    },
+                );
+            }
         }
     }
     Ok(by_id.into_values().collect())
@@ -404,3 +405,14 @@ pub(crate) fn test_binaries_from_shim_metadata(
 #[cfg(test)]
 #[path = "batch_executor_finish_test.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "batch_executor_finish_b_test.rs"]
+mod tests_b;
+
+#[cfg(test)]
+#[path = "batch_executor_finish_digest_test.rs"]
+mod digest_tests;
+
+#[cfg(test)]
+#[path = "batch_executor_finish_helpers_test.rs"]
+mod test_helpers;

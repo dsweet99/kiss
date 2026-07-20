@@ -19,6 +19,16 @@ def test_load_command_imports_metrics() -> None:
     assert cmd.name == "metrics"
 
 
+def test_load_command_returns_none_for_unknown_or_non_click(monkeypatch) -> None:
+    assert _load_command("missing") is None
+    monkeypatch.setitem(
+        importlib.import_module("ops.adversarial")._COMMAND_SPECS,
+        "path",
+        ("pathlib", "Path"),
+    )
+    assert _load_command("path") is None
+
+
 def test_main_group_help_lists_subcommands() -> None:
     result = CliRunner().invoke(main, ["--help"])
     assert result.exit_code == 0

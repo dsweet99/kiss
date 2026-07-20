@@ -34,3 +34,75 @@ pub(crate) fn resolve_shim_metadata<'a>(
         ))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::batch_shim::SHIM_LIST_SCHEMA;
+    use std::path::PathBuf;
+
+    fn shim(full_name: &str) -> BatchShimMetadata {
+        BatchShimMetadata {
+            schema_version: SHIM_LIST_SCHEMA.to_string(),
+            id: full_name.to_string(),
+            full_name: full_name.to_string(),
+            profile_path: PathBuf::from("profile.profraw"),
+            cwd: PathBuf::from("."),
+            argv: vec!["test-bin".to_string()],
+            exit_code: Some(0),
+            spawn_error: None,
+            shim_identity: None,
+            delegated_identity: None,
+            stdout: None,
+            stderr: None,
+            output_frame_count: None,
+        }
+    }
+
+    #[test]
+    fn resolves_exact_full_name_first() {
+        let items = vec![shim("bin-a$case"), shim("bin-b$case")];
+        let by_full_name: BTreeMap<_, _> = items
+            .iter()
+            .map(|item| (item.full_name.clone(), item))
+            .collect();
+
+        let resolved = resolve_shim_metadata(&by_full_name, &items, "bin-b$case").unwrap();
+
+        assert_eq!(resolved.full_name, "bin-b$case");
+    }
+
+    #[test]
+    fn resolves_unique_suffix_when_binary_id_changed() {
+        let items = vec![shim("new-bin$case")];
+        let by_full_name = BTreeMap::new();
+
+        let resolved = resolve_shim_metadata(&by_full_name, &items, "old-bin$case").unwrap();
+
+        assert_eq!(resolved.full_name, "new-bin$case");
+    }
+
+    #[test]
+    fn reports_missing_metadata_without_suffix() {
+        let items = vec![shim("bin$case")];
+        let by_full_name = BTreeMap::new();
+
+        let err = resolve_shim_metadata(&by_full_name, &items, "case").unwrap_err();
+
+        assert!(format!("{err:?}").contains("missing target-runner metadata"));
+    }
+
+    #[test]
+    fn reports_missing_and_ambiguous_suffix_matches() {
+        let missing_items = vec![shim("bin$other")];
+        let by_full_name = BTreeMap::new();
+        let missing =
+            resolve_shim_metadata(&by_full_name, &missing_items, "old-bin$case").unwrap_err();
+        assert!(format!("{missing:?}").contains("missing target-runner metadata"));
+
+        let ambiguous_items = vec![shim("bin-a$case"), shim("bin-b$case")];
+        let ambiguous =
+            resolve_shim_metadata(&by_full_name, &ambiguous_items, "old-bin$case").unwrap_err();
+        assert!(format!("{ambiguous:?}").contains("ambiguous target-runner metadata"));
+    }
+}

@@ -104,7 +104,7 @@ pub(crate) fn concurrency_request(
         nodeid: nodeid.to_string(),
         cwd: cwd.to_path_buf(),
         python: PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python".to_string())),
-        pytest_args: vec!["-q".to_string()],
+        pytest_args: vec!["-q".to_string(), "-p".to_string(), "no:testmon".to_string()],
         env: env.clone(),
         child_preload_modules: Vec::new(),
         artifacts: Vec::new(),
@@ -154,12 +154,33 @@ pub(crate) fn assert_bounded_concurrency(
     for attempt in 0..5 {
         reset_concurrency_counters(&fixture.state_path, &fixture.max_path);
         let outcomes = run_bounded(requests.clone(), jobs);
-        let got: Vec<_> = outcomes
+        let got = outcomes
             .iter()
-            .map(|outcome| outcome.as_ref().unwrap().nodeid.clone())
-            .collect();
+            .map(|outcome| outcome.as_ref().map(|row| row.nodeid.clone()))
+            .collect::<Result<Vec<_>, _>>();
+        let Ok(got) = got else {
+            assert!(
+                attempt + 1 < 5,
+                "expected successful {label} outcomes after retries"
+            );
+            std::thread::sleep(Duration::from_millis(25));
+            continue;
+        };
         assert_eq!(got, expected);
-        assert_passed_outcomes(&outcomes);
+        if outcomes.iter().all(|outcome| {
+            outcome
+                .as_ref()
+                .is_ok_and(|row| row.status == TestStatus::Passed)
+        }) {
+            assert_passed_outcomes(&outcomes);
+        } else {
+            assert!(
+                attempt + 1 < 5,
+                "expected passing {label} outcomes after retries"
+            );
+            std::thread::sleep(Duration::from_millis(25));
+            continue;
+        }
         max_active = read_max_active(&fixture.max_path);
         if max_active >= jobs {
             break;

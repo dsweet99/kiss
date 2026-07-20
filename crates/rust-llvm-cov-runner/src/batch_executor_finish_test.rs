@@ -1,20 +1,23 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::time::Duration;
-
+use super::test_helpers::finish_context;
 use super::{
     FreshBatchFinishContext, build_instance_export_requests, build_instance_results,
-    finish_fresh_batch_after_export,
+    finish_fresh_batch_after_export, finish_fresh_check_aggregate_after_export,
 };
 use crate::batch_events::{BatchCompilerArtifact, BatchTestStarted, BatchTestTerminal};
 use crate::batch_export::ExportCounters;
 use crate::batch_fingerprint::{batch_identity, entry_fingerprint};
-use crate::batch_plan::{RustCoverageBatchRequest, build_rust_coverage_batch_plan};
+use crate::batch_plan::{
+    CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
+};
 use crate::batch_shim::BatchShimMetadata;
 use crate::rust_cov_cache::load_rust_cov_cache_entry;
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, witness_batch_tools,
 };
-use crate::{RustLineCoverage, RustTestBinaryIdentity};
+use crate::RustLineCoverage;
+use rpytest_runner::TestStatus;
+use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 
 #[test]
 fn fresh_batch_finish_context_witness_is_constructible() {
@@ -54,7 +57,7 @@ fn build_instance_results_and_export_requests_cover_finish_helpers() {
         stdout: None,
         reason: None,
     }];
-    let instances = build_instance_results(&started, &[], &terminal, &[shim.clone()], false, &req)
+    let instances = build_instance_results(&started, &[], &terminal, std::slice::from_ref(&shim), false, &req)
         .expect("build_instance_results");
     assert_eq!(instances.len(), 1);
     let artifacts = vec![BatchCompilerArtifact {
@@ -157,21 +160,6 @@ fn population_finish_rejects_unmatched_selectors_before_storing() {
     assert!(load_rust_cov_cache_entry(&req.cache_root, &fingerprint).is_none());
 }
 
-fn test_binary() -> RustTestBinaryIdentity {
-    RustTestBinaryIdentity {
-        id: "/tmp/bin".to_string(),
-        executable: "/tmp/bin".to_string(),
-        digest: "0000000000000000".to_string(),
-    }
-}
-
-fn finish_context() -> FreshBatchFinishContext {
-    FreshBatchFinishContext {
-        test_binaries: vec![test_binary()],
-        ..FreshBatchFinishContext::witness()
-    }
-}
-
 #[test]
 fn reject_missing_terminal_events_and_instance_profile_path_are_exercised() {
     let repo = batch_executor_fixture_repo();
@@ -186,4 +174,70 @@ fn reject_missing_terminal_events_and_instance_profile_path_are_exercised() {
     );
     let _plan = build_rust_coverage_batch_plan(&req).unwrap();
     let _ = RustCoverageBatchRequest::witness();
+}
+
+#[test]
+fn finish_fresh_check_aggregate_rejects_unmatched_selectors() {
+    let repo = batch_executor_fixture_repo();
+    let mut req = batch_executor_request(repo.path());
+    req.coverage_output_mode = CoverageOutputMode::CheckAggregate {
+        publication_binary_ids: None,
+        repair_publication: None,
+    };
+    let tools = witness_batch_tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let result = finish_fresh_check_aggregate_after_export(
+        &req,
+        &identity,
+        false,
+        Vec::new(),
+        BTreeMap::new(),
+        ExportCounters::default(),
+        finish_context(),
+    )
+    .expect("returns batch error result");
+    assert!(result.completed.is_empty());
+    assert!(matches!(
+        result.batch_error,
+        Some(crate::RustLlvmCovError::InvalidRequest(ref message))
+            if message.contains("check aggregate batch did not execute")
+    ));
+}
+
+#[test]
+fn finish_fresh_check_aggregate_returns_failed_outcomes_without_publishing() {
+    let repo = batch_executor_fixture_repo();
+    let mut req = batch_executor_request(repo.path());
+    req.logical_selectors = vec!["alpha".to_string()];
+    req.coverage_output_mode = CoverageOutputMode::CheckAggregate {
+        publication_binary_ids: None,
+        repair_publication: None,
+    };
+    let tools = witness_batch_tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let instances = vec![crate::batch_aggregate::InstanceResult {
+        full_name: "pkg::bin$alpha".to_string(),
+        test_binary_id: "/tmp/bin".to_string(),
+        passed: false,
+        exit_code: Some(1),
+        duration: Duration::from_millis(1),
+        stdout: None,
+        stderr: None,
+        coverage: RustLineCoverage {
+            files: BTreeMap::new(),
+        },
+    }];
+    let result = finish_fresh_check_aggregate_after_export(
+        &req,
+        &identity,
+        false,
+        instances,
+        BTreeMap::new(),
+        ExportCounters::default(),
+        finish_context(),
+    )
+    .expect("failed outcomes are returned");
+    assert!(result.batch_error.is_none());
+    assert_eq!(result.completed.len(), 1);
+    assert_eq!(result.completed[0].status, TestStatus::Failed);
 }

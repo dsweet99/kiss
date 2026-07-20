@@ -19,6 +19,33 @@ fn tmp_repo_three_files() -> TempDir {
     tmp
 }
 
+fn permissive_config(mut cfg: Config) -> Config {
+    cfg.statements_per_function = usize::MAX;
+    cfg.methods_per_class = usize::MAX;
+    cfg.statements_per_file = usize::MAX;
+    cfg.lines_per_file = usize::MAX;
+    cfg.functions_per_file = usize::MAX;
+    cfg.arguments_positional = usize::MAX;
+    cfg.arguments_keyword_only = usize::MAX;
+    cfg.max_indentation_depth = usize::MAX;
+    cfg.interface_types_per_file = usize::MAX;
+    cfg.concrete_types_per_file = usize::MAX;
+    cfg.nested_function_depth = usize::MAX;
+    cfg.returns_per_function = usize::MAX;
+    cfg.return_values_per_function = usize::MAX;
+    cfg.branches_per_function = usize::MAX;
+    cfg.local_variables_per_function = usize::MAX;
+    cfg.imported_names_per_file = usize::MAX;
+    cfg.statements_per_try_block = usize::MAX;
+    cfg.boolean_parameters = usize::MAX;
+    cfg.annotations_per_function = usize::MAX;
+    cfg.calls_per_function = usize::MAX;
+    cfg.cycle_size = usize::MAX;
+    cfg.indirect_dependencies = usize::MAX;
+    cfg.dependency_depth = usize::MAX;
+    cfg
+}
+
 #[test]
 fn test_structs() {
     let py_cfg = Config::python_defaults();
@@ -151,4 +178,38 @@ fn test_run_analyze_no_files() {
     assert_eq!(parsed.len(), 1);
     assert!(viols.is_empty());
     assert!(units > 0);
+}
+
+#[test]
+fn test_run_analyze_current_repo_in_process() {
+    let py_cfg = permissive_config(Config::python_defaults());
+    let rs_cfg = permissive_config(Config::rust_defaults());
+    let gate_cfg = GateConfig {
+        test_coverage_threshold: 0,
+        duplication_enabled: false,
+        orphan_module_enabled: false,
+        ..GateConfig::default()
+    };
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src_root = repo_root.join("src");
+    let universe = src_root.to_str().unwrap();
+    let focus = vec![universe.to_string()];
+    let opts = AnalyzeOptions {
+        universe,
+        focus_paths: &focus,
+        py_config: &py_cfg,
+        rs_config: &rs_cfg,
+        lang_filter: None,
+        bypass_gate: false,
+        gate_config: &gate_cfg,
+        ignore_prefixes: &[],
+        show_timing: false,
+        suppress_final_status: true,
+        coverage_source: crate::analyze::CoverageSource::StaticReferences,
+        runtime_coverage_jobs: 1,
+    };
+
+    let result = crate::analyze::run_analyze_with_result(&opts);
+
+    assert!(result.metrics.is_some());
 }

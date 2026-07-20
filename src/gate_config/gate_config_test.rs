@@ -111,3 +111,71 @@ fn witness_try_merge_from_toml_and_int_to_f64() {
     assert_eq!(gate.test_coverage_threshold, 75);
     assert_eq!(int_to_f64(3), 3.0);
 }
+
+#[test]
+fn try_load_from_content_accepts_all_gate_fields() {
+    let gate = GateConfig::try_load_from_content(
+        "\
+[gate]
+test_coverage_threshold = 91
+min_similarity = 0.75
+duplication_enabled = false
+orphan_module_enabled = false
+",
+    )
+    .unwrap();
+
+    assert_eq!(gate.test_coverage_threshold, 91);
+    assert!((gate.min_similarity - 0.75).abs() < f64::EPSILON);
+    assert!(!gate.duplication_enabled);
+    assert!(!gate.orphan_module_enabled);
+}
+
+#[test]
+fn try_load_from_reads_file_and_reports_missing_file() {
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[gate]\ntest_coverage_threshold = 44\n").unwrap();
+    let gate = GateConfig::try_load_from(tmp.path()).unwrap();
+    assert_eq!(gate.test_coverage_threshold, 44);
+
+    let missing = tempfile::NamedTempFile::new().unwrap();
+    let missing_path = missing.path().to_path_buf();
+    drop(missing);
+    let err = GateConfig::try_load_from(&missing_path).unwrap_err();
+    assert!(matches!(err, ConfigError::IoError { .. }));
+}
+
+#[test]
+fn try_load_from_content_rejects_out_of_range_gate_values() {
+    let coverage =
+        GateConfig::try_load_from_content("[gate]\ntest_coverage_threshold = 101").unwrap_err();
+    assert!(matches!(
+        coverage,
+        ConfigError::InvalidValue { ref key, .. } if key == "test_coverage_threshold"
+    ));
+
+    let similarity = GateConfig::try_load_from_content("[gate]\nmin_similarity = 1.5").unwrap_err();
+    assert!(matches!(
+        similarity,
+        ConfigError::InvalidValue { ref key, .. } if key == "min_similarity"
+    ));
+}
+
+#[test]
+fn merge_from_toml_ignores_out_of_range_and_unknown_gate_values() {
+    let mut gate = GateConfig::default();
+    gate.merge_from_toml("[gate]\ntest_coverage_threshold = 101");
+    assert_eq!(
+        gate.test_coverage_threshold,
+        defaults::gate::TEST_COVERAGE_THRESHOLD
+    );
+
+    gate.merge_from_toml("[gate]\nmin_similarity = 1.5");
+    assert_eq!(gate.min_similarity, defaults::duplication::MIN_SIMILARITY);
+
+    gate.merge_from_toml("[gate]\nunknown = 1\ntest_coverage_threshold = 1");
+    assert_eq!(
+        gate.test_coverage_threshold,
+        defaults::gate::TEST_COVERAGE_THRESHOLD
+    );
+}

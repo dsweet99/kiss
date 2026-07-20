@@ -48,10 +48,10 @@ fn accumulate_rust_file_metrics_from_items(items: &[syn::Item], out: &mut RustFi
         match item {
             syn::Item::Trait(_) => out.interface_types += 1,
             syn::Item::Struct(_) | syn::Item::Enum(_) | syn::Item::Union(_) => {
-                out.concrete_types += 1;
+                add_concrete_type(out)
             }
             syn::Item::Use(u) if matches!(u.vis, syn::Visibility::Inherited) => {
-                out.imports += count_use_names(&u.tree);
+                add_import_names(out, &u.tree)
             }
             syn::Item::Fn(f) => {
                 out.functions += 1;
@@ -79,6 +79,14 @@ fn accumulate_rust_file_metrics_from_items(items: &[syn::Item], out: &mut RustFi
             _ => {}
         }
     }
+}
+
+fn add_concrete_type(out: &mut RustFileMetrics) {
+    out.concrete_types += 1;
+}
+
+fn add_import_names(out: &mut RustFileMetrics, tree: &syn::UseTree) {
+    out.imports += count_use_names(tree);
 }
 
 /// Returns true if the module has a `#[cfg(test)]` or similar attribute indicating test code.

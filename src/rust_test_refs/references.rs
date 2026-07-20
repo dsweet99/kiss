@@ -1,4 +1,4 @@
-use super::{has_cfg_test_attribute, has_test_attribute};
+use super::has_test_attribute;
 use crate::macro_expr_parser::{parse_expr_list, parse_single_expr};
 use std::collections::HashSet;
 use syn::visit::Visit;
@@ -27,7 +27,8 @@ pub(crate) fn collect_rust_references_for_fn(f: &syn::ItemFn) -> HashSet<String>
 }
 
 /// Collects per-test (`test_id`, `usage_refs`) from a file.
-/// `test_id` format: `fn_name` for top-level `#[test]` fn, `mod_name::fn_name` for `#[cfg(test)]` mod.
+/// `test_id` format: `fn_name` for top-level `#[test]` fn, `mod_name::fn_name` for nested
+/// inline modules (including plain `mod` and `#[cfg(test)]` mod).
 pub(super) fn collect_per_test_usage(ast: &syn::File) -> Vec<(String, HashSet<String>)> {
     let mut out = Vec::new();
     collect_per_test_usage_from_items(&ast.items, "", &mut out);
@@ -46,6 +47,14 @@ fn has_ignore_attribute(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| a.path().is_ident("ignore"))
 }
 
+fn nested_test_module_prefix(prefix: &str, mod_name: &str) -> String {
+    if prefix.is_empty() {
+        mod_name.to_string()
+    } else {
+        format!("{prefix}::{mod_name}")
+    }
+}
+
 pub(crate) fn collect_per_test_usage_from_items(
     items: &[syn::Item],
     prefix: &str,
@@ -53,14 +62,12 @@ pub(crate) fn collect_per_test_usage_from_items(
 ) {
     for item in items {
         match item {
-            Item::Mod(m) if has_cfg_test_attribute(&m.attrs) => {
-                let mod_name = m.ident.to_string();
-                let mod_prefix = if prefix.is_empty() {
-                    mod_name.clone()
-                } else {
-                    format!("{prefix}::{mod_name}")
-                };
+            // Recurse into every inline module. Nested plain `mod helper { #[test] ... }`
+            // (common inside `#[cfg(test)]` / `#[path]` test files) must be discoverable for
+            // kiss check runtime coverage population, not only `#[cfg(test)]` modules.
+            Item::Mod(m) => {
                 if let Some((_, mod_items)) = &m.content {
+                    let mod_prefix = nested_test_module_prefix(prefix, &m.ident.to_string());
                     collect_per_test_usage_from_items(mod_items, &mod_prefix, out);
                 }
             }
@@ -180,7 +187,7 @@ pub(super) struct CallReferenceVisitor<'a> {
     pub(super) qualified: &'a mut HashSet<QualifiedModuleRef>,
 }
 
-fn visit_item_skip_use<'a, V: Visit<'a>>(visitor: &mut V, item: &'a syn::Item) {
+pub(super) fn visit_item_skip_use<'a, V: Visit<'a>>(visitor: &mut V, item: &'a syn::Item) {
     if matches!(item, Item::Use(_)) {
         return;
     }
@@ -368,19 +375,4 @@ mod coverage_witness {
         assert_eq!(usage[0].0, "kept");
         assert!(usage[0].1.contains("kept_target"));
     }
-}
-
-#[cfg(test)]
-#[test]
-fn witness_visit_item_skip_use_fn() {
-    let mut refs = std::collections::HashSet::new();
-    let mut qualified = std::collections::HashSet::new();
-    let mut rv = ReferenceVisitor {
-        refs: &mut refs,
-        qualified: &mut qualified,
-    };
-    let item: syn::Item = syn::parse_quote!(
-        use std;
-    );
-    visit_item_skip_use(&mut rv, &item);
 }

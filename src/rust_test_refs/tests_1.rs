@@ -9,6 +9,11 @@ fn test_file_detection_and_helpers() {
         is_rust_test_file(Path::new("test_utils.rs"))
             && is_rust_test_file(Path::new("utils_test.rs"))
     );
+    assert!(is_rust_test_file(Path::new("src/foo_tests.rs")));
+    assert!(is_rust_test_file(Path::new("src/tests.rs")));
+    assert!(is_rust_test_file(Path::new("src/tests_1.rs")));
+    assert!(is_rust_test_file(Path::new("src/layout_test_1.rs")));
+    assert!(!is_rust_test_file(Path::new("src/batch_plan_test_args.rs")));
     assert!(!is_rust_test_file(Path::new("src/main.rs")));
     assert!(is_rs_file(Path::new("foo.rs")) && !is_rs_file(Path::new("foo.py")));
     assert!(
@@ -239,4 +244,55 @@ fn test_same_name_different_files_disambiguated_by_module() {
         beta_uncovered,
         "beta::helper should be uncovered (no test references beta)"
     );
+}
+
+#[test]
+fn nested_plain_modules_are_executable_selectors() {
+    let ast: syn::File = syn::parse_quote!(
+        #[test]
+        fn top_level() {
+            top_target();
+        }
+
+        mod plan_tests {
+            #[test]
+            fn nested_plain() {
+                nested_target();
+            }
+
+            #[cfg(test)]
+            mod deeper {
+                #[test]
+                fn nested_cfg() {
+                    deeper_target();
+                }
+            }
+        }
+    );
+
+    let usage = references::collect_per_test_usage(&ast);
+    let ids: Vec<_> = usage.iter().map(|(id, _)| id.as_str()).collect();
+
+    assert!(ids.contains(&"top_level"));
+    assert!(ids.contains(&"plan_tests::nested_plain"));
+    assert!(ids.contains(&"plan_tests::deeper::nested_cfg"));
+    let nested = usage
+        .iter()
+        .find(|(id, _)| id == "plan_tests::nested_plain")
+        .unwrap();
+    assert!(nested.1.contains("nested_target"));
+}
+
+#[test]
+fn witness_visit_item_skip_use_fn() {
+    let mut refs = std::collections::HashSet::new();
+    let mut qualified = std::collections::HashSet::new();
+    let mut rv = references::ReferenceVisitor {
+        refs: &mut refs,
+        qualified: &mut qualified,
+    };
+    let item: syn::Item = syn::parse_quote!(
+        use std;
+    );
+    references::visit_item_skip_use(&mut rv, &item);
 }

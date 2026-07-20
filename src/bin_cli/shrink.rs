@@ -183,3 +183,90 @@ pub fn emit_shrink_final_status(check_ok: bool, shrink_result: &ShrinkViolations
     }
     i32::from(has_failures)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn full_ctx<'a>(
+        py: &'a kiss::Config,
+        rs: &'a kiss::Config,
+        gate: &'a kiss::GateConfig,
+    ) -> ShrinkFullContext<'a> {
+        ShrinkFullContext {
+            lang_filter: None,
+            py_config: py,
+            rs_config: rs,
+            gate_config: gate,
+        }
+    }
+
+    #[test]
+    fn emit_shrink_final_status_reflects_check_and_constraint_failures() {
+        assert_eq!(
+            emit_shrink_final_status(
+                true,
+                &ShrinkViolations {
+                    violations: Vec::new()
+                }
+            ),
+            0
+        );
+        assert_eq!(
+            emit_shrink_final_status(
+                false,
+                &ShrinkViolations {
+                    violations: Vec::new()
+                }
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn get_shrink_metrics_prefers_result_metrics() {
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let ctx = full_ctx(&py, &rs, &gate);
+        let metrics = kiss::GlobalMetrics {
+            files: 1,
+            code_units: 2,
+            statements: 3,
+            graph_nodes: 4,
+            graph_edges: 5,
+        };
+        let result = analyze::AnalyzeResult {
+            success: false,
+            metrics: Some(metrics),
+        };
+        let paths = vec!["missing".to_string()];
+
+        let got = get_shrink_metrics(ShrinkMetricsArgs {
+            result: &result,
+            paths: &paths,
+            ignore: &[],
+            ctx: &ctx,
+        })
+        .unwrap();
+        assert_eq!(got.files, metrics.files);
+        assert_eq!(got.graph_edges, metrics.graph_edges);
+    }
+
+    #[test]
+    fn run_shrink_start_reports_empty_source_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let ctx = ShrinkStartContext {
+            lang_filter: None,
+            py_config: &py,
+            rs_config: &rs,
+        };
+        let paths = vec![tmp.path().to_string_lossy().to_string()];
+
+        let code = run_shrink_start("files=0", &paths, &[], &ctx);
+
+        assert_eq!(code, 1);
+    }
+}

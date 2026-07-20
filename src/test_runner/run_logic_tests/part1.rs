@@ -1,49 +1,4 @@
 use super::*;
-use kiss::Language;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
-
-use crate::test_runner::coverage_decision::LanguagePlanner;
-use crate::test_runner::runners::SelectorExecutionSummary;
-use crate::test_runner::runners::{python_backer, rust_backer};
-
-fn planned() -> PlannedSelectors {
-    PlannedSelectors {
-        repo_root: PathBuf::from("."),
-        py_sel: Vec::new(),
-        rs_sel: Vec::new(),
-        python_population_required: false,
-        rust_population_required: false,
-        rust_source_paths: Vec::new(),
-        rust_vcs_source_paths: 0,
-        rust_snapshot_delta_modified: 0,
-        rust_snapshot_delta_structural: false,
-        python_prior_failure_selectors: Vec::new(),
-        rust_prior_failure_selectors: Vec::new(),
-        coverage_decision_engine_used: true,
-        rust_selection_basis: Default::default(),
-        ignore: Vec::new(),
-    }
-}
-
-fn options(force_rerun: bool) -> SelectorRunOptions<'static> {
-    SelectorRunOptions {
-        dry_run: true,
-        force_rerun,
-        metrics: false,
-        jobs: 1,
-        extra: &[],
-        plan_duration: Duration::ZERO,
-    }
-}
-
-fn execution_module_rust(planned: &PlannedSelectors) -> rust_backer::RustModule {
-    rust_backer::RustModule::for_execution(&planned.repo_root, &planned.ignore)
-}
-
-fn execution_module_python(planned: &PlannedSelectors) -> python_backer::PythonModule {
-    python_backer::PythonModule::for_execution(&planned.repo_root, &planned.ignore)
-}
 
 #[test]
 fn force_rerun_does_not_make_rust_population_required() {
@@ -375,3 +330,4 @@ fn python_outcome_records_index_rebuild_duration_in_metrics() {
         Duration::from_millis(3)
     );
 }
+

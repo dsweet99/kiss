@@ -49,3 +49,22 @@ pub(crate) fn rules_grouped(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grouped_rules_are_nonempty_for_both_languages_and_keep_category_order() {
+        let gate = GateConfig::default();
+        let python = rules_for_python(&Config::python_defaults(), &gate);
+        let rust = rules_for_rust(&Config::rust_defaults(), &gate);
+
+        assert!(!python.is_empty());
+        assert!(!rust.is_empty());
+        assert!(matches!(python[0].0, RuleCategory::Functions));
+        assert!(matches!(rust[0].0, RuleCategory::Functions));
+        assert!(python.iter().all(|(_, rules)| !rules.is_empty()));
+        assert!(rust.iter().all(|(_, rules)| !rules.is_empty()));
+    }
+}

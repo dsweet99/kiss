@@ -99,6 +99,32 @@ fn finalize_batch_result_appends_cleanup_to_primary_batch_error() {
 }
 
 #[test]
+fn finalize_batch_result_returns_ok_when_no_cleanup_errors() {
+    let result = RustCoverageBatchResult {
+        completed: Vec::new(),
+        batch_error: None,
+        counters: Default::default(),
+        test_binaries: Vec::new(),
+    };
+
+    let finalized = finalize_batch_result(result, None, None).unwrap();
+
+    assert!(finalized.batch_error.is_none());
+}
+
+#[test]
+fn sole_cleanup_error_combines_stale_and_current_cleanup_failures() {
+    let stale = io::Error::new(io::ErrorKind::PermissionDenied, "stale cleanup denied");
+    let current = io::Error::other("current cleanup denied");
+
+    let err = sole_cleanup_error(Some(stale), Some(current)).expect("combined cleanup error");
+
+    assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    assert!(err.to_string().contains("stale cleanup denied"));
+    assert!(err.to_string().contains("current cleanup denied"));
+}
+
+#[test]
 fn fresh_batch_run_scope_finish_combines_execution_and_cleanup_errors() {
     let tmp = tempfile::tempdir().unwrap();
     let cache_root = tmp.path().join("cache");
@@ -121,6 +147,29 @@ fn fresh_batch_run_scope_finish_combines_execution_and_cleanup_errors() {
     let message = format!("{err:?}");
     assert!(message.contains("primary"));
     assert!(message.contains("injected cleanup failure"));
+}
+
+#[test]
+fn fresh_batch_run_scope_finish_reports_cleanup_error_after_success() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_root = tmp.path().join("cache");
+    let run_root = cache_root.join("runs").join("run-a");
+    fs::create_dir_all(&run_root).unwrap();
+    let scope = FreshBatchRunScope::begin(
+        &cache_root,
+        run_root,
+        CurrentRunCleanup::injecting(|_, _| {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "cleanup denied after success",
+            ))
+        }),
+    )
+    .unwrap();
+
+    let err = scope.finish::<()>(Ok(())).unwrap_err();
+
+    assert!(format!("{err:?}").contains("cleanup denied after success"));
 }
 
 #[test]

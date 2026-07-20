@@ -87,17 +87,19 @@ pub(crate) fn combined_selectors(
     } else {
         pre_rust_selection_basis
     };
-    Ok(SelectorPlan {
-        py_selectors: if python_population_required {
-            population_py
-        } else {
-            selected_py
-        },
-        rust_selectors: if rust_population_required {
-            population_rs
-        } else {
-            selected_rs
-        },
+    let py_selectors = if python_population_required {
+        population_py
+    } else {
+        selected_py
+    };
+    let rust_selectors = if rust_population_required {
+        population_rs
+    } else {
+        selected_rs
+    };
+    let plan = SelectorPlan {
+        py_selectors,
+        rust_selectors,
         python_population_required,
         rust_population_required,
         rust_source_paths: prepared.rust_source_paths,
@@ -110,7 +112,8 @@ pub(crate) fn combined_selectors(
         rust_prior_failure_selectors,
         coverage_decision_engine_used: true,
         rust_selection_basis,
-    })
+    };
+    Ok(plan)
 }
 
 fn rust_selection_basis_from_backers(backers: &[Box<dyn LanguagePlanner>]) -> RustSelectionBasis {
@@ -347,3 +350,4 @@ fn changed_lines_for_sources(
 #[cfg(test)]
 #[path = "decision_test.rs"]
 mod tests;
+

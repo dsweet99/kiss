@@ -1,3 +1,4 @@
+#![allow(unused_imports, dead_code)]
 use std::collections::HashSet;
 
 use tree_sitter::Node;
@@ -105,9 +106,10 @@ fn collect_local_variables(node: Node, source: &str, vars: &mut HashSet<String>)
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
-    #[test]
+#[test]
     fn test_params_and_decorators() {
         let p = parse("def f(a, b, c): pass");
         let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
@@ -313,27 +315,5 @@ mod tests {
         assert!(is_interface_type(cls, &p.source));
     }
 
-    #[test]
-    fn test_touch_return_helpers_for_static_coverage() {
-        let p_ret = parse("def g():\n    return a, b, c");
-        let ret = p_ret
-            .tree
-            .root_node()
-            .child(0)
-            .unwrap()
-            .child_by_field_name("body")
-            .unwrap()
-            .child(0)
-            .unwrap();
-        assert_eq!(count_return_values(ret), 3);
-    }
 
-    #[test]
-    fn test_touch_statement_counters_for_static_coverage() {
-        let p2 = parse("class C:\n    def m(self):\n        x = 1\n        return x\n");
-        let root2 = p2.tree.root_node();
-        assert!(count_file_statements(root2) > 0);
-        let class_body = root2.child(0).unwrap().child_by_field_name("body").unwrap();
-        assert!(count_class_statements(class_body) > 0);
-    }
 }

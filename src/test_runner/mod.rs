@@ -63,19 +63,17 @@ pub struct RunTestCmdArgs<'a> {
 }
 
 pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
-    let RunTestCmdArgs {
-        mode,
-        main_branch_cli,
-        base_branch_cli,
-        dry_run,
-        force_rerun,
-        metrics,
-        jobs,
-        extra,
-        ignore,
-        lang_filter,
-        config_main_branch,
-    } = a;
+    let mode = a.mode;
+    let main_branch_cli = a.main_branch_cli;
+    let base_branch_cli = a.base_branch_cli;
+    let dry_run = a.dry_run;
+    let force_rerun = a.force_rerun;
+    let metrics = a.metrics;
+    let jobs = a.jobs;
+    let extra = a.extra;
+    let ignore = a.ignore;
+    let lang_filter = a.lang_filter;
+    let config_main_branch = a.config_main_branch;
     let plan_started = std::time::Instant::now();
     match plan_selectors(
         mode,
@@ -196,22 +194,17 @@ pub(crate) fn plan_selectors(
         main_branch_cli,
         base_branch_cli,
     )?;
+    // `resolve_diff_target` returns `None` only for Commit; Base/Main always yield `Some`.
     let rel_changed = match mode {
         TestChangeMode::Commit => crate::test_git::changed_paths_commit(&repo_root)?,
         TestChangeMode::Base | TestChangeMode::Main => {
-            let Some(ref rev) = diff_target else {
-                return Err("error: kiss test: internal error (missing diff target)".into());
-            };
-            crate::test_git::changed_paths_since(&repo_root, rev)?
+            crate::test_git::changed_paths_since(&repo_root, diff_target.as_ref().unwrap())?
         }
     };
     let rel_changed_lines = match mode {
         TestChangeMode::Commit => crate::test_git::changed_lines_commit(&repo_root)?,
         TestChangeMode::Base | TestChangeMode::Main => {
-            let Some(ref rev) = diff_target else {
-                return Err("error: kiss test: internal error (missing diff target)".into());
-            };
-            crate::test_git::changed_lines_since(&repo_root, rev)?
+            crate::test_git::changed_lines_since(&repo_root, diff_target.as_ref().unwrap())?
         }
     };
     let lang_filter = lang_filter.map(|l| match l {

@@ -33,8 +33,38 @@ mod tests {
     use super::validate_supported_rust_test_args;
 
     #[test]
+    fn validate_supported_rust_test_args_accepts_supported_forms() {
+        validate_supported_rust_test_args(&[
+            "--exact".to_string(),
+            "--nocapture".to_string(),
+            "--no-capture".to_string(),
+            "--ignored".to_string(),
+            "--include-ignored".to_string(),
+            "--skip".to_string(),
+            "slow".to_string(),
+            "--skip=flaky".to_string(),
+        ])
+        .unwrap();
+    }
+
+    #[test]
     fn validate_supported_rust_test_args_rejects_unknown_flags() {
         let err = validate_supported_rust_test_args(&["--test-threads".to_string()]).unwrap_err();
         assert!(err.contains("unsupported Rust test argument"));
+    }
+
+    #[test]
+    fn validate_supported_rust_test_args_rejects_empty_skip_patterns() {
+        assert!(
+            validate_supported_rust_test_args(&["--skip".to_string()])
+                .unwrap_err()
+                .contains("requires")
+        );
+        assert!(
+            validate_supported_rust_test_args(&["--skip".to_string(), String::new()])
+                .unwrap_err()
+                .contains("requires")
+        );
+        assert!(validate_supported_rust_test_args(&["--skip=".to_string()]).is_err());
     }
 }

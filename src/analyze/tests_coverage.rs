@@ -196,3 +196,46 @@ fn coverage_weighted_sentinel_respects_focus_set() {
     assert_eq!(viols.len(), 1);
     assert_eq!(viols[0].file, in_focus);
 }
+
+#[test]
+fn merge_weighted_file_pcts_inserts_python_test_and_marker_files() {
+    let tmp = TempDir::new().unwrap();
+    let pkg = tmp.path().join("pkg");
+    let tests = tmp.path().join("tests");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::create_dir_all(&tests).unwrap();
+    let init = pkg.join("__init__.py");
+    let helper = pkg.join("helper.py");
+    let test_file = tests.join("test_helper.py");
+    std::fs::write(&init, "# package marker\n").unwrap();
+    std::fs::write(&helper, "VALUE = 1\n").unwrap();
+    std::fs::write(&test_file, "def test_ok():\n    assert True\n").unwrap();
+    let parsed: Vec<ParsedFile> =
+        kiss::parse_files(&[init.clone(), helper.clone(), test_file.clone()])
+            .unwrap()
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+    let py_cov = kiss::TestRefAnalysis {
+        definitions: Vec::new(),
+        test_references: HashSet::new(),
+        call_references: HashSet::new(),
+        unreferenced: Vec::new(),
+        coverage_map: Default::default(),
+    };
+    let rs_cov = kiss::RustTestRefAnalysis {
+        definitions: Vec::new(),
+        test_references: HashSet::new(),
+        call_references: HashSet::new(),
+        propagated_references: HashSet::new(),
+        unreferenced: Vec::new(),
+        coverage_map: Default::default(),
+    };
+
+    let weighted =
+        crate::analyze::coverage_weighted::merge_weighted_file_pcts(&py_cov, &parsed, &rs_cov, &[]);
+
+    assert_eq!(weighted.get(&test_file), Some(&0));
+    assert_eq!(weighted.get(&helper), Some(&0));
+    assert!(weighted.contains_key(&init));
+}

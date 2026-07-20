@@ -26,6 +26,8 @@ mod cli_integration_2;
 mod cli_kiss_test_smoke;
 #[path = "cases/config_tests.rs"]
 mod config_tests;
+#[path = "cases/coverage_corpus.rs"]
+mod coverage_corpus;
 #[path = "cases/fix_h1_error_nodes.rs"]
 mod fix_h1_error_nodes;
 #[path = "cases/fix_h5_phantom_orphans.rs"]

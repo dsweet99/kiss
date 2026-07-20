@@ -175,6 +175,80 @@ fn failed_selective_fresh_batch_preserves_population_through_executor() {
     );
 }
 
+#[test]
+fn finalize_after_fresh_batch_marks_legacy_cleanup_for_check_aggregate_mode() {
+    let repo = batch_executor_fixture_repo();
+    let mut req = batch_executor_request(repo.path());
+    req.coverage_output_mode = CoverageOutputMode::CheckAggregate {
+        publication_binary_ids: None,
+        repair_publication: None,
+    };
+    let tools = tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let mut result = RustCoverageBatchResult {
+        completed: Vec::new(),
+        batch_error: None,
+        counters: RustCoverageBatchCounters::default(),
+        test_binaries: Vec::new(),
+    };
+
+    finalize_after_fresh_batch(&req, &tools, &identity, true, &mut result).unwrap();
+
+    assert!(result.counters.legacy_cleanup_deferred);
+}
+
+#[test]
+fn apply_population_derived_publication_skips_errors_and_missing_selectors() {
+    let repo = batch_executor_fixture_repo();
+    let req = batch_executor_request(repo.path());
+    let tools = tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let mut errored = RustCoverageBatchResult {
+        completed: Vec::new(),
+        batch_error: Some(RustLlvmCovError::InvalidRequest("failed".to_string())),
+        counters: RustCoverageBatchCounters::default(),
+        test_binaries: Vec::new(),
+    };
+    apply_population_derived_publication(&req, &tools, &identity, &mut errored).unwrap();
+    assert!(!errored.counters.derived_state_published);
+
+    let mut no_population = RustCoverageBatchResult {
+        completed: Vec::new(),
+        batch_error: None,
+        counters: RustCoverageBatchCounters::default(),
+        test_binaries: Vec::new(),
+    };
+    apply_population_derived_publication(&req, &tools, &identity, &mut no_population).unwrap();
+    assert!(!no_population.counters.derived_state_published);
+}
+
+#[test]
+fn outcome_from_entry_replays_cache_entry_without_output() {
+    let entry = RustCovCacheEntry::from_outcome(
+        &crate::RustLlvmCovOutcome {
+            selector: "alpha".to_string(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            coverage: RustLineCoverage {
+                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+            },
+            test_binary_ids: vec!["bin".to_string()],
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: Some(b"stdout".to_vec()),
+            stderr: Some(b"stderr".to_vec()),
+        },
+        "generation",
+    );
+
+    let outcome = outcome_from_entry(entry, RustCovCacheStatus::Hit);
+
+    assert_eq!(outcome.selector, "alpha");
+    assert_eq!(outcome.cache_status, RustCovCacheStatus::Hit);
+    assert_eq!(outcome.stdout, None);
+    assert_eq!(outcome.stderr, None);
+}
+
 fn store_obsolete_selective_entry(cache_root: &std::path::Path) {
     let obsolete = RustCovCacheEntry::from_outcome(
         &crate::RustLlvmCovOutcome {

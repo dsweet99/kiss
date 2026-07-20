@@ -75,13 +75,7 @@ fn find_test_function_node<'a>(root: Node<'a>, source: &str, test_id: &str) -> O
     if let Some((class_prefix, fn_name)) = test_id.rsplit_once("::") {
         let mut cursor = root.walk();
         for child in root.children(&mut cursor) {
-            if child.kind() != "class_definition" {
-                continue;
-            }
-            let Some(name) = get_child_by_field(child, "name", source) else {
-                continue;
-            };
-            if name != class_prefix {
+            if !is_named_class(child, source, class_prefix) {
                 continue;
             }
             if let Some(body) = child.child_by_field_name("body") {
@@ -110,6 +104,11 @@ fn find_test_function_node<'a>(root: Node<'a>, source: &str, test_id: &str) -> O
         }
     }
     None
+}
+
+fn is_named_class(node: Node<'_>, source: &str, class_prefix: &str) -> bool {
+    node.kind() == "class_definition"
+        && get_child_by_field(node, "name", source).as_deref() == Some(class_prefix)
 }
 
 fn test_function_branches(parsed: &ParsedFile, test_id: &str) -> usize {
@@ -330,3 +329,5 @@ pub fn compute_py_weighted_file_pcts(
 
 #[cfg(test)]
 mod inline_tests;
+#[cfg(test)]
+mod inline_tests_b;

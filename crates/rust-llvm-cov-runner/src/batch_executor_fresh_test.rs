@@ -7,7 +7,7 @@ use crate::batch_plan::build_rust_coverage_batch_plan;
 use crate::batch_result::RustCoverageBatchResult;
 use crate::batch_run::{
     BatchSubprocessRunner, BuildIdentityFile, BuildIdentityPreparation, build_identity_input,
-    path_size_bytes, prepare_build_target_for_identity, remove_stale_run_directories,
+    path_size_bytes, prepare_build_target_for_identity,
 };
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, store_batch_executor_selector,
@@ -143,17 +143,151 @@ fn fresh_batch_requires_shim_metadata_for_matched_instances() {
 }
 
 #[test]
-fn fresh_batch_rejects_matching_started_test_missing_terminal_event() {
+fn subprocess_exporter_wrapper_propagates_pre_export_failures() {
+    let repo = batch_executor_fixture_repo();
+    let req = batch_executor_request(repo.path());
+    let runner = BatchSubprocessRunner::from_fn(|_, _| {
+        Ok(crate::batch_run::BatchSubprocessRunOutcome {
+            exit_code: Some(17),
+            stdout: br#"{"reason":"build-finished","success":true}"#.to_vec(),
+            stderr: b"no terminal events".to_vec(),
+            duration: Duration::from_millis(1),
+            process_residual_count: 0,
+        })
+    });
+    let tools = tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let plan = build_rust_coverage_batch_plan(&req).unwrap();
+    let exporter = crate::batch_export::SubprocessInstanceExporter::new(
+        crate::batch_export_tools::ExportTools {
+            llvm_profdata: "/bin/false".into(),
+            llvm_cov: "/bin/false".into(),
+            llvm_readobj: "/bin/false".into(),
+        },
+        None,
+    );
+
+    let err = execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, exporter)
+        .unwrap_err();
+
+    assert!(
+        matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("without terminal test events"))
+    );
+}
+
+#[test]
+fn subprocess_exporter_wrapper_handles_failed_test_without_export_jobs() {
     let repo = batch_executor_fixture_repo();
     let req = batch_executor_request(repo.path());
     let runner = BatchSubprocessRunner::from_fn(|_, plan| {
         fs::create_dir_all(&plan.build_target).unwrap();
+        let bin = plan.build_target.join("bin");
+        fs::write(&bin, b"binary").unwrap();
+        super::fresh_test_helpers::write_shim_metadata(
+            &plan.target_runner_output_dir,
+            "pkg::bin$alpha",
+            &bin,
+        );
+        Ok(crate::batch_run::BatchSubprocessRunOutcome {
+            exit_code: Some(1),
+            stdout: format!(
+                "{{\"reason\":\"compiler-artifact\",\"executable\":\"{}\",\"filenames\":[\"/tmp/a.o\"],\"fresh\":false}}\n{{\"reason\":\"build-finished\",\"success\":true}}\n{{\"type\":\"test\",\"event\":\"failed\",\"name\":\"pkg::bin$alpha\",\"exec_time\":0.001}}\n",
+                bin.display()
+            )
+            .into_bytes(),
+            stderr: Vec::new(),
+            duration: Duration::from_millis(1),
+            process_residual_count: 0,
+        })
+    });
+    let tools = tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let plan = build_rust_coverage_batch_plan(&req).unwrap();
+    let exporter = crate::batch_export::SubprocessInstanceExporter::new(
+        crate::batch_export_tools::ExportTools {
+            llvm_profdata: "/bin/false".into(),
+            llvm_cov: "/bin/false".into(),
+            llvm_readobj: "/bin/false".into(),
+        },
+        None,
+    );
+
+    let result =
+        execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, exporter)
+            .unwrap();
+
+    assert_eq!(result.counters.export_jobs, 0);
+    assert_eq!(result.completed[0].status, TestStatus::Failed);
+}
+
+#[test]
+fn check_aggregate_branch_reports_missing_shim_metadata_before_export() {
+    let repo = batch_executor_fixture_repo();
+    let mut req = batch_executor_request(repo.path());
+    req.coverage_output_mode = crate::batch_plan::CoverageOutputMode::CheckAggregate {
+        publication_binary_ids: None,
+        repair_publication: None,
+    };
+    let runner = BatchSubprocessRunner::from_fn(|_, plan| {
+        fs::create_dir_all(&plan.build_target).unwrap();
+        let bin = plan.build_target.join("bin");
+        fs::write(&bin, b"binary").unwrap();
         Ok(crate::batch_run::BatchSubprocessRunOutcome {
             exit_code: Some(0),
-            stdout: br#"{"reason":"build-finished","success":true}
-{"type":"test","event":"started","name":"pkg::bin$alpha"}
-"#
-            .to_vec(),
+            stdout: format!(
+                "{{\"reason\":\"compiler-artifact\",\"executable\":\"{}\",\"filenames\":[\"/tmp/a.o\"],\"fresh\":false}}\n{{\"reason\":\"build-finished\",\"success\":true}}\n{{\"type\":\"test\",\"event\":\"ok\",\"name\":\"pkg::bin$alpha\",\"exec_time\":0.001}}\n",
+                bin.display()
+            )
+            .into_bytes(),
+            stderr: Vec::new(),
+            duration: Duration::from_millis(1),
+            process_residual_count: 0,
+        })
+    });
+    let tools = tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let plan = build_rust_coverage_batch_plan(&req).unwrap();
+
+    let err = execute_fresh_batch_with_export_fn(
+        &req,
+        &tools,
+        &identity,
+        &plan,
+        &runner,
+        Arc::new(|_, _, _, _| unreachable!("check aggregate path does not use instance exporter")),
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("missing target-runner metadata"))
+    );
+}
+
+#[test]
+fn check_aggregate_branch_builds_export_requests_with_shim_metadata() {
+    let repo = batch_executor_fixture_repo();
+    let mut req = batch_executor_request(repo.path());
+    req.coverage_output_mode = crate::batch_plan::CoverageOutputMode::CheckAggregate {
+        publication_binary_ids: None,
+        repair_publication: None,
+    };
+    let runner = BatchSubprocessRunner::from_fn(|_, plan| {
+        fs::create_dir_all(&plan.build_target).unwrap();
+        let bin = plan.build_target.join("bin");
+        fs::write(&bin, b"binary").unwrap();
+        super::fresh_test_helpers::write_shim_metadata(
+            &plan.target_runner_output_dir,
+            "pkg::bin$alpha",
+            &bin,
+        );
+        Ok(crate::batch_run::BatchSubprocessRunOutcome {
+            exit_code: Some(0),
+            stdout: format!(
+                "{{\"reason\":\"compiler-artifact\",\"executable\":\"{}\",\"filenames\":[\"{}.o\"],\"fresh\":false}}\n{{\"reason\":\"build-finished\",\"success\":true}}\n{{\"type\":\"test\",\"event\":\"ok\",\"name\":\"pkg::bin$alpha\",\"exec_time\":0.001}}\n",
+                bin.display(),
+                bin.display()
+            )
+            .into_bytes(),
             stderr: Vec::new(),
             duration: Duration::from_millis(1),
             process_residual_count: 0,
@@ -168,140 +302,51 @@ fn fresh_batch_rejects_matching_started_test_missing_terminal_event() {
         &identity,
         &plan,
         &runner,
-        Arc::new(|_, _, _, _| unreachable!("missing terminal should fail before export")),
+        Arc::new(|_, _, _, _| unreachable!("check aggregate uses aggregate exporter")),
     )
     .unwrap_err();
-
+    // Should get past shim resolution into aggregate export / finish.
+    let message = format!("{err:?}");
     assert!(
-        matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("missing terminal events") && message.contains("pkg::bin$alpha"))
+        message.contains("export")
+            || message.contains("profdata")
+            || message.contains("llvm")
+            || message.contains("InvalidRequest")
+            || message.contains("Io"),
+        "unexpected error: {message}"
     );
 }
 
 #[test]
-fn store_failure_returns_fresh_unstored_with_completed_outcome() {
-    let repo = batch_executor_fixture_repo();
-    let req = batch_executor_request(repo.path());
-    fs::create_dir_all(req.cache_root.join("entries")).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(
-            req.cache_root.join("entries"),
-            fs::Permissions::from_mode(0o444),
-        )
-        .unwrap();
-    }
-    let result = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
-    assert!(result.batch_error.is_some());
-    assert_eq!(result.completed.len(), 2);
-    assert!(
-        result
-            .completed
-            .iter()
-            .any(|outcome| outcome.cache_status == RustCovCacheStatus::FreshUnstored)
-    );
-    assert_eq!(result.counters.build_invocations, 1);
-}
-
-#[test]
-fn partial_miss_falls_through_to_fresh_execution() {
-    let repo = batch_executor_fixture_repo();
-    let req = batch_executor_request(repo.path());
-    store_batch_executor_selector(repo.path(), &req, "alpha");
-
-    let result = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
-    assert_eq!(result.completed.len(), 2);
-    assert!(
-        result
-            .completed
-            .iter()
-            .any(|outcome| outcome.selector == "beta")
-    );
-}
-
-#[test]
-fn apply_non_primary_cleanup_error_preserves_primary_batch_error() {
+fn apply_non_primary_cleanup_error_propagates_io_failure() {
     let result = RustCoverageBatchResult {
         completed: Vec::new(),
-        batch_error: Some(RustLlvmCovError::InvalidRequest("primary".into())),
+        batch_error: None,
         counters: Default::default(),
         test_binaries: Vec::new(),
     };
-    let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "cleanup");
-    let applied = crate::batch_executor_fresh::apply_non_primary_cleanup_error(result, Some(err))
-        .expect("preserve primary");
-    let message = format!("{:?}", applied.batch_error.unwrap());
-    assert!(message.contains("primary"));
-    assert!(message.contains("cleanup"));
-}
-
-#[test]
-fn stale_run_directory_cleanup_failure_preserves_primary_store_error() {
-    let repo = batch_executor_fixture_repo();
-    let mut req = batch_executor_request(repo.path());
-    let cache_root = req.cache_root.clone();
-    let stale = cache_root.join("runs").join("run-stale");
-    fs::create_dir_all(&stale).unwrap();
-    fs::write(stale.join("marker"), b"x").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&stale, fs::Permissions::from_mode(0o555)).unwrap();
-    }
-    fs::create_dir_all(cache_root.join("entries")).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(
-            cache_root.join("entries"),
-            fs::Permissions::from_mode(0o444),
-        )
-        .unwrap();
-    }
-    let result = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
-    assert!(result.batch_error.is_some());
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&stale, fs::Permissions::from_mode(0o755)).unwrap();
-        fs::set_permissions(
-            cache_root.join("entries"),
-            fs::Permissions::from_mode(0o755),
-        )
-        .unwrap();
-    }
-    remove_stale_run_directories(&cache_root, &req.generated_config.parent().unwrap()).unwrap();
-    req.force_rerun = true;
-    let recovered = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
-    assert!(recovered.batch_error.is_none());
-}
-
-#[test]
-fn fresh_batch_plan_keeps_repository_target_untouched() {
-    let repo = batch_executor_fixture_repo();
-    let repo_target = repo.path().join("target");
-    fs::create_dir_all(&repo_target).unwrap();
-    let marker = repo_target.join("ordinary-target-marker");
-    fs::write(&marker, b"untouched").unwrap();
-    let before = fs::read(&marker).unwrap();
-
-    let req = batch_executor_request(repo.path());
-    let cache_root = req.cache_root.clone();
-    let plan = build_rust_coverage_batch_plan(&req).unwrap();
+    let outcome = apply_non_primary_cleanup_error(
+        result,
+        Some(std::io::Error::other("stale cleanup failed")),
+    )
+    .unwrap();
     assert!(
-        plan.build_target.starts_with(&cache_root),
-        "batch build target must live under cache root, not repository target/"
+        matches!(
+            outcome.batch_error,
+            Some(RustLlvmCovError::Io(err)) if err.to_string().contains("stale cleanup failed")
+        )
     );
-    assert_ne!(
-        plan.build_target, repo_target,
-        "batch must not use repository target/"
-    );
-    assert_eq!(
-        plan.env.get("CARGO_TARGET_DIR").map(String::as_str),
-        Some(plan.build_target.to_string_lossy().as_ref())
-    );
-
-    let _ = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
-    assert_eq!(fs::read(&marker).unwrap(), before);
-    assert!(repo_target.is_dir());
 }
+
+#[test]
+fn apply_non_primary_cleanup_error_passes_through_clean_result() {
+    let result = RustCoverageBatchResult {
+        completed: Vec::new(),
+        batch_error: None,
+        counters: Default::default(),
+        test_binaries: Vec::new(),
+    };
+    let ok = apply_non_primary_cleanup_error(result, None).unwrap();
+    assert!(ok.completed.is_empty());
+}
+

@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Write;
 use syn::visit::Visit;
 
 fn parse_fn(
@@ -245,4 +246,121 @@ fn test_count_use_names() {
         m.imports, 3,
         "should count 3 imported names: Read, Write, Path"
     );
+}
+
+#[test]
+fn cfg_test_detection_handles_nested_boolean_forms() {
+    let positive: syn::ItemMod =
+        syn::parse_str("#[cfg(any(feature = \"x\", all(test)))] mod m {}").unwrap();
+    assert!(is_cfg_test_mod(&positive));
+
+    let negative: syn::ItemMod =
+        syn::parse_str("#[cfg(all(not(test), feature = \"x\"))] mod m {}").unwrap();
+    assert!(!is_cfg_test_mod(&negative));
+
+    let double_negative: syn::ItemMod = syn::parse_str("#[cfg(not(not(test)))] mod m {}").unwrap();
+    assert!(is_cfg_test_mod(&double_negative));
+}
+
+#[test]
+fn function_metrics_count_struct_tuple_and_typed_pattern_bindings() {
+    let func: syn::ItemFn = syn::parse_str(
+        "fn f(value: bool) { let Point { x, y } = p; let Pair(a, b) = q; let z: i32 = 1; if value { call(); } }",
+    )
+    .unwrap();
+
+    let metrics = compute_rust_function_metrics(
+        &func.sig.inputs,
+        &func.block,
+        count_non_doc_attrs(&func.attrs),
+    );
+
+    assert_eq!(metrics.arguments, 1);
+    assert_eq!(metrics.bool_parameters, 1);
+    assert!(metrics.local_variables >= 5);
+    assert_eq!(metrics.branches, 1);
+    assert_eq!(metrics.calls, 1);
+}
+
+#[test]
+fn function_metrics_count_closures_calls_and_skip_inner_function_bodies() {
+    let (inputs, block) = parse_fn(
+        r#"
+        fn outer(flag: bool) {
+            use std::fmt;
+            fn inner() {
+                let hidden = 1;
+                return;
+            }
+            let f = || || helper();
+            if flag {
+                f()();
+            }
+            match 1 {
+                0 => return,
+                1 => helper(),
+                _ => value.method(),
+            }
+        }
+        "#,
+    );
+    let metrics = compute_rust_function_metrics(&inputs, &block, 0);
+
+    assert_eq!(metrics.bool_parameters, 1);
+    assert_eq!(metrics.returns, 1);
+    assert_eq!(metrics.branches, 4);
+    assert_eq!(metrics.nested_function_depth, 2);
+    assert!(metrics.calls >= 4);
+    assert_eq!(metrics.local_variables, 1);
+}
+
+#[test]
+fn file_metrics_count_traits_concrete_types_and_nested_non_test_modules() {
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    writeln!(
+        tmp,
+        "trait T {{}}\nstruct S;\nenum E {{ A }}\nunion U {{ a: u8 }}\nmod nested {{ pub fn f() {{ let x = 1; }} }}\n#[cfg(test)] mod tests {{ fn hidden() {{ let y = 1; }} }}",
+    )
+    .unwrap();
+    let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+    let metrics = compute_rust_file_metrics(&parsed);
+
+    assert_eq!(metrics.interface_types, 1);
+    assert_eq!(metrics.concrete_types, 3);
+    assert_eq!(metrics.functions, 1);
+    assert_eq!(metrics.statements, 1);
+}
+
+#[test]
+fn file_metrics_count_impl_methods_and_private_import_names() {
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    writeln!(
+        tmp,
+        "use std::{{fmt, io::Write}};\nstruct S;\nimpl S {{ fn a(&self) {{ let x = 1; }} fn b(&self) {{ let y = 2; }} }}",
+    )
+    .unwrap();
+    let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+    let metrics = compute_rust_file_metrics(&parsed);
+
+    assert_eq!(metrics.imports, 2);
+    assert_eq!(metrics.concrete_types, 1);
+    assert_eq!(metrics.functions, 2);
+    assert_eq!(metrics.statements, 2);
+}
+
+#[test]
+fn accumulate_file_metrics_visits_each_top_level_item_kind_directly() {
+    let file: syn::File = syn::parse_str(
+        "trait T {}\nstruct S;\nenum E { A }\nunion U { a: u8 }\nuse std::{fmt, io::Write};\nfn f() { let x = 1; }\n",
+    )
+    .unwrap();
+    let mut metrics = RustFileMetrics::default();
+
+    accumulate_rust_file_metrics_from_items(&file.items, &mut metrics);
+
+    assert_eq!(metrics.interface_types, 1);
+    assert_eq!(metrics.concrete_types, 3);
+    assert_eq!(metrics.imports, 2);
+    assert_eq!(metrics.functions, 1);
+    assert_eq!(metrics.statements, 1);
 }

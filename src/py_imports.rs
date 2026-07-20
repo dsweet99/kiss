@@ -159,4 +159,23 @@ mod tests {
         assert!(names.contains("os"));
         assert!(names.contains("path"));
     }
+
+    #[test]
+    fn test_import_aliases_use_bound_name() {
+        let p = parse("import numpy as np\nfrom pathlib import Path as P");
+        let mut names = std::collections::HashSet::new();
+
+        collect_import_names(p.tree.root_node(), &p.source, &mut names);
+
+        assert!(names.contains("np"));
+        assert!(names.contains("P"));
+    }
+
+    #[test]
+    fn test_non_if_nodes_are_not_type_checking_blocks() {
+        let p = parse("import os");
+        let import_node = p.tree.root_node().child(0).unwrap();
+
+        assert!(!is_type_checking_block(import_node, &p.source));
+    }
 }

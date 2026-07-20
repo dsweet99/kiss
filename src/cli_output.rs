@@ -317,6 +317,32 @@ mod tests {
     }
 
     #[test]
+    fn test_candidate_list_truncates_only_when_needed() {
+        let candidates = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+
+        assert_eq!(format_candidate_list(&candidates, 3), "a, b, c");
+        assert_eq!(format_candidate_list(&candidates, 2), "a, b…");
+    }
+
+    #[test]
+    fn test_gate_eligible_coverage_ignores_tests_and_binary_entry_points() {
+        let defs = vec![
+            (PathBuf::from("src/lib.py"), "prod".into(), 1),
+            (PathBuf::from("tests/test_lib.py"), "test_prod".into(), 1),
+            (PathBuf::from("src/main.rs"), "main".into(), 1),
+        ];
+        let unref = vec![
+            (PathBuf::from("tests/test_lib.py"), "test_prod".into(), 1),
+            (PathBuf::from("src/main.rs"), "main".into(), 1),
+        ];
+
+        assert_eq!(min_per_file_coverage(&defs, &unref), 0);
+        assert_eq!(min_gate_eligible_per_file_coverage(&defs, &unref), 100);
+        assert!(!is_coverage_gate_file(Path::new("tests/test_lib.py")));
+        assert!(!is_coverage_gate_file(Path::new("src/main.rs")));
+    }
+
+    #[test]
     fn test_file_coverage_map_computes_per_file_pct() {
         let defs = vec![
             (PathBuf::from("a.py"), "f1".into(), 1),

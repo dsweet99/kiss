@@ -25,3 +25,6 @@ mod py_metrics_test;
 
 #[cfg(test)]
 mod py_metrics_test_2;
+
+#[cfg(test)]
+mod py_metrics_test_3;

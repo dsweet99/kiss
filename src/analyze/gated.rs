@@ -3,6 +3,7 @@
 use kiss::{GateConfig, ParsedFile};
 
 use crate::analyze::coverage_gate::evaluate_gate;
+use crate::analyze::dup_detect;
 use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
 use crate::analyze::graph_api::{build_py_graph, build_rs_graph};
 use crate::analyze::options::AnalyzeResult;
@@ -26,8 +27,6 @@ fn gated_py_parallel(
     Vec<kiss::Violation>,
     Vec<PyDup>,
 ) {
-    use crate::analyze::dup_detect;
-
     let GatedPyParallelIn {
         py_parsed,
         opts,
@@ -71,8 +70,6 @@ fn gated_py_parallel(
 }
 
 pub(crate) fn run_gated_analysis(in_: GatedAnalysis<'_>) -> AnalyzeResult {
-    use crate::analyze::dup_detect;
-
     let GatedAnalysis {
         opts,
         py_files,
@@ -252,5 +249,61 @@ mod gated_tests {
             assert!(graph_viols.is_empty());
             assert!(py_dups.is_empty());
         });
+    }
+
+    #[test]
+    fn test_gated_py_parallel_with_python_source_and_duplication_disabled() {
+        let mut fix = TestFixture::new();
+        fix.gate.duplication_enabled = false;
+        let tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
+        std::fs::write(
+            tmp.path(),
+            "def alpha():\n    return 1\n\ndef beta():\n    return alpha()\n",
+        )
+        .unwrap();
+        let mut parser = kiss::parsing::create_parser().unwrap();
+        let parsed = vec![kiss::parsing::parse_file(&mut parser, tmp.path()).unwrap()];
+        let opts = fix.make_opts();
+        let input = GatedPyParallelIn {
+            py_parsed: &parsed,
+            opts: &opts,
+            file_count: 1,
+            gate: &fix.gate,
+        };
+
+        let (py_cov, py_graph, _graph_viols, py_dups) = gated_py_parallel(&input);
+
+        assert!(!py_cov.definitions.is_empty());
+        assert!(py_graph.is_some());
+        assert!(py_dups.is_empty());
+    }
+
+    #[test]
+    fn test_gated_py_parallel_runs_duplicate_detection_when_enabled() {
+        let mut fix = TestFixture::new();
+        fix.gate.duplication_enabled = true;
+        fix.gate.min_similarity = 0.1;
+        let tmp_a = tempfile::NamedTempFile::with_suffix(".py").unwrap();
+        let tmp_b = tempfile::NamedTempFile::with_suffix(".py").unwrap();
+        std::fs::write(tmp_a.path(), "def alpha(x):\n    y = x + 1\n    return y\n").unwrap();
+        std::fs::write(tmp_b.path(), "def beta(x):\n    y = x + 1\n    return y\n").unwrap();
+        let mut parser = kiss::parsing::create_parser().unwrap();
+        let parsed = vec![
+            kiss::parsing::parse_file(&mut parser, tmp_a.path()).unwrap(),
+            kiss::parsing::parse_file(&mut parser, tmp_b.path()).unwrap(),
+        ];
+        let opts = fix.make_opts();
+        let input = GatedPyParallelIn {
+            py_parsed: &parsed,
+            opts: &opts,
+            file_count: 1,
+            gate: &fix.gate,
+        };
+
+        let (py_cov, py_graph, _graph_viols, py_dups) = gated_py_parallel(&input);
+
+        assert_eq!(py_cov.definitions.len(), 2);
+        assert!(py_graph.is_some());
+        assert!(py_dups.len() <= 1);
     }
 }

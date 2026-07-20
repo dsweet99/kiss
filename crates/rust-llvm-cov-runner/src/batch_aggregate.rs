@@ -40,6 +40,7 @@ pub fn aggregate_logical_selectors(
             .filter(|instance| selector_matches_test(&instance.full_name, selector, exact))
             .collect();
         if matched.is_empty() {
+            eprintln!("kiss: unmatched rust selector during aggregate: {selector}");
             counters.unmatched_selectors += 1;
             outcomes.push(successful_empty_outcome(selector));
             continue;

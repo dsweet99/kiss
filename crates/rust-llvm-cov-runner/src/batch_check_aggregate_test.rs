@@ -183,6 +183,42 @@ fn loader_ignores_partial_temporary_publication_file() {
     );
 }
 
+#[test]
+fn build_check_aggregate_reports_missing_binary_identity_and_line_map() {
+    let fixture = AggregateFixture::new();
+    let selectors = vec!["pkg::bin$alpha".to_string()];
+    let selector_binary_ids = BTreeMap::from([(selectors[0].clone(), vec!["missing".to_string()])]);
+
+    let missing_identity = build_check_aggregate(
+        &fixture.req,
+        &fixture.identity,
+        &selectors,
+        selector_binary_ids.clone(),
+        &[],
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        missing_identity,
+        RustLlvmCovError::InvalidRequest(message)
+            if message.contains("missing test-binary identity")
+    ));
+
+    let missing_line_map = build_check_aggregate(
+        &fixture.req,
+        &fixture.identity,
+        &selectors,
+        selector_binary_ids,
+        &[fixture_binary(&fixture.req.source_root, "missing")],
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        missing_line_map,
+        RustLlvmCovError::InvalidRequest(message) if message.contains("missing line map")
+    ));
+}
+
 struct AggregateFixture {
     _tmp: tempfile::TempDir,
     req: RustCoverageBatchRequest,

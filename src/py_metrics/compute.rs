@@ -58,3 +58,37 @@ pub fn compute_file_metrics(parsed: &ParsedFile) -> FileMetrics {
         functions: counts.functions,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::parse_python_source;
+
+    #[test]
+    fn function_metrics_include_keyword_only_boolean_return_and_call_counts() {
+        let parsed =
+            parse_python_source("def f(a, *, flag=False):\n    helper()\n    return a, flag\n");
+        let func = parsed.tree.root_node().child(0).expect("function");
+        let metrics = compute_function_metrics(func, &parsed.source);
+
+        assert_eq!(metrics.arguments_keyword_only, 1);
+        assert_eq!(metrics.boolean_parameters, 1);
+        assert_eq!(metrics.max_return_values, 2);
+        assert_eq!(metrics.calls, 1);
+    }
+
+    #[test]
+    fn class_and_file_metrics_count_methods_and_top_level_functions() {
+        let parsed = parse_python_source(
+            "def top():\n    return 1\n\nclass C:\n    def method(self):\n        return 2\n",
+        );
+        let root = parsed.tree.root_node();
+        let class_node = root
+            .children(&mut root.walk())
+            .find(|node| node.kind() == "class_definition")
+            .expect("class");
+
+        assert_eq!(compute_class_metrics(class_node).methods, 1);
+        assert_eq!(compute_file_metrics(&parsed).functions, 2);
+    }
+}

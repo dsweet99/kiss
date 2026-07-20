@@ -217,6 +217,45 @@ fn test_cluster_from_pairs() {
 }
 
 #[test]
+fn clustering_handles_empty_and_unmatched_inputs() {
+    assert!(cluster_duplicates(&[], &[]).is_empty());
+
+    let chunks = vec![
+        CodeChunk {
+            file: "a.py".into(),
+            name: "f1".into(),
+            start_line: 1,
+            end_line: 10,
+            normalized: "x y z a b c d e f g".into(),
+        },
+        CodeChunk {
+            file: "b.py".into(),
+            name: "f2".into(),
+            start_line: 1,
+            end_line: 10,
+            normalized: "x y z a b c d e f g".into(),
+        },
+    ];
+    let pair = DuplicatePair {
+        chunk1: CodeChunk {
+            file: "missing.py".into(),
+            name: "missing".into(),
+            start_line: 1,
+            end_line: 10,
+            normalized: "x".into(),
+        },
+        chunk2: chunks[1].clone(),
+        similarity: 0.99,
+    };
+
+    assert!(cluster_duplicates(&[pair], &chunks).is_empty());
+    assert_eq!(
+        clustering::compute_cluster_similarity(&[0, 1], &HashMap::new()),
+        0.0
+    );
+}
+
+#[test]
 fn test_extract_chunks_for_duplication_direct() {
     let code = "def foo():\n    x = 1\n    y = 2\n    z = 3\n    a = 4\n    b = 5\n    return x";
     let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();

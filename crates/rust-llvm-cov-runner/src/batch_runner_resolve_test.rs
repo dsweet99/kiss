@@ -1,7 +1,12 @@
 use std::collections::BTreeMap;
 use std::fs;
 
-use crate::batch_runner_resolve::{delegated_runner_for_platform, resolve_delegated_runners};
+use crate::RustLlvmCovError;
+use crate::batch_runner_resolve::{
+    delegated_runner_for_platform, placeholder_delegated_runner_fields, read_runner_map,
+    resolve_batch_request_runners, resolve_delegated_runners, runner_map_fingerprint,
+    write_runner_map,
+};
 use crate::test_support::{
     make_executable, runner_resolve_base_request, runner_resolve_toml_string,
 };
@@ -32,6 +37,14 @@ fn delegated_runner_for_platform_selects_map_entry() {
 }
 
 #[test]
+fn placeholder_delegated_runner_fields_are_fingerprint_consistent() {
+    let (map, fingerprint, host) = placeholder_delegated_runner_fields();
+    assert_eq!(host, "x86_64-unknown-linux-gnu");
+    assert_eq!(fingerprint, runner_map_fingerprint(&map));
+    assert_eq!(delegated_runner_for_platform(&map, &host), Some(&[][..]));
+}
+
+#[test]
 fn resolve_delegated_runners_returns_host_platform_and_map() {
     let repo = tempfile::tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();
@@ -49,6 +62,43 @@ fn resolve_delegated_runners_returns_host_platform_and_map() {
     assert!(!resolved.host_platform.is_empty());
     assert!(resolved.map.contains_key(&resolved.host_platform));
     let _ = format!("{resolved:?}");
+}
+
+#[test]
+fn resolve_batch_request_runners_populates_mutable_request_fields() {
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+
+    let mut req = runner_resolve_base_request(repo.path());
+    resolve_batch_request_runners(&mut req).unwrap();
+
+    assert!(!req.host_platform.is_empty());
+    assert!(req.delegated_runners.contains_key(&req.host_platform));
+    assert_eq!(
+        req.runner_map_fingerprint,
+        runner_map_fingerprint(&req.delegated_runners)
+    );
+}
+
+#[test]
+fn runner_map_io_reports_decode_error_and_missing_parent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bad_json = tmp.path().join("bad.json");
+    fs::write(&bad_json, b"not json").unwrap();
+    let err = read_runner_map(&bad_json).unwrap_err();
+    assert!(matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("decode")));
+
+    let err = write_runner_map(std::path::Path::new(""), &BTreeMap::new()).unwrap_err();
+    assert!(matches!(
+        err,
+        RustLlvmCovError::InvalidRequest(message) if message.contains("no parent")
+    ));
 }
 
 #[test]
@@ -263,4 +313,102 @@ fn resolve_delegated_runners_preserves_relative_runner_with_args_and_build_targe
             "--flag".to_string(),
         ])
     );
+}
+
+#[test]
+fn resolve_delegated_runners_rejects_invalid_inline_runner_config() {
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+
+    let mut req = runner_resolve_base_request(repo.path());
+    req.cargo_args = vec![
+        "--config".to_string(),
+        "[target.\"x86_64-unknown-linux-gnu\"]\nrunner = 1\n".to_string(),
+    ];
+
+    let err = resolve_delegated_runners(&req).unwrap_err();
+    assert!(matches!(
+        err,
+        RustLlvmCovError::InvalidRequest(message)
+            if message.contains("runner must be a string or string list")
+    ));
+}
+
+#[test]
+fn resolve_delegated_runners_rejects_runner_list_with_non_string_item() {
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+
+    let mut req = runner_resolve_base_request(repo.path());
+    let host = resolve_delegated_runners(&req).unwrap().host_platform;
+    req.cargo_args = vec![format!(
+        "--config=[target.{}]\nrunner = [\"/bin/echo\", 1]\n",
+        host
+    )];
+
+    let err = resolve_delegated_runners(&req).unwrap_err();
+    assert!(matches!(
+        err,
+        RustLlvmCovError::InvalidRequest(message)
+            if message.contains("runner list must contain only strings")
+    ));
+}
+
+#[test]
+fn resolve_delegated_runners_rejects_missing_cargo_config_file() {
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+
+    let mut req = runner_resolve_base_request(repo.path());
+    req.cargo_args = vec!["--config".to_string(), "does-not-exist.toml".to_string()];
+
+    let err = resolve_delegated_runners(&req).unwrap_err();
+    assert!(matches!(
+        err,
+        RustLlvmCovError::InvalidRequest(message)
+            if message.contains("failed to read Cargo --config file")
+    ));
+}
+
+#[test]
+fn resolve_delegated_runners_accepts_explicit_target_argument_forms() {
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+
+    let base = runner_resolve_base_request(repo.path());
+    let host = resolve_delegated_runners(&base).unwrap().host_platform;
+    let mut req = base.clone();
+    req.cargo_args = vec![
+        "--target".to_string(),
+        host.clone(),
+        format!("--target={host}"),
+    ];
+
+    let resolved = resolve_delegated_runners(&req).unwrap();
+    assert_eq!(resolved.host_platform, host);
+    assert!(resolved.map.contains_key(&host));
 }

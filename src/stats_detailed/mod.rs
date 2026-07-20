@@ -119,6 +119,25 @@ mod tests {
     }
 
     #[test]
+    fn test_format_detailed_table_renders_missing_metrics_as_dashes() {
+        let u = UnitMetrics::new(
+            "a/very/long/path/that/exceeds/the/forty/character/column/test.rs".to_string(),
+            "a_very_long_function_name".to_string(),
+            "function",
+            42,
+        );
+
+        let table = format_detailed_table(&[u]);
+
+        assert!(table.contains(&truncate(
+            "a/very/long/path/that/exceeds/the/forty/character/column/test.rs",
+            40
+        )));
+        assert!(table.contains(&truncate("a_very_long_function_name", 20)));
+        assert!(table.contains("     -"));
+    }
+
+    #[test]
     fn test_get_impl_name() {
         let code: syn::ItemImpl = syn::parse_quote! { impl Foo { fn bar() {} } };
         assert_eq!(get_impl_name(&code), "Foo");

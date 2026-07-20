@@ -124,10 +124,10 @@ fn run_tracked_batch_command(
     command
         .args(&argv[1..])
         .current_dir(cwd)
-        .envs(env)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    apply_batch_subprocess_env(&mut command, env);
     let mut child = process_tree
         .spawn_batch_command(&mut command)
         .map_err(|err| spawn_component_error(&program, err.to_string()))?;
@@ -231,108 +231,6 @@ fn read_pipe_to_end<R: io::Read>(mut pipe: R) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-    use std::process::{Command, Stdio};
-
-    use crate::batch_process_tree::{BatchProcessTreeGuard, record_child_process_group};
-    use crate::batch_shim::write_shim_start_metadata;
-
-    use super::{ingest_live_shim_identities, wait_child_with_interruption};
-
-    #[test]
-    fn ingest_live_shim_identities_records_each_identity_once() {
-        let guard = BatchProcessTreeGuard::install().expect("install guard");
-        let mut children = Vec::new();
-        let mut identities = Vec::new();
-        for _ in 0..2 {
-            let mut command = Command::new("/bin/sh");
-            command.arg("-c").arg("sleep 0.5");
-            command.stdin(Stdio::null());
-            command.stdout(Stdio::null());
-            command.stderr(Stdio::null());
-            let child = guard
-                .spawn_batch_command(&mut command)
-                .expect("spawn child");
-            record_child_process_group(guard.registry().as_ref(), &child);
-            identities.push(
-                guard
-                    .registry()
-                    .identities()
-                    .last()
-                    .expect("recorded child identity")
-                    .clone(),
-            );
-            children.push(child);
-        }
-        let registry = crate::batch_process_tree::ProcessTreeRegistry::default();
-        let tmp = tempfile::tempdir().unwrap();
-        write_shim_start_metadata(tmp.path(), "alpha", &identities[0]).unwrap();
-        write_shim_start_metadata(tmp.path(), "beta", &identities[1]).unwrap();
-        let mut seen = HashSet::new();
-        ingest_live_shim_identities(&registry, tmp.path(), &mut seen);
-        ingest_live_shim_identities(&registry, tmp.path(), &mut seen);
-        let recorded = registry.identities();
-        assert_eq!(recorded.len(), 2);
-        assert!(recorded.contains(&identities[0]));
-        assert!(recorded.contains(&identities[1]));
-        for mut child in children {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
-
-    #[test]
-    fn wait_child_with_interruption_returns_on_normal_exit() {
-        let guard = BatchProcessTreeGuard::install().expect("install guard");
-        let mut command = Command::new("/bin/sh");
-        command.arg("-c").arg("sleep 0.05");
-        command.stdin(Stdio::null());
-        command.stdout(Stdio::null());
-        command.stderr(Stdio::null());
-        let mut child = guard
-            .spawn_batch_command(&mut command)
-            .expect("spawn child");
-        record_child_process_group(guard.registry().as_ref(), &child);
-        let mut seen = HashSet::new();
-        let status = wait_child_with_interruption(
-            &mut child,
-            &guard,
-            std::path::Path::new("/nonexistent"),
-            &mut seen,
-        )
-        .expect("wait child");
-        assert!(status.success());
-        assert!(!guard.interrupted());
-    }
-
-    #[test]
-    fn wait_child_with_interruption_fails_when_interrupted() {
-        let guard = BatchProcessTreeGuard::install().expect("install guard");
-        let mut command = Command::new("/bin/sh");
-        command.arg("-c").arg("sleep 2");
-        command.stdin(Stdio::null());
-        command.stdout(Stdio::null());
-        command.stderr(Stdio::null());
-        let mut child = guard
-            .spawn_batch_command(&mut command)
-            .expect("spawn child");
-        record_child_process_group(guard.registry().as_ref(), &child);
-        guard.set_interrupted_for_test(true);
-        let mut seen = HashSet::new();
-        let err = wait_child_with_interruption(
-            &mut child,
-            &guard,
-            std::path::Path::new("/nonexistent"),
-            &mut seen,
-        )
-        .expect_err("expected interrupted wait");
-        assert_eq!(err.kind(), std::io::ErrorKind::Interrupted);
-        assert!(err.to_string().contains("batch interrupted"));
-    }
-}
-
 fn ensure_batch_env_dirs(plan: &RustCoverageBatchPlan) -> Result<(), BatchSubprocessRunError> {
     for key in [
         "CARGO_TARGET_DIR",
@@ -352,3 +250,20 @@ fn ensure_batch_env_dirs(plan: &RustCoverageBatchPlan) -> Result<(), BatchSubpro
     }
     Ok(())
 }
+
+/// Drop enclosing coverage env, then apply the nested plan env.
+///
+/// Nested batches often run inside an outer instrumented test that already set
+/// `LLVM_PROFILE_FILE`. Inheriting that path lets nested binaries write foreign
+/// binary ids into the outer profile and breaks check-aggregate catalog resolve.
+pub(crate) fn apply_batch_subprocess_env(
+    command: &mut Command,
+    env: &BTreeMap<String, String>,
+) {
+    crate::batch_shim_delegated::scrub_coverage_build_env(command);
+    command.envs(env);
+}
+
+#[cfg(test)]
+#[path = "batch_run_subprocess_test.rs"]
+mod tests;

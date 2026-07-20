@@ -51,8 +51,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i
 
 pub(in crate::bin_cli::dispatch) fn dispatch_mimic(o: MimicDispatchOptions) -> i32 {
     let ignore = normalize_ignore_prefixes(&o.ignore);
-    run_mimic(&o.paths, o.out.as_deref(), o.lang, &ignore);
-    0
+    run_mimic(&o.paths, o.out.as_deref(), o.lang, &ignore)
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_clamp(
@@ -65,8 +64,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_clamp(
         Some(Path::new(".kissconfig")),
         lang,
         &ignore,
-    );
-    0
+    )
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_dry(o: DryDispatchOptions) -> i32 {

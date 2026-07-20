@@ -46,3 +46,33 @@ pub fn format_detailed_table(units: &[UnitMetrics]) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stats_detailed::types::UnitMetrics;
+
+    #[test]
+    fn detailed_table_formats_optional_metrics_and_truncates_long_fields() {
+        let mut unit = UnitMetrics::new(
+            "a/very/long/path/that/exceeds/the/display/width/module.py".to_string(),
+            "a_very_long_function_name_that_is_truncated".to_string(),
+            "function",
+            7,
+        );
+        unit.statements = Some(3);
+        unit.indentation = Some(1);
+        unit.branches = Some(2);
+        unit.locals = Some(4);
+        unit.lines = Some(10);
+        unit.imports = Some(1);
+        unit.fan_out = Some(2);
+        let units = vec![unit];
+
+        let table = format_detailed_table(&units);
+
+        assert!(table.contains("function"));
+        assert!(table.contains("  -"));
+        assert!(table.contains("..."));
+    }
+}

@@ -109,3 +109,52 @@ fn repository_root_for_universe_falls_back_to_parent_for_file_without_git() {
         src.canonicalize().unwrap()
     );
 }
+
+#[test]
+fn runtime_coverage_helpers_merge_lines_and_format_identities() {
+    let mut target = BTreeMap::from([("a.py".to_string(), BTreeSet::from([1, 2]))]);
+    let source = BTreeMap::from([
+        ("a.py".to_string(), BTreeSet::from([2, 3])),
+        ("b.py".to_string(), BTreeSet::from([4])),
+    ]);
+    merge_lines(&mut target, source);
+
+    assert_eq!(target["a.py"], BTreeSet::from([1, 2, 3]));
+    assert_eq!(target["b.py"], BTreeSet::from([4]));
+
+    let id = backend_identity(
+        "Python",
+        &[("population".to_string(), "abc".to_string())],
+        &target,
+    );
+    let repeat = backend_identity(
+        "Python",
+        &[("population".to_string(), "abc".to_string())],
+        &target,
+    );
+    assert_eq!(id, repeat);
+    assert_eq!(id.len(), 16);
+}
+
+#[test]
+fn runtime_coverage_error_display_includes_language_and_reason() {
+    let err = coverage_error("Rust", "missing population");
+
+    assert_eq!(
+        err.to_string(),
+        "error: kiss check: Rust runtime line coverage is missing population."
+    );
+}
+
+#[test]
+fn repository_root_for_universe_walks_up_to_git_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let nested = tmp.path().join("repo/src/pkg");
+    fs::create_dir_all(&nested).unwrap();
+    fs::create_dir(tmp.path().join("repo/.git")).unwrap();
+
+    assert_eq!(
+        repository_root_for_universe(&nested),
+        tmp.path().join("repo").canonicalize().unwrap()
+    );
+}

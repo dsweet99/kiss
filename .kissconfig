@@ -5,7 +5,7 @@
 num_jobs = 8
 
 [gate]
-test_coverage_threshold = 0
+test_coverage_threshold = 90
 min_similarity = 0.9
 duplication_enabled = true
 orphan_module_enabled = true

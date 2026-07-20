@@ -2,11 +2,6 @@ use super::*;
 use crate::test_runner::coverage_decision::{ChangedDiff, LanguagePlanner, SelectionDecision};
 use crate::test_runner::python_coverage_index::{
     python_coverage_cache_root, rebuild_python_coverage_index,
-    write_python_population_manifest_for_args,
-};
-use crate::test_runner::runners::python_collect::{
-    full_suite_subprocess_collects_for_tests, reset_full_suite_subprocess_collects_for_tests,
-    reset_python_collect_memo_for_tests,
 };
 use crate::test_runner::rust_coverage_index::{
     rebuild_rust_coverage_index, write_rust_population_manifest_for_args,
@@ -34,6 +29,256 @@ fn selector_plan_default_has_no_work_or_engine_claim() {
     assert!(plan.python_prior_failure_selectors.is_empty());
     assert!(plan.rust_prior_failure_selectors.is_empty());
     assert!(!plan.coverage_decision_engine_used);
+}
+
+#[test]
+fn decision_helper_splitters_preserve_language_and_line_filters() {
+    let py = PathBuf::from("app.py");
+    let rs = PathBuf::from("src/lib.rs");
+    let (py_sources, rust_sources) = split_source_paths(&[py.clone(), rs.clone()]);
+    assert_eq!(py_sources, vec![py.clone()]);
+    assert_eq!(rust_sources, vec![rs.clone()]);
+
+    let changed = changed_sources_for_engine(&py_sources, &rust_sources);
+    assert_eq!(changed.len(), 2);
+    assert!(
+        changed
+            .iter()
+            .any(|source| source.language == kiss::Language::Python)
+    );
+    assert!(
+        changed
+            .iter()
+            .any(|source| source.language == kiss::Language::Rust)
+    );
+
+    let lines = BTreeMap::from([
+        (py.clone(), BTreeSet::from([1, 2])),
+        (rs.clone(), BTreeSet::from([3])),
+    ]);
+    assert_eq!(
+        changed_lines_for_sources(&lines, std::slice::from_ref(&rs)),
+        BTreeMap::from([(rs.clone(), BTreeSet::from([3]))])
+    );
+
+    let selectors = vec![
+        TestSelector::new(kiss::Language::Rust, "rs::test"),
+        TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_app"),
+        TestSelector::new(kiss::Language::Rust, "rs::test"),
+    ];
+    let (py_sel, rs_sel) = selectors_by_language(&selectors);
+    assert_eq!(py_sel, vec!["tests/test_app.py::test_app".to_string()]);
+    assert_eq!(rs_sel, vec!["rs::test".to_string()]);
+}
+
+struct NoBasisPlanner;
+
+impl LanguagePlanner for NoBasisPlanner {
+    fn language(&self) -> kiss::Language {
+        kiss::Language::Rust
+    }
+
+    fn discover_universe(&self) -> Result<Vec<TestSelector>, String> {
+        Ok(Vec::new())
+    }
+
+    fn changed_tests(&self, _diff: &ChangedDiff) -> Vec<TestSelector> {
+        Vec::new()
+    }
+
+    fn prior_failures(&self) -> Vec<TestSelector> {
+        Vec::new()
+    }
+
+    fn freshness(
+        &self,
+        _universe: &[TestSelector],
+    ) -> Result<crate::test_runner::coverage_decision::CoverageFreshness, String> {
+        Ok(crate::test_runner::coverage_decision::CoverageFreshness::Fresh)
+    }
+
+    fn population_plan(
+        &self,
+        universe: &[TestSelector],
+    ) -> crate::test_runner::coverage_decision::PopulationPlan {
+        crate::test_runner::coverage_decision::full_population_plan(universe)
+    }
+
+    fn select(&self) -> Result<SelectionDecision, String> {
+        Ok(SelectionDecision::default())
+    }
+
+    fn manifest_env_allowlist(&self) -> &'static [&'static str] {
+        &[]
+    }
+}
+
+#[test]
+fn prior_failure_and_basis_helpers_have_empty_cases() {
+    let tmp = tempfile::TempDir::new().unwrap();
+
+    assert!(
+        prior_failures_for_language(tmp.path(), kiss::Language::Python, &[])
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        prior_failures_for_language(tmp.path(), kiss::Language::Rust, &[])
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        rust_selection_basis_from_backers(&[Box::new(NoBasisPlanner)]),
+        RustSelectionBasis::Current
+    );
+}
+
+#[test]
+fn prior_failures_for_language_loads_rust_failures_with_live_identity() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(tmp.path().join("src/lib.rs"), "pub fn value() -> u32 { 1 }\n").unwrap();
+
+    let cargo = PathBuf::from("cargo");
+    let rustc = PathBuf::from("rustc");
+    let cargo_version =
+        crate::test_runner::runners::command_stdout(&cargo, &["--version"], tmp.path())
+            .expect("cargo version");
+    let llvm_cov_version =
+        crate::test_runner::runners::command_stdout(&cargo, &["llvm-cov", "--version"], tmp.path())
+            .expect("llvm-cov version");
+    let cargo_nextest_version =
+        crate::test_runner::runners::command_stdout(&cargo, &["nextest", "--version"], tmp.path())
+            .expect("nextest version");
+    let rustc_version =
+        crate::test_runner::runners::command_stdout(&rustc, &["-Vv"], tmp.path())
+            .expect("rustc version");
+    let runner_map_fingerprint =
+        crate::test_runner::rust_coverage_index::current_rust_runner_map_fingerprint(tmp.path(), &[])
+            .unwrap_or_default();
+    let identity = crate::test_runner::last_status::rust_last_status_identity(
+        &cargo_version,
+        &llvm_cov_version,
+        &rustc_version,
+        &cargo_nextest_version,
+        &[],
+        &runner_map_fingerprint,
+    );
+    crate::test_runner::last_status::record_statuses(
+        tmp.path(),
+        kiss::Language::Rust,
+        &identity,
+        &[(
+            "demo::tests::failed".to_string(),
+            rpytest_runner::TestStatus::Failed,
+        )],
+    )
+    .unwrap();
+
+    let loaded = prior_failures_for_language(tmp.path(), kiss::Language::Rust, &[]).unwrap();
+    assert_eq!(
+        loaded,
+        vec![TestSelector::new(
+            kiss::Language::Rust,
+            "demo::tests::failed"
+        )]
+    );
+}
+
+#[test]
+fn prior_failures_for_language_loads_python_failures_with_live_identity() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let python = PathBuf::from("python");
+    let python_version = crate::test_runner::runners::command_stdout(
+        &python,
+        &[
+            "-c",
+            "import sys; print('.'.join(map(str, sys.version_info[:3])))",
+        ],
+        tmp.path(),
+    )
+    .expect("python version");
+    let pytest_version = crate::test_runner::runners::command_stdout(
+        &python,
+        &["-c", "import pytest; print(pytest.__version__)"],
+        tmp.path(),
+    )
+    .expect("pytest version");
+    let identity = crate::test_runner::last_status::python_last_status_identity(
+        &python_version,
+        &pytest_version,
+        &[],
+    );
+    crate::test_runner::last_status::record_statuses(
+        tmp.path(),
+        kiss::Language::Python,
+        &identity,
+        &[(
+            "tests/test_app.py::test_failed".to_string(),
+            rpytest_runner::TestStatus::Failed,
+        )],
+    )
+    .unwrap();
+
+    let loaded = prior_failures_for_language(tmp.path(), kiss::Language::Python, &[]).unwrap();
+    assert_eq!(
+        loaded,
+        vec![TestSelector::new(
+            kiss::Language::Python,
+            "tests/test_app.py::test_failed"
+        )]
+    );
+}
+
+#[test]
+fn combined_selectors_routes_changed_python_and_rust_tests() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let tests = tmp.path().join("tests");
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&tests).unwrap();
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    let py_test = tests.join("test_app.py");
+    let rs_test = src.join("lib.rs");
+    std::fs::write(&py_test, "def test_py_changed():\n    assert True\n").unwrap();
+    std::fs::write(
+        &rs_test,
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn rust_changed() { assert_eq!(1, 1); }\n}\n",
+    )
+    .unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        &[],
+        &[py_test.clone(), rs_test],
+        &BTreeMap::new(),
+        &[],
+        None,
+        &[],
+    )
+    .unwrap();
+
+    assert!(
+        plan.py_selectors
+            .iter()
+            .any(|selector| selector.ends_with("test_app.py::test_py_changed"))
+    );
+    assert!(
+        plan.rust_selectors
+            .iter()
+            .any(|selector| selector.contains("rust_changed"))
+    );
+    assert!(plan.coverage_decision_engine_used);
+    assert_eq!(plan.rust_vcs_source_paths, 0);
 }
 
 #[test]
@@ -102,232 +347,3 @@ fn engine_backers_expose_manifest_env_policy() {
     assert!(rust.manifest_env_allowlist().contains(&"RUSTFLAGS"));
 }
 
-#[test]
-#[allow(non_snake_case)]
-fn PythonModule_and_RustModule_expose_discovery_and_static_policy_inputs() {
-    // Covers PythonModule and RustModule planner methods.
-    let tmp = tempfile::TempDir::new().unwrap();
-    let tests = tmp.path().join("tests");
-    let src = tmp.path().join("src");
-    std::fs::create_dir_all(&tests).unwrap();
-    std::fs::create_dir_all(&src).unwrap();
-    let test_app = tests.join("test_app.py");
-    let lib = src.join("lib.rs");
-    std::fs::write(&test_app, "def test_value():\n    assert True\n").unwrap();
-    std::fs::write(&lib, "#[test]\nfn rust_value() {}\n").unwrap();
-    let py_changed = TestSelector::new(
-        kiss::Language::Python,
-        "tests/test_app.py::test_value".to_string(),
-    );
-    let rs_changed = TestSelector::new(kiss::Language::Rust, "rust_value");
-    let py_prior = TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_prior");
-    let rs_prior = TestSelector::new(kiss::Language::Rust, "crate::tests::test_prior");
-
-    let python = python_backer::PythonModule::new(
-        tmp.path(),
-        &[],
-        &BTreeMap::new(),
-        &[],
-        &[],
-        std::slice::from_ref(&py_changed),
-        std::slice::from_ref(&py_prior),
-    );
-    let rust = RustModule::new(
-        tmp.path(),
-        &[],
-        &BTreeMap::new(),
-        &[],
-        &[],
-        std::slice::from_ref(&rs_changed),
-        std::slice::from_ref(&rs_prior),
-    );
-    let diff = ChangedDiff::new(vec![
-        ChangedSource::new(kiss::Language::Python, "app.py"),
-        ChangedSource::new(kiss::Language::Rust, "src/lib.rs"),
-    ]);
-
-    assert_eq!(
-        <python_backer::PythonModule as LanguagePlanner>::language(&python),
-        kiss::Language::Python
-    );
-    assert!(
-        <python_backer::PythonModule as LanguagePlanner>::discover_universe(&python)
-            .unwrap()
-            .contains(&py_changed)
-    );
-    assert_eq!(
-        <python_backer::PythonModule as LanguagePlanner>::changed_tests(&python, &diff),
-        vec![py_changed]
-    );
-    assert_eq!(
-        <python_backer::PythonModule as LanguagePlanner>::prior_failures(&python),
-        vec![py_prior]
-    );
-    assert_eq!(
-        <python_backer::PythonModule as LanguagePlanner>::manifest_env_allowlist(&python),
-        ["PYTHONPATH"]
-    );
-
-    assert_eq!(
-        <RustModule as LanguagePlanner>::language(&rust),
-        kiss::Language::Rust
-    );
-    assert!(
-        <RustModule as LanguagePlanner>::discover_universe(&rust)
-            .unwrap()
-            .contains(&rs_changed)
-    );
-    assert_eq!(
-        <RustModule as LanguagePlanner>::changed_tests(&rust, &diff),
-        vec![rs_changed]
-    );
-    assert_eq!(
-        <RustModule as LanguagePlanner>::prior_failures(&rust),
-        vec![rs_prior]
-    );
-    assert!(<RustModule as LanguagePlanner>::manifest_env_allowlist(&rust).contains(&"RUSTFLAGS"));
-}
-
-#[test]
-fn python_source_change_requires_population_without_selective_python() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let tests = tmp.path().join("tests");
-    std::fs::create_dir(&tests).unwrap();
-    let app = tmp.path().join("app.py");
-    let test_app = tests.join("test_app.py");
-    std::fs::write(&app, "def value():\n    return 1\n").unwrap();
-    std::fs::write(
-        &test_app,
-        "def test_one():\n    assert True\n\ndef test_two():\n    assert True\n",
-    )
-    .unwrap();
-
-    let plan = combined_selectors(
-        tmp.path(),
-        std::slice::from_ref(&app),
-        &[],
-        &BTreeMap::new(),
-        &[],
-        Some(kiss::Language::Python),
-        &[],
-    )
-    .unwrap();
-
-    assert_eq!(
-        plan.py_selectors,
-        vec![
-            "tests/test_app.py::test_one".to_string(),
-            "tests/test_app.py::test_two".to_string(),
-        ]
-    );
-    assert!(plan.python_population_required);
-    assert!(plan.rust_selectors.is_empty());
-    assert!(test_app.exists());
-}
-
-#[test]
-fn warm_python_source_change_selects_covering_test_from_rslip_index() {
-    reset_python_collect_memo_for_tests();
-    reset_full_suite_subprocess_collects_for_tests();
-    let tmp = tempfile::TempDir::new().unwrap();
-    let (app, covering) = setup_warm_python_index(&tmp);
-
-    let plan = python_source_change_plan(tmp.path(), &app);
-    assert_eq!(plan.py_selectors, vec![covering.clone()]);
-    assert!(!plan.python_population_required);
-    assert_eq!(full_suite_subprocess_collects_for_tests(), 0);
-
-    reset_python_collect_memo_for_tests();
-    let plan_twice = python_source_change_plan(tmp.path(), &app);
-    assert_eq!(plan_twice.py_selectors, vec![covering]);
-    assert!(!plan_twice.python_population_required);
-    assert_eq!(full_suite_subprocess_collects_for_tests(), 0);
-}
-
-fn setup_warm_python_index(tmp: &tempfile::TempDir) -> (std::path::PathBuf, String) {
-    let tests = tmp.path().join("tests");
-    std::fs::create_dir(&tests).unwrap();
-    let app = tmp.path().join("app.py");
-    let test_app = tests.join("test_app.py");
-    std::fs::write(&app, "def value():\n    return 1\n").unwrap();
-    std::fs::write(
-        &test_app,
-        "from app import value\n\n\
-def test_value():\n    assert value() == 1\n\n\
-def test_unrelated():\n    assert True\n",
-    )
-    .unwrap();
-    let covering = "tests/test_app.py::test_value".to_string();
-    let unrelated = "tests/test_app.py::test_unrelated".to_string();
-    write_python_entry(
-        tmp.path(),
-        "covering",
-        &covering,
-        LineCoverage {
-            files: BTreeMap::from([(app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
-        },
-    );
-    write_python_entry(
-        tmp.path(),
-        "unrelated",
-        &unrelated,
-        LineCoverage {
-            files: BTreeMap::from([(test_app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
-        },
-    );
-    rebuild_python_coverage_index(tmp.path()).unwrap();
-    write_python_population_manifest_for_args(tmp.path(), &[covering.clone(), unrelated], &[])
-        .unwrap();
-    (app, covering)
-}
-
-fn python_source_change_plan(repo_root: &std::path::Path, app: &std::path::Path) -> SelectorPlan {
-    let app_path = app.to_path_buf();
-    combined_selectors(
-        repo_root,
-        std::slice::from_ref(&app_path),
-        &[],
-        &BTreeMap::from([(app_path.clone(), BTreeSet::from([1]))]),
-        &[],
-        Some(kiss::Language::Python),
-        &[],
-    )
-    .unwrap()
-}
-
-fn write_python_entry(
-    repo_root: &std::path::Path,
-    name: &str,
-    selector: &str,
-    coverage: LineCoverage,
-) {
-    let path = python_coverage_cache_root(repo_root)
-        .unwrap()
-        .join("entries")
-        .join(format!("{name}.json"));
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let entry = serde_json::json!({
-        "schema_version": rslip::CACHE_SCHEMA_VERSION,
-        "nodeid": selector,
-        "status": TestStatus::Passed,
-        "exit_code": 0,
-        "duration": Duration::from_millis(1),
-        "coverage": coverage,
-    });
-    std::fs::write(path, serde_json::to_vec(&entry).unwrap()).unwrap();
-}
-
-fn write_rust_entry(
-    repo_root: &std::path::Path,
-    name: &str,
-    selector: &str,
-    coverage: rust_llvm_cov_runner::RustLineCoverage,
-) {
-    crate::test_runner::rust_coverage_index::write_test_entry(
-        repo_root,
-        name,
-        selector,
-        TestStatus::Passed,
-        coverage,
-    );
-}

@@ -160,4 +160,60 @@ mod coverage_witness {
         let counts = count_parameters(params, &parsed.source);
         assert!(counts.total >= 1);
     }
+
+    #[test]
+    fn typed_self_cls_and_typed_splats_follow_parameter_rules() {
+        let parsed = parse_python_source(
+            "def f(self: object, cls: type, a: int, *args: str, b: bool = False, **kwargs: object): pass",
+        );
+        let func = parsed.tree.root_node().child(0).expect("function");
+        let params = func.child_by_field_name("parameters").expect("params");
+        let counts = count_parameters(params, &parsed.source);
+
+        assert_eq!(counts.positional, 4);
+        assert_eq!(counts.keyword_only, 1);
+        assert_eq!(counts.total, 5);
+        assert_eq!(counts.boolean_params, 1);
+    }
+
+    #[test]
+    fn decorator_count_counts_multiple_parent_decorators() {
+        let parsed = parse_python_source("@one\n@two\ndef f(): pass");
+        let decorated = parsed.tree.root_node().child(0).expect("decorated");
+        let function = decorated
+            .children(&mut decorated.walk())
+            .find(|node| node.kind() == "function_definition")
+            .expect("function");
+
+        assert_eq!(count_decorators(function), 2);
+    }
+
+    #[test]
+    fn parameter_counts_handle_plain_and_typed_keyword_only_forms() {
+        let parsed = parse_python_source(
+            "def f(self, a, *args, b=False, c: int = 1, **kwargs):\n    pass\n",
+        );
+        let func = parsed.tree.root_node().child(0).expect("function");
+        let params = func.child_by_field_name("parameters").expect("params");
+
+        let counts = count_parameters(params, &parsed.source);
+
+        assert_eq!(counts.positional, 2);
+        assert_eq!(counts.keyword_only, 2);
+        assert_eq!(counts.total, 4);
+        assert_eq!(counts.boolean_params, 1);
+    }
+
+    #[test]
+    fn boolean_default_returns_false_for_non_default_parameter() {
+        let parsed = parse_python_source("def f(a):\n    pass\n");
+        let func = parsed.tree.root_node().child(0).expect("function");
+        let params = func.child_by_field_name("parameters").expect("params");
+        let ident = params
+            .children(&mut params.walk())
+            .find(|child| child.kind() == "identifier")
+            .expect("identifier");
+
+        assert!(!is_boolean_default(&ident, &parsed.source));
+    }
 }

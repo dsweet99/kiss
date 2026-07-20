@@ -217,14 +217,14 @@ pub(crate) fn collect_per_test_call_usage_from_items(
 ) {
     for item in items {
         match item {
-            Item::Mod(m) if has_cfg_test_attribute(&m.attrs) => {
-                let mod_name = m.ident.to_string();
-                let mod_prefix = if prefix.is_empty() {
-                    mod_name.clone()
-                } else {
-                    format!("{prefix}::{mod_name}")
-                };
+            Item::Mod(m) => {
                 if let Some((_, mod_items)) = &m.content {
+                    let mod_name = m.ident.to_string();
+                    let mod_prefix = if prefix.is_empty() {
+                        mod_name
+                    } else {
+                        format!("{prefix}::{mod_name}")
+                    };
                     collect_per_test_call_usage_from_items(mod_items, &mod_prefix, out);
                 }
             }

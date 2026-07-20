@@ -12,12 +12,12 @@ use super::ast_python_walk::walk_py;
 pub(super) fn parse_python(content: &str) -> ParseOutcome {
     let mut parser = Parser::new();
     let lang = tree_sitter_python::LANGUAGE;
-    if parser.set_language(&lang.into()).is_err() {
-        return ParseOutcome::Fail(FallbackReason::ParserUnavailable);
-    }
-    let Some(tree) = parser.parse(content, None) else {
-        return ParseOutcome::Fail(FallbackReason::ParseFailed);
-    };
+    parser
+        .set_language(&lang.into())
+        .expect("tree-sitter Python grammar should be available");
+    let tree = parser
+        .parse(content, None)
+        .expect("tree-sitter parse should not be cancelled without a timeout");
     let root = tree.root_node();
     if root.has_error() {
         return ParseOutcome::Fail(FallbackReason::ParseFailed);

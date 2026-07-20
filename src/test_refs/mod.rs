@@ -179,6 +179,8 @@ mod coverage_witness {
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_b;
+#[cfg(test)]
 mod tests_2;
 #[cfg(test)]
 mod tests_3;

@@ -290,3 +290,50 @@ fn target_runner_shim_ignores_nextest_env_for_shell_script_commands() {
         std::env::remove_var("NEXTEST_TEST_NAME");
     }
 }
+
+#[test]
+fn target_runner_shim_returns_one_for_missing_command() {
+    let _env_guard = shim_test_env_lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let output = tmp.path().join("instances");
+    let runner_map = tmp.path().join("runner-map.json");
+    fs::write(&runner_map, b"{}").unwrap();
+
+    let code = run_target_runner_shim(&output, &runner_map, "x86_64-unknown-linux-gnu", &[]);
+
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn target_runner_shim_clears_inherited_llvm_profile_file() {
+    let _env_guard = shim_test_env_lock();
+    unsafe {
+        std::env::set_var("LLVM_PROFILE_FILE", "/tmp/should-be-cleared.profraw");
+    }
+    super::clear_inherited_llvm_profile_file();
+    assert!(
+        std::env::var_os("LLVM_PROFILE_FILE").is_none(),
+        "shim must drop inherited LLVM_PROFILE_FILE"
+    );
+}
+
+#[test]
+fn target_runner_shim_returns_one_for_malformed_runner_map() {
+    let _env_guard = shim_test_env_lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let output = tmp.path().join("instances");
+    let runner_map = tmp.path().join("runner-map.json");
+    let script = tmp.path().join("child.sh");
+    fs::write(&runner_map, b"not json").unwrap();
+    fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+    make_executable(&script);
+
+    let code = run_target_runner_shim(
+        &output,
+        &runner_map,
+        "x86_64-unknown-linux-gnu",
+        &[script.into_os_string()],
+    );
+
+    assert_eq!(code, 1);
+}

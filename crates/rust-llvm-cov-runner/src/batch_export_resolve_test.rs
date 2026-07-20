@@ -1,4 +1,5 @@
 use super::{BinaryIdObjectMap, resolve_objects_for_profdata};
+use crate::test_support::write_executable;
 use crate::batch_export_tools::{
     ExportTools, objects_satisfy_profile, resolve_export_tools_from_rustc,
 };
@@ -358,12 +359,3 @@ fn find_profraw(root: &Path) -> Option<PathBuf> {
     find_all_profraws(root).into_iter().next()
 }
 
-#[cfg(unix)]
-fn write_executable(path: PathBuf, contents: &str) -> PathBuf {
-    std::fs::write(&path, contents).unwrap();
-    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
-    use std::os::unix::fs::PermissionsExt;
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&path, permissions).unwrap();
-    path
-}

@@ -123,19 +123,20 @@ mod tests {
     use crate::test_support::{derived_fixture_request, witness_batch_tools};
     use crate::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
 
-    fn store_entry(
+    fn store_entry_with_status(
         req: &crate::RustCoverageBatchRequest,
         tools: &crate::RustCoverageToolIdentity,
         generation: &str,
         selector: &str,
         test_binary_ids: Vec<String>,
+        status: TestStatus,
     ) {
         let identity = batch_identity(req, tools).unwrap();
         let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, selector);
         let entry = RustCovCacheEntry::from_outcome(
             &RustLlvmCovOutcome {
                 selector: selector.to_string(),
-                status: TestStatus::Passed,
+                status,
                 exit_code: Some(0),
                 duration: Duration::from_millis(1),
                 coverage: RustLineCoverage {
@@ -149,6 +150,31 @@ mod tests {
             generation,
         );
         store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &entry).unwrap();
+    }
+
+    fn store_entry(
+        req: &crate::RustCoverageBatchRequest,
+        tools: &crate::RustCoverageToolIdentity,
+        generation: &str,
+        selector: &str,
+        test_binary_ids: Vec<String>,
+    ) {
+        store_entry_with_status(
+            req,
+            tools,
+            generation,
+            selector,
+            test_binary_ids,
+            TestStatus::Passed,
+        );
+    }
+
+    fn test_binary() -> crate::RustTestBinaryIdentity {
+        crate::RustTestBinaryIdentity {
+            id: "test-bin".to_string(),
+            executable: "/tmp/test-bin".to_string(),
+            digest: "0000000000000000".to_string(),
+        }
     }
 
     #[test]
@@ -178,5 +204,87 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{err:?}").contains("executable binding"));
+    }
+
+    #[test]
+    fn successor_validation_rejects_missing_metadata_and_failed_entries() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join("src")).unwrap();
+        std::fs::write(repo.path().join("Cargo.toml"), "[package]\n").unwrap();
+        std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let req = derived_fixture_request(repo.path());
+        let tools = witness_batch_tools();
+        let identity = batch_identity(&req, &tools).unwrap();
+
+        let missing_metadata = super::validate_successor_entries(
+            &req.cache_root,
+            &identity.generation_fingerprint,
+            &["alpha".to_string()],
+            &BTreeMap::new(),
+        )
+        .unwrap_err();
+        assert!(format!("{missing_metadata:?}").contains("missing executable metadata"));
+
+        store_entry_with_status(
+            &req,
+            &tools,
+            &identity.generation_fingerprint,
+            "alpha",
+            vec!["test-bin".to_string()],
+            TestStatus::Failed,
+        );
+        let expected = BTreeMap::from([("alpha".to_string(), vec!["test-bin".to_string()])]);
+        let failed = super::validate_successor_entries(
+            &req.cache_root,
+            &identity.generation_fingerprint,
+            &["alpha".to_string()],
+            &expected,
+        )
+        .unwrap_err();
+        assert!(format!("{failed:?}").contains("did not pass"));
+    }
+
+    #[test]
+    fn incremental_publish_rewrites_retained_entry_to_current_generation() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join("src")).unwrap();
+        std::fs::write(repo.path().join("Cargo.toml"), "[package]\n").unwrap();
+        std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let req = derived_fixture_request(repo.path());
+        let tools = witness_batch_tools();
+        let current = batch_identity(&req, &tools).unwrap();
+        let prior_generation = "prior-generation";
+        store_entry(
+            &req,
+            &tools,
+            prior_generation,
+            "alpha",
+            vec!["test-bin".to_string()],
+        );
+        let expected = BTreeMap::from([("alpha".to_string(), vec!["test-bin".to_string()])]);
+        let selectors = vec!["alpha".to_string()];
+        let counters = super::publish_incremental_derived_state(
+            &req,
+            &tools,
+            &current,
+            super::IncrementalPublishPlan {
+                prior_generation,
+                selectors: &selectors,
+                retained_selectors: &selectors,
+                expected_selector_binaries: &expected,
+                test_binaries: &[test_binary()],
+            },
+        )
+        .unwrap();
+
+        assert!(counters.entry_generation_count > 0);
+        let entry = super::load_generation_selector_entry(
+            &req.cache_root,
+            &current.generation_fingerprint,
+            "alpha",
+        )
+        .expect("current-generation retained entry");
+        assert_eq!(entry.generation_fingerprint, current.generation_fingerprint);
+        assert_eq!(entry.test_binary_ids, vec!["test-bin".to_string()]);
     }
 }

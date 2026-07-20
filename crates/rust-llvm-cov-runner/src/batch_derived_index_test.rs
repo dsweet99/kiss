@@ -349,3 +349,57 @@ fn reusable_snapshot_delta_reports_unchanged_modified_and_structural_cases() {
         RustSnapshotDelta::StructuralChange
     );
 }
+
+#[test]
+fn index_type_validators_reject_unsorted_invalid_paths_and_binaries() {
+    use crate::batch_derived_index_types::{OrdinarySourceDigestRecord, TestBinaryRecord};
+
+    assert!(
+        crate::batch_derived_index_types::validate_ordinary_source_digests(vec![
+            OrdinarySourceDigestRecord {
+                path: "src/b.rs".to_string(),
+                digest: "bbbbbbbbbbbbbbbb".to_string(),
+            },
+            OrdinarySourceDigestRecord {
+                path: "src/a.rs".to_string(),
+                digest: "aaaaaaaaaaaaaaaa".to_string(),
+            },
+        ])
+        .is_none()
+    );
+    assert!(
+        crate::batch_derived_index_types::validate_ordinary_source_digests(vec![
+            OrdinarySourceDigestRecord {
+                path: "../src/lib.rs".to_string(),
+                digest: "aaaaaaaaaaaaaaaa".to_string(),
+            },
+        ])
+        .is_none()
+    );
+    assert!(
+        crate::batch_derived_index_types::validate_ordinary_source_digests(vec![
+            OrdinarySourceDigestRecord {
+                path: "src/lib.rs".to_string(),
+                digest: "not-a-digest".to_string(),
+            },
+        ])
+        .is_none()
+    );
+
+    assert!(
+        crate::batch_derived_index_types::validate_test_binaries(vec![TestBinaryRecord {
+            id: String::new(),
+            executable: "/tmp/bin".to_string(),
+            digest: "aaaaaaaaaaaaaaaa".to_string(),
+        }])
+        .is_none()
+    );
+    assert!(
+        crate::batch_derived_index_types::validate_test_binaries(vec![TestBinaryRecord {
+            id: "bin".to_string(),
+            executable: "/tmp/bin".to_string(),
+            digest: "AAAAAAAAAAAAAAAA".to_string(),
+        }])
+        .is_none()
+    );
+}

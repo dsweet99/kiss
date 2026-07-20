@@ -148,6 +148,31 @@ fn direct_class_covering_and_call_witness() {
 }
 
 #[test]
+fn unreferenced_class_has_no_import_surface_covering_tests() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let module = tmp.path().join("mod.py");
+    std::fs::write(
+        &module,
+        "class Widget:\n    def ok(self):\n        return 1\n",
+    )
+    .unwrap();
+    let test_path = tmp.path().join("test_mod.py");
+    std::fs::write(&test_path, "def test_unrelated():\n    assert True\n").unwrap();
+    let paths = vec![module.clone(), test_path];
+    let parsed: Vec<_> = parse_files(&paths).unwrap().into_iter().flatten().collect();
+    let refs: Vec<_> = parsed.iter().collect();
+    let analysis = crate::test_refs::analyze_test_refs(&refs, None);
+    let unref_set: std::collections::HashSet<_> = analysis
+        .unreferenced
+        .iter()
+        .map(|d| (&d.file, d.name.as_str()))
+        .collect();
+
+    assert!(unref_set.contains(&(&module, "Widget")));
+    assert!(class_covering_tests(&analysis, &unref_set, &module, "Widget").is_none());
+}
+
+#[test]
 fn py_init_marker_empty_package_init_is_hundred() {
     let tmp = tempfile::TempDir::new().unwrap();
     let init = tmp.path().join("pkg/__init__.py");
@@ -178,27 +203,95 @@ fn py_init_marker_reexport_barrel_is_zero() {
 }
 
 #[test]
-fn sparse_module_gets_partial_credit() {
+fn py_init_marker_ignores_non_init_files() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let module = tmp.path().join("big.py");
-    let body: String = (0..30)
-        .map(|i| format!("def f{i}(x: int) -> int:\n    return x + {i}\n"))
-        .collect();
-    std::fs::write(&module, body).unwrap();
-    let test_path = tmp.path().join("test_big.py");
+    let module = tmp.path().join("pkg/module.py");
+    std::fs::create_dir_all(module.parent().unwrap()).unwrap();
+    std::fs::write(&module, "\"\"\"Not an init marker.\"\"\"\n").unwrap();
+    let parsed = parse_files(std::slice::from_ref(&module))
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .next()
+        .unwrap();
+
+    assert_eq!(super::py_init_marker_pct(&parsed), 0);
+}
+
+#[test]
+fn weighted_coverage_skips_definitions_without_parsed_file() {
+    let analysis = TestRefAnalysis {
+        definitions: vec![CodeDefinition {
+            file: PathBuf::from("missing.py"),
+            name: "missing".to_string(),
+            line: 1,
+            kind: CodeUnitKind::Function,
+            containing_class: None,
+        }],
+        test_references: Default::default(),
+        call_references: Default::default(),
+        unreferenced: Vec::new(),
+        coverage_map: Default::default(),
+    };
+
+    assert!(compute_py_weighted_file_pcts(&analysis, &[]).is_empty());
+}
+
+#[test]
+fn class_method_test_ids_find_nested_test_methods() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let module = tmp.path().join("svc.py");
+    std::fs::write(&module, "def value():\n    return 1\n").unwrap();
+    let test_path = tmp.path().join("test_svc.py");
     std::fs::write(
         &test_path,
-        "from big import f0\n\ndef test_one():\n    assert f0(1) == 2\n",
+        "from svc import value\n\nclass TestValue:\n    def test_value(self):\n        if value() == 1:\n            assert True\n",
     )
     .unwrap();
-    let paths = vec![module.clone(), test_path];
-    let parsed: Vec<_> = parse_files(&paths).unwrap().into_iter().flatten().collect();
-    let refs: Vec<_> = parsed.iter().collect();
-    let analysis = crate::test_refs::analyze_test_refs(&refs, None);
-    let weighted = compute_py_weighted_file_pcts(&analysis, &refs);
-    let pct = weighted.get(&module).copied().unwrap_or(0);
-    assert!(
-        pct > 0 && pct < 100,
-        "sparse module should get partial credit, got {pct}%"
+    let parsed: Vec<_> = parse_files(&[module.clone(), test_path.clone()])
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .collect();
+    let test_file = parsed.iter().find(|p| p.path == test_path).unwrap();
+
+    assert_eq!(
+        test_function_branches(test_file, "TestValue::test_value"),
+        1
     );
+    assert_eq!(test_function_branches(test_file, "TestValue::missing"), 0);
+}
+
+#[test]
+fn top_level_test_id_and_class_definition_lookup_are_supported() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let module = tmp.path().join("svc.py");
+    std::fs::write(
+        &module,
+        "class Widget:\n    pass\n\ndef value():\n    return 1\n",
+    )
+    .unwrap();
+    let test_path = tmp.path().join("test_svc.py");
+    std::fs::write(
+        &test_path,
+        "from svc import value\n\ndef test_value():\n    if value() == 1:\n        assert True\n",
+    )
+    .unwrap();
+    let parsed: Vec<_> = parse_files(&[module.clone(), test_path.clone()])
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .collect();
+    let module_file = parsed.iter().find(|p| p.path == module).unwrap();
+    let test_file = parsed.iter().find(|p| p.path == test_path).unwrap();
+
+    assert_eq!(test_function_branches(test_file, "test_value"), 1);
+    assert!(find_def_node_at_line(module_file.tree.root_node(), 1).is_some());
+    assert!(find_def_node_at_line(module_file.tree.root_node(), 999).is_none());
+    assert!(is_named_class(
+        module_file.tree.root_node().named_child(0).unwrap(),
+        &module_file.source,
+        "Widget"
+    ));
+    assert_eq!(test_function_branches(test_file, "missing_test"), 0);
 }

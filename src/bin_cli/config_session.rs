@@ -7,7 +7,10 @@ pub fn ensure_default_config_exists() {
     if local_config.exists() {
         return;
     }
-    run_mimic(&[".".to_string()], Some(local_config), None, &[]);
+    let code = run_mimic(&[".".to_string()], Some(local_config), None, &[]);
+    if code != 0 {
+        std::process::exit(code);
+    }
 }
 
 pub fn run_init_command(repo_path: &Path) -> i32 {

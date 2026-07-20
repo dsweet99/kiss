@@ -1,6 +1,6 @@
 use crate::bounded_concurrency_test_support::{
-    ConcurrencyFixture, assert_passed_outcomes, concurrency_request, read_max_active,
-    reset_concurrency_counters, setup_concurrency_fixture,
+    CONCURRENCY_TEST_SCRIPT, ConcurrencyFixture, assert_passed_outcomes, concurrency_request,
+    read_max_active, reset_concurrency_counters, setup_concurrency_fixture,
 };
 use crate::{PytestRunOutcome, TestStatus};
 
@@ -12,6 +12,16 @@ fn concurrency_fixture_witness_and_fields_are_exercised() {
     assert!(fixture.max_path.is_file());
     assert!(fixture.env.contains_key("STATE_PATH"));
     assert!(fixture.env.contains_key("LOCK_PATH"));
+}
+
+#[test]
+fn concurrency_fixture_declares_all_tests_at_module_scope() {
+    for name in ["test_a", "test_b", "test_c", "test_d"] {
+        assert!(
+            CONCURRENCY_TEST_SCRIPT.contains(&format!("\ndef {name}():")),
+            "{name} must be a top-level pytest function"
+        );
+    }
 }
 
 #[test]

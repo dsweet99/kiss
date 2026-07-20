@@ -177,3 +177,143 @@ fn call_router_dispatchers(
         0
     );
 }
+
+#[test]
+fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
+    let test = TestSectionConfig::default();
+
+    assert_eq!(
+        super::dispatch_test_command(
+            None,
+            Commands::Test {
+                mode: "invalid".to_string(),
+                validation_mode: None,
+                main_branch: None,
+                base_branch: None,
+                dry_run: true,
+                force: false,
+                metrics: false,
+                jobs: 1,
+                ignore: vec![],
+                fixture: None,
+                extra: vec![],
+            },
+            &test,
+        ),
+        2
+    );
+    assert_eq!(
+        super::dispatch_test_command(None, Commands::Rules, &test),
+        2
+    );
+}
+
+#[test]
+fn dispatch_private_routers_reject_commands_from_the_other_group() {
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = GateConfig::default();
+    let test = TestSectionConfig::default();
+    let cfg = options::TriConfig {
+        py: &py,
+        rs: &rs,
+        gate: &gate,
+    };
+
+    assert_eq!(dispatch_analyze(None, Commands::Rules, &cfg, &test), 2);
+    assert_eq!(
+        dispatch_tools(
+            None,
+            true,
+            None,
+            Commands::Check {
+                paths: vec![".".to_string()],
+                all: true,
+                ignore: vec![],
+                timing: false,
+                jobs: None,
+            },
+            &cfg,
+            &test,
+        ),
+        2
+    );
+}
+
+#[test]
+fn dispatch_private_routers_cover_additional_command_variants() {
+    let _cwd_guard = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("sample.py"), "def old():\n    return 1\n").unwrap();
+    let orig_dir = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = GateConfig::default();
+    let test = TestSectionConfig::default();
+    let cfg = options::TriConfig {
+        py: &py,
+        rs: &rs,
+        gate: &gate,
+    };
+
+    let _ = dispatch_analyze(
+        None,
+        Commands::Stats {
+            paths: vec![".".to_string()],
+            all: None,
+            table: false,
+            ignore: vec![],
+        },
+        &cfg,
+        &test,
+    );
+    let _ = dispatch_analyze(
+        None,
+        Commands::Mimic {
+            paths: vec![".".to_string()],
+            out: None,
+            ignore: vec![],
+        },
+        &cfg,
+        &test,
+    );
+    assert_eq!(
+        dispatch_analyze(None, Commands::Clamp { ignore: vec![] }, &cfg, &test),
+        0
+    );
+    let _ = dispatch_tools(
+        None,
+        true,
+        None,
+        Commands::Dry {
+            path: ".".to_string(),
+            filter_files: vec![],
+            shingle_size: 3,
+            minhash_size: 100,
+            lsh_bands: 20,
+            min_similarity: 0.9,
+            ignore: vec![],
+        },
+        &cfg,
+        &test,
+    );
+    let _ = dispatch_tools(
+        None,
+        true,
+        None,
+        Commands::Mv {
+            query: "sample.py::old".to_string(),
+            new_name: "new".to_string(),
+            paths: vec![".".to_string()],
+            to: None,
+            dry_run: true,
+            json: false,
+            ignore: vec![],
+        },
+        &cfg,
+        &test,
+    );
+
+    std::env::set_current_dir(orig_dir).unwrap();
+}

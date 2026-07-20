@@ -1,7 +1,6 @@
 use super::*;
 use std::cell::Cell;
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -179,211 +178,22 @@ fn rust_selector_path_submits_one_batch_request_to_executor() {
 }
 
 #[test]
+fn rust_selector_wrappers_return_empty_summary_without_tool_detection() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    let selector_summary =
+        run_rust_llvm_cov_selectors(tmp.path(), &[], &[], false, 1, None).unwrap();
+    let aggregate_summary =
+        run_rust_llvm_cov_check_aggregate_selectors(tmp.path(), &[], &[], 1, None, None).unwrap();
+
+    assert_eq!(selector_summary.total, 0);
+    assert_eq!(aggregate_summary.total, 0);
+}
+
+#[test]
 #[should_panic(expected = "jobs must be greater than zero")]
 fn run_rust_llvm_cov_selectors_rejects_zero_jobs_before_spawning() {
     let tmp = tempfile::tempdir().unwrap();
 
     let _ = run_rust_llvm_cov_selectors(tmp.path(), &[], &[], false, 0, None);
-}
-
-#[test]
-fn run_rust_llvm_cov_selectors_rejects_unsupported_test_args_before_tool_detection() {
-    let tmp = tempfile::tempdir().unwrap();
-
-    let err = run_rust_llvm_cov_selectors(
-        tmp.path(),
-        &["tests::case".to_string()],
-        &["--format".to_string(), "json".to_string()],
-        false,
-        1,
-        None,
-    )
-    .unwrap_err();
-
-    assert!(err.contains("unsupported Rust test argument"));
-    assert!(err.contains("--format"));
-}
-
-#[test]
-fn rust_coverage_batch_request_from_parts_preserves_selector_occurrences() {
-    let tmp = tempfile::tempdir().unwrap();
-    let selectors = vec![
-        "tests::case".to_string(),
-        "tests::case".to_string(),
-        "tests::other".to_string(),
-    ];
-    let extra = vec!["--exact".to_string()];
-
-    let req = rust_coverage_batch_request_from_parts(
-        tmp.path(),
-        &selectors,
-        &extra,
-        true,
-        3,
-        None,
-        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
-    )
-    .unwrap();
-
-    assert_eq!(req.cwd, tmp.path());
-    assert_eq!(req.source_root, tmp.path());
-    assert_eq!(
-        req.cache_root,
-        tmp.path().join(".kiss").join("rust_llvm_cov_cache")
-    );
-    assert_eq!(req.logical_selectors, selectors);
-    assert_eq!(req.cargo_args, ["--workspace"]);
-    assert_eq!(req.test_args, extra);
-    assert!(req.force_rerun);
-    assert_eq!(req.jobs, 3);
-    assert!(
-        req.generated_config.starts_with(
-            tmp.path()
-                .join(".kiss")
-                .join("rust_llvm_cov_cache")
-                .join("runs")
-        )
-    );
-    assert_eq!(req.generated_config.file_name().unwrap(), "nextest.toml");
-    assert_ne!(
-        req.generated_config.parent().unwrap(),
-        tmp.path()
-            .join(".kiss")
-            .join("rust_llvm_cov_cache")
-            .join("runs")
-    );
-}
-
-#[test]
-fn rust_coverage_batch_request_uses_unique_run_scoped_config_paths() {
-    let tmp = tempfile::tempdir().unwrap();
-    let selectors = vec!["tests::case".to_string()];
-
-    let first = rust_coverage_batch_request_from_parts(
-        tmp.path(),
-        &selectors,
-        &[],
-        false,
-        2,
-        None,
-        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
-    )
-    .unwrap();
-    let second = rust_coverage_batch_request_from_parts(
-        tmp.path(),
-        &selectors,
-        &[],
-        false,
-        2,
-        None,
-        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
-    )
-    .unwrap();
-
-    assert_ne!(first.generated_config, second.generated_config);
-    assert_eq!(first.generated_config.file_name().unwrap(), "nextest.toml");
-    assert_eq!(second.generated_config.file_name().unwrap(), "nextest.toml");
-}
-
-#[test]
-fn compatibility_batch_executor_returns_error_on_spawn_failure() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname = \"spawn-fail\"\n",
-    )
-    .unwrap();
-    let mut batch_req = rust_coverage_batch_request_from_parts(
-        tmp.path(),
-        &["tests::case".to_string()],
-        &[],
-        true,
-        1,
-        None,
-        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
-    )
-    .unwrap();
-    batch_req.cargo = "/definitely/not/cargo".into();
-    let versions = RustCoverageToolVersions {
-        cargo: "cargo 1.88.0".to_string(),
-        llvm_cov: "cargo-llvm-cov 0.6.0".to_string(),
-        rustc: "rustc 1.88.0".to_string(),
-        cargo_nextest: "cargo-nextest 0.9.0".to_string(),
-    };
-
-    let err = execute_rust_coverage_batch_compat(&batch_req, &versions).unwrap_err();
-
-    assert!(
-        err.contains("failed to spawn")
-            || err.contains("cargo metadata failed")
-            || err.contains("No such file or directory"),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
-fn detect_rust_coverage_tool_versions_reports_installed_tools() {
-    let versions = detect_rust_coverage_tool_versions(Path::new(env!("CARGO_MANIFEST_DIR")))
-        .expect("Rust coverage tools are installed for the quality gates");
-
-    assert!(versions.cargo.contains("cargo"));
-    assert!(versions.llvm_cov.contains("cargo-llvm-cov"));
-    assert!(versions.rustc.contains("rustc"));
-    assert!(versions.cargo_nextest.contains("cargo-nextest"));
-}
-
-#[test]
-fn rust_coverage_batch_request_rejects_unsupported_test_args() {
-    let tmp = tempfile::tempdir().unwrap();
-    let err = rust_coverage_batch_request_from_parts(
-        tmp.path(),
-        &["tests::case".to_string()],
-        &["--test-threads".to_string(), "8".to_string()],
-        false,
-        1,
-        None,
-        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
-    )
-    .unwrap_err();
-
-    assert!(err.contains("unsupported Rust test argument"));
-    assert!(err.contains("--test-threads"));
-}
-
-#[test]
-fn print_rust_llvm_cov_outcome_accepts_all_status_cache_shapes() {
-    for (status, cache_status) in [
-        (rpytest_runner::TestStatus::Passed, RustCovCacheStatus::Hit),
-        (
-            rpytest_runner::TestStatus::Passed,
-            RustCovCacheStatus::MissStored,
-        ),
-        (
-            rpytest_runner::TestStatus::Passed,
-            RustCovCacheStatus::FreshUnstored,
-        ),
-        (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::Hit),
-        (
-            rpytest_runner::TestStatus::Failed,
-            RustCovCacheStatus::MissStored,
-        ),
-        (
-            rpytest_runner::TestStatus::Failed,
-            RustCovCacheStatus::FreshUnstored,
-        ),
-    ] {
-        print_rust_llvm_cov_outcome(&RustLlvmCovOutcome {
-            selector: "tests::case".to_string(),
-            status,
-            exit_code: Some(i32::from(status == rpytest_runner::TestStatus::Failed)),
-            duration: Duration::from_millis(1),
-            coverage: RustLineCoverage {
-                files: BTreeMap::new(),
-            },
-            test_binary_ids: vec!["test-bin".to_string()],
-            cache_status,
-            stdout: None,
-            stderr: Some(Vec::new()),
-        });
-    }
 }

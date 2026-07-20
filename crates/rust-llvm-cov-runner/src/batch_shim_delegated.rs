@@ -22,6 +22,9 @@ const COVERAGE_BUILD_ENV_KEYS: &[&str] = &[
     "KISS_CHECK_RUNTIME_REFRESH_ACTIVE",
 ];
 
+#[cfg(test)]
+pub(crate) const COVERAGE_BUILD_ENV_KEYS_FOR_TEST: &[&str] = COVERAGE_BUILD_ENV_KEYS;
+
 pub(crate) fn spawn_delegated_piped_child(
     delegated: &[String],
     command: &[OsString],
@@ -158,5 +161,33 @@ mod tests {
             "LLVM_PROFILE_FILE",
             &profile_path.display().to_string()
         ));
+    }
+
+    #[test]
+    fn delegated_child_runs_command_through_nonempty_delegated_runner() {
+        let _lock = crate::test_support::shim_test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let go_path = tmp.path().join("go");
+        let profile_path = tmp.path().join("fresh.profraw");
+        let delegated = vec![
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "exec \"$@\"".to_string(),
+            "delegated-sh".to_string(),
+        ];
+        let command = vec![
+            OsString::from("/bin/sh"),
+            OsString::from("-c"),
+            OsString::from("printf delegated-ok"),
+        ];
+
+        let (child, identity) =
+            spawn_delegated_piped_child(&delegated, &command, &profile_path, &go_path).unwrap();
+        assert!(identity.is_some());
+        release_delegated_child_handshake(&go_path).unwrap();
+        let output = child.wait_with_output().unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8(output.stdout).unwrap(), "delegated-ok");
     }
 }

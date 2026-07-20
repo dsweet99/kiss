@@ -58,18 +58,17 @@ fn normalize_collect_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
 }
 
 fn format_collect_error(err: rpytest_runner::PytestCollectError) -> String {
-    use rpytest_runner::PytestCollectError;
     match err {
-        PytestCollectError::InvalidRequest(message) => {
+        rpytest_runner::PytestCollectError::InvalidRequest(message) => {
             format!("error: kiss test: invalid pytest collection request: {message}")
         }
-        PytestCollectError::Spawn { program, message } => {
+        rpytest_runner::PytestCollectError::Spawn { program, message } => {
             format!(
                 "error: kiss test: failed to spawn {} for pytest collection: {message}",
                 program.display()
             )
         }
-        PytestCollectError::CollectionFailed {
+        rpytest_runner::PytestCollectError::CollectionFailed {
             exit_code,
             stderr,
             stdout,
@@ -84,10 +83,10 @@ fn format_collect_error(err: rpytest_runner::PytestCollectError) -> String {
                 exit_code
             )
         }
-        PytestCollectError::InvalidOutput(message) => {
+        rpytest_runner::PytestCollectError::InvalidOutput(message) => {
             format!("error: kiss test: invalid pytest collection output: {message}")
         }
-        PytestCollectError::NodeidNormalization { nodeid, message } => {
+        rpytest_runner::PytestCollectError::NodeidNormalization { nodeid, message } => {
             format!("error: kiss test: invalid pytest nodeid '{nodeid}': {message}")
         }
     }
@@ -99,16 +98,19 @@ pub(crate) fn format_collect_error_for_test(err: rpytest_runner::PytestCollectEr
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn reset_python_collect_memo_for_tests() {
     COLLECT_MEMO.lock().unwrap().clear();
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn full_suite_subprocess_collects_for_tests() -> usize {
     FULL_SUITE_SUBPROCESS_COLLECTS.load(Ordering::SeqCst)
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn reset_full_suite_subprocess_collects_for_tests() {
     FULL_SUITE_SUBPROCESS_COLLECTS.store(0, Ordering::SeqCst);
 }
@@ -131,5 +133,9 @@ mod coverage_witness {
                 .contains("invalid pytest collection request")
         );
         reset_python_collect_memo_for_tests();
+        let before = full_suite_subprocess_collects_for_tests();
+        reset_full_suite_subprocess_collects_for_tests();
+        assert_eq!(full_suite_subprocess_collects_for_tests(), 0);
+        let _ = before;
     }
 }

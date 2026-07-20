@@ -65,11 +65,11 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct RustCoverageToolVersions {
-    cargo: String,
-    llvm_cov: String,
-    rustc: String,
-    cargo_nextest: String,
+pub(crate) struct RustCoverageToolVersions {
+    pub(crate) cargo: String,
+    pub(crate) llvm_cov: String,
+    pub(crate) rustc: String,
+    pub(crate) cargo_nextest: String,
 }
 
 #[derive(Clone, Debug)]
@@ -209,7 +209,7 @@ pub(crate) fn build_current_rust_test_executable_index(
 }
 
 #[allow(dead_code)]
-fn rust_coverage_tool_identity_from_versions(
+pub(crate) fn rust_coverage_tool_identity_from_versions(
     versions: &RustCoverageToolVersions,
 ) -> RustCoverageToolIdentity {
     RustCoverageToolIdentity {
@@ -326,3 +326,7 @@ mod metrics_tests;
 #[cfg(test)]
 #[path = "rust_llvm_cov_test.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "rust_llvm_cov_b_test.rs"]
+mod tests_b;
+

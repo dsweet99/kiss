@@ -1,5 +1,43 @@
 use super::*;
 
+
+fn write_python_entry(
+    repo_root: &std::path::Path,
+    name: &str,
+    selector: &str,
+    coverage: LineCoverage,
+) {
+    let path = python_coverage_cache_root(repo_root)
+        .unwrap()
+        .join("entries")
+        .join(format!("{name}.json"));
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let entry = serde_json::json!({
+        "schema_version": rslip::CACHE_SCHEMA_VERSION,
+        "nodeid": selector,
+        "status": TestStatus::Passed,
+        "exit_code": 0,
+        "duration": Duration::from_millis(1),
+        "coverage": coverage,
+    });
+    std::fs::write(path, serde_json::to_vec(&entry).unwrap()).unwrap();
+}
+
+fn write_rust_entry(
+    repo_root: &std::path::Path,
+    name: &str,
+    selector: &str,
+    coverage: rust_llvm_cov_runner::RustLineCoverage,
+) {
+    crate::test_runner::rust_coverage_index::write_test_entry(
+        repo_root,
+        name,
+        selector,
+        TestStatus::Passed,
+        coverage,
+    );
+}
+
 #[test]
 fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_changed_line_coverage()
  {

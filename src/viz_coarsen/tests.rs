@@ -177,3 +177,24 @@ fn test_choose_prefix_depth_and_group_nodes() {
     let groups = paths::group_nodes(&nodes, &per_paths, depth);
     assert!(!groups.is_empty());
 }
+
+#[test]
+fn test_path_coarsen_edge_branches() {
+    let nodes: Vec<String> = vec!["same".into(), "same".into(), "same".into(), "same".into()];
+    let empty_paths: BTreeMap<String, PathBuf> = BTreeMap::new();
+    let per_paths: Vec<Option<PathBuf>> = vec![None, None, None, None];
+
+    assert_eq!(paths::choose_prefix_depth(&nodes, &per_paths, 0, 3), 0);
+    assert!(paths::fast_communities_from_paths(&[], &empty_paths, 3).is_empty());
+
+    let merged = paths::merge_overflow(vec![vec![0], vec![1], vec![2], vec![3]], 2);
+    assert_eq!(merged.len(), 2);
+    assert_eq!(merged[1], vec![1, 2, 3]);
+
+    let (a, b) = paths::split_largest_once(&nodes, &[0, 1, 2, 3]);
+    assert_eq!(a, vec![0, 2]);
+    assert_eq!(b, vec![1, 3]);
+
+    let split = paths::split_until_target(&nodes, vec![vec![0, 1, 2, 3]], 3);
+    assert_eq!(split.len(), 3);
+}

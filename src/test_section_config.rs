@@ -114,6 +114,30 @@ impl TestSectionConfig {
 #[cfg(test)]
 mod tests {
     use super::TestSectionConfig;
+    use std::path::PathBuf;
+
+    struct CwdGuard {
+        original: PathBuf,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl CwdGuard {
+        fn enter(path: &std::path::Path) -> Self {
+            let lock = crate::cwd_test_lock::lock();
+            let original = std::env::current_dir().unwrap();
+            std::env::set_current_dir(path).unwrap();
+            Self {
+                original,
+                _lock: lock,
+            }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            std::env::set_current_dir(&self.original).unwrap();
+        }
+    }
 
     #[test]
     fn test_section_config_defaults_num_jobs_to_four() {
@@ -122,6 +146,8 @@ mod tests {
 
     #[test]
     fn test_section_config_reads_positive_num_jobs() {
+        let cwd = tempfile::TempDir::new().unwrap();
+        let _cwd_guard = CwdGuard::enter(cwd.path());
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), "[test]\nnum_jobs = 7\n").unwrap();
 
@@ -135,6 +161,8 @@ mod tests {
 
     #[test]
     fn test_section_config_rejects_nonpositive_num_jobs() {
+        let cwd = tempfile::TempDir::new().unwrap();
+        let _cwd_guard = CwdGuard::enter(cwd.path());
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), "[test]\nnum_jobs = 0\n").unwrap();
 
@@ -143,14 +171,10 @@ mod tests {
 
     #[test]
     fn test_section_config_try_load_rejects_local_nonpositive_num_jobs() {
-        let _cwd_guard = crate::cwd_test_lock::lock();
         let tmp = tempfile::TempDir::new().unwrap();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
+        let _cwd_guard = CwdGuard::enter(tmp.path());
         std::fs::write(".kissconfig", "[test]\nnum_jobs = 0\n").unwrap();
 
         assert!(TestSectionConfig::try_load().is_err());
-
-        std::env::set_current_dir(original).unwrap();
     }
 }

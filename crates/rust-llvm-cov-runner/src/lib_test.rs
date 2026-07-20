@@ -88,3 +88,47 @@ fn rust_cov_cache_entry_round_trips_outcome_fields() {
     assert_eq!(entry.status, TestStatus::Passed);
     assert_eq!(entry.coverage.files["src/lib.rs"], BTreeSet::from([1]));
 }
+
+#[test]
+fn public_error_conversions_and_variants_are_constructible() {
+    let io_err = std::io::Error::other("io");
+    assert!(matches!(
+        RustLlvmCovError::from(io_err),
+        RustLlvmCovError::Io(_)
+    ));
+
+    let json_err = serde_json::from_str::<serde_json::Value>("{").unwrap_err();
+    assert!(matches!(
+        RustLlvmCovError::from(json_err),
+        RustLlvmCovError::Json(_)
+    ));
+
+    let invalid = RustLlvmCovError::InvalidRequest("bad request".to_string());
+    assert!(format!("{invalid:?}").contains("bad request"));
+    let missing = RustLlvmCovError::MissingArtifact(std::path::PathBuf::from("missing.json"));
+    assert!(format!("{missing:?}").contains("missing.json"));
+}
+
+#[test]
+fn cache_status_and_binary_identity_values_round_trip() {
+    let statuses = [
+        RustCovCacheStatus::Hit,
+        RustCovCacheStatus::MissStored,
+        RustCovCacheStatus::FreshUnstored,
+    ];
+    assert_eq!(
+        serde_json::from_str::<RustCovCacheStatus>(&serde_json::to_string(&statuses[2]).unwrap())
+            .unwrap(),
+        RustCovCacheStatus::FreshUnstored
+    );
+    assert_ne!(statuses[0], statuses[1]);
+
+    let binary = super::RustTestBinaryIdentity {
+        id: "id".to_string(),
+        executable: "/tmp/bin".to_string(),
+        digest: "0123456789abcdef".to_string(),
+    };
+    let cloned = binary.clone();
+    assert_eq!(binary, cloned);
+    assert_eq!(format!("{binary:?}"), format!("{cloned:?}"));
+}

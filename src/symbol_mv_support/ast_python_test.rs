@@ -4,7 +4,7 @@ use super::super::ast_models::{ParseOutcome, ReferenceKind};
 use super::{
     collect_decorator, collect_identifier_children, collect_py_call, collect_py_def,
     collect_py_import, collect_raise_from, handle_decorated, name_text, parse_python,
-    push_import_name, recurse_py, walk_py,
+    push_import_name, python_identifier_is_value, recurse_py, walk_py,
 };
 
 #[test]
@@ -183,6 +183,42 @@ fn del_obj_attr_emits_attribute_reference() {
 }
 
 #[test]
+fn python_identifier_value_classification_distinguishes_bindings_and_uses() {
+    let src = "def f(arg):\n    value = arg\n    return value.attr\n";
+    let ParseOutcome::Success(_) = parse_python(src) else {
+        panic!("parse should succeed");
+    };
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&tree_sitter_python::LANGUAGE.into())
+        .unwrap();
+    let tree = parser.parse(src, None).unwrap();
+    let root = tree.root_node();
+    fn collect_identifiers<'a>(node: tree_sitter::Node<'a>, out: &mut Vec<tree_sitter::Node<'a>>) {
+        if node.kind() == "identifier" {
+            out.push(node);
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            collect_identifiers(child, out);
+        }
+    }
+    let mut identifiers = Vec::new();
+    collect_identifiers(root, &mut identifiers);
+
+    assert!(
+        identifiers
+            .iter()
+            .any(|node| !python_identifier_is_value(*node))
+    );
+    assert!(
+        identifiers
+            .iter()
+            .any(|node| python_identifier_is_value(*node))
+    );
+}
+
+#[test]
 fn decorator_call_site_emits_reference() {
     let src = "def helper(f):\n    return f\n\n@helper\ndef other():\n    return 1\n";
     let ParseOutcome::Success(res) = parse_python(src) else {
@@ -193,4 +229,26 @@ fn decorator_call_site_emits_reference() {
         .iter()
         .any(|r| &src[r.start..r.end] == "helper");
     assert!(any_helper_ref, "decorator @helper should be a reference");
+}
+
+#[test]
+fn parses_decorator_attributes_keyword_values_and_class_members() {
+    let src = "def helper():\n    return 1\n\n@pkg.decorate(helper)\nclass C:\n    def method(self):\n        return helper\n\ndef use():\n    return call(key=helper)\n";
+    let ParseOutcome::Success(res) = parse_python(src) else {
+        panic!("parse should succeed");
+    };
+
+    assert!(res.matching_definition("method", Some("C")).is_some());
+    assert!(
+        res.references
+            .iter()
+            .any(|r| r.kind == ReferenceKind::Method && &src[r.start..r.end] == "decorate")
+    );
+    assert!(
+        res.references
+            .iter()
+            .filter(|r| &src[r.start..r.end] == "helper")
+            .count()
+            >= 3
+    );
 }

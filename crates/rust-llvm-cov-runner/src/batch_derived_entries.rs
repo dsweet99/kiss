@@ -57,3 +57,121 @@ pub fn load_reusable_prior_selector_entries(
     let actual = by_selector.keys().cloned().collect::<Vec<_>>();
     (actual == population.selectors).then_some(by_selector)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rust_cov_cache::RustCovCacheEntry;
+    use crate::{RustCovCacheStatus, RustLlvmCovOutcome, RustTestBinaryIdentity};
+    use rpytest_runner::TestStatus;
+    use std::time::Duration;
+
+    fn population() -> RustPopulationState {
+        RustPopulationState {
+            input_fingerprint: "input".to_string(),
+            generation_fingerprint: "generation".to_string(),
+            selection_context_fingerprint: "selection".to_string(),
+            entries_fingerprint: "entries".to_string(),
+            selectors: vec!["test_a".to_string(), "test_b".to_string()],
+            line_index: BTreeMap::new(),
+            ordinary_source_digests: BTreeMap::new(),
+            test_binaries: BTreeMap::from([(
+                "bin".to_string(),
+                RustTestBinaryIdentity {
+                    id: "bin".to_string(),
+                    executable: "/tmp/bin".to_string(),
+                    digest: "digest".to_string(),
+                },
+            )]),
+        }
+    }
+
+    fn entry(selector: &str, generation: &str, binary_ids: Vec<String>) -> RustCovCacheEntry {
+        RustCovCacheEntry::from_outcome(
+            &RustLlvmCovOutcome {
+                selector: selector.to_string(),
+                status: TestStatus::Passed,
+                exit_code: Some(0),
+                duration: Duration::from_millis(1),
+                coverage: RustLineCoverage {
+                    files: BTreeMap::from([(
+                        "src/lib.rs".to_string(),
+                        [1_u32].into_iter().collect(),
+                    )]),
+                },
+                test_binary_ids: binary_ids,
+                cache_status: RustCovCacheStatus::Hit,
+                stdout: None,
+                stderr: None,
+            },
+            generation,
+        )
+    }
+
+    fn write_entry(cache_root: &Path, name: &str, entry: &RustCovCacheEntry) {
+        let entries = cache_root.join("entries");
+        fs::create_dir_all(&entries).unwrap();
+        fs::write(
+            entries.join(name),
+            serde_json::to_vec(entry).expect("entry json"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn loads_entries_when_generation_and_selector_population_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_entry(
+            tmp.path(),
+            "a.json",
+            &entry("test_a", "generation", vec!["bin".to_string()]),
+        );
+        write_entry(
+            tmp.path(),
+            "b.json",
+            &entry("test_b", "generation", vec!["bin".to_string()]),
+        );
+
+        let entries = load_reusable_prior_selector_entries(tmp.path(), &population()).unwrap();
+
+        assert_eq!(
+            entries.keys().cloned().collect::<Vec<_>>(),
+            ["test_a", "test_b"]
+        );
+        assert_eq!(entries["test_a"].test_binary_ids, vec!["bin".to_string()]);
+    }
+
+    #[test]
+    fn rejects_missing_or_unknown_binary_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_entry(
+            tmp.path(),
+            "a.json",
+            &entry("test_a", "generation", vec!["unknown".to_string()]),
+        );
+        write_entry(
+            tmp.path(),
+            "b.json",
+            &entry("test_b", "generation", vec!["bin".to_string()]),
+        );
+
+        assert!(load_reusable_prior_selector_entries(tmp.path(), &population()).is_none());
+    }
+
+    #[test]
+    fn ignores_stale_generation_entries_but_requires_complete_population() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_entry(
+            tmp.path(),
+            "a.json",
+            &entry("test_a", "old-generation", vec!["bin".to_string()]),
+        );
+        write_entry(
+            tmp.path(),
+            "b.json",
+            &entry("test_b", "generation", vec!["bin".to_string()]),
+        );
+
+        assert!(load_reusable_prior_selector_entries(tmp.path(), &population()).is_none());
+    }
+}

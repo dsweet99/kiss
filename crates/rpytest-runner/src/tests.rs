@@ -59,6 +59,38 @@ fn forkserver_runner_exposes_bounded_batch_api() {
 }
 
 #[test]
+fn forkserver_runner_run_many_handles_empty_batch_without_starting_controller() {
+    let got = ForkserverPytestRunner::new().run_many(Vec::new());
+
+    assert!(got.is_empty());
+}
+
+#[test]
+fn pytest_runner_from_bounded_fn_powers_all_entrypoints() {
+    let runner = PytestRunner::from_bounded_fn(|reqs, max_jobs| {
+        assert!(max_jobs > 0);
+        reqs.into_iter()
+            .map(|req| {
+                Ok(PytestRunOutcome {
+                    nodeid: req.nodeid,
+                    status: TestStatus::Passed,
+                    exit_code: Some(0),
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                    duration: Duration::ZERO,
+                    artifacts: BTreeMap::new(),
+                })
+            })
+            .collect()
+    });
+    let req = PytestRunRequest::witness();
+
+    assert_eq!(runner.run_one(req.clone()).unwrap().nodeid, req.nodeid);
+    assert_eq!(runner.run_many(vec![req.clone()]).len(), 1);
+    assert_eq!(runner.run_many_bounded(vec![req], 1).len(), 1);
+}
+
+#[test]
 fn api_structs_expose_expected_fields() {
     let artifact = crate::RequestedArtifact::witness();
     assert_eq!(artifact.name, "coverage");

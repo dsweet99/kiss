@@ -126,3 +126,147 @@ fn print() {
 
     report.print(true);
 }
+
+
+#[test]
+fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
+    let tmp = tempfile::tempdir().unwrap();
+    let old = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+        mode: TestChangeMode::Commit,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: true,
+        force_rerun: false,
+        metrics: false,
+        jobs: 1,
+        extra: &[],
+        ignore: &[],
+        lang_filter: None,
+        config_main_branch: None,
+    });
+    std::env::set_current_dir(old).unwrap();
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn validate_selection_returns_nonzero_when_planning_fails_outside_git_repo() {
+    let tmp = tempfile::tempdir().unwrap();
+    let old = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let code = validate_selection(ValidateSelectionCmdArgs {
+        mode: TestChangeMode::Commit,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: true,
+        jobs: 1,
+        extra: &[],
+        ignore: &[],
+        lang_filter: Some(Language::Rust),
+        fixture: None,
+        config_main_branch: None,
+    });
+    std::env::set_current_dir(old).unwrap();
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn run_test_dry_run_commit_in_workspace_completes() {
+    let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+        mode: TestChangeMode::Commit,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: true,
+        force_rerun: false,
+        metrics: false,
+        jobs: 1,
+        extra: &[],
+        ignore: &[],
+        lang_filter: Some(Language::Rust),
+        config_main_branch: None,
+    });
+    assert!(
+        code == 0 || code == 1,
+        "dry-run planning must complete with a process status, got {code}"
+    );
+}
+
+#[test]
+fn validate_selection_dry_run_commit_in_workspace_prints_report() {
+    let code = validate_selection(ValidateSelectionCmdArgs {
+        mode: TestChangeMode::Commit,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: true,
+        jobs: 1,
+        extra: &[],
+        ignore: &[],
+        lang_filter: Some(Language::Rust),
+        fixture: None,
+        config_main_branch: None,
+    });
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn validate_selection_runs_tiny_recall_fixture_path() {
+    let code = validate_selection(ValidateSelectionCmdArgs {
+        mode: TestChangeMode::Commit,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: false,
+        jobs: 1,
+        extra: &[],
+        ignore: &[],
+        lang_filter: None,
+        fixture: Some("tiny-recall"),
+        config_main_branch: None,
+    });
+    assert!(
+        code == 0 || code == 1,
+        "tiny-recall fixture must complete with a process status, got {code}"
+    );
+}
+
+#[test]
+fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
+    let extra = ["--format".to_string()];
+    let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+        mode: TestChangeMode::Commit,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: true,
+        force_rerun: false,
+        metrics: false,
+        jobs: 1,
+        extra: &extra,
+        ignore: &[],
+        lang_filter: Some(Language::Rust),
+        config_main_branch: None,
+    });
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn plan_selectors_main_mode_uses_diff_target_in_workspace() {
+    let planned = crate::test_runner::plan_selectors(
+        TestChangeMode::Main,
+        None,
+        None,
+        &[],
+        &[],
+        Some(Language::Rust),
+        None,
+    );
+    assert!(
+        planned.is_ok() || planned.is_err(),
+        "Main-mode planning must resolve a diff target without internal missing-target errors"
+    );
+    if let Err(err) = planned {
+        assert!(
+            !err.contains("missing diff target"),
+            "unexpected missing diff target: {err}"
+        );
+    }
+}

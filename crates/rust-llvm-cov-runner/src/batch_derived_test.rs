@@ -323,11 +323,10 @@ fn prune_obsolete_selective_generations_retains_population_and_current() {
     .unwrap();
     assert_eq!(pruned, 1);
     assert!(
-        req.cache_root
+        !req.cache_root
             .join("entries")
             .join("deadbeefdeadbeef.json")
             .exists()
-            == false
     );
     let manifest = crate::batch_derived_index::read_population_manifest(&req.cache_root)
         .expect("population manifest");

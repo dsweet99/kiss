@@ -73,8 +73,8 @@ pub(crate) fn load_check_runtime_coverage(
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RuntimeCoverageLoadError {
-    language: &'static str,
-    pub(super) reason: String,
+    pub(crate) language: &'static str,
+    pub(crate) reason: String,
 }
 
 impl RuntimeCoverageLoadError {

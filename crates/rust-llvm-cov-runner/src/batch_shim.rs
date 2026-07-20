@@ -17,8 +17,8 @@ mod batch_shim_write;
 pub(crate) use batch_shim_child::run_target_runner_shim_inner;
 #[cfg(test)]
 pub(crate) use batch_shim_child::{
-    ShimSignalForwarder, clear_shim_signal_forwarder, install_shim_signal_forwarder,
-    trigger_shim_forward_signal_for_test,
+    ShimSignalForwarder, clear_inherited_llvm_profile_file, clear_shim_signal_forwarder,
+    install_shim_signal_forwarder, trigger_shim_forward_signal_for_test,
 };
 #[cfg(test)]
 pub(crate) use batch_shim_write::{write_shim_metadata, write_shim_start_metadata};

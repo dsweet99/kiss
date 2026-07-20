@@ -34,6 +34,17 @@ fn test_touch_dynamic_import_helpers_for_static_coverage() {
 }
 
 #[test]
+fn test_dynamic_import_literal_forms() {
+    let mut parser = create_parser().unwrap();
+    let code =
+        "import importlib\nimportlib.import_module(r'''pkg.raw''')\n__import__(f'pkg.{name}')\n";
+    let imports = extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);
+
+    assert!(imports.contains(&"pkg.raw".to_string()));
+    assert!(!imports.iter().any(|item| item.contains("{name}")));
+}
+
+#[test]
 fn test_graph_imports_and_cycles() {
     let mut parser = create_parser().unwrap();
     assert!(

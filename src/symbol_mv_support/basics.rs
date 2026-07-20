@@ -58,3 +58,46 @@ pub fn gather_candidate_files(
         Language::Rust => rs_files,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detect_language_accepts_supported_extensions_case_insensitively() {
+        assert_eq!(
+            detect_language(Path::new("app.PY")).unwrap(),
+            Language::Python
+        );
+        assert_eq!(
+            detect_language(Path::new("lib.RS")).unwrap(),
+            Language::Rust
+        );
+        assert_eq!(
+            detect_language(Path::new("generated.inc")).unwrap(),
+            Language::Rust
+        );
+        assert!(detect_language(Path::new("README.md")).is_err());
+    }
+
+    #[test]
+    fn parse_symbol_shape_accepts_members_and_rejects_invalid_shapes() {
+        assert_eq!(
+            parse_symbol_shape("Thing.method", Language::Python).unwrap(),
+            ("Thing".to_string(), Some("method".to_string()))
+        );
+        assert_eq!(
+            parse_symbol_shape("function_name", Language::Rust).unwrap(),
+            ("function_name".to_string(), None)
+        );
+        assert!(parse_symbol_shape("A.b.c", Language::Python).is_err());
+        assert!(parse_symbol_shape("1bad", Language::Rust).is_err());
+    }
+
+    #[test]
+    fn valid_identifier_allows_underscores_and_ascii_digits_after_first_char() {
+        assert!(is_valid_identifier("_value_1", Language::Python));
+        assert!(!is_valid_identifier("1_value", Language::Python));
+        assert!(!is_valid_identifier("has-dash", Language::Rust));
+    }
+}

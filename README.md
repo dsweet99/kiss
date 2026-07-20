@@ -134,7 +134,7 @@ RULE: [Python] [imported_names_per_file < 30] imported_names_per_file is the max
 RULE: [Python] [cycle_size < 0] cycle_size is the maximum allowed number of modules participating in an import cycle.
 RULE: [Python] [indirect_dependencies < 10] indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).
 RULE: [Python] [dependency_depth < 3] dependency_depth is the maximum length of an import chain in the dependency graph.
-RULE: [Python] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of physical source lines per Python file covered by cached rslip runtime coverage. `kiss check` uses a current cache without running tests; when Python coverage is missing or stale, it refreshes the full Python test population before enforcing the gate.
+RULE: [Python] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of syntactically coverable source lines per Python file covered by cached rslip runtime coverage. `kiss check` uses a current cache without running tests; when Python coverage is missing or stale, it refreshes the full Python test population before enforcing the gate.
 RULE: [Python] [min_similarity >= 0.90] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 RULE: [Rust] [statements_per_function < 35] statements_per_function is the maximum number of statements in a Rust function/method body.
 RULE: [Rust] [positional_args < 8] positional_args is the maximum number of non-self parameters in a Rust function/method signature.
@@ -156,7 +156,7 @@ RULE: [Rust] [imported_names_per_file < 50] imported_names_per_file is the maxim
 RULE: [Rust] [cycle_size < 0] cycle_size is the maximum allowed number of modules participating in a dependency cycle.
 RULE: [Rust] [indirect_dependencies < 10] indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).
 RULE: [Rust] [dependency_depth < 3] dependency_depth is the maximum length of a module dependency chain in the dependency graph.
-RULE: [Rust] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of physical source lines per Rust file covered by cached llvm-cov runtime coverage. `kiss check` uses a current cache without running tests; when Rust coverage is stale, it reuses selector coverage only when the compiled test executable digest is unchanged, reruns invalidated selectors, and falls back to a full Rust test-population refresh whenever reuse cannot be proven safe.
+RULE: [Rust] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of syntactically coverable source lines per Rust file covered by cached llvm-cov runtime coverage. `kiss check` uses a current cache without running tests; when Rust coverage is stale, it reuses selector coverage only when the compiled test executable digest is unchanged, reruns invalidated selectors, and falls back to a full Rust test-population refresh whenever reuse cannot be proven safe.
 RULE: [Rust] [min_similarity >= 0.90] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 ```
 

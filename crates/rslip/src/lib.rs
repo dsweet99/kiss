@@ -350,6 +350,8 @@ fn python_version(python: &Path) -> String {
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_b;
+#[cfg(test)]
 mod tests_subprocess;
 #[cfg(test)]
 mod tests_types;

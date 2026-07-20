@@ -8,6 +8,7 @@ use super::{
 use crate::batch_output_channel::{
     OutputChannelServer, apply_output_channel_env, create_output_channel_config,
 };
+use crate::batch_shim::batch_shim_child::build_delegated_command;
 use crate::test_support::{make_executable, shim_metadata, shim_only_metadata, shim_test_env_lock};
 
 #[test]
@@ -188,6 +189,59 @@ fn target_runner_shim_reports_missing_command() {
 }
 
 #[test]
+fn nextest_list_phase_detection_reads_environment() {
+    let _env_guard = shim_test_env_lock();
+    // SAFETY: serialized by shim_test_env_lock.
+    unsafe {
+        std::env::remove_var("NEXTEST_TEST_PHASE");
+    }
+    assert!(!super::batch_shim_child::is_nextest_list_phase());
+
+    // SAFETY: serialized by shim_test_env_lock.
+    unsafe {
+        std::env::set_var("NEXTEST_TEST_PHASE", "list");
+    }
+    assert!(super::batch_shim_child::is_nextest_list_phase());
+
+    // SAFETY: serialized by shim_test_env_lock.
+    unsafe {
+        std::env::remove_var("NEXTEST_TEST_PHASE");
+    }
+}
+
+#[test]
+fn delegated_command_builder_and_runner_map_error_paths_are_covered() {
+    let direct = build_delegated_command(&[], &[OsString::from("bin"), OsString::from("arg")]);
+    assert_eq!(direct.get_program(), std::ffi::OsStr::new("bin"));
+    assert_eq!(
+        direct.get_args().collect::<Vec<_>>(),
+        vec![std::ffi::OsStr::new("arg")]
+    );
+
+    let delegated = build_delegated_command(
+        &["wrapper".to_string(), "--flag".to_string()],
+        &[OsString::from("bin")],
+    );
+    assert_eq!(delegated.get_program(), std::ffi::OsStr::new("wrapper"));
+    assert_eq!(
+        delegated.get_args().collect::<Vec<_>>(),
+        vec![std::ffi::OsStr::new("--flag"), std::ffi::OsStr::new("bin")]
+    );
+
+    let tmp = tempfile::tempdir().unwrap();
+    let runner_map = tmp.path().join("runner-map.json");
+    fs::write(&runner_map, b"{not-json").unwrap();
+    let err = super::run_target_runner_shim_inner(
+        tmp.path(),
+        &runner_map,
+        "x86_64-unknown-linux-gnu",
+        &[OsString::from("bin")],
+    )
+    .unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+}
+
+#[test]
 fn target_runner_shim_uses_exact_test_name_from_command() {
     let tmp = tempfile::tempdir().unwrap();
     let output = tmp.path().join("instances");
@@ -263,5 +317,27 @@ fn load_target_runner_shim_metadata_reads_sorted_json_records() {
     assert_eq!(
         loaded.into_iter().map(|item| item.id).collect::<Vec<_>>(),
         ["a", "b"]
+    );
+}
+
+#[test]
+fn shim_metadata_loaders_return_empty_for_missing_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let missing = tmp.path().join("missing");
+
+    assert!(
+        super::load_target_runner_shim_metadata(&missing)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        super::load_target_runner_list_metadata(&missing)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        super::load_live_shim_process_identities(&missing)
+            .unwrap()
+            .is_empty()
     );
 }

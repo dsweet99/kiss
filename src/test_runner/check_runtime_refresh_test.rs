@@ -221,3 +221,32 @@ fn test_binary(id: &str, digest: &str) -> rust_llvm_cov_runner::RustTestBinaryId
         digest: digest.to_string(),
     }
 }
+
+#[test]
+fn coverage_refresh_error_constructors_and_display_cover_all_arms() {
+    let lock = super::CoverageRefreshError::lock("Rust", "busy");
+    assert!(lock.to_string().contains("lock acquisition"));
+    let discovery = super::CoverageRefreshError::discovery("Python", "parse failed");
+    assert!(discovery.to_string().contains("test discovery"));
+    let publication = super::CoverageRefreshError::publication("Rust", "write failed");
+    assert!(publication.to_string().contains("publication"));
+    let validation = super::CoverageRefreshError::PostRefreshValidation {
+        language: "Rust",
+        reason: "missing aggregate".into(),
+    };
+    assert!(validation.to_string().contains("post-refresh validation"));
+    let _via_ctor = super::CoverageRefreshError::validation(
+        "Rust",
+        crate::test_runner::check_line_coverage::RuntimeCoverageLoadError {
+            language: "Rust",
+            reason: "missing aggregate".into(),
+        },
+    );
+    let exec = super::CoverageRefreshError::TestExecution {
+        language: "Rust",
+        total: 3,
+        failed: 1,
+        exit_code: 1,
+    };
+    assert!(exec.to_string().contains("1/3"));
+}

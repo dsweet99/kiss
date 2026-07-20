@@ -382,3 +382,14 @@ pub(crate) fn shim_metadata(id: &str) -> crate::batch_shim::BatchShimMetadata {
         output_frame_count: None,
     }
 }
+
+#[cfg(unix)]
+pub(crate) fn write_executable(path: std::path::PathBuf, contents: &str) -> std::path::PathBuf {
+    std::fs::write(&path, contents).unwrap();
+    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+    use std::os::unix::fs::PermissionsExt;
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&path, permissions).unwrap();
+    path
+}
+

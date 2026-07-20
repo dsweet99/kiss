@@ -5,13 +5,9 @@ use super::{
 use crate::batch_events::BatchCompilerArtifact;
 use crate::batch_export_catalog::object_paths_from_artifacts;
 use crate::batch_export_resolve::BinaryIdObjectMap;
-use crate::batch_export_tools::{
-    ExportTools, find_llvm_cov_in_path, find_llvm_profdata_in_path, find_llvm_readobj_in_path,
-    resolve_export_tools_from_env, resolve_export_tools_from_rustc, which_tool,
-};
+use crate::batch_export_tools::ExportTools;
 use crate::{RustLineCoverage, RustLlvmCovError};
 use std::collections::{BTreeMap, BTreeSet};
-use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -50,6 +46,20 @@ pub fn write_fake_profile(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fs::write(path, bytes)
 }
 
+
+fn export_argv_for_test() -> Vec<String> {
+    vec![
+        "llvm-profdata".to_string(),
+        "merge".to_string(),
+        "-sparse".to_string(),
+        "--num-threads=1".to_string(),
+        "llvm-cov".to_string(),
+        "export".to_string(),
+        "-format=text".to_string(),
+        "--threads=1".to_string(),
+    ]
+}
+
 #[test]
 fn object_paths_collect_unique_object_files_from_artifacts() {
     let artifacts = vec![BatchCompilerArtifact {
@@ -85,6 +95,29 @@ fn object_paths_for_executable_selects_only_matching_artifact_objects() {
 }
 
 #[test]
+fn object_paths_for_executable_matches_basename_and_suffix_forms() {
+    let artifacts = vec![
+        BatchCompilerArtifact {
+            executable: Some("/tmp/target/debug/deps/demo-abc".into()),
+            filenames: vec!["/tmp/demo.o".into()],
+        },
+        BatchCompilerArtifact {
+            executable: Some("relative/bin-two".into()),
+            filenames: vec!["/tmp/two.o".into()],
+        },
+    ];
+
+    assert_eq!(
+        object_paths_for_executable(&artifacts, Path::new("demo-abc")),
+        vec![PathBuf::from("/tmp/demo.o")]
+    );
+    assert_eq!(
+        object_paths_for_executable(&artifacts, Path::new("/repo/relative/bin-two")),
+        vec![PathBuf::from("/tmp/two.o")]
+    );
+}
+
+#[test]
 fn bounded_export_pool_never_exceeds_jobs() {
     let tmp = tempfile::tempdir().unwrap();
     let profile = tmp.path().join("inst.profraw");
@@ -117,6 +150,60 @@ fn bounded_export_pool_never_exceeds_jobs() {
     assert_eq!(results.len(), 6);
     assert_eq!(counters.export_jobs, 6);
     assert!(counters.max_active_exports <= 2);
+}
+
+#[test]
+fn bounded_export_preserves_request_order_and_propagates_worker_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let profile = tmp.path().join("inst.profraw");
+    write_fake_profile(&profile, b"profile").unwrap();
+    let requests = ["slow", "fast"]
+        .into_iter()
+        .map(|id| InstanceExportRequest {
+            instance_id: id.to_string(),
+            profile_path: profile.clone(),
+            objects: vec![PathBuf::from("/tmp/a.o")],
+        })
+        .collect::<Vec<_>>();
+    let (results, counters) = export_instances_bounded_with(
+        2,
+        tmp.path(),
+        &[PathBuf::from("/tmp/a.o")],
+        requests,
+        Arc::new(|request, _source_root, _catalog, _seed_objects| {
+            if request.instance_id == "slow" {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Ok(RustLineCoverage {
+                files: BTreeMap::from([(request.instance_id.clone(), BTreeSet::from([1]))]),
+            })
+        }),
+    )
+    .unwrap();
+    assert_eq!(counters.max_objects_per_export, 1);
+    assert_eq!(results[0].0, "slow");
+    assert_eq!(results[1].0, "fast");
+
+    let err = export_instances_bounded_with(
+        1,
+        tmp.path(),
+        &[PathBuf::from("/tmp/a.o")],
+        vec![InstanceExportRequest {
+            instance_id: "bad".to_string(),
+            profile_path: profile,
+            objects: vec![PathBuf::from("/tmp/a.o")],
+        }],
+        Arc::new(|request, _source_root, _catalog, _seed_objects| {
+            Err(RustLlvmCovError::InvalidRequest(format!(
+                "failed {}",
+                request.instance_id
+            )))
+        }),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("failed bad"))
+    );
 }
 
 #[test]
@@ -164,164 +251,145 @@ fn subprocess_exporter_returns_empty_coverage_without_objects() {
 }
 
 #[test]
-fn resolve_export_tools_honors_env_overrides() {
+fn subprocess_exporter_reports_profdata_merge_failure() {
     let tmp = tempfile::tempdir().unwrap();
-    let profdata = tmp.path().join("llvm-profdata");
-    let cov = tmp.path().join("llvm-cov");
-    let readobj = tmp.path().join("llvm-readobj");
-    fs::write(&profdata, b"").unwrap();
-    fs::write(&cov, b"").unwrap();
-    fs::write(&readobj, b"").unwrap();
-    // SAFETY: test-only env mutation restored by process exit.
-    unsafe {
-        std::env::set_var("LLVM_PROFDATA", &profdata);
-        std::env::set_var("LLVM_COV", &cov);
-        std::env::set_var("LLVM_READOBJ", &readobj);
-    }
-    let tools = resolve_export_tools_from_rustc(OsStr::new("rustc")).unwrap();
-    assert_eq!(tools.llvm_profdata, profdata);
-    assert_eq!(tools.llvm_cov, cov);
-    assert_eq!(tools.llvm_readobj, readobj);
-    // SAFETY: test-only env cleanup.
-    unsafe {
-        std::env::remove_var("LLVM_PROFDATA");
-        std::env::remove_var("LLVM_COV");
-        std::env::remove_var("LLVM_READOBJ");
-    }
-}
-
-#[test]
-fn resolve_export_tools_falls_back_to_path_lookup() {
-    let tools = resolve_export_tools_from_env().unwrap();
-    assert!(!tools.llvm_cov.as_os_str().is_empty());
-    assert!(!tools.llvm_profdata.as_os_str().is_empty());
-}
-
-#[test]
-fn private_tool_lookup_helpers_are_callable() {
-    let old_path = std::env::var_os("PATH").unwrap();
-    // SAFETY: test-only PATH mutation restored below.
-    unsafe {
-        std::env::set_var("PATH", "/definitely/not/on/path");
-    }
-    let cov = find_llvm_cov_in_path();
-    let profdata = find_llvm_profdata_in_path();
-    let readobj = find_llvm_readobj_in_path();
-    let missing = which_tool("definitely-not-a-tool-xyz");
-    // SAFETY: restore PATH for other tests.
-    unsafe {
-        std::env::set_var("PATH", old_path);
-    }
-    assert_eq!(cov, PathBuf::from("llvm-cov"));
-    assert_eq!(profdata, PathBuf::from("llvm-profdata"));
-    assert_eq!(readobj, PathBuf::from("llvm-readobj"));
-    assert!(missing.is_none());
-}
-
-#[test]
-fn which_tool_finds_executable_on_path() {
-    let tmp = tempfile::tempdir().unwrap();
-    let tool = tmp.path().join("llvm-cov");
-    fs::write(&tool, b"").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(&tool).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&tool, permissions).unwrap();
-    }
-    let old_path = std::env::var_os("PATH").unwrap();
-    // SAFETY: test-only PATH mutation restored below.
-    unsafe {
-        std::env::set_var(
-            "PATH",
-            format!("{}:{}", tmp.path().display(), old_path.to_string_lossy()),
-        );
-    }
-    let tools = resolve_export_tools_from_env().unwrap();
-    assert_eq!(tools.llvm_cov, tool);
-    // SAFETY: restore PATH for other tests.
-    unsafe {
-        std::env::set_var("PATH", old_path);
-    }
-}
-
-#[test]
-fn export_request_and_tools_types_are_constructible() {
-    let request = InstanceExportRequest {
-        instance_id: "id".to_string(),
-        profile_path: PathBuf::from("/tmp/id.profraw"),
-        objects: vec![PathBuf::from("/tmp/a.o")],
-    };
+    let profile = tmp.path().join("inst.profraw");
+    write_fake_profile(&profile, b"profile").unwrap();
     let tools = ExportTools {
-        llvm_profdata: PathBuf::from("/bin/llvm-profdata"),
-        llvm_cov: PathBuf::from("/bin/llvm-cov"),
-        llvm_readobj: PathBuf::from("/bin/llvm-readobj"),
+        llvm_profdata: PathBuf::from("/bin/false"),
+        llvm_cov: PathBuf::from("/bin/false"),
+        llvm_readobj: PathBuf::from("/bin/false"),
     };
-    assert_eq!(request.instance_id, "id");
-    assert_eq!(tools.llvm_cov, PathBuf::from("/bin/llvm-cov"));
-}
-
-#[test]
-fn subprocess_exporter_with_binary_id_map_is_constructible() {
-    let tools = ExportTools {
-        llvm_profdata: PathBuf::from("/bin/llvm-profdata"),
-        llvm_cov: PathBuf::from("/bin/llvm-cov"),
-        llvm_readobj: PathBuf::from("/bin/llvm-readobj"),
-    };
-    let exporter =
-        SubprocessInstanceExporter::with_binary_id_map(tools, None, BinaryIdObjectMap::default());
+    let exporter = SubprocessInstanceExporter::new(tools, None);
     let request = InstanceExportRequest {
         instance_id: "inst".to_string(),
-        profile_path: PathBuf::from("/tmp/inst.profraw"),
+        profile_path: profile,
+        objects: vec![PathBuf::from("/tmp/a.o")],
+    };
+
+    let err = exporter
+        .export_instance(&request, Path::new("/repo"), &[], &request.objects)
+        .unwrap_err();
+
+    assert!(format!("{err:?}").contains("llvm-profdata merge failed"));
+}
+
+#[test]
+fn subprocess_exporter_reports_missing_binary_id_map_after_merge() {
+    let tmp = tempfile::tempdir().unwrap();
+    let profile = tmp.path().join("inst.profraw");
+    write_fake_profile(&profile, b"profile").unwrap();
+    let object = tmp.path().join("a.o");
+    fs::write(&object, b"object").unwrap();
+    let tools = ExportTools {
+        llvm_profdata: PathBuf::from("/bin/true"),
+        llvm_cov: PathBuf::from("/bin/false"),
+        llvm_readobj: PathBuf::from("/bin/false"),
+    };
+    let exporter = SubprocessInstanceExporter::new(tools, None);
+    let request = InstanceExportRequest {
+        instance_id: "inst".to_string(),
+        profile_path: profile,
+        objects: vec![object.clone()],
+    };
+
+    let err = exporter
+        .export_instance(&request, tmp.path(), &[], &[object])
+        .unwrap_err();
+
+    assert!(format!("{err:?}").contains("binary-id object map"));
+}
+
+#[test]
+fn merge_profiles_rejects_empty_input_without_spawning_tool() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tools = ExportTools {
+        llvm_profdata: PathBuf::from("/bin/false"),
+        llvm_cov: PathBuf::from("/bin/false"),
+        llvm_readobj: PathBuf::from("/bin/false"),
+    };
+    let err = super::merge_profiles(&tools, &[], &tmp.path().join("out.profdata")).unwrap_err();
+
+    assert!(matches!(
+        err,
+        RustLlvmCovError::InvalidRequest(message)
+            if message.contains("requires at least one input")
+    ));
+}
+
+#[test]
+fn export_instance_coverage_parses_successful_tool_output() {
+    let tmp = tempfile::tempdir().unwrap();
+    let source = tmp.path().join("src.rs");
+    fs::write(&source, "fn f() {}\n").unwrap();
+    let profdata = tmp.path().join("inst.profdata");
+    fs::write(&profdata, b"profile").unwrap();
+    let object = tmp.path().join("a.o");
+    fs::write(&object, b"object").unwrap();
+    let json_path = tmp.path().join("cov.json");
+    fs::write(
+        &json_path,
+        crate::test_support::llvm_cov_json_for_file(&source),
+    )
+    .unwrap();
+    let llvm_cov = crate::test_support::write_executable(
+        tmp.path().join("llvm-cov"),
+        &format!("#!/bin/sh\ncat '{}'\n", json_path.display()),
+    );
+    let tools = ExportTools {
+        llvm_profdata: PathBuf::from("/bin/true"),
+        llvm_cov,
+        llvm_readobj: PathBuf::from("/bin/true"),
+    };
+    let coverage = super::export_instance_coverage(
+        &tools,
+        &profdata,
+        tmp.path(),
+        &[object],
+        Some(r"\.cargo/"),
+    )
+    .unwrap();
+    assert!(
+        coverage.files.keys().any(|k| k.contains("src.rs")) || !coverage.files.is_empty(),
+        "expected parsed coverage files, got {:?}",
+        coverage.files.keys().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn export_instance_coverage_reports_tool_failure() {
+    let tmp = tempfile::tempdir().unwrap();
+    let profdata = tmp.path().join("inst.profdata");
+    fs::write(&profdata, b"profile").unwrap();
+    let object = tmp.path().join("a.o");
+    fs::write(&object, b"object").unwrap();
+    let tools = ExportTools {
+        llvm_profdata: PathBuf::from("/bin/true"),
+        llvm_cov: PathBuf::from("/bin/false"),
+        llvm_readobj: PathBuf::from("/bin/true"),
+    };
+    let err = super::export_instance_coverage(&tools, &profdata, tmp.path(), &[object], None)
+        .unwrap_err();
+    assert!(format!("{err:?}").contains("llvm-cov export failed"));
+}
+
+#[test]
+fn with_binary_id_map_stores_map_for_later_exports() {
+    let tools = ExportTools {
+        llvm_profdata: PathBuf::from("/bin/false"),
+        llvm_cov: PathBuf::from("/bin/false"),
+        llvm_readobj: PathBuf::from("/bin/false"),
+    };
+    let map = BinaryIdObjectMap::default();
+    let exporter = SubprocessInstanceExporter::with_binary_id_map(tools, None, map);
+    let request = InstanceExportRequest {
+        instance_id: "inst".to_string(),
+        profile_path: PathBuf::from("/tmp/missing.profraw"),
         objects: Vec::new(),
     };
     let coverage = exporter
-        .export_instance(&request, Path::new("/repo"), &[], &[])
+        .export_instance(&request, Path::new("/tmp"), &[], &[])
         .unwrap();
     assert!(coverage.files.is_empty());
 }
 
-#[test]
-fn export_instances_bounded_drains_more_jobs_than_concurrency() {
-    let tmp = tempfile::tempdir().unwrap();
-    let fake = Arc::new(FakeInstanceExporter::new(BTreeMap::from([(
-        "a".to_string(),
-        RustLineCoverage {
-            files: BTreeMap::new(),
-        },
-    )])));
-    let fake_for_fn = fake.clone();
-    let make_request = |id: &str| InstanceExportRequest {
-        instance_id: id.to_string(),
-        profile_path: tmp.path().join(format!("{id}.profraw")),
-        objects: vec![PathBuf::from("/tmp/a.o")],
-    };
-    let requests = vec![make_request("a"), make_request("b"), make_request("c")];
-    let (results, counters) = export_instances_bounded_with(
-        2,
-        tmp.path(),
-        &[],
-        requests,
-        Arc::new(move |request, source_root, _catalog, _seed_objects| {
-            fake_for_fn.export_instance(request, source_root, &[], &[])
-        }),
-    )
-    .unwrap();
-    assert_eq!(results.len(), 3);
-    assert_eq!(counters.export_jobs, 3);
-    assert!(counters.max_active_exports <= 2);
-}
-
-fn export_argv_for_test() -> Vec<String> {
-    vec![
-        "llvm-profdata".to_string(),
-        "merge".to_string(),
-        "-sparse".to_string(),
-        "--num-threads=1".to_string(),
-        "llvm-cov".to_string(),
-        "export".to_string(),
-        "-format=text".to_string(),
-        "--threads=1".to_string(),
-    ]
-}

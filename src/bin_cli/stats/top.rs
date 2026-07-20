@@ -17,11 +17,21 @@ pub struct StatsTopArgs<'a> {
 type FreshCoverageItems = (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>);
 
 pub fn run_stats_top(args: StatsTopArgs<'_>) {
+    finalize_stats_top_status(run_stats_top_status(args));
+}
+
+pub(super) fn finalize_stats_top_status(status: i32) {
+    if status == 0 {
+        return;
+    }
+    std::process::exit(status);
+}
+
+pub(super) fn run_stats_top_status(args: StatsTopArgs<'_>) -> i32 {
     let (py_files, rs_files) =
         kiss::discovery::gather_files_by_lang(args.paths, args.lang_filter, args.ignore);
     if py_files.is_empty() && rs_files.is_empty() {
-        eprintln!("No source files found.");
-        std::process::exit(1);
+        return no_source_files_status();
     }
     println!(
         "kiss stats --all {n} - Top Outliers\nAnalyzed from: {paths}\n{prov}\n",
@@ -55,15 +65,23 @@ pub fn run_stats_top(args: StatsTopArgs<'_>) {
     let mut all_units = py_units;
     all_units.extend(rs_units);
     print_all_top_metrics(&all_units, args.n);
+    0
 }
 
-fn coverage_map_to_string_keys(map: HashMap<PathBuf, usize>) -> HashMap<String, usize> {
+fn no_source_files_status() -> i32 {
+    eprintln!("No source files found.");
+    1
+}
+
+pub(super) fn coverage_map_to_string_keys(
+    map: HashMap<PathBuf, usize>,
+) -> HashMap<String, usize> {
     map.into_iter()
         .map(|(p, v)| (p.display().to_string(), v))
         .collect()
 }
 
-fn merge_fresh_items(
+pub(super) fn merge_fresh_items(
     py: Option<FreshCoverageItems>,
     rs: Option<FreshCoverageItems>,
 ) -> Option<FreshCoverageItems> {
@@ -102,12 +120,13 @@ fn collect_py_units(
     collect_lang_units(LangCollect {
         files: py_files,
         cached_coverage,
-        parse: |files| match parse_files(files) {
-            Ok(r) => r.into_iter().filter_map(Result::ok).collect(),
-            Err(e) => {
-                eprintln!("error: failed to parse Python files: {e}");
-                Vec::new()
-            }
+        // parse_files currently always returns Ok(...); keep the Result surface explicit.
+        parse: |files| {
+            parse_files(files)
+                .unwrap_or_else(|_| Vec::new())
+                .into_iter()
+                .filter_map(Result::ok)
+                .collect()
         },
         build_graph: build_dependency_graph,
         analyze: |refs, graph| {
@@ -245,70 +264,13 @@ pub(super) fn append_cycle_units(
     }
 }
 
-type UnitMetricExtractor = fn(&kiss::UnitMetrics) -> Option<usize>;
-
 #[cfg(test)]
 pub(super) const AGGREGATE_ONLY_METRICS: &[&str] = &[];
 
-fn extractor_for_fn_core(metric_id: &str) -> Option<UnitMetricExtractor> {
-    match metric_id {
-        "statements_per_function" => Some(|u| u.statements),
-        "positional_args" => Some(|u| u.args_positional),
-        "keyword_only_args" => Some(|u| u.args_keyword_only),
-        "max_indentation_depth" => Some(|u| u.indentation),
-        "nested_function_depth" => Some(|u| u.nested_depth),
-        "returns_per_function" => Some(|u| u.returns),
-        "return_values_per_function" => Some(|u| u.return_values),
-        _ => None,
-    }
-}
+#[path = "top_extractors.rs"]
+mod top_extractors;
+pub(crate) use top_extractors::*;
 
-fn extractor_for_fn_extra(metric_id: &str) -> Option<UnitMetricExtractor> {
-    match metric_id {
-        "branches_per_function" => Some(|u| u.branches),
-        "local_variables_per_function" => Some(|u| u.locals),
-        "statements_per_try_block" => Some(|u| u.try_block_statements),
-        "boolean_parameters" => Some(|u| u.boolean_parameters),
-        "annotations_per_function" => Some(|u| u.annotations),
-        "calls_per_function" => Some(|u| u.calls),
-        "methods_per_class" => Some(|u| u.methods),
-        _ => None,
-    }
-}
-
-fn extractor_for_fn(metric_id: &str) -> Option<UnitMetricExtractor> {
-    extractor_for_fn_core(metric_id).or_else(|| extractor_for_fn_extra(metric_id))
-}
-
-fn extractor_for_file(metric_id: &str) -> Option<UnitMetricExtractor> {
-    match metric_id {
-        "statements_per_file" => Some(|u| u.file_statements),
-        "lines_per_file" => Some(|u| u.lines),
-        "functions_per_file" => Some(|u| u.file_functions),
-        "interface_types_per_file" => Some(|u| u.interface_types),
-        "concrete_types_per_file" => Some(|u| u.concrete_types),
-        "imported_names_per_file" => Some(|u| u.imports),
-        "inv_test_coverage" => Some(|u| u.inv_test_coverage),
-        _ => None,
-    }
-}
-
-fn extractor_for_graph(metric_id: &str) -> Option<UnitMetricExtractor> {
-    match metric_id {
-        "fan_in" => Some(|u| u.fan_in),
-        "fan_out" => Some(|u| u.fan_out),
-        "indirect_dependencies" => Some(|u| u.indirect_deps),
-        "dependency_depth" => Some(|u| u.dependency_depth),
-        "cycle_size" => Some(|u| u.cycle_size),
-        _ => None,
-    }
-}
-
-pub(super) fn extractor_for(metric_id: &str) -> Option<UnitMetricExtractor> {
-    extractor_for_fn(metric_id)
-        .or_else(|| extractor_for_file(metric_id))
-        .or_else(|| extractor_for_graph(metric_id))
-}
 
 pub fn print_all_top_metrics(units: &[kiss::UnitMetrics], n: usize) {
     for def in kiss::METRICS {
@@ -340,56 +302,3 @@ where
     }
 }
 
-#[cfg(test)]
-mod coverage_tests {
-    use super::*;
-
-    #[test]
-    fn stats_top_args_preserves_cli_inputs() {
-        let paths = vec!["src".to_string()];
-        let ignore = vec!["target".to_string()];
-        let py = Config::python_defaults();
-        let rs = Config::rust_defaults();
-        let gate = GateConfig::default();
-        let args = StatsTopArgs {
-            paths: &paths,
-            lang_filter: Some(Language::Rust),
-            ignore: &ignore,
-            n: 7,
-            py_config: &py,
-            rs_config: &rs,
-            gate_config: &gate,
-        };
-
-        assert_eq!(args.paths, ["src"]);
-        assert_eq!(args.lang_filter, Some(Language::Rust));
-        assert_eq!(args.ignore, ["target"]);
-        assert_eq!(args.n, 7);
-        assert_eq!(args.py_config.lines_per_file, py.lines_per_file);
-        assert_eq!(args.rs_config.lines_per_file, rs.lines_per_file);
-        assert_eq!(
-            args.gate_config.test_coverage_threshold,
-            gate.test_coverage_threshold
-        );
-    }
-
-    #[test]
-    fn lang_collect_empty_input_short_circuits_without_parsing() {
-        let files: Vec<PathBuf> = Vec::new();
-        let (units, fresh) = collect_lang_units(LangCollect {
-            files: &files,
-            cached_coverage: None,
-            parse: |_| panic!("empty input must not parse"),
-            build_graph: |_| panic!("empty input must not build graph"),
-            analyze: |_: &[&()], _: &kiss::DependencyGraph| panic!("empty input must not analyze"),
-            collect_detailed: |_: &[&()], _: Option<&kiss::DependencyGraph>| {
-                panic!("empty input must not collect metrics")
-            },
-            file_of: |_: &()| panic!("empty input has no definitions"),
-            item_of: |_: &()| panic!("empty input has no cache items"),
-        });
-
-        assert!(units.is_empty());
-        assert!(fresh.is_none());
-    }
-}

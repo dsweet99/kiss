@@ -25,6 +25,9 @@ mod bounded_concurrency_test_support_test;
 #[cfg(test)]
 mod forkserver_test;
 #[cfg(test)]
+#[path = "forkserver_timeout_test.rs"]
+mod forkserver_timeout_test;
+#[cfg(test)]
 mod runner_test;
 #[cfg(test)]
 mod tests;

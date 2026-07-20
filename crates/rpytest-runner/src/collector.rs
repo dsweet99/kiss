@@ -20,8 +20,8 @@ class _KissCollectReporter:
         sys.stdout.write("KISS_COLLECT_JSON:" + json.dumps(payload) + "\n")
 
 def main():
-    config = json.loads(sys.argv[1])
-    args = ["--collect-only", "-q"]
+    config = json.loads(sys.stdin.read())
+    args = ["--collect-only", "-q", "-o", "addopts="]
     args.extend(config.get("pytest_args", []))
     args.extend(config.get("paths", []))
     raise SystemExit(pytest.main(args, plugins=[_KissCollectReporter()]))
@@ -97,7 +97,7 @@ fn collect_subprocess(
     let config = collect_config_json(&req.paths, &req.pytest_args)?;
     let mut cmd = Command::new(&req.python);
     cmd.current_dir(&req.cwd);
-    cmd.stdin(Stdio::null());
+    cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     cmd.env_remove("PYTEST_ADDOPTS");
@@ -106,12 +106,26 @@ fn collect_subprocess(
         cmd.env(key, value);
     }
     cmd.arg("-c").arg(PYTEST_COLLECT_MAIN);
-    cmd.arg(&config);
 
-    let output = cmd.output().map_err(|err| PytestCollectError::Spawn {
+    let mut child = cmd.spawn().map_err(|err| PytestCollectError::Spawn {
         program: req.python.clone(),
         message: err.to_string(),
     })?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        stdin
+            .write_all(config.as_bytes())
+            .map_err(|err| PytestCollectError::Spawn {
+                program: req.python.clone(),
+                message: err.to_string(),
+            })?;
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|err| PytestCollectError::Spawn {
+            program: req.python.clone(),
+            message: err.to_string(),
+        })?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let parsed = parse_collect_payload(&stdout)?;

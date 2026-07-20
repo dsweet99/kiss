@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -101,62 +102,71 @@ fn resolve_objects_by_binary_ids(
     binary_id_map: &BinaryIdObjectMap,
 ) -> Result<Vec<PathBuf>, RustLlvmCovError> {
     let mut resolved = Vec::new();
+    let mut unmatched = Vec::new();
     for id in profile_ids {
-        resolved.push(resolve_object_for_binary_id(
-            tools,
-            profdata,
-            catalog,
-            seed_objects,
-            binary_id_map,
-            id,
-        )?);
+        match try_resolve_object_for_binary_id(tools, catalog, seed_objects, binary_id_map, id)? {
+            Some(path) => resolved.push(path),
+            None => unmatched.push(id.clone()),
+        }
     }
     resolved.sort();
     resolved.dedup();
-    if !objects_satisfy_profile(tools, profdata, &resolved) {
+    if unmatched.is_empty() {
+        if !objects_satisfy_profile(tools, profdata, &resolved) {
+            return Err(RustLlvmCovError::InvalidRequest(format!(
+                "binary-id-resolved objects {:?} do not satisfy profile {}",
+                resolved,
+                profdata.display()
+            )));
+        }
+        return Ok(resolved);
+    }
+    // Nested coverage / deleted artifacts can leave orphan binary ids in a
+    // merged profile. Keep seed objects whose build-ids are still present.
+    resolve_with_orphan_profile_ids(tools, profdata, profile_ids, seed_objects, resolved, &unmatched)
+}
+
+fn resolve_with_orphan_profile_ids(
+    tools: &ExportTools,
+    profdata: &Path,
+    profile_ids: &[String],
+    seed_objects: &[PathBuf],
+    mut resolved: Vec<PathBuf>,
+    unmatched: &[String],
+) -> Result<Vec<PathBuf>, RustLlvmCovError> {
+    let profile_id_set: BTreeSet<&str> = profile_ids.iter().map(String::as_str).collect();
+    let mut covered_seeds = Vec::new();
+    for seed in seed_objects {
+        if let Some(id) = read_object_binary_id(tools, seed)?
+            && profile_id_set.contains(id.as_str())
+        {
+            covered_seeds.push(seed.clone());
+        }
+    }
+    if covered_seeds.is_empty() {
+        let expected_id = unmatched.first().map(String::as_str).unwrap_or("unknown");
         return Err(RustLlvmCovError::InvalidRequest(format!(
-            "binary-id-resolved objects {:?} do not satisfy profile {}",
-            resolved,
+            "no catalog object matched profile binary id `{expected_id}` for {}",
             profdata.display()
         )));
     }
+    resolved.extend(covered_seeds);
+    resolved.sort();
+    resolved.dedup();
     Ok(resolved)
 }
 
-fn resolve_object_for_binary_id(
-    tools: &ExportTools,
-    profdata: &Path,
-    catalog: &[PathBuf],
-    seed_objects: &[PathBuf],
+fn try_resolve_object_for_binary_id(
+    _tools: &ExportTools,
+    _catalog: &[PathBuf],
+    _seed_objects: &[PathBuf],
     binary_id_map: &BinaryIdObjectMap,
     expected_id: &str,
-) -> Result<PathBuf, RustLlvmCovError> {
-    if let Some(path) = binary_id_map.lookup(expected_id) {
-        return Ok(path.clone());
-    }
-    let mut search_paths = catalog
-        .iter()
-        .chain(seed_objects.iter())
-        .collect::<Vec<_>>();
-    search_paths.sort();
-    search_paths.dedup();
-    let mut matches = Vec::new();
-    for object in search_paths {
-        if read_object_binary_id(tools, object)?.as_deref() == Some(expected_id) {
-            matches.push(object.clone());
-        }
-    }
-    match matches.len() {
-        0 => Err(RustLlvmCovError::InvalidRequest(format!(
-            "no catalog object matched profile binary id `{expected_id}` for {}",
-            profdata.display()
-        ))),
-        1 => Ok(matches[0].clone()),
-        _ => Err(RustLlvmCovError::InvalidRequest(format!(
-            "ambiguous catalog objects {:?} for profile binary id `{expected_id}`",
-            matches
-        ))),
-    }
+) -> Result<Option<PathBuf>, RustLlvmCovError> {
+    // The catalog map is authoritative. Rescanning every object with
+    // llvm-readobj on each miss is O(orphans × catalog) and pathologically
+    // slow for large binaries; orphan seeds are handled separately.
+    Ok(binary_id_map.lookup(expected_id).cloned())
 }
 
 fn read_object_binary_id(
@@ -181,3 +191,7 @@ fn read_object_binary_id(
 #[cfg(test)]
 #[path = "batch_export_resolve_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "batch_export_resolve_orphan_test.rs"]
+mod orphan_tests;

@@ -1,5 +1,13 @@
 #[path = "batch_process_tree_reap.rs"]
 mod batch_process_tree_reap;
+#[path = "batch_process_tree_groups.rs"]
+mod batch_process_tree_groups;
+
+pub(crate) use batch_process_tree_groups::{
+    identity_still_valid, process_group_alive, signal_validated_process_group,
+};
+#[allow(unused_imports)] // re-exported for unit tests via `super::`
+pub(crate) use batch_process_tree_groups::signal_process_group;
 
 use std::io;
 use std::process::{Child, Command};
@@ -57,7 +65,6 @@ impl BatchScopeInterruptGuard {
         let registry = Arc::new(ProcessTreeRegistry::default());
         let interrupted = Arc::new(AtomicBool::new(false));
         register_batch_scope_sigint(Arc::clone(&registry), Arc::clone(&interrupted))?;
-        #[cfg(unix)]
         install_sigint_handler(Arc::clone(&registry), Arc::clone(&interrupted))?;
         Ok(Self)
     }
@@ -87,7 +94,6 @@ impl BatchProcessTreeGuard {
         }
         let registry = Arc::new(ProcessTreeRegistry::default());
         let interrupted = Arc::new(AtomicBool::new(false));
-        #[cfg(unix)]
         install_sigint_handler(Arc::clone(&registry), Arc::clone(&interrupted))?;
         install_child_subreaper()?;
         Ok(Self {
@@ -116,17 +122,7 @@ impl BatchProcessTreeGuard {
         {
             let registry = Arc::clone(&self.registry);
             unsafe {
-                command.pre_exec(move || {
-                    libc::setpgid(0, 0);
-                    let pgid = libc::getpgid(0);
-                    if pgid > 0 {
-                        registry.record(ProcessGroupIdentity {
-                            pid: libc::getpid() as u32,
-                            pgid: pgid as u32,
-                        });
-                    }
-                    Ok(())
-                });
+                command.pre_exec(move || configure_batch_child_process_group(registry.as_ref()));
             }
         }
         command.spawn()
@@ -268,6 +264,15 @@ fn install_sigint_handler(
     Ok(())
 }
 
+#[cfg(not(unix))]
+fn install_sigint_handler(
+    registry: Arc<ProcessTreeRegistry>,
+    interrupted: Arc<AtomicBool>,
+) -> io::Result<()> {
+    let _ = (registry, interrupted);
+    Ok(())
+}
+
 fn clear_sigint_handler() {
     #[cfg(unix)]
     {
@@ -281,6 +286,26 @@ fn clear_sigint_handler() {
                 *slot = None;
             }
         }
+    }
+}
+
+#[cfg(unix)]
+fn configure_batch_child_process_group(registry: &ProcessTreeRegistry) -> std::io::Result<()> {
+    if unsafe { libc::setpgid(0, 0) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    record_current_process_group(registry);
+    Ok(())
+}
+
+#[cfg(unix)]
+fn record_current_process_group(registry: &ProcessTreeRegistry) {
+    let pgid = unsafe { libc::getpgid(0) };
+    if pgid > 0 {
+        registry.record(ProcessGroupIdentity {
+            pid: std::process::id(),
+            pgid: pgid as u32,
+        });
     }
 }
 
@@ -302,48 +327,6 @@ pub fn record_child_process_group(registry: &ProcessTreeRegistry, child: &Child)
     {
         let _ = (registry, child);
     }
-}
-
-pub(crate) fn identity_still_valid(identity: &ProcessGroupIdentity) -> bool {
-    if identity.pid == 0 || identity.pgid == 0 {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        let pid = identity.pid as i32;
-        if unsafe { libc::kill(pid, 0) } != 0 {
-            return false;
-        }
-        let pgid = unsafe { libc::getpgid(pid) };
-        pgid > 0 && pgid as u32 == identity.pgid
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = identity;
-        false
-    }
-}
-
-pub(crate) fn signal_validated_process_group(identity: &ProcessGroupIdentity, signal: i32) {
-    if identity_still_valid(identity) {
-        signal_process_group(identity.pgid, signal);
-    }
-}
-
-fn signal_process_group(pgid: u32, signal: i32) {
-    if pgid == 0 {
-        return;
-    }
-    unsafe {
-        libc::killpg(pgid as i32, signal);
-    }
-}
-
-fn process_group_alive(pgid: u32) -> bool {
-    if pgid == 0 {
-        return false;
-    }
-    unsafe { libc::killpg(pgid as i32, 0) == 0 }
 }
 
 #[cfg(test)]

@@ -5,6 +5,8 @@ mod options;
 
 #[cfg(test)]
 mod test_dispatch;
+#[cfg(test)]
+mod test_dispatch_b;
 
 use crate::bin_cli::args::{Cli, Commands, parse_test_command_action};
 use crate::bin_cli::config_session::run_init_command;
@@ -161,43 +163,44 @@ fn dispatch_test_command(
     command: Commands,
     test_section: &TestSectionConfig,
 ) -> i32 {
-    let Commands::Test {
-        mode,
-        validation_mode,
-        main_branch,
-        base_branch,
-        dry_run,
-        force,
-        metrics,
-        jobs,
-        ignore,
-        fixture,
-        extra,
-    } = command
-    else {
-        return 2;
-    };
-    let action = match parse_test_command_action(&mode, validation_mode) {
-        Ok(action) => action,
-        Err(e) => {
-            eprintln!("error: kiss test: {e}");
-            return 2;
+    match command {
+        Commands::Test {
+            mode,
+            validation_mode,
+            main_branch,
+            base_branch,
+            dry_run,
+            force,
+            metrics,
+            jobs,
+            ignore,
+            fixture,
+            extra,
+        } => {
+            let action = match parse_test_command_action(&mode, validation_mode) {
+                Ok(action) => action,
+                Err(e) => {
+                    eprintln!("error: kiss test: {e}");
+                    return 2;
+                }
+            };
+            dispatch_test(TestDispatchOptions {
+                lang,
+                action,
+                main_branch,
+                base_branch,
+                dry_run,
+                force,
+                metrics,
+                jobs,
+                ignore,
+                fixture,
+                extra,
+                test_cfg: test_section,
+            })
         }
-    };
-    dispatch_test(TestDispatchOptions {
-        lang,
-        action,
-        main_branch,
-        base_branch,
-        dry_run,
-        force,
-        metrics,
-        jobs,
-        ignore,
-        fixture,
-        extra,
-        test_cfg: test_section,
-    })
+        _ => 2,
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -213,18 +216,23 @@ pub fn dispatch(
         rs: rs_config,
         gate: gate_config,
     };
-    let Cli {
-        lang,
-        defaults,
-        config,
-        command,
-    } = cli;
-    match command {
-        Commands::Check { .. }
-        | Commands::Stats { .. }
-        | Commands::Mimic { .. }
-        | Commands::Clamp { .. }
-        | Commands::Init { .. } => dispatch_analyze(lang, command, &cfg, test_section),
-        _ => dispatch_tools(lang, defaults, config, command, &cfg, test_section),
+    match cli {
+        Cli {
+            lang,
+            defaults: _,
+            config: _,
+            command:
+                command @ (Commands::Check { .. }
+                | Commands::Stats { .. }
+                | Commands::Mimic { .. }
+                | Commands::Clamp { .. }
+                | Commands::Init { .. }),
+        } => dispatch_analyze(lang, command, &cfg, test_section),
+        Cli {
+            lang,
+            defaults,
+            config,
+            command,
+        } => dispatch_tools(lang, defaults, config, command, &cfg, test_section),
     }
 }

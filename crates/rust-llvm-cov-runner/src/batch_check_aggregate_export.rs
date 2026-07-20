@@ -15,6 +15,16 @@ use crate::batch_shim::BatchShimMetadata;
 use crate::batch_shim_lookup::resolve_shim_metadata;
 use crate::{RustLineCoverage, RustLlvmCovError};
 
+type CheckAggregateExportFn = Arc<
+    dyn Fn(
+            &CheckAggregateExportRequest,
+            &Path,
+            &[PathBuf],
+        ) -> Result<(String, RustLineCoverage), RustLlvmCovError>
+        + Send
+        + Sync,
+>;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckAggregateExportRequest {
     pub binary_id: String,
@@ -143,10 +153,14 @@ pub(crate) fn export_check_aggregates_bounded(
     }
     let tools = resolve_export_tools_from_rustc(std::ffi::OsStr::new("rustc"))?;
     let binary_id_map = BinaryIdObjectMap::build(&tools, catalog)?;
-    let exporter = Arc::new(CheckAggregateExporter {
+    let exporter = CheckAggregateExporter {
         tools,
         binary_id_map,
-    });
+    };
+    let exporter: CheckAggregateExportFn =
+        Arc::new(move |request, source_root, catalog| {
+            exporter.export_binary(request, source_root, catalog)
+        });
     export_check_aggregates_bounded_with(jobs, source_root, catalog, requests, exporter)
 }
 
@@ -155,7 +169,7 @@ fn export_check_aggregates_bounded_with(
     source_root: &Path,
     catalog: &[PathBuf],
     requests: Vec<CheckAggregateExportRequest>,
-    exporter: Arc<CheckAggregateExporter>,
+    exporter: CheckAggregateExportFn,
 ) -> Result<(BTreeMap<String, RustLineCoverage>, ExportCounters), RustLlvmCovError> {
     assert!(jobs > 0, "jobs must be greater than zero");
     if requests.is_empty() {
@@ -169,7 +183,7 @@ struct ExportScheduler {
     source_root: PathBuf,
     catalog: Vec<PathBuf>,
     requests: Vec<CheckAggregateExportRequest>,
-    exporter: Arc<CheckAggregateExporter>,
+    exporter: CheckAggregateExportFn,
     active: Arc<Mutex<usize>>,
     tx: mpsc::Sender<(usize, CheckAggregateExportResult)>,
     rx: mpsc::Receiver<(usize, CheckAggregateExportResult)>,
@@ -184,7 +198,7 @@ impl ExportScheduler {
         source_root: &Path,
         catalog: &[PathBuf],
         requests: Vec<CheckAggregateExportRequest>,
-        exporter: Arc<CheckAggregateExporter>,
+        exporter: CheckAggregateExportFn,
     ) -> Self {
         let (tx, rx) = mpsc::channel();
         let counters = ExportCounters {
@@ -274,7 +288,7 @@ impl ExportScheduler {
 }
 
 struct CheckAggregateExportContext {
-    exporter: Arc<CheckAggregateExporter>,
+    exporter: CheckAggregateExportFn,
     source_root: PathBuf,
     catalog: Vec<PathBuf>,
     active: Arc<Mutex<usize>>,
@@ -294,10 +308,7 @@ fn spawn_check_aggregate_export(
             let mut guard = context.active.lock().expect("active lock");
             *guard += 1;
         }
-        let outcome =
-            context
-                .exporter
-                .export_binary(&request, &context.source_root, &context.catalog);
+        let outcome = (context.exporter)(&request, &context.source_root, &context.catalog);
         {
             let mut guard = context.active.lock().expect("active lock");
             *guard = guard.saturating_sub(1);
@@ -323,7 +334,9 @@ impl CheckAggregateExporter {
             .profile_paths
             .first()
             .and_then(|path| path.parent())
-            .ok_or_else(|| RustLlvmCovError::InvalidRequest("profile path has no parent".into()))?;
+            .ok_or_else(|| {
+                RustLlvmCovError::InvalidRequest("profile path has no parent".into())
+            })?;
         let profdata = profile_dir.join(format!(
             "check-aggregate-{}.profdata",
             stable_name(&request.binary_id)
@@ -342,7 +355,11 @@ impl CheckAggregateExporter {
     }
 }
 
-fn stable_name(value: &str) -> String {
+pub(super) fn stable_name(value: &str) -> String {
     let h = crate::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, value.as_bytes());
     format!("{h:016x}")
 }
+
+#[cfg(test)]
+#[path = "batch_check_aggregate_export_test.rs"]
+mod tests;

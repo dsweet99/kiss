@@ -114,7 +114,7 @@ fn toml_basic_string(value: &str) -> String {
 }
 
 fn target_runner_argv(req: &RustCoverageBatchRequest, runner_map_path: &Path) -> Vec<String> {
-    let kiss_bin = target_runner_shim_program();
+    let kiss_bin = crate::batch_plan_target_runner_program::target_runner_shim_program();
     let output_dir = super::batch_plan::target_runner_output_dir(req);
     vec![
         kiss_bin,
@@ -129,22 +129,13 @@ fn target_runner_argv(req: &RustCoverageBatchRequest, runner_map_path: &Path) ->
     ]
 }
 
-fn target_runner_shim_program() -> String {
-    if let Some(path) = std::env::var_os("KISS_RUST_LLVM_COV_TARGET_RUNNER_SHIM") {
-        return path.to_string_lossy().to_string();
-    }
-    std::env::current_exe()
-        .ok()
-        .map(|path| path.to_string_lossy().to_string())
-        .unwrap_or_else(|| "kiss".to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         build_target_runner_cargo_config_toml, escape_nextest_regex, nextest_filter_string,
-        nextest_test_threads, target_runner_shim_program, toml_basic_string,
+        nextest_test_threads, toml_basic_string,
     };
+    use std::path::Path;
 
     #[test]
     fn escaping_preserves_nextest_and_toml_string_boundaries() {
@@ -162,28 +153,12 @@ mod tests {
         assert_eq!(toml_basic_string(value), r#""quote\"slash\\line\n""#);
     }
 
-    use std::path::Path;
-
     #[test]
     fn target_runner_cargo_config_uses_list_runner_for_platform() {
         let req = crate::batch_plan::RustCoverageBatchRequest::witness();
         let toml = build_target_runner_cargo_config_toml(&req, Path::new("/tmp/runner-map.json"));
         assert!(toml.contains("[target.\"x86_64-unknown-linux-gnu\"]"));
         assert!(toml.contains("runner = ["));
-    }
-
-    #[test]
-    fn target_runner_shim_program_honors_test_override() {
-        // SAFETY: this unit test reads the variable immediately and restores it
-        // before returning; no other test in this module depends on it.
-        unsafe {
-            std::env::set_var("KISS_RUST_LLVM_COV_TARGET_RUNNER_SHIM", "/tmp/kiss-test");
-        }
-        assert_eq!(target_runner_shim_program(), "/tmp/kiss-test");
-        // SAFETY: see the set_var note above.
-        unsafe {
-            std::env::remove_var("KISS_RUST_LLVM_COV_TARGET_RUNNER_SHIM");
-        }
     }
 
     #[test]

@@ -5,6 +5,7 @@ import os
 import signal
 import sys
 import tempfile
+import time
 import traceback
 import pytest
 
@@ -67,6 +68,22 @@ def _run_child(req, stdout_path, stderr_path):
         except Exception:
             pass
 
+def _wait_status(pid, timeout_ms):
+    if timeout_ms is None:
+        return os.waitpid(pid, 0)[1], False
+    deadline = time.monotonic() + max(float(timeout_ms) / 1000.0, 0.001)
+    while True:
+        waited, status = os.waitpid(pid, os.WNOHANG)
+        if waited != 0:
+            return status, False
+        if time.monotonic() >= deadline:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+            return os.waitpid(pid, 0)[1], True
+        time.sleep(0.005)
+
 def _handle(req):
     stdout_fd, stdout_path = tempfile.mkstemp(prefix="rpytest-forkserver-out-")
     stderr_fd, stderr_path = tempfile.mkstemp(prefix="rpytest-forkserver-err-")
@@ -76,14 +93,16 @@ def _handle(req):
         pid = os.fork()
         if pid == 0:
             _run_child(req, stdout_path, stderr_path)
-        _pid, status = os.waitpid(pid, 0)
+        status, forced_timeout = _wait_status(pid, req.get("timeout_ms"))
         if os.WIFEXITED(status):
             exit_code = os.WEXITSTATUS(status)
         elif os.WIFSIGNALED(status):
             exit_code = 128 + os.WTERMSIG(status)
         else:
             exit_code = 1
-        timed_out = req.get("timeout_ms") is not None and exit_code == 124
+        timed_out = forced_timeout or (
+            req.get("timeout_ms") is not None and exit_code == 124
+        )
         artifacts = {a["name"]: a["path"] for a in req.get("artifacts", [])}
         return {
             "id": req["id"],

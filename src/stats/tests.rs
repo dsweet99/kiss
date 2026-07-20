@@ -235,3 +235,51 @@ fn test_metric_values() {
     assert_eq!(metric_values(&stats, "fan_in"), Some(&[2][..]));
     assert_eq!(metric_values(&stats, "unknown_metric"), None);
 }
+
+#[test]
+fn config_key_for_maps_all_metric_families() {
+    let cases = [
+        ("positional_args", Some("arguments_positional")),
+        ("keyword_only_args", Some("arguments_keyword_only")),
+        ("branches_per_function", Some("branches_per_function")),
+        (
+            "local_variables_per_function",
+            Some("local_variables_per_function"),
+        ),
+        ("statements_per_try_block", Some("statements_per_try_block")),
+        ("annotations_per_function", Some("annotations_per_function")),
+        ("calls_per_function", Some("calls_per_function")),
+        ("methods_per_class", Some("methods_per_class")),
+        ("lines_per_file", Some("lines_per_file")),
+        ("functions_per_file", Some("functions_per_file")),
+        ("interface_types_per_file", Some("interface_types_per_file")),
+        ("concrete_types_per_file", Some("concrete_types_per_file")),
+        ("imported_names_per_file", Some("imported_names_per_file")),
+        ("fan_in", Some("fan_in")),
+        ("fan_out", Some("fan_out")),
+        ("cycle_size", Some("cycle_size")),
+        ("indirect_dependencies", Some("indirect_dependencies")),
+        ("dependency_depth", Some("dependency_depth")),
+        ("unknown_metric", None),
+    ];
+
+    for (metric, expected) in cases {
+        assert_eq!(config_key_for(metric), expected, "metric={metric}");
+    }
+}
+
+#[test]
+fn format_stats_table_skips_empty_summaries_but_keeps_header() {
+    let table = super::format_stats_table(&[PercentileSummary {
+        metric_id: "empty_metric",
+        count: 0,
+        p50: 0,
+        p90: 0,
+        p95: 0,
+        p99: 0,
+        max: 0,
+    }]);
+
+    assert!(table.contains("metric_id"));
+    assert!(!table.contains("empty_metric"));
+}
