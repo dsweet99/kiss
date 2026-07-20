@@ -1,7 +1,10 @@
 #![allow(unused_imports)]
 use super::*;
 use crate::test_runner::runners::SelectorExecutionSummary;
-use rust_llvm_cov_runner::{RustCoverageBatchCounters, RustCoverageBatchResult, RustLineCoverage, RustLlvmCovError, RustLlvmCovOutcome};
+use rust_llvm_cov_runner::{
+    RustCoverageBatchCounters, RustCoverageBatchResult, RustLineCoverage, RustLlvmCovError,
+    RustLlvmCovOutcome,
+};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -172,23 +175,19 @@ fn run_rust_llvm_cov_selectors_reaches_compat_executor_for_nonempty_selectors() 
     )
     .unwrap();
     std::fs::create_dir_all(tmp.path().join("src")).unwrap();
-    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn v() -> u32 { 1 }\n").unwrap();
-
-    let summary = run_rust_llvm_cov_selectors(
-        tmp.path(),
-        &["tests::case".to_string()],
-        &[],
-        true,
-        1,
-        None,
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "pub fn v() -> u32 { 1 }\n",
     )
-    .expect("compat executor path should return a summary");
+    .unwrap();
+
+    let summary =
+        run_rust_llvm_cov_selectors(tmp.path(), &["tests::case".to_string()], &[], true, 1, None)
+            .expect("compat executor path should return a summary");
 
     assert_eq!(summary.total, 1);
     assert!(summary.rust_unmatched_selectors >= 1 || summary.cache_misses >= 1);
 }
-
-
 
 #[test]
 fn rust_coverage_tool_identity_from_versions_copies_fields() {
@@ -246,7 +245,10 @@ fn build_current_rust_test_executable_index_on_bare_temp_repo_indexes_or_errors(
                 mapped.is_empty(),
                 "missing_case must not map to binaries: {mapped:?}"
             );
-            assert_eq!(build.request.logical_selectors, vec!["missing_case".to_string()]);
+            assert_eq!(
+                build.request.logical_selectors,
+                vec!["missing_case".to_string()]
+            );
         }
         Err(err) => assert!(!err.is_empty(), "error path must carry a message"),
     }

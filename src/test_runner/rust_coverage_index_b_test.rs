@@ -219,15 +219,9 @@ fn stale_index_is_not_loaded() {
     assert!(load_current_rust_coverage_index(tmp.path(), &[]).is_none());
 }
 
-
 #[test]
 fn select_rust_source_selectors_hybrid_empty_sources_returns_empty_set() {
     let tmp = tempfile::tempdir().unwrap();
-    let out = select_rust_source_selectors_hybrid(
-        tmp.path(),
-        &[],
-        &BTreeMap::new(),
-        &[],
-    );
+    let out = select_rust_source_selectors_hybrid(tmp.path(), &[], &BTreeMap::new(), &[]);
     assert_eq!(out, Some(BTreeSet::new()));
 }

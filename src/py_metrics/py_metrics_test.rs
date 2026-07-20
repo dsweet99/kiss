@@ -109,7 +109,7 @@ mod tests {
 
     use super::*;
 
-#[test]
+    #[test]
     fn test_params_and_decorators() {
         let p = parse("def f(a, b, c): pass");
         let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
@@ -314,6 +314,4 @@ mod tests {
             .expect("expected class_definition node");
         assert!(is_interface_type(cls, &p.source));
     }
-
-
 }

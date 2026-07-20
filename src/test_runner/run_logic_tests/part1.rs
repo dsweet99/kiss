@@ -330,4 +330,3 @@ fn python_outcome_records_index_rebuild_duration_in_metrics() {
         Duration::from_millis(3)
     );
 }
-

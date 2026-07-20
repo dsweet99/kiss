@@ -5,9 +5,15 @@ fn scoped_refresh_env_guard_sets_and_restores_process_env() {
     unsafe { std::env::remove_var(key) };
     {
         let _guard = super::ScopedRefreshEnvGuard::set();
-        assert_eq!(std::env::var_os(key).as_deref(), Some(std::ffi::OsStr::new("1")));
+        assert_eq!(
+            std::env::var_os(key).as_deref(),
+            Some(std::ffi::OsStr::new("1"))
+        );
         let _nested = super::ScopedRefreshEnvGuard::set();
-        assert_eq!(std::env::var_os(key).as_deref(), Some(std::ffi::OsStr::new("1")));
+        assert_eq!(
+            std::env::var_os(key).as_deref(),
+            Some(std::ffi::OsStr::new("1"))
+        );
     }
     assert!(std::env::var_os(key).is_none());
     if let Some(value) = previous {
@@ -63,10 +69,7 @@ fn ensure_check_runtime_coverage_on_empty_repo_reports_refresh_failure() {
     };
     let err = super::ensure_check_runtime_coverage(repo, required, &[], 1).unwrap_err();
     let rendered = err.to_string();
-    assert!(
-        rendered.contains("runtime line coverage"),
-        "{rendered}"
-    );
+    assert!(rendered.contains("runtime line coverage"), "{rendered}");
 }
 
 #[test]
@@ -121,10 +124,8 @@ fn inject_synthetic_binary_into_index(
         executable: exe.to_string_lossy().to_string(),
         digest: "synthetic-digest".to_string(),
     }];
-    build.index.selector_binary_ids = std::collections::BTreeMap::from([(
-        selector.to_string(),
-        vec![binary_id.to_string()],
-    )]);
+    build.index.selector_binary_ids =
+        std::collections::BTreeMap::from([(selector.to_string(), vec![binary_id.to_string()])]);
     rust_llvm_cov_runner::RustLineCoverage {
         files: std::collections::BTreeMap::from([(
             "src/lib.rs".to_string(),
@@ -161,14 +162,8 @@ fn apply_identity_only_repair_publishes_when_maps_match_injected_index() {
             .or_insert_with(|| vec!["bin-a".to_string()]);
     }
     let retained = std::collections::BTreeMap::from([("bin-a".to_string(), line_map)]);
-    let stats = super::apply_identity_only_repair(
-        tmp.path(),
-        &[],
-        &build,
-        &selectors,
-        retained,
-    )
-    .expect("identity-only repair should publish a valid aggregate");
+    let stats = super::apply_identity_only_repair(tmp.path(), &[], &build, &selectors, retained)
+        .expect("identity-only repair should publish a valid aggregate");
     assert!(stats.rust_identity_only_repair);
     assert_eq!(stats.rust_aggregate_binaries, 1);
 }

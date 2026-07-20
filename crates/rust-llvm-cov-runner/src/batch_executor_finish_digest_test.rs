@@ -1,7 +1,11 @@
 use super::test_binaries_from_shim_metadata;
 use crate::batch_shim::BatchShimMetadata;
 
-fn shim_rows_for_bin(tmp: &std::path::Path, bin: &std::path::Path, n: usize) -> Vec<BatchShimMetadata> {
+fn shim_rows_for_bin(
+    tmp: &std::path::Path,
+    bin: &std::path::Path,
+    n: usize,
+) -> Vec<BatchShimMetadata> {
     (0..n)
         .map(|i| BatchShimMetadata {
             schema_version: "kiss-rust-llvm-cov-shim-v1".to_string(),

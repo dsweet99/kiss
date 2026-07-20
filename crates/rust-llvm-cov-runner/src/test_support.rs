@@ -392,4 +392,3 @@ pub(crate) fn write_executable(path: std::path::PathBuf, contents: &str) -> std:
     std::fs::set_permissions(&path, permissions).unwrap();
     path
 }
-

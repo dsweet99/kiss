@@ -1,7 +1,7 @@
 use super::top::{
     AGGREGATE_ONLY_METRICS, StatsTopArgs, append_cycle_units, coverage_map_to_string_keys,
-    coverage_pct_map, decorate_file_units_with_coverage, extractor_for,
-    finalize_stats_top_status, merge_fresh_items, print_top_for_metric, run_stats_top_status,
+    coverage_pct_map, decorate_file_units_with_coverage, extractor_for, finalize_stats_top_status,
+    merge_fresh_items, print_top_for_metric, run_stats_top_status,
 };
 use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::{Config, GateConfig, Language};

@@ -127,7 +127,6 @@ fn print() {
     report.print(true);
 }
 
-
 #[test]
 fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
     let tmp = tempfile::tempdir().unwrap();
@@ -246,6 +245,72 @@ fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
         config_main_branch: None,
     });
     assert_eq!(code, 1);
+}
+
+#[test]
+fn cold_broad_suite_predicate_is_limited_to_unfiltered_base_or_main() {
+    let _cwd_guard = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("Makefile"), "test:\n\t@true\n").unwrap();
+    let orig = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+
+    fn args(
+        mode: TestChangeMode,
+        dry_run: bool,
+        lang_filter: Option<Language>,
+    ) -> crate::test_runner::RunTestCmdArgs<'static> {
+        crate::test_runner::RunTestCmdArgs {
+            mode,
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run,
+            force_rerun: false,
+            metrics: false,
+            jobs: 16,
+            extra: &[],
+            ignore: &[],
+            lang_filter,
+            config_main_branch: None,
+        }
+    }
+    let base = args(TestChangeMode::Base, false, None);
+    let dry_run = args(TestChangeMode::Base, true, None);
+    let rust_only = args(TestChangeMode::Base, false, Some(Language::Rust));
+    let commit = args(TestChangeMode::Commit, false, None);
+
+    assert!(crate::test_runner::should_run_cold_broad_suite(&base));
+    assert!(!crate::test_runner::should_run_cold_broad_suite(&dry_run));
+    assert!(!crate::test_runner::should_run_cold_broad_suite(&rust_only));
+    assert!(!crate::test_runner::should_run_cold_broad_suite(&commit));
+
+    std::env::set_current_dir(orig).unwrap();
+}
+
+#[test]
+fn run_test_uses_cold_broad_suite_when_predicate_matches() {
+    let _cwd_guard = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("Makefile"), "test:\n\t@true\n").unwrap();
+    let orig = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+
+    let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+        mode: TestChangeMode::Base,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: false,
+        force_rerun: false,
+        metrics: false,
+        jobs: 16,
+        extra: &[],
+        ignore: &[],
+        lang_filter: None,
+        config_main_branch: None,
+    });
+
+    std::env::set_current_dir(orig).unwrap();
+    assert_eq!(code, 0);
 }
 
 #[test]

@@ -146,7 +146,9 @@ pub(super) fn cfg_expr_active(tokens: proc_macro2::TokenStream) -> Option<bool> 
             let group = cfg_expect_group(&mut iter)?;
             cfg_all_active(split_cfg_group(group.stream()))
         }
-        proc_macro2::TokenTree::Ident(ident) if ident == "target_os" => cfg_target_os_active(&mut iter),
+        proc_macro2::TokenTree::Ident(ident) if ident == "target_os" => {
+            cfg_target_os_active(&mut iter)
+        }
         _ => None,
     }
 }
@@ -160,9 +162,7 @@ fn cfg_expect_group(
     }
 }
 
-fn cfg_target_os_active(
-    iter: &mut impl Iterator<Item = proc_macro2::TokenTree>,
-) -> Option<bool> {
+fn cfg_target_os_active(iter: &mut impl Iterator<Item = proc_macro2::TokenTree>) -> Option<bool> {
     let proc_macro2::TokenTree::Punct(eq) = iter.next()? else {
         return None;
     };
@@ -228,4 +228,3 @@ pub(super) fn literal_string_value(lit: &proc_macro2::Literal) -> Option<&'stati
         _ => return None,
     })
 }
-

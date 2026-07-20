@@ -33,7 +33,10 @@ fn metamorphic_apply_batch_subprocess_env_scrubs_all_coverage_keys() {
         command.env(key, format!("stale-{key}"));
     }
     let plan_env = BTreeMap::from([
-        ("CARGO_TARGET_DIR".to_string(), "/tmp/plan-target".to_string()),
+        (
+            "CARGO_TARGET_DIR".to_string(),
+            "/tmp/plan-target".to_string(),
+        ),
         ("KEEP_ME".to_string(), "1".to_string()),
     ]);
     apply_batch_subprocess_env(&mut command, &plan_env);
@@ -59,9 +62,7 @@ fn fuzz_apply_batch_subprocess_env_clears_random_coverage_key_subsets() {
     println!("fuzz_apply_batch_subprocess_env seed={seed}");
     let mut state = seed;
     for round in 0..32 {
-        state = state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1);
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
         let mut command = Command::new("/bin/true");
         let mut expected_removed = Vec::new();
         for (index, key) in COVERAGE_BUILD_ENV_KEYS_FOR_TEST.iter().enumerate() {

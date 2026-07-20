@@ -330,12 +330,10 @@ fn apply_non_primary_cleanup_error_propagates_io_failure() {
         Some(std::io::Error::other("stale cleanup failed")),
     )
     .unwrap();
-    assert!(
-        matches!(
-            outcome.batch_error,
-            Some(RustLlvmCovError::Io(err)) if err.to_string().contains("stale cleanup failed")
-        )
-    );
+    assert!(matches!(
+        outcome.batch_error,
+        Some(RustLlvmCovError::Io(err)) if err.to_string().contains("stale cleanup failed")
+    ));
 }
 
 #[test]
@@ -349,4 +347,3 @@ fn apply_non_primary_cleanup_error_passes_through_clean_result() {
     let ok = apply_non_primary_cleanup_error(result, None).unwrap();
     assert!(ok.completed.is_empty());
 }
-

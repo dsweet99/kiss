@@ -73,9 +73,7 @@ fn no_source_files_status() -> i32 {
     1
 }
 
-pub(super) fn coverage_map_to_string_keys(
-    map: HashMap<PathBuf, usize>,
-) -> HashMap<String, usize> {
+pub(super) fn coverage_map_to_string_keys(map: HashMap<PathBuf, usize>) -> HashMap<String, usize> {
     map.into_iter()
         .map(|(p, v)| (p.display().to_string(), v))
         .collect()
@@ -271,7 +269,6 @@ pub(super) const AGGREGATE_ONLY_METRICS: &[&str] = &[];
 mod top_extractors;
 pub(crate) use top_extractors::*;
 
-
 pub fn print_all_top_metrics(units: &[kiss::UnitMetrics], n: usize) {
     for def in kiss::METRICS {
         if let Some(extractor) = extractor_for(def.metric_id) {
@@ -301,4 +298,3 @@ where
         );
     }
 }
-

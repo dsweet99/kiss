@@ -15,6 +15,10 @@ use super::last_status::{LastStatusIdentity, record_statuses, rust_last_status_i
 use super::runners::{SelectorCacheRecord, SelectorExecutionSummary, command_stdout};
 use crate::test_runner::rust_coverage_index::relevant_rust_batch_env;
 
+pub(crate) fn validate_rust_extra_args(extra: &[String]) -> Result<(), String> {
+    validate_supported_rust_test_args(extra)
+}
+
 pub(crate) fn run_rust_llvm_cov_selectors(
     repo_root: &Path,
     selectors: &[String],
@@ -329,4 +333,3 @@ mod tests;
 #[cfg(test)]
 #[path = "rust_llvm_cov_b_test.rs"]
 mod tests_b;
-

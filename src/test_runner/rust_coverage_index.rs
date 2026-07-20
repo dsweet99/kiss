@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::{
-    CoverageOutputMode, RustCoverageToolIdentity, RustCoverageBatchRequest, RustLineCoverage,
+    CoverageOutputMode, RustCoverageBatchRequest, RustCoverageToolIdentity, RustLineCoverage,
     placeholder_delegated_runner_fields, resolve_batch_request_runners,
 };
 use serde::Deserialize;

@@ -350,4 +350,3 @@ fn changed_lines_for_sources(
 #[cfg(test)]
 #[path = "decision_test.rs"]
 mod tests;
-

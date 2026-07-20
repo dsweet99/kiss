@@ -1,8 +1,8 @@
 use super::{BinaryIdObjectMap, resolve_objects_for_profdata};
-use crate::test_support::write_executable;
 use crate::batch_export_tools::{
     ExportTools, objects_satisfy_profile, resolve_export_tools_from_rustc,
 };
+use crate::test_support::write_executable;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
@@ -358,4 +358,3 @@ fn collect_profraws(dir: &Path, out: &mut Vec<PathBuf>) {
 fn find_profraw(root: &Path) -> Option<PathBuf> {
     find_all_profraws(root).into_iter().next()
 }
-

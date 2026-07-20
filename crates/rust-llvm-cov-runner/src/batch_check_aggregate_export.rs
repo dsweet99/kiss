@@ -157,10 +157,9 @@ pub(crate) fn export_check_aggregates_bounded(
         tools,
         binary_id_map,
     };
-    let exporter: CheckAggregateExportFn =
-        Arc::new(move |request, source_root, catalog| {
-            exporter.export_binary(request, source_root, catalog)
-        });
+    let exporter: CheckAggregateExportFn = Arc::new(move |request, source_root, catalog| {
+        exporter.export_binary(request, source_root, catalog)
+    });
     export_check_aggregates_bounded_with(jobs, source_root, catalog, requests, exporter)
 }
 
@@ -334,9 +333,7 @@ impl CheckAggregateExporter {
             .profile_paths
             .first()
             .and_then(|path| path.parent())
-            .ok_or_else(|| {
-                RustLlvmCovError::InvalidRequest("profile path has no parent".into())
-            })?;
+            .ok_or_else(|| RustLlvmCovError::InvalidRequest("profile path has no parent".into()))?;
         let profdata = profile_dir.join(format!(
             "check-aggregate-{}.profdata",
             stable_name(&request.binary_id)

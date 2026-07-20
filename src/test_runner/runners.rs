@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+pub(crate) use super::rust_llvm_cov::run_rust_llvm_cov_check_aggregate_selectors;
 #[cfg(not(test))]
 pub(crate) use super::rust_llvm_cov::run_rust_llvm_cov_selectors;
 #[cfg(test)]
@@ -34,6 +35,9 @@ use python_collect::collect_python_nodeids;
 mod python_collect_test;
 #[path = "runners/rust_backer.rs"]
 pub(crate) mod rust_backer;
+#[path = "runners/rust_workspace.rs"]
+mod rust_workspace;
+use rust_workspace::{cargo_workspace_member_manifest_dirs, is_workspace_rust_selector_file};
 
 #[path = "runners/rslip.rs"]
 mod rslip;
@@ -194,12 +198,23 @@ pub fn enumerate_tests_in_changed_files(
         .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("py")))
         .cloned()
         .collect();
-    let rs: Vec<_> = test_paths
+    let rs_candidates: Vec<_> = test_paths
         .iter()
         .filter(|p| p.is_file())
         .filter(|p| kiss::Language::is_rust_path(p))
         .cloned()
         .collect();
+    let rs = if rs_candidates.is_empty() {
+        Vec::new()
+    } else {
+        match cargo_workspace_member_manifest_dirs(repo_root) {
+            Ok(member_manifest_dirs) => rs_candidates
+                .into_iter()
+                .filter(|p| is_workspace_rust_selector_file(p, &member_manifest_dirs))
+                .collect(),
+            Err(_) => rs_candidates,
+        }
+    };
     if !py.is_empty() {
         for nodeid in collect_python_nodeids(repo_root, Some(&py), &[])? {
             out.python_nodeids.insert(nodeid);
@@ -227,6 +242,13 @@ pub fn enumerate_workspace_rust_selectors(
     let root = repo_root.to_string_lossy().to_string();
     let (_py_files, rs_files) =
         kiss::gather_files_by_lang(&[root], Some(kiss::Language::Rust), ignore);
+    let rs_files: Vec<_> = match cargo_workspace_member_manifest_dirs(repo_root) {
+        Ok(member_manifest_dirs) => rs_files
+            .into_iter()
+            .filter(|path| is_workspace_rust_selector_file(path, &member_manifest_dirs))
+            .collect(),
+        Err(_) => rs_files,
+    };
     let parsed = parse_rust_files(&rs_files);
     let mut selectors = BTreeSet::new();
     for (path, result) in rs_files.iter().zip(parsed) {

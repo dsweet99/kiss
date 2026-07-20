@@ -133,7 +133,11 @@ fn run_selectors_non_dry_run_executes_python_selective_phase() {
     let tmp = tempfile::tempdir().unwrap();
     let tests = tmp.path().join("tests");
     std::fs::create_dir_all(&tests).unwrap();
-    std::fs::write(tests.join("test_app.py"), "def test_ok():\n    assert True\n").unwrap();
+    std::fs::write(
+        tests.join("test_app.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
     planned.py_sel = vec!["tests/test_app.py::test_ok".to_string()];
@@ -153,7 +157,10 @@ fn run_selectors_non_dry_run_executes_python_selective_phase() {
         Ok(0) => {}
         Ok(other) => panic!("unexpected exit code {other}"),
         Err(err) => assert!(
-            err.contains("kiss") || err.contains("pytest") || err.contains("rslip") || err.contains("population"),
+            err.contains("kiss")
+                || err.contains("pytest")
+                || err.contains("rslip")
+                || err.contains("population"),
             "unexpected error: {err}"
         ),
     }
@@ -195,4 +202,3 @@ fn run_selectors_no_work_and_dry_run_with_metrics() {
         0
     );
 }
-

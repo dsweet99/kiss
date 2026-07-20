@@ -123,7 +123,14 @@ fn resolve_objects_by_binary_ids(
     }
     // Nested coverage / deleted artifacts can leave orphan binary ids in a
     // merged profile. Keep seed objects whose build-ids are still present.
-    resolve_with_orphan_profile_ids(tools, profdata, profile_ids, seed_objects, resolved, &unmatched)
+    resolve_with_orphan_profile_ids(
+        tools,
+        profdata,
+        profile_ids,
+        seed_objects,
+        resolved,
+        &unmatched,
+    )
 }
 
 fn resolve_with_orphan_profile_ids(

@@ -57,8 +57,8 @@ fn is_cargo_hashed_kiss_artifact(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_cargo_hashed_kiss_artifact, prefer_nonhashed_kiss_cli, resolve_target_runner_shim_program,
-        target_runner_shim_program,
+        is_cargo_hashed_kiss_artifact, prefer_nonhashed_kiss_cli,
+        resolve_target_runner_shim_program, target_runner_shim_program,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -68,7 +68,9 @@ mod tests {
     fn env_override_wins_over_current_exe() {
         let resolved = resolve_target_runner_shim_program(
             Some("/tmp/override-kiss".into()),
-            Some(PathBuf::from("/tmp/target/debug/deps/kiss-abcdef0123456789")),
+            Some(PathBuf::from(
+                "/tmp/target/debug/deps/kiss-abcdef0123456789",
+            )),
         );
         assert_eq!(resolved, "/tmp/override-kiss");
     }
@@ -150,9 +152,7 @@ mod tests {
         println!("fuzz_hashed_artifact_detector seed={seed}");
         let mut state = seed;
         for _ in 0..64 {
-            state = state
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1);
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
             let hex_len = 8 + (state % 9) as usize;
             let hex: String = (0..hex_len)
                 .map(|i| {

@@ -396,6 +396,5 @@ pub(crate) fn export_instance_coverage(
 #[path = "batch_export_test.rs"]
 mod tests;
 
-
 #[cfg(test)]
 pub use tests::{FakeInstanceExporter, write_fake_profile};

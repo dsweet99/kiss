@@ -1,13 +1,13 @@
-#[path = "batch_process_tree_reap.rs"]
-mod batch_process_tree_reap;
 #[path = "batch_process_tree_groups.rs"]
 mod batch_process_tree_groups;
+#[path = "batch_process_tree_reap.rs"]
+mod batch_process_tree_reap;
 
+#[allow(unused_imports)] // re-exported for unit tests via `super::`
+pub(crate) use batch_process_tree_groups::signal_process_group;
 pub(crate) use batch_process_tree_groups::{
     identity_still_valid, process_group_alive, signal_validated_process_group,
 };
-#[allow(unused_imports)] // re-exported for unit tests via `super::`
-pub(crate) use batch_process_tree_groups::signal_process_group;
 
 use std::io;
 use std::process::{Child, Command};

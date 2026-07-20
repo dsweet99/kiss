@@ -142,7 +142,11 @@ fn prior_failures_for_language_loads_rust_failures_with_live_identity() {
     )
     .unwrap();
     std::fs::create_dir_all(tmp.path().join("src")).unwrap();
-    std::fs::write(tmp.path().join("src/lib.rs"), "pub fn value() -> u32 { 1 }\n").unwrap();
+    std::fs::write(
+        tmp.path().join("src/lib.rs"),
+        "pub fn value() -> u32 { 1 }\n",
+    )
+    .unwrap();
 
     let cargo = PathBuf::from("cargo");
     let rustc = PathBuf::from("rustc");
@@ -155,12 +159,14 @@ fn prior_failures_for_language_loads_rust_failures_with_live_identity() {
     let cargo_nextest_version =
         crate::test_runner::runners::command_stdout(&cargo, &["nextest", "--version"], tmp.path())
             .expect("nextest version");
-    let rustc_version =
-        crate::test_runner::runners::command_stdout(&rustc, &["-Vv"], tmp.path())
-            .expect("rustc version");
+    let rustc_version = crate::test_runner::runners::command_stdout(&rustc, &["-Vv"], tmp.path())
+        .expect("rustc version");
     let runner_map_fingerprint =
-        crate::test_runner::rust_coverage_index::current_rust_runner_map_fingerprint(tmp.path(), &[])
-            .unwrap_or_default();
+        crate::test_runner::rust_coverage_index::current_rust_runner_map_fingerprint(
+            tmp.path(),
+            &[],
+        )
+        .unwrap_or_default();
     let identity = crate::test_runner::last_status::rust_last_status_identity(
         &cargo_version,
         &llvm_cov_version,
@@ -346,4 +352,3 @@ fn engine_backers_expose_manifest_env_policy() {
     assert_eq!(python.manifest_env_allowlist(), ["PYTHONPATH"]);
     assert!(rust.manifest_env_allowlist().contains(&"RUSTFLAGS"));
 }
-

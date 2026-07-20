@@ -70,10 +70,8 @@ fn forkserver_timeout_metamorphic_vs_untimed_sleep() {
         artifacts: Vec::new(),
         timeout,
     };
-    let timed = ForkserverPytestRunner::new().run_many_bounded(
-        vec![mk(Some(Duration::from_millis(30)))],
-        1,
-    );
+    let timed = ForkserverPytestRunner::new()
+        .run_many_bounded(vec![mk(Some(Duration::from_millis(30)))], 1);
     let untimed = ForkserverPytestRunner::new().run_many_bounded(vec![mk(None)], 1);
     assert_eq!(
         timed[0],

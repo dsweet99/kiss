@@ -12,6 +12,7 @@ mod rust_llvm_cov;
 mod validation;
 
 use std::path::PathBuf;
+use std::process::Command;
 use std::time::Duration;
 
 use kiss::Language;
@@ -74,6 +75,9 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
     let ignore = a.ignore;
     let lang_filter = a.lang_filter;
     let config_main_branch = a.config_main_branch;
+    if should_run_cold_broad_suite(&a) {
+        return run_cold_broad_suite();
+    }
     let plan_started = std::time::Instant::now();
     match plan_selectors(
         mode,
@@ -103,6 +107,28 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
         },
         Err(e) => {
             eprintln!("{e}");
+            1
+        }
+    }
+}
+
+fn should_run_cold_broad_suite(a: &RunTestCmdArgs<'_>) -> bool {
+    matches!(a.mode, TestChangeMode::Base | TestChangeMode::Main)
+        && !a.dry_run
+        && !a.force_rerun
+        && !a.metrics
+        && a.extra.is_empty()
+        && a.ignore.is_empty()
+        && a.lang_filter.is_none()
+        && !PathBuf::from(".kiss").exists()
+        && PathBuf::from("Makefile").is_file()
+}
+
+fn run_cold_broad_suite() -> i32 {
+    match Command::new("make").arg("test").status() {
+        Ok(status) => status.code().unwrap_or(1),
+        Err(err) => {
+            eprintln!("error: kiss test: failed to run cold broad suite: {err}");
             1
         }
     }
@@ -211,6 +237,9 @@ pub(crate) fn plan_selectors(
         Language::Python => crate::test_git::TestLangFilter::Python,
         Language::Rust => crate::test_git::TestLangFilter::Rust,
     });
+    if matches!(lang_filter, Some(crate::test_git::TestLangFilter::Rust)) {
+        rust_llvm_cov::validate_rust_extra_args(extra)?;
+    }
     let abs_paths = crate::test_git::resolve_changed_source_paths(
         &repo_root,
         &rel_changed,

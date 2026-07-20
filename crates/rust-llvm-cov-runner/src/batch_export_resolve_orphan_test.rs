@@ -88,7 +88,11 @@ fn map_miss_does_not_rescan_catalog_with_llvm_readobj() {
     let tools = counting_readobj_tools(tmp.path(), &counter);
     let (profdata, seed, catalog) = seed_catalog_with_decoys(tmp.path(), 40);
     let map = BinaryIdObjectMap::build(&tools, &catalog).expect("map");
-    let after_map: u64 = std::fs::read_to_string(&counter).unwrap().trim().parse().unwrap();
+    let after_map: u64 = std::fs::read_to_string(&counter)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
     let resolved = resolve_objects_for_profdata(
         &tools,
         &profdata,
@@ -98,7 +102,11 @@ fn map_miss_does_not_rescan_catalog_with_llvm_readobj() {
     )
     .expect("orphans tolerated via seed");
     assert_eq!(resolved, vec![seed]);
-    let after_resolve: u64 = std::fs::read_to_string(&counter).unwrap().trim().parse().unwrap();
+    let after_resolve: u64 = std::fs::read_to_string(&counter)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
     assert!(
         after_resolve <= after_map + 2,
         "expected ≤2 extra llvm-readobj calls after map build, got map={after_map} resolve={after_resolve}"
@@ -128,9 +136,12 @@ if [ \"$1\" = show ]; then printf 'Binary IDs:\ncafebabe\naaaaaaaa\nbbbbbbbb\n';
 exit 1
 ",
         ),
-        llvm_cov: write_executable(tmp.join("llvm-cov"), "#!/bin/sh
+        llvm_cov: write_executable(
+            tmp.join("llvm-cov"),
+            "#!/bin/sh
 exit 1
-"),
+",
+        ),
         llvm_readobj,
     }
 }
@@ -139,19 +150,33 @@ exit 1
 fn seed_catalog_with_decoys(
     tmp: &std::path::Path,
     decoys: usize,
-) -> (std::path::PathBuf, std::path::PathBuf, Vec<std::path::PathBuf>) {
+) -> (
+    std::path::PathBuf,
+    std::path::PathBuf,
+    Vec<std::path::PathBuf>,
+) {
     let profdata = tmp.join("instance.profdata");
     let seed = tmp.join("seed-object");
     std::fs::write(&profdata, b"profile").unwrap();
     std::fs::write(&seed, b"object").unwrap();
-    std::fs::write(format!("{}.id", seed.display()), b"Build ID: cafebabe
-").unwrap();
+    std::fs::write(
+        format!("{}.id", seed.display()),
+        b"Build ID: cafebabe
+",
+    )
+    .unwrap();
     let mut catalog = vec![seed.clone()];
     for i in 0..decoys {
         let decoy = tmp.join(format!("decoy-{i}"));
         std::fs::write(&decoy, b"object").unwrap();
-        std::fs::write(format!("{}.id", decoy.display()), format!("Build ID: decoy{i:04x}
-")).unwrap();
+        std::fs::write(
+            format!("{}.id", decoy.display()),
+            format!(
+                "Build ID: decoy{i:04x}
+"
+            ),
+        )
+        .unwrap();
         catalog.push(decoy);
     }
     (profdata, seed, catalog)
@@ -204,4 +229,3 @@ fn fuzz_orphan_id_subsets_preserve_seed_when_covered() {
         assert_eq!(resolved, vec![seed]);
     }
 }
-

@@ -46,7 +46,6 @@ pub fn write_fake_profile(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fs::write(path, bytes)
 }
 
-
 fn export_argv_for_test() -> Vec<String> {
     vec![
         "llvm-profdata".to_string(),
@@ -392,4 +391,3 @@ fn with_binary_id_map_stores_map_for_later_exports() {
         .unwrap();
     assert!(coverage.files.is_empty());
 }
-

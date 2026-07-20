@@ -3,6 +3,7 @@ use super::{
     build_instance_export_requests, build_instance_results,
     finish_fresh_check_aggregate_after_export,
 };
+use crate::RustLineCoverage;
 use crate::batch_events::BatchTestTerminal;
 use crate::batch_export::ExportCounters;
 use crate::batch_fingerprint::batch_identity;
@@ -11,7 +12,6 @@ use crate::batch_shim::BatchShimMetadata;
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, witness_batch_tools,
 };
-use crate::RustLineCoverage;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
