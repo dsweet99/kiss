@@ -35,6 +35,9 @@ use python_collect::collect_python_nodeids;
 mod python_collect_test;
 #[path = "runners/rust_backer.rs"]
 pub(crate) mod rust_backer;
+#[path = "runners/rust_population.rs"]
+mod rust_population;
+pub(crate) use rust_population::run_uninstrumented_rust_population_selectors;
 #[path = "runners/rust_workspace.rs"]
 mod rust_workspace;
 use rust_workspace::{cargo_workspace_member_manifest_dirs, is_workspace_rust_selector_file};

@@ -175,6 +175,13 @@ pub(super) fn run_rust_selectors_for_module(
         return Ok(SelectorExecutionSummary::default());
     }
     if population_publication_selectors.is_some() && !ctx.options.force_rerun {
+        if ctx.options.extra.is_empty() && ctx.planned.ignore.is_empty() {
+            return runners::run_uninstrumented_rust_population_selectors(
+                &ctx.planned.repo_root,
+                selectors,
+                ctx.options.jobs,
+            );
+        }
         return runners::run_rust_llvm_cov_check_aggregate_selectors(
             &ctx.planned.repo_root,
             selectors,
