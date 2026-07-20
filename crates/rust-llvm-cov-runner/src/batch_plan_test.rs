@@ -38,7 +38,7 @@ fn batch_request_public_data_contract_preserves_every_field() {
 #[test]
 fn batch_plan_uses_one_shared_build_target_and_bounded_nextest_jobs() {
     let plan = build_rust_coverage_batch_plan(&request()).unwrap();
-    let build_target = "/repo/.kiss/rust_llvm_cov_cache/build/target";
+    let build_target = "/repo/target";
 
     assert_eq!(plan.build_target, PathBuf::from(build_target));
     assert_eq!(plan.env["CARGO_TARGET_DIR"], build_target);
@@ -90,10 +90,7 @@ fn batch_plan_public_data_contract_preserves_every_field() {
 
     assert_eq!(cloned, plan);
     assert!(format!("{plan:?}").contains("RustCoverageBatchPlan"));
-    assert_eq!(
-        plan.build_target,
-        PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/build/target")
-    );
+    assert_eq!(plan.build_target, PathBuf::from("/repo/target"));
     assert_eq!(
         plan.target_runner_output_dir,
         PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/instances")

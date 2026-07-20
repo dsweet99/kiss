@@ -248,12 +248,9 @@ fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
 }
 
 #[test]
-fn cold_broad_suite_predicate_is_limited_to_unfiltered_base_or_main() {
+fn cold_initialization_predicate_is_limited_to_unfiltered_base_or_main() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("Makefile"), "test:\n\t@true\n").unwrap();
-    let orig = std::env::current_dir().unwrap();
-    std::env::set_current_dir(tmp.path()).unwrap();
 
     fn args(
         mode: TestChangeMode,
@@ -279,23 +276,28 @@ fn cold_broad_suite_predicate_is_limited_to_unfiltered_base_or_main() {
     let rust_only = args(TestChangeMode::Base, false, Some(Language::Rust));
     let commit = args(TestChangeMode::Commit, false, None);
 
-    assert!(crate::test_runner::should_run_cold_broad_suite(&base));
-    assert!(!crate::test_runner::should_run_cold_broad_suite(&dry_run));
-    assert!(!crate::test_runner::should_run_cold_broad_suite(&rust_only));
-    assert!(!crate::test_runner::should_run_cold_broad_suite(&commit));
-
-    std::env::set_current_dir(orig).unwrap();
+    assert!(crate::test_runner::should_force_cold_initialization(
+        &base,
+        tmp.path()
+    ));
+    assert!(!crate::test_runner::should_force_cold_initialization(
+        &dry_run,
+        tmp.path()
+    ));
+    assert!(!crate::test_runner::should_force_cold_initialization(
+        &rust_only,
+        tmp.path()
+    ));
+    assert!(!crate::test_runner::should_force_cold_initialization(
+        &commit,
+        tmp.path()
+    ));
 }
 
 #[test]
-fn run_test_uses_cold_broad_suite_when_predicate_matches() {
-    let _cwd_guard = crate::cwd_test_lock::lock();
+fn cold_initialization_population_marks_missing_state_for_both_languages() {
     let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("Makefile"), "test:\n\t@true\n").unwrap();
-    let orig = std::env::current_dir().unwrap();
-    std::env::set_current_dir(tmp.path()).unwrap();
-
-    let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+    let args = crate::test_runner::RunTestCmdArgs {
         mode: TestChangeMode::Base,
         main_branch_cli: None,
         base_branch_cli: None,
@@ -307,10 +309,28 @@ fn run_test_uses_cold_broad_suite_when_predicate_matches() {
         ignore: &[],
         lang_filter: None,
         config_main_branch: None,
-    });
+    };
+    let mut planned = crate::test_runner::PlannedSelectors {
+        repo_root: tmp.path().to_path_buf(),
+        py_sel: Vec::new(),
+        rs_sel: Vec::new(),
+        python_population_required: false,
+        rust_population_required: false,
+        rust_source_paths: Vec::new(),
+        rust_vcs_source_paths: 0,
+        rust_snapshot_delta_modified: 0,
+        rust_snapshot_delta_structural: false,
+        python_prior_failure_selectors: Vec::new(),
+        rust_prior_failure_selectors: Vec::new(),
+        coverage_decision_engine_used: true,
+        rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+        ignore: Vec::new(),
+    };
 
-    std::env::set_current_dir(orig).unwrap();
-    assert_eq!(code, 0);
+    crate::test_runner::apply_cold_initialization_population(&args, &mut planned);
+
+    assert!(planned.python_population_required);
+    assert!(planned.rust_population_required);
 }
 
 #[test]

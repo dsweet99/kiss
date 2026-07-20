@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+pub(crate) use crate::batch_executor_finish_export::FreshCheckAggregateExport;
 use crate::{
     RustCovCacheStatus, RustLineCoverage, RustLlvmCovError, RustLlvmCovOutcome,
     RustTestBinaryIdentity,
@@ -192,25 +193,23 @@ pub(crate) fn finish_fresh_batch_after_export(
 
 pub(crate) fn finish_fresh_check_aggregate_after_export(
     req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
-    exact: bool,
-    instances: Vec<InstanceResult>,
-    exported: BTreeMap<String, RustLineCoverage>,
-    export_counters: crate::batch_export::ExportCounters,
+    export: FreshCheckAggregateExport,
     finish: FreshBatchFinishContext,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
     let export_phase_ms = finish.export_started.elapsed().as_millis();
     let (completed, agg_counters) =
-        aggregate_logical_selectors(&req.logical_selectors, exact, &instances);
+        aggregate_logical_selectors(&req.logical_selectors, export.exact, &export.instances);
     let mut counters = RustCoverageBatchCounters {
         build_invocations: 1,
         test_instances: agg_counters.test_instances,
-        aggregate_binaries: exported.len(),
-        aggregate_exports: export_counters.export_jobs,
+        aggregate_binaries: export.exported.len(),
+        aggregate_exports: export.counters.export_jobs,
         max_active_test_instances: agg_counters.test_instances.min(req.jobs),
-        max_active_exports: export_counters.max_active_exports,
+        max_active_exports: export.counters.max_active_exports,
         unmatched_selectors: agg_counters.unmatched_selectors,
-        max_objects_per_export: export_counters.max_objects_per_export,
+        max_objects_per_export: export.counters.max_objects_per_export,
         build_target_baseline_bytes: finish.build_target_baseline_bytes,
         export_phase_ms,
         process_residual_count: finish.process_residual_count,
@@ -247,7 +246,7 @@ pub(crate) fn finish_fresh_check_aggregate_after_export(
                     .cloned()
                     .collect::<Vec<_>>();
                 let mut maps = repair.retained_binary_line_maps;
-                maps.extend(exported);
+                maps.extend(export.exported);
                 (
                     selectors,
                     repair.selector_binary_ids,
@@ -259,7 +258,7 @@ pub(crate) fn finish_fresh_check_aggregate_after_export(
                 req.logical_selectors.clone(),
                 selector_binary_ids_from_outcomes(&completed),
                 finish.test_binaries.clone(),
-                exported,
+                export.exported,
             ),
         };
     let aggregate = build_check_aggregate(
@@ -271,6 +270,9 @@ pub(crate) fn finish_fresh_check_aggregate_after_export(
         binary_line_maps,
     )?;
     publish_check_aggregate(req, &aggregate)?;
+    crate::batch_derived::publish_conservative_derived_state_from_check_aggregate(
+        req, tools, identity, &aggregate,
+    )?;
     counters.aggregate_binaries = aggregate.binaries.len();
     Ok(RustCoverageBatchResult {
         completed,

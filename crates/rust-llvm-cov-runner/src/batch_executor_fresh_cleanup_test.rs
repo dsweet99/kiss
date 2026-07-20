@@ -41,7 +41,7 @@ fn successful_fresh_execution_removes_current_run_directory() {
     let cache_root = req.cache_root.clone();
     seed_durable_cache_artifacts(&cache_root);
     let run_root = run_root_for(&req);
-    let build_target = cache_root.join("build").join("target");
+    let build_target = repo.path().join("target");
 
     let result = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
     assert!(result.batch_error.is_none());

@@ -38,6 +38,7 @@ pub(crate) fn prepare_build_target_for_identity(
     plan: &RustCoverageBatchPlan,
 ) -> io::Result<BuildIdentityPreparation> {
     let expected = build_identity_input(req, tools);
+    let build_target_is_cache_owned = plan.build_target.starts_with(&req.cache_root);
     if let Some(previous) = load_build_identity(&req.cache_root)?
         && previous.input == expected
     {
@@ -46,7 +47,7 @@ pub(crate) fn prepare_build_target_for_identity(
             let current_bytes = path_size_bytes(&plan.build_target)?;
             let growth_limit = baseline.saturating_mul(BUILD_TARGET_GROWTH_NUMERATOR)
                 / BUILD_TARGET_GROWTH_DENOMINATOR;
-            if current_bytes > growth_limit {
+            if build_target_is_cache_owned && current_bytes > growth_limit {
                 remove_build_target(&plan.build_target)?;
                 return Ok(BuildIdentityPreparation {
                     previous_baseline_bytes: 0,
@@ -57,7 +58,9 @@ pub(crate) fn prepare_build_target_for_identity(
             previous_baseline_bytes: baseline,
         });
     }
-    remove_build_target(&plan.build_target)?;
+    if build_target_is_cache_owned {
+        remove_build_target(&plan.build_target)?;
+    }
     Ok(BuildIdentityPreparation {
         previous_baseline_bytes: 0,
     })

@@ -1,6 +1,6 @@
 use super::test_helpers::{finish_context, test_binary};
 use super::{
-    build_instance_export_requests, build_instance_results,
+    FreshCheckAggregateExport, build_instance_export_requests, build_instance_results,
     finish_fresh_check_aggregate_after_export,
 };
 use crate::RustLineCoverage;
@@ -42,14 +42,17 @@ fn finish_fresh_check_aggregate_publishes_successful_outcomes() {
     let exported = BTreeMap::from([("/tmp/bin".to_string(), coverage)]);
     let result = finish_fresh_check_aggregate_after_export(
         &req,
+        &tools,
         &identity,
-        false,
-        instances,
-        exported,
-        ExportCounters {
-            export_jobs: 1,
-            max_active_exports: 1,
-            max_objects_per_export: 1,
+        FreshCheckAggregateExport {
+            exact: false,
+            instances,
+            exported,
+            counters: ExportCounters {
+                export_jobs: 1,
+                max_active_exports: 1,
+                max_objects_per_export: 1,
+            },
         },
         finish_context(),
     );
@@ -108,14 +111,17 @@ fn finish_fresh_check_aggregate_merges_repair_publication_line_maps() {
     });
     let result = finish_fresh_check_aggregate_after_export(
         &req,
+        &tools,
         &identity,
-        false,
-        instances,
-        exported,
-        ExportCounters {
-            export_jobs: 1,
-            max_active_exports: 1,
-            max_objects_per_export: 1,
+        FreshCheckAggregateExport {
+            exact: false,
+            instances,
+            exported,
+            counters: ExportCounters {
+                export_jobs: 1,
+                max_active_exports: 1,
+                max_objects_per_export: 1,
+            },
         },
         finish,
     );

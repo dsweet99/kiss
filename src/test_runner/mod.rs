@@ -12,7 +12,6 @@ mod rust_llvm_cov;
 mod validation;
 
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::Duration;
 
 use kiss::Language;
@@ -75,9 +74,6 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
     let ignore = a.ignore;
     let lang_filter = a.lang_filter;
     let config_main_branch = a.config_main_branch;
-    if should_run_cold_broad_suite(&a) {
-        return run_cold_broad_suite();
-    }
     let plan_started = std::time::Instant::now();
     match plan_selectors(
         mode,
@@ -88,23 +84,26 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
         lang_filter,
         config_main_branch,
     ) {
-        Ok(planned) => match run_selectors(
-            &planned,
-            SelectorRunOptions {
-                dry_run,
-                force_rerun,
-                metrics,
-                jobs,
-                extra,
-                plan_duration: plan_started.elapsed(),
-            },
-        ) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("{e}");
-                1
+        Ok(mut planned) => {
+            apply_cold_initialization_population(&a, &mut planned);
+            match run_selectors(
+                &planned,
+                SelectorRunOptions {
+                    dry_run,
+                    force_rerun,
+                    metrics,
+                    jobs,
+                    extra,
+                    plan_duration: plan_started.elapsed(),
+                },
+            ) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("{e}");
+                    1
+                }
             }
-        },
+        }
         Err(e) => {
             eprintln!("{e}");
             1
@@ -112,7 +111,7 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
     }
 }
 
-fn should_run_cold_broad_suite(a: &RunTestCmdArgs<'_>) -> bool {
+fn should_force_cold_initialization(a: &RunTestCmdArgs<'_>, repo_root: &std::path::Path) -> bool {
     matches!(a.mode, TestChangeMode::Base | TestChangeMode::Main)
         && !a.dry_run
         && !a.force_rerun
@@ -120,16 +119,19 @@ fn should_run_cold_broad_suite(a: &RunTestCmdArgs<'_>) -> bool {
         && a.extra.is_empty()
         && a.ignore.is_empty()
         && a.lang_filter.is_none()
-        && !PathBuf::from(".kiss").exists()
-        && PathBuf::from("Makefile").is_file()
+        && !repo_root.join(".kiss").exists()
 }
 
-fn run_cold_broad_suite() -> i32 {
-    match Command::new("make").arg("test").status() {
-        Ok(status) => status.code().unwrap_or(1),
-        Err(err) => {
-            eprintln!("error: kiss test: failed to run cold broad suite: {err}");
-            1
+fn apply_cold_initialization_population(a: &RunTestCmdArgs<'_>, planned: &mut PlannedSelectors) {
+    if !should_force_cold_initialization(a, &planned.repo_root) {
+        return;
+    }
+    match a.lang_filter {
+        Some(Language::Python) => planned.python_population_required = true,
+        Some(Language::Rust) => planned.rust_population_required = true,
+        None => {
+            planned.python_population_required = true;
+            planned.rust_population_required = true;
         }
     }
 }

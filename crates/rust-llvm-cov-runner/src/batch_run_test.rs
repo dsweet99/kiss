@@ -168,7 +168,7 @@ fn build_identity_helpers_are_executable_witnesses() {
 }
 
 #[test]
-fn prepare_build_target_for_identity_rebuilds_when_target_exceeds_growth_limit() {
+fn prepare_build_target_for_identity_retains_external_target_when_growth_limit_exceeded() {
     use crate::test_support::witness_batch_tools;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -182,6 +182,31 @@ fn prepare_build_target_for_identity_rebuilds_when_target_exceeds_growth_limit()
         .join("run-a")
         .join("nextest.toml");
     let plan = crate::build_rust_coverage_batch_plan(&req).unwrap();
+    let tools = witness_batch_tools();
+    fs::create_dir_all(&plan.build_target).unwrap();
+    fs::write(plan.build_target.join("artifact"), vec![0_u8; 10]).unwrap();
+    publish_successful_build_identity(&req, &tools, &plan, 0).unwrap();
+    fs::write(plan.build_target.join("artifact"), vec![0_u8; 20]).unwrap();
+    prepare_build_target_for_identity(&req, &tools, &plan).unwrap();
+    assert!(plan.build_target.exists());
+}
+
+#[test]
+fn prepare_build_target_for_identity_rebuilds_cache_owned_target_when_growth_limit_exceeded() {
+    use crate::test_support::witness_batch_tools;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let mut req = RustCoverageBatchRequest::witness();
+    req.source_root = tmp.path().to_path_buf();
+    req.cwd = tmp.path().to_path_buf();
+    req.cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    req.generated_config = req
+        .cache_root
+        .join("runs")
+        .join("run-a")
+        .join("nextest.toml");
+    let mut plan = crate::build_rust_coverage_batch_plan(&req).unwrap();
+    plan.build_target = req.cache_root.join("build").join("target");
     let tools = witness_batch_tools();
     fs::create_dir_all(&plan.build_target).unwrap();
     fs::write(plan.build_target.join("artifact"), vec![0_u8; 10]).unwrap();

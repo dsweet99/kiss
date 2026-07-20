@@ -86,7 +86,7 @@ fn fresh_build_identity_helpers_track_build_compatible_inputs() {
 }
 
 #[test]
-fn fresh_build_identity_removes_incompatible_target_and_sizes_nested_files() {
+fn fresh_build_identity_drops_incompatible_baseline_and_retains_external_target() {
     let repo = batch_executor_fixture_repo();
     let mut req = batch_executor_request(repo.path());
     let tools = tools();
@@ -101,7 +101,7 @@ fn fresh_build_identity_removes_incompatible_target_and_sizes_nested_files() {
 
     assert_eq!(prep.previous_baseline_bytes, 0);
     assert!(!identity.generation_fingerprint.is_empty());
-    assert!(!changed_plan.build_target.exists());
+    assert!(changed_plan.build_target.exists());
 }
 
 #[test]

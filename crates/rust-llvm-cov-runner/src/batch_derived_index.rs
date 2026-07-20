@@ -1,3 +1,4 @@
+use crate::CACHE_SCHEMA_VERSION;
 use crate::batch_derived::{INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION};
 #[cfg(test)]
 use crate::batch_derived_index_types::OnDiskIndex;
@@ -7,7 +8,6 @@ use crate::batch_derived_index_types::{
 };
 use crate::batch_fingerprint::RustCoverageBatchIdentity;
 use crate::rust_cov_cache::{RustCovCacheEntry, generation_entries_fingerprint};
-use crate::{CACHE_SCHEMA_VERSION, RustLineCoverage};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -29,6 +29,17 @@ pub struct RustGenerationCoverageSnapshot {
     pub identity: String,
     pub covered_lines: BTreeMap<String, BTreeSet<u32>>,
     pub population: RustPopulationState,
+}
+
+const CHECK_AGGREGATE_ENTRIES_PREFIX: &str = "check-aggregate:";
+
+pub(crate) fn check_aggregate_entries_fingerprint(
+    aggregate: &crate::batch_check_aggregate::ValidatedCheckAggregate,
+) -> String {
+    format!(
+        "{CHECK_AGGREGATE_ENTRIES_PREFIX}{}",
+        aggregate.integrity_fingerprint
+    )
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RustSnapshotDelta {
@@ -60,8 +71,13 @@ pub fn load_current_generation_coverage_snapshot(
     selectors: Option<&[String]>,
 ) -> Option<RustGenerationCoverageSnapshot> {
     let population = load_current_population_state(cache_root, source_root, identity, selectors)?;
-    let entries = load_manifest_generation_entries(cache_root, source_root, &population)?;
-    let snapshot_identity = stable_generation_coverage_identity(&population, &entries);
+    let entries = crate::batch_derived_snapshot::load_manifest_generation_entries(
+        cache_root,
+        source_root,
+        &population,
+    )?;
+    let snapshot_identity =
+        crate::batch_derived_snapshot::stable_generation_coverage_identity(&population, &entries);
     Some(RustGenerationCoverageSnapshot {
         identity: snapshot_identity,
         covered_lines: entries,
@@ -151,13 +167,51 @@ fn population_artifacts_compatible(
     {
         return false;
     }
-    if generation_entries_fingerprint(cache_root, &manifest.generation_fingerprint)
-        .ok()
-        .is_none_or(|computed| computed != manifest.entries_fingerprint)
+    if manifest
+        .entries_fingerprint
+        .starts_with(CHECK_AGGREGATE_ENTRIES_PREFIX)
     {
-        return false;
+        return index_matches_check_aggregate(cache_root, source_root, manifest, index);
     }
-    index_matches_derived_entries(cache_root, source_root, manifest, index)
+    generation_entries_fingerprint(cache_root, &manifest.generation_fingerprint)
+        .ok()
+        .is_some_and(|computed| computed == manifest.entries_fingerprint)
+        && index_matches_derived_entries(cache_root, source_root, manifest, index)
+}
+
+fn index_matches_check_aggregate(
+    cache_root: &Path,
+    source_root: &Path,
+    manifest: &PopulationManifestOnDisk,
+    index: &OnDiskIndexWithFiles,
+) -> bool {
+    let identity = RustCoverageBatchIdentity {
+        input_digest: manifest.input_fingerprint.clone(),
+        generation_fingerprint: manifest.generation_fingerprint.clone(),
+        selection_context_fingerprint: manifest.selection_context_fingerprint.clone(),
+        ordinary_source_digests: manifest.ordinary_source_digests.clone(),
+    };
+    let Some(snapshot) = crate::batch_check_aggregate::load_current_check_aggregate_snapshot(
+        cache_root,
+        source_root,
+        &identity,
+        Some(&manifest.selectors),
+    ) else {
+        return false;
+    };
+    manifest.entries_fingerprint == check_aggregate_entries_fingerprint(&snapshot.aggregate)
+        && conservative_check_aggregate_index(&snapshot.aggregate) == index.files
+}
+
+fn conservative_check_aggregate_index(
+    aggregate: &crate::batch_check_aggregate::ValidatedCheckAggregate,
+) -> RustCoverageIndex {
+    let selectors = aggregate.selectors.iter().cloned().collect::<BTreeSet<_>>();
+    aggregate
+        .aggregate_covered_lines
+        .keys()
+        .map(|file| (file.clone(), selectors.clone()))
+        .collect()
 }
 
 fn index_matches_derived_entries(
@@ -212,6 +266,12 @@ fn manifest_generation_entries_complete(
     cache_root: &Path,
     manifest: &PopulationManifestOnDisk,
 ) -> bool {
+    if manifest
+        .entries_fingerprint
+        .starts_with(CHECK_AGGREGATE_ENTRIES_PREFIX)
+    {
+        return true;
+    }
     let entries_dir = cache_root.join("entries");
     if !entries_dir.is_dir() {
         return false;
@@ -255,84 +315,6 @@ fn manifest_generation_entries_complete(
     actual.sort();
     actual == expected
 }
-fn load_manifest_generation_entries(
-    cache_root: &Path,
-    source_root: &Path,
-    population: &RustPopulationState,
-) -> Option<BTreeMap<String, BTreeSet<u32>>> {
-    let entries_dir = cache_root.join("entries");
-    let mut by_selector = BTreeMap::<String, RustLineCoverage>::new();
-    for entry in fs::read_dir(entries_dir).ok()?.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-            continue;
-        }
-        let parsed: RustCovCacheEntry = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
-        if parsed.schema_version != CACHE_SCHEMA_VERSION
-            || parsed.generation_fingerprint != population.generation_fingerprint
-        {
-            continue;
-        }
-        if parsed.status != rpytest_runner::TestStatus::Passed {
-            return None;
-        }
-        if by_selector
-            .insert(parsed.selector.clone(), parsed.coverage)
-            .is_some()
-        {
-            return None;
-        }
-    }
-    let actual: Vec<_> = by_selector.keys().cloned().collect();
-    if actual != population.selectors {
-        return None;
-    }
-    let mut covered_lines = BTreeMap::<String, BTreeSet<u32>>::new();
-    for coverage in by_selector.into_values() {
-        for (file, lines) in coverage.files {
-            let rel = crate::repo_relative_coverage_file(source_root, &file)?;
-            covered_lines.entry(rel).or_default().extend(lines);
-        }
-    }
-    Some(covered_lines)
-}
-
-fn stable_generation_coverage_identity(
-    population: &RustPopulationState,
-    covered_lines: &BTreeMap<String, BTreeSet<u32>>,
-) -> String {
-    let mut h = stable_fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
-    for value in [
-        population.input_fingerprint.as_str(),
-        population.generation_fingerprint.as_str(),
-        population.selection_context_fingerprint.as_str(),
-        population.entries_fingerprint.as_str(),
-    ] {
-        h = stable_fnv1a64(h, value.as_bytes());
-        h = stable_fnv1a64(h, &[0]);
-    }
-    for selector in &population.selectors {
-        h = stable_fnv1a64(h, selector.as_bytes());
-        h = stable_fnv1a64(h, &[0]);
-    }
-    for (file, lines) in covered_lines {
-        h = stable_fnv1a64(h, file.as_bytes());
-        h = stable_fnv1a64(h, &[0]);
-        for line in lines {
-            h = stable_fnv1a64(h, line.to_le_bytes().as_slice());
-        }
-        h = stable_fnv1a64(h, &[0]);
-    }
-    format!("{h:016x}")
-}
-
-fn stable_fnv1a64(h: u64, bytes: &[u8]) -> u64 {
-    const PRIME: u64 = 0x0100_0000_01b3;
-    bytes
-        .iter()
-        .fold(h, |acc, byte| (acc ^ u64::from(*byte)).wrapping_mul(PRIME))
-}
-
 pub fn load_current_generation_line_index(
     cache_root: &Path,
     source_root: &Path,
@@ -352,19 +334,7 @@ pub fn reusable_snapshot_delta(
     prior: &BTreeMap<String, String>,
     current: &BTreeMap<String, String>,
 ) -> RustSnapshotDelta {
-    if prior.keys().ne(current.keys()) {
-        return RustSnapshotDelta::StructuralChange;
-    }
-    let modified = prior
-        .iter()
-        .filter(|(path, digest)| current.get(*path) != Some(*digest))
-        .map(|(path, _digest)| source_root.join(path))
-        .collect::<Vec<_>>();
-    if modified.is_empty() {
-        RustSnapshotDelta::Unchanged
-    } else {
-        RustSnapshotDelta::Modified(modified)
-    }
+    crate::batch_derived_snapshot::reusable_snapshot_delta(source_root, prior, current)
 }
 
 pub(crate) fn normalized_source_root(source_root: &Path) -> String {
@@ -414,6 +384,10 @@ pub(crate) fn read_population_generation(cache_root: &Path) -> Option<String> {
         .as_str()
         .map(str::to_string)
 }
+
+#[cfg(test)]
+#[path = "batch_derived_index_check_aggregate_test.rs"]
+mod check_aggregate_tests;
 
 #[cfg(test)]
 #[path = "batch_derived_index_test.rs"]

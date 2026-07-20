@@ -1,7 +1,8 @@
 use super::test_helpers::finish_context;
 use super::{
-    FreshBatchFinishContext, build_instance_export_requests, build_instance_results,
-    finish_fresh_batch_after_export, finish_fresh_check_aggregate_after_export,
+    FreshBatchFinishContext, FreshCheckAggregateExport, build_instance_export_requests,
+    build_instance_results, finish_fresh_batch_after_export,
+    finish_fresh_check_aggregate_after_export,
 };
 use crate::RustLineCoverage;
 use crate::batch_events::{BatchCompilerArtifact, BatchTestStarted, BatchTestTerminal};
@@ -195,11 +196,14 @@ fn finish_fresh_check_aggregate_rejects_unmatched_selectors() {
     let identity = batch_identity(&req, &tools).unwrap();
     let result = finish_fresh_check_aggregate_after_export(
         &req,
+        &tools,
         &identity,
-        false,
-        Vec::new(),
-        BTreeMap::new(),
-        ExportCounters::default(),
+        FreshCheckAggregateExport {
+            exact: false,
+            instances: Vec::new(),
+            exported: BTreeMap::new(),
+            counters: ExportCounters::default(),
+        },
         finish_context(),
     )
     .expect("returns batch error result");
@@ -236,11 +240,14 @@ fn finish_fresh_check_aggregate_returns_failed_outcomes_without_publishing() {
     }];
     let result = finish_fresh_check_aggregate_after_export(
         &req,
+        &tools,
         &identity,
-        false,
-        instances,
-        BTreeMap::new(),
-        ExportCounters::default(),
+        FreshCheckAggregateExport {
+            exact: false,
+            instances,
+            exported: BTreeMap::new(),
+            counters: ExportCounters::default(),
+        },
         finish_context(),
     )
     .expect("failed outcomes are returned");

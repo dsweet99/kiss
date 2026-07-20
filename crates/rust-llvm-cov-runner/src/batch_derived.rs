@@ -1,11 +1,16 @@
-use crate::batch_derived_index::read_population_generation;
+pub(crate) use crate::batch_derived_prune::maybe_prune_obsolete_selective_after_batch;
+use crate::batch_derived_prune::prune_non_current_generations;
+pub use crate::batch_derived_prune::prune_obsolete_selective_generations;
 use crate::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
 use crate::batch_plan::RustCoverageBatchRequest;
 use crate::rust_cov_cache::{
     RustCovCacheEntry, create_new_cache_file, generation_entries_fingerprint,
     load_rust_cov_cache_entry, repo_relative_coverage_file, rust_cov_unique_suffix,
 };
-use crate::{CACHE_SCHEMA_VERSION, RustLineCoverage, RustLlvmCovError, RustTestBinaryIdentity};
+use crate::{
+    RustLineCoverage, RustLlvmCovError, RustTestBinaryIdentity,
+    batch_check_aggregate::ValidatedCheckAggregate,
+};
 use rpytest_runner::TestStatus;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -187,6 +192,53 @@ pub fn publish_derived_state_with_binaries(
     })
 }
 
+pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
+    req: &RustCoverageBatchRequest,
+    _tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+    aggregate: &ValidatedCheckAggregate,
+) -> Result<DerivedPublishCounters, RustLlvmCovError> {
+    let pruned = prune_non_current_generations(&req.cache_root, &identity.generation_fingerprint)?;
+    let selector_set = aggregate.selectors.iter().cloned().collect::<BTreeSet<_>>();
+    let index = aggregate
+        .aggregate_covered_lines
+        .keys()
+        .map(|file| (file.clone(), selector_set.clone()))
+        .collect::<RustCoverageIndex>();
+    let entries_fingerprint =
+        crate::batch_derived_index::check_aggregate_entries_fingerprint(aggregate);
+    write_coverage_index(
+        &req.cache_root,
+        &req.source_root,
+        &identity.generation_fingerprint,
+        &entries_fingerprint,
+        &index,
+    )?;
+    let test_binaries = aggregate
+        .binaries
+        .values()
+        .map(|record| RustTestBinaryIdentity {
+            id: record.id.clone(),
+            executable: record.executable.clone(),
+            digest: record.digest.clone(),
+        })
+        .collect::<Vec<_>>();
+    crate::batch_derived_manifest::write_population_manifest(
+        &req.cache_root,
+        &req.source_root,
+        identity,
+        &aggregate.selectors,
+        &test_binaries,
+        &entries_fingerprint,
+    )?;
+    Ok(DerivedPublishCounters {
+        derived_repair: false,
+        entry_generation_count: count_generations(&req.cache_root)?,
+        current_index_generation: identity.generation_fingerprint.clone(),
+        cache_pruned_entries: pruned,
+    })
+}
+
 fn legacy_test_binaries(selectors: &[String]) -> Vec<RustTestBinaryIdentity> {
     if selectors.is_empty() {
         return Vec::new();
@@ -196,87 +248,6 @@ fn legacy_test_binaries(selectors: &[String]) -> Vec<RustTestBinaryIdentity> {
         executable: "test-bin".to_string(),
         digest: "0000000000000000".to_string(),
     }]
-}
-
-fn prune_non_current_generations(
-    cache_root: &Path,
-    current_generation: &str,
-) -> Result<usize, RustLlvmCovError> {
-    prune_generations_except(
-        cache_root,
-        current_generation,
-        retained_population_generation(cache_root),
-    )
-}
-
-pub fn prune_obsolete_selective_generations(
-    cache_root: &Path,
-    current_generation: &str,
-) -> Result<usize, RustLlvmCovError> {
-    prune_generations_except(
-        cache_root,
-        current_generation,
-        retained_population_generation(cache_root),
-    )
-}
-
-/// Selective runs prune obsolete result generations only after a successful batch.
-/// Failed or interrupted runs must retain the complete population snapshot generation.
-pub(crate) fn maybe_prune_obsolete_selective_after_batch(
-    req: &RustCoverageBatchRequest,
-    identity: &RustCoverageBatchIdentity,
-    result: &mut crate::RustCoverageBatchResult,
-) -> Result<(), RustLlvmCovError> {
-    if result.batch_error.is_some() || req.population_publication_selectors.is_some() {
-        return Ok(());
-    }
-    let pruned =
-        prune_obsolete_selective_generations(&req.cache_root, &identity.generation_fingerprint)?;
-    result.counters.cache_pruned_entries += pruned;
-    Ok(())
-}
-
-fn retained_population_generation(cache_root: &Path) -> Option<String> {
-    read_population_generation(cache_root)
-}
-
-fn prune_generations_except(
-    cache_root: &Path,
-    current_generation: &str,
-    population_generation: Option<String>,
-) -> Result<usize, RustLlvmCovError> {
-    let entries_dir = cache_root.join("entries");
-    if !entries_dir.is_dir() {
-        return Ok(0);
-    }
-    let mut retained = BTreeSet::from([current_generation.to_string()]);
-    if let Some(previous) =
-        population_generation.filter(|generation| generation != current_generation)
-    {
-        retained.insert(previous);
-    }
-    let mut pruned = 0usize;
-    for entry in fs::read_dir(&entries_dir).map_err(RustLlvmCovError::Io)? {
-        let path = entry.map_err(RustLlvmCovError::Io)?.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-            continue;
-        }
-        let bytes = fs::read(&path).map_err(RustLlvmCovError::Io)?;
-        let Ok(parsed): Result<RustCovCacheEntry, _> = serde_json::from_slice(&bytes) else {
-            continue;
-        };
-        if parsed.schema_version != CACHE_SCHEMA_VERSION {
-            continue;
-        }
-        if parsed.generation_fingerprint.is_empty()
-            || retained.contains(&parsed.generation_fingerprint)
-        {
-            continue;
-        }
-        fs::remove_file(path).map_err(RustLlvmCovError::Io)?;
-        pruned += 1;
-    }
-    Ok(pruned)
 }
 
 pub(crate) fn derived_generation_line_index(
