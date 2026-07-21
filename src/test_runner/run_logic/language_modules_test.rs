@@ -243,3 +243,65 @@ fn language_executor_non_empty_runs_validate_jobs_before_spawning() {
         .is_err()
     );
 }
+
+#[test]
+fn cached_rust_check_aggregate_is_only_for_non_forced_selective_runs() {
+    assert!(should_try_cached_rust_check_aggregate(false, &None));
+    assert!(!should_try_cached_rust_check_aggregate(true, &None));
+    assert!(!should_try_cached_rust_check_aggregate(
+        false,
+        &Some(vec!["tests::population".to_string()])
+    ));
+}
+
+#[test]
+fn rust_execution_helper_reaches_check_aggregate_population_with_ignores() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut planned = planned();
+    planned.repo_root = tmp.path().to_path_buf();
+    planned.ignore = vec!["--ignore".to_string(), "other.rs".to_string()];
+    let mut options = options();
+    options.jobs = 0;
+    let ctx = crate::test_runner::coverage_decision::RunContext {
+        planned: &planned,
+        options: &options,
+    };
+
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_rust_selectors_for_module(
+                &["tests::population".to_string()],
+                &ctx,
+                Some(vec!["tests::population".to_string()]),
+            )
+        }))
+        .is_err()
+    );
+}
+
+#[test]
+fn rust_execution_helper_tries_cached_selective_before_falling_through() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
+    let mut planned = planned();
+    planned.repo_root = tmp.path().to_path_buf();
+    let mut options = options();
+    options.jobs = 0;
+    let ctx = crate::test_runner::coverage_decision::RunContext {
+        planned: &planned,
+        options: &options,
+    };
+
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_rust_selectors_for_module(&["tests::case".to_string()], &ctx, None)
+        }))
+        .is_err()
+    );
+}

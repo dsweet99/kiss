@@ -178,6 +178,104 @@ fn rust_selector_path_submits_one_batch_request_to_executor() {
 }
 
 #[test]
+fn check_aggregate_population_request_carries_population_selectors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let selectors = vec!["tests::case".to_string()];
+    let population_selectors = vec!["tests::case".to_string(), "tests::other".to_string()];
+    let expected_population_selectors = population_selectors.clone();
+
+    let summary = run_rust_llvm_cov_selectors_with_deps(
+        tmp.path(),
+        &selectors,
+        RustCoverageRunOptions {
+            extra: &[],
+            force_rerun: true,
+            jobs: 2,
+            population_publication_selectors: Some(population_selectors),
+            coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate {
+                publication_binary_ids: None,
+                repair_publication: None,
+            },
+        },
+        |_repo_root| {
+            Ok(RustCoverageToolVersions {
+                cargo: "cargo 1.88.0".to_string(),
+                llvm_cov: "cargo-llvm-cov 0.6.0".to_string(),
+                rustc: "rustc 1.88.0".to_string(),
+                cargo_nextest: "cargo-nextest 0.9.0".to_string(),
+            })
+        },
+        move |batch_req, _versions| {
+            assert_eq!(
+                batch_req.population_publication_selectors,
+                Some(expected_population_selectors)
+            );
+            assert!(matches!(
+                batch_req.coverage_output_mode,
+                rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate { .. }
+            ));
+            Ok(RustCoverageBatchResult {
+                completed: batch_req
+                    .logical_selectors
+                    .iter()
+                    .cloned()
+                    .map(passed_rust_llvm_cov_outcome)
+                    .collect(),
+                batch_error: None,
+                counters: RustCoverageBatchCounters::default(),
+                test_binaries: Vec::new(),
+            })
+        },
+    )
+    .unwrap();
+
+    assert_eq!(summary.total, selectors.len());
+}
+
+#[test]
+fn check_aggregate_population_can_return_cached_summary() {
+    let selectors = vec!["tests::case".to_string(), "tests::other".to_string()];
+    let population = rust_llvm_cov_runner::RustPopulationState {
+        input_fingerprint: "input".to_string(),
+        generation_fingerprint: "generation".to_string(),
+        selection_context_fingerprint: "selection".to_string(),
+        entries_fingerprint: "check-aggregate:abc".to_string(),
+        selectors: selectors.clone(),
+        line_index: BTreeMap::new(),
+        ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
+    };
+
+    let summary = cached_summary_from_check_aggregate_population(&selectors, &population).unwrap();
+
+    assert_eq!(summary.total, 2);
+    assert_eq!(summary.cache_hits, 2);
+    assert_eq!(summary.cache_misses, 0);
+
+    let mut entry_backed = population;
+    entry_backed.entries_fingerprint = "entry-fingerprint".to_string();
+    assert!(cached_summary_from_check_aggregate_population(&selectors, &entry_backed).is_none());
+}
+
+#[test]
+fn cached_check_aggregate_selectors_returns_none_without_population() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
+
+    let cached =
+        cached_rust_check_aggregate_selectors(tmp.path(), &["tests::case".to_string()], &[])
+            .unwrap();
+
+    assert!(cached.is_none());
+}
+
+#[test]
 fn rust_selector_wrappers_return_empty_summary_without_tool_detection() {
     let tmp = tempfile::tempdir().unwrap();
 

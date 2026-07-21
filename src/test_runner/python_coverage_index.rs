@@ -72,11 +72,20 @@ pub(crate) fn publish_python_derived_state_with_filter(
         &index,
         &entries_fingerprint,
     )?;
-    if let Some(selectors) = population_selectors {
+    let selectors_to_publish = population_selectors
+        .map(|selectors| selectors.to_vec())
+        .or_else(|| {
+            manifest::stored_python_universe_selectors_for_current_inputs(
+                repo_root,
+                test_args,
+                manifest::PYTHON_COVERAGE_ENV_KEYS,
+            )
+        });
+    if let Some(selectors) = selectors_to_publish {
         let identity = manifest::current_python_population_manifest_identity(repo_root, test_args)?;
         manifest::write_python_population_manifest_with_identity_and_entries_fingerprint(
             repo_root,
-            selectors,
+            &selectors,
             &identity,
             &entries_fingerprint,
         )?;

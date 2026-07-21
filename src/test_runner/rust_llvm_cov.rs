@@ -50,6 +50,89 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
     publication_binary_ids: Option<std::collections::BTreeSet<String>>,
     repair_publication: Option<CheckAggregateRepairPublication>,
 ) -> Result<SelectorExecutionSummary, String> {
+    run_rust_llvm_cov_check_aggregate_selectors_with_publication(
+        repo_root,
+        selectors,
+        extra,
+        jobs,
+        None,
+        publication_binary_ids,
+        repair_publication,
+    )
+}
+
+pub(crate) fn run_rust_llvm_cov_check_aggregate_population_selectors(
+    repo_root: &Path,
+    selectors: &[String],
+    extra: &[String],
+    jobs: usize,
+    population_publication_selectors: Vec<String>,
+) -> Result<SelectorExecutionSummary, String> {
+    run_rust_llvm_cov_check_aggregate_selectors_with_publication(
+        repo_root,
+        selectors,
+        extra,
+        jobs,
+        Some(population_publication_selectors),
+        None,
+        None,
+    )
+}
+
+pub(crate) fn cached_rust_check_aggregate_selectors(
+    repo_root: &Path,
+    selectors: &[String],
+    extra: &[String],
+) -> Result<Option<SelectorExecutionSummary>, String> {
+    let identity = crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+        repo_root, extra,
+    )?;
+    let cache_root = repo_root.join(".kiss").join("rust_llvm_cov_cache");
+    let Some(population) = rust_llvm_cov_runner::load_current_population_state(
+        &cache_root,
+        repo_root,
+        &identity,
+        Some(selectors),
+    ) else {
+        return Ok(None);
+    };
+    Ok(cached_summary_from_check_aggregate_population(
+        selectors,
+        &population,
+    ))
+}
+
+fn cached_summary_from_check_aggregate_population(
+    selectors: &[String],
+    population: &rust_llvm_cov_runner::RustPopulationState,
+) -> Option<SelectorExecutionSummary> {
+    if !population
+        .entries_fingerprint
+        .starts_with("check-aggregate:")
+    {
+        return None;
+    }
+    let mut summary = SelectorExecutionSummary::default();
+    for selector in selectors {
+        println!("PASSED (cached): {selector}");
+        summary.record(
+            rpytest_runner::TestStatus::Passed,
+            SelectorCacheRecord::Hit,
+            Some(0),
+        );
+    }
+    Some(summary)
+}
+
+fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
+    repo_root: &Path,
+    selectors: &[String],
+    extra: &[String],
+    jobs: usize,
+    population_publication_selectors: Option<Vec<String>>,
+    publication_binary_ids: Option<std::collections::BTreeSet<String>>,
+    repair_publication: Option<CheckAggregateRepairPublication>,
+) -> Result<SelectorExecutionSummary, String> {
     run_rust_llvm_cov_selectors_with_deps(
         repo_root,
         selectors,
@@ -57,7 +140,7 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
             extra,
             force_rerun: true,
             jobs,
-            population_publication_selectors: None,
+            population_publication_selectors,
             coverage_output_mode: CoverageOutputMode::CheckAggregate {
                 publication_binary_ids,
                 repair_publication,

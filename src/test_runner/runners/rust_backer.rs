@@ -143,26 +143,14 @@ impl LanguagePlanner for RustModule {
         self.prior_failures.clone()
     }
 
-    fn freshness(&self, universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
+    fn freshness(&self, _universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
         if self.rust_source_paths.is_empty()
             && self.changed_tests.is_empty()
             && self.resolved.get().is_none()
         {
             return Ok(CoverageFreshness::Fresh);
         }
-        let universe_ids = universe
-            .iter()
-            .map(|selector| selector.id.clone())
-            .collect::<Vec<_>>();
         let resolved = self.resolved_state()?;
-        if let Some(selectors) = Some(&universe_ids)
-            && resolved
-                .state
-                .as_ref()
-                .is_some_and(|state| state.selectors != *selectors)
-        {
-            return Ok(CoverageFreshness::Stale);
-        }
         Ok(resolved.freshness)
     }
 
@@ -220,4 +208,50 @@ pub(crate) fn select_fresh_rust_source_selectors(
         rust_test_args,
         &resolved,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_runner::coverage_decision::{CoverageFreshness, RustSelectionBasis};
+    use rust_llvm_cov_runner::RustPopulationState;
+
+    #[test]
+    fn freshness_trusts_resolved_partial_current_population() {
+        let tmp = tempfile::tempdir().unwrap();
+        let resolved = ResolvedRustPopulation {
+            freshness: CoverageFreshness::Fresh,
+            basis: RustSelectionBasis::Current,
+            state: Some(RustPopulationState {
+                input_fingerprint: "input".to_string(),
+                generation_fingerprint: "generation".to_string(),
+                selection_context_fingerprint: "selection".to_string(),
+                entries_fingerprint: "entries".to_string(),
+                selectors: vec!["tests::selected_by_changed_source".to_string()],
+                line_index: BTreeMap::new(),
+                ordinary_source_digests: BTreeMap::new(),
+                test_binaries: BTreeMap::new(),
+            }),
+            snapshot_delta: None,
+        };
+        let module = RustModule::new_with_resolved(RustBackerInput {
+            repo_root: tmp.path(),
+            rust_source_paths: &[tmp.path().join("src").join("lib.rs")],
+            rust_changed_lines: &BTreeMap::new(),
+            rust_test_args: &[],
+            ignore: &[],
+            changed_tests: &[],
+            prior_failures: &[],
+            resolved: Some(resolved),
+        });
+        let universe = [TestSelector::new(
+            kiss::Language::Rust,
+            "tests::full_universe_member",
+        )];
+
+        assert_eq!(
+            module.freshness(&universe).unwrap(),
+            CoverageFreshness::Fresh
+        );
+    }
 }

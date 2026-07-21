@@ -174,25 +174,45 @@ pub(super) fn run_rust_selectors_for_module(
     if selectors.is_empty() {
         return Ok(SelectorExecutionSummary::default());
     }
-    if population_publication_selectors.is_some() && !ctx.options.force_rerun {
-        if ctx.options.extra.is_empty() && ctx.planned.ignore.is_empty() {
-            return runners::run_uninstrumented_rust_population_selectors(
+    if let Some(population_selectors) = population_publication_selectors {
+        if !ctx.options.force_rerun {
+            if ctx.options.extra.is_empty() && ctx.planned.ignore.is_empty() {
+                return runners::run_uninstrumented_rust_population_selectors(
+                    &ctx.planned.repo_root,
+                    selectors,
+                    ctx.options.jobs,
+                );
+            }
+            return runners::run_rust_llvm_cov_check_aggregate_population_selectors(
                 &ctx.planned.repo_root,
                 selectors,
+                ctx.options.extra,
                 ctx.options.jobs,
+                population_selectors,
             );
         }
-        return runners::run_rust_llvm_cov_check_aggregate_selectors(
+        let force_rerun =
+            ctx.options.force_rerun || !ctx.planned.rust_prior_failure_selectors.is_empty();
+        return runners::run_rust_llvm_cov_selectors(
             &ctx.planned.repo_root,
             selectors,
             ctx.options.extra,
+            force_rerun,
             ctx.options.jobs,
-            None,
-            None,
+            Some(population_selectors),
         );
     }
     let force_rerun =
         ctx.options.force_rerun || !ctx.planned.rust_prior_failure_selectors.is_empty();
+    if should_try_cached_rust_check_aggregate(force_rerun, &population_publication_selectors)
+        && let Some(summary) = runners::cached_rust_check_aggregate_selectors(
+            &ctx.planned.repo_root,
+            selectors,
+            ctx.options.extra,
+        )?
+    {
+        return Ok(summary);
+    }
     runners::run_rust_llvm_cov_selectors(
         &ctx.planned.repo_root,
         selectors,
@@ -201,6 +221,13 @@ pub(super) fn run_rust_selectors_for_module(
         ctx.options.jobs,
         population_publication_selectors,
     )
+}
+
+fn should_try_cached_rust_check_aggregate(
+    force_rerun: bool,
+    population_publication_selectors: &Option<Vec<String>>,
+) -> bool {
+    !force_rerun && population_publication_selectors.is_none()
 }
 
 #[cfg(test)]

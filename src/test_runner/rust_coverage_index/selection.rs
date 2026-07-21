@@ -40,6 +40,28 @@ pub(crate) fn resolve_rust_population_state(
             snapshot_delta: None,
         });
     }
+    let partial_current = rust_llvm_cov_runner::load_current_population_state(
+        &cache_root,
+        repo_root,
+        &identity,
+        None,
+    );
+    if let Some(partial_current) = partial_current
+        && current_partial_population_covers_selection(
+            repo_root,
+            rust_source_paths,
+            &BTreeMap::new(),
+            test_args,
+            &partial_current,
+        )
+    {
+        return Ok(ResolvedRustPopulation {
+            freshness: CoverageFreshness::Fresh,
+            basis: RustSelectionBasis::Current,
+            state: Some(partial_current),
+            snapshot_delta: None,
+        });
+    }
     let reusable = rust_llvm_cov_runner::load_reusable_prior_population_state(
         &cache_root,
         repo_root,
@@ -73,6 +95,33 @@ pub(crate) fn resolve_rust_population_state(
         state: None,
         snapshot_delta: None,
     })
+}
+
+fn current_partial_population_covers_selection(
+    repo_root: &Path,
+    rust_source_paths: &[PathBuf],
+    rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
+    test_args: &[String],
+    population: &rust_llvm_cov_runner::RustPopulationState,
+) -> bool {
+    if rust_source_paths.is_empty() {
+        return false;
+    }
+    let Some(selected) = select_current_basis_rust_source_selectors(
+        repo_root,
+        rust_source_paths,
+        rust_changed_lines,
+        test_args,
+        population,
+    ) else {
+        return false;
+    };
+    let manifest_selectors = population
+        .selectors
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    selected == manifest_selectors
 }
 
 pub(crate) fn select_rust_source_selectors_for_basis(
@@ -161,8 +210,10 @@ fn select_reusable_prior_rust_source_selectors(
 
 #[cfg(test)]
 mod coverage_witness {
-    use super::ResolvedRustPopulation;
+    use super::{ResolvedRustPopulation, current_partial_population_covers_selection};
     use crate::test_runner::coverage_decision::{CoverageFreshness, RustSelectionBasis};
+    use rust_llvm_cov_runner::RustPopulationState;
+    use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
     fn witness_resolved_population_struct() {
@@ -173,5 +224,45 @@ mod coverage_witness {
             snapshot_delta: None,
         };
         assert_eq!(resolved.basis, RustSelectionBasis::ReusablePrior);
+    }
+
+    #[test]
+    fn partial_current_population_must_exactly_cover_changed_source_selection() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src").join("lib.rs");
+        std::fs::create_dir_all(src.parent().unwrap()).unwrap();
+        std::fs::write(&src, "pub fn value() -> u32 { 1 }\n").unwrap();
+        let population = RustPopulationState {
+            input_fingerprint: "input".to_string(),
+            generation_fingerprint: "generation".to_string(),
+            selection_context_fingerprint: "selection".to_string(),
+            entries_fingerprint: "entries".to_string(),
+            selectors: vec!["tests::covers_src".to_string()],
+            line_index: BTreeMap::from([(
+                "src/lib.rs".to_string(),
+                BTreeSet::from(["tests::covers_src".to_string()]),
+            )]),
+            ordinary_source_digests: BTreeMap::new(),
+            test_binaries: BTreeMap::new(),
+        };
+
+        assert!(current_partial_population_covers_selection(
+            tmp.path(),
+            std::slice::from_ref(&src),
+            &BTreeMap::new(),
+            &[],
+            &population
+        ));
+        let mut extra_manifest_selector = population.clone();
+        extra_manifest_selector
+            .selectors
+            .push("tests::not_selected".to_string());
+        assert!(!current_partial_population_covers_selection(
+            tmp.path(),
+            &[src],
+            &BTreeMap::new(),
+            &[],
+            &extra_manifest_selector
+        ));
     }
 }
