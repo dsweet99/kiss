@@ -149,6 +149,48 @@ fn PythonModule_and_RustModule_execution_constructors_expose_language_policy() {
 }
 
 #[test]
+fn dry_run_lines_report_population_and_selector_commands() {
+    let root = PathBuf::from(".");
+    let ignore = Vec::<String>::new();
+    let python = PythonModule::for_execution(&root, &ignore);
+    let rust = RustModule::for_execution(&root, &ignore);
+
+    let python_lines = <PythonModule as LanguageExecutor>::dry_run_lines(
+        &python,
+        &["tests/test_app.py::test_ok".to_string()],
+        true,
+        &["-q".to_string()],
+        4,
+    )
+    .unwrap();
+    assert_eq!(python_lines[0], "PYTHON COVERAGE POPULATION");
+    assert_eq!(
+        python_lines[1],
+        "python '-m' pytest tests/test_app.py::test_ok '-q'"
+    );
+
+    let rust_lines = <RustModule as LanguageExecutor>::dry_run_lines(
+        &rust,
+        &["crate::tests::test_ok".to_string()],
+        true,
+        &[],
+        4,
+    )
+    .unwrap();
+    assert_eq!(rust_lines[0], "RUST COVERAGE POPULATION");
+    assert!(
+        rust_lines
+            .iter()
+            .any(|line| line == "RUST BATCH selectors=1 jobs=4")
+    );
+    assert!(
+        rust_lines
+            .iter()
+            .any(|line| line == "RUST SELECTOR crate::tests::test_ok")
+    );
+}
+
+#[test]
 fn language_executor_non_empty_runs_validate_jobs_before_spawning() {
     let planned = planned();
     let mut options = options();
