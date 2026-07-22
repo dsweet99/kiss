@@ -271,3 +271,7 @@ pub(crate) fn load_python_entries_for_line_selection(
 #[cfg(test)]
 #[path = "python_coverage_index_test.rs"]
 mod external_tests;
+
+#[cfg(test)]
+#[path = "python_coverage_index_b_test.rs"]
+mod external_b_tests;

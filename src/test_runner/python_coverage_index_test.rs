@@ -3,8 +3,6 @@ use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
-use std::sync::mpsc;
-use std::thread;
 use std::time::Duration;
 
 use rpytest_runner::TestStatus;
@@ -21,7 +19,13 @@ fn identity() -> PythonPopulationManifestIdentity {
     }
 }
 
-fn write_entry(repo_root: &Path, name: &str, selector: &str, coverage: LineCoverage) {
+fn write_entry(
+    repo_root: &Path,
+    name: &str,
+    selector: &str,
+    status: TestStatus,
+    coverage: LineCoverage,
+) {
     let path = python_coverage_cache_root(repo_root)
         .unwrap()
         .join("entries")
@@ -30,12 +34,16 @@ fn write_entry(repo_root: &Path, name: &str, selector: &str, coverage: LineCover
     let entry = serde_json::json!({
         "schema_version": rslip::CACHE_SCHEMA_VERSION,
         "nodeid": selector,
-        "status": TestStatus::Passed,
+        "status": status,
         "exit_code": 0,
         "duration": Duration::from_millis(1),
         "coverage": coverage,
     });
     fs::write(path, serde_json::to_vec(&entry).unwrap()).unwrap();
+}
+
+fn write_passed_entry(repo_root: &Path, name: &str, selector: &str, coverage: LineCoverage) {
+    write_entry(repo_root, name, selector, TestStatus::Passed, coverage);
 }
 
 #[test]
@@ -44,7 +52,7 @@ fn manifest_and_storage_helpers_are_referenced_from_external_tests() {
     let app = tmp.path().join("app.py");
     fs::write(&app, "def value():\n    return 1\n").unwrap();
     let selector = "tests/test_app.py::test_value".to_string();
-    write_entry(
+    write_passed_entry(
         tmp.path(),
         "a",
         &selector,
@@ -100,7 +108,7 @@ fn selective_entry_refresh_preserves_current_population_manifest() {
     let coverage = |lines| LineCoverage {
         files: BTreeMap::from([(app.to_string_lossy().to_string(), lines)]),
     };
-    write_entry(
+    write_passed_entry(
         tmp.path(),
         "selected",
         &selector,
@@ -125,7 +133,7 @@ fn selective_entry_refresh_preserves_current_population_manifest() {
     // A forced selective run replaces the selector's cache entry, then the
     // shared execution path rebuilds derived state without an explicit
     // population selector list.
-    write_entry(
+    write_passed_entry(
         tmp.path(),
         "selected",
         &selector,
@@ -154,7 +162,7 @@ fn selector_path_and_hash_helpers_are_referenced_from_external_tests() {
     fs::write(&app, "def value():\n    return 1\n").unwrap();
     fs::write(&other, "VALUE = 2\n").unwrap();
     let selector = "tests/test_app.py::test_value".to_string();
-    write_entry(
+    write_passed_entry(
         tmp.path(),
         "a",
         &selector,
@@ -235,7 +243,7 @@ fn filtered_python_rebuild_uses_supplied_indexable_policy() {
     let ignored = tmp.path().join("ignored.py");
     fs::write(&app, "def value():\n    return 1\n").unwrap();
     fs::write(&ignored, "VALUE = 2\n").unwrap();
-    write_entry(
+    write_passed_entry(
         tmp.path(),
         "a",
         "tests/test_app.py::test_value",
@@ -262,54 +270,6 @@ fn filtered_python_rebuild_uses_supplied_indexable_policy() {
 }
 
 #[test]
-fn legacy_unscoped_python_cache_entries_are_ignored() {
-    let tmp = tempfile::tempdir().unwrap();
-    let app = tmp.path().join("app.py");
-    fs::write(&app, "def value():\n    return 1\n").unwrap();
-    let legacy_entry = tmp
-        .path()
-        .join(".kiss")
-        .join("rslip_cache")
-        .join("entries")
-        .join("legacy.json");
-    fs::create_dir_all(legacy_entry.parent().unwrap()).unwrap();
-    let entry = serde_json::json!({
-        "schema_version": rslip::CACHE_SCHEMA_VERSION,
-        "nodeid": "tests/test_app.py::test_value",
-        "status": TestStatus::Passed,
-        "exit_code": 0,
-        "duration": Duration::from_millis(1),
-        "coverage": LineCoverage {
-            files: BTreeMap::from([(app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
-        },
-    });
-    fs::write(legacy_entry, serde_json::to_vec(&entry).unwrap()).unwrap();
-
-    let index = rebuild_python_coverage_index(tmp.path()).unwrap();
-
-    assert!(index.is_empty());
-}
-
-#[test]
-fn derived_state_publication_waits_for_derived_lock() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::write(tmp.path().join("app.py"), "def value():\n    return 1\n").unwrap();
-    let cache_root = python_coverage_cache_root(tmp.path()).unwrap();
-    let guard = rslip::lock_rslip_derived_state(&cache_root).unwrap();
-    let repo_root = tmp.path().to_path_buf();
-    let (tx, rx) = mpsc::channel();
-    let publisher = thread::spawn(move || {
-        let result = publish_python_derived_state_with_filter(&repo_root, None, &[], |_, _| true);
-        tx.send(result).unwrap();
-    });
-
-    assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
-    drop(guard);
-    rx.recv_timeout(Duration::from_secs(1)).unwrap().unwrap();
-    publisher.join().unwrap();
-}
-
-#[test]
 fn python_selection_handles_empty_missing_and_hybrid_fallback_cases() {
     let tmp = tempfile::tempdir().unwrap();
     let app = tmp.path().join("app.py");
@@ -325,7 +285,7 @@ fn python_selection_handles_empty_missing_and_hybrid_fallback_cases() {
         select_python_source_selectors_from_index(tmp.path(), std::slice::from_ref(&app)).is_none()
     );
 
-    write_entry(
+    write_passed_entry(
         tmp.path(),
         "app",
         "tests/test_app.py::test_value",
@@ -354,5 +314,110 @@ fn python_selection_handles_empty_missing_and_hybrid_fallback_cases() {
         Some(BTreeSet::from(
             ["tests/test_app.py::test_value".to_string()]
         ))
+    );
+}
+
+#[test]
+fn python_changed_line_selection_is_precise_for_disjoint_cached_lines() {
+    let tmp = tempfile::tempdir().unwrap();
+    let app = tmp.path().join("app.py");
+    fs::write(&app, "FIRST = 1\nSECOND = 2\nTHIRD = 3\n").unwrap();
+    let first = "tests/test_app.py::test_first".to_string();
+    let second = "tests/test_app.py::test_second".to_string();
+
+    write_passed_entry(
+        tmp.path(),
+        "first",
+        &first,
+        LineCoverage {
+            files: BTreeMap::from([(app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+        },
+    );
+    write_passed_entry(
+        tmp.path(),
+        "second",
+        &second,
+        LineCoverage {
+            files: BTreeMap::from([(app.to_string_lossy().to_string(), BTreeSet::from([2]))]),
+        },
+    );
+
+    assert_eq!(
+        python_selectors_by_changed_file_line(
+            tmp.path(),
+            &BTreeMap::from([("app.py".to_string(), BTreeSet::from([1]))])
+        ),
+        BTreeMap::from([("app.py".to_string(), BTreeSet::from([first.clone()]))])
+    );
+    assert_eq!(
+        python_selectors_by_changed_file_line(
+            tmp.path(),
+            &BTreeMap::from([("app.py".to_string(), BTreeSet::from([2]))])
+        ),
+        BTreeMap::from([("app.py".to_string(), BTreeSet::from([second.clone()]))])
+    );
+    assert_eq!(
+        python_selectors_by_changed_file_line(
+            tmp.path(),
+            &BTreeMap::from([("app.py".to_string(), BTreeSet::from([3]))])
+        ),
+        BTreeMap::new()
+    );
+
+    rebuild_python_coverage_index(tmp.path()).unwrap();
+    assert_eq!(
+        select_python_source_selectors_hybrid(
+            tmp.path(),
+            std::slice::from_ref(&app),
+            &BTreeMap::from([(app.clone(), BTreeSet::from([1]))])
+        ),
+        Some(BTreeSet::from([first.clone()]))
+    );
+    assert_eq!(
+        select_python_source_selectors_hybrid(
+            tmp.path(),
+            std::slice::from_ref(&app),
+            &BTreeMap::from([(app.clone(), BTreeSet::from([2]))])
+        ),
+        Some(BTreeSet::from([second.clone()]))
+    );
+    assert_eq!(
+        select_python_source_selectors_hybrid(
+            tmp.path(),
+            std::slice::from_ref(&app),
+            &BTreeMap::from([(app.clone(), BTreeSet::from([3]))])
+        ),
+        Some(BTreeSet::from([first, second]))
+    );
+}
+
+#[test]
+fn failed_python_cache_entries_do_not_contribute_line_coverage_evidence() {
+    let tmp = tempfile::tempdir().unwrap();
+    let app = tmp.path().join("app.py");
+    fs::write(&app, "VALUE = 1\n").unwrap();
+    let selector = "tests/test_app.py::test_failed".to_string();
+
+    write_entry(
+        tmp.path(),
+        "failed",
+        &selector,
+        TestStatus::Failed,
+        LineCoverage {
+            files: BTreeMap::from([(app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+        },
+    );
+
+    assert!(
+        rebuild_python_coverage_index(tmp.path())
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        python_selectors_by_changed_file_line(
+            tmp.path(),
+            &BTreeMap::from([("app.py".to_string(), BTreeSet::from([1]))])
+        ),
+        BTreeMap::new()
     );
 }
