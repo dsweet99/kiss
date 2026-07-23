@@ -412,6 +412,7 @@ dependencies = [
  "fa-leiden-cd",
  "fs2",
  "ignore",
+ "kiss-publication-barrier",
  "libc",
  "petgraph",
  "proc-macro2",
@@ -427,6 +428,10 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-python",
 ]
+
+[[package]]
+name = "kiss-publication-barrier"
+version = "0.1.0"
 
 [[package]]
 name = "libc"
@@ -561,6 +566,7 @@ name = "rslip"
 version = "0.1.0"
 dependencies = [
  "fs2",
+ "kiss-publication-barrier",
  "rpytest-runner",
  "serde",
  "serde_json",
@@ -573,6 +579,7 @@ version = "0.1.0"
 dependencies = [
  "cargo-config2",
  "fs2",
+ "kiss-publication-barrier",
  "libc",
  "rpytest-runner",
  "serde",

@@ -10,6 +10,7 @@ use crate::{
     batch_check_aggregate::{
         build_check_aggregate, publish_check_aggregate, selector_binary_ids_from_outcomes,
     },
+    batch_executor_finish_entries::attach_binary_line_maps_to_completed_outcomes,
     batch_export::{InstanceExportRequest, object_paths_for_executable},
     batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity, entry_fingerprint},
     batch_plan::{CheckAggregateRepairPublication, RustCoverageBatchRequest},
@@ -25,19 +26,6 @@ pub(crate) struct FreshBatchFinishContext {
     pub(crate) process_residual_count: usize,
     pub(crate) test_binaries: Vec<RustTestBinaryIdentity>,
     pub(crate) repair_publication: Option<CheckAggregateRepairPublication>,
-}
-
-#[cfg(test)]
-impl FreshBatchFinishContext {
-    pub(crate) fn witness() -> Self {
-        Self {
-            export_started: std::time::Instant::now(),
-            build_target_baseline_bytes: 42,
-            process_residual_count: 0,
-            test_binaries: Vec::new(),
-            repair_publication: None,
-        }
-    }
 }
 
 pub(crate) fn build_instance_results(
@@ -199,7 +187,7 @@ pub(crate) fn finish_fresh_check_aggregate_after_export(
     finish: FreshBatchFinishContext,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
     let export_phase_ms = finish.export_started.elapsed().as_millis();
-    let (completed, agg_counters) =
+    let (mut completed, agg_counters) =
         aggregate_logical_selectors(&req.logical_selectors, export.exact, &export.instances);
     let mut counters = RustCoverageBatchCounters {
         build_invocations: 1,
@@ -261,6 +249,19 @@ pub(crate) fn finish_fresh_check_aggregate_after_export(
                 export.exported,
             ),
         };
+    attach_binary_line_maps_to_completed_outcomes(
+        &mut completed,
+        &selector_binary_ids,
+        &binary_line_maps,
+    );
+    if let Err(store_err) = store_completed_outcomes(req, tools, identity, &mut completed) {
+        return Ok(RustCoverageBatchResult {
+            completed,
+            batch_error: Some(store_err),
+            counters,
+            test_binaries: Vec::new(),
+        });
+    }
     let aggregate = build_check_aggregate(
         req,
         identity,

@@ -20,6 +20,7 @@ mod batch_events;
 mod batch_executable_index;
 mod batch_executor;
 mod batch_executor_finish;
+mod batch_executor_finish_entries;
 mod batch_executor_finish_export;
 mod batch_executor_fresh;
 mod batch_export;

@@ -86,8 +86,12 @@ pub(crate) fn write_python_population_manifest_with_identity_and_entries_fingerp
     use std::io::Write;
     file.write_all(b"\n").map_err(|e| e.to_string())?;
     file.sync_all().map_err(|e| e.to_string())?;
+    kiss_publication_barrier::after_sync_before_rename("python_population", &tmp_path, &path)
+        .map_err(|e| e.to_string())?;
     drop(file);
-    fs::rename(tmp_path, path).map_err(|e| e.to_string())
+    fs::rename(&tmp_path, &path).map_err(|e| e.to_string())?;
+    kiss_publication_barrier::after_rename("python_population", &tmp_path, &path)
+        .map_err(|e| e.to_string())
 }
 
 pub(crate) fn python_population_manifest_is_current_with_identity(

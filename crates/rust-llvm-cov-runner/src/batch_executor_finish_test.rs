@@ -1,8 +1,7 @@
 use super::test_helpers::finish_context;
 use super::{
-    FreshBatchFinishContext, FreshCheckAggregateExport, build_instance_export_requests,
-    build_instance_results, finish_fresh_batch_after_export,
-    finish_fresh_check_aggregate_after_export,
+    FreshCheckAggregateExport, build_instance_export_requests, build_instance_results,
+    finish_fresh_batch_after_export, finish_fresh_check_aggregate_after_export,
 };
 use crate::RustLineCoverage;
 use crate::batch_events::{BatchCompilerArtifact, BatchTestStarted, BatchTestTerminal};
@@ -19,13 +18,6 @@ use crate::test_support::{
 use rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
-
-#[test]
-fn fresh_batch_finish_context_witness_is_constructible() {
-    let ctx = FreshBatchFinishContext::witness();
-    assert_eq!(ctx.build_target_baseline_bytes, 42);
-    assert_eq!(ctx.process_residual_count, 0);
-}
 
 #[test]
 fn build_instance_results_and_export_requests_cover_finish_helpers() {

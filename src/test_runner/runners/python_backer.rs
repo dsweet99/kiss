@@ -96,12 +96,20 @@ impl LanguagePlanner for PythonModule {
             .iter()
             .map(|selector| selector.id.clone())
             .collect::<Vec<_>>();
-        if python_population_manifest_is_current_for_args_with_env_keys(
+        let has_current_population = python_population_manifest_is_current_for_args_with_env_keys(
             &self.repo_root,
             &universe_ids,
             &self.test_args,
             self.manifest_env_allowlist(),
-        ) {
+        );
+        let has_line_precise_entries = !self.python_changed_lines.is_empty()
+            && select_fresh_python_source_selectors(
+                &self.repo_root,
+                &self.py_source_paths,
+                &self.python_changed_lines,
+            )
+            .is_some();
+        if has_current_population || has_line_precise_entries {
             Ok(CoverageFreshness::Fresh)
         } else {
             Ok(CoverageFreshness::Stale)
@@ -174,6 +182,7 @@ pub(crate) fn select_fresh_python_source_selectors(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     #[allow(non_snake_case)]
@@ -198,5 +207,57 @@ mod tests {
         );
         assert_eq!(module.prior_failures(), vec![prior]);
         assert_eq!(module.manifest_env_allowlist(), PYTHON_COVERAGE_ENV_KEYS);
+    }
+
+    #[test]
+    fn changed_line_cache_selection_can_be_fresh_without_population_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = tmp.path().join("app.py");
+        fs::write(&app, "def alpha():\n    return 'alpha'\n").unwrap();
+        let cache_root =
+            crate::test_runner::python_coverage_index::python_coverage_cache_root(tmp.path())
+                .unwrap();
+        fs::create_dir_all(cache_root.join("entries")).unwrap();
+        fs::write(
+            cache_root.join("entries/alpha.json"),
+            format!(
+                "{{\"schema_version\":\"{}\",\"nodeid\":\"tests/test_app.py::test_alpha\",\"status\":\"Passed\",\"coverage\":{{\"files\":{{\"{}\":[2]}}}}}}\n",
+                rslip::CACHE_SCHEMA_VERSION,
+                app.display()
+            ),
+        )
+        .unwrap();
+        crate::test_runner::python_coverage_index::publish_python_derived_state_with_filter(
+            tmp.path(),
+            None,
+            &[],
+            |path, repo_root| {
+                crate::test_runner::python_coverage_index::repo_relative_coverage_file(
+                    repo_root,
+                    &path.to_string_lossy(),
+                )
+                .is_some()
+            },
+        )
+        .unwrap();
+        let changed_lines = BTreeMap::from([(app.clone(), BTreeSet::from([2_u32]))]);
+        let module = PythonModule::new(
+            tmp.path(),
+            std::slice::from_ref(&app),
+            &changed_lines,
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let universe = vec![
+            TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_alpha"),
+            TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_beta"),
+        ];
+
+        assert_eq!(
+            module.freshness(&universe).unwrap(),
+            CoverageFreshness::Fresh
+        );
     }
 }

@@ -377,6 +377,10 @@ mod tests_b;
 mod reusable_tests;
 
 #[cfg(test)]
+#[path = "rust_coverage_index_reusable_line_test.rs"]
+mod reusable_line_tests;
+
+#[cfg(test)]
 #[path = "rust_coverage_index_reusable_integration_test.rs"]
 mod reusable_integration_tests;
 

@@ -123,8 +123,10 @@ pub fn store_rust_cov_cache_entry(
     serde_json::to_writer(&mut file, entry).map_err(io::Error::other)?;
     file.write_all(b"\n")?;
     file.sync_all()?;
+    kiss_publication_barrier::after_sync_before_rename("rust_selector_entry", &tmp_path, &path)?;
     drop(file);
-    fs::rename(tmp_path, path)
+    fs::rename(&tmp_path, &path)?;
+    kiss_publication_barrier::after_rename("rust_selector_entry", &tmp_path, &path)
 }
 
 pub(crate) fn create_new_cache_file(path: &Path) -> io::Result<File> {

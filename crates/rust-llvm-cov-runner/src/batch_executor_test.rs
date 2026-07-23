@@ -198,6 +198,66 @@ fn finalize_after_fresh_batch_marks_legacy_cleanup_for_check_aggregate_mode() {
 }
 
 #[test]
+fn check_aggregate_population_rechecks_cache_after_lock_without_fresh_run() {
+    let repo = batch_executor_fixture_repo();
+    fs::create_dir_all(repo.path().join("target")).unwrap();
+    let binary_path = repo.path().join("target").join("bin-a");
+    fs::write(&binary_path, "binary-a").unwrap();
+    let mut req = batch_executor_request(repo.path());
+    req.force_rerun = true;
+    req.population_publication_selectors = Some(req.logical_selectors.clone());
+    req.coverage_output_mode = CoverageOutputMode::CheckAggregate {
+        publication_binary_ids: None,
+        repair_publication: None,
+    };
+    let tools = tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let binary = crate::RustTestBinaryIdentity {
+        id: "bin-a".to_string(),
+        executable: binary_path.to_string_lossy().to_string(),
+        digest: "aaaaaaaaaaaaaaaa".to_string(),
+    };
+    let aggregate = crate::build_check_aggregate(
+        &req,
+        &identity,
+        &req.logical_selectors,
+        BTreeMap::from([
+            ("alpha".to_string(), vec!["bin-a".to_string()]),
+            ("beta".to_string(), vec!["bin-a".to_string()]),
+        ]),
+        std::slice::from_ref(&binary),
+        BTreeMap::from([(
+            "bin-a".to_string(),
+            RustLineCoverage {
+                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+            },
+        )]),
+    )
+    .unwrap();
+    crate::publish_check_aggregate(&req, &aggregate).unwrap();
+    crate::batch_derived::publish_conservative_derived_state_from_check_aggregate(
+        &req, &tools, &identity, &aggregate,
+    )
+    .unwrap();
+
+    let result =
+        execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {
+            panic!("fresh check-aggregate run should be skipped after lock recheck")
+        })
+        .unwrap();
+
+    assert_eq!(result.completed.len(), 2);
+    assert_eq!(result.counters.cache_hits, 2);
+    assert_eq!(result.counters.build_invocations, 0);
+    assert!(
+        result
+            .completed
+            .iter()
+            .all(|outcome| outcome.cache_status == RustCovCacheStatus::Hit)
+    );
+}
+
+#[test]
 fn apply_population_derived_publication_skips_errors_and_missing_selectors() {
     let repo = batch_executor_fixture_repo();
     let req = batch_executor_request(repo.path());

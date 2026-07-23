@@ -361,8 +361,12 @@ fn write_coverage_index(
     })?;
     file.write_all(b"\n").map_err(RustLlvmCovError::Io)?;
     file.sync_all().map_err(RustLlvmCovError::Io)?;
+    kiss_publication_barrier::after_sync_before_rename("rust_derived_index", &tmp_path, &path)
+        .map_err(RustLlvmCovError::Io)?;
     drop(file);
-    fs::rename(tmp_path, path).map_err(RustLlvmCovError::Io)
+    fs::rename(&tmp_path, &path).map_err(RustLlvmCovError::Io)?;
+    kiss_publication_barrier::after_rename("rust_derived_index", &tmp_path, &path)
+        .map_err(RustLlvmCovError::Io)
 }
 
 #[cfg(test)]

@@ -12,6 +12,7 @@ categories = ["development-tools::testing"]
 [dependencies]
 cargo-config2 = "0.1.44"
 fs2 = "0.4.3"
+kiss-publication-barrier = { path = "../kiss-publication-barrier" }
 libc = "0.2"
 rpytest-runner = { path = "../rpytest-runner" }
 serde = { version = "1", features = ["derive"] }

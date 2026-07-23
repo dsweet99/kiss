@@ -158,11 +158,15 @@ fn effective_rust_changed_lines(
     rust_source_paths: &[PathBuf],
     resolved: Option<&ResolvedRustPopulation>,
 ) -> BTreeMap<PathBuf, BTreeSet<u32>> {
-    if resolved.is_some_and(|resolved| resolved.basis == RustSelectionBasis::Current) {
-        changed_lines_for_sources(changed_lines, rust_source_paths)
-    } else {
-        BTreeMap::new()
+    if let Some(resolved) = resolved
+        && matches!(
+            resolved.basis,
+            RustSelectionBasis::Current | RustSelectionBasis::ReusablePrior
+        )
+    {
+        return changed_lines_for_sources(changed_lines, rust_source_paths);
     }
+    BTreeMap::new()
 }
 
 #[cfg(test)]
@@ -282,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn effective_rust_changed_lines_only_survive_current_basis() {
+    fn effective_rust_changed_lines_survive_line_aware_basis() {
         let path = PathBuf::from("src/lib.rs");
         let changed = BTreeMap::from([(path.clone(), BTreeSet::from([7]))]);
         assert_eq!(
@@ -293,10 +297,23 @@ mod tests {
             ),
             changed
         );
+        assert_eq!(
+            effective_rust_changed_lines(
+                &changed,
+                std::slice::from_ref(&path),
+                Some(&resolved(
+                    RustSelectionBasis::ReusablePrior,
+                    Some(rust_llvm_cov_runner::RustSnapshotDelta::Modified(vec![
+                        path.clone()
+                    ])),
+                )),
+            ),
+            changed
+        );
         assert!(
             effective_rust_changed_lines(
                 &changed,
-                &[path],
+                &[],
                 Some(&resolved(
                     RustSelectionBasis::ReusablePrior,
                     Some(rust_llvm_cov_runner::RustSnapshotDelta::Unchanged),

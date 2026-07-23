@@ -343,11 +343,15 @@ pub fn publish_check_aggregate(
     serde_json::to_writer(&mut file, &raw)?;
     file.write_all(b"\n").map_err(RustLlvmCovError::Io)?;
     file.sync_all().map_err(RustLlvmCovError::Io)?;
+    kiss_publication_barrier::after_sync_before_rename("rust_check_aggregate", &tmp, &path)
+        .map_err(RustLlvmCovError::Io)?;
     drop(file);
     fs::rename(&tmp, &path).map_err(|err| {
         let _ = fs::remove_file(&tmp);
         RustLlvmCovError::Io(err)
-    })
+    })?;
+    kiss_publication_barrier::after_rename("rust_check_aggregate", &tmp, &path)
+        .map_err(RustLlvmCovError::Io)
 }
 
 fn on_disk_from_validated(

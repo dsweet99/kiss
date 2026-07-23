@@ -51,8 +51,12 @@ pub(crate) fn write_python_coverage_index_with_entries_fingerprint(
     serde_json::to_writer_pretty(&mut file, &payload).map_err(|e| e.to_string())?;
     file.write_all(b"\n").map_err(|e| e.to_string())?;
     file.sync_all().map_err(|e| e.to_string())?;
+    kiss_publication_barrier::after_sync_before_rename("python_index", &tmp_path, &path)
+        .map_err(|e| e.to_string())?;
     drop(file);
-    fs::rename(tmp_path, path).map_err(|e| e.to_string())
+    fs::rename(&tmp_path, &path).map_err(|e| e.to_string())?;
+    kiss_publication_barrier::after_rename("python_index", &tmp_path, &path)
+        .map_err(|e| e.to_string())
 }
 
 pub(crate) fn load_current_python_coverage_index(repo_root: &Path) -> Option<PythonCoverageIndex> {

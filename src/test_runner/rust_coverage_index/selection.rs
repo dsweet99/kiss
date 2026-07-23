@@ -145,6 +145,7 @@ pub(crate) fn select_rust_source_selectors_for_basis(
         RustSelectionBasis::ReusablePrior => select_reusable_prior_rust_source_selectors(
             repo_root,
             rust_source_paths,
+            rust_changed_lines,
             resolved.state.as_ref()?,
         ),
         RustSelectionBasis::Population => None,
@@ -188,8 +189,18 @@ fn select_current_basis_rust_source_selectors(
 fn select_reusable_prior_rust_source_selectors(
     repo_root: &Path,
     rust_source_paths: &[PathBuf],
+    rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     population: &rust_llvm_cov_runner::RustPopulationState,
 ) -> Option<BTreeSet<String>> {
+    let line_selectors_by_file = if rust_changed_lines.is_empty() {
+        BTreeMap::new()
+    } else {
+        selectors_by_changed_file_line(
+            repo_root,
+            &changed_line_rels(repo_root, rust_changed_lines),
+            &population.generation_fingerprint,
+        )
+    };
     let mut selectors = BTreeSet::new();
     for source_path in rust_source_paths {
         if !source_path
@@ -203,7 +214,11 @@ fn select_reusable_prior_rust_source_selectors(
         if file_selectors.is_empty() {
             return None;
         }
-        selectors.extend(file_selectors.iter().cloned());
+        let selected_for_file = line_selectors_by_file
+            .get(&rel)
+            .filter(|selectors| !selectors.is_empty())
+            .unwrap_or(file_selectors);
+        selectors.extend(selected_for_file.iter().cloned());
     }
     Some(selectors)
 }

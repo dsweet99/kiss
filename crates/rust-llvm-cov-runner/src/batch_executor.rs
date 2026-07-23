@@ -15,6 +15,9 @@ use crate::batch_run::default_batch_subprocess_runner;
 use crate::rust_cov_cache::{RustCovCacheEntry, load_rust_cov_cache_entry};
 use crate::worker::cleanup_legacy_worker_data_nonblocking;
 use crate::{RustCovCacheStatus, RustLlvmCovError, RustLlvmCovOutcome};
+use rpytest_runner::TestStatus;
+use std::collections::BTreeMap;
+use std::time::Duration;
 
 fn default_instance_exporter(
     req: &RustCoverageBatchRequest,
@@ -92,6 +95,10 @@ where
                 result
             },
         );
+    }
+    if let Some(mut result) = try_check_aggregate_hit_after_lock(req, &identity)? {
+        result.counters.legacy_cleanup_deferred = legacy_cleanup.deferred;
+        return Ok(result);
     }
 
     fresh(req, tools, &identity, &plan).and_then(|mut result| {
@@ -193,6 +200,71 @@ fn all_hit_batch_result(
             ..Default::default()
         },
         test_binaries: Vec::new(),
+    }))
+}
+
+fn try_check_aggregate_hit_after_lock(
+    req: &RustCoverageBatchRequest,
+    identity: &RustCoverageBatchIdentity,
+) -> Result<Option<RustCoverageBatchResult>, RustLlvmCovError> {
+    if !matches!(
+        req.coverage_output_mode,
+        CoverageOutputMode::CheckAggregate { .. }
+    ) {
+        return Ok(None);
+    }
+    let Some(selectors) = req.population_publication_selectors.as_deref() else {
+        return Ok(None);
+    };
+    let population = crate::batch_derived_index::load_current_population_state(
+        &req.cache_root,
+        &req.source_root,
+        identity,
+        Some(selectors),
+    )
+    .or_else(|| {
+        crate::batch_derived_index::load_reusable_prior_population_state(
+            &req.cache_root,
+            &req.source_root,
+            Some(selectors),
+            &identity.selection_context_fingerprint,
+        )
+        .filter(|population| population.ordinary_source_digests == identity.ordinary_source_digests)
+    });
+    let Some(population) = population else {
+        return Ok(None);
+    };
+    if !population
+        .entries_fingerprint
+        .starts_with("check-aggregate:")
+    {
+        return Ok(None);
+    }
+    let completed = req
+        .logical_selectors
+        .iter()
+        .map(|selector| RustLlvmCovOutcome {
+            selector: selector.clone(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::ZERO,
+            coverage: crate::RustLineCoverage {
+                files: BTreeMap::new(),
+            },
+            test_binary_ids: Vec::new(),
+            cache_status: RustCovCacheStatus::Hit,
+            stdout: None,
+            stderr: None,
+        })
+        .collect();
+    Ok(Some(RustCoverageBatchResult {
+        completed,
+        batch_error: None,
+        counters: RustCoverageBatchCounters {
+            cache_hits: req.logical_selectors.len(),
+            ..Default::default()
+        },
+        test_binaries: population.test_binaries.into_values().collect(),
     }))
 }
 

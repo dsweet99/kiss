@@ -57,8 +57,10 @@ pub(crate) fn store_rslip_cache_entry(
     serde_json::to_writer(&mut file, entry).map_err(io::Error::other)?;
     file.write_all(b"\n")?;
     file.sync_all()?;
+    kiss_publication_barrier::after_sync_before_rename("rslip_selector_entry", &tmp_path, &path)?;
     drop(file);
-    fs::rename(tmp_path, path)
+    fs::rename(&tmp_path, &path)?;
+    kiss_publication_barrier::after_rename("rslip_selector_entry", &tmp_path, &path)
 }
 
 pub(crate) fn create_new_rslip_cache_file(path: &Path) -> io::Result<File> {
