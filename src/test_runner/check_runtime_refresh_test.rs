@@ -1,8 +1,8 @@
 #[test]
 fn refresh_guard_env_name_is_stable() {
     assert_eq!(
-        super::CHECK_RUNTIME_REFRESH_ACTIVE_ENV,
-        "KISS_CHECK_RUNTIME_REFRESH_ACTIVE"
+        super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV,
+        "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE"
     );
 }
 

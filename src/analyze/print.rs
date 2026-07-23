@@ -60,7 +60,7 @@ pub(crate) fn log_parse_timing(show: bool, timing: &str) {
 pub(crate) fn log_timing_phase2(show: bool, t3: std::time::Instant, t4: std::time::Instant) {
     if show {
         eprintln!(
-            "[TIMING] graph_analysis={:.2}s, test_refs={:.2}s",
+            "[TIMING] graph_analysis={:.2}s, dup_prep={:.2}s",
             t4.duration_since(t3).as_secs_f64(),
             std::time::Instant::now().duration_since(t4).as_secs_f64()
         );

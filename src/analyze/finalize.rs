@@ -1,11 +1,8 @@
 use std::time::Instant;
 
 use crate::analyze::cache::{FullCacheStoreInput, maybe_store_full_cache};
-use crate::analyze::coverage::{
-    CoverageOutputOpts, GraphRefPair, PyRsTestCoverage, collect_coverage_viols,
-};
 pub(crate) use crate::analyze::finalize_types::{
-    AnalysisProducts, CovDupOutcome, CovDupPhase, FinalizeAnalysisIn, HeaderPhase, StorePrintPhase,
+    AnalysisProducts, DupOutcome, DupPhase, FinalizeAnalysisIn, HeaderPhase, StorePrintPhase,
 };
 use crate::analyze::focus::{filter_duplicates_by_focus, filter_viols_by_focus};
 use crate::analyze::graph_api::graph_stats;
@@ -50,43 +47,16 @@ fn finalize_header(phase: HeaderPhase<'_>) -> kiss::GlobalMetrics {
     metrics
 }
 
-fn finalize_coverage_and_dups(phase: CovDupPhase<'_>) -> CovDupOutcome {
+fn finalize_dups(phase: DupPhase<'_>) -> DupOutcome {
     phase.viols.extend(filter_viols_by_focus(
         phase.graph_viols_all.to_vec(),
         phase.focus,
     ));
     let t_phase2 = Instant::now();
-    let (cov_viols, coverage_cache_lists) = phase.precomputed_coverage_cache_lists.map_or_else(
-        || {
-            collect_coverage_viols(
-                PyRsTestCoverage {
-                    py: phase.py_cov,
-                    rs: phase.rs_cov,
-                },
-                phase.py_parsed,
-                phase.rs_parsed,
-                phase.focus,
-                CoverageOutputOpts {
-                    bypass_gate: phase.opts.bypass_gate,
-                    show_timing: phase.opts.show_timing,
-                },
-                GraphRefPair {
-                    py: phase.py_graph,
-                    rs: phase.rs_graph,
-                },
-            )
-        },
-        |coverage_cache_lists| (phase.precomputed_cov_viols, Some(coverage_cache_lists)),
-    );
-    phase.viols.extend(cov_viols.iter().cloned());
     let py_dups = filter_duplicates_by_focus(phase.py_dups_all.to_vec(), phase.focus);
     let rs_dups_f = filter_duplicates_by_focus(phase.rs_dups_all.to_vec(), phase.focus);
     log_timing_phase2(phase.opts.show_timing, t_phase2, Instant::now());
-    CovDupOutcome {
-        cov_viols,
-        coverage_cache_lists,
-        runtime_coverage_snapshot: phase.runtime_coverage_snapshot,
-        runtime_line_coverage: phase.runtime_line_coverage,
+    DupOutcome {
         t_phase2,
         py_dups,
         rs_dups: rs_dups_f,
@@ -102,14 +72,10 @@ fn finalize_store_and_print(phase: StorePrintPhase<'_>) -> bool {
         result,
         viols,
         graph_viols_all,
-        cov_viols,
         py_graph,
         rs_graph,
         py_dups_all,
         rs_dups_all,
-        coverage_cache_lists,
-        runtime_coverage_snapshot,
-        runtime_line_coverage,
         py_stats,
         rs_stats,
         py_dups,
@@ -123,14 +89,10 @@ fn finalize_store_and_print(phase: StorePrintPhase<'_>) -> bool {
         focus,
         result,
         graph_viols_all,
-        coverage_violations: cov_viols,
         py_graph,
         rs_graph,
         py_dups_all,
         rs_dups_all,
-        coverage_cache_lists,
-        runtime_coverage_snapshot,
-        runtime_line_coverage,
         py_stats,
         rs_stats,
     });
@@ -158,7 +120,6 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
 
     let RustAnalysis {
         graph: rs_graph_owned,
-        cov: rs_cov,
         dups: rs_dups_vec,
     } = products.rs;
 
@@ -171,20 +132,10 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         timings,
     });
 
-    let outcome = finalize_coverage_and_dups(CovDupPhase {
+    let outcome = finalize_dups(DupPhase {
         opts,
         focus,
         viols: &mut viols,
-        py_cov: products.py_cov,
-        rs_cov,
-        py_parsed: &products.result.py_parsed,
-        rs_parsed: &products.result.rs_parsed,
-        py_graph: products.py_graph.as_ref(),
-        rs_graph: rs_graph_owned.as_ref(),
-        precomputed_cov_viols: products.cov_viols,
-        precomputed_coverage_cache_lists: products.coverage_cache_lists,
-        runtime_coverage_snapshot: products.runtime_coverage_snapshot,
-        runtime_line_coverage: products.runtime_line_coverage,
         graph_viols_all: &products.graph_viols_all,
         py_dups_all: &products.py_dups_all,
         rs_dups_all: &rs_dups_vec,
@@ -198,14 +149,10 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         result: &products.result,
         viols: &viols,
         graph_viols_all: &products.graph_viols_all,
-        cov_viols: &outcome.cov_viols,
         py_graph: products.py_graph.as_ref(),
         rs_graph: rs_graph_owned.as_ref(),
         py_dups_all: &products.py_dups_all,
         rs_dups_all: &rs_dups_vec,
-        coverage_cache_lists: outcome.coverage_cache_lists,
-        runtime_coverage_snapshot: outcome.runtime_coverage_snapshot.as_ref(),
-        runtime_line_coverage: outcome.runtime_line_coverage.as_deref(),
         py_stats: products.py_stats.as_ref(),
         rs_stats: products.rs_stats.as_ref(),
         py_dups: &outcome.py_dups,
@@ -263,7 +210,7 @@ mod finalize_touch {
     #[test]
     fn finalize_functions_exist() {
         let _ = finalize_header as fn(HeaderPhase<'_>) -> kiss::GlobalMetrics;
-        let _ = finalize_coverage_and_dups as fn(CovDupPhase<'_>) -> CovDupOutcome;
+        let _ = finalize_dups as fn(DupPhase<'_>) -> DupOutcome;
         let _ = finalize_store_and_print as fn(StorePrintPhase<'_>) -> bool;
     }
 }

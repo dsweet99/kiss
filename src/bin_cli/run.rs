@@ -204,10 +204,8 @@ mod run_coverage {
         for command in [
             Commands::Check {
                 paths: vec![".".to_string()],
-                all: false,
                 ignore: Vec::new(),
                 timing: true,
-                jobs: Some(1),
             },
             Commands::Stats {
                 paths: vec![".".to_string()],

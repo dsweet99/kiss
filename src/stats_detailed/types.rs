@@ -38,7 +38,6 @@ pub struct UnitMetrics {
     pub file_functions: Option<usize>,
     pub interface_types: Option<usize>,
     pub concrete_types: Option<usize>,
-    pub inv_test_coverage: Option<usize>,
     // module-scope
     pub fan_in: Option<usize>,
     pub fan_out: Option<usize>,
@@ -76,7 +75,6 @@ impl UnitMetrics {
             file_functions: None,
             interface_types: None,
             concrete_types: None,
-            inv_test_coverage: None,
             fan_in: None,
             fan_out: None,
             indirect_deps: None,

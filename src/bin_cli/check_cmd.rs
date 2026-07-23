@@ -9,10 +9,8 @@ pub struct CheckCommandArgs<'a> {
     pub py_config: &'a kiss::Config,
     pub rs_config: &'a kiss::Config,
     pub gate_config: &'a kiss::GateConfig,
-    pub bypass_gate: bool,
     pub ignore: &'a [String],
     pub timing: bool,
-    pub jobs: usize,
 }
 
 pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
@@ -30,13 +28,11 @@ pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
         py_config: args.py_config,
         rs_config: args.rs_config,
         lang_filter: args.lang_filter,
-        bypass_gate: args.bypass_gate,
+        bypass_gate: false,
         gate_config: args.gate_config,
         ignore_prefixes: &ignore,
         show_timing: args.timing,
         suppress_final_status: false,
-        coverage_source: analyze::CoverageSource::RuntimeLine,
-        runtime_coverage_jobs: args.jobs,
     };
     i32::from(!run_analyze(&opts))
 }
@@ -62,10 +58,8 @@ mod coverage_witness {
             py_config: &py,
             rs_config: &rs,
             gate_config: &gate,
-            bypass_gate: true,
             ignore: &[],
             timing: false,
-            jobs: 1,
         };
         CheckCommandArgs::witness();
         assert_eq!(run_check_command(&args), 0);

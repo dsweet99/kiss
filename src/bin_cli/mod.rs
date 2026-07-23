@@ -3,6 +3,7 @@
 pub mod args;
 mod check_cmd;
 mod config_session;
+mod cov_cmd;
 pub mod dispatch;
 mod mimic;
 mod run;

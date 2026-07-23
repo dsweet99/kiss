@@ -2,25 +2,37 @@ use std::path::Path;
 
 use crate::analyze;
 use crate::analyze::DryRunParams;
-use crate::bin_cli::check_cmd::{CheckCommandArgs, run_check_command};
+use crate::bin_cli::{check_cmd, cov_cmd};
 use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::shrink::{RunShrinkArgs, ShrinkFullContext, run_shrink};
 use crate::bin_cli::stats::{RunStatsArgs, run_stats};
 use crate::bin_cli::test_cmd::run_test_command;
-use crate::bin_cli::util::merge_check_ignore_prefixes;
-use crate::bin_cli::util::{validate_min_similarity, validate_paths};
+use crate::bin_cli::util;
 use crate::rules::{run_config, run_rules};
 use crate::viz::{VizCoarsen, run_viz};
 use kiss::{Language, normalize_ignore_prefixes};
 
 use super::options::{
-    CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-    MvDispatchOptions, RulesDispatchOptions, ShrinkDispatchOptions, StatsDispatchOptions,
-    TestDispatchOptions, VizDispatchOptions,
+    CheckDispatchOptions, ConfigDispatchOptions, CovDispatchOptions, DryDispatchOptions,
+    MimicDispatchOptions, MvDispatchOptions, RulesDispatchOptions, ShrinkDispatchOptions,
+    StatsDispatchOptions, TestDispatchOptions, VizDispatchOptions,
 };
 
 pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) -> i32 {
-    let args = CheckCommandArgs {
+    let args = check_cmd::CheckCommandArgs {
+        paths: &o.paths,
+        lang_filter: o.lang,
+        py_config: o.cfg.py,
+        rs_config: o.cfg.rs,
+        gate_config: o.cfg.gate,
+        ignore: &o.ignore,
+        timing: o.timing,
+    };
+    check_cmd::run_check_command(&args)
+}
+
+pub(in crate::bin_cli::dispatch) fn dispatch_cov(o: CovDispatchOptions<'_>) -> i32 {
+    let args = cov_cmd::CovCommandArgs {
         paths: &o.paths,
         lang_filter: o.lang,
         py_config: o.cfg.py,
@@ -31,7 +43,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) 
         timing: o.timing,
         jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
     };
-    run_check_command(&args)
+    cov_cmd::run_cov_command(&args)
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i32 {
@@ -58,7 +70,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_clamp(
     lang: Option<Language>,
     ignore: Vec<String>,
 ) -> i32 {
-    let ignore = merge_check_ignore_prefixes(&ignore);
+    let ignore = util::merge_check_ignore_prefixes(&ignore);
     run_mimic(
         &[".".to_string()],
         Some(Path::new(".kissconfig")),
@@ -69,7 +81,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_clamp(
 
 pub(in crate::bin_cli::dispatch) fn dispatch_dry(o: DryDispatchOptions) -> i32 {
     let ignore = normalize_ignore_prefixes(&o.ignore);
-    if let Err(msg) = validate_min_similarity(o.min_similarity) {
+    if let Err(msg) = util::validate_min_similarity(o.min_similarity) {
         eprintln!("Error: {msg}");
         return 1;
     }
@@ -108,7 +120,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_config(o: ConfigDispatchOptions<'_>
 
 pub(in crate::bin_cli::dispatch) fn dispatch_viz(o: VizDispatchOptions) -> i32 {
     let ignore = normalize_ignore_prefixes(&o.ignore);
-    validate_paths(&o.paths);
+    util::validate_paths(&o.paths);
     let coarsen = o
         .num_nodes
         .map_or(VizCoarsen::Zoom(o.zoom), VizCoarsen::NumNodes);

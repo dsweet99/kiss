@@ -25,8 +25,8 @@ fn assert_cold_aggregate_matches_selector_entries(
     home: &TempDir,
     repo: &TempDir,
 ) -> (usize, BTreeMap<String, Value>) {
-    let cold = run_kiss_check_rust(home, repo);
-    assert_success("cold kiss check", &cold);
+    let cold = run_kiss_cov_rust(home, repo);
+    assert_success("cold kiss cov", &cold);
     let cold_stderr = String::from_utf8_lossy(&cold.stderr);
     let (cold_binaries, cold_exports) = parse_aggregate_refresh_counts(&cold_stderr)
         .unwrap_or_else(|| panic!("missing cold aggregate Rust refresh line:\n{cold_stderr}"));
@@ -52,8 +52,8 @@ fn assert_incremental_repair_replaces_only_covered_binary(
     cold_binaries: usize,
     cold_maps: &BTreeMap<String, Value>,
 ) {
-    let incremental = run_kiss_check_rust(home, repo);
-    assert_success("incremental kiss check", &incremental);
+    let incremental = run_kiss_cov_rust(home, repo);
+    assert_success("incremental kiss cov", &incremental);
     let incremental_stderr = String::from_utf8_lossy(&incremental.stderr);
     let (binaries, exports) = parse_aggregate_refresh_counts(&incremental_stderr)
         .unwrap_or_else(|| panic!("missing aggregate Rust refresh line:\n{incremental_stderr}"));
@@ -80,8 +80,8 @@ fn assert_incremental_repair_replaces_only_covered_binary(
 }
 
 fn assert_warm_check_reuses_current_aggregate(home: &TempDir, repo: &TempDir) {
-    let warm = run_kiss_check_rust(home, repo);
-    assert_success("warm kiss check", &warm);
+    let warm = run_kiss_cov_rust(home, repo);
+    assert_success("warm kiss cov", &warm);
     let warm_stderr = String::from_utf8_lossy(&warm.stderr);
     assert!(
         !warm_stderr.contains("refreshing Rust runtime coverage"),
@@ -90,7 +90,7 @@ fn assert_warm_check_reuses_current_aggregate(home: &TempDir, repo: &TempDir) {
 }
 
 fn parse_aggregate_refresh_counts(stderr: &str) -> Option<(usize, usize)> {
-    let prefix = "kiss check: refreshed Rust runtime coverage ";
+    let prefix = "kiss cov: refreshed Rust runtime coverage ";
     let line = stderr.lines().find(|line| line.starts_with(prefix))?;
     let fields = line.strip_prefix(prefix)?;
     let mut binaries = None;
@@ -283,9 +283,9 @@ fn write_stable_package(stable: &std::path::Path) {
     .unwrap();
 }
 
-fn run_kiss_check_rust(home: &TempDir, repo: &TempDir) -> std::process::Output {
+fn run_kiss_cov_rust(home: &TempDir, repo: &TempDir) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("check")
+        .arg("cov")
         .arg("--lang")
         .arg("rust")
         .arg(repo.path())
@@ -293,7 +293,7 @@ fn run_kiss_check_rust(home: &TempDir, repo: &TempDir) -> std::process::Output {
         .env("HOME", home.path())
         .env_remove("LLVM_PROFILE_FILE")
         .output()
-        .expect("kiss check should run")
+        .expect("kiss cov should run")
 }
 
 fn run_kiss_test_rust_force(home: &TempDir, repo: &TempDir) -> std::process::Output {

@@ -5,9 +5,7 @@ use std::path::{Path, PathBuf};
 use rpytest_runner::TestStatus;
 
 use crate::analyze::line_coverage::RuntimeCoverageSnapshot;
-pub(crate) use crate::test_runner::check_runtime_refresh::{
-    CHECK_RUNTIME_REFRESH_ACTIVE_ENV, ensure_check_runtime_coverage,
-};
+pub(crate) use crate::test_runner::check_runtime_refresh::ensure_check_runtime_coverage;
 use crate::test_runner::python_coverage_index::{
     PYTHON_COVERAGE_ENV_KEYS, python_population_environment_mismatch,
     repo_relative_coverage_file as python_repo_relative_coverage_file,
@@ -90,7 +88,7 @@ impl fmt::Display for RuntimeCoverageLoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "error: kiss check: {} runtime line coverage is {}.",
+            "error: kiss cov: {} runtime line coverage is {}.",
             self.language, self.reason
         )
     }

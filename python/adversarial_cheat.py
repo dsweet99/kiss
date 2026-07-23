@@ -1,4 +1,4 @@
-"""Adversarial cheat: repos that pass kiss static coverage but not runtime tools."""
+"""Adversarial cheat: repos that pass cached kiss coverage but not runtime tools."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def cheat_satisfied(metrics: CheatMetrics) -> bool:
 
 
 def format_cheat_report(metrics: CheatMetrics) -> str:
-    lines = [f"kiss check: {'pass' if metrics.kiss_passes else 'fail'}"]
+    lines = [f"kiss cov: {'pass' if metrics.kiss_passes else 'fail'}"]
     if not metrics.gaps:
         lines.append("source files with kiss=100% but low runtime coverage: (none)")
     else:
@@ -59,7 +59,7 @@ def build_cheat_prompt(kiss_root: Path, repo_dir: Path, lang: str) -> str:
         "python": "Python only (include tests runnable via `pytest` with slipcover).",
         "both": "Both Rust and Python in the same repo.",
     }[lang]
-    return f"""# Cheat kiss: static coverage without runtime execution
+    return f"""# Cheat kiss: cached runtime coverage divergence
 
 Create a self-contained repository at:
 
@@ -73,15 +73,15 @@ Use this directory exactly; do not relocate the repo.
 
 ## Goal
 
-Write unit tests that **satisfy kiss** (all definitions statically referenced, so
-`kiss check --all` exits 0 with no `test_coverage` gate failures) but **do not**
-satisfy runtime line coverage (`slipcover` for Python, `cargo llvm-cov` for Rust):
-source files should report low line coverage even though kiss treats them as fully
-covered.
+Write unit tests and cache state that **satisfy kiss's cached runtime coverage**
+(`kiss cov --all` exits 0 with no `test_coverage` gate failures) but **do not**
+satisfy independently collected runtime line coverage (`slipcover` for Python,
+`cargo llvm-cov` for Rust): source files should report low line coverage even
+though kiss treats them as fully covered from its cached coverage view.
 
-Favor techniques where tests mention or bind symbols without executing their bodies
-(for example bind-only imports, mocks that prevent execution, unreachable branches
-still referenced in tests, or string-based lookups that never call the target).
+Favor techniques that create divergence between kiss's cached runtime coverage
+and an independently collected runtime coverage run, without disabling the
+ordinary test commands.
 
 ## Verification loop
 
@@ -91,7 +91,7 @@ From the kiss repo root ({kiss_root.resolve()}), repeatedly run:
 
 Revise the generated repo until **both** hold:
 
-- `kiss check --all` passes (exit code 0, no test_coverage violations)
+- `kiss cov --all` passes (exit code 0, no test_coverage violations)
 - at least one non-test source file has kiss coverage 100% but runtime line coverage
   below {TRUE_COVERAGE_CEILING:.0f}%
 
@@ -103,7 +103,7 @@ met. Print the final cheat-verify output when done.
 
 
 def run_kiss_check(repo: Path) -> tuple[int, str]:
-    cmd = ["kiss", "check", "--all", str(repo.resolve())]
+    cmd = ["kiss", "cov", "--all", str(repo.resolve())]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     combined = result.stdout
     if result.stderr:

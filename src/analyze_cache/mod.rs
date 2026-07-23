@@ -2,16 +2,12 @@ mod content_digest;
 mod emit;
 
 use crate::analyze::FocusFilter;
-use crate::analyze::line_coverage::{RuntimeCoverageSnapshot, line_records_from_cache};
-use crate::analyze::{
-    collect_line_coverage_viols, compute_test_coverage_from_lists, filter_duplicates_by_focus,
-    filter_viols_by_focus,
-};
+use crate::analyze::{filter_duplicates_by_focus, filter_viols_by_focus};
 use emit::{emit_cached_bypass, emit_cached_gated};
 use kiss::check_cache;
-use kiss::check_universe_cache::{CachedCoverageItem, FullCheckCache};
+use kiss::check_universe_cache::FullCheckCache;
 use kiss::{Config, DuplicateCluster, GateConfig, Violation};
-use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
+use kiss::DependencyGraph;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
@@ -23,11 +19,11 @@ mod test_helpers;
 pub(crate) use content_digest::load_verified_full_cache;
 use path_helpers::{cache_path_full, same_cached_paths};
 pub(crate) use stats_top::{
-    maybe_store_stats_top_cache, try_run_cached_stats_summary, try_run_cached_stats_top,
+    try_run_cached_stats_summary,
 };
 pub use store_full::{FullCacheInputs, store_full_cache_from_run};
 
-const CACHE_SCHEMA_VERSION: &str = "v10";
+const CACHE_SCHEMA_VERSION: &str = "v12-static";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -69,7 +65,6 @@ fn mix_config_into_fingerprint(mut h: u64, cfg: &Config) -> u64 {
 }
 
 fn mix_gate_into_fingerprint(mut h: u64, gate: &GateConfig) -> u64 {
-    h = fnv1a64(h, gate.test_coverage_threshold.to_le_bytes().as_slice());
     h = fnv1a64(h, gate.min_similarity.to_bits().to_le_bytes().as_slice());
     h = fnv1a64(h, &[u8::from(gate.duplication_enabled)]);
     h = fnv1a64(h, &[u8::from(gate.orphan_module_enabled)]);
@@ -119,18 +114,6 @@ pub fn store_full_cache(cache: &FullCheckCache) {
     let _ = std::fs::write(cache_path_full(&cache.fingerprint), bytes);
 }
 
-pub fn coverage_violation(file: PathBuf, name: String, line: usize, file_pct: usize) -> Violation {
-    Violation {
-        file,
-        line,
-        unit_name: name,
-        metric: "test_coverage".to_string(),
-        value: 0,
-        threshold: 0,
-        message: kiss::cli_output::format_unreferenced_unit_coverage_message(file_pct),
-        suggestion: String::new(),
-    }
-}
 
 fn cached_duplicates(
     cache: FullCheckCache,
@@ -187,90 +170,12 @@ fn cached_duplicates(
     (viols, py_dups, rs_dups, cache)
 }
 
-fn cached_coverage_viols(cache: &FullCheckCache, focus: &FocusFilter) -> Vec<Violation> {
-    let defs: Vec<_> = cache
-        .definitions
-        .iter()
-        .cloned()
-        .map(CachedCoverageItem::into_tuple)
-        .collect();
-    let unref: Vec<_> = cache
-        .unreferenced
-        .iter()
-        .cloned()
-        .map(CachedCoverageItem::into_tuple)
-        .collect();
-    let (_, _, _, unreferenced) = compute_test_coverage_from_lists(&defs, &unref, focus);
-    let unweighted_file_pcts = kiss::cli_output::file_coverage_map(&defs, &unreferenced);
-    let def_unreferenced: std::collections::HashSet<_> = unreferenced
-        .iter()
-        .map(|(f, n, l)| (f.clone(), n.clone(), *l))
-        .collect();
-
-    if !cache.coverage_violations.is_empty() {
-        return cache
-            .coverage_violations
-            .iter()
-            .map(|v| {
-                let mut viol = v.clone().into_violation();
-                let key = (viol.file.clone(), viol.unit_name.clone(), viol.line);
-                let pct = if def_unreferenced.contains(&key) {
-                    unweighted_file_pcts.get(&viol.file).copied().unwrap_or(0)
-                } else {
-                    stored_coverage_pct(&viol.message).unwrap_or(0)
-                };
-                viol.message = refresh_coverage_violation_message(
-                    &viol.message,
-                    &kiss::cli_output::format_unreferenced_unit_coverage_message(pct),
-                );
-                viol
-            })
-            .filter(|v| {
-                crate::analyze::is_focus_file(&v.file, focus)
-                    && crate::analyze::is_coverage_report_target(&v.file, &v.unit_name, true)
-            })
-            .collect();
-    }
-
-    unreferenced
-        .into_iter()
-        .filter(|(path, name, _)| crate::analyze::is_coverage_report_target(path, name, true))
-        .map(|(file, name, line)| {
-            let pct = unweighted_file_pcts.get(&file).copied().unwrap_or(0);
-            coverage_violation(file, name, line, pct)
-        })
-        .collect()
-}
-
-fn cached_runtime_coverage_viols(cache: &FullCheckCache, focus: &FocusFilter) -> Vec<Violation> {
-    let records = line_records_from_cache(&cache.runtime_line_coverage);
-    collect_line_coverage_viols(&records, focus, true)
-}
-
-fn stored_coverage_pct(message: &str) -> Option<usize> {
-    message
-        .split_whitespace()
-        .next()
-        .and_then(|token| token.strip_suffix('%'))
-        .and_then(|n| n.parse().ok())
-}
-
-fn refresh_coverage_violation_message(old_message: &str, new_base: &str) -> String {
-    const SUFFIX_ANCHOR: &str = "Add test coverage for this code unit.";
-    if let Some(idx) = old_message.find(SUFFIX_ANCHOR) {
-        let suffix = &old_message[idx + SUFFIX_ANCHOR.len()..];
-        format!("{new_base}{suffix}")
-    } else {
-        new_base.to_string()
-    }
-}
 
 pub fn try_run_cached_all(
     opts: &crate::analyze::AnalyzeOptions<'_>,
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
     focus: &FocusFilter,
-    runtime_coverage_snapshot: Option<&RuntimeCoverageSnapshot>,
 ) -> Option<bool> {
     let fp = fingerprint_for_check(
         py_files,
@@ -283,12 +188,6 @@ pub fn try_run_cached_all(
     if !same_cached_paths(py_files, rs_files, focus, &cache) {
         return None;
     }
-    if let Some(snapshot) = runtime_coverage_snapshot
-        && cache.runtime_coverage_identity.as_deref() != Some(snapshot.identity.as_str())
-    {
-        return None;
-    }
-
     if opts.bypass_gate {
         Some(emit_cached_bypass(cache, opts, focus))
     } else {
@@ -307,46 +206,6 @@ pub fn graph_counts(
     (nodes, edges)
 }
 
-#[allow(dead_code)]
-pub fn coverage_lists(
-    py_parsed: &[ParsedFile],
-    rs_parsed: &[ParsedRustFile],
-) -> (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>) {
-    let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-    let rs_refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let py_cov = kiss::analyze_test_refs_quick(&py_refs);
-    let rs_cov = kiss::analyze_rust_test_refs(&rs_refs, None);
-
-    let to_cached = |file: PathBuf, name: String, line: usize| CachedCoverageItem {
-        file: file.to_string_lossy().to_string(),
-        name,
-        line,
-    };
-
-    let mut definitions: Vec<CachedCoverageItem> = py_cov
-        .definitions
-        .into_iter()
-        .map(|d| to_cached(d.file, d.name, d.line))
-        .collect();
-    definitions.extend(
-        rs_cov
-            .definitions
-            .into_iter()
-            .map(|d| to_cached(d.file, d.name, d.line)),
-    );
-    let mut unreferenced: Vec<CachedCoverageItem> = py_cov
-        .unreferenced
-        .into_iter()
-        .map(|d| to_cached(d.file, d.name, d.line))
-        .collect();
-    unreferenced.extend(
-        rs_cov
-            .unreferenced
-            .into_iter()
-            .map(|d| to_cached(d.file, d.name, d.line)),
-    );
-    (definitions, unreferenced)
-}
 
 #[cfg(test)]
 mod coverage_witness {

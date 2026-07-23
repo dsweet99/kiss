@@ -2,8 +2,6 @@ use crate::discovery::Language;
 use crate::duplication::{DuplicateCluster, DuplicatePair};
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
-use crate::rust_test_refs::analyze_rust_test_refs;
-use crate::test_refs::analyze_test_refs;
 use crate::violation::Violation;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -236,20 +234,16 @@ pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
     }
 }
 
+/// Static-reference unreferenced counts were removed with the old checker.
+/// These helpers remain as stable no-ops for callers that only need emptiness.
 pub fn count_py_unreferenced(parsed: &[ParsedFile]) -> usize {
-    if parsed.is_empty() {
-        return 0;
-    }
-    let analysis = analyze_test_refs(&parsed.iter().collect::<Vec<_>>(), None);
-    analysis.unreferenced.len()
+    let _ = parsed;
+    0
 }
 
 pub fn count_rs_unreferenced(parsed: &[ParsedRustFile]) -> usize {
-    if parsed.is_empty() {
-        return 0;
-    }
-    let analysis = analyze_rust_test_refs(&parsed.iter().collect::<Vec<_>>(), None);
-    analysis.unreferenced.len()
+    let _ = parsed;
+    0
 }
 
 #[cfg(test)]

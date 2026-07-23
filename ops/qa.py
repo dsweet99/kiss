@@ -897,7 +897,7 @@ def load_json(path: Path) -> dict:
 
 
 def parse_rust_aggregate_refresh(stderr: str) -> tuple[int, int] | None:
-    prefix = "kiss check: refreshed Rust runtime coverage "
+    prefix = "kiss cov: refreshed Rust runtime coverage "
     for line in stderr.splitlines():
         if not line.startswith(prefix):
             continue
@@ -1169,7 +1169,7 @@ def witness_env(repo: Path, marker_dir: Path) -> dict[str, str]:
 
 
 def witness_check_command(language: str, repo: Path, jobs: int | None = None) -> list[str]:
-    command = [str(KISS), "--defaults", "--lang", language, "check"]
+    command = [str(KISS), "--defaults", "--lang", language, "cov"]
     if jobs is not None:
         command.extend(["-j", str(jobs)])
     command.append(str(repo))
@@ -1458,7 +1458,7 @@ def run_aggregate_benchmark_trial(
             "--defaults",
             "--lang",
             "rust",
-            "check",
+            "cov",
             "-j",
             str(jobs),
             str(repo),
@@ -2472,7 +2472,7 @@ def aggregate_coverage() -> None:
             "--defaults",
             "--lang",
             "rust",
-            "check",
+            "cov",
             "-j",
             str(jobs),
             *fixture.ignores["rust"],

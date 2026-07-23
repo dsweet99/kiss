@@ -20,6 +20,7 @@ pub struct AnalyzeGraphsIn<'a> {
 }
 
 /// Pick the Python or Rust graph for a source file path based on extension.
+#[allow(dead_code)] // Public analysis helper retained for library consumers / tests.
 pub fn graph_for_path<'a>(
     path: &Path,
     py_graph: Option<&'a DependencyGraph>,

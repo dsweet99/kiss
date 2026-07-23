@@ -49,19 +49,10 @@ pub struct FullCheckCache {
 
     pub base_violations: Vec<CachedViolation>,
     pub graph_violations: Vec<CachedViolation>,
-    /// Coverage violations with graph-enhanced messages (fan-in, candidates).
-    #[serde(default)]
-    pub coverage_violations: Vec<CachedViolation>,
 
     pub py_duplicates: Vec<CachedDuplicateCluster>,
     pub rs_duplicates: Vec<CachedDuplicateCluster>,
 
-    pub definitions: Vec<CachedCoverageItem>,
-    pub unreferenced: Vec<CachedCoverageItem>,
-    #[serde(default)]
-    pub runtime_coverage_identity: Option<String>,
-    #[serde(default)]
-    pub runtime_line_coverage: Vec<CachedLineCoverageRecord>,
     /// Per-file content digests captured at cache-write time; verified on replay.
     #[serde(default)]
     pub file_content_digests: Vec<(String, u64)>,
@@ -130,13 +121,8 @@ mod tests {
                 graph_edges: 0,
                 base_violations: Vec::new(),
                 graph_violations: Vec::new(),
-                coverage_violations: Vec::new(),
                 py_duplicates: Vec::new(),
                 rs_duplicates: Vec::new(),
-                definitions: Vec::new(),
-                unreferenced: Vec::new(),
-                runtime_coverage_identity: None,
-                runtime_line_coverage: Vec::new(),
                 file_content_digests: Vec::new(),
             }
         }

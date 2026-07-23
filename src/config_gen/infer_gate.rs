@@ -1,6 +1,3 @@
-use std::path::PathBuf;
-
-use crate::cli_output::min_gate_eligible_per_file_coverage;
 use crate::config::Config;
 use crate::discovery::{Language, gather_files_by_lang};
 use crate::duplication::{
@@ -12,10 +9,6 @@ use crate::graph::{analyze_graph, build_dependency_graph};
 use crate::parsing::{ParsedFile, parse_files};
 use crate::rust_graph::build_rust_dependency_graph;
 use crate::rust_parsing::{ParsedRustFile, parse_rust_files};
-use crate::rust_test_refs::analyze_rust_test_refs;
-use crate::test_refs::analyze_test_refs;
-
-type DefLineList = Vec<(PathBuf, String, usize)>;
 
 pub fn infer_gate_config_for_paths(
     paths: &[String],
@@ -44,75 +37,12 @@ pub fn infer_gate_config_for_paths(
             .collect::<Vec<ParsedRustFile>>()
     };
 
-    gate.test_coverage_threshold = compute_min_per_file_test_coverage(&py_parsed, &rs_parsed);
+    // Coverage threshold is owned by `kiss cov` (runtime line coverage). Mimic/clamp
+    // keep the default threshold rather than inferring from deleted static-reference coverage.
     gate.duplication_enabled =
         !has_reportable_duplicates(&py_parsed, &rs_parsed, gate.min_similarity);
     gate.orphan_module_enabled = !has_orphan_modules(&py_parsed, &rs_parsed);
     gate
-}
-
-pub(crate) fn compute_min_per_file_test_coverage(
-    py_parsed: &[ParsedFile],
-    rs_parsed: &[ParsedRustFile],
-) -> usize {
-    let (definitions, unreferenced) = collect_defs_and_unrefs(py_parsed, rs_parsed);
-    min_gate_eligible_per_file_coverage(&definitions, &unreferenced)
-}
-
-pub(super) fn extend_defs_from_py(
-    definitions: &mut DefLineList,
-    unreferenced: &mut DefLineList,
-    py_parsed: &[ParsedFile],
-) {
-    if py_parsed.is_empty() {
-        return;
-    }
-    let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-    let a = analyze_test_refs(&refs, None);
-    definitions.extend(
-        a.definitions
-            .iter()
-            .map(|d| (d.file.clone(), d.name.clone(), d.line)),
-    );
-    unreferenced.extend(
-        a.unreferenced
-            .iter()
-            .map(|d| (d.file.clone(), d.name.clone(), d.line)),
-    );
-}
-
-pub(super) fn extend_defs_from_rs(
-    definitions: &mut DefLineList,
-    unreferenced: &mut DefLineList,
-    rs_parsed: &[ParsedRustFile],
-) {
-    if rs_parsed.is_empty() {
-        return;
-    }
-    let refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let graph = build_rust_dependency_graph(&refs);
-    let a = analyze_rust_test_refs(&refs, Some(&graph));
-    definitions.extend(
-        a.definitions
-            .iter()
-            .map(|d| (d.file.clone(), d.name.clone(), d.line)),
-    );
-    unreferenced.extend(
-        a.unreferenced
-            .iter()
-            .map(|d| (d.file.clone(), d.name.clone(), d.line)),
-    );
-}
-
-pub(crate) fn collect_defs_and_unrefs(
-    py_parsed: &[ParsedFile],
-    rs_parsed: &[ParsedRustFile],
-) -> (DefLineList, DefLineList) {
-    let mut definitions = DefLineList::new();
-    let mut unreferenced = DefLineList::new();
-    extend_defs_from_py(&mut definitions, &mut unreferenced, py_parsed);
-    extend_defs_from_rs(&mut definitions, &mut unreferenced, rs_parsed);
-    (definitions, unreferenced)
 }
 
 pub(crate) fn has_orphan_modules(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> bool {

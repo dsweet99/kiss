@@ -12,11 +12,11 @@ use crate::bin_cli::args::{Cli, Commands, parse_test_command_action};
 use crate::bin_cli::config_session::run_init_command;
 
 use handlers::{
-    dispatch_check, dispatch_clamp, dispatch_config, dispatch_dry, dispatch_mimic, dispatch_mv,
+    dispatch_check, dispatch_clamp, dispatch_config, dispatch_cov, dispatch_dry, dispatch_mimic, dispatch_mv,
     dispatch_rules, dispatch_shrink, dispatch_stats, dispatch_test, dispatch_viz,
 };
 use options::{
-    CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
+    CheckDispatchOptions, ConfigDispatchOptions, CovDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
     MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, ShrinkDispatchOptions,
     StatsDispatchOptions, TestDispatchOptions, TriConfig, VizDispatchOptions,
 };
@@ -33,11 +33,22 @@ fn dispatch_analyze(
     match command {
         Commands::Check {
             paths,
+            ignore,
+            timing,
+        } => dispatch_check(CheckDispatchOptions {
+            lang,
+            paths,
+            ignore,
+            timing,
+            cfg,
+        }),
+        Commands::Cov {
+            paths,
             all,
             ignore,
             timing,
             jobs,
-        } => dispatch_check(CheckDispatchOptions {
+        } => dispatch_cov(CovDispatchOptions {
             lang,
             paths,
             bypass_gate: all,
@@ -223,6 +234,7 @@ pub fn dispatch(
             config: _,
             command:
                 command @ (Commands::Check { .. }
+                | Commands::Cov { .. }
                 | Commands::Stats { .. }
                 | Commands::Mimic { .. }
                 | Commands::Clamp { .. }

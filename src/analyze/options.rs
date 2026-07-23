@@ -1,11 +1,5 @@
 use kiss::{Config, GateConfig, Language};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CoverageSource {
-    StaticReferences,
-    RuntimeLine,
-}
-
 /// Options for a full universe analysis run.
 pub struct AnalyzeOptions<'a> {
     pub universe: &'a str,
@@ -19,8 +13,6 @@ pub struct AnalyzeOptions<'a> {
     pub show_timing: bool,
     /// If true, suppress "NO VIOLATIONS" sentinel (used by shrink mode after constraint check)
     pub suppress_final_status: bool,
-    pub coverage_source: CoverageSource,
-    pub runtime_coverage_jobs: usize,
 }
 
 /// Result of running analysis, including computed global metrics.
@@ -34,27 +26,16 @@ pub struct AnalyzeResult {
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod options_tests {
     use super::*;
 
-    impl<'a> AnalyzeOptions<'a> {
-        fn witness() {}
-    }
-
-    impl AnalyzeResult {
-        fn witness(success: bool) -> Self {
-            Self {
-                success,
-                metrics: None,
-            }
-        }
-    }
-
     #[test]
-    fn witness_options_types() {
-        AnalyzeOptions::witness();
-        let _ = CoverageSource::StaticReferences;
-        let _ = CoverageSource::RuntimeLine;
-        let _ = AnalyzeResult::witness(true);
+    fn analyze_result_carries_success_flag() {
+        let result = AnalyzeResult {
+            success: true,
+            metrics: None,
+        };
+        assert!(result.success);
+        assert!(result.metrics.is_none());
     }
 }

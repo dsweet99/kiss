@@ -38,7 +38,6 @@ pub(crate) fn extractor_for_file(metric_id: &str) -> Option<UnitMetricExtractor>
         "interface_types_per_file" => Some(|u| u.interface_types),
         "concrete_types_per_file" => Some(|u| u.concrete_types),
         "imported_names_per_file" => Some(|u| u.imports),
-        "inv_test_coverage" => Some(|u| u.inv_test_coverage),
         _ => None,
     }
 }

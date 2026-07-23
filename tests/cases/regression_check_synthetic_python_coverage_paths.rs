@@ -29,14 +29,14 @@ fn synthetic_python_runtime_coverage_paths_do_not_make_check_malformed() {
     );
 
     let out = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("check")
+        .arg("cov")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
         .current_dir(repo.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss check should run");
+        .expect("kiss cov should run");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
@@ -71,14 +71,14 @@ fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
     );
 
     let first = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("check")
+        .arg("cov")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
         .current_dir(repo.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss check should run");
+        .expect("kiss cov should run");
     assert!(
         first.status.success(),
         "fresh seeded coverage should pass before the source changes. stdout:\n{}\nstderr:\n{}",
@@ -88,14 +88,14 @@ fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
 
     fs::write(repo.path().join("lib.py"), "VALUE = 1\nOTHER = 2\n").unwrap();
     let second = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("check")
+        .arg("cov")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
         .current_dir(repo.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss check should run");
+        .expect("kiss cov should run");
     let stdout = String::from_utf8_lossy(&second.stdout);
     let stderr = String::from_utf8_lossy(&second.stderr);
 
@@ -135,19 +135,19 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
     let cold_stderr = String::from_utf8_lossy(&cold.stderr);
     assert!(
         cold.status.success(),
-        "cold check should refresh coverage and pass. stdout:\n{cold_stdout}\nstderr:\n{cold_stderr}"
+        "cold cov should refresh coverage and pass. stdout:\n{cold_stdout}\nstderr:\n{cold_stderr}"
     );
     assert!(
         cold_stderr.contains("refreshing Python runtime coverage"),
-        "cold check should announce the automatic refresh. stdout:\n{cold_stdout}\nstderr:\n{cold_stderr}"
+        "cold cov should announce the automatic refresh. stdout:\n{cold_stdout}\nstderr:\n{cold_stderr}"
     );
     assert!(
         cold_stdout.contains("PASSED: test_lib.py::test_value"),
-        "cold check should run the discovered Python population. stdout:\n{cold_stdout}"
+        "cold cov should run the discovered Python population. stdout:\n{cold_stdout}"
     );
     assert!(
-        !list_full_check_cache_files(home.path()).is_empty(),
-        "cold check should write a reusable full-check cache"
+        list_full_check_cache_files(home.path()).is_empty(),
+        "cold cov must not write the static full-check cache"
     );
 
     let warm = run_python_check(&home, &repo);
@@ -155,15 +155,15 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
     let warm_stderr = String::from_utf8_lossy(&warm.stderr);
     assert!(
         warm.status.success(),
-        "warm check should pass from caches. stdout:\n{warm_stdout}\nstderr:\n{warm_stderr}"
+        "warm cov should pass from coverage caches. stdout:\n{warm_stdout}\nstderr:\n{warm_stderr}"
     );
     assert!(
         !warm_stderr.contains("refreshing Python runtime coverage"),
-        "warm check should not refresh valid runtime coverage. stdout:\n{warm_stdout}\nstderr:\n{warm_stderr}"
+        "warm cov should not refresh valid runtime coverage. stdout:\n{warm_stdout}\nstderr:\n{warm_stderr}"
     );
     assert!(
         !warm_stdout.contains("PASSED:"),
-        "warm check should not run the Python population again. stdout:\n{warm_stdout}"
+        "warm cov should not run the Python population again. stdout:\n{warm_stdout}"
     );
 }
 
@@ -178,7 +178,7 @@ fn failed_python_check_refresh_does_not_publish_full_check_cache() {
     let failed_stderr = String::from_utf8_lossy(&failed.stderr);
     assert!(
         !failed.status.success(),
-        "failing test should make cold check fail. stdout:\n{failed_stdout}\nstderr:\n{failed_stderr}"
+        "failing test should make cold cov fail. stdout:\n{failed_stdout}\nstderr:\n{failed_stderr}"
     );
     assert!(
         failed_stderr.contains("failed to refresh Python runtime line coverage")
@@ -197,17 +197,60 @@ fn failed_python_check_refresh_does_not_publish_full_check_cache() {
     let fixed_stderr = String::from_utf8_lossy(&fixed.stderr);
     assert!(
         fixed.status.success(),
-        "fixed test should refresh and pass. stdout:\n{fixed_stdout}\nstderr:\n{fixed_stderr}"
+        "fixed test should refresh and pass under cov. stdout:\n{fixed_stdout}\nstderr:\n{fixed_stderr}"
     );
     assert!(
         fixed_stderr.contains("refreshing Python runtime coverage")
             && fixed_stdout.contains("PASSED: test_lib.py::test_value"),
-        "after a failed refresh, the next valid check should run and publish the population. \
+        "after a failed refresh, the next valid cov should run and publish the population. \
          stdout:\n{fixed_stdout}\nstderr:\n{fixed_stderr}"
     );
     assert!(
-        !list_full_check_cache_files(home.path()).is_empty(),
-        "successful refresh should publish the full-check cache"
+        list_full_check_cache_files(home.path()).is_empty(),
+        "successful cov refresh must not publish the static full-check cache"
+    );
+}
+
+#[test]
+fn kiss_check_succeeds_when_tests_fail_while_cov_fails_refresh() {
+    let home = TempDir::new().unwrap();
+    let repo = TempDir::new().unwrap();
+    write_refreshable_python_repo(&repo, "    assert value() == 2\n");
+
+    let check = Command::new(env!("CARGO_BIN_EXE_kiss"))
+        .arg("check")
+        .arg("--lang")
+        .arg("python")
+        .arg(repo.path())
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .output()
+        .expect("kiss check should run");
+    let check_stdout = String::from_utf8_lossy(&check.stdout);
+    let check_stderr = String::from_utf8_lossy(&check.stderr);
+    assert!(
+        check.status.success(),
+        "kiss check must succeed without running failing tests.\nstdout:\n{check_stdout}\nstderr:\n{check_stderr}"
+    );
+    assert!(
+        !check_stdout.contains("PASSED:")
+            && !check_stdout.contains("FAILED:")
+            && !check_stderr.contains("refreshing")
+            && !check_stderr.contains("population test run failed"),
+        "kiss check must not execute the test population.\nstdout:\n{check_stdout}\nstderr:\n{check_stderr}"
+    );
+
+    let cov = run_python_check(&home, &repo);
+    let cov_stdout = String::from_utf8_lossy(&cov.stdout);
+    let cov_stderr = String::from_utf8_lossy(&cov.stderr);
+    assert!(
+        !cov.status.success(),
+        "kiss cov must fail when the population tests fail.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
+    );
+    assert!(
+        cov_stderr.contains("failed to refresh Python runtime line coverage")
+            && cov_stderr.contains("population test run failed"),
+        "kiss cov must report the existing refresh/population failure.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
     );
 }
 
@@ -230,12 +273,12 @@ fn write_refreshable_python_repo(repo: &TempDir, assertion: &str) {
 
 fn run_python_check(home: &TempDir, repo: &TempDir) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("check")
+        .arg("cov")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
         .current_dir(repo.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss check should run")
+        .expect("kiss cov should run")
 }

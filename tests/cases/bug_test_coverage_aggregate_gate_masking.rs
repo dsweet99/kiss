@@ -1,7 +1,7 @@
-//! Regression for per-file test-coverage gate enforcement in production `kiss check`.
+//! Regression for per-file test-coverage gate enforcement in production `kiss cov`.
 //!
 //! `KPop` bughunt (`_malvin/20260523_185300_52l1g7oq/_kpop/exp_log_*.md`): whole-repo
-//! `kiss check` must fail when any production file is below the threshold, even if
+//! `kiss cov` must fail when any production file is below the threshold, even if
 //! aggregate coverage clears the gate (18/19 referenced with threshold 90).
 
 use crate::common::seed_python_runtime_coverage;
@@ -64,7 +64,7 @@ fn write_aggregate_masking_corpus(root: &std::path::Path) {
     write_permissive_config(root);
 }
 
-fn run_check_from_corpus_root(
+fn run_cov_from_corpus_root(
     home: &std::path::Path,
     root: &std::path::Path,
     target: &str,
@@ -72,12 +72,12 @@ fn run_check_from_corpus_root(
     kiss_binary()
         .current_dir(root)
         .env("HOME", home)
-        .arg("check")
+        .arg("cov")
         .arg("--lang")
         .arg("python")
         .arg(target)
         .output()
-        .expect("kiss check should run")
+        .expect("kiss cov should run")
 }
 
 /// Whole-repo check must fail when any production file is below the threshold,
@@ -89,19 +89,19 @@ fn bug_whole_repo_check_fails_when_one_file_below_coverage_threshold() {
     let root = tmp.path();
     write_aggregate_masking_corpus(root);
 
-    let out = run_check_from_corpus_root(home.path(), root, ".");
+    let out = run_cov_from_corpus_root(home.path(), root, ".");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
     assert_ne!(
         out.status.code(),
         Some(0),
-        "whole-repo check must fail when bad.py has 0% coverage despite aggregate ≥ 90%.\n\
+        "whole-repo cov must fail when bad.py has 0% coverage despite aggregate ≥ 90%.\n\
          stdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
         stdout.contains("GATE_FAILED:test_coverage"),
-        "expected test_coverage gate failure on whole-repo check.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        "expected test_coverage gate failure on whole-repo cov.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
         stdout.contains("bad.py"),
@@ -117,8 +117,8 @@ fn bug_whole_repo_and_focused_check_agree_on_coverage_gate() {
     let root = tmp.path();
     write_aggregate_masking_corpus(root);
 
-    let focused = run_check_from_corpus_root(home.path(), root, "bad.py");
-    let whole = run_check_from_corpus_root(home.path(), root, ".");
+    let focused = run_cov_from_corpus_root(home.path(), root, "bad.py");
+    let whole = run_cov_from_corpus_root(home.path(), root, ".");
 
     let focused_stdout = String::from_utf8_lossy(&focused.stdout);
     let whole_stdout = String::from_utf8_lossy(&whole.stdout);

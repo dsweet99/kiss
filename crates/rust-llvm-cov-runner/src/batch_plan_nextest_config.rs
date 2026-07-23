@@ -167,12 +167,12 @@ mod tests {
         // SAFETY: this test observes the variable immediately and restores it
         // before returning; scheduling must not depend on this guard.
         unsafe {
-            std::env::set_var("KISS_CHECK_RUNTIME_REFRESH_ACTIVE", "1");
+            std::env::set_var("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE", "1");
         }
         assert_eq!(nextest_test_threads(&req), req.jobs.to_string());
         // SAFETY: see the set_var note above.
         unsafe {
-            std::env::remove_var("KISS_CHECK_RUNTIME_REFRESH_ACTIVE");
+            std::env::remove_var("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE");
         }
     }
 

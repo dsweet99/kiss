@@ -38,20 +38,18 @@ fn kpop_rust_none_dependency_depth() {
 #[test]
 fn kpop_rust_none_test_coverage_threshold() {
     // RULE: test_coverage_threshold (Rust)
-    // Minimal positive case: a function name appearing in a test file removes it from unreferenced.
-    use std::io::Write;
-    let mut src = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-    writeln!(src, "pub fn foo() {{}}").unwrap();
-    writeln!(src, "pub fn bar() {{}}").unwrap();
-    let mut tst = tempfile::NamedTempFile::with_suffix("_test.rs").unwrap();
-    writeln!(tst, "#[test]\nfn test_foo() {{ foo(); }}").unwrap();
-
-    let parsed_src = parse_rust_file(src.path()).unwrap();
-    let parsed_tst = parse_rust_file(tst.path()).unwrap();
-    let refs = kiss::analyze_rust_test_refs(&[&parsed_src, &parsed_tst], None);
-
-    assert!(refs.definitions.iter().any(|d| d.name == "foo"));
-    assert!(!refs.unreferenced.iter().any(|d| d.name == "foo"));
+    // Static-reference coverage was removed; runtime coverage is owned by `kiss cov`.
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 90,
+        ..Default::default()
+    };
+    assert_eq!(gate.test_coverage_threshold, 90);
+    assert!(
+        !std::fs::read_to_string("src/lib.rs")
+            .unwrap()
+            .contains("analyze_rust_test_refs"),
+        "static-reference analyze_rust_test_refs must not be re-exported"
+    );
 }
 
 #[test]

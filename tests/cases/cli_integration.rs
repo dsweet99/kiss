@@ -104,7 +104,6 @@ fn cli_analyze_runs_on_python() {
     let output = kiss_binary()
         .arg("check")
         .arg(tmp.path())
-        .arg("--all")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -122,7 +121,6 @@ fn cli_analyze_reports_violations_on_god_class() {
     let output = kiss_binary()
         .arg("check")
         .arg(tmp.path())
-        .arg("--all")
         .arg("--lang")
         .arg("python")
         .output()

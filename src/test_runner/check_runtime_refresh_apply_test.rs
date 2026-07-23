@@ -1,6 +1,6 @@
 #[test]
 fn scoped_refresh_env_guard_sets_and_restores_process_env() {
-    let key = super::CHECK_RUNTIME_REFRESH_ACTIVE_ENV;
+    let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     unsafe { std::env::remove_var(key) };
     {
@@ -23,7 +23,7 @@ fn scoped_refresh_env_guard_sets_and_restores_process_env() {
 
 #[test]
 fn restore_refresh_active_env_covers_set_and_clear_arms() {
-    let key = super::CHECK_RUNTIME_REFRESH_ACTIVE_ENV;
+    let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     unsafe { std::env::set_var(key, "seed") };
     super::restore_refresh_active_env(Some(std::ffi::OsString::from("restored")));
@@ -41,7 +41,7 @@ fn restore_refresh_active_env_covers_set_and_clear_arms() {
 
 #[test]
 fn restore_refresh_active_env_is_metamorphic_under_nested_clear_set() {
-    let key = super::CHECK_RUNTIME_REFRESH_ACTIVE_ENV;
+    let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     let seed = 0xC0FFEE_u64;
     eprintln!("restore_refresh metamorphic seed={seed:#x}");

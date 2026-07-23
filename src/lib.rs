@@ -89,11 +89,7 @@ pub use stats::{
 pub use stats_detailed::{
     UnitMetrics, collect_detailed_py, collect_detailed_rs, format_detailed_table, truncate,
 };
-pub use test_refs::{
-    CodeDefinition, TestRefAnalysis, analyze_test_refs, analyze_test_refs_no_map,
-    analyze_test_refs_quick, build_name_file_map, is_in_test_directory, is_test_file,
-    test_functions_in,
-};
+pub use test_refs::{is_in_test_directory, is_test_file};
 pub use test_section_config::TestSectionConfig;
 pub use units::count_code_units;
 pub use units::{CodeUnit, CodeUnitKind, extract_code_units};
@@ -108,8 +104,7 @@ pub use rust_graph::build_rust_dependency_graph;
 pub use rust_graph::{IncludeGraph, build_include_graph, expand_rust_files};
 pub use rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file, parse_rust_files};
 pub use rust_test_refs::{
-    RustCodeDefinition, RustTestRefAnalysis, analyze_rust_test_refs, is_binary_entry_point,
-    is_rust_test_file, rust_test_functions_in,
+    is_binary_entry_point, is_rust_test_file, rust_test_functions_in,
 };
 pub use rust_units::{RustCodeUnit, extract_rust_code_units};
 

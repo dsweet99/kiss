@@ -17,13 +17,12 @@ fn chmod(path: &std::path::Path, mode: u32) {
     fs::set_permissions(path, perms).unwrap();
 }
 
-fn run_python_check_all(repo: &Path, home: &Path) -> Output {
+fn run_python_check(repo: &Path, home: &Path) -> Output {
     kiss_binary()
         .arg("--defaults")
         .arg("check")
         .arg("--lang")
         .arg("python")
-        .arg("--all")
         .arg(repo)
         .env("HOME", home)
         .output()
@@ -31,7 +30,7 @@ fn run_python_check_all(repo: &Path, home: &Path) -> Output {
 }
 
 #[test]
-fn check_all_cache_hit_replays_on_second_run() {
+fn check_cache_hit_replays_on_second_run() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
@@ -39,7 +38,7 @@ fn check_all_cache_hit_replays_on_second_run() {
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
     seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
-    let out1 = run_python_check_all(repo.path(), home.path());
+    let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
     assert!(
         stdout1.contains("Analyzed:"),
@@ -50,7 +49,7 @@ fn check_all_cache_hit_replays_on_second_run() {
         "expected full-check cache file under HOME. stdout:\n{stdout1}"
     );
 
-    let out2 = run_python_check_all(repo.path(), home.path());
+    let out2 = run_python_check(repo.path(), home.path());
     let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
     assert_eq!(
         out2.status.code(),
@@ -66,7 +65,7 @@ fn check_all_cache_hit_replays_on_second_run() {
 }
 
 #[test]
-fn check_all_cache_invalidates_when_runtime_coverage_changes() {
+fn check_cache_is_not_invalidated_when_runtime_coverage_changes() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
@@ -74,11 +73,11 @@ fn check_all_cache_invalidates_when_runtime_coverage_changes() {
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
     seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
-    let out1 = run_python_check_all(repo.path(), home.path());
+    let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
     assert!(
-        stdout1.contains("0% covered"),
-        "sanity: first run should report the seeded 0% coverage. stdout:\n{stdout1}"
+        stdout1.contains("Analyzed:"),
+        "sanity: first run should report static analysis summary. stdout:\n{stdout1}"
     );
     assert!(!list_full_check_cache_files(home.path()).is_empty());
 
@@ -90,26 +89,21 @@ fn check_all_cache_invalidates_when_runtime_coverage_changes() {
         )],
     );
 
-    let out2 = run_python_check_all(repo.path(), home.path());
+    let out2 = run_python_check(repo.path(), home.path());
     let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
     assert!(
         out2.status.success(),
-        "refreshed runtime coverage should satisfy --all. stdout:\n{stdout2}\nstderr:\n{}",
+        "static check should still pass after runtime coverage changes. stdout:\n{stdout2}\nstderr:\n{}",
         String::from_utf8_lossy(&out2.stderr)
     );
-    assert!(
-        !stdout2.contains("0% covered"),
-        "runtime coverage refresh should be visible instead of replaying stale cache. \
-         stdout1:\n{stdout1}\nstdout2:\n{stdout2}"
-    );
-    assert_ne!(
+    assert_eq!(
         stdout2, stdout1,
-        "unchanged source with changed runtime coverage must miss the old full-check cache"
+        "unchanged source with changed runtime coverage should preserve the static check cache"
     );
 }
 
 #[test]
-fn check_all_cache_invalidates_when_sources_unreadable() {
+fn check_cache_invalidates_when_sources_unreadable() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
@@ -117,13 +111,13 @@ fn check_all_cache_invalidates_when_sources_unreadable() {
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
     seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
-    let out1 = run_python_check_all(repo.path(), home.path());
+    let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
     assert!(!list_full_check_cache_files(home.path()).is_empty());
 
     chmod(&src, 0o000);
 
-    let out2 = run_python_check_all(repo.path(), home.path());
+    let out2 = run_python_check(repo.path(), home.path());
     let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
     assert_ne!(
         stdout2, stdout1,
@@ -132,7 +126,7 @@ fn check_all_cache_invalidates_when_sources_unreadable() {
 }
 
 #[test]
-fn check_all_cache_invalidates_on_mtime_or_size_change() {
+fn check_cache_invalidates_on_mtime_or_size_change() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
@@ -140,7 +134,7 @@ fn check_all_cache_invalidates_on_mtime_or_size_change() {
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
     seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
-    let out1 = run_python_check_all(repo.path(), home.path());
+    let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
     assert!(!list_full_check_cache_files(home.path()).is_empty());
 
@@ -149,7 +143,7 @@ fn check_all_cache_invalidates_on_mtime_or_size_change() {
     fs::write(&src, "def foo():\n    return 2\n").unwrap();
     chmod(&src, 0o000); // unreadable, so a cache miss will drop parsing and change output
 
-    let out2 = run_python_check_all(repo.path(), home.path());
+    let out2 = run_python_check(repo.path(), home.path());
 
     // We don't require a failure (the analyzer may skip unreadable files), but we do require
     // that it did NOT incorrectly replay the stale cached output.
@@ -161,7 +155,7 @@ fn check_all_cache_invalidates_on_mtime_or_size_change() {
 }
 
 #[test]
-fn check_all_cache_invalidates_on_same_size_content_change() {
+fn check_cache_invalidates_on_same_size_content_change() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
@@ -172,7 +166,7 @@ fn check_all_cache_invalidates_on_same_size_content_change() {
     fs::write(&src, content1).unwrap();
     seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
-    let out1 = run_python_check_all(repo.path(), home.path());
+    let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
     assert!(!list_full_check_cache_files(home.path()).is_empty());
 
@@ -185,7 +179,7 @@ fn check_all_cache_invalidates_on_same_size_content_change() {
         .set_modified(mtime)
         .unwrap();
 
-    let out2 = run_python_check_all(repo.path(), home.path());
+    let out2 = run_python_check(repo.path(), home.path());
     let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
     assert_ne!(
         stdout2, stdout1,

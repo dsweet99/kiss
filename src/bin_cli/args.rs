@@ -12,7 +12,7 @@ use crate::test_git::TestChangeMode;
     about = "Code-quality metrics tool for Python and Rust"
 )]
 #[command(
-    after_help = "EXAMPLES:\n  kiss check .                 Analyze current directory\n  kiss check . src/module/     Analyze module against full codebase (focus mode)\n  kiss check --lang rust src/  Analyze only Rust files in src/\n  kiss mimic . --out .kissconfig   Generate config from codebase\n  kiss init .                  Write a default .kissconfig"
+    after_help = "EXAMPLES:\n  kiss check .                 Run static analysis on current directory\n  kiss check . src/module/     Analyze module against full codebase (focus mode)\n  kiss cov .                   Refresh and check runtime line coverage\n  kiss check --lang rust src/  Analyze only Rust files in src/\n  kiss mimic . --out .kissconfig   Generate config from codebase\n  kiss init .                  Write a default .kissconfig"
 )]
 pub struct Cli {
     /// Path to custom config file (default: .kissconfig)
@@ -79,18 +79,30 @@ pub fn parse_test_command_action(
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Analyze code for violations
+    /// Run static complexity, graph, and duplicate checks
     Check {
         /// First path is UNIVERSE (analysis scope), additional paths are FOCUS (report only these)
         #[arg(default_value = ".")]
         paths: Vec<String>,
-        /// Bypass coverage gate and show all violations
+        /// Ignore files/directories starting with PREFIX (repeatable)
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
+        /// Show timing breakdown for performance analysis
+        #[arg(long)]
+        timing: bool,
+    },
+    /// Refresh and check runtime line coverage
+    Cov {
+        /// First path is UNIVERSE (coverage scope), additional paths are FOCUS (report only these)
+        #[arg(default_value = ".")]
+        paths: Vec<String>,
+        /// Bypass coverage gate and show all coverage violations
         #[arg(long)]
         all: bool,
         /// Ignore files/directories starting with PREFIX (repeatable)
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
-        /// Show timing breakdown for performance analysis
+        /// Show timing breakdown for coverage loading/refresh/evaluation
         #[arg(long)]
         timing: bool,
         /// Maximum test jobs when refreshing runtime coverage
@@ -297,14 +309,20 @@ mod coverage_witness {
     }
 
     #[test]
-    fn check_accepts_jobs_override() {
-        let cli = Cli::parse_from(["kiss", "check", "-j", "7"]);
-        assert!(matches!(cli.command, Commands::Check { jobs: Some(7), .. }));
+    fn cov_accepts_jobs_override() {
+        let cli = Cli::parse_from(["kiss", "cov", "-j", "7"]);
+        assert!(matches!(cli.command, Commands::Cov { jobs: Some(7), .. }));
     }
 
     #[test]
-    fn check_rejects_zero_jobs_override() {
-        assert!(Cli::try_parse_from(["kiss", "check", "-j", "0"]).is_err());
+    fn cov_rejects_zero_jobs_override() {
+        assert!(Cli::try_parse_from(["kiss", "cov", "-j", "0"]).is_err());
+    }
+
+    #[test]
+    fn check_rejects_removed_coverage_flags() {
+        assert!(Cli::try_parse_from(["kiss", "check", "--all"]).is_err());
+        assert!(Cli::try_parse_from(["kiss", "check", "-j", "2"]).is_err());
     }
 
     #[test]

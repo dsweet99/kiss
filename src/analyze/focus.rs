@@ -77,11 +77,6 @@ impl FocusFilter {
         self.restrict
     }
 
-    #[cfg(test)]
-    pub(crate) fn paths(&self) -> &HashSet<PathBuf> {
-        &self.paths
-    }
-
     pub fn cache_focus_paths(&self) -> Vec<String> {
         let mut paths: Vec<String> = self
             .paths

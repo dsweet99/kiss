@@ -1,11 +1,7 @@
-use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::stats::MetricStats;
 use kiss::{DuplicateCluster, Violation};
 
 use crate::analyze::focus::FocusFilter;
-use crate::analyze::line_coverage::{
-    LineCoverageRecord, RuntimeCoverageSnapshot, cached_line_records,
-};
 use crate::analyze::options::AnalyzeOptions;
 use crate::analyze_parse::ParseResult;
 
@@ -16,31 +12,22 @@ pub(crate) struct FullCacheStoreInput<'a> {
     pub focus: &'a FocusFilter,
     pub result: &'a ParseResult,
     pub graph_viols_all: &'a [Violation],
-    pub coverage_violations: &'a [Violation],
-    pub runtime_coverage_snapshot: Option<&'a RuntimeCoverageSnapshot>,
-    pub runtime_line_coverage: Option<&'a [LineCoverageRecord]>,
     pub py_graph: Option<&'a kiss::DependencyGraph>,
     pub rs_graph: Option<&'a kiss::DependencyGraph>,
     pub py_dups_all: &'a [DuplicateCluster],
     pub rs_dups_all: &'a [DuplicateCluster],
     pub py_stats: Option<&'a MetricStats>,
     pub rs_stats: Option<&'a MetricStats>,
-    pub coverage_cache_lists: Option<(Vec<CachedCoverageItem>, Vec<CachedCoverageItem>)>,
 }
 
 pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
-    // Cache writes are independent of `--all`: every successful `kiss check`
-    // run primes the cache so subsequent invocations (with or without
-    // `--all`) can hit it. We still skip writes when the user asked for
-    // timing breakdowns, so the timed run isn't influenced by I/O it would
-    // not normally do. Suppressed-status callers (for example shrink
-    // pre-flight) also avoid priming the user-facing cache.
+    // Cache writes are independent of report mode: every successful static
+    // `kiss check` run primes the cache so subsequent invocations can hit it.
+    // Skip writes for timing breakdowns and suppressed-status callers (for
+    // example shrink pre-flight).
     if inp.opts.show_timing || inp.opts.suppress_final_status {
         return;
     }
-    let Some((definitions, unreferenced)) = inp.coverage_cache_lists else {
-        return;
-    };
     let fp = crate::analyze_cache::fingerprint_for_check(
         inp.py_files,
         inp.rs_files,
@@ -72,20 +59,10 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
             .collect(),
         violations: &inp.result.violations,
         graph_viols_all: inp.graph_viols_all,
-        coverage_violations: inp.coverage_violations,
-        runtime_coverage_identity: inp
-            .runtime_coverage_snapshot
-            .map(|snapshot| snapshot.identity.clone()),
-        runtime_line_coverage: inp
-            .runtime_line_coverage
-            .map(cached_line_records)
-            .unwrap_or_default(),
         py_graph: inp.py_graph,
         rs_graph: inp.rs_graph,
         py_dups_all: inp.py_dups_all,
         rs_dups_all: inp.rs_dups_all,
-        definitions,
-        unreferenced,
     });
 }
 

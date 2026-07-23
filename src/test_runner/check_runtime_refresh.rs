@@ -23,7 +23,8 @@ pub(crate) use check_runtime_refresh_apply::{
     apply_identity_only_repair, apply_rerun_repair, finalize_population_summary,
 };
 
-pub(crate) const CHECK_RUNTIME_REFRESH_ACTIVE_ENV: &str = "KISS_CHECK_RUNTIME_REFRESH_ACTIVE";
+pub(crate) const COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV: &str =
+    "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct CoverageRefreshStats {
@@ -95,11 +96,11 @@ impl fmt::Display for CoverageRefreshError {
         match self {
             CoverageRefreshError::Lock { language, reason } => write!(
                 f,
-                "error: kiss check: failed to refresh {language} runtime line coverage during lock acquisition: {reason}"
+                "error: kiss cov: failed to refresh {language} runtime line coverage during lock acquisition: {reason}"
             ),
             CoverageRefreshError::Discovery { language, reason } => write!(
                 f,
-                "error: kiss check: failed to refresh {language} runtime line coverage during test discovery: {reason}"
+                "error: kiss cov: failed to refresh {language} runtime line coverage during test discovery: {reason}"
             ),
             CoverageRefreshError::TestExecution {
                 language,
@@ -108,15 +109,15 @@ impl fmt::Display for CoverageRefreshError {
                 exit_code,
             } => write!(
                 f,
-                "error: kiss check: failed to refresh {language} runtime line coverage because the population test run failed ({failed}/{total} tests failed, exit code {exit_code})"
+                "error: kiss cov: failed to refresh {language} runtime line coverage because the population test run failed ({failed}/{total} tests failed, exit code {exit_code})"
             ),
             CoverageRefreshError::Publication { language, reason } => write!(
                 f,
-                "error: kiss check: failed to refresh {language} runtime line coverage during publication: {reason}"
+                "error: kiss cov: failed to refresh {language} runtime line coverage during publication: {reason}"
             ),
             CoverageRefreshError::PostRefreshValidation { language, reason } => write!(
                 f,
-                "error: kiss check: failed to refresh {language} runtime line coverage during post-refresh validation: {reason}"
+                "error: kiss cov: failed to refresh {language} runtime line coverage during post-refresh validation: {reason}"
             ),
         }
     }
@@ -147,10 +148,10 @@ pub(crate) struct ScopedRefreshEnvGuard {
 
 impl ScopedRefreshEnvGuard {
     pub(crate) fn set() -> Self {
-        let old = std::env::var_os(CHECK_RUNTIME_REFRESH_ACTIVE_ENV);
+        let old = std::env::var_os(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV);
         // SAFETY: `kiss check` sets this process-wide guard only around its
         // synchronous population runner call, before waiting for child tests.
-        unsafe { std::env::set_var(CHECK_RUNTIME_REFRESH_ACTIVE_ENV, "1") };
+        unsafe { std::env::set_var(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV, "1") };
         Self { old }
     }
 }
@@ -162,7 +163,7 @@ impl Drop for ScopedRefreshEnvGuard {
 }
 
 pub(crate) fn restore_refresh_active_env(old: Option<std::ffi::OsString>) {
-    let key = CHECK_RUNTIME_REFRESH_ACTIVE_ENV;
+    let key = COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     match old {
         // SAFETY: restores the guard set by `ScopedRefreshEnvGuard::set`.
         Some(value) => unsafe { std::env::set_var(key, value) },
@@ -208,7 +209,7 @@ fn ensure_python_runtime_coverage(
         crate::test_runner::runners::enumerate_workspace_python_selectors(repo_root, ignore)
             .map_err(|err| CoverageRefreshError::discovery("Python", err))?;
     eprintln!(
-        "kiss check: refreshing Python runtime coverage ({} tests)",
+        "kiss cov: refreshing Python runtime coverage ({} tests)",
         selectors.len()
     );
     let _refresh_env = ScopedRefreshEnvGuard::set();
@@ -274,7 +275,7 @@ fn refresh_full_rust_check_aggregate(
     jobs: usize,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     eprintln!(
-        "kiss check: refreshing Rust runtime coverage ({} tests)",
+        "kiss cov: refreshing Rust runtime coverage ({} tests)",
         selectors.len()
     );
     let _refresh_env = ScopedRefreshEnvGuard::set();

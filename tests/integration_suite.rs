@@ -6,8 +6,6 @@ mod support;
 
 #[path = "cases/c2_break_orphans.rs"]
 mod break_c2_orphans;
-#[path = "cases/c2_break_test_coverage.rs"]
-mod break_c2_test_coverage;
 #[path = "cases/bug_indirect_dependencies_check.rs"]
 mod bug_indirect_dependencies_check;
 #[path = "cases/bug_test_coverage_aggregate_gate_masking.rs"]
@@ -60,8 +58,6 @@ mod kpop_rust_graph_metrics;
 mod kpop_rust_none;
 #[path = "cases/kpop_rust_none_graph_and_gates.rs"]
 mod kpop_rust_none_graph_and_gates;
-#[path = "cases/kpop_rust_syntactic_witness_coverage.rs"]
-mod kpop_rust_syntactic_witness_coverage;
 #[path = "cases/lib_integration.rs"]
 mod lib_integration;
 #[path = "cases/main_integration.rs"]

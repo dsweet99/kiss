@@ -18,7 +18,6 @@ fn cli_with_lang_filter_python() {
         .arg(tmp.path())
         .arg("--lang")
         .arg("python")
-        .arg("--all")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -37,7 +36,6 @@ fn cli_with_lang_filter_rust() {
         .arg(tmp.path())
         .arg("--lang")
         .arg("rust")
-        .arg("--all")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -92,7 +90,6 @@ fn cli_on_empty_directory() {
     let output = kiss_binary()
         .arg("check")
         .arg(tmp.path())
-        .arg("--all")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);

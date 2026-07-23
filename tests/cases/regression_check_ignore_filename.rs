@@ -31,7 +31,6 @@ fn cli_check_ignore_excludes_matching_directory() {
 
     let baseline = kiss_binary()
         .arg("check")
-        .arg("--all")
         .arg(root)
         .output()
         .unwrap();
@@ -43,7 +42,6 @@ fn cli_check_ignore_excludes_matching_directory() {
 
     let filtered = kiss_binary()
         .arg("check")
-        .arg("--all")
         .arg("--ignore=subdir")
         .arg(root)
         .output()
@@ -67,7 +65,6 @@ fn cli_check_ignore_excludes_matching_filename() {
 
     let baseline = kiss_binary()
         .arg("check")
-        .arg("--all")
         .arg(root)
         .output()
         .unwrap();
@@ -79,7 +76,6 @@ fn cli_check_ignore_excludes_matching_filename() {
 
     let filtered = kiss_binary()
         .arg("check")
-        .arg("--all")
         .arg("--ignore=big")
         .arg(root)
         .output()

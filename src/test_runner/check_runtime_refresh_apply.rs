@@ -30,7 +30,7 @@ pub(crate) fn apply_identity_only_repair(
         .map(|_| ())
         .map_err(|err| CoverageRefreshError::validation("Rust", err))?;
     eprintln!(
-        "kiss check: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports=0",
+        "kiss cov: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports=0",
         aggregate.binaries.len()
     );
     Ok(CoverageRefreshStats {
@@ -47,7 +47,7 @@ pub(crate) fn finalize_population_summary(
     full_refresh: bool,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     eprintln!(
-        "kiss check: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports={}",
+        "kiss cov: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports={}",
         summary.rust_aggregate_binaries, summary.rust_aggregate_exports
     );
     if summary.exit_code != 0 {
@@ -83,7 +83,7 @@ pub(crate) fn apply_rerun_repair(
     jobs: usize,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     eprintln!(
-        "kiss check: incrementally refreshing Rust runtime coverage ({} tests, {} replacement binaries)",
+        "kiss cov: incrementally refreshing Rust runtime coverage ({} tests, {} replacement binaries)",
         rerun_selectors.len(),
         replacement_binary_ids.len()
     );

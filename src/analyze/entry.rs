@@ -1,16 +1,9 @@
 use std::path::Path;
 
 use crate::analyze::focus::{FocusFilter, build_focus_filter, gather_files};
-use crate::analyze::line_coverage::{
-    LineCoverageRecord, RuntimeCoverageSnapshot, compute_line_coverage_records,
-};
-use crate::analyze::options::{AnalyzeOptions, AnalyzeResult, CoverageSource};
+use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
 use crate::analyze::params::RunAnalyzeUncached;
 use crate::analyze::pipeline::run_analyze_uncached;
-use crate::test_runner::check_line_coverage::{
-    CHECK_RUNTIME_REFRESH_ACTIVE_ENV, RequiredCoverageLanguages, ensure_check_runtime_coverage,
-    load_check_runtime_coverage, repository_root_for_universe,
-};
 use kiss::cli_output::print_no_files_message;
 
 fn empty_repo_metrics() -> kiss::GlobalMetrics {
@@ -31,72 +24,16 @@ fn try_cache_hit(
     py_files: &[std::path::PathBuf],
     rs_files: &[std::path::PathBuf],
     focus: &FocusFilter,
-    runtime_coverage_snapshot: Option<&RuntimeCoverageSnapshot>,
 ) -> Option<AnalyzeResult> {
     if opts.show_timing || opts.suppress_final_status {
         return None;
     }
-    crate::analyze_cache::try_run_cached_all(
-        opts,
-        py_files,
-        rs_files,
-        focus,
-        runtime_coverage_snapshot,
-    )
-    .map(|ok| AnalyzeResult {
-        success: ok,
-        metrics: None,
-    })
-}
-
-fn runtime_coverage_needed(opts: &AnalyzeOptions<'_>) -> bool {
-    opts.coverage_source == CoverageSource::RuntimeLine
-        && (opts.gate_config.test_coverage_threshold > 0 || opts.bypass_gate)
-        && std::env::var_os(CHECK_RUNTIME_REFRESH_ACTIVE_ENV).is_none()
-}
-
-fn load_runtime_coverage_for_check(
-    opts: &AnalyzeOptions<'_>,
-    py_files: &[std::path::PathBuf],
-    rs_files: &[std::path::PathBuf],
-) -> Result<Option<(RuntimeCoverageSnapshot, Vec<LineCoverageRecord>)>, AnalyzeResult> {
-    if !runtime_coverage_needed(opts) {
-        return Ok(None);
-    }
-    let repo_root = repository_root_for_universe(Path::new(opts.universe));
-    let required = RequiredCoverageLanguages {
-        python: !py_files.is_empty(),
-        rust: !rs_files.is_empty(),
-    };
-    let snapshot = match load_check_runtime_coverage(&repo_root, required, opts.ignore_prefixes) {
-        Ok(snapshot) => snapshot,
-        Err(_) => {
-            if let Err(err) = ensure_check_runtime_coverage(
-                &repo_root,
-                required,
-                opts.ignore_prefixes,
-                opts.runtime_coverage_jobs,
-            ) {
-                eprintln!("{err}");
-                return Err(AnalyzeResult {
-                    success: false,
-                    metrics: None,
-                });
-            }
-            match load_check_runtime_coverage(&repo_root, required, opts.ignore_prefixes) {
-                Ok(snapshot) => snapshot,
-                Err(err) => {
-                    eprintln!("{err}");
-                    return Err(AnalyzeResult {
-                        success: false,
-                        metrics: None,
-                    });
-                }
-            }
+    crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus).map(|ok| {
+        AnalyzeResult {
+            success: ok,
+            metrics: None,
         }
-    };
-    let records = compute_line_coverage_records(&repo_root, py_files, rs_files, &snapshot);
-    Ok(Some((snapshot, records)))
+    })
 }
 
 /// Run analysis and return a simple success/failure bool.
@@ -118,17 +55,7 @@ pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
         };
     }
     let focus = focus_filter_for_opts(opts);
-    let runtime_coverage = match load_runtime_coverage_for_check(opts, &py_files, &rs_files) {
-        Ok(runtime_coverage) => runtime_coverage,
-        Err(result) => return result,
-    };
-    if let Some(hit) = try_cache_hit(
-        opts,
-        &py_files,
-        &rs_files,
-        &focus,
-        runtime_coverage.as_ref().map(|(snapshot, _)| snapshot),
-    ) {
+    if let Some(hit) = try_cache_hit(opts, &py_files, &rs_files, &focus) {
         return hit;
     }
     let t1 = std::time::Instant::now();
@@ -137,10 +64,6 @@ pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
         py_files: &py_files,
         rs_files: &rs_files,
         focus: &focus,
-        runtime_coverage_snapshot: runtime_coverage
-            .as_ref()
-            .map(|(snapshot, _)| snapshot.clone()),
-        runtime_line_coverage: runtime_coverage.map(|(_, records)| records),
         t0,
         t1,
     })
@@ -149,6 +72,29 @@ pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
 #[cfg(test)]
 mod entry_touch {
     use super::*;
+
+    fn sample_opts<'a>(
+        universe: &'a str,
+        focus: &'a [String],
+        py_cfg: &'a kiss::Config,
+        rs_cfg: &'a kiss::Config,
+        gate: &'a kiss::GateConfig,
+        show_timing: bool,
+        suppress_final_status: bool,
+    ) -> AnalyzeOptions<'a> {
+        AnalyzeOptions {
+            universe,
+            focus_paths: focus,
+            py_config: py_cfg,
+            rs_config: rs_cfg,
+            lang_filter: None,
+            bypass_gate: false,
+            gate_config: gate,
+            ignore_prefixes: &[],
+            show_timing,
+            suppress_final_status,
+        }
+    }
 
     #[test]
     fn empty_repo_matches_default_metrics() {
@@ -163,20 +109,7 @@ mod entry_touch {
         let py_cfg = kiss::Config::python_defaults();
         let rs_cfg = kiss::Config::rust_defaults();
         let gate = kiss::GateConfig::default();
-        let opts = AnalyzeOptions {
-            universe: &universe,
-            focus_paths: &focus,
-            py_config: &py_cfg,
-            rs_config: &rs_cfg,
-            lang_filter: None,
-            bypass_gate: false,
-            gate_config: &gate,
-            ignore_prefixes: &[],
-            show_timing: false,
-            suppress_final_status: false,
-            coverage_source: CoverageSource::StaticReferences,
-            runtime_coverage_jobs: 1,
-        };
+        let opts = sample_opts(&universe, &focus, &py_cfg, &rs_cfg, &gate, false, false);
         let filter = focus_filter_for_opts(&opts);
         assert!(!filter.is_active());
     }
@@ -189,22 +122,9 @@ mod entry_touch {
         let py_cfg = kiss::Config::python_defaults();
         let rs_cfg = kiss::Config::rust_defaults();
         let gate = kiss::GateConfig::default();
-        let opts = AnalyzeOptions {
-            universe: &universe,
-            focus_paths: &focus,
-            py_config: &py_cfg,
-            rs_config: &rs_cfg,
-            lang_filter: None,
-            bypass_gate: false,
-            gate_config: &gate,
-            ignore_prefixes: &[],
-            show_timing: true,
-            suppress_final_status: false,
-            coverage_source: CoverageSource::StaticReferences,
-            runtime_coverage_jobs: 1,
-        };
+        let opts = sample_opts(&universe, &focus, &py_cfg, &rs_cfg, &gate, true, false);
         let focus_filter = FocusFilter::unrestricted();
-        assert!(try_cache_hit(&opts, &[], &[], &focus_filter, None).is_none());
+        assert!(try_cache_hit(&opts, &[], &[], &focus_filter).is_none());
     }
 
     #[test]
@@ -215,22 +135,9 @@ mod entry_touch {
         let py_cfg = kiss::Config::python_defaults();
         let rs_cfg = kiss::Config::rust_defaults();
         let gate = kiss::GateConfig::default();
-        let opts = AnalyzeOptions {
-            universe: &universe,
-            focus_paths: &focus,
-            py_config: &py_cfg,
-            rs_config: &rs_cfg,
-            lang_filter: None,
-            bypass_gate: false,
-            gate_config: &gate,
-            ignore_prefixes: &[],
-            show_timing: false,
-            suppress_final_status: true,
-            coverage_source: CoverageSource::StaticReferences,
-            runtime_coverage_jobs: 1,
-        };
+        let opts = sample_opts(&universe, &focus, &py_cfg, &rs_cfg, &gate, false, true);
         let focus_filter = FocusFilter::unrestricted();
-        assert!(try_cache_hit(&opts, &[], &[], &focus_filter, None).is_none());
+        assert!(try_cache_hit(&opts, &[], &[], &focus_filter).is_none());
     }
 
     #[test]
@@ -241,20 +148,7 @@ mod entry_touch {
         let py_cfg = kiss::Config::python_defaults();
         let rs_cfg = kiss::Config::rust_defaults();
         let gate = kiss::GateConfig::default();
-        let opts = AnalyzeOptions {
-            universe: &universe,
-            focus_paths: &focus,
-            py_config: &py_cfg,
-            rs_config: &rs_cfg,
-            lang_filter: None,
-            bypass_gate: false,
-            gate_config: &gate,
-            ignore_prefixes: &[],
-            show_timing: false,
-            suppress_final_status: true,
-            coverage_source: CoverageSource::StaticReferences,
-            runtime_coverage_jobs: 1,
-        };
+        let opts = sample_opts(&universe, &focus, &py_cfg, &rs_cfg, &gate, false, true);
         let result = run_analyze_with_result(&opts);
         assert!(result.success);
     }

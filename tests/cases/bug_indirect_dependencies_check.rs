@@ -32,7 +32,6 @@ fn bug_check_reports_indirect_dependencies_for_fan_in_zero_entry() {
         .arg("check")
         .arg("--lang")
         .arg("python")
-        .arg("--all")
         .arg(".")
         .output()
         .expect("kiss check should run");

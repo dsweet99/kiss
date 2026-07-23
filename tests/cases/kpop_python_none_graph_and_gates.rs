@@ -43,32 +43,20 @@ fn kpop_python_none_dependency_depth() {
 fn kpop_python_none_test_coverage_threshold() {
     // RULE: test_coverage_threshold
     //
-    // KPOP hypothesis: test-ref analysis considers a definition "covered" if its name appears in a test file.
-    // We test a small positive case.
-    let code = {
-        use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
-        write!(
-            tmp,
-            "def foo():\n    return 1\n\ndef bar():\n    return 2\n"
-        )
-        .unwrap();
-        tmp
+    // Static-reference coverage was removed. Runtime coverage is owned by
+    // `kiss cov`; this test only asserts the threshold config remains loadable
+    // and the static-reference APIs are gone.
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 90,
+        ..Default::default()
     };
-    let test_code = {
-        use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::with_suffix("_test.py").unwrap();
-        write!(tmp, "from x import foo\n\ndef test_foo():\n    foo()\n").unwrap();
-        tmp
-    };
-    let mut parser = create_parser().unwrap();
-    let parsed_code = parse_file(&mut parser, code.path()).unwrap();
-    let parsed_test = parse_file(&mut parser, test_code.path()).unwrap();
-    let refs = kiss::analyze_test_refs(&[&parsed_code, &parsed_test], None);
-
-    // We expect at least one definition (foo) to not be unreferenced.
-    assert!(refs.definitions.iter().any(|d| d.name == "foo"));
-    assert!(!refs.unreferenced.iter().any(|d| d.name == "foo"));
+    assert_eq!(gate.test_coverage_threshold, 90);
+    assert!(
+        !std::fs::read_to_string("src/lib.rs")
+            .unwrap()
+            .contains("analyze_test_refs"),
+        "static-reference analyze_test_refs must not be re-exported"
+    );
 }
 
 #[test]

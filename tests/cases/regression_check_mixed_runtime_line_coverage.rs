@@ -21,7 +21,7 @@ fn mixed_python_and_rust_runtime_line_coverage_can_pass_together() {
         )],
     );
 
-    let out = run_kiss_check_all(&home, &repo);
+    let out = run_kiss_cov_all(&home, &repo);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
@@ -79,12 +79,12 @@ fn write_mixed_runtime_repo(repo: &TempDir) {
     .unwrap();
 }
 
-fn run_kiss_check_all(home: &TempDir, repo: &TempDir) -> std::process::Output {
+fn run_kiss_cov_all(home: &TempDir, repo: &TempDir) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("check")
+        .arg("cov")
         .arg("--all")
         .arg(repo.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss check should run")
+        .expect("kiss cov should run")
 }

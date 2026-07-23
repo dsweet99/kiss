@@ -13,6 +13,14 @@ pub(crate) struct TriConfig<'a> {
 pub(crate) struct CheckDispatchOptions<'a> {
     pub lang: Option<Language>,
     pub paths: Vec<String>,
+    pub ignore: Vec<String>,
+    pub timing: bool,
+    pub cfg: &'a TriConfig<'a>,
+}
+
+pub(crate) struct CovDispatchOptions<'a> {
+    pub lang: Option<Language>,
+    pub paths: Vec<String>,
     pub bypass_gate: bool,
     pub ignore: Vec<String>,
     pub timing: bool,
@@ -47,6 +55,9 @@ mod coverage_witness {
     impl CheckDispatchOptions<'_> {
         fn witness() {}
     }
+    impl CovDispatchOptions<'_> {
+        fn witness() {}
+    }
     impl StatsDispatchOptions<'_> {
         fn witness() {}
     }
@@ -65,6 +76,7 @@ mod coverage_witness {
     fn witness_opt_batch_a() {
         TriConfig::witness();
         CheckDispatchOptions::witness();
+        CovDispatchOptions::witness();
         StatsDispatchOptions::witness();
         let _ = MimicDispatchOptions::witness();
     }

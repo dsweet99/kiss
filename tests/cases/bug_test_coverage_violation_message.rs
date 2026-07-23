@@ -20,14 +20,14 @@ fn bug_check_all_never_claims_100_percent_on_unreferenced_unit() {
     );
 
     let out = kiss_binary()
-        .arg("check")
+        .arg("cov")
         .arg("--all")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss check --all should run");
+        .expect("kiss cov --all should run");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(

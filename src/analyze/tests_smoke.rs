@@ -62,8 +62,6 @@ fn test_structs() {
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
-        coverage_source: crate::analyze::CoverageSource::StaticReferences,
-        runtime_coverage_jobs: 1,
     };
     let _ = ParseResult {
         py_parsed: vec![],
@@ -165,8 +163,6 @@ fn test_run_analyze_no_files() {
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
-        coverage_source: crate::analyze::CoverageSource::StaticReferences,
-        runtime_coverage_jobs: 1,
     };
     assert!(run_analyze(&opts));
 
@@ -205,8 +201,6 @@ fn test_run_analyze_current_repo_in_process() {
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: true,
-        coverage_source: crate::analyze::CoverageSource::StaticReferences,
-        runtime_coverage_jobs: 1,
     };
 
     let result = crate::analyze::run_analyze_with_result(&opts);

@@ -1,6 +1,4 @@
 use crate::duplication::CodeChunk;
-use crate::test_refs::CodeDefinition;
-use crate::units::CodeUnitKind;
 use crate::violation::Violation;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -80,63 +78,6 @@ impl From<&CodeChunk> for CachedCodeChunk {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CachedCodeDefinition {
-    pub name: String,
-    pub kind: String,
-    pub file: String,
-    pub line: usize,
-    pub containing_class: Option<String>,
-}
-
-const fn kind_to_str(k: CodeUnitKind) -> &'static str {
-    match k {
-        CodeUnitKind::Function => "function",
-        CodeUnitKind::Method => "method",
-        CodeUnitKind::Class => "class",
-        CodeUnitKind::Module => "module",
-        CodeUnitKind::Struct => "struct",
-        CodeUnitKind::Enum => "enum",
-        CodeUnitKind::TraitImplMethod => "trait_impl_method",
-    }
-}
-
-fn kind_from_str(s: &str) -> CodeUnitKind {
-    match s {
-        "method" => CodeUnitKind::Method,
-        "class" => CodeUnitKind::Class,
-        "module" => CodeUnitKind::Module,
-        "struct" => CodeUnitKind::Struct,
-        "enum" => CodeUnitKind::Enum,
-        "trait_impl_method" => CodeUnitKind::TraitImplMethod,
-        _ => CodeUnitKind::Function,
-    }
-}
-
-impl From<&CodeDefinition> for CachedCodeDefinition {
-    fn from(d: &CodeDefinition) -> Self {
-        Self {
-            name: d.name.clone(),
-            kind: kind_to_str(d.kind).to_string(),
-            file: d.file.to_string_lossy().to_string(),
-            line: d.line,
-            containing_class: d.containing_class.clone(),
-        }
-    }
-}
-
-impl CachedCodeDefinition {
-    pub fn into_definition(self) -> CodeDefinition {
-        CodeDefinition {
-            name: self.name,
-            kind: kind_from_str(&self.kind),
-            file: PathBuf::from(self.file),
-            line: self.line,
-            containing_class: self.containing_class,
-        }
-    }
-}
-
 pub fn cache_dir() -> PathBuf {
     // Prefer user cache dir; fall back to temp.
     if let Some(home) = std::env::var_os("HOME") {
@@ -183,28 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cached_definition_roundtrip() {
-        let d = CodeDefinition {
-            name: "C".to_string(),
-            kind: CodeUnitKind::Class,
-            file: PathBuf::from("x.py"),
-            line: 3,
-            containing_class: None,
-        };
-        let cached = CachedCodeDefinition::from(&d);
-        let d2 = cached.into_definition();
-        assert_eq!(d2.name, "C");
-        assert_eq!(d2.kind, CodeUnitKind::Class);
-        assert_eq!(d2.file, PathBuf::from("x.py"));
-    }
-
-    #[test]
     fn test_cache_dir_smoke() {
-        // Full-run cache uses this directory; keep it stable and non-panicking.
         let _ = cache_dir();
-
-        // Touch helpers for the static test-reference gate.
-        let _ = kind_to_str(CodeUnitKind::Function);
-        let _ = kind_from_str("class");
     }
 }

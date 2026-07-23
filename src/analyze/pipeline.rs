@@ -1,17 +1,10 @@
-use crate::analyze::coverage::{
-    CoverageOutputOpts, GraphRefPair, PyRsTestCoverage, collect_coverage_viols,
-    collect_line_coverage_viols, merge_coverage_results,
-};
 use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
 use crate::analyze::focus::{FocusFilter, filter_viols_by_focus};
-use crate::analyze::line_coverage::{LineCoverageRecord, RuntimeCoverageSnapshot};
 use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
 use crate::analyze::parallel::{ParallelPyIn, run_parallel_py_analysis, run_rust_analysis};
 use crate::analyze::params::RunAnalyzeUncached;
 use crate::analyze::print::log_parse_timing;
 use crate::analyze_parse::{ParseAllTimedParams, ParseResult, parse_all_timed};
-use kiss::check_universe_cache::CachedCoverageItem;
-use kiss::cli_output::file_coverage_map;
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::path::PathBuf;
 use std::time::Instant;
@@ -23,15 +16,10 @@ pub(crate) struct FullPipelineResult {
     pub py_graph: Option<DependencyGraph>,
     pub rs: crate::analyze::parallel::RustAnalysis,
     pub graph_viols_all: Vec<kiss::Violation>,
-    pub cov_viols: Vec<kiss::Violation>,
-    pub py_cov: kiss::TestRefAnalysis,
     pub py_dups_all: Vec<kiss::DuplicateCluster>,
     pub rs_dups_all: Vec<kiss::DuplicateCluster>,
     pub py_stats: kiss::MetricStats,
     pub rs_stats: kiss::MetricStats,
-    pub coverage_cache_lists: Option<(Vec<CachedCoverageItem>, Vec<CachedCoverageItem>)>,
-    pub runtime_coverage_snapshot: Option<RuntimeCoverageSnapshot>,
-    pub runtime_line_coverage: Option<Vec<LineCoverageRecord>>,
     pub timings: (Instant, Instant, Instant),
 }
 
@@ -40,92 +28,48 @@ pub(crate) struct FullPipelineInput<'a> {
     pub py_files: &'a [PathBuf],
     pub rs_files: &'a [PathBuf],
     pub focus: &'a FocusFilter,
-    pub runtime_coverage_snapshot: Option<RuntimeCoverageSnapshot>,
-    pub runtime_line_coverage: Option<Vec<LineCoverageRecord>>,
     pub t0: Instant,
     pub t1: Instant,
     pub t2: Instant,
 }
 
-fn build_metric_stats<T, FCollect, FPath>(
+fn build_metric_stats<T, FCollect>(
     parsed: &[T],
     graph: Option<&DependencyGraph>,
-    defs: Vec<(PathBuf, String, usize)>,
-    unreferenced: Vec<(PathBuf, String, usize)>,
-    path_of: FPath,
     init: FCollect,
 ) -> kiss::MetricStats
 where
-    FCollect: Fn(&[T]) -> kiss::MetricStats,
-    FPath: Fn(&T) -> &PathBuf,
+    FCollect: FnOnce(&[T]) -> kiss::MetricStats,
 {
-    let mut stats = init(parsed);
+    let mut stats = if parsed.is_empty() {
+        kiss::MetricStats::default()
+    } else {
+        init(parsed)
+    };
     if let Some(graph) = graph {
         stats.collect_graph_metrics(graph);
     }
-    let by_file = file_coverage_map(&defs, &unreferenced);
-    let file_coverages = parsed
-        .iter()
-        .map(|item| by_file.get(path_of(item)).copied().unwrap_or(100))
-        .collect::<Vec<_>>();
-    stats.extend_inv_test_coverage(file_coverages);
     stats
 }
 
 fn build_python_metric_stats(
-    parsed: &[ParsedFile],
-    graph: Option<&DependencyGraph>,
-    coverage: &kiss::TestRefAnalysis,
+    py_parsed: &[ParsedFile],
+    py_graph: Option<&DependencyGraph>,
 ) -> kiss::MetricStats {
-    let defs = coverage
-        .definitions
-        .iter()
-        .map(|d| (d.file.clone(), d.name.clone(), d.line))
-        .collect::<Vec<_>>();
-    let unreferenced = coverage
-        .unreferenced
-        .iter()
-        .map(|d| (d.file.clone(), d.name.clone(), d.line))
-        .collect::<Vec<_>>();
-    build_metric_stats(
-        parsed,
-        graph,
-        defs,
-        unreferenced,
-        |item| &item.path,
-        |files| {
-            let refs: Vec<_> = files.iter().collect();
-            kiss::MetricStats::collect(&refs)
-        },
-    )
+    build_metric_stats(py_parsed, py_graph, |files| {
+        let refs: Vec<_> = files.iter().collect();
+        kiss::MetricStats::collect(&refs)
+    })
 }
 
 fn build_rust_metric_stats(
-    parsed: &[ParsedRustFile],
-    graph: Option<&DependencyGraph>,
-    coverage: &kiss::RustTestRefAnalysis,
+    rs_parsed: &[ParsedRustFile],
+    rs_graph: Option<&DependencyGraph>,
 ) -> kiss::MetricStats {
-    let defs = coverage
-        .definitions
-        .iter()
-        .map(|d| (d.file.clone(), d.name.clone(), d.line))
-        .collect::<Vec<_>>();
-    let unreferenced = coverage
-        .unreferenced
-        .iter()
-        .map(|d| (d.file.clone(), d.name.clone(), d.line))
-        .collect::<Vec<_>>();
-    build_metric_stats(
-        parsed,
-        graph,
-        defs,
-        unreferenced,
-        |item| &item.path,
-        |files| {
-            let refs: Vec<_> = files.iter().collect();
-            kiss::MetricStats::collect_rust(&refs)
-        },
-    )
+    build_metric_stats(rs_parsed, rs_graph, |files| {
+        let refs: Vec<_> = files.iter().collect();
+        kiss::MetricStats::collect_rust(&refs)
+    })
 }
 
 pub(crate) fn run_full_pipeline(in_: FullPipelineInput<'_>) -> FullPipelineResult {
@@ -141,8 +85,6 @@ pub(crate) fn run_full_pipeline(in_: FullPipelineInput<'_>) -> FullPipelineResul
         focus: in_.focus,
         result,
         parse_timing,
-        runtime_coverage_snapshot: in_.runtime_coverage_snapshot,
-        runtime_line_coverage: in_.runtime_line_coverage,
         timings: (in_.t0, in_.t1, in_.t2),
     })
 }
@@ -152,62 +94,28 @@ struct FullPipelineWithParseInput<'a> {
     focus: &'a FocusFilter,
     result: ParseResult,
     parse_timing: String,
-    runtime_coverage_snapshot: Option<RuntimeCoverageSnapshot>,
-    runtime_line_coverage: Option<Vec<LineCoverageRecord>>,
     timings: (Instant, Instant, Instant),
 }
 
 fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipelineResult {
     let opts = in_.opts;
     let focus = in_.focus;
-    let runtime_coverage_snapshot = in_.runtime_coverage_snapshot;
-    let runtime_line_coverage = in_.runtime_line_coverage;
     let timings = in_.timings;
     log_parse_timing(opts.show_timing, &in_.parse_timing);
     let result = in_.result;
     let file_count = result.py_parsed.len() + result.rs_parsed.len();
     let viols = filter_viols_by_focus(result.violations.clone(), focus);
-    let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config, None);
-    let ((py_graph, graph_viols_all), (py_cov, py_dups_all)) =
-        run_parallel_py_analysis(ParallelPyIn {
-            py_parsed: &result.py_parsed,
-            rs_graph: rs.graph.as_ref(),
-            opts,
-            file_count,
-            cached_py_cov: None,
-        });
+    let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config);
+    let ((py_graph, graph_viols_all), py_dups_all) = run_parallel_py_analysis(ParallelPyIn {
+        py_parsed: &result.py_parsed,
+        rs_graph: rs.graph.as_ref(),
+        opts,
+        file_count,
+    });
     let rs_dups_all = rs.dups.clone();
 
-    let py_stats = build_python_metric_stats(&result.py_parsed, py_graph.as_ref(), &py_cov);
-    let rs_stats = build_rust_metric_stats(&result.rs_parsed, rs.graph.as_ref(), &rs.cov);
-
-    let (cov_viols, coverage_cache_lists) = if opts.show_timing {
-        (Vec::new(), None)
-    } else if let Some(records) = runtime_line_coverage.as_ref() {
-        (
-            collect_line_coverage_viols(records, focus, opts.bypass_gate),
-            Some(merge_coverage_results(py_cov.clone(), rs.cov.clone())),
-        )
-    } else {
-        let (cov_viols, cache_lists) = collect_coverage_viols(
-            PyRsTestCoverage {
-                py: py_cov.clone(),
-                rs: rs.cov.clone(),
-            },
-            &result.py_parsed,
-            &result.rs_parsed,
-            focus,
-            CoverageOutputOpts {
-                bypass_gate: opts.bypass_gate,
-                show_timing: false,
-            },
-            GraphRefPair {
-                py: py_graph.as_ref(),
-                rs: rs.graph.as_ref(),
-            },
-        );
-        (cov_viols, cache_lists)
-    };
+    let py_stats = build_python_metric_stats(&result.py_parsed, py_graph.as_ref());
+    let rs_stats = build_rust_metric_stats(&result.rs_parsed, rs.graph.as_ref());
 
     FullPipelineResult {
         result,
@@ -216,15 +124,10 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
         py_graph,
         rs,
         graph_viols_all,
-        cov_viols,
-        py_cov,
         py_dups_all,
         rs_dups_all,
         py_stats,
         rs_stats,
-        coverage_cache_lists,
-        runtime_coverage_snapshot,
-        runtime_line_coverage,
         timings,
     }
 }
@@ -235,8 +138,6 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
         py_files,
         rs_files,
         focus,
-        runtime_coverage_snapshot,
-        runtime_line_coverage,
         t0,
         t1,
     } = in_;
@@ -248,45 +149,11 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
         show_timing: opts.show_timing,
     });
 
-    if !opts.bypass_gate
-        && opts.gate_config.test_coverage_threshold > 0
-        && let Some(records) = runtime_line_coverage.as_ref()
-    {
-        if let Some(early) = crate::analyze::coverage_gate::evaluate_line_gate(
-            records,
-            focus,
-            opts.gate_config.test_coverage_threshold,
-        ) {
-            log_parse_timing(opts.show_timing, &parse_timing);
-            return early;
-        }
-    } else if !opts.bypass_gate && opts.gate_config.test_coverage_threshold > 0 {
-        let py_refs = result.py_parsed.iter().collect::<Vec<_>>();
-        let rs_refs = result.rs_parsed.iter().collect::<Vec<_>>();
-        let py_graph = crate::analyze::graph_api::build_py_graph(&result.py_parsed);
-        let rs_graph = crate::analyze::graph_api::build_rs_graph(&result.rs_parsed);
-        let py_cov = kiss::analyze_test_refs(&py_refs, py_graph.as_ref());
-        let rs_cov = kiss::analyze_rust_test_refs(&rs_refs, rs_graph.as_ref());
-        if let Some(early) = crate::analyze::coverage_gate::evaluate_gate(
-            &py_cov,
-            &rs_cov,
-            &result.py_parsed,
-            &result.rs_parsed,
-            focus,
-            opts.gate_config.test_coverage_threshold,
-        ) {
-            log_parse_timing(opts.show_timing, &parse_timing);
-            return early;
-        }
-    }
-
     let pipeline = run_full_pipeline_with_parse(FullPipelineWithParseInput {
         opts,
         focus,
         result,
         parse_timing,
-        runtime_coverage_snapshot,
-        runtime_line_coverage,
         timings: (t0, t1, Instant::now()),
     });
 
@@ -299,11 +166,6 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
             result: pipeline.result,
             viols: pipeline.viols,
             file_count: pipeline.file_count,
-            py_cov: pipeline.py_cov,
-            cov_viols: pipeline.cov_viols,
-            coverage_cache_lists: pipeline.coverage_cache_lists,
-            runtime_coverage_snapshot: pipeline.runtime_coverage_snapshot,
-            runtime_line_coverage: pipeline.runtime_line_coverage,
             py_stats: Some(pipeline.py_stats),
             rs_stats: Some(pipeline.rs_stats),
             rs: pipeline.rs,
@@ -316,23 +178,12 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod pipeline_tests {
     use super::*;
 
-    impl FullPipelineResult {
-        fn witness() {}
-    }
-    impl FullPipelineInput<'_> {
-        fn witness() {}
-    }
-    impl FullPipelineWithParseInput<'_> {
-        fn witness() {}
-    }
-
     #[test]
-    fn witness_pipeline_types() {
-        FullPipelineResult::witness();
-        FullPipelineInput::witness();
-        FullPipelineWithParseInput::witness();
+    fn full_pipeline_input_is_coverage_free() {
+        let _ = std::mem::size_of::<FullPipelineInput<'_>>();
+        let _ = std::mem::size_of::<FullPipelineResult>();
     }
 }

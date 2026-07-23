@@ -1,4 +1,4 @@
-//! `kiss check --all` must not emit coverage violations for test modules.
+//! `kiss cov --all` must not emit coverage violations for test modules.
 //! Test files are witness sources, not production gate targets.
 
 use crate::common::seed_python_runtime_coverage;
@@ -66,18 +66,18 @@ fn kiss_check_all_passes_without_test_module_violations() {
     let home = TempDir::new().unwrap();
 
     let out = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("check")
+        .arg("cov")
         .arg("--all")
         .arg(corpus.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss check --all should run");
+        .expect("kiss cov --all should run");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         out.status.success(),
-        "kiss check --all failed (exit {:?})\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        "kiss cov --all failed (exit {:?})\nstdout:\n{stdout}\nstderr:\n{stderr}",
         out.status.code(),
     );
     assert!(

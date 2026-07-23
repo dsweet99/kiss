@@ -1,9 +1,7 @@
 use std::path::PathBuf;
 
 use kiss::check_cache::{CachedCodeChunk, CachedViolation};
-use kiss::check_universe_cache::{
-    CachedCoverageItem, CachedDuplicateCluster, CachedLineCoverageRecord, FullCheckCache,
-};
+use kiss::check_universe_cache::{CachedDuplicateCluster, FullCheckCache};
 use kiss::stats::MetricStats;
 use kiss::{DependencyGraph, DuplicateCluster, Violation};
 
@@ -18,9 +16,6 @@ pub struct FullCacheInputs<'a> {
     pub statement_count: usize,
     pub violations: &'a [Violation],
     pub graph_viols_all: &'a [Violation],
-    pub coverage_violations: &'a [Violation],
-    pub runtime_coverage_identity: Option<String>,
-    pub runtime_line_coverage: Vec<CachedLineCoverageRecord>,
     pub py_graph: Option<&'a DependencyGraph>,
     pub rs_graph: Option<&'a DependencyGraph>,
     pub py_stats: Option<&'a MetricStats>,
@@ -31,8 +26,6 @@ pub struct FullCacheInputs<'a> {
     pub rs_paths: Vec<String>,
     pub py_dups_all: &'a [DuplicateCluster],
     pub rs_dups_all: &'a [DuplicateCluster],
-    pub definitions: Vec<CachedCoverageItem>,
-    pub unreferenced: Vec<CachedCoverageItem>,
 }
 
 pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
@@ -67,13 +60,6 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
             .iter()
             .map(CachedViolation::from)
             .collect(),
-        coverage_violations: inputs
-            .coverage_violations
-            .iter()
-            .map(CachedViolation::from)
-            .collect(),
-        runtime_coverage_identity: inputs.runtime_coverage_identity,
-        runtime_line_coverage: inputs.runtime_line_coverage,
         py_duplicates: inputs
             .py_dups_all
             .iter()
@@ -90,8 +76,6 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
                 chunks: c.chunks.iter().map(CachedCodeChunk::from).collect(),
             })
             .collect(),
-        definitions: inputs.definitions,
-        unreferenced: inputs.unreferenced,
     };
     store_full_cache(&cache);
 }

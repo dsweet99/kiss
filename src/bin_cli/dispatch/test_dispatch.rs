@@ -36,6 +36,13 @@ fn call_handler_dispatchers(
     let _ = handlers::dispatch_check(options::CheckDispatchOptions {
         lang: None,
         paths: vec![".".to_string()],
+        ignore: vec![],
+        timing: false,
+        cfg,
+    });
+    let _ = handlers::dispatch_cov(options::CovDispatchOptions {
+        lang: None,
+        paths: vec![".".to_string()],
         bypass_gate: true,
         ignore: vec![],
         timing: false,
@@ -140,10 +147,8 @@ fn call_router_dispatchers(
         None,
         Commands::Check {
             paths: vec![".".to_string()],
-            all: true,
             ignore: vec![],
             timing: false,
-            jobs: None,
         },
         cfg,
         test,
@@ -228,10 +233,8 @@ fn dispatch_private_routers_reject_commands_from_the_other_group() {
             None,
             Commands::Check {
                 paths: vec![".".to_string()],
-                all: true,
                 ignore: vec![],
                 timing: false,
-                jobs: None,
             },
             &cfg,
             &test,

@@ -19,7 +19,7 @@ const COVERAGE_BUILD_ENV_KEYS: &[&str] = &[
     "CARGO_TARGET_DIR",
     "CARGO_LLVM_COV_TARGET_DIR",
     "CARGO_LLVM_COV_BUILD_DIR",
-    "KISS_CHECK_RUNTIME_REFRESH_ACTIVE",
+    "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE",
 ];
 
 #[cfg(test)]
@@ -139,7 +139,7 @@ mod tests {
         let _lock = crate::test_support::shim_test_env_lock();
         let _rustflags = EnvVarGuard::set("RUSTFLAGS", "-Cinstrument-coverage");
         let _target_dir = EnvVarGuard::set("CARGO_TARGET_DIR", "/outer-target");
-        let _check_refresh = EnvVarGuard::set("KISS_CHECK_RUNTIME_REFRESH_ACTIVE", "1");
+        let _check_refresh = EnvVarGuard::set("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE", "1");
         let tmp = tempfile::tempdir().unwrap();
         let go_path = tmp.path().join("go");
         let profile_path = tmp.path().join("fresh.profraw");
@@ -155,7 +155,7 @@ mod tests {
         assert!(!env_has_key(&env, "RUSTFLAGS"));
         assert!(!env_has_key(&env, "CARGO_ENCODED_RUSTFLAGS"));
         assert!(!env_has_key(&env, "CARGO_TARGET_DIR"));
-        assert!(!env_has_key(&env, "KISS_CHECK_RUNTIME_REFRESH_ACTIVE"));
+        assert!(!env_has_key(&env, "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE"));
         assert!(env_has_binding(
             &env,
             "LLVM_PROFILE_FILE",

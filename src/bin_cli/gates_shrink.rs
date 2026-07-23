@@ -132,6 +132,38 @@ fn test_shrink_check_without_state() {
 }
 
 #[test]
+fn test_shrink_analysis_ignores_coverage_threshold() {
+    use crate::bin_cli::shrink::{ShrinkAnalyzeArgs, ShrinkFullContext, run_shrink_analysis};
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("mod.py"), "def foo():\n    return 1\n").unwrap();
+    let p = tmp.path().to_string_lossy().to_string();
+    let py_cfg = Config::python_defaults();
+    let rs_cfg = Config::rust_defaults();
+    let gate_cfg = GateConfig {
+        test_coverage_threshold: 90,
+        orphan_module_enabled: false,
+        duplication_enabled: false,
+        ..Default::default()
+    };
+    let ctx = ShrinkFullContext {
+        lang_filter: None,
+        py_config: &py_cfg,
+        rs_config: &rs_cfg,
+        gate_config: &gate_cfg,
+    };
+    let result = run_shrink_analysis(ShrinkAnalyzeArgs {
+        paths: std::slice::from_ref(&p),
+        ignore: &[],
+        ctx: &ctx,
+    });
+    assert!(
+        result.success,
+        "shrink static analysis must succeed without enforcing coverage"
+    );
+}
+
+#[test]
 fn test_shrink_helper_functions() {
     fn touch<T>(_: T) {}
     touch(run_shrink_analysis);

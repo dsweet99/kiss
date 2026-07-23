@@ -8,8 +8,8 @@ use kiss::config_gen::{
 };
 use kiss::{
     Config, DependencyGraph, DuplicationConfig, Language, ParsedFile, ParsedRustFile, analyze_file,
-    analyze_graph, analyze_test_refs, build_dependency_graph, cluster_duplicates,
-    detect_duplicates, extract_chunks_for_duplication, find_source_files, parse_files,
+    analyze_graph, build_dependency_graph, cluster_duplicates, detect_duplicates,
+    extract_chunks_for_duplication, find_source_files, parse_files,
 };
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -44,35 +44,6 @@ fn parse_and_analyze_py(
     (parsed, viols)
 }
 
-fn compute_test_coverage(
-    py_parsed: &[ParsedFile],
-) -> (usize, usize, usize, Vec<(PathBuf, String, usize)>) {
-    let mut tested = 0;
-    let mut total = 0;
-    let mut unreferenced = Vec::new();
-    if !py_parsed.is_empty() {
-        let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-        let analysis = analyze_test_refs(&refs, None);
-        total += analysis.definitions.len();
-        tested += analysis.definitions.len() - analysis.unreferenced.len();
-        for def in analysis.unreferenced {
-            unreferenced.push((def.file, def.name, def.line));
-        }
-    }
-
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
-    )]
-    let coverage = if total > 0 {
-        ((tested as f64 / total as f64) * 100.0).round() as usize
-    } else {
-        100
-    };
-    (coverage, tested, total, unreferenced)
-}
-
 #[test]
 fn test_gather_files_all_and_filtered() {
     let tmp = TempDir::new().unwrap();
@@ -84,41 +55,6 @@ fn test_gather_files_all_and_filtered() {
     let (py2, rs2) = gather_files(tmp.path(), Some(Language::Python));
     assert_eq!(py2.len(), 1);
     assert_eq!(rs2.len(), 0);
-}
-
-#[test]
-fn test_coverage_gate_blocks_untested_code() {
-    let tmp = TempDir::new().unwrap();
-    std::fs::write(
-        tmp.path().join("utils.py"),
-        "def my_function():\n    pass\n",
-    )
-    .unwrap();
-    let (py_files, _) = gather_files(tmp.path(), Some(Language::Python));
-    let (py_parsed, _) = parse_and_analyze_py(&py_files, &Config::default());
-    let (coverage, _, total, unreferenced) = compute_test_coverage(&py_parsed);
-    assert_eq!(total, 1);
-    assert_eq!(coverage, 0);
-    assert_eq!(unreferenced.len(), 1);
-}
-
-#[test]
-fn test_coverage_gate_passes_with_tests() {
-    let tmp = TempDir::new().unwrap();
-    std::fs::write(
-        tmp.path().join("utils.py"),
-        "def my_function():\n    pass\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("test_utils.py"),
-        "from utils import my_function\ndef test_it():\n    my_function()\n",
-    )
-    .unwrap();
-    let (py_files, _) = gather_files(tmp.path(), Some(Language::Python));
-    let (py_parsed, _) = parse_and_analyze_py(&py_files, &Config::default());
-    let (coverage, _, _, _) = compute_test_coverage(&py_parsed);
-    assert_eq!(coverage, 100);
 }
 
 #[test]

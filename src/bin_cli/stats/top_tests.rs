@@ -1,11 +1,8 @@
 use super::top::{
-    AGGREGATE_ONLY_METRICS, StatsTopArgs, append_cycle_units, coverage_map_to_string_keys,
-    coverage_pct_map, decorate_file_units_with_coverage, extractor_for, finalize_stats_top_status,
-    merge_fresh_items, print_top_for_metric, run_stats_top_status,
+    AGGREGATE_ONLY_METRICS, StatsTopArgs, append_cycle_units, extractor_for,
+    finalize_stats_top_status, merge_fresh_items, print_top_for_metric, run_stats_top_status,
 };
-use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::{Config, GateConfig, Language};
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 fn file_unit(path: &str, name: &str) -> kiss::UnitMetrics {
@@ -44,27 +41,10 @@ fn allowlist_entries_exist_in_registry() {
 }
 
 #[test]
-fn extractor_for_inv_test_coverage_reads_field() {
-    let mut u = file_unit("a.rs", "a.rs");
-    u.inv_test_coverage = Some(75);
-    assert_eq!(extractor_for("inv_test_coverage").unwrap()(&u), Some(75));
-}
-
-#[test]
 fn extractor_for_cycle_size_reads_field() {
     let mut u = file_unit("a.rs", "mod_a");
     u.cycle_size = Some(3);
     assert_eq!(extractor_for("cycle_size").unwrap()(&u), Some(3));
-}
-
-#[test]
-fn decorate_file_units_with_coverage_inverts_pct() {
-    let mut units = vec![file_unit("c.rs", "c.rs"), file_unit("b.rs", "b.rs")];
-    let mut map = HashMap::new();
-    map.insert("c.rs".to_string(), 80);
-    decorate_file_units_with_coverage(&mut units, &map);
-    assert_eq!(units[0].inv_test_coverage, Some(20));
-    assert_eq!(units[1].inv_test_coverage, Some(0));
 }
 
 #[test]
@@ -84,30 +64,6 @@ fn append_cycle_units_emits_one_unit_per_cycle() {
     assert_eq!(units[0].cycle_size, Some(3));
     assert_eq!(units[0].name, "mod_a");
     assert_eq!(units[0].file, "mod_a.rs");
-}
-
-#[test]
-fn coverage_pct_map_groups_by_file() {
-    struct Def {
-        file: PathBuf,
-    }
-    let defs = vec![
-        Def {
-            file: PathBuf::from("a.py"),
-        },
-        Def {
-            file: PathBuf::from("a.py"),
-        },
-        Def {
-            file: PathBuf::from("b.py"),
-        },
-    ];
-    let unrefs = vec![Def {
-        file: PathBuf::from("a.py"),
-    }];
-    let map = coverage_pct_map(&defs, &unrefs, |d| &d.file);
-    assert_eq!(map.get("a.py").copied(), Some(50));
-    assert_eq!(map.get("b.py").copied(), Some(100));
 }
 
 #[test]
@@ -221,39 +177,6 @@ fn merge_fresh_items_none_none_is_none() {
 }
 
 #[test]
-fn merge_fresh_items_joins_py_and_rs() {
-    let py = (
-        vec![CachedCoverageItem {
-            file: "a.py".into(),
-            name: "f".into(),
-            line: 1,
-        }],
-        Vec::new(),
-    );
-    let rs = (
-        Vec::new(),
-        vec![CachedCoverageItem {
-            file: "b.rs".into(),
-            name: "g".into(),
-            line: 2,
-        }],
-    );
-    let (defs, unrefs) = merge_fresh_items(Some(py), Some(rs)).unwrap();
-    assert_eq!(defs.len(), 1);
-    assert_eq!(unrefs.len(), 1);
-    assert_eq!(defs[0].file, "a.py");
-    assert_eq!(unrefs[0].file, "b.rs");
-}
-
-#[test]
-fn coverage_map_to_string_keys_uses_display_paths() {
-    let mut map = HashMap::new();
-    map.insert(PathBuf::from("x.rs"), 9);
-    let out = coverage_map_to_string_keys(map);
-    assert_eq!(out.get("x.rs").copied(), Some(9));
-}
-
-#[test]
 fn print_top_for_metric_skips_when_no_values() {
     print_top_for_metric(&[], 3, "lines_per_file", |_| None);
 }
@@ -291,17 +214,7 @@ fn run_stats_top_status_analyzes_temp_rust_file() {
 #[test]
 fn merge_fresh_items_metamorphic_none_vs_some() {
     let empty = merge_fresh_items(None, None);
-    let nonempty = merge_fresh_items(
-        Some((
-            vec![CachedCoverageItem {
-                file: "a.py".into(),
-                name: "f".into(),
-                line: 1,
-            }],
-            Vec::new(),
-        )),
-        None,
-    );
+    let nonempty = merge_fresh_items(Some(()), None);
     assert!(empty.is_none());
-    assert!(nonempty.is_some());
+    assert!(nonempty.is_none());
 }

@@ -1,11 +1,6 @@
 use super::path_helpers::load_full_cache;
 use super::*;
-use crate::analyze::CoverageSource;
 use crate::analyze::FocusFilter;
-use kiss::Violation;
-use kiss::check_cache::CachedViolation;
-use kiss::check_universe_cache::CachedCoverageItem;
-use kiss::check_universe_cache::CachedLineCoverageRecord;
 use std::path::PathBuf;
 
 fn empty_cache(fp: &str) -> FullCheckCache {
@@ -25,13 +20,8 @@ fn empty_cache(fp: &str) -> FullCheckCache {
         graph_edges: 0,
         base_violations: Vec::new(),
         graph_violations: Vec::new(),
-        coverage_violations: Vec::new(),
         py_duplicates: Vec::new(),
         rs_duplicates: Vec::new(),
-        definitions: Vec::new(),
-        unreferenced: Vec::new(),
-        runtime_coverage_identity: None,
-        runtime_line_coverage: Vec::new(),
         file_content_digests: Vec::new(),
     }
 }
@@ -45,9 +35,6 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
         statement_count: 0,
         violations: &[],
         graph_viols_all: &[],
-        coverage_violations: &[],
-        runtime_coverage_identity: None,
-        runtime_line_coverage: Vec::new(),
         py_graph: None,
         rs_graph: None,
         py_stats: None,
@@ -58,8 +45,6 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
         rs_paths: Vec::new(),
         py_dups_all: &[],
         rs_dups_all: &[],
-        definitions: Vec::new(),
-        unreferenced: Vec::new(),
     }
 }
 
@@ -79,110 +64,18 @@ fn test_analyze_options<'a>(
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
-        coverage_source: CoverageSource::StaticReferences,
-        runtime_coverage_jobs: 1,
     }
 }
 
 #[test]
-fn cached_coverage_viols_skips_test_files_on_replay() {
-    let file = PathBuf::from("/tmp/repo/tests/test_lib.py");
-    let cached = CachedViolation::from(&coverage_violation(file.clone(), "test_lib".into(), 1, 0));
-    let mut cache = empty_cache("test_file_skip");
-    cache.coverage_violations = vec![cached];
-    let focus = FocusFilter::restricting([file.clone()].into_iter().collect());
-    assert!(cached_coverage_viols(&cache, &focus).is_empty());
-}
-
-#[test]
-fn cached_coverage_viols_refreshes_stale_100_pct_for_unreferenced_units() {
-    let file = PathBuf::from("src/module.py");
-    let cached = CachedViolation::from(&Violation {
-        file: file.clone(),
-        line: 1,
-        unit_name: "fn_a".into(),
-        metric: "test_coverage".to_string(),
-        value: 0,
-        threshold: 0,
-        message: "100% covered. Add test coverage for this code unit. No test module imports this module.".into(),
-        suggestion: String::new(),
-    });
-    let mut cache = empty_cache("stale_100_refresh");
-    cache.coverage_violations = vec![cached];
-    cache.definitions.push(CachedCoverageItem {
-        file: file.to_string_lossy().to_string(),
-        name: "fn_a".into(),
-        line: 1,
-    });
-    cache.definitions.push(CachedCoverageItem {
-        file: file.to_string_lossy().to_string(),
-        name: "fn_b".into(),
-        line: 2,
-    });
-    cache.unreferenced.push(CachedCoverageItem {
-        file: file.to_string_lossy().to_string(),
-        name: "fn_a".into(),
-        line: 1,
-    });
-    let focus = FocusFilter::unrestricted();
-    let viols = cached_coverage_viols(&cache, &focus);
-    assert_eq!(viols.len(), 1);
-    assert!(
-        viols[0].message.contains("50% covered"),
-        "expected unweighted pct on replay, got: {}",
-        viols[0].message
-    );
-    assert!(
-        viols[0]
-            .message
-            .contains("No test module imports this module."),
-        "graph suffix should be preserved: {}",
-        viols[0].message
-    );
-}
-
-#[test]
-fn cached_coverage_viols_replays_weighted_overlay_pct() {
-    let file = PathBuf::from("src/sparse_module.py");
-    let cached = CachedViolation::from(&coverage_violation(file.clone(), "fn_a".into(), 1, 17));
-    let mut cache = empty_cache("weighted_overlay_replay");
-    cache.coverage_violations = vec![cached];
-    cache.definitions.push(CachedCoverageItem {
-        file: file.to_string_lossy().to_string(),
-        name: "fn_a".into(),
-        line: 1,
-    });
-    let focus = FocusFilter::unrestricted();
-    let viols = cached_coverage_viols(&cache, &focus);
-    assert_eq!(viols.len(), 1);
-    assert_eq!(viols[0].metric, "test_coverage");
-    assert!(viols[0].message.contains("17% covered"));
-}
-
-#[test]
-fn emit_cached_gated_fails_on_static_cached_coverage_gate() {
-    let mut cache = empty_cache("static_gate_fail");
-    cache.definitions.push(CachedCoverageItem {
-        file: "src/module.py".into(),
-        name: "covered".into(),
-        line: 1,
-    });
-    cache.definitions.push(CachedCoverageItem {
-        file: "src/module.py".into(),
-        name: "missing".into(),
-        line: 2,
-    });
-    cache.unreferenced.push(CachedCoverageItem {
-        file: "src/module.py".into(),
-        name: "missing".into(),
-        line: 2,
-    });
+fn emit_cached_gated_replays_static_violations_only() {
+    let cache = empty_cache("static_only");
     let py = Config::python_defaults();
     let rs = Config::rust_defaults();
     let gate = GateConfig::default();
     let opts = test_analyze_options(&py, &rs, &gate);
 
-    assert!(!emit_cached_gated(
+    assert!(emit_cached_gated(
         cache,
         &opts,
         &FocusFilter::unrestricted()
@@ -190,30 +83,7 @@ fn emit_cached_gated_fails_on_static_cached_coverage_gate() {
 }
 
 #[test]
-fn emit_cached_gated_fails_on_runtime_line_coverage_gate() {
-    let mut cache = empty_cache("runtime_gate_fail");
-    cache.runtime_coverage_identity = Some("runtime-id".into());
-    cache.runtime_line_coverage.push(CachedLineCoverageRecord {
-        file: "src/module.py".into(),
-        total_lines: 10,
-        covered_lines: 8,
-        percent: 80,
-        first_uncovered_line: Some(9),
-    });
-    let py = Config::python_defaults();
-    let rs = Config::rust_defaults();
-    let gate = GateConfig::default();
-    let opts = test_analyze_options(&py, &rs, &gate);
-
-    assert!(!emit_cached_gated(
-        cache,
-        &opts,
-        &FocusFilter::unrestricted()
-    ));
-}
-
-#[test]
-fn fingerprint_path_duplicates_and_coverage_helpers() {
+fn fingerprint_path_duplicates_helpers() {
     let fp = fingerprint_for_check(
         &[],
         &[],
@@ -222,20 +92,15 @@ fn fingerprint_path_duplicates_and_coverage_helpers() {
         &GateConfig::default(),
     );
     assert!(!fp.is_empty());
-
-    let v = coverage_violation(PathBuf::from("test.py"), "foo".into(), 1, 50);
-    assert_eq!(v.metric, "test_coverage");
-    assert!(v.message.contains("50%"));
     assert_eq!(graph_counts(None, None), (0, 0));
 
     cache_path_full("deadbeef");
     assert!(load_full_cache("deadbeef").is_none());
 
     let focus = FocusFilter::unrestricted();
-    let (_viols, py_dups, rs_dups, cache) =
+    let (_viols, py_dups, rs_dups, _cache) =
         cached_duplicates(empty_cache("deadbeef"), &GateConfig::default(), &focus);
     assert!(py_dups.is_empty() && rs_dups.is_empty());
-    assert!(cached_coverage_viols(&cache, &focus).is_empty());
 }
 
 #[test]
@@ -317,13 +182,13 @@ fn fingerprint_includes_python_returns_per_function() {
 }
 
 #[test]
-fn fingerprint_includes_gate_test_coverage_threshold() {
+fn fingerprint_excludes_gate_test_coverage_threshold() {
     let py = Config::python_defaults();
     let rs = Config::rust_defaults();
     let g0 = GateConfig::default();
     let mut g1 = g0.clone();
     g1.test_coverage_threshold = g0.test_coverage_threshold.saturating_add(1);
-    assert_ne!(
+    assert_eq!(
         fingerprint_for_check(&[], &[], &py, &rs, &g0),
         fingerprint_for_check(&[], &[], &py, &rs, &g1),
     );

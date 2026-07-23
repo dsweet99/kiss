@@ -10,7 +10,7 @@ pub(super) fn kiss_binary() -> Command {
 /// Metric IDs that are NOT directly comparable between `stats --all` and `check`.
 ///
 /// Architectural asymmetries (by design):
-/// - `cycle_size`, `inv_test_coverage`: aggregate-only (no per-unit STAT line).
+/// - `cycle_size`: aggregate-only (no per-unit STAT line).
 /// - `duplication`, `orphan_module`, `test_coverage`: gate-only (check emits, stats doesn't).
 /// - `fan_in`, `fan_out`: stats reports them but check never emits violations for them.
 /// - `dependency_depth`: check emits with module-qualified name differing from stats' filename.
@@ -21,7 +21,6 @@ pub(super) fn kiss_binary() -> Command {
 const NON_SHARED_METRICS: &[&str] = &[
     // Architectural
     "cycle_size",
-    "inv_test_coverage",
     "duplication",
     "orphan_module",
     "test_coverage",
@@ -300,7 +299,6 @@ pub(super) fn run_check(
         .arg("check")
         .arg("--lang")
         .arg("python")
-        .arg("--all")
         .arg(corpus)
         .env("HOME", home)
         .output()

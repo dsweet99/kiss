@@ -34,7 +34,7 @@ def test_cheat_cli(
 
     gaps = (("src/a.py", 100.0, 5.0),) if expect_success else ()
     metrics = cheat_mod.CheatMetrics(expect_success, gaps)
-    output = "kiss check: pass\n" if expect_success else "kiss check: fail\n"
+    output = "kiss cov: pass\n" if expect_success else "kiss cov: fail\n"
     monkeypatch.setattr(cheat_mod, "verify_cheat", lambda *_: (expect_success, metrics, output))
 
     result = CliRunner().invoke(cheat, [])
@@ -71,7 +71,7 @@ def test_cheat_success_moves_repo_to_kiss_adversarial(
         lambda *_: (
             True,
             cheat_mod.CheatMetrics(True, (("src/a.py", 100.0, 5.0),)),
-            "kiss check: pass\n",
+            "kiss cov: pass\n",
         ),
     )
 
@@ -103,7 +103,7 @@ def test_cheat_failure_leaves_no_kiss_adversarial_repo(
     monkeypatch.setattr(
         cheat_mod,
         "verify_cheat",
-        lambda *_: (False, cheat_mod.CheatMetrics(False, ()), "kiss check: fail\n"),
+        lambda *_: (False, cheat_mod.CheatMetrics(False, ()), "kiss cov: fail\n"),
     )
 
     work_dir = tmp_path / "cheat_repo"

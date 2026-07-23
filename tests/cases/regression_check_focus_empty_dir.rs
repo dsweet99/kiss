@@ -49,7 +49,6 @@ fn cli_check_focus_dir_with_source_restricts_report() {
 
     let out = kiss_binary()
         .arg("check")
-        .arg("--all")
         .arg("--defaults")
         .arg(root)
         .arg(root.join("focus_dir"))
@@ -76,7 +75,6 @@ fn cli_check_focus_dir_with_no_source_does_not_leak_universe() {
 
     let universe_only = kiss_binary()
         .arg("check")
-        .arg("--all")
         .arg("--defaults")
         .arg(root)
         .output()
@@ -89,7 +87,6 @@ fn cli_check_focus_dir_with_no_source_does_not_leak_universe() {
 
     let focused = kiss_binary()
         .arg("check")
-        .arg("--all")
         .arg("--defaults")
         .arg(root)
         .arg(root.join("non_src"))
@@ -131,7 +128,7 @@ fn cli_check_requires_runtime_coverage_for_universe_languages_before_focus() {
     );
 
     let focused = kiss_binary()
-        .arg("check")
+        .arg("cov")
         .arg("--all")
         .arg(root)
         .arg(root.join("app.py"))

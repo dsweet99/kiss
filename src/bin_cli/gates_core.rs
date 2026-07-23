@@ -40,7 +40,7 @@ fn test_language_and_config() {
 }
 
 #[test]
-fn test_clamp_ignore_aligns_with_check_floor_for_fixture() {
+fn test_clamp_keeps_default_coverage_threshold() {
     let tmp = tempfile::TempDir::new().unwrap();
     std::fs::write(
         tmp.path().join("app.py"),
@@ -62,8 +62,9 @@ fn test_clamp_ignore_aligns_with_check_floor_for_fixture() {
     let path = tmp.path().to_string_lossy().to_string();
     let gate = kiss::config_gen::infer_gate_config_for_paths(&[path], None, &ignore);
     assert_eq!(
-        gate.test_coverage_threshold, 50,
-        "clamp should infer the floor from non-ignored source files"
+        gate.test_coverage_threshold,
+        kiss::defaults::gate::TEST_COVERAGE_THRESHOLD,
+        "clamp must not infer coverage from static references after the kiss cov split"
     );
 }
 
@@ -182,7 +183,7 @@ fn test_stats_top_helpers() {
     std::fs::write(tmp.path().join("b.rs"), "fn bar() { let z = 3; }").unwrap();
     let py_files = vec![tmp.path().join("a.py")];
     let rs_files = vec![tmp.path().join("b.rs")];
-    let units = collect_all_units(&py_files, &rs_files, None);
+    let units = collect_all_units(&py_files, &rs_files);
     assert!(!units.is_empty());
     print_all_top_metrics(&units, 2);
     print_top_for_metric(&units, 1, "test_metric", |u| u.statements);

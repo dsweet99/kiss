@@ -10,7 +10,7 @@
 //! invocation either.
 //!
 //! Symptom: in a real ~3,900-file repo, `kiss check` takes ~1.7 s wall on
-//! every run; `kiss check --all` warms in ~5 s and subsequent `--all` runs
+//! every run; `kiss check` should warm the static cache for subsequent runs
 //! drop to ~0.1 s. The cache works — it just isn't engaged for the
 //! command users actually type.
 //!
