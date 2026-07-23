@@ -205,6 +205,12 @@ fn validate_batch_request(req: &RustCoverageBatchRequest) -> Result<(), String> 
     {
         return Err("logical selectors must not be empty".to_string());
     }
+    let mut seen_selectors = BTreeSet::new();
+    for selector in &req.logical_selectors {
+        if !seen_selectors.insert(selector) {
+            return Err(format!("duplicate logical selector: {selector}"));
+        }
+    }
     validate_supported_rust_cargo_args(&req.cargo_args)?;
     validate_supported_rust_test_args(&req.test_args)?;
     Ok(())

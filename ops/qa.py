@@ -1135,11 +1135,12 @@ def run_witness_check(
     language: str,
     repo: Path,
     marker_dir: Path,
+    jobs: int | None = None,
 ) -> Outcome:
     env = witness_env(repo, marker_dir)
     outcome = run(
         f"{language}-witness-check",
-        [str(KISS), "--defaults", "--lang", language, "check", str(repo)],
+        witness_check_command(language, repo, jobs=jobs),
         repo,
         env,
         expected=None,
@@ -1167,8 +1168,12 @@ def witness_env(repo: Path, marker_dir: Path) -> dict[str, str]:
     return env
 
 
-def witness_check_command(language: str, repo: Path) -> list[str]:
-    return [str(KISS), "--defaults", "--lang", language, "check", str(repo)]
+def witness_check_command(language: str, repo: Path, jobs: int | None = None) -> list[str]:
+    command = [str(KISS), "--defaults", "--lang", language, "check"]
+    if jobs is not None:
+        command.extend(["-j", str(jobs)])
+    command.append(str(repo))
+    return command
 
 
 def assert_python_coverage_witness(repo: Path, marker_dir: Path) -> None:
@@ -1197,7 +1202,7 @@ def assert_python_coverage_witness(repo: Path, marker_dir: Path) -> None:
 
 
 def assert_rust_coverage_witness(repo: Path, marker_dir: Path) -> None:
-    cold = run_witness_check("rust", repo, marker_dir)
+    cold = run_witness_check("rust", repo, marker_dir, jobs=4)
     assert marker_names(marker_dir) == {"rust-alpha", "rust-beta"}
     cache = repo / ".kiss/rust_llvm_cov_cache"
     entry_paths = sorted((cache / "entries").glob("*.json"))
@@ -1219,7 +1224,7 @@ def assert_rust_coverage_witness(repo: Path, marker_dir: Path) -> None:
     ]
     cold_bytes = relevant_artifact_bytes(artifact_paths)
     clear_markers(marker_dir)
-    warm = run_witness_check("rust", repo, marker_dir)
+    warm = run_witness_check("rust", repo, marker_dir, jobs=4)
     assert "refreshing Rust runtime coverage" not in warm.stderr, warm.stderr
     assert marker_names(marker_dir) == set()
     assert relevant_artifact_bytes(artifact_paths) == cold_bytes
@@ -1306,8 +1311,9 @@ def run_publication_crash_scenario(
     writer_env = witness_env(repo, markers)
     writer_env["KISS_QA_PUBLICATION_BARRIER_DIR"] = str(barrier_dir)
     writer_env["KISS_QA_PUBLICATION_BARRIER_TARGET"] = f"{artifact}:{phase}"
+    writer_jobs = 1 if language == "rust" and artifact == "rust_selector_entry" else None
     writer = subprocess.Popen(
-        witness_check_command(language, repo),
+        witness_check_command(language, repo, jobs=writer_jobs),
         cwd=repo,
         env=writer_env,
         text=True,

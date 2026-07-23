@@ -208,6 +208,16 @@ fn batch_plan_rejects_zero_jobs_and_empty_selectors_before_mutation() {
             .unwrap_err()
             .contains("selectors")
     );
+
+    let mut duplicate_selector = request();
+    duplicate_selector
+        .logical_selectors
+        .push(duplicate_selector.logical_selectors[0].clone());
+    assert!(
+        build_rust_coverage_batch_plan(&duplicate_selector)
+            .unwrap_err()
+            .contains("duplicate logical selector")
+    );
 }
 
 #[test]

@@ -3,7 +3,6 @@ use super::{
     FreshCheckAggregateExport, build_instance_export_requests, build_instance_results,
     finish_fresh_batch_after_export, finish_fresh_check_aggregate_after_export,
 };
-use crate::RustLineCoverage;
 use crate::batch_events::{BatchCompilerArtifact, BatchTestStarted, BatchTestTerminal};
 use crate::batch_export::ExportCounters;
 use crate::batch_fingerprint::{batch_identity, entry_fingerprint};
@@ -15,6 +14,7 @@ use crate::rust_cov_cache::load_rust_cov_cache_entry;
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, witness_batch_tools,
 };
+use crate::{RustCovCacheStatus, RustLineCoverage};
 use rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
@@ -246,4 +246,133 @@ fn finish_fresh_check_aggregate_returns_failed_outcomes_without_publishing() {
     assert!(result.batch_error.is_none());
     assert_eq!(result.completed.len(), 1);
     assert_eq!(result.completed[0].status, TestStatus::Failed);
+}
+
+#[test]
+fn finish_fresh_check_aggregate_store_failure_prevents_final_publication() {
+    let repo = batch_executor_fixture_repo();
+    let mut req = batch_executor_request(repo.path());
+    req.logical_selectors = vec!["alpha".to_string()];
+    req.coverage_output_mode = CoverageOutputMode::CheckAggregate {
+        publication_binary_ids: None,
+        repair_publication: None,
+    };
+    req.cache_root = repo.path().join("cache-root-file");
+    std::fs::write(&req.cache_root, "not a directory").unwrap();
+    let tools = witness_batch_tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let coverage = RustLineCoverage {
+        files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+    };
+    let instances = vec![crate::batch_aggregate::InstanceResult {
+        full_name: "pkg::bin$alpha".to_string(),
+        test_binary_id: "/tmp/bin".to_string(),
+        passed: true,
+        exit_code: Some(0),
+        duration: Duration::from_millis(1),
+        stdout: None,
+        stderr: None,
+        coverage: coverage.clone(),
+    }];
+    let result = finish_fresh_check_aggregate_after_export(
+        &req,
+        &tools,
+        &identity,
+        FreshCheckAggregateExport {
+            exact: false,
+            instances,
+            exported: BTreeMap::from([("/tmp/bin".to_string(), coverage)]),
+            counters: ExportCounters {
+                export_jobs: 1,
+                max_active_exports: 1,
+                max_objects_per_export: 1,
+            },
+        },
+        finish_context(),
+    )
+    .expect("store failure returns batch error result");
+
+    assert!(matches!(
+        result.batch_error,
+        Some(crate::RustLlvmCovError::Io(_))
+    ));
+    assert_eq!(
+        result.completed[0].cache_status,
+        RustCovCacheStatus::FreshUnstored
+    );
+    assert!(!req.cache_root.join("check_aggregate.json").exists());
+    assert!(!req.cache_root.join("index.json").exists());
+    assert!(!req.cache_root.join("population.json").exists());
+}
+
+#[test]
+fn finish_fresh_check_aggregate_success_publishes_final_state_after_entries() {
+    let repo = batch_executor_fixture_repo();
+    std::fs::create_dir_all(repo.path().join("target")).unwrap();
+    let binary_path = repo.path().join("target").join("bin-a");
+    std::fs::write(&binary_path, "binary-a").unwrap();
+    let mut req = batch_executor_request(repo.path());
+    req.logical_selectors = vec!["alpha".to_string()];
+    req.coverage_output_mode = CoverageOutputMode::CheckAggregate {
+        publication_binary_ids: None,
+        repair_publication: None,
+    };
+    let tools = witness_batch_tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let coverage = RustLineCoverage {
+        files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+    };
+    let instances = vec![crate::batch_aggregate::InstanceResult {
+        full_name: "pkg::bin$alpha".to_string(),
+        test_binary_id: "bin-a".to_string(),
+        passed: true,
+        exit_code: Some(0),
+        duration: Duration::from_millis(1),
+        stdout: None,
+        stderr: None,
+        coverage: coverage.clone(),
+    }];
+    let finish = super::FreshBatchFinishContext {
+        export_started: std::time::Instant::now(),
+        build_target_baseline_bytes: 42,
+        process_residual_count: 0,
+        test_binaries: vec![crate::RustTestBinaryIdentity {
+            id: "bin-a".to_string(),
+            executable: binary_path.to_string_lossy().to_string(),
+            digest: "aaaaaaaaaaaaaaaa".to_string(),
+        }],
+        repair_publication: None,
+    };
+
+    let result = finish_fresh_check_aggregate_after_export(
+        &req,
+        &tools,
+        &identity,
+        FreshCheckAggregateExport {
+            exact: false,
+            instances,
+            exported: BTreeMap::from([("bin-a".to_string(), coverage)]),
+            counters: ExportCounters {
+                export_jobs: 1,
+                max_active_exports: 1,
+                max_objects_per_export: 1,
+            },
+        },
+        finish,
+    )
+    .expect("check aggregate finish should succeed");
+
+    assert!(result.batch_error.is_none());
+    assert_eq!(result.counters.aggregate_binaries, 1);
+    assert_eq!(
+        result.completed[0].cache_status,
+        RustCovCacheStatus::MissStored
+    );
+    let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
+    let entry = load_rust_cov_cache_entry(&req.cache_root, &fingerprint)
+        .expect("entry is readable after final publication");
+    assert_eq!(entry.coverage.files["src/lib.rs"], BTreeSet::from([1]));
+    assert!(req.cache_root.join("check_aggregate.json").exists());
+    assert!(req.cache_root.join("index.json").exists());
+    assert!(req.cache_root.join("population.json").exists());
 }

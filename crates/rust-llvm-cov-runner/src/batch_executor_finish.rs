@@ -4,20 +4,19 @@ use std::time::Duration;
 
 pub(crate) use crate::batch_executor_finish_export::FreshCheckAggregateExport;
 use crate::{
-    RustCovCacheStatus, RustLineCoverage, RustLlvmCovError, RustLlvmCovOutcome,
-    RustTestBinaryIdentity,
+    RustLineCoverage, RustLlvmCovError, RustTestBinaryIdentity,
     batch_aggregate::{InstanceResult, aggregate_logical_selectors},
     batch_check_aggregate::{
         build_check_aggregate, publish_check_aggregate, selector_binary_ids_from_outcomes,
     },
     batch_executor_finish_entries::attach_binary_line_maps_to_completed_outcomes,
+    batch_executor_finish_store::store_completed_outcomes,
     batch_export::{InstanceExportRequest, object_paths_for_executable},
-    batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity, entry_fingerprint},
+    batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity},
     batch_plan::{CheckAggregateRepairPublication, RustCoverageBatchRequest},
     batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult},
     batch_shim::BatchShimMetadata,
     batch_shim_lookup::resolve_shim_metadata,
-    rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry},
 };
 
 pub(crate) struct FreshBatchFinishContext {
@@ -337,27 +336,6 @@ fn instance_profile_path(
     resolve_shim_metadata(&metadata_by_id, shim_metadata, full_name)
         .map(|item| item.profile_path.clone())
         .unwrap_or_else(|_| std::path::PathBuf::from(format!("{full_name}.profraw")))
-}
-
-fn store_completed_outcomes(
-    req: &RustCoverageBatchRequest,
-    tools: &RustCoverageToolIdentity,
-    identity: &RustCoverageBatchIdentity,
-    completed: &mut [RustLlvmCovOutcome],
-) -> Result<(), RustLlvmCovError> {
-    for outcome in completed.iter_mut() {
-        let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, &outcome.selector);
-        let cache_entry =
-            RustCovCacheEntry::from_outcome(outcome, &identity.generation_fingerprint);
-        match store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &cache_entry) {
-            Ok(()) => outcome.cache_status = RustCovCacheStatus::MissStored,
-            Err(err) => {
-                outcome.cache_status = RustCovCacheStatus::FreshUnstored;
-                return Err(RustLlvmCovError::Io(err));
-            }
-        }
-    }
-    Ok(())
 }
 
 pub(crate) fn test_binary_id_for_argv(argv: &[String]) -> Result<String, RustLlvmCovError> {

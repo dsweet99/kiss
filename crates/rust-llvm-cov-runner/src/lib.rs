@@ -22,6 +22,7 @@ mod batch_executor;
 mod batch_executor_finish;
 mod batch_executor_finish_entries;
 mod batch_executor_finish_export;
+mod batch_executor_finish_store;
 mod batch_executor_fresh;
 mod batch_export;
 mod batch_export_catalog;

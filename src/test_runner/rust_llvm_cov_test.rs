@@ -117,11 +117,7 @@ fn fresh_unstored_batch_outcome_is_counted_explicitly() {
 #[test]
 fn rust_selector_path_submits_one_batch_request_to_executor() {
     let tmp = tempfile::tempdir().unwrap();
-    let selectors = vec![
-        "tests::case".to_string(),
-        "tests::case".to_string(),
-        "tests::other".to_string(),
-    ];
+    let selectors = vec!["tests::case".to_string(), "tests::other".to_string()];
     let detector_calls = Rc::new(Cell::new(0usize));
     let detector_calls_for_closure = Rc::clone(&detector_calls);
     let executor_calls = Rc::new(Cell::new(0usize));
@@ -173,8 +169,52 @@ fn rust_selector_path_submits_one_batch_request_to_executor() {
 
     assert_eq!(detector_calls.get(), 1);
     assert_eq!(executor_calls.get(), 1);
-    assert_eq!(summary.total, 3);
-    assert_eq!(summary.cache_misses, 3);
+    assert_eq!(summary.total, 2);
+    assert_eq!(summary.cache_misses, 2);
+}
+
+#[test]
+fn rust_selector_path_rejects_duplicate_batch_selectors_before_execution() {
+    let tmp = tempfile::tempdir().unwrap();
+    let selectors = vec![
+        "tests::case".to_string(),
+        "tests::case".to_string(),
+        "tests::other".to_string(),
+    ];
+    let detector_calls = Rc::new(Cell::new(0usize));
+    let detector_calls_for_closure = Rc::clone(&detector_calls);
+    let executor_calls = Rc::new(Cell::new(0usize));
+    let executor_calls_for_closure = Rc::clone(&executor_calls);
+
+    let err = run_rust_llvm_cov_selectors_with_deps(
+        tmp.path(),
+        &selectors,
+        RustCoverageRunOptions {
+            extra: &["--exact".to_string()],
+            force_rerun: true,
+            jobs: 7,
+            population_publication_selectors: None,
+            coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        },
+        move |_repo_root| {
+            detector_calls_for_closure.set(detector_calls_for_closure.get() + 1);
+            Ok(RustCoverageToolVersions {
+                cargo: "cargo 1.88.0".to_string(),
+                llvm_cov: "cargo-llvm-cov 0.6.0".to_string(),
+                rustc: "rustc 1.88.0".to_string(),
+                cargo_nextest: "cargo-nextest 0.9.0".to_string(),
+            })
+        },
+        move |_batch_req, _versions| {
+            executor_calls_for_closure.set(executor_calls_for_closure.get() + 1);
+            unreachable!("duplicate selectors must fail before executor starts")
+        },
+    )
+    .unwrap_err();
+
+    assert!(err.contains("duplicate logical selector: tests::case"));
+    assert_eq!(detector_calls.get(), 0);
+    assert_eq!(executor_calls.get(), 0);
 }
 
 #[test]
