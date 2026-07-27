@@ -360,3 +360,7 @@ pub fn resolve_diff_target(
 #[cfg(test)]
 #[path = "test_git/git_changes_test.rs"]
 mod git_changes_test;
+
+#[cfg(test)]
+#[path = "test_git/git_changes_b_test.rs"]
+mod git_changes_b_test;

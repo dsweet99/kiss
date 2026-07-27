@@ -319,6 +319,17 @@ mod coverage_witness {
 }
 
 #[cfg(test)]
+pub(crate) mod test_mode_fixtures;
+
+#[cfg(test)]
+#[path = "test_change_modes_test.rs"]
+mod test_change_modes_test;
+
+#[cfg(test)]
+#[path = "test_change_modes_b_test.rs"]
+mod test_change_modes_b_test;
+
+#[cfg(test)]
 #[path = "mod_test.rs"]
 mod mod_test;
 

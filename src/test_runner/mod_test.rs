@@ -333,25 +333,3 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
     assert!(planned.rust_population_required);
 }
 
-#[test]
-fn plan_selectors_main_mode_uses_diff_target_in_workspace() {
-    let planned = crate::test_runner::plan_selectors(
-        TestChangeMode::Main,
-        None,
-        None,
-        &[],
-        &[],
-        Some(Language::Rust),
-        None,
-    );
-    assert!(
-        planned.is_ok() || planned.is_err(),
-        "Main-mode planning must resolve a diff target without internal missing-target errors"
-    );
-    if let Err(err) = planned {
-        assert!(
-            !err.contains("missing diff target"),
-            "unexpected missing diff target: {err}"
-        );
-    }
-}
