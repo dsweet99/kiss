@@ -113,6 +113,10 @@ pub fn store_rust_cov_cache_entry(
     fingerprint: &str,
     entry: &RustCovCacheEntry,
 ) -> io::Result<()> {
+    // Duration JSON width varies with wall time; zero it so retained entry bytes
+    // are stable across cold vs warm / different `-j` values.
+    let mut stable = entry.clone();
+    stable.duration = std::time::Duration::ZERO;
     let path = rust_cov_cache_entry_path(cache_root, fingerprint);
     let parent = path
         .parent()
@@ -120,7 +124,7 @@ pub fn store_rust_cov_cache_entry(
     fs::create_dir_all(parent)?;
     let tmp_path = parent.join(format!(".{}.{}.tmp", fingerprint, rust_cov_unique_suffix()));
     let mut file = create_new_cache_file(&tmp_path)?;
-    serde_json::to_writer(&mut file, entry).map_err(io::Error::other)?;
+    serde_json::to_writer(&mut file, &stable).map_err(io::Error::other)?;
     file.write_all(b"\n")?;
     file.sync_all()?;
     kiss_publication_barrier::after_sync_before_rename("rust_selector_entry", &tmp_path, &path)?;

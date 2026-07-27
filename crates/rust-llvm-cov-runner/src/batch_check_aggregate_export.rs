@@ -15,6 +15,13 @@ use crate::batch_shim::BatchShimMetadata;
 use crate::batch_shim_lookup::resolve_shim_metadata;
 use crate::{RustLineCoverage, RustLlvmCovError};
 
+#[path = "batch_check_aggregate_export_pool.rs"]
+mod batch_check_aggregate_export_pool;
+use batch_check_aggregate_export_pool::{
+    filter_pool_inputs_for_seed_ids, resolve_profile_merge_inputs, seed_binary_ids_for_objects,
+    stable_name,
+};
+
 type CheckAggregateExportFn = Arc<
     dyn Fn(
             &CheckAggregateExportRequest,
@@ -156,6 +163,7 @@ pub(crate) fn export_check_aggregates_bounded(
     let exporter = CheckAggregateExporter {
         tools,
         binary_id_map,
+        profraw_binary_ids: Arc::new(Mutex::new(BTreeMap::new())),
     };
     let exporter: CheckAggregateExportFn = Arc::new(move |request, source_root, catalog| {
         exporter.export_binary(request, source_root, catalog)
@@ -320,6 +328,8 @@ fn spawn_check_aggregate_export(
 struct CheckAggregateExporter {
     tools: ExportTools,
     binary_id_map: BinaryIdObjectMap,
+    /// Cache of pool profraw → binary ids (shared across export workers).
+    profraw_binary_ids: Arc<Mutex<BTreeMap<PathBuf, Vec<String>>>>,
 }
 
 impl CheckAggregateExporter {
@@ -338,7 +348,15 @@ impl CheckAggregateExporter {
             "check-aggregate-{}.profdata",
             stable_name(&request.binary_id)
         ));
-        merge_profiles(&self.tools, &request.profile_paths, &profdata)?;
+        let profile_inputs = resolve_profile_merge_inputs(&request.profile_paths)?;
+        let seed_ids = seed_binary_ids_for_objects(&self.tools, &self.binary_id_map, &request.objects)?;
+        let filtered_inputs = filter_pool_inputs_for_seed_ids(
+            &self.tools,
+            &profile_inputs,
+            &seed_ids,
+            &self.profraw_binary_ids,
+        )?;
+        merge_profiles(&self.tools, &filtered_inputs, &profdata)?;
         let objects = resolve_objects_for_profdata(
             &self.tools,
             &profdata,
@@ -350,11 +368,6 @@ impl CheckAggregateExporter {
             export_instance_coverage(&self.tools, &profdata, source_root, &objects, None)?;
         Ok((request.binary_id.clone(), coverage))
     }
-}
-
-pub(super) fn stable_name(value: &str) -> String {
-    let h = crate::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, value.as_bytes());
-    format!("{h:016x}")
 }
 
 #[cfg(test)]

@@ -53,12 +53,20 @@ pub fn parse_positive_usize(s: &str) -> Result<usize, String> {
 pub enum TestCommandAction {
     Run(TestChangeMode),
     ValidateSelection(TestChangeMode),
+    /// Warm/cold runtime coverage gate (`kiss test cov` → `kiss cov`).
+    Cov,
 }
 
 pub fn parse_test_command_action(
     mode: &str,
     validation_mode: Option<TestChangeMode>,
 ) -> Result<TestCommandAction, String> {
+    if mode == "cov" {
+        if validation_mode.is_some() {
+            return Err("validation mode is only valid after validate-selection".to_string());
+        }
+        return Ok(TestCommandAction::Cov);
+    }
     if mode == "validate-selection" {
         return validation_mode
             .map(TestCommandAction::ValidateSelection)
@@ -72,7 +80,7 @@ pub fn parse_test_command_action(
         "base" => Ok(TestCommandAction::Run(TestChangeMode::Base)),
         "main" => Ok(TestCommandAction::Run(TestChangeMode::Main)),
         other => Err(format!(
-            "unknown test mode '{other}'. Use commit, base, main, or validate-selection."
+            "unknown test mode '{other}'. Use commit, base, main, cov, or validate-selection."
         )),
     }
 }
@@ -214,8 +222,8 @@ pub enum Commands {
     /// Run pytest / cargo test for tests covering changed files (git-based)
     #[command(alias = "t")]
     Test {
-        /// What to run: commit, base, main, or validate-selection
-        #[arg(value_name = "commit|base|main|validate-selection")]
+        /// What to run: commit, base, main, cov, or validate-selection
+        #[arg(value_name = "commit|base|main|cov|validate-selection")]
         mode: String,
         /// Diff mode for `validate-selection`
         #[arg(
@@ -323,6 +331,15 @@ mod coverage_witness {
     fn check_rejects_removed_coverage_flags() {
         assert!(Cli::try_parse_from(["kiss", "check", "--all"]).is_err());
         assert!(Cli::try_parse_from(["kiss", "check", "-j", "2"]).is_err());
+    }
+
+    #[test]
+    fn test_cov_mode_parses_as_cov_action() {
+        assert_eq!(
+            parse_test_command_action("cov", None).unwrap(),
+            TestCommandAction::Cov
+        );
+        assert!(parse_test_command_action("cov", Some(TestChangeMode::Commit)).is_err());
     }
 
     #[test]

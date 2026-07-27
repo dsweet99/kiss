@@ -4,7 +4,10 @@ use std::io::{self, Write};
 use crate::RustCoverageBatchPlan;
 use crate::rust_cov_cache::rust_cov_unique_suffix;
 
-pub fn publish_generated_nextest_config(plan: &RustCoverageBatchPlan) -> io::Result<()> {
+pub fn publish_generated_nextest_config(
+    plan: &RustCoverageBatchPlan,
+    _req: &crate::batch_plan::RustCoverageBatchRequest,
+) -> io::Result<()> {
     publish_generated_config_file(
         &plan.generated_config,
         plan.generated_config_toml.as_bytes(),
@@ -12,7 +15,8 @@ pub fn publish_generated_nextest_config(plan: &RustCoverageBatchPlan) -> io::Res
     publish_generated_config_file(
         &plan.target_runner_cargo_config,
         plan.target_runner_cargo_config_toml.as_bytes(),
-    )
+    )?;
+    Ok(())
 }
 
 fn publish_generated_config_file(path: &std::path::Path, contents: &[u8]) -> io::Result<()> {

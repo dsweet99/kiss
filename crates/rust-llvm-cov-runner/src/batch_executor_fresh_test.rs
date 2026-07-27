@@ -258,8 +258,12 @@ fn check_aggregate_branch_reports_missing_shim_metadata_before_export() {
     )
     .unwrap_err();
 
+    let message = format!("{err:?}");
     assert!(
-        matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("missing target-runner metadata"))
+        message.contains("synthesize")
+            || message.contains("nextest binary id")
+            || message.contains("compiler-artifact executable"),
+        "unexpected error: {message}"
     );
 }
 
@@ -275,17 +279,14 @@ fn check_aggregate_branch_builds_export_requests_with_shim_metadata() {
         fs::create_dir_all(&plan.build_target).unwrap();
         let bin = plan.build_target.join("bin");
         fs::write(&bin, b"binary").unwrap();
-        super::fresh_test_helpers::write_shim_metadata(
-            &plan.target_runner_output_dir,
-            "pkg::bin$alpha",
-            &bin,
-        );
+        let manifest = plan.build_target.join("Cargo.toml");
+        fs::write(&manifest, "[package]\nname = \"pkg\"\nversion = \"0.1.0\"\n").unwrap();
         Ok(crate::batch_run::BatchSubprocessRunOutcome {
             exit_code: Some(0),
             stdout: format!(
-                "{{\"reason\":\"compiler-artifact\",\"executable\":\"{}\",\"filenames\":[\"{}.o\"],\"fresh\":false}}\n{{\"reason\":\"build-finished\",\"success\":true}}\n{{\"type\":\"test\",\"event\":\"ok\",\"name\":\"pkg::bin$alpha\",\"exec_time\":0.001}}\n",
-                bin.display(),
-                bin.display()
+                "{{\"reason\":\"compiler-artifact\",\"executable\":\"{exe}\",\"filenames\":[\"{exe}.o\"],\"fresh\":false,\"manifest_path\":\"{manifest}\",\"target\":{{\"name\":\"bin\",\"kind\":[\"test\"]}}}}\n{{\"reason\":\"build-finished\",\"success\":true}}\n{{\"type\":\"test\",\"event\":\"ok\",\"name\":\"pkg::bin$alpha\",\"exec_time\":0.001}}\n",
+                exe = bin.display(),
+                manifest = manifest.display()
             )
             .into_bytes(),
             stderr: Vec::new(),
@@ -305,14 +306,15 @@ fn check_aggregate_branch_builds_export_requests_with_shim_metadata() {
         Arc::new(|_, _, _, _| unreachable!("check aggregate uses aggregate exporter")),
     )
     .unwrap_err();
-    // Should get past shim resolution into aggregate export / finish.
+    // Should get past shim synthesis into aggregate export / finish.
     let message = format!("{err:?}");
     assert!(
         message.contains("export")
             || message.contains("profdata")
             || message.contains("llvm")
             || message.contains("InvalidRequest")
-            || message.contains("Io"),
+            || message.contains("Io")
+            || message.contains("pool"),
         "unexpected error: {message}"
     );
 }

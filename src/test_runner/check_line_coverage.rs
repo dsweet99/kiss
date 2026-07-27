@@ -210,13 +210,26 @@ pub(super) fn load_rust_runtime_coverage(
     repo_root: &Path,
     ignore: &[String],
 ) -> Result<BackendCoverage, RuntimeCoverageLoadError> {
-    let selectors =
-        crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
-            .map_err(|err| coverage_error("Rust", &format!("selector discovery failed ({err})")))?;
     let identity = current_rust_coverage_batch_identity(repo_root, &[]).map_err(|err| {
         coverage_error("Rust", &format!("stale/incompatible tool identity ({err})"))
     })?;
     let cache_root = rust_coverage_cache_root(repo_root);
+    // Prefer aggregate hit without re-enumerating workspace selectors. Source digests in
+    // `identity` already invalidate when test/source files change.
+    if let Some(snapshot) = rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
+        &cache_root,
+        repo_root,
+        &identity,
+        None,
+    ) {
+        return Ok(BackendCoverage {
+            identity: snapshot.identity,
+            covered_lines: snapshot.covered_lines,
+        });
+    }
+    let selectors =
+        crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
+            .map_err(|err| coverage_error("Rust", &format!("selector discovery failed ({err})")))?;
     if let Some(snapshot) = rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
         &cache_root,
         repo_root,

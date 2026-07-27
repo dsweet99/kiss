@@ -101,6 +101,10 @@ fn witness_batch_export() {
     let objects = object_paths_from_artifacts(&[BatchCompilerArtifact {
         executable: Some("/tmp/bin".to_string()),
         filenames: vec!["/tmp/a.o".to_string()],
+        nextest_binary_id: None,
+    libtest_binary_prefix: None,
+    src_path: None,
+    is_test_harness: false,
     }]);
     assert_eq!(objects, vec![PathBuf::from("/tmp/a.o")]);
 

@@ -175,3 +175,28 @@ fn repo_relative_and_generation_entry_fingerprint_helpers() {
     let fingerprint = rust_cov_cache::generation_entries_fingerprint(&cache_root, "gen-a").unwrap();
     assert!(!fingerprint.is_empty());
 }
+
+#[test]
+fn stored_entry_bytes_ignore_wall_clock_duration() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut short = RustCovCacheEntry::from_outcome(&outcome(), "gen");
+    short.duration = Duration::from_millis(3);
+    let mut long = short.clone();
+    long.duration = Duration::from_secs(100) + Duration::from_nanos(123_456_789);
+
+    rust_cov_cache::store_rust_cov_cache_entry(tmp.path(), "short", &short).unwrap();
+    rust_cov_cache::store_rust_cov_cache_entry(tmp.path(), "long", &long).unwrap();
+
+    let short_bytes = fs::metadata(rust_cov_cache::rust_cov_cache_entry_path(tmp.path(), "short"))
+        .unwrap()
+        .len();
+    let long_bytes = fs::metadata(rust_cov_cache::rust_cov_cache_entry_path(tmp.path(), "long"))
+        .unwrap()
+        .len();
+    assert_eq!(
+        short_bytes, long_bytes,
+        "persisted entry size must not depend on wall-clock duration digits"
+    );
+    let loaded = rust_cov_cache::load_rust_cov_cache_entry(tmp.path(), "long").unwrap();
+    assert_eq!(loaded.duration, Duration::ZERO);
+}

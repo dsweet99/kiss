@@ -242,7 +242,7 @@ fn prepare_fresh_batch_run(
     build_identity: BuildIdentityPreparation,
 ) -> Result<PreparedFreshBatchRun, RustLlvmCovError> {
     crate::batch_runner_resolve::write_runner_map(&plan.runner_map_path, &req.delegated_runners)?;
-    crate::batch_plan_publish::publish_generated_nextest_config(plan)?;
+    crate::batch_plan_publish::publish_generated_nextest_config(plan, req)?;
     let run = runner.run(&req.cwd, plan).map_err(RustLlvmCovError::from)?;
     let parsed = parse_batch_event_stream(&run.stdout)?;
     reject_failed_build_without_tests(&run, &parsed)?;
@@ -257,7 +257,26 @@ fn prepare_fresh_batch_run(
         build_identity.previous_baseline_bytes,
     )?;
     let exact = req.test_args.iter().any(|arg| arg == "--exact");
-    let shim_metadata = load_target_runner_shim_metadata(&plan.target_runner_output_dir)?;
+    let shim_metadata = match &req.coverage_output_mode {
+        CoverageOutputMode::CheckAggregate { .. } => {
+            let run_root = plan
+                .generated_config
+                .parent()
+                .unwrap_or(req.cache_root.as_path());
+            let profile = crate::batch_shim_synthesize::check_aggregate_pool_profile_path_for_run(
+                &plan.build_target,
+                run_root,
+            );
+            crate::batch_shim_synthesize::synthesize_check_aggregate_shim_metadata(
+                &parsed,
+                &profile,
+                &req.cwd,
+            )?
+        }
+        CoverageOutputMode::SelectorEntries => {
+            load_target_runner_shim_metadata(&plan.target_runner_output_dir)?
+        }
+    };
     let test_binaries = test_binaries_from_shim_metadata(&shim_metadata)?;
     let instances = build_instance_results(
         &parsed.started_tests,

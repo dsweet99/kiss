@@ -11,14 +11,18 @@ use crate::batch_process_tree::{ProcessGroupIdentity, identity_still_valid};
 mod batch_shim_child;
 #[path = "batch_shim_list.rs"]
 mod batch_shim_list;
+#[path = "batch_shim_signal.rs"]
+mod batch_shim_signal;
 #[path = "batch_shim_write.rs"]
 mod batch_shim_write;
 
 pub(crate) use batch_shim_child::run_target_runner_shim_inner;
 #[cfg(test)]
-pub(crate) use batch_shim_child::{
-    ShimSignalForwarder, clear_inherited_llvm_profile_file, clear_shim_signal_forwarder,
-    install_shim_signal_forwarder, trigger_shim_forward_signal_for_test,
+pub(crate) use batch_shim_child::clear_inherited_llvm_profile_file;
+#[cfg(test)]
+pub(crate) use batch_shim_signal::{
+    ShimSignalForwarder, clear_shim_signal_forwarder, install_shim_signal_forwarder,
+    trigger_shim_forward_signal_for_test,
 };
 #[cfg(test)]
 pub(crate) use batch_shim_write::{write_shim_metadata, write_shim_start_metadata};

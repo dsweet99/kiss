@@ -1,5 +1,6 @@
 pub(crate) mod check_line_coverage;
 pub(crate) mod check_runtime_refresh;
+pub(crate) mod durable_cov_generation;
 mod coverage_decision;
 pub(crate) mod last_status;
 mod line_selection;

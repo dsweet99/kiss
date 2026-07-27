@@ -248,7 +248,7 @@ fn install_sigint_handler(
         Some((registry, interrupted));
     let previous = unsafe {
         let mut action: libc::sigaction = std::mem::zeroed();
-        action.sa_sigaction = handle_sigint as usize;
+        action.sa_sigaction = handle_sigint as *const () as usize;
         action.sa_flags = 0;
         libc::sigemptyset(&mut action.sa_mask);
         let mut old = std::mem::zeroed();

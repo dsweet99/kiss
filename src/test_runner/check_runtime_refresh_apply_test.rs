@@ -22,6 +22,34 @@ fn scoped_refresh_env_guard_sets_and_restores_process_env() {
 }
 
 #[test]
+fn scoped_refresh_env_guard_is_safe_across_threads() {
+    let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
+    let previous = std::env::var_os(key);
+    unsafe { std::env::remove_var(key) };
+    // Many short-lived overlapping guards stress the depth/env publication race.
+    for _ in 0..64 {
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                scope.spawn(|| {
+                    let _guard = super::ScopedRefreshEnvGuard::set();
+                    assert_eq!(
+                        std::env::var_os(key).as_deref(),
+                        Some(std::ffi::OsStr::new("1"))
+                    );
+                });
+            }
+        });
+        assert!(
+            std::env::var_os(key).is_none(),
+            "env marker must clear after all overlapping guards drop"
+        );
+    }
+    if let Some(value) = previous {
+        unsafe { std::env::set_var(key, value) };
+    }
+}
+
+#[test]
 fn restore_refresh_active_env_covers_set_and_clear_arms() {
     let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);

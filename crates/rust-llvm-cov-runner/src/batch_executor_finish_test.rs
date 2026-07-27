@@ -63,6 +63,10 @@ fn build_instance_results_and_export_requests_cover_finish_helpers() {
     let artifacts = vec![BatchCompilerArtifact {
         executable: Some("/tmp/bin".to_string()),
         filenames: vec!["/tmp/a.o".to_string()],
+        nextest_binary_id: None,
+    libtest_binary_prefix: None,
+    src_path: None,
+    is_test_harness: false,
     }];
     let requests =
         build_instance_export_requests(&instances, &[shim], &artifacts).expect("export requests");

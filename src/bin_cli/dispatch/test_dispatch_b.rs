@@ -165,6 +165,14 @@ fn dispatch_test_command_routes_valid_test_mode() {
     let orig_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
 
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    let cfg = super::TriConfig {
+        py: &py,
+        rs: &rs,
+        gate: &gate,
+    };
     let code = super::dispatch_test_command(
         None,
         Commands::Test {
@@ -180,6 +188,7 @@ fn dispatch_test_command_routes_valid_test_mode() {
             fixture: None,
             extra: vec![],
         },
+        &cfg,
         &TestSectionConfig::default(),
     );
 
@@ -194,6 +203,14 @@ fn dispatch_test_command_routes_validate_selection_mode() {
     let orig_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
 
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    let cfg = super::TriConfig {
+        py: &py,
+        rs: &rs,
+        gate: &gate,
+    };
     let code = super::dispatch_test_command(
         Some(kiss::Language::Python),
         Commands::Test {
@@ -209,6 +226,7 @@ fn dispatch_test_command_routes_validate_selection_mode() {
             fixture: None,
             extra: vec![],
         },
+        &cfg,
         &TestSectionConfig::default(),
     );
 

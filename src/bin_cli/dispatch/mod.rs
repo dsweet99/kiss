@@ -146,7 +146,7 @@ fn dispatch_tools(
             cfg,
         }),
         test_command @ Commands::Test { .. } => {
-            dispatch_test_command(lang, test_command, test_section)
+            dispatch_test_command(lang, test_command, cfg, test_section)
         }
         Commands::Mv {
             query,
@@ -172,6 +172,7 @@ fn dispatch_tools(
 fn dispatch_test_command(
     lang: Option<kiss::Language>,
     command: Commands,
+    cfg: &TriConfig<'_>,
     test_section: &TestSectionConfig,
 ) -> i32 {
     match command {
@@ -195,6 +196,18 @@ fn dispatch_test_command(
                     return 2;
                 }
             };
+            if matches!(action, crate::bin_cli::args::TestCommandAction::Cov) {
+                return dispatch_cov(CovDispatchOptions {
+                    lang,
+                    paths: vec![".".to_string()],
+                    bypass_gate: false,
+                    ignore,
+                    timing: false,
+                    jobs: Some(jobs),
+                    cfg,
+                    test_cfg: test_section,
+                });
+            }
             dispatch_test(TestDispatchOptions {
                 lang,
                 action,

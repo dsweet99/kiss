@@ -45,7 +45,9 @@ mod batch_process_tree;
 mod batch_result;
 mod batch_run;
 mod batch_runner_resolve;
+mod batch_nextest_id;
 mod batch_shim;
+mod batch_shim_synthesize;
 #[cfg(unix)]
 mod batch_shim_delegated;
 mod batch_shim_lookup;

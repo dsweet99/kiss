@@ -33,7 +33,7 @@ pub fn build_rust_test_executable_index(
             &plan.runner_map_path,
             &req.delegated_runners,
         )?;
-        crate::batch_plan_publish::publish_generated_nextest_config(plan)?;
+        crate::batch_plan_publish::publish_generated_nextest_config(plan, req)?;
         let mut list_plan = plan.clone();
         select_no_tests(&mut list_plan);
         let run = batch_run::default_batch_subprocess_runner()

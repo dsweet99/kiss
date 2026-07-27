@@ -1,12 +1,13 @@
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::path::Path;
+use std::sync::Mutex;
 
 use fs2::FileExt;
 
 use crate::test_runner::check_line_coverage::{
-    RequiredCoverageLanguages, RuntimeCoverageLoadError, load_python_runtime_coverage,
-    load_rust_runtime_coverage,
+    RequiredCoverageLanguages, RuntimeCoverageLoadError, load_check_runtime_coverage,
+    load_python_runtime_coverage, load_rust_runtime_coverage,
 };
 use crate::test_runner::python_coverage_index::{
     publish_python_derived_state_with_filter,
@@ -129,13 +130,41 @@ pub(crate) fn ensure_check_runtime_coverage(
     ignore: &[String],
     jobs: usize,
 ) -> Result<(), CoverageRefreshError> {
-    if required.python {
-        ensure_python_runtime_coverage(repo_root, ignore, jobs)?;
+    if super::durable_cov_generation::try_hydrate_if_kiss_absent(repo_root, required, ignore)
+        && load_check_runtime_coverage(repo_root, required, ignore).is_ok()
+    {
+        return Ok(());
     }
-    if required.rust {
-        ensure_rust_runtime_coverage(repo_root, ignore, jobs)?;
+    let result = match (required.python, required.rust) {
+        (true, true) => refresh_python_and_rust_parallel(repo_root, ignore, jobs),
+        (true, false) => ensure_python_runtime_coverage(repo_root, ignore, jobs),
+        (false, true) => ensure_rust_runtime_coverage(repo_root, ignore, jobs),
+        (false, false) => Ok(()),
+    };
+    if result.is_ok() {
+        super::durable_cov_generation::publish_durable_generation(repo_root, required, ignore);
     }
-    Ok(())
+    result
+}
+
+fn refresh_python_and_rust_parallel(
+    repo_root: &Path,
+    ignore: &[String],
+    jobs: usize,
+) -> Result<(), CoverageRefreshError> {
+    // Per-language file locks allow overlap. Refcounted ScopedRefreshEnvGuard makes
+    // the process-wide refresh env marker safe across these two threads.
+    std::thread::scope(|scope| {
+        let python = scope.spawn(|| ensure_python_runtime_coverage(repo_root, ignore, jobs));
+        let rust = ensure_rust_runtime_coverage(repo_root, ignore, jobs);
+        let python = python
+            .join()
+            .unwrap_or_else(|_| Err(CoverageRefreshError::publication(
+                "Python",
+                "python refresh thread panicked",
+            )));
+        rust.and(python)
+    })
 }
 
 struct RefreshLockGuard {
@@ -143,22 +172,40 @@ struct RefreshLockGuard {
 }
 
 pub(crate) struct ScopedRefreshEnvGuard {
-    old: Option<std::ffi::OsString>,
+    _private: (),
 }
+
+/// Depth + saved prior env value, guarded together so concurrent `set`/`Drop`
+/// cannot observe a bumped depth before the process env marker is written.
+static REFRESH_ENV_STATE: Mutex<(usize, Option<Option<std::ffi::OsString>>)> =
+    Mutex::new((0, None));
 
 impl ScopedRefreshEnvGuard {
     pub(crate) fn set() -> Self {
-        let old = std::env::var_os(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV);
-        // SAFETY: `kiss check` sets this process-wide guard only around its
-        // synchronous population runner call, before waiting for child tests.
-        unsafe { std::env::set_var(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV, "1") };
-        Self { old }
+        let mut state = REFRESH_ENV_STATE
+            .lock()
+            .expect("refresh env state lock");
+        if state.0 == 0 {
+            state.1 = Some(std::env::var_os(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV));
+            // SAFETY: process-wide marker for nested kiss/check children during refresh.
+            // Depth counting allows concurrent Python+Rust refresh threads to share it.
+            unsafe { std::env::set_var(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV, "1") };
+        }
+        state.0 += 1;
+        Self { _private: () }
     }
 }
 
 impl Drop for ScopedRefreshEnvGuard {
     fn drop(&mut self) {
-        restore_refresh_active_env(self.old.take());
+        let mut state = REFRESH_ENV_STATE
+            .lock()
+            .expect("refresh env state lock");
+        state.0 = state.0.saturating_sub(1);
+        if state.0 == 0 {
+            let old = state.1.take().flatten();
+            restore_refresh_active_env(old);
+        }
     }
 }
 

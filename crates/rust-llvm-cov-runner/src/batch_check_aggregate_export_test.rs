@@ -85,6 +85,10 @@ fn builds_requests_from_passed_instances_and_deduplicates_paths() {
     let artifacts = vec![BatchCompilerArtifact {
         executable: Some("/tmp/test-bin".to_string()),
         filenames: vec!["/tmp/test-bin.o".to_string(), "/tmp/test-bin.o".to_string()],
+        nextest_binary_id: None,
+    libtest_binary_prefix: None,
+    src_path: None,
+    is_test_harness: false,
     }];
 
     let requests =
@@ -118,6 +122,10 @@ fn publication_filter_reports_missing_binary_ids() {
     let artifacts = vec![BatchCompilerArtifact {
         executable: Some("/tmp/test-bin".to_string()),
         filenames: vec!["/tmp/test-bin.o".to_string()],
+        nextest_binary_id: None,
+    libtest_binary_prefix: None,
+    src_path: None,
+    is_test_harness: false,
     }];
     let publication = BTreeSet::from(["other".to_string()]);
 
@@ -146,10 +154,18 @@ fn publication_filter_accepts_observed_binary_id() {
         BatchCompilerArtifact {
             executable: Some("/tmp/test-bin".to_string()),
             filenames: vec!["/tmp/test-bin.o".to_string()],
+            nextest_binary_id: None,
+        libtest_binary_prefix: None,
+        src_path: None,
+        is_test_harness: false,
         },
         BatchCompilerArtifact {
             executable: Some("/tmp/other-bin".to_string()),
             filenames: vec!["/tmp/other-bin.o".to_string()],
+            nextest_binary_id: None,
+        libtest_binary_prefix: None,
+        src_path: None,
+        is_test_harness: false,
         },
     ];
     let publication = BTreeSet::from(["bin".to_string()]);
@@ -246,3 +262,4 @@ fn bounded_export_propagates_worker_error() {
         matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("fake export failure for beta"))
     );
 }
+

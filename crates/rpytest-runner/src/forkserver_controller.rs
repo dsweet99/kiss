@@ -32,6 +32,10 @@ def _run_child(req, stdout_path, stderr_path):
     try:
         try:
             os.chdir(req["cwd"])
+            # Parent shells may export PYTEST_ADDOPTS (e.g. --testmon); isolated
+            # node runs must not inherit that, matching SubprocessPytestCollector.
+            os.environ.pop("PYTEST_ADDOPTS", None)
+            os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
             os.environ.update(req.get("env", {}))
             _apply_pythonpath_from_env()
             stdout_fd = os.open(stdout_path, os.O_WRONLY | os.O_TRUNC)

@@ -7,7 +7,8 @@ use crate::test_runner::coverage_decision::{
     TestSelector, full_population_plan,
 };
 use crate::test_runner::python_coverage_index::{
-    PYTHON_COVERAGE_ENV_KEYS, python_population_manifest_is_current_for_args_with_env_keys,
+    PYTHON_COVERAGE_ENV_KEYS, python_population_environment_mismatch,
+    python_population_manifest_is_current_for_args_with_env_keys,
     select_python_source_selectors_from_index, select_python_source_selectors_hybrid,
     stored_python_universe_selectors,
 };
@@ -91,6 +92,16 @@ impl LanguagePlanner for PythonModule {
     fn freshness(&self, universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
         if self.py_source_paths.is_empty() {
             return Ok(CoverageFreshness::Fresh);
+        }
+        // Line-precise index entries are only valid under the env that recorded them.
+        if python_population_environment_mismatch(
+            &self.repo_root,
+            &self.test_args,
+            self.manifest_env_allowlist(),
+        )
+        .is_some()
+        {
+            return Ok(CoverageFreshness::Stale);
         }
         let universe_ids = universe
             .iter()
@@ -258,6 +269,74 @@ mod tests {
         assert_eq!(
             module.freshness(&universe).unwrap(),
             CoverageFreshness::Fresh
+        );
+    }
+
+    #[test]
+    fn pythonpath_mismatch_forces_stale_even_with_line_precise_entries() {
+        use crate::test_runner::TestEnvVarGuard;
+        use crate::test_runner::python_coverage_index::write_python_population_manifest_for_args;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let app = tmp.path().join("app.py");
+        fs::write(&app, "def alpha():\n    return 'alpha'\n").unwrap();
+        let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", "/recorded/path");
+        write_python_population_manifest_for_args(
+            tmp.path(),
+            &["tests/test_app.py::test_alpha".to_string()],
+            &[],
+        )
+        .unwrap();
+        let cache_root =
+            crate::test_runner::python_coverage_index::python_coverage_cache_root(tmp.path())
+                .unwrap();
+        fs::create_dir_all(cache_root.join("entries")).unwrap();
+        fs::write(
+            cache_root.join("entries/alpha.json"),
+            format!(
+                "{{\"schema_version\":\"{}\",\"nodeid\":\"tests/test_app.py::test_alpha\",\"status\":\"Passed\",\"coverage\":{{\"files\":{{\"{}\":[2]}}}}}}\n",
+                rslip::CACHE_SCHEMA_VERSION,
+                app.display()
+            ),
+        )
+        .unwrap();
+        crate::test_runner::python_coverage_index::publish_python_derived_state_with_filter(
+            tmp.path(),
+            None,
+            &[],
+            |path, repo_root| {
+                crate::test_runner::python_coverage_index::repo_relative_coverage_file(
+                    repo_root,
+                    &path.to_string_lossy(),
+                )
+                .is_some()
+            },
+        )
+        .unwrap();
+        let changed_lines = BTreeMap::from([(app.clone(), BTreeSet::from([2_u32]))]);
+        let module = PythonModule::new(
+            tmp.path(),
+            std::slice::from_ref(&app),
+            &changed_lines,
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let universe = vec![TestSelector::new(
+            kiss::Language::Python,
+            "tests/test_app.py::test_alpha",
+        )];
+        // Still recorded env → Fresh via line-precise or population.
+        assert_eq!(
+            module.freshness(&universe).unwrap(),
+            CoverageFreshness::Fresh
+        );
+        drop(_pythonpath);
+        let _pythonpath_b = TestEnvVarGuard::set("PYTHONPATH", "/changed/path");
+        assert_eq!(
+            module.freshness(&universe).unwrap(),
+            CoverageFreshness::Stale
         );
     }
 }

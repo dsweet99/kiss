@@ -4,6 +4,7 @@ mod cache;
 mod coverage;
 mod coverage_gate;
 mod coverage_types;
+pub(crate) mod cov_records_cache;
 mod dry;
 mod dup_detect;
 mod entry;

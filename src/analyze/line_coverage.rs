@@ -201,7 +201,6 @@ pub(crate) fn compute_file_line_coverage(
     }
 }
 
-#[allow(dead_code)]
 pub(crate) fn cached_line_records(records: &[LineCoverageRecord]) -> Vec<CachedLineCoverageRecord> {
     records
         .iter()
@@ -215,7 +214,6 @@ pub(crate) fn cached_line_records(records: &[LineCoverageRecord]) -> Vec<CachedL
         .collect()
 }
 
-#[allow(dead_code)]
 pub(crate) fn line_records_from_cache(
     records: &[CachedLineCoverageRecord],
 ) -> Vec<LineCoverageRecord> {

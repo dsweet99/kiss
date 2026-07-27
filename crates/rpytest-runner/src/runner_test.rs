@@ -62,6 +62,68 @@ fn runner_helpers_validate_and_run_commands_directly() {
 }
 
 #[test]
+fn subprocess_runner_clears_inherited_pytest_addopts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let fake_python = tmp.path().join("fake_python");
+    fs::write(
+        &fake_python,
+        r#"#!/usr/bin/env python3
+import json
+import os
+import sys
+
+payload = {
+    "PYTEST_ADDOPTS": os.environ.get("PYTEST_ADDOPTS"),
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD"),
+}
+open("observed.json", "w").write(json.dumps(payload))
+raise SystemExit(0)
+"#,
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&fake_python).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&fake_python, perms).unwrap();
+    }
+    let old_addopts = std::env::var("PYTEST_ADDOPTS").ok();
+    unsafe { std::env::set_var("PYTEST_ADDOPTS", "--testmon --testmon") };
+
+    let outcome = crate::SubprocessPytestRunner::new()
+        .run_one(PytestRunRequest {
+            nodeid: "test_sample.py::test_ok".to_string(),
+            cwd: tmp.path().to_path_buf(),
+            python: fake_python,
+            pytest_args: vec!["-q".to_string()],
+            env: BTreeMap::new(),
+            child_preload_modules: Vec::new(),
+            artifacts: Vec::new(),
+            timeout: None,
+        })
+        .unwrap();
+
+    match old_addopts {
+        Some(value) => unsafe { std::env::set_var("PYTEST_ADDOPTS", value) },
+        None => unsafe { std::env::remove_var("PYTEST_ADDOPTS") },
+    }
+
+    assert_eq!(outcome.status, TestStatus::Passed);
+    let observed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(tmp.path().join("observed.json")).unwrap())
+            .unwrap();
+    assert!(
+        observed["PYTEST_ADDOPTS"].is_null(),
+        "inherited PYTEST_ADDOPTS must be scrubbed: {observed}"
+    );
+    assert_eq!(
+        observed["PYTEST_DISABLE_PLUGIN_AUTOLOAD"].as_str(),
+        Some("1")
+    );
+}
+
+#[test]
 fn subprocess_worker_sends_indexed_result() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(

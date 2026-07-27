@@ -1,18 +1,17 @@
 use std::ffi::OsString;
 use std::io::{self, Read};
-use std::path::Path;
-use std::process::Command;
-#[cfg(unix)]
-use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::atomic::Ordering;
 
 use crate::batch_output_channel::{
     OutputChannelClient, OutputStreamKind, output_channel_config_from_env,
 };
-use crate::batch_process_tree::{ProcessGroupIdentity, signal_validated_process_group};
+use crate::batch_process_tree::ProcessGroupIdentity;
 use crate::batch_runner_resolve::read_runner_map;
 
 use super::BatchShimMetadata;
+use super::batch_shim_signal::ShimSignalForwarder;
 use super::batch_shim_write::{filesystem_safe_instance_id, instance_full_name};
 use super::batch_shim_write::{
     write_delegated_start_metadata, write_shim_metadata, write_shim_start_metadata,
@@ -61,7 +60,10 @@ pub(crate) fn run_target_runner_shim_inner(
         .ok_or_else(|| io::Error::other("failed to resolve shim process group identity"))?;
     let full_name = instance_full_name(command);
     let id = filesystem_safe_instance_id(&full_name);
-    let profile_path = output_dir.join(format!("{id}.profraw"));
+    let profile_path = profile_path_for_instance(output_dir, &id, command);
+    if let Some(parent) = profile_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let _signal_guard = ShimSignalForwarder::install()?;
     write_shim_start_metadata(output_dir, &id, &shim_identity)?;
     let (exit_code, spawn_error, delegated_identity, stdout, stderr, output_frame_count) =
@@ -88,6 +90,30 @@ pub(crate) fn run_target_runner_shim_inner(
     Ok(exit_code.unwrap_or(1))
 }
 
+pub(crate) const PROFILE_POOL_ENV: &str = "KISS_RUST_COVERAGE_PROFILE_POOL";
+pub(crate) const PROFILE_POOL_FILE_PATTERN: &str = "pool-%32m.profraw";
+
+/// Profile sink for one shim instance.
+///
+/// CheckAggregate pool mode uses a **per-test-binary** subdirectory so online
+/// `%Nm` merge pools do not mix coverage from unrelated test executables.
+pub(crate) fn profile_path_for_instance(
+    output_dir: &Path,
+    instance_id: &str,
+    command: &[OsString],
+) -> PathBuf {
+    if std::env::var(PROFILE_POOL_ENV).ok().as_deref() == Some("1") {
+        let binary = command
+            .first()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "unknown-binary".to_string());
+        let pool_key = filesystem_safe_instance_id(&binary);
+        output_dir.join(pool_key).join(PROFILE_POOL_FILE_PATTERN)
+    } else {
+        output_dir.join(format!("{instance_id}.profraw"))
+    }
+}
+
 pub(super) fn is_nextest_list_phase() -> bool {
     std::env::var("NEXTEST_TEST_PHASE").ok().as_deref() == Some("list")
 }
@@ -106,6 +132,9 @@ fn run_delegated_child(
     instance_id: &str,
     output_dir: &Path,
 ) -> io::Result<DelegatedChildOutcome> {
+    if std::env::var(PROFILE_POOL_ENV).ok().as_deref() == Some("1") {
+        return run_delegated_child_pool_fast(delegated, command, profile_path);
+    }
     let go_path = output_dir.join(format!("{instance_id}.delegated-go"));
     let spawn = match delegated_child_spawn(delegated, command, profile_path, &go_path) {
         Ok(spawn) => spawn,
@@ -140,6 +169,57 @@ fn run_delegated_child(
         stdout,
         stderr,
         output_frame_count,
+    ))
+}
+
+/// CheckAggregate pool mode: skip handshake + output capture.
+///
+/// Population only needs exit status and per-binary `LLVM_PROFILE_FILE` sinks.
+/// The full piped/handshake path dominates cold `kiss cov` wall time.
+fn run_delegated_child_pool_fast(
+    delegated: &[String],
+    command: &[OsString],
+    profile_path: &Path,
+) -> io::Result<DelegatedChildOutcome> {
+    let mut child = build_delegated_command(delegated, command);
+    crate::batch_shim_delegated::scrub_coverage_build_env(&mut child);
+    child.env("LLVM_PROFILE_FILE", profile_path);
+    child.stdout(Stdio::null());
+    child.stderr(Stdio::null());
+    child.stdin(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        unsafe {
+            child.pre_exec(|| {
+                if libc::setpgid(0, 0) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    let mut spawned = match child.spawn() {
+        Ok(spawned) => spawned,
+        Err(err) => {
+            return Ok((
+                Some(1),
+                Some(err.to_string()),
+                None,
+                Vec::new(),
+                Vec::new(),
+                None,
+            ));
+        }
+    };
+    let status = spawned.wait()?;
+    Ok((
+        status.code().or(Some(1)),
+        None,
+        None,
+        Vec::new(),
+        Vec::new(),
+        None,
     ))
 }
 
@@ -321,104 +401,6 @@ fn shutdown_shared_output_client(
     Ok(())
 }
 
-#[cfg(unix)]
-static SHIM_DELEGATED_PGID: AtomicU32 = AtomicU32::new(0);
-
-pub(crate) struct ShimSignalForwarder;
-
-impl ShimSignalForwarder {
-    pub(crate) fn install() -> io::Result<Self> {
-        #[cfg(unix)]
-        {
-            install_shim_signal_forwarder()?;
-        }
-        Ok(Self)
-    }
-
-    pub(crate) fn set_delegated_identity(identity: &ProcessGroupIdentity) {
-        #[cfg(unix)]
-        {
-            SHIM_DELEGATED_PGID.store(identity.pgid, Ordering::SeqCst);
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = identity;
-        }
-    }
-
-    pub(crate) fn clear_delegated_identity() {
-        #[cfg(unix)]
-        {
-            SHIM_DELEGATED_PGID.store(0, Ordering::SeqCst);
-        }
-    }
-}
-
-impl Drop for ShimSignalForwarder {
-    fn drop(&mut self) {
-        Self::clear_delegated_identity();
-        #[cfg(unix)]
-        {
-            clear_shim_signal_forwarder();
-        }
-    }
-}
-
-#[cfg(unix)]
-static SHIM_SIGNAL_STATE: OnceLock<std::sync::Mutex<bool>> = OnceLock::new();
-
 #[cfg(test)]
-#[cfg(unix)]
-pub(crate) fn trigger_shim_forward_signal_for_test(signal: libc::c_int) {
-    shim_forward_signal(signal);
-}
-
-#[cfg(unix)]
-extern "C" fn shim_forward_signal(signal: libc::c_int) {
-    let pgid = SHIM_DELEGATED_PGID.load(Ordering::SeqCst);
-    if pgid == 0 {
-        return;
-    }
-    let identity = ProcessGroupIdentity { pid: pgid, pgid };
-    signal_validated_process_group(&identity, signal);
-}
-
-#[cfg(unix)]
-pub(crate) fn install_shim_signal_forwarder() -> io::Result<()> {
-    let slot = SHIM_SIGNAL_STATE.get_or_init(|| std::sync::Mutex::new(false));
-    *slot
-        .lock()
-        .map_err(|_| io::Error::other("shim signal forwarder lock poisoned"))? = true;
-    for signal in [libc::SIGINT, libc::SIGTERM] {
-        let previous = unsafe {
-            let mut action: libc::sigaction = std::mem::zeroed();
-            action.sa_sigaction = shim_forward_signal as usize;
-            action.sa_flags = 0;
-            libc::sigemptyset(&mut action.sa_mask);
-            let mut old = std::mem::zeroed();
-            let rc = libc::sigaction(signal, &action, &mut old);
-            if rc != 0 {
-                return Err(io::Error::last_os_error());
-            }
-            old.sa_sigaction
-        };
-        let _ = previous;
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-pub(crate) fn clear_shim_signal_forwarder() {
-    if SHIM_SIGNAL_STATE.get().is_some() {
-        for signal in [libc::SIGINT, libc::SIGTERM] {
-            unsafe {
-                let mut action: libc::sigaction = std::mem::zeroed();
-                action.sa_sigaction = libc::SIG_DFL;
-                libc::sigaction(signal, &action, std::ptr::null_mut());
-            }
-        }
-        if let Ok(mut slot) = SHIM_SIGNAL_STATE.get().expect("shim signal state").lock() {
-            *slot = false;
-        }
-    }
-}
+#[path = "batch_shim_child_profile_test.rs"]
+mod profile_pool_tests;

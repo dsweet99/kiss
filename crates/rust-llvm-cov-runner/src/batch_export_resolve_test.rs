@@ -192,8 +192,10 @@ fn resolve_objects_for_profdata_rejects_unresolved_profile_binary_ids() {
     )
     .expect_err("unresolved nonempty binary id should be an error");
 
+    let message = format!("{err:?}");
     assert!(
-        format!("{err:?}").contains("no catalog object matched profile binary id `deadbeef`"),
+        message.contains("no catalog object matched profile binary id `deadbeef`")
+            || message.contains("seed-filtered object resolve produced no objects"),
         "unexpected error: {err:?}"
     );
 }

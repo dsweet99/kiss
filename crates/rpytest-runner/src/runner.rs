@@ -119,6 +119,10 @@ impl SubprocessPytestRunner {
         let started = Instant::now();
         let mut cmd = Command::new(&req.python);
         cmd.current_dir(&req.cwd);
+        // Parent shells (e.g. malvin) may export PYTEST_ADDOPTS=--testmon; isolated
+        // node runs must not inherit that, matching SubprocessPytestCollector.
+        cmd.env_remove("PYTEST_ADDOPTS");
+        cmd.env("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1");
         cmd.envs(&req.env);
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());

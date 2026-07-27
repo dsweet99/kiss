@@ -144,7 +144,7 @@ fn publish_generated_nextest_config_writes_run_scoped_config_atomically() {
         .join("nextest.toml");
     let plan = build_rust_coverage_batch_plan(&req).unwrap();
 
-    publish_generated_nextest_config(&plan).unwrap();
+    publish_generated_nextest_config(&plan, &req).unwrap();
 
     assert_eq!(
         std::fs::read_to_string(&plan.generated_config).unwrap(),

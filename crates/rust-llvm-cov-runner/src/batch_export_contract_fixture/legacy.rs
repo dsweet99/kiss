@@ -26,6 +26,10 @@ pub(crate) fn discover_compiler_artifacts(
             .iter()
             .map(|path| path.to_string_lossy().into_owned())
             .collect(),
+        nextest_binary_id: None,
+    libtest_binary_prefix: None,
+    src_path: None,
+    is_test_harness: false,
     }]
 }
 

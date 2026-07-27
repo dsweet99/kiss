@@ -186,6 +186,14 @@ fn call_router_dispatchers(
 #[test]
 fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
     let test = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    let cfg = super::TriConfig {
+        py: &py,
+        rs: &rs,
+        gate: &gate,
+    };
 
     assert_eq!(
         super::dispatch_test_command(
@@ -203,12 +211,13 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
                 fixture: None,
                 extra: vec![],
             },
+            &cfg,
             &test,
         ),
         2
     );
     assert_eq!(
-        super::dispatch_test_command(None, Commands::Rules, &test),
+        super::dispatch_test_command(None, Commands::Rules, &cfg, &test),
         2
     );
 }

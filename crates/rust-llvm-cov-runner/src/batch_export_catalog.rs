@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::batch_events::BatchCompilerArtifact;
@@ -14,7 +14,7 @@ pub fn build_object_catalog(
     for request in export_requests {
         objects.extend(request.objects.iter().cloned());
     }
-    collect_instrumented_objects_from_dir(build_target, &mut objects);
+    collect_instrumented_objects_from_build_target(build_target, &mut objects);
     for value in env.values() {
         let path = PathBuf::from(value);
         if path.is_file() {
@@ -59,18 +59,33 @@ fn is_object_file(path: &str) -> bool {
         .is_some_and(|ext| matches!(ext, "o" | "rlib" | "rmeta"))
 }
 
-fn collect_instrumented_objects_from_dir(dir: &Path, out: &mut Vec<PathBuf>) {
-    if !dir.is_dir() {
-        return;
+/// Scan only cargo's immediate debug output dirs.
+///
+/// Do **not** recursively walk the entire `target/` tree: it often embeds
+/// `llvm-cov-target`, `incremental`, and other multi-GB trees, and reading
+/// build-ids for every file there dominates cold `kiss cov` wall time.
+fn collect_instrumented_objects_from_build_target(build_target: &Path, out: &mut Vec<PathBuf>) {
+    let mut scanned = BTreeSet::new();
+    for dir in [
+        build_target.join("debug").join("deps"),
+        build_target.join("debug"),
+        build_target.join("deps"),
+        build_target.to_path_buf(),
+    ] {
+        if !dir.is_dir() || !scanned.insert(dir.clone()) {
+            continue;
+        }
+        collect_instrumented_objects_in_flat_dir(&dir, out);
     }
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return,
+}
+
+fn collect_instrumented_objects_in_flat_dir(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            collect_instrumented_objects_from_dir(&path, out);
             continue;
         }
         if is_instrumented_catalog_object(&path) || is_instrumented_catalog_executable(&path) {

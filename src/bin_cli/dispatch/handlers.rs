@@ -179,6 +179,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) ->
                 },
             )
         }
+        crate::bin_cli::args::TestCommandAction::Cov => 2,
     }
 }
 

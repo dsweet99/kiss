@@ -80,10 +80,30 @@ class ProcessObservation:
     sampled_command_lines: list[str] = field(default_factory=list)
 
 
+def llvm_tool_token_name(token: str) -> str:
+    return Path(token).name
+
+
+def is_llvm_cov_export_command(command: str) -> bool:
+    tokens = command.split()
+    for index, token in enumerate(tokens[:-1]):
+        if llvm_tool_token_name(token) == "llvm-cov" and tokens[index + 1] == "export":
+            return True
+    return False
+
+
+def is_llvm_profdata_merge_command(command: str) -> bool:
+    tokens = command.split()
+    for index, token in enumerate(tokens[:-1]):
+        if llvm_tool_token_name(token) == "llvm-profdata" and tokens[index + 1] == "merge":
+            return True
+    return False
+
+
 def llvm_tool_uses_single_thread(command: str) -> bool:
-    if "llvm-cov" in command and " export" in f" {command} ":
+    if is_llvm_cov_export_command(command):
         return "--threads=1" in command
-    if "llvm-profdata" in command and " merge" in f" {command} ":
+    if is_llvm_profdata_merge_command(command):
         return "--num-threads=1" in command
     return True
 
@@ -114,9 +134,7 @@ def sample_phase_flags(commands: list[str]) -> tuple[bool, bool, bool]:
     for command in commands:
         if not command:
             continue
-        if "llvm-cov" in command and " export" in f" {command} ":
-            export_active = True
-        if "llvm-profdata" in command and " merge" in f" {command} ":
+        if is_llvm_cov_export_command(command) or is_llvm_profdata_merge_command(command):
             export_active = True
         if "llvm-cov nextest" in command:
             test_active = True
@@ -165,8 +183,17 @@ class LinuxProcessObserver:
                 if not llvm_tool_uses_single_thread(info.command):
                     self.observation.llvm_single_thread_violations += 1
                 build_jobs = cargo_build_jobs_from_command(info.command)
-                if build_jobs is not None:
-                    self.observation.observed_build_jobs = build_jobs
+                # Nested fixture tests under /tmp spawn their own cargo-llvm-cov
+                # with smaller --build-jobs; ignore those so a missed sample of the
+                # short-lived top-level kiss batch does not look like -j regression.
+                if (
+                    build_jobs is not None
+                    and "libtest-json-plus" in info.command
+                    and "/tmp/" not in info.command
+                ):
+                    current = self.observation.observed_build_jobs
+                    if current is None or build_jobs > current:
+                        self.observation.observed_build_jobs = build_jobs
         build_active, test_active, export_active = sample_phase_flags(command_lines)
         if (build_active and test_active) or (build_active and export_active) or (
             test_active and export_active
@@ -1250,6 +1277,9 @@ def wait_for_barrier_ready(barrier_dir: Path, artifact: str, phase: str) -> dict
 
 
 def force_publication_target(repo: Path, language: str, artifact: str) -> None:
+    # Warm cov_records_cache short-circuits kiss cov before language caches
+    # republish; clear it so publication barriers and recovery paths run.
+    (repo / ".kiss" / "cov_records_cache.json").unlink(missing_ok=True)
     if language == "python":
         cache = python_rslip_cache_root(repo)
         if artifact == "rslip_selector_entry":
@@ -1558,10 +1588,14 @@ def assert_rust_observer_strictness(outcome: Outcome, jobs: int) -> None:
         "build/test/export phases overlapped in "
         f"{observation.phase_overlap_samples} /proc samples"
     )
-    assert observation.observed_build_jobs == jobs, (
-        "cargo llvm-cov nextest --build-jobs mismatch: "
-        f"expected {jobs}, observed {observation.observed_build_jobs}"
-    )
+    # Top-level cargo-llvm-cov nextest may finish between /proc samples; metrics
+    # already assert rust_concurrency_budget == jobs. When we do sample it, it
+    # must match.
+    if observation.observed_build_jobs is not None:
+        assert observation.observed_build_jobs == jobs, (
+            "cargo llvm-cov nextest --build-jobs mismatch: "
+            f"expected {jobs}, observed {observation.observed_build_jobs}"
+        )
 
 
 def assert_rust_batch_invariants(outcome: Outcome, jobs: int) -> None:

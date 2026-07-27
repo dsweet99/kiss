@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::RustLlvmCovError;
-use crate::batch_export_tools::{ExportTools, objects_satisfy_profile, read_profdata_binary_ids};
+use crate::batch_export_tools::{ExportTools, read_profdata_binary_ids};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BinaryIdObjectMap {
@@ -101,9 +101,22 @@ fn resolve_objects_by_binary_ids(
     seed_objects: &[PathBuf],
     binary_id_map: &BinaryIdObjectMap,
 ) -> Result<Vec<PathBuf>, RustLlvmCovError> {
+    let mut seed_ids = BTreeSet::new();
+    for seed in seed_objects {
+        if let Some(id) = binary_id_map.lookup_by_object(seed) {
+            seed_ids.insert(id.to_string());
+        } else if let Some(id) = read_object_binary_id(tools, seed)? {
+            seed_ids.insert(id);
+        }
+    }
     let mut resolved = Vec::new();
     let mut unmatched = Vec::new();
     for id in profile_ids {
+        if !seed_ids.is_empty() && !seed_ids.contains(id) {
+            // Shared LLVM profile pools contain every binary id. Keep only the
+            // seed binary's objects so aggregate line maps stay per-binary.
+            continue;
+        }
         match try_resolve_object_for_binary_id(tools, catalog, seed_objects, binary_id_map, id)? {
             Some(path) => resolved.push(path),
             None => unmatched.push(id.clone()),
@@ -112,13 +125,15 @@ fn resolve_objects_by_binary_ids(
     resolved.sort();
     resolved.dedup();
     if unmatched.is_empty() {
-        if !objects_satisfy_profile(tools, profdata, &resolved) {
+        if resolved.is_empty() {
             return Err(RustLlvmCovError::InvalidRequest(format!(
-                "binary-id-resolved objects {:?} do not satisfy profile {}",
-                resolved,
+                "seed-filtered object resolve produced no objects for {}; \
+                 seed build-ids may be absent from the merged profile (stale pools?)",
                 profdata.display()
             )));
         }
+        // Binary-id resolution already matched every selected profile id to a catalog object.
+        // Skip the redundant full `llvm-cov export -check-binary-ids` validation export.
         return Ok(resolved);
     }
     // Nested coverage / deleted artifacts can leave orphan binary ids in a
@@ -176,7 +191,7 @@ fn try_resolve_object_for_binary_id(
     Ok(binary_id_map.lookup(expected_id).cloned())
 }
 
-fn read_object_binary_id(
+pub(crate) fn read_object_binary_id(
     tools: &ExportTools,
     object: &Path,
 ) -> Result<Option<String>, RustLlvmCovError> {

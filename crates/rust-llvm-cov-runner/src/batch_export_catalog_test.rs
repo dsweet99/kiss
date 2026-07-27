@@ -38,3 +38,24 @@ fn build_object_catalog_includes_root_level_cargo_binaries() {
     assert!(catalog.contains(&deps_bin));
     assert!(!catalog.contains(&depfile));
 }
+
+#[test]
+fn build_object_catalog_skips_nested_llvm_cov_target_trees() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cargo_target = tmp.path().join("target");
+    let deps = cargo_target.join("debug").join("deps");
+    let nested = cargo_target
+        .join("llvm-cov-target")
+        .join("debug")
+        .join("deps");
+    fs::create_dir_all(&deps).unwrap();
+    fs::create_dir_all(&nested).unwrap();
+    let keep = deps.join("keep-bin");
+    let skip = nested.join("skip-bin");
+    fs::write(&keep, b"keep").unwrap();
+    fs::write(&skip, b"skip").unwrap();
+
+    let catalog = build_object_catalog(&[], &cargo_target, &[], &BTreeMap::new());
+    assert!(catalog.contains(&keep));
+    assert!(!catalog.contains(&skip));
+}

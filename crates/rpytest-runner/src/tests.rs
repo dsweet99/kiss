@@ -169,6 +169,44 @@ fn forkserver_runner_runs_one_pytest_node() {
 }
 
 #[test]
+fn forkserver_runner_ignores_inherited_pytest_addopts_testmon() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_ok():\n    assert 2 + 2 == 4\n",
+    )
+    .unwrap();
+    let old_addopts = std::env::var("PYTEST_ADDOPTS").ok();
+    unsafe { std::env::set_var("PYTEST_ADDOPTS", "--testmon --testmon --testmon") };
+
+    let outcome = forkserver_pytest_runner()
+        .run_one(PytestRunRequest {
+            nodeid: "test_sample.py::test_ok".to_string(),
+            cwd: tmp.path().to_path_buf(),
+            python: python!(),
+            pytest_args: vec!["-q".to_string()],
+            env: BTreeMap::new(),
+            child_preload_modules: Vec::new(),
+            artifacts: Vec::new(),
+            timeout: None,
+        })
+        .unwrap();
+
+    match old_addopts {
+        Some(value) => unsafe { std::env::set_var("PYTEST_ADDOPTS", value) },
+        None => unsafe { std::env::remove_var("PYTEST_ADDOPTS") },
+    }
+
+    assert_eq!(
+        outcome.status,
+        TestStatus::Passed,
+        "stderr={}",
+        String::from_utf8_lossy(&outcome.stderr)
+    );
+    assert_eq!(outcome.exit_code, Some(0));
+}
+
+#[test]
 fn subprocess_runner_reports_failed_pytest_node() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
