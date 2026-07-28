@@ -8,6 +8,13 @@ use std::process::{Command, Stdio};
 use crate::batch_process_tree::ProcessGroupIdentity;
 
 pub(crate) const DELEGATED_GO_ENV: &str = "KISS_RUST_LLVM_COV_DELEGATED_GO";
+/// Optional QA/debug hold (milliseconds) after writing start identities and before
+/// releasing the delegated handshake. Unset/0 keeps production paths fast.
+///
+/// Intentionally omitted from [`COVERAGE_BUILD_ENV_KEYS`]: batch subprocess env
+/// scrubbing must not strip this from the shim host (which reads it via
+/// `std::env`). Delegated children may inherit it; that is harmless.
+pub(crate) const HOLD_BEFORE_GO_MS_ENV: &str = "KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS";
 
 const COVERAGE_BUILD_ENV_KEYS: &[&str] = &[
     "LLVM_PROFILE_FILE",
@@ -59,7 +66,21 @@ pub(crate) fn scrub_coverage_build_env(command: &mut Command) {
 }
 
 pub(crate) fn release_delegated_child_handshake(go_path: &Path) -> io::Result<()> {
+    hold_before_delegated_go_release();
     fs::write(go_path, b"go\n")
+}
+
+fn hold_before_delegated_go_release() {
+    let Ok(raw) = std::env::var(HOLD_BEFORE_GO_MS_ENV) else {
+        return;
+    };
+    let Ok(ms) = raw.parse::<u64>() else {
+        return;
+    };
+    if ms == 0 {
+        return;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(ms.min(5_000)));
 }
 
 fn build_handshake_wrapped_command(
@@ -134,6 +155,28 @@ mod tests {
     fn env_has_binding(env: &str, key: &str, value: &str) -> bool {
         let expected = format!("{key}={value}");
         env.lines().any(|line| line == expected)
+    }
+
+    #[test]
+    fn hold_before_go_release_honors_env_milliseconds() {
+        let _lock = crate::test_support::shim_test_env_lock();
+        let _hold = EnvVarGuard::set(HOLD_BEFORE_GO_MS_ENV, "40");
+        let started = std::time::Instant::now();
+        hold_before_delegated_go_release();
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(35),
+            "elapsed={:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn hold_before_go_release_skips_when_unset() {
+        let _lock = crate::test_support::shim_test_env_lock();
+        let _hold = EnvVarGuard::set(HOLD_BEFORE_GO_MS_ENV, "0");
+        let started = std::time::Instant::now();
+        hold_before_delegated_go_release();
+        assert!(started.elapsed() < std::time::Duration::from_millis(20));
     }
 
     #[test]

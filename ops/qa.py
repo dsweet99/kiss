@@ -127,6 +127,38 @@ def cargo_executable_name(command: str) -> str | None:
     return Path(parts[0]).name
 
 
+def is_compile_command(command: str) -> bool:
+    """True for llvm-cov / cargo compile processes seen under `cargo llvm-cov nextest`.
+
+    Live /proc samples during compile show `cargo test --no-run`,
+    `cargo-llvm-cov rustc`, bare `rustc`, and `build-script-build` — not only
+    `cargo` + ` rustc `/` build `.
+    """
+    name = cargo_executable_name(command)
+    padded = f" {command} "
+    if name == "rustc":
+        return True
+    if name in {"cargo", "cargo-llvm-cov"} and (
+        " rustc " in padded or " build " in padded
+    ):
+        return True
+    if name == "cargo" and " test " in padded and "--no-run" in command:
+        return True
+    return "build-script-build" in command
+
+
+def is_test_execution_command(command: str) -> bool:
+    """True only for SelectorEntries shim / delegated handshake processes.
+
+    The persistent `cargo llvm-cov nextest` parent stays alive across compile and
+    export, so it must not count as test execution. The `/target/` binary
+    heuristic also mislabels `build-script-build` as delegated.
+    """
+    if TARGET_RUNNER_SHIM_MARKER in command:
+        return True
+    return any(marker in command for marker in DELEGATED_CHILD_MARKERS)
+
+
 def sample_phase_flags(commands: list[str]) -> tuple[bool, bool, bool]:
     export_active = False
     test_active = False
@@ -136,12 +168,29 @@ def sample_phase_flags(commands: list[str]) -> tuple[bool, bool, bool]:
             continue
         if is_llvm_cov_export_command(command) or is_llvm_profdata_merge_command(command):
             export_active = True
-        if "llvm-cov nextest" in command:
+        if is_test_execution_command(command):
             test_active = True
-        if cargo_executable_name(command) == "cargo" and (
-            " rustc " in f" {command} " or " build " in f" {command} "
-        ):
+        if is_compile_command(command):
             build_active = True
+    return build_active, test_active, export_active
+
+
+def sample_phase_flags_with_repo(
+    commands: list[str],
+    repo_root: Path | None,
+) -> tuple[bool, bool, bool]:
+    """Like sample_phase_flags, plus live shim/delegated start-metadata.
+
+    Warm --force SelectorEntries runs can finish a shim hold between /proc
+    samples; start-json identities remain valid for the hold window and arm
+    test_active without treating the persistent llvm-cov nextest parent as
+    test execution.
+    """
+    build_active, test_active, export_active = sample_phase_flags(commands)
+    if not test_active and repo_root is not None:
+        roles = live_shim_roles_from_metadata(repo_root)
+        if "shim" in roles or "delegated" in roles:
+            test_active = True
     return build_active, test_active, export_active
 
 
@@ -546,6 +595,7 @@ def run_interrupt_after_distinct_live_groups(
         observer = LinuxProcessObserver(process.pid)
         live_groups: dict[str, int] | None = None
         test_phase_seen = False
+        signaled = False
         deadline = started + timeout
         while process.poll() is None and time.monotonic() < deadline:
             observer.sample()
@@ -557,7 +607,10 @@ def run_interrupt_after_distinct_live_groups(
                 for info in [snapshot.get(pid)]
                 if info is not None and info.command
             ]
-            _, test_active, export_active = sample_phase_flags(command_lines)
+            _, test_active, export_active = sample_phase_flags_with_repo(
+                command_lines,
+                repo_root,
+            )
             if test_active and not export_active:
                 test_phase_seen = True
                 live_groups = distinct_live_process_groups(
@@ -566,8 +619,12 @@ def run_interrupt_after_distinct_live_groups(
                 )
                 if live_groups is not None:
                     os.killpg(os.getpgid(process.pid), signal.SIGINT)
+                    signaled = True
                     break
-            time.sleep(0.05)
+                # Narrow triple-role windows need denser sampling than idle phases.
+                time.sleep(0.01)
+            else:
+                time.sleep(0.05)
         else:
             if process.poll() is None:
                 process.kill()
@@ -596,8 +653,13 @@ def run_interrupt_after_distinct_live_groups(
     if not test_phase_seen:
         raise AssertionError(f"{name}: test phase never became active")
     if live_groups is None:
+        if signaled:
+            raise AssertionError(
+                f"{name}: interrupted without recording distinct live process groups"
+            )
         raise AssertionError(
-            f"{name}: interrupted without recording distinct live process groups"
+            f"{name}: exited before recording distinct live process groups "
+            f"(rc={outcome.returncode})"
         )
     click.echo(
         f"{name}: rc={outcome.returncode} elapsed={outcome.elapsed:.2f}s "
@@ -616,6 +678,7 @@ def run_interrupt_on_phase(
     target_phase: str,
     timeout: int = 1_200,
     settle: float = 2.0,
+    repo_root: Path | None = None,
 ) -> Outcome:
     started = time.monotonic()
     with (
@@ -636,8 +699,17 @@ def run_interrupt_on_phase(
         deadline = started + timeout
         while process.poll() is None and time.monotonic() < deadline:
             observer.sample()
-            build_active, test_active, export_active = sample_phase_flags(
-                observer.observation.sampled_command_lines
+            snapshot = read_proc_snapshot()
+            command_lines = [
+                info.command
+                for pid in descendant_pids(snapshot, process.pid)
+                if pid != process.pid
+                for info in [snapshot.get(pid)]
+                if info is not None and info.command
+            ]
+            build_active, test_active, export_active = sample_phase_flags_with_repo(
+                command_lines,
+                repo_root,
             )
             phase_active = {
                 "build": build_active and not test_active and not export_active,
@@ -647,7 +719,9 @@ def run_interrupt_on_phase(
             if phase_active and not signaled:
                 os.killpg(os.getpgid(process.pid), signal.SIGINT)
                 signaled = True
-            time.sleep(0.05)
+            # Warm SelectorEntries shims are brief without a hold; poll denser
+            # until the target phase arms, then relax.
+            time.sleep(0.01 if not signaled else 0.05)
         if process.poll() is None:
             if not signaled:
                 os.killpg(os.getpgid(process.pid), signal.SIGINT)
@@ -671,6 +745,7 @@ def run_interrupt_on_phase(
         f"{name}: rc={outcome.returncode} elapsed={outcome.elapsed:.2f}s "
         f"phase={target_phase} signaled={signaled}"
     )
+    assert signaled, f"{name}: target phase {target_phase!r} never became active"
     return outcome
 
 
@@ -2663,8 +2738,13 @@ def rust_phase_interrupt() -> None:
     )
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "phase_interrupt.log"
-    phase_delays = {"build": 0.35, "test": 12.0, "export": 8.0}
+    # Phase-aware SIGINT: wall-clock delays miss warm --force populations that
+    # finish the test phase before a fixed timer (historically ~7s < 12s).
+    phases = ("build", "test", "export")
     with qa_fixture("kiss-qa-rust-phase-interrupt-") as fixture, log_path.open("w") as log:
+        # Widen shim/delegated lifetime so warm --force test/export samples
+        # can observe SelectorEntries execution (production leaves this unset).
+        fixture.env["KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS"] = "750"
         population_command = kiss_command(
             "rust",
             fixture.ignores["rust"],
@@ -2673,17 +2753,18 @@ def rust_phase_interrupt() -> None:
             "-j",
             str(jobs),
         )
-        for phase, signal_after in phase_delays.items():
-            interrupted = run_interrupted(
+        for phase in phases:
+            interrupted = run_interrupt_on_phase(
                 f"rust-phase-interrupt-{phase}",
                 population_command,
                 fixture.root,
                 fixture.env,
-                signal_after=signal_after,
+                target_phase=phase,
+                repo_root=fixture.root,
             )
             log.write(
                 f"{phase}: rc={interrupted.returncode} elapsed={interrupted.elapsed:.2f}s "
-                f"signal_after={signal_after}\n"
+                f"target_phase={phase}\n"
             )
             assert interrupted.returncode != 0, f"{phase} interrupt should fail"
             residual = lingering_processes_matching(
@@ -2948,6 +3029,9 @@ def rust_distinct_groups_interrupt() -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "distinct_groups_interrupt.log"
     with qa_fixture("kiss-qa-distinct-groups-") as fixture:
+        # Widen the simultaneous nextest/shim/delegated window for observation.
+        # Production paths leave this unset (zero hold).
+        fixture.env["KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS"] = "750"
         population_command = kiss_command(
             "rust",
             fixture.ignores["rust"],
