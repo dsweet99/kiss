@@ -46,8 +46,8 @@ fn resolve_reusable_prior_population_after_ordinary_source_edit() {
 
     let resolved = resolve_rust_population_state(tmp.path(), &[], std::slice::from_ref(&lib), &[])
         .expect("resolved population");
-    assert_eq!(resolved.freshness, CoverageFreshness::ReusablePrior);
-    assert_eq!(resolved.basis, RustSelectionBasis::ReusablePrior);
+    assert_eq!(resolved.freshness(), CoverageFreshness::ReusablePrior);
+    assert_eq!(resolved.basis(), RustSelectionBasis::ReusablePrior);
     let selected = select_rust_source_selectors_for_basis(
         tmp.path(),
         std::slice::from_ref(&lib),

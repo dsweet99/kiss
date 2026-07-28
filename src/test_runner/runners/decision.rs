@@ -206,10 +206,9 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
         && (!input.rust_source_paths.is_empty()
             || !input.changed_tests.rust.is_empty()
             || !rust_prior_failures.is_empty()
-            || input
-                .rust_resolved
-                .as_ref()
-                .is_some_and(|resolved| resolved.basis == RustSelectionBasis::Population))
+            || input.rust_resolved.as_ref().is_some_and(|resolved| {
+                resolved.basis() == RustSelectionBasis::Population
+            }))
     {
         backers.push(rust_llvm_cov_backer(RustBackerInput {
             repo_root: input.repo_root,

@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::test_runner::coverage_decision::RustSelectionBasis;
 use crate::test_runner::rust_coverage_index::ResolvedRustPopulation;
 
 use super::{ChangedTestSelectors, changed_lines_for_sources, changed_test_selectors_by_language};
@@ -89,13 +88,7 @@ fn check_aggregate_covers_changed_rust_sources(
     rust_source_paths: &[PathBuf],
     resolved: Option<&ResolvedRustPopulation>,
 ) -> bool {
-    let Some(resolved) = resolved else {
-        return false;
-    };
-    if resolved.basis != RustSelectionBasis::Current {
-        return false;
-    }
-    let Some(state) = resolved.state.as_ref() else {
+    let Some(ResolvedRustPopulation::Current { state }) = resolved else {
         return false;
     };
     if !rust_llvm_cov_runner::is_check_aggregate_population(state) {
@@ -170,41 +163,33 @@ fn effective_paths_for_resolution(
     rust_vcs_source_paths: &[PathBuf],
     rust_vcs_test_paths: &[PathBuf],
 ) -> (Vec<PathBuf>, Vec<PathBuf>, usize, bool) {
-    match resolved.basis {
-        RustSelectionBasis::Current => (
+    match resolved {
+        ResolvedRustPopulation::Current { .. } => (
             rust_vcs_source_paths.to_vec(),
             rust_vcs_test_paths.to_vec(),
             0,
             false,
         ),
-        RustSelectionBasis::ReusablePrior => match resolved.snapshot_delta.as_ref() {
-            Some(rust_llvm_cov_runner::RustSnapshotDelta::Modified(paths)) => {
+        ResolvedRustPopulation::ReusablePrior { delta, .. } => match delta {
+            rust_llvm_cov_runner::RustSnapshotDelta::Modified(paths) => {
                 let (source_paths, test_paths) =
                     crate::test_runner::runners::partition_changed_paths(paths);
                 (source_paths, test_paths, paths.len(), false)
             }
-            Some(rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange) => {
+            rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => {
                 (Vec::new(), Vec::new(), 0, true)
             }
-            Some(rust_llvm_cov_runner::RustSnapshotDelta::Unchanged) | None => {
+            rust_llvm_cov_runner::RustSnapshotDelta::Unchanged => {
                 (Vec::new(), Vec::new(), 0, false)
             }
         },
-        RustSelectionBasis::Population => {
-            let structural = resolved.snapshot_delta.as_ref().is_some_and(|delta| {
-                *delta == rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange
-            });
-            if structural {
-                (Vec::new(), Vec::new(), 0, true)
-            } else {
-                (
-                    rust_vcs_source_paths.to_vec(),
-                    rust_vcs_test_paths.to_vec(),
-                    0,
-                    false,
-                )
-            }
-        }
+        ResolvedRustPopulation::StructuralStale => (Vec::new(), Vec::new(), 0, true),
+        ResolvedRustPopulation::ColdStale => (
+            rust_vcs_source_paths.to_vec(),
+            rust_vcs_test_paths.to_vec(),
+            0,
+            false,
+        ),
     }
 }
 
@@ -215,8 +200,9 @@ fn effective_rust_changed_lines(
 ) -> BTreeMap<PathBuf, BTreeSet<u32>> {
     if let Some(resolved) = resolved
         && matches!(
-            resolved.basis,
-            RustSelectionBasis::Current | RustSelectionBasis::ReusablePrior
+            resolved,
+            ResolvedRustPopulation::Current { .. }
+                | ResolvedRustPopulation::ReusablePrior { .. }
         )
     {
         return changed_lines_for_sources(changed_lines, rust_source_paths);
@@ -227,21 +213,32 @@ fn effective_rust_changed_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_runner::coverage_decision::CoverageFreshness;
 
-    fn resolved(
-        basis: RustSelectionBasis,
-        snapshot_delta: Option<rust_llvm_cov_runner::RustSnapshotDelta>,
+    fn empty_population_state() -> rust_llvm_cov_runner::RustPopulationState {
+        rust_llvm_cov_runner::RustPopulationState {
+            input_fingerprint: String::new(),
+            generation_fingerprint: String::new(),
+            selection_context_fingerprint: String::new(),
+            entries_fingerprint: String::new(),
+            selectors: Vec::new(),
+            line_index: BTreeMap::new(),
+            ordinary_source_digests: BTreeMap::new(),
+            test_binaries: BTreeMap::new(),
+        }
+    }
+
+    fn resolved_current() -> ResolvedRustPopulation {
+        ResolvedRustPopulation::Current {
+            state: empty_population_state(),
+        }
+    }
+
+    fn resolved_reusable(
+        delta: rust_llvm_cov_runner::RustSnapshotDelta,
     ) -> ResolvedRustPopulation {
-        ResolvedRustPopulation {
-            freshness: match basis {
-                RustSelectionBasis::Current => CoverageFreshness::Fresh,
-                RustSelectionBasis::ReusablePrior => CoverageFreshness::ReusablePrior,
-                RustSelectionBasis::Population => CoverageFreshness::Stale,
-            },
-            basis,
-            state: None,
-            snapshot_delta,
+        ResolvedRustPopulation::ReusablePrior {
+            state: empty_population_state(),
+            delta,
         }
     }
 
@@ -281,7 +278,7 @@ mod tests {
         let vcs_test = PathBuf::from("tests/integration.rs");
         assert_eq!(
             effective_paths_for_resolution(
-                &resolved(RustSelectionBasis::Current, None),
+                &resolved_current(),
                 std::slice::from_ref(&vcs_source),
                 std::slice::from_ref(&vcs_test),
             ),
@@ -291,12 +288,9 @@ mod tests {
         let modified = PathBuf::from("src/changed.rs");
         assert_eq!(
             effective_paths_for_resolution(
-                &resolved(
-                    RustSelectionBasis::ReusablePrior,
-                    Some(rust_llvm_cov_runner::RustSnapshotDelta::Modified(vec![
-                        modified.clone()
-                    ])),
-                ),
+                &resolved_reusable(rust_llvm_cov_runner::RustSnapshotDelta::Modified(vec![
+                    modified.clone()
+                ])),
                 &[],
                 &[],
             ),
@@ -305,10 +299,7 @@ mod tests {
 
         assert_eq!(
             effective_paths_for_resolution(
-                &resolved(
-                    RustSelectionBasis::ReusablePrior,
-                    Some(rust_llvm_cov_runner::RustSnapshotDelta::Unchanged),
-                ),
+                &resolved_reusable(rust_llvm_cov_runner::RustSnapshotDelta::Unchanged),
                 &[],
                 &[],
             ),
@@ -320,10 +311,7 @@ mod tests {
     fn effective_paths_mark_structural_population() {
         assert_eq!(
             effective_paths_for_resolution(
-                &resolved(
-                    RustSelectionBasis::Population,
-                    Some(rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange),
-                ),
+                &ResolvedRustPopulation::StructuralStale,
                 &[],
                 &[],
             ),
@@ -332,7 +320,7 @@ mod tests {
         let vcs_source = PathBuf::from("src/lib.rs");
         assert_eq!(
             effective_paths_for_resolution(
-                &resolved(RustSelectionBasis::Population, None),
+                &ResolvedRustPopulation::ColdStale,
                 std::slice::from_ref(&vcs_source),
                 &[],
             ),
@@ -348,7 +336,7 @@ mod tests {
             effective_rust_changed_lines(
                 &changed,
                 std::slice::from_ref(&path),
-                Some(&resolved(RustSelectionBasis::Current, None)),
+                Some(&resolved_current()),
             ),
             changed
         );
@@ -356,11 +344,8 @@ mod tests {
             effective_rust_changed_lines(
                 &changed,
                 std::slice::from_ref(&path),
-                Some(&resolved(
-                    RustSelectionBasis::ReusablePrior,
-                    Some(rust_llvm_cov_runner::RustSnapshotDelta::Modified(vec![
-                        path.clone()
-                    ])),
+                Some(&resolved_reusable(
+                    rust_llvm_cov_runner::RustSnapshotDelta::Modified(vec![path.clone()]),
                 )),
             ),
             changed
@@ -369,9 +354,8 @@ mod tests {
             effective_rust_changed_lines(
                 &changed,
                 &[],
-                Some(&resolved(
-                    RustSelectionBasis::ReusablePrior,
-                    Some(rust_llvm_cov_runner::RustSnapshotDelta::Unchanged),
+                Some(&resolved_reusable(
+                    rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
                 )),
             )
             .is_empty()

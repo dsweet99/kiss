@@ -103,7 +103,7 @@ impl RustModule {
         {
             return Ok(RustSelectionBasis::Current);
         }
-        Ok(self.resolved_state()?.basis)
+        Ok(self.resolved_state()?.basis())
     }
 
     fn resolved_state(&self) -> Result<&ResolvedRustPopulation, String> {
@@ -151,7 +151,7 @@ impl LanguagePlanner for RustModule {
             return Ok(CoverageFreshness::Fresh);
         }
         let resolved = self.resolved_state()?;
-        Ok(resolved.freshness)
+        Ok(resolved.freshness())
     }
 
     fn population_plan(&self, universe: &[TestSelector]) -> PopulationPlan {
@@ -213,16 +213,14 @@ pub(crate) fn select_fresh_rust_source_selectors(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_runner::coverage_decision::{CoverageFreshness, RustSelectionBasis};
+    use crate::test_runner::coverage_decision::CoverageFreshness;
     use rust_llvm_cov_runner::RustPopulationState;
 
     #[test]
     fn freshness_trusts_resolved_partial_current_population() {
         let tmp = tempfile::tempdir().unwrap();
-        let resolved = ResolvedRustPopulation {
-            freshness: CoverageFreshness::Fresh,
-            basis: RustSelectionBasis::Current,
-            state: Some(RustPopulationState {
+        let resolved = ResolvedRustPopulation::Current {
+            state: RustPopulationState {
                 input_fingerprint: "input".to_string(),
                 generation_fingerprint: "generation".to_string(),
                 selection_context_fingerprint: "selection".to_string(),
@@ -231,8 +229,7 @@ mod tests {
                 line_index: BTreeMap::new(),
                 ordinary_source_digests: BTreeMap::new(),
                 test_binaries: BTreeMap::new(),
-            }),
-            snapshot_delta: None,
+            },
         };
         let module = RustModule::new_with_resolved(RustBackerInput {
             repo_root: tmp.path(),

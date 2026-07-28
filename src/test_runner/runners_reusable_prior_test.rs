@@ -43,7 +43,7 @@ fn reusable_prior_real_cache_fixture() {
     assert_eq!(
         resolve_rust_population_state(repo, &[], std::slice::from_ref(&cli), &[])
             .expect("resolved")
-            .freshness,
+            .freshness(),
         CoverageFreshness::ReusablePrior
     );
     assert!(!plan.rust_population_required);

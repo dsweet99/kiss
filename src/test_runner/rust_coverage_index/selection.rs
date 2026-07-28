@@ -8,12 +8,44 @@ use super::{
     rust_coverage_cache_root, selectors_by_changed_file_line, selectors_for_source_paths,
 };
 
+/// Resolved Rust coverage population path. Variants carry only the data that
+/// path needs; illegal freshness/basis/state/delta bags cannot be constructed.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ResolvedRustPopulation {
-    pub(crate) freshness: CoverageFreshness,
-    pub(crate) basis: RustSelectionBasis,
-    pub(crate) state: Option<rust_llvm_cov_runner::RustPopulationState>,
-    pub(crate) snapshot_delta: Option<rust_llvm_cov_runner::RustSnapshotDelta>,
+pub(crate) enum ResolvedRustPopulation {
+    Current {
+        state: rust_llvm_cov_runner::RustPopulationState,
+    },
+    ReusablePrior {
+        state: rust_llvm_cov_runner::RustPopulationState,
+        delta: rust_llvm_cov_runner::RustSnapshotDelta,
+    },
+    StructuralStale,
+    ColdStale,
+}
+
+impl ResolvedRustPopulation {
+    pub(crate) fn freshness(&self) -> CoverageFreshness {
+        match self {
+            Self::Current { .. } => CoverageFreshness::Fresh,
+            Self::ReusablePrior { .. } => CoverageFreshness::ReusablePrior,
+            Self::StructuralStale | Self::ColdStale => CoverageFreshness::Stale,
+        }
+    }
+
+    pub(crate) fn basis(&self) -> RustSelectionBasis {
+        match self {
+            Self::Current { .. } => RustSelectionBasis::Current,
+            Self::ReusablePrior { .. } => RustSelectionBasis::ReusablePrior,
+            Self::StructuralStale | Self::ColdStale => RustSelectionBasis::Population,
+        }
+    }
+
+    pub(crate) fn state(&self) -> Option<&rust_llvm_cov_runner::RustPopulationState> {
+        match self {
+            Self::Current { state } | Self::ReusablePrior { state, .. } => Some(state),
+            Self::StructuralStale | Self::ColdStale => None,
+        }
+    }
 }
 
 pub(crate) fn resolve_rust_population_state(
@@ -29,13 +61,8 @@ pub(crate) fn resolve_rust_population_state(
     // selector universe into the population / check-aggregate artifacts.
     let current =
         rust_llvm_cov_runner::load_current_population_state(&cache_root, repo_root, &identity, None);
-    if current.is_some() {
-        return Ok(ResolvedRustPopulation {
-            freshness: CoverageFreshness::Fresh,
-            basis: RustSelectionBasis::Current,
-            state: current,
-            snapshot_delta: None,
-        });
+    if let Some(current) = current {
+        return Ok(ResolvedRustPopulation::Current { state: current });
     }
     let partial_current = rust_llvm_cov_runner::load_current_population_state(
         &cache_root,
@@ -52,11 +79,8 @@ pub(crate) fn resolve_rust_population_state(
             &partial_current,
         )
     {
-        return Ok(ResolvedRustPopulation {
-            freshness: CoverageFreshness::Fresh,
-            basis: RustSelectionBasis::Current,
-            state: Some(partial_current),
-            snapshot_delta: None,
+        return Ok(ResolvedRustPopulation::Current {
+            state: partial_current,
         });
     }
     let universe = super::super::runners::enumerate_workspace_rust_selectors(repo_root, ignore)?;
@@ -73,26 +97,14 @@ pub(crate) fn resolve_rust_population_state(
             &identity.ordinary_source_digests,
         );
         if delta == rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange {
-            return Ok(ResolvedRustPopulation {
-                freshness: CoverageFreshness::Stale,
-                basis: RustSelectionBasis::Population,
-                state: None,
-                snapshot_delta: Some(delta),
-            });
+            return Ok(ResolvedRustPopulation::StructuralStale);
         }
-        return Ok(ResolvedRustPopulation {
-            freshness: CoverageFreshness::ReusablePrior,
-            basis: RustSelectionBasis::ReusablePrior,
-            state: Some(reusable),
-            snapshot_delta: Some(delta),
+        return Ok(ResolvedRustPopulation::ReusablePrior {
+            state: reusable,
+            delta,
         });
     }
-    Ok(ResolvedRustPopulation {
-        freshness: CoverageFreshness::Stale,
-        basis: RustSelectionBasis::Population,
-        state: None,
-        snapshot_delta: None,
-    })
+    Ok(ResolvedRustPopulation::ColdStale)
 }
 
 fn current_partial_population_covers_selection(
@@ -135,30 +147,31 @@ pub(crate) fn select_rust_source_selectors_for_basis(
     if std::env::var_os("KISS_PLAN_TRACE").is_some() {
         eprintln!(
             "KISS_PLAN_TRACE rust_basis={:?} check_agg={} changed_line_files={} sources={}",
-            resolved.basis,
+            resolved.basis(),
             resolved
-                .state
-                .as_ref()
+                .state()
                 .is_some_and(rust_llvm_cov_runner::is_check_aggregate_population),
             rust_changed_lines.len(),
             rust_source_paths.len()
         );
     }
-    match resolved.basis {
-        RustSelectionBasis::Current => select_current_basis_rust_source_selectors(
+    match resolved {
+        ResolvedRustPopulation::Current { state } => select_current_basis_rust_source_selectors(
             repo_root,
             rust_source_paths,
             rust_changed_lines,
             test_args,
-            resolved.state.as_ref()?,
+            state,
         ),
-        RustSelectionBasis::ReusablePrior => select_reusable_prior_rust_source_selectors(
-            repo_root,
-            rust_source_paths,
-            rust_changed_lines,
-            resolved.state.as_ref()?,
-        ),
-        RustSelectionBasis::Population => None,
+        ResolvedRustPopulation::ReusablePrior { state, .. } => {
+            select_reusable_prior_rust_source_selectors(
+                repo_root,
+                rust_source_paths,
+                rust_changed_lines,
+                state,
+            )
+        }
+        ResolvedRustPopulation::StructuralStale | ResolvedRustPopulation::ColdStale => None,
     }
 }
 
@@ -339,14 +352,23 @@ mod coverage_witness {
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
-    fn witness_resolved_population_struct() {
-        let resolved = ResolvedRustPopulation {
-            freshness: CoverageFreshness::ReusablePrior,
-            basis: RustSelectionBasis::ReusablePrior,
-            state: None,
-            snapshot_delta: None,
+    fn witness_resolved_population_enum() {
+        let resolved = ResolvedRustPopulation::ReusablePrior {
+            state: RustPopulationState {
+                input_fingerprint: String::new(),
+                generation_fingerprint: String::new(),
+                selection_context_fingerprint: String::new(),
+                entries_fingerprint: String::new(),
+                selectors: Vec::new(),
+                line_index: BTreeMap::new(),
+                ordinary_source_digests: BTreeMap::new(),
+                test_binaries: BTreeMap::new(),
+            },
+            delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
         };
-        assert_eq!(resolved.basis, RustSelectionBasis::ReusablePrior);
+        assert_eq!(resolved.basis(), RustSelectionBasis::ReusablePrior);
+        assert_eq!(resolved.freshness(), CoverageFreshness::ReusablePrior);
+        assert!(resolved.state().is_some());
     }
 
     #[test]

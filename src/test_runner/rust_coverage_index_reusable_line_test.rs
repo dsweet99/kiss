@@ -1,4 +1,3 @@
-use crate::test_runner::coverage_decision::{CoverageFreshness, RustSelectionBasis};
 use crate::test_runner::rust_coverage_index::{
     ResolvedRustPopulation, current_rust_coverage_batch_identity,
     select_rust_source_selectors_for_basis, write_test_entry,
@@ -22,10 +21,8 @@ fn write_line_entry(repo_root: &Path, lib: &Path, name: &str, line: u32) {
 fn reusable_prior_state(repo_root: &Path) -> ResolvedRustPopulation {
     let identity = current_rust_coverage_batch_identity(repo_root, &[]).unwrap();
     let selector_names = ["tests::alpha".to_string(), "tests::beta".to_string()];
-    ResolvedRustPopulation {
-        freshness: CoverageFreshness::ReusablePrior,
-        basis: RustSelectionBasis::ReusablePrior,
-        state: Some(rust_llvm_cov_runner::RustPopulationState {
+    ResolvedRustPopulation::ReusablePrior {
+        state: rust_llvm_cov_runner::RustPopulationState {
             input_fingerprint: String::new(),
             generation_fingerprint: identity.generation_fingerprint,
             selection_context_fingerprint: String::new(),
@@ -37,8 +34,8 @@ fn reusable_prior_state(repo_root: &Path) -> ResolvedRustPopulation {
             )]),
             ordinary_source_digests: BTreeMap::new(),
             test_binaries: BTreeMap::new(),
-        }),
-        snapshot_delta: None,
+        },
+        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     }
 }
 

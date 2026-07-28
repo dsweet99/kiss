@@ -31,11 +31,9 @@ fn reusable_prior_selection_fails_on_missing_index_row() {
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
     };
-    let resolved = ResolvedRustPopulation {
-        freshness: CoverageFreshness::ReusablePrior,
-        basis: RustSelectionBasis::ReusablePrior,
-        state: Some(population),
-        snapshot_delta: None,
+    let resolved = ResolvedRustPopulation::ReusablePrior {
+        state: population,
+        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     assert!(
         select_rust_source_selectors_for_basis(
@@ -65,11 +63,9 @@ fn reusable_prior_selection_fails_on_empty_index_row() {
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
     };
-    let resolved = ResolvedRustPopulation {
-        freshness: CoverageFreshness::ReusablePrior,
-        basis: RustSelectionBasis::ReusablePrior,
-        state: Some(population),
-        snapshot_delta: None,
+    let resolved = ResolvedRustPopulation::ReusablePrior {
+        state: population,
+        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     assert!(
         select_rust_source_selectors_for_basis(
@@ -105,11 +101,9 @@ fn reusable_prior_selects_all_file_level_selectors_for_affected_file() {
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
     };
-    let resolved = ResolvedRustPopulation {
-        freshness: CoverageFreshness::ReusablePrior,
-        basis: RustSelectionBasis::ReusablePrior,
-        state: Some(population),
-        snapshot_delta: None,
+    let resolved = ResolvedRustPopulation::ReusablePrior {
+        state: population,
+        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     let selected = select_rust_source_selectors_for_basis(
         tmp.path(),
@@ -155,11 +149,9 @@ fn reusable_prior_unions_selectors_from_multiple_affected_files() {
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
     };
-    let resolved = ResolvedRustPopulation {
-        freshness: CoverageFreshness::ReusablePrior,
-        basis: RustSelectionBasis::ReusablePrior,
-        state: Some(population),
-        snapshot_delta: None,
+    let resolved = ResolvedRustPopulation::ReusablePrior {
+        state: population,
+        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     let selected = select_rust_source_selectors_for_basis(
         tmp.path(),
@@ -194,11 +186,9 @@ fn reusable_prior_uses_file_level_selectors_without_line_coordinate_matching() {
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
     };
-    let resolved = ResolvedRustPopulation {
-        freshness: CoverageFreshness::ReusablePrior,
-        basis: RustSelectionBasis::ReusablePrior,
-        state: Some(population),
-        snapshot_delta: None,
+    let resolved = ResolvedRustPopulation::ReusablePrior {
+        state: population,
+        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     let changed_lines = BTreeMap::from([(lib.clone(), BTreeSet::from([99u32]))]);
     let selected = select_rust_source_selectors_for_basis(
@@ -231,11 +221,9 @@ fn reusable_prior_selection_fails_on_non_rust_extension() {
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
     };
-    let resolved = ResolvedRustPopulation {
-        freshness: CoverageFreshness::ReusablePrior,
-        basis: RustSelectionBasis::ReusablePrior,
-        state: Some(population),
-        snapshot_delta: None,
+    let resolved = ResolvedRustPopulation::ReusablePrior {
+        state: population,
+        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     assert!(
         select_rust_source_selectors_for_basis(
@@ -258,10 +246,10 @@ fn resolve_stale_population_when_no_manifest_matches() {
     let resolved: ResolvedRustPopulation =
         resolve_rust_population_state(tmp.path(), &[], std::slice::from_ref(&lib), &[])
             .expect("resolved population");
-    assert_eq!(resolved.freshness, CoverageFreshness::Stale);
-    assert_eq!(resolved.basis, RustSelectionBasis::Population);
-    assert!(resolved.state.is_none());
-    assert!(resolved.snapshot_delta.is_none());
+    assert_eq!(resolved, ResolvedRustPopulation::ColdStale);
+    assert_eq!(resolved.freshness(), CoverageFreshness::Stale);
+    assert_eq!(resolved.basis(), RustSelectionBasis::Population);
+    assert!(resolved.state().is_none());
 }
 
 #[test]
@@ -285,11 +273,9 @@ fn reusable_prior_is_not_claimed_complete_behavioral_impact_analysis() {
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
     };
-    let resolved = ResolvedRustPopulation {
-        freshness: CoverageFreshness::ReusablePrior,
-        basis: RustSelectionBasis::ReusablePrior,
-        state: Some(population),
-        snapshot_delta: None,
+    let resolved = ResolvedRustPopulation::ReusablePrior {
+        state: population,
+        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     let selected = select_rust_source_selectors_for_basis(
         tmp.path(),
@@ -338,11 +324,9 @@ fn added_deleted_and_missing_rust_paths_require_population() {
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
     };
-    let resolved = ResolvedRustPopulation {
-        freshness: CoverageFreshness::ReusablePrior,
-        basis: RustSelectionBasis::ReusablePrior,
-        state: Some(population),
-        snapshot_delta: None,
+    let resolved = ResolvedRustPopulation::ReusablePrior {
+        state: population,
+        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     assert!(
         select_rust_source_selectors_for_basis(
