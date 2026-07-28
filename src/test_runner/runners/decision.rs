@@ -45,6 +45,14 @@ pub(crate) fn combined_selectors(
     lang_filter: Option<kiss::Language>,
     ignore: &[String],
 ) -> Result<SelectorPlan, String> {
+    let plan_trace = std::env::var_os("KISS_PLAN_TRACE").is_some();
+    let mut mark = std::time::Instant::now();
+    let mut lap = |label: &str| {
+        if plan_trace {
+            eprintln!("KISS_PLAN_TRACE {label}_ms={}", mark.elapsed().as_millis());
+            mark = std::time::Instant::now();
+        }
+    };
     let prepared = decision_rust_paths::prepare_rust_inputs(
         repo_root,
         source_paths,
@@ -54,6 +62,7 @@ pub(crate) fn combined_selectors(
         lang_filter,
         ignore,
     )?;
+    lap("prepare_rust_inputs");
     let changed_sources =
         changed_sources_for_engine(&prepared.py_source_paths, &prepared.rust_source_paths);
     let engine_backers = engine_backers(EngineBackerInputs {
@@ -66,14 +75,25 @@ pub(crate) fn combined_selectors(
         lang_filter,
         ignore,
         changed_tests: &prepared.changed_tests,
-        rust_resolved: prepared.rust_resolved,
+        rust_resolved: prepared.rust_resolved.clone(),
     })?;
+    lap("engine_backers");
+    let plan = assemble_selector_plan(prepared, engine_backers, &changed_sources)?;
+    lap("engine_plan");
+    Ok(plan)
+}
+
+fn assemble_selector_plan(
+    prepared: decision_rust_paths::PreparedRustInputs,
+    engine_backers: EngineBackers,
+    changed_sources: &[ChangedSource],
+) -> Result<SelectorPlan, String> {
     let python_prior_failure_selectors =
         selectors_for_language(&engine_backers.prior_failures, kiss::Language::Python);
     let rust_prior_failure_selectors =
         selectors_for_language(&engine_backers.prior_failures, kiss::Language::Rust);
     let pre_rust_selection_basis = rust_selection_basis_from_backers(&engine_backers.backers);
-    let engine_plan = CoverageDecisionEngine::new(engine_backers.backers).plan(&changed_sources)?;
+    let engine_plan = CoverageDecisionEngine::new(engine_backers.backers).plan(changed_sources)?;
     let (selected_py, selected_rs) = selectors_by_language(&engine_plan.selected);
     let (population_py, population_rs) = selectors_by_language(&engine_plan.population);
     let python_population_required = engine_plan
@@ -97,7 +117,7 @@ pub(crate) fn combined_selectors(
     } else {
         selected_rs
     };
-    let plan = SelectorPlan {
+    Ok(SelectorPlan {
         py_selectors,
         rust_selectors,
         python_population_required,
@@ -112,8 +132,7 @@ pub(crate) fn combined_selectors(
         rust_prior_failure_selectors,
         coverage_decision_engine_used: true,
         rust_selection_basis,
-    };
-    Ok(plan)
+    })
 }
 
 fn rust_selection_basis_from_backers(backers: &[Box<dyn LanguagePlanner>]) -> RustSelectionBasis {

@@ -31,6 +31,10 @@ mod python_collect_acceptance_test;
 #[cfg(test)]
 #[path = "runners/python_collect_error_test.rs"]
 mod python_collect_error_test;
+use super::python_coverage_index::{
+    PYTHON_COVERAGE_ENV_KEYS, repo_relative_path as python_repo_relative_path,
+    stored_python_universe_selectors,
+};
 use python_collect::collect_python_nodeids;
 #[cfg(test)]
 #[path = "runners/python_collect_test.rs"]
@@ -221,8 +225,12 @@ pub fn enumerate_tests_in_changed_files(
         }
     };
     if !py.is_empty() {
-        for nodeid in collect_python_nodeids(repo_root, Some(&py), &[])? {
-            out.python_nodeids.insert(nodeid);
+        if let Some(nodeids) = python_nodeids_from_stored_universe(repo_root, &py) {
+            out.python_nodeids.extend(nodeids);
+        } else {
+            for nodeid in collect_python_nodeids(repo_root, Some(&py), &[])? {
+                out.python_nodeids.insert(nodeid);
+            }
         }
     }
     if !rs.is_empty() {
@@ -238,6 +246,25 @@ pub fn enumerate_tests_in_changed_files(
         }
     }
     Ok(out)
+}
+
+fn python_nodeids_from_stored_universe(
+    repo_root: &Path,
+    py_files: &[PathBuf],
+) -> Option<BTreeSet<String>> {
+    let selectors = stored_python_universe_selectors(repo_root, &[], PYTHON_COVERAGE_ENV_KEYS)?;
+    let mut rels = BTreeSet::new();
+    for path in py_files {
+        rels.insert(python_repo_relative_path(repo_root, path)?);
+    }
+    let mut out = BTreeSet::new();
+    for selector in selectors {
+        let file = selector.split("::").next().unwrap_or(selector.as_str());
+        if rels.contains(file) {
+            out.insert(selector);
+        }
+    }
+    Some(out)
 }
 
 pub fn enumerate_workspace_rust_selectors(

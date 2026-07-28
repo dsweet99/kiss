@@ -25,6 +25,11 @@ pub fn batch_identity(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> io::Result<RustCoverageBatchIdentity> {
+    if let Some(cached) =
+        crate::batch_identity_seal::try_identity_from_mtime_seal(&req.cache_root, &req.source_root, req, tools)
+    {
+        return Ok(cached);
+    }
     let snapshot = rust_input_snapshot(&req.source_root, req)
         .map_err(|err| io::Error::other(format!("{err:?}")))?;
     let generation_fingerprint = generation_fingerprint(

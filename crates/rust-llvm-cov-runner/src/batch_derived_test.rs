@@ -2,7 +2,7 @@ use super::*;
 use crate::batch_fingerprint::entry_fingerprint;
 use crate::rust_cov_cache::store_rust_cov_cache_entry;
 use crate::test_support::{derived_fixture_request, store_alpha_entry, witness_batch_tools};
-use crate::{RustCovCacheStatus, RustLlvmCovOutcome, RustTestBinaryIdentity};
+use crate::{RustCovCacheStatus, RustLlvmCovOutcome};
 use std::path::Path;
 use std::time::Duration;
 
@@ -242,100 +242,6 @@ fn index_contains_file(cache_root: &Path, file: &str) -> bool {
 
 fn read_index_json(cache_root: &Path) -> serde_json::Value {
     serde_json::from_slice(&std::fs::read(cache_root.join("index.json")).unwrap()).unwrap()
-}
-
-#[test]
-fn conservative_check_aggregate_publish_writes_valid_population_index() {
-    let repo = tempfile::tempdir().unwrap();
-    write_aggregate_backed_repo(repo.path());
-    let mut req = derived_fixture_request(repo.path());
-    req.logical_selectors = vec!["alpha".to_string(), "beta".to_string()];
-    req.population_publication_selectors = Some(req.logical_selectors.clone());
-    let tools = witness_batch_tools();
-    let identity = crate::batch_fingerprint::batch_identity(&req, &tools).unwrap();
-    let selectors = vec!["beta".to_string(), "alpha".to_string()];
-    let binaries = [
-        aggregate_binary(repo.path(), "bin-a"),
-        aggregate_binary(repo.path(), "bin-b"),
-    ];
-    let aggregate = crate::build_check_aggregate(
-        &req,
-        &identity,
-        &selectors,
-        BTreeMap::from([
-            ("alpha".to_string(), vec!["bin-a".to_string()]),
-            ("beta".to_string(), vec!["bin-b".to_string()]),
-        ]),
-        &binaries,
-        BTreeMap::from([
-            (
-                "bin-a".to_string(),
-                RustLineCoverage {
-                    files: BTreeMap::from([("src/a.rs".to_string(), BTreeSet::from([1]))]),
-                },
-            ),
-            (
-                "bin-b".to_string(),
-                RustLineCoverage {
-                    files: BTreeMap::from([("src/b.rs".to_string(), BTreeSet::from([2]))]),
-                },
-            ),
-        ]),
-    )
-    .unwrap();
-    crate::publish_check_aggregate(&req, &aggregate).unwrap();
-
-    let counters = publish_conservative_derived_state_from_check_aggregate(
-        &req, &tools, &identity, &aggregate,
-    )
-    .unwrap();
-
-    assert_eq!(counters.entry_generation_count, 0);
-    assert_eq!(
-        counters.current_index_generation,
-        identity.generation_fingerprint
-    );
-    let state = crate::batch_derived_index::load_current_population_state(
-        &req.cache_root,
-        repo.path(),
-        &identity,
-        Some(&aggregate.selectors),
-    )
-    .expect("aggregate-backed population state");
-    let all_selectors = BTreeSet::from(["alpha".to_string(), "beta".to_string()]);
-    assert_eq!(state.line_index["src/a.rs"], all_selectors);
-    assert_eq!(state.line_index["src/b.rs"], all_selectors);
-    assert_eq!(
-        state.test_binaries.keys().cloned().collect::<Vec<_>>(),
-        vec!["bin-a".to_string(), "bin-b".to_string()]
-    );
-}
-
-fn write_aggregate_backed_repo(repo: &Path) {
-    std::fs::create_dir_all(repo.join("src")).unwrap();
-    std::fs::create_dir_all(repo.join("target")).unwrap();
-    std::fs::write(repo.join("Cargo.toml"), "[package]\n").unwrap();
-    std::fs::write(repo.join("src").join("a.rs"), "pub fn a() {}\n").unwrap();
-    std::fs::write(repo.join("src").join("b.rs"), "pub fn b() {}\n").unwrap();
-    std::fs::write(repo.join("target").join("bin-a"), "binary-a").unwrap();
-    std::fs::write(repo.join("target").join("bin-b"), "binary-b").unwrap();
-}
-
-fn aggregate_binary(repo: &Path, binary_id: &str) -> RustTestBinaryIdentity {
-    let digest = match binary_id {
-        "bin-a" => "aaaaaaaaaaaaaaaa",
-        "bin-b" => "bbbbbbbbbbbbbbbb",
-        other => panic!("unexpected aggregate binary id: {other}"),
-    };
-    RustTestBinaryIdentity {
-        id: binary_id.to_string(),
-        executable: repo
-            .join("target")
-            .join(binary_id)
-            .to_string_lossy()
-            .to_string(),
-        digest: digest.to_string(),
-    }
 }
 
 #[test]

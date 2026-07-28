@@ -44,9 +44,122 @@ fn load_current_population_state_accepts_empty_check_aggregate_coverage() {
     assert_eq!(state.selectors, fixture.selectors);
     assert_eq!(state.test_binaries.len(), 2);
     assert!(state.entries_fingerprint.starts_with("check-aggregate:"));
+    assert!(crate::is_check_aggregate_population(&state));
     assert_eq!(
         load_current_generation_line_index(&fixture.req.cache_root, fixture.repo.path()),
         Some(BTreeMap::new())
+    );
+}
+
+#[test]
+fn load_check_aggregate_population_skips_index_json_body() {
+    let fixture = aggregate_backed_population_fixture();
+    let index_path = fixture.req.cache_root.join("index.json");
+    let original = std::fs::read(&index_path).expect("index.json");
+    // Corrupt the huge files map while leaving a parseable stub that would fail
+    // full conservative equality if it were consulted.
+    std::fs::write(
+        &index_path,
+        format!(
+            "{{\n  \"schema_version\": \"{}\",\n  \"source_root\": \"{}\",\n  \"generation_fingerprint\": \"tampered\",\n  \"entries_fingerprint\": \"tampered\",\n  \"files\": {{}}\n}}\n",
+            crate::batch_derived::INDEX_SCHEMA_VERSION,
+            fixture.repo.path().canonicalize().unwrap().display()
+        ),
+    )
+    .unwrap();
+
+    let state = load_current_population_state(
+        &fixture.req.cache_root,
+        fixture.repo.path(),
+        &fixture.identity,
+        Some(&fixture.selectors),
+    )
+    .expect("check-aggregate load must not require index.json body");
+    assert!(state.line_index.contains_key("src/a.rs"));
+    assert!(state.line_index["src/a.rs"].is_empty());
+    assert_eq!(state.selectors, fixture.selectors);
+
+    std::fs::write(&index_path, original).unwrap();
+}
+
+#[test]
+fn load_check_aggregate_population_rejects_malformed_index_json() {
+    let fixture = aggregate_backed_population_fixture();
+    let index_path = fixture.req.cache_root.join("index.json");
+    std::fs::write(&index_path, "{ deliberately broken").unwrap();
+    assert!(
+        load_current_population_state(
+            &fixture.req.cache_root,
+            fixture.repo.path(),
+            &fixture.identity,
+            Some(&fixture.selectors),
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn load_check_aggregate_population_accepts_large_index_with_object_prefix() {
+    let fixture = aggregate_backed_population_fixture();
+    let index_path = fixture.req.cache_root.join("index.json");
+    // Larger than the full-parse byte limit: must not DOM-parse; object prefix is enough.
+    let mut huge = Vec::with_capacity(4 * 1024 * 1024 + 64);
+    huge.extend_from_slice(b"{\n  \"schema_version\": \"x\",\n  \"pad\": \"");
+    huge.extend(std::iter::repeat_n(b'a', 4 * 1024 * 1024));
+    huge.extend_from_slice(b"\"\n}\n");
+    std::fs::write(&index_path, huge).unwrap();
+
+    let state = load_current_population_state(
+        &fixture.req.cache_root,
+        fixture.repo.path(),
+        &fixture.identity,
+        Some(&fixture.selectors),
+    )
+    .expect("large parseable-prefix index must not block check-aggregate load");
+    assert!(crate::is_check_aggregate_population(&state));
+}
+
+#[test]
+fn load_check_aggregate_population_rejects_large_index_without_object_prefix() {
+    let fixture = aggregate_backed_population_fixture();
+    let index_path = fixture.req.cache_root.join("index.json");
+    let mut huge = Vec::with_capacity(4 * 1024 * 1024 + 8);
+    huge.extend_from_slice(b"[");
+    huge.extend(std::iter::repeat_n(b'a', 4 * 1024 * 1024));
+    huge.extend_from_slice(b"]");
+    std::fs::write(&index_path, huge).unwrap();
+    assert!(
+        load_current_population_state(
+            &fixture.req.cache_root,
+            fixture.repo.path(),
+            &fixture.identity,
+            Some(&fixture.selectors),
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn conservative_check_aggregate_publish_writes_valid_population_index() {
+    let fixture = aggregate_backed_population_fixture();
+    let state = load_current_population_state(
+        &fixture.req.cache_root,
+        fixture.repo.path(),
+        &fixture.identity,
+        Some(&fixture.selectors),
+    )
+    .expect("aggregate-backed population state");
+    assert!(state.line_index.contains_key("src/a.rs"));
+    assert!(state.line_index.contains_key("src/b.rs"));
+    // In-memory check-aggregate index is compact (keys only); on-disk index.json
+    // still stores the full conservative file→all-selectors map for other readers.
+    assert!(state.line_index["src/a.rs"].is_empty());
+    assert!(state.line_index["src/b.rs"].is_empty());
+    assert_eq!(state.selectors, fixture.selectors);
+    assert!(crate::is_check_aggregate_population(&state));
+    assert_eq!(
+        state.test_binaries.keys().cloned().collect::<Vec<_>>(),
+        vec!["bin-a".to_string(), "bin-b".to_string()]
     );
 }
 

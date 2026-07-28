@@ -27,9 +27,18 @@ pub(super) fn prepare_rust_inputs(
     lang_filter: Option<kiss::Language>,
     ignore: &[String],
 ) -> Result<PreparedRustInputs, String> {
+    let plan_trace = std::env::var_os("KISS_PLAN_TRACE").is_some();
+    let mut mark = std::time::Instant::now();
+    let mut lap = |label: &str| {
+        if plan_trace {
+            eprintln!("KISS_PLAN_TRACE prep_{label}_ms={}", mark.elapsed().as_millis());
+            mark = std::time::Instant::now();
+        }
+    };
     let (py_source_paths, rust_vcs_source_paths) = super::split_source_paths(source_paths);
     let rust_vcs_source_count = rust_vcs_source_paths.len();
     let (py_test_paths, rust_vcs_test_paths) = split_test_paths(test_paths);
+    lap("split");
     let rust_resolution = resolve_effective_rust_paths(
         repo_root,
         &rust_vcs_source_paths,
@@ -38,14 +47,30 @@ pub(super) fn prepare_rust_inputs(
         lang_filter,
         ignore,
     )?;
+    lap("resolve_rust");
     let rust_changed_lines = effective_rust_changed_lines(
         changed_lines,
         &rust_resolution.source_paths,
         rust_resolution.resolved.as_ref(),
     );
+    lap("rust_changed_lines");
+    // Full check-aggregate file-level select makes Rust changed-test parsing
+    // redundant. Keep it when line-precise narrowing may drop to a subset.
     let mut effective_test_paths = py_test_paths;
-    effective_test_paths.extend(rust_resolution.test_paths.iter().cloned());
+    let line_precise = !rust_changed_lines.is_empty() && rust_changed_lines.len() <= 1;
+    if !line_precise
+        && check_aggregate_covers_changed_rust_sources(
+            repo_root,
+            &rust_resolution.source_paths,
+            rust_resolution.resolved.as_ref(),
+        )
+    {
+        // Python changed tests only.
+    } else {
+        effective_test_paths.extend(rust_resolution.test_paths.iter().cloned());
+    }
     let changed_tests = changed_test_selectors_by_language(repo_root, &effective_test_paths)?;
+    lap("changed_tests");
     Ok(PreparedRustInputs {
         python_changed_lines: changed_lines_for_sources(changed_lines, &py_source_paths),
         py_source_paths,
@@ -57,6 +82,36 @@ pub(super) fn prepare_rust_inputs(
         rust_snapshot_delta_modified: rust_resolution.snapshot_delta_modified,
         rust_snapshot_delta_structural: rust_resolution.snapshot_delta_structural,
     })
+}
+
+fn check_aggregate_covers_changed_rust_sources(
+    repo_root: &Path,
+    rust_source_paths: &[PathBuf],
+    resolved: Option<&ResolvedRustPopulation>,
+) -> bool {
+    let Some(resolved) = resolved else {
+        return false;
+    };
+    if resolved.basis != RustSelectionBasis::Current {
+        return false;
+    }
+    let Some(state) = resolved.state.as_ref() else {
+        return false;
+    };
+    if !rust_llvm_cov_runner::is_check_aggregate_population(state) {
+        return false;
+    }
+    for source_path in rust_source_paths {
+        let Some(key) =
+            crate::test_runner::rust_coverage_index::repo_relative_path(repo_root, source_path)
+        else {
+            continue;
+        };
+        if state.line_index.contains_key(&key) {
+            return true;
+        }
+    }
+    false
 }
 
 fn split_test_paths(test_paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>) {

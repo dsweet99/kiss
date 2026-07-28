@@ -181,7 +181,11 @@ pub(crate) fn select_fresh_python_source_selectors(
     py_source_paths: &[PathBuf],
     python_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
 ) -> Option<BTreeSet<String>> {
+    // Mirror Rust check-aggregate policy: only single-file diffs pay for
+    // entry-backed line narrowing. Larger diffs use the file-level index.
+    const LINE_PRECISE_FILE_LIMIT: usize = 1;
     if !python_changed_lines.is_empty()
+        && python_changed_lines.len() <= LINE_PRECISE_FILE_LIMIT
         && let Some(line_selectors) =
             select_python_source_selectors_hybrid(repo_root, py_source_paths, python_changed_lines)
     {

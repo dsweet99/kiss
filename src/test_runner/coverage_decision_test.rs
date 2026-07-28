@@ -67,7 +67,11 @@ impl LanguagePlanner for FakePlanner {
     }
 
     fn freshness(&self, universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
-        assert_eq!(universe, self.universe.as_slice());
+        // Engine may probe with `&[]` on the warm selective path before deciding
+        // whether pytest/cargo universe discovery is required.
+        if !universe.is_empty() {
+            assert_eq!(universe, self.universe.as_slice());
+        }
         Ok(self.freshness)
     }
 

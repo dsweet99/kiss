@@ -12,6 +12,7 @@ mod batch_derived;
 mod batch_derived_entries;
 mod batch_derived_incremental;
 mod batch_derived_index;
+mod batch_derived_index_check_aggregate_support;
 mod batch_derived_index_types;
 mod batch_derived_manifest;
 mod batch_derived_prune;
@@ -30,6 +31,9 @@ mod batch_export_ignore;
 mod batch_export_resolve;
 mod batch_export_tools;
 mod batch_fingerprint;
+mod batch_identity_seal;
+#[cfg(test)]
+mod batch_identity_seal_test;
 mod batch_lock;
 mod batch_output_channel;
 mod batch_output_channel_frame;
@@ -98,8 +102,9 @@ pub use batch_derived_entries::{RustReusableSelectorEntry, load_reusable_prior_s
 pub use batch_derived_incremental::{IncrementalPublishPlan, publish_incremental_derived_state};
 pub use batch_derived_index::{
     RustGenerationCoverageSnapshot, RustPopulationState, RustSnapshotDelta,
-    load_current_generation_coverage_snapshot, load_current_generation_line_index,
-    load_current_population_state, load_reusable_prior_population_state, reusable_snapshot_delta,
+    is_check_aggregate_population, load_current_generation_coverage_snapshot,
+    load_current_generation_line_index, load_current_population_state,
+    load_reusable_prior_population_state, reusable_snapshot_delta,
 };
 pub use batch_events::{
     BatchCompilerArtifact, BatchEventStream, BatchTestTerminal, aggregate_selectors_for_test,

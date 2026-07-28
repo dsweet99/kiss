@@ -7,10 +7,17 @@ use crate::batch_derived_index_types::{
     validate_ordinary_source_digests, validate_test_binaries,
 };
 use crate::batch_fingerprint::RustCoverageBatchIdentity;
+use crate::batch_derived_index_check_aggregate_support::{
+    CHECK_AGGREGATE_ENTRIES_PREFIX, index_matches_check_aggregate,
+    load_check_aggregate_population_state,
+};
 use crate::rust_cov_cache::{RustCovCacheEntry, generation_entries_fingerprint};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+pub(crate) use crate::batch_derived_index_check_aggregate_support::check_aggregate_entries_fingerprint;
+pub use crate::batch_derived_index_check_aggregate_support::is_check_aggregate_population;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RustPopulationState {
@@ -31,16 +38,6 @@ pub struct RustGenerationCoverageSnapshot {
     pub population: RustPopulationState,
 }
 
-const CHECK_AGGREGATE_ENTRIES_PREFIX: &str = "check-aggregate:";
-
-pub(crate) fn check_aggregate_entries_fingerprint(
-    aggregate: &crate::batch_check_aggregate::ValidatedCheckAggregate,
-) -> String {
-    format!(
-        "{CHECK_AGGREGATE_ENTRIES_PREFIX}{}",
-        aggregate.integrity_fingerprint
-    )
-}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RustSnapshotDelta {
     Unchanged,
@@ -116,6 +113,18 @@ fn load_validated_population_state(
     mode: PopulationLoadMode,
 ) -> Option<RustPopulationState> {
     let manifest = read_population_manifest(cache_root)?;
+    if manifest
+        .entries_fingerprint
+        .starts_with(CHECK_AGGREGATE_ENTRIES_PREFIX)
+    {
+        return load_check_aggregate_population_state(
+            cache_root,
+            source_root,
+            selectors,
+            mode,
+            manifest,
+        );
+    }
     let index = read_index_with_files(cache_root)?;
     if !population_artifacts_compatible(cache_root, source_root, &index, &manifest, selectors) {
         return None;
@@ -179,41 +188,6 @@ fn population_artifacts_compatible(
         && index_matches_derived_entries(cache_root, source_root, manifest, index)
 }
 
-fn index_matches_check_aggregate(
-    cache_root: &Path,
-    source_root: &Path,
-    manifest: &PopulationManifestOnDisk,
-    index: &OnDiskIndexWithFiles,
-) -> bool {
-    let identity = RustCoverageBatchIdentity {
-        input_digest: manifest.input_fingerprint.clone(),
-        generation_fingerprint: manifest.generation_fingerprint.clone(),
-        selection_context_fingerprint: manifest.selection_context_fingerprint.clone(),
-        ordinary_source_digests: manifest.ordinary_source_digests.clone(),
-    };
-    let Some(snapshot) = crate::batch_check_aggregate::load_current_check_aggregate_snapshot(
-        cache_root,
-        source_root,
-        &identity,
-        Some(&manifest.selectors),
-    ) else {
-        return false;
-    };
-    manifest.entries_fingerprint == check_aggregate_entries_fingerprint(&snapshot.aggregate)
-        && conservative_check_aggregate_index(&snapshot.aggregate) == index.files
-}
-
-fn conservative_check_aggregate_index(
-    aggregate: &crate::batch_check_aggregate::ValidatedCheckAggregate,
-) -> RustCoverageIndex {
-    let selectors = aggregate.selectors.iter().cloned().collect::<BTreeSet<_>>();
-    aggregate
-        .aggregate_covered_lines
-        .keys()
-        .map(|file| (file.clone(), selectors.clone()))
-        .collect()
-}
-
 fn index_matches_derived_entries(
     cache_root: &Path,
     source_root: &Path,
@@ -229,7 +203,7 @@ fn index_matches_derived_entries(
     .is_some_and(|derived| derived == index.files)
 }
 
-fn population_selection_context_matches(
+pub(crate) fn population_selection_context_matches(
     manifest: &PopulationManifestOnDisk,
     mode: &PopulationLoadMode,
 ) -> Option<String> {
@@ -245,7 +219,7 @@ fn population_selection_context_matches(
     (manifest.selection_context_fingerprint == *expected).then(|| expected.clone())
 }
 
-fn population_current_identity_matches(
+pub(crate) fn population_current_identity_matches(
     manifest: &PopulationManifestOnDisk,
     mode: &PopulationLoadMode,
 ) -> bool {

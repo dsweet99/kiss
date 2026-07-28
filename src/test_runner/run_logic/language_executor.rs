@@ -83,7 +83,8 @@ fn should_rebuild_index(phase: &ExecutionPhase, summary: &SelectorExecutionSumma
     match phase {
         ExecutionPhase::NoWork => false,
         ExecutionPhase::Population(_) => summary.exit_code == 0,
-        ExecutionPhase::Selective(_) => summary.total > 0,
+        // Cache hits do not change coverage maps; rebuild only after fresh runs.
+        ExecutionPhase::Selective(_) => summary.cache_misses > 0 || summary.cache_unstored > 0,
     }
 }
 

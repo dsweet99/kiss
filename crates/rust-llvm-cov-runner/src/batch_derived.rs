@@ -154,7 +154,7 @@ pub fn publish_derived_state(
 
 pub fn publish_derived_state_with_binaries(
     req: &RustCoverageBatchRequest,
-    _tools: &RustCoverageToolIdentity,
+    tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
     selectors: &[String],
     test_binaries: &[RustTestBinaryIdentity],
@@ -184,6 +184,13 @@ pub fn publish_derived_state_with_binaries(
         test_binaries,
         &entries_fingerprint,
     )?;
+    let _ = crate::batch_identity_seal::write_identity_mtime_seal(
+        &req.cache_root,
+        &req.source_root,
+        req,
+        tools,
+        identity,
+    );
     Ok(DerivedPublishCounters {
         derived_repair,
         entry_generation_count: count_generations(&req.cache_root)?,
@@ -194,7 +201,7 @@ pub fn publish_derived_state_with_binaries(
 
 pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
     req: &RustCoverageBatchRequest,
-    _tools: &RustCoverageToolIdentity,
+    tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
     aggregate: &ValidatedCheckAggregate,
 ) -> Result<DerivedPublishCounters, RustLlvmCovError> {
@@ -231,6 +238,13 @@ pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
         &test_binaries,
         &entries_fingerprint,
     )?;
+    let _ = crate::batch_identity_seal::write_identity_mtime_seal(
+        &req.cache_root,
+        &req.source_root,
+        req,
+        tools,
+        identity,
+    );
     Ok(DerivedPublishCounters {
         derived_repair: false,
         entry_generation_count: count_generations(&req.cache_root)?,
