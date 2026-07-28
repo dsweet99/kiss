@@ -47,10 +47,14 @@ fn remove_current_run_directory_removes_validated_run_root() {
 #[test]
 fn current_run_lifecycle_guard_cleans_up_on_drop() {
     let tmp = tempfile::tempdir().unwrap();
-    let cache_root = tmp.path().join("cache");
+    let kiss = tmp.path().join(".kiss");
+    let cache_root = kiss.join("rust_llvm_cov_cache");
     let run_root = cache_root.join("runs").join("run-a");
+    let kiss_tmp = kiss.join("tmp");
     fs::create_dir_all(&run_root).unwrap();
+    fs::create_dir_all(&kiss_tmp).unwrap();
     fs::write(run_root.join("marker"), b"x").unwrap();
+    fs::write(kiss_tmp.join("default_1_0_9.profraw"), b"raw").unwrap();
 
     {
         let _guard = CurrentRunLifecycleGuard::new(cache_root.clone(), run_root.clone());
@@ -58,6 +62,7 @@ fn current_run_lifecycle_guard_cleans_up_on_drop() {
     }
 
     assert!(!run_root.exists());
+    assert!(!kiss_tmp.join("default_1_0_9.profraw").exists());
 }
 
 #[test]

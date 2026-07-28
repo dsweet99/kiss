@@ -17,6 +17,14 @@ pub(crate) fn run_delegated_list_child(
 ) -> io::Result<i32> {
     let mut delegated_command = build_delegated_command(delegated, command);
     scrub_coverage_build_env(&mut delegated_command);
+    // List children are often instrumented; scrubbing without a discard sink
+    // leaves `default_*.profraw` in the package CWD.
+    let kiss_tmp = crate::kiss_tmp::resolve_kiss_tmp(output_dir);
+    crate::kiss_tmp::ensure_kiss_tmp(&kiss_tmp)?;
+    delegated_command.env(
+        "LLVM_PROFILE_FILE",
+        crate::kiss_tmp::discard_llvm_profile_path(&kiss_tmp),
+    );
     let output = delegated_command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

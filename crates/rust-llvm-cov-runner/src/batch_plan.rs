@@ -105,6 +105,7 @@ pub fn build_rust_coverage_batch_plan(
     env.remove("KISS_RUST_COVERAGE_PROFILE_POOL");
     // CheckAggregate no longer uses a target runner / shim pool flag; profile
     // sinks come from LLVM_PROFILE_FILE on the batch env instead.
+    crate::kiss_tmp::ensure_kiss_tmp_env(&mut env, &req.source_root);
     let build_target_value = build_target.to_string_lossy().to_string();
     env.insert(
         "NEXTEST_EXPERIMENTAL_LIBTEST_JSON".to_string(),

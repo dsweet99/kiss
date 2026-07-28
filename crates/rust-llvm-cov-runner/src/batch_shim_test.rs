@@ -167,7 +167,10 @@ fn target_runner_shim_delegates_to_configured_runner() {
 fn target_runner_shim_list_phase_delegates_with_list_metadata_without_profile() {
     let _env_guard = shim_test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
-    let output = tmp.path().join("instances");
+    let kiss_tmp = tmp.path().join(".kiss").join("tmp");
+    let output = tmp
+        .path()
+        .join(".kiss/rust_llvm_cov_cache/runs/run-a/instances");
     let runner_map = tmp.path().join("runner-map.json");
     let marker = tmp.path().join("marker");
     let script = tmp.path().join("list-child.sh");
@@ -175,43 +178,37 @@ fn target_runner_shim_list_phase_delegates_with_list_metadata_without_profile() 
     fs::write(
         &script,
         format!(
-            "#!/bin/sh\n[ -z \"${{LLVM_PROFILE_FILE:-}}\" ] || exit 9\nprintf listed > \"{}\"\nprintf '{{\"type\":\"test\",\"event\":\"discovered\",\"name\":\"alpha\"}}\\n'\nexit 0\n",
+            "#!/bin/sh\ncase \"${{LLVM_PROFILE_FILE:-}}\" in */.kiss/tmp/default_%m_%p.profraw) ;; *) exit 9 ;; esac\nprintf listed > \"{}\"\nprintf '{{\"type\":\"test\",\"event\":\"discovered\",\"name\":\"alpha\"}}\\n'\nexit 0\n",
             marker.display()
         ),
     )
     .unwrap();
     make_executable(&script);
-
-    // SAFETY: the lock serializes test-only mutation of process-wide nextest env.
+    let old_kiss_tmp = std::env::var_os(crate::kiss_tmp::KISS_TMP_ENV);
     unsafe {
+        std::env::set_var(crate::kiss_tmp::KISS_TMP_ENV, &kiss_tmp);
         std::env::set_var("NEXTEST_TEST_PHASE", "list");
     }
     let code = run_target_runner_shim(
         &output,
         &runner_map,
         "x86_64-unknown-linux-gnu",
-        &[script.clone().into_os_string()],
+        &[script.into_os_string()],
     );
-    // SAFETY: the lock serializes test-only mutation of process-wide nextest env.
     unsafe {
         std::env::remove_var("NEXTEST_TEST_PHASE");
+        match old_kiss_tmp {
+            Some(value) => std::env::set_var(crate::kiss_tmp::KISS_TMP_ENV, value),
+            None => std::env::remove_var(crate::kiss_tmp::KISS_TMP_ENV),
+        }
     }
 
     assert_eq!(code, 0);
     assert_eq!(fs::read_to_string(marker).unwrap(), "listed");
     let list = super::load_target_runner_list_metadata(&output).unwrap();
     assert_eq!(list.len(), 1);
-    assert!(
-        list[0]
-            .test_names
-            .iter()
-            .any(|name| name.ends_with("$alpha"))
-    );
-    assert!(
-        super::load_target_runner_shim_metadata(&output)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(list[0].test_names.iter().any(|name| name.ends_with("$alpha")));
+    assert!(super::load_target_runner_shim_metadata(&output).unwrap().is_empty());
     assert!(
         fs::read_dir(&output)
             .unwrap()
@@ -302,19 +299,6 @@ fn target_runner_shim_returns_one_for_missing_command() {
     let code = run_target_runner_shim(&output, &runner_map, "x86_64-unknown-linux-gnu", &[]);
 
     assert_eq!(code, 1);
-}
-
-#[test]
-fn target_runner_shim_clears_inherited_llvm_profile_file() {
-    let _env_guard = shim_test_env_lock();
-    unsafe {
-        std::env::set_var("LLVM_PROFILE_FILE", "/tmp/should-be-cleared.profraw");
-    }
-    super::clear_inherited_llvm_profile_file();
-    assert!(
-        std::env::var_os("LLVM_PROFILE_FILE").is_none(),
-        "shim must drop inherited LLVM_PROFILE_FILE"
-    );
 }
 
 #[test]

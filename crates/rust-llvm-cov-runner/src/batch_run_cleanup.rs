@@ -67,7 +67,18 @@ impl CurrentRunLifecycleGuard {
             return None;
         }
         self.cleaned.set(true);
-        self.cleanup.remove(&self.cache_root, &self.run_root).err()
+        let run_err = self.cleanup.remove(&self.cache_root, &self.run_root).err();
+        let tmp_err = crate::kiss_tmp::cleanup_kiss_tmp_profraw(
+            &crate::kiss_tmp::kiss_tmp_from_cache_root(&self.cache_root),
+        )
+        .err();
+        match (run_err, tmp_err) {
+            (None, None) => None,
+            (Some(err), None) | (None, Some(err)) => Some(err),
+            (Some(run), Some(tmp)) => {
+                Some(io::Error::new(run.kind(), format!("{run}; {tmp}")))
+            }
+        }
     }
 }
 
@@ -115,6 +126,8 @@ impl FreshBatchRunScope {
         fs::create_dir_all(&run_root)?;
         let scope = Self::begin(cache_root, run_root, cleanup)?;
         fs::create_dir_all(&plan.target_runner_output_dir)?;
+        let kiss_tmp = crate::kiss_tmp::kiss_tmp_from_cache_root(cache_root);
+        let _ = crate::kiss_tmp::ensure_kiss_tmp(&kiss_tmp);
         Ok(scope)
     }
 

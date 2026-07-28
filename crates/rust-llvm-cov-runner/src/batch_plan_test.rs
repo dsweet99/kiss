@@ -96,6 +96,10 @@ fn batch_plan_public_data_contract_preserves_every_field() {
         PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/instances")
     );
     assert_eq!(plan.env["KEEP_ME"], "1");
+    assert_eq!(
+        plan.env[crate::kiss_tmp::KISS_TMP_ENV],
+        "/repo/.kiss/tmp"
+    );
     assert_eq!(plan.argv[0], "cargo");
     assert!(plan.generated_config_toml.contains("[profile.kiss]"));
     assert!(plan.target_runner_cargo_config_toml.contains("runner = ["));

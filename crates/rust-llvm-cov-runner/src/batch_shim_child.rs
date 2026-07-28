@@ -34,7 +34,9 @@ pub(crate) fn run_target_runner_shim_inner(
 ) -> io::Result<i32> {
     // Instrumented shim hosts must not dump coverage into an inherited outer
     // LLVM_PROFILE_FILE; only the delegated test child should write profiles.
-    clear_inherited_llvm_profile_file();
+    // Redirect the host sink under `.kiss/tmp` instead of unsetting (unset
+    // dumps `default_*.profraw` into the process CWD).
+    crate::kiss_tmp::redirect_inherited_llvm_profile_file(output_dir)?;
     if command.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -116,13 +118,6 @@ pub(crate) fn profile_path_for_instance(
 
 pub(super) fn is_nextest_list_phase() -> bool {
     std::env::var("NEXTEST_TEST_PHASE").ok().as_deref() == Some("list")
-}
-
-pub(crate) fn clear_inherited_llvm_profile_file() {
-    // SAFETY: shim entry clears this process-local coverage sink before spawn.
-    unsafe {
-        std::env::remove_var("LLVM_PROFILE_FILE");
-    }
 }
 
 fn run_delegated_child(
