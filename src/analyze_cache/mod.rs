@@ -14,8 +14,6 @@ use std::time::UNIX_EPOCH;
 mod path_helpers;
 mod stats_top;
 mod store_full;
-#[cfg(test)]
-mod test_helpers;
 pub(crate) use content_digest::load_verified_full_cache;
 use path_helpers::{cache_path_full, same_cached_paths};
 pub(crate) use stats_top::{
@@ -105,13 +103,13 @@ pub fn fingerprint_for_check(
     format!("{h:016x}")
 }
 
-pub fn store_full_cache(cache: &FullCheckCache) {
-    let dir = check_cache::cache_dir();
+pub fn store_full_cache(repo_root: &std::path::Path, cache: &FullCheckCache) {
+    let dir = check_cache::cache_dir(repo_root);
     let _ = std::fs::create_dir_all(&dir);
     let Ok(bytes) = bincode::serialize(cache) else {
         return;
     };
-    let _ = std::fs::write(cache_path_full(&cache.fingerprint), bytes);
+    let _ = std::fs::write(cache_path_full(repo_root, &cache.fingerprint), bytes);
 }
 
 
@@ -184,7 +182,8 @@ pub fn try_run_cached_all(
         opts.rs_config,
         opts.gate_config,
     );
-    let cache = load_verified_full_cache(&fp, py_files, rs_files)?;
+    let repo_root = repo_root_for_universe(opts.universe);
+    let cache = load_verified_full_cache(&repo_root, &fp, py_files, rs_files)?;
     if !same_cached_paths(py_files, rs_files, focus, &cache) {
         return None;
     }
@@ -193,6 +192,12 @@ pub fn try_run_cached_all(
     } else {
         Some(emit_cached_gated(cache, opts, focus))
     }
+}
+
+pub(crate) fn repo_root_for_universe(universe: &str) -> PathBuf {
+    crate::test_runner::check_line_coverage::repository_root_for_universe(std::path::Path::new(
+        universe,
+    ))
 }
 
 pub fn graph_counts(

@@ -33,10 +33,10 @@ fn regression_check_default_writes_cache_and_replays() {
         .output()
         .unwrap();
     let cold_stdout = String::from_utf8_lossy(&cold.stdout).to_string();
-    let cache_files = list_full_check_cache_files(home.path());
+    let cache_files = list_full_check_cache_files(repo.path());
     assert!(
         !cache_files.is_empty(),
-        "expected full-check cache file under HOME. stdout:\n{cold_stdout}"
+        "expected full-check cache file under repo/.kiss. stdout:\n{cold_stdout}"
     );
 
     let warm = kiss_binary()

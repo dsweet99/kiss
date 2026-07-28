@@ -9,6 +9,7 @@ use super::{content_digest, graph_counts, store_full_cache};
 
 #[derive(Default)]
 pub struct FullCacheInputs<'a> {
+    pub repo_root: PathBuf,
     pub fingerprint: String,
     pub py_file_count: usize,
     pub rs_file_count: usize,
@@ -77,7 +78,7 @@ pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
             })
             .collect(),
     };
-    store_full_cache(&cache);
+    store_full_cache(&inputs.repo_root, &cache);
 }
 
 #[cfg(test)]

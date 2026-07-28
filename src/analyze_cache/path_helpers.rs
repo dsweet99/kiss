@@ -1,11 +1,11 @@
 use kiss::check_cache;
 use kiss::check_universe_cache::FullCheckCache;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::analyze::FocusFilter;
 
-pub(super) fn cache_path_full(fingerprint: &str) -> PathBuf {
-    check_cache::cache_dir().join(format!("check_full_{fingerprint}.bin"))
+pub(super) fn cache_path_full(repo_root: &Path, fingerprint: &str) -> PathBuf {
+    check_cache::cache_dir(repo_root).join(format!("check_full_{fingerprint}.bin"))
 }
 
 pub(super) fn same_cached_paths(
@@ -51,8 +51,11 @@ pub(super) fn same_cached_paths(
     focus.cache_focus_paths() == cache_focus
 }
 
-pub(super) fn load_full_cache(fingerprint: &str) -> Option<FullCheckCache> {
-    let p = cache_path_full(fingerprint);
+pub(super) fn load_full_cache(
+    repo_root: &Path,
+    fingerprint: &str,
+) -> Option<FullCheckCache> {
+    let p = cache_path_full(repo_root, fingerprint);
     let bytes = std::fs::read(p).ok()?;
     let c: FullCheckCache = bincode::deserialize(&bytes).ok()?;
     (c.fingerprint == fingerprint).then_some(c)

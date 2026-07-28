@@ -53,11 +53,12 @@ pub(crate) fn verify_content_digests(
 }
 
 pub(crate) fn load_verified_full_cache(
+    repo_root: &std::path::Path,
     fingerprint: &str,
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
 ) -> Option<FullCheckCache> {
-    let cache = load_full_cache(fingerprint)?;
+    let cache = load_full_cache(repo_root, fingerprint)?;
     if !verify_content_digests(&cache.file_content_digests, py_files, rs_files) {
         return None;
     }

@@ -78,17 +78,15 @@ impl From<&CodeChunk> for CachedCodeChunk {
     }
 }
 
-pub fn cache_dir() -> PathBuf {
-    // Prefer user cache dir; fall back to temp.
-    if let Some(home) = std::env::var_os("HOME") {
-        return Path::new(&home).join(".cache").join("kiss");
-    }
-    std::env::temp_dir().join("kiss-cache")
+/// Per-repo analyze/check cache root (`repo/.kiss`), matching coverage caches.
+pub fn cache_dir(repo_root: &Path) -> PathBuf {
+    repo_root.join(".kiss")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn test_cached_violation_roundtrip() {
@@ -124,7 +122,10 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_dir_smoke() {
-        let _ = cache_dir();
+    fn test_cache_dir_is_repo_local_kiss() {
+        assert_eq!(
+            cache_dir(Path::new("/repo")),
+            PathBuf::from("/repo/.kiss")
+        );
     }
 }

@@ -38,6 +38,7 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
     let focus_paths = inp.focus.cache_focus_paths();
     let focus_restrict = inp.focus.is_active();
     crate::analyze_cache::store_full_cache_from_run(crate::analyze_cache::FullCacheInputs {
+        repo_root: crate::analyze_cache::repo_root_for_universe(inp.opts.universe),
         fingerprint: fp,
         py_file_count: inp.result.py_parsed.len(),
         rs_file_count: inp.result.rs_parsed.len(),

@@ -28,6 +28,7 @@ fn empty_cache(fp: &str) -> FullCheckCache {
 
 fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
     FullCacheInputs {
+        repo_root: PathBuf::from("."),
         fingerprint: fp.to_string(),
         py_file_count: 0,
         rs_file_count: 0,
@@ -94,8 +95,8 @@ fn fingerprint_path_duplicates_helpers() {
     assert!(!fp.is_empty());
     assert_eq!(graph_counts(None, None), (0, 0));
 
-    cache_path_full("deadbeef");
-    assert!(load_full_cache("deadbeef").is_none());
+    cache_path_full(std::path::Path::new("."), "deadbeef");
+    assert!(load_full_cache(std::path::Path::new("."), "deadbeef").is_none());
 
     let focus = FocusFilter::unrestricted();
     let (_viols, py_dups, rs_dups, _cache) =
@@ -142,17 +143,19 @@ fn fnv1a64_properties() {
 
 #[test]
 fn full_cache_inputs_and_store() {
-    let _home = super::test_helpers::ScopedHome::new();
+    let tmp = tempfile::TempDir::new().unwrap();
     let mut inputs = empty_inputs("test_fp_persist");
+    inputs.repo_root = tmp.path().to_path_buf();
     inputs.py_file_count = 1;
     assert_eq!(inputs.py_file_count, 1);
     store_full_cache_from_run(inputs);
-    let loaded = load_full_cache("test_fp_persist");
+    let loaded = load_full_cache(tmp.path(), "test_fp_persist");
     assert_eq!(
         loaded.as_ref().map(|c| c.fingerprint.as_str()),
         Some("test_fp_persist")
     );
     assert_eq!(loaded.map(|c| c.py_file_count), Some(1));
+    assert!(tmp.path().join(".kiss").is_dir());
 }
 
 #[test]

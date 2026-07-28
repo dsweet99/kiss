@@ -156,7 +156,12 @@ fn maybe_print_cached_stats_summary(
     gate: &GateConfig,
 ) -> bool {
     let Some(cache) = crate::analyze_cache::try_run_cached_stats_summary(
-        py_files, rs_files, py_cfg, rs_cfg, gate,
+        paths.first().map(String::as_str).unwrap_or("."),
+        py_files,
+        rs_files,
+        py_cfg,
+        rs_cfg,
+        gate,
     ) else {
         return false;
     };

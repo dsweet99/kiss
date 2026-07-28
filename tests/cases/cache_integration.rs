@@ -45,8 +45,8 @@ fn check_cache_hit_replays_on_second_run() {
         "expected summary line. stdout:\n{stdout1}"
     );
     assert!(
-        !list_full_check_cache_files(home.path()).is_empty(),
-        "expected full-check cache file under HOME. stdout:\n{stdout1}"
+        !list_full_check_cache_files(repo.path()).is_empty(),
+        "expected full-check cache file under repo/.kiss. stdout:\n{stdout1}"
     );
 
     let out2 = run_python_check(repo.path(), home.path());
@@ -79,7 +79,7 @@ fn check_cache_is_not_invalidated_when_runtime_coverage_changes() {
         stdout1.contains("Analyzed:"),
         "sanity: first run should report static analysis summary. stdout:\n{stdout1}"
     );
-    assert!(!list_full_check_cache_files(home.path()).is_empty());
+    assert!(!list_full_check_cache_files(repo.path()).is_empty());
 
     seed_python_runtime_coverage(
         repo.path(),
@@ -113,7 +113,7 @@ fn check_cache_invalidates_when_sources_unreadable() {
 
     let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
-    assert!(!list_full_check_cache_files(home.path()).is_empty());
+    assert!(!list_full_check_cache_files(repo.path()).is_empty());
 
     chmod(&src, 0o000);
 
@@ -136,7 +136,7 @@ fn check_cache_invalidates_on_mtime_or_size_change() {
 
     let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
-    assert!(!list_full_check_cache_files(home.path()).is_empty());
+    assert!(!list_full_check_cache_files(repo.path()).is_empty());
 
     // Change the file (updates mtime/size), then make it unreadable.
     chmod(&src, 0o200); // write-only
@@ -168,7 +168,7 @@ fn check_cache_invalidates_on_same_size_content_change() {
 
     let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
-    assert!(!list_full_check_cache_files(home.path()).is_empty());
+    assert!(!list_full_check_cache_files(repo.path()).is_empty());
 
     let mtime: SystemTime = fs::metadata(&src).unwrap().modified().unwrap();
     fs::write(&src, content2).unwrap();

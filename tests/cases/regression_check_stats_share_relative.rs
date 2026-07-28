@@ -54,14 +54,14 @@ fn regression_check_stats_share_cache_with_relative_path() {
     };
 
     let _check = run("check");
-    let after_check = list_full_check_cache_files(home.path());
+    let after_check = list_full_check_cache_files(repo.path());
     assert_eq!(
         after_check.len(),
         1,
         "expected exactly one cache file after `kiss check .`; got {after_check:?}"
     );
     let _stats = run("stats");
-    let after_stats = list_full_check_cache_files(home.path());
+    let after_stats = list_full_check_cache_files(repo.path());
     assert_eq!(
         after_stats.len(),
         1,

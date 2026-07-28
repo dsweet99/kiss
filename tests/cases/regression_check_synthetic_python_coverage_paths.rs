@@ -146,7 +146,7 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
         "cold cov should run the discovered Python population. stdout:\n{cold_stdout}"
     );
     assert!(
-        list_full_check_cache_files(home.path()).is_empty(),
+        list_full_check_cache_files(repo.path()).is_empty(),
         "cold cov must not write the static full-check cache"
     );
 
@@ -187,7 +187,7 @@ fn failed_python_check_refresh_does_not_publish_full_check_cache() {
          stdout:\n{failed_stdout}\nstderr:\n{failed_stderr}"
     );
     assert!(
-        list_full_check_cache_files(home.path()).is_empty(),
+        list_full_check_cache_files(repo.path()).is_empty(),
         "failed refresh must not publish a full-check cache"
     );
 
@@ -206,7 +206,7 @@ fn failed_python_check_refresh_does_not_publish_full_check_cache() {
          stdout:\n{fixed_stdout}\nstderr:\n{fixed_stderr}"
     );
     assert!(
-        list_full_check_cache_files(home.path()).is_empty(),
+        list_full_check_cache_files(repo.path()).is_empty(),
         "successful cov refresh must not publish the static full-check cache"
     );
 }

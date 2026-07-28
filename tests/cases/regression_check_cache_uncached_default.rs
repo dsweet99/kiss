@@ -1,7 +1,7 @@
 //! Regression test for the `kiss check` cache-bypass bug.
 //!
 //! `kiss check` reads and writes its full-check cache
-//! (`~/.cache/kiss/check_full_*.bin`) only when `--all` (i.e.
+//! (`repo/.kiss/check_full_*.bin`) only when `--all` (i.e.
 //! `opts.bypass_gate`) is set. Without `--all`, both the read site
 //! (`src/analyze/entry.rs::try_cache_hit`) and the write site
 //! (`src/analyze/cache.rs::maybe_store_full_cache`) early-return, so the
@@ -106,7 +106,7 @@ fn kiss_check_default_writes_full_check_cache() {
     write_corpus(corpus.path());
 
     let home = TempDir::new().unwrap();
-    let cache_dir = home.path().join(".cache").join("kiss");
+    let cache_dir = corpus.path().join(".kiss");
 
     assert_eq!(
         count_check_full_files(&cache_dir),
@@ -145,5 +145,12 @@ fn kiss_check_default_writes_full_check_cache() {
                 .map(|e| e.file_name().to_string_lossy().into_owned())
                 .collect::<Vec<_>>())
             .unwrap_or_default(),
+    );
+
+    let home_cache = home.path().join(".cache").join("kiss");
+    assert_eq!(
+        count_check_full_files(&home_cache),
+        0,
+        "check_full_*.bin must not land under HOME/.cache/kiss"
     );
 }
