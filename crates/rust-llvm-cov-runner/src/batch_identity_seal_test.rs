@@ -64,3 +64,51 @@ fn mtime_seal_misses_when_live_env_changes_generation() {
         .insert("RUSTFLAGS".into(), "-C instrument-coverage -Ccodegen-units=1".into());
     assert!(try_identity_from_mtime_seal(&req.cache_root, repo.path(), &req, &tools).is_none());
 }
+
+#[cfg(unix)]
+#[test]
+fn mtime_seal_false_hit_when_same_length_content_changes_with_restored_mtime() {
+    use std::os::unix::fs::MetadataExt;
+
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(repo.path().join("src")).unwrap();
+    std::fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname=\"t\"\nversion=\"0.1.0\"\n",
+    )
+    .unwrap();
+    let src = repo.path().join("src").join("lib.rs");
+    let before = b"pub fn v() -> u32 { 1 }\n";
+    let after = b"pub fn v() -> u32 { 2 }\n";
+    assert_eq!(before.len(), after.len());
+    std::fs::write(&src, before).unwrap();
+
+    let req = derived_fixture_request(repo.path());
+    let tools = witness_batch_tools();
+    let identity = sealed_identity_for(&req, &tools);
+    write_identity_mtime_seal(&req.cache_root, repo.path(), &req, &tools, &identity).unwrap();
+    assert!(try_identity_from_mtime_seal(&req.cache_root, repo.path(), &req, &tools).is_some());
+
+    let meta = std::fs::metadata(&src).unwrap();
+    let times = [
+        libc::timespec {
+            tv_sec: meta.atime(),
+            tv_nsec: meta.atime_nsec(),
+        },
+        libc::timespec {
+            tv_sec: meta.mtime(),
+            tv_nsec: meta.mtime_nsec(),
+        },
+    ];
+    std::fs::write(&src, after).unwrap();
+    let c_path = std::ffi::CString::new(src.to_str().unwrap()).unwrap();
+    let rc = unsafe { libc::utimensat(libc::AT_FDCWD, c_path.as_ptr(), times.as_ptr(), 0) };
+    assert_eq!(rc, 0, "utimensat failed");
+
+    let hit = try_identity_from_mtime_seal(&req.cache_root, repo.path(), &req, &tools);
+    assert!(
+        hit.is_none(),
+        "expected seal miss after same-length content change; got stale hit {:?}",
+        hit.as_ref().map(|i| i.input_digest.as_str())
+    );
+}

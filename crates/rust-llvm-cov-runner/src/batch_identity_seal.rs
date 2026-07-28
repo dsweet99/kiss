@@ -10,7 +10,7 @@ use crate::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdenti
 use crate::batch_plan::RustCoverageBatchRequest;
 use crate::shared_input::rust_cov_input_files;
 
-const SEAL_SCHEMA_VERSION: &str = "rust-input-mtime-seal-v1";
+const SEAL_SCHEMA_VERSION: &str = "rust-input-mtime-seal-v2";
 const SEAL_FILE_NAME: &str = "input_mtime_seal.json";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,6 +18,10 @@ struct SealFileMeta {
     path: String,
     len: u64,
     mtime_ns: u64,
+    /// Unix ctime (status-change time). Content writes and mtime restores via
+    /// `utimensat` update ctime even when mtime is forced back, so same-length
+    /// rewrites with preserved mtime still miss the seal.
+    ctime_ns: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,6 +54,24 @@ fn mtime_ns(meta: &fs::Metadata) -> Option<u64> {
     )
 }
 
+fn ctime_ns(meta: &fs::Metadata) -> u64 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        (meta.ctime() as u64)
+            .saturating_mul(1_000_000_000)
+            .saturating_add(meta.ctime_nsec() as u64)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = meta;
+        // Without a reliable status-change time, refuse to treat metadata as
+        // content identity: collect_file_meta still records 0, and try_* will
+        // only hit if nothing else drifts — prefer miss via schema/tools checks.
+        0
+    }
+}
+
 fn collect_file_meta(source_root: &Path) -> io::Result<Vec<SealFileMeta>> {
     let files = rust_cov_input_files(source_root)?;
     let mut out = Vec::with_capacity(files.len());
@@ -65,6 +87,7 @@ fn collect_file_meta(source_root: &Path) -> io::Result<Vec<SealFileMeta>> {
             path: rel,
             len: meta.len(),
             mtime_ns: mtime_ns(&meta).unwrap_or(0),
+            ctime_ns: ctime_ns(&meta),
         });
     }
     Ok(out)
@@ -77,7 +100,7 @@ fn file_meta_matches(source_root: &Path, expected: &[SealFileMeta]) -> bool {
     current == expected
 }
 
-/// Persist a content-identity seal keyed by input-file mtime/size metadata.
+/// Persist a content-identity seal keyed by input-file size/mtime/ctime metadata.
 /// Written by `kiss cov` publish so the next `kiss test` can skip re-hashing.
 pub fn write_identity_mtime_seal(
     cache_root: &Path,
@@ -124,7 +147,7 @@ fn parent_tmp_path(path: &Path) -> io::Result<PathBuf> {
     Ok(parent.join(format!(".input_mtime_seal.{nanos}.tmp")))
 }
 
-/// Fast path: reuse digests when input-file mtime/size set and tool identity match.
+/// Fast path: reuse digests when input-file size/mtime/ctime set and tool identity match.
 pub fn try_identity_from_mtime_seal(
     cache_root: &Path,
     source_root: &Path,
