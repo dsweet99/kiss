@@ -2,14 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn git_command(repo: &Path) -> Command {
-    let mut c = Command::new("git");
-    c.current_dir(repo)
-        .env_remove("GIT_INDEX_FILE")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_OBJECT_DIRECTORY")
-        .env_remove("GIT_COMMON_DIR");
-    c
+    kiss::scrubbed_git_command(repo)
 }
 
 #[test]
@@ -49,5 +42,5 @@ fn should_scan_rust_file(path: &Path) -> bool {
 }
 
 fn bare_git_command_allowed(path: &Path) -> bool {
-    path == Path::new("src/test_git.rs") || path == Path::new("tests/support/git.rs")
+    path == Path::new("src/shared_helpers.rs")
 }

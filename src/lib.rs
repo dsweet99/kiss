@@ -18,6 +18,7 @@ pub mod gate_config;
 pub mod py_imports;
 pub mod py_metrics;
 pub mod rule_defs;
+pub mod shared_helpers;
 pub mod violation;
 
 pub mod check_cache;
@@ -56,6 +57,7 @@ pub mod test_utils;
 
 pub use cli_output::print_dry_results;
 pub use config::{Config, ConfigError, ConfigLanguage, is_similar};
+pub use shared_helpers::{env_map_from_allowlist, json_entry_paths, scrubbed_git_command};
 pub use counts::analyze_file;
 pub use counts::analyze_file_with_statement_count;
 pub use defaults::default_config_toml;

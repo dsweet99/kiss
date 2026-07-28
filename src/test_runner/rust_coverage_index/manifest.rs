@@ -234,14 +234,7 @@ fn current_rust_population_manifest_identity_with_env_keys(
 
 #[cfg(test)]
 fn relevant_rust_coverage_env(env_keys: &[&str]) -> BTreeMap<String, String> {
-    env_keys
-        .iter()
-        .filter_map(|key| {
-            std::env::var(key)
-                .ok()
-                .map(|value| ((*key).to_string(), value))
-        })
-        .collect()
+    kiss::env_map_from_allowlist(env_keys)
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@ pub(super) fn python_entries_fingerprint(cache_root: &Path) -> String {
         0xcbf2_9ce4_8422_2325,
         rslip::CACHE_SCHEMA_VERSION.as_bytes(),
     );
-    for path in sorted_json_entry_paths(cache_root) {
+    for path in kiss::json_entry_paths(cache_root) {
         let meta = fs::metadata(&path).unwrap();
         let name = path
             .file_name()
@@ -52,23 +52,6 @@ pub(super) fn python_source_input_fingerprint(root: &Path) -> String {
     format!("{h:016x}")
 }
 
-fn sorted_json_entry_paths(cache_root: &Path) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    if let Ok(entries) = fs::read_dir(cache_root.join("entries")) {
-        paths.extend(
-            entries
-                .filter_map(Result::ok)
-                .map(|entry| entry.path())
-                .filter(|path| {
-                    path.extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
-                }),
-        );
-    }
-    paths.sort();
-    paths
-}
-
 fn modified_nanos(meta: &fs::Metadata) -> Option<String> {
     meta.modified()
         .ok()?
@@ -101,37 +84,11 @@ fn visit_python_source_inputs(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn should_skip_python_source_input_dir(path: &Path) -> bool {
-    const SKIP_NAMES: &[&str] = &[
-        ".git",
-        ".pytest_cache",
-        "__pycache__",
-        ".venv",
-        "venv",
-        "target",
-        ".rslip_cache",
-    ];
-    let name = path.file_name().and_then(|name| name.to_str());
-    name.is_some_and(|name| SKIP_NAMES.contains(&name)) || is_kiss_rslip_cache_dir(path)
-}
-
-fn is_kiss_rslip_cache_dir(path: &Path) -> bool {
-    let parts = path
-        .components()
-        .rev()
-        .filter_map(|component| component.as_os_str().to_str())
-        .take(2)
-        .collect::<Vec<_>>();
-    parts == ["rslip_cache", ".kiss"]
+    rslip::should_skip_rslip_dir(path)
 }
 
 fn is_python_source_input_path(path: &Path) -> bool {
-    let file_name = path.file_name().and_then(|name| name.to_str());
-    path.extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("py"))
-        || matches!(
-            file_name,
-            Some("pytest.ini" | "pyproject.toml" | "setup.cfg" | "tox.ini")
-        )
+    rslip::is_rslip_cache_input(path)
 }
 
 fn trim_outer_ascii_whitespace(bytes: &[u8]) -> &[u8] {

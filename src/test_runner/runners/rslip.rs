@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::env;
 use std::path::{Path, PathBuf};
 
 use rpytest_runner::PytestRunner;
@@ -117,10 +116,7 @@ pub(crate) fn rslip_request_from_parts(
 }
 
 fn relevant_rslip_env(env_keys: &[&str]) -> BTreeMap<String, String> {
-    env_keys
-        .iter()
-        .filter_map(|key| env::var(key).ok().map(|value| ((*key).to_string(), value)))
-        .collect()
+    kiss::env_map_from_allowlist(env_keys)
 }
 
 pub(crate) fn detect_rslip_versions(repo_root: &Path) -> Result<(String, String), String> {

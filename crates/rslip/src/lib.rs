@@ -30,6 +30,7 @@ use cache::{
     RslipCacheEntry, load_rslip_cache_entry, rslip_cache_fingerprint_from_context,
     rslip_request_context_fingerprint, rslip_unique_suffix,
 };
+pub use cache::{is_kiss_rslip_cache_dir, is_rslip_cache_input, should_skip_rslip_dir};
 pub use lock::{LocalRslipLockGuard, lock_rslip_cache_entry, lock_rslip_derived_state};
 use rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, TestStatus,

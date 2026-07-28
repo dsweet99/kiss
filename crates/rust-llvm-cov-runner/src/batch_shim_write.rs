@@ -1,7 +1,6 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
@@ -147,8 +146,5 @@ fn exact_test_from_command(command: &[std::ffi::OsString]) -> Option<(std::path:
 }
 
 fn unique_shim_id() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    format!("{}.{}", std::process::id(), nanos)
+    kiss_publication_barrier::unique_process_suffix()
 }

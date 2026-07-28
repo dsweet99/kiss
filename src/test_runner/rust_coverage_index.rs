@@ -26,14 +26,7 @@ pub(crate) const LEGACY_POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-populat
 pub(crate) const RUST_SELECTOR_DISCOVERY_VERSION: &str = "rust-selector-discovery-v1";
 
 pub(crate) fn relevant_rust_batch_env() -> BTreeMap<String, String> {
-    RUST_COVERAGE_ENV_KEYS
-        .iter()
-        .filter_map(|key| {
-            std::env::var(key)
-                .ok()
-                .map(|value| ((*key).to_string(), value))
-        })
-        .collect()
+    kiss::env_map_from_allowlist(RUST_COVERAGE_ENV_KEYS)
 }
 
 pub(crate) fn current_rust_coverage_batch_identity(

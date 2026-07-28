@@ -6,7 +6,6 @@ use std::io::Write;
 use std::path::Path;
 #[cfg(debug_assertions)]
 use std::path::PathBuf;
-#[cfg(debug_assertions)]
 use std::process;
 #[cfg(debug_assertions)]
 use std::thread;
@@ -14,8 +13,15 @@ use std::thread;
 use std::time::Duration;
 #[cfg(debug_assertions)]
 use std::time::Instant;
-#[cfg(any(debug_assertions, test))]
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Process-id + nanosecond suffix for uniquely named temporary files.
+pub fn unique_process_suffix() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    format!("{}.{}", process::id(), nanos)
+}
 
 #[cfg(debug_assertions)]
 const SCHEMA_VERSION: u32 = 1;

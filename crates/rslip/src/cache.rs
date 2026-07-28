@@ -1,8 +1,6 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rpytest_runner::TestStatus;
 use serde::{Deserialize, Serialize};
@@ -74,10 +72,7 @@ pub(crate) fn rslip_cache_entry_path(cache_root: &Path, fingerprint: &str) -> Pa
 }
 
 pub(crate) fn rslip_unique_suffix() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    format!("{}.{}", process::id(), nanos)
+    kiss_publication_barrier::unique_process_suffix()
 }
 
 pub(crate) fn rslip_cache_fingerprint(req: &RslipRequest) -> io::Result<String> {
@@ -146,7 +141,7 @@ fn visit_rslip_inputs(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
     Ok(())
 }
 
-fn should_skip_rslip_dir(path: &Path) -> bool {
+pub fn should_skip_rslip_dir(path: &Path) -> bool {
     matches!(
         path.file_name().and_then(|name| name.to_str()),
         Some(
@@ -155,7 +150,7 @@ fn should_skip_rslip_dir(path: &Path) -> bool {
     ) || is_kiss_rslip_cache_dir(path)
 }
 
-fn is_kiss_rslip_cache_dir(path: &Path) -> bool {
+pub fn is_kiss_rslip_cache_dir(path: &Path) -> bool {
     path.file_name().and_then(|name| name.to_str()) == Some("rslip_cache")
         && path
             .parent()
@@ -164,7 +159,7 @@ fn is_kiss_rslip_cache_dir(path: &Path) -> bool {
             == Some(".kiss")
 }
 
-fn is_rslip_cache_input(path: &Path) -> bool {
+pub fn is_rslip_cache_input(path: &Path) -> bool {
     if path
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("py"))

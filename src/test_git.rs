@@ -32,21 +32,11 @@ pub fn git_repo_root(repo: &Path) -> Result<PathBuf, String> {
         .map_err(|e| format!("failed to canonicalize repo root: {e}"))
 }
 
-// Build a `git` Command rooted at `repo` with all parent-process
-// `GIT_*` overrides removed. Otherwise an outer wrapper (notably
-// pre-commit, which exports `GIT_INDEX_FILE` to isolate staged
-// content from hooks) silently redirects every git call to the
-// wrapper's repo instead of `repo`, which would corrupt the user's
-// real index when `kiss test` runs from inside such a wrapper.
+// See `kiss::scrubbed_git_command`: strip parent-process `GIT_*`
+// overrides so wrappers (notably pre-commit) cannot redirect kiss
+// into the wrapper's index/worktree.
 pub(crate) fn git_command(repo: &Path) -> Command {
-    let mut c = Command::new("git");
-    c.current_dir(repo)
-        .env_remove("GIT_INDEX_FILE")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_OBJECT_DIRECTORY")
-        .env_remove("GIT_COMMON_DIR");
-    c
+    kiss::scrubbed_git_command(repo)
 }
 
 fn git_output(repo: &Path, args: &[&str]) -> Result<String, String> {

@@ -293,14 +293,7 @@ fn current_python_population_manifest_identity_with_env_keys(
 }
 
 fn relevant_python_coverage_env(env_keys: &[&str]) -> BTreeMap<String, String> {
-    env_keys
-        .iter()
-        .filter_map(|key| {
-            std::env::var(key)
-                .ok()
-                .map(|value| ((*key).to_string(), value))
-        })
-        .collect()
+    kiss::env_map_from_allowlist(env_keys)
 }
 
 #[derive(Deserialize, Serialize)]

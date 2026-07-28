@@ -228,19 +228,12 @@ fn rust_runtime_coverage_tool_identity(
 }
 
 fn relevant_rust_env() -> BTreeMap<String, String> {
-    [
+    kiss::env_map_from_allowlist(&[
         "RUSTFLAGS",
         "RUSTDOCFLAGS",
         "CARGO_TARGET_DIR",
         "LLVM_PROFILE_FILE",
-    ]
-    .iter()
-    .filter_map(|key| {
-        std::env::var(key)
-            .ok()
-            .map(|value| ((*key).to_string(), value))
-    })
-    .collect()
+    ])
 }
 
 fn command_output(repo: &Path, program: &str, args: &[&str]) -> String {
@@ -288,11 +281,7 @@ fn python_command_output(repo: &Path, args: &[&str]) -> String {
 }
 
 fn relevant_python_env() -> BTreeMap<String, String> {
-    let mut env = BTreeMap::new();
-    if let Ok(value) = std::env::var("PYTHONPATH") {
-        env.insert("PYTHONPATH".to_string(), value);
-    }
-    env
+    kiss::env_map_from_allowlist(&["PYTHONPATH"])
 }
 
 pub fn parse_python_source(code: &str) -> ParsedFile {

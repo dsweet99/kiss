@@ -1,9 +1,8 @@
+#[cfg(test)]
 use std::fs;
 use std::fs::OpenOptions;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(test)]
 use serde::Serialize;
@@ -169,20 +168,7 @@ pub(crate) fn write_test_json_atomically<T: Serialize>(
 }
 
 pub(crate) fn rust_coverage_entry_paths(cache_root: &Path) -> Vec<PathBuf> {
-    let entries_dir = cache_root.join("entries");
-    let Ok(entries) = fs::read_dir(entries_dir) else {
-        return Vec::new();
-    };
-    let mut paths: Vec<_> = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
-        })
-        .collect();
-    paths.sort();
-    paths
+    kiss::json_entry_paths(cache_root)
 }
 
 #[cfg(test)]
@@ -200,10 +186,7 @@ pub(crate) fn workspace_input_fingerprint(repo_root: &Path) -> io::Result<String
 }
 
 pub(crate) fn unique_suffix() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    format!("{}.{}", process::id(), nanos)
+    kiss_publication_barrier::unique_process_suffix()
 }
 
 #[cfg(test)]

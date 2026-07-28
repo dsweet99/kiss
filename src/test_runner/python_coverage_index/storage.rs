@@ -1,8 +1,6 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -82,20 +80,7 @@ pub(crate) fn load_current_python_coverage_index(repo_root: &Path) -> Option<Pyt
 }
 
 pub(crate) fn python_coverage_entry_paths(cache_root: &Path) -> Vec<PathBuf> {
-    let entries_dir = cache_root.join("entries");
-    let Ok(entries) = fs::read_dir(entries_dir) else {
-        return Vec::new();
-    };
-    let mut paths: Vec<_> = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
-        })
-        .collect();
-    paths.sort();
-    paths
+    kiss::json_entry_paths(cache_root)
 }
 
 pub(crate) fn python_entries_fingerprint(cache_root: &Path) -> io::Result<String> {
@@ -163,36 +148,16 @@ fn visit_python_source_inputs(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<
 }
 
 pub(crate) fn should_skip_python_source_input_dir(path: &Path) -> bool {
-    matches!(
-        path.file_name().and_then(|name| name.to_str()),
-        Some(
-            ".git" | ".pytest_cache" | "__pycache__" | ".venv" | "venv" | "target" | ".rslip_cache"
-        )
-    ) || is_kiss_rslip_cache_dir(path)
+    rslip::should_skip_rslip_dir(path)
 }
 
+#[cfg(test)]
 pub(crate) fn is_kiss_rslip_cache_dir(path: &Path) -> bool {
-    let mut names = path
-        .components()
-        .rev()
-        .filter_map(|component| component.as_os_str().to_str());
-    matches!(
-        (names.next(), names.next()),
-        (Some("rslip_cache"), Some(".kiss"))
-    )
+    rslip::is_kiss_rslip_cache_dir(path)
 }
 
 pub(crate) fn is_python_source_input_path(path: &Path) -> bool {
-    if path
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("py"))
-    {
-        return true;
-    }
-    matches!(
-        path.file_name().and_then(|name| name.to_str()),
-        Some("pytest.ini" | "pyproject.toml" | "setup.cfg" | "tox.ini")
-    )
+    rslip::is_rslip_cache_input(path)
 }
 
 pub(crate) fn python_repo_relative_coverage_file(repo_root: &Path, file: &str) -> Option<String> {
@@ -239,10 +204,7 @@ pub(crate) fn create_new_python_file(path: &Path) -> io::Result<File> {
 }
 
 pub(crate) fn python_unique_suffix() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    format!("{}.{}", process::id(), nanos)
+    kiss_publication_barrier::unique_process_suffix()
 }
 
 pub(crate) fn python_fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {

@@ -1,8 +1,6 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rpytest_runner::TestStatus;
 use serde::{Deserialize, Serialize};
@@ -144,10 +142,7 @@ pub(crate) fn rust_cov_cache_entry_path(cache_root: &Path, fingerprint: &str) ->
 }
 
 pub(crate) fn rust_cov_unique_suffix() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
-    format!("{}.{}", process::id(), nanos)
+    kiss_publication_barrier::unique_process_suffix()
 }
 
 pub(crate) fn rust_cov_fnv1a64(h: u64, bytes: &[u8]) -> u64 {
