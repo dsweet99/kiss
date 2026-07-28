@@ -8,7 +8,7 @@ mod test_dispatch;
 #[cfg(test)]
 mod test_dispatch_b;
 
-use crate::bin_cli::args::{Cli, Commands, parse_test_command_action};
+use crate::bin_cli::args::{Cli, Commands, parse_test_invocation, validate_test_branch_options};
 use crate::bin_cli::config_session::run_init_command;
 
 use handlers::{
@@ -172,13 +172,12 @@ fn dispatch_tools(
 fn dispatch_test_command(
     lang: Option<kiss::Language>,
     command: Commands,
-    cfg: &TriConfig<'_>,
+    _cfg: &TriConfig<'_>,
     test_section: &TestSectionConfig,
 ) -> i32 {
     match command {
         Commands::Test {
-            mode,
-            validation_mode,
+            operands,
             main_branch,
             base_branch,
             dry_run,
@@ -186,31 +185,26 @@ fn dispatch_test_command(
             metrics,
             jobs,
             ignore,
-            fixture,
             extra,
         } => {
-            let action = match parse_test_command_action(&mode, validation_mode) {
-                Ok(action) => action,
+            let invocation = match parse_test_invocation(&operands) {
+                Ok(invocation) => invocation,
                 Err(e) => {
                     eprintln!("error: kiss test: {e}");
                     return 2;
                 }
             };
-            if matches!(action, crate::bin_cli::args::TestCommandAction::Cov) {
-                return dispatch_cov(CovDispatchOptions {
-                    lang,
-                    paths: vec![".".to_string()],
-                    bypass_gate: false,
-                    ignore,
-                    timing: false,
-                    jobs: Some(jobs),
-                    cfg,
-                    test_cfg: test_section,
-                });
+            if let Err(e) = validate_test_branch_options(
+                &invocation,
+                main_branch.as_deref(),
+                base_branch.as_deref(),
+            ) {
+                eprintln!("error: kiss test: {e}");
+                return 2;
             }
             dispatch_test(TestDispatchOptions {
                 lang,
-                action,
+                invocation,
                 main_branch,
                 base_branch,
                 dry_run,
@@ -218,7 +212,6 @@ fn dispatch_test_command(
                 metrics,
                 jobs,
                 ignore,
-                fixture,
                 extra,
                 test_cfg: test_section,
             })

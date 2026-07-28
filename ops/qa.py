@@ -952,21 +952,6 @@ def kiss_command(
     return argv
 
 
-def validate_command(language: str, ignores: list[str], jobs: int) -> list[str]:
-    return [
-        str(KISS),
-        "--defaults",
-        "--lang",
-        language,
-        "test",
-        "validate-selection",
-        "commit",
-        "--dry-run",
-        "-j",
-        str(jobs),
-        *ignores,
-    ]
-
 
 @contextmanager
 def qa_fixture(prefix: str) -> Iterator[Fixture]:
@@ -1919,17 +1904,6 @@ def coverage_stress() -> None:
         )
         assert "RUST COVERAGE POPULATION" in rs_env.stdout
 
-        for language in LANGUAGES:
-            validation = run(
-                f"{language}-validation",
-                validate_command(language, fixture.ignores[language], jobs),
-                fixture.root,
-                fixture.env,
-            )
-            metrics = validation.metrics()
-            assert 0 < metric_int(metrics, "selected_total") <= metric_int(
-                metrics, "full_total"
-            )
 
         changed_text(
             fixture.root / PY_SOURCE,

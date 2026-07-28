@@ -19,7 +19,9 @@ use rust_llvm_cov_runner::{
 
 #[path = "runners/decision.rs"]
 mod decision;
-pub(crate) use decision::combined_selectors;
+pub(crate) use decision::{
+    CombinedSelectorInput, SelectorPlan, combined_selectors, combined_selectors_with_direct,
+};
 
 #[path = "runners/python_backer.rs"]
 pub(crate) mod python_backer;
@@ -36,6 +38,13 @@ use super::python_coverage_index::{
     stored_python_universe_selectors,
 };
 use python_collect::collect_python_nodeids;
+pub(crate) fn collect_python_nodeids_for_targets(
+    repo_root: &Path,
+    paths: Option<&[PathBuf]>,
+    pytest_args: &[String],
+) -> Result<Vec<String>, String> {
+    collect_python_nodeids(repo_root, paths, pytest_args)
+}
 #[cfg(test)]
 #[path = "runners/python_collect_test.rs"]
 mod python_collect_test;

@@ -3,8 +3,6 @@ use kiss::Language;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use crate::test_git::TestChangeMode;
-
 #[derive(Parser, Debug)]
 #[command(
     name = "kiss",
@@ -50,39 +48,110 @@ pub fn parse_positive_usize(s: &str) -> Result<usize, String> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TestCommandAction {
-    Run(TestChangeMode),
-    ValidateSelection(TestChangeMode),
-    /// Warm/cold runtime coverage gate (`kiss test cov` → `kiss cov`).
-    Cov,
+pub enum TestInvocation {
+    Commit,
+    Base,
+    Main,
+    All,
+    Targets(Vec<String>),
 }
 
-pub fn parse_test_command_action(
-    mode: &str,
-    validation_mode: Option<TestChangeMode>,
-) -> Result<TestCommandAction, String> {
-    if mode == "cov" {
-        if validation_mode.is_some() {
-            return Err("validation mode is only valid after validate-selection".to_string());
+const RESERVED_TEST_ACTIONS: &[&str] = &["commit", "base", "main", "all"];
+
+pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, String> {
+    let first = operands.first().ok_or_else(|| {
+        "at least one of commit, base, main, all, or a PATH / PATH::symbol target is required"
+            .to_string()
+    })?;
+    if let Some(reserved) = parse_reserved_action(first, operands.len())? {
+        return Ok(reserved);
+    }
+    if matches!(first.as_str(), "cov" | "validate-selection") {
+        return Err(format!(
+            "unknown test target '{first}'. Use commit, base, main, all, or PATH / PATH::symbol. \
+             Coverage is `kiss cov`."
+        ));
+    }
+    if let Some(operand) = operands
+        .iter()
+        .find(|operand| RESERVED_TEST_ACTIONS.contains(&operand.as_str()))
+    {
+        return Err(format!(
+            "reserved action '{operand}' cannot be mixed with PATH / PATH::symbol targets"
+        ));
+    }
+    for operand in operands {
+        validate_target_operand_shape(operand)?;
+    }
+    Ok(TestInvocation::Targets(operands.to_vec()))
+}
+
+fn validate_target_operand_shape(raw: &str) -> Result<(), String> {
+    let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
+    if path_part.is_empty() {
+        return Err(format!("unknown test target '{raw}'. Use commit, base, main, all, or PATH / PATH::symbol."));
+    }
+    let ok_ext = std::path::Path::new(path_part)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"));
+    if !ok_ext {
+        return Err(format!(
+            "unknown test target '{raw}'. Use commit, base, main, all, or PATH / PATH::symbol."
+        ));
+    }
+    if let Some((_, symbol)) = raw.split_once("::")
+        && symbol.is_empty()
+    {
+        return Err("target path and symbol must both be non-empty".to_string());
+    }
+    Ok(())
+}
+
+fn parse_reserved_action(first: &str, operand_count: usize) -> Result<Option<TestInvocation>, String> {
+    if !RESERVED_TEST_ACTIONS.contains(&first) {
+        return Ok(None);
+    }
+    if operand_count > 1 {
+        return Err(format!(
+            "reserved action '{first}' cannot be mixed with additional targets"
+        ));
+    }
+    Ok(Some(match first {
+        "commit" => TestInvocation::Commit,
+        "base" => TestInvocation::Base,
+        "main" => TestInvocation::Main,
+        "all" => TestInvocation::All,
+        _ => unreachable!("reserved action list must match match arms"),
+    }))
+}
+
+pub fn validate_test_branch_options(
+    invocation: &TestInvocation,
+    main_branch: Option<&str>,
+    base_branch: Option<&str>,
+) -> Result<(), String> {
+    match invocation {
+        TestInvocation::Main => {
+            if base_branch.is_some() {
+                return Err("--base-branch is only valid with kiss test base".to_string());
+            }
         }
-        return Ok(TestCommandAction::Cov);
+        TestInvocation::Base => {
+            if main_branch.is_some() {
+                return Err("--main-branch is only valid with kiss test main".to_string());
+            }
+        }
+        TestInvocation::Commit | TestInvocation::All | TestInvocation::Targets(_) => {
+            if main_branch.is_some() {
+                return Err("--main-branch is only valid with kiss test main".to_string());
+            }
+            if base_branch.is_some() {
+                return Err("--base-branch is only valid with kiss test base".to_string());
+            }
+        }
     }
-    if mode == "validate-selection" {
-        return validation_mode
-            .map(TestCommandAction::ValidateSelection)
-            .ok_or_else(|| "validate-selection requires commit, base, or main".to_string());
-    }
-    if validation_mode.is_some() {
-        return Err("validation mode is only valid after validate-selection".to_string());
-    }
-    match mode {
-        "commit" => Ok(TestCommandAction::Run(TestChangeMode::Commit)),
-        "base" => Ok(TestCommandAction::Run(TestChangeMode::Base)),
-        "main" => Ok(TestCommandAction::Run(TestChangeMode::Main)),
-        other => Err(format!(
-            "unknown test mode '{other}'. Use commit, base, main, cov, or validate-selection."
-        )),
-    }
+    Ok(())
 }
 
 #[derive(Subcommand, Debug)]
@@ -219,18 +288,16 @@ pub enum Commands {
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
     },
-    /// Run pytest / cargo test for tests covering changed files (git-based)
+    /// Run pytest / cargo nextest for covering tests (git modes, all, or PATH targets)
     #[command(alias = "t")]
     Test {
-        /// What to run: commit, base, main, cov, or validate-selection
-        #[arg(value_name = "commit|base|main|cov|validate-selection")]
-        mode: String,
-        /// Diff mode for `validate-selection`
+        /// `commit`, `base`, `main`, `all`, or one or more `PATH` / `PATH::symbol` targets
         #[arg(
-            value_name = "commit|base|main",
-            required_if_eq("mode", "validate-selection")
+            required = true,
+            num_args = 1..,
+            value_name = "commit|base|main|all|TARGET"
         )]
-        validation_mode: Option<TestChangeMode>,
+        operands: Vec<String>,
         #[arg(long, value_name = "BRANCH")]
         main_branch: Option<String>,
         #[arg(long, value_name = "BRANCH")]
@@ -248,9 +315,6 @@ pub enum Commands {
         jobs: usize,
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
-        /// Optional validation fixture name
-        #[arg(long, value_name = "NAME")]
-        fixture: Option<String>,
         #[arg(last = true)]
         extra: Vec<String>,
     },
@@ -293,69 +357,5 @@ pub enum Commands {
 }
 
 #[cfg(test)]
-mod coverage_witness {
-    use super::*;
-    use clap::{CommandFactory, Parser};
-
-    impl Cli {
-        fn witness() -> Self {
-            Cli::parse_from(["kiss", "rules"])
-        }
-    }
-
-    impl Commands {
-        fn witness() -> Self {
-            Commands::Rules
-        }
-    }
-
-    #[test]
-    fn witness_cli_types() {
-        let _ = Cli::witness();
-        let _ = Commands::witness();
-        assert!(parse_language("python").is_ok());
-    }
-
-    #[test]
-    fn cov_accepts_jobs_override() {
-        let cli = Cli::parse_from(["kiss", "cov", "-j", "7"]);
-        assert!(matches!(cli.command, Commands::Cov { jobs: Some(7), .. }));
-    }
-
-    #[test]
-    fn cov_rejects_zero_jobs_override() {
-        assert!(Cli::try_parse_from(["kiss", "cov", "-j", "0"]).is_err());
-    }
-
-    #[test]
-    fn check_rejects_removed_coverage_flags() {
-        assert!(Cli::try_parse_from(["kiss", "check", "--all"]).is_err());
-        assert!(Cli::try_parse_from(["kiss", "check", "-j", "2"]).is_err());
-    }
-
-    #[test]
-    fn test_cov_mode_parses_as_cov_action() {
-        assert_eq!(
-            parse_test_command_action("cov", None).unwrap(),
-            TestCommandAction::Cov
-        );
-        assert!(parse_test_command_action("cov", Some(TestChangeMode::Commit)).is_err());
-    }
-
-    #[test]
-    fn test_command_help_is_language_neutral_for_shared_options() {
-        let mut command = Cli::command();
-        let help = command
-            .find_subcommand_mut("test")
-            .expect("test subcommand exists")
-            .render_long_help()
-            .to_string();
-
-        assert!(
-            help.contains("Force selected tests to rerun instead of reusing test-runner caches")
-        );
-        assert!(help.contains("Maximum number of test jobs to run concurrently"));
-        assert!(!help.contains("Force Python tests"));
-        assert!(!help.contains("Maximum number of Python test jobs"));
-    }
-}
+#[path = "args_test.rs"]
+mod coverage_witness;

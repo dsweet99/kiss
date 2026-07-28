@@ -134,8 +134,7 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
                 lang: None,
                 defaults: true,
                 command: Commands::Test {
-                    mode: "invalid".to_string(),
-                    validation_mode: None,
+                    operands: vec!["invalid".to_string()],
                     main_branch: None,
                     base_branch: None,
                     dry_run: true,
@@ -143,7 +142,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
                     metrics: false,
                     jobs: 1,
                     ignore: vec![],
-                    fixture: None,
                     extra: vec![],
                 },
             },
@@ -176,8 +174,7 @@ fn dispatch_test_command_routes_valid_test_mode() {
     let code = super::dispatch_test_command(
         None,
         Commands::Test {
-            mode: "commit".to_string(),
-            validation_mode: None,
+            operands: vec!["commit".to_string()],
             main_branch: None,
             base_branch: None,
             dry_run: true,
@@ -185,7 +182,6 @@ fn dispatch_test_command_routes_valid_test_mode() {
             metrics: false,
             jobs: 1,
             ignore: vec![],
-            fixture: None,
             extra: vec![],
         },
         &cfg,
@@ -197,7 +193,7 @@ fn dispatch_test_command_routes_valid_test_mode() {
 }
 
 #[test]
-fn dispatch_test_command_routes_validate_selection_mode() {
+fn dispatch_test_command_rejects_removed_validate_selection() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     let orig_dir = std::env::current_dir().unwrap();
@@ -214,8 +210,7 @@ fn dispatch_test_command_routes_validate_selection_mode() {
     let code = super::dispatch_test_command(
         Some(kiss::Language::Python),
         Commands::Test {
-            mode: "validate-selection".to_string(),
-            validation_mode: Some(crate::test_git::TestChangeMode::Commit),
+            operands: vec!["validate-selection".to_string()],
             main_branch: None,
             base_branch: None,
             dry_run: true,
@@ -223,7 +218,6 @@ fn dispatch_test_command_routes_validate_selection_mode() {
             metrics: false,
             jobs: 1,
             ignore: vec![],
-            fixture: None,
             extra: vec![],
         },
         &cfg,
@@ -231,5 +225,5 @@ fn dispatch_test_command_routes_validate_selection_mode() {
     );
 
     std::env::set_current_dir(orig_dir).unwrap();
-    assert_eq!(code, 1);
+    assert_eq!(code, 2);
 }

@@ -145,12 +145,13 @@ fn python_version_supports_rslip(version: &str) -> bool {
 }
 
 fn print_rslip_outcome(outcome: &RslipOutcome) {
+    let duration = crate::test_runner::duration::format_test_duration(outcome.duration);
     match (outcome.status, outcome.cache_status) {
         (rpytest_runner::TestStatus::Passed, PyCacheStatus::Hit) => {
             println!("PASSED (cached): {}", outcome.nodeid);
         }
         (rpytest_runner::TestStatus::Passed, PyCacheStatus::MissStored) => {
-            println!("PASSED: {}", outcome.nodeid);
+            println!("PASSED: {} ({duration})", outcome.nodeid);
         }
         (rpytest_runner::TestStatus::Failed, PyCacheStatus::Hit) => {
             println!("FAILED (cached): {}", outcome.nodeid);
@@ -159,7 +160,7 @@ fn print_rslip_outcome(outcome: &RslipOutcome) {
             );
         }
         (rpytest_runner::TestStatus::Failed, PyCacheStatus::MissStored) => {
-            println!("FAILED: {}", outcome.nodeid);
+            println!("FAILED: {} ({duration})", outcome.nodeid);
             if let Some(stderr) = &outcome.stderr
                 && !stderr.is_empty()
             {

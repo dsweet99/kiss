@@ -184,34 +184,38 @@ fn test_test_cli_parse() {
     let cli = Cli::try_parse_from(["kiss", "test", "base", "--dry-run", "--metrics"]).unwrap();
     match cli.command {
         Commands::Test {
-            mode,
-            validation_mode: None,
+            operands,
             dry_run: true,
             metrics: true,
             ..
-        } => assert_eq!(mode, "base"),
+        } => assert_eq!(operands, vec!["base".to_string()]),
         _ => panic!("expected Test base dry-run"),
     }
 
     let cli = Cli::try_parse_from(["kiss", "t", "main"]).unwrap();
     match cli.command {
-        Commands::Test {
-            mode,
-            validation_mode: None,
-            ..
-        } => assert_eq!(mode, "main"),
+        Commands::Test { operands, .. } => assert_eq!(operands, vec!["main".to_string()]),
         _ => panic!("expected Test main"),
     }
 
-    let cli =
-        Cli::try_parse_from(["kiss", "test", "validate-selection", "commit", "--dry-run"]).unwrap();
+    let cli = Cli::try_parse_from(["kiss", "test", "all", "--dry-run"]).unwrap();
     match cli.command {
         Commands::Test {
-            mode,
-            validation_mode: Some(crate::test_git::TestChangeMode::Commit),
+            operands,
             dry_run: true,
             ..
-        } => assert_eq!(mode, "validate-selection"),
-        _ => panic!("expected validate-selection commit dry-run"),
+        } => assert_eq!(operands, vec!["all".to_string()]),
+        _ => panic!("expected Test all dry-run"),
+    }
+
+    let cli = Cli::parse_from(["kiss", "test", "src/lib.rs", "tests/t.py::test_x"]);
+    match cli.command {
+        Commands::Test { operands, .. } => {
+            assert_eq!(
+                operands,
+                vec!["src/lib.rs".to_string(), "tests/t.py::test_x".to_string()]
+            );
+        }
+        _ => panic!("expected targets"),
     }
 }

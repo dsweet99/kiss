@@ -343,15 +343,16 @@ fn detect_rust_coverage_tool_versions(
 }
 
 fn print_rust_llvm_cov_outcome(outcome: &RustLlvmCovOutcome) {
+    let duration = crate::test_runner::duration::format_test_duration(outcome.duration);
     match (outcome.status, outcome.cache_status) {
         (rpytest_runner::TestStatus::Passed, RustCovCacheStatus::Hit) => {
             println!("PASSED (cached): {}", outcome.selector);
         }
         (rpytest_runner::TestStatus::Passed, RustCovCacheStatus::MissStored) => {
-            println!("PASSED: {}", outcome.selector);
+            println!("PASSED: {} ({duration})", outcome.selector);
         }
         (rpytest_runner::TestStatus::Passed, RustCovCacheStatus::FreshUnstored) => {
-            println!("PASSED (not cached): {}", outcome.selector);
+            println!("PASSED (not cached): {} ({duration})", outcome.selector);
         }
         (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::Hit) => {
             println!("FAILED (cached): {}", outcome.selector);
@@ -360,7 +361,7 @@ fn print_rust_llvm_cov_outcome(outcome: &RustLlvmCovOutcome) {
             );
         }
         (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::MissStored) => {
-            println!("FAILED: {}", outcome.selector);
+            println!("FAILED: {} ({duration})", outcome.selector);
             if let Some(stderr) = &outcome.stderr
                 && !stderr.is_empty()
             {
@@ -368,7 +369,7 @@ fn print_rust_llvm_cov_outcome(outcome: &RustLlvmCovOutcome) {
             }
         }
         (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::FreshUnstored) => {
-            println!("FAILED (not cached): {}", outcome.selector);
+            println!("FAILED (not cached): {} ({duration})", outcome.selector);
             if let Some(stderr) = &outcome.stderr
                 && !stderr.is_empty()
             {

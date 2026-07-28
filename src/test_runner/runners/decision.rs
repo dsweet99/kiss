@@ -36,6 +36,19 @@ pub(crate) struct SelectorPlan {
     pub(crate) rust_selection_basis: RustSelectionBasis,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct CombinedSelectorInput<'a> {
+    pub(crate) repo_root: &'a Path,
+    pub(crate) source_paths: &'a [PathBuf],
+    pub(crate) test_paths: &'a [PathBuf],
+    pub(crate) changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
+    pub(crate) rust_test_args: &'a [String],
+    pub(crate) lang_filter: Option<kiss::Language>,
+    pub(crate) ignore: &'a [String],
+    pub(crate) extra_direct_python: &'a [String],
+    pub(crate) extra_direct_rust: &'a [String],
+}
+
 pub(crate) fn combined_selectors(
     repo_root: &Path,
     source_paths: &[PathBuf],
@@ -45,6 +58,22 @@ pub(crate) fn combined_selectors(
     lang_filter: Option<kiss::Language>,
     ignore: &[String],
 ) -> Result<SelectorPlan, String> {
+    combined_selectors_with_direct(CombinedSelectorInput {
+        repo_root,
+        source_paths,
+        test_paths,
+        changed_lines: rust_changed_lines,
+        rust_test_args,
+        lang_filter,
+        ignore,
+        extra_direct_python: &[],
+        extra_direct_rust: &[],
+    })
+}
+
+pub(crate) fn combined_selectors_with_direct(
+    input: CombinedSelectorInput<'_>,
+) -> Result<SelectorPlan, String> {
     let plan_trace = std::env::var_os("KISS_PLAN_TRACE").is_some();
     let mut mark = std::time::Instant::now();
     let mut lap = |label: &str| {
@@ -53,27 +82,39 @@ pub(crate) fn combined_selectors(
             mark = std::time::Instant::now();
         }
     };
-    let prepared = decision_rust_paths::prepare_rust_inputs(
-        repo_root,
-        source_paths,
-        test_paths,
-        rust_changed_lines,
-        rust_test_args,
-        lang_filter,
-        ignore,
+    let mut prepared = decision_rust_paths::prepare_rust_inputs(
+        input.repo_root,
+        input.source_paths,
+        input.test_paths,
+        input.changed_lines,
+        input.rust_test_args,
+        input.lang_filter,
+        input.ignore,
     )?;
+    for selector in input.extra_direct_python {
+        prepared
+            .changed_tests
+            .python
+            .push(TestSelector::new(kiss::Language::Python, selector.clone()));
+    }
+    for selector in input.extra_direct_rust {
+        prepared
+            .changed_tests
+            .rust
+            .push(TestSelector::new(kiss::Language::Rust, selector.clone()));
+    }
     lap("prepare_rust_inputs");
     let changed_sources =
         changed_sources_for_engine(&prepared.py_source_paths, &prepared.rust_source_paths);
     let engine_backers = engine_backers(EngineBackerInputs {
-        repo_root,
+        repo_root: input.repo_root,
         py_source_paths: &prepared.py_source_paths,
         python_changed_lines: &prepared.python_changed_lines,
         rust_source_paths: &prepared.rust_source_paths,
         rust_changed_lines: &prepared.rust_changed_lines,
-        rust_test_args,
-        lang_filter,
-        ignore,
+        rust_test_args: input.rust_test_args,
+        lang_filter: input.lang_filter,
+        ignore: input.ignore,
         changed_tests: &prepared.changed_tests,
         rust_resolved: prepared.rust_resolved.clone(),
     })?;

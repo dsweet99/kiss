@@ -1,0 +1,85 @@
+use super::*;
+use kiss::Language;
+use std::fs;
+use tempfile::tempdir;
+
+#[test]
+fn parse_test_target_accepts_path_and_symbol_forms() {
+    let path_only = parse_test_target("src/lib.rs").unwrap();
+    assert_eq!(path_only.language, Language::Rust);
+    assert!(path_only.symbol.is_none());
+
+    let with_symbol = parse_test_target("tests/test_x.py::test_y").unwrap();
+    assert_eq!(with_symbol.language, Language::Python);
+    assert_eq!(with_symbol.symbol.as_deref(), Some("test_y"));
+    assert!(with_symbol.member.is_none());
+
+    let with_member = parse_test_target("src/app.py::Foo.bar").unwrap();
+    assert_eq!(with_member.symbol.as_deref(), Some("Foo"));
+    assert_eq!(with_member.member.as_deref(), Some("bar"));
+}
+
+#[test]
+fn parse_test_target_rejects_malformed_operands() {
+    assert!(parse_test_target("").is_err());
+    assert!(parse_test_target("::foo").is_err());
+    assert!(parse_test_target("a.py::").is_err());
+    assert!(parse_test_target("a.py::Foo.bar.baz").is_err());
+    assert!(parse_test_target("a.py::A::B").is_err());
+    assert!(parse_test_target("readme.md").is_err());
+}
+
+#[test]
+fn rust_source_model_extracts_tests_and_types() {
+    let tmp = tempdir().unwrap();
+    let path = tmp.path().join("lib.rs");
+    fs::write(
+        &path,
+        r#"
+pub struct Config;
+impl Config {
+    pub fn load() {}
+}
+pub fn helper() {}
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn covers_helper() {}
+}
+"#,
+    )
+    .unwrap();
+    let model = super::model::load_source_model(&path, Language::Rust).unwrap();
+    assert!(model.definitions.iter().any(|d| d.name == "Config" && d.member.is_none()));
+    assert!(
+        model
+            .definitions
+            .iter()
+            .any(|d| d.name == "Config" && d.member.as_deref() == Some("load"))
+    );
+    assert!(model.direct_tests.iter().any(|t| t.selector.contains("covers_helper")));
+    assert!(!model.non_test_lines().is_empty());
+}
+
+#[test]
+fn python_source_model_marks_test_and_class_spans() {
+    let tmp = tempdir().unwrap();
+    let path = tmp.path().join("mod.py");
+    fs::write(
+        &path,
+        "class Box:\n    def value(self):\n        return 1\n\ndef helper():\n    return 2\n\ndef test_helper():\n    assert helper() == 2\n",
+    )
+    .unwrap();
+    let model = super::model::load_source_model(&path, Language::Python).unwrap();
+    assert!(model.definitions.iter().any(|d| d.name == "Box" && d.member.is_none()));
+    assert!(
+        model
+            .definitions
+            .iter()
+            .any(|d| d.name == "Box" && d.member.as_deref() == Some("value"))
+    );
+    assert!(model.direct_tests.iter().any(|t| t.name == "test_helper"));
+    let non_test = model.non_test_lines();
+    assert!(non_test.contains(&1));
+    assert!(!non_test.is_empty());
+}

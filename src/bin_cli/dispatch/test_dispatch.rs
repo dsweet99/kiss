@@ -108,9 +108,7 @@ fn call_handler_dispatchers(
     });
     let _ = handlers::dispatch_test(options::TestDispatchOptions {
         lang: None,
-        action: crate::bin_cli::args::TestCommandAction::Run(
-            crate::test_git::TestChangeMode::Commit,
-        ),
+        invocation: crate::bin_cli::args::TestInvocation::Commit,
         main_branch: None,
         base_branch: None,
         dry_run: true,
@@ -118,7 +116,6 @@ fn call_handler_dispatchers(
         metrics: false,
         jobs: 1,
         ignore: vec![],
-        fixture: None,
         extra: vec![],
         test_cfg: test,
     });
@@ -199,8 +196,7 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
         super::dispatch_test_command(
             None,
             Commands::Test {
-                mode: "invalid".to_string(),
-                validation_mode: None,
+                operands: vec!["invalid".to_string()],
                 main_branch: None,
                 base_branch: None,
                 dry_run: true,
@@ -208,7 +204,6 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
                 metrics: false,
                 jobs: 1,
                 ignore: vec![],
-                fixture: None,
                 extra: vec![],
             },
             &cfg,

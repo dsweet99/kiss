@@ -185,7 +185,11 @@ fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Optio
     );
     let code = with_cwd(tmp.path(), || {
         run_test(RunTestCmdArgs {
-            mode,
+            invocation: match mode {
+                TestChangeMode::Commit => crate::bin_cli::args::TestInvocation::Commit,
+                TestChangeMode::Base => crate::bin_cli::args::TestInvocation::Base,
+                TestChangeMode::Main => crate::bin_cli::args::TestInvocation::Main,
+            },
             main_branch_cli: main,
             base_branch_cli: base,
             dry_run: true,
@@ -252,7 +256,7 @@ fn row_k_run_test_base_without_other_refs_fails() {
     );
     let code = with_cwd(tmp.path(), || {
         run_test(RunTestCmdArgs {
-            mode: TestChangeMode::Base,
+            invocation: crate::bin_cli::args::TestInvocation::Base,
             main_branch_cli: None,
             base_branch_cli: None,
             dry_run: true,

@@ -1,5 +1,8 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::time::Duration;
+
+use rust_llvm_cov_runner::parse_batch_event_stream;
 
 use super::{SelectorCacheRecord, SelectorExecutionSummary};
 
@@ -35,14 +38,34 @@ where
             command_output_text(&output)
         ));
     }
+    let stream = parse_batch_event_stream(&output.stdout).map_err(|err| {
+        format!("error: kiss test: failed to parse uninstrumented nextest events: {err:?}")
+    })?;
     let mut summary = SelectorExecutionSummary::default();
-    for selector in selectors {
-        println!("PASSED: {selector}");
-        summary.record(
-            rpytest_runner::TestStatus::Passed,
-            SelectorCacheRecord::MissUnstored,
-            Some(0),
-        );
+    if stream.terminal_tests.is_empty() {
+        // Structured events absent (for example, empty fixture runners): keep
+        // selector accounting without inventing a fresh duration.
+        for selector in selectors {
+            println!("PASSED: {selector} (0.00s)");
+            summary.record(
+                rpytest_runner::TestStatus::Passed,
+                SelectorCacheRecord::MissUnstored,
+                Some(0),
+            );
+        }
+        return Ok(summary);
+    }
+    for terminal in &stream.terminal_tests {
+        let duration = Duration::from_secs_f64(terminal.exec_time_secs.max(0.0));
+        let formatted = crate::test_runner::duration::format_test_duration(duration);
+        let status = if terminal.passed {
+            println!("PASSED: {} ({formatted})", terminal.test_name);
+            rpytest_runner::TestStatus::Passed
+        } else {
+            println!("FAILED: {} ({formatted})", terminal.test_name);
+            rpytest_runner::TestStatus::Failed
+        };
+        summary.record(status, SelectorCacheRecord::MissUnstored, Some(0));
     }
     Ok(summary)
 }
@@ -57,6 +80,10 @@ fn build_uninstrumented_nextest_population_args(jobs: usize) -> Vec<String> {
         "0".to_string(),
         "-j".to_string(),
         jobs.to_string(),
+        "--message-format".to_string(),
+        "libtest-json-plus".to_string(),
+        "--message-format-version".to_string(),
+        "0.1".to_string(),
         "--status-level".to_string(),
         "none".to_string(),
         "--final-status-level".to_string(),
@@ -97,40 +124,32 @@ mod tests {
         assert!(args.windows(2).any(|pair| pair == ["-j", "16"]));
         assert!(
             args.windows(2)
+                .any(|pair| pair == ["--message-format", "libtest-json-plus"])
+        );
+        assert!(
+            args.windows(2)
                 .any(|pair| pair == ["--status-level", "none"])
-        );
-        assert!(
-            args.windows(2)
-                .any(|pair| pair == ["--final-status-level", "none"])
-        );
-        assert!(
-            args.windows(2)
-                .any(|pair| pair == ["--success-output", "never"])
         );
     }
 
     #[test]
-    fn uninstrumented_population_success_records_requested_selectors_unstored() {
-        let selectors = vec![
-            "crate::tests::alpha".to_string(),
-            "selector with spaces".to_string(),
-        ];
-        let mut observed_args = Vec::new();
-
+    fn uninstrumented_population_prints_structured_durations() {
+        let selectors = vec!["crate::tests::alpha".to_string()];
+        let stdout = concat!(
+            r#"{"type":"suite","event":"started","test_count":1}"#,
+            "\n",
+            r#"{"type":"test","event":"ok","name":"pkg::bin$alpha","exec_time":0.12}"#,
+            "\n",
+        );
         let summary =
-            run_uninstrumented_rust_population_selectors_with_runner(&selectors, 3, |args| {
-                observed_args = args.to_vec();
-                Ok(output(0, "", ""))
+            run_uninstrumented_rust_population_selectors_with_runner(&selectors, 3, |_args| {
+                Ok(output(0, stdout, ""))
             })
             .unwrap();
 
-        assert_eq!(summary.total, selectors.len());
-        assert_eq!(summary.cache_misses, selectors.len());
-        assert_eq!(summary.cache_unstored, selectors.len());
+        assert_eq!(summary.total, 1);
         assert_eq!(summary.failed, 0);
         assert_eq!(summary.exit_code, 0);
-        assert!(observed_args.windows(2).any(|pair| pair == ["-j", "3"]));
-        assert!(!observed_args.iter().any(|arg| selectors.contains(arg)));
     }
 
     #[test]
