@@ -257,6 +257,13 @@ fn selectors_by_changed_file_line(
         return BTreeMap::new();
     }
     let cache_root = rust_coverage_cache_root(repo_root);
+    if let Some(from_reverse) = rust_llvm_cov_runner::query_reverse_line_index(
+        &cache_root,
+        generation_fingerprint,
+        changed_rels,
+    ) {
+        return from_reverse;
+    }
     let entries = load_entries_for_line_selection(&cache_root, generation_fingerprint);
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (selector, coverage) in entries {

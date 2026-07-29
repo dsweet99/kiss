@@ -176,6 +176,12 @@ pub fn publish_derived_state_with_binaries(
         &entries_fingerprint,
         &index,
     )?;
+    crate::batch_reverse_line_index::publish_reverse_line_index(
+        &req.cache_root,
+        &req.source_root,
+        &identity.generation_fingerprint,
+        &entries_fingerprint,
+    )?;
     crate::batch_derived_manifest::write_population_manifest(
         &req.cache_root,
         &req.source_root,
@@ -220,6 +226,12 @@ pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
         &identity.generation_fingerprint,
         &entries_fingerprint,
         &index,
+    )?;
+    crate::batch_reverse_line_index::publish_reverse_line_index(
+        &req.cache_root,
+        &req.source_root,
+        &identity.generation_fingerprint,
+        &entries_fingerprint,
     )?;
     let test_binaries = aggregate
         .binaries

@@ -16,6 +16,7 @@ mod batch_derived_index_check_aggregate_support;
 mod batch_derived_index_types;
 mod batch_derived_manifest;
 mod batch_derived_prune;
+mod batch_reverse_line_index;
 mod batch_derived_snapshot;
 mod batch_events;
 mod batch_executable_index;
@@ -98,6 +99,9 @@ pub use batch_derived::{
     POPULATION_SCHEMA_VERSION as BATCH_POPULATION_SCHEMA_VERSION, population_derived_state_stale,
     population_manifest_state_is_current, prune_obsolete_selective_generations,
     publish_derived_state, publish_derived_state_with_binaries,
+};
+pub use batch_reverse_line_index::{
+    publish_reverse_line_index, query_reverse_line_index, reverse_line_index_dir,
 };
 pub use batch_derived_entries::{RustReusableSelectorEntry, load_reusable_prior_selector_entries};
 pub use batch_derived_incremental::{IncrementalPublishPlan, publish_incremental_derived_state};

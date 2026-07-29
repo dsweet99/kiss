@@ -51,10 +51,52 @@ fn resolve_path_symbol_uses_definition_lines() {
     )
     .unwrap();
     assert!(query.direct_rust.is_empty());
+    assert!(query.rust_files.is_empty());
     assert_eq!(query.rust_lines.len(), 1);
     let lines = query.rust_lines.values().next().unwrap();
     assert!(lines.contains(&1));
     assert!(!lines.contains(&2));
+}
+
+#[test]
+fn resolve_path_uses_file_level_not_line_map() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    let path = tmp.path().join("lib.rs");
+    fs::write(&path, "pub fn alpha() {}\n").unwrap();
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["lib.rs".into()],
+        Some(Language::Rust),
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(query.rust_files.len(), 1);
+    assert!(query.rust_lines.is_empty());
+    let model = super::model::load_source_model(&path, Language::Rust).unwrap();
+    assert!(!model.non_test_lines().is_empty());
+    assert_eq!(model.all_lines().len() as u32, model.line_count);
+    assert!(model.direct_test_lines().is_empty());
+}
+
+#[test]
+fn resolve_const_symbol_uses_definition_span() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    let path = tmp.path().join("lib.rs");
+    fs::write(&path, "pub(super) const RS_RULE_SPECS: &[u8] = &[1, 2];\n").unwrap();
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["lib.rs::RS_RULE_SPECS".into()],
+        Some(Language::Rust),
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert!(query.rust_files.is_empty());
+    assert_eq!(query.rust_lines.len(), 1);
+    assert!(query.rust_lines.values().next().unwrap().contains(&1));
 }
 
 #[test]

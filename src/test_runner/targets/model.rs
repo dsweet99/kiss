@@ -32,14 +32,17 @@ pub(crate) struct SourceModel {
     pub language: Language,
     pub direct_tests: Vec<DirectTestDef>,
     pub definitions: Vec<NamedDefinition>,
+    #[allow(dead_code)]
     pub line_count: u32,
 }
 
 impl SourceModel {
+    #[allow(dead_code)]
     pub(crate) fn all_lines(&self) -> BTreeSet<u32> {
         (1..=self.line_count).collect()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn direct_test_lines(&self) -> BTreeSet<u32> {
         let mut lines = BTreeSet::new();
         for test in &self.direct_tests {
@@ -48,6 +51,7 @@ impl SourceModel {
         lines
     }
 
+    #[allow(dead_code)]
     pub(crate) fn non_test_lines(&self) -> BTreeSet<u32> {
         let test_lines = self.direct_test_lines();
         self.all_lines()

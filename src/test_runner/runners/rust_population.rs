@@ -14,6 +14,7 @@ pub(crate) fn run_uninstrumented_rust_population_selectors(
     run_uninstrumented_rust_population_selectors_with_runner(selectors, jobs, |args| {
         Command::new("cargo")
             .args(args)
+            .env("NEXTEST_EXPERIMENTAL_LIBTEST_JSON", "1")
             .current_dir(repo_root)
             .stdin(Stdio::null())
             .output()

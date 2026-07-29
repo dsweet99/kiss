@@ -50,6 +50,8 @@ fn collect_items(
             Item::Enum(item) => push_named(item.ident.to_string(), item, definitions),
             Item::Trait(item) => push_trait(item, definitions),
             Item::Impl(item_impl) => push_impl(item_impl, definitions, direct_tests),
+            Item::Const(item) => push_named(item.ident.to_string(), item, definitions),
+            Item::Static(item) => push_named(item.ident.to_string(), item, definitions),
             _ => {}
         }
     }

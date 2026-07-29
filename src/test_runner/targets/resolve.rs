@@ -15,6 +15,10 @@ use crate::test_runner::runners::collect_python_nodeids_for_targets;
 pub(crate) struct TargetSelectionQuery {
     pub direct_python: BTreeSet<String>,
     pub direct_rust: BTreeSet<String>,
+    /// Whole-file PATH operands (file-level coverage selection).
+    pub python_files: BTreeSet<PathBuf>,
+    pub rust_files: BTreeSet<PathBuf>,
+    /// PATH::symbol operands (line-precise coverage selection).
     pub python_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
     pub rust_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
 }
@@ -64,10 +68,7 @@ fn apply_parsed_target(
                 }
                 insert_direct(query, model.language, test.selector.clone());
             }
-            let lines = model.non_test_lines();
-            if !lines.is_empty() {
-                insert_lines(query, model.language, abs, lines);
-            }
+            insert_file(query, model.language, abs);
         }
         (Some(name), member) => {
             let def = model.find_definition(name, member)?;
@@ -197,6 +198,17 @@ fn insert_direct(query: &mut TargetSelectionQuery, language: Language, selector:
         }
         Language::Rust => {
             query.direct_rust.insert(selector);
+        }
+    }
+}
+
+fn insert_file(query: &mut TargetSelectionQuery, language: Language, abs: &Path) {
+    match language {
+        Language::Python => {
+            query.python_files.insert(abs.to_path_buf());
+        }
+        Language::Rust => {
+            query.rust_files.insert(abs.to_path_buf());
         }
     }
 }

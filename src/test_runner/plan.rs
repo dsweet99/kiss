@@ -76,6 +76,8 @@ fn plan_explicit_target_selectors(
     let query = resolve_target_operands(repo_root, targets, lang_filter, ignore, extra)
         .map_err(|e| format!("error: kiss test: {e}"))?;
     let mut source_paths = Vec::new();
+    source_paths.extend(query.python_files.iter().cloned());
+    source_paths.extend(query.rust_files.iter().cloned());
     source_paths.extend(query.python_lines.keys().cloned());
     source_paths.extend(query.rust_lines.keys().cloned());
     source_paths.sort();
