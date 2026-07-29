@@ -176,12 +176,14 @@ pub(super) fn run_rust_selectors_for_module(
     }
     if let Some(population_selectors) = population_publication_selectors {
         if !ctx.options.force_rerun {
-            if ctx.options.extra.is_empty() && ctx.planned.ignore.is_empty() {
-                return runners::run_uninstrumented_rust_population_selectors(
+            if ctx.options.extra.is_empty() {
+                return crate::test_runner::check_runtime_refresh::ensure_rust_runtime_coverage_shared(
                     &ctx.planned.repo_root,
-                    selectors,
+                    &ctx.planned.ignore,
                     ctx.options.jobs,
-                );
+                    "kiss test",
+                )
+                .map_err(|err| err.to_string());
             }
             return runners::run_rust_llvm_cov_check_aggregate_population_selectors(
                 &ctx.planned.repo_root,

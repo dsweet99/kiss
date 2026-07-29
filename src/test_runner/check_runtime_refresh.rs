@@ -16,10 +16,16 @@ use crate::test_runner::python_coverage_index::{
 
 #[path = "check_runtime_refresh_repair.rs"]
 mod check_runtime_refresh_repair;
-use check_runtime_refresh_repair::{CheckAggregateRepairDecision, classify_check_aggregate_repair};
+use check_runtime_refresh_repair::try_repair_rust_check_aggregate_labeled;
+#[cfg(test)]
+pub(crate) use check_runtime_refresh_repair::{
+    CheckAggregateRepairDecision, classify_check_aggregate_repair,
+};
 
 #[path = "check_runtime_refresh_apply.rs"]
 mod check_runtime_refresh_apply;
+pub(crate) use check_runtime_refresh_apply::finalize_population_summary_labeled;
+#[cfg(test)]
 pub(crate) use check_runtime_refresh_apply::{
     apply_identity_only_repair, apply_rerun_repair, finalize_population_summary,
 };
@@ -290,13 +296,14 @@ fn ensure_rust_runtime_coverage(
     ignore: &[String],
     jobs: usize,
 ) -> Result<(), CoverageRefreshError> {
-    ensure_rust_runtime_coverage_with_stats(repo_root, ignore, jobs).map(|_| ())
+    ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, "kiss cov").map(|_| ())
 }
 
-fn ensure_rust_runtime_coverage_with_stats(
+fn ensure_rust_runtime_coverage_with_stats_labeled(
     repo_root: &Path,
     ignore: &[String],
     jobs: usize,
+    caller_label: &str,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     let _guard = lock_refresh(repo_root, "Rust")?;
     match load_rust_runtime_coverage(repo_root, ignore) {
@@ -306,23 +313,63 @@ fn ensure_rust_runtime_coverage_with_stats(
                 crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
                     .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
             if let Some(stats) =
-                try_repair_rust_check_aggregate(repo_root, ignore, &selectors, jobs)?
+                try_repair_rust_check_aggregate_labeled(repo_root, ignore, &selectors, jobs, caller_label)?
             {
                 return Ok(stats);
             }
-            refresh_full_rust_check_aggregate(repo_root, ignore, &selectors, jobs)
+            refresh_full_rust_check_aggregate_labeled(repo_root, ignore, &selectors, jobs, caller_label)
         }
     }
 }
 
-fn refresh_full_rust_check_aggregate(
+/// Shared durable-aware Rust ensure/refresh entry point used by both `kiss cov` and
+/// cold non-force `kiss test` population when `extra` is empty.
+///
+/// Performs the same missing-`.kiss` durable hydration as `ensure_check_runtime_coverage`,
+/// then runs the lock / load / repair / full-refresh body. Returns a
+/// `SelectorExecutionSummary` with cached-hit accounting when coverage was already
+/// loadable, or the real batch summary after a full refresh.
+pub(crate) fn ensure_rust_runtime_coverage_shared(
+    repo_root: &Path,
+    ignore: &[String],
+    jobs: usize,
+    caller_label: &str,
+) -> Result<crate::test_runner::runners::SelectorExecutionSummary, CoverageRefreshError> {
+    let required = crate::test_runner::check_line_coverage::RequiredCoverageLanguages {
+        python: false,
+        rust: true,
+    };
+    if super::durable_cov_generation::try_hydrate_if_kiss_absent(repo_root, required, ignore)
+        && load_rust_runtime_coverage(repo_root, ignore).is_ok()
+    {
+        let rust_batch_cache_hits =
+            crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
+                .unwrap_or_default()
+                .len();
+        return Ok(crate::test_runner::runners::SelectorExecutionSummary {
+            rust_batch_cache_hits,
+            ..Default::default()
+        });
+    }
+    let stats = ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, caller_label)?;
+    super::durable_cov_generation::publish_durable_generation(repo_root, required, ignore);
+    Ok(crate::test_runner::runners::SelectorExecutionSummary {
+        rust_test_instances: stats.rust_test_instances,
+        rust_aggregate_binaries: stats.rust_aggregate_binaries,
+        rust_aggregate_exports: stats.rust_aggregate_exports,
+        ..Default::default()
+    })
+}
+
+fn refresh_full_rust_check_aggregate_labeled(
     repo_root: &Path,
     ignore: &[String],
     selectors: &[String],
     jobs: usize,
+    caller_label: &str,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     eprintln!(
-        "kiss cov: refreshing Rust runtime coverage ({} tests)",
+        "{caller_label}: refreshing Rust runtime coverage ({} tests)",
         selectors.len()
     );
     let _refresh_env = ScopedRefreshEnvGuard::set();
@@ -335,77 +382,17 @@ fn refresh_full_rust_check_aggregate(
         None,
     )
     .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
-    finalize_population_summary(repo_root, ignore, &summary, true)
+    finalize_population_summary_labeled(repo_root, ignore, &summary, true, caller_label)
 }
 
+#[cfg(test)]
 pub(crate) fn try_repair_rust_check_aggregate(
     repo_root: &Path,
     ignore: &[String],
     selectors: &[String],
     jobs: usize,
 ) -> Result<Option<CoverageRefreshStats>, CoverageRefreshError> {
-    let current_identity =
-        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
-            repo_root,
-            &[],
-        )
-        .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
-    let cache_root = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root);
-    let Some(prior) = rust_llvm_cov_runner::load_reusable_prior_check_aggregate(
-        &cache_root,
-        repo_root,
-        selectors,
-        &current_identity.selection_context_fingerprint,
-    ) else {
-        return Ok(None);
-    };
-    match rust_llvm_cov_runner::reusable_check_aggregate_delta(
-        repo_root,
-        &prior.ordinary_source_digests,
-        &current_identity.ordinary_source_digests,
-    ) {
-        rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => return Ok(None),
-        rust_llvm_cov_runner::RustSnapshotDelta::Unchanged
-        | rust_llvm_cov_runner::RustSnapshotDelta::Modified(_) => {}
-    }
-    let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
-        repo_root,
-        selectors,
-        &[],
-        jobs,
-    )
-    .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
-    let decision = classify_check_aggregate_repair(
-        selectors,
-        &prior,
-        &build.index.selector_binary_ids,
-        &build.index.test_binaries,
-    );
-    match decision {
-        CheckAggregateRepairDecision::FullRefresh => Ok(None),
-        CheckAggregateRepairDecision::IdentityOnly {
-            retained_binary_line_maps,
-        } => Ok(Some(apply_identity_only_repair(
-            repo_root,
-            ignore,
-            &build,
-            selectors,
-            retained_binary_line_maps,
-        )?)),
-        CheckAggregateRepairDecision::Rerun {
-            rerun_selectors,
-            replacement_binary_ids,
-            retained_binary_line_maps,
-        } => Ok(Some(apply_rerun_repair(
-            repo_root,
-            ignore,
-            &build,
-            rerun_selectors,
-            replacement_binary_ids,
-            retained_binary_line_maps,
-            jobs,
-        )?)),
-    }
+    try_repair_rust_check_aggregate_labeled(repo_root, ignore, selectors, jobs, "kiss cov")
 }
 
 #[cfg(test)]

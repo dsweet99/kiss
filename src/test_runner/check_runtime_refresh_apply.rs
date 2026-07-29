@@ -5,6 +5,7 @@ use crate::test_runner::runners::SelectorExecutionSummary;
 
 use super::{CoverageRefreshError, CoverageRefreshStats, ScopedRefreshEnvGuard};
 
+#[cfg(test)]
 pub(crate) fn apply_identity_only_repair(
     repo_root: &Path,
     ignore: &[String],
@@ -14,6 +15,20 @@ pub(crate) fn apply_identity_only_repair(
         String,
         rust_llvm_cov_runner::RustLineCoverage,
     >,
+) -> Result<CoverageRefreshStats, CoverageRefreshError> {
+    apply_identity_only_repair_labeled(repo_root, ignore, build, selectors, retained_binary_line_maps, "kiss cov")
+}
+
+pub(crate) fn apply_identity_only_repair_labeled(
+    repo_root: &Path,
+    ignore: &[String],
+    build: &crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild,
+    selectors: &[String],
+    retained_binary_line_maps: std::collections::BTreeMap<
+        String,
+        rust_llvm_cov_runner::RustLineCoverage,
+    >,
+    caller_label: &str,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     let aggregate = rust_llvm_cov_runner::build_check_aggregate(
         &build.request,
@@ -30,7 +45,7 @@ pub(crate) fn apply_identity_only_repair(
         .map(|_| ())
         .map_err(|err| CoverageRefreshError::validation("Rust", err))?;
     eprintln!(
-        "kiss cov: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports=0",
+        "{caller_label}: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports=0",
         aggregate.binaries.len()
     );
     Ok(CoverageRefreshStats {
@@ -40,14 +55,25 @@ pub(crate) fn apply_identity_only_repair(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn finalize_population_summary(
     repo_root: &Path,
     ignore: &[String],
     summary: &SelectorExecutionSummary,
     full_refresh: bool,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
+    finalize_population_summary_labeled(repo_root, ignore, summary, full_refresh, "kiss cov")
+}
+
+pub(crate) fn finalize_population_summary_labeled(
+    repo_root: &Path,
+    ignore: &[String],
+    summary: &SelectorExecutionSummary,
+    full_refresh: bool,
+    caller_label: &str,
+) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     eprintln!(
-        "kiss cov: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports={}",
+        "{caller_label}: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports={}",
         summary.rust_aggregate_binaries, summary.rust_aggregate_exports
     );
     if summary.exit_code != 0 {
@@ -70,6 +96,7 @@ pub(crate) fn finalize_population_summary(
     })
 }
 
+#[cfg(test)]
 pub(crate) fn apply_rerun_repair(
     repo_root: &Path,
     ignore: &[String],
@@ -82,8 +109,25 @@ pub(crate) fn apply_rerun_repair(
     >,
     jobs: usize,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
+    apply_rerun_repair_labeled(repo_root, ignore, build, rerun_selectors, replacement_binary_ids, retained_binary_line_maps, jobs, "kiss cov")
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn apply_rerun_repair_labeled(
+    repo_root: &Path,
+    ignore: &[String],
+    build: &crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild,
+    rerun_selectors: Vec<String>,
+    replacement_binary_ids: std::collections::BTreeSet<String>,
+    retained_binary_line_maps: std::collections::BTreeMap<
+        String,
+        rust_llvm_cov_runner::RustLineCoverage,
+    >,
+    jobs: usize,
+    caller_label: &str,
+) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     eprintln!(
-        "kiss cov: incrementally refreshing Rust runtime coverage ({} tests, {} replacement binaries)",
+        "{caller_label}: incrementally refreshing Rust runtime coverage ({} tests, {} replacement binaries)",
         rerun_selectors.len(),
         replacement_binary_ids.len()
     );
@@ -102,5 +146,5 @@ pub(crate) fn apply_rerun_repair(
         Some(repair_publication),
     )
     .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
-    finalize_population_summary(repo_root, ignore, &summary, false)
+    finalize_population_summary_labeled(repo_root, ignore, &summary, false, caller_label)
 }

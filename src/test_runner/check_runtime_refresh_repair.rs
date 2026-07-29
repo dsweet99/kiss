@@ -1,7 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
+
+use super::check_runtime_refresh_apply::{
+    apply_identity_only_repair_labeled, apply_rerun_repair_labeled,
+};
+use super::{CoverageRefreshError, CoverageRefreshStats};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum CheckAggregateRepairDecision {
+pub(crate) enum CheckAggregateRepairDecision {
     FullRefresh,
     IdentityOnly {
         retained_binary_line_maps: BTreeMap<String, rust_llvm_cov_runner::RustLineCoverage>,
@@ -13,7 +19,80 @@ pub(super) enum CheckAggregateRepairDecision {
     },
 }
 
-pub(super) fn classify_check_aggregate_repair(
+pub(super) fn try_repair_rust_check_aggregate_labeled(
+    repo_root: &Path,
+    ignore: &[String],
+    selectors: &[String],
+    jobs: usize,
+    caller_label: &str,
+) -> Result<Option<CoverageRefreshStats>, CoverageRefreshError> {
+    let current_identity =
+        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+            repo_root,
+            &[],
+        )
+        .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
+    let cache_root = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root);
+    let Some(prior) = rust_llvm_cov_runner::load_reusable_prior_check_aggregate(
+        &cache_root,
+        repo_root,
+        selectors,
+        &current_identity.selection_context_fingerprint,
+    ) else {
+        return Ok(None);
+    };
+    match rust_llvm_cov_runner::reusable_check_aggregate_delta(
+        repo_root,
+        &prior.ordinary_source_digests,
+        &current_identity.ordinary_source_digests,
+    ) {
+        rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => return Ok(None),
+        rust_llvm_cov_runner::RustSnapshotDelta::Unchanged
+        | rust_llvm_cov_runner::RustSnapshotDelta::Modified(_) => {}
+    }
+    let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
+        repo_root,
+        selectors,
+        &[],
+        jobs,
+    )
+    .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
+    let decision = classify_check_aggregate_repair(
+        selectors,
+        &prior,
+        &build.index.selector_binary_ids,
+        &build.index.test_binaries,
+    );
+    match decision {
+        CheckAggregateRepairDecision::FullRefresh => Ok(None),
+        CheckAggregateRepairDecision::IdentityOnly {
+            retained_binary_line_maps,
+        } => Ok(Some(apply_identity_only_repair_labeled(
+            repo_root,
+            ignore,
+            &build,
+            selectors,
+            retained_binary_line_maps,
+            caller_label,
+        )?)),
+        CheckAggregateRepairDecision::Rerun {
+            rerun_selectors,
+            replacement_binary_ids,
+            retained_binary_line_maps,
+        } => Ok(Some(apply_rerun_repair_labeled(
+            repo_root,
+            ignore,
+            &build,
+            rerun_selectors,
+            replacement_binary_ids,
+            retained_binary_line_maps,
+            jobs,
+            caller_label,
+        )?)),
+    }
+}
+
+pub(crate) fn classify_check_aggregate_repair(
     selectors: &[String],
     prior: &rust_llvm_cov_runner::ValidatedCheckAggregate,
     current_selector_binary_ids: &BTreeMap<String, Vec<String>>,
