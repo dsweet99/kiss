@@ -1736,6 +1736,76 @@ def coverage_cache_witness() -> None:
         )
 
 
+@cli.command("coverage-no-xdg-hydrate")
+def coverage_no_xdg_hydrate() -> None:
+    """Cold .kiss rebuild must ignore planted XDG durable leases."""
+    assert KISS.is_file(), f"local binary missing: {KISS}"
+    with tempfile.TemporaryDirectory(prefix="kq-noxdg-", dir="/tmp") as tmp:
+        root = Path(tmp)
+        repo = root / "repo"
+        markers = root / "markers"
+        cache_home = root / "xdg-cache"
+        cache_home.mkdir()
+        write_rust_witness_repo(repo)
+        env = witness_env(repo, markers)
+        env["XDG_CACHE_HOME"] = str(cache_home)
+        cold = run(
+            "noxdg-prime",
+            witness_check_command("rust", repo, jobs=4),
+            repo,
+            env,
+            expected=None,
+        )
+        assert_check_gate_allowed(cold)
+        assert "refreshing Rust runtime coverage" in cold.stderr, cold.stderr
+        kiss_dir = repo / ".kiss"
+        assert kiss_dir.is_dir()
+        prime_aggregate = (kiss_dir / "rust_llvm_cov_cache" / "check_aggregate.json").read_bytes()
+        durable_root = cache_home / "kiss" / "kiss-cov-durable"
+        planted_gen = durable_root / "planted-lease"
+        planted_gen.mkdir(parents=True)
+        (planted_gen / "PLANTED_LEASE_MARKER").write_text("do-not-hydrate\n", encoding="utf-8")
+        (planted_gen / "rust_llvm_cov_cache").mkdir()
+        (planted_gen / "rust_llvm_cov_cache" / "check_aggregate.json").write_text(
+            '{"planted": true}\n',
+            encoding="utf-8",
+        )
+        heads = durable_root / "heads"
+        heads.mkdir(parents=True)
+        (heads / "planted.head").write_text("planted-lease\n", encoding="utf-8")
+        durable_before = sorted(path.relative_to(durable_root).as_posix() for path in durable_root.rglob("*") if path.is_file())
+        shutil.rmtree(kiss_dir)
+        assert not kiss_dir.exists()
+        rebuilt = run(
+            "noxdg-cold-after-plant",
+            witness_check_command("rust", repo, jobs=4),
+            repo,
+            env,
+            expected=None,
+        )
+        assert_check_gate_allowed(rebuilt)
+        assert "refreshing Rust runtime coverage" in rebuilt.stderr, rebuilt.stderr
+        assert "hydrated durable coverage generation" not in rebuilt.stderr, rebuilt.stderr
+        assert kiss_dir.is_dir()
+        assert not (kiss_dir / "PLANTED_LEASE_MARKER").exists()
+        rebuilt_aggregate = kiss_dir / "rust_llvm_cov_cache" / "check_aggregate.json"
+        assert rebuilt_aggregate.is_file()
+        rebuilt_bytes = rebuilt_aggregate.read_bytes()
+        assert rebuilt_bytes != b'{"planted": true}\n'
+        assert b'"planted"' not in rebuilt_bytes
+        # Real refresh may differ from the prime run's bytes, but must be valid JSON aggregate.
+        load_json(rebuilt_aggregate)
+        assert prime_aggregate  # primed path produced a real aggregate earlier
+        durable_after = sorted(path.relative_to(durable_root).as_posix() for path in durable_root.rglob("*") if path.is_file())
+        assert durable_after == durable_before, (
+            f"kiss must not publish new durable coverage under XDG: before={durable_before} after={durable_after}"
+        )
+        click.echo(
+            "QA PASS: missing .kiss rebuilds via instrumented refresh; planted "
+            "XDG kiss-cov-durable lease is ignored and not republished."
+        )
+
+
 @cli.command("coverage-publication-crash-recovery")
 def coverage_publication_crash_recovery() -> None:
     """Crash coverage publication at debug barriers and verify recovery."""

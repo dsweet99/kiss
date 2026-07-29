@@ -28,8 +28,31 @@ fn cov_accepts_jobs_override() {
 }
 
 #[test]
+fn cov_jobs_defaults_to_none_for_config_num_jobs() {
+    let cli = Cli::parse_from(["kiss", "cov"]);
+    assert!(matches!(cli.command, Commands::Cov { jobs: None, .. }));
+}
+
+#[test]
 fn cov_rejects_zero_jobs_override() {
     assert!(Cli::try_parse_from(["kiss", "cov", "-j", "0"]).is_err());
+}
+
+#[test]
+fn test_accepts_jobs_override() {
+    let cli = Cli::parse_from(["kiss", "test", "all", "-j", "7"]);
+    assert!(matches!(cli.command, Commands::Test { jobs: Some(7), .. }));
+}
+
+#[test]
+fn test_jobs_defaults_to_none_for_config_num_jobs() {
+    let cli = Cli::parse_from(["kiss", "test", "all"]);
+    assert!(matches!(cli.command, Commands::Test { jobs: None, .. }));
+}
+
+#[test]
+fn test_rejects_zero_jobs_override() {
+    assert!(Cli::try_parse_from(["kiss", "test", "all", "-j", "0"]).is_err());
 }
 
 #[test]

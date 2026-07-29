@@ -126,11 +126,6 @@ fn compute_and_store_records(
         );
     }
     store_cov_records(cache_key, &records);
-    crate::test_runner::durable_cov_generation::publish_durable_generation(
-        repo_root,
-        cache_key.required,
-        cache_key.ignore,
-    );
     records
 }
 
@@ -189,9 +184,7 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
     evaluate_records(&records, &focus, threshold, args.bypass_gate)
 }
 
-/// Hit `cov_records_cache` when present. If `.kiss` is gone, hydrate a durable
-/// generation first and retry — otherwise cold `rm -rf .kiss` pays snapshot load
-/// + record recompute even when durable artifacts already hold the records.
+/// Hit `cov_records_cache` when present under `./.kiss`.
 fn try_cov_records_fast_path(
     cache_key: &CovRecordsCacheKey<'_>,
     focus: &analyze::FocusFilter,
@@ -199,22 +192,6 @@ fn try_cov_records_fast_path(
     args: &CovCommandArgs<'_>,
 ) -> Option<i32> {
     let t0 = Instant::now();
-    if let Some(records) = try_load_cov_records(cache_key) {
-        return Some(finish_records_cache_hit(
-            &records, focus, threshold, args, t0,
-        ));
-    }
-    if cache_key.repo_root.join(".kiss").exists() {
-        return None;
-    }
-    let hydrated = crate::test_runner::durable_cov_generation::try_hydrate_if_kiss_absent(
-        cache_key.repo_root,
-        cache_key.required,
-        cache_key.ignore,
-    );
-    if !hydrated {
-        return None;
-    }
     let records = try_load_cov_records(cache_key)?;
     Some(finish_records_cache_hit(
         &records, focus, threshold, args, t0,

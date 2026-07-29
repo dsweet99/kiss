@@ -154,7 +154,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) ->
         dry_run: o.dry_run,
         force: o.force,
         metrics: o.metrics,
-        jobs: o.jobs,
+        jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
         ignore: &o.ignore,
         extra: &o.extra,
         lang_filter: o.lang,

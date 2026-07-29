@@ -366,7 +366,7 @@ fn aggregate_selection_scope_is_conservative_not_per_test() {
     // per the plan: "the change must not claim per-test attribution."
     //
     // We record this invariant by asserting that `rust_batch_cache_hits` is
-    // populated on a warm durable-hydrate summary, and that `rust_entry_generation_count`
+    // populated on a warm shared-ensure summary, and that `rust_entry_generation_count`
     // (which counts per-test entries) is zero — confirming aggregate-only semantics.
     let summary = crate::test_runner::runners::SelectorExecutionSummary {
         rust_batch_cache_hits: 42,

@@ -2,7 +2,7 @@
 # Thresholds based on max values of analyzed codebase
 
 [test]
-num_jobs = 8
+num_jobs = 24
 
 [gate]
 test_coverage_threshold = 90

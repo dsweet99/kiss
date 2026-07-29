@@ -375,3 +375,29 @@ fn apply_repair_helpers_are_metamorphic_on_error_language_tag() {
         "identity={identity_err} rerun={rerun_err}"
     );
 }
+
+#[test]
+fn successful_ensure_does_not_create_xdg_kiss_cov_durable() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_home = tmp.path().join("xdg-cache");
+    std::fs::create_dir_all(&cache_home).unwrap();
+    let _xdg = crate::test_runner::TestEnvVarGuard::set(
+        "XDG_CACHE_HOME",
+        cache_home.to_str().unwrap(),
+    );
+    let repo_tmp = tempfile::tempdir().unwrap();
+    let app = crate::test_runner::test_mode_fixtures::warm_python_covering_demo(&repo_tmp);
+    assert!(app.is_file());
+    let repo = repo_tmp.path();
+    let required = crate::test_runner::check_line_coverage::RequiredCoverageLanguages {
+        python: true,
+        rust: false,
+    };
+    super::ensure_check_runtime_coverage(repo, required, &[], 1).expect("warm ensure");
+    assert!(
+        !cache_home.join("kiss").join("kiss-cov-durable").exists(),
+        "successful ensure must not publish $XDG_CACHE_HOME/kiss/kiss-cov-durable"
+    );
+    crate::test_runner::check_line_coverage::load_check_runtime_coverage(repo, required, &[])
+        .expect("coverage must remain loadable from ./.kiss");
+}

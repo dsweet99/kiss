@@ -6,8 +6,8 @@ use std::sync::Mutex;
 use fs2::FileExt;
 
 use crate::test_runner::check_line_coverage::{
-    RequiredCoverageLanguages, RuntimeCoverageLoadError, load_check_runtime_coverage,
-    load_python_runtime_coverage, load_rust_runtime_coverage,
+    RequiredCoverageLanguages, RuntimeCoverageLoadError, load_python_runtime_coverage,
+    load_rust_runtime_coverage,
 };
 use crate::test_runner::python_coverage_index::{
     publish_python_derived_state_with_filter,
@@ -136,21 +136,12 @@ pub(crate) fn ensure_check_runtime_coverage(
     ignore: &[String],
     jobs: usize,
 ) -> Result<(), CoverageRefreshError> {
-    if super::durable_cov_generation::try_hydrate_if_kiss_absent(repo_root, required, ignore)
-        && load_check_runtime_coverage(repo_root, required, ignore).is_ok()
-    {
-        return Ok(());
-    }
-    let result = match (required.python, required.rust) {
+    match (required.python, required.rust) {
         (true, true) => refresh_python_and_rust_parallel(repo_root, ignore, jobs),
         (true, false) => ensure_python_runtime_coverage(repo_root, ignore, jobs),
         (false, true) => ensure_rust_runtime_coverage(repo_root, ignore, jobs),
         (false, false) => Ok(()),
-    };
-    if result.is_ok() {
-        super::durable_cov_generation::publish_durable_generation(repo_root, required, ignore);
     }
-    result
 }
 
 fn refresh_python_and_rust_parallel(
@@ -322,26 +313,20 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     }
 }
 
-/// Shared durable-aware Rust ensure/refresh entry point used by both `kiss cov` and
-/// cold non-force `kiss test` population when `extra` is empty.
+/// Shared Rust ensure/refresh entry point used by both `kiss cov` and cold
+/// non-force `kiss test` population when `extra` is empty.
 ///
-/// Performs the same missing-`.kiss` durable hydration as `ensure_check_runtime_coverage`,
-/// then runs the lock / load / repair / full-refresh body. Returns a
-/// `SelectorExecutionSummary` with cached-hit accounting when coverage was already
-/// loadable, or the real batch summary after a full refresh.
+/// Runs the lock / load / repair / full-refresh body against repo-local
+/// `./.kiss` coverage artifacts. Returns a `SelectorExecutionSummary` with
+/// cached-hit accounting when coverage was already loadable, or the real batch
+/// summary after a full refresh.
 pub(crate) fn ensure_rust_runtime_coverage_shared(
     repo_root: &Path,
     ignore: &[String],
     jobs: usize,
     caller_label: &str,
 ) -> Result<crate::test_runner::runners::SelectorExecutionSummary, CoverageRefreshError> {
-    let required = crate::test_runner::check_line_coverage::RequiredCoverageLanguages {
-        python: false,
-        rust: true,
-    };
-    if super::durable_cov_generation::try_hydrate_if_kiss_absent(repo_root, required, ignore)
-        && load_rust_runtime_coverage(repo_root, ignore).is_ok()
-    {
+    if load_rust_runtime_coverage(repo_root, ignore).is_ok() {
         let rust_batch_cache_hits =
             crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
                 .unwrap_or_default()
@@ -352,7 +337,6 @@ pub(crate) fn ensure_rust_runtime_coverage_shared(
         });
     }
     let stats = ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, caller_label)?;
-    super::durable_cov_generation::publish_durable_generation(repo_root, required, ignore);
     Ok(crate::test_runner::runners::SelectorExecutionSummary {
         rust_test_instances: stats.rust_test_instances,
         rust_aggregate_binaries: stats.rust_aggregate_binaries,

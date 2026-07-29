@@ -183,6 +183,7 @@ pub enum Commands {
         #[arg(long)]
         timing: bool,
         /// Maximum test jobs when refreshing runtime coverage
+        /// (default: [test] num_jobs from config)
         #[arg(short = 'j', long, value_name = "JOBS", value_parser = parse_positive_usize)]
         jobs: Option<usize>,
     },
@@ -311,8 +312,9 @@ pub enum Commands {
         #[arg(long)]
         metrics: bool,
         /// Maximum number of test jobs to run concurrently
-        #[arg(short = 'j', long, default_value_t = 1)]
-        jobs: usize,
+        /// (default: [test] num_jobs from config)
+        #[arg(short = 'j', long, value_name = "JOBS", value_parser = parse_positive_usize)]
+        jobs: Option<usize>,
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
         #[arg(last = true)]
