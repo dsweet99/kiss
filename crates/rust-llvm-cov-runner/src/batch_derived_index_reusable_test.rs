@@ -88,5 +88,5 @@ fn v4_manifest_is_unavailable_for_reusable_loading() {
         )
         .is_none()
     );
-    assert_eq!(POPULATION_SCHEMA_VERSION, "rust-llvm-cov-population-v5");
+    assert_eq!(POPULATION_SCHEMA_VERSION, "rust-llvm-cov-population-v6");
 }

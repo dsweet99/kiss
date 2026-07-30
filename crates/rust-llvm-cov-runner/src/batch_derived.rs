@@ -4,21 +4,19 @@ pub use crate::batch_derived_prune::prune_obsolete_selective_generations;
 use crate::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
 use crate::batch_plan::RustCoverageBatchRequest;
 use crate::rust_cov_cache::{
-    RustCovCacheEntry, create_new_cache_file, generation_entries_fingerprint,
-    load_rust_cov_cache_entry, repo_relative_coverage_file, rust_cov_unique_suffix,
+    RustCovCacheEntry, generation_entries_fingerprint, load_rust_cov_cache_entry,
+    repo_relative_coverage_file,
 };
 use crate::{
     RustLineCoverage, RustLlvmCovError, RustTestBinaryIdentity,
     batch_check_aggregate::ValidatedCheckAggregate,
 };
 use rpytest_runner::TestStatus;
-use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 pub const INDEX_SCHEMA_VERSION: &str = "rust-llvm-cov-index-v3";
-pub const POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v5";
+pub const POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v6";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DerivedPublishCounters {
@@ -26,6 +24,7 @@ pub struct DerivedPublishCounters {
     pub entry_generation_count: usize,
     pub current_index_generation: String,
     pub cache_pruned_entries: usize,
+    pub reverse_snapshots_reclaimed: usize,
 }
 
 type RustCoverageIndex = BTreeMap<String, BTreeSet<String>>;
@@ -169,18 +168,26 @@ pub fn publish_derived_state_with_binaries(
     let entries_fingerprint =
         generation_entries_fingerprint(&req.cache_root, &identity.generation_fingerprint)
             .map_err(RustLlvmCovError::Io)?;
-    write_coverage_index(
+    let prior_snapshot =
+        crate::batch_reverse_line_index::read_prior_snapshot_id(&req.cache_root);
+    let revision = crate::batch_entry_state::publish_next_entry_state(
+        &req.cache_root,
+        &identity.generation_fingerprint,
+        &entries_fingerprint,
+    )?;
+    let reverse = crate::batch_reverse_line_index::publish_reverse_line_index(
+        &req.cache_root,
+        &req.source_root,
+        &identity.generation_fingerprint,
+        &entries_fingerprint,
+        revision,
+    )?;
+    crate::batch_derived_index_write::write_coverage_index(
         &req.cache_root,
         &req.source_root,
         &identity.generation_fingerprint,
         &entries_fingerprint,
         &index,
-    )?;
-    crate::batch_reverse_line_index::publish_reverse_line_index(
-        &req.cache_root,
-        &req.source_root,
-        &identity.generation_fingerprint,
-        &entries_fingerprint,
     )?;
     crate::batch_derived_manifest::write_population_manifest(
         &req.cache_root,
@@ -189,7 +196,20 @@ pub fn publish_derived_state_with_binaries(
         selectors,
         test_binaries,
         &entries_fingerprint,
+        Some(&reverse),
     )?;
+    let reverse_snapshots_reclaimed = match crate::batch_reverse_line_index::prune_unreferenced_snapshots(
+        &req.cache_root,
+        &reverse.snapshot_id,
+        prior_snapshot.as_deref(),
+    ) {
+        Ok(removed) => removed,
+        Err(err) => {
+            // Never fail publication or delete the activated snapshot on prune errors.
+            eprintln!("kiss: reverse snapshot prune failed (active snapshot retained): {err:?}");
+            0
+        }
+    };
     let _ = crate::batch_identity_seal::write_identity_mtime_seal(
         &req.cache_root,
         &req.source_root,
@@ -202,6 +222,7 @@ pub fn publish_derived_state_with_binaries(
         entry_generation_count: count_generations(&req.cache_root)?,
         current_index_generation: identity.generation_fingerprint.clone(),
         cache_pruned_entries: pruned,
+        reverse_snapshots_reclaimed,
     })
 }
 
@@ -220,19 +241,14 @@ pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
         .collect::<RustCoverageIndex>();
     let entries_fingerprint =
         crate::batch_derived_index::check_aggregate_entries_fingerprint(aggregate);
-    write_coverage_index(
+    crate::batch_derived_index_write::write_coverage_index(
         &req.cache_root,
         &req.source_root,
         &identity.generation_fingerprint,
         &entries_fingerprint,
         &index,
     )?;
-    crate::batch_reverse_line_index::publish_reverse_line_index(
-        &req.cache_root,
-        &req.source_root,
-        &identity.generation_fingerprint,
-        &entries_fingerprint,
-    )?;
+    // CheckAggregate lacks exact line-to-selector ownership; omit reverse metadata.
     let test_binaries = aggregate
         .binaries
         .values()
@@ -249,6 +265,7 @@ pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
         &aggregate.selectors,
         &test_binaries,
         &entries_fingerprint,
+        None,
     )?;
     let _ = crate::batch_identity_seal::write_identity_mtime_seal(
         &req.cache_root,
@@ -262,6 +279,7 @@ pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
         entry_generation_count: count_generations(&req.cache_root)?,
         current_index_generation: identity.generation_fingerprint.clone(),
         cache_pruned_entries: pruned,
+        reverse_snapshots_reclaimed: 0,
     })
 }
 
@@ -346,53 +364,6 @@ fn count_generations(cache_root: &Path) -> Result<usize, RustLlvmCovError> {
         }
     }
     Ok(generations.len())
-}
-
-fn write_coverage_index(
-    cache_root: &Path,
-    source_root: &Path,
-    generation: &str,
-    entries_fingerprint: &str,
-    index: &RustCoverageIndex,
-) -> Result<(), RustLlvmCovError> {
-    #[derive(Serialize)]
-    struct OnDiskIndex<'a> {
-        schema_version: &'a str,
-        source_root: String,
-        generation_fingerprint: &'a str,
-        entries_fingerprint: &'a str,
-        files: &'a RustCoverageIndex,
-    }
-
-    let path = cache_root.join("index.json");
-    let parent = path
-        .parent()
-        .ok_or_else(|| RustLlvmCovError::InvalidRequest("index path has no parent".into()))?;
-    fs::create_dir_all(parent).map_err(RustLlvmCovError::Io)?;
-    let tmp_path = parent.join(format!(".index.{}.tmp", rust_cov_unique_suffix()));
-    let mut file = create_new_cache_file(&tmp_path).map_err(RustLlvmCovError::Io)?;
-    let payload = OnDiskIndex {
-        schema_version: INDEX_SCHEMA_VERSION,
-        source_root: source_root
-            .canonicalize()
-            .unwrap_or_else(|_| source_root.to_path_buf())
-            .to_string_lossy()
-            .to_string(),
-        generation_fingerprint: generation,
-        entries_fingerprint,
-        files: index,
-    };
-    serde_json::to_writer_pretty(&mut file, &payload).map_err(|err| {
-        RustLlvmCovError::InvalidRequest(format!("failed to write index json: {err}"))
-    })?;
-    file.write_all(b"\n").map_err(RustLlvmCovError::Io)?;
-    file.sync_all().map_err(RustLlvmCovError::Io)?;
-    kiss_publication_barrier::after_sync_before_rename("rust_derived_index", &tmp_path, &path)
-        .map_err(RustLlvmCovError::Io)?;
-    drop(file);
-    fs::rename(&tmp_path, &path).map_err(RustLlvmCovError::Io)?;
-    kiss_publication_barrier::after_rename("rust_derived_index", &tmp_path, &path)
-        .map_err(RustLlvmCovError::Io)
 }
 
 #[cfg(test)]

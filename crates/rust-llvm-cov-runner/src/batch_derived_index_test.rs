@@ -177,6 +177,7 @@ fn read_population_and_index_loaders_handle_missing_and_invalid_json() {
         selectors: vec!["alpha".to_string()],
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
+        reverse_line_index: None,
     };
     assert_eq!(
         index.generation_fingerprint,
@@ -240,23 +241,10 @@ fn rust_population_state_exposes_generation_and_index_fields() {
 }
 
 #[test]
-fn manifest_generation_entries_complete_rejects_duplicate_selectors() {
+fn entry_state_mismatch_rejects_population_with_reverse_metadata() {
     let fixture = published_alpha_derived_fixture();
-    let duplicate = fixture.req.cache_root.join("entries/duplicate.json");
-    let entry = std::fs::read_to_string(
-        fixture
-            .req
-            .cache_root
-            .join("entries")
-            .read_dir()
-            .unwrap()
-            .filter_map(Result::ok)
-            .find(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
-            .expect("entry")
-            .path(),
-    )
-    .unwrap();
-    std::fs::write(&duplicate, entry).unwrap();
+    // Drop the token without clearing reverse activation, simulating a torn write.
+    std::fs::remove_file(fixture.req.cache_root.join("entry_state.json")).unwrap();
     assert!(
         load_current_population_state(
             &fixture.req.cache_root,

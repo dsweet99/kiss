@@ -77,7 +77,10 @@ where
     ) && !req.force_rerun
         && let Some(result) = try_all_hit_fast_path(req, tools, &identity)?
     {
-        return maybe_publish_derived_after_all_hit(req, tools, &identity, result);
+        // Lock-free only when derived state already validates and no publication
+        // is needed. Never publish/repair here: a TOCTOU stale flip must wait for
+        // a lock-owning publisher (below or a later call).
+        return Ok(result);
     }
 
     let _batch_guard = lock_batch(&req.cache_root)?;
@@ -304,3 +307,7 @@ fn outcome_from_entry(
 #[cfg(test)]
 #[path = "batch_executor_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "batch_executor_all_hit_lock_test.rs"]
+mod all_hit_lock_tests;

@@ -164,6 +164,7 @@ fn read_population_and_index_loaders_reject_invalid_json() {
         selectors: vec!["alpha".to_string()],
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
+        reverse_line_index: None,
     };
     assert_eq!(
         index.generation_fingerprint,
@@ -199,6 +200,16 @@ fn read_index_json(cache_root: &Path) -> serde_json::Value {
     serde_json::from_slice(&std::fs::read(cache_root.join("index.json")).unwrap()).unwrap()
 }
 
+fn publish_under_batch_lock(
+    req: &crate::batch_plan::RustCoverageBatchRequest,
+    tools: &crate::batch_fingerprint::RustCoverageToolIdentity,
+    identity: &crate::batch_fingerprint::RustCoverageBatchIdentity,
+    selectors: &[String],
+) -> Result<Option<DerivedPublishCounters>, RustLlvmCovError> {
+    let _guard = crate::batch_lock::lock_batch(&req.cache_root).unwrap();
+    try_publish_population_derived_state(req, tools, identity, selectors)
+}
+
 #[test]
 fn concurrent_repairers_observe_single_repair() {
     let repo = tempfile::tempdir().unwrap();
@@ -225,14 +236,14 @@ fn concurrent_repairers_observe_single_repair() {
         let tools = tools.clone();
         let identity = identity.clone();
         let selectors = selectors.clone();
-        move || try_publish_population_derived_state(&req, &tools, &identity, &selectors)
+        move || publish_under_batch_lock(&req, &tools, &identity, &selectors)
     });
     let second = std::thread::spawn({
         let req = req.clone();
         let tools = tools.clone();
         let identity = identity.clone();
         let selectors = selectors.clone();
-        move || try_publish_population_derived_state(&req, &tools, &identity, &selectors)
+        move || publish_under_batch_lock(&req, &tools, &identity, &selectors)
     });
     let repaired = [first.join().expect("first"), second.join().expect("second")]
         .into_iter()

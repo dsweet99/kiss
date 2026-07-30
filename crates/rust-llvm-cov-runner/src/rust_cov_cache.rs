@@ -128,7 +128,9 @@ pub fn store_rust_cov_cache_entry(
     kiss_publication_barrier::after_sync_before_rename("rust_selector_entry", &tmp_path, &path)?;
     drop(file);
     fs::rename(&tmp_path, &path)?;
-    kiss_publication_barrier::after_rename("rust_selector_entry", &tmp_path, &path)
+    kiss_publication_barrier::after_rename("rust_selector_entry", &tmp_path, &path)?;
+    crate::batch_entry_state::invalidate_entry_state(cache_root);
+    Ok(())
 }
 
 pub(crate) fn create_new_cache_file(path: &Path) -> io::Result<File> {

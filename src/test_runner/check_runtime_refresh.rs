@@ -332,6 +332,8 @@ pub(crate) fn ensure_rust_runtime_coverage_shared(
                 .unwrap_or_default()
                 .len();
         return Ok(crate::test_runner::runners::SelectorExecutionSummary {
+            total: rust_batch_cache_hits,
+            cache_hits: rust_batch_cache_hits,
             rust_batch_cache_hits,
             ..Default::default()
         });

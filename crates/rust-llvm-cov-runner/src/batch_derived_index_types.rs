@@ -35,6 +35,15 @@ pub(crate) struct TestBinaryRecord {
     pub(crate) digest: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
+pub(crate) struct ReverseLineIndexManifestMeta {
+    pub(crate) schema_version: String,
+    pub(crate) snapshot_id: String,
+    pub(crate) meta_digest: String,
+    pub(crate) entry_state_revision: u64,
+}
+
 #[derive(Deserialize)]
 pub(crate) struct PopulationManifestRaw {
     pub(crate) schema_version: String,
@@ -45,6 +54,8 @@ pub(crate) struct PopulationManifestRaw {
     pub(crate) selectors: Vec<String>,
     pub(crate) ordinary_source_digests: Vec<OrdinarySourceDigestRecord>,
     pub(crate) test_binaries: Vec<TestBinaryRecord>,
+    #[serde(default)]
+    pub(crate) reverse_line_index: Option<ReverseLineIndexManifestMeta>,
 }
 
 pub(crate) struct PopulationManifestOnDisk {
@@ -56,6 +67,7 @@ pub(crate) struct PopulationManifestOnDisk {
     pub(crate) selectors: Vec<String>,
     pub(crate) ordinary_source_digests: BTreeMap<String, String>,
     pub(crate) test_binaries: BTreeMap<String, crate::RustTestBinaryIdentity>,
+    pub(crate) reverse_line_index: Option<ReverseLineIndexManifestMeta>,
 }
 
 pub(crate) fn validate_ordinary_source_digests(

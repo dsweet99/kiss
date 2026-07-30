@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::batch_derived::POPULATION_SCHEMA_VERSION;
 use crate::batch_fingerprint::RustCoverageBatchIdentity;
+use crate::batch_reverse_build::ReversePublishInfo;
 use crate::rust_cov_cache::{create_new_cache_file, rust_cov_unique_suffix};
 use crate::{CACHE_SCHEMA_VERSION, RustLlvmCovError, RustTestBinaryIdentity};
 
@@ -16,6 +17,7 @@ pub(crate) fn write_population_manifest(
     selectors: &[String],
     test_binaries: &[RustTestBinaryIdentity],
     entries_fingerprint: &str,
+    reverse: Option<&ReversePublishInfo>,
 ) -> Result<(), RustLlvmCovError> {
     let path = cache_root.join("population.json");
     let parent = path
@@ -24,6 +26,12 @@ pub(crate) fn write_population_manifest(
     fs::create_dir_all(parent).map_err(RustLlvmCovError::Io)?;
     let tmp_path = parent.join(format!(".population.{}.tmp", rust_cov_unique_suffix()));
     let mut file = create_new_cache_file(&tmp_path).map_err(RustLlvmCovError::Io)?;
+    let reverse_meta = reverse.map(|info| ReverseLineIndexManifestMeta {
+        schema_version: info.schema_version.as_str(),
+        snapshot_id: info.snapshot_id.as_str(),
+        meta_digest: info.meta_digest.as_str(),
+        entry_state_revision: info.entry_state_revision,
+    });
     let payload = PopulationManifest {
         schema_version: POPULATION_SCHEMA_VERSION,
         cache_schema_version: CACHE_SCHEMA_VERSION,
@@ -39,6 +47,7 @@ pub(crate) fn write_population_manifest(
         selectors,
         ordinary_source_digests: ordinary_source_digest_records(identity),
         test_binaries: test_binary_records(test_binaries),
+        reverse_line_index: reverse_meta,
     };
     serde_json::to_writer_pretty(&mut file, &payload).map_err(|err| {
         RustLlvmCovError::InvalidRequest(format!("failed to write index json: {err}"))
@@ -50,7 +59,9 @@ pub(crate) fn write_population_manifest(
     drop(file);
     fs::rename(&tmp_path, &path).map_err(RustLlvmCovError::Io)?;
     kiss_publication_barrier::after_rename("rust_population", &tmp_path, &path)
-        .map_err(RustLlvmCovError::Io)
+        .map_err(RustLlvmCovError::Io)?;
+    let dir = fs::File::open(parent).map_err(RustLlvmCovError::Io)?;
+    dir.sync_all().map_err(RustLlvmCovError::Io)
 }
 
 #[derive(Serialize)]
@@ -67,6 +78,14 @@ struct TestBinaryRecord<'a> {
 }
 
 #[derive(Serialize)]
+struct ReverseLineIndexManifestMeta<'a> {
+    schema_version: &'a str,
+    snapshot_id: &'a str,
+    meta_digest: &'a str,
+    entry_state_revision: u64,
+}
+
+#[derive(Serialize)]
 struct PopulationManifest<'a> {
     schema_version: &'a str,
     cache_schema_version: &'a str,
@@ -78,6 +97,8 @@ struct PopulationManifest<'a> {
     selectors: &'a [String],
     ordinary_source_digests: Vec<OrdinarySourceDigestRecord<'a>>,
     test_binaries: Vec<TestBinaryRecord<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reverse_line_index: Option<ReverseLineIndexManifestMeta<'a>>,
 }
 
 fn ordinary_source_digest_records(

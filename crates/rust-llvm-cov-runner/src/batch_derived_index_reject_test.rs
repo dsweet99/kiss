@@ -165,7 +165,7 @@ fn load_current_population_state_accepts_inc_source_digest_records() {
 }
 
 #[test]
-fn load_current_population_state_rejects_empty_test_binary_ids() {
+fn entry_state_backed_load_does_not_rescan_entry_bodies() {
     let fixture = published_alpha_derived_fixture();
     tamper_only_cached_entry(&fixture.req.cache_root, |value| {
         value["test_binary_ids"] = serde_json::json!([]);
@@ -177,7 +177,8 @@ fn load_current_population_state_rejects_empty_test_binary_ids() {
             &fixture.identity,
             Some(&["alpha".to_string()]),
         )
-        .is_none()
+        .is_some(),
+        "with reverse+entry_state, population load must not re-deserialize entries/*.json"
     );
 }
 

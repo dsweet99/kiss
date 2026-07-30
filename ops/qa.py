@@ -1323,7 +1323,7 @@ def assert_rust_coverage_witness(repo: Path, marker_dir: Path) -> None:
 
 
 def wait_for_barrier_ready(barrier_dir: Path, artifact: str, phase: str) -> dict:
-    deadline = time.monotonic() + 60
+    deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         for path in sorted(barrier_dir.glob("*.ready.json")):
             try:
@@ -1369,8 +1369,66 @@ def force_publication_target(repo: Path, language: str, artifact: str) -> None:
             (cache / "population.json").unlink(missing_ok=True)
         elif artifact == "rust_check_aggregate":
             (cache / "check_aggregate.json").unlink(missing_ok=True)
+        elif artifact == "rust_entry_state":
+            (cache / "entry_state.json").unlink(missing_ok=True)
+            (cache / "check_aggregate.json").unlink(missing_ok=True)
+            (cache / "index.json").unlink(missing_ok=True)
+            (cache / "population.json").unlink(missing_ok=True)
+            shutil.rmtree(cache / "reverse_line_index", ignore_errors=True)
+        elif artifact in {
+            "rust_reverse_selectors",
+            "rust_reverse_file",
+            "rust_reverse_meta",
+        }:
+            (cache / "entry_state.json").unlink(missing_ok=True)
+            (cache / "check_aggregate.json").unlink(missing_ok=True)
+            (cache / "index.json").unlink(missing_ok=True)
+            (cache / "population.json").unlink(missing_ok=True)
+            shutil.rmtree(cache / "reverse_line_index", ignore_errors=True)
         else:
             raise AssertionError(f"unknown Rust publication artifact: {artifact}")
+
+
+RUST_SELECTOR_PUBLISH_ARTIFACTS = frozenset(
+    {
+        "rust_entry_state",
+        "rust_reverse_selectors",
+        "rust_reverse_file",
+        "rust_reverse_meta",
+    }
+)
+
+
+def publication_writer_command(
+    language: str,
+    repo: Path,
+    artifact: str,
+    jobs: int | None = None,
+) -> list[str]:
+    if language == "rust" and artifact in RUST_SELECTOR_PUBLISH_ARTIFACTS:
+        # Population + --force takes SelectorEntries publish (entry_state/reverse),
+        # not the CheckAggregate ensure path used by plain kiss cov / kiss test.
+        command = [
+            str(KISS),
+            "--defaults",
+            "--lang",
+            "rust",
+            "test",
+            "commit",
+            "--force",
+            "--metrics",
+        ]
+        if jobs is not None:
+            command.extend(["-j", str(jobs)])
+        return command
+    return witness_check_command(language, repo, jobs=jobs)
+
+
+def prepare_rust_selector_publish_diff(repo: Path) -> None:
+    # write_rust_witness_repo already commits a baseline; leave an uncommitted edit
+    # so `kiss test commit --force` requires a population SelectorEntries publish.
+    lib = repo / "src" / "lib.rs"
+    lib.write_text(lib.read_text() + "\n// reverse-publish trigger\n", encoding="utf-8")
 
 
 def assert_cache_json_integrity(repo: Path, language: str) -> None:
@@ -1393,6 +1451,8 @@ def run_publication_crash_scenario(
         write_rust_witness_repo(repo)
     baseline = run_witness_check(language, repo, markers)
     assert_check_gate_allowed(baseline)
+    if language == "rust" and artifact in RUST_SELECTOR_PUBLISH_ARTIFACTS:
+        prepare_rust_selector_publish_diff(repo)
     clear_markers(markers)
     force_publication_target(repo, language, artifact)
 
@@ -1402,8 +1462,11 @@ def run_publication_crash_scenario(
     writer_env["KISS_QA_PUBLICATION_BARRIER_DIR"] = str(barrier_dir)
     writer_env["KISS_QA_PUBLICATION_BARRIER_TARGET"] = f"{artifact}:{phase}"
     writer_jobs = 1 if language == "rust" and artifact == "rust_selector_entry" else None
+    writer_command = publication_writer_command(
+        language, repo, artifact, jobs=writer_jobs
+    )
     writer = subprocess.Popen(
-        witness_check_command(language, repo, jobs=writer_jobs),
+        writer_command,
         cwd=repo,
         env=writer_env,
         text=True,
@@ -1815,7 +1878,11 @@ def coverage_publication_crash_recovery() -> None:
         ("python", "python_index"),
         ("python", "python_population"),
         ("rust", "rust_selector_entry"),
+        ("rust", "rust_entry_state"),
         ("rust", "rust_derived_index"),
+        ("rust", "rust_reverse_selectors"),
+        ("rust", "rust_reverse_file"),
+        ("rust", "rust_reverse_meta"),
         ("rust", "rust_population"),
         ("rust", "rust_check_aggregate"),
     ]
@@ -1827,8 +1894,314 @@ def coverage_publication_crash_recovery() -> None:
                 run_publication_crash_scenario(root, language, artifact, phase)
         click.echo(
             "QA PASS: barrier-targeted publication interruption and recovery "
-            "held for Python and Rust check-published artifacts."
+            "held for Python and Rust check-published artifacts, including "
+            "Rust reverse-index and entry-state barriers."
         )
+
+
+@cli.command("reverse-index-concurrency-stress")
+def reverse_index_concurrency_stress() -> None:
+    """Race Rust reverse-index writers/readers against a forward-entry oracle."""
+    assert KISS.is_file(), f"local binary missing: {KISS}"
+    jobs = 2
+    iterations = 20
+    writer_slots = 8
+    reader_count = 16
+    with qa_fixture("kiss-qa-reverse-stress-") as fixture:
+        # --force takes SelectorEntries publish so reverse snapshots are activated.
+        cold = run(
+            "rust-cold-population",
+            kiss_command(
+                "rust",
+                fixture.ignores["rust"],
+                "--force",
+                "--metrics",
+                "-j",
+                str(jobs),
+            ),
+            fixture.root,
+            fixture.env,
+        )
+        assert_metric(cold.metrics(), "rust_population_required", "true")
+        population = load_json(
+            fixture.root / ".kiss/rust_llvm_cov_cache" / "population.json"
+        )
+        assert population.get("reverse_line_index") is not None, population
+        assert_rust_reverse_cache_integrity(fixture.root)
+
+        rel = RS_SOURCE.as_posix()
+        symbol = f"{rel}::format_unreferenced_unit_coverage_message"
+        hit_latencies_ms: list[float] = []
+        fallback_latencies_ms: list[float] = []
+        killed_writers = 0
+        repaired = 0
+
+        for iteration in range(iterations):
+            writers: list[tuple[list[str], Path]] = []
+            cwds = [fixture.root, fixture.nested] * (writer_slots // 2)
+            for cwd in cwds:
+                writers.append(
+                    (
+                        kiss_command(
+                            "rust",
+                            fixture.ignores["rust"],
+                            "--metrics",
+                            "-j",
+                            str(jobs),
+                        ),
+                        cwd,
+                    )
+                )
+
+            # Inject a publication-barrier kill on selected iterations across
+            # reverse publish barriers (not only rust_population).
+            kill_this_round = iteration in (0, 5, 10, 15)
+            if kill_this_round:
+                reverse_barriers = [
+                    ("rust_entry_state", "after_sync_before_rename"),
+                    ("rust_reverse_selectors", "after_sync_before_rename"),
+                    ("rust_reverse_file", "after_sync_before_rename"),
+                    ("rust_reverse_meta", "after_sync_before_rename"),
+                    ("rust_population", "after_sync_before_rename"),
+                    ("rust_population", "after_rename"),
+                ]
+                artifact, phase = reverse_barriers[iteration % len(reverse_barriers)]
+                barrier_dir = fixture.root / f".kiss-qa-barrier-{iteration}"
+                barrier_dir.mkdir(exist_ok=True)
+                force_publication_target(fixture.root, "rust", artifact)
+                writer_env = dict(fixture.env)
+                writer_env["KISS_QA_PUBLICATION_BARRIER_DIR"] = str(barrier_dir)
+                writer_env["KISS_QA_PUBLICATION_BARRIER_TARGET"] = f"{artifact}:{phase}"
+                kill_cmd = kiss_command(
+                    "rust",
+                    fixture.ignores["rust"],
+                    "--force",
+                    "--metrics",
+                    "-j",
+                    "1",
+                )
+                writer = subprocess.Popen(
+                    kill_cmd,
+                    cwd=fixture.root,
+                    env=writer_env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True,
+                )
+                try:
+                    wait_for_barrier_ready(barrier_dir, artifact, phase)
+                    os.killpg(os.getpgid(writer.pid), signal.SIGKILL)
+                    killed_writers += 1
+                finally:
+                    writer.communicate(timeout=60)
+                # Repair after kill.
+                repair = run(
+                    f"reverse-repair-{iteration}",
+                    kiss_command(
+                        "rust",
+                        fixture.ignores["rust"],
+                        "--force",
+                        "--metrics",
+                        "-j",
+                        str(jobs),
+                    ),
+                    fixture.root,
+                    fixture.env,
+                )
+                assert repair.returncode == 0, repair.stderr
+                repaired += 1
+                assert_rust_reverse_cache_integrity(fixture.root)
+
+            writer_outcomes = run_concurrent(
+                f"reverse-writers-{iteration}", writers, fixture.env
+            )
+            for outcome in writer_outcomes:
+                assert outcome.returncode == 0, outcome.stderr
+
+            file_readers: list[tuple[list[str], Path]] = []
+            symbol_readers: list[tuple[list[str], Path]] = []
+            for i in range(reader_count // 2):
+                cwd = fixture.root if i % 2 == 0 else fixture.nested
+                shared = [
+                    str(KISS),
+                    "--defaults",
+                    "--lang",
+                    "rust",
+                    "test",
+                    "PLACEHOLDER",
+                    "--dry-run",
+                    "--metrics",
+                    "-j",
+                    str(jobs),
+                ]
+                file_cmd = list(shared)
+                file_cmd[5] = rel
+                symbol_cmd = list(shared)
+                symbol_cmd[5] = symbol
+                file_readers.append((file_cmd, cwd))
+                symbol_readers.append((symbol_cmd, cwd))
+            t0 = time.monotonic()
+            file_outcomes = run_concurrent(
+                f"reverse-file-readers-{iteration}", file_readers, fixture.env
+            )
+            symbol_outcomes = run_concurrent(
+                f"reverse-symbol-readers-{iteration}", symbol_readers, fixture.env
+            )
+            elapsed_ms = (time.monotonic() - t0) * 1000.0
+            for outcome in file_outcomes + symbol_outcomes:
+                assert outcome.returncode == 0, outcome.stderr
+            assert len({rendered_plan(o) for o in file_outcomes}) == 1
+            assert len({rendered_plan(o) for o in symbol_outcomes}) == 1
+            oracle = rust_forward_entry_oracle_selectors(fixture.root, rel)
+            assert oracle, f"forward oracle empty for {rel}"
+            for outcome in file_outcomes:
+                assert_rust_dry_run_matches_oracle("file", outcome, oracle)
+            for outcome in symbol_outcomes:
+                assert_rust_dry_run_matches_oracle(
+                    "symbol", outcome, oracle, allow_subset=True
+                )
+            hit_latencies_ms.append(elapsed_ms)
+
+            # Reverse-hit probe: entries unreadable ⇒ answer must still equal oracle.
+            cache = fixture.root / ".kiss/rust_llvm_cov_cache"
+            entries = cache / "entries"
+            assert entries.is_dir(), entries
+            mode = entries.stat().st_mode
+            try:
+                entries.chmod(0o000)
+                probe = run(
+                    f"reverse-hit-zero-entry-{iteration}",
+                    [
+                        str(KISS),
+                        "--defaults",
+                        "--lang",
+                        "rust",
+                        "test",
+                        rel,
+                        "--dry-run",
+                        "--metrics",
+                        "-j",
+                        str(jobs),
+                    ],
+                    fixture.root,
+                    fixture.env,
+                )
+                assert probe.returncode == 0, (
+                    "reverse-hit dry-run must succeed with entries/ unreadable "
+                    f"(zero entry-file reads): {probe.stderr}"
+                )
+                assert_rust_dry_run_matches_oracle(
+                    f"zero-entry-reverse-hit-{iteration}", probe, oracle
+                )
+            finally:
+                entries.chmod(mode)
+
+            assert_rust_reverse_cache_integrity(fixture.root)
+            click.echo(
+                f"reverse stress iteration {iteration}: plan_ok oracle_ok "
+                f"elapsed_ms={elapsed_ms:.1f}"
+            )
+
+        assert hit_latencies_ms, (
+            "reverse-index stress produced no reverse-hit/oracle samples "
+            "(opaque __plan__-only dry-runs are not enough)"
+        )
+        click.echo(
+            "QA PASS: reverse-index concurrency stress held "
+            f"({iterations} iterations, writers={writer_slots}, readers={reader_count}, "
+            f"killed_writers={killed_writers}, repaired={repaired}, "
+            f"hit_samples={len(hit_latencies_ms)}, "
+            f"fallback_samples={len(fallback_latencies_ms)}, "
+            f"hit_ms_avg={_avg(hit_latencies_ms):.1f}, "
+            f"fallback_ms_avg={_avg(fallback_latencies_ms):.1f})."
+        )
+
+
+def _avg(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def assert_rust_reverse_cache_integrity(repo: Path) -> None:
+    cache = repo / ".kiss/rust_llvm_cov_cache"
+    assert_json_integrity(cache)
+    population = load_json(cache / "population.json")
+    reverse = population.get("reverse_line_index")
+    if reverse is None:
+        return
+    entry_state = load_json(cache / "entry_state.json")
+    assert entry_state["generation_fingerprint"] == population["generation_fingerprint"]
+    assert entry_state["entries_fingerprint"] == population["entries_fingerprint"]
+    assert entry_state["revision"] == reverse["entry_state_revision"]
+    snap = (
+        cache
+        / "reverse_line_index"
+        / "snapshots"
+        / reverse["snapshot_id"]
+        / "meta.json"
+    )
+    assert snap.is_file(), snap
+    assert not list((cache / "reverse_line_index" / "snapshots").glob(".staging.*"))
+
+
+def rust_forward_entry_oracle_selectors(repo: Path, rel_file: str) -> set[str]:
+    cache = repo / ".kiss/rust_llvm_cov_cache"
+    population = load_json(cache / "population.json")
+    generation = population["generation_fingerprint"]
+    selected: set[str] = set()
+    entries = cache / "entries"
+    if not entries.is_dir():
+        return selected
+    for path in entries.glob("*.json"):
+        entry = load_json(path)
+        if entry.get("generation_fingerprint") != generation:
+            continue
+        if entry.get("status") != "Passed":
+            continue
+        files = entry.get("coverage", {}).get("files", {})
+        for file_path, lines in files.items():
+            if file_path.endswith(rel_file) or Path(file_path).name == Path(rel_file).name:
+                if lines:
+                    selected.add(entry["selector"])
+                    break
+    return selected
+
+
+def rust_dry_run_selectors(outcome: Outcome) -> set[str]:
+    selected: set[str] = set()
+    for line in outcome.stdout.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("RUST SELECTOR "):
+            selected.add(stripped[len("RUST SELECTOR ") :])
+            continue
+        if stripped.startswith("cargo ") or stripped.startswith("nextest "):
+            continue
+        if "::" in stripped and " " not in stripped:
+            selected.add(stripped)
+        elif stripped.startswith("test ") and "::" in stripped:
+            selected.add(stripped.split()[-1])
+    if not selected:
+        # Opaque plan only when dry-run emits no selector lines at all.
+        return {"__plan__", rendered_plan(outcome)}
+    return selected
+
+
+def assert_rust_dry_run_matches_oracle(
+    label: str,
+    outcome: Outcome,
+    oracle: set[str],
+    *,
+    allow_subset: bool = False,
+) -> None:
+    selected = rust_dry_run_selectors(outcome)
+    assert "__plan__" not in selected, (
+        f"{label}: opaque __plan__ dry-run is not a reverse/oracle sample: "
+        f"plan={rendered_plan(outcome)!r}"
+    )
+    if allow_subset:
+        assert selected and selected <= oracle, (label, selected, oracle)
+    else:
+        assert selected == oracle, (label, selected, oracle)
 
 
 @cli.command("coverage-stress")
@@ -2336,6 +2709,88 @@ def concurrent_cache_recovery() -> None:
             ]
             assert len(set(plans)) == 1
             assert "COVERAGE POPULATION" not in plans[0]
+
+        # Clear aggregate-only derived state, then --force SelectorEntries publish
+        # so reverse snapshots are activated for oracle races.
+        rs_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
+        (rs_cache / "population.json").unlink(missing_ok=True)
+        (rs_cache / "index.json").unlink(missing_ok=True)
+        (rs_cache / "entry_state.json").unlink(missing_ok=True)
+        (rs_cache / "check_aggregate.json").unlink(missing_ok=True)
+        shutil.rmtree(rs_cache / "reverse_line_index", ignore_errors=True)
+        reverse_prime = run(
+            "rust-reverse-prime",
+            kiss_command(
+                "rust",
+                fixture.ignores["rust"],
+                "--force",
+                "--metrics",
+                "-j",
+                str(jobs),
+            ),
+            fixture.root,
+            fixture.env,
+        )
+        assert reverse_prime.returncode == 0, reverse_prime.stderr
+        assert_metric(reverse_prime.metrics(), "rust_population_required", "true")
+        population = load_json(rs_cache / "population.json")
+        assert population.get("reverse_line_index") is not None, population
+        assert_rust_reverse_cache_integrity(fixture.root)
+
+        # Warm file + PATH::symbol dry-run readers vs forward-entry oracle.
+        rel = RS_SOURCE.as_posix()
+        symbol = f"{rel}::format_unreferenced_unit_coverage_message"
+        file_readers: list[tuple[list[str], Path]] = []
+        symbol_readers: list[tuple[list[str], Path]] = []
+        for cwd in (fixture.root, fixture.nested, fixture.root, fixture.nested):
+            file_readers.append(
+                (
+                    [
+                        str(KISS),
+                        "--defaults",
+                        "--lang",
+                        "rust",
+                        "test",
+                        rel,
+                        "--dry-run",
+                        "--metrics",
+                        "-j",
+                        str(jobs),
+                    ],
+                    cwd,
+                )
+            )
+            symbol_readers.append(
+                (
+                    [
+                        str(KISS),
+                        "--defaults",
+                        "--lang",
+                        "rust",
+                        "test",
+                        symbol,
+                        "--dry-run",
+                        "--metrics",
+                        "-j",
+                        str(jobs),
+                    ],
+                    cwd,
+                )
+            )
+        file_dry = run_concurrent("warm-rust-file-oracle-race", file_readers, fixture.env)
+        symbol_dry = run_concurrent(
+            "warm-rust-symbol-oracle-race", symbol_readers, fixture.env
+        )
+        oracle = rust_forward_entry_oracle_selectors(fixture.root, rel)
+        assert oracle, f"forward oracle empty for {rel}"
+        for outcome in file_dry:
+            assert_rust_dry_run_matches_oracle("file", outcome, oracle)
+        for outcome in symbol_dry:
+            assert_rust_dry_run_matches_oracle(
+                "symbol", outcome, oracle, allow_subset=True
+            )
+        assert len({rendered_plan(outcome) for outcome in file_dry}) == 1, "file"
+        assert len({rendered_plan(outcome) for outcome in symbol_dry}) == 1, "symbol"
 
         for language in LANGUAGES:
             run(

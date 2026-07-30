@@ -1,4 +1,3 @@
-use crate::CACHE_SCHEMA_VERSION;
 use crate::batch_derived::{INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION};
 #[cfg(test)]
 use crate::batch_derived_index_types::OnDiskIndex;
@@ -11,7 +10,8 @@ use crate::batch_derived_index_check_aggregate_support::{
     CHECK_AGGREGATE_ENTRIES_PREFIX, index_matches_check_aggregate,
     load_check_aggregate_population_state,
 };
-use crate::rust_cov_cache::{RustCovCacheEntry, generation_entries_fingerprint};
+use crate::batch_derived_index_reverse::reverse_bound_index_ok;
+use crate::rust_cov_cache::generation_entries_fingerprint;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -182,10 +182,11 @@ fn population_artifacts_compatible(
     {
         return index_matches_check_aggregate(cache_root, source_root, manifest, index);
     }
-    generation_entries_fingerprint(cache_root, &manifest.generation_fingerprint)
-        .ok()
-        .is_some_and(|computed| computed == manifest.entries_fingerprint)
-        && index_matches_derived_entries(cache_root, source_root, manifest, index)
+    reverse_bound_index_ok(cache_root, manifest, index)
+        || (generation_entries_fingerprint(cache_root, &manifest.generation_fingerprint)
+            .ok()
+            .is_some_and(|computed| computed == manifest.entries_fingerprint)
+            && index_matches_derived_entries(cache_root, source_root, manifest, index))
 }
 
 fn index_matches_derived_entries(
@@ -246,6 +247,24 @@ fn manifest_generation_entries_complete(
     {
         return true;
     }
+    if let Some(reverse) = manifest.reverse_line_index.as_ref() {
+        let Some(state) = crate::batch_entry_state::read_entry_state(cache_root) else {
+            return false;
+        };
+        return crate::batch_entry_state::entry_state_matches(
+            &state,
+            &manifest.generation_fingerprint,
+            &manifest.entries_fingerprint,
+            reverse.entry_state_revision,
+        );
+    }
+    manifest_generation_entries_scanned(cache_root, manifest)
+}
+
+fn manifest_generation_entries_scanned(
+    cache_root: &Path,
+    manifest: &PopulationManifestOnDisk,
+) -> bool {
     let entries_dir = cache_root.join("entries");
     if !entries_dir.is_dir() {
         return false;
@@ -262,10 +281,10 @@ fn manifest_generation_entries_complete(
         let Ok(bytes) = fs::read(&path) else {
             continue;
         };
-        let Ok(parsed) = serde_json::from_slice::<RustCovCacheEntry>(&bytes) else {
+        let Ok(parsed) = serde_json::from_slice::<crate::RustCovCacheEntry>(&bytes) else {
             continue;
         };
-        if parsed.schema_version != CACHE_SCHEMA_VERSION
+        if parsed.schema_version != crate::CACHE_SCHEMA_VERSION
             || parsed.generation_fingerprint != manifest.generation_fingerprint
         {
             continue;
@@ -347,6 +366,7 @@ pub(crate) fn read_population_manifest(cache_root: &Path) -> Option<PopulationMa
         selectors: raw.selectors,
         ordinary_source_digests,
         test_binaries,
+        reverse_line_index: raw.reverse_line_index,
     })
 }
 

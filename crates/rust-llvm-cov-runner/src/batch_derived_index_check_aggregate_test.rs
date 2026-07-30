@@ -157,6 +157,14 @@ fn conservative_check_aggregate_publish_writes_valid_population_index() {
     assert!(state.line_index["src/b.rs"].is_empty());
     assert_eq!(state.selectors, fixture.selectors);
     assert!(crate::is_check_aggregate_population(&state));
+    let population: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(fixture.req.cache_root.join("population.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        population.get("reverse_line_index").is_none(),
+        "CheckAggregate must not claim line-precise reverse ownership"
+    );
     assert_eq!(
         state.test_binaries.keys().cloned().collect::<Vec<_>>(),
         vec!["bin-a".to_string(), "bin-b".to_string()]

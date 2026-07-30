@@ -176,7 +176,10 @@ pub(super) fn run_rust_selectors_for_module(
     }
     if let Some(population_selectors) = population_publication_selectors {
         if !ctx.options.force_rerun {
-            if ctx.options.extra.is_empty() {
+            // Shared ensure is for unfiltered whole-tree population (no --ignore).
+            // With ignores (QA fixtures), keep CheckAggregate population selectors so
+            // per-selector cache hit/miss accounting remains observable.
+            if ctx.options.extra.is_empty() && ctx.planned.ignore.is_empty() {
                 return crate::test_runner::check_runtime_refresh::ensure_rust_runtime_coverage_shared(
                     &ctx.planned.repo_root,
                     &ctx.planned.ignore,

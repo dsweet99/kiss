@@ -13,10 +13,20 @@ mod batch_derived_entries;
 mod batch_derived_incremental;
 mod batch_derived_index;
 mod batch_derived_index_check_aggregate_support;
+mod batch_derived_index_reverse;
 mod batch_derived_index_types;
+mod batch_derived_index_write;
 mod batch_derived_manifest;
 mod batch_derived_prune;
+mod batch_entry_state;
+mod batch_reverse_build;
+mod batch_reverse_publish;
+mod batch_reverse_query;
 mod batch_reverse_line_index;
+#[cfg(test)]
+mod batch_reverse_test_support;
+#[cfg(test)]
+mod batch_reverse_process_race_support;
 mod batch_derived_snapshot;
 mod batch_events;
 mod batch_executable_index;
@@ -100,9 +110,15 @@ pub use batch_derived::{
     population_manifest_state_is_current, prune_obsolete_selective_generations,
     publish_derived_state, publish_derived_state_with_binaries,
 };
-pub use batch_reverse_line_index::{
-    publish_reverse_line_index, query_reverse_line_index, reverse_line_index_dir,
+pub use batch_entry_state::{
+    EntryState, ENTRY_STATE_SCHEMA, invalidate_entry_state, publish_next_entry_state,
+    read_entry_state,
 };
+pub use batch_reverse_line_index::{
+    ReversePublishInfo, REVERSE_LINE_INDEX_SCHEMA, prune_unreferenced_snapshots,
+    publish_reverse_line_index, read_prior_snapshot_id, reverse_line_index_dir,
+};
+pub use batch_reverse_query::query_reverse_line_index;
 pub use batch_derived_entries::{RustReusableSelectorEntry, load_reusable_prior_selector_entries};
 pub use batch_derived_incremental::{IncrementalPublishPlan, publish_incremental_derived_state};
 pub use batch_derived_index::{
