@@ -68,18 +68,25 @@ impl CurrentRunLifecycleGuard {
         }
         self.cleaned.set(true);
         let run_err = self.cleanup.remove(&self.cache_root, &self.run_root).err();
-        let tmp_err = crate::kiss_tmp::cleanup_kiss_tmp_profraw(
-            &crate::kiss_tmp::kiss_tmp_from_cache_root(&self.cache_root),
-        )
-        .err();
-        match (run_err, tmp_err) {
-            (None, None) => None,
-            (Some(err), None) | (None, Some(err)) => Some(err),
-            (Some(run), Some(tmp)) => {
-                Some(io::Error::new(run.kind(), format!("{run}; {tmp}")))
-            }
-        }
+        let kiss_profraw = crate::kiss_profraw::kiss_profraw_from_cache_root(&self.cache_root);
+        let profraw_err = crate::kiss_profraw::cleanup_kiss_profraw(&kiss_profraw).err();
+        // CheckAggregate has no per-process discard cleanup; mid-run CWD dumps from
+        // instrumented children that scrub LLVM_PROFILE_FILE are cleared here.
+        let orphan_err = crate::kiss_profraw::repo_root_from_cache_root(&self.cache_root)
+            .and_then(|root| crate::kiss_profraw::sweep_orphan_default_profraw(&root).err());
+        fold_cleanup_errors([run_err, profraw_err, orphan_err])
     }
+}
+
+fn fold_cleanup_errors(errors: [Option<io::Error>; 3]) -> Option<io::Error> {
+    let mut combined: Option<io::Error> = None;
+    for err in errors.into_iter().flatten() {
+        combined = Some(match combined {
+            None => err,
+            Some(prior) => io::Error::new(prior.kind(), format!("{prior}; {err}")),
+        });
+    }
+    combined
 }
 
 impl Drop for CurrentRunLifecycleGuard {
@@ -126,8 +133,11 @@ impl FreshBatchRunScope {
         fs::create_dir_all(&run_root)?;
         let scope = Self::begin(cache_root, run_root, cleanup)?;
         fs::create_dir_all(&plan.target_runner_output_dir)?;
-        let kiss_tmp = crate::kiss_tmp::kiss_tmp_from_cache_root(cache_root);
-        let _ = crate::kiss_tmp::ensure_kiss_tmp(&kiss_tmp);
+        let kiss_profraw = crate::kiss_profraw::kiss_profraw_from_cache_root(cache_root);
+        crate::kiss_profraw::ensure_kiss_profraw(&kiss_profraw)?;
+        if let Some(repo_root) = crate::kiss_profraw::repo_root_from_cache_root(cache_root) {
+            crate::kiss_profraw::sweep_orphan_default_profraw(&repo_root)?;
+        }
         Ok(scope)
     }
 

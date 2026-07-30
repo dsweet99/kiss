@@ -196,7 +196,7 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
         super::dispatch_test_command(
             None,
             Commands::Test {
-                operands: vec!["invalid".to_string()],
+                operands: vec!["all".to_string()],
                 main_branch: None,
                 base_branch: None,
                 dry_run: true,

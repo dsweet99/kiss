@@ -167,3 +167,75 @@ fn plan_all_selectors_are_selective_not_population() {
     assert!(!planned.python_population_required);
     assert!(!planned.rs_sel.is_empty());
 }
+
+#[test]
+fn plan_repo_root_target_matches_all_via_dot() {
+    let cwd = std::env::current_dir().unwrap();
+    let repo_root = crate::test_git::git_repo_root(&cwd).unwrap();
+    let root = repo_root.canonicalize().unwrap();
+    let via_all = crate::test_runner::plan_target_selectors(
+        crate::test_runner::TargetPlanKind::All,
+        &[],
+        &[],
+        Some(Language::Rust),
+    )
+    .unwrap();
+    let via_root = crate::test_runner::plan_target_selectors(
+        crate::test_runner::TargetPlanKind::Targets(&[root.to_string_lossy().into_owned()]),
+        &[],
+        &[],
+        Some(Language::Rust),
+    )
+    .unwrap();
+    assert_eq!(via_all.rs_sel, via_root.rs_sel);
+    assert_eq!(via_all.py_sel, via_root.py_sel);
+    assert!(!via_all.coverage_decision_engine_used);
+    assert!(!via_root.coverage_decision_engine_used);
+}
+
+#[test]
+fn plan_subdirectory_is_not_workspace_enumerator() {
+    let planned = crate::test_runner::plan_target_selectors(
+        crate::test_runner::TargetPlanKind::Targets(&["src/bin_cli".into()]),
+        &[],
+        &[],
+        Some(Language::Rust),
+    )
+    .unwrap();
+    let all = crate::test_runner::plan_target_selectors(
+        crate::test_runner::TargetPlanKind::All,
+        &[],
+        &[],
+        Some(Language::Rust),
+    )
+    .unwrap();
+    assert!(!planned.rs_sel.is_empty());
+    assert!(!planned.rust_source_paths.is_empty());
+    assert!(all.rust_source_paths.is_empty());
+    assert!(!all.coverage_decision_engine_used);
+}
+
+#[test]
+fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
+    let cwd = std::env::current_dir().unwrap();
+    let nested = cwd.join("src/bin_cli");
+    assert!(nested.is_dir());
+    std::env::set_current_dir(&nested).unwrap();
+    let planned = crate::test_runner::plan_target_selectors(
+        crate::test_runner::TargetPlanKind::All,
+        &[],
+        &[],
+        Some(Language::Rust),
+    );
+    std::env::set_current_dir(&cwd).unwrap();
+    let planned = planned.unwrap();
+    let from_root = crate::test_runner::plan_target_selectors(
+        crate::test_runner::TargetPlanKind::All,
+        &[],
+        &[],
+        Some(Language::Rust),
+    )
+    .unwrap();
+    assert_eq!(planned.repo_root, from_root.repo_root);
+    assert_eq!(planned.rs_sel, from_root.rs_sel);
+}

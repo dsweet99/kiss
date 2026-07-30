@@ -56,20 +56,68 @@ pub enum TestInvocation {
     Targets(Vec<String>),
 }
 
-const RESERVED_TEST_ACTIONS: &[&str] = &["commit", "base", "main", "all"];
+const RESERVED_TEST_ACTIONS: &[&str] = &["commit", "base", "main"];
+const TEST_OPERAND_HINT: &str =
+    "commit, base, main, ., or PATH / PATH::symbol / directory";
+
+fn is_dot_all_operand(operand: &str) -> bool {
+    matches!(operand, "." | "./")
+}
+
+fn path_has_source_ext(path_part: &str) -> bool {
+    std::path::Path::new(path_part)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"))
+}
 
 pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, String> {
     let first = operands.first().ok_or_else(|| {
-        "at least one of commit, base, main, all, or a PATH / PATH::symbol target is required"
-            .to_string()
+        format!("at least one of {TEST_OPERAND_HINT} is required")
     })?;
+    reject_legacy_all_operand(operands)?;
     if let Some(reserved) = parse_reserved_action(first, operands.len())? {
         return Ok(reserved);
     }
-    if matches!(first.as_str(), "cov" | "validate-selection") {
+    if let Some(invocation) = try_parse_dot_all(operands, first)? {
+        return Ok(invocation);
+    }
+    parse_path_or_directory_targets(operands, first)
+}
+
+fn reject_legacy_all_operand(operands: &[String]) -> Result<(), String> {
+    if operands.iter().any(|operand| operand == "all") {
+        Err(
+            "unknown test target 'all'. Use `kiss test .` instead of `kiss test all`.".to_string(),
+        )
+    } else {
+        Ok(())
+    }
+}
+
+fn try_parse_dot_all(
+    operands: &[String],
+    first: &str,
+) -> Result<Option<TestInvocation>, String> {
+    if is_dot_all_operand(first) {
+        if operands.len() > 1 {
+            return Err("`.` cannot be mixed with additional targets".to_string());
+        }
+        return Ok(Some(TestInvocation::All));
+    }
+    if operands.iter().any(|operand| is_dot_all_operand(operand)) {
+        return Err("`.` cannot be mixed with additional targets".to_string());
+    }
+    Ok(None)
+}
+
+fn parse_path_or_directory_targets(
+    operands: &[String],
+    first: &str,
+) -> Result<TestInvocation, String> {
+    if matches!(first, "cov" | "validate-selection") {
         return Err(format!(
-            "unknown test target '{first}'. Use commit, base, main, all, or PATH / PATH::symbol. \
-             Coverage is `kiss cov`."
+            "unknown test target '{first}'. Use {TEST_OPERAND_HINT}. Coverage is `kiss cov`."
         ));
     }
     if let Some(operand) = operands
@@ -87,23 +135,25 @@ pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, Stri
 }
 
 fn validate_target_operand_shape(raw: &str) -> Result<(), String> {
-    let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
+    let (path_part, symbol) = match raw.split_once("::") {
+        Some((path, symbol)) => (path, Some(symbol)),
+        None => (raw, None),
+    };
     if path_part.is_empty() {
-        return Err(format!("unknown test target '{raw}'. Use commit, base, main, all, or PATH / PATH::symbol."));
-    }
-    let ok_ext = std::path::Path::new(path_part)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"));
-    if !ok_ext {
         return Err(format!(
-            "unknown test target '{raw}'. Use commit, base, main, all, or PATH / PATH::symbol."
+            "unknown test target '{raw}'. Use {TEST_OPERAND_HINT}."
         ));
     }
-    if let Some((_, symbol)) = raw.split_once("::")
-        && symbol.is_empty()
-    {
-        return Err("target path and symbol must both be non-empty".to_string());
+    if let Some(symbol) = symbol {
+        if !path_has_source_ext(path_part) {
+            return Err(format!(
+                "unknown test target '{raw}'. PATH::symbol requires a .py or .rs path."
+            ));
+        }
+        if symbol.is_empty() {
+            return Err("target path and symbol must both be non-empty".to_string());
+        }
+        return Ok(());
     }
     Ok(())
 }
@@ -121,7 +171,6 @@ fn parse_reserved_action(first: &str, operand_count: usize) -> Result<Option<Tes
         "commit" => TestInvocation::Commit,
         "base" => TestInvocation::Base,
         "main" => TestInvocation::Main,
-        "all" => TestInvocation::All,
         _ => unreachable!("reserved action list must match match arms"),
     }))
 }
@@ -289,14 +338,14 @@ pub enum Commands {
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
     },
-    /// Run pytest / cargo nextest for covering tests (git modes, all, or PATH targets)
+    /// Run pytest / cargo nextest for covering tests (git modes, `.`, or PATH targets)
     #[command(alias = "t")]
     Test {
-        /// `commit`, `base`, `main`, `all`, or one or more `PATH` / `PATH::symbol` targets
+        /// `commit`, `base`, `main`, `.`, or one or more `PATH` / `PATH::symbol` / directory targets
         #[arg(
             required = true,
             num_args = 1..,
-            value_name = "commit|base|main|all|TARGET"
+            value_name = "commit|base|main|.|TARGET"
         )]
         operands: Vec<String>,
         #[arg(long, value_name = "BRANCH")]

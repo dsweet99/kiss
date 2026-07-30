@@ -34,9 +34,31 @@ pub(crate) fn run_target_runner_shim_inner(
 ) -> io::Result<i32> {
     // Instrumented shim hosts must not dump coverage into an inherited outer
     // LLVM_PROFILE_FILE; only the delegated test child should write profiles.
-    // Redirect the host sink under `.kiss/tmp` instead of unsetting (unset
+    // Redirect the host sink under `.kiss/profraw` instead of unsetting (unset
     // dumps `default_*.profraw` into the process CWD).
-    crate::kiss_tmp::redirect_inherited_llvm_profile_file(output_dir)?;
+    crate::kiss_profraw::redirect_inherited_llvm_profile_file(output_dir)?;
+    let result = run_target_runner_shim_after_redirect(output_dir, runner_map, platform, command);
+    let cleanup_err = crate::kiss_profraw::cleanup_kiss_profraw_for_pid(
+        &crate::kiss_profraw::resolve_kiss_profraw(output_dir),
+        std::process::id(),
+    )
+    .err();
+    match (result, cleanup_err) {
+        (Ok(code), None) => Ok(code),
+        (Ok(_), Some(err)) => Err(err),
+        (Err(err), None) => Err(err),
+        (Err(err), Some(cleanup)) => {
+            Err(io::Error::new(err.kind(), format!("{err}; {cleanup}")))
+        }
+    }
+}
+
+fn run_target_runner_shim_after_redirect(
+    output_dir: &Path,
+    runner_map: &Path,
+    platform: &str,
+    command: &[OsString],
+) -> io::Result<i32> {
     if command.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

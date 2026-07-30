@@ -134,7 +134,7 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
                 lang: None,
                 defaults: true,
                 command: Commands::Test {
-                    operands: vec!["invalid".to_string()],
+                    operands: vec!["all".to_string()],
                     main_branch: None,
                     base_branch: None,
                     dry_run: true,

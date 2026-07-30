@@ -1,5 +1,6 @@
 //! Explicit `kiss test` PATH / PATH::symbol target parsing and resolution.
 
+mod expand;
 mod model;
 mod model_python;
 mod model_rust;
@@ -8,6 +9,7 @@ mod resolve;
 
 use kiss::Language;
 
+pub(crate) use expand::{ExpandedTargetPlan, expand_target_operands};
 #[cfg(test)]
 pub(crate) use parse::parse_test_target;
 pub(crate) use resolve::resolve_target_operands;
@@ -25,3 +27,6 @@ mod targets_test;
 #[cfg(test)]
 #[path = "targets_b_test.rs"]
 mod targets_b_test;
+#[cfg(test)]
+#[path = "targets_expand_test.rs"]
+mod targets_expand_test;

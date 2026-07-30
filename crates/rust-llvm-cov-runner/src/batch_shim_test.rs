@@ -167,7 +167,7 @@ fn target_runner_shim_delegates_to_configured_runner() {
 fn target_runner_shim_list_phase_delegates_with_list_metadata_without_profile() {
     let _env_guard = shim_test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
-    let kiss_tmp = tmp.path().join(".kiss").join("tmp");
+    let kiss_profraw = tmp.path().join(".kiss").join("profraw");
     let output = tmp
         .path()
         .join(".kiss/rust_llvm_cov_cache/runs/run-a/instances");
@@ -178,15 +178,15 @@ fn target_runner_shim_list_phase_delegates_with_list_metadata_without_profile() 
     fs::write(
         &script,
         format!(
-            "#!/bin/sh\ncase \"${{LLVM_PROFILE_FILE:-}}\" in */.kiss/tmp/default_%m_%p.profraw) ;; *) exit 9 ;; esac\nprintf listed > \"{}\"\nprintf '{{\"type\":\"test\",\"event\":\"discovered\",\"name\":\"alpha\"}}\\n'\nexit 0\n",
+            "#!/bin/sh\ncase \"${{LLVM_PROFILE_FILE:-}}\" in */.kiss/profraw/default_%m_%p.profraw) ;; *) exit 9 ;; esac\nprintf listed > \"{}\"\nprintf '{{\"type\":\"test\",\"event\":\"discovered\",\"name\":\"alpha\"}}\\n'\nexit 0\n",
             marker.display()
         ),
     )
     .unwrap();
     make_executable(&script);
-    let old_kiss_tmp = std::env::var_os(crate::kiss_tmp::KISS_TMP_ENV);
+    let old_kiss_profraw = std::env::var_os(crate::kiss_profraw::KISS_PROFRAW_DIR_ENV);
     unsafe {
-        std::env::set_var(crate::kiss_tmp::KISS_TMP_ENV, &kiss_tmp);
+        std::env::set_var(crate::kiss_profraw::KISS_PROFRAW_DIR_ENV, &kiss_profraw);
         std::env::set_var("NEXTEST_TEST_PHASE", "list");
     }
     let code = run_target_runner_shim(
@@ -197,9 +197,9 @@ fn target_runner_shim_list_phase_delegates_with_list_metadata_without_profile() 
     );
     unsafe {
         std::env::remove_var("NEXTEST_TEST_PHASE");
-        match old_kiss_tmp {
-            Some(value) => std::env::set_var(crate::kiss_tmp::KISS_TMP_ENV, value),
-            None => std::env::remove_var(crate::kiss_tmp::KISS_TMP_ENV),
+        match old_kiss_profraw {
+            Some(value) => std::env::set_var(crate::kiss_profraw::KISS_PROFRAW_DIR_ENV, value),
+            None => std::env::remove_var(crate::kiss_profraw::KISS_PROFRAW_DIR_ENV),
         }
     }
 

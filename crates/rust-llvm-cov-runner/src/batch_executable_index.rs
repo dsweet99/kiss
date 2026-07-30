@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use crate::batch_events::selector_matches_test;
 use crate::batch_executor_finish::{digest_test_binary, test_binary_id_for_path};
@@ -90,6 +90,7 @@ fn executable_index_from_list_metadata(
             "no Rust test executable metadata produced by nextest list phase".into(),
         ));
     }
+    let kiss_profraw = crate::kiss_profraw::kiss_profraw_dir(&req.source_root);
     let mut binary_by_id = BTreeMap::new();
     let mut selector_binary_ids = BTreeMap::<String, BTreeSet<String>>::new();
     for item in list_metadata {
@@ -108,7 +109,7 @@ fn executable_index_from_list_metadata(
                 digest,
             },
         );
-        let test_names = list_test_names_from_executable(path, &id)?;
+        let test_names = list_test_names_from_executable(path, &id, &kiss_profraw)?;
         for selector in &req.logical_selectors {
             if test_names
                 .iter()
@@ -135,11 +136,28 @@ fn executable_index_from_list_metadata(
 fn list_test_names_from_executable(
     path: &std::path::Path,
     binary_id: &str,
+    kiss_profraw: &std::path::Path,
 ) -> Result<Vec<String>, RustLlvmCovError> {
-    let output = Command::new(path)
-        .arg("--list")
-        .output()
+    // Instrumented binaries dump continuous-mode `default_*_0_*.profraw` into CWD
+    // unless LLVM_PROFILE_FILE is set; keep those discard dumps under `.kiss/profraw`.
+    crate::kiss_profraw::ensure_kiss_profraw(kiss_profraw).map_err(RustLlvmCovError::Io)?;
+    let mut command = Command::new(path);
+    command.arg("--list");
+    crate::batch_shim_delegated::scrub_coverage_build_env(&mut command);
+    command.env(
+        "LLVM_PROFILE_FILE",
+        crate::kiss_profraw::discard_llvm_profile_path(kiss_profraw),
+    );
+    let child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(RustLlvmCovError::Io)?;
+    let child_pid = child.id();
+    let output = child.wait_with_output().map_err(RustLlvmCovError::Io)?;
+    let cleanup_err =
+        crate::kiss_profraw::cleanup_kiss_profraw_for_pid(kiss_profraw, child_pid).err();
     if !output.status.success() {
         return Err(RustLlvmCovError::InvalidRequest(format!(
             "test binary list failed for {}: stdout:\n{}\nstderr:\n{}",
@@ -147,6 +165,9 @@ fn list_test_names_from_executable(
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         )));
+    }
+    if let Some(err) = cleanup_err {
+        return Err(RustLlvmCovError::Io(err));
     }
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
@@ -256,6 +277,7 @@ mod tests {
         .unwrap();
 
         let mut req = crate::RustCoverageBatchRequest::witness();
+        req.source_root = tmp.path().to_path_buf();
         req.logical_selectors = vec!["alpha::passes".to_string(), "gamma::missing".to_string()];
         req.test_args = Vec::new();
         let mut plan = crate::RustCoverageBatchPlan::witness();
@@ -285,10 +307,33 @@ mod tests {
         permissions.set_mode(0o755);
         std::fs::set_permissions(&bin, permissions).unwrap();
 
-        let err = super::list_test_names_from_executable(&bin, "bin-id").unwrap_err();
+        let kiss_profraw = tmp.path().join(".kiss").join("profraw");
+        let err =
+            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw).unwrap_err();
 
         assert!(format!("{err:?}").contains("test binary list failed"));
         assert!(format!("{err:?}").contains("bad"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_test_names_sets_discard_llvm_profile_under_kiss_profraw() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kiss_profraw = tmp.path().join(".kiss").join("profraw");
+        let bin = tmp.path().join("test-bin");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\ncase \"${LLVM_PROFILE_FILE:-}\" in */.kiss/profraw/default_%m_%p.profraw) ;; *) echo \"bad:$LLVM_PROFILE_FILE\" >&2; exit 9 ;; esac\nprintf 'alpha::passes: test\\n'\n",
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&bin).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&bin, permissions).unwrap();
+
+        let names =
+            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw).unwrap();
+        assert_eq!(names, vec!["bin-id$alpha::passes".to_string()]);
+        assert!(kiss_profraw.is_dir());
     }
 
     #[test]

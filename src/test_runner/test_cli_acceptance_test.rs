@@ -10,9 +10,9 @@ fn kiss_bin() -> PathBuf {
 }
 
 #[test]
-fn kiss_test_all_dry_run_smoke() {
+fn kiss_test_dot_dry_run_smoke() {
     let output = Command::new(kiss_bin())
-        .args(["--defaults", "test", "all", "--dry-run", "--lang", "rust"])
+        .args(["--defaults", "test", ".", "--dry-run", "--lang", "rust"])
         .output()
         .expect("spawn kiss");
     assert!(
@@ -52,7 +52,7 @@ fn kiss_test_rejects_removed_cov_and_validate_selection() {
 #[test]
 fn kiss_test_rejects_branch_options_outside_matching_modes() {
     let output = Command::new(kiss_bin())
-        .args(["test", "all", "--main-branch", "main", "--dry-run"])
+        .args(["test", ".", "--main-branch", "main", "--dry-run"])
         .output()
         .expect("spawn kiss");
     assert_eq!(output.status.code(), Some(2));
@@ -68,6 +68,7 @@ fn kiss_test_rejects_branch_options_outside_matching_modes() {
 
 #[test]
 fn parse_rejects_framework_args_without_dashdash_as_mixed_reserved() {
+    assert!(parse_test_invocation(&[".".into(), "-q".into()]).is_err());
     assert!(parse_test_invocation(&["all".into(), "-q".into()]).is_err());
     assert_eq!(
         parse_test_invocation(&["commit".into()]).unwrap(),
@@ -85,10 +86,10 @@ fn parse_rejects_framework_args_without_dashdash_as_mixed_reserved() {
 
 #[test]
 fn clap_keeps_trailing_extra_after_dashdash() {
-    let cli = Cli::parse_from(["kiss", "test", "all", "--", "-q"]);
+    let cli = Cli::parse_from(["kiss", "test", ".", "--", "-q"]);
     match cli.command {
         Commands::Test { operands, extra, .. } => {
-            assert_eq!(operands, vec!["all".to_string()]);
+            assert_eq!(operands, vec![".".to_string()]);
             assert_eq!(extra, vec!["-q".to_string()]);
         }
         _ => panic!("expected Test"),

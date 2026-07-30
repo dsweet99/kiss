@@ -1,11 +1,14 @@
-//! Planning adapters for git modes, `all`, and explicit PATH targets.
+//! Planning adapters for git modes, `.` (All), and explicit PATH / directory targets.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use kiss::Language;
 
-use super::{PlannedSelectors, runners, rust_llvm_cov, targets::resolve_target_operands};
+use super::{
+    PlannedSelectors, runners, rust_llvm_cov,
+    targets::{ExpandedTargetPlan, expand_target_operands, resolve_target_operands},
+};
 use crate::test_git::TestChangeMode;
 
 pub(crate) enum TargetPlanKind<'a> {
@@ -30,7 +33,20 @@ pub(crate) fn plan_target_selectors(
     match kind {
         TargetPlanKind::All => plan_all_selectors(&repo_root, &ignore_norm, lang_filter),
         TargetPlanKind::Targets(targets) => {
-            plan_explicit_target_selectors(&repo_root, targets, &ignore_norm, extra, lang_filter)
+            match expand_target_operands(&repo_root, targets, &ignore_norm, lang_filter)
+                .map_err(|e| format!("error: kiss test: {e}"))?
+            {
+                ExpandedTargetPlan::All => {
+                    plan_all_selectors(&repo_root, &ignore_norm, lang_filter)
+                }
+                ExpandedTargetPlan::Files(files) => plan_explicit_target_selectors(
+                    &repo_root,
+                    &files,
+                    &ignore_norm,
+                    extra,
+                    lang_filter,
+                ),
+            }
         }
     }
 }

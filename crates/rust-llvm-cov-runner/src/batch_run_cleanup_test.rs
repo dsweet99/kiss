@@ -47,14 +47,22 @@ fn remove_current_run_directory_removes_validated_run_root() {
 #[test]
 fn current_run_lifecycle_guard_cleans_up_on_drop() {
     let tmp = tempfile::tempdir().unwrap();
-    let kiss = tmp.path().join(".kiss");
+    let repo = tmp.path();
+    let kiss = repo.join(".kiss");
     let cache_root = kiss.join("rust_llvm_cov_cache");
     let run_root = cache_root.join("runs").join("run-a");
-    let kiss_tmp = kiss.join("tmp");
+    let other_instances = cache_root.join("runs").join("other").join("instances");
+    let kiss_profraw = kiss.join("profraw");
+    let crate_dir = repo.join("crates").join("pkg");
     fs::create_dir_all(&run_root).unwrap();
-    fs::create_dir_all(&kiss_tmp).unwrap();
+    fs::create_dir_all(&other_instances).unwrap();
+    fs::create_dir_all(&kiss_profraw).unwrap();
+    fs::create_dir_all(&crate_dir).unwrap();
     fs::write(run_root.join("marker"), b"x").unwrap();
-    fs::write(kiss_tmp.join("default_1_0_9.profraw"), b"raw").unwrap();
+    fs::write(kiss_profraw.join("default_1_0_9.profraw"), b"raw").unwrap();
+    fs::write(other_instances.join("intentional.profraw"), b"keep").unwrap();
+    fs::write(repo.join("default_root_end_0_1.profraw"), b"root").unwrap();
+    fs::write(crate_dir.join("default_crate_end_0_2.profraw"), b"crate").unwrap();
 
     {
         let _guard = CurrentRunLifecycleGuard::new(cache_root.clone(), run_root.clone());
@@ -62,7 +70,10 @@ fn current_run_lifecycle_guard_cleans_up_on_drop() {
     }
 
     assert!(!run_root.exists());
-    assert!(!kiss_tmp.join("default_1_0_9.profraw").exists());
+    assert!(!kiss_profraw.join("default_1_0_9.profraw").exists());
+    assert!(other_instances.join("intentional.profraw").exists());
+    assert!(!repo.join("default_root_end_0_1.profraw").exists());
+    assert!(!crate_dir.join("default_crate_end_0_2.profraw").exists());
 }
 
 #[test]
@@ -188,6 +199,41 @@ fn unsafe_cleanup_path_is_rejected_without_deleting() {
     let err = remove_current_run_directory(&cache_root, &outside).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
     assert!(outside.join("marker").is_file());
+}
+
+#[test]
+fn begin_with_layout_sweeps_orphan_default_profraw() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    let kiss = repo.join(".kiss");
+    let cache_root = kiss.join("rust_llvm_cov_cache");
+    let crate_dir = repo.join("crates").join("pkg");
+    fs::create_dir_all(&crate_dir).unwrap();
+    fs::create_dir_all(kiss.join("tmp")).unwrap();
+    fs::write(repo.join("default_root_0_1.profraw"), b"root").unwrap();
+    fs::write(crate_dir.join("default_crate_0_2.profraw"), b"crate").unwrap();
+    fs::write(kiss.join("tmp").join("default_legacy_0_3.profraw"), b"legacy").unwrap();
+
+    let mut req = crate::RustCoverageBatchRequest::witness();
+    req.source_root = repo.to_path_buf();
+    req.cache_root = cache_root.clone();
+    req.generated_config = cache_root.join("runs").join("run-a").join("nextest.toml");
+    let plan = crate::build_rust_coverage_batch_plan(&req).unwrap();
+    let scope =
+        FreshBatchRunScope::begin_with_layout(&cache_root, &plan, CurrentRunCleanup::default())
+            .unwrap();
+    assert!(kiss.join("profraw").is_dir());
+    assert!(!repo.join("default_root_0_1.profraw").exists());
+    assert!(!crate_dir.join("default_crate_0_2.profraw").exists());
+    assert!(!kiss.join("tmp").exists());
+    // Intentional instance profiles under the live run are not orphan-swept.
+    fs::write(
+        plan.target_runner_output_dir.join("intentional.profraw"),
+        b"keep",
+    )
+    .unwrap();
+    assert!(plan.target_runner_output_dir.join("intentional.profraw").exists());
+    drop(scope);
 }
 
 #[test]

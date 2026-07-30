@@ -236,6 +236,16 @@ mod tests {
             "env={:?}",
             plan.env.get("LLVM_PROFILE_FILE_NAME")
         );
+        assert_eq!(
+            plan.env.get("LLVM_PROFILE_FILE").map(String::as_str),
+            Some("/repo/.kiss/profraw/default_%m_%p.profraw")
+        );
+        assert_eq!(
+            plan.env
+                .get(crate::kiss_profraw::KISS_PROFRAW_DIR_ENV)
+                .map(String::as_str),
+            Some("/repo/.kiss/profraw")
+        );
         assert!(!plan.argv.iter().any(|arg| arg.contains("__rust-llvm-cov-target-runner")));
     }
 

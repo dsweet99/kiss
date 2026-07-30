@@ -40,19 +40,19 @@ fn cov_rejects_zero_jobs_override() {
 
 #[test]
 fn test_accepts_jobs_override() {
-    let cli = Cli::parse_from(["kiss", "test", "all", "-j", "7"]);
+    let cli = Cli::parse_from(["kiss", "test", ".", "-j", "7"]);
     assert!(matches!(cli.command, Commands::Test { jobs: Some(7), .. }));
 }
 
 #[test]
 fn test_jobs_defaults_to_none_for_config_num_jobs() {
-    let cli = Cli::parse_from(["kiss", "test", "all"]);
+    let cli = Cli::parse_from(["kiss", "test", "."]);
     assert!(matches!(cli.command, Commands::Test { jobs: None, .. }));
 }
 
 #[test]
 fn test_rejects_zero_jobs_override() {
-    assert!(Cli::try_parse_from(["kiss", "test", "all", "-j", "0"]).is_err());
+    assert!(Cli::try_parse_from(["kiss", "test", ".", "-j", "0"]).is_err());
 }
 
 #[test]
@@ -62,11 +62,18 @@ fn check_rejects_removed_coverage_flags() {
 }
 
 #[test]
-fn test_invocation_parses_modes_all_and_targets() {
+fn test_invocation_parses_modes_dot_all_and_targets() {
     assert_eq!(
-        parse_test_invocation(&["all".into()]).unwrap(),
+        parse_test_invocation(&[".".into()]).unwrap(),
         TestInvocation::All
     );
+    assert_eq!(
+        parse_test_invocation(&["./".into()]).unwrap(),
+        TestInvocation::All
+    );
+    let all_err = parse_test_invocation(&["all".into()]).unwrap_err();
+    assert!(all_err.contains("kiss test ."), "{all_err}");
+    assert!(parse_test_invocation(&["./all".into()]).is_ok());
     assert_eq!(
         parse_test_invocation(&["commit".into()]).unwrap(),
         TestInvocation::Commit
@@ -79,8 +86,13 @@ fn test_invocation_parses_modes_all_and_targets() {
             "tests/test_x.py::test_y".into()
         ])
     );
+    assert_eq!(
+        parse_test_invocation(&["src".into(), "crates/foo".into()]).unwrap(),
+        TestInvocation::Targets(vec!["src".into(), "crates/foo".into()])
+    );
     assert!(parse_test_invocation(&[]).is_err());
-    assert!(parse_test_invocation(&["all".into(), "src/lib.rs".into()]).is_err());
+    assert!(parse_test_invocation(&[".".into(), "src/lib.rs".into()]).is_err());
+    assert!(parse_test_invocation(&["src::symbol".into()]).is_err());
     assert!(parse_test_invocation(&["cov".into()]).is_err());
     assert!(parse_test_invocation(&["validate-selection".into()]).is_err());
 }
@@ -122,7 +134,8 @@ fn test_command_help_is_language_neutral_for_shared_options() {
         help.contains("Force selected tests to rerun instead of reusing test-runner caches")
     );
     assert!(help.contains("Maximum number of test jobs to run concurrently"));
-    assert!(help.contains("all"));
+    assert!(help.contains("commit|base|main|.|TARGET"));
+    assert!(!help.contains("all|TARGET"));
     assert!(!help.contains("validate-selection"));
     assert!(!help.contains("Force Python tests"));
     assert!(!help.contains("Maximum number of Python test jobs"));

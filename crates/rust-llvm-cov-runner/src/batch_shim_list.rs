@@ -19,20 +19,27 @@ pub(crate) fn run_delegated_list_child(
     scrub_coverage_build_env(&mut delegated_command);
     // List children are often instrumented; scrubbing without a discard sink
     // leaves `default_*.profraw` in the package CWD.
-    let kiss_tmp = crate::kiss_tmp::resolve_kiss_tmp(output_dir);
-    crate::kiss_tmp::ensure_kiss_tmp(&kiss_tmp)?;
+    let kiss_profraw = crate::kiss_profraw::resolve_kiss_profraw(output_dir);
+    crate::kiss_profraw::ensure_kiss_profraw(&kiss_profraw)?;
     delegated_command.env(
         "LLVM_PROFILE_FILE",
-        crate::kiss_tmp::discard_llvm_profile_path(&kiss_tmp),
+        crate::kiss_profraw::discard_llvm_profile_path(&kiss_profraw),
     );
-    let output = delegated_command
+    let child = delegated_command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()?;
+        .spawn()?;
+    let child_pid = child.id();
+    let output = child.wait_with_output()?;
+    let cleanup_err =
+        crate::kiss_profraw::cleanup_kiss_profraw_for_pid(&kiss_profraw, child_pid).err();
     io::stdout().write_all(&output.stdout)?;
     io::stderr().write_all(&output.stderr)?;
     write_list_metadata(output_dir, command, &output.stdout)?;
+    if let Some(err) = cleanup_err {
+        return Err(err);
+    }
     Ok(output.status.code().unwrap_or(1))
 }
 

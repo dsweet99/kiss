@@ -198,14 +198,14 @@ fn test_test_cli_parse() {
         _ => panic!("expected Test main"),
     }
 
-    let cli = Cli::try_parse_from(["kiss", "test", "all", "--dry-run"]).unwrap();
+    let cli = Cli::try_parse_from(["kiss", "test", ".", "--dry-run"]).unwrap();
     match cli.command {
         Commands::Test {
             operands,
             dry_run: true,
             ..
-        } => assert_eq!(operands, vec!["all".to_string()]),
-        _ => panic!("expected Test all dry-run"),
+        } => assert_eq!(operands, vec![".".to_string()]),
+        _ => panic!("expected Test . dry-run"),
     }
 
     let cli = Cli::parse_from(["kiss", "test", "src/lib.rs", "tests/t.py::test_x"]);

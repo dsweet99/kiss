@@ -58,7 +58,7 @@ mod batch_shim_delegated;
 mod batch_shim_lookup;
 mod cargo_workspace_metadata;
 mod file_lock;
-mod kiss_tmp;
+mod kiss_profraw;
 mod llvm_cov_json;
 mod rust_cov_cache;
 mod shared_input;
