@@ -1,18 +1,25 @@
 //! Strict manifest-bound reverse snapshot reads with safe fallback.
 
-use crate::batch_entry_state::{entry_state_matches, read_entry_state};
+use crate::batch_entry_state::{read_entry_state, EntryState};
 use crate::batch_reverse_build::{
-    FileReverseRecord, ReverseMeta, REVERSE_LINE_INDEX_SCHEMA, file_record_name, hex_digest,
+    file_record_name, hex_digest, FileReverseRecord, ReverseMeta, REVERSE_LINE_INDEX_SCHEMA,
 };
 use crate::batch_reverse_publish::snapshot_path;
+use crate::batch_reverse_query_metrics::{
+    record_reverse_hit, record_reverse_unavailable, ReverseUnavailableReason,
+};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 
-pub static REVERSE_QUERY_HITS: AtomicU64 = AtomicU64::new(0);
-pub static REVERSE_QUERY_UNAVAILABLE: AtomicU64 = AtomicU64::new(0);
+pub use crate::batch_reverse_query_metrics::{
+    snapshot_reverse_query_counters, take_reverse_query_counters_since_last_copy,
+    ReverseQueryCounters, ReverseUnavailableCounts, REVERSE_QUERY_HITS,
+};
+
+#[cfg(test)]
+pub use crate::batch_reverse_query_metrics::reset_reverse_query_counters_for_test;
 
 #[derive(Clone, Debug, Deserialize)]
 struct PopulationReverseNeedle {
@@ -38,12 +45,12 @@ pub fn query_reverse_line_index(
         return Some(BTreeMap::new());
     }
     match query_validated(cache_root, generation, changed_rels) {
-        Some(out) => {
-            REVERSE_QUERY_HITS.fetch_add(1, Ordering::Relaxed);
+        Ok(out) => {
+            record_reverse_hit();
             Some(out)
         }
-        None => {
-            REVERSE_QUERY_UNAVAILABLE.fetch_add(1, Ordering::Relaxed);
+        Err(reason) => {
+            record_reverse_unavailable(reason);
             None
         }
     }
@@ -53,55 +60,87 @@ fn query_validated(
     cache_root: &Path,
     generation: &str,
     changed_rels: &BTreeMap<String, BTreeSet<u32>>,
-) -> Option<BTreeMap<String, BTreeSet<String>>> {
+) -> Result<BTreeMap<String, BTreeSet<String>>, ReverseUnavailableReason> {
     let needle = load_population_needle(cache_root)?;
-    let reverse = needle.reverse_line_index.as_ref()?;
-    if needle.generation_fingerprint != generation
-        || reverse.schema_version != REVERSE_LINE_INDEX_SCHEMA
-    {
-        return None;
+    let reverse = needle
+        .reverse_line_index
+        .as_ref()
+        .ok_or(ReverseUnavailableReason::MissingRecord)?;
+    if reverse.schema_version != REVERSE_LINE_INDEX_SCHEMA {
+        return Err(ReverseUnavailableReason::Schema);
     }
-    let state = read_entry_state(cache_root)?;
-    if !entry_state_matches(
-        &state,
-        &needle.generation_fingerprint,
-        &needle.entries_fingerprint,
-        reverse.entry_state_revision,
-    ) {
-        return None;
+    if needle.generation_fingerprint != generation {
+        return Err(ReverseUnavailableReason::Generation);
     }
+    let state = read_entry_state(cache_root).ok_or(ReverseUnavailableReason::MissingRecord)?;
+    classify_entry_state(&state, &needle, reverse)?;
     let root = snapshot_path(cache_root, &reverse.snapshot_id);
-    let meta_bytes = fs::read(root.join("meta.json")).ok()?;
+    let meta_bytes = fs::read(root.join("meta.json")).map_err(|_| {
+        ReverseUnavailableReason::MissingRecord
+    })?;
     if hex_digest(&meta_bytes) != reverse.meta_digest {
-        return None;
+        return Err(ReverseUnavailableReason::Digest);
     }
-    let meta: ReverseMeta = serde_json::from_slice(&meta_bytes).ok()?;
-    if !meta_matches_needle(&meta, &needle, reverse) {
-        return None;
-    }
-    let selectors_bytes = fs::read(root.join("selectors.json")).ok()?;
+    let meta: ReverseMeta = serde_json::from_slice(&meta_bytes)
+        .map_err(|_| ReverseUnavailableReason::Malformed)?;
+    classify_meta(&meta, &needle, reverse)?;
+    let selectors_bytes = fs::read(root.join("selectors.json")).map_err(|_| {
+        ReverseUnavailableReason::MissingRecord
+    })?;
     if hex_digest(&selectors_bytes) != meta.selectors_digest {
-        return None;
+        return Err(ReverseUnavailableReason::Digest);
     }
-    let selectors: Vec<String> = serde_json::from_slice(&selectors_bytes).ok()?;
+    let selectors: Vec<String> = serde_json::from_slice(&selectors_bytes)
+        .map_err(|_| ReverseUnavailableReason::Malformed)?;
     select_from_snapshot(&root, &meta, &selectors, changed_rels)
 }
 
-fn load_population_needle(cache_root: &Path) -> Option<PopulationReverseNeedle> {
-    let bytes = fs::read(cache_root.join("population.json")).ok()?;
-    serde_json::from_slice(&bytes).ok()
+fn classify_entry_state(
+    state: &EntryState,
+    needle: &PopulationReverseNeedle,
+    reverse: &ReverseNeedle,
+) -> Result<(), ReverseUnavailableReason> {
+    if state.generation_fingerprint != needle.generation_fingerprint {
+        return Err(ReverseUnavailableReason::Generation);
+    }
+    if state.entries_fingerprint != needle.entries_fingerprint {
+        return Err(ReverseUnavailableReason::Fingerprint);
+    }
+    if state.revision != reverse.entry_state_revision {
+        return Err(ReverseUnavailableReason::Revision);
+    }
+    Ok(())
 }
 
-fn meta_matches_needle(
+fn classify_meta(
     meta: &ReverseMeta,
     needle: &PopulationReverseNeedle,
     reverse: &ReverseNeedle,
-) -> bool {
-    meta.schema_version == REVERSE_LINE_INDEX_SCHEMA
-        && meta.snapshot_id == reverse.snapshot_id
-        && meta.generation_fingerprint == needle.generation_fingerprint
-        && meta.entries_fingerprint == needle.entries_fingerprint
-        && meta.entry_state_revision == reverse.entry_state_revision
+) -> Result<(), ReverseUnavailableReason> {
+    if meta.schema_version != REVERSE_LINE_INDEX_SCHEMA {
+        return Err(ReverseUnavailableReason::Schema);
+    }
+    if meta.snapshot_id != reverse.snapshot_id {
+        return Err(ReverseUnavailableReason::MissingRecord);
+    }
+    if meta.generation_fingerprint != needle.generation_fingerprint {
+        return Err(ReverseUnavailableReason::Generation);
+    }
+    if meta.entries_fingerprint != needle.entries_fingerprint {
+        return Err(ReverseUnavailableReason::Fingerprint);
+    }
+    if meta.entry_state_revision != reverse.entry_state_revision {
+        return Err(ReverseUnavailableReason::Revision);
+    }
+    Ok(())
+}
+
+fn load_population_needle(
+    cache_root: &Path,
+) -> Result<PopulationReverseNeedle, ReverseUnavailableReason> {
+    let bytes = fs::read(cache_root.join("population.json"))
+        .map_err(|_| ReverseUnavailableReason::MissingRecord)?;
+    serde_json::from_slice(&bytes).map_err(|_| ReverseUnavailableReason::Malformed)
 }
 
 fn select_from_snapshot(
@@ -109,16 +148,14 @@ fn select_from_snapshot(
     meta: &ReverseMeta,
     selectors: &[String],
     changed_rels: &BTreeMap<String, BTreeSet<u32>>,
-) -> Option<BTreeMap<String, BTreeSet<String>>> {
+) -> Result<BTreeMap<String, BTreeSet<String>>, ReverseUnavailableReason> {
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (rel, wanted) in changed_rels {
         if wanted.is_empty() {
             continue;
         }
         match meta.files.get(rel) {
-            None => {
-                // Absent from complete map: trusted empty selector set.
-            }
+            None => {}
             Some(file_meta) => {
                 let record = load_validated_record(root, rel, file_meta)?;
                 let selected = selectors_for_wanted(&record, selectors, wanted)?;
@@ -128,42 +165,48 @@ fn select_from_snapshot(
             }
         }
     }
-    Some(out)
+    Ok(out)
 }
 
 fn load_validated_record(
     root: &Path,
     rel: &str,
     file_meta: &crate::batch_reverse_build::FileMeta,
-) -> Option<FileReverseRecord> {
+) -> Result<FileReverseRecord, ReverseUnavailableReason> {
     if file_meta.record != file_record_name(rel) {
-        return None;
+        return Err(ReverseUnavailableReason::MissingRecord);
     }
     let path = root.join("files").join(&file_meta.record);
-    let bytes = fs::read(path).ok()?;
+    let bytes = fs::read(path).map_err(|_| ReverseUnavailableReason::MissingRecord)?;
     if hex_digest(&bytes) != file_meta.digest {
-        return None;
+        return Err(ReverseUnavailableReason::Digest);
     }
-    let record: FileReverseRecord = serde_json::from_slice(&bytes).ok()?;
-    (record.file == *rel).then_some(record)
+    let record: FileReverseRecord = serde_json::from_slice(&bytes)
+        .map_err(|_| ReverseUnavailableReason::Malformed)?;
+    if record.file != *rel {
+        return Err(ReverseUnavailableReason::Malformed);
+    }
+    Ok(record)
 }
 
 fn selectors_for_wanted(
     record: &FileReverseRecord,
     selectors: &[String],
     wanted: &BTreeSet<u32>,
-) -> Option<BTreeSet<String>> {
+) -> Result<BTreeSet<String>, ReverseUnavailableReason> {
     let mut selected = BTreeSet::new();
     for (start, end, ids) in &record.ranges {
         if !range_overlaps_wanted(*start, *end, wanted) {
             continue;
         }
         for id in ids {
-            let sel = selectors.get(*id as usize)?;
+            let sel = selectors
+                .get(*id as usize)
+                .ok_or(ReverseUnavailableReason::Malformed)?;
             selected.insert(sel.clone());
         }
     }
-    Some(selected)
+    Ok(selected)
 }
 
 fn range_overlaps_wanted(start: u32, end: u32, wanted: &BTreeSet<u32>) -> bool {

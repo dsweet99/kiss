@@ -3,12 +3,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-#[cfg(not(test))]
-pub(crate) use super::rust_llvm_cov::run_rust_llvm_cov_selectors;
-#[cfg(test)]
-pub(crate) use super::rust_llvm_cov::run_rust_llvm_cov_selectors;
 pub(crate) use super::rust_llvm_cov::{
     cached_rust_check_aggregate_selectors, run_rust_llvm_cov_check_aggregate_population_selectors,
+    run_rust_llvm_cov_selectors,
 };
 use kiss::test_refs::{is_in_test_directory, is_test_file};
 use kiss::{parse_rust_files, rust_test_functions_in};
@@ -57,6 +54,8 @@ use rust_workspace::{cargo_workspace_member_manifest_dirs, is_workspace_rust_sel
 
 #[path = "runners/rslip.rs"]
 mod rslip;
+#[path = "runners/rust_batch_counters.rs"]
+mod rust_batch_counters;
 pub(crate) use rslip::run_rslip_selectors;
 pub(crate) use rslip::{detect_rslip_versions, rslip_request_from_parts};
 
@@ -98,6 +97,16 @@ pub(crate) struct SelectorExecutionSummary {
     pub(crate) rust_cache_pruned_entries: usize,
     pub(crate) rust_process_residual_count: usize,
     pub(crate) rust_legacy_cleanup_deferred: bool,
+    pub(crate) rust_reverse_query_hits: u64,
+    pub(crate) rust_reverse_unavailable_schema: u64,
+    pub(crate) rust_reverse_unavailable_generation: u64,
+    pub(crate) rust_reverse_unavailable_revision: u64,
+    pub(crate) rust_reverse_unavailable_fingerprint: u64,
+    pub(crate) rust_reverse_unavailable_digest: u64,
+    pub(crate) rust_reverse_unavailable_malformed: u64,
+    pub(crate) rust_reverse_unavailable_missing_record: u64,
+    pub(crate) rust_reverse_published: bool,
+    pub(crate) rust_reverse_snapshots_reclaimed: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -167,6 +176,7 @@ impl SelectorExecutionSummary {
         if counters.legacy_cleanup_deferred {
             self.rust_legacy_cleanup_deferred = true;
         }
+        rust_batch_counters::record_reverse_batch_counters(self, counters);
     }
 }
 

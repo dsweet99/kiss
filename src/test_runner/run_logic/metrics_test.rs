@@ -61,18 +61,27 @@ fn metrics_with_batch_counters() -> LocalRubricMetrics {
 }
 
 #[test]
-fn rust_batch_counters_record_process_and_cleanup_metrics() {
+fn rust_batch_counters_record_reverse_metrics() {
     let mut summary = SelectorExecutionSummary::default();
     let counters = RustCoverageBatchCounters {
-        process_residual_count: 2,
-        legacy_cleanup_deferred: true,
+        reverse_query_hits: 2,
+        reverse_unavailable: rust_llvm_cov_runner::ReverseUnavailableCounts {
+            schema: 1,
+            digest: 3,
+            ..Default::default()
+        },
+        reverse_published: true,
+        reverse_snapshots_reclaimed: 4,
         ..RustCoverageBatchCounters::default()
     };
 
     summary.record_rust_batch_counters(&counters);
 
-    assert_eq!(summary.rust_process_residual_count, 2);
-    assert!(summary.rust_legacy_cleanup_deferred);
+    assert_eq!(summary.rust_reverse_query_hits, 2);
+    assert_eq!(summary.rust_reverse_unavailable_schema, 1);
+    assert_eq!(summary.rust_reverse_unavailable_digest, 3);
+    assert!(summary.rust_reverse_published);
+    assert_eq!(summary.rust_reverse_snapshots_reclaimed, 4);
 }
 
 fn population_rust_summary() -> SelectorExecutionSummary {

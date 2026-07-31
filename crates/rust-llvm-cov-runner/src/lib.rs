@@ -22,6 +22,7 @@ mod batch_entry_state;
 mod batch_reverse_build;
 mod batch_reverse_publish;
 mod batch_reverse_query;
+mod batch_reverse_query_metrics;
 mod batch_reverse_line_index;
 #[cfg(test)]
 mod batch_reverse_test_support;
@@ -118,7 +119,14 @@ pub use batch_reverse_line_index::{
     ReversePublishInfo, REVERSE_LINE_INDEX_SCHEMA, prune_unreferenced_snapshots,
     publish_reverse_line_index, read_prior_snapshot_id, reverse_line_index_dir,
 };
-pub use batch_reverse_query::query_reverse_line_index;
+pub use batch_reverse_query::{
+    query_reverse_line_index, snapshot_reverse_query_counters,
+    take_reverse_query_counters_since_last_copy, ReverseQueryCounters, ReverseUnavailableCounts,
+    REVERSE_QUERY_HITS,
+};
+pub use batch_reverse_query_metrics::ReverseUnavailableReason;
+#[cfg(test)]
+pub use batch_reverse_query::reset_reverse_query_counters_for_test;
 pub use batch_derived_entries::{RustReusableSelectorEntry, load_reusable_prior_selector_entries};
 pub use batch_derived_incremental::{IncrementalPublishPlan, publish_incremental_derived_state};
 pub use batch_derived_index::{

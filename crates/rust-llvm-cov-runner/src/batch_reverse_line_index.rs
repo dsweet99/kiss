@@ -23,8 +23,8 @@ mod query_contract_tests;
 mod rebuild_tests;
 
 #[cfg(test)]
-#[path = "batch_reverse_prune_test.rs"]
-mod prune_tests;
+#[path = "batch_reverse_metrics_test.rs"]
+mod metrics_tests;
 
 #[cfg(test)]
 #[path = "batch_reverse_process_race_test.rs"]

@@ -80,7 +80,7 @@ where
         // Lock-free only when derived state already validates and no publication
         // is needed. Never publish/repair here: a TOCTOU stale flip must wait for
         // a lock-owning publisher (below or a later call).
-        return Ok(result);
+        return Ok(with_process_reverse_query_counters(result));
     }
 
     let _batch_guard = lock_batch(&req.cache_root)?;
@@ -95,19 +95,28 @@ where
         return maybe_publish_derived_after_all_hit(req, tools, &identity, result).map(
             |mut result| {
                 result.counters.legacy_cleanup_deferred = legacy_cleanup.deferred;
-                result
+                with_process_reverse_query_counters(result)
             },
         );
     }
     if let Some(mut result) = try_check_aggregate_hit_after_lock(req, &identity)? {
         result.counters.legacy_cleanup_deferred = legacy_cleanup.deferred;
-        return Ok(result);
+        return Ok(with_process_reverse_query_counters(result));
     }
 
     fresh(req, tools, &identity, &plan).and_then(|mut result| {
         finalize_after_fresh_batch(req, tools, &identity, legacy_cleanup.deferred, &mut result)?;
-        Ok(result)
+        Ok(with_process_reverse_query_counters(result))
     })
+}
+
+fn with_process_reverse_query_counters(
+    mut result: RustCoverageBatchResult,
+) -> RustCoverageBatchResult {
+    result
+        .counters
+        .incorporate_process_reverse_query_counters();
+    result
 }
 
 fn finalize_after_fresh_batch(
@@ -164,6 +173,8 @@ fn apply_population_derived_publication(
         result.counters.entry_generation_count = publish.entry_generation_count;
         result.counters.current_index_generation = publish.current_index_generation;
         result.counters.cache_pruned_entries = publish.cache_pruned_entries;
+        result.counters.reverse_published = publish.reverse_published;
+        result.counters.reverse_snapshots_reclaimed = publish.reverse_snapshots_reclaimed;
     }
     Ok(())
 }

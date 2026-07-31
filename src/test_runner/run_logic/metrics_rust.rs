@@ -1,4 +1,5 @@
 use super::LocalRubricMetrics;
+use rust_llvm_cov_runner::snapshot_reverse_query_counters;
 
 pub(super) fn print_rust_batch_metrics(metrics: &LocalRubricMetrics) {
     println!("rust_build_invocations={}", rust_build_invocations(metrics));
@@ -53,6 +54,48 @@ pub(super) fn print_rust_batch_metrics(metrics: &LocalRubricMetrics) {
     println!(
         "rust_legacy_cleanup_deferred={}",
         rust_legacy_cleanup_deferred(metrics)
+    );
+    print_rust_reverse_metrics(metrics);
+}
+
+fn print_rust_reverse_metrics(metrics: &LocalRubricMetrics) {
+    let process = snapshot_reverse_query_counters();
+    println!("rust_reverse_query_hits={}", process.hits);
+    println!(
+        "rust_reverse_unavailable_schema={}",
+        process.unavailable.schema
+    );
+    println!(
+        "rust_reverse_unavailable_generation={}",
+        process.unavailable.generation
+    );
+    println!(
+        "rust_reverse_unavailable_revision={}",
+        process.unavailable.revision
+    );
+    println!(
+        "rust_reverse_unavailable_fingerprint={}",
+        process.unavailable.fingerprint
+    );
+    println!(
+        "rust_reverse_unavailable_digest={}",
+        process.unavailable.digest
+    );
+    println!(
+        "rust_reverse_unavailable_malformed={}",
+        process.unavailable.malformed
+    );
+    println!(
+        "rust_reverse_unavailable_missing_record={}",
+        process.unavailable.missing_record
+    );
+    println!(
+        "rust_reverse_published={}",
+        rust_reverse_published(metrics)
+    );
+    println!(
+        "rust_reverse_snapshots_reclaimed={}",
+        rust_reverse_snapshots_reclaimed(metrics)
     );
 }
 
@@ -158,4 +201,14 @@ pub(super) fn rust_process_residual_count(metrics: &LocalRubricMetrics) -> usize
 pub(super) fn rust_legacy_cleanup_deferred(metrics: &LocalRubricMetrics) -> bool {
     metrics.rust_population.summary.rust_legacy_cleanup_deferred
         || metrics.rust_final.summary.rust_legacy_cleanup_deferred
+}
+
+pub(super) fn rust_reverse_published(metrics: &LocalRubricMetrics) -> bool {
+    metrics.rust_population.summary.rust_reverse_published
+        || metrics.rust_final.summary.rust_reverse_published
+}
+
+pub(super) fn rust_reverse_snapshots_reclaimed(metrics: &LocalRubricMetrics) -> usize {
+    metrics.rust_population.summary.rust_reverse_snapshots_reclaimed
+        + metrics.rust_final.summary.rust_reverse_snapshots_reclaimed
 }

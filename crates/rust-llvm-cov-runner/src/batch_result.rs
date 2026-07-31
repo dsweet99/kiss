@@ -1,3 +1,6 @@
+use crate::batch_reverse_query_metrics::{
+    take_reverse_query_counters_since_last_copy, ReverseUnavailableCounts,
+};
 use crate::{RustLlvmCovError, RustLlvmCovOutcome, RustTestBinaryIdentity};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -21,6 +24,19 @@ pub struct RustCoverageBatchCounters {
     pub cache_pruned_entries: usize,
     pub process_residual_count: usize,
     pub legacy_cleanup_deferred: bool,
+    pub reverse_query_hits: u64,
+    pub reverse_unavailable: ReverseUnavailableCounts,
+    pub reverse_published: bool,
+    pub reverse_snapshots_reclaimed: usize,
+}
+
+impl RustCoverageBatchCounters {
+    /// Copy process reverse hit / unavailable deltas into this batch result.
+    pub fn incorporate_process_reverse_query_counters(&mut self) {
+        let delta = take_reverse_query_counters_since_last_copy();
+        self.reverse_query_hits += delta.hits;
+        self.reverse_unavailable.add_assign(&delta.unavailable);
+    }
 }
 
 #[derive(Debug)]

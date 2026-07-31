@@ -24,6 +24,7 @@ pub struct DerivedPublishCounters {
     pub entry_generation_count: usize,
     pub current_index_generation: String,
     pub cache_pruned_entries: usize,
+    pub reverse_published: bool,
     pub reverse_snapshots_reclaimed: usize,
 }
 
@@ -222,6 +223,7 @@ pub fn publish_derived_state_with_binaries(
         entry_generation_count: count_generations(&req.cache_root)?,
         current_index_generation: identity.generation_fingerprint.clone(),
         cache_pruned_entries: pruned,
+        reverse_published: true,
         reverse_snapshots_reclaimed,
     })
 }
@@ -279,6 +281,7 @@ pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
         entry_generation_count: count_generations(&req.cache_root)?,
         current_index_generation: identity.generation_fingerprint.clone(),
         cache_pruned_entries: pruned,
+        reverse_published: false,
         reverse_snapshots_reclaimed: 0,
     })
 }
