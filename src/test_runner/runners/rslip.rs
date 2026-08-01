@@ -120,6 +120,9 @@ fn relevant_rslip_env(env_keys: &[&str]) -> BTreeMap<String, String> {
 }
 
 pub(crate) fn detect_rslip_versions(repo_root: &Path) -> Result<(String, String), String> {
+    if let Some(cached) = read_cached_python_tool_versions(repo_root) {
+        return Ok(cached);
+    }
     let python = PathBuf::from("python");
     let python_version = command_stdout(
         &python,
@@ -134,7 +137,41 @@ pub(crate) fn detect_rslip_versions(repo_root: &Path) -> Result<(String, String)
         &["-c", "import pytest; print(pytest.__version__)"],
         repo_root,
     )?;
+    let _ = write_cached_python_tool_versions(repo_root, &python_version, &pytest_version);
     Ok((python_version, pytest_version))
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct PythonToolVersionsCache {
+    python: String,
+    pytest: String,
+}
+
+fn python_tool_versions_cache_path(repo_root: &Path) -> PathBuf {
+    repo_root.join(".kiss").join("python_tool_versions.json")
+}
+
+fn read_cached_python_tool_versions(repo_root: &Path) -> Option<(String, String)> {
+    let bytes = std::fs::read(python_tool_versions_cache_path(repo_root)).ok()?;
+    let cached: PythonToolVersionsCache = serde_json::from_slice(&bytes).ok()?;
+    Some((cached.python, cached.pytest))
+}
+
+fn write_cached_python_tool_versions(
+    repo_root: &Path,
+    python: &str,
+    pytest: &str,
+) -> std::io::Result<()> {
+    let path = python_tool_versions_cache_path(repo_root);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let cached = PythonToolVersionsCache {
+        python: python.to_string(),
+        pytest: pytest.to_string(),
+    };
+    let bytes = serde_json::to_vec(&cached).map_err(std::io::Error::other)?;
+    std::fs::write(path, bytes)
 }
 
 fn python_version_supports_rslip(version: &str) -> bool {

@@ -12,7 +12,7 @@ use rust_llvm_cov_runner::{
 };
 
 use super::last_status::{LastStatusIdentity, record_statuses, rust_last_status_identity};
-use super::runners::{SelectorCacheRecord, SelectorExecutionSummary, command_stdout};
+use super::runners::{SelectorCacheRecord, SelectorExecutionSummary};
 use crate::test_runner::rust_coverage_index::relevant_rust_batch_env;
 
 pub(crate) fn validate_rust_extra_args(extra: &[String]) -> Result<(), String> {
@@ -84,10 +84,15 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
     selectors: &[String],
     extra: &[String],
 ) -> Result<Option<SelectorExecutionSummary>, String> {
+    let cache_root = repo_root.join(".kiss").join("rust_llvm_cov_cache");
+    // No derived population index ⇒ check-aggregate warm path cannot hit. Avoid
+    // cargo -vV / toolchain probes that current_rust_coverage_batch_identity pays.
+    if !cache_root.join("index.json").is_file() {
+        return Ok(None);
+    }
     let identity = crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
         repo_root, extra,
     )?;
-    let cache_root = repo_root.join(".kiss").join("rust_llvm_cov_cache");
     let Some(population) = rust_llvm_cov_runner::load_current_population_state(
         &cache_root,
         repo_root,
@@ -151,7 +156,7 @@ fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
     )
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RustCoverageToolVersions {
     pub(crate) cargo: String,
     pub(crate) llvm_cov: String,
@@ -325,20 +330,18 @@ fn unique_rust_coverage_batch_config_path(repo_root: &Path) -> PathBuf {
         .join("nextest.toml")
 }
 
-fn detect_rust_coverage_tool_versions(
+pub(crate) fn detect_rust_coverage_tool_versions(
     repo_root: &Path,
 ) -> Result<RustCoverageToolVersions, String> {
-    let cargo = PathBuf::from("cargo");
-    let cargo_version = command_stdout(&cargo, &["--version"], repo_root)?;
-    let llvm_cov_version = command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?;
-    let cargo_nextest_version = command_stdout(&cargo, &["nextest", "--version"], repo_root)?;
-    let rustc = PathBuf::from("rustc");
-    let rustc_version = command_stdout(&rustc, &["-Vv"], repo_root)?;
+    let (cargo, llvm_cov, rustc, cargo_nextest) =
+        crate::test_runner::rust_coverage_index::rust_coverage_tool_versions_from_cache_or_detect(
+            repo_root,
+        )?;
     Ok(RustCoverageToolVersions {
-        cargo: cargo_version,
-        llvm_cov: llvm_cov_version,
-        rustc: rustc_version,
-        cargo_nextest: cargo_nextest_version,
+        cargo,
+        llvm_cov,
+        rustc,
+        cargo_nextest,
     })
 }
 

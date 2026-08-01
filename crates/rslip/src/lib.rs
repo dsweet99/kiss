@@ -5,6 +5,7 @@
 #![allow(clippy::must_use_candidate)]
 
 mod batch;
+mod batch_context_seal;
 mod cache;
 mod lock;
 mod runtime;
@@ -165,14 +166,20 @@ pub fn load_cached_outcomes_many(
     let Some(first) = reqs.first() else {
         return Vec::new();
     };
-    let shared_context = match rslip_request_context_fingerprint(first) {
-        Ok(context) => context,
-        Err(err) => {
-            return reqs
-                .iter()
-                .map(|_| Err(RslipError::Io(io::Error::new(err.kind(), err.to_string()))))
-                .collect();
-        }
+    let shared_context = match batch_context_seal::try_batch_context_seal(first) {
+        Some(cached) => cached,
+        None => match rslip_request_context_fingerprint(first) {
+            Ok(context) => {
+                let _ = batch_context_seal::write_batch_context_seal(first, &context);
+                context
+            }
+            Err(err) => {
+                return reqs
+                    .iter()
+                    .map(|_| Err(RslipError::Io(io::Error::new(err.kind(), err.to_string()))))
+                    .collect();
+            }
+        },
     };
     reqs.iter()
         .map(|req| {

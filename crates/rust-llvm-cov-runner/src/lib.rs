@@ -51,6 +51,7 @@ mod batch_output_channel;
 mod batch_output_channel_frame;
 mod batch_output_channel_token;
 mod batch_plan;
+mod batch_publication_tmp;
 mod batch_plan_env;
 mod batch_plan_nextest_config;
 mod batch_plan_publish;

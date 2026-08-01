@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunRequest};
 
 use crate::cache::{
-    RslipCacheEntry, load_rslip_cache_entry, rslip_cache_fingerprint, rslip_unique_suffix,
+    RslipCacheEntry, load_rslip_cache_entry, rslip_cache_fingerprint,
+    rslip_cache_fingerprint_from_context, rslip_request_context_fingerprint, rslip_unique_suffix,
     store_rslip_cache_entry,
 };
 use crate::{
@@ -48,9 +49,17 @@ impl Rslip {
         let mut out = Vec::new();
         out.resize_with(reqs.len(), || None);
         let mut misses = Vec::new();
+        let shared_context = reqs.first().and_then(|first| {
+            if let Some(cached) = crate::batch_context_seal::try_batch_context_seal(first) {
+                return Some(cached);
+            }
+            let context = rslip_request_context_fingerprint(first).ok()?;
+            let _ = crate::batch_context_seal::write_batch_context_seal(first, &context);
+            Some(context)
+        });
 
         for (index, req) in reqs.into_iter().enumerate() {
-            match prepare_rslip_cache_candidate(index, req) {
+            match prepare_rslip_cache_candidate(index, req, shared_context.as_deref()) {
                 Ok(candidate) => {
                     if !candidate.req.force_rerun
                         && let Some(entry) = load_rslip_cache_entry(
@@ -93,11 +102,15 @@ impl Rslip {
 fn prepare_rslip_cache_candidate(
     index: usize,
     req: RslipRequest,
+    shared_context: Option<&str>,
 ) -> Result<RslipCacheCandidate, RslipError> {
     validate_rslip_request(&req)?;
     fs::create_dir_all(&req.cache_root)?;
     let canonical_cache_root = req.cache_root.canonicalize()?;
-    let fingerprint = rslip_cache_fingerprint(&req)?;
+    let fingerprint = match shared_context {
+        Some(context) => rslip_cache_fingerprint_from_context(context, &req.nodeid),
+        None => rslip_cache_fingerprint(&req)?,
+    };
     Ok(RslipCacheCandidate {
         index,
         req,

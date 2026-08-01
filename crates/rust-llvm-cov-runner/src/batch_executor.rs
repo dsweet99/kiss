@@ -12,7 +12,6 @@ use crate::batch_plan::{
 };
 use crate::batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult};
 use crate::batch_run::default_batch_subprocess_runner;
-use crate::rust_cov_cache::{RustCovCacheEntry, load_rust_cov_cache_entry};
 use crate::worker::cleanup_legacy_worker_data_nonblocking;
 use crate::{RustCovCacheStatus, RustLlvmCovError, RustLlvmCovOutcome};
 use rpytest_runner::TestStatus;
@@ -158,9 +157,7 @@ fn apply_population_derived_publication(
     if result.batch_error.is_some() {
         return Ok(());
     }
-    let Some(selectors) = req.population_publication_selectors.as_deref() else {
-        return Ok(());
-    };
+    let selectors = req.population_publication_selectors.as_deref().unwrap_or(&[]);
     if let Some(publish) = crate::batch_derived::try_publish_population_derived_state_with_binaries(
         req,
         tools,
@@ -290,16 +287,53 @@ fn all_hit_outcomes(
     let mut completed = Vec::with_capacity(req.logical_selectors.len());
     for selector in &req.logical_selectors {
         let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, selector);
-        let Some(entry) = load_rust_cov_cache_entry(&req.cache_root, &fingerprint) else {
-            return Ok(None);
+        let path = crate::rust_cov_cache::rust_cov_cache_entry_path(&req.cache_root, &fingerprint);
+        let mut file = match std::fs::File::open(&path) {
+            Ok(file) => file,
+            Err(_) => return Ok(None),
         };
-        completed.push(outcome_from_entry(entry, RustCovCacheStatus::Hit));
+        let mut prefix = [0_u8; 512];
+        let n = std::io::Read::read(&mut file, &mut prefix).map_err(RustLlvmCovError::Io)?;
+        let status = status_from_entry_prefix(&prefix[..n]).ok_or_else(|| {
+            RustLlvmCovError::InvalidRequest(format!(
+                "invalid rust cov cache entry {}",
+                path.display()
+            ))
+        })?;
+        completed.push(RustLlvmCovOutcome {
+            selector: selector.clone(),
+            status,
+            exit_code: match status {
+                TestStatus::Passed => Some(0),
+                TestStatus::Failed => Some(1),
+            },
+            duration: Duration::ZERO,
+            coverage: Default::default(),
+            test_binary_ids: Vec::new(),
+            cache_status: RustCovCacheStatus::Hit,
+            stdout: None,
+            stderr: None,
+        });
     }
     Ok(Some(completed))
 }
 
+fn status_from_entry_prefix(bytes: &[u8]) -> Option<TestStatus> {
+    // Entries are small JSON objects; locate the status token without full deserialize.
+    const FAILED: &[u8] = br#""status":"Failed""#;
+    const PASSED: &[u8] = br#""status":"Passed""#;
+    if bytes.windows(FAILED.len()).any(|window| window == FAILED) {
+        Some(TestStatus::Failed)
+    } else if bytes.windows(PASSED.len()).any(|window| window == PASSED) {
+        Some(TestStatus::Passed)
+    } else {
+        None
+    }
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 fn outcome_from_entry(
-    entry: RustCovCacheEntry,
+    entry: crate::rust_cov_cache::RustCovCacheEntry,
     cache_status: RustCovCacheStatus,
 ) -> RustLlvmCovOutcome {
     RustLlvmCovOutcome {

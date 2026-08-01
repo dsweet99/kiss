@@ -89,7 +89,7 @@ fn visit_rust_cov_inputs(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
 pub(crate) fn should_skip_rust_cov_dir(path: &Path) -> bool {
     matches!(
         path.file_name().and_then(|name| name.to_str()),
-        Some(".git" | "target" | ".rust_llvm_cov_cache")
+        Some(".git" | "target" | ".rust_llvm_cov_cache" | ".kiss")
     ) || is_kiss_rust_cov_cache_dir(path)
 }
 

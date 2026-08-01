@@ -1,6 +1,6 @@
-use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::test_runner::coverage_decision::{
     ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan, RustSelectionBasis,
@@ -36,7 +36,7 @@ pub(crate) struct RustModule {
     ignore: Vec<String>,
     changed_tests: Vec<TestSelector>,
     prior_failures: Vec<TestSelector>,
-    resolved: OnceCell<Result<ResolvedRustPopulation, String>>,
+    resolved: OnceLock<Result<ResolvedRustPopulation, String>>,
 }
 
 impl RustModule {
@@ -63,7 +63,7 @@ impl RustModule {
     }
 
     pub(crate) fn new_with_resolved(input: RustBackerInput<'_>) -> Self {
-        let resolved_cell = OnceCell::new();
+        let resolved_cell = OnceLock::new();
         if let Some(resolved) = input.resolved {
             let _ = resolved_cell.set(Ok(resolved));
         }
@@ -88,7 +88,7 @@ impl RustModule {
             ignore: ignore.to_vec(),
             changed_tests: Vec::new(),
             prior_failures: Vec::new(),
-            resolved: OnceCell::new(),
+            resolved: OnceLock::new(),
         }
     }
 

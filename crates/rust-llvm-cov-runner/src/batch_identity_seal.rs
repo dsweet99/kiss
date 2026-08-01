@@ -74,15 +74,23 @@ fn ctime_ns(meta: &fs::Metadata) -> u64 {
 
 fn collect_file_meta(source_root: &Path) -> io::Result<Vec<SealFileMeta>> {
     let files = rust_cov_input_files(source_root)?;
+    let root = source_root
+        .canonicalize()
+        .unwrap_or_else(|_| source_root.to_path_buf());
     let mut out = Vec::with_capacity(files.len());
     for file in files {
         let meta = fs::metadata(&file)?;
-        let rel = crate::rust_cov_cache::repo_relative_path(source_root, &file).ok_or_else(|| {
-            io::Error::other(format!(
-                "input path is not repository-relative: {}",
-                file.display()
-            ))
-        })?;
+        let rel = file
+            .strip_prefix(&root)
+            .or_else(|_| file.strip_prefix(source_root))
+            .map_err(|_| {
+                io::Error::other(format!(
+                    "input path is not repository-relative: {}",
+                    file.display()
+                ))
+            })?
+            .to_string_lossy()
+            .replace('\\', "/");
         out.push(SealFileMeta {
             path: rel,
             len: meta.len(),

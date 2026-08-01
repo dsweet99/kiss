@@ -33,3 +33,7 @@ mod process_race_tests;
 #[cfg(test)]
 #[path = "batch_reverse_process_race_b_test.rs"]
 mod process_race_b_tests;
+
+#[cfg(test)]
+#[path = "batch_reverse_prune_test.rs"]
+mod prune_tests;

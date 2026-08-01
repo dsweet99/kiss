@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::{
@@ -71,33 +70,13 @@ fn resolved_rust_batch_request_parts(
         coverage_output_mode: CoverageOutputMode::SelectorEntries,
     };
     resolve_batch_request_runners(&mut req).map_err(|err| format!("{err:?}"))?;
-    let tools = cached_rust_coverage_tool_identity(repo_root)?;
+    let tools = tool_identity::cached_rust_coverage_tool_identity(repo_root)?;
     Ok((req, tools))
 }
 
-fn cached_rust_coverage_tool_identity(
-    repo_root: &Path,
-) -> Result<RustCoverageToolIdentity, String> {
-    static TOOLS: OnceLock<RustCoverageToolIdentity> = OnceLock::new();
-    if let Some(tools) = TOOLS.get() {
-        return Ok(tools.clone());
-    }
-    let tools = detect_rust_coverage_tool_identity(repo_root)?;
-    Ok(TOOLS.get_or_init(|| tools).clone())
-}
-
-fn detect_rust_coverage_tool_identity(
-    repo_root: &Path,
-) -> Result<RustCoverageToolIdentity, String> {
-    let cargo = PathBuf::from("cargo");
-    let rustc = PathBuf::from("rustc");
-    Ok(RustCoverageToolIdentity {
-        cargo_version: command_stdout(&cargo, &["--version"], repo_root)?,
-        llvm_cov_version: command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?,
-        rustc_version: command_stdout(&rustc, &["-Vv"], repo_root)?,
-        cargo_nextest_version: command_stdout(&cargo, &["nextest", "--version"], repo_root)?,
-    })
-}
+#[path = "rust_coverage_index/tool_identity.rs"]
+mod tool_identity;
+pub(crate) use tool_identity::rust_coverage_tool_versions_from_cache_or_detect;
 
 #[path = "rust_coverage_index/manifest.rs"]
 mod manifest;

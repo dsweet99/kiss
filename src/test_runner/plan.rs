@@ -56,6 +56,16 @@ fn plan_all_selectors(
     ignore: &[String],
     lang_filter: Option<Language>,
 ) -> Result<PlannedSelectors, String> {
+    if let Some((cached_py, cached_rs)) =
+        super::workspace_selector_cache::load_cached_workspace_selectors(repo_root, ignore)
+    {
+        let (py_sel, rs_sel) = match lang_filter {
+            None => (cached_py, cached_rs),
+            Some(Language::Python) => (cached_py, Vec::new()),
+            Some(Language::Rust) => (Vec::new(), cached_rs),
+        };
+        return Ok(planned_all(repo_root, ignore, py_sel, rs_sel));
+    }
     let mut py_sel = Vec::new();
     let mut rs_sel = Vec::new();
     if lang_filter != Some(Language::Rust) {
@@ -64,7 +74,21 @@ fn plan_all_selectors(
     if lang_filter != Some(Language::Python) {
         rs_sel = runners::enumerate_workspace_rust_selectors(repo_root, ignore)?;
     }
-    Ok(PlannedSelectors {
+    if lang_filter.is_none() {
+        super::workspace_selector_cache::store_workspace_selectors(
+            repo_root, ignore, &py_sel, &rs_sel,
+        );
+    }
+    Ok(planned_all(repo_root, ignore, py_sel, rs_sel))
+}
+
+fn planned_all(
+    repo_root: &std::path::Path,
+    ignore: &[String],
+    py_sel: Vec<String>,
+    rs_sel: Vec<String>,
+) -> PlannedSelectors {
+    PlannedSelectors {
         repo_root: repo_root.to_path_buf(),
         py_sel,
         rs_sel,
@@ -79,7 +103,7 @@ fn plan_all_selectors(
         coverage_decision_engine_used: false,
         rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
         ignore: ignore.to_vec(),
-    })
+    }
 }
 
 fn plan_explicit_target_selectors(

@@ -81,6 +81,10 @@ pub(crate) fn rslip_cache_fingerprint(req: &RslipRequest) -> io::Result<String> 
 }
 
 pub(crate) fn rslip_request_context_fingerprint(req: &RslipRequest) -> io::Result<String> {
+    compute_rslip_request_context_fingerprint(req)
+}
+
+fn compute_rslip_request_context_fingerprint(req: &RslipRequest) -> io::Result<String> {
     let mut h = rslip_fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
     h = rslip_fnv1a64(h, req.python.to_string_lossy().as_bytes());
     h = rslip_fnv1a64(h, req.python_version.as_bytes());
@@ -145,7 +149,14 @@ pub fn should_skip_rslip_dir(path: &Path) -> bool {
     matches!(
         path.file_name().and_then(|name| name.to_str()),
         Some(
-            ".git" | ".pytest_cache" | "__pycache__" | ".venv" | "venv" | "target" | ".rslip_cache"
+            ".git"
+                | ".pytest_cache"
+                | "__pycache__"
+                | ".venv"
+                | "venv"
+                | "target"
+                | ".rslip_cache"
+                | ".kiss"
         )
     ) || is_kiss_rslip_cache_dir(path)
 }

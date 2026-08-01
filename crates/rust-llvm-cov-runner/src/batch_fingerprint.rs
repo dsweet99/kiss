@@ -44,12 +44,20 @@ pub fn batch_identity(
         tools,
         BATCH_EXECUTION_POLICY_VERSION,
     );
-    Ok(RustCoverageBatchIdentity {
+    let identity = RustCoverageBatchIdentity {
         input_digest: snapshot.input_digest,
         generation_fingerprint,
         selection_context_fingerprint,
         ordinary_source_digests: snapshot.ordinary_source_digests,
-    })
+    };
+    let _ = crate::batch_identity_seal::write_identity_mtime_seal(
+        &req.cache_root,
+        &req.source_root,
+        req,
+        tools,
+        &identity,
+    );
+    Ok(identity)
 }
 
 pub fn entry_fingerprint(

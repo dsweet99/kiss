@@ -53,7 +53,9 @@ pub(crate) fn try_publish_population_derived_state_with_binaries(
     test_binaries: &[RustTestBinaryIdentity],
 ) -> Result<Option<DerivedPublishCounters>, RustLlvmCovError> {
     let Some(selectors) = req.population_publication_selectors.as_deref() else {
-        return Ok(None);
+        // Force/final re-stores invalidate entry_state.json; if a reverse-bound
+        // population remains, republish so integrity checks still see a token.
+        return republish_if_entry_state_missing(req, tools, identity, test_binaries);
     };
     if selectors.is_empty() {
         return Ok(None);
@@ -66,9 +68,42 @@ pub(crate) fn try_publish_population_derived_state_with_binaries(
     }
     let repair = derived_state_stale(req, tools, identity, selectors)?;
     if !repair && all_entries_hit(req, tools, identity)? {
-        return Ok(None);
+        return republish_if_entry_state_missing(req, tools, identity, test_binaries);
     }
     publish_derived_state_with_binaries(req, tools, identity, selectors, test_binaries, repair)
+        .map(Some)
+}
+
+fn republish_if_entry_state_missing(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+    test_binaries: &[RustTestBinaryIdentity],
+) -> Result<Option<DerivedPublishCounters>, RustLlvmCovError> {
+    if crate::batch_entry_state::read_entry_state(&req.cache_root).is_some() {
+        return Ok(None);
+    }
+    let Ok(bytes) = fs::read(req.cache_root.join("population.json")) else {
+        return Ok(None);
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return Ok(None);
+    };
+    let selectors = value
+        .get("reverse_line_index")
+        .and_then(|_| value.get("selectors"))
+        .and_then(|node| node.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        })
+        .filter(|items| !items.is_empty());
+    let Some(selectors) = selectors else {
+        return Ok(None);
+    };
+    publish_derived_state_with_binaries(req, tools, identity, &selectors, test_binaries, true)
         .map(Some)
 }
 pub fn population_derived_state_stale(
@@ -160,6 +195,8 @@ pub fn publish_derived_state_with_binaries(
     test_binaries: &[RustTestBinaryIdentity],
     derived_repair: bool,
 ) -> Result<DerivedPublishCounters, RustLlvmCovError> {
+    crate::batch_publication_tmp::sweep_orphaned_publication_tmps(&req.cache_root)
+        .map_err(RustLlvmCovError::Io)?;
     let pruned = prune_non_current_generations(&req.cache_root, &identity.generation_fingerprint)?;
     let index = build_generation_index(
         &req.cache_root,

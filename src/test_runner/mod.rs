@@ -193,6 +193,7 @@ pub(crate) struct SelectorRunOptions<'a> {
 }
 
 mod plan;
+mod workspace_selector_cache;
 pub(crate) use plan::{TargetPlanKind, plan_selectors, plan_target_selectors};
 
 #[cfg(test)]

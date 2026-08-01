@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::RustLlvmCovError;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RustLineCoverage {
     pub files: BTreeMap<String, BTreeSet<u32>>,
 }
