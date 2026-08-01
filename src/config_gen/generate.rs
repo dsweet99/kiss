@@ -24,6 +24,11 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
         "test_coverage_threshold = {}",
         p.gate.test_coverage_threshold
     );
+    let _ = writeln!(
+        out,
+        "test_coverage_scope = \"{}\"",
+        p.gate.test_coverage_scope
+    );
     let _ = writeln!(out, "min_similarity = {}", p.gate.min_similarity);
     let _ = writeln!(out, "duplication_enabled = {}", p.gate.duplication_enabled);
     let _ = writeln!(
@@ -93,6 +98,13 @@ mod coverage_witness {
             rs_n: 0,
             gate: &gate,
         };
-        assert!(generate_config_toml_by_language(&p).contains("[gate]"));
+        let toml = generate_config_toml_by_language(&p);
+        assert!(toml.contains("[gate]"));
+        assert!(
+            toml.contains(
+                "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmin_similarity"
+            ),
+            "gate emission order:\n{toml}"
+        );
     }
 }

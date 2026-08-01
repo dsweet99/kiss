@@ -125,7 +125,7 @@ pub(super) const RS_RULE_SPECS: &[RuleSpec] = &[
         metric: "test_coverage_threshold",
         op: ">=",
         threshold: ThresholdValue::Usize(|_, g| g.test_coverage_threshold),
-        description: "test_coverage_threshold is the minimum percent of syntactically coverable source lines per Rust file covered by cached llvm-cov runtime coverage. `kiss cov` uses a current cache; when Rust coverage is stale, it reuses selector coverage only when the compiled test executable digest is unchanged, reruns invalidated selectors, and falls back to a full Rust test-population refresh whenever reuse cannot be proven safe.",
+        description: "test_coverage_threshold is the minimum percent of syntactically coverable source lines covered by cached llvm-cov runtime coverage. Enforcement is per file or codebase-wide according to `test_coverage_scope` (default `codebase`). `kiss cov` uses a current cache; when Rust coverage is stale, it reuses selector coverage only when the compiled test executable digest is unchanged, reruns invalidated selectors, and falls back to a full Rust test-population refresh whenever reuse cannot be proven safe.",
     },
     RuleSpec {
         metric: "min_similarity",

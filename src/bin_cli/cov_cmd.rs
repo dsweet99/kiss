@@ -62,11 +62,12 @@ fn evaluate_records(
     records: &[analyze::line_coverage::LineCoverageRecord],
     focus: &analyze::FocusFilter,
     threshold: usize,
+    scope: kiss::TestCoverageScope,
     bypass_gate: bool,
 ) -> i32 {
     if !bypass_gate
         && threshold > 0
-        && let Some(result) = analyze::evaluate_line_gate(records, focus, threshold)
+        && let Some(result) = analyze::evaluate_line_gate(records, focus, threshold, scope)
     {
         return i32::from(!result.success);
     }
@@ -156,32 +157,56 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
         print_final_status(false);
         return 0;
     }
-    let repo_root = repository_root_for_universe(universe_root);
+    evaluate_gathered_cov(EvaluateGatheredCov {
+        args,
+        ignore: &ignore,
+        focus_paths,
+        universe,
+        universe_root,
+        files: &files,
+        threshold,
+    })
+}
+
+struct EvaluateGatheredCov<'a> {
+    args: &'a CovCommandArgs<'a>,
+    ignore: &'a [String],
+    focus_paths: &'a [String],
+    universe: &'a str,
+    universe_root: &'a Path,
+    files: &'a CovFileSets,
+    threshold: usize,
+}
+
+fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
+    let scope = p.args.gate_config.test_coverage_scope;
+    let repo_root = repository_root_for_universe(p.universe_root);
     let required = RequiredCoverageLanguages {
-        python: !files.py_files.is_empty(),
-        rust: !files.rs_files.is_empty(),
+        python: !p.files.py_files.is_empty(),
+        rust: !p.files.rs_files.is_empty(),
     };
     let cache_key = CovRecordsCacheKey {
         repo_root: &repo_root,
-        py_files: &files.py_files,
-        rs_files: &files.rs_files,
+        py_files: &p.files.py_files,
+        rs_files: &p.files.rs_files,
         required,
-        threshold,
-        bypass_gate: args.bypass_gate,
-        ignore: &ignore,
-        lang_filter: lang_filter_cache_label(args.lang_filter),
+        threshold: p.threshold,
+        bypass_gate: p.args.bypass_gate,
+        ignore: p.ignore,
+        lang_filter: lang_filter_cache_label(p.args.lang_filter),
     };
-    let focus = build_focus_filter(focus_paths, universe, args.lang_filter, &ignore);
+    let focus = build_focus_filter(p.focus_paths, p.universe, p.args.lang_filter, p.ignore);
     let t0 = Instant::now();
-    if let Some(code) = try_cov_records_fast_path(&cache_key, &focus, threshold, args) {
+    if let Some(code) = try_cov_records_fast_path(&cache_key, &focus, p.threshold, scope, p.args) {
         return code;
     }
-    let snapshot = match load_or_refresh_snapshot(&repo_root, required, &ignore, args.jobs) {
+    let snapshot = match load_or_refresh_snapshot(&repo_root, required, p.ignore, p.args.jobs) {
         Ok(snapshot) => snapshot,
         Err(code) => return code,
     };
-    let records = compute_and_store_records(&cache_key, &repo_root, &files, &snapshot, args.timing, t0);
-    evaluate_records(&records, &focus, threshold, args.bypass_gate)
+    let records =
+        compute_and_store_records(&cache_key, &repo_root, p.files, &snapshot, p.args.timing, t0);
+    evaluate_records(&records, &focus, p.threshold, scope, p.args.bypass_gate)
 }
 
 /// Hit `cov_records_cache` when present under `./.kiss`.
@@ -189,12 +214,13 @@ fn try_cov_records_fast_path(
     cache_key: &CovRecordsCacheKey<'_>,
     focus: &analyze::FocusFilter,
     threshold: usize,
+    scope: kiss::TestCoverageScope,
     args: &CovCommandArgs<'_>,
 ) -> Option<i32> {
     let t0 = Instant::now();
     let records = try_load_cov_records(cache_key)?;
     Some(finish_records_cache_hit(
-        &records, focus, threshold, args, t0,
+        &records, focus, threshold, scope, args, t0,
     ))
 }
 
@@ -202,6 +228,7 @@ fn finish_records_cache_hit(
     records: &[analyze::line_coverage::LineCoverageRecord],
     focus: &analyze::FocusFilter,
     threshold: usize,
+    scope: kiss::TestCoverageScope,
     args: &CovCommandArgs<'_>,
     t0: Instant,
 ) -> i32 {
@@ -211,5 +238,5 @@ fn finish_records_cache_hit(
             t0.elapsed().as_millis()
         );
     }
-    evaluate_records(records, focus, threshold, args.bypass_gate)
+    evaluate_records(records, focus, threshold, scope, args.bypass_gate)
 }

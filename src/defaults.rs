@@ -58,6 +58,9 @@ pub mod duplication {
 
 pub mod gate {
     pub const TEST_COVERAGE_THRESHOLD: usize = 90;
+    pub const TEST_COVERAGE_SCOPE: &str = "codebase";
+    /// TOML literal including quotes, for `default_config_toml` emission.
+    pub const TEST_COVERAGE_SCOPE_TOML: &str = "\"codebase\"";
 }
 
 pub fn default_config_toml() -> String {
@@ -66,6 +69,7 @@ pub fn default_config_toml() -> String {
 
 [gate]
 test_coverage_threshold = {gate_coverage}
+test_coverage_scope = {gate_scope}
 min_similarity = {min_sim}
 duplication_enabled = true
 orphan_module_enabled = true
@@ -117,6 +121,7 @@ indirect_dependencies = {rs_indirect_deps}
 dependency_depth = {rs_dep_depth}
 ",
         gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
+        gate_scope = gate::TEST_COVERAGE_SCOPE_TOML,
         min_sim = duplication::MIN_SIMILARITY,
         py_statements = python::STATEMENTS_PER_FUNCTION,
         py_pos_args = python::POSITIONAL_ARGS,

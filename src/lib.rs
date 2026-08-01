@@ -71,7 +71,7 @@ pub use duplication::{
     detect_duplicates_from_chunks, extract_chunks_for_duplication,
     extract_rust_chunks_for_duplication,
 };
-pub use gate_config::GateConfig;
+pub use gate_config::{GateConfig, TestCoverageScope};
 pub use graph::{
     CycleInfo, DependencyGraph, ModuleGraphMetrics, analyze_graph, build_dependency_graph,
     compute_cyclomatic_complexity,

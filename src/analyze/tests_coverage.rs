@@ -36,7 +36,13 @@ fn evaluate_line_gate_reports_below_threshold_files() {
         first_uncovered_line: Some(2),
     }];
     assert!(
-        crate::analyze::evaluate_line_gate(&records, &focus, 90).is_some(),
+        crate::analyze::evaluate_line_gate(
+            &records,
+            &focus,
+            90,
+            kiss::TestCoverageScope::ByFile
+        )
+        .is_some(),
         "runtime line gate must fail when focused files are below threshold"
     );
 }

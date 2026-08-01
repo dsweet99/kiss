@@ -102,8 +102,10 @@ pub fn run_config(
     }
     println!("\n[gate]");
     println!("test_coverage_threshold = {}", gate.test_coverage_threshold);
+    println!("test_coverage_scope = \"{}\"", gate.test_coverage_scope);
     println!("min_similarity = {:.2}", gate.min_similarity);
     println!("duplication_enabled = {}", gate.duplication_enabled);
+    println!("orphan_module_enabled = {}", gate.orphan_module_enabled);
     println!("\n[python]");
     print_python_config(py);
     println!("\n[rust]");

@@ -1,10 +1,53 @@
 use crate::config::{ConfigError, check_unknown_keys, get_usize};
 use crate::defaults;
+use std::fmt;
 use std::path::Path;
+
+/// Which coverage surface `kiss cov` compares to `test_coverage_threshold`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TestCoverageScope {
+    ByFile,
+    #[default]
+    Codebase,
+}
+
+impl TestCoverageScope {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ByFile => "by_file",
+            Self::Codebase => "codebase",
+        }
+    }
+
+    fn parse(raw: &str) -> Result<Self, String> {
+        match raw {
+            "by_file" => Ok(Self::ByFile),
+            "codebase" => Ok(Self::Codebase),
+            other => Err(format!(
+                "must be \"by_file\" or \"codebase\", got \"{other}\""
+            )),
+        }
+    }
+}
+
+impl fmt::Display for TestCoverageScope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+const GATE_KEYS: &[&str] = &[
+    "test_coverage_threshold",
+    "test_coverage_scope",
+    "min_similarity",
+    "duplication_enabled",
+    "orphan_module_enabled",
+];
 
 #[derive(Debug, Clone)]
 pub struct GateConfig {
     pub test_coverage_threshold: usize,
+    pub test_coverage_scope: TestCoverageScope,
     pub min_similarity: f64,
     pub duplication_enabled: bool,
     pub orphan_module_enabled: bool,
@@ -14,6 +57,7 @@ impl Default for GateConfig {
     fn default() -> Self {
         Self {
             test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD,
+            test_coverage_scope: TestCoverageScope::Codebase,
             min_similarity: defaults::duplication::MIN_SIMILARITY,
             duplication_enabled: true,
             orphan_module_enabled: true,
@@ -68,16 +112,7 @@ impl GateConfig {
             return;
         };
         if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
-            if let Err(e) = check_unknown_keys(
-                gate,
-                &[
-                    "test_coverage_threshold",
-                    "min_similarity",
-                    "duplication_enabled",
-                    "orphan_module_enabled",
-                ],
-                "gate",
-            ) {
+            if let Err(e) = check_unknown_keys(gate, GATE_KEYS, "gate") {
                 eprintln!("Error: {e}");
                 return;
             }
@@ -87,6 +122,9 @@ impl GateConfig {
                     return;
                 }
                 self.test_coverage_threshold = t;
+            }
+            if let Err(msg) = merge_scope_lenient(gate, &mut self.test_coverage_scope) {
+                eprintln!("Error: {msg}");
             }
             if let Some(s) = get_f64(gate, "min_similarity") {
                 if !(0.0..=1.0).contains(&s) {
@@ -112,16 +150,7 @@ impl GateConfig {
                 message: e.to_string(),
             })?;
         if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
-            check_unknown_keys(
-                gate,
-                &[
-                    "test_coverage_threshold",
-                    "min_similarity",
-                    "duplication_enabled",
-                    "orphan_module_enabled",
-                ],
-                "gate",
-            )?;
+            check_unknown_keys(gate, GATE_KEYS, "gate")?;
             if let Some(t) = get_usize(gate, "test_coverage_threshold") {
                 if t > 100 {
                     return Err(ConfigError::InvalidValue {
@@ -130,6 +159,9 @@ impl GateConfig {
                     });
                 }
                 self.test_coverage_threshold = t;
+            }
+            if let Some(scope) = try_get_scope(gate)? {
+                self.test_coverage_scope = scope;
             }
             if let Some(s) = try_get_f64(gate, "min_similarity")? {
                 if !(0.0..=1.0).contains(&s) {
@@ -147,6 +179,49 @@ impl GateConfig {
         }
         Ok(())
     }
+}
+
+fn merge_scope_lenient(
+    gate: &toml::Table,
+    current: &mut TestCoverageScope,
+) -> Result<(), String> {
+    let Some(value) = gate.get("test_coverage_scope") else {
+        return Ok(());
+    };
+    let Some(raw) = value.as_str() else {
+        return Err(format!(
+            "test_coverage_scope must be \"by_file\" or \"codebase\", got {}",
+            value.type_str()
+        ));
+    };
+    match TestCoverageScope::parse(raw) {
+        Ok(scope) => {
+            *current = scope;
+            Ok(())
+        }
+        Err(message) => Err(format!("test_coverage_scope {message}")),
+    }
+}
+
+fn try_get_scope(gate: &toml::Table) -> Result<Option<TestCoverageScope>, ConfigError> {
+    let Some(value) = gate.get("test_coverage_scope") else {
+        return Ok(None);
+    };
+    let Some(raw) = value.as_str() else {
+        return Err(ConfigError::InvalidValue {
+            key: "test_coverage_scope".into(),
+            message: format!(
+                "must be \"by_file\" or \"codebase\", got {}",
+                value.type_str()
+            ),
+        });
+    };
+    TestCoverageScope::parse(raw)
+        .map(Some)
+        .map_err(|message| ConfigError::InvalidValue {
+            key: "test_coverage_scope".into(),
+            message,
+        })
 }
 
 #[allow(clippy::cast_precision_loss)]

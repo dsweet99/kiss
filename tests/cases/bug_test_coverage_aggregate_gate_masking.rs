@@ -1,8 +1,8 @@
-//! Regression for per-file test-coverage gate enforcement in production `kiss cov`.
+//! Regression for test-coverage gate scope: default/`codebase` aggregates;
+//! explicit `by_file` still fails when any production file is below threshold
+//! even if aggregate coverage clears the gate (18/19 referenced with threshold 90).
 //!
-//! `KPop` bughunt (`_malvin/20260523_185300_52l1g7oq/_kpop/exp_log_*.md`): whole-repo
-//! `kiss cov` must fail when any production file is below the threshold, even if
-//! aggregate coverage clears the gate (18/19 referenced with threshold 90).
+//! `KPop` bughunt (`_malvin/20260523_185300_52l1g7oq/_kpop/exp_log_*.md`).
 
 use crate::common::seed_python_runtime_coverage;
 use std::fmt::Write as _;
@@ -17,18 +17,28 @@ fn kiss_binary() -> Command {
 }
 
 fn write_permissive_config(root: &std::path::Path) {
+    write_permissive_config_with_scope(root, None);
+}
+
+fn write_permissive_config_with_scope(root: &std::path::Path, scope: Option<&str>) {
+    let scope_line = scope.map_or(String::new(), |s| {
+        format!("test_coverage_scope = \"{s}\"\n")
+    });
     fs::write(
         root.join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 90\n\
-         duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
-         \n\
-         [python]\n\
-         functions_per_file = 100\n\
-         statements_per_file = 1000\n\
-         lines_per_file = 1000\n\
-         imported_names_per_file = 100\n",
+        format!(
+            "[gate]\n\
+             test_coverage_threshold = 90\n\
+             {scope_line}\
+             duplication_enabled = false\n\
+             orphan_module_enabled = false\n\
+             \n\
+             [python]\n\
+             functions_per_file = 100\n\
+             statements_per_file = 1000\n\
+             lines_per_file = 1000\n\
+             imported_names_per_file = 100\n"
+        ),
     )
     .unwrap();
 }
@@ -80,7 +90,7 @@ fn run_cov_from_corpus_root(
         .expect("kiss cov should run")
 }
 
-/// Whole-repo check must fail when any production file is below the threshold,
+/// Explicit `by_file`: whole-repo must fail when any production file is below the threshold,
 /// even if aggregate coverage clears the gate (18/19 referenced with threshold 90).
 #[test]
 fn bug_whole_repo_check_fails_when_one_file_below_coverage_threshold() {
@@ -88,6 +98,7 @@ fn bug_whole_repo_check_fails_when_one_file_below_coverage_threshold() {
     let home = TempDir::new().unwrap();
     let root = tmp.path();
     write_aggregate_masking_corpus(root);
+    write_permissive_config_with_scope(root, Some("by_file"));
 
     let out = run_cov_from_corpus_root(home.path(), root, ".");
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -96,7 +107,7 @@ fn bug_whole_repo_check_fails_when_one_file_below_coverage_threshold() {
     assert_ne!(
         out.status.code(),
         Some(0),
-        "whole-repo cov must fail when bad.py has 0% coverage despite aggregate ≥ 90%.\n\
+        "by_file whole-repo cov must fail when bad.py has 0% coverage despite aggregate ≥ 90%.\n\
          stdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
@@ -109,13 +120,14 @@ fn bug_whole_repo_check_fails_when_one_file_below_coverage_threshold() {
     );
 }
 
-/// Focused and whole-repo checks must agree on test-coverage pass/fail for the same file.
+/// Explicit `by_file`: focused and whole-repo checks must agree on pass/fail for the same file.
 #[test]
 fn bug_whole_repo_and_focused_check_agree_on_coverage_gate() {
     let tmp = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let root = tmp.path();
     write_aggregate_masking_corpus(root);
+    write_permissive_config_with_scope(root, Some("by_file"));
 
     let focused = run_cov_from_corpus_root(home.path(), root, "bad.py");
     let whole = run_cov_from_corpus_root(home.path(), root, ".");
@@ -129,5 +141,82 @@ fn bug_whole_repo_and_focused_check_agree_on_coverage_gate() {
         "focused and whole-repo checks must agree on exit status.\n\
          focused stdout:\n{focused_stdout}\n\
          whole stdout:\n{whole_stdout}"
+    );
+}
+
+/// Omitted / default scope uses codebase aggregation: line-weighted aggregate (~95%) clears 90.
+#[test]
+fn default_scope_whole_repo_passes_when_aggregate_clears() {
+    let tmp = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let root = tmp.path();
+    write_aggregate_masking_corpus(root);
+
+    let out = run_cov_from_corpus_root(home.path(), root, ".");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "default/omitted scope whole-repo cov must pass when aggregate ≥ 90%.\n\
+         stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("per-file enforcement"),
+        "default codebase path must not emit per-file enforcement.\nstdout:\n{stdout}"
+    );
+}
+
+/// Same corpus under explicit codebase scope: line-weighted aggregate (~95%) clears threshold 90.
+#[test]
+fn codebase_scope_whole_repo_passes_when_aggregate_clears() {
+    let tmp = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let root = tmp.path();
+    write_aggregate_masking_corpus(root);
+    write_permissive_config_with_scope(root, Some("codebase"));
+
+    let out = run_cov_from_corpus_root(home.path(), root, ".");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "codebase scope whole-repo cov must pass when aggregate ≥ 90%.\n\
+         stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("per-file enforcement"),
+        "codebase pass path must not emit per-file enforcement.\nstdout:\n{stdout}"
+    );
+}
+
+/// Focused bad.py under codebase scope aggregates only that file and must fail.
+#[test]
+fn codebase_scope_focused_bad_py_fails() {
+    let tmp = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let root = tmp.path();
+    write_aggregate_masking_corpus(root);
+    write_permissive_config_with_scope(root, Some("codebase"));
+
+    let out = run_cov_from_corpus_root(home.path(), root, "bad.py");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert_ne!(
+        out.status.code(),
+        Some(0),
+        "codebase scope focused on bad.py must fail.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("codebase coverage"),
+        "expected codebase gate failure header.\nstdout:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("per-file enforcement"),
+        "codebase failure must not use per-file enforcement wording.\nstdout:\n{stdout}"
     );
 }

@@ -190,7 +190,7 @@ pub(crate) fn compute_file_line_coverage(
     let percent = if total_lines == 0 {
         100
     } else {
-        percentage(covered, total_lines)
+        coverage_percentage(covered, total_lines)
     };
     LineCoverageRecord {
         file: file.to_path_buf(),
@@ -374,7 +374,7 @@ fn repo_relative_key(repo_root: &Path, file: &Path) -> Option<String> {
         .map(|path| path.to_string_lossy().replace('\\', "/"))
 }
 
-fn percentage(covered: usize, total: usize) -> usize {
+pub(crate) fn coverage_percentage(covered: usize, total: usize) -> usize {
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,

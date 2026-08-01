@@ -13,6 +13,56 @@ fn test_gate_config_merge_from_toml() {
 }
 
 #[test]
+fn default_gate_config_scope_is_codebase() {
+    assert_eq!(
+        GateConfig::default().test_coverage_scope,
+        TestCoverageScope::Codebase
+    );
+}
+
+#[test]
+fn parse_test_coverage_scope_values() {
+    let by_file =
+        GateConfig::try_load_from_content("[gate]\ntest_coverage_scope = \"by_file\"").unwrap();
+    assert_eq!(by_file.test_coverage_scope, TestCoverageScope::ByFile);
+    let codebase =
+        GateConfig::try_load_from_content("[gate]\ntest_coverage_scope = \"codebase\"").unwrap();
+    assert_eq!(codebase.test_coverage_scope, TestCoverageScope::Codebase);
+}
+
+#[test]
+fn missing_test_coverage_scope_keeps_codebase() {
+    let gate = GateConfig::try_load_from_content("[gate]\ntest_coverage_threshold = 80\n").unwrap();
+    assert_eq!(gate.test_coverage_scope, TestCoverageScope::Codebase);
+}
+
+#[test]
+fn try_load_rejects_unknown_test_coverage_scope() {
+    let err =
+        GateConfig::try_load_from_content("[gate]\ntest_coverage_scope = \"mean\"").unwrap_err();
+    assert!(matches!(
+        err,
+        ConfigError::InvalidValue { ref key, .. } if key == "test_coverage_scope"
+    ));
+    let wrong_type =
+        GateConfig::try_load_from_content("[gate]\ntest_coverage_scope = 1").unwrap_err();
+    assert!(matches!(
+        wrong_type,
+        ConfigError::InvalidValue { ref key, .. } if key == "test_coverage_scope"
+    ));
+}
+
+#[test]
+fn merge_from_toml_keeps_prior_scope_on_invalid() {
+    let mut gate = GateConfig {
+        test_coverage_scope: TestCoverageScope::Codebase,
+        ..Default::default()
+    };
+    gate.merge_from_toml("[gate]\ntest_coverage_scope = \"mean\"");
+    assert_eq!(gate.test_coverage_scope, TestCoverageScope::Codebase);
+}
+
+#[test]
 fn test_get_usize() {
     let mut table = toml::Table::new();
     table.insert("valid".into(), toml::Value::Integer(42));
@@ -118,6 +168,7 @@ fn try_load_from_content_accepts_all_gate_fields() {
         "\
 [gate]
 test_coverage_threshold = 91
+test_coverage_scope = \"codebase\"
 min_similarity = 0.75
 duplication_enabled = false
 orphan_module_enabled = false
@@ -126,6 +177,7 @@ orphan_module_enabled = false
     .unwrap();
 
     assert_eq!(gate.test_coverage_threshold, 91);
+    assert_eq!(gate.test_coverage_scope, TestCoverageScope::Codebase);
     assert!((gate.min_similarity - 0.75).abs() < f64::EPSILON);
     assert!(!gate.duplication_enabled);
     assert!(!gate.orphan_module_enabled);
