@@ -92,7 +92,6 @@ fn filtered_rust_rebuild_uses_supplied_indexable_policy() {
         path.file_name().is_some_and(|name| name == "lib.rs")
     })
     .unwrap();
-    super::write_rust_coverage_index(tmp.path(), &index).unwrap();
 
     assert_eq!(
         index,

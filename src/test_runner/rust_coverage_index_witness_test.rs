@@ -111,41 +111,8 @@ fn witness_changed_line_selection_ignores_retained_prior_generation_entries() {
 }
 
 #[test]
-fn witness_manifest_identity_and_private_helpers() {
-    let identity: RustPopulationManifestIdentity = RustPopulationManifestIdentity {
-        cache_schema_version: CACHE_SCHEMA_VERSION.to_string(),
-        selector_discovery_version: RUST_SELECTOR_DISCOVERY_VERSION.to_string(),
-        rustc_version: "rustc".to_string(),
-        cargo_version: "cargo".to_string(),
-        cargo_llvm_cov_version: "llvm-cov".to_string(),
-        cargo_args: Vec::new(),
-        test_args: Vec::new(),
-        env: BTreeMap::new(),
-    };
-    let manifest: RustPopulationManifest = RustPopulationManifest {
-        schema_version: LEGACY_POPULATION_SCHEMA_VERSION.to_string(),
-        cache_schema_version: identity.cache_schema_version.clone(),
-        source_root: "root".to_string(),
-        selector_discovery_version: identity.selector_discovery_version.clone(),
-        rustc_version: identity.rustc_version.clone(),
-        cargo_version: identity.cargo_version.clone(),
-        cargo_llvm_cov_version: identity.cargo_llvm_cov_version.clone(),
-        cargo_args: identity.cargo_args.clone(),
-        test_args: identity.test_args.clone(),
-        env: identity.env.clone(),
-        input_fingerprint: "input".to_string(),
-        entries_fingerprint: "entries".to_string(),
-        selectors: Vec::new(),
-    };
-    assert!(identity.has_tool_versions());
-    assert_eq!(identity.tool_versions(), ["rustc", "cargo", "llvm-cov"]);
-    assert!(identity.args_match(&[], &[]));
-    assert!(manifest.matches_identity(&identity, "root"));
-    assert!(manifest.matches_selectors(&[]));
-    assert_eq!(manifest.cache_schema_version, CACHE_SCHEMA_VERSION);
+fn witness_facade_path_and_tool_helpers() {
     assert!(command_stdout(Path::new("/definitely/not/a/command"), &[], Path::new(".")).is_err());
-    assert_eq!(command_output_text(b" ok \n"), "ok");
-    assert!(command_failure_message(Path::new("cmd"), b"bad").contains("cmd failed: bad"));
     assert!(is_cargo_config_input_path(Path::new(".cargo/config.toml")));
     assert!(is_cargo_config_input_path(Path::new(".cargo/config")));
     assert!(!is_cargo_config_input_path(Path::new("config.toml")));

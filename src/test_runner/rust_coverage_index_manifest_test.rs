@@ -5,61 +5,8 @@ use std::path::Path;
 use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::RustLineCoverage;
 
-use super::manifest::{RustPopulationManifest, RustPopulationManifestIdentity};
 use super::test_support::{test_entries_fingerprint, write_test_entry, write_test_entry_with_args};
 use super::*;
-
-fn fake_manifest_identity() -> RustPopulationManifestIdentity {
-    RustPopulationManifestIdentity {
-        cache_schema_version: CACHE_SCHEMA_VERSION.to_string(),
-        selector_discovery_version: RUST_SELECTOR_DISCOVERY_VERSION.to_string(),
-        rustc_version: "rustc 1.88.0\nhost: x86_64-unknown-linux-gnu".to_string(),
-        cargo_version: "cargo 1.88.0".to_string(),
-        cargo_llvm_cov_version: "cargo-llvm-cov 0.6.16".to_string(),
-        cargo_args: Vec::new(),
-        test_args: vec!["--exact".to_string()],
-        env: BTreeMap::from([("RUSTFLAGS".to_string(), "-Cinstrument-coverage".to_string())]),
-    }
-}
-
-#[test]
-fn rust_population_manifest_identity() {
-    let identity = fake_manifest_identity();
-
-    assert!(identity.has_tool_versions());
-    assert_eq!(
-        identity.tool_versions(),
-        [
-            "rustc 1.88.0\nhost: x86_64-unknown-linux-gnu",
-            "cargo 1.88.0",
-            "cargo-llvm-cov 0.6.16"
-        ]
-    );
-    assert!(identity.args_match(&[], &["--exact".to_string()]));
-}
-
-#[test]
-fn rust_population_manifest() {
-    let identity = fake_manifest_identity();
-    let manifest = RustPopulationManifest {
-        schema_version: LEGACY_POPULATION_SCHEMA_VERSION.to_string(),
-        cache_schema_version: identity.cache_schema_version.clone(),
-        source_root: "root".to_string(),
-        selector_discovery_version: identity.selector_discovery_version.clone(),
-        rustc_version: identity.rustc_version.clone(),
-        cargo_version: identity.cargo_version.clone(),
-        cargo_llvm_cov_version: identity.cargo_llvm_cov_version.clone(),
-        cargo_args: identity.cargo_args.clone(),
-        test_args: identity.test_args.clone(),
-        env: identity.env.clone(),
-        input_fingerprint: "input".to_string(),
-        entries_fingerprint: "entries".to_string(),
-        selectors: vec!["test_lib".to_string()],
-    };
-
-    assert!(manifest.matches_identity(&identity, "root"));
-    assert!(manifest.matches_selectors(&["test_lib".to_string()]));
-}
 
 #[test]
 fn write_rust_population_manifest_for_args_marks_population_current() {
@@ -96,23 +43,17 @@ fn write_rust_population_manifest_for_args_marks_population_current() {
 }
 
 #[test]
-fn batch_population_manifest_is_current_rejects_missing_batch_identity() {
-    let tmp = tempfile::tempdir().unwrap();
-    let identity = fake_manifest_identity();
-    assert!(!rust_population_manifest_is_current_with_identity(
-        tmp.path(),
-        &["test_lib".to_string()],
-        &identity,
-    ));
-}
-
-#[test]
 fn population_manifest_requires_matching_generation_and_selectors() {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
     fs::write(&lib, "pub fn lib() {}\n").unwrap();
-    let identity = fake_manifest_identity();
+    let exact_args = vec!["--exact".to_string()];
     write_test_entry_with_args(
         tmp.path(),
         "a",
@@ -121,22 +62,22 @@ fn population_manifest_requires_matching_generation_and_selectors() {
         RustLineCoverage {
             files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
         },
-        &identity.test_args,
+        &exact_args,
     );
 
-    write_rust_population_manifest_with_identity(tmp.path(), &["test_lib".to_string()], &identity)
+    write_rust_population_manifest_for_args(tmp.path(), &["test_lib".to_string()], &exact_args)
         .unwrap();
 
-    assert!(rust_population_manifest_is_current_with_identity(
+    assert!(rust_population_manifest_is_current_for_args(
         tmp.path(),
         &["test_lib".to_string()],
-        &identity
+        &exact_args,
     ));
 
-    let mut changed = identity.clone();
-    changed.test_args.push("--nocapture".to_string());
+    let mut changed = exact_args.clone();
+    changed.push("--nocapture".to_string());
     assert!(
-        !rust_population_manifest_is_current_with_identity(
+        !rust_population_manifest_is_current_for_args(
             tmp.path(),
             &["test_lib".to_string()],
             &changed,
@@ -145,10 +86,10 @@ fn population_manifest_requires_matching_generation_and_selectors() {
     );
 
     assert!(
-        !rust_population_manifest_is_current_with_identity(
+        !rust_population_manifest_is_current_for_args(
             tmp.path(),
             &["other_selector".to_string()],
-            &identity,
+            &exact_args,
         ),
         "selector population mismatch invalidates population freshness"
     );
@@ -242,36 +183,12 @@ fn path_fingerprint_and_temp_file_helpers_have_contracts() {
 }
 
 #[test]
-fn manifest_identity_and_private_helpers_have_contracts() {
+fn facade_helpers_have_contracts() {
     let tmp = tempfile::tempdir().unwrap();
-    let identity = fake_manifest_identity();
-
-    assert_eq!(identity.cache_schema_version, CACHE_SCHEMA_VERSION);
-    let manifest = RustPopulationManifest {
-        schema_version: LEGACY_POPULATION_SCHEMA_VERSION.to_string(),
-        cache_schema_version: identity.cache_schema_version.clone(),
-        source_root: "root".to_string(),
-        selector_discovery_version: identity.selector_discovery_version.clone(),
-        rustc_version: identity.rustc_version.clone(),
-        cargo_version: identity.cargo_version.clone(),
-        cargo_llvm_cov_version: identity.cargo_llvm_cov_version.clone(),
-        cargo_args: identity.cargo_args.clone(),
-        test_args: identity.test_args.clone(),
-        env: identity.env.clone(),
-        input_fingerprint: "input".to_string(),
-        entries_fingerprint: "entries".to_string(),
-        selectors: vec!["test_lib".to_string()],
-    };
-    assert_eq!(manifest.cache_schema_version, CACHE_SCHEMA_VERSION);
-    assert_eq!(
-        std::mem::size_of_val(&identity),
-        std::mem::size_of::<RustPopulationManifestIdentity>()
-    );
-
     let err = command_stdout(Path::new("/definitely/not/a/command"), &[], tmp.path()).unwrap_err();
     assert!(err.contains("failed to spawn"));
-
     assert!(is_cargo_config_input_path(Path::new(".cargo/config")));
     assert!(is_cargo_config_input_path(Path::new(".cargo/config.toml")));
     assert!(!is_cargo_config_input_path(Path::new("config.toml")));
+    assert!(rust_population_manifest_path(tmp.path()).ends_with("population.json"));
 }

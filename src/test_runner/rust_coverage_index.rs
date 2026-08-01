@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use rpytest_runner::TestStatus;
@@ -13,20 +14,40 @@ use crate::test_runner::line_selection;
 
 pub(crate) const CACHE_SCHEMA_VERSION: &str = rust_llvm_cov_runner::CACHE_SCHEMA_VERSION;
 #[cfg(test)]
-pub(crate) const INDEX_SCHEMA_VERSION: &str = rust_llvm_cov_runner::BATCH_INDEX_SCHEMA_VERSION;
-#[cfg(test)]
-pub(crate) const POPULATION_SCHEMA_VERSION: &str =
-    rust_llvm_cov_runner::BATCH_POPULATION_SCHEMA_VERSION;
-#[cfg(test)]
 pub(crate) const LEGACY_INDEX_SCHEMA_VERSION: &str = "rust-llvm-cov-index-v1";
-#[cfg(test)]
-pub(crate) const LEGACY_POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v1";
-#[cfg(test)]
-pub(crate) const RUST_SELECTOR_DISCOVERY_VERSION: &str = "rust-selector-discovery-v1";
+
+pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
+    "RUSTFLAGS",
+    "RUSTDOCFLAGS",
+    "CARGO_TARGET_DIR",
+    "LLVM_PROFILE_FILE",
+];
 
 pub(crate) fn relevant_rust_batch_env() -> BTreeMap<String, String> {
     kiss::env_map_from_allowlist(RUST_COVERAGE_ENV_KEYS)
 }
+
+pub(crate) fn rust_coverage_cache_root(repo_root: &Path) -> PathBuf {
+    repo_root.join(".kiss").join("rust_llvm_cov_cache")
+}
+
+pub(crate) fn rust_coverage_entry_paths(cache_root: &Path) -> Vec<PathBuf> {
+    kiss::json_entry_paths(cache_root)
+}
+
+pub(crate) fn create_new_file(path: &Path) -> io::Result<std::fs::File> {
+    OpenOptions::new().write(true).create_new(true).open(path)
+}
+
+pub(crate) fn unique_suffix() -> String {
+    kiss_publication_barrier::unique_process_suffix()
+}
+
+pub(crate) use rust_llvm_cov_runner::{repo_relative_coverage_file, repo_relative_path};
+#[cfg(test)]
+pub(crate) use crate::test_runner::runners::command_stdout;
+#[cfg(test)]
+pub(crate) use rust_llvm_cov_runner::is_cargo_config_input_path;
 
 pub(crate) fn current_rust_coverage_batch_identity(
     repo_root: &Path,
@@ -55,7 +76,7 @@ fn resolved_rust_batch_request_parts(
         cwd: repo_root.to_path_buf(),
         source_root: repo_root.to_path_buf(),
         cargo: PathBuf::from("cargo"),
-        cache_root: repo_root.join(".kiss").join("rust_llvm_cov_cache"),
+        cache_root: rust_coverage_cache_root(repo_root),
         logical_selectors: Vec::new(),
         cargo_args: vec!["--workspace".to_string()],
         test_args: test_args.to_vec(),
@@ -78,40 +99,11 @@ fn resolved_rust_batch_request_parts(
 mod tool_identity;
 pub(crate) use tool_identity::rust_coverage_tool_versions_from_cache_or_detect;
 
-#[path = "rust_coverage_index/manifest.rs"]
-mod manifest;
 #[path = "rust_coverage_index/selection.rs"]
 mod selection;
-pub(crate) use manifest::RUST_COVERAGE_ENV_KEYS;
-#[cfg(test)]
-pub(crate) use manifest::{
-    RustPopulationManifest, RustPopulationManifestIdentity,
-    rust_population_manifest_is_current_for_args,
-    rust_population_manifest_is_current_with_identity, write_rust_population_manifest_for_args,
-    write_rust_population_manifest_with_identity,
-};
 pub(crate) use selection::{
     ResolvedRustPopulation, resolve_rust_population_state, select_rust_source_selectors_for_basis,
 };
-#[path = "rust_coverage_index/storage.rs"]
-mod storage;
-#[cfg(test)]
-pub(crate) use rust_llvm_cov_runner::is_cargo_config_input_path;
-pub(crate) use rust_llvm_cov_runner::{repo_relative_coverage_file, repo_relative_path};
-#[cfg(test)]
-pub(crate) use storage::load_current_rust_coverage_index;
-#[cfg(test)]
-pub(crate) use storage::load_current_rust_population_state;
-#[cfg(test)]
-pub(crate) use storage::write_rust_coverage_index;
-#[cfg(test)]
-pub(crate) use storage::{command_failure_message, command_output_text, rust_coverage_index_path};
-pub(crate) use storage::{
-    command_stdout, create_new_file, rust_coverage_cache_root, rust_coverage_entry_paths,
-    unique_suffix,
-};
-#[cfg(test)]
-pub(crate) use storage::{normalized_repo_root, rust_population_manifest_path};
 
 pub(crate) type RustCoverageIndex = BTreeMap<String, BTreeSet<String>>;
 
@@ -122,15 +114,6 @@ pub(crate) fn build_test_rust_coverage_index(
     build_rust_coverage_index_with_filter(repo_root, |path, repo_root| {
         repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
     })
-}
-
-#[cfg(test)]
-pub(crate) fn rebuild_rust_coverage_index(repo_root: &Path) -> Result<RustCoverageIndex, String> {
-    let index = build_rust_coverage_index_with_filter(repo_root, |path, repo_root| {
-        repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
-    })?;
-    write_rust_coverage_index(repo_root, &index)?;
-    Ok(index)
 }
 
 #[cfg(test)]
@@ -341,6 +324,17 @@ fn load_entry_for_line_selection(
 }
 
 #[cfg(test)]
+#[path = "rust_coverage_index/test_support.rs"]
+mod test_support;
+
+#[cfg(test)]
+pub(crate) use test_support::{
+    load_current_rust_coverage_index, load_current_rust_population_state, normalized_repo_root,
+    rebuild_rust_coverage_index, rust_coverage_index_path, rust_population_manifest_is_current_for_args,
+    rust_population_manifest_path, write_rust_population_manifest_for_args, write_test_entry,
+};
+
+#[cfg(test)]
 #[path = "rust_coverage_index_witness_test.rs"]
 mod coverage_witness;
 
@@ -362,13 +356,6 @@ mod reusable_line_tests;
 #[cfg(test)]
 #[path = "rust_coverage_index_reusable_integration_test.rs"]
 mod reusable_integration_tests;
-
-#[cfg(test)]
-#[path = "rust_coverage_index/test_support.rs"]
-mod test_support;
-
-#[cfg(test)]
-pub(crate) use test_support::write_test_entry;
 
 #[cfg(test)]
 #[path = "rust_coverage_index_manifest_test.rs"]

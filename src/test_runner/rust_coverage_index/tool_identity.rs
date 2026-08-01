@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use rust_llvm_cov_runner::RustCoverageToolIdentity;
 
-use super::command_stdout;
+use crate::test_runner::runners::command_stdout;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct RustToolVersionsCache {
