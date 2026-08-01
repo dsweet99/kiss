@@ -175,27 +175,8 @@ pub(super) fn run_rust_selectors_for_module(
         return Ok(SelectorExecutionSummary::default());
     }
     if let Some(population_selectors) = population_publication_selectors {
-        if !ctx.options.force_rerun {
-            // Shared ensure is for unfiltered whole-tree population (no --ignore).
-            // With ignores (QA fixtures), keep CheckAggregate population selectors so
-            // per-selector cache hit/miss accounting remains observable.
-            if ctx.options.extra.is_empty() && ctx.planned.ignore.is_empty() {
-                return crate::test_runner::check_runtime_refresh::ensure_rust_runtime_coverage_shared(
-                    &ctx.planned.repo_root,
-                    &ctx.planned.ignore,
-                    ctx.options.jobs,
-                    "kiss test",
-                )
-                .map_err(|err| err.to_string());
-            }
-            return runners::run_rust_llvm_cov_check_aggregate_population_selectors(
-                &ctx.planned.repo_root,
-                selectors,
-                ctx.options.extra,
-                ctx.options.jobs,
-                population_selectors,
-            );
-        }
+        // Population runs publish via SelectorEntries (population.json + reverse_line_index).
+        // CheckAggregate refresh remains owned by `kiss cov`, not `kiss test`.
         let force_rerun =
             ctx.options.force_rerun || !ctx.planned.rust_prior_failure_selectors.is_empty();
         return runners::run_rust_llvm_cov_selectors(
@@ -233,6 +214,40 @@ fn should_try_cached_rust_check_aggregate(
     population_publication_selectors: &Option<Vec<String>>,
 ) -> bool {
     !force_rerun && population_publication_selectors.is_none()
+}
+
+/// Test seam mirroring the population branch of [`run_rust_selectors_for_module`]:
+/// always SelectorEntries with publication selectors (never CheckAggregate).
+#[cfg(test)]
+pub(super) fn run_rust_population_selectors_with_batch_deps<D, E>(
+    selectors: &[String],
+    ctx: &RunContext<'_, '_>,
+    population_publication_selectors: Vec<String>,
+    detect_versions: D,
+    execute_batch: E,
+) -> Result<SelectorExecutionSummary, String>
+where
+    D: FnOnce(&std::path::Path) -> Result<crate::test_runner::rust_llvm_cov::RustCoverageToolVersions, String>,
+    E: FnOnce(
+        &rust_llvm_cov_runner::RustCoverageBatchRequest,
+        &crate::test_runner::rust_llvm_cov::RustCoverageToolVersions,
+    ) -> Result<rust_llvm_cov_runner::RustCoverageBatchResult, String>,
+{
+    let force_rerun =
+        ctx.options.force_rerun || !ctx.planned.rust_prior_failure_selectors.is_empty();
+    crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_selectors_with_deps(
+        &ctx.planned.repo_root,
+        selectors,
+        crate::test_runner::rust_llvm_cov::RustCoverageRunOptions {
+            extra: ctx.options.extra,
+            force_rerun,
+            jobs: ctx.options.jobs,
+            population_publication_selectors: Some(population_publication_selectors),
+            coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        },
+        detect_versions,
+        execute_batch,
+    )
 }
 
 #[cfg(test)]

@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 pub(crate) use super::rust_llvm_cov::{
-    cached_rust_check_aggregate_selectors, run_rust_llvm_cov_check_aggregate_population_selectors,
-    run_rust_llvm_cov_selectors,
+    cached_rust_check_aggregate_selectors, run_rust_llvm_cov_selectors,
 };
 use kiss::test_refs::{is_in_test_directory, is_test_file};
 use kiss::{parse_rust_files, rust_test_functions_in};

@@ -1263,8 +1263,47 @@ def witness_check_command(language: str, repo: Path, jobs: int | None = None) ->
     return command
 
 
+def witness_test_command(language: str, repo: Path, jobs: int | None = None) -> list[str]:
+    command = [str(KISS), "--defaults", "--lang", language, "test"]
+    if jobs is not None:
+        command.extend(["-j", str(jobs)])
+    command.append(str(repo))
+    return command
+
+
+def run_witness_test(
+    language: str,
+    repo: Path,
+    marker_dir: Path,
+    jobs: int | None = None,
+) -> Outcome:
+    env = witness_env(repo, marker_dir)
+    return run(
+        f"{language}-witness-test",
+        witness_test_command(language, repo, jobs=jobs),
+        repo,
+        env,
+        expected=0,
+    )
+
+
+def cache_tree_bytes(cache: Path, paths: list[Path]) -> dict[str, bytes]:
+    result: dict[str, bytes] = {}
+    for path in paths:
+        assert path.is_file(), f"missing artifact: {path}"
+        result[path.relative_to(cache).as_posix()] = path.read_bytes()
+    return result
+
+
+def reverse_line_index_files(cache: Path) -> list[Path]:
+    root = cache / "reverse_line_index"
+    if not root.is_dir():
+        return []
+    return sorted(path for path in root.rglob("*") if path.is_file())
+
+
 def assert_python_coverage_witness(repo: Path, marker_dir: Path) -> None:
-    run_witness_check("python", repo, marker_dir)
+    run_witness_test("python", repo, marker_dir)
     assert marker_names(marker_dir) == {"python-alpha", "python-beta"}
     cache = python_rslip_cache_root(repo)
     entry_payloads = selector_entry_payloads(cache)
@@ -1277,19 +1316,19 @@ def assert_python_coverage_witness(repo: Path, marker_dir: Path) -> None:
         cache / "index.json",
         cache / "population.json",
     ]
-    cold_bytes = relevant_artifact_bytes(artifact_paths)
+    post_test_bytes = cache_tree_bytes(cache, artifact_paths)
     clear_markers(marker_dir)
     warm = run_witness_check("python", repo, marker_dir)
     assert "refreshing Python runtime coverage" not in warm.stderr, warm.stderr
     assert marker_names(marker_dir) == set()
-    assert relevant_artifact_bytes(artifact_paths) == cold_bytes
+    assert cache_tree_bytes(cache, artifact_paths) == post_test_bytes
     changed_text(repo / "app.py", "    return 'alpha'", "    return str('alpha')")
     dry = run_witness_dry_run("python", repo, marker_dir)
     assert_dry_run_selects_exactly(dry, "test_alpha", "test_beta")
 
 
 def assert_rust_coverage_witness(repo: Path, marker_dir: Path) -> None:
-    cold = run_witness_check("rust", repo, marker_dir, jobs=4)
+    run_witness_test("rust", repo, marker_dir, jobs=4)
     assert marker_names(marker_dir) == {"rust-alpha", "rust-beta"}
     cache = repo / ".kiss/rust_llvm_cov_cache"
     entry_paths = sorted((cache / "entries").glob("*.json"))
@@ -1298,28 +1337,28 @@ def assert_rust_coverage_witness(repo: Path, marker_dir: Path) -> None:
     assert_disjoint_entry_lines(entry_payloads, "src/lib.rs", 2, 6, 10)
     index = load_json(cache / "index.json")
     manifest = load_json(cache / "population.json")
-    aggregate = load_json(cache / "check_aggregate.json")
     assert_index_source_selectors(index, "src/lib.rs", ("test_alpha", "test_beta"))
-    aggregate_lines = {int(line) for line in aggregate["aggregate_covered_lines"]["src/lib.rs"]}
-    assert {2, 6}.issubset(aggregate_lines), aggregate_lines
-    assert 10 not in aggregate_lines, aggregate_lines
     assert_population_selectors(manifest, ("test_alpha", "test_beta"))
+    assert manifest.get("reverse_line_index") is not None, manifest
+    assert_rust_reverse_cache_integrity(repo)
+    reverse_paths = reverse_line_index_files(cache)
+    assert reverse_paths, f"missing reverse_line_index files under {cache}"
     artifact_paths = entry_paths + [
         cache / "index.json",
         cache / "population.json",
-        cache / "check_aggregate.json",
+        *reverse_paths,
     ]
-    cold_bytes = relevant_artifact_bytes(artifact_paths)
+    post_test_bytes = cache_tree_bytes(cache, artifact_paths)
     clear_markers(marker_dir)
     warm = run_witness_check("rust", repo, marker_dir, jobs=4)
     assert "refreshing Rust runtime coverage" not in warm.stderr, warm.stderr
     assert marker_names(marker_dir) == set()
-    assert relevant_artifact_bytes(artifact_paths) == cold_bytes
+    assert cache_tree_bytes(cache, artifact_paths) == post_test_bytes
+    assert_rust_reverse_cache_integrity(repo)
     changed_text(repo / "src/lib.rs", "    \"alpha\"", "    { \"alpha\" }")
     dry = run_witness_dry_run("rust", repo, marker_dir)
     assert_dry_run_selects_exactly(dry, "test_alpha", "test_beta")
     assert metric_int(dry.metrics(), "selected_rust_initial") == 1
-    assert "refreshing Rust runtime coverage" in cold.stderr, cold.stderr
 
 
 def wait_for_barrier_ready(barrier_dir: Path, artifact: str, phase: str) -> dict:
@@ -1793,9 +1832,9 @@ def coverage_cache_witness() -> None:
         assert_python_coverage_witness(py_repo, py_markers)
         assert_rust_coverage_witness(rs_repo, rs_markers)
         click.echo(
-            "QA PASS: exact Python and Rust coverage witnesses, warm reuse, "
-            "Python changed-line dry-run precision, and Rust aggregate-backed "
-            "dry-run selection held."
+            "QA PASS: kiss test primes Python and Rust coverage populations; "
+            "warm kiss cov reuses them without refresh; covered-line, warm "
+            "reuse, and changed-line dry-run selection held."
         )
 
 

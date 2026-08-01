@@ -61,6 +61,7 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
     )
 }
 
+#[allow(dead_code)] // retained for CheckAggregate population callers outside `kiss test`
 pub(crate) fn run_rust_llvm_cov_check_aggregate_population_selectors(
     repo_root: &Path,
     selectors: &[String],
@@ -165,15 +166,15 @@ pub(crate) struct RustCoverageToolVersions {
 }
 
 #[derive(Clone, Debug)]
-struct RustCoverageRunOptions<'a> {
-    extra: &'a [String],
-    force_rerun: bool,
-    jobs: usize,
-    population_publication_selectors: Option<Vec<String>>,
-    coverage_output_mode: CoverageOutputMode,
+pub(crate) struct RustCoverageRunOptions<'a> {
+    pub(crate) extra: &'a [String],
+    pub(crate) force_rerun: bool,
+    pub(crate) jobs: usize,
+    pub(crate) population_publication_selectors: Option<Vec<String>>,
+    pub(crate) coverage_output_mode: CoverageOutputMode,
 }
 
-fn run_rust_llvm_cov_selectors_with_deps<D, E>(
+pub(crate) fn run_rust_llvm_cov_selectors_with_deps<D, E>(
     repo_root: &Path,
     selectors: &[String],
     options: RustCoverageRunOptions<'_>,

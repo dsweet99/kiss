@@ -255,103 +255,88 @@ fn cached_rust_check_aggregate_is_only_for_non_forced_selective_runs() {
 }
 
 #[test]
-fn rust_execution_helper_reaches_check_aggregate_population_with_ignores() {
-    let tmp = tempfile::tempdir().unwrap();
-    let mut planned = planned();
-    planned.repo_root = tmp.path().to_path_buf();
-    planned.ignore = vec!["--ignore".to_string(), "other.rs".to_string()];
-    let mut options = options();
-    options.jobs = 0;
-    let ctx = crate::test_runner::coverage_decision::RunContext {
-        planned: &planned,
-        options: &options,
+fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
+    use crate::test_runner::rust_llvm_cov::RustCoverageToolVersions;
+    use rust_llvm_cov_runner::{
+        CoverageOutputMode, RustCovCacheStatus, RustCoverageBatchCounters, RustCoverageBatchResult,
+        RustLineCoverage, RustLlvmCovOutcome,
     };
+    use std::cell::Cell;
+    use std::collections::BTreeMap;
+    use std::rc::Rc;
 
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run_rust_selectors_for_module(
-                &["tests::population".to_string()],
-                &ctx,
-                Some(vec!["tests::population".to_string()]),
-            )
-        }))
-        .is_err()
-    );
-}
+    fn passed_outcome(selector: String) -> RustLlvmCovOutcome {
+        RustLlvmCovOutcome {
+            selector,
+            status: rpytest_runner::TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
+            test_binary_ids: vec!["test-bin".to_string()],
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        }
+    }
 
-/// Regression guard: empty extra + population selectors + non-force → shared refresh path,
-/// not uninstrumented nextest. Verifies that the uninstrumented branch is gone and that
-/// the empty-extra path panics in the same way as the shared refresh (jobs=0 check) rather
-/// than as cargo nextest. The jobs=0 assert fires inside ensure_rust_runtime_coverage_shared
-/// (via the Rust workspace selector path), not nextest.
-#[test]
-fn routing_empty_extra_non_force_population_uses_shared_refresh_not_uninstrumented() {
     let tmp = tempfile::tempdir().unwrap();
+    let selectors = vec!["crate::tests::alpha".to_string()];
+    let expected_selectors = selectors.clone();
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
-    // extra is empty — must route to shared refresh
+    planned.ignore = Vec::new();
     let mut options = options();
     options.extra = &[];
-    options.jobs = 0;
+    options.force_rerun = false;
+    options.jobs = 1;
     let ctx = crate::test_runner::coverage_decision::RunContext {
         planned: &planned,
         options: &options,
     };
 
-    // The shared refresh path panics on jobs=0 (assert inside the lock path).
-    // The old uninstrumented path also panicked on jobs=0. Both produce a panic,
-    // but the shared path goes through ensure_rust_runtime_coverage_shared whereas
-    // the uninstrumented path went through run_uninstrumented_rust_population_selectors
-    // (now deleted). The existence of this test alongside the deletion of
-    // run_uninstrumented_rust_population_selectors is the regression guard.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_rust_selectors_for_module(
-            &["crate::tests::alpha".to_string()],
-            &ctx,
-            Some(vec!["crate::tests::alpha".to_string()]),
-        )
-    }));
-    assert!(result.is_err(), "expected panic from shared refresh path (jobs=0)");
-}
-
-/// Routing non-empty extra: with population selectors, non-force, non-empty extra →
-/// instrumented check-aggregate population wrapper (not shared refresh, not uninstrumented).
-#[test]
-fn routing_non_empty_extra_non_force_population_uses_check_aggregate_wrapper() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
-    std::fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    let saw_selector_entries = Rc::new(Cell::new(false));
+    let saw_selector_entries_for_closure = Rc::clone(&saw_selector_entries);
+    let summary = run_rust_population_selectors_with_batch_deps(
+        &selectors,
+        &ctx,
+        selectors.clone(),
+        |_repo_root| {
+            Ok(RustCoverageToolVersions {
+                cargo: "cargo 1.88.0".to_string(),
+                llvm_cov: "cargo-llvm-cov 0.6.0".to_string(),
+                rustc: "rustc 1.88.0".to_string(),
+                cargo_nextest: "cargo-nextest 0.9.0".to_string(),
+            })
+        },
+        move |batch_req, _versions| {
+            assert_eq!(
+                batch_req.population_publication_selectors,
+                Some(expected_selectors.clone())
+            );
+            assert!(matches!(
+                batch_req.coverage_output_mode,
+                CoverageOutputMode::SelectorEntries
+            ));
+            saw_selector_entries_for_closure.set(true);
+            Ok(RustCoverageBatchResult {
+                completed: batch_req
+                    .logical_selectors
+                    .iter()
+                    .cloned()
+                    .map(passed_outcome)
+                    .collect(),
+                batch_error: None,
+                counters: RustCoverageBatchCounters::default(),
+                test_binaries: Vec::new(),
+            })
+        },
     )
     .unwrap();
-    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
-    let mut planned = planned();
-    planned.repo_root = tmp.path().to_path_buf();
-    let extra: Vec<String> = vec!["--no-fail-fast".to_string()];
-    let options = SelectorRunOptions {
-        dry_run: true,
-        force_rerun: false,
-        metrics: false,
-        jobs: 0, // will panic inside check-aggregate path (not uninstrumented nextest)
-        extra: &extra,
-        plan_duration: Duration::ZERO,
-    };
-    let ctx = crate::test_runner::coverage_decision::RunContext {
-        planned: &planned,
-        options: &options,
-    };
 
-    // Non-empty extra routes to run_rust_llvm_cov_check_aggregate_population_selectors,
-    // which panics on jobs=0 — confirming it reached the correct (instrumented) path.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_rust_selectors_for_module(
-            &["crate::tests::alpha".to_string()],
-            &ctx,
-            Some(vec!["crate::tests::alpha".to_string()]),
-        )
-    }));
-    assert!(result.is_err(), "expected panic from check-aggregate path (jobs=0)");
+    assert!(saw_selector_entries.get());
+    assert_eq!(summary.total, selectors.len());
 }
 
 /// Aggregate selection scope: records that aggregate-only cached coverage may

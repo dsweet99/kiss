@@ -88,12 +88,14 @@ fn planned_all(
     py_sel: Vec<String>,
     rs_sel: Vec<String>,
 ) -> PlannedSelectors {
+    let python_population_required = !py_sel.is_empty();
+    let rust_population_required = !rs_sel.is_empty();
     PlannedSelectors {
         repo_root: repo_root.to_path_buf(),
         py_sel,
         rs_sel,
-        python_population_required: false,
-        rust_population_required: false,
+        python_population_required,
+        rust_population_required,
         rust_source_paths: Vec::new(),
         rust_vcs_source_paths: 0,
         rust_snapshot_delta_modified: 0,

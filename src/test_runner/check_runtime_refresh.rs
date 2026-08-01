@@ -287,7 +287,7 @@ fn ensure_rust_runtime_coverage(
     ignore: &[String],
     jobs: usize,
 ) -> Result<(), CoverageRefreshError> {
-    ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, "kiss cov").map(|_| ())
+    ensure_rust_runtime_coverage_shared(repo_root, ignore, jobs, "kiss cov").map(|_| ())
 }
 
 fn ensure_rust_runtime_coverage_with_stats_labeled(
@@ -313,8 +313,7 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     }
 }
 
-/// Shared Rust ensure/refresh entry point used by both `kiss cov` and cold
-/// non-force `kiss test` population when `extra` is empty.
+/// Shared Rust ensure/refresh entry point used by `kiss cov`.
 ///
 /// Runs the lock / load / repair / full-refresh body against repo-local
 /// `./.kiss` coverage artifacts. Returns a `SelectorExecutionSummary` with
