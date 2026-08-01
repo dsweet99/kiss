@@ -3589,5 +3589,91 @@ def shlex_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
+def _unlink_default_profraw(directory: Path) -> None:
+    if not directory.is_dir():
+        return
+    for path in directory.glob("default_*.profraw"):
+        path.unlink(missing_ok=True)
+
+
+def _discard_profraw_names(repo: Path) -> set[str]:
+    discard = repo / ".kiss" / "profraw"
+    if not discard.is_dir():
+        return set()
+    return {path.name for path in discard.glob("*.profraw")}
+
+
+def _run_kiss_help(cwd: Path, env: dict[str, str]) -> None:
+    completed = subprocess.run(
+        [str(KISS), "--help"],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+@cli.command("profraw-discard-sink")
+def profraw_discard_sink() -> None:
+    """Prove CLI redirect keeps default_*.profraw out of CWD and cleans discard sinks."""
+    assert KISS.is_file(), f"local binary missing: {KISS}"
+    nested = ROOT / "crates" / "rust-llvm-cov-runner"
+    assert nested.is_dir(), nested
+    discard = ROOT / ".kiss" / "profraw"
+    env = os.environ.copy()
+    env.pop("LLVM_PROFILE_FILE", None)
+    env.pop("KISS_PROFRAW_DIR", None)
+
+    _unlink_default_profraw(ROOT)
+    _unlink_default_profraw(nested)
+    _unlink_default_profraw(discard)
+
+    _run_kiss_help(ROOT, env)
+    assert not list(ROOT.glob("default_*.profraw")), list(ROOT.glob("default_*.profraw"))
+    first_names = _discard_profraw_names(ROOT)
+    assert first_names, f"expected dumps under {discard}"
+
+    _run_kiss_help(ROOT, env)
+    second_names = _discard_profraw_names(ROOT)
+    assert first_names.isdisjoint(second_names), (
+        f"startup sweep did not clear prior discard dumps: "
+        f"prior={sorted(first_names)} still={sorted(first_names & second_names)}"
+    )
+    assert second_names, f"expected fresh dump under {discard} after second --help"
+
+    _unlink_default_profraw(nested)
+    _run_kiss_help(nested, env)
+    assert not list(ROOT.glob("default_*.profraw")), list(ROOT.glob("default_*.profraw"))
+    assert not list(nested.glob("default_*.profraw")), list(nested.glob("default_*.profraw"))
+    assert _discard_profraw_names(ROOT), f"expected dumps under {discard} from nested cwd"
+
+    with qa_fixture("kiss-qa-profraw-") as fixture:
+        planted = fixture.root / "default_scrubbed_0_424242.profraw"
+        planted.write_bytes(b"orphan-from-scrubbed-child")
+        batch_env = dict(fixture.env)
+        batch_env.pop("LLVM_PROFILE_FILE", None)
+        outcome = run(
+            "profraw-batch-begin-orphan-sweep",
+            kiss_command(
+                "rust",
+                fixture.ignores["rust"],
+                "--metrics",
+                "-j",
+                "1",
+            ),
+            fixture.root,
+            batch_env,
+        )
+        assert outcome.returncode == 0, outcome.combined
+        assert not planted.exists(), "batch-begin must remove scrubbed-child root dumps"
+
+    click.echo(
+        "QA PASS: absolute .kiss/profraw redirect, startup sweep, nested cwd, "
+        "and batch-begin orphan cleanup held."
+    )
+
+
 if __name__ == "__main__":
     cli()

@@ -168,6 +168,9 @@ pub use batch_runner_resolve::{
     resolve_delegated_runners, runner_map_fingerprint, write_runner_map,
 };
 pub use batch_shim::{TARGET_RUNNER_SHIM_SUBCOMMAND, run_target_runner_shim};
+pub use kiss_profraw::{
+    KissProfrawProcessGuard, discover_repo_root, redirect_this_process, sweep_kiss_profraw_dir,
+};
 pub use rust_cov_cache::{
     RustCovCacheEntry, generation_entries_fingerprint, repo_relative_coverage_file,
     repo_relative_path, store_rust_cov_cache_entry,

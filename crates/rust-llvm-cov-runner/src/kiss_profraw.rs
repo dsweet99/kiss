@@ -8,6 +8,7 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 pub(crate) const KISS_PROFRAW_DIR_ENV: &str = "KISS_PROFRAW_DIR";
 pub(crate) const DISCARD_PROFILE_PATTERN: &str = "default_%m_%p.profraw";
@@ -95,6 +96,108 @@ pub(crate) fn redirect_llvm_profile_file_to_kiss_profraw(
 
 pub(crate) fn redirect_inherited_llvm_profile_file(output_dir: &Path) -> io::Result<()> {
     redirect_llvm_profile_file_to_kiss_profraw(&resolve_kiss_profraw(output_dir)).map(|_| ())
+}
+
+/// Walk up from `start` for `.git`; fall back to the absolute start directory.
+pub fn discover_repo_root(start: &Path) -> PathBuf {
+    let start = start
+        .canonicalize()
+        .unwrap_or_else(|_| start.to_path_buf());
+    let start_dir = if start.is_file() {
+        start.parent().unwrap_or(&start).to_path_buf()
+    } else {
+        start
+    };
+    let mut cursor = start_dir.as_path();
+    loop {
+        if cursor.join(".git").exists() {
+            return cursor.to_path_buf();
+        }
+        let Some(parent) = cursor.parent() else {
+            return start_dir;
+        };
+        cursor = parent;
+    }
+}
+
+/// Unconditionally redirect this process to absolute `<repo>/.kiss/profraw`.
+///
+/// LLVM reads `LLVM_PROFILE_FILE` in `__llvm_profile_initialize` before `main`,
+/// so a late `set_var` alone does not move dump-at-exit. When the env is not
+/// already the absolute discard path, set it and re-exec (skipped under
+/// `cfg(test)` so unit tests do not restart the harness).
+pub fn redirect_this_process(repo_root: &Path) -> io::Result<PathBuf> {
+    let repo_root = repo_root
+        .canonicalize()
+        .unwrap_or_else(|_| repo_root.to_path_buf());
+    let kiss_profraw = kiss_profraw_dir(&repo_root);
+    let path = discard_llvm_profile_path(&kiss_profraw);
+    let already_redirected = llvm_profile_file_is(&path);
+    let path = redirect_llvm_profile_file_to_kiss_profraw(&kiss_profraw)?;
+    // SAFETY: process-local discard metadata for children / later sweeps.
+    unsafe {
+        std::env::set_var(KISS_PROFRAW_DIR_ENV, &kiss_profraw);
+    }
+    if !cfg!(test) && !already_redirected {
+        reexec_current_process()?;
+    }
+    Ok(path)
+}
+
+fn llvm_profile_file_is(path: &Path) -> bool {
+    std::env::var_os("LLVM_PROFILE_FILE").is_some_and(|value| Path::new(&value) == path)
+}
+
+fn reexec_current_process() -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let exe = std::env::current_exe()?;
+        let args: Vec<_> = std::env::args_os().skip(1).collect();
+        let error = Command::new(exe).args(args).exec();
+        Err(io::Error::other(format!("re-exec after profraw redirect failed: {error}")))
+    }
+    #[cfg(not(unix))]
+    {
+        Ok(())
+    }
+}
+
+/// Delete leftover discard `*.profraw` under `<repo>/.kiss/profraw`.
+///
+/// Keeps the directory itself so this process's LLVM dump-at-exit still has a sink.
+pub fn sweep_kiss_profraw_dir(repo_root: &Path) -> io::Result<()> {
+    let kiss_profraw = kiss_profraw_dir(repo_root);
+    let entries = match fs::read_dir(&kiss_profraw) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err),
+    };
+    for entry in entries {
+        remove_if_profraw(&entry?.path())?;
+    }
+    Ok(())
+}
+
+/// Best-effort pid-scoped cleanup of the discard sink (does not beat LLVM atexit).
+pub struct KissProfrawProcessGuard {
+    kiss_profraw: PathBuf,
+    pid: u32,
+}
+
+impl KissProfrawProcessGuard {
+    pub fn for_current_process(repo_root: &Path) -> Self {
+        Self {
+            kiss_profraw: kiss_profraw_dir(repo_root),
+            pid: std::process::id(),
+        }
+    }
+}
+
+impl Drop for KissProfrawProcessGuard {
+    fn drop(&mut self) {
+        let _ = cleanup_kiss_profraw_for_pid(&self.kiss_profraw, self.pid);
+    }
 }
 
 /// Delete discard dumps for one writer pid (`…_{pid}.profraw`); concurrency-safe.
@@ -205,3 +308,7 @@ fn ignore_absent_or_nonempty(result: io::Result<()>) -> io::Result<()> {
 #[cfg(test)]
 #[path = "kiss_profraw_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "kiss_profraw_cleanup_test.rs"]
+mod cleanup_tests;

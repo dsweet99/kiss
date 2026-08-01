@@ -15,10 +15,23 @@ mod viz;
 mod viz_coarsen;
 
 use crate::bin_cli::{run, set_sigpipe_default};
+use rust_llvm_cov_runner::{
+    KissProfrawProcessGuard, discover_repo_root, redirect_this_process, sweep_kiss_profraw_dir,
+};
 
 fn main() {
+    // Drop runs in `run_kiss_main` before `process::exit` (exit skips destructors).
+    std::process::exit(run_kiss_main());
+}
+
+fn run_kiss_main() -> i32 {
     let t0 = std::time::Instant::now();
     set_sigpipe_default();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let repo_root = discover_repo_root(&cwd);
+    let _ = redirect_this_process(&repo_root);
+    let _ = sweep_kiss_profraw_dir(&repo_root);
+    let _profraw_guard = KissProfrawProcessGuard::for_current_process(&repo_root);
     let exit_code = run();
     let d = t0.elapsed();
     if d.as_secs() >= 1 {
@@ -26,7 +39,7 @@ fn main() {
     } else {
         eprintln!("kiss: {}ms", d.as_millis());
     }
-    std::process::exit(exit_code);
+    exit_code
 }
 
 #[cfg(test)]
