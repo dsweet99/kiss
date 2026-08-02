@@ -10,11 +10,18 @@ fn kiss_binary() -> Command {
 #[test]
 fn cli_check_default_gate_emits_hint_on_coverage_failure() {
     let tmp = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
     fs::write(tmp.path().join("orphan.py"), "def orphan():\n    pass\n").unwrap();
+    fs::write(
+        tmp.path().join(".kissconfig"),
+        "[gate]\ntest_coverage_threshold = 90\n",
+    )
+    .unwrap();
     let output = kiss_binary()
+        .current_dir(tmp.path())
+        .env("HOME", home.path())
         .arg("check")
-        .arg("--defaults")
-        .arg(tmp.path())
+        .arg(".")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);

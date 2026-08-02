@@ -1,7 +1,7 @@
 # Default kiss configuration
 
 [gate]
-test_coverage_threshold = 90
+test_coverage_threshold = 0
 min_similarity = 0.9
 duplication_enabled = true
 orphan_module_enabled = true

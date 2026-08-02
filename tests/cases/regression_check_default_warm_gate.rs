@@ -6,18 +6,6 @@ fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
 }
 
-fn run_default_check(home: &std::path::Path, repo: &std::path::Path) -> std::process::Output {
-    kiss_binary()
-        .arg("--defaults")
-        .arg("check")
-        .arg("--lang")
-        .arg("python")
-        .arg(repo)
-        .env("HOME", home)
-        .output()
-        .unwrap()
-}
-
 fn run_default_check_with_config(
     home: &std::path::Path,
     repo: &std::path::Path,
@@ -50,8 +38,8 @@ fn regression_check_default_warm_gate_matches_cold_and_warm_output() {
     )
     .unwrap();
 
-    let cold = run_default_check(home.path(), repo.path());
-    let warm = run_default_check(home.path(), repo.path());
+    let cold = run_default_check_with_config(home.path(), repo.path());
+    let warm = run_default_check_with_config(home.path(), repo.path());
 
     assert_eq!(
         cold.status.code(),
@@ -128,8 +116,9 @@ fn regression_default_gate_fail_still_reports_timing() {
     .unwrap();
 
     let out = kiss_binary()
-        .arg("--defaults")
         .arg("check")
+        .arg("--config")
+        .arg(repo.path().join(".kissconfig"))
         .arg("--timing")
         .arg("--lang")
         .arg("python")
