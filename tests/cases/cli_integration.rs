@@ -25,7 +25,7 @@ fn cli_init_writes_default_config_in_current_directory() {
 
     let config = fs::read_to_string(tmp.path().join(".kissconfig")).unwrap();
     assert!(
-        config.contains("[gate]\ntest_coverage_threshold = 90\nmin_similarity = 0.9\nduplication_enabled = true\norphan_module_enabled = true"),
+        config.contains("[gate]\ntest_coverage_threshold = 0\nmin_similarity = 0.9\nduplication_enabled = true\norphan_module_enabled = true"),
         "config:\n{config}"
     );
     assert!(

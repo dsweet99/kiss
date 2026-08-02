@@ -197,7 +197,7 @@ fn cli_config_shows_gate_settings() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("test_coverage_threshold = 90"),
+        stdout.contains("test_coverage_threshold = 0"),
         "Should show default coverage. stdout: {stdout}"
     );
     assert!(

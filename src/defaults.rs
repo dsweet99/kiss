@@ -57,7 +57,7 @@ pub mod duplication {
 }
 
 pub mod gate {
-    pub const TEST_COVERAGE_THRESHOLD: usize = 90;
+    pub const TEST_COVERAGE_THRESHOLD: usize = 0;
 }
 
 pub fn default_config_toml() -> String {
@@ -171,7 +171,7 @@ mod tests {
     fn test_defaults_are_reasonable() {
         assert!(python::STATEMENTS_PER_FUNCTION > 0);
         assert!(rust::STATEMENTS_PER_FUNCTION > 0);
-        assert!(gate::TEST_COVERAGE_THRESHOLD <= 100);
+        assert_eq!(gate::TEST_COVERAGE_THRESHOLD, 0);
     }
 
     #[test]

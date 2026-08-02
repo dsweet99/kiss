@@ -18,7 +18,7 @@ fn default_config_has_reasonable_values() {
 }
 
 fn verify_gate_defaults(gate: &GateConfig) {
-    assert_eq!(gate.test_coverage_threshold, 90);
+    assert_eq!(gate.test_coverage_threshold, 0);
     assert!((gate.min_similarity - 0.9).abs() < f64::EPSILON);
     assert!(gate.duplication_enabled);
     assert!(gate.orphan_module_enabled);
@@ -93,14 +93,14 @@ fn test_load_from_nonexistent() {
 #[test]
 fn test_gate_config_defaults() {
     let gate = GateConfig::default();
-    assert!(gate.test_coverage_threshold > 0);
+    assert_eq!(gate.test_coverage_threshold, 0);
     assert!(gate.min_similarity > 0.0 && gate.min_similarity <= 1.0);
 }
 
 #[test]
 fn test_gate_config_load() {
     let gate = GateConfig::load();
-    assert!(gate.test_coverage_threshold > 0);
+    assert_eq!(gate.test_coverage_threshold, 0);
 }
 
 #[test]
