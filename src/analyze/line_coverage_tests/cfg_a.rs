@@ -111,7 +111,7 @@ fn runtime_records_skip_cfg_test_only_rust_modules() {
 }
 
 #[test]
-fn cfg_any_test_feature_module_is_not_test_only() {
+fn cfg_any_test_feature_module_is_test_only() {
     let tmp = tempfile::tempdir().unwrap();
     let src = tmp.path().join("src");
     std::fs::create_dir_all(&src).unwrap();
@@ -135,7 +135,7 @@ fn cfg_any_test_feature_module_is_not_test_only() {
         .map(|record| record.file.clone())
         .collect::<BTreeSet<_>>();
 
-    assert!(files.contains(&maybe_support));
+    assert!(!files.contains(&maybe_support));
 }
 
 #[test]

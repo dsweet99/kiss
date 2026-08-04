@@ -47,22 +47,30 @@ fn write_cached_rust_tool_identity(
     fs::write(path, bytes)
 }
 
-fn detect_rust_coverage_tool_identity(
+fn detect_live_rust_coverage_tool_identity(
     repo_root: &Path,
 ) -> Result<RustCoverageToolIdentity, String> {
-    if let Some(cached) = read_cached_rust_tool_identity(repo_root) {
-        return Ok(cached);
-    }
     let cargo = PathBuf::from("cargo");
     let rustc = PathBuf::from("rustc");
-    let tools = RustCoverageToolIdentity {
+    Ok(RustCoverageToolIdentity {
         cargo_version: command_stdout(&cargo, &["--version"], repo_root)?,
         llvm_cov_version: command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?,
         rustc_version: command_stdout(&rustc, &["-Vv"], repo_root)?,
         cargo_nextest_version: command_stdout(&cargo, &["nextest", "--version"], repo_root)?,
-    };
-    let _ = write_cached_rust_tool_identity(repo_root, &tools);
-    Ok(tools)
+    })
+}
+
+fn detect_rust_coverage_tool_identity(
+    repo_root: &Path,
+) -> Result<RustCoverageToolIdentity, String> {
+    let live = detect_live_rust_coverage_tool_identity(repo_root)?;
+    if let Some(cached) = read_cached_rust_tool_identity(repo_root)
+        && cached == live
+    {
+        return Ok(cached);
+    }
+    let _ = write_cached_rust_tool_identity(repo_root, &live);
+    Ok(live)
 }
 
 pub(crate) fn cached_rust_coverage_tool_identity(

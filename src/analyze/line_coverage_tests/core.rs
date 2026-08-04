@@ -151,7 +151,7 @@ fn rust_coverage_denominator_skips_attribute_and_bare_else_lines() {
              }\n",
     )
     .unwrap();
-    let denom = coverage_denominator_lines(&file);
+    let denom = coverage_denominator_lines(&file).expect("readable rust source");
     let source = std::fs::read_to_string(&file).unwrap();
     for (idx, line) in source.lines().enumerate() {
         let n = idx + 1;
@@ -182,8 +182,8 @@ fn metamorphic_rust_denominator_attribute_skip_stable_under_spacing() {
         "pub fn f() {\n    #[cfg(unix)]\n    {\n        let x = 1;\n        let _ = x;\n    }\n}\n",
     )
     .unwrap();
-    let da = coverage_denominator_lines(&a);
-    let db = coverage_denominator_lines(&b);
+    let da = coverage_denominator_lines(&a).expect("readable rust source");
+    let db = coverage_denominator_lines(&b).expect("readable rust source");
     assert_eq!(da.len(), db.len());
     for lines in [&da, &db] {
         for n in lines {
@@ -210,7 +210,7 @@ fn fuzz_rust_denominator_never_counts_attribute_only_lines() {
         };
         let file = tmp.path().join(format!("f{i}.rs"));
         std::fs::write(&file, format!("pub fn g() {{\n    {body}}}\n")).unwrap();
-        let denom = coverage_denominator_lines(&file);
+        let denom = coverage_denominator_lines(&file).expect("readable rust source");
         let text = std::fs::read_to_string(&file).unwrap();
         for n in &denom {
             let row = text.lines().nth(n - 1).unwrap().trim();

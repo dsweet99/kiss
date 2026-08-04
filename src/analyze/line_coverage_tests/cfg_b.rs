@@ -125,13 +125,11 @@ fn cfg_test_only_recognizes_compound_and_grouped_cfg_test_forms() {
     ];
     let test_only = cfg_test_only_rust_files(&files);
     assert!(test_only.contains(&all_test));
-    // `any(...)` skips nested tokens by design in cfg_tokens_contain_test.
-    assert!(!test_only.contains(&any_test));
+    assert!(test_only.contains(&any_test));
     assert!(test_only.contains(&group_test));
     assert!(!test_only.contains(&plain));
     assert!(!test_only.contains(&not_test));
     assert!(!test_only.contains(&named));
-    // Still exercise the any(...) token walk even when it does not mark test-only.
     assert!(files.iter().any(|p| p.ends_with("any_test.rs")));
 }
 
@@ -173,7 +171,7 @@ fn coverage_denominator_visits_impl_methods_and_cfg_blocks() {
         ),
     )
     .unwrap();
-    let denom = coverage_denominator_lines(&file);
+    let denom = coverage_denominator_lines(&file).expect("readable rust source");
     assert!(
         denom.len() >= 3,
         "expected impl/block statements in denom, got {denom:?}"
@@ -216,11 +214,21 @@ fn module_path_attr_ignores_non_string_path_forms() {
 }
 
 #[test]
-fn coverage_denominator_returns_empty_for_unreadable_path() {
+fn unreadable_source_is_not_reported_as_fully_covered() {
+    // Impact-5 regression: unreadable sources must not fail open as 100%.
     let missing =
         std::path::PathBuf::from("/tmp/kiss-missing-coverage-denom-file-does-not-exist.rs");
-    let denom = coverage_denominator_lines(&missing);
-    assert!(denom.is_empty());
+    let snapshot = RuntimeCoverageSnapshot {
+        identity: "id".into(),
+        covered_lines: BTreeMap::new(),
+    };
+    let record = compute_file_line_coverage(Path::new("/tmp"), &missing, &snapshot);
+    assert_ne!(
+        record.percent, 100,
+        "unreadable source must not be reported as 100% covered"
+    );
+    assert_eq!(record.percent, 0);
+    assert_eq!(record.covered_lines, 0);
 }
 
 #[test]

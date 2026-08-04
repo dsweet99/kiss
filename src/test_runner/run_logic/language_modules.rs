@@ -124,16 +124,39 @@ impl LanguageExecutor for RustModule {
         run_rust_selectors_for_module(selectors, ctx, None)
     }
 
-    fn rebuild_index(&self, _ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        Ok(())
+    fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
+        crate::test_runner::rust_coverage_index::publish_rust_derived_state_with_filter(
+            &ctx.planned.repo_root,
+            None,
+            ctx.options.extra,
+            |path, repo_root| self.is_indexable_source(path, repo_root),
+        )
     }
 
     fn write_manifest(
         &self,
-        _selectors: &[String],
-        _ctx: &RunContext<'_, '_>,
+        selectors: &[String],
+        ctx: &RunContext<'_, '_>,
     ) -> Result<(), String> {
-        Ok(())
+        if crate::test_runner::rust_coverage_index::rust_population_manifest_is_current_for_args(
+            &ctx.planned.repo_root,
+            selectors,
+            ctx.options.extra,
+        ) && crate::test_runner::rust_coverage_index::load_current_rust_population_state(
+            &ctx.planned.repo_root,
+            None,
+            ctx.options.extra,
+        )
+        .is_some()
+        {
+            return Ok(());
+        }
+        crate::test_runner::rust_coverage_index::publish_rust_derived_state_with_filter(
+            &ctx.planned.repo_root,
+            Some(selectors),
+            ctx.options.extra,
+            |path, repo_root| self.is_indexable_source(path, repo_root),
+        )
     }
 
     fn is_indexable_source(&self, path: &std::path::Path, repo_root: &std::path::Path) -> bool {

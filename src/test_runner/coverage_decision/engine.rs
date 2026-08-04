@@ -91,6 +91,11 @@ fn plan_rust_language(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
+    // Match Python: prior failures force full-universe planning so selective
+    // freshness cannot skip rediscovery / population when failures remain.
+    if !planner.prior_failures().is_empty() {
+        return plan_with_universe(planner, changed_tests);
+    }
     let plan_trace = std::env::var_os("KISS_PLAN_TRACE").is_some();
     let mut mark = std::time::Instant::now();
     let freshness = planner.freshness(&[])?;

@@ -123,8 +123,12 @@ impl LanguagePlanner for PythonModule {
                 &self.python_changed_lines,
             )
             .is_some();
-        if has_current_population || has_line_precise_entries {
+        if has_current_population {
             Ok(CoverageFreshness::Fresh)
+        } else if has_line_precise_entries {
+            // Ordinary source edits with usable line-precise index entries: reuse
+            // prior coverage without requiring a full population refresh.
+            Ok(CoverageFreshness::ReusablePrior)
         } else {
             Ok(CoverageFreshness::Stale)
         }
@@ -228,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn changed_line_cache_selection_can_be_fresh_without_population_manifest() {
+    fn changed_line_cache_selection_is_reusable_prior_without_population_manifest() {
         let tmp = tempfile::tempdir().unwrap();
         let app = tmp.path().join("app.py");
         fs::write(&app, "def alpha():\n    return 'alpha'\n").unwrap();
@@ -275,7 +279,7 @@ mod tests {
 
         assert_eq!(
             module.freshness(&universe).unwrap(),
-            CoverageFreshness::Fresh
+            CoverageFreshness::ReusablePrior
         );
     }
 

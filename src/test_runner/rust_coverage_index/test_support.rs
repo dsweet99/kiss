@@ -102,41 +102,7 @@ pub(crate) fn load_current_rust_coverage_index(
     repo_root: &Path,
     test_args: &[String],
 ) -> Option<RustCoverageIndex> {
-    load_current_rust_population_state(repo_root, None, test_args).map(|state| state.line_index)
-}
-
-pub(crate) fn load_current_rust_population_state(
-    repo_root: &Path,
-    selectors: Option<&[String]>,
-    test_args: &[String],
-) -> Option<rust_llvm_cov_runner::RustPopulationState> {
-    let identity = super::current_rust_coverage_batch_identity(repo_root, test_args).ok()?;
-    rust_llvm_cov_runner::load_current_population_state(
-        &rust_coverage_cache_root(repo_root),
-        repo_root,
-        &identity,
-        selectors,
-    )
-}
-
-pub(crate) fn rust_population_manifest_is_current_for_args(
-    repo_root: &Path,
-    selectors: &[String],
-    test_args: &[String],
-) -> bool {
-    let Ok(identity) = super::current_rust_coverage_batch_identity(repo_root, test_args) else {
-        return false;
-    };
-    let mut expected = selectors.to_vec();
-    expected.sort();
-    expected.dedup();
-    rust_llvm_cov_runner::load_current_population_state(
-        &rust_coverage_cache_root(repo_root),
-        repo_root,
-        &identity,
-        Some(&expected),
-    )
-    .is_some()
+    super::load_current_rust_population_state(repo_root, None, test_args).map(|state| state.line_index)
 }
 
 pub(crate) fn rust_coverage_index_path(repo_root: &Path) -> std::path::PathBuf {

@@ -148,7 +148,11 @@ fn cfg_tokens_contain_test(tokens: proc_macro2::TokenStream) -> bool {
                 }
             }
             proc_macro2::TokenTree::Ident(ident) if ident == "any" => {
-                let _ = iter.next();
+                if let Some(proc_macro2::TokenTree::Group(group)) = iter.next()
+                    && cfg_tokens_contain_test(group.stream())
+                {
+                    return true;
+                }
             }
             proc_macro2::TokenTree::Group(group) => {
                 if cfg_tokens_contain_test(group.stream()) {
@@ -166,7 +170,16 @@ pub(crate) fn compute_file_line_coverage(
     file: &Path,
     snapshot: &RuntimeCoverageSnapshot,
 ) -> LineCoverageRecord {
-    let denominator_lines = coverage_denominator_lines(file);
+    let Some(denominator_lines) = coverage_denominator_lines(file) else {
+        // Fail closed: unreadable sources must not report as 100% covered.
+        return LineCoverageRecord {
+            file: file.to_path_buf(),
+            total_lines: 0,
+            covered_lines: 0,
+            percent: 0,
+            first_uncovered_line: None,
+        };
+    };
     let total_lines = denominator_lines.len();
     let rel = repo_relative_key(repo_root, file);
     let covered = rel
@@ -229,19 +242,19 @@ pub(crate) fn line_records_from_cache(
         .collect()
 }
 
-fn coverage_denominator_lines(file: &Path) -> BTreeSet<usize> {
-    let Ok(contents) = fs::read_to_string(file) else {
-        return BTreeSet::new();
-    };
+/// Returns `None` when the source file cannot be read (fail closed for coverage %).
+/// Returns `Some(empty)` for a readable empty file (treated as 100% covered).
+fn coverage_denominator_lines(file: &Path) -> Option<BTreeSet<usize>> {
+    let contents = fs::read_to_string(file).ok()?;
     if contents.is_empty() {
-        return BTreeSet::new();
+        return Some(BTreeSet::new());
     }
     let parsed = match file.extension().and_then(|ext| ext.to_str()) {
         Some("py") => python_coverable_lines(&contents),
         Some("rs") => rust_coverable_lines(&contents),
         _ => None,
     };
-    parsed.unwrap_or_else(|| (1..=contents.lines().count()).collect())
+    Some(parsed.unwrap_or_else(|| (1..=contents.lines().count()).collect()))
 }
 
 fn python_coverable_lines(source: &str) -> Option<BTreeSet<usize>> {

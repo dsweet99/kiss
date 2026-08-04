@@ -54,17 +54,19 @@ pub(super) fn prepare_rust_inputs(
     );
     lap("rust_changed_lines");
     // Full check-aggregate file-level select makes Rust changed-test parsing
-    // redundant. Keep it when line-precise narrowing may drop to a subset.
+    // redundant for source-only edits. Keep Rust test paths when VCS reports
+    // changed Rust tests so they are not dropped while Python tests remain.
     let mut effective_test_paths = py_test_paths;
     let line_precise = !rust_changed_lines.is_empty() && rust_changed_lines.len() <= 1;
     if !line_precise
+        && rust_vcs_test_paths.is_empty()
         && check_aggregate_covers_changed_rust_sources(
             repo_root,
             &rust_resolution.source_paths,
             rust_resolution.resolved.as_ref(),
         )
     {
-        // Python changed tests only.
+        // Source-only + check-aggregate: skip Rust test path parsing.
     } else {
         effective_test_paths.extend(rust_resolution.test_paths.iter().cloned());
     }
