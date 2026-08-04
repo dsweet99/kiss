@@ -10,9 +10,11 @@ use super::{CoverageRefreshError, CoverageRefreshStats};
 pub(crate) enum CheckAggregateRepairDecision {
     FullRefresh,
     IdentityOnly {
+        prior_generation: String,
         retained_binary_line_maps: BTreeMap<String, rust_llvm_cov_runner::RustLineCoverage>,
     },
     Rerun {
+        prior_generation: String,
         rerun_selectors: Vec<String>,
         replacement_binary_ids: BTreeSet<String>,
         retained_binary_line_maps: BTreeMap<String, rust_llvm_cov_runner::RustLineCoverage>,
@@ -66,28 +68,34 @@ pub(super) fn try_repair_rust_check_aggregate_labeled(
     match decision {
         CheckAggregateRepairDecision::FullRefresh => Ok(None),
         CheckAggregateRepairDecision::IdentityOnly {
+            prior_generation,
             retained_binary_line_maps,
         } => Ok(Some(apply_identity_only_repair_labeled(
             repo_root,
             ignore,
             &build,
             selectors,
+            &prior_generation,
             retained_binary_line_maps,
             caller_label,
         )?)),
         CheckAggregateRepairDecision::Rerun {
+            prior_generation,
             rerun_selectors,
             replacement_binary_ids,
             retained_binary_line_maps,
         } => Ok(Some(apply_rerun_repair_labeled(
-            repo_root,
-            ignore,
-            &build,
-            rerun_selectors,
-            replacement_binary_ids,
-            retained_binary_line_maps,
-            jobs,
-            caller_label,
+            super::check_runtime_refresh_apply::RerunRepairArgs {
+                repo_root,
+                ignore,
+                build: &build,
+                prior_generation: &prior_generation,
+                rerun_selectors,
+                replacement_binary_ids,
+                retained_binary_line_maps,
+                jobs,
+                caller_label,
+            },
         )?)),
     }
 }
@@ -118,6 +126,7 @@ pub(crate) fn classify_check_aggregate_repair(
     );
     if replacement_binary_ids.is_empty() {
         return CheckAggregateRepairDecision::IdentityOnly {
+            prior_generation: prior.generation_fingerprint.clone(),
             retained_binary_line_maps,
         };
     }
@@ -130,6 +139,7 @@ pub(crate) fn classify_check_aggregate_repair(
         return CheckAggregateRepairDecision::FullRefresh;
     }
     CheckAggregateRepairDecision::Rerun {
+        prior_generation: prior.generation_fingerprint.clone(),
         rerun_selectors,
         replacement_binary_ids,
         retained_binary_line_maps,

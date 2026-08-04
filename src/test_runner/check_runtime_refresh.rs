@@ -27,7 +27,7 @@ mod check_runtime_refresh_apply;
 pub(crate) use check_runtime_refresh_apply::finalize_population_summary_labeled;
 #[cfg(test)]
 pub(crate) use check_runtime_refresh_apply::{
-    apply_identity_only_repair, apply_rerun_repair, finalize_population_summary,
+    RerunRepairArgs, apply_identity_only_repair, apply_rerun_repair, finalize_population_summary,
 };
 
 pub(crate) const COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV: &str =
@@ -387,3 +387,7 @@ mod tests;
 #[cfg(test)]
 #[path = "check_runtime_refresh_apply_test.rs"]
 mod apply_tests;
+
+#[cfg(test)]
+#[path = "check_runtime_refresh_apply_b_test.rs"]
+mod apply_b_tests;

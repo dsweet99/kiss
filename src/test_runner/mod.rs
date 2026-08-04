@@ -11,6 +11,7 @@ mod runners;
 mod rust_coverage_index;
 mod rust_llvm_cov;
 mod targets;
+pub(crate) mod unit_test_timing;
 
 use std::path::PathBuf;
 use std::time::Duration;

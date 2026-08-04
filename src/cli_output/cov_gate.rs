@@ -1,4 +1,4 @@
-use super::{final_status_message, format_unreferenced_unit_coverage_message};
+use super::format_unreferenced_unit_coverage_message;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -20,12 +20,14 @@ pub fn print_coverage_gate_failure(ctx: &CoverageGateFailureCtx<'_>) {
     for line in coverage_gate_failure_lines(ctx) {
         println!("{line}");
     }
+    println!("{}", super::final_status_message(true));
 }
 
 pub fn print_codebase_coverage_gate_failure(ctx: &CodebaseCoverageGateFailureCtx<'_>) {
     for line in codebase_coverage_gate_failure_lines(ctx) {
         println!("{line}");
     }
+    println!("{}", super::final_status_message(true));
 }
 
 pub fn codebase_coverage_gate_failure_lines(ctx: &CodebaseCoverageGateFailureCtx<'_>) -> Vec<String> {
@@ -41,7 +43,6 @@ pub fn codebase_coverage_gate_failure_lines(ctx: &CodebaseCoverageGateFailureCtx
             line
         ));
     }
-    lines.push(final_status_message(true).to_string());
     lines
 }
 
@@ -78,7 +79,6 @@ pub fn coverage_gate_failure_lines(ctx: &CoverageGateFailureCtx<'_>) -> Vec<Stri
             ));
         }
     }
-    lines.push(final_status_message(true).to_string());
     lines
 }
 
@@ -97,8 +97,8 @@ mod tests {
         });
         let stdout = lines.join("\n");
         assert!(
-            stdout.contains(VIOLATIONS_FIX_HINT),
-            "expected hint in stdout: {stdout}"
+            !stdout.contains(VIOLATIONS_FIX_HINT),
+            "diagnostic lines omit final status so sibling gates can print once: {stdout}"
         );
         assert!(
             stdout.contains("GATE_FAILED:test_coverage:"),
@@ -108,6 +108,7 @@ mod tests {
             stdout.contains("per-file enforcement"),
             "expected per-file enforcement in stdout: {stdout}"
         );
+        assert_eq!(super::super::final_status_message(true), VIOLATIONS_FIX_HINT);
     }
 
     #[test]
@@ -135,6 +136,9 @@ mod tests {
             stdout.contains("VIOLATION:test_coverage:good.py:4:<file>:"),
             "≥-threshold file with uncovered lines must still appear.\nstdout:\n{stdout}"
         );
-        assert!(stdout.contains(VIOLATIONS_FIX_HINT), "stdout:\n{stdout}");
+        assert!(
+            !stdout.contains(VIOLATIONS_FIX_HINT),
+            "diagnostic lines omit final status:\n{stdout}"
+        );
     }
 }

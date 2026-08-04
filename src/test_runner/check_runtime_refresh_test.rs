@@ -64,6 +64,7 @@ fn aggregate_repair_reruns_selectors_for_changed_binary() {
 
     match decision {
         super::CheckAggregateRepairDecision::Rerun {
+            prior_generation: _,
             rerun_selectors,
             replacement_binary_ids,
             retained_binary_line_maps,

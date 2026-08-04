@@ -1,8 +1,12 @@
 use crate::bin_cli::config_session::config_provenance;
+use crate::bin_cli::util::merge_check_ignore_prefixes;
+use crate::test_runner::unit_test_timing::{
+    TimingLangInclude, unit_test_runtime_ms_line_for_universe,
+};
 use kiss::check_universe_cache::FullCheckCache;
 use kiss::discovery::gather_files_by_lang;
 use kiss::{Config, GateConfig, Language, compute_summaries, format_stats_table};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 struct StatsSummaryInput<'a> {
@@ -30,7 +34,16 @@ pub fn run_stats_summary(
         std::process::exit(1);
     }
 
-    if maybe_print_cached_stats_summary(paths, &py_files, &rs_files, py_cfg, rs_cfg, gate) {
+    if maybe_print_cached_stats_summary(CachedStatsSummaryArgs {
+        paths,
+        py_files: &py_files,
+        rs_files: &rs_files,
+        py_cfg,
+        rs_cfg,
+        gate,
+        lang_filter,
+        ignore,
+    }) {
         return;
     }
 
@@ -86,10 +99,30 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         py_stats: Some(&pipeline.py_stats),
         rs_stats: Some(&pipeline.rs_stats),
     });
-    print_summary_from_pipeline(input.paths, &pipeline);
+    print_summary_from_pipeline(input.paths, &pipeline, input.lang_filter, input.ignore);
 }
 
-fn print_summary_from_pipeline(paths: &[String], pipeline: &crate::analyze::FullPipelineResult) {
+fn maybe_print_unit_test_runtime_line(
+    paths: &[String],
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+) {
+    let universe = Path::new(paths.first().map(String::as_str).unwrap_or("."));
+    let merged = merge_check_ignore_prefixes(ignore);
+    if let Some(line) =
+        unit_test_runtime_ms_line_for_universe(universe, lang_filter, include, &merged)
+    {
+        println!("{line}");
+    }
+}
+
+fn print_summary_from_pipeline(
+    paths: &[String],
+    pipeline: &crate::analyze::FullPipelineResult,
+    lang_filter: Option<Language>,
+    ignore: &[String],
+) {
     let duplicate_total = pipeline.py_dups_all.len() + pipeline.rs_dups_all.len();
     let orphan_total = pipeline
         .result
@@ -145,31 +178,59 @@ fn print_summary_from_pipeline(paths: &[String], pipeline: &crate::analyze::Full
             format_stats_table(&compute_summaries(&pipeline.rs_stats))
         );
     }
+    maybe_print_unit_test_runtime_line(
+        paths,
+        lang_filter,
+        TimingLangInclude {
+            python: !pipeline.result.py_parsed.is_empty(),
+            rust: !pipeline.result.rs_parsed.is_empty(),
+        },
+        ignore,
+    );
 }
 
-fn maybe_print_cached_stats_summary(
-    paths: &[String],
-    py_files: &[PathBuf],
-    rs_files: &[PathBuf],
-    py_cfg: &Config,
-    rs_cfg: &Config,
-    gate: &GateConfig,
-) -> bool {
+struct CachedStatsSummaryArgs<'a> {
+    paths: &'a [String],
+    py_files: &'a [PathBuf],
+    rs_files: &'a [PathBuf],
+    py_cfg: &'a Config,
+    rs_cfg: &'a Config,
+    gate: &'a GateConfig,
+    lang_filter: Option<Language>,
+    ignore: &'a [String],
+}
+
+fn maybe_print_cached_stats_summary(args: CachedStatsSummaryArgs<'_>) -> bool {
     let Some(cache) = crate::analyze_cache::try_run_cached_stats_summary(
-        paths.first().map(String::as_str).unwrap_or("."),
-        py_files,
-        rs_files,
-        py_cfg,
-        rs_cfg,
-        gate,
+        args.paths.first().map(String::as_str).unwrap_or("."),
+        args.py_files,
+        args.rs_files,
+        args.py_cfg,
+        args.rs_cfg,
+        args.gate,
     ) else {
         return false;
     };
-    print_cached_summary(paths, &cache);
+    print_cached_summary(
+        args.paths,
+        &cache,
+        args.lang_filter,
+        TimingLangInclude {
+            python: !args.py_files.is_empty(),
+            rust: !args.rs_files.is_empty(),
+        },
+        args.ignore,
+    );
     true
 }
 
-fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
+fn print_cached_summary(
+    paths: &[String],
+    cache: &FullCheckCache,
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+) {
     let dup_total = cache.py_duplicates.len() + cache.rs_duplicates.len();
     let orphan_total = cache
         .base_violations
@@ -210,6 +271,7 @@ fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
             format_stats_table(&compute_summaries(stats))
         );
     }
+    maybe_print_unit_test_runtime_line(paths, lang_filter, include, ignore);
 }
 
 #[cfg(test)]
@@ -225,9 +287,16 @@ mod summary_tests {
         let py_cfg = Config::default();
         let rs_cfg = Config::default();
         let gate = GateConfig::default();
-        assert!(!maybe_print_cached_stats_summary(
-            &paths, &py, &rs, &py_cfg, &rs_cfg, &gate
-        ));
+        assert!(!maybe_print_cached_stats_summary(CachedStatsSummaryArgs {
+            paths: &paths,
+            py_files: &py,
+            rs_files: &rs,
+            py_cfg: &py_cfg,
+            rs_cfg: &rs_cfg,
+            gate: &gate,
+            lang_filter: None,
+            ignore: &[],
+        }));
     }
 
     #[test]
@@ -253,7 +322,16 @@ mod summary_tests {
             rs_duplicates: vec![],
             file_content_digests: vec![],
         };
-        print_cached_summary(&[".".into()], &cache);
+        print_cached_summary(
+            &[".".into()],
+            &cache,
+            None,
+            TimingLangInclude {
+                python: true,
+                rust: false,
+            },
+            &[],
+        );
     }
 }
 

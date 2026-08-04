@@ -120,10 +120,6 @@ pub fn store_rust_cov_cache_entry(
     fingerprint: &str,
     entry: &RustCovCacheEntry,
 ) -> io::Result<()> {
-    // Duration JSON width varies with wall time; zero it so retained entry bytes
-    // are stable across cold vs warm / different `-j` values.
-    let mut stable = entry.clone();
-    stable.duration = std::time::Duration::ZERO;
     let path = rust_cov_cache_entry_path(cache_root, fingerprint);
     let parent = path
         .parent()
@@ -134,7 +130,7 @@ pub fn store_rust_cov_cache_entry(
         &path,
         &tmp_path,
         |file| {
-            serde_json::to_writer(&mut *file, &stable).map_err(io::Error::other)?;
+            serde_json::to_writer(&mut *file, entry).map_err(io::Error::other)?;
             file.write_all(b"\n")?;
             Ok(())
         },

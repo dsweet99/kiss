@@ -146,6 +146,12 @@ pub(super) const PY_RULE_SPECS: &[RuleSpec] = &[
         description: "test_coverage_threshold is the minimum percent of syntactically coverable source lines covered by cached rslip runtime coverage. Enforcement is per file or codebase-wide according to `test_coverage_scope` (default `codebase`). `kiss cov` uses a current cache and refreshes missing or stale Python coverage before enforcing it.",
     },
     RuleSpec {
+        metric: "max_unit_test_seconds",
+        op: "<",
+        threshold: ThresholdValue::F64(|_, g| g.max_unit_test_seconds),
+        description: "max_unit_test_seconds is the maximum wall-clock duration in seconds for each current-population unit test enforced by `kiss cov` (stats reports the same timings in integer milliseconds). A test at or above the threshold fails; 0 disables the time gate. Default 2.0 (under 2s per VISION.md).",
+    },
+    RuleSpec {
         metric: "min_similarity",
         op: ">=",
         threshold: ThresholdValue::F64(|_, g| g.min_similarity),

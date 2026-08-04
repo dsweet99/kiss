@@ -16,20 +16,27 @@ pub struct IncrementalPublishPlan<'a> {
     pub test_binaries: &'a [RustTestBinaryIdentity],
 }
 
-pub fn publish_incremental_derived_state(
+/// Re-store prior-generation selector entries under the current identity.
+///
+/// Preserves measured `duration` (and coverage bindings) while updating
+/// `generation_fingerprint` and the entry fingerprint path so current-population
+/// timing loads remain complete after CheckAggregate / SelectorEntries repair.
+pub fn rekey_selector_entries_to_identity(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
     current: &RustCoverageBatchIdentity,
-    plan: IncrementalPublishPlan<'_>,
-) -> Result<DerivedPublishCounters, RustLlvmCovError> {
-    for selector in plan.retained_selectors {
+    prior_generation: &str,
+    selectors: &[String],
+) -> Result<(), RustLlvmCovError> {
+    for selector in selectors {
         let mut entry =
-            load_generation_selector_entry(&req.cache_root, plan.prior_generation, selector)
-                .ok_or_else(|| {
+            load_generation_selector_entry(&req.cache_root, prior_generation, selector).ok_or_else(
+                || {
                     RustLlvmCovError::InvalidRequest(format!(
                         "missing retained Rust coverage entry for selector `{selector}`"
                     ))
-                })?;
+                },
+            )?;
         entry.generation_fingerprint = current.generation_fingerprint.clone();
         let fingerprint = crate::plan::batch_fingerprint::entry_fingerprint(
             &current.input_digest,
@@ -40,6 +47,22 @@ pub fn publish_incremental_derived_state(
         store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &entry)
             .map_err(RustLlvmCovError::Io)?;
     }
+    Ok(())
+}
+
+pub fn publish_incremental_derived_state(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    current: &RustCoverageBatchIdentity,
+    plan: IncrementalPublishPlan<'_>,
+) -> Result<DerivedPublishCounters, RustLlvmCovError> {
+    rekey_selector_entries_to_identity(
+        req,
+        tools,
+        current,
+        plan.prior_generation,
+        plan.retained_selectors,
+    )?;
     validate_successor_entries(
         &req.cache_root,
         &current.generation_fingerprint,

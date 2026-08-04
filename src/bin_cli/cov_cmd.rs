@@ -8,6 +8,10 @@ use crate::test_runner::check_line_coverage::{
     RequiredCoverageLanguages, ensure_check_runtime_coverage, load_check_runtime_coverage,
     repository_root_for_universe,
 };
+use crate::test_runner::unit_test_timing::{
+    RuntimeGateEval, TimingCollectOpts, TimingLangInclude, collect_current_unit_test_timings,
+    evaluate_runtime_gate, runtime_gate_failure_lines,
+};
 use kiss::Language;
 use kiss::cli_output::{print_final_status, print_no_files_message, print_violations};
 use std::path::{Path, PathBuf};
@@ -46,32 +50,131 @@ fn load_or_refresh_snapshot(
     }
 }
 
-fn finish_with_coverage_violations(
-    records: &[analyze::line_coverage::LineCoverageRecord],
-    focus: &analyze::FocusFilter,
-    bypass_gate: bool,
-) -> i32 {
-    let viols = analyze::collect_line_coverage_viols(records, focus, bypass_gate);
-    print_violations(&viols);
-    let has_violations = !viols.is_empty();
-    print_final_status(has_violations);
-    i32::from(has_violations)
+struct SiblingGateResult {
+    coverage_failed: bool,
+    time_failed: bool,
 }
 
-fn evaluate_records(
+fn finish_sibling_gates(result: SiblingGateResult) -> i32 {
+    let failed = result.coverage_failed || result.time_failed;
+    print_final_status(failed);
+    i32::from(failed)
+}
+
+fn evaluate_time_gate_for_cov(
+    args: &CovCommandArgs<'_>,
+    universe_root: &Path,
+    files: &CovFileSets,
+    ignore: &[String],
+) -> RuntimeGateEval {
+    let max_secs = args.gate_config.max_unit_test_seconds;
+    if max_secs == 0.0 {
+        return RuntimeGateEval::Disabled;
+    }
+    let timings = collect_current_unit_test_timings(TimingCollectOpts {
+        universe: universe_root,
+        lang_filter: args.lang_filter,
+        include: TimingLangInclude {
+            python: !files.py_files.is_empty(),
+            rust: !files.rs_files.is_empty(),
+        },
+        ignore,
+    });
+    evaluate_runtime_gate(&timings, max_secs)
+}
+
+fn apply_time_gate_eval(eval: &RuntimeGateEval, max_secs: f64) -> bool {
+    match eval {
+        RuntimeGateEval::Disabled | RuntimeGateEval::Passed => false,
+        RuntimeGateEval::Failed(viols) => {
+            for line in runtime_gate_failure_lines(viols, max_secs) {
+                println!("{line}");
+            }
+            true
+        }
+        RuntimeGateEval::Incomplete => {
+            eprintln!(
+                "error: kiss cov: unit-test timing cache is incomplete for the current population"
+            );
+            true
+        }
+    }
+}
+
+fn evaluate_coverage_gate(
     records: &[analyze::line_coverage::LineCoverageRecord],
     focus: &analyze::FocusFilter,
     threshold: usize,
     scope: kiss::TestCoverageScope,
     bypass_gate: bool,
-) -> i32 {
+) -> bool {
     if !bypass_gate
         && threshold > 0
         && let Some(result) = analyze::evaluate_line_gate(records, focus, threshold, scope)
     {
-        return i32::from(!result.success);
+        return !result.success;
     }
-    finish_with_coverage_violations(records, focus, bypass_gate)
+    let viols = analyze::collect_line_coverage_viols(records, focus, bypass_gate);
+    print_violations(&viols);
+    !viols.is_empty()
+}
+
+struct RecordsEvalCtx<'a> {
+    focus: &'a analyze::FocusFilter,
+    threshold: usize,
+    scope: kiss::TestCoverageScope,
+    args: &'a CovCommandArgs<'a>,
+    universe_root: &'a Path,
+    files: &'a CovFileSets,
+    ignore: &'a [String],
+}
+
+fn evaluate_records_with_time(
+    records: &[analyze::line_coverage::LineCoverageRecord],
+    ctx: &RecordsEvalCtx<'_>,
+) -> i32 {
+    let coverage_failed = evaluate_coverage_gate(
+        records,
+        ctx.focus,
+        ctx.threshold,
+        ctx.scope,
+        ctx.args.bypass_gate,
+    );
+    let time_eval =
+        evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
+    let time_failed =
+        apply_time_gate_eval(&time_eval, ctx.args.gate_config.max_unit_test_seconds);
+    finish_sibling_gates(SiblingGateResult {
+        coverage_failed,
+        time_failed,
+    })
+}
+
+/// Like [`evaluate_records_with_time`], but returns `None` when the time gate needs a
+/// cold population refresh (incomplete durable timings) so the caller can fall through.
+fn try_evaluate_records_with_time(
+    records: &[analyze::line_coverage::LineCoverageRecord],
+    ctx: &RecordsEvalCtx<'_>,
+) -> Option<i32> {
+    let time_eval =
+        evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
+    if matches!(time_eval, RuntimeGateEval::Incomplete) {
+        // Schema bump / stale entries: force cold path so kiss cov can refresh once.
+        return None;
+    }
+    let coverage_failed = evaluate_coverage_gate(
+        records,
+        ctx.focus,
+        ctx.threshold,
+        ctx.scope,
+        ctx.args.bypass_gate,
+    );
+    let time_failed =
+        apply_time_gate_eval(&time_eval, ctx.args.gate_config.max_unit_test_seconds);
+    Some(finish_sibling_gates(SiblingGateResult {
+        coverage_failed,
+        time_failed,
+    }))
 }
 
 struct CovFileSets {
@@ -153,9 +256,27 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
         );
     }
     let threshold = args.gate_config.test_coverage_threshold;
-    if threshold == 0 && !args.bypass_gate {
+    let max_secs = args.gate_config.max_unit_test_seconds;
+    if threshold == 0 && max_secs == 0.0 && !args.bypass_gate {
         print_final_status(false);
         return 0;
+    }
+    // Time-only: skip line-coverage record computation when coverage gate and --all
+    // do not need records.
+    if threshold == 0 && !args.bypass_gate {
+        let repo_root = repository_root_for_universe(universe_root);
+        let required = RequiredCoverageLanguages {
+            python: !files.py_files.is_empty(),
+            rust: !files.rs_files.is_empty(),
+        };
+        // Ensure populations are current so schema bumps can refresh durations once.
+        let _ = load_or_refresh_snapshot(&repo_root, required, &ignore, args.jobs);
+        let time_eval = evaluate_time_gate_for_cov(args, universe_root, &files, &ignore);
+        let time_failed = apply_time_gate_eval(&time_eval, max_secs);
+        return finish_sibling_gates(SiblingGateResult {
+            coverage_failed: false,
+            time_failed,
+        });
     }
     evaluate_gathered_cov(EvaluateGatheredCov {
         args,
@@ -197,7 +318,16 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
     };
     let focus = build_focus_filter(p.focus_paths, p.universe, p.args.lang_filter, p.ignore);
     let t0 = Instant::now();
-    if let Some(code) = try_cov_records_fast_path(&cache_key, &focus, p.threshold, scope, p.args) {
+    let eval_ctx = RecordsEvalCtx {
+        focus: &focus,
+        threshold: p.threshold,
+        scope,
+        args: p.args,
+        universe_root: p.universe_root,
+        files: p.files,
+        ignore: p.ignore,
+    };
+    if let Some(code) = try_cov_records_fast_path(&cache_key, &eval_ctx, t0) {
         return code;
     }
     let snapshot = match load_or_refresh_snapshot(&repo_root, required, p.ignore, p.args.jobs) {
@@ -206,96 +336,25 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
     };
     let records =
         compute_and_store_records(&cache_key, &repo_root, p.files, &snapshot, p.args.timing, t0);
-    evaluate_records(&records, &focus, p.threshold, scope, p.args.bypass_gate)
+    evaluate_records_with_time(&records, &eval_ctx)
 }
 
 /// Hit `cov_records_cache` when present under `./.kiss`.
 fn try_cov_records_fast_path(
     cache_key: &CovRecordsCacheKey<'_>,
-    focus: &analyze::FocusFilter,
-    threshold: usize,
-    scope: kiss::TestCoverageScope,
-    args: &CovCommandArgs<'_>,
-) -> Option<i32> {
-    let t0 = Instant::now();
-    let records = try_load_cov_records(cache_key)?;
-    Some(finish_records_cache_hit(
-        &records, focus, threshold, scope, args, t0,
-    ))
-}
-
-fn finish_records_cache_hit(
-    records: &[analyze::line_coverage::LineCoverageRecord],
-    focus: &analyze::FocusFilter,
-    threshold: usize,
-    scope: kiss::TestCoverageScope,
-    args: &CovCommandArgs<'_>,
+    ctx: &RecordsEvalCtx<'_>,
     t0: Instant,
-) -> i32 {
-    if args.timing {
+) -> Option<i32> {
+    let records = try_load_cov_records(cache_key)?;
+    if ctx.args.timing {
         eprintln!(
             "TIMING:coverage_records_cache_hit_ms:{}",
             t0.elapsed().as_millis()
         );
     }
-    evaluate_records(records, focus, threshold, scope, args.bypass_gate)
+    try_evaluate_records_with_time(&records, ctx)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::analyze::FocusFilter;
-    use kiss::{Config, GateConfig, TestCoverageScope};
-
-    #[test]
-    fn finish_records_cache_hit_emits_timing_and_evaluates() {
-        let py = Config::python_defaults();
-        let rs = Config::rust_defaults();
-        let gate = GateConfig::default();
-        let args = CovCommandArgs {
-            paths: &[],
-            lang_filter: None,
-            py_config: &py,
-            rs_config: &rs,
-            gate_config: &gate,
-            bypass_gate: true,
-            ignore: &[],
-            timing: true,
-            jobs: 1,
-        };
-        let code = finish_records_cache_hit(
-            &[],
-            &FocusFilter::unrestricted(),
-            75,
-            TestCoverageScope::ByFile,
-            &args,
-            Instant::now(),
-        );
-        assert_eq!(code, 0);
-    }
-
-    #[test]
-    fn evaluate_records_rejects_when_gate_fails() {
-        let records = [analyze::line_coverage::LineCoverageRecord {
-            file: PathBuf::from("src/low.rs"),
-            total_lines: 100,
-            covered_lines: 10,
-            percent: 10,
-            first_uncovered_line: Some(1),
-        }];
-        let code = evaluate_records(
-            &records,
-            &FocusFilter::unrestricted(),
-            75,
-            TestCoverageScope::ByFile,
-            false,
-        );
-        assert_eq!(code, 1);
-    }
-
-    #[test]
-    fn gather_cov_files_none_when_empty_dir() {
-        let tmp = tempfile::tempdir().unwrap();
-        assert!(gather_cov_files(tmp.path(), None, &[]).is_none());
-    }
-}
+#[path = "cov_cmd_test.rs"]
+mod tests;

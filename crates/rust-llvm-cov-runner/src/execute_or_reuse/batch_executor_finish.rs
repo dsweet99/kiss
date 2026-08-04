@@ -261,6 +261,28 @@ pub(crate) fn finish_fresh_check_aggregate_after_export(
             test_binaries: Vec::new(),
         });
     }
+    if let Some(repair) = &finish.repair_publication {
+        let fresh: BTreeSet<_> = completed.iter().map(|o| o.selector.clone()).collect();
+        let retained: Vec<String> = aggregate_selectors
+            .iter()
+            .filter(|selector| !fresh.contains(*selector))
+            .cloned()
+            .collect();
+        if let Err(store_err) = crate::rekey_selector_entries_to_identity(
+            req,
+            tools,
+            identity,
+            &repair.prior_generation,
+            &retained,
+        ) {
+            return Ok(RustCoverageBatchResult {
+                completed,
+                batch_error: Some(store_err),
+                counters,
+                test_binaries: Vec::new(),
+            });
+        }
+    }
     let aggregate = build_check_aggregate(
         req,
         identity,

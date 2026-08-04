@@ -169,6 +169,7 @@ fn try_load_from_content_accepts_all_gate_fields() {
 [gate]
 test_coverage_threshold = 91
 test_coverage_scope = \"codebase\"
+max_unit_test_seconds = 1.5
 min_similarity = 0.75
 duplication_enabled = false
 orphan_module_enabled = false
@@ -178,9 +179,49 @@ orphan_module_enabled = false
 
     assert_eq!(gate.test_coverage_threshold, 91);
     assert_eq!(gate.test_coverage_scope, TestCoverageScope::Codebase);
+    assert!((gate.max_unit_test_seconds - 1.5).abs() < f64::EPSILON);
     assert!((gate.min_similarity - 0.75).abs() < f64::EPSILON);
     assert!(!gate.duplication_enabled);
     assert!(!gate.orphan_module_enabled);
+}
+
+#[test]
+fn default_max_unit_test_seconds_is_two() {
+    assert!((GateConfig::default().max_unit_test_seconds - 2.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn try_load_rejects_negative_and_nonfinite_max_unit_test_seconds() {
+    for raw in ["-1", "nan", "inf", "-inf"] {
+        let err = GateConfig::try_load_from_content(&format!(
+            "[gate]\nmax_unit_test_seconds = {raw}"
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ConfigError::InvalidValue { ref key, .. } if key == "max_unit_test_seconds"
+            ),
+            "raw={raw} err={err:?}"
+        );
+    }
+}
+
+#[test]
+fn merge_keeps_prior_max_unit_test_seconds_on_invalid() {
+    let mut gate = GateConfig {
+        max_unit_test_seconds: 1.25,
+        ..GateConfig::default()
+    };
+    gate.merge_from_toml("[gate]\nmax_unit_test_seconds = -3");
+    assert!((gate.max_unit_test_seconds - 1.25).abs() < f64::EPSILON);
+}
+
+#[test]
+fn max_unit_test_seconds_zero_disables() {
+    let gate =
+        GateConfig::try_load_from_content("[gate]\nmax_unit_test_seconds = 0").unwrap();
+    assert_eq!(gate.max_unit_test_seconds, 0.0);
 }
 
 #[test]

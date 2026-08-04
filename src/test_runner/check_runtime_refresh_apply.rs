@@ -11,12 +11,21 @@ pub(crate) fn apply_identity_only_repair(
     ignore: &[String],
     build: &crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild,
     selectors: &[String],
+    prior_generation: &str,
     retained_binary_line_maps: std::collections::BTreeMap<
         String,
         rust_llvm_cov_runner::RustLineCoverage,
     >,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
-    apply_identity_only_repair_labeled(repo_root, ignore, build, selectors, retained_binary_line_maps, "kiss cov")
+    apply_identity_only_repair_labeled(
+        repo_root,
+        ignore,
+        build,
+        selectors,
+        prior_generation,
+        retained_binary_line_maps,
+        "kiss cov",
+    )
 }
 
 pub(crate) fn apply_identity_only_repair_labeled(
@@ -24,12 +33,21 @@ pub(crate) fn apply_identity_only_repair_labeled(
     ignore: &[String],
     build: &crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild,
     selectors: &[String],
+    prior_generation: &str,
     retained_binary_line_maps: std::collections::BTreeMap<
         String,
         rust_llvm_cov_runner::RustLineCoverage,
     >,
     caller_label: &str,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
+    rust_llvm_cov_runner::rekey_selector_entries_to_identity(
+        &build.request,
+        &build.tools,
+        &build.identity,
+        prior_generation,
+        selectors,
+    )
+    .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
     let aggregate = rust_llvm_cov_runner::build_check_aggregate(
         &build.request,
         &build.identity,
@@ -98,53 +116,54 @@ pub(crate) fn finalize_population_summary_labeled(
 
 #[cfg(test)]
 pub(crate) fn apply_rerun_repair(
-    repo_root: &Path,
-    ignore: &[String],
-    build: &crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild,
-    rerun_selectors: Vec<String>,
-    replacement_binary_ids: std::collections::BTreeSet<String>,
-    retained_binary_line_maps: std::collections::BTreeMap<
-        String,
-        rust_llvm_cov_runner::RustLineCoverage,
-    >,
-    jobs: usize,
+    args: RerunRepairArgs<'_>,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
-    apply_rerun_repair_labeled(repo_root, ignore, build, rerun_selectors, replacement_binary_ids, retained_binary_line_maps, jobs, "kiss cov")
+    apply_rerun_repair_labeled(args)
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(crate) struct RerunRepairArgs<'a> {
+    pub(crate) repo_root: &'a Path,
+    pub(crate) ignore: &'a [String],
+    pub(crate) build: &'a crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild,
+    pub(crate) prior_generation: &'a str,
+    pub(crate) rerun_selectors: Vec<String>,
+    pub(crate) replacement_binary_ids: std::collections::BTreeSet<String>,
+    pub(crate) retained_binary_line_maps:
+        std::collections::BTreeMap<String, rust_llvm_cov_runner::RustLineCoverage>,
+    pub(crate) jobs: usize,
+    pub(crate) caller_label: &'a str,
+}
+
 pub(crate) fn apply_rerun_repair_labeled(
-    repo_root: &Path,
-    ignore: &[String],
-    build: &crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild,
-    rerun_selectors: Vec<String>,
-    replacement_binary_ids: std::collections::BTreeSet<String>,
-    retained_binary_line_maps: std::collections::BTreeMap<
-        String,
-        rust_llvm_cov_runner::RustLineCoverage,
-    >,
-    jobs: usize,
-    caller_label: &str,
+    args: RerunRepairArgs<'_>,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     eprintln!(
-        "{caller_label}: incrementally refreshing Rust runtime coverage ({} tests, {} replacement binaries)",
-        rerun_selectors.len(),
-        replacement_binary_ids.len()
+        "{}: incrementally refreshing Rust runtime coverage ({} tests, {} replacement binaries)",
+        args.caller_label,
+        args.rerun_selectors.len(),
+        args.replacement_binary_ids.len()
     );
     let _refresh_env = ScopedRefreshEnvGuard::set();
     let repair_publication = rust_llvm_cov_runner::CheckAggregateRepairPublication {
-        selector_binary_ids: build.index.selector_binary_ids.clone(),
-        test_binaries: build.index.test_binaries.clone(),
-        retained_binary_line_maps,
+        prior_generation: args.prior_generation.to_string(),
+        selector_binary_ids: args.build.index.selector_binary_ids.clone(),
+        test_binaries: args.build.index.test_binaries.clone(),
+        retained_binary_line_maps: args.retained_binary_line_maps,
     };
     let summary = crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_check_aggregate_selectors(
-        repo_root,
-        &rerun_selectors,
+        args.repo_root,
+        &args.rerun_selectors,
         &[],
-        jobs,
-        Some(replacement_binary_ids),
+        args.jobs,
+        Some(args.replacement_binary_ids),
         Some(repair_publication),
     )
     .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
-    finalize_population_summary_labeled(repo_root, ignore, &summary, false, caller_label)
+    finalize_population_summary_labeled(
+        args.repo_root,
+        args.ignore,
+        &summary,
+        false,
+        args.caller_label,
+    )
 }

@@ -66,7 +66,7 @@ pub(crate) fn current_rust_runner_map_fingerprint(
     Ok(req.runner_map_fingerprint)
 }
 
-fn resolved_rust_batch_request_parts(
+pub(crate) fn resolved_rust_batch_request_parts(
     repo_root: &Path,
     test_args: &[String],
 ) -> Result<(RustCoverageBatchRequest, RustCoverageToolIdentity), String> {

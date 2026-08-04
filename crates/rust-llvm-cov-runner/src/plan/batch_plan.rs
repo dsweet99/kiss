@@ -4,23 +4,11 @@ use std::path::PathBuf;
 use crate::plan::batch_plan_env::ensure_coverage_link_build_id;
 use crate::plan::batch_plan_nextest_config::build_nextest_config_toml;
 use crate::plan::batch_plan_test_args::validate_supported_rust_test_args;
-use crate::{RustLineCoverage, RustTestBinaryIdentity};
+use crate::RustTestBinaryIdentity;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CoverageOutputMode {
-    SelectorEntries,
-    CheckAggregate {
-        publication_binary_ids: Option<BTreeSet<String>>,
-        repair_publication: Option<CheckAggregateRepairPublication>,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CheckAggregateRepairPublication {
-    pub selector_binary_ids: BTreeMap<String, Vec<String>>,
-    pub test_binaries: Vec<RustTestBinaryIdentity>,
-    pub retained_binary_line_maps: BTreeMap<String, RustLineCoverage>,
-}
+pub use crate::plan::batch_plan_coverage_mode::{
+    CheckAggregateRepairPublication, CoverageOutputMode,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RustCoverageBatchRequest {

@@ -140,12 +140,14 @@ pub use batch_reverse_query_metrics::ReverseUnavailableReason;
 #[cfg(test)]
 pub use batch_reverse_query::reset_reverse_query_counters_for_test;
 pub use batch_derived_entries::{RustReusableSelectorEntry, load_reusable_prior_selector_entries};
-pub use batch_derived_incremental::{IncrementalPublishPlan, publish_incremental_derived_state};
+pub use batch_derived_incremental::{
+    IncrementalPublishPlan, publish_incremental_derived_state, rekey_selector_entries_to_identity,
+};
 pub use batch_derived_index::{
     RustGenerationCoverageSnapshot, RustPopulationState, RustSnapshotDelta,
     is_check_aggregate_population, load_current_generation_coverage_snapshot,
-    load_current_generation_line_index, load_current_population_state,
-    load_reusable_prior_population_state, reusable_snapshot_delta,
+    load_current_generation_line_index, load_current_population_durations,
+    load_current_population_state, load_reusable_prior_population_state, reusable_snapshot_delta,
 };
 pub use batch_events::{
     BatchCompilerArtifact, BatchEventStream, BatchTestTerminal, aggregate_selectors_for_test,
@@ -194,7 +196,7 @@ pub use shared_input::{
 };
 pub use worker::rust_cov_cache_tmp_parent;
 
-pub const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v3";
+pub const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v4";
 pub const BATCH_EXECUTION_POLICY_VERSION: &str = "rust-batch-execution-v1";
 
 pub use llvm_cov_json::RustLineCoverage;

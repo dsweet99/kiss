@@ -128,6 +128,12 @@ pub(super) const RS_RULE_SPECS: &[RuleSpec] = &[
         description: "test_coverage_threshold is the minimum percent of syntactically coverable source lines covered by cached llvm-cov runtime coverage. Enforcement is per file or codebase-wide according to `test_coverage_scope` (default `codebase`). `kiss cov` uses a current cache; when Rust coverage is stale, it reuses selector coverage only when the compiled test executable digest is unchanged, reruns invalidated selectors, and falls back to a full Rust test-population refresh whenever reuse cannot be proven safe.",
     },
     RuleSpec {
+        metric: "max_unit_test_seconds",
+        op: "<",
+        threshold: ThresholdValue::F64(|_, g| g.max_unit_test_seconds),
+        description: "max_unit_test_seconds is the maximum wall-clock duration in seconds for each current-population unit test enforced by `kiss cov` (stats reports the same timings in integer milliseconds). A test at or above the threshold fails; 0 disables the time gate. Default 2.0 (under 2s per VISION.md).",
+    },
+    RuleSpec {
         metric: "min_similarity",
         op: ">=",
         threshold: ThresholdValue::F64(|_, g| g.min_similarity),

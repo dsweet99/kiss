@@ -61,6 +61,8 @@ pub mod gate {
     pub const TEST_COVERAGE_SCOPE: &str = "codebase";
     /// TOML literal including quotes, for `default_config_toml` emission.
     pub const TEST_COVERAGE_SCOPE_TOML: &str = "\"codebase\"";
+    /// Max wall seconds per unit test (`kiss cov`); `0` disables. VISION: under 2s.
+    pub const MAX_UNIT_TEST_SECONDS: f64 = 2.0;
 }
 
 pub fn default_config_toml() -> String {
@@ -70,6 +72,7 @@ pub fn default_config_toml() -> String {
 [gate]
 test_coverage_threshold = {gate_coverage}
 test_coverage_scope = {gate_scope}
+max_unit_test_seconds = {max_unit_test_seconds}
 min_similarity = {min_sim}
 duplication_enabled = true
 orphan_module_enabled = true
@@ -122,6 +125,7 @@ dependency_depth = {rs_dep_depth}
 ",
         gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
         gate_scope = gate::TEST_COVERAGE_SCOPE_TOML,
+        max_unit_test_seconds = gate::MAX_UNIT_TEST_SECONDS,
         min_sim = duplication::MIN_SIMILARITY,
         py_statements = python::STATEMENTS_PER_FUNCTION,
         py_pos_args = python::POSITIONAL_ARGS,

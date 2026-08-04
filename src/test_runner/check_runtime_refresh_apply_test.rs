@@ -118,7 +118,7 @@ fn try_repair_rust_check_aggregate_returns_none_or_discovery_error_on_empty_repo
     }
 }
 
-fn bare_crate_with_lib(tmp: &tempfile::TempDir) {
+pub(super) fn bare_crate_with_lib(tmp: &tempfile::TempDir) {
     std::fs::write(
         tmp.path().join("Cargo.toml"),
         "[package]\nname=\"t\"\nversion=\"0.0.0\"\nedition=\"2021\"\n",
@@ -139,7 +139,7 @@ fn bare_crate_with_lib(tmp: &tempfile::TempDir) {
     .unwrap();
 }
 
-fn inject_synthetic_binary_into_index(
+pub(super) fn inject_synthetic_binary_into_index(
     build: &mut crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild,
     selector: &str,
     binary_id: &str,
@@ -159,6 +159,41 @@ fn inject_synthetic_binary_into_index(
             "src/lib.rs".to_string(),
             std::collections::BTreeSet::from([1]),
         )]),
+    }
+}
+
+pub(super) fn seed_prior_selector_entries(
+    build: &crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild,
+    prior_generation: &str,
+    selectors: &[String],
+    binary_id: &str,
+) {
+    std::fs::create_dir_all(build.request.cache_root.join("entries")).unwrap();
+    for (i, selector) in selectors.iter().enumerate() {
+        let outcome = rust_llvm_cov_runner::RustLlvmCovOutcome {
+            selector: selector.clone(),
+            status: rpytest_runner::TestStatus::Passed,
+            exit_code: Some(0),
+            duration: std::time::Duration::from_millis(3),
+            coverage: rust_llvm_cov_runner::RustLineCoverage {
+                files: std::collections::BTreeMap::from([(
+                    "src/lib.rs".to_string(),
+                    std::collections::BTreeSet::from([1]),
+                )]),
+            },
+            test_binary_ids: vec![binary_id.to_string()],
+            cache_status: rust_llvm_cov_runner::RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        };
+        let entry =
+            rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(&outcome, prior_generation);
+        rust_llvm_cov_runner::store_rust_cov_cache_entry(
+            &build.request.cache_root,
+            &format!("prior-seed-{i:04}"),
+            &entry,
+        )
+        .unwrap();
     }
 }
 
@@ -190,8 +225,17 @@ fn apply_identity_only_repair_publishes_when_maps_match_injected_index() {
             .or_insert_with(|| vec!["bin-a".to_string()]);
     }
     let retained = std::collections::BTreeMap::from([("bin-a".to_string(), line_map)]);
-    let stats = super::apply_identity_only_repair(tmp.path(), &[], &build, &selectors, retained)
-        .expect("identity-only repair should publish a valid aggregate");
+    let prior_generation = "prior-generation";
+    seed_prior_selector_entries(&build, prior_generation, &selectors, "bin-a");
+    let stats = super::apply_identity_only_repair(
+        tmp.path(),
+        &[],
+        &build,
+        &selectors,
+        prior_generation,
+        retained,
+    )
+    .expect("identity-only repair should publish a valid aggregate");
     assert!(stats.rust_identity_only_repair);
     assert_eq!(stats.rust_aggregate_binaries, 1);
 }
@@ -246,11 +290,14 @@ fn finalize_population_summary_accepts_zero_exit_after_identity_publish() {
             .entry(selector.clone())
             .or_insert_with(|| vec!["bin-a".to_string()]);
     }
+    let prior_generation = "prior-generation";
+    seed_prior_selector_entries(&build, prior_generation, &selectors, "bin-a");
     super::apply_identity_only_repair(
         tmp.path(),
         &[],
         &build,
         &selectors,
+        prior_generation,
         std::collections::BTreeMap::from([("bin-a".to_string(), line_map)]),
     )
     .expect("publish");
@@ -283,121 +330,3 @@ fn finalize_population_summary_full_refresh_flag_is_metamorphic() {
     assert_eq!(a.to_string(), b.to_string());
 }
 
-#[test]
-fn apply_identity_only_repair_on_bare_index_reports_structured_failure() {
-    let tmp = tempfile::tempdir().unwrap();
-    bare_crate_with_lib(&tmp);
-    let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
-        tmp.path(),
-        &["missing_case".into()],
-        &[],
-        1,
-    )
-    .expect("bare crate can build an executable index");
-    let err = super::apply_identity_only_repair(
-        tmp.path(),
-        &[],
-        &build,
-        &["missing_case".into()],
-        std::collections::BTreeMap::new(),
-    )
-    .expect_err("identity-only repair should fail without a reusable aggregate");
-    let rendered = err.to_string();
-    assert!(
-        rendered.contains("runtime line coverage") || rendered.contains("publication"),
-        "{rendered}"
-    );
-}
-
-#[test]
-fn apply_rerun_repair_on_bare_index_reports_publication_or_execution_failure() {
-    let tmp = tempfile::tempdir().unwrap();
-    bare_crate_with_lib(&tmp);
-    let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
-        tmp.path(),
-        &["missing_case".into()],
-        &[],
-        1,
-    )
-    .expect("bare crate can build an executable index");
-    let err = super::apply_rerun_repair(
-        tmp.path(),
-        &[],
-        &build,
-        vec!["missing_case".into()],
-        std::collections::BTreeSet::from(["bin".into()]),
-        std::collections::BTreeMap::new(),
-        1,
-    )
-    .expect_err("rerun repair should fail on a bare crate");
-    let rendered = err.to_string();
-    assert!(
-        rendered.contains("runtime line coverage")
-            || rendered.contains("publication")
-            || rendered.contains("failed"),
-        "{rendered}"
-    );
-}
-
-#[test]
-fn apply_repair_helpers_are_metamorphic_on_error_language_tag() {
-    let tmp = tempfile::tempdir().unwrap();
-    bare_crate_with_lib(&tmp);
-    let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
-        tmp.path(),
-        &["missing_case".into()],
-        &[],
-        1,
-    )
-    .expect("index");
-    let identity_err = super::apply_identity_only_repair(
-        tmp.path(),
-        &[],
-        &build,
-        &["missing_case".into()],
-        std::collections::BTreeMap::new(),
-    )
-    .unwrap_err()
-    .to_string();
-    let rerun_err = super::apply_rerun_repair(
-        tmp.path(),
-        &[],
-        &build,
-        vec!["missing_case".into()],
-        std::collections::BTreeSet::from(["bin".into()]),
-        std::collections::BTreeMap::new(),
-        1,
-    )
-    .unwrap_err()
-    .to_string();
-    assert!(
-        identity_err.contains("Rust") && rerun_err.contains("Rust"),
-        "identity={identity_err} rerun={rerun_err}"
-    );
-}
-
-#[test]
-fn successful_ensure_does_not_create_xdg_kiss_cov_durable() {
-    let tmp = tempfile::tempdir().unwrap();
-    let cache_home = tmp.path().join("xdg-cache");
-    std::fs::create_dir_all(&cache_home).unwrap();
-    let _xdg = crate::test_runner::TestEnvVarGuard::set(
-        "XDG_CACHE_HOME",
-        cache_home.to_str().unwrap(),
-    );
-    let repo_tmp = tempfile::tempdir().unwrap();
-    let app = crate::test_runner::test_mode_fixtures::warm_python_covering_demo(&repo_tmp);
-    assert!(app.is_file());
-    let repo = repo_tmp.path();
-    let required = crate::test_runner::check_line_coverage::RequiredCoverageLanguages {
-        python: true,
-        rust: false,
-    };
-    super::ensure_check_runtime_coverage(repo, required, &[], 1).expect("warm ensure");
-    assert!(
-        !cache_home.join("kiss").join("kiss-cov-durable").exists(),
-        "successful ensure must not publish $XDG_CACHE_HOME/kiss/kiss-cov-durable"
-    );
-    crate::test_runner::check_line_coverage::load_check_runtime_coverage(repo, required, &[])
-        .expect("coverage must remain loadable from ./.kiss");
-}

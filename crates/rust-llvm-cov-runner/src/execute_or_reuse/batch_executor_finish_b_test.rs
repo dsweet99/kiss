@@ -107,6 +107,7 @@ fn finish_fresh_check_aggregate_merges_repair_publication_line_maps() {
     let exported = BTreeMap::from([("/tmp/bin-new".to_string(), exported_cov)]);
     let mut finish = finish_context();
     finish.repair_publication = Some(crate::plan::batch_plan::CheckAggregateRepairPublication {
+        prior_generation: "prior-generation".to_string(),
         selector_binary_ids: BTreeMap::from([(
             "alpha".to_string(),
             vec!["/tmp/bin-new".to_string()],

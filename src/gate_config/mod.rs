@@ -39,6 +39,7 @@ impl fmt::Display for TestCoverageScope {
 const GATE_KEYS: &[&str] = &[
     "test_coverage_threshold",
     "test_coverage_scope",
+    "max_unit_test_seconds",
     "min_similarity",
     "duplication_enabled",
     "orphan_module_enabled",
@@ -48,6 +49,7 @@ const GATE_KEYS: &[&str] = &[
 pub struct GateConfig {
     pub test_coverage_threshold: usize,
     pub test_coverage_scope: TestCoverageScope,
+    pub max_unit_test_seconds: f64,
     pub min_similarity: f64,
     pub duplication_enabled: bool,
     pub orphan_module_enabled: bool,
@@ -58,6 +60,7 @@ impl Default for GateConfig {
         Self {
             test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD,
             test_coverage_scope: TestCoverageScope::Codebase,
+            max_unit_test_seconds: defaults::gate::MAX_UNIT_TEST_SECONDS,
             min_similarity: defaults::duplication::MIN_SIMILARITY,
             duplication_enabled: true,
             orphan_module_enabled: true,
@@ -126,6 +129,7 @@ impl GateConfig {
             if let Err(msg) = merge_scope_lenient(gate, &mut self.test_coverage_scope) {
                 eprintln!("Error: {msg}");
             }
+            merge_max_unit_test_seconds_lenient(gate, &mut self.max_unit_test_seconds);
             if let Some(s) = get_f64(gate, "min_similarity") {
                 if !(0.0..=1.0).contains(&s) {
                     eprintln!("Error: min_similarity must be 0.0-1.0, got {s}");
@@ -163,6 +167,17 @@ impl GateConfig {
             if let Some(scope) = try_get_scope(gate)? {
                 self.test_coverage_scope = scope;
             }
+            if let Some(secs) = try_get_f64(gate, "max_unit_test_seconds")? {
+                if !is_valid_max_unit_test_seconds(secs) {
+                    return Err(ConfigError::InvalidValue {
+                        key: "max_unit_test_seconds".into(),
+                        message: format!(
+                            "must be a finite nonnegative number, got {secs}"
+                        ),
+                    });
+                }
+                self.max_unit_test_seconds = secs;
+            }
             if let Some(s) = try_get_f64(gate, "min_similarity")? {
                 if !(0.0..=1.0).contains(&s) {
                     return Err(ConfigError::InvalidValue {
@@ -179,6 +194,23 @@ impl GateConfig {
         }
         Ok(())
     }
+}
+
+fn is_valid_max_unit_test_seconds(secs: f64) -> bool {
+    secs.is_finite() && secs >= 0.0
+}
+
+fn merge_max_unit_test_seconds_lenient(gate: &toml::Table, current: &mut f64) {
+    let Some(secs) = get_f64(gate, "max_unit_test_seconds") else {
+        return;
+    };
+    if !is_valid_max_unit_test_seconds(secs) {
+        eprintln!(
+            "Error: max_unit_test_seconds must be a finite nonnegative number, got {secs}"
+        );
+        return;
+    }
+    *current = secs;
 }
 
 fn merge_scope_lenient(

@@ -5,8 +5,8 @@ use crate::analyze::focus::{FocusFilter, is_focus_file};
 use crate::analyze::line_coverage::{LineCoverageRecord, coverage_percentage};
 use kiss::TestCoverageScope;
 use kiss::cli_output::{
-    CodebaseCoverageGateFailureCtx, CoverageGateFailureCtx, print_codebase_coverage_gate_failure,
-    print_coverage_gate_failure,
+    CodebaseCoverageGateFailureCtx, CoverageGateFailureCtx, codebase_coverage_gate_failure_lines,
+    coverage_gate_failure_lines,
 };
 
 pub(crate) use kiss::cli_output::is_coverage_gate_file;
@@ -50,11 +50,13 @@ fn evaluate_by_file(
             )
         })
         .collect::<Vec<_>>();
-    print_coverage_gate_failure(&CoverageGateFailureCtx {
+    for line in coverage_gate_failure_lines(&CoverageGateFailureCtx {
         threshold,
         unreferenced: &unreferenced,
         file_pcts: &file_pcts,
-    });
+    }) {
+        println!("{line}");
+    }
     Some(crate::analyze::options::AnalyzeResult {
         success: false,
         metrics: None,
@@ -93,11 +95,13 @@ fn evaluate_codebase(
         })
         .collect();
     diagnostics.sort_by(|a, b| a.0.cmp(&b.0));
-    print_codebase_coverage_gate_failure(&CodebaseCoverageGateFailureCtx {
+    for line in codebase_coverage_gate_failure_lines(&CodebaseCoverageGateFailureCtx {
         percent,
         threshold,
         diagnostics: &diagnostics,
-    });
+    }) {
+        println!("{line}");
+    }
     Some(crate::analyze::options::AnalyzeResult {
         success: false,
         metrics: None,
