@@ -189,5 +189,45 @@ mod tests {
         assert_ne!(stable_name("demo"), stable_name("other"));
         assert_eq!(stable_name("demo").len(), 16);
     }
+
+    #[test]
+    fn filter_pool_inputs_errors_when_cached_ids_do_not_match_seeds() {
+        let tools = ExportTools {
+            llvm_profdata: PathBuf::from("llvm-profdata"),
+            llvm_cov: PathBuf::from("llvm-cov"),
+            llvm_readobj: PathBuf::from("llvm-readobj"),
+        };
+        let path = PathBuf::from("/tmp/pool-aaaa.profraw");
+        let mut seeds = BTreeSet::new();
+        seeds.insert("wanted-id".to_string());
+        let cache = Arc::new(Mutex::new(BTreeMap::from([(
+            path.clone(),
+            vec!["other-id".to_string()],
+        )])));
+        let err = filter_pool_inputs_for_seed_ids(&tools, &[path], &seeds, &cache).unwrap_err();
+        match err {
+            RustLlvmCovError::InvalidRequest(msg) => {
+                assert!(
+                    msg.contains("no pool profraw files matched seed binary id"),
+                    "{msg}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_profile_merge_inputs_errors_when_pool_has_no_matches() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pattern = tmp.path().join("pool-%32m.profraw");
+        std::fs::write(tmp.path().join("other-bbbb.profraw"), b"y").unwrap();
+        let err = resolve_profile_merge_inputs(&[pattern]).unwrap_err();
+        match err {
+            RustLlvmCovError::InvalidRequest(msg) => {
+                assert!(msg.contains("coverage profile pool produced no"), "{msg}");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
 }
 

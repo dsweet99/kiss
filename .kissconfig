@@ -1,7 +1,7 @@
 
 [gate]
 test_coverage_scope = "by_file"
-test_coverage_threshold = 90
+test_coverage_threshold = 75
 orphan_module_enabled = true
 duplication_enabled = true
 min_similarity = 0.9

@@ -114,3 +114,20 @@ fn resolve_missing_and_unresolved_targets_error() {
             .is_err()
     );
 }
+
+#[test]
+fn resolve_deduplicates_repeated_operands() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    let path = tmp.path().join("lib.rs");
+    fs::write(&path, "pub fn alpha() {}\n").unwrap();
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["lib.rs".into(), "lib.rs".into()],
+        Some(Language::Rust),
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(query.rust_files.len(), 1);
+}

@@ -240,3 +240,62 @@ fn finish_records_cache_hit(
     }
     evaluate_records(records, focus, threshold, scope, args.bypass_gate)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analyze::FocusFilter;
+    use kiss::{Config, GateConfig, TestCoverageScope};
+
+    #[test]
+    fn finish_records_cache_hit_emits_timing_and_evaluates() {
+        let py = Config::python_defaults();
+        let rs = Config::rust_defaults();
+        let gate = GateConfig::default();
+        let args = CovCommandArgs {
+            paths: &[],
+            lang_filter: None,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            bypass_gate: true,
+            ignore: &[],
+            timing: true,
+            jobs: 1,
+        };
+        let code = finish_records_cache_hit(
+            &[],
+            &FocusFilter::unrestricted(),
+            75,
+            TestCoverageScope::ByFile,
+            &args,
+            Instant::now(),
+        );
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn evaluate_records_rejects_when_gate_fails() {
+        let records = [analyze::line_coverage::LineCoverageRecord {
+            file: PathBuf::from("src/low.rs"),
+            total_lines: 100,
+            covered_lines: 10,
+            percent: 10,
+            first_uncovered_line: Some(1),
+        }];
+        let code = evaluate_records(
+            &records,
+            &FocusFilter::unrestricted(),
+            75,
+            TestCoverageScope::ByFile,
+            false,
+        );
+        assert_eq!(code, 1);
+    }
+
+    #[test]
+    fn gather_cov_files_none_when_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(gather_cov_files(tmp.path(), None, &[]).is_none());
+    }
+}

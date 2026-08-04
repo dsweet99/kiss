@@ -180,6 +180,29 @@ fn test_unknown_section_returns_error() {
 }
 
 #[test]
+fn load_and_load_for_language_with_override_apply_toml() {
+    let loaded = Config::load();
+    assert!(loaded.statements_per_function > 0);
+
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[python]\nstatements_per_function = 61\n").unwrap();
+    let overridden =
+        Config::load_for_language_with_override(tmp.path(), ConfigLanguage::Python);
+    assert_eq!(overridden.statements_per_function, 61);
+
+    let missing = tempfile::NamedTempFile::new().unwrap();
+    std::fs::remove_file(missing.path()).unwrap();
+    // Missing override keeps whatever load_for_language produced (cwd .kissconfig may apply).
+    let fallback =
+        Config::load_for_language_with_override(missing.path(), ConfigLanguage::Python);
+    let baseline = Config::load_for_language(ConfigLanguage::Python);
+    assert_eq!(
+        fallback.statements_per_function,
+        baseline.statements_per_function
+    );
+}
+
+#[test]
 fn test_load_from_for_language_and_try_load_from() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(tmp.path(), "[python]\nstatements_per_function = 77\n").unwrap();

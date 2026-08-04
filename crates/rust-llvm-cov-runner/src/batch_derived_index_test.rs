@@ -391,3 +391,20 @@ fn index_type_validators_reject_unsorted_invalid_paths_and_binaries() {
         .is_none()
     );
 }
+
+#[test]
+fn load_current_population_state_falls_back_to_entry_scan_without_reverse() {
+    let fixture = published_alpha_derived_fixture();
+    tamper_json_file(&fixture.req.cache_root, "population.json", |value| {
+        value["reverse_line_index"] = serde_json::Value::Null;
+    });
+    let state = load_current_population_state(
+        &fixture.req.cache_root,
+        fixture.repo.path(),
+        &fixture.identity,
+        Some(&["alpha".to_string()]),
+    )
+    .expect("population without reverse should load via entry scan");
+    assert!(state.line_index.contains_key("src/lib.rs"));
+    assert_eq!(state.selectors, vec!["alpha".to_string()]);
+}

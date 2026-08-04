@@ -84,6 +84,21 @@ fn emit_cached_gated_replays_static_violations_only() {
 }
 
 #[test]
+fn emit_cached_bypass_replays_static_output_without_gate() {
+    let cache = empty_cache("bypass_static");
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig::default();
+    let opts = test_analyze_options(&py, &rs, &gate);
+
+    assert!(emit_cached_bypass(
+        cache,
+        &opts,
+        &FocusFilter::unrestricted()
+    ));
+}
+
+#[test]
 fn fingerprint_path_duplicates_helpers() {
     let fp = fingerprint_for_check(
         &[],

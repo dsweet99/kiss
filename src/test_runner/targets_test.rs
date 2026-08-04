@@ -83,3 +83,50 @@ fn python_source_model_marks_test_and_class_spans() {
     assert!(non_test.contains(&1));
     assert!(!non_test.is_empty());
 }
+
+#[test]
+fn python_attach_nodeids_for_function_and_class_tests() {
+    let tmp = tempdir().unwrap();
+    let path = tmp.path().join("test_mod.py");
+    fs::write(
+        &path,
+        "def test_top():\n    assert True\n\nclass TestBox:\n    def test_method(self):\n        assert True\n",
+    )
+    .unwrap();
+    let mut model = super::model::load_source_model(&path, Language::Python).unwrap();
+    let nodeids = vec![
+        "test_mod.py::test_top".to_string(),
+        "test_mod.py::TestBox::test_method".to_string(),
+    ];
+    super::model_python::attach_python_nodeids(&mut model, &nodeids, "test_mod.py");
+    assert!(
+        model
+            .direct_tests
+            .iter()
+            .any(|t| t.selector == "test_mod.py::test_top")
+    );
+    assert!(
+        model
+            .direct_tests
+            .iter()
+            .any(|t| t.selector == "test_mod.py::TestBox::test_method")
+    );
+    assert!(
+        model
+            .definitions
+            .iter()
+            .any(|d| d.test_selector.as_deref() == Some("test_mod.py::test_top"))
+    );
+}
+
+#[test]
+fn python_build_model_rejects_syntax_errors() {
+    let tmp = tempdir().unwrap();
+    let path = tmp.path().join("bad.py");
+    fs::write(&path, "def broken(\n").unwrap();
+    let err = super::model::load_source_model(&path, Language::Python).unwrap_err();
+    assert!(
+        err.contains("syntax error") || err.contains("failed to parse"),
+        "{err}"
+    );
+}
