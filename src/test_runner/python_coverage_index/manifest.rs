@@ -5,9 +5,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::storage::{
-    create_new_python_file, normalized_python_repo_root, python_coverage_cache_root,
-    python_entries_fingerprint, python_population_manifest_path, python_source_input_fingerprint,
-    python_unique_suffix,
+    normalized_python_repo_root, python_coverage_cache_root, python_entries_fingerprint,
+    python_population_manifest_path, python_source_input_fingerprint, python_unique_suffix,
 };
 use super::{POPULATION_SCHEMA_VERSION, PYTHON_SELECTOR_DISCOVERY_VERSION};
 
@@ -66,9 +65,7 @@ pub(crate) fn write_python_population_manifest_with_identity_and_entries_fingerp
     let parent = path.parent().ok_or_else(|| {
         "error: kiss test: Python population manifest path has no parent".to_string()
     })?;
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let tmp_path = parent.join(format!(".population.{}.tmp", python_unique_suffix()));
-    let mut file = create_new_python_file(&tmp_path).map_err(|e| e.to_string())?;
     let payload = PythonPopulationManifest {
         schema_version: POPULATION_SCHEMA_VERSION.to_string(),
         cache_schema_version: identity.cache_schema_version.clone(),
@@ -82,16 +79,13 @@ pub(crate) fn write_python_population_manifest_with_identity_and_entries_fingerp
         entries_fingerprint: entries_fingerprint.to_string(),
         selectors,
     };
-    serde_json::to_writer_pretty(&mut file, &payload).map_err(|e| e.to_string())?;
-    use std::io::Write;
-    file.write_all(b"\n").map_err(|e| e.to_string())?;
-    file.sync_all().map_err(|e| e.to_string())?;
-    kiss_publication_barrier::after_sync_before_rename("python_population", &tmp_path, &path)
-        .map_err(|e| e.to_string())?;
-    drop(file);
-    fs::rename(&tmp_path, &path).map_err(|e| e.to_string())?;
-    kiss_publication_barrier::after_rename("python_population", &tmp_path, &path)
-        .map_err(|e| e.to_string())
+    kiss_publication_barrier::publish_atomically("python_population", &path, &tmp_path, |file| {
+        serde_json::to_writer_pretty(&mut *file, &payload).map_err(std::io::Error::other)?;
+        use std::io::Write;
+        file.write_all(b"\n")?;
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
 }
 
 pub(crate) fn python_population_manifest_is_current_with_identity(

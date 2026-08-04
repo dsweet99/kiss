@@ -1,69 +1,8 @@
+use super::test_support::{EnvGuard, temp_dir};
 use super::*;
 use std::fs;
-use std::path::PathBuf;
-use std::process;
-use std::sync::{Mutex, OnceLock};
 #[cfg(debug_assertions)]
 use std::time::Duration;
-
-static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-struct EnvGuard {
-    _lock: std::sync::MutexGuard<'static, ()>,
-    dir: Option<String>,
-    target: Option<String>,
-}
-
-impl EnvGuard {
-    fn set(dir: Option<&Path>, target: Option<&str>) -> Self {
-        let lock = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let guard = Self {
-            _lock: lock,
-            dir: std::env::var(BARRIER_DIR_ENV).ok(),
-            target: std::env::var(BARRIER_TARGET_ENV).ok(),
-        };
-        unsafe {
-            if let Some(dir) = dir {
-                std::env::set_var(BARRIER_DIR_ENV, dir);
-            } else {
-                std::env::remove_var(BARRIER_DIR_ENV);
-            }
-            if let Some(target) = target {
-                std::env::set_var(BARRIER_TARGET_ENV, target);
-            } else {
-                std::env::remove_var(BARRIER_TARGET_ENV);
-            }
-        }
-        guard
-    }
-}
-
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        unsafe {
-            if let Some(value) = &self.dir {
-                std::env::set_var(BARRIER_DIR_ENV, value);
-            } else {
-                std::env::remove_var(BARRIER_DIR_ENV);
-            }
-            if let Some(value) = &self.target {
-                std::env::set_var(BARRIER_TARGET_ENV, value);
-            } else {
-                std::env::remove_var(BARRIER_TARGET_ENV);
-            }
-        }
-    }
-}
-
-fn temp_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "kiss-publication-barrier-test-{}-{}",
-        process::id(),
-        unique_nanos()
-    ));
-    fs::create_dir(&dir).unwrap();
-    dir
-}
 
 #[cfg(debug_assertions)]
 fn short_policy() -> WaitPolicy {

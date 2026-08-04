@@ -1,6 +1,9 @@
-use std::fs::{self, File, OpenOptions};
+use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
+#[cfg(test)]
+use std::fs::{File, OpenOptions};
 
 use serde::{Deserialize, Serialize};
 
@@ -37,24 +40,19 @@ pub(crate) fn write_python_coverage_index_with_entries_fingerprint(
     let parent = path
         .parent()
         .ok_or_else(|| "error: kiss test: Python coverage index path has no parent".to_string())?;
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let tmp_path = parent.join(format!(".index.{}.tmp", python_unique_suffix()));
-    let mut file = create_new_python_file(&tmp_path).map_err(|e| e.to_string())?;
     let payload = OnDiskIndex {
         schema_version: INDEX_SCHEMA_VERSION,
         source_root: normalized_python_repo_root(repo_root),
         entries_fingerprint: entries_fingerprint.to_string(),
         files: index,
     };
-    serde_json::to_writer_pretty(&mut file, &payload).map_err(|e| e.to_string())?;
-    file.write_all(b"\n").map_err(|e| e.to_string())?;
-    file.sync_all().map_err(|e| e.to_string())?;
-    kiss_publication_barrier::after_sync_before_rename("python_index", &tmp_path, &path)
-        .map_err(|e| e.to_string())?;
-    drop(file);
-    fs::rename(&tmp_path, &path).map_err(|e| e.to_string())?;
-    kiss_publication_barrier::after_rename("python_index", &tmp_path, &path)
-        .map_err(|e| e.to_string())
+    kiss_publication_barrier::publish_atomically("python_index", &path, &tmp_path, |file| {
+        serde_json::to_writer_pretty(&mut *file, &payload).map_err(io::Error::other)?;
+        file.write_all(b"\n")?;
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
 }
 
 pub(crate) fn load_current_python_coverage_index(repo_root: &Path) -> Option<PythonCoverageIndex> {
@@ -199,6 +197,7 @@ pub(crate) fn normalized_python_repo_root(repo_root: &Path) -> String {
         .to_string()
 }
 
+#[cfg(test)]
 pub(crate) fn create_new_python_file(path: &Path) -> io::Result<File> {
     OpenOptions::new().write(true).create_new(true).open(path)
 }

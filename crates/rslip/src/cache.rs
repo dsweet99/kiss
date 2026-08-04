@@ -1,6 +1,9 @@
-use std::fs::{self, File, OpenOptions};
+use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
+#[cfg(test)]
+use std::fs::{File, OpenOptions};
 
 use rpytest_runner::TestStatus;
 use serde::{Deserialize, Serialize};
@@ -49,18 +52,20 @@ pub(crate) fn store_rslip_cache_entry(
     let parent = path
         .parent()
         .ok_or_else(|| io::Error::other("cache path has no parent"))?;
-    fs::create_dir_all(parent)?;
     let tmp_path = parent.join(format!(".{}.{}.tmp", fingerprint, rslip_unique_suffix()));
-    let mut file = create_new_rslip_cache_file(&tmp_path)?;
-    serde_json::to_writer(&mut file, entry).map_err(io::Error::other)?;
-    file.write_all(b"\n")?;
-    file.sync_all()?;
-    kiss_publication_barrier::after_sync_before_rename("rslip_selector_entry", &tmp_path, &path)?;
-    drop(file);
-    fs::rename(&tmp_path, &path)?;
-    kiss_publication_barrier::after_rename("rslip_selector_entry", &tmp_path, &path)
+    kiss_publication_barrier::publish_atomically(
+        "rslip_selector_entry",
+        &path,
+        &tmp_path,
+        |file| {
+            serde_json::to_writer(&mut *file, entry).map_err(io::Error::other)?;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
 }
 
+#[cfg(test)]
 pub(crate) fn create_new_rslip_cache_file(path: &Path) -> io::Result<File> {
     OpenOptions::new().write(true).create_new(true).open(path)
 }

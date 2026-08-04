@@ -1,5 +1,3 @@
-#[cfg(debug_assertions)]
-use std::fs::{self, OpenOptions};
 use std::io;
 #[cfg(debug_assertions)]
 use std::io::Write;
@@ -14,6 +12,12 @@ use std::time::Duration;
 #[cfg(debug_assertions)]
 use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(debug_assertions)]
+use std::fs::{self, OpenOptions};
+
+mod publish;
+pub use publish::publish_atomically;
 
 /// Process-id + nanosecond suffix for uniquely named temporary files.
 pub fn unique_process_suffix() -> String {
@@ -414,4 +418,8 @@ fn decode_json_escape(ch: char) -> char {
 }
 
 #[cfg(test)]
+mod test_support;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod publish_test;

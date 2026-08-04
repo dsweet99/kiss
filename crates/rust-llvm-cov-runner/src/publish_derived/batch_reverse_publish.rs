@@ -4,7 +4,7 @@ use crate::publish_derived::batch_reverse_build::{
     BuiltReverseIndex, FileMeta, FileReverseRecord, ReverseMeta, ReversePublishInfo,
     REVERSE_LINE_INDEX_SCHEMA, build_reverse_line_index, file_record_name, hex_digest,
 };
-use crate::rust_cov_cache::{create_new_cache_file, rust_cov_unique_suffix};
+use crate::rust_cov_cache::rust_cov_unique_suffix;
 use crate::RustLlvmCovError;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -162,7 +162,6 @@ fn write_json_bytes<T: Serialize>(
     let parent = path
         .parent()
         .ok_or_else(|| RustLlvmCovError::InvalidRequest("reverse path has no parent".into()))?;
-    fs::create_dir_all(parent).map_err(RustLlvmCovError::Io)?;
     let bytes = serde_json::to_vec(value).map_err(|err| {
         RustLlvmCovError::InvalidRequest(format!("failed to serialize reverse json: {err}"))
     })?;
@@ -175,14 +174,11 @@ fn write_json_bytes<T: Serialize>(
             .unwrap_or("rev"),
         rust_cov_unique_suffix()
     ));
-    let mut file = create_new_cache_file(&tmp).map_err(RustLlvmCovError::Io)?;
-    file.write_all(&with_nl).map_err(RustLlvmCovError::Io)?;
-    file.sync_all().map_err(RustLlvmCovError::Io)?;
-    kiss_publication_barrier::after_sync_before_rename(barrier, &tmp, path)
-        .map_err(RustLlvmCovError::Io)?;
-    drop(file);
-    fs::rename(&tmp, path).map_err(RustLlvmCovError::Io)?;
-    kiss_publication_barrier::after_rename(barrier, &tmp, path).map_err(RustLlvmCovError::Io)?;
+    let payload = with_nl.clone();
+    kiss_publication_barrier::publish_atomically(barrier, path, &tmp, |file| {
+        file.write_all(&payload)
+    })
+    .map_err(RustLlvmCovError::Io)?;
     Ok(with_nl)
 }
 

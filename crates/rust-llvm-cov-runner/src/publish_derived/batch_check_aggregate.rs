@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -326,29 +326,22 @@ pub fn publish_check_aggregate(
     let parent = path
         .parent()
         .ok_or_else(|| RustLlvmCovError::InvalidRequest("aggregate path has no parent".into()))?;
-    fs::create_dir_all(parent)?;
     let tmp = parent.join(format!(
         ".check_aggregate.{}.tmp",
         crate::rust_cov_cache::rust_cov_unique_suffix()
     ));
     let raw = on_disk_from_validated(req, aggregate);
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&tmp)
-        .map_err(RustLlvmCovError::Io)?;
-    serde_json::to_writer(&mut file, &raw)?;
-    file.write_all(b"\n").map_err(RustLlvmCovError::Io)?;
-    file.sync_all().map_err(RustLlvmCovError::Io)?;
-    kiss_publication_barrier::after_sync_before_rename("rust_check_aggregate", &tmp, &path)
-        .map_err(RustLlvmCovError::Io)?;
-    drop(file);
-    fs::rename(&tmp, &path).map_err(|err| {
-        let _ = fs::remove_file(&tmp);
-        RustLlvmCovError::Io(err)
-    })?;
-    kiss_publication_barrier::after_rename("rust_check_aggregate", &tmp, &path)
-        .map_err(RustLlvmCovError::Io)
+    kiss_publication_barrier::publish_atomically(
+        "rust_check_aggregate",
+        &path,
+        &tmp,
+        |file| {
+            serde_json::to_writer(&mut *file, &raw).map_err(io::Error::other)?;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
+    .map_err(RustLlvmCovError::Io)
 }
 
 fn on_disk_from_validated(

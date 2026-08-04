@@ -1,10 +1,10 @@
 //! Lock-owned entry-state token for Rust coverage derived-state freshness.
 
-use crate::rust_cov_cache::{create_new_cache_file, rust_cov_unique_suffix};
+use crate::rust_cov_cache::rust_cov_unique_suffix;
 use crate::RustLlvmCovError;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 pub const ENTRY_STATE_SCHEMA: &str = "rust-llvm-cov-entry-state-v1";
@@ -66,26 +66,13 @@ fn write_entry_state(cache_root: &Path, state: &EntryState) -> Result<(), RustLl
     let parent = path
         .parent()
         .ok_or_else(|| RustLlvmCovError::InvalidRequest("entry_state has no parent".into()))?;
-    fs::create_dir_all(parent).map_err(RustLlvmCovError::Io)?;
     let tmp = parent.join(format!(".entry_state.{}.tmp", rust_cov_unique_suffix()));
-    let mut file = create_new_cache_file(&tmp).map_err(RustLlvmCovError::Io)?;
-    serde_json::to_writer(&mut file, state).map_err(|err| {
-        RustLlvmCovError::InvalidRequest(format!("failed to write entry_state: {err}"))
-    })?;
-    file.write_all(b"\n").map_err(RustLlvmCovError::Io)?;
-    file.sync_all().map_err(RustLlvmCovError::Io)?;
-    kiss_publication_barrier::after_sync_before_rename("rust_entry_state", &tmp, &path)
-        .map_err(RustLlvmCovError::Io)?;
-    drop(file);
-    fs::rename(&tmp, &path).map_err(RustLlvmCovError::Io)?;
-    kiss_publication_barrier::after_rename("rust_entry_state", &tmp, &path)
-        .map_err(RustLlvmCovError::Io)?;
-    sync_dir(parent)
-}
-
-fn sync_dir(path: &Path) -> Result<(), RustLlvmCovError> {
-    let dir = fs::File::open(path).map_err(RustLlvmCovError::Io)?;
-    dir.sync_all().map_err(RustLlvmCovError::Io)
+    kiss_publication_barrier::publish_atomically("rust_entry_state", &path, &tmp, |file| {
+        serde_json::to_writer(&mut *file, state).map_err(io::Error::other)?;
+        file.write_all(b"\n")?;
+        Ok(())
+    })
+    .map_err(RustLlvmCovError::Io)
 }
 
 #[cfg(test)]

@@ -1,5 +1,4 @@
-use std::fs;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::Path;
 
 use serde::Serialize;
@@ -7,7 +6,7 @@ use serde::Serialize;
 use crate::publish_derived::batch_derived::POPULATION_SCHEMA_VERSION;
 use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
 use crate::publish_derived::batch_reverse_build::ReversePublishInfo;
-use crate::rust_cov_cache::{create_new_cache_file, rust_cov_unique_suffix};
+use crate::rust_cov_cache::rust_cov_unique_suffix;
 use crate::{CACHE_SCHEMA_VERSION, RustLlvmCovError, RustTestBinaryIdentity};
 
 pub(crate) fn write_population_manifest(
@@ -23,9 +22,7 @@ pub(crate) fn write_population_manifest(
     let parent = path
         .parent()
         .ok_or_else(|| RustLlvmCovError::InvalidRequest("population path has no parent".into()))?;
-    fs::create_dir_all(parent).map_err(RustLlvmCovError::Io)?;
     let tmp_path = parent.join(format!(".population.{}.tmp", rust_cov_unique_suffix()));
-    let mut file = create_new_cache_file(&tmp_path).map_err(RustLlvmCovError::Io)?;
     let reverse_meta = reverse.map(|info| ReverseLineIndexManifestMeta {
         schema_version: info.schema_version.as_str(),
         snapshot_id: info.snapshot_id.as_str(),
@@ -49,19 +46,12 @@ pub(crate) fn write_population_manifest(
         test_binaries: test_binary_records(test_binaries),
         reverse_line_index: reverse_meta,
     };
-    serde_json::to_writer_pretty(&mut file, &payload).map_err(|err| {
-        RustLlvmCovError::InvalidRequest(format!("failed to write index json: {err}"))
-    })?;
-    file.write_all(b"\n").map_err(RustLlvmCovError::Io)?;
-    file.sync_all().map_err(RustLlvmCovError::Io)?;
-    kiss_publication_barrier::after_sync_before_rename("rust_population", &tmp_path, &path)
-        .map_err(RustLlvmCovError::Io)?;
-    drop(file);
-    fs::rename(&tmp_path, &path).map_err(RustLlvmCovError::Io)?;
-    kiss_publication_barrier::after_rename("rust_population", &tmp_path, &path)
-        .map_err(RustLlvmCovError::Io)?;
-    let dir = fs::File::open(parent).map_err(RustLlvmCovError::Io)?;
-    dir.sync_all().map_err(RustLlvmCovError::Io)
+    kiss_publication_barrier::publish_atomically("rust_population", &path, &tmp_path, |file| {
+        serde_json::to_writer_pretty(&mut *file, &payload).map_err(io::Error::other)?;
+        file.write_all(b"\n")?;
+        Ok(())
+    })
+    .map_err(RustLlvmCovError::Io)
 }
 
 #[derive(Serialize)]

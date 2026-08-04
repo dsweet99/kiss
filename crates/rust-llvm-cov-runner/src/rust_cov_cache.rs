@@ -128,16 +128,17 @@ pub fn store_rust_cov_cache_entry(
     let parent = path
         .parent()
         .ok_or_else(|| io::Error::other("cache path has no parent"))?;
-    fs::create_dir_all(parent)?;
     let tmp_path = parent.join(format!(".{}.{}.tmp", fingerprint, rust_cov_unique_suffix()));
-    let mut file = create_new_cache_file(&tmp_path)?;
-    serde_json::to_writer(&mut file, &stable).map_err(io::Error::other)?;
-    file.write_all(b"\n")?;
-    file.sync_all()?;
-    kiss_publication_barrier::after_sync_before_rename("rust_selector_entry", &tmp_path, &path)?;
-    drop(file);
-    fs::rename(&tmp_path, &path)?;
-    kiss_publication_barrier::after_rename("rust_selector_entry", &tmp_path, &path)?;
+    kiss_publication_barrier::publish_atomically(
+        "rust_selector_entry",
+        &path,
+        &tmp_path,
+        |file| {
+            serde_json::to_writer(&mut *file, &stable).map_err(io::Error::other)?;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )?;
     crate::publish_derived::batch_entry_state::invalidate_entry_state(cache_root);
     Ok(())
 }
