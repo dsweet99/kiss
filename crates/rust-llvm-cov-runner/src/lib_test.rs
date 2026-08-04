@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rpytest_runner::TestStatus;
 
-use super::llvm_cov_json::{
+use crate::llvm_cov_json::{
     LlvmCovData, LlvmCovFile, LlvmCovReport, covered_line_from_segment, parse_llvm_cov_json,
     parse_llvm_cov_json_file,
 };

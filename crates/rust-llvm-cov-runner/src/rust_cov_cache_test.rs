@@ -8,7 +8,7 @@ use rpytest_runner::TestStatus;
 use tempfile::TempDir;
 
 use super::rust_cov_cache;
-use super::shared_input;
+use crate::shared_input;
 use super::{RustCovCacheEntry, RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
 
 fn outcome() -> RustLlvmCovOutcome {

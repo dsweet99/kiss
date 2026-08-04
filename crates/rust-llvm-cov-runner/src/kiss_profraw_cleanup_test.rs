@@ -77,7 +77,7 @@ fn list_child_pid_capture_cleans_spawned_child_pid() {
 
 #[test]
 fn list_child_source_records_spawn_pid_not_output_alone() {
-    let src = include_str!("batch_shim_list.rs");
+    let src = include_str!("execute_or_reuse/batch_shim_list.rs");
     assert!(
         src.contains("child.id()"),
         "list path must record spawned child pid"
@@ -149,10 +149,10 @@ fn no_production_kiss_tmp_discard_references() {
     let lib = fs::read_to_string(src_root.join("lib.rs")).unwrap();
     assert!(!lib.contains("mod kiss_tmp"));
     for name in [
-        "batch_plan.rs",
-        "batch_run_cleanup.rs",
-        "batch_shim_child.rs",
-        "batch_shim_list.rs",
+        "plan/batch_plan.rs",
+        "execute_or_reuse/batch_run_cleanup.rs",
+        "execute_or_reuse/batch_shim_child.rs",
+        "execute_or_reuse/batch_shim_list.rs",
     ] {
         let text = fs::read_to_string(src_root.join(name)).unwrap();
         assert!(

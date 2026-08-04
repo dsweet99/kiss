@@ -53,7 +53,7 @@ pub(crate) fn batch_executor_request(repo: &Path) -> crate::RustCoverageBatchReq
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use crate::batch_runner_resolve::placeholder_delegated_runner_fields;
+    use crate::plan::batch_runner_resolve::placeholder_delegated_runner_fields;
 
     let (delegated_runners, runner_map_fingerprint, host_platform) =
         placeholder_delegated_runner_fields();
@@ -93,7 +93,7 @@ pub(crate) fn store_batch_executor_selector(
 
     use rpytest_runner::TestStatus;
 
-    use crate::batch_fingerprint::{batch_identity, entry_fingerprint};
+    use crate::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
     use crate::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
     use crate::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
 
@@ -145,7 +145,7 @@ pub(crate) fn published_alpha_derived_fixture() -> PublishedAlphaFixture {
 
     use rpytest_runner::TestStatus;
 
-    use crate::batch_fingerprint::{batch_identity, entry_fingerprint};
+    use crate::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
     use crate::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
     use crate::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
 
@@ -199,7 +199,7 @@ pub(crate) fn store_alpha_entry(
 
     use rpytest_runner::TestStatus;
 
-    use crate::batch_fingerprint::entry_fingerprint;
+    use crate::plan::batch_fingerprint::entry_fingerprint;
     use crate::rust_cov_cache::store_rust_cov_cache_entry;
     use crate::{RustCovCacheEntry, RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
 
@@ -249,7 +249,7 @@ pub(crate) fn make_executable(path: &Path) {
 pub(crate) fn derived_fixture_request(repo: &Path) -> crate::RustCoverageBatchRequest {
     use std::path::PathBuf;
 
-    use crate::batch_runner_resolve::placeholder_delegated_runner_fields;
+    use crate::plan::batch_runner_resolve::placeholder_delegated_runner_fields;
 
     let (delegated_runners, runner_map_fingerprint, host_platform) =
         placeholder_delegated_runner_fields();
@@ -308,7 +308,7 @@ pub(crate) fn runner_resolve_base_request(repo: &Path) -> crate::RustCoverageBat
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use crate::batch_runner_resolve::placeholder_delegated_runner_fields;
+    use crate::plan::batch_runner_resolve::placeholder_delegated_runner_fields;
 
     let (delegated_runners, runner_map_fingerprint, host_platform) =
         placeholder_delegated_runner_fields();
@@ -344,7 +344,7 @@ pub(crate) fn shim_test_env_lock() -> std::sync::MutexGuard<'static, ()> {
 }
 
 #[cfg(test)]
-pub(crate) fn shim_only_metadata(output: &Path) -> crate::batch_shim::BatchShimMetadata {
+pub(crate) fn shim_only_metadata(output: &Path) -> crate::execute_or_reuse::batch_shim::BatchShimMetadata {
     let paths = fs::read_dir(output)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -363,10 +363,10 @@ pub(crate) fn shim_only_metadata(output: &Path) -> crate::batch_shim::BatchShimM
 }
 
 #[cfg(test)]
-pub(crate) fn shim_metadata(id: &str) -> crate::batch_shim::BatchShimMetadata {
+pub(crate) fn shim_metadata(id: &str) -> crate::execute_or_reuse::batch_shim::BatchShimMetadata {
     use std::path::PathBuf;
 
-    crate::batch_shim::BatchShimMetadata {
+    crate::execute_or_reuse::batch_shim::BatchShimMetadata {
         schema_version: "kiss-rust-llvm-cov-shim-v2".to_string(),
         id: id.to_string(),
         full_name: id.to_string(),

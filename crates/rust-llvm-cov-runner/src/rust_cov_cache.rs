@@ -56,6 +56,15 @@ pub fn repo_relative_coverage_file(source_root: &Path, file: &str) -> Option<Str
     (rel.ends_with(".rs") && !rel.starts_with(".kiss/") && !rel.starts_with('<')).then_some(rel)
 }
 
+
+pub(crate) fn normalized_source_root(source_root: &std::path::Path) -> String {
+    source_root
+        .canonicalize()
+        .unwrap_or_else(|_| source_root.to_path_buf())
+        .to_string_lossy()
+        .to_string()
+}
+
 pub fn repo_relative_path(source_root: &Path, path: &Path) -> Option<String> {
     let root = source_root
         .canonicalize()
@@ -129,7 +138,7 @@ pub fn store_rust_cov_cache_entry(
     drop(file);
     fs::rename(&tmp_path, &path)?;
     kiss_publication_barrier::after_rename("rust_selector_entry", &tmp_path, &path)?;
-    crate::batch_entry_state::invalidate_entry_state(cache_root);
+    crate::publish_derived::batch_entry_state::invalidate_entry_state(cache_root);
     Ok(())
 }
 
@@ -237,7 +246,7 @@ mod tests {
         )
         .unwrap();
 
-        let names: BTreeSet<_> = crate::shared_input::rust_cov_input_files(tmp.path())
+        let names: BTreeSet<_> = crate::plan::shared_input::rust_cov_input_files(tmp.path())
             .unwrap()
             .into_iter()
             .map(|path| path.strip_prefix(tmp.path()).unwrap().to_path_buf())
@@ -250,10 +259,10 @@ mod tests {
         assert!(names.contains(Path::new("src/lib.rs")));
         assert!(!names.contains(Path::new("target/ignored.rs")));
         assert!(!names.contains(Path::new(".kiss/rust_llvm_cov_cache/ignored.rs")));
-        assert!(crate::shared_input::should_skip_rust_cov_dir(
+        assert!(crate::plan::shared_input::should_skip_rust_cov_dir(
             &tmp.path().join("target")
         ));
-        assert!(crate::shared_input::is_kiss_rust_cov_cache_dir(
+        assert!(crate::plan::shared_input::is_kiss_rust_cov_cache_dir(
             &tmp.path().join(".kiss").join("rust_llvm_cov_cache")
         ));
     }
