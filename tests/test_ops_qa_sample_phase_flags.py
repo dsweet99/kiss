@@ -44,6 +44,56 @@ def test_sample_phase_flags_warm_shim_test_with_nextest_parent() -> None:
     assert not export_active
 
 
+def test_sample_phase_flags_ignores_nested_tempfile_cargo_during_shim_tests() -> None:
+    # Full-repo observer: outer SelectorEntries shims must not overlap with
+    # nested subject cargo under /tmp/.tmp… (Rust tempfile), which is not the
+    # observed batch compile-once phase.
+    commands = [
+        "/home/user/.cargo/bin/cargo-llvm-cov llvm-cov nextest --no-report",
+        "/repo/target/debug/kiss __rust-llvm-cov-target-runner "
+        "--output-dir /repo/.kiss/rust_llvm_cov_cache/runs/r1/instances",
+        "/home/user/.cargo/bin/cargo test --manifest-path /tmp/.tmpAbC123/Cargo.toml "
+        "--no-run --message-format json --workspace --jobs 32 "
+        "--target-dir /tmp/.tmpAbC123/target "
+        "--config /tmp/.tmpAbC123/.kiss/rust_llvm_cov_cache/runs/r/config.toml",
+    ]
+    build_active, test_active, export_active = sample_phase_flags(commands)
+    assert not build_active
+    assert test_active
+    assert not export_active
+
+
+def test_sample_phase_flags_ignores_kiss_export_minimal_during_shim_tests() -> None:
+    # Live full-repo overlap sample: export-contract subject compile under
+    # /tmp/kiss-export-minimal-* while SelectorEntries shims are running.
+    commands = [
+        "/home/user/.cargo/bin/cargo-llvm-cov llvm-cov nextest --no-report",
+        "/repo/target/debug/kiss __rust-llvm-cov-target-runner "
+        "--output-dir /repo/.kiss/rust_llvm_cov_cache/runs/r1/instances",
+        "/home/user/.cargo/bin/cargo-llvm-cov rustc --crate-name integration "
+        "--out-dir /tmp/kiss-export-minimal-3285960/llvm-cov-target/debug/deps",
+        "rustc --crate-name integration "
+        "--out-dir /tmp/kiss-export-minimal-3285960/llvm-cov-target/debug/deps",
+    ]
+    build_active, test_active, export_active = sample_phase_flags(commands)
+    assert not build_active
+    assert test_active
+    assert not export_active
+
+
+def test_sample_phase_flags_still_counts_kiss_qa_fixture_compile() -> None:
+    commands = [
+        "/home/user/.cargo/bin/cargo-llvm-cov llvm-cov nextest --no-report",
+        "/home/user/.cargo/bin/cargo test --manifest-path "
+        "/tmp/kiss-qa-phase-abc/repo/Cargo.toml --no-run "
+        "--target-dir /tmp/kiss-qa-phase-abc/repo/target",
+    ]
+    build_active, test_active, export_active = sample_phase_flags(commands)
+    assert build_active
+    assert not test_active
+    assert not export_active
+
+
 def test_sample_phase_flags_export_with_nextest_parent() -> None:
     commands = [
         "/home/user/.cargo/bin/cargo-llvm-cov llvm-cov nextest --no-report",

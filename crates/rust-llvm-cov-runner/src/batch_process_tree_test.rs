@@ -182,6 +182,14 @@ fn batch_process_tree_guard_marks_interrupted_after_terminate() {
     assert!(guard.interrupted());
 }
 
+#[test]
+fn reap_lingering_descendants_does_not_mark_interrupted() {
+    let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
+    assert!(!guard.interrupted());
+    let _ = guard.reap_lingering_descendants(Duration::from_millis(1));
+    assert!(!guard.interrupted());
+}
+
 #[cfg(unix)]
 #[test]
 fn batch_process_tree_guard_terminates_signal_ignoring_descendant() {

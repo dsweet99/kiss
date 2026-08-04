@@ -59,15 +59,30 @@ pub(crate) fn run_batch_subprocess(
             output_channel.errors.join("; "),
         ));
     }
+    // Final shim ingest, then drain/reap before counting. Full-repo -j32 batches can
+    // still have one worker process-group alive briefly after cargo/nextest returns;
+    // counting without reaping falsely reports rust_process_residual_count > 0.
+    let mut seen_shim_metadata = HashSet::new();
+    ingest_live_shim_identities(
+        process_tree.registry().as_ref(),
+        &plan.target_runner_output_dir,
+        &mut seen_shim_metadata,
+    );
     let process_residual_count = if process_tree.interrupted() {
-        ingest_live_shim_identities(
-            process_tree.registry().as_ref(),
-            &plan.target_runner_output_dir,
-            &mut HashSet::new(),
-        );
         process_tree.terminate_descendants(Duration::from_millis(250))
     } else {
-        process_tree.registry().residual_count()
+        let grace = Duration::from_millis(250);
+        let deadline = std::time::Instant::now() + grace;
+        while std::time::Instant::now() < deadline
+            && process_tree.registry().residual_count() > 0
+        {
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        if process_tree.registry().residual_count() == 0 {
+            0
+        } else {
+            process_tree.reap_lingering_descendants(grace)
+        }
     };
     Ok(BatchSubprocessRunOutcome {
         exit_code: output.status.code(),

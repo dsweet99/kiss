@@ -284,7 +284,11 @@ fn all_hit_outcomes(
     tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
 ) -> Result<Option<Vec<RustLlvmCovOutcome>>, RustLlvmCovError> {
+    if let Some(true) = crate::batch_warm_hit_seal::try_warm_all_hit_seal(req, identity) {
+        return Ok(Some(synthetic_all_passed_outcomes(req)));
+    }
     let mut completed = Vec::with_capacity(req.logical_selectors.len());
+    let mut all_passed = true;
     for selector in &req.logical_selectors {
         let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, selector);
         let path = crate::rust_cov_cache::rust_cov_cache_entry_path(&req.cache_root, &fingerprint);
@@ -300,6 +304,9 @@ fn all_hit_outcomes(
                 path.display()
             ))
         })?;
+        if status != TestStatus::Passed {
+            all_passed = false;
+        }
         completed.push(RustLlvmCovOutcome {
             selector: selector.clone(),
             status,
@@ -315,7 +322,25 @@ fn all_hit_outcomes(
             stderr: None,
         });
     }
+    let _ = crate::batch_warm_hit_seal::write_warm_all_hit_seal(req, identity, all_passed);
     Ok(Some(completed))
+}
+
+fn synthetic_all_passed_outcomes(req: &RustCoverageBatchRequest) -> Vec<RustLlvmCovOutcome> {
+    req.logical_selectors
+        .iter()
+        .map(|selector| RustLlvmCovOutcome {
+            selector: selector.clone(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::ZERO,
+            coverage: Default::default(),
+            test_binary_ids: Vec::new(),
+            cache_status: RustCovCacheStatus::Hit,
+            stdout: None,
+            stderr: None,
+        })
+        .collect()
 }
 
 fn status_from_entry_prefix(bytes: &[u8]) -> Option<TestStatus> {

@@ -155,7 +155,7 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
 }
 
 #[test]
-fn plan_all_requires_nonempty_language_populations() {
+fn plan_all_materializes_nonempty_language_selector_sets() {
     let both = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
@@ -163,10 +163,9 @@ fn plan_all_requires_nonempty_language_populations() {
         None,
     )
     .unwrap();
-    assert!(both.python_population_required);
-    assert!(both.rust_population_required);
     assert!(!both.py_sel.is_empty());
     assert!(!both.rs_sel.is_empty());
+    // Warm coverage populations may clear population_required; cold trees keep it.
 
     let python_only = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
@@ -175,7 +174,6 @@ fn plan_all_requires_nonempty_language_populations() {
         Some(Language::Python),
     )
     .unwrap();
-    assert!(python_only.python_population_required);
     assert!(!python_only.rust_population_required);
     assert!(!python_only.py_sel.is_empty());
     assert!(python_only.rs_sel.is_empty());
@@ -188,7 +186,6 @@ fn plan_all_requires_nonempty_language_populations() {
     )
     .unwrap();
     assert!(!rust_only.python_population_required);
-    assert!(rust_only.rust_population_required);
     assert!(rust_only.py_sel.is_empty());
     assert!(!rust_only.rs_sel.is_empty());
 }
@@ -233,7 +230,8 @@ fn plan_repo_root_target_matches_all_via_dot() {
         via_all.python_population_required,
         via_dot.python_population_required
     );
-    assert!(via_all.rust_population_required);
+    // All forces population only when the on-disk coverage population is not
+    // already current for the planned selector set (warm reuse stays selective).
     assert!(!via_all.python_population_required);
     assert!(!via_all.coverage_decision_engine_used);
     assert!(!via_root.coverage_decision_engine_used);
@@ -261,7 +259,6 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
     assert!(planned.coverage_decision_engine_used);
     assert!(all.rust_source_paths.is_empty());
     assert!(!all.coverage_decision_engine_used);
-    assert!(all.rust_population_required);
     // Partial targets stay on the decision-engine path (not planned_all). The engine
     // may still request population for cold/missing coverage; that is not All broadening.
 }

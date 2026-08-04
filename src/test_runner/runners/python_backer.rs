@@ -112,7 +112,10 @@ impl LanguagePlanner for PythonModule {
             &universe_ids,
             &self.test_args,
             self.manifest_env_allowlist(),
-        );
+        ) && crate::test_runner::python_coverage_index::load_current_python_coverage_index(
+            &self.repo_root,
+        )
+        .is_some();
         let has_line_precise_entries = !self.python_changed_lines.is_empty()
             && select_fresh_python_source_selectors(
                 &self.repo_root,

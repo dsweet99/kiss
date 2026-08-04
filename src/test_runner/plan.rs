@@ -88,8 +88,19 @@ fn planned_all(
     py_sel: Vec<String>,
     rs_sel: Vec<String>,
 ) -> PlannedSelectors {
-    let python_population_required = !py_sel.is_empty();
-    let rust_population_required = !rs_sel.is_empty();
+    // Warm `kiss test .`: when coverage populations are already current for the
+    // planned selector sets, run as selective reuse instead of re-populating
+    // (avoids rediscovery + index republish on every third warm run).
+    let python_population_required = !(py_sel.is_empty()
+        || (crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
+            repo_root,
+            &py_sel,
+            &[],
+            crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
+        ) && crate::test_runner::python_coverage_index::load_current_python_coverage_index(repo_root)
+            .is_some()));
+    let rust_population_required = !(rs_sel.is_empty()
+        || rust_population_current_for_all_selectors(repo_root, &rs_sel));
     PlannedSelectors {
         repo_root: repo_root.to_path_buf(),
         py_sel,
@@ -106,6 +117,27 @@ fn planned_all(
         rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
         ignore: ignore.to_vec(),
     }
+}
+
+fn rust_population_current_for_all_selectors(
+    repo_root: &std::path::Path,
+    selectors: &[String],
+) -> bool {
+    let Ok(identity) =
+        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(repo_root, &[])
+    else {
+        return false;
+    };
+    let mut expected = selectors.to_vec();
+    expected.sort();
+    expected.dedup();
+    rust_llvm_cov_runner::load_current_population_state(
+        &crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root),
+        repo_root,
+        &identity,
+        Some(&expected),
+    )
+    .is_some()
 }
 
 fn plan_explicit_target_selectors(

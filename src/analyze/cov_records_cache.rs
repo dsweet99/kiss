@@ -139,16 +139,32 @@ fn find_python_population_manifest(repo_root: &Path) -> Option<PathBuf> {
 }
 
 fn rust_backend_identity(repo_root: &Path) -> Option<String> {
-    let path = repo_root
-        .join(".kiss")
-        .join("rust_llvm_cov_cache")
-        .join("check_aggregate.json");
-    let bytes = fs::read(path).ok()?;
+    let cache = repo_root.join(".kiss").join("rust_llvm_cov_cache");
+    if let Some(identity) = rust_check_aggregate_backend_identity(&cache) {
+        return Some(identity);
+    }
+    rust_population_backend_identity(&cache)
+}
+
+fn rust_check_aggregate_backend_identity(cache: &Path) -> Option<String> {
+    let bytes = fs::read(cache.join("check_aggregate.json")).ok()?;
     let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
     let integrity = value.get("integrity_fingerprint")?.as_str()?;
     let input = value.get("input_fingerprint")?.as_str()?;
     let generation = value.get("generation_fingerprint")?.as_str()?;
-    Some(format!("rs:{integrity}:{input}:{generation}"))
+    Some(format!("rs-agg:{integrity}:{input}:{generation}"))
+}
+
+fn rust_population_backend_identity(cache: &Path) -> Option<String> {
+    let bytes = fs::read(cache.join("population.json")).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let input = value.get("input_fingerprint")?.as_str()?;
+    let generation = value.get("generation_fingerprint")?.as_str()?;
+    let entries = value.get("entries_fingerprint")?.as_str()?;
+    let n_selectors = value.get("selectors")?.as_array()?.len();
+    Some(format!(
+        "rs-pop:{input}:{generation}:{entries}:{n_selectors}"
+    ))
 }
 
 fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {

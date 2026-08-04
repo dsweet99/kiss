@@ -62,6 +62,7 @@ mod batch_process_tree;
 mod batch_result;
 mod batch_run;
 mod batch_runner_resolve;
+mod batch_warm_hit_seal;
 mod batch_nextest_id;
 mod batch_shim;
 mod batch_shim_synthesize;

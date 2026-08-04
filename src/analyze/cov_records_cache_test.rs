@@ -131,3 +131,48 @@ fn cov_records_cache_misses_when_rust_backend_identity_changes() {
     .unwrap();
     assert!(try_load_cov_records(&key).is_none());
 }
+
+#[test]
+fn cov_records_cache_hits_with_rust_population_when_aggregate_missing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    write_python_population(repo);
+    let cache = repo.join(".kiss/rust_llvm_cov_cache");
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(
+        cache.join("population.json"),
+        r#"{
+            "schema_version":"rust-llvm-cov-population-v3",
+            "input_fingerprint":"in-pop",
+            "generation_fingerprint":"gen-pop",
+            "entries_fingerprint":"ent-pop",
+            "selectors":["tests::one","tests::two"]
+        }"#,
+    )
+    .unwrap();
+    let py = touch_source(&repo.join("a.py"), "pass\n");
+    let rs = touch_source(&repo.join("lib.rs"), "fn g() {}\n");
+    let records = vec![LineCoverageRecord {
+        file: rs.clone(),
+        total_lines: 1,
+        covered_lines: 1,
+        percent: 100,
+        first_uncovered_line: None,
+    }];
+    let key = CovRecordsCacheKey {
+        repo_root: repo,
+        py_files: std::slice::from_ref(&py),
+        rs_files: std::slice::from_ref(&rs),
+        required: RequiredCoverageLanguages {
+            python: true,
+            rust: true,
+        },
+        threshold: 90,
+        bypass_gate: false,
+        ignore: &[],
+        lang_filter: None,
+    };
+    store_cov_records(&key, &records);
+    let loaded = try_load_cov_records(&key).expect("population-backed warm hit");
+    assert_eq!(loaded, records);
+}

@@ -134,6 +134,14 @@ impl BatchProcessTreeGuard {
         if self.owns_sigint_handler {
             self.interrupted.store(true, Ordering::SeqCst);
         }
+        self.reap_lingering_descendants(grace)
+    }
+
+    /// Reap still-alive recorded process groups without marking interruption.
+    ///
+    /// Used on the successful completion path so a late-exiting worker cannot be
+    /// reported as a residual after the parent status is already observed.
+    pub fn reap_lingering_descendants(&self, grace: Duration) -> usize {
         let identities = self.registry.identities();
         for identity in &identities {
             signal_validated_process_group(identity, libc::SIGTERM);

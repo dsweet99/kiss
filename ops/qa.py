@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 KISS = ROOT / "target" / "debug" / "kiss"
 PY_SOURCE = Path("python/coverage_metrics.py")
 PY_TEST = Path("tests/test_coverage_metrics_kiss.py")
-RS_SOURCE = Path("src/cli_output.rs")
+RS_SOURCE = Path("src/cli_output/mod.rs")
 LANGUAGES = ("python", "rust")
 
 
@@ -127,13 +127,31 @@ def cargo_executable_name(command: str) -> str | None:
     return Path(parts[0]).name
 
 
+def is_nested_subject_compile_path(command: str) -> bool:
+    """True for subject-test cargo/rustc under /tmp outside kiss-qa fixtures.
+
+    Observed QA fixture batches live under `/tmp/kiss-qa-…` and must still count.
+    Nested subject trees include Rust `tempfile` (`/tmp/.tmp…`) and in-suite
+    helpers such as `/tmp/kiss-export-minimal-*` from export-contract tests.
+    """
+    if "/tmp/kiss-qa" in command:
+        return False
+    return "/tmp/.tmp" in command or "/tmp/kiss-export-minimal-" in command
+
+
 def is_compile_command(command: str) -> bool:
     """True for llvm-cov / cargo compile processes seen under `cargo llvm-cov nextest`.
 
     Live /proc samples during compile show `cargo test --no-run`,
     `cargo-llvm-cov rustc`, bare `rustc`, and `build-script-build` — not only
     `cargo` + ` rustc `/` build `.
+
+    Nested in-suite cargo under subject temp paths is ignored: those are subject
+    tests spawning their own trees, not the observed batch's compile-once phase.
+    Fixture roots like `/tmp/kiss-qa-…` still count.
     """
+    if is_nested_subject_compile_path(command):
+        return False
     name = cargo_executable_name(command)
     padded = f" {command} "
     if name == "rustc":
@@ -921,8 +939,13 @@ def language_ignores(root: Path, language: str) -> list[str]:
             if test_file(path.relative_to(root)) and path.relative_to(root) != PY_TEST
         ]
     else:
+        # kiss --ignore matches filename prefixes. Never emit the RS_SOURCE basename
+        # (e.g. mod.rs), or sibling files with the same name would ignore the edit target.
+        keep_name = RS_SOURCE.name
         ignored = [
-            path.name for path in root.rglob("*.rs") if path.relative_to(root) != RS_SOURCE
+            path.name
+            for path in root.rglob("*.rs")
+            if path.relative_to(root) != RS_SOURCE and path.name != keep_name
         ]
     result: list[str] = []
     for path in sorted(set(ignored)):
@@ -2199,7 +2222,10 @@ def rust_forward_entry_oracle_selectors(repo: Path, rel_file: str) -> set[str]:
             continue
         files = entry.get("coverage", {}).get("files", {})
         for file_path, lines in files.items():
-            if file_path.endswith(rel_file) or Path(file_path).name == Path(rel_file).name:
+            # Match the repo-relative path only. Basename equality is wrong for
+            # shared names like mod.rs (would union every module's covering tests).
+            normalized = str(file_path).replace("\\", "/")
+            if normalized == rel_file or normalized.endswith("/" + rel_file):
                 if lines:
                     selected.add(entry["selector"])
                     break

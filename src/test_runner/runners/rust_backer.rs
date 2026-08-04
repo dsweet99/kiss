@@ -127,6 +127,17 @@ impl LanguagePlanner for RustModule {
     }
 
     fn discover_universe(&self) -> Result<Vec<TestSelector>, String> {
+        if let Some((_py, cached_rs)) =
+            crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
+                &self.repo_root,
+                &self.ignore,
+            )
+        {
+            return Ok(cached_rs
+                .into_iter()
+                .map(|id| TestSelector::new(kiss::Language::Rust, id))
+                .collect());
+        }
         Ok(
             enumerate_workspace_rust_selectors(&self.repo_root, &self.ignore)?
                 .into_iter()

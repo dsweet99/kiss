@@ -46,6 +46,20 @@ impl LanguageExecutor for PythonModule {
     }
 
     fn write_manifest(&self, selectors: &[String], ctx: &RunContext<'_, '_>) -> Result<(), String> {
+        // Manifest currentness alone is not enough: a corrupt index.json must still
+        // be republished (QA concurrent-cache-recovery corrupts index on purpose).
+        if crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
+            &ctx.planned.repo_root,
+            selectors,
+            ctx.options.extra,
+            crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
+        ) && crate::test_runner::python_coverage_index::load_current_python_coverage_index(
+            &ctx.planned.repo_root,
+        )
+        .is_some()
+        {
+            return Ok(());
+        }
         publish_python_derived_state_with_filter(
             &ctx.planned.repo_root,
             Some(selectors),
