@@ -7,6 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::analyze_cache::fnv1a64;
+
 const SCHEMA_VERSION: &str = "workspace-test-selectors-v2";
 const CACHE_FILE_NAME: &str = "workspace_test_selectors.json";
 
@@ -51,22 +53,13 @@ fn hash_file_meta(h: u64, rel: &str, meta: &fs::Metadata) -> u64 {
             .unwrap_or(0),
         Err(_) => 0,
     };
-    let mut acc = fold_fnv1a64(h, rel.as_bytes());
-    acc = fold_fnv1a64(acc, &meta.len().to_le_bytes());
-    fold_fnv1a64(acc, &mtime.to_le_bytes())
-}
-
-fn fold_fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
-    const FNV_PRIME: u64 = 0x0100_0000_01b3;
-    for &byte in bytes {
-        h ^= u64::from(byte);
-        h = h.wrapping_mul(FNV_PRIME);
-    }
-    h
+    let mut acc = fnv1a64(h, rel.as_bytes());
+    acc = fnv1a64(acc, &meta.len().to_le_bytes());
+    fnv1a64(acc, &mtime.to_le_bytes())
 }
 
 fn workspace_files_fingerprint(repo_root: &Path, ignore: &[String]) -> io::Result<String> {
-    let mut h = fold_fnv1a64(0xcbf2_9ce4_8422_2325, b"workspace-selectors-fp-v2");
+    let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, b"workspace-selectors-fp-v2");
     let mut stack = vec![repo_root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let entries = fs::read_dir(&dir)?;

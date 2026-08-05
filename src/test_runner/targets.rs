@@ -15,10 +15,7 @@ pub(crate) use parse::parse_test_target;
 pub(crate) use resolve::resolve_target_operands;
 
 pub(super) fn language_label(language: Language) -> &'static str {
-    match language {
-        Language::Python => "python",
-        Language::Rust => "rust",
-    }
+    language.label()
 }
 
 #[cfg(test)]

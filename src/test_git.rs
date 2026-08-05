@@ -17,19 +17,20 @@ pub enum TestChangeMode {
     Main,
 }
 
-pub fn assert_git_repo(repo: &Path) -> Result<(), String> {
-    let out = git_output(repo, &["rev-parse", "--is-inside-work-tree"])?;
-    if out.trim() != "true" {
-        return Err("not a git repository".into());
-    }
-    Ok(())
-}
-
 pub fn git_repo_root(repo: &Path) -> Result<PathBuf, String> {
     let s = git_output(repo, &["rev-parse", "--show-toplevel"])?;
     let p = PathBuf::from(s.trim());
     p.canonicalize()
         .map_err(|e| format!("failed to canonicalize repo root: {e}"))
+}
+
+/// Assert `repo` is inside a work tree and return the canonical toplevel.
+pub fn require_git_repo_root(repo: &Path) -> Result<PathBuf, String> {
+    let out = git_output(repo, &["rev-parse", "--is-inside-work-tree"])?;
+    if out.trim() != "true" {
+        return Err("not a git repository".into());
+    }
+    git_repo_root(repo)
 }
 
 // See `kiss::scrubbed_git_command`: strip parent-process `GIT_*`

@@ -103,6 +103,36 @@ fn rust_coverage_denominator_ignores_declarations_without_runtime_lines() {
 }
 
 #[test]
+fn rust_coverage_denominator_skips_coverage_off_functions() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("src").join("fork.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(
+        &file,
+        "pub fn tracked() -> i32 {\n\
+             1\n\
+         }\n\
+         \n\
+         #[doc = \"kiss-coverage-off\"]\n\
+         pub fn untracked() -> i32 {\n\
+             let x = 1;\n\
+             x + 1\n\
+         }\n",
+    )
+    .unwrap();
+    let snapshot = RuntimeCoverageSnapshot {
+        identity: "id".to_string(),
+        covered_lines: BTreeMap::from([("src/fork.rs".to_string(), BTreeSet::from([1, 2]))]),
+    };
+
+    let record = compute_file_line_coverage(tmp.path(), &file, &snapshot);
+
+    assert_eq!(record.total_lines, 2);
+    assert_eq!(record.covered_lines, 2);
+    assert_eq!(record.percent, 100);
+}
+
+#[test]
 fn rust_coverage_denominator_uses_statement_start_lines() {
     let tmp = tempfile::tempdir().unwrap();
     let file = tmp.path().join("src").join("defaults.rs");

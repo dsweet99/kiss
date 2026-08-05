@@ -24,9 +24,8 @@ pub(crate) fn plan_target_selectors(
 ) -> Result<PlannedSelectors, String> {
     let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
-    crate::test_git::assert_git_repo(&cwd)
+    let repo_root = crate::test_git::require_git_repo_root(&cwd)
         .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
-    let repo_root = crate::test_git::git_repo_root(&cwd)?;
     if matches!(lang_filter, Some(Language::Rust)) {
         rust_llvm_cov::validate_rust_extra_args(extra)?;
     }
@@ -218,9 +217,8 @@ pub(crate) fn plan_selectors(
 ) -> Result<PlannedSelectors, String> {
     let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
-    crate::test_git::assert_git_repo(&cwd)
+    let repo_root = crate::test_git::require_git_repo_root(&cwd)
         .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
-    let repo_root = crate::test_git::git_repo_root(&cwd)?;
     let diff_target = crate::test_git::resolve_diff_target(
         &repo_root,
         mode,

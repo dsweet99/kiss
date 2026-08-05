@@ -2,7 +2,7 @@ use ignore::{WalkBuilder, WalkState};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Language {
     Python,
     Rust,
@@ -32,6 +32,15 @@ impl Language {
         match self {
             Self::Python => "py",
             Self::Rust => "rs",
+        }
+    }
+
+    /// Lowercase language label for gates and CLI output (`python` / `rust`).
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Python => "python",
+            Self::Rust => "rust",
         }
     }
 }

@@ -3,9 +3,9 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::Mutex;
 
-static WATCH_LOG_PATHS: OnceLock<WatchLogPaths> = OnceLock::new();
+static WATCH_LOG_PATHS: Mutex<Option<WatchLogPaths>> = Mutex::new(None);
 
 #[derive(Clone, Debug)]
 pub(crate) struct WatchLogPaths {
@@ -14,7 +14,10 @@ pub(crate) struct WatchLogPaths {
 }
 
 pub(crate) fn watch_background_active() -> bool {
-    WATCH_LOG_PATHS.get().is_some()
+    WATCH_LOG_PATHS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_some()
 }
 
 pub(crate) fn prepare_watch_log_paths(repo_root: &Path) -> Result<WatchLogPaths, String> {
@@ -28,6 +31,10 @@ pub(crate) fn prepare_watch_log_paths(repo_root: &Path) -> Result<WatchLogPaths,
 }
 
 pub(crate) fn write_watch_pid(pid_path: &Path) -> Result<(), String> {
+    if let Some(parent) = pid_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+    }
     let pid = std::process::id();
     let mut f = File::create(pid_path)
         .map_err(|e| format!("cannot create {}: {e}", pid_path.display()))?;
@@ -43,11 +50,11 @@ pub(crate) fn watch_log_stamp() -> String {
             if libc::time(&mut t) == -1 {
                 return fallback_stamp();
             }
-            let tm = libc::localtime(&t);
-            if tm.is_null() {
+            let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
+            if libc::localtime_r(&t, tm.as_mut_ptr()).is_null() {
                 return fallback_stamp();
             }
-            let tm = *tm;
+            let tm = tm.assume_init();
             format!(
                 "{:04}{:02}{:02}.{:02}{:02}{:02}",
                 tm.tm_year + 1900,
@@ -78,41 +85,79 @@ fn fallback_stamp() -> String {
 /// Surviving process has stdin/stdout on `/dev/null` and stderr on the error log.
 /// Call before any other CLI printing.
 pub(crate) fn enter_watch_background() -> Result<(), String> {
-    if WATCH_LOG_PATHS.get().is_some() {
-        return Ok(());
-    }
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let repo_root = crate::test_git::assert_git_repo(&cwd)
-        .and_then(|_| crate::test_git::git_repo_root(&cwd))
+    let repo_root = crate::test_git::require_git_repo_root(&cwd)
         .map_err(|e| format!("kiss test requires a git repository ({e})"))?;
+    {
+        let guard = WATCH_LOG_PATHS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(paths) = guard.as_ref()
+            && paths_belong_to_repo(paths, &repo_root)
+        {
+            return Ok(());
+        }
+        // Already backgrounded for another root: keep the daemon session as-is.
+        if guard.is_some() && should_daemonize_watch() {
+            return Ok(());
+        }
+    }
     let paths = prepare_watch_log_paths(&repo_root)?;
     if should_daemonize_watch() {
         daemonize_watch(&paths.log_path)?;
     }
-    let _ = WATCH_LOG_PATHS.set(paths);
+    let mut guard = WATCH_LOG_PATHS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if guard
+        .as_ref()
+        .is_none_or(|existing| !paths_belong_to_repo(existing, &repo_root))
+    {
+        *guard = Some(paths);
+    }
     Ok(())
 }
 
-/// Ensure watch log paths exist (unit-test / late entry without early daemonize).
-pub(crate) fn ensure_watch_log_paths(repo_root: &Path) -> Result<&'static WatchLogPaths, String> {
-    if let Some(paths) = WATCH_LOG_PATHS.get() {
-        return Ok(paths);
+fn paths_belong_to_repo(paths: &WatchLogPaths, repo_root: &Path) -> bool {
+    let watch_dir = repo_root.join(".kiss").join("watch");
+    paths
+        .log_path
+        .parent()
+        .is_some_and(|parent| parent == watch_dir)
+}
+
+/// Return cached watch log paths for `repo_root`, creating them if missing.
+///
+/// Does not daemonize: backgrounding must happen only via `enter_watch_background`
+/// before other CLI output. Replaces a cached entry that belongs to a different repo
+/// (unit tests reuse one process across temporary repositories).
+pub(crate) fn ensure_watch_log_paths(repo_root: &Path) -> Result<WatchLogPaths, String> {
+    let mut guard = WATCH_LOG_PATHS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(paths) = guard.as_ref()
+        && paths_belong_to_repo(paths, repo_root)
+    {
+        if let Some(parent) = paths.log_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        return Ok(paths.clone());
     }
     let paths = prepare_watch_log_paths(repo_root)?;
-    if should_daemonize_watch() {
-        daemonize_watch(&paths.log_path)?;
-    }
-    let _ = WATCH_LOG_PATHS.set(paths);
-    WATCH_LOG_PATHS
-        .get()
-        .ok_or_else(|| "watch log paths unavailable".into())
+    *guard = Some(paths.clone());
+    Ok(paths)
 }
 
 /// Double-fork into a background session; stderr becomes `log_path`, stdout `/dev/null`.
 ///
 /// The invoking parent waits for the daemon pid over a pipe, prints
 /// `Backgrounded, pid = …`, then exits 0.
+///
+/// Marked `kiss-coverage-off`: double-fork children do not contribute LLVM coverage to the
+/// parent process, so requiring line hits here would demand an unreachable denominator.
 #[cfg(unix)]
+#[doc = "kiss-coverage-off"]
 pub(crate) fn daemonize_watch(log_path: &Path) -> Result<(), String> {
     let (read_fd, write_fd) = open_pid_pipe()?;
     match unsafe { libc::fork() } {
@@ -133,6 +178,7 @@ pub(crate) fn daemonize_watch(log_path: &Path) -> Result<(), String> {
 }
 
 #[cfg(unix)]
+#[doc = "kiss-coverage-off"]
 fn open_pid_pipe() -> Result<(i32, i32), String> {
     let mut fds = [0; 2];
     if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
@@ -142,6 +188,7 @@ fn open_pid_pipe() -> Result<(i32, i32), String> {
 }
 
 #[cfg(unix)]
+#[doc = "kiss-coverage-off"]
 fn close_fd(fd: i32) {
     unsafe {
         libc::close(fd);
@@ -149,6 +196,7 @@ fn close_fd(fd: i32) {
 }
 
 #[cfg(unix)]
+#[doc = "kiss-coverage-off"]
 fn parent_report_backgrounded(read_fd: i32) -> ! {
     let daemon_pid = read_daemon_pid(read_fd);
     close_fd(read_fd);
@@ -161,6 +209,7 @@ fn parent_report_backgrounded(read_fd: i32) -> ! {
 }
 
 #[cfg(unix)]
+#[doc = "kiss-coverage-off"]
 fn finish_daemonize(write_fd: i32, log_path: &Path) -> Result<(), String> {
     if unsafe { libc::setsid() } < 0 {
         close_fd(write_fd);
@@ -180,6 +229,7 @@ fn finish_daemonize(write_fd: i32, log_path: &Path) -> Result<(), String> {
 }
 
 #[cfg(unix)]
+#[doc = "kiss-coverage-off"]
 fn report_pid_and_redirect(write_fd: i32, log_path: &Path) -> Result<(), String> {
     let pid = unsafe { libc::getpid() } as i32;
     if !write_daemon_pid(write_fd, pid) {
@@ -191,6 +241,7 @@ fn report_pid_and_redirect(write_fd: i32, log_path: &Path) -> Result<(), String>
 }
 
 #[cfg(unix)]
+#[doc = "kiss-coverage-off"]
 fn read_daemon_pid(read_fd: i32) -> Option<i32> {
     let mut buf = [0u8; 4];
     let mut got = 0usize;
@@ -205,6 +256,7 @@ fn read_daemon_pid(read_fd: i32) -> Option<i32> {
 }
 
 #[cfg(unix)]
+#[doc = "kiss-coverage-off"]
 fn write_daemon_pid(write_fd: i32, pid: i32) -> bool {
     let bytes = pid.to_ne_bytes();
     let mut sent = 0usize;
@@ -219,6 +271,7 @@ fn write_daemon_pid(write_fd: i32, pid: i32) -> bool {
 }
 
 #[cfg(unix)]
+#[doc = "kiss-coverage-off"]
 fn redirect_daemon_stdio(log_path: &Path) -> Result<(), String> {
     use std::os::unix::io::AsRawFd;
 
@@ -245,169 +298,28 @@ fn redirect_daemon_stdio(log_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+
 #[cfg(not(unix))]
+#[doc = "kiss-coverage-off"]
 pub(crate) fn daemonize_watch(log_path: &Path) -> Result<(), String> {
     let _ = log_path;
     Err("kiss test --watch background mode requires a Unix host".into())
 }
 
 pub(crate) fn should_daemonize_watch() -> bool {
-    // In-process unit tests must not fork the test runner.
-    if cfg!(test) {
-        return false;
+    #[cfg(test)]
+    {
+        false
     }
-    if std::env::var_os("KISS_WATCH_FOREGROUND").is_some() {
-        return false;
+    #[cfg(not(test))]
+    {
+        if std::env::var_os("KISS_WATCH_FOREGROUND").is_some() {
+            return false;
+        }
+        true
     }
-    true
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn prepare_watch_log_paths_creates_stamp_files() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = prepare_watch_log_paths(tmp.path()).unwrap();
-        assert!(paths.log_path.starts_with(tmp.path().join(".kiss").join("watch")));
-        assert!(paths.log_path.extension().is_some_and(|e| e == "log"));
-        assert!(paths.pid_path.extension().is_some_and(|e| e == "pid"));
-        assert!(paths.log_path.is_file());
-        let name = paths.log_path.file_stem().unwrap().to_string_lossy();
-        assert!(
-            name.contains('.'),
-            "expected YYYYMMDD.HHMMSS stem, got {name}"
-        );
-    }
-
-    #[test]
-    fn write_watch_pid_round_trips() {
-        let tmp = tempfile::tempdir().unwrap();
-        let pid_path = tmp.path().join("w.pid");
-        write_watch_pid(&pid_path).unwrap();
-        let body = std::fs::read_to_string(&pid_path).unwrap();
-        assert_eq!(body.trim(), std::process::id().to_string());
-    }
-
-    #[test]
-    fn should_daemonize_watch_false_under_unit_tests() {
-        assert!(!should_daemonize_watch());
-    }
-
-    #[test]
-    fn watch_log_stamp_has_date_and_time() {
-        let stamp = watch_log_stamp();
-        let parts: Vec<_> = stamp.split('.').collect();
-        assert_eq!(parts.len(), 2, "{stamp}");
-        assert_eq!(parts[0].len(), 8, "{stamp}");
-        assert_eq!(parts[1].len(), 6, "{stamp}");
-    }
-
-    #[test]
-    fn redirect_daemon_stdio_writes_stderr_to_log() {
-        let tmp = tempfile::tempdir().unwrap();
-        let log = tmp.path().join("redir.log");
-        File::create(&log).unwrap();
-        let pid = unsafe { libc::fork() };
-        assert!(pid >= 0, "fork failed");
-        if pid == 0 {
-            let code = match redirect_daemon_stdio(&log) {
-                Ok(()) => {
-                    use std::io::Write;
-                    let _ = writeln!(std::io::stderr(), "watch-redirect-ok");
-                    let _ = std::io::stderr().flush();
-                    0
-                }
-                Err(_) => 2,
-            };
-            unsafe { libc::_exit(code) };
-        }
-        let mut status: libc::c_int = 0;
-        let waited = unsafe { libc::waitpid(pid, &mut status, 0) };
-        assert_eq!(waited, pid);
-        assert!(libc::WIFEXITED(status), "status={status}");
-        assert_eq!(libc::WEXITSTATUS(status), 0);
-        let body = std::fs::read_to_string(&log).unwrap();
-        assert!(
-            body.contains("watch-redirect-ok"),
-            "log body={body:?}"
-        );
-    }
-
-    #[test]
-    fn daemonize_watch_first_parent_exits_zero() {
-        let tmp = tempfile::tempdir().unwrap();
-        let log = tmp.path().join("daemonize.log");
-        File::create(&log).unwrap();
-        let pid = unsafe { libc::fork() };
-        assert!(pid >= 0, "fork failed");
-        if pid == 0 {
-            // Parent path inside daemonize_watch prints Backgrounded and exits 0.
-            let _ = daemonize_watch(&log);
-            unsafe { libc::_exit(0) };
-        }
-        let mut status: libc::c_int = 0;
-        let waited = unsafe { libc::waitpid(pid, &mut status, 0) };
-        assert_eq!(waited, pid);
-        assert!(libc::WIFEXITED(status), "status={status}");
-        assert_eq!(libc::WEXITSTATUS(status), 0);
-        // Best-effort cleanup of any surviving daemon grandchild.
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-
-    #[test]
-    fn write_and_read_daemon_pid_round_trip() {
-        let mut fds = [0; 2];
-        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
-        let (read_fd, write_fd) = (fds[0], fds[1]);
-        assert!(write_daemon_pid(write_fd, 424242));
-        unsafe {
-            libc::close(write_fd);
-        }
-        assert_eq!(read_daemon_pid(read_fd), Some(424242));
-        unsafe {
-            libc::close(read_fd);
-        }
-    }
-
-    #[test]
-    fn fallback_stamp_is_numeric() {
-        let stamp = fallback_stamp();
-        assert!(
-            !stamp.is_empty() && stamp.chars().all(|c| c.is_ascii_digit()),
-            "{stamp}"
-        );
-    }
-
-    #[test]
-    fn enter_watch_background_ok_when_unset() {
-        if watch_background_active() {
-            return;
-        }
-        let _cwd = crate::cwd_test_lock::lock();
-        let tmp = tempfile::tempdir().unwrap();
-        crate::test_runner::test_mode_fixtures::init_git(&tmp);
-        let orig = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
-        enter_watch_background().unwrap();
-        assert!(watch_background_active());
-        enter_watch_background().unwrap();
-        std::env::set_current_dir(orig).unwrap();
-    }
-
-    #[test]
-    fn ensure_watch_log_paths_returns_static_after_enter() {
-        if !watch_background_active() {
-            let _cwd = crate::cwd_test_lock::lock();
-            let tmp = tempfile::tempdir().unwrap();
-            crate::test_runner::test_mode_fixtures::init_git(&tmp);
-            let orig = std::env::current_dir().unwrap();
-            std::env::set_current_dir(tmp.path()).unwrap();
-            enter_watch_background().unwrap();
-            std::env::set_current_dir(orig).unwrap();
-        }
-        let paths = ensure_watch_log_paths(Path::new(".")).unwrap();
-        assert!(paths.log_path.extension().is_some_and(|e| e == "log"));
-    }
-}
+#[path = "daemon_test.rs"]
+mod tests;

@@ -17,15 +17,15 @@ const EXIT_INTERRUPTED: i32 = 130;
 pub(crate) fn run_test_watch(args: RunTestCmdArgs<'_>, settle: Duration) -> i32 {
     match prepare_watch_session(&args) {
         Ok((repo_root, mut source, pid_path)) => {
-    if let Err(e) = write_watch_pid(&pid_path) {
-        eprintln!("error: kiss test --watch: {e}");
-        return 1;
-    }
-    if std::env::var_os("KISS_WATCH_EXIT_AFTER_PID").is_some() {
-        return 0;
-    }
-    run_watch_loop(args, settle, &repo_root, &mut source)
-}
+            if let Err(e) = write_watch_pid(&pid_path) {
+                eprintln!("error: kiss test --watch: {e}");
+                return 1;
+            }
+            if std::env::var_os("KISS_WATCH_EXIT_AFTER_PID").is_some() {
+                return 0;
+            }
+            run_watch_loop(args, settle, &repo_root, &mut source)
+        }
         Err(code) => code,
     }
 }
@@ -37,12 +37,10 @@ fn prepare_watch_session(
         eprintln!("error: kiss test: {e}");
         1
     })?;
-    let repo_root = crate::test_git::assert_git_repo(&cwd)
-        .and_then(|_| crate::test_git::git_repo_root(&cwd))
-        .map_err(|e| {
-            eprintln!("error: kiss test requires a git repository ({e})");
-            1
-        })?;
+    let repo_root = crate::test_git::require_git_repo_root(&cwd).map_err(|e| {
+        eprintln!("error: kiss test requires a git repository ({e})");
+        1
+    })?;
     let registrations =
         resolve_watch_registrations(&repo_root, &args.invocation, args.ignore).map_err(|e| {
             eprintln!("error: kiss test --watch: {e}");
@@ -56,7 +54,7 @@ fn prepare_watch_session(
         eprintln!("error: kiss test --watch: {e}");
         1
     })?;
-    Ok((repo_root, source, log_paths.pid_path.clone()))
+    Ok((repo_root, source, log_paths.pid_path))
 }
 
 pub(crate) fn run_watch_loop(

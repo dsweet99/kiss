@@ -18,24 +18,9 @@ use crate::test_runner::rust_coverage_index::{
     resolved_rust_batch_request_parts, rust_coverage_cache_root,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum TimingLanguage {
-    Python,
-    Rust,
-}
-
-impl TimingLanguage {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Python => "python",
-            Self::Rust => "rust",
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UnitTestTiming {
-    pub(crate) language: TimingLanguage,
+    pub(crate) language: Language,
     pub(crate) selector: String,
     pub(crate) duration: Duration,
 }
@@ -44,8 +29,6 @@ pub(crate) struct UnitTestTiming {
 pub(crate) enum TimingPopulation {
     Complete(Vec<UnitTestTiming>),
     Incomplete,
-#[allow(dead_code)]
-    Unavailable,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -79,12 +62,30 @@ pub(crate) fn collect_current_unit_test_timings(opts: TimingCollectOpts<'_>) -> 
         }
     }
     if want_rust {
-        match load_rust_timings(&repo_root, opts.ignore) {
+        match load_rust_timings(&repo_root) {
             Some(rust) => timings.extend(rust),
             None => return TimingPopulation::Incomplete,
         }
     }
-    TimingPopulation::Complete(timings)
+    TimingPopulation::Complete(filter_timings_by_ignore(timings, opts.ignore))
+}
+
+fn filter_timings_by_ignore(
+    mut timings: Vec<UnitTestTiming>,
+    ignore: &[String],
+) -> Vec<UnitTestTiming> {
+    if ignore.is_empty() {
+        return timings;
+    }
+    timings.retain(|t| !selector_matches_ignore_prefix(&t.selector, ignore));
+    timings
+}
+
+fn selector_matches_ignore_prefix(selector: &str, ignore: &[String]) -> bool {
+    let path_part = selector.split_once("::").map_or(selector, |(p, _)| p);
+    ignore.iter().any(|prefix| {
+        path_part == prefix.as_str() || path_part.starts_with(&format!("{prefix}/"))
+    })
 }
 
 fn load_python_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
@@ -116,7 +117,7 @@ fn load_python_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
             return None;
         }
         out.push(UnitTestTiming {
-            language: TimingLanguage::Python,
+            language: Language::Python,
             selector: selector.clone(),
             duration: outcome.duration,
         });
@@ -124,7 +125,7 @@ fn load_python_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
     Some(out)
 }
 
-fn load_rust_timings(repo_root: &Path, _ignore: &[String]) -> Option<Vec<UnitTestTiming>> {
+fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
     let (req, tools) = resolved_rust_batch_request_parts(repo_root, &[]).ok()?;
     let identity = rust_llvm_cov_runner::batch_identity(&req, &tools).ok()?;
     let cache_root = rust_coverage_cache_root(repo_root);
@@ -142,7 +143,7 @@ fn load_rust_timings(repo_root: &Path, _ignore: &[String]) -> Option<Vec<UnitTes
         pairs
             .into_iter()
             .map(|(selector, duration)| UnitTestTiming {
-                language: TimingLanguage::Rust,
+                language: Language::Rust,
                 selector,
                 duration,
             })
@@ -152,7 +153,7 @@ fn load_rust_timings(repo_root: &Path, _ignore: &[String]) -> Option<Vec<UnitTes
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct RuntimeGateViolation {
-    pub(crate) language: TimingLanguage,
+    pub(crate) language: Language,
     pub(crate) selector: String,
     pub(crate) seconds: f64,
 }
@@ -174,7 +175,7 @@ pub(crate) fn evaluate_runtime_gate(
     }
     match timings {
         TimingPopulation::Complete(entries) => {
-            let mut viols: Vec<RuntimeGateViolation> = entries
+            let viols: Vec<RuntimeGateViolation> = entries
                 .iter()
                 .filter(|t| t.duration.as_secs_f64() >= max_unit_test_seconds)
                 .map(|t| RuntimeGateViolation {
@@ -186,13 +187,10 @@ pub(crate) fn evaluate_runtime_gate(
             if viols.is_empty() {
                 RuntimeGateEval::Passed
             } else {
-                viols.sort_by(|a, b| {
-                    (a.language, a.selector.as_str()).cmp(&(b.language, b.selector.as_str()))
-                });
                 RuntimeGateEval::Failed(viols)
             }
         }
-        TimingPopulation::Incomplete | TimingPopulation::Unavailable => RuntimeGateEval::Incomplete,
+        TimingPopulation::Incomplete => RuntimeGateEval::Incomplete,
     }
 }
 
@@ -254,7 +252,7 @@ pub(crate) fn unit_test_runtime_ms_line_for_universe(
         ignore,
     }) {
         TimingPopulation::Complete(timings) => format_unit_test_runtime_ms_line(&timings),
-        TimingPopulation::Incomplete | TimingPopulation::Unavailable => None,
+        TimingPopulation::Incomplete => None,
     }
 }
 

@@ -43,7 +43,7 @@ pub(crate) fn compute_line_coverage_records(
 
 #[path = "line_coverage_cfg.rs"]
 mod line_coverage_cfg;
-use line_coverage_cfg::{cfg_attrs_active, stmt_cfg_active};
+use line_coverage_cfg::{cfg_attrs_active, coverage_off_attrs, stmt_cfg_active};
 
 fn cfg_test_only_rust_files(rs_files: &[PathBuf]) -> BTreeSet<PathBuf> {
     let universe: BTreeSet<PathBuf> = rs_files.iter().cloned().collect();
@@ -345,7 +345,7 @@ impl RustCoverableLineVisitor<'_> {
 
 impl<'ast> Visit<'ast> for RustCoverableLineVisitor<'_> {
     fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
-        if !cfg_attrs_active(&node.attrs) {
+        if !cfg_attrs_active(&node.attrs) || coverage_off_attrs(&node.attrs) {
             return;
         }
         self.add_start_line(node.sig.span());
@@ -353,7 +353,7 @@ impl<'ast> Visit<'ast> for RustCoverableLineVisitor<'_> {
     }
 
     fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
-        if !cfg_attrs_active(&node.attrs) {
+        if !cfg_attrs_active(&node.attrs) || coverage_off_attrs(&node.attrs) {
             return;
         }
         self.add_start_line(node.sig.span());

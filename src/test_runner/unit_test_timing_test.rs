@@ -6,12 +6,12 @@ fn format_runtime_ms_line_requires_samples() {
     assert!(format_unit_test_runtime_ms_line(&[]).is_none());
     let line = format_unit_test_runtime_ms_line(&[
         UnitTestTiming {
-            language: TimingLanguage::Python,
+            language: Language::Python,
             selector: "a".into(),
             duration: Duration::from_millis(12),
         },
         UnitTestTiming {
-            language: TimingLanguage::Rust,
+            language: Language::Rust,
             selector: "b".into(),
             duration: Duration::from_millis(40),
         },
@@ -25,7 +25,7 @@ fn format_runtime_ms_line_requires_samples() {
 #[test]
 fn evaluate_runtime_gate_threshold_semantics() {
     let timings = TimingPopulation::Complete(vec![UnitTestTiming {
-        language: TimingLanguage::Python,
+        language: Language::Python,
         selector: "t::slow".into(),
         duration: Duration::from_millis(1500),
     }]);
@@ -46,7 +46,7 @@ fn evaluate_runtime_gate_threshold_semantics() {
     ));
     // Equality at threshold fails.
     let exact = TimingPopulation::Complete(vec![UnitTestTiming {
-        language: TimingLanguage::Rust,
+        language: Language::Rust,
         selector: "exact".into(),
         duration: Duration::from_secs(2),
     }]);
@@ -62,10 +62,6 @@ fn incomplete_population_fail_closed_when_enabled() {
         evaluate_runtime_gate(&TimingPopulation::Incomplete, 2.0),
         RuntimeGateEval::Incomplete
     ));
-    assert!(matches!(
-        evaluate_runtime_gate(&TimingPopulation::Unavailable, 2.0),
-        RuntimeGateEval::Incomplete
-    ));
 }
 
 #[test]
@@ -73,12 +69,12 @@ fn runtime_gate_failure_lines_are_sorted_and_labeled() {
     let lines = runtime_gate_failure_lines(
         &[
             RuntimeGateViolation {
-                language: TimingLanguage::Rust,
+                language: Language::Rust,
                 selector: "crate::b".into(),
                 seconds: 3.0,
             },
             RuntimeGateViolation {
-                language: TimingLanguage::Python,
+                language: Language::Python,
                 selector: "tests/test_x.py::test_y".into(),
                 seconds: 2.41,
             },
@@ -109,4 +105,29 @@ fn empty_lang_selection_is_complete_empty() {
         ignore: &[],
     });
     assert_eq!(pop, TimingPopulation::Complete(vec![]));
+}
+
+#[test]
+fn ignore_prefixes_drop_matching_path_selectors() {
+    let timings = vec![
+        UnitTestTiming {
+            language: Language::Python,
+            selector: "tests/fast/test_a.py::t".into(),
+            duration: Duration::from_millis(10),
+        },
+        UnitTestTiming {
+            language: Language::Python,
+            selector: "tests/slow/test_b.py::t".into(),
+            duration: Duration::from_millis(50),
+        },
+        UnitTestTiming {
+            language: Language::Rust,
+            selector: "crate::mod::tests::t".into(),
+            duration: Duration::from_millis(20),
+        },
+    ];
+    let filtered = filter_timings_by_ignore(timings, &["tests/slow".into()]);
+    assert_eq!(filtered.len(), 2);
+    assert_eq!(filtered[0].selector, "tests/fast/test_a.py::t");
+    assert_eq!(filtered[1].selector, "crate::mod::tests::t");
 }

@@ -30,9 +30,9 @@ fn init_repo(tmp: &TempDir) {
 }
 
 #[test]
-fn assert_git_repo_rejects_without_git() {
+fn require_git_repo_root_rejects_without_git() {
     let tmp = TempDir::new().unwrap();
-    assert!(assert_git_repo(tmp.path()).is_err());
+    assert!(require_git_repo_root(tmp.path()).is_err());
 }
 
 #[test]
@@ -45,8 +45,7 @@ fn repo_root_and_commit_changed_paths() {
         .args(["commit", "-m", "m"])
         .status()
         .unwrap();
-    assert_git_repo(tmp.path()).unwrap();
-    let root = git_repo_root(tmp.path()).unwrap();
+    let root = require_git_repo_root(tmp.path()).unwrap();
     assert_eq!(root, tmp.path().canonicalize().unwrap());
     std::fs::write(tmp.path().join("b.py"), "y=1\n").unwrap();
     let names = changed_paths_commit(tmp.path()).unwrap();

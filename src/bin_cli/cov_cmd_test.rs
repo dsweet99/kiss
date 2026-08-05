@@ -84,7 +84,7 @@ fn both_gates_disabled_short_circuits() {
 #[test]
 fn runtime_gate_eval_failed_sets_time_failed() {
     let viols = vec![crate::test_runner::unit_test_timing::RuntimeGateViolation {
-        language: crate::test_runner::unit_test_timing::TimingLanguage::Python,
+        language: kiss::Language::Python,
         selector: "t::test_slow".into(),
         seconds: 2.5,
     }];

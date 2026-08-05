@@ -58,12 +58,13 @@ impl WatchPathFilter {
     }
 
     pub(crate) fn is_ignore_file(&self, rel: &Path) -> bool {
-        matches!(
-            rel.file_name().and_then(|n| n.to_str()),
-            Some(".gitignore" | ".kissignore" | "exclude")
-        ) || rel == Path::new(".gitignore")
+        rel == Path::new(".gitignore")
             || rel == Path::new(".kissignore")
             || rel == Path::new(".git/info/exclude")
+            || matches!(
+                rel.file_name().and_then(|n| n.to_str()),
+                Some(".gitignore" | ".kissignore")
+            )
     }
 
     pub(crate) fn is_relevant(&self, rel: &Path) -> bool {
@@ -222,5 +223,16 @@ mod tests {
         assert!(exact.is_relevant(Path::new("src/a.py")));
         assert!(!exact.is_relevant(Path::new("src/b.py")));
         assert!(exact.is_relevant(Path::new("pytest.ini")));
+    }
+
+    #[test]
+    fn basename_exclude_is_not_an_ignore_support_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
+        assert!(!f.is_ignore_file(Path::new("vendor/exclude")));
+        assert!(!f.is_ignore_file(Path::new("exclude")));
+        assert!(f.is_ignore_file(Path::new(".git/info/exclude")));
+        assert!(f.is_ignore_file(Path::new(".gitignore")));
+        assert!(f.is_ignore_file(Path::new("nested/.gitignore")));
     }
 }

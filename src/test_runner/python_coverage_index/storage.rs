@@ -206,12 +206,8 @@ pub(crate) fn python_unique_suffix() -> String {
     kiss_publication_barrier::unique_process_suffix()
 }
 
-pub(crate) fn python_fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
-    const PRIME: u64 = 0x0100_0000_01b3;
-    for byte in bytes {
-        h = (h ^ u64::from(*byte)).wrapping_mul(PRIME);
-    }
-    h
+pub(crate) fn python_fnv1a64(h: u64, bytes: &[u8]) -> u64 {
+    crate::analyze_cache::fnv1a64(h, bytes)
 }
 
 #[cfg(test)]

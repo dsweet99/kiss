@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use rpytest_runner::TestStatus;
 
 use crate::analyze::line_coverage::RuntimeCoverageSnapshot;
+use crate::analyze_cache::fnv1a64;
 pub(crate) use crate::test_runner::check_runtime_refresh::ensure_check_runtime_coverage;
 use crate::test_runner::python_coverage_index::{
     PYTHON_COVERAGE_ENV_KEYS, python_population_environment_mismatch,
@@ -320,13 +321,6 @@ fn combined_identity(
         h = fnv1a64(h, &[0]);
     }
     format!("{h:016x}")
-}
-
-fn fnv1a64(h: u64, bytes: &[u8]) -> u64 {
-    const PRIME: u64 = 0x0100_0000_01b3;
-    bytes
-        .iter()
-        .fold(h, |acc, byte| (acc ^ u64::from(*byte)).wrapping_mul(PRIME))
 }
 
 #[cfg(test)]

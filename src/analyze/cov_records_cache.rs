@@ -6,7 +6,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
 use kiss::check_universe_cache::CachedLineCoverageRecord;
 use serde::{Deserialize, Serialize};
@@ -14,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::analyze::line_coverage::{
     LineCoverageRecord, cached_line_records, line_records_from_cache,
 };
+use crate::analyze_cache::{fnv1a64, mix_sorted_paths_len_mtime};
 use crate::test_runner::check_line_coverage::RequiredCoverageLanguages;
 
 const SCHEMA_VERSION: &str = "kiss-cov-records-v1";
@@ -85,8 +85,8 @@ fn cov_records_fingerprint(key: &CovRecordsCacheKey<'_>) -> Option<String> {
         h = fnv1a64(h, prefix.as_bytes());
         h = fnv1a64(h, &[0]);
     }
-    h = mix_path_mtimes(h, key.py_files);
-    h = mix_path_mtimes(h, key.rs_files);
+    h = mix_sorted_paths_len_mtime(h, key.py_files);
+    h = mix_sorted_paths_len_mtime(h, key.rs_files);
     if key.required.python {
         h = fnv1a64(h, python_backend_identity(key.repo_root)?.as_bytes());
     }
@@ -94,26 +94,6 @@ fn cov_records_fingerprint(key: &CovRecordsCacheKey<'_>) -> Option<String> {
         h = fnv1a64(h, rust_backend_identity(key.repo_root)?.as_bytes());
     }
     Some(format!("{h:016x}"))
-}
-
-fn mix_path_mtimes(mut h: u64, files: &[PathBuf]) -> u64 {
-    let mut paths: Vec<&PathBuf> = files.iter().collect();
-    paths.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
-    for path in paths {
-        h = fnv1a64(h, path.to_string_lossy().as_bytes());
-        if let Ok(meta) = fs::metadata(path) {
-            h = fnv1a64(h, meta.len().to_le_bytes().as_slice());
-            let mtime_ns = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map_or(0u128, |d| {
-                    u128::from(d.as_secs()) * 1_000_000_000_u128 + u128::from(d.subsec_nanos())
-                });
-            h = fnv1a64(h, mtime_ns.to_le_bytes().as_slice());
-        }
-    }
-    h
 }
 
 fn python_backend_identity(repo_root: &Path) -> Option<String> {
@@ -165,15 +145,6 @@ fn rust_population_backend_identity(cache: &Path) -> Option<String> {
     Some(format!(
         "rs-pop:{input}:{generation}:{entries}:{n_selectors}"
     ))
-}
-
-fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
-    const PRIME: u64 = 0x0100_0000_01b3;
-    for byte in bytes {
-        h ^= u64::from(*byte);
-        h = h.wrapping_mul(PRIME);
-    }
-    h
 }
 
 #[cfg(test)]

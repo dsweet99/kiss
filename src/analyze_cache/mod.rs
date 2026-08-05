@@ -8,7 +8,7 @@ use kiss::check_cache;
 use kiss::check_universe_cache::FullCheckCache;
 use kiss::{Config, DuplicateCluster, GateConfig, Violation};
 use kiss::DependencyGraph;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 mod path_helpers;
@@ -27,6 +27,42 @@ pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
         h ^= u64::from(b);
         h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    h
+}
+
+/// Nanoseconds since UNIX epoch from file metadata, or 0 if unavailable.
+#[must_use]
+pub fn mtime_ns_since_epoch(meta: &std::fs::Metadata) -> u128 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |d| {
+            u128::from(d.as_secs()) * 1_000_000_000_u128 + u128::from(d.subsec_nanos())
+        })
+}
+
+/// Mix path bytes, length, and mtime into an FNV-1a accumulator.
+#[must_use]
+pub fn mix_path_len_mtime(mut h: u64, path: &Path) -> u64 {
+    h = fnv1a64(h, path.to_string_lossy().as_bytes());
+    if let Ok(meta) = std::fs::metadata(path) {
+        h = fnv1a64(h, meta.len().to_le_bytes().as_slice());
+        h = fnv1a64(h, mtime_ns_since_epoch(&meta).to_le_bytes().as_slice());
+    }
+    h
+}
+
+/// Sort paths lexicographically by display string, then mix each path's meta.
+#[must_use]
+pub fn mix_sorted_paths_len_mtime<'a, I>(mut h: u64, files: I) -> u64
+where
+    I: IntoIterator<Item = &'a PathBuf>,
+{
+    let mut paths: Vec<&PathBuf> = files.into_iter().collect();
+    paths.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
+    for path in paths {
+        h = mix_path_len_mtime(h, path);
     }
     h
 }
@@ -82,24 +118,7 @@ pub fn fingerprint_for_check(
     h = mix_config_into_fingerprint(h, py_config);
     h = mix_config_into_fingerprint(h, rs_config);
     h = mix_gate_into_fingerprint(h, gate_config);
-
-    let mut all_files: Vec<&PathBuf> = py_files.iter().chain(rs_files).collect();
-    all_files.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
-
-    for p in &all_files {
-        h = fnv1a64(h, p.to_string_lossy().as_bytes());
-        if let Ok(meta) = std::fs::metadata(p) {
-            h = fnv1a64(h, meta.len().to_le_bytes().as_slice());
-            let mtime_ns = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map_or(0, |d| {
-                    u128::from(d.as_secs()) * 1_000_000_000_u128 + u128::from(d.subsec_nanos())
-                });
-            h = fnv1a64(h, mtime_ns.to_le_bytes().as_slice());
-        }
-    }
+    h = mix_sorted_paths_len_mtime(h, py_files.iter().chain(rs_files));
     format!("{h:016x}")
 }
 
