@@ -194,7 +194,7 @@ fn watch_sigint_rust_batch_exits_130() {
 }
 
 #[test]
-fn watch_daemon_parent_is_silent() {
+fn watch_daemon_parent_reports_backgrounded_pid() {
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
     write_python_repo(tmp.path());
@@ -206,11 +206,16 @@ fn watch_daemon_parent_is_silent() {
         .output()
         .expect("run kiss test --watch");
     assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = stdout.trim_end();
+    let prefix = "Backgrounded, pid = ";
     assert!(
-        output.stdout.is_empty(),
-        "stdout={:?}",
-        String::from_utf8_lossy(&output.stdout)
+        stdout.starts_with(prefix),
+        "stdout={stdout:?}"
     );
+    let reported: i32 = stdout[prefix.len()..]
+        .parse()
+        .unwrap_or_else(|_| panic!("pid not an integer: {stdout:?}"));
     assert!(
         output.stderr.is_empty(),
         "stderr={:?}",
@@ -218,13 +223,15 @@ fn watch_daemon_parent_is_silent() {
     );
     let watch_dir = tmp.path().join(".kiss").join("watch");
     let deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        if read_watch_pid(&watch_dir).is_some() {
-            break;
+    let file_pid = loop {
+        if let Some(pid) = read_watch_pid(&watch_dir) {
+            break pid;
         }
         if Instant::now() >= deadline {
-            panic!("daemon pid file not written after silent parent exit");
+            panic!("daemon pid file not written after Backgrounded parent exit");
         }
         std::thread::sleep(Duration::from_millis(50));
-    }
+    };
+    assert_eq!(reported, file_pid, "stdout pid must match .pid file");
+    let _ = unsafe { libc::kill(file_pid, libc::SIGKILL) };
 }

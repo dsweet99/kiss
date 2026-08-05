@@ -74,8 +74,9 @@ fn fallback_stamp() -> String {
 
 /// Validate the repo, open `.kiss/watch/*.log`, and double-fork into the background.
 ///
-/// The pre-fork parent exits 0 with no output. Surviving process has stdin/stdout on
-/// `/dev/null` and stderr on the error log. Call before any other CLI printing.
+/// The pre-fork parent prints `Backgrounded, pid = <daemon_pid>` to stdout and exits 0.
+/// Surviving process has stdin/stdout on `/dev/null` and stderr on the error log.
+/// Call before any other CLI printing.
 pub(crate) fn enter_watch_background() -> Result<(), String> {
     if WATCH_LOG_PATHS.get().is_some() {
         return Ok(());
@@ -108,22 +109,113 @@ pub(crate) fn ensure_watch_log_paths(repo_root: &Path) -> Result<&'static WatchL
 }
 
 /// Double-fork into a background session; stderr becomes `log_path`, stdout `/dev/null`.
+///
+/// The invoking parent waits for the daemon pid over a pipe, prints
+/// `Backgrounded, pid = …`, then exits 0.
 #[cfg(unix)]
 pub(crate) fn daemonize_watch(log_path: &Path) -> Result<(), String> {
+    let (read_fd, write_fd) = open_pid_pipe()?;
     match unsafe { libc::fork() } {
-        -1 => return Err(format!("fork failed: {}", std::io::Error::last_os_error())),
-        0 => {}
-        _ => std::process::exit(0),
+        -1 => {
+            close_fd(read_fd);
+            close_fd(write_fd);
+            Err(format!("fork failed: {}", std::io::Error::last_os_error()))
+        }
+        0 => {
+            close_fd(read_fd);
+            finish_daemonize(write_fd, log_path)
+        }
+        _ => {
+            close_fd(write_fd);
+            parent_report_backgrounded(read_fd)
+        }
     }
+}
+
+#[cfg(unix)]
+fn open_pid_pipe() -> Result<(i32, i32), String> {
+    let mut fds = [0; 2];
+    if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+        return Err(format!("pipe failed: {}", std::io::Error::last_os_error()));
+    }
+    Ok((fds[0], fds[1]))
+}
+
+#[cfg(unix)]
+fn close_fd(fd: i32) {
+    unsafe {
+        libc::close(fd);
+    }
+}
+
+#[cfg(unix)]
+fn parent_report_backgrounded(read_fd: i32) -> ! {
+    let daemon_pid = read_daemon_pid(read_fd);
+    close_fd(read_fd);
+    if let Some(pid) = daemon_pid {
+        println!("Backgrounded, pid = {pid}");
+        let _ = std::io::stdout().flush();
+        std::process::exit(0);
+    }
+    std::process::exit(1);
+}
+
+#[cfg(unix)]
+fn finish_daemonize(write_fd: i32, log_path: &Path) -> Result<(), String> {
     if unsafe { libc::setsid() } < 0 {
+        close_fd(write_fd);
         return Err(format!("setsid failed: {}", std::io::Error::last_os_error()));
     }
     match unsafe { libc::fork() } {
-        -1 => return Err(format!("fork failed: {}", std::io::Error::last_os_error())),
-        0 => {}
-        _ => std::process::exit(0),
+        -1 => {
+            close_fd(write_fd);
+            Err(format!("fork failed: {}", std::io::Error::last_os_error()))
+        }
+        0 => report_pid_and_redirect(write_fd, log_path),
+        _ => {
+            close_fd(write_fd);
+            std::process::exit(0);
+        }
     }
+}
+
+#[cfg(unix)]
+fn report_pid_and_redirect(write_fd: i32, log_path: &Path) -> Result<(), String> {
+    let pid = unsafe { libc::getpid() } as i32;
+    if !write_daemon_pid(write_fd, pid) {
+        close_fd(write_fd);
+        return Err("failed to report background pid".into());
+    }
+    close_fd(write_fd);
     redirect_daemon_stdio(log_path)
+}
+
+#[cfg(unix)]
+fn read_daemon_pid(read_fd: i32) -> Option<i32> {
+    let mut buf = [0u8; 4];
+    let mut got = 0usize;
+    while got < 4 {
+        let n = unsafe { libc::read(read_fd, buf[got..].as_mut_ptr().cast(), 4 - got) };
+        if n <= 0 {
+            return None;
+        }
+        got += n as usize;
+    }
+    Some(i32::from_ne_bytes(buf))
+}
+
+#[cfg(unix)]
+fn write_daemon_pid(write_fd: i32, pid: i32) -> bool {
+    let bytes = pid.to_ne_bytes();
+    let mut sent = 0usize;
+    while sent < 4 {
+        let n = unsafe { libc::write(write_fd, bytes[sent..].as_ptr().cast(), 4 - sent) };
+        if n <= 0 {
+            return false;
+        }
+        sent += n as usize;
+    }
+    true
 }
 
 #[cfg(unix)]
@@ -251,7 +343,7 @@ mod tests {
         let pid = unsafe { libc::fork() };
         assert!(pid >= 0, "fork failed");
         if pid == 0 {
-            // Parent path inside daemonize_watch calls process::exit(0).
+            // Parent path inside daemonize_watch prints Backgrounded and exits 0.
             let _ = daemonize_watch(&log);
             unsafe { libc::_exit(0) };
         }
@@ -262,6 +354,21 @@ mod tests {
         assert_eq!(libc::WEXITSTATUS(status), 0);
         // Best-effort cleanup of any surviving daemon grandchild.
         std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    #[test]
+    fn write_and_read_daemon_pid_round_trip() {
+        let mut fds = [0; 2];
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        let (read_fd, write_fd) = (fds[0], fds[1]);
+        assert!(write_daemon_pid(write_fd, 424242));
+        unsafe {
+            libc::close(write_fd);
+        }
+        assert_eq!(read_daemon_pid(read_fd), Some(424242));
+        unsafe {
+            libc::close(read_fd);
+        }
     }
 
     #[test]
