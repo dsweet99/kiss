@@ -89,6 +89,7 @@ pub fn run_config(
     py: &Config,
     rs: &Config,
     gate: &GateConfig,
+    test: &kiss::TestSectionConfig,
     config_path: Option<&PathBuf>,
     use_defaults: bool,
 ) {
@@ -107,6 +108,12 @@ pub fn run_config(
     println!("min_similarity = {:.2}", gate.min_similarity);
     println!("duplication_enabled = {}", gate.duplication_enabled);
     println!("orphan_module_enabled = {}", gate.orphan_module_enabled);
+    println!("\n[test]");
+    println!("num_jobs = {}", test.num_jobs);
+    println!("watch_settle_seconds = {}", test.watch_settle_seconds);
+    if let Some(main) = &test.main_branch {
+        println!("main_branch = \"{}\"", main);
+    }
     println!("\n[python]");
     print_python_config(py);
     println!("\n[rust]");

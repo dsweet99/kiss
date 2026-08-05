@@ -80,6 +80,7 @@ rpytest-runner = { path = "crates/rpytest-runner" }
 rslip = { path = "crates/rslip" }
 rust-llvm-cov-runner = { path = "crates/rust-llvm-cov-runner" }
 kiss-publication-barrier = { path = "crates/kiss-publication-barrier" }
+notify = "6.1"
 
 [dev-dependencies]
 tempfile = "3"

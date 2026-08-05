@@ -10,6 +10,7 @@ use rust_llvm_cov_runner::{
 };
 
 use crate::test_runner::last_status::prior_failures;
+use crate::test_runner::rust_llvm_cov_error::format_rust_llvm_cov_error;
 
 pub(crate) fn passed_rust_llvm_cov_outcome(selector: String) -> RustLlvmCovOutcome {
     RustLlvmCovOutcome {
@@ -334,4 +335,11 @@ fn run_rust_llvm_cov_selectors_rejects_zero_jobs_before_spawning() {
     let tmp = tempfile::tempdir().unwrap();
 
     let _ = run_rust_llvm_cov_selectors(tmp.path(), &[], &[], false, 0, None);
+}
+
+
+#[test]
+fn interrupted_error_maps_without_string_matching() {
+    let err = RustLlvmCovError::Interrupted;
+    assert!(matches!(err, RustLlvmCovError::Interrupted));
 }

@@ -12,6 +12,9 @@ mod rust_coverage_index;
 mod rust_llvm_cov;
 mod targets;
 pub(crate) mod unit_test_timing;
+mod watch;
+mod rust_batch_interrupt;
+mod rust_llvm_cov_error;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -61,7 +64,20 @@ pub struct RunTestCmdArgs<'a> {
     pub config_main_branch: Option<&'a str>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum RunTestOnceOutcome {
+    Code(i32),
+    Interrupted,
+}
+
 pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
+    match run_test_once(a) {
+        RunTestOnceOutcome::Code(code) => code,
+        RunTestOnceOutcome::Interrupted => 130,
+    }
+}
+
+pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     let dry_run = a.dry_run;
     let force_rerun = a.force_rerun;
     let metrics = a.metrics;
@@ -82,19 +98,24 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
                     plan_duration: plan_started.elapsed(),
                 },
             ) {
-                Ok(c) => c,
+                Ok(c) => RunTestOnceOutcome::Code(c),
                 Err(e) => {
+                    if rust_batch_interrupt::consume_rust_batch_interrupted() {
+                        return RunTestOnceOutcome::Interrupted;
+                    }
                     eprintln!("{e}");
-                    1
+                    RunTestOnceOutcome::Code(1)
                 }
             }
         }
         Err(e) => {
             eprintln!("{e}");
-            1
+            RunTestOnceOutcome::Code(1)
         }
     }
 }
+
+pub(crate) use watch::run_test_watch;
 
 fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, String> {
     match &a.invocation {

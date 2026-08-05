@@ -230,15 +230,10 @@ fn interrupted_batch_attempts_current_run_cleanup() {
     let req = batch_executor_request(repo.path());
     let run_root = run_root_for(&req);
     let runner = BatchSubprocessRunner::from_fn(|_, _| {
-        Err(crate::execute_or_reuse::batch_run::BatchSubprocessRunError::Spawn {
-            program: "batch".to_string(),
-            message: "batch interrupted".to_string(),
-        })
+        Err(crate::execute_or_reuse::batch_run::BatchSubprocessRunError::Interrupted)
     });
     let err = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap_err();
-    assert!(
-        matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("batch interrupted"))
-    );
+    assert!(matches!(err, RustLlvmCovError::Interrupted));
     assert!(!run_root.exists());
 }
 

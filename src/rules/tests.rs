@@ -36,8 +36,9 @@ fn test_run_config_and_print_config() {
     let py = Config::python_defaults();
     let rs = Config::rust_defaults();
     let gate = GateConfig::default();
-    run_config(&py, &rs, &gate, None, false);
-    run_config(&py, &rs, &gate, None, true);
+    let test = kiss::TestSectionConfig::default();
+    run_config(&py, &rs, &gate, &test, None, false);
+    run_config(&py, &rs, &gate, &test, None, true);
     print_python_config(&py);
     print_rust_config(&rs);
 }

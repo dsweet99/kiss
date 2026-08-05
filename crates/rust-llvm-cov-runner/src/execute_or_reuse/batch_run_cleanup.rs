@@ -285,6 +285,7 @@ pub fn append_cleanup_error(primary: RustLlvmCovError, cleanup: io::Error) -> Ru
         RustLlvmCovError::InvalidRequest(message) => {
             RustLlvmCovError::InvalidRequest(format!("{message}; cleanup failed: {cleanup}"))
         }
+        RustLlvmCovError::Interrupted => RustLlvmCovError::Interrupted,
         other => RustLlvmCovError::InvalidRequest(format!("{other:?}; cleanup failed: {cleanup}")),
     }
 }

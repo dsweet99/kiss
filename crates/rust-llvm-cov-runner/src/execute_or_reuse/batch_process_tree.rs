@@ -11,7 +11,7 @@ pub(crate) use batch_process_tree_groups::{
 
 use std::io;
 use std::process::{Child, Command};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -26,7 +26,7 @@ pub struct ProcessGroupIdentity {
 
 #[derive(Default)]
 pub struct ProcessTreeRegistry {
-    groups: Mutex<Vec<ProcessGroupIdentity>>,
+    pub(crate) groups: Mutex<Vec<ProcessGroupIdentity>>,
 }
 
 impl ProcessTreeRegistry {
@@ -173,6 +173,14 @@ impl Drop for BatchProcessTreeGuard {
 #[cfg(unix)]
 static SIGINT_STATE: OnceLock<Mutex<Option<SigintHandlerState>>> = OnceLock::new();
 
+/// Raw pointers published for the SIGINT handler so it never needs `Mutex::lock`.
+/// Cleared before the owning `Arc`s are dropped in `clear_sigint_handler`.
+#[cfg(unix)]
+static ACTIVE_SIGINT_FLAG: AtomicPtr<AtomicBool> = AtomicPtr::new(std::ptr::null_mut());
+#[cfg(unix)]
+static ACTIVE_SIGINT_REGISTRY: AtomicPtr<ProcessTreeRegistry> =
+    AtomicPtr::new(std::ptr::null_mut());
+
 type BatchScopeSigintState = (Arc<ProcessTreeRegistry>, Arc<AtomicBool>);
 static BATCH_SCOPE_SIGINT: OnceLock<Mutex<Option<BatchScopeSigintState>>> = OnceLock::new();
 
@@ -220,27 +228,31 @@ type SigintHandlerState = (Arc<ProcessTreeRegistry>, Arc<AtomicBool>);
 
 #[cfg(unix)]
 extern "C" fn handle_sigint(_signal: libc::c_int) {
-    if let Some(state) = SIGINT_STATE
-        .get()
-        .and_then(|slot| slot.lock().ok())
-        .and_then(|slot| slot.as_ref().cloned())
-    {
-        let (registry, interrupted) = state;
-        interrupted.store(true, Ordering::SeqCst);
-        for identity in registry.identities() {
-            signal_validated_process_group(&identity, libc::SIGTERM);
+    // Async-signal-safe-ish: no Mutex::lock, no sleep. Flag the batch and
+    // best-effort kill recorded groups; `wait_child_with_interruption` reaps.
+    let flag = ACTIVE_SIGINT_FLAG.load(Ordering::SeqCst);
+    if !flag.is_null() {
+        unsafe {
+            (*flag).store(true, Ordering::SeqCst);
         }
-        let deadline = Instant::now() + Duration::from_millis(250);
-        while Instant::now() < deadline {
-            if registry.residual_count() == 0 {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        }
-        for identity in registry.identities() {
-            signal_validated_process_group(&identity, libc::SIGKILL);
-        }
-        batch_process_tree_reap::reap_zombies();
+    }
+    let registry = ACTIVE_SIGINT_REGISTRY.load(Ordering::SeqCst);
+    if registry.is_null() {
+        return;
+    }
+    let Some(identities) = (unsafe { &*registry })
+        .groups
+        .try_lock()
+        .ok()
+        .map(|groups| groups.clone())
+    else {
+        return;
+    };
+    for identity in &identities {
+        signal_validated_process_group(identity, libc::SIGTERM);
+    }
+    for identity in &identities {
+        signal_validated_process_group(identity, libc::SIGKILL);
     }
 }
 
@@ -253,7 +265,15 @@ fn install_sigint_handler(
     *slot
         .lock()
         .map_err(|_| io::Error::other("sigint registry lock poisoned"))? =
-        Some((registry, interrupted));
+        Some((Arc::clone(&registry), Arc::clone(&interrupted)));
+    ACTIVE_SIGINT_FLAG.store(
+        Arc::as_ptr(&interrupted) as *mut AtomicBool,
+        Ordering::SeqCst,
+    );
+    ACTIVE_SIGINT_REGISTRY.store(
+        Arc::as_ptr(&registry) as *mut ProcessTreeRegistry,
+        Ordering::SeqCst,
+    );
     let previous = unsafe {
         let mut action: libc::sigaction = std::mem::zeroed();
         action.sa_sigaction = handle_sigint as *const () as usize;
@@ -284,6 +304,8 @@ fn install_sigint_handler(
 fn clear_sigint_handler() {
     #[cfg(unix)]
     {
+        ACTIVE_SIGINT_FLAG.store(std::ptr::null_mut(), Ordering::SeqCst);
+        ACTIVE_SIGINT_REGISTRY.store(std::ptr::null_mut(), Ordering::SeqCst);
         if SIGINT_STATE.get().is_some() {
             unsafe {
                 let mut action: libc::sigaction = std::mem::zeroed();

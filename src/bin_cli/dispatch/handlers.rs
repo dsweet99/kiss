@@ -112,6 +112,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_config(o: ConfigDispatchOptions<'_>
         o.cfg.py,
         o.cfg.rs,
         o.cfg.gate,
+        o.test_cfg,
         o.config.as_ref(),
         o.defaults,
     );
@@ -154,6 +155,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) ->
         dry_run: o.dry_run,
         force: o.force,
         metrics: o.metrics,
+        watch: o.watch,
         jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
         ignore: &o.ignore,
         extra: &o.extra,

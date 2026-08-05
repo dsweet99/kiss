@@ -34,6 +34,7 @@ use super::python_coverage_index::{
     stored_python_universe_selectors,
 };
 use python_collect::collect_python_nodeids;
+pub(crate) use python_collect::clear_python_collect_memo;
 pub(crate) fn collect_python_nodeids_for_targets(
     repo_root: &Path,
     paths: Option<&[PathBuf]>,

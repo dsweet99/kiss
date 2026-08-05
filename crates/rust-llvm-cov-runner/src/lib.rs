@@ -258,6 +258,7 @@ pub enum RustLlvmCovError {
     Json(serde_json::Error),
     InvalidRequest(String),
     MissingArtifact(PathBuf),
+    Interrupted,
 }
 
 impl From<io::Error> for RustLlvmCovError {

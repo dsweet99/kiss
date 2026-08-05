@@ -170,3 +170,16 @@ fn test_cli_parses_targets_and_rejects_removed_modes() {
     }
 }
 
+#[test]
+fn test_watch_flag_parses() {
+    let cli = Cli::try_parse_from(["kiss", "test", "--watch", "commit"]).unwrap();
+    match cli.command {
+        Commands::Test {
+            watch: true,
+            operands,
+            ..
+        } => assert_eq!(operands, vec!["commit".to_string()]),
+        _ => panic!("expected watch"),
+    }
+}
+

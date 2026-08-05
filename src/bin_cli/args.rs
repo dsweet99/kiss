@@ -360,6 +360,9 @@ pub enum Commands {
         /// Print a local rubric metrics summary for this run
         #[arg(long)]
         metrics: bool,
+        /// Re-run covering tests when watched sources settle
+        #[arg(long)]
+        watch: bool,
         /// Maximum number of test jobs to run concurrently
         /// (default: [test] num_jobs from config)
         #[arg(short = 'j', long, value_name = "JOBS", value_parser = parse_positive_usize)]

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use kiss::Language;
+use kiss::TestSectionConfig;
 
 use super::TriConfig;
 
@@ -25,6 +26,7 @@ pub(crate) struct ConfigDispatchOptions<'a> {
     pub defaults: bool,
     pub config: Option<PathBuf>,
     pub cfg: &'a TriConfig<'a>,
+    pub test_cfg: &'a TestSectionConfig,
 }
 
 pub(crate) struct VizDispatchOptions {

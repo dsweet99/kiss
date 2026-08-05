@@ -102,6 +102,8 @@ fn batch_subprocess_error_converts_to_rust_llvm_cov_error() {
     }
     .into();
     assert!(matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("boom")));
+    let interrupted: RustLlvmCovError = BatchSubprocessRunError::Interrupted.into();
+    assert!(matches!(interrupted, RustLlvmCovError::Interrupted));
 }
 
 #[test]

@@ -41,11 +41,13 @@ pub struct BatchSubprocessRunOutcome {
 #[derive(Debug, PartialEq, Eq)]
 pub enum BatchSubprocessRunError {
     Spawn { program: String, message: String },
+    Interrupted,
 }
 
 impl From<BatchSubprocessRunError> for RustLlvmCovError {
     fn from(value: BatchSubprocessRunError) -> Self {
         match value {
+            BatchSubprocessRunError::Interrupted => Self::Interrupted,
             BatchSubprocessRunError::Spawn { program, message } => {
                 Self::InvalidRequest(format!("failed to spawn `{program}`: {message}"))
             }

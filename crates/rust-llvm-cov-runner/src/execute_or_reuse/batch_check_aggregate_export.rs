@@ -238,12 +238,12 @@ impl ExportScheduler {
         let mut results = BTreeMap::new();
         while self.running > 0 {
             if crate::execute_or_reuse::batch_process_tree::batch_scope_interrupted() {
-                return Err(RustLlvmCovError::InvalidRequest("batch interrupted".into()));
+                return Err(RustLlvmCovError::Interrupted);
             }
             self.receive_one(&mut results)?;
         }
         if crate::execute_or_reuse::batch_process_tree::batch_scope_interrupted() {
-            return Err(RustLlvmCovError::InvalidRequest("batch interrupted".into()));
+            return Err(RustLlvmCovError::Interrupted);
         }
         Ok((results, self.counters.clone()))
     }

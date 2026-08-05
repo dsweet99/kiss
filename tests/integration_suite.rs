@@ -22,6 +22,8 @@ mod cli_integration;
 mod cli_integration_2;
 #[path = "cases/cli_kiss_test_smoke.rs"]
 mod cli_kiss_test_smoke;
+#[path = "cases/watch_sigint.rs"]
+mod watch_sigint;
 #[path = "cases/config_tests.rs"]
 mod config_tests;
 #[path = "cases/coverage_corpus.rs"]

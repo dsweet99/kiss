@@ -28,15 +28,15 @@ pub fn rekey_selector_entries_to_identity(
     prior_generation: &str,
     selectors: &[String],
 ) -> Result<(), RustLlvmCovError> {
+    // One directory scan: per-selector full-directory walks are O(selectors×entries)
+    // and hang `kiss cov` on large caches (~10k entries × ~1.5k selectors).
+    let by_selector = index_generation_selector_entries(&req.cache_root, prior_generation);
     for selector in selectors {
-        let mut entry =
-            load_generation_selector_entry(&req.cache_root, prior_generation, selector).ok_or_else(
-                || {
-                    RustLlvmCovError::InvalidRequest(format!(
-                        "missing retained Rust coverage entry for selector `{selector}`"
-                    ))
-                },
-            )?;
+        let mut entry = by_selector.get(selector).cloned().ok_or_else(|| {
+            RustLlvmCovError::InvalidRequest(format!(
+                "missing retained Rust coverage entry for selector `{selector}`"
+            ))
+        })?;
         entry.generation_fingerprint = current.generation_fingerprint.clone();
         let fingerprint = crate::plan::batch_fingerprint::entry_fingerprint(
             &current.input_digest,
@@ -85,18 +85,18 @@ fn validate_successor_entries(
     selectors: &[String],
     expected_selector_binaries: &BTreeMap<String, Vec<String>>,
 ) -> Result<(), RustLlvmCovError> {
+    let by_selector = index_generation_selector_entries(cache_root, generation);
     for selector in selectors {
         let expected = expected_selector_binaries.get(selector).ok_or_else(|| {
             RustLlvmCovError::InvalidRequest(format!(
                 "missing executable metadata for Rust selector `{selector}`"
             ))
         })?;
-        let entry =
-            load_generation_selector_entry(cache_root, generation, selector).ok_or_else(|| {
-                RustLlvmCovError::InvalidRequest(format!(
-                    "missing successor Rust coverage entry for selector `{selector}`"
-                ))
-            })?;
+        let entry = by_selector.get(selector).ok_or_else(|| {
+            RustLlvmCovError::InvalidRequest(format!(
+                "missing successor Rust coverage entry for selector `{selector}`"
+            ))
+        })?;
         if entry.status != rpytest_runner::TestStatus::Passed {
             return Err(RustLlvmCovError::InvalidRequest(format!(
                 "successor Rust coverage entry for selector `{selector}` did not pass"
@@ -112,26 +112,45 @@ fn validate_successor_entries(
     Ok(())
 }
 
+/// Single pass over `entries/` for one generation → selector map (first wins).
+fn index_generation_selector_entries(
+    cache_root: &Path,
+    generation: &str,
+) -> BTreeMap<String, RustCovCacheEntry> {
+    let mut by_selector = BTreeMap::new();
+    let entries_dir = cache_root.join("entries");
+    let Ok(entries) = fs::read_dir(entries_dir) else {
+        return by_selector;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(bytes) = fs::read(&path) else {
+            continue;
+        };
+        let Ok(parsed) = serde_json::from_slice::<RustCovCacheEntry>(&bytes) else {
+            continue;
+        };
+        if parsed.schema_version == CACHE_SCHEMA_VERSION
+            && parsed.generation_fingerprint == generation
+        {
+            by_selector.entry(parsed.selector.clone()).or_insert(parsed);
+        }
+    }
+    by_selector
+}
+
+#[cfg(test)]
 fn load_generation_selector_entry(
     cache_root: &Path,
     generation: &str,
     selector: &str,
 ) -> Option<RustCovCacheEntry> {
-    let entries_dir = cache_root.join("entries");
-    for entry in fs::read_dir(entries_dir).ok()?.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-            continue;
-        }
-        let parsed: RustCovCacheEntry = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
-        if parsed.schema_version == CACHE_SCHEMA_VERSION
-            && parsed.generation_fingerprint == generation
-            && parsed.selector == selector
-        {
-            return Some(parsed);
-        }
-    }
-    None
+    index_generation_selector_entries(cache_root, generation)
+        .get(selector)
+        .cloned()
 }
 
 #[cfg(test)]
@@ -309,5 +328,66 @@ mod tests {
         .expect("current-generation retained entry");
         assert_eq!(entry.generation_fingerprint, current.generation_fingerprint);
         assert_eq!(entry.test_binary_ids, vec!["test-bin".to_string()]);
+    }
+
+    #[test]
+    fn rekey_and_validate_scale_with_many_decoy_entries() {
+        // Regression: per-selector full-directory scans made kiss cov hang on large caches.
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join("src")).unwrap();
+        std::fs::write(repo.path().join("Cargo.toml"), "[package]\n").unwrap();
+        std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let req = derived_fixture_request(repo.path());
+        let tools = witness_batch_tools();
+        let current = batch_identity(&req, &tools).unwrap();
+        let prior_generation = "prior-generation";
+        let entries = req.cache_root.join("entries");
+        std::fs::create_dir_all(&entries).unwrap();
+        for i in 0..2_000 {
+            let decoy = RustCovCacheEntry::from_outcome(
+                &RustLlvmCovOutcome {
+                    selector: format!("decoy_{i}"),
+                    status: TestStatus::Passed,
+                    exit_code: Some(0),
+                    duration: Duration::from_millis(1),
+                    coverage: RustLineCoverage {
+                        files: BTreeMap::new(),
+                    },
+                    test_binary_ids: vec!["test-bin".to_string()],
+                    cache_status: RustCovCacheStatus::MissStored,
+                    stdout: None,
+                    stderr: None,
+                },
+                prior_generation,
+            );
+            store_rust_cov_cache_entry(&req.cache_root, &format!("decoy{i:04x}"), &decoy).unwrap();
+        }
+        store_entry(
+            &req,
+            &tools,
+            prior_generation,
+            "alpha",
+            vec!["test-bin".to_string()],
+        );
+        let expected = BTreeMap::from([("alpha".to_string(), vec!["test-bin".to_string()])]);
+        let selectors = vec!["alpha".to_string()];
+        let started = std::time::Instant::now();
+        super::publish_incremental_derived_state(
+            &req,
+            &tools,
+            &current,
+            super::IncrementalPublishPlan {
+                prior_generation,
+                selectors: &selectors,
+                retained_selectors: &selectors,
+                expected_selector_binaries: &expected,
+                test_binaries: &[test_binary()],
+            },
+        )
+        .unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "indexed lookup must stay fast with thousands of decoy entries"
+        );
     }
 }

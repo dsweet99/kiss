@@ -88,6 +88,7 @@ fn call_handler_dispatchers(
             defaults: true,
             config: None,
             cfg,
+            test_cfg: test,
         }),
         0
     );
@@ -114,6 +115,7 @@ fn call_handler_dispatchers(
         dry_run: true,
         force: false,
         metrics: false,
+        watch: false,
         jobs: None,
         ignore: vec![],
         extra: vec![],
@@ -202,6 +204,7 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
                 dry_run: true,
                 force: false,
                 metrics: false,
+                watch: false,
                 jobs: None,
                 ignore: vec![],
                 extra: vec![],
@@ -324,3 +327,37 @@ fn dispatch_private_routers_cover_additional_command_variants() {
 
     std::env::set_current_dir(orig_dir).unwrap();
 }
+
+#[test]
+fn dispatch_test_rejects_watch_with_dry_run() {
+    let test = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    let cfg = super::TriConfig {
+        py: &py,
+        rs: &rs,
+        gate: &gate,
+    };
+    assert_eq!(
+        super::dispatch_test_command(
+            None,
+            Commands::Test {
+                operands: vec![".".to_string()],
+                main_branch: None,
+                base_branch: None,
+                dry_run: true,
+                force: false,
+                metrics: false,
+                watch: true,
+                jobs: None,
+                ignore: vec![],
+                extra: vec![],
+            },
+            &cfg,
+            &test,
+        ),
+        2
+    );
+}
+

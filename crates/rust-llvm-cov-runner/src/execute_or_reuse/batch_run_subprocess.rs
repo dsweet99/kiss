@@ -167,7 +167,13 @@ fn run_tracked_batch_command(
     );
     let stdout = join_pipe_reader(stdout_handle, &program, "stdout")?;
     let stderr = join_pipe_reader(stderr_handle, &program, "stderr")?;
-    let status = wait_result.map_err(|err| spawn_component_error(&program, err.to_string()))?;
+    let status = match wait_result {
+        Ok(status) => status,
+        Err(err) if err.kind() == io::ErrorKind::Interrupted => {
+            return Err(BatchSubprocessRunError::Interrupted);
+        }
+        Err(err) => return Err(spawn_component_error(&program, err.to_string())),
+    };
     Ok(std::process::Output {
         status,
         stdout,

@@ -5,6 +5,7 @@ use std::path::Path;
 pub struct TestSectionConfig {
     pub main_branch: Option<String>,
     pub num_jobs: usize,
+    pub watch_settle_seconds: f64,
 }
 
 impl Default for TestSectionConfig {
@@ -12,6 +13,7 @@ impl Default for TestSectionConfig {
         Self {
             main_branch: None,
             num_jobs: 4,
+            watch_settle_seconds: 1.0,
         }
     }
 }
@@ -56,7 +58,7 @@ impl TestSectionConfig {
             return;
         };
         if let Some(t) = value.get("test").and_then(|v| v.as_table()) {
-            if let Err(e) = check_unknown_keys(t, &["main_branch", "num_jobs"], "test") {
+            if let Err(e) = check_unknown_keys(t, &["main_branch", "num_jobs", "watch_settle_seconds"], "test") {
                 eprintln!("Error: {e}");
                 return;
             }
@@ -76,6 +78,16 @@ impl TestSectionConfig {
                     eprintln!("Warning: Config key 'num_jobs' expected a positive integer");
                 }
             }
+            if let Some(v) = t.get("watch_settle_seconds") {
+                if let Some(n) = v.as_float().or_else(|| v.as_integer().map(|i| i as f64))
+                    && n.is_finite()
+                    && n > 0.0
+                {
+                    self.watch_settle_seconds = n;
+                } else {
+                    eprintln!("Warning: Config key 'watch_settle_seconds' expected a finite number greater than zero");
+                }
+            }
         }
     }
 
@@ -86,7 +98,7 @@ impl TestSectionConfig {
                 message: e.to_string(),
             })?;
         if let Some(t) = value.get("test").and_then(|v| v.as_table()) {
-            check_unknown_keys(t, &["main_branch", "num_jobs"], "test")?;
+            check_unknown_keys(t, &["main_branch", "num_jobs", "watch_settle_seconds"], "test")?;
             if let Some(v) = t.get("main_branch") {
                 let s = v.as_str().ok_or_else(|| ConfigError::InvalidValue {
                     key: "main_branch".into(),
@@ -105,6 +117,22 @@ impl TestSectionConfig {
                         message: "expected a positive integer".into(),
                     }
                 })?;
+            }
+            if let Some(v) = t.get("watch_settle_seconds") {
+                let n = v
+                    .as_float()
+                    .or_else(|| v.as_integer().map(|i| i as f64))
+                    .ok_or_else(|| ConfigError::InvalidValue {
+                        key: "watch_settle_seconds".into(),
+                        message: "expected a finite number greater than zero".into(),
+                    })?;
+                if !n.is_finite() || n <= 0.0 {
+                    return Err(ConfigError::InvalidValue {
+                        key: "watch_settle_seconds".into(),
+                        message: "expected a finite number greater than zero".into(),
+                    });
+                }
+                self.watch_settle_seconds = n;
             }
         }
         Ok(())
@@ -176,5 +204,35 @@ mod tests {
         std::fs::write(".kissconfig", "[test]\nnum_jobs = 0\n").unwrap();
 
         assert!(TestSectionConfig::try_load().is_err());
+    }
+
+    #[test]
+    fn test_section_config_defaults_watch_settle_to_one() {
+        assert!((TestSectionConfig::default().watch_settle_seconds - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_section_config_reads_watch_settle_seconds() {
+        let cwd = tempfile::TempDir::new().unwrap();
+        let _cwd_guard = CwdGuard::enter(cwd.path());
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "[test]\nwatch_settle_seconds = 2.5\n").unwrap();
+        assert!(
+            (TestSectionConfig::try_load_from(tmp.path())
+                .unwrap()
+                .watch_settle_seconds
+                - 2.5)
+                .abs()
+                < f64::EPSILON
+        );
+    }
+
+    #[test]
+    fn test_section_config_rejects_nonpositive_watch_settle() {
+        let cwd = tempfile::TempDir::new().unwrap();
+        let _cwd_guard = CwdGuard::enter(cwd.path());
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "[test]\nwatch_settle_seconds = 0\n").unwrap();
+        assert!(TestSectionConfig::try_load_from(tmp.path()).is_err());
     }
 }

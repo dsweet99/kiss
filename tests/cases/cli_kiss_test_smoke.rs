@@ -1,39 +1,6 @@
 use std::path::Path;
 
-use crate::support::git::git_command;
-
-fn init_git_repo(dir: &Path) {
-    assert!(
-        git_command(dir)
-            .args(["init", "-b", "main"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    for kv in [("user.email", "t@t.t"), ("user.name", "t")] {
-        git_command(dir)
-            .args(["config", kv.0, kv.1])
-            .status()
-            .unwrap();
-    }
-}
-
-fn commit_all(dir: &Path, message: &str) {
-    assert!(
-        git_command(dir)
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_command(dir)
-            .args(["commit", "-m", message])
-            .status()
-            .unwrap()
-            .success()
-    );
-}
+use crate::support::git::{commit_all, git_command, init_git_repo};
 
 fn write_python_fixture(dir: &Path) {
     std::fs::write(dir.join("lib.py"), "def f():\n    return 0\n").unwrap();

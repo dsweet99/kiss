@@ -77,6 +77,10 @@ min_similarity = {min_sim}
 duplication_enabled = true
 orphan_module_enabled = true
 
+[test]
+num_jobs = 4
+watch_settle_seconds = 1.0
+
 [python]
 statements_per_function = {py_statements}
 positional_args = {py_pos_args}

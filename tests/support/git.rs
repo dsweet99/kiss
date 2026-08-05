@@ -5,6 +5,39 @@ pub fn git_command(repo: &Path) -> Command {
     kiss::scrubbed_git_command(repo)
 }
 
+pub fn init_git_repo(dir: &Path) {
+    assert!(
+        git_command(dir)
+            .args(["init", "-b", "main"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    for kv in [("user.email", "t@t.t"), ("user.name", "t")] {
+        git_command(dir)
+            .args(["config", kv.0, kv.1])
+            .status()
+            .unwrap();
+    }
+}
+
+pub fn commit_all(dir: &Path, message: &str) {
+    assert!(
+        git_command(dir)
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_command(dir)
+            .args(["commit", "-m", message])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
 #[test]
 fn bare_git_commands_stay_in_approved_helpers() {
     let roots = [Path::new("src"), Path::new("tests")];

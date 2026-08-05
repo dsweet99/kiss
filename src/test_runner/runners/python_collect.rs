@@ -97,10 +97,14 @@ pub(crate) fn format_collect_error_for_test(err: rpytest_runner::PytestCollectEr
     format_collect_error(err)
 }
 
+pub(crate) fn clear_python_collect_memo() {
+    COLLECT_MEMO.lock().unwrap().clear();
+}
+
 #[cfg(test)]
 #[allow(dead_code)]
 pub(crate) fn reset_python_collect_memo_for_tests() {
-    COLLECT_MEMO.lock().unwrap().clear();
+    clear_python_collect_memo();
 }
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rust_llvm_cov_runner::{
     CheckAggregateRepairPublication, CoverageOutputMode, RustCovCacheStatus,
-    RustCoverageBatchRequest, RustCoverageBatchResult, RustCoverageToolIdentity, RustLlvmCovError,
+    RustCoverageBatchRequest, RustCoverageBatchResult, RustCoverageToolIdentity,
     RustLlvmCovOutcome, RustTestExecutableIndex, build_rust_coverage_batch_plan,
     build_rust_test_executable_index, execute_rust_coverage_batch, resolve_batch_request_runners,
     validate_supported_rust_test_args,
@@ -14,6 +14,7 @@ use rust_llvm_cov_runner::{
 use super::last_status::{LastStatusIdentity, record_statuses, rust_last_status_identity};
 use super::runners::{SelectorCacheRecord, SelectorExecutionSummary};
 use crate::test_runner::rust_coverage_index::relevant_rust_batch_env;
+use crate::test_runner::rust_llvm_cov_error::map_rust_llvm_cov_error;
 
 pub(crate) fn validate_rust_extra_args(extra: &[String]) -> Result<(), String> {
     validate_supported_rust_test_args(extra)
@@ -226,7 +227,7 @@ fn execute_rust_coverage_batch_compat(
         rustc_version: versions.rustc.clone(),
         cargo_nextest_version: versions.cargo_nextest.clone(),
     };
-    execute_rust_coverage_batch(batch_req, &tools).map_err(format_rust_llvm_cov_error)
+    execute_rust_coverage_batch(batch_req, &tools).map_err(map_rust_llvm_cov_error)
 }
 
 pub(crate) fn rust_coverage_batch_request_from_parts(
@@ -257,7 +258,7 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
         host_platform: String::new(),
         coverage_output_mode,
     };
-    resolve_batch_request_runners(&mut req).map_err(format_rust_llvm_cov_error)?;
+    resolve_batch_request_runners(&mut req).map_err(map_rust_llvm_cov_error)?;
     Ok(req)
 }
 
@@ -292,7 +293,7 @@ pub(crate) fn build_current_rust_test_executable_index(
     let identity = rust_llvm_cov_runner::batch_identity(&request, &tools)
         .map_err(|err| format!("batch identity: {err}"))?;
     let index = build_rust_test_executable_index(&request, &tools, &identity, &plan)
-        .map_err(format_rust_llvm_cov_error)?;
+        .map_err(map_rust_llvm_cov_error)?;
     Ok(RustExecutableIndexBuild {
         request,
         tools,
@@ -403,13 +404,9 @@ fn finish_rust_coverage_batch_result(
     }
     record_statuses(repo_root, kiss::Language::Rust, identity, &statuses)?;
     if let Some(err) = result.batch_error {
-        return Err(format_rust_llvm_cov_error(err));
+        return Err(map_rust_llvm_cov_error(err));
     }
     Ok(summary)
-}
-
-fn format_rust_llvm_cov_error(err: RustLlvmCovError) -> String {
-    format!("error: kiss test: rust llvm-cov failed: {err:?}")
 }
 
 #[cfg(test)]

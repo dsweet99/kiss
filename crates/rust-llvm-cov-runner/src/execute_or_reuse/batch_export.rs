@@ -293,7 +293,7 @@ fn clone_export_context(context: &_ExportJobContext) -> _ExportJobContext {
 fn drain_export_results(drain: &mut ExportDrainState<'_>) -> Result<(), RustLlvmCovError> {
     while *drain.running > 0 {
         if crate::execute_or_reuse::batch_process_tree::batch_scope_interrupted() {
-            return Err(RustLlvmCovError::InvalidRequest("batch interrupted".into()));
+            return Err(RustLlvmCovError::Interrupted);
         }
         match drain.rx.recv_timeout(Duration::from_millis(25)) {
             Ok((index, outcome)) => {
@@ -318,7 +318,7 @@ fn drain_export_results(drain: &mut ExportDrainState<'_>) -> Result<(), RustLlvm
         }
     }
     if crate::execute_or_reuse::batch_process_tree::batch_scope_interrupted() {
-        return Err(RustLlvmCovError::InvalidRequest("batch interrupted".into()));
+        return Err(RustLlvmCovError::Interrupted);
     }
     Ok(())
 }

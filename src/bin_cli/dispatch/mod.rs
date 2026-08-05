@@ -119,6 +119,7 @@ fn dispatch_tools(
             defaults,
             config,
             cfg,
+            test_cfg: test_section,
         }),
         Commands::Viz {
             out,
@@ -183,6 +184,7 @@ fn dispatch_test_command(
             dry_run,
             force,
             metrics,
+            watch,
             jobs,
             ignore,
             extra,
@@ -202,6 +204,10 @@ fn dispatch_test_command(
                 eprintln!("error: kiss test: {e}");
                 return 2;
             }
+            if watch && dry_run {
+                eprintln!("error: kiss test: --watch cannot be combined with --dry-run");
+                return 2;
+            }
             dispatch_test(TestDispatchOptions {
                 lang,
                 invocation,
@@ -210,6 +216,7 @@ fn dispatch_test_command(
                 dry_run,
                 force,
                 metrics,
+                watch,
                 jobs,
                 ignore,
                 extra,
