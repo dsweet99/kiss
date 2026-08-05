@@ -180,7 +180,7 @@ fn invocation_label_covers_modes() {
 }
 
 #[test]
-fn print_cycle_summary_handles_overflow() {
+fn print_cycle_summary_is_silent() {
     let paths: Vec<_> = (0..12).map(|i| PathBuf::from(format!("f{i}.py"))).collect();
     crate::test_runner::watch::print_cycle_summary(&paths);
 }

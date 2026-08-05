@@ -24,6 +24,16 @@ pub fn write_mimic_config(
     py_cnt: usize,
     rs_cnt: usize,
 ) -> Result<(), std::io::Error> {
+    write_mimic_config_with_quiet(out, toml, py_cnt, rs_cnt, false)
+}
+
+pub fn write_mimic_config_with_quiet(
+    out: &Path,
+    toml: &str,
+    py_cnt: usize,
+    rs_cnt: usize,
+    quiet: bool,
+) -> Result<(), std::io::Error> {
     let content = if out.exists() {
         merge::merge_config_toml(
             out,
@@ -34,11 +44,13 @@ pub fn write_mimic_config(
         toml.to_string()
     };
     std::fs::write(out, &content)?;
-    eprintln!(
-        "Generated config from {} files → {}",
-        py_cnt + rs_cnt,
-        out.display()
-    );
+    if !quiet {
+        eprintln!(
+            "Generated config from {} files → {}",
+            py_cnt + rs_cnt,
+            out.display()
+        );
+    }
     Ok(())
 }
 

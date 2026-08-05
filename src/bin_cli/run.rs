@@ -28,6 +28,21 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
     if let Commands::Init { repo_path } = &cli.command {
         return run_init_command(repo_path);
     }
+    if let Commands::Test {
+        watch: true,
+        dry_run,
+        ..
+    } = &cli.command
+    {
+        if *dry_run {
+            eprintln!("error: kiss test: --watch cannot be combined with --dry-run");
+            return 2;
+        }
+        if let Err(e) = crate::test_runner::enter_watch_background() {
+            eprintln!("error: kiss test --watch: {e}");
+            return 1;
+        }
+    }
     ensure_default_config_exists();
     let (py_config, rs_config) = load_configs(cli.config.as_ref(), cli.defaults);
     let gate_config = load_gate_config(cli.config.as_ref(), cli.defaults);

@@ -116,6 +116,7 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
 }
 
 pub(crate) use watch::run_test_watch;
+pub(crate) use watch::{enter_watch_background, watch_background_active};
 
 fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, String> {
     match &a.invocation {

@@ -1,11 +1,16 @@
 //! Native filesystem watch session for `kiss test --watch`.
 
+mod daemon;
 mod event_source;
 mod filter;
 mod roots;
 mod session;
 mod settle;
 
+#[allow(unused_imports)] // re-exported for sibling modules and tests
+pub(crate) use daemon::{
+    enter_watch_background, ensure_watch_log_paths, watch_background_active, write_watch_pid,
+};
 #[allow(unused_imports)] // re-exported for sibling modules and tests
 pub(crate) use event_source::{NativeWatchEventSource, NormalizedWatchEvent, WatchEventSource};
 #[allow(unused_imports)]
@@ -27,6 +32,7 @@ use event_source::NormalizedWatchEvent as Ev;
 use filter::WatchPathFilter as Filter;
 use settle::{PathSignature as Sig, SettleMachine as Machine};
 
+#[allow(dead_code)] // used by unit tests; watch UI no longer prints the label
 pub(crate) fn invocation_label(invocation: &TestInvocation) -> String {
     match invocation {
         TestInvocation::Commit => "commit".into(),
@@ -37,26 +43,8 @@ pub(crate) fn invocation_label(invocation: &TestInvocation) -> String {
     }
 }
 
-pub(crate) fn print_cycle_summary(paths: &[PathBuf]) {
-    let mut sorted: Vec<_> = paths.iter().map(|p| p.display().to_string()).collect();
-    sorted.sort();
-    let shown: Vec<_> = sorted.iter().take(10).cloned().collect();
-    let extra = sorted.len().saturating_sub(shown.len());
-    if extra == 0 {
-        println!(
-            "kiss test --watch: {} change(s): {}",
-            sorted.len(),
-            shown.join(", ")
-        );
-    } else {
-        println!(
-            "kiss test --watch: {} change(s): {} (+{} more)",
-            sorted.len(),
-            shown.join(", "),
-            extra
-        );
-    }
-}
+/// Watch mode is silent; cycle path summaries are not printed.
+pub(crate) fn print_cycle_summary(_paths: &[PathBuf]) {}
 
 pub(crate) fn apply_normalized_event(
     event: Ev,

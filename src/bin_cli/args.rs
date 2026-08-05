@@ -360,7 +360,7 @@ pub enum Commands {
         /// Print a local rubric metrics summary for this run
         #[arg(long)]
         metrics: bool,
-        /// Re-run covering tests when watched sources settle
+        /// Re-run covering tests when sources settle (background; errors → `.kiss/watch/`)
         #[arg(long)]
         watch: bool,
         /// Maximum number of test jobs to run concurrently

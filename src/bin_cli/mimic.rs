@@ -1,7 +1,7 @@
 use kiss::Language;
 use kiss::config_gen::{
     GenerateConfigParams, collect_all_stats_with_ignore, generate_config_toml_by_language,
-    infer_gate_config_for_paths, write_mimic_config,
+    infer_gate_config_for_paths, write_mimic_config_with_quiet,
 };
 use std::path::Path;
 
@@ -11,10 +11,22 @@ pub fn run_mimic(
     lang_filter: Option<Language>,
     ignore: &[String],
 ) -> i32 {
+    run_mimic_with_quiet(paths, out, lang_filter, ignore, false)
+}
+
+pub fn run_mimic_with_quiet(
+    paths: &[String],
+    out: Option<&Path>,
+    lang_filter: Option<Language>,
+    ignore: &[String],
+    quiet: bool,
+) -> i32 {
     let ((py_stats, py_cnt), (rs_stats, rs_cnt)) =
         collect_all_stats_with_ignore(paths, lang_filter, ignore);
     if py_cnt + rs_cnt == 0 {
-        eprintln!("No source files found.");
+        if !quiet {
+            eprintln!("No source files found.");
+        }
         return 1;
     }
     let gate = infer_gate_config_for_paths(paths, lang_filter, ignore);
@@ -27,12 +39,18 @@ pub fn run_mimic(
     });
     match out {
         Some(p) => {
-            if let Err(e) = write_mimic_config(p, &toml, py_cnt, rs_cnt) {
-                eprintln!("Error writing to {}: {e}", p.display());
+            if let Err(e) = write_mimic_config_with_quiet(p, &toml, py_cnt, rs_cnt, quiet) {
+                if !quiet {
+                    eprintln!("Error writing to {}: {e}", p.display());
+                }
                 return 1;
             }
         }
-        None => print!("{toml}"),
+        None => {
+            if !quiet {
+                print!("{toml}");
+            }
+        }
     }
     0
 }
