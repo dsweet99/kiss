@@ -39,7 +39,7 @@ impl LanguageExecutor for PythonModule {
         publish_python_derived_state_with_filter(
             &ctx.planned.repo_root,
             None,
-            ctx.options.extra,
+            ctx.options.python_extra,
             |path, repo_root| self.is_indexable_source(path, repo_root),
         )?;
         Ok(())
@@ -51,7 +51,7 @@ impl LanguageExecutor for PythonModule {
         if crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
             &ctx.planned.repo_root,
             selectors,
-            ctx.options.extra,
+            ctx.options.python_extra,
             crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
         ) && crate::test_runner::python_coverage_index::load_current_python_coverage_index(
             &ctx.planned.repo_root,
@@ -63,7 +63,7 @@ impl LanguageExecutor for PythonModule {
         publish_python_derived_state_with_filter(
             &ctx.planned.repo_root,
             Some(selectors),
-            ctx.options.extra,
+            ctx.options.python_extra,
             |path, repo_root| self.is_indexable_source(path, repo_root),
         )?;
         Ok(())
@@ -197,7 +197,7 @@ pub(super) fn run_rslip_selectors_for_module(
     runners::run_rslip_selectors(
         &ctx.planned.repo_root,
         selectors,
-        ctx.options.extra,
+        ctx.options.python_extra,
         force_rerun,
         ctx.options.jobs,
     )

@@ -114,6 +114,17 @@ pub fn run_config(
     if let Some(main) = &test.main_branch {
         println!("main_branch = \"{}\"", main);
     }
+    if test.pytest_plugins.is_empty() {
+        println!("pytest_plugins = []");
+    } else {
+        let rendered = test
+            .pytest_plugins
+            .iter()
+            .map(|p| format!("\"{p}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("pytest_plugins = [{rendered}]");
+    }
     println!("\n[python]");
     print_python_config(py);
     println!("\n[rust]");

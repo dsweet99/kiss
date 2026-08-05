@@ -16,6 +16,7 @@ fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
         metrics: false,
         jobs: 1,
         extra: &[],
+        python_extra: &[],
         ignore: &[],
         lang_filter: None,
         config_main_branch: None,
@@ -35,6 +36,7 @@ fn run_test_dry_run_commit_in_workspace_completes() {
         metrics: false,
         jobs: 1,
         extra: &[],
+        python_extra: &[],
         ignore: &[],
         lang_filter: Some(Language::Rust),
         config_main_branch: None,
@@ -57,6 +59,7 @@ fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
         metrics: false,
         jobs: 1,
         extra: &extra,
+        python_extra: &[],
         ignore: &[],
         lang_filter: Some(Language::Rust),
         config_main_branch: None,
@@ -87,6 +90,7 @@ fn cold_initialization_predicate_is_limited_to_unfiltered_base_or_main() {
             metrics: false,
             jobs: 16,
             extra: &[],
+            python_extra: &[],
             ignore: &[],
             lang_filter,
             config_main_branch: None,
@@ -127,6 +131,7 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
         metrics: false,
         jobs: 16,
         extra: &[],
+        python_extra: &[],
         ignore: &[],
         lang_filter: None,
         config_main_branch: None,
@@ -160,6 +165,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
         crate::test_runner::TargetPlanKind::All,
         &[],
         &[],
+        &[],
         None,
     )
     .unwrap();
@@ -171,6 +177,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
         crate::test_runner::TargetPlanKind::All,
         &[],
         &[],
+        &[],
         Some(Language::Python),
     )
     .unwrap();
@@ -180,6 +187,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
 
     let rust_only = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
+        &[],
         &[],
         &[],
         Some(Language::Rust),
@@ -199,6 +207,7 @@ fn plan_repo_root_target_matches_all_via_dot() {
         crate::test_runner::TargetPlanKind::All,
         &[],
         &[],
+        &[],
         Some(Language::Rust),
     )
     .unwrap();
@@ -206,11 +215,13 @@ fn plan_repo_root_target_matches_all_via_dot() {
         crate::test_runner::TargetPlanKind::Targets(&[root.to_string_lossy().into_owned()]),
         &[],
         &[],
+        &[],
         Some(Language::Rust),
     )
     .unwrap();
     let via_dot = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&[".".into()]),
+        &[],
         &[],
         &[],
         Some(Language::Rust),
@@ -244,11 +255,13 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
         crate::test_runner::TargetPlanKind::Targets(&["src/bin_cli".into()]),
         &[],
         &[],
+        &[],
         Some(Language::Rust),
     )
     .unwrap();
     let all = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
+        &[],
         &[],
         &[],
         Some(Language::Rust),
@@ -273,12 +286,14 @@ fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
         crate::test_runner::TargetPlanKind::All,
         &[],
         &[],
+        &[],
         Some(Language::Rust),
     );
     std::env::set_current_dir(&cwd).unwrap();
     let planned = planned.unwrap();
     let from_root = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
+        &[],
         &[],
         &[],
         Some(Language::Rust),

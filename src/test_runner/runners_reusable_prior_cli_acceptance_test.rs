@@ -6,7 +6,9 @@ use crate::test_runner::runners::enumerate_workspace_rust_selectors;
 use crate::test_runner::test_mode_fixtures::{
     RS_COVERING_SELECTOR, edit_rust_covered_source, warm_committed_rust_demo,
 };
-use crate::test_runner::{PlannedSelectors, SelectorRunOptions, plan_selectors, run_selectors};
+use crate::test_runner::{
+    PlanSelectorsRequest, PlannedSelectors, SelectorRunOptions, plan_selectors, run_selectors,
+};
 
 #[test]
 fn plan_selectors_commit_uses_reusable_prior_after_ordinary_rs_edit() {
@@ -17,15 +19,16 @@ fn plan_selectors_commit_uses_reusable_prior_after_ordinary_rs_edit() {
 
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    let planned: PlannedSelectors = plan_selectors(
-        TestChangeMode::Commit,
-        None,
-        None,
-        &[],
-        &[],
-        Some(kiss::Language::Rust),
-        None,
-    )
+    let planned: PlannedSelectors = plan_selectors(PlanSelectorsRequest {
+        mode: TestChangeMode::Commit,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        ignore: &[],
+        extra: &[],
+        python_extra: &[],
+        lang_filter: Some(kiss::Language::Rust),
+        config_main_branch: None,
+    })
     .expect("plan selectors");
     let universe = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap();
     let code = run_selectors(
@@ -36,6 +39,7 @@ fn plan_selectors_commit_uses_reusable_prior_after_ordinary_rs_edit() {
             metrics: true,
             jobs: 1,
             extra: &[],
+            python_extra: &[],
             plan_duration: std::time::Duration::ZERO,
         },
     )

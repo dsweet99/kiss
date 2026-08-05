@@ -21,6 +21,8 @@ pub struct TestCommandArgs<'a> {
 }
 
 pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
+    let python_extra_owned =
+        kiss::effective_python_pytest_args(&args.test_cfg.pytest_plugins, args.extra);
     let run_args = RunTestCmdArgs {
         invocation: args.invocation,
         main_branch_cli: args.main_branch,
@@ -30,6 +32,7 @@ pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
         metrics: args.metrics,
         jobs: args.jobs,
         extra: args.extra,
+        python_extra: &python_extra_owned,
         ignore: args.ignore,
         lang_filter: args.lang_filter,
         config_main_branch: args.test_cfg.main_branch.as_deref(),

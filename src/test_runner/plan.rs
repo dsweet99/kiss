@@ -20,6 +20,7 @@ pub(crate) fn plan_target_selectors(
     kind: TargetPlanKind<'_>,
     ignore: &[String],
     extra: &[String],
+    python_extra: &[String],
     lang_filter: Option<Language>,
 ) -> Result<PlannedSelectors, String> {
     let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
@@ -30,19 +31,20 @@ pub(crate) fn plan_target_selectors(
         rust_llvm_cov::validate_rust_extra_args(extra)?;
     }
     match kind {
-        TargetPlanKind::All => plan_all_selectors(&repo_root, &ignore_norm, lang_filter),
+        TargetPlanKind::All => plan_all_selectors(&repo_root, &ignore_norm, python_extra, lang_filter),
         TargetPlanKind::Targets(targets) => {
             match expand_target_operands(&repo_root, targets, &ignore_norm, lang_filter)
                 .map_err(|e| format!("error: kiss test: {e}"))?
             {
                 ExpandedTargetPlan::All => {
-                    plan_all_selectors(&repo_root, &ignore_norm, lang_filter)
+                    plan_all_selectors(&repo_root, &ignore_norm, python_extra, lang_filter)
                 }
                 ExpandedTargetPlan::Files(files) => plan_explicit_target_selectors(
                     &repo_root,
                     &files,
                     &ignore_norm,
                     extra,
+                    python_extra,
                     lang_filter,
                 ),
             }
@@ -53,6 +55,7 @@ pub(crate) fn plan_target_selectors(
 fn plan_all_selectors(
     repo_root: &std::path::Path,
     ignore: &[String],
+    python_extra: &[String],
     lang_filter: Option<Language>,
 ) -> Result<PlannedSelectors, String> {
     if let Some((cached_py, cached_rs)) =
@@ -63,12 +66,12 @@ fn plan_all_selectors(
             Some(Language::Python) => (cached_py, Vec::new()),
             Some(Language::Rust) => (Vec::new(), cached_rs),
         };
-        return Ok(planned_all(repo_root, ignore, py_sel, rs_sel));
+        return Ok(planned_all(repo_root, ignore, python_extra, py_sel, rs_sel));
     }
     let mut py_sel = Vec::new();
     let mut rs_sel = Vec::new();
     if lang_filter != Some(Language::Rust) {
-        py_sel = runners::enumerate_workspace_python_selectors(repo_root, ignore)?;
+        py_sel = runners::enumerate_workspace_python_selectors(repo_root, ignore, python_extra)?;
     }
     if lang_filter != Some(Language::Python) {
         rs_sel = runners::enumerate_workspace_rust_selectors(repo_root, ignore)?;
@@ -78,12 +81,13 @@ fn plan_all_selectors(
             repo_root, ignore, &py_sel, &rs_sel,
         );
     }
-    Ok(planned_all(repo_root, ignore, py_sel, rs_sel))
+    Ok(planned_all(repo_root, ignore, python_extra, py_sel, rs_sel))
 }
 
 fn planned_all(
     repo_root: &std::path::Path,
     ignore: &[String],
+    python_extra: &[String],
     py_sel: Vec<String>,
     rs_sel: Vec<String>,
 ) -> PlannedSelectors {
@@ -94,7 +98,7 @@ fn planned_all(
         || (crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
             repo_root,
             &py_sel,
-            &[],
+            python_extra,
             crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
         ) && crate::test_runner::python_coverage_index::load_current_python_coverage_index(repo_root)
             .is_some()));
@@ -144,9 +148,10 @@ fn plan_explicit_target_selectors(
     targets: &[String],
     ignore: &[String],
     extra: &[String],
+    python_extra: &[String],
     lang_filter: Option<Language>,
 ) -> Result<PlannedSelectors, String> {
-    let query = resolve_target_operands(repo_root, targets, lang_filter, ignore, extra)
+    let query = resolve_target_operands(repo_root, targets, lang_filter, ignore, python_extra)
         .map_err(|e| format!("error: kiss test: {e}"))?;
     let mut source_paths = Vec::new();
     source_paths.extend(query.python_files.iter().cloned());
@@ -170,6 +175,7 @@ fn plan_explicit_target_selectors(
         test_paths: &[],
         changed_lines: &changed_lines,
         rust_test_args: extra,
+        python_test_args: python_extra,
         lang_filter,
         ignore,
         extra_direct_python: &direct_python,
@@ -206,44 +212,47 @@ fn planned_from_selector_plan(
     }
 }
 
-pub(crate) fn plan_selectors(
-    mode: TestChangeMode,
-    main_branch_cli: Option<&str>,
-    base_branch_cli: Option<&str>,
-    ignore: &[String],
-    extra: &[String],
-    lang_filter: Option<Language>,
-    config_main_branch: Option<&str>,
-) -> Result<PlannedSelectors, String> {
-    let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
+pub(crate) struct PlanSelectorsRequest<'a> {
+    pub mode: TestChangeMode,
+    pub main_branch_cli: Option<&'a str>,
+    pub base_branch_cli: Option<&'a str>,
+    pub ignore: &'a [String],
+    pub extra: &'a [String],
+    pub python_extra: &'a [String],
+    pub lang_filter: Option<Language>,
+    pub config_main_branch: Option<&'a str>,
+}
+
+pub(crate) fn plan_selectors(req: PlanSelectorsRequest<'_>) -> Result<PlannedSelectors, String> {
+    let ignore_norm = kiss::normalize_ignore_prefixes(req.ignore);
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
     let repo_root = crate::test_git::require_git_repo_root(&cwd)
         .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
     let diff_target = crate::test_git::resolve_diff_target(
         &repo_root,
-        mode,
-        config_main_branch,
-        main_branch_cli,
-        base_branch_cli,
+        req.mode,
+        req.config_main_branch,
+        req.main_branch_cli,
+        req.base_branch_cli,
     )?;
-    let rel_changed = match mode {
+    let rel_changed = match req.mode {
         TestChangeMode::Commit => crate::test_git::changed_paths_commit(&repo_root)?,
         TestChangeMode::Base | TestChangeMode::Main => {
             crate::test_git::changed_paths_since(&repo_root, diff_target.as_ref().unwrap())?
         }
     };
-    let rel_changed_lines = match mode {
+    let rel_changed_lines = match req.mode {
         TestChangeMode::Commit => crate::test_git::changed_lines_commit(&repo_root)?,
         TestChangeMode::Base | TestChangeMode::Main => {
             crate::test_git::changed_lines_since(&repo_root, diff_target.as_ref().unwrap())?
         }
     };
-    let lang_filter = lang_filter.map(|l| match l {
+    let lang_filter = req.lang_filter.map(|l| match l {
         Language::Python => crate::test_git::TestLangFilter::Python,
         Language::Rust => crate::test_git::TestLangFilter::Rust,
     });
     if matches!(lang_filter, Some(crate::test_git::TestLangFilter::Rust)) {
-        rust_llvm_cov::validate_rust_extra_args(extra)?;
+        rust_llvm_cov::validate_rust_extra_args(req.extra)?;
     }
     let abs_paths = crate::test_git::resolve_changed_source_paths(
         &repo_root,
@@ -258,18 +267,21 @@ pub(crate) fn plan_selectors(
         lang_filter,
     );
     let (source_changed, test_changed) = runners::partition_changed_paths(&abs_paths);
-    let selector_plan = runners::combined_selectors(
-        &repo_root,
-        &source_changed,
-        &test_changed,
-        &changed_lines,
-        extra,
-        lang_filter.map(|l| match l {
+    let selector_plan = runners::combined_selectors_with_direct(runners::CombinedSelectorInput {
+        repo_root: &repo_root,
+        source_paths: &source_changed,
+        test_paths: &test_changed,
+        changed_lines: &changed_lines,
+        rust_test_args: req.extra,
+        python_test_args: req.python_extra,
+        lang_filter: lang_filter.map(|l| match l {
             crate::test_git::TestLangFilter::Python => Language::Python,
             crate::test_git::TestLangFilter::Rust => Language::Rust,
         }),
-        &ignore_norm,
-    )?;
+        ignore: &ignore_norm,
+        extra_direct_python: &[],
+        extra_direct_rust: &[],
+    })?;
     Ok(planned_from_selector_plan(
         repo_root,
         selector_plan,

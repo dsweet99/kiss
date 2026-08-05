@@ -1,6 +1,8 @@
 use std::time::Instant;
 
-use crate::test_runner::coverage_decision::{LanguagePlanner, LanguageTestModule, RunContext};
+use crate::test_runner::coverage_decision::{
+    LanguageExecutor, LanguagePlanner, LanguageTestModule, RunContext,
+};
 use crate::test_runner::runners::SelectorExecutionSummary;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -112,7 +114,11 @@ pub(super) fn print_dry_run(
             ExecutionPhase::Population(selectors) => (selectors.as_slice(), true),
             ExecutionPhase::Selective(selectors) => (selectors.as_slice(), false),
         };
-        for line in module.dry_run_lines(selectors, population, options.extra, options.jobs)? {
+        let extra = match LanguageExecutor::language(*module) {
+            kiss::Language::Python => options.python_extra,
+            kiss::Language::Rust => options.extra,
+        };
+        for line in module.dry_run_lines(selectors, population, extra, options.jobs)? {
             println!("{line}");
         }
     }

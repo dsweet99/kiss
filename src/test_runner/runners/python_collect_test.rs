@@ -32,7 +32,7 @@ fn full_suite_collection_omits_collect_ignore_glob_paths() {
         "def test_kept():\n    assert True\n",
     )
     .unwrap();
-    let selectors = enumerate_workspace_python_selectors(tmp.path(), &[]).unwrap();
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &[], &[]).unwrap();
     assert_eq!(selectors, vec!["tests/test_kept.py::test_kept".to_string()]);
 }
 
@@ -55,7 +55,7 @@ fn workspace_collection_respects_kiss_ignore_prefixes() {
     )
     .unwrap();
     let ignore = ["ignored".to_string()];
-    let selectors = enumerate_workspace_python_selectors(tmp.path(), &ignore).unwrap();
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &ignore, &[]).unwrap();
     assert_eq!(selectors, vec!["tests/test_kept.py::test_kept".to_string()]);
 }
 
@@ -103,7 +103,7 @@ fn parametrized_tests_expand_to_distinct_nodeids() {
         "import pytest\n\n@pytest.mark.parametrize('value', [1, 2])\ndef test_values(value):\n    assert value > 0\n",
     )
     .unwrap();
-    let selectors = enumerate_workspace_python_selectors(tmp.path(), &[]).unwrap();
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &[], &[]).unwrap();
     assert_eq!(
         selectors,
         vec![
@@ -124,7 +124,7 @@ fn class_based_tests_use_pytest_nodeid_form() {
         "class TestValues:\n    def test_one(self):\n        assert True\n",
     )
     .unwrap();
-    let selectors = enumerate_workspace_python_selectors(tmp.path(), &[]).unwrap();
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &[], &[]).unwrap();
     assert_eq!(
         selectors,
         vec!["tests/test_class.py::TestValues::test_one".to_string()]
@@ -288,7 +288,7 @@ fn collect_pytest_nodeids_public_wrapper_is_used() {
 fn kiss_repo_discovery_omits_ignored_fixtures() {
     reset_python_collect_memo_for_tests();
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let selectors = enumerate_workspace_python_selectors(&repo, &[]).unwrap();
+    let selectors = enumerate_workspace_python_selectors(&repo, &[], &[]).unwrap();
     assert!(
         !selectors
             .iter()

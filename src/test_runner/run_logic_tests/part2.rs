@@ -61,6 +61,7 @@ fn run_selected_phases_records_rust_population_selective_and_prints_metrics() {
         metrics: true,
         jobs: 1,
         extra: &[],
+        python_extra: &[],
         plan_duration: Duration::ZERO,
     };
     let python = FakeLanguageModule {
@@ -121,6 +122,7 @@ fn run_selectors_rejects_zero_jobs_at_entry() {
             metrics: false,
             jobs: 0,
             extra: &[],
+            python_extra: &[],
             plan_duration: Duration::ZERO,
         },
     )
@@ -149,6 +151,7 @@ fn run_selectors_non_dry_run_executes_python_selective_phase() {
             metrics: true,
             jobs: 1,
             extra: &[],
+            python_extra: &[],
             plan_duration: Duration::ZERO,
         },
     );
@@ -177,6 +180,7 @@ fn run_selectors_no_work_and_dry_run_with_metrics() {
                 metrics: true,
                 jobs: 1,
                 extra: &[],
+                python_extra: &[],
                 plan_duration: Duration::ZERO,
             },
         )
@@ -195,6 +199,7 @@ fn run_selectors_no_work_and_dry_run_with_metrics() {
                 metrics: true,
                 jobs: 1,
                 extra: &[],
+                python_extra: &[],
                 plan_duration: Duration::ZERO,
             },
         )

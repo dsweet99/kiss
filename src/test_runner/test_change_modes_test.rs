@@ -15,7 +15,16 @@ fn plan(
     ignore: &[String],
     lang: Option<kiss::Language>,
 ) -> Result<PlannedSelectors, String> {
-    plan_selectors(mode, main, base, ignore, &[], lang, None)
+    plan_selectors(crate::test_runner::PlanSelectorsRequest {
+        mode,
+        main_branch_cli: main,
+        base_branch_cli: base,
+        ignore,
+        extra: &[],
+        python_extra: &[],
+        lang_filter: lang,
+        config_main_branch: None,
+    })
 }
 
 fn mode_label(mode: TestChangeMode) -> &'static str {
@@ -182,6 +191,7 @@ fn row_d_empty_diff_dry_run_exits_zero() {
                 metrics: false,
                 jobs: 1,
                 extra: &[],
+                python_extra: &[],
                 plan_duration: std::time::Duration::ZERO,
             },
         )

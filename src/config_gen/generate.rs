@@ -64,6 +64,7 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
     let _ = writeln!(out, "[test]");
     let _ = writeln!(out, "num_jobs = 4");
     let _ = writeln!(out, "watch_settle_seconds = 1.0");
+    let _ = writeln!(out, "pytest_plugins = []");
     out
 }
 

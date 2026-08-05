@@ -42,7 +42,7 @@ fn kiss_discovery_matches_isolated_pytest_collection() {
         "class TestValues:\n    def test_one(self):\n        assert True\n",
     )
     .unwrap();
-    let kiss_selectors = enumerate_workspace_python_selectors(tmp.path(), &[]).unwrap();
+    let kiss_selectors = enumerate_workspace_python_selectors(tmp.path(), &[], &[]).unwrap();
     let pytest_outcome =
         rpytest_runner::collect_pytest_nodeids(rpytest_runner::PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
@@ -87,7 +87,7 @@ fn dry_run_lines_omit_ignored_fixture_selectors() {
         "def test_kept():\n    assert True\n",
     )
     .unwrap();
-    let selectors = enumerate_workspace_python_selectors(tmp.path(), &[]).unwrap();
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &[], &[]).unwrap();
     let module = PythonModule::for_execution(tmp.path(), &[]);
     let lines = module.dry_run_lines(&selectors, false, &[], 1).unwrap();
     let output = lines.join("\n");

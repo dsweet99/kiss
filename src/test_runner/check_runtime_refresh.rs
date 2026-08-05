@@ -249,17 +249,26 @@ fn ensure_python_runtime_coverage(
     if load_python_runtime_coverage(repo_root).is_ok() {
         return Ok(());
     }
-    let selectors =
-        crate::test_runner::runners::enumerate_workspace_python_selectors(repo_root, ignore)
-            .map_err(|err| CoverageRefreshError::discovery("Python", err))?;
+    let python_extra = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
+    let selectors = crate::test_runner::runners::enumerate_workspace_python_selectors(
+        repo_root,
+        ignore,
+        &python_extra,
+    )
+    .map_err(|err| CoverageRefreshError::discovery("Python", err))?;
     eprintln!(
         "kiss cov: refreshing Python runtime coverage ({} tests)",
         selectors.len()
     );
     let _refresh_env = ScopedRefreshEnvGuard::set();
-    let summary =
-        crate::test_runner::runners::run_rslip_selectors(repo_root, &selectors, &[], false, jobs)
-            .map_err(|err| CoverageRefreshError::publication("Python", err))?;
+    let summary = crate::test_runner::runners::run_rslip_selectors(
+        repo_root,
+        &selectors,
+        &python_extra,
+        false,
+        jobs,
+    )
+    .map_err(|err| CoverageRefreshError::publication("Python", err))?;
     if summary.exit_code != 0 {
         return Err(CoverageRefreshError::TestExecution {
             language: "Python",
@@ -271,7 +280,7 @@ fn ensure_python_runtime_coverage(
     publish_python_derived_state_with_filter(
         repo_root,
         Some(&selectors),
-        &[],
+        &python_extra,
         |path, repo_root| {
             python_repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
         },

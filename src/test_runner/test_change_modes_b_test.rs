@@ -16,7 +16,16 @@ fn plan(
     base: Option<&str>,
     lang: Option<kiss::Language>,
 ) -> Result<PlannedSelectors, String> {
-    plan_selectors(mode, main, base, &[], &[], lang, None)
+    plan_selectors(crate::test_runner::PlanSelectorsRequest {
+        mode,
+        main_branch_cli: main,
+        base_branch_cli: base,
+        ignore: &[],
+        extra: &[],
+        python_extra: &[],
+        lang_filter: lang,
+        config_main_branch: None,
+    })
 }
 
 #[test]
@@ -197,6 +206,7 @@ fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Optio
             metrics: false,
             jobs: 1,
             extra: &[],
+            python_extra: &[],
             ignore: &[],
             lang_filter: Some(kiss::Language::Rust),
             config_main_branch: None,
@@ -264,6 +274,7 @@ fn row_k_run_test_base_without_other_refs_fails() {
             metrics: false,
             jobs: 1,
             extra: &[],
+            python_extra: &[],
             ignore: &[],
             lang_filter: Some(kiss::Language::Rust),
             config_main_branch: None,

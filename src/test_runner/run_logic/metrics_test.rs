@@ -239,7 +239,8 @@ fn local_rubric_metrics_carry_reusable_prior_selection_basis() {
         plan_duration: Duration::ZERO,
         force_rerun: false,
         metrics: false,
-        extra: &[],
+        extra: &[],        python_extra: &[],
+
     };
     let metrics = LocalRubricMetrics::new(
         &planned,

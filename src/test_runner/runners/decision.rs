@@ -43,12 +43,14 @@ pub(crate) struct CombinedSelectorInput<'a> {
     pub(crate) test_paths: &'a [PathBuf],
     pub(crate) changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
     pub(crate) rust_test_args: &'a [String],
+    pub(crate) python_test_args: &'a [String],
     pub(crate) lang_filter: Option<kiss::Language>,
     pub(crate) ignore: &'a [String],
     pub(crate) extra_direct_python: &'a [String],
     pub(crate) extra_direct_rust: &'a [String],
 }
 
+#[cfg(test)]
 pub(crate) fn combined_selectors(
     repo_root: &Path,
     source_paths: &[PathBuf],
@@ -64,6 +66,7 @@ pub(crate) fn combined_selectors(
         test_paths,
         changed_lines: rust_changed_lines,
         rust_test_args,
+        python_test_args: rust_test_args,
         lang_filter,
         ignore,
         extra_direct_python: &[],
@@ -113,6 +116,7 @@ pub(crate) fn combined_selectors_with_direct(
         rust_source_paths: &prepared.rust_source_paths,
         rust_changed_lines: &prepared.rust_changed_lines,
         rust_test_args: input.rust_test_args,
+        python_test_args: input.python_test_args,
         lang_filter: input.lang_filter,
         ignore: input.ignore,
         changed_tests: &prepared.changed_tests,
@@ -192,6 +196,7 @@ struct EngineBackerInputs<'a> {
     rust_source_paths: &'a [PathBuf],
     rust_changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
     rust_test_args: &'a [String],
+    python_test_args: &'a [String],
     lang_filter: Option<kiss::Language>,
     ignore: &'a [String],
     changed_tests: &'a ChangedTestSelectors,
@@ -220,7 +225,7 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
         prior_failures_for_language(
             input.repo_root,
             kiss::Language::Python,
-            input.rust_test_args,
+            input.python_test_args,
         )?
     };
     let rust_prior_failures = if input.lang_filter == Some(kiss::Language::Python) {
@@ -237,7 +242,7 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
             input.repo_root,
             input.py_source_paths,
             input.python_changed_lines,
-            input.rust_test_args,
+            input.python_test_args,
             input.ignore,
             &input.changed_tests.python,
             &python_prior_failures,

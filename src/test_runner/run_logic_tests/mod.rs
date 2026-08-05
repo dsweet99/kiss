@@ -38,6 +38,7 @@ fn options(force_rerun: bool) -> SelectorRunOptions<'static> {
         metrics: false,
         jobs: 1,
         extra: &[],
+        python_extra: &[],
         plan_duration: Duration::ZERO,
     }
 }

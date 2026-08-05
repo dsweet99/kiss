@@ -14,6 +14,7 @@ impl RunTestCmdArgs<'_> {
             metrics: false,
             jobs: 1,
             extra: &[],
+            python_extra: &[],
             ignore: &[],
             lang_filter: None,
             config_main_branch: None,
@@ -50,6 +51,7 @@ impl SelectorRunOptions<'_> {
             metrics: false,
             jobs: 1,
             extra: &[],
+            python_extra: &[],
             plan_duration: Duration::ZERO,
         }
     }
@@ -78,6 +80,7 @@ fn dry_run_rejects_unsupported_rust_test_args_without_panic() {
             metrics: false,
             jobs: 1,
             extra: &extra,
+            python_extra: &[],
             plan_duration: Duration::ZERO,
         },
     )
@@ -137,7 +140,16 @@ mod plan_tests {
         let orig = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
         let planned: PlannedSelectors =
-            plan_selectors(TestChangeMode::Commit, None, None, &[], &[], None, None).unwrap();
+            plan_selectors(PlanSelectorsRequest {
+                mode: TestChangeMode::Commit,
+                main_branch_cli: None,
+                base_branch_cli: None,
+                ignore: &[],
+                extra: &[],
+                python_extra: &[],
+                lang_filter: None,
+                config_main_branch: None,
+            }).unwrap();
         std::env::set_current_dir(orig).unwrap();
         assert_eq!(planned.repo_root, tmp.path().canonicalize().unwrap());
         assert!(planned.py_sel.is_empty());
@@ -150,6 +162,7 @@ mod plan_tests {
                 metrics: false,
                 jobs: 1,
                 extra: &[],
+                python_extra: &[],
                 plan_duration: Duration::ZERO,
             },
         )
@@ -186,6 +199,7 @@ mod plan_tests {
                 metrics: false,
                 jobs: 0,
                 extra: &[],
+                python_extra: &[],
                 plan_duration: Duration::ZERO,
             },
         )

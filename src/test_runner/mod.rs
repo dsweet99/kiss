@@ -59,6 +59,8 @@ pub struct RunTestCmdArgs<'a> {
     pub metrics: bool,
     pub jobs: usize,
     pub extra: &'a [String],
+    /// Python-only pytest args: configured `-p` plugins plus CLI `extra`.
+    pub python_extra: &'a [String],
     pub ignore: &'a [String],
     pub lang_filter: Option<Language>,
     pub config_main_branch: Option<&'a str>,
@@ -83,6 +85,7 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     let metrics = a.metrics;
     let jobs = a.jobs;
     let extra = a.extra;
+    let python_extra = a.python_extra;
     let plan_started = std::time::Instant::now();
     match plan_for_invocation(&a) {
         Ok(mut planned) => {
@@ -95,6 +98,7 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
                     metrics,
                     jobs,
                     extra,
+                    python_extra,
                     plan_duration: plan_started.elapsed(),
                 },
             ) {
@@ -120,43 +124,48 @@ pub(crate) use watch::{enter_watch_background, watch_background_active};
 
 fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, String> {
     match &a.invocation {
-        TestInvocation::Commit => plan_selectors(
-            TestChangeMode::Commit,
-            a.main_branch_cli,
-            a.base_branch_cli,
-            a.ignore,
-            a.extra,
-            a.lang_filter,
-            a.config_main_branch,
-        ),
-        TestInvocation::Base => plan_selectors(
-            TestChangeMode::Base,
-            a.main_branch_cli,
-            a.base_branch_cli,
-            a.ignore,
-            a.extra,
-            a.lang_filter,
-            a.config_main_branch,
-        ),
-        TestInvocation::Main => plan_selectors(
-            TestChangeMode::Main,
-            a.main_branch_cli,
-            a.base_branch_cli,
-            a.ignore,
-            a.extra,
-            a.lang_filter,
-            a.config_main_branch,
-        ),
+        TestInvocation::Commit => plan_selectors(PlanSelectorsRequest {
+            mode: TestChangeMode::Commit,
+            main_branch_cli: a.main_branch_cli,
+            base_branch_cli: a.base_branch_cli,
+            ignore: a.ignore,
+            extra: a.extra,
+            python_extra: a.python_extra,
+            lang_filter: a.lang_filter,
+            config_main_branch: a.config_main_branch,
+        }),
+        TestInvocation::Base => plan_selectors(PlanSelectorsRequest {
+            mode: TestChangeMode::Base,
+            main_branch_cli: a.main_branch_cli,
+            base_branch_cli: a.base_branch_cli,
+            ignore: a.ignore,
+            extra: a.extra,
+            python_extra: a.python_extra,
+            lang_filter: a.lang_filter,
+            config_main_branch: a.config_main_branch,
+        }),
+        TestInvocation::Main => plan_selectors(PlanSelectorsRequest {
+            mode: TestChangeMode::Main,
+            main_branch_cli: a.main_branch_cli,
+            base_branch_cli: a.base_branch_cli,
+            ignore: a.ignore,
+            extra: a.extra,
+            python_extra: a.python_extra,
+            lang_filter: a.lang_filter,
+            config_main_branch: a.config_main_branch,
+        }),
         TestInvocation::All => plan_target_selectors(
             TargetPlanKind::All,
             a.ignore,
             a.extra,
+            a.python_extra,
             a.lang_filter,
         ),
         TestInvocation::Targets(targets) => plan_target_selectors(
             TargetPlanKind::Targets(targets.as_slice()),
             a.ignore,
             a.extra,
+            a.python_extra,
             a.lang_filter,
         ),
     }
@@ -212,12 +221,14 @@ pub(crate) struct SelectorRunOptions<'a> {
     pub metrics: bool,
     pub jobs: usize,
     pub extra: &'a [String],
+    /// Python-only: configured pytest `-p` plugins plus CLI extras.
+    pub python_extra: &'a [String],
     pub plan_duration: Duration,
 }
 
 mod plan;
 mod workspace_selector_cache;
-pub(crate) use plan::{TargetPlanKind, plan_selectors, plan_target_selectors};
+pub(crate) use plan::{PlanSelectorsRequest, TargetPlanKind, plan_selectors, plan_target_selectors};
 
 #[cfg(test)]
 pub(crate) mod test_mode_fixtures;

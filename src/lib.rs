@@ -92,7 +92,9 @@ pub use stats_detailed::{
     UnitMetrics, collect_detailed_py, collect_detailed_rs, format_detailed_table, truncate,
 };
 pub use test_refs::{is_in_test_directory, is_test_file};
-pub use test_section_config::TestSectionConfig;
+pub use test_section_config::{
+    TestSectionConfig, effective_python_pytest_args, pytest_plugin_cli_args,
+};
 pub use units::count_code_units;
 pub use units::{CodeUnit, CodeUnitKind, extract_code_units};
 pub use violation::{Violation, ViolationBuilder};

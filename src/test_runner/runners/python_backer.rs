@@ -74,7 +74,7 @@ impl LanguagePlanner for PythonModule {
                 .collect());
         }
         Ok(
-            enumerate_workspace_python_selectors(&self.repo_root, &self.ignore)?
+            enumerate_workspace_python_selectors(&self.repo_root, &self.ignore, &self.test_args)?
                 .into_iter()
                 .map(|id| TestSelector::new(kiss::Language::Python, id))
                 .collect(),

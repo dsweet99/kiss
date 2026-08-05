@@ -15,9 +15,9 @@ use rust_llvm_cov_runner::{
 
 #[path = "runners/decision.rs"]
 mod decision;
-pub(crate) use decision::{
-    CombinedSelectorInput, SelectorPlan, combined_selectors, combined_selectors_with_direct,
-};
+pub(crate) use decision::{CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct};
+#[cfg(test)]
+pub(crate) use decision::combined_selectors;
 
 #[path = "runners/python_backer.rs"]
 pub(crate) mod python_backer;
@@ -317,6 +317,7 @@ pub fn enumerate_workspace_rust_selectors(
 pub fn enumerate_workspace_python_selectors(
     repo_root: &Path,
     ignore: &[String],
+    pytest_args: &[String],
 ) -> Result<Vec<String>, String> {
     if !ignore.is_empty() {
         let root = repo_root.to_string_lossy().to_string();
@@ -326,9 +327,9 @@ pub fn enumerate_workspace_python_selectors(
             .into_iter()
             .filter(|path| is_test_file(path) || is_in_test_directory(path))
             .collect::<Vec<_>>();
-        return collect_python_nodeids(repo_root, Some(&test_paths), &[]);
+        return collect_python_nodeids(repo_root, Some(&test_paths), pytest_args);
     }
-    collect_python_nodeids(repo_root, None, &[])
+    collect_python_nodeids(repo_root, None, pytest_args)
 }
 
 pub fn shell_quote_line(argv: &[String]) -> String {

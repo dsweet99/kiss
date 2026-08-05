@@ -236,6 +236,7 @@ fn run_test_watch_requires_git() {
         metrics: false,
         jobs: 1,
         extra: &[],
+        python_extra: &[],
         ignore: &[],
         lang_filter: None,
         config_main_branch: None,
