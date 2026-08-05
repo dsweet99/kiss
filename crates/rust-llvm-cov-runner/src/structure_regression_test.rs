@@ -28,7 +28,8 @@ fn stable_public_api_names_resolve_at_crate_root() {
     // Compile-time witness: these names must remain reachable at the crate root.
     use crate::{
         CoverageOutputMode, TARGET_RUNNER_SHIM_SUBCOMMAND, build_rust_coverage_batch_plan,
-        execute_rust_coverage_batch, load_current_population_state, publish_derived_state,
+        execute_rust_coverage_batch, load_current_population_durations,
+        load_current_population_state, publish_derived_state,
     };
     assert!(!TARGET_RUNNER_SHIM_SUBCOMMAND.is_empty());
     let _ = CoverageOutputMode::SelectorEntries;
@@ -38,6 +39,7 @@ fn stable_public_api_names_resolve_at_crate_root() {
         build_rust_coverage_batch_plan,
         publish_derived_state,
         load_current_population_state,
+        load_current_population_durations,
     );
 }
 

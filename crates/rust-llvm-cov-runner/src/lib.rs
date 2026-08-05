@@ -91,6 +91,7 @@ pub(crate) use publish_derived::batch_derived_index_reverse;
 pub(crate) use publish_derived::batch_derived_index_types;
 pub(crate) use publish_derived::batch_derived_index_write;
 pub(crate) use publish_derived::batch_derived_manifest;
+pub(crate) use publish_derived::batch_population_durations;
 pub(crate) use publish_derived::batch_derived_prune;
 pub(crate) use publish_derived::batch_entry_state;
 pub(crate) use publish_derived::batch_reverse_build;
@@ -146,9 +147,10 @@ pub use batch_derived_incremental::{
 pub use batch_derived_index::{
     RustGenerationCoverageSnapshot, RustPopulationState, RustSnapshotDelta,
     is_check_aggregate_population, load_current_generation_coverage_snapshot,
-    load_current_generation_line_index, load_current_population_durations,
-    load_current_population_state, load_reusable_prior_population_state, reusable_snapshot_delta,
+    load_current_generation_line_index, load_current_population_state,
+    load_reusable_prior_population_state, reusable_snapshot_delta,
 };
+pub use batch_population_durations::load_current_population_durations;
 pub use batch_events::{
     BatchCompilerArtifact, BatchEventStream, BatchTestTerminal, aggregate_selectors_for_test,
     parse_batch_event_stream, selector_matches_test,

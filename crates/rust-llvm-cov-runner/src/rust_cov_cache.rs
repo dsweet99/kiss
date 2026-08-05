@@ -136,6 +136,7 @@ pub fn store_rust_cov_cache_entry(
         },
     )?;
     crate::publish_derived::batch_entry_state::invalidate_entry_state(cache_root);
+    crate::publish_derived::batch_population_durations::invalidate_population_durations(cache_root);
     Ok(())
 }
 

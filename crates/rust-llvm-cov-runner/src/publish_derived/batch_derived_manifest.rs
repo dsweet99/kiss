@@ -4,7 +4,10 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::publish_derived::batch_derived::POPULATION_SCHEMA_VERSION;
-use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
+use crate::plan::batch_fingerprint::{
+    RustCoverageBatchIdentity, RustCoverageToolIdentity,
+};
+use crate::plan::batch_plan::RustCoverageBatchRequest;
 use crate::publish_derived::batch_reverse_build::ReversePublishInfo;
 use crate::rust_cov_cache::rust_cov_unique_suffix;
 use crate::{CACHE_SCHEMA_VERSION, RustLlvmCovError, RustTestBinaryIdentity};
@@ -52,6 +55,36 @@ pub(crate) fn write_population_manifest(
         Ok(())
     })
     .map_err(RustLlvmCovError::Io)
+}
+
+/// Write `population.json`, then best-effort publish the durations sidecar.
+pub(crate) fn write_population_and_durations(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+    selectors: &[String],
+    test_binaries: &[RustTestBinaryIdentity],
+    entries_fingerprint: &str,
+    reverse: Option<&ReversePublishInfo>,
+) -> Result<(), RustLlvmCovError> {
+    write_population_manifest(
+        &req.cache_root,
+        &req.source_root,
+        identity,
+        selectors,
+        test_binaries,
+        entries_fingerprint,
+        reverse,
+    )?;
+    crate::publish_derived::batch_population_durations::try_publish_durations_after_population(
+        &req.cache_root,
+        identity,
+        req,
+        tools,
+        selectors,
+        entries_fingerprint,
+    );
+    Ok(())
 }
 
 #[derive(Serialize)]

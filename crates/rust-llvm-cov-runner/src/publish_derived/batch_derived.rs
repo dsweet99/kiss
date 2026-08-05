@@ -227,9 +227,9 @@ pub fn publish_derived_state_with_binaries(
         &entries_fingerprint,
         &index,
     )?;
-    crate::publish_derived::batch_derived_manifest::write_population_manifest(
-        &req.cache_root,
-        &req.source_root,
+    crate::publish_derived::batch_derived_manifest::write_population_and_durations(
+        req,
+        tools,
         identity,
         selectors,
         test_binaries,
@@ -297,9 +297,9 @@ pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
             digest: record.digest.clone(),
         })
         .collect::<Vec<_>>();
-    crate::publish_derived::batch_derived_manifest::write_population_manifest(
-        &req.cache_root,
-        &req.source_root,
+    crate::publish_derived::batch_derived_manifest::write_population_and_durations(
+        req,
+        tools,
         identity,
         &aggregate.selectors,
         &test_binaries,

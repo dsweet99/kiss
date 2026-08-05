@@ -5,20 +5,16 @@ use crate::publish_derived::batch_derived_index_types::{
     OnDiskIndexWithFiles, PopulationManifestOnDisk, PopulationManifestRaw, RustCoverageIndex,
     validate_ordinary_source_digests, validate_test_binaries,
 };
-use crate::plan::batch_fingerprint::{
-    RustCoverageBatchIdentity, RustCoverageToolIdentity, entry_fingerprint,
-};
-use crate::plan::batch_plan::RustCoverageBatchRequest;
+use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
 use crate::publish_derived::batch_derived_index_check_aggregate_support::{
     CHECK_AGGREGATE_ENTRIES_PREFIX, index_matches_check_aggregate,
     load_check_aggregate_population_state,
 };
 use crate::publish_derived::batch_derived_index_reverse::reverse_bound_index_ok;
-use crate::rust_cov_cache::{generation_entries_fingerprint, load_rust_cov_cache_entry};
+use crate::rust_cov_cache::generation_entries_fingerprint;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 pub(crate) use crate::publish_derived::batch_derived_index_check_aggregate_support::check_aggregate_entries_fingerprint;
 pub use crate::publish_derived::batch_derived_index_check_aggregate_support::is_check_aggregate_population;
@@ -64,35 +60,6 @@ pub fn load_current_population_state(
             selection_context_fingerprint: identity.selection_context_fingerprint.clone(),
         },
     )
-}
-
-/// Load validated wall durations for every selector in the current population.
-///
-/// Returns `None` when the population is missing/invalid or any selector entry is
-/// missing, wrong-schema, wrong-generation, or unresolvable. Does not scan orphan
-/// entry files outside the population.
-pub fn load_current_population_durations(
-    cache_root: &Path,
-    source_root: &Path,
-    identity: &RustCoverageBatchIdentity,
-    req: &RustCoverageBatchRequest,
-    tools: &RustCoverageToolIdentity,
-    selectors: Option<&[String]>,
-) -> Option<Vec<(String, Duration)>> {
-    let population = load_current_population_state(cache_root, source_root, identity, selectors)?;
-    let mut out = Vec::with_capacity(population.selectors.len());
-    for selector in &population.selectors {
-        let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, selector);
-        let entry = load_rust_cov_cache_entry(cache_root, &fingerprint)?;
-        if entry.selector != *selector {
-            return None;
-        }
-        if entry.generation_fingerprint != population.generation_fingerprint {
-            return None;
-        }
-        out.push((selector.clone(), entry.duration));
-    }
-    Some(out)
 }
 
 pub fn load_current_generation_coverage_snapshot(
