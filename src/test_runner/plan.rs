@@ -61,6 +61,7 @@ fn plan_all_selectors(
     if let Some((cached_py, cached_rs)) =
         super::workspace_selector_cache::load_cached_workspace_selectors(repo_root, ignore)
     {
+        super::emit_test_progress("kiss test: using cached selectors");
         let (py_sel, rs_sel) = match lang_filter {
             None => (cached_py, cached_rs),
             Some(Language::Python) => (cached_py, Vec::new()),
@@ -71,9 +72,11 @@ fn plan_all_selectors(
     let mut py_sel = Vec::new();
     let mut rs_sel = Vec::new();
     if lang_filter != Some(Language::Rust) {
+        super::emit_test_progress("kiss test: collecting python selectors");
         py_sel = runners::enumerate_workspace_python_selectors(repo_root, ignore, python_extra)?;
     }
     if lang_filter != Some(Language::Python) {
+        super::emit_test_progress("kiss test: collecting rust selectors");
         rs_sel = runners::enumerate_workspace_rust_selectors(repo_root, ignore)?;
     }
     if lang_filter.is_none() {
@@ -94,6 +97,9 @@ fn planned_all(
     // Warm `kiss test .`: when coverage populations are already current for the
     // planned selector sets, run as selective reuse instead of re-populating
     // (avoids rediscovery + index republish on every third warm run).
+    if !py_sel.is_empty() {
+        super::emit_test_progress("kiss test: checking python coverage population");
+    }
     let python_population_required = !(py_sel.is_empty()
         || (crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
             repo_root,
@@ -102,6 +108,9 @@ fn planned_all(
             crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
         ) && crate::test_runner::python_coverage_index::load_current_python_coverage_index(repo_root)
             .is_some()));
+    if !rs_sel.is_empty() {
+        super::emit_test_progress("kiss test: checking rust coverage population");
+    }
     let rust_population_required = !(rs_sel.is_empty()
         || rust_population_current_for_all_selectors(repo_root, &rs_sel));
     PlannedSelectors {

@@ -87,3 +87,26 @@ fn kiss_test_base_dry_run_single_branch_exits_nonzero() {
         "base: stderr must guide --base-branch, got {stderr}"
     );
 }
+
+#[test]
+fn kiss_test_non_watch_prints_planning_feedback_on_stdout() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    write_python_fixture(tmp.path());
+    commit_all(tmp.path(), "init");
+    let out = kiss_test_dry_run(tmp.path(), &["test", ".", "--dry-run"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "kiss test . --dry-run should exit 0, stderr={stderr}, stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("kiss test: planning"),
+        "non-watch kiss test must log planning feedback on stdout, got {stdout}"
+    );
+    assert!(
+        stdout.contains("kiss test: selected "),
+        "non-watch kiss test must log selected counts on stdout, got {stdout}"
+    );
+}
