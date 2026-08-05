@@ -15,6 +15,10 @@ use crate::{
     rslip_coverage_from_outcome, rslip_outcome_from_cache, runtime, validate_rslip_request,
 };
 
+mod lock_chunk;
+pub(crate) use lock_chunk::rslip_entry_lock_chunk_size;
+use lock_chunk::{coalesce_rslip_miss_candidates, lock_and_filter_rslip_miss_groups};
+
 pub(crate) struct RslipCacheCandidate {
     pub(crate) index: usize,
     pub(crate) req: RslipRequest,
@@ -76,22 +80,29 @@ impl Rslip {
             }
         }
 
-        let LockedRslipMisses {
-            misses: runner_misses,
-            _guards: _entry_guards,
-        } = prepare_rslip_misses(misses, &mut out);
-        if runner_misses.is_empty() {
-            return finalize_rslip_batch_results(out);
-        }
-        let runner_reqs: Vec<_> = runner_misses
-            .iter()
-            .map(|miss| miss.runner_req.clone())
-            .collect();
-        let runner_outcomes = self.runner.run_many_bounded(runner_reqs, jobs);
+        // Coalesce duplicates, then lock/run in FD-bounded chunks (avoids EMFILE).
+        let mut groups = coalesce_rslip_miss_candidates(misses);
+        let chunk_size = rslip_entry_lock_chunk_size(jobs);
+        while !groups.is_empty() {
+            let take = chunk_size.min(groups.len());
+            let chunk: Vec<_> = groups.drain(..take).collect();
+            let LockedRslipMisses {
+                misses: runner_misses,
+                _guards: _entry_guards,
+            } = prepare_rslip_misses(chunk, &mut out);
+            if runner_misses.is_empty() {
+                continue;
+            }
+            let runner_reqs: Vec<_> = runner_misses
+                .iter()
+                .map(|miss| miss.runner_req.clone())
+                .collect();
+            let runner_outcomes = self.runner.run_many_bounded(runner_reqs, jobs);
 
-        for (miss, result) in runner_misses.into_iter().zip(runner_outcomes) {
-            for (index, result) in handle_rslip_miss_result(miss, result) {
-                out[index] = Some(result);
+            for (miss, result) in runner_misses.into_iter().zip(runner_outcomes) {
+                for (index, result) in handle_rslip_miss_result(miss, result) {
+                    out[index] = Some(result);
+                }
             }
         }
 
@@ -120,11 +131,11 @@ fn prepare_rslip_cache_candidate(
 }
 
 fn prepare_rslip_misses(
-    misses: Vec<RslipCacheCandidate>,
+    groups: Vec<RslipCacheCandidateGroup>,
     out: &mut [Option<Result<RslipOutcome, RslipError>>],
 ) -> LockedRslipMisses {
     let mut guards = Vec::new();
-    let misses = lock_and_filter_rslip_misses(misses, out, &mut guards);
+    let misses = lock_and_filter_rslip_miss_groups(groups, out, &mut guards);
     let mut roots = BTreeSet::new();
     for miss in &misses {
         roots.insert(miss.representative.req.cache_root.clone());
@@ -157,58 +168,6 @@ fn prepare_rslip_misses(
         misses: runner_misses,
         _guards: guards,
     }
-}
-
-fn lock_and_filter_rslip_misses(
-    misses: Vec<RslipCacheCandidate>,
-    out: &mut [Option<Result<RslipOutcome, RslipError>>],
-    guards: &mut Vec<crate::LocalRslipLockGuard>,
-) -> Vec<RslipCacheCandidateGroup> {
-    let mut groups: BTreeMap<(PathBuf, String), Vec<RslipCacheCandidate>> = BTreeMap::new();
-    for miss in misses {
-        groups
-            .entry((miss.canonical_cache_root.clone(), miss.fingerprint.clone()))
-            .or_default()
-            .push(miss);
-    }
-    let mut runner_groups = Vec::new();
-    for ((_canonical_root, fingerprint), candidates) in groups {
-        let first = candidates
-            .first()
-            .expect("rslip miss group contains at least one candidate");
-        match crate::lock_rslip_cache_entry(&first.req.cache_root, &fingerprint) {
-            Ok(guard) => {
-                let force_rerun = candidates.iter().any(|candidate| candidate.req.force_rerun);
-                if !force_rerun
-                    && let Some(entry) = load_rslip_cache_entry(&first.req.cache_root, &fingerprint)
-                {
-                    for candidate in candidates {
-                        out[candidate.index] = Some(Ok(rslip_outcome_from_cache(entry.clone())));
-                    }
-                } else {
-                    guards.push(guard);
-                    runner_groups.push(RslipCacheCandidateGroup {
-                        indices: candidates.iter().map(|candidate| candidate.index).collect(),
-                        representative: candidates
-                            .into_iter()
-                            .next()
-                            .expect("rslip miss group contains a representative"),
-                        fingerprint,
-                    });
-                }
-            }
-            Err(err) => {
-                for candidate in candidates {
-                    out[candidate.index] = Some(Err(RslipError::Io(io::Error::new(
-                        err.kind(),
-                        err.to_string(),
-                    ))));
-                }
-            }
-        }
-    }
-    runner_groups.sort_by_key(|group| group.indices.first().copied().unwrap_or(usize::MAX));
-    runner_groups
 }
 
 pub(crate) struct RslipCacheCandidateGroup {
