@@ -16,8 +16,7 @@ use crate::{
 };
 
 mod lock_chunk;
-pub(crate) use lock_chunk::rslip_entry_lock_chunk_size;
-use lock_chunk::{coalesce_rslip_miss_candidates, lock_and_filter_rslip_miss_groups};
+use lock_chunk::{brief_lock_filter_rslip_miss_groups, coalesce_rslip_miss_candidates};
 
 pub(crate) struct RslipCacheCandidate {
     pub(crate) index: usize,
@@ -33,9 +32,8 @@ pub(crate) struct RslipMiss {
     pub(crate) runner_req: PytestRunRequest,
 }
 
-pub(crate) struct LockedRslipMisses {
+pub(crate) struct PreparedRslipMisses {
     pub(crate) misses: Vec<RslipMiss>,
-    pub(crate) _guards: Vec<crate::LocalRslipLockGuard>,
 }
 
 enum PublishedRuntime {
@@ -74,7 +72,7 @@ impl Rslip {
             cache_hits: out.iter().filter(|slot| slot.is_some()).count(),
             cache_misses,
         });
-        run_rslip_miss_chunks(self, misses, cache_misses, jobs, &mut out, &mut on_progress);
+        run_rslip_misses(self, misses, cache_misses, jobs, &mut out, &mut on_progress);
         finalize_rslip_batch_results(out)
     }
 }
@@ -118,7 +116,7 @@ fn prepare_rslip_batch_slots(
     (out, misses)
 }
 
-fn run_rslip_miss_chunks(
+fn run_rslip_misses(
     rslip: &Rslip,
     misses: Vec<RslipCacheCandidate>,
     mut remaining_misses: usize,
@@ -126,32 +124,27 @@ fn run_rslip_miss_chunks(
     out: &mut [Option<Result<RslipOutcome, RslipError>>],
     on_progress: &mut impl FnMut(RslipBatchProgress),
 ) {
-    // Coalesce duplicates, then lock/run in FD-bounded chunks (avoids EMFILE).
-    let mut groups = coalesce_rslip_miss_candidates(misses);
-    let chunk_size = rslip_entry_lock_chunk_size(jobs);
-    while !groups.is_empty() {
-        let take = chunk_size.min(groups.len());
-        let chunk: Vec<_> = groups.drain(..take).collect();
-        let LockedRslipMisses {
-            misses: runner_misses,
-            _guards: _entry_guards,
-        } = prepare_rslip_misses(chunk, out);
-        if runner_misses.is_empty() {
-            continue;
+    // Coalesce, brief-lock/recheck (no retained FDs), then one bounded runner call.
+    let groups = coalesce_rslip_miss_candidates(misses);
+    let groups = brief_lock_filter_rslip_miss_groups(groups, out);
+    let PreparedRslipMisses {
+        misses: runner_misses,
+    } = prepare_rslip_misses(groups, out);
+    if runner_misses.is_empty() {
+        return;
+    }
+    let runner_reqs: Vec<_> = runner_misses
+        .iter()
+        .map(|miss| miss.runner_req.clone())
+        .collect();
+    let runner_outcomes = rslip.runner.run_many_bounded(runner_reqs, jobs);
+    for (miss, result) in runner_misses.into_iter().zip(runner_outcomes) {
+        let resolved = miss.indices.len();
+        for (index, result) in handle_rslip_miss_result(miss, result) {
+            out[index] = Some(result);
         }
-        let runner_reqs: Vec<_> = runner_misses
-            .iter()
-            .map(|miss| miss.runner_req.clone())
-            .collect();
-        let runner_outcomes = rslip.runner.run_many_bounded(runner_reqs, jobs);
-        for (miss, result) in runner_misses.into_iter().zip(runner_outcomes) {
-            let resolved = miss.indices.len();
-            for (index, result) in handle_rslip_miss_result(miss, result) {
-                out[index] = Some(result);
-            }
-            remaining_misses = remaining_misses.saturating_sub(resolved);
-            on_progress(RslipBatchProgress::Resolved { remaining_misses });
-        }
+        remaining_misses = remaining_misses.saturating_sub(resolved);
+        on_progress(RslipBatchProgress::Resolved { remaining_misses });
     }
 }
 
@@ -178,16 +171,14 @@ fn prepare_rslip_cache_candidate(
 fn prepare_rslip_misses(
     groups: Vec<RslipCacheCandidateGroup>,
     out: &mut [Option<Result<RslipOutcome, RslipError>>],
-) -> LockedRslipMisses {
-    let mut guards = Vec::new();
-    let misses = lock_and_filter_rslip_miss_groups(groups, out, &mut guards);
+) -> PreparedRslipMisses {
     let mut roots = BTreeSet::new();
-    for miss in &misses {
+    for miss in &groups {
         roots.insert(miss.representative.req.cache_root.clone());
     }
     let runtimes = publish_rslip_runtimes(roots);
     let mut runner_misses = Vec::new();
-    for miss in misses {
+    for miss in groups {
         let runtime = runtimes
             .get(&miss.representative.req.cache_root)
             .expect("runtime publication attempted for every miss root");
@@ -209,9 +200,8 @@ fn prepare_rslip_misses(
             }
         }
     }
-    LockedRslipMisses {
+    PreparedRslipMisses {
         misses: runner_misses,
-        _guards: guards,
     }
 }
 
@@ -311,7 +301,7 @@ fn handle_rslip_miss_result_once(
         // Timeouts are recorded as failed outcomes (empty coverage) so a large
         // population can finish instead of hanging forever on one stuck test.
         Err(PytestRunError::Timeout(timeout)) => {
-            return store_failed_miss_outcome(
+            return finalize_failed_miss_outcome(
                 miss,
                 timeout,
                 124,
@@ -324,7 +314,7 @@ fn handle_rslip_miss_result_once(
         Ok(coverage) => coverage,
         // Missing coverage must not abort a multi-thousand-selector population.
         Err(RslipError::MissingArtifact(name)) => {
-            return store_failed_miss_outcome(
+            return finalize_failed_miss_outcome(
                 miss,
                 outcome.duration,
                 outcome.exit_code.unwrap_or(1),
@@ -343,15 +333,10 @@ fn handle_rslip_miss_result_once(
         stdout: Some(outcome.stdout),
         stderr: Some(outcome.stderr),
     };
-    store_rslip_cache_entry(
-        &miss.req.cache_root,
-        &miss.fingerprint,
-        &RslipCacheEntry::from(&rslip_outcome),
-    )?;
-    Ok(rslip_outcome)
+    finalize_cacheable_miss_outcome(miss, rslip_outcome)
 }
 
-fn store_failed_miss_outcome(
+fn finalize_failed_miss_outcome(
     miss: &RslipMiss,
     duration: std::time::Duration,
     exit_code: i32,
@@ -369,12 +354,26 @@ fn store_failed_miss_outcome(
         stdout: None,
         stderr: Some(stderr.into_bytes()),
     };
+    finalize_cacheable_miss_outcome(miss, rslip_outcome)
+}
+
+/// Lock, recheck for a concurrent cache entry, then store this outcome if still missing.
+fn finalize_cacheable_miss_outcome(
+    miss: &RslipMiss,
+    outcome: RslipOutcome,
+) -> Result<RslipOutcome, RslipError> {
+    let _guard = crate::lock_rslip_cache_entry(&miss.req.cache_root, &miss.fingerprint)?;
+    if !miss.req.force_rerun
+        && let Some(entry) = load_rslip_cache_entry(&miss.req.cache_root, &miss.fingerprint)
+    {
+        return Ok(rslip_outcome_from_cache(entry));
+    }
     store_rslip_cache_entry(
         &miss.req.cache_root,
         &miss.fingerprint,
-        &RslipCacheEntry::from(&rslip_outcome),
+        &RslipCacheEntry::from(&outcome),
     )?;
-    Ok(rslip_outcome)
+    Ok(outcome)
 }
 
 fn clone_rslip_result(

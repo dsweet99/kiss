@@ -1,5 +1,5 @@
 use super::*;
-use crate::batch::{LockedRslipMisses, RslipCacheCandidate, RslipCacheCandidateGroup};
+use crate::batch::{PreparedRslipMisses, RslipCacheCandidate, RslipCacheCandidateGroup};
 use crate::cache::{rslip_cache_fingerprint, store_rslip_cache_entry};
 use rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunner};
 use std::cell::Cell;
@@ -48,7 +48,7 @@ def test_b():\n    assert True\n",
 
 #[test]
 #[allow(non_snake_case)]
-fn LockedRslipMisses_and_RslipCacheCandidateGroup_are_test_referenced() {
+fn PreparedRslipMisses_and_RslipCacheCandidateGroup_are_test_referenced() {
     let tmp = tempfile::tempdir().unwrap();
     let req = rslip_sample_request(tmp.path());
     let candidate = RslipCacheCandidate {
@@ -62,13 +62,12 @@ fn LockedRslipMisses_and_RslipCacheCandidateGroup_are_test_referenced() {
         representative: candidate,
         fingerprint: "abc".to_string(),
     };
-    let locked = LockedRslipMisses {
+    let prepared = PreparedRslipMisses {
         misses: Vec::new(),
-        _guards: Vec::new(),
     };
 
     assert_eq!(group.indices, vec![0]);
-    assert_eq!(locked.misses.len(), 0);
+    assert_eq!(prepared.misses.len(), 0);
 }
 
 #[test]

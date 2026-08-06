@@ -10,47 +10,52 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 #[test]
-fn two_process_same_host_cold_cache_contention_executes_once_and_reuses_hit() {
+fn two_process_same_host_cold_cache_contention_prefers_first_store() {
     if env::var_os("RSLIP_TWO_PROCESS_CONTENTION_CHILD").is_some() {
         run_two_process_contention_child();
         return;
     }
-
     let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-    fs::create_dir(tmp.path().join("ready")).unwrap();
-    let exe = env::current_exe().unwrap();
-    let first = spawn_two_process_contention_child(&exe, tmp.path(), "first");
-    let second = spawn_two_process_contention_child(&exe, tmp.path(), "second");
-
-    wait_for_path(
-        &tmp.path().join("ready").join("first"),
-        Duration::from_secs(2),
-    );
-    wait_for_path(
-        &tmp.path().join("ready").join("second"),
-        Duration::from_secs(2),
-    );
+    prepare_two_process_fixture(tmp.path());
+    let (first, second) = spawn_contention_pair(tmp.path());
+    wait_for_both_ready(tmp.path());
     fs::write(tmp.path().join("go"), b"go").unwrap();
+    assert_contention_results(tmp.path(), first, second);
+}
 
+fn prepare_two_process_fixture(root: &Path) {
+    fs::write(root.join("test_sample.py"), "def test_ok():\n    assert True\n").unwrap();
+    fs::create_dir(root.join("ready")).unwrap();
+}
+
+fn spawn_contention_pair(root: &Path) -> (Child, Child) {
+    let exe = env::current_exe().unwrap();
+    (
+        spawn_two_process_contention_child(&exe, root, "first"),
+        spawn_two_process_contention_child(&exe, root, "second"),
+    )
+}
+
+fn wait_for_both_ready(root: &Path) {
+    wait_for_path(&root.join("ready").join("first"), Duration::from_secs(2));
+    wait_for_path(&root.join("ready").join("second"), Duration::from_secs(2));
+}
+
+fn assert_contention_results(root: &Path, first: Child, second: Child) {
     let first_output = first.wait_with_output().unwrap();
     let second_output = second.wait_with_output().unwrap();
     assert_child_success("first", &first_output);
     assert_child_success("second", &second_output);
-
-    let execution_log = fs::read_to_string(tmp.path().join("executions.log")).unwrap();
-    assert_eq!(
-        execution_log.lines().count(),
-        1,
-        "expected one runner execution, got log:\n{execution_log}"
+    // Brief locks allow concurrent runners; finalize recheck keeps one cache entry.
+    let execution_log = fs::read_to_string(root.join("executions.log")).unwrap();
+    let executions = execution_log.lines().count();
+    assert!(
+        (1..=2).contains(&executions),
+        "expected one or two runner executions, got log:\n{execution_log}"
     );
     let mut statuses = vec![
-        fs::read_to_string(tmp.path().join("result-first.txt")).unwrap(),
-        fs::read_to_string(tmp.path().join("result-second.txt")).unwrap(),
+        fs::read_to_string(root.join("result-first.txt")).unwrap(),
+        fs::read_to_string(root.join("result-second.txt")).unwrap(),
     ];
     statuses.sort();
     assert_eq!(statuses, vec!["Hit", "MissStored"]);
@@ -70,7 +75,7 @@ fn configure_two_process_contention_child<'a>(
     command
         .arg("--exact")
         .arg(
-            "batch_process_test::two_process_same_host_cold_cache_contention_executes_once_and_reuses_hit",
+            "batch_process_test::two_process_same_host_cold_cache_contention_prefers_first_store",
         )
         .arg("--nocapture")
         .env("RSLIP_TWO_PROCESS_CONTENTION_CHILD", child_id)

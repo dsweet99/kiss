@@ -1,73 +1,240 @@
 use super::*;
-use crate::batch::rslip_entry_lock_chunk_size;
-use rpytest_runner::{PytestRunOutcome, PytestRunner};
+use crate::cache::{self, rslip_cache_fingerprint, store_rslip_cache_entry};
+use rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner};
 use std::cell::Cell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
+use std::path::Path;
 use std::rc::Rc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread;
+use std::time::{Duration, Instant};
+
+type TimingSlots = Arc<Mutex<Vec<Option<Instant>>>>;
 
 #[test]
-fn entry_lock_chunk_size_is_capped_below_typical_nofile_soft_limit() {
-    assert_eq!(rslip_entry_lock_chunk_size(1), 1);
-    assert_eq!(rslip_entry_lock_chunk_size(8), 8);
-    assert_eq!(rslip_entry_lock_chunk_size(256), 256);
-    assert_eq!(rslip_entry_lock_chunk_size(1024), 256);
-    assert_eq!(rslip_entry_lock_chunk_size(0), 1);
-}
-
-#[test]
-fn large_miss_batch_chunks_entry_locks_instead_of_holding_all() {
+fn large_miss_batch_submits_one_bounded_call_without_retaining_entry_locks() {
     // Regression for EMFILE when sameq-scale miss sets held one flock FD each
-    // for the entire batch (ulimit -n 4096; ~14k selectors).
+    // for the entire batch (ulimit -n 4096; ~14k selectors). Brief lock/recheck
+    // plus one full runner call must not retain a lock per queued miss.
     let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
+    write_ok_sample(tmp.path());
     let miss_count = 4500;
     let jobs = 8;
     let batch_calls = Rc::new(Cell::new(0));
     let max_batch = Rc::new(Cell::new(0));
     let batch_calls_for_runner = Rc::clone(&batch_calls);
     let max_batch_for_runner = Rc::clone(&max_batch);
-    let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |reqs, jobs| {
+    let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |reqs, observed_jobs| {
         batch_calls_for_runner.set(batch_calls_for_runner.get() + 1);
         max_batch_for_runner.set(max_batch_for_runner.get().max(reqs.len()));
-        assert!(reqs.len() <= rslip_entry_lock_chunk_size(jobs));
-        reqs.into_iter()
-            .map(|req| {
-                let path = req.artifacts[0].path.clone();
-                fs::write(&path, r#"{"files":{"/project/app.py":[1,3]}}"#).unwrap();
-                Ok(PytestRunOutcome {
-                    nodeid: req.nodeid,
-                    status: TestStatus::Passed,
-                    exit_code: Some(0),
-                    stdout: Vec::new(),
-                    stderr: Vec::new(),
-                    duration: Duration::from_millis(1),
-                    artifacts: BTreeMap::from([(runtime::COVERAGE_ARTIFACT.to_string(), path)]),
-                })
-            })
-            .collect()
+        assert_eq!(observed_jobs, jobs);
+        assert_eq!(reqs.len(), miss_count);
+        reqs.into_iter().map(ok_coverage_outcome).collect()
     }));
-    let reqs: Vec<_> = (0..miss_count)
-        .map(|i| {
-            let mut req = rslip_sample_request(tmp.path());
-            req.nodeid = format!("test_sample.py::test_{i}");
-            req
-        })
-        .collect();
+    let reqs = numbered_sample_requests(tmp.path(), miss_count);
 
     let outcomes = rslip.run_or_reuse_many_bounded(reqs, jobs);
 
     assert_eq!(outcomes.len(), miss_count);
-    assert!(outcomes.iter().all(|outcome| outcome.is_ok()));
-    assert!(max_batch.get() <= rslip_entry_lock_chunk_size(jobs));
-    assert!(batch_calls.get() > 1);
-    assert_eq!(
-        batch_calls.get(),
-        miss_count.div_ceil(rslip_entry_lock_chunk_size(jobs))
+    assert!(outcomes.iter().all(Result::is_ok));
+    assert_eq!(batch_calls.get(), 1);
+    assert_eq!(max_batch.get(), miss_count);
+}
+
+#[test]
+fn bounded_miss_queue_starts_third_before_slow_first_finishes() {
+    // Wave scheduling with jobs=2 waits for the first wave before starting the
+    // third miss. One full queue plus a jobs-bounded worker pool starts the
+    // third while the slow first is still running.
+    let tmp = tempfile::tempdir().unwrap();
+    write_ok_sample(tmp.path());
+    let starts = empty_timing_slots(3);
+    let ends = empty_timing_slots(3);
+    let starts_for_runner = Arc::clone(&starts);
+    let ends_for_runner = Arc::clone(&ends);
+    let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |reqs, jobs| {
+        assert_eq!(reqs.len(), 3);
+        assert_eq!(jobs, 2);
+        run_blocking_first_worker_queue(reqs, jobs, &starts_for_runner, &ends_for_runner)
+    }));
+
+    let outcomes = rslip.run_or_reuse_many_bounded(numbered_sample_requests(tmp.path(), 3), 2);
+
+    assert!(outcomes.iter().all(Result::is_ok));
+    assert_third_started_before_first_finished(&starts, &ends);
+}
+
+#[test]
+fn concurrent_cache_entry_wins_over_local_normal_and_timeout_outcomes() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_ok_sample(tmp.path());
+    assert_concurrent_normal_entry_wins(tmp.path());
+    assert_concurrent_timeout_entry_wins(tmp.path());
+}
+
+fn write_ok_sample(root: &Path) {
+    fs::write(root.join("test_sample.py"), "def test_ok():\n    assert True\n").unwrap();
+}
+
+fn numbered_sample_requests(root: &Path, count: usize) -> Vec<RslipRequest> {
+    (0..count)
+        .map(|i| {
+            let mut req = rslip_sample_request(root);
+            req.nodeid = format!("test_sample.py::test_{i}");
+            req
+        })
+        .collect()
+}
+
+fn ok_coverage_outcome(req: PytestRunRequest) -> Result<PytestRunOutcome, PytestRunError> {
+    let path = req.artifacts[0].path.clone();
+    fs::write(&path, r#"{"files":{"/project/app.py":[1,3]}}"#).unwrap();
+    Ok(PytestRunOutcome {
+        nodeid: req.nodeid,
+        status: TestStatus::Passed,
+        exit_code: Some(0),
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        duration: Duration::from_millis(1),
+        artifacts: BTreeMap::from([(runtime::COVERAGE_ARTIFACT.to_string(), path)]),
+    })
+}
+
+fn empty_timing_slots(len: usize) -> TimingSlots {
+    Arc::new(Mutex::new(vec![None; len]))
+}
+
+fn run_blocking_first_worker_queue(
+    reqs: Vec<PytestRunRequest>,
+    jobs: usize,
+    starts: &TimingSlots,
+    ends: &TimingSlots,
+) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
+    let len = reqs.len();
+    let queue = Arc::new(Mutex::new(
+        reqs.into_iter().enumerate().collect::<VecDeque<_>>(),
+    ));
+    // First worker blocks until third has started (proves continuous pull).
+    let (third_started_tx, third_started_rx) = mpsc::channel::<()>();
+    let third_started_rx = Arc::new(Mutex::new(Some(third_started_rx)));
+    let (tx, rx) = mpsc::channel();
+    for _ in 0..jobs {
+        let queue = Arc::clone(&queue);
+        let tx = tx.clone();
+        let starts = Arc::clone(starts);
+        let ends = Arc::clone(ends);
+        let third_rx = Arc::clone(&third_started_rx);
+        let third_tx = third_started_tx.clone();
+        thread::spawn(move || {
+            loop {
+                // Drop the queue guard before blocking so another worker can pull.
+                let Some((index, req)) = queue.lock().unwrap().pop_front() else {
+                    break;
+                };
+                starts.lock().unwrap()[index] = Some(Instant::now());
+                if index == 0 {
+                    let receiver = third_rx
+                        .lock()
+                        .unwrap()
+                        .take()
+                        .expect("first miss owns the third-started receiver");
+                    receiver
+                        .recv_timeout(Duration::from_secs(2))
+                        .expect("third miss must start while first is still running");
+                } else if index == 2 {
+                    let _ = third_tx.send(());
+                }
+                ends.lock().unwrap()[index] = Some(Instant::now());
+                tx.send((index, ok_coverage_outcome(req))).unwrap();
+            }
+        });
+    }
+    drop(tx);
+    drop(third_started_tx);
+    let mut out = Vec::new();
+    out.resize_with(len, || Err(PytestRunError::WorkerPanic));
+    for (index, result) in rx {
+        out[index] = result;
+    }
+    out
+}
+
+fn assert_third_started_before_first_finished(starts: &TimingSlots, ends: &TimingSlots) {
+    let starts = starts.lock().unwrap();
+    let ends = ends.lock().unwrap();
+    let third_start = starts[2].expect("third test should start");
+    let first_end = ends[0].expect("first test should finish");
+    assert!(
+        third_start < first_end,
+        "third miss must start before slow first miss finishes (continuous queue)"
     );
+}
+
+fn assert_concurrent_normal_entry_wins(root: &Path) {
+    let mut req = rslip_sample_request(root);
+    req.nodeid = "test_sample.py::test_normal".to_string();
+    let fingerprint = rslip_cache_fingerprint(&req).unwrap();
+    let cache_root = req.cache_root.clone();
+    let concurrent = cache::RslipCacheEntry::from(&passed_coverage_outcome(
+        &req.nodeid,
+        BTreeSet::from([2, 4]),
+    ));
+    let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |reqs, _jobs| {
+        store_rslip_cache_entry(&cache_root, &fingerprint, &concurrent).unwrap();
+        reqs.into_iter().map(ok_coverage_outcome).collect()
+    }));
+    let outcomes = rslip.run_or_reuse_many_bounded(vec![req], 1);
+    assert_eq!(outcomes[0].as_ref().unwrap().cache_status, CacheStatus::Hit);
+    assert_eq!(
+        outcomes[0].as_ref().unwrap().coverage.files["/project/app.py"],
+        BTreeSet::from([2, 4])
+    );
+}
+
+fn assert_concurrent_timeout_entry_wins(root: &Path) {
+    let mut req = rslip_sample_request(root);
+    req.nodeid = "test_sample.py::test_timeout".to_string();
+    let fingerprint = rslip_cache_fingerprint(&req).unwrap();
+    let cache_root = req.cache_root.clone();
+    let concurrent = cache::RslipCacheEntry::from(&failed_empty_outcome(&req.nodeid, 7));
+    let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |reqs, _jobs| {
+        store_rslip_cache_entry(&cache_root, &fingerprint, &concurrent).unwrap();
+        reqs.into_iter()
+            .map(|_| Err(PytestRunError::Timeout(Duration::from_millis(50))))
+            .collect()
+    }));
+    let outcomes = rslip.run_or_reuse_many_bounded(vec![req], 1);
+    assert_eq!(outcomes[0].as_ref().unwrap().cache_status, CacheStatus::Hit);
+    assert_eq!(outcomes[0].as_ref().unwrap().exit_code, Some(7));
+}
+
+fn passed_coverage_outcome(nodeid: &str, lines: BTreeSet<u32>) -> RslipOutcome {
+    RslipOutcome {
+        nodeid: nodeid.to_string(),
+        status: TestStatus::Passed,
+        exit_code: Some(0),
+        duration: Duration::from_millis(9),
+        coverage: LineCoverage {
+            files: BTreeMap::from([("/project/app.py".to_string(), lines)]),
+        },
+        cache_status: CacheStatus::MissStored,
+        stdout: None,
+        stderr: None,
+    }
+}
+
+fn failed_empty_outcome(nodeid: &str, exit_code: i32) -> RslipOutcome {
+    RslipOutcome {
+        nodeid: nodeid.to_string(),
+        status: TestStatus::Failed,
+        exit_code: Some(exit_code),
+        duration: Duration::from_millis(3),
+        coverage: LineCoverage {
+            files: BTreeMap::new(),
+        },
+        cache_status: CacheStatus::MissStored,
+        stdout: None,
+        stderr: Some(b"concurrent timeout entry\n".to_vec()),
+    }
 }

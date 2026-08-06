@@ -1,5 +1,5 @@
 use super::*;
-use crate::batch::{LockedRslipMisses, RslipCacheCandidate, RslipCacheCandidateGroup, RslipMiss};
+use crate::batch::{PreparedRslipMisses, RslipCacheCandidate, RslipCacheCandidateGroup, RslipMiss};
 use rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact,
     forkserver_pytest_runner,
@@ -95,8 +95,8 @@ fn rslip_cache_candidate_and_miss_store_batch_fields() {
 }
 
 #[test]
-fn locked_rslip_misses_and_candidate_group_types_are_test_referenced() {
-    assert!(std::any::type_name::<LockedRslipMisses>().contains("LockedRslipMisses"));
+fn prepared_rslip_misses_and_candidate_group_types_are_test_referenced() {
+    assert!(std::any::type_name::<PreparedRslipMisses>().contains("PreparedRslipMisses"));
     assert!(
         std::any::type_name::<RslipCacheCandidateGroup>().contains("RslipCacheCandidateGroup")
     );

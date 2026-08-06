@@ -2,17 +2,10 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::PathBuf;
 
-use crate::cache::{load_rslip_cache_entry};
+use crate::cache::load_rslip_cache_entry;
 use crate::{RslipError, RslipOutcome, rslip_outcome_from_cache};
 
 use super::{RslipCacheCandidate, RslipCacheCandidateGroup};
-
-/// Cap concurrent entry-lock FDs so a large miss set cannot exhaust NOFILE.
-pub(crate) fn rslip_entry_lock_chunk_size(jobs: usize) -> usize {
-    const ABSOLUTE_CAP: usize = 256;
-    let jobs = jobs.max(1);
-    jobs.min(ABSOLUTE_CAP)
-}
 
 pub(super) fn coalesce_rslip_miss_candidates(
     misses: Vec<RslipCacheCandidate>,
@@ -44,10 +37,11 @@ pub(super) fn coalesce_rslip_miss_candidates(
     runner_groups
 }
 
-pub(super) fn lock_and_filter_rslip_miss_groups(
+/// Briefly lock each miss group, recheck the cache, then release the lock.
+/// Retains only groups that are still missing so FDs are not held across the run.
+pub(super) fn brief_lock_filter_rslip_miss_groups(
     groups: Vec<RslipCacheCandidateGroup>,
     out: &mut [Option<Result<RslipOutcome, RslipError>>],
-    guards: &mut Vec<crate::LocalRslipLockGuard>,
 ) -> Vec<RslipCacheCandidateGroup> {
     let mut runner_groups = Vec::new();
     for group in groups {
@@ -55,7 +49,7 @@ pub(super) fn lock_and_filter_rslip_miss_groups(
             &group.representative.req.cache_root,
             &group.fingerprint,
         ) {
-            Ok(guard) => {
+            Ok(_guard) => {
                 if !group.representative.req.force_rerun
                     && let Some(entry) = load_rslip_cache_entry(
                         &group.representative.req.cache_root,
@@ -66,7 +60,6 @@ pub(super) fn lock_and_filter_rslip_miss_groups(
                         out[index] = Some(Ok(rslip_outcome_from_cache(entry.clone())));
                     }
                 } else {
-                    guards.push(guard);
                     runner_groups.push(group);
                 }
             }
