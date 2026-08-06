@@ -361,9 +361,6 @@ fn print_rust_llvm_cov_outcome(outcome: &RustLlvmCovOutcome) {
         }
         (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::Hit) => {
             println!("FAILED (cached): {}", outcome.selector);
-            eprintln!(
-                "Failure output was not cached. Re-run with --force to reproduce stdout/stderr."
-            );
         }
         (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::MissStored) => {
             println!("FAILED: {} ({duration})", outcome.selector);

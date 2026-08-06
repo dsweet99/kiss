@@ -248,9 +248,6 @@ fn print_rslip_outcome(outcome: &RslipOutcome) {
         }
         (rpytest_runner::TestStatus::Failed, PyCacheStatus::Hit) => {
             println!("FAILED (cached): {}", outcome.nodeid);
-            eprintln!(
-                "Failure output was not cached. Re-run with --force to reproduce stdout/stderr."
-            );
         }
         (rpytest_runner::TestStatus::Failed, PyCacheStatus::MissStored) => {
             println!("FAILED: {} ({duration})", outcome.nodeid);
