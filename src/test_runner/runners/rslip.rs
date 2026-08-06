@@ -76,20 +76,34 @@ fn run_rslip_selectors_with_runner(
                 "kiss test: rslip prepared hits={cache_hits} misses={cache_misses}"
             ));
         }
-        RslipBatchProgress::Resolved { remaining_misses } => {
-            // Periodic heartbeat so large silent miss batches do not look hung.
-            if remaining_misses == 0 || remaining_misses % 25 == 0 {
-                crate::test_runner::emit_test_progress(&format!(
-                    "kiss test: rslip misses remaining={remaining_misses}"
-                ));
+        RslipBatchProgress::SelectorFinalized { outcomes } => {
+            for (index, result) in outcomes {
+                match result {
+                    Ok(outcome) => {
+                        print_rslip_outcome(&outcome);
+                        let _ = std::io::Write::flush(&mut std::io::stdout());
+                    }
+                    Err(err) => {
+                        let selector = selectors
+                            .get(index)
+                            .map(String::as_str)
+                            .unwrap_or("<unknown>");
+                        println!("FAILED: {selector} (rslip error)");
+                        eprintln!("{}", format_rslip_error(err));
+                        let _ = std::io::Write::flush(&mut std::io::stdout());
+                    }
+                }
             }
+        }
+        RslipBatchProgress::TestsRemaining { remaining } => {
+            crate::test_runner::emit_test_progress(&format!(
+                "kiss test: tests_remaining={remaining}"
+            ));
         }
     });
     for (selector, result) in selectors.iter().zip(results) {
         match result {
             Ok(outcome) => {
-                print_rslip_outcome(&outcome);
-                let _ = std::io::Write::flush(&mut std::io::stdout());
                 statuses.push((outcome.nodeid.clone(), outcome.status));
                 summary.record(
                     outcome.status,
@@ -103,10 +117,7 @@ fn run_rslip_selectors_with_runner(
             }
             // Keep population/selective batches moving: one rslip Io/runner error must
             // not discard thousands of already-resolved cache hits.
-            Err(err) => {
-                println!("FAILED: {selector} (rslip error)");
-                eprintln!("{}", format_rslip_error(err));
-                let _ = std::io::Write::flush(&mut std::io::stdout());
+            Err(_) => {
                 statuses.push((selector.clone(), rpytest_runner::TestStatus::Failed));
                 summary.record(
                     rpytest_runner::TestStatus::Failed,

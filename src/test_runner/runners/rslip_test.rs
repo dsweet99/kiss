@@ -180,3 +180,135 @@ def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
             });
         }
     }
+
+    #[cfg(unix)]
+    fn capture_stdout(f: impl FnOnce()) -> String {
+        use std::io::{Read, Write};
+        use std::os::fd::FromRawFd;
+        let mut fds = [0; 2];
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        let read_fd = fds[0];
+        let write_fd = fds[1];
+        let old_stdout = unsafe { libc::dup(libc::STDOUT_FILENO) };
+        assert!(old_stdout >= 0);
+        assert_eq!(
+            unsafe { libc::dup2(write_fd, libc::STDOUT_FILENO) },
+            libc::STDOUT_FILENO
+        );
+        unsafe {
+            libc::close(write_fd);
+        }
+        f();
+        let _ = std::io::stdout().flush();
+        assert_eq!(
+            unsafe { libc::dup2(old_stdout, libc::STDOUT_FILENO) },
+            libc::STDOUT_FILENO
+        );
+        unsafe {
+            libc::close(old_stdout);
+        }
+        let mut reader = unsafe { std::fs::File::from_raw_fd(read_fd) };
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf).unwrap();
+        drop(reader);
+        String::from_utf8_lossy(&buf).into_owned()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rslip_selectors_stdout_streams_outcomes_and_tests_remaining() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join("test_sample.py"),
+            "def test_a():\n    assert True\n\n\
+def test_b():\n    assert True\n",
+        )
+        .unwrap();
+        let selectors = vec![
+            "test_sample.py::test_a".to_string(),
+            "test_sample.py::test_b".to_string(),
+        ];
+        let runner = PytestRunner::from_bounded_fn(|reqs, _jobs| {
+            reqs.into_iter()
+                .map(|req| {
+                    let path = req.artifacts[0].path.clone();
+                    let artifact_name = req.artifacts[0].name.clone();
+                    fs::write(&path, r#"{"files":{"/project/app.py":[1]}}"#).unwrap();
+                    Ok(PytestRunOutcome {
+                        nodeid: req.nodeid,
+                        status: TestStatus::Passed,
+                        exit_code: Some(0),
+                        stdout: Vec::new(),
+                        stderr: Vec::new(),
+                        duration: Duration::from_millis(1),
+                        artifacts: BTreeMap::from([(artifact_name, path)]),
+                    })
+                })
+                .collect()
+        });
+
+        let miss_out = capture_stdout(|| {
+            let summary = run_rslip_selectors_with_runner(
+                tmp.path(),
+                &selectors,
+                &[],
+                false,
+                &[],
+                2,
+                runner,
+            )
+            .unwrap();
+            assert_eq!(summary.cache_misses, 2);
+        });
+        assert!(
+            miss_out.contains("kiss test: rslip prepared hits=0 misses=2"),
+            "missing prepared line: {miss_out}"
+        );
+        assert!(
+            miss_out.contains("PASSED: test_sample.py::test_a"),
+            "missing miss print: {miss_out}"
+        );
+        assert!(
+            miss_out.contains("PASSED: test_sample.py::test_b"),
+            "missing miss print: {miss_out}"
+        );
+        assert!(
+            miss_out.contains("kiss test: tests_remaining="),
+            "missing tests_remaining heartbeat: {miss_out}"
+        );
+        assert_eq!(
+            miss_out.matches("PASSED: test_sample.py::test_a").count(),
+            1,
+            "duplicate miss lines: {miss_out}"
+        );
+
+        let cached_runner = PytestRunner::from_fn(|_| {
+            panic!("cache hits must not invoke the pytest runner");
+        });
+        let hit_out = capture_stdout(|| {
+            let summary = run_rslip_selectors_with_runner(
+                tmp.path(),
+                &selectors,
+                &[],
+                false,
+                &[],
+                2,
+                cached_runner,
+            )
+            .unwrap();
+            assert_eq!(summary.cache_hits, 2);
+        });
+        assert!(
+            hit_out.contains("PASSED (cached): test_sample.py::test_a"),
+            "cache hits must print via prepare-time SelectorFinalized: {hit_out}"
+        );
+        assert!(
+            hit_out.contains("PASSED (cached): test_sample.py::test_b"),
+            "cache hits must print via prepare-time SelectorFinalized: {hit_out}"
+        );
+        assert_eq!(
+            hit_out.matches("PASSED (cached):").count(),
+            2,
+            "duplicate cached lines: {hit_out}"
+        );
+    }

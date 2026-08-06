@@ -17,6 +17,8 @@ mod batch_error_test;
 #[cfg(test)]
 mod batch_lock_chunk_test;
 #[cfg(test)]
+mod batch_stream_test;
+#[cfg(test)]
 mod batch_process_test;
 #[cfg(test)]
 mod batch_test;

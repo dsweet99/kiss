@@ -11,12 +11,31 @@ use crate::{PytestRunError, PytestRunOutcome, PytestRunRequest, TestStatus};
 type PytestRunResult = Result<PytestRunOutcome, PytestRunError>;
 type RunOneFn = dyn Fn(PytestRunRequest) -> PytestRunResult;
 type RunManyFn = dyn Fn(Vec<PytestRunRequest>) -> Vec<PytestRunResult>;
-type RunManyBoundedFn = dyn Fn(Vec<PytestRunRequest>, usize) -> Vec<PytestRunResult>;
+type RunManyBoundedFn =
+    dyn Fn(Vec<PytestRunRequest>, usize, &mut dyn FnMut(usize, PytestRunResult));
 
 pub struct PytestRunner {
     run_one: Rc<RunOneFn>,
     run_many: Box<RunManyFn>,
     run_many_bounded: Box<RunManyBoundedFn>,
+}
+
+pub(crate) fn collect_bounded_results(
+    reqs: Vec<PytestRunRequest>,
+    max_jobs: usize,
+    run: impl FnOnce(
+        Vec<PytestRunRequest>,
+        usize,
+        &mut dyn FnMut(usize, Result<PytestRunOutcome, PytestRunError>),
+    ),
+) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
+    let len = reqs.len();
+    let mut out = Vec::new();
+    out.resize_with(len, || Err(PytestRunError::WorkerPanic));
+    run(reqs, max_jobs, &mut |index, result| {
+        out[index] = result;
+    });
+    out
 }
 
 impl PytestRunner {
@@ -30,11 +49,11 @@ impl PytestRunner {
         Self {
             run_one,
             run_many: Box::new(move |reqs| reqs.into_iter().map(|req| run_many_one(req)).collect()),
-            run_many_bounded: Box::new(move |reqs, max_jobs| {
+            run_many_bounded: Box::new(move |reqs, max_jobs, on_complete| {
                 assert!(max_jobs > 0, "max_jobs must be greater than zero");
-                reqs.into_iter()
-                    .map(|req| run_many_bounded_one(req))
-                    .collect()
+                for (index, req) in reqs.into_iter().enumerate() {
+                    on_complete(index, run_many_bounded_one(req));
+                }
             }),
         }
     }
@@ -43,9 +62,11 @@ impl PytestRunner {
     where
         F: Fn(Vec<PytestRunRequest>, usize) -> Vec<PytestRunResult> + 'static,
     {
-        let run_many_bounded: Rc<RunManyBoundedFn> = Rc::new(run_many_bounded);
+        let run_many_bounded: Rc<dyn Fn(Vec<PytestRunRequest>, usize) -> Vec<PytestRunResult>> =
+            Rc::new(run_many_bounded);
         let run_one_bounded = Rc::clone(&run_many_bounded);
-        let run_many_bounded_default = Rc::clone(&run_many_bounded);
+        let run_many_default = Rc::clone(&run_many_bounded);
+        let run_many_bounded_stream = Rc::clone(&run_many_bounded);
         Self {
             run_one: Rc::new(move |req| {
                 run_one_bounded(vec![req], 1)
@@ -55,11 +76,45 @@ impl PytestRunner {
             }),
             run_many: Box::new(move |reqs| {
                 let max_jobs = reqs.len().max(1);
-                run_many_bounded_default(reqs, max_jobs)
+                run_many_default(reqs, max_jobs)
             }),
-            run_many_bounded: Box::new(move |reqs, max_jobs| {
+            run_many_bounded: Box::new(move |reqs, max_jobs, on_complete| {
                 assert!(max_jobs > 0, "max_jobs must be greater than zero");
-                run_many_bounded(reqs, max_jobs)
+                for (index, result) in run_many_bounded_stream(reqs, max_jobs).into_iter().enumerate()
+                {
+                    on_complete(index, result);
+                }
+            }),
+        }
+    }
+
+    /// Build a runner whose bounded path can invoke `on_complete` while other
+    /// requests are still outstanding (for streaming / durability tests).
+    pub fn from_streaming_bounded_fn<F>(run_many_bounded: F) -> Self
+    where
+        F: Fn(Vec<PytestRunRequest>, usize, &mut dyn FnMut(usize, PytestRunResult)) + 'static,
+    {
+        let run_many_bounded: Rc<RunManyBoundedFn> = Rc::new(run_many_bounded);
+        let run_one_bounded = Rc::clone(&run_many_bounded);
+        let run_many_default = Rc::clone(&run_many_bounded);
+        let run_many_bounded_stream = Rc::clone(&run_many_bounded);
+        Self {
+            run_one: Rc::new(move |req| {
+                let mut result = Err(PytestRunError::WorkerPanic);
+                run_one_bounded(vec![req], 1, &mut |_, completed| {
+                    result = completed;
+                });
+                result
+            }),
+            run_many: Box::new(move |reqs| {
+                let max_jobs = reqs.len().max(1);
+                collect_bounded_results(reqs, max_jobs, |reqs, max_jobs, on_complete| {
+                    run_many_default(reqs, max_jobs, on_complete);
+                })
+            }),
+            run_many_bounded: Box::new(move |reqs, max_jobs, on_complete| {
+                assert!(max_jobs > 0, "max_jobs must be greater than zero");
+                run_many_bounded_stream(reqs, max_jobs, on_complete);
             }),
         }
     }
@@ -68,8 +123,12 @@ impl PytestRunner {
         Self {
             run_one: Rc::new(|req| SubprocessPytestRunner::new().run_one(req)),
             run_many: Box::new(|reqs| SubprocessPytestRunner::new().run_many(reqs)),
-            run_many_bounded: Box::new(|reqs, max_jobs| {
-                SubprocessPytestRunner::new().run_many_bounded(reqs, max_jobs)
+            run_many_bounded: Box::new(|reqs, max_jobs, on_complete| {
+                SubprocessPytestRunner::new().run_many_bounded_with_on_complete(
+                    reqs,
+                    max_jobs,
+                    on_complete,
+                );
             }),
         }
     }
@@ -78,8 +137,12 @@ impl PytestRunner {
         Self {
             run_one: Rc::new(|req| ForkserverPytestRunner::new().run_one(req)),
             run_many: Box::new(|reqs| ForkserverPytestRunner::new().run_many(reqs)),
-            run_many_bounded: Box::new(|reqs, max_jobs| {
-                ForkserverPytestRunner::new().run_many_bounded(reqs, max_jobs)
+            run_many_bounded: Box::new(|reqs, max_jobs, on_complete| {
+                ForkserverPytestRunner::new().run_many_bounded_with_on_complete(
+                    reqs,
+                    max_jobs,
+                    on_complete,
+                );
             }),
         }
     }
@@ -100,7 +163,18 @@ impl PytestRunner {
         reqs: Vec<PytestRunRequest>,
         max_jobs: usize,
     ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
-        (self.run_many_bounded)(reqs, max_jobs)
+        collect_bounded_results(reqs, max_jobs, |reqs, max_jobs, on_complete| {
+            self.run_many_bounded_with_on_complete(reqs, max_jobs, on_complete);
+        })
+    }
+
+    pub fn run_many_bounded_with_on_complete(
+        &self,
+        reqs: Vec<PytestRunRequest>,
+        max_jobs: usize,
+        on_complete: &mut dyn FnMut(usize, PytestRunResult),
+    ) {
+        (self.run_many_bounded)(reqs, max_jobs, on_complete);
     }
 }
 
@@ -163,12 +237,19 @@ impl SubprocessPytestRunner {
         reqs: Vec<PytestRunRequest>,
         max_jobs: usize,
     ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
+        collect_bounded_results(reqs, max_jobs, run_subprocess_bounded_streaming)
+    }
+
+    pub fn run_many_bounded_with_on_complete(
+        &self,
+        reqs: Vec<PytestRunRequest>,
+        max_jobs: usize,
+        mut on_complete: impl FnMut(usize, Result<PytestRunOutcome, PytestRunError>),
+    ) {
         assert!(max_jobs > 0, "max_jobs must be greater than zero");
         let len = reqs.len();
-        let mut out = Vec::new();
-        out.resize_with(len, || Err(PytestRunError::WorkerPanic));
         if len == 0 {
-            return out;
+            return;
         }
 
         let (tx, rx) = mpsc::channel();
@@ -186,14 +267,21 @@ impl SubprocessPytestRunner {
                 break;
             };
             running -= 1;
-            out[index] = result;
+            on_complete(index, result);
             if let Some((next_index, next_req)) = indexed_reqs.next() {
                 spawn_subprocess_job(next_index, next_req, tx.clone());
                 running += 1;
             }
         }
-        out
     }
+}
+
+fn run_subprocess_bounded_streaming(
+    reqs: Vec<PytestRunRequest>,
+    max_jobs: usize,
+    on_complete: &mut dyn FnMut(usize, Result<PytestRunOutcome, PytestRunError>),
+) {
+    SubprocessPytestRunner.run_many_bounded_with_on_complete(reqs, max_jobs, on_complete);
 }
 
 pub fn subprocess_pytest_runner() -> PytestRunner {

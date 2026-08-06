@@ -37,12 +37,21 @@ impl ForkserverPytestRunner {
         reqs: Vec<PytestRunRequest>,
         max_jobs: usize,
     ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
+        crate::runner::collect_bounded_results(reqs, max_jobs, |reqs, max_jobs, on_complete| {
+            self.run_many_bounded_with_on_complete(reqs, max_jobs, on_complete);
+        })
+    }
+
+    pub fn run_many_bounded_with_on_complete(
+        &self,
+        reqs: Vec<PytestRunRequest>,
+        max_jobs: usize,
+        mut on_complete: impl FnMut(usize, Result<PytestRunOutcome, PytestRunError>),
+    ) {
         assert!(max_jobs > 0, "max_jobs must be greater than zero");
         let len = reqs.len();
-        let mut out = Vec::new();
-        out.resize_with(len, || Err(PytestRunError::WorkerPanic));
         if len == 0 {
-            return out;
+            return;
         }
 
         let queue = Arc::new(Mutex::new(reqs.into_iter().enumerate().collect()));
@@ -53,9 +62,8 @@ impl ForkserverPytestRunner {
         drop(tx);
 
         for (index, result) in rx {
-            out[index] = result;
+            on_complete(index, result);
         }
-        out
     }
 }
 

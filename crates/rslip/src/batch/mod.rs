@@ -3,20 +3,23 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunRequest};
+use rpytest_runner::PytestRunRequest;
 
 use crate::cache::{
-    RslipCacheEntry, load_rslip_cache_entry, rslip_cache_fingerprint,
-    rslip_cache_fingerprint_from_context, rslip_request_context_fingerprint, rslip_unique_suffix,
-    store_rslip_cache_entry,
+    rslip_cache_fingerprint, rslip_cache_fingerprint_from_context,
+    rslip_request_context_fingerprint, rslip_unique_suffix,
 };
 use crate::{
-    CacheStatus, Rslip, RslipError, RslipOutcome, RslipRequest, build_pytest_runner_request,
-    rslip_coverage_from_outcome, rslip_outcome_from_cache, runtime, validate_rslip_request,
+    Rslip, RslipError, RslipOutcome, RslipRequest, build_pytest_runner_request,
+    rslip_outcome_from_cache, runtime, validate_rslip_request,
 };
+use crate::cache::load_rslip_cache_entry;
 
+mod finalize;
 mod lock_chunk;
-use lock_chunk::{brief_lock_filter_rslip_miss_groups, coalesce_rslip_miss_candidates};
+mod miss_run;
+use finalize::{clone_rslip_error, clone_rslip_result};
+use miss_run::run_rslip_misses;
 
 pub(crate) struct RslipCacheCandidate {
     pub(crate) index: usize,
@@ -42,12 +45,16 @@ enum PublishedRuntime {
 }
 
 /// Progress events emitted while a bounded rslip batch runs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum RslipBatchProgress {
     /// Cache prepare finished; misses still need pytest execution.
     Prepared { cache_hits: usize, cache_misses: usize },
-    /// One request resolved (cache hit, miss store, or error).
-    Resolved { remaining_misses: usize },
+    /// One or more selectors finalized (print payload only).
+    SelectorFinalized {
+        outcomes: Vec<(usize, Result<RslipOutcome, RslipError>)>,
+    },
+    /// Miss-work heartbeat (`tests_remaining=`).
+    TestsRemaining { remaining: usize },
 }
 
 impl Rslip {
@@ -72,8 +79,22 @@ impl Rslip {
             cache_hits: out.iter().filter(|slot| slot.is_some()).count(),
             cache_misses,
         });
+        emit_prepare_resolved_progress(&out, &mut on_progress);
         run_rslip_misses(self, misses, cache_misses, jobs, &mut out, &mut on_progress);
         finalize_rslip_batch_results(out)
+    }
+}
+
+fn emit_prepare_resolved_progress(
+    out: &[Option<Result<RslipOutcome, RslipError>>],
+    on_progress: &mut impl FnMut(RslipBatchProgress),
+) {
+    for (index, slot) in out.iter().enumerate() {
+        if let Some(result) = slot {
+            on_progress(RslipBatchProgress::SelectorFinalized {
+                outcomes: vec![(index, clone_rslip_result(result))],
+            });
+        }
     }
 }
 
@@ -116,38 +137,6 @@ fn prepare_rslip_batch_slots(
     (out, misses)
 }
 
-fn run_rslip_misses(
-    rslip: &Rslip,
-    misses: Vec<RslipCacheCandidate>,
-    mut remaining_misses: usize,
-    jobs: usize,
-    out: &mut [Option<Result<RslipOutcome, RslipError>>],
-    on_progress: &mut impl FnMut(RslipBatchProgress),
-) {
-    // Coalesce, brief-lock/recheck (no retained FDs), then one bounded runner call.
-    let groups = coalesce_rslip_miss_candidates(misses);
-    let groups = brief_lock_filter_rslip_miss_groups(groups, out);
-    let PreparedRslipMisses {
-        misses: runner_misses,
-    } = prepare_rslip_misses(groups, out);
-    if runner_misses.is_empty() {
-        return;
-    }
-    let runner_reqs: Vec<_> = runner_misses
-        .iter()
-        .map(|miss| miss.runner_req.clone())
-        .collect();
-    let runner_outcomes = rslip.runner.run_many_bounded(runner_reqs, jobs);
-    for (miss, result) in runner_misses.into_iter().zip(runner_outcomes) {
-        let resolved = miss.indices.len();
-        for (index, result) in handle_rslip_miss_result(miss, result) {
-            out[index] = Some(result);
-        }
-        remaining_misses = remaining_misses.saturating_sub(resolved);
-        on_progress(RslipBatchProgress::Resolved { remaining_misses });
-    }
-}
-
 fn prepare_rslip_cache_candidate(
     index: usize,
     req: RslipRequest,
@@ -168,7 +157,7 @@ fn prepare_rslip_cache_candidate(
     })
 }
 
-fn prepare_rslip_misses(
+pub(super) fn prepare_rslip_misses(
     groups: Vec<RslipCacheCandidateGroup>,
     out: &mut [Option<Result<RslipOutcome, RslipError>>],
 ) -> PreparedRslipMisses {
@@ -281,131 +270,3 @@ fn publish_rslip_runtime(cache_root: &Path) -> io::Result<PathBuf> {
     Ok(run_dir)
 }
 
-fn handle_rslip_miss_result(
-    miss: RslipMiss,
-    result: Result<PytestRunOutcome, PytestRunError>,
-) -> Vec<(usize, Result<RslipOutcome, RslipError>)> {
-    let result = handle_rslip_miss_result_once(&miss, result);
-    miss.indices
-        .into_iter()
-        .map(|index| (index, clone_rslip_result(&result)))
-        .collect()
-}
-
-fn handle_rslip_miss_result_once(
-    miss: &RslipMiss,
-    result: Result<PytestRunOutcome, PytestRunError>,
-) -> Result<RslipOutcome, RslipError> {
-    let outcome = match result {
-        Ok(outcome) => outcome,
-        // Timeouts are recorded as failed outcomes (empty coverage) so a large
-        // population can finish instead of hanging forever on one stuck test.
-        Err(PytestRunError::Timeout(timeout)) => {
-            return finalize_failed_miss_outcome(
-                miss,
-                timeout,
-                124,
-                format!("rslip: pytest timed out after {timeout:?}\n"),
-            );
-        }
-        Err(err) => return Err(RslipError::Runner(err)),
-    };
-    let coverage = match rslip_coverage_from_outcome(&outcome) {
-        Ok(coverage) => coverage,
-        // Missing coverage must not abort a multi-thousand-selector population.
-        Err(RslipError::MissingArtifact(name)) => {
-            return finalize_failed_miss_outcome(
-                miss,
-                outcome.duration,
-                outcome.exit_code.unwrap_or(1),
-                format!("rslip: missing coverage artifact {name}\n"),
-            );
-        }
-        Err(err) => return Err(err),
-    };
-    let rslip_outcome = RslipOutcome {
-        nodeid: outcome.nodeid,
-        status: outcome.status,
-        exit_code: outcome.exit_code,
-        duration: outcome.duration,
-        coverage,
-        cache_status: CacheStatus::MissStored,
-        stdout: Some(outcome.stdout),
-        stderr: Some(outcome.stderr),
-    };
-    finalize_cacheable_miss_outcome(miss, rslip_outcome)
-}
-
-fn finalize_failed_miss_outcome(
-    miss: &RslipMiss,
-    duration: std::time::Duration,
-    exit_code: i32,
-    stderr: String,
-) -> Result<RslipOutcome, RslipError> {
-    let rslip_outcome = RslipOutcome {
-        nodeid: miss.req.nodeid.clone(),
-        status: rpytest_runner::TestStatus::Failed,
-        exit_code: Some(exit_code),
-        duration,
-        coverage: crate::LineCoverage {
-            files: std::collections::BTreeMap::new(),
-        },
-        cache_status: CacheStatus::MissStored,
-        stdout: None,
-        stderr: Some(stderr.into_bytes()),
-    };
-    finalize_cacheable_miss_outcome(miss, rslip_outcome)
-}
-
-/// Lock, recheck for a concurrent cache entry, then store this outcome if still missing.
-fn finalize_cacheable_miss_outcome(
-    miss: &RslipMiss,
-    outcome: RslipOutcome,
-) -> Result<RslipOutcome, RslipError> {
-    let _guard = crate::lock_rslip_cache_entry(&miss.req.cache_root, &miss.fingerprint)?;
-    if !miss.req.force_rerun
-        && let Some(entry) = load_rslip_cache_entry(&miss.req.cache_root, &miss.fingerprint)
-    {
-        return Ok(rslip_outcome_from_cache(entry));
-    }
-    store_rslip_cache_entry(
-        &miss.req.cache_root,
-        &miss.fingerprint,
-        &RslipCacheEntry::from(&outcome),
-    )?;
-    Ok(outcome)
-}
-
-fn clone_rslip_result(
-    result: &Result<RslipOutcome, RslipError>,
-) -> Result<RslipOutcome, RslipError> {
-    match result {
-        Ok(outcome) => Ok(outcome.clone()),
-        Err(err) => Err(clone_rslip_error(err)),
-    }
-}
-
-fn clone_rslip_error(err: &RslipError) -> RslipError {
-    match err {
-        RslipError::Io(err) => RslipError::Io(io::Error::new(err.kind(), err.to_string())),
-        RslipError::Json(err) => {
-            RslipError::Json(serde_json::Error::io(io::Error::other(err.to_string())))
-        }
-        RslipError::Runner(err) => RslipError::Runner(clone_pytest_error(err)),
-        RslipError::MissingArtifact(name) => RslipError::MissingArtifact(name.clone()),
-        RslipError::InvalidRequest(message) => RslipError::InvalidRequest(message.clone()),
-    }
-}
-
-fn clone_pytest_error(err: &PytestRunError) -> PytestRunError {
-    match err {
-        PytestRunError::InvalidRequest(message) => PytestRunError::InvalidRequest(message.clone()),
-        PytestRunError::Protocol(message) => PytestRunError::Protocol(message.clone()),
-        PytestRunError::Spawn { program, message } => PytestRunError::Spawn {
-            program: program.clone(),
-            message: message.clone(),
-        },
-        PytestRunError::Timeout(timeout) => PytestRunError::Timeout(*timeout),
-        PytestRunError::WorkerPanic => PytestRunError::WorkerPanic,
-    }
-}
