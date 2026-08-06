@@ -51,7 +51,18 @@ fn regression_check_default_warm_gate_matches_cold_and_warm_output() {
         "def uncovered_function(x):\n    return x * 2\n",
     )
     .unwrap();
-    seed_python_runtime_coverage(repo.path(), &[("test_default.py::test_default", vec![])]);
+    fs::write(
+        repo.path().join("test_default.py"),
+        "def test_default():\n    assert True\n",
+    )
+    .unwrap();
+    seed_python_runtime_coverage(
+        repo.path(),
+        &[(
+            "test_default.py::test_default",
+            vec![("test_default.py", vec![1, 2])],
+        )],
+    );
 
     let cold = run_default_cov(home.path(), repo.path());
     let warm = run_default_cov(home.path(), repo.path());

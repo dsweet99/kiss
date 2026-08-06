@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use kiss::Language;
 use kiss::test_refs::{is_in_test_directory, is_test_file};
+use kiss::is_rust_test_file;
 
 use super::model::{SourceModel, load_source_model};
 use super::model_python::attach_python_nodeids;
@@ -68,7 +69,15 @@ fn apply_parsed_target(
                 }
                 insert_direct(query, model.language, test.selector.clone());
             }
-            insert_file(query, model.language, abs);
+            // Test-file / tests-dir path operands are direct selectors only; do not
+            // treat them as coverage sources for index-based covering selection.
+            let is_test_operand = match model.language {
+                Language::Python => is_test_file(abs) || is_in_test_directory(abs),
+                Language::Rust => is_rust_test_file(abs),
+            };
+            if !is_test_operand {
+                insert_file(query, model.language, abs);
+            }
         }
         (Some(name), member) => {
             let def = model.find_definition(name, member)?;

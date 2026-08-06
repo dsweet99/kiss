@@ -248,6 +248,10 @@ pub(crate) use plan::{PlanSelectorsRequest, TargetPlanKind, plan_selectors, plan
 pub(crate) mod test_mode_fixtures;
 
 #[cfg(test)]
+#[path = "explicit_test_targets_test.rs"]
+mod explicit_test_targets_test;
+
+#[cfg(test)]
 #[path = "test_change_modes_test.rs"]
 mod test_change_modes_test;
 

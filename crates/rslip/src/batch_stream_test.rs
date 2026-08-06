@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 fn write_ok_sample(root: &Path) {
+    fs::write(root.join("app.py"), "x = 1\n").unwrap();
     fs::write(root.join("test_sample.py"), "def test_ok():\n    assert True\n").unwrap();
 }
 
@@ -23,7 +24,12 @@ fn numbered_requests(root: &Path, count: usize) -> Vec<RslipRequest> {
 
 fn ok_coverage_outcome(req: rpytest_runner::PytestRunRequest) -> Result<PytestRunOutcome, PytestRunError> {
     let path = req.artifacts[0].path.clone();
-    fs::write(&path, r#"{"files":{"/project/app.py":[1,3]}}"#).unwrap();
+    let app = req.cwd.join("app.py");
+    let payload = format!(
+        r#"{{"files":{{"{}":[1,3]}}}}"#,
+        app.to_string_lossy().replace('\\', "/")
+    );
+    fs::write(&path, payload).unwrap();
     Ok(PytestRunOutcome {
         nodeid: req.nodeid,
         status: TestStatus::Passed,
@@ -192,7 +198,7 @@ fn prepare_hits_emit_selector_finalized_without_tests_remaining() {
     crate::cache::store_rslip_cache_entry(
         &hit.cache_root,
         &fingerprint,
-        &crate::cache::RslipCacheEntry::from(&RslipOutcome::witness()),
+        &crate::cache::RslipCacheEntry::from_outcome(&RslipOutcome::witness(), tmp.path()),
     )
     .unwrap();
     let mut miss = rslip_sample_request(tmp.path());

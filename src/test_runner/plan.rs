@@ -178,6 +178,26 @@ fn plan_explicit_target_selectors(
     }
     let direct_python: Vec<_> = query.direct_python.into_iter().collect();
     let direct_rust: Vec<_> = query.direct_rust.into_iter().collect();
+    // Pure test-operand plans: run only named selectors; no covering selection,
+    // population, or prior-failure fan-out.
+    if source_paths.is_empty() {
+        return Ok(PlannedSelectors {
+            repo_root: repo_root.to_path_buf(),
+            py_sel: direct_python,
+            rs_sel: direct_rust,
+            python_population_required: false,
+            rust_population_required: false,
+            rust_source_paths: Vec::new(),
+            rust_vcs_source_paths: 0,
+            rust_snapshot_delta_modified: 0,
+            rust_snapshot_delta_structural: false,
+            python_prior_failure_selectors: Vec::new(),
+            rust_prior_failure_selectors: Vec::new(),
+            coverage_decision_engine_used: false,
+            rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+            ignore: ignore.to_vec(),
+        });
+    }
     let input = runners::CombinedSelectorInput {
         repo_root,
         source_paths: &source_paths,
@@ -189,6 +209,7 @@ fn plan_explicit_target_selectors(
         ignore,
         extra_direct_python: &direct_python,
         extra_direct_rust: &direct_rust,
+        include_prior_failures: false,
     };
     let selector_plan = runners::combined_selectors_with_direct(input)?;
     Ok(planned_from_selector_plan(
@@ -290,6 +311,7 @@ pub(crate) fn plan_selectors(req: PlanSelectorsRequest<'_>) -> Result<PlannedSel
         ignore: &ignore_norm,
         extra_direct_python: &[],
         extra_direct_rust: &[],
+        include_prior_failures: true,
     })?;
     Ok(planned_from_selector_plan(
         repo_root,

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::PathBuf;
 
-use crate::cache::load_rslip_cache_entry;
+use crate::cache::load_reusable_rslip_cache_entry;
 use crate::{RslipError, RslipOutcome, rslip_outcome_from_cache};
 
 use super::{RslipCacheCandidate, RslipCacheCandidateGroup};
@@ -51,9 +51,10 @@ pub(super) fn brief_lock_filter_rslip_miss_groups(
         ) {
             Ok(_guard) => {
                 if !group.representative.req.force_rerun
-                    && let Some(entry) = load_rslip_cache_entry(
+                    && let Some(entry) = load_reusable_rslip_cache_entry(
                         &group.representative.req.cache_root,
                         &group.fingerprint,
+                        &group.representative.req.source_root,
                     )
                 {
                     for index in group.indices {

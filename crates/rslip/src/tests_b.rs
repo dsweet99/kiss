@@ -66,6 +66,13 @@ fn build_pytest_runner_request_prepends_runtime_to_existing_pythonpath() {
 
 #[test]
 fn cached_rslip_outcome_omits_output_but_keeps_status_and_coverage() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
     let outcome = RslipOutcome {
         nodeid: "test_sample.py::test_ok".to_string(),
         status: TestStatus::Passed,
@@ -78,7 +85,7 @@ fn cached_rslip_outcome_omits_output_but_keeps_status_and_coverage() {
         stdout: Some(b"fresh".to_vec()),
         stderr: Some(b"err".to_vec()),
     };
-    let cached = rslip_outcome_from_cache(cache::RslipCacheEntry::from(&outcome));
+    let cached = rslip_outcome_from_cache(cache::RslipCacheEntry::from_outcome(&outcome, tmp.path()));
 
     assert_eq!(cached.nodeid, "test_sample.py::test_ok");
     assert_eq!(cached.status, TestStatus::Passed);
@@ -93,6 +100,13 @@ fn load_cached_outcomes_many_handles_empty_and_mixed_contexts() {
     assert!(load_cached_outcomes_many(&[]).is_empty());
 
     let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_a():\n    assert True\n\n\
+         def test_b():\n    assert True\n",
+    )
+    .unwrap();
     let mut first = rslip_sample_request(tmp.path());
     first.nodeid = "test_sample.py::test_a".to_string();
     let mut second = rslip_sample_request(tmp.path());
@@ -115,7 +129,7 @@ fn load_cached_outcomes_many_handles_empty_and_mixed_contexts() {
         cache::store_rslip_cache_entry(
             &req.cache_root,
             &fingerprint,
-            &cache::RslipCacheEntry::from(&outcome),
+            &cache::RslipCacheEntry::from_outcome(&outcome, tmp.path()),
         )
         .unwrap();
     }
@@ -133,6 +147,7 @@ fn load_cached_outcomes_many_handles_empty_and_mixed_contexts() {
 #[test]
 fn load_cached_outcomes_many_reads_current_entries_without_runner() {
     let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
     fs::write(
         tmp.path().join("test_sample.py"),
         "def test_a():\n    assert True\n\n\
@@ -160,7 +175,7 @@ fn load_cached_outcomes_many_reads_current_entries_without_runner() {
         cache::store_rslip_cache_entry(
             &req.cache_root,
             &fingerprint,
-            &cache::RslipCacheEntry::from(&outcome),
+            &cache::RslipCacheEntry::from_outcome(&outcome, tmp.path()),
         )
         .unwrap();
     }

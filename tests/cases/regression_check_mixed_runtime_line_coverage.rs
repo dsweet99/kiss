@@ -52,9 +52,7 @@ fn write_mixed_runtime_repo(repo: &TempDir) {
     .unwrap();
     fs::write(
         repo.path().join("test_app.py"),
-        "from app import py_value\n\n\
-         def test_py_value():\n\
-             assert py_value() == 1\n",
+        "from app import py_value\n\ndef test_py_value():\n    assert py_value() == 1\n",
     )
     .unwrap();
     fs::write(

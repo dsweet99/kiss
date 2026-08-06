@@ -1,8 +1,7 @@
 use super::*;
 use crate::batch::{PreparedRslipMisses, RslipCacheCandidate, RslipCacheCandidateGroup, RslipMiss};
 use rpytest_runner::{
-    PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact,
-    forkserver_pytest_runner,
+    PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, forkserver_pytest_runner,
 };
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -136,14 +135,22 @@ fn missing_coverage_artifact_is_stored_as_failed_miss() {
 
     let calls = Rc::new(Cell::new(0));
     let calls_for_runner = Rc::clone(&calls);
-    let cached = Rslip::new(PytestRunner::from_fn(move |_req| {
+    let second = Rslip::new(PytestRunner::from_fn(move |req| {
         calls_for_runner.set(calls_for_runner.get() + 1);
-        Err(PytestRunError::Protocol(
-            "unexpected runner call".to_string(),
-        ))
+        let path = req.artifacts[0].path.clone();
+        // Still missing coverage: empty-coverage entries are never cache hits.
+        Ok(PytestRunOutcome {
+            nodeid: req.nodeid,
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            duration: Duration::from_millis(1),
+            artifacts: BTreeMap::from([(runtime::COVERAGE_ARTIFACT.to_string(), path)]),
+        })
     }))
     .run_or_reuse_many_bounded(vec![req], 1);
-    assert_eq!(cached[0].as_ref().unwrap().cache_status, CacheStatus::Hit);
-    assert_eq!(cached[0].as_ref().unwrap().status, TestStatus::Failed);
-    assert_eq!(calls.get(), 0);
+    assert_eq!(second[0].as_ref().unwrap().cache_status, CacheStatus::MissStored);
+    assert_eq!(second[0].as_ref().unwrap().status, TestStatus::Failed);
+    assert_eq!(calls.get(), 1);
 }

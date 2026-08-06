@@ -5,20 +5,39 @@ use rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunner};
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fs;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+fn write_sample_tree(root: &Path) {
+    fs::write(root.join("app.py"), "x = 1\n").unwrap();
+    fs::write(
+        root.join("test_sample.py"),
+        "def test_ok():\n    assert True\n\n\
+def test_a():\n    assert True\n\n\
+def test_b():\n    assert True\n\n\
+def test_fail():\n    assert False\n",
+    )
+    .unwrap();
+}
+
+fn write_coverage_artifact(req: &rpytest_runner::PytestRunRequest, lines: &str) {
+    let path = &req.artifacts[0].path;
+    let app = req.cwd.join("app.py");
+    let payload = format!(
+        r#"{{"files":{{"{}":[{}]}}}}"#,
+        app.to_string_lossy().replace('\\', "/"),
+        lines
+    );
+    fs::write(path, payload).unwrap();
+}
+
 #[test]
 fn batch_mixed_hit_and_miss_preserves_order_and_skips_hit_execution() {
     let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        "def test_a():\n    assert True\n\n\
-def test_b():\n    assert True\n",
-    )
-    .unwrap();
+    write_sample_tree(tmp.path());
     let calls = Rc::new(Cell::new(0));
     let rslip = Rslip::new(fake_runner(Rc::clone(&calls)));
     let mut hit_req = rslip_sample_request(tmp.path());
@@ -73,6 +92,7 @@ fn PreparedRslipMisses_and_RslipCacheCandidateGroup_are_test_referenced() {
 #[test]
 fn batch_all_cache_hits_does_not_call_runner() {
     let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
     fs::write(
         tmp.path().join("test_sample.py"),
         "def test_ok():\n    assert True\n",
@@ -83,7 +103,7 @@ fn batch_all_cache_hits_does_not_call_runner() {
     store_rslip_cache_entry(
         &req.cache_root,
         &fingerprint,
-        &cache::RslipCacheEntry::from(&RslipOutcome::witness()),
+        &cache::RslipCacheEntry::from_outcome(&RslipOutcome::witness(), tmp.path()),
     )
     .unwrap();
     let calls = Rc::new(Cell::new(0));
@@ -102,6 +122,7 @@ fn batch_all_cache_hits_does_not_call_runner() {
 #[test]
 fn all_hit_batch_does_not_wait_for_entry_lock() {
     let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
     fs::write(
         tmp.path().join("test_sample.py"),
         "def test_ok():\n    assert True\n",
@@ -112,7 +133,7 @@ fn all_hit_batch_does_not_wait_for_entry_lock() {
     store_rslip_cache_entry(
         &req.cache_root,
         &fingerprint,
-        &cache::RslipCacheEntry::from(&RslipOutcome::witness()),
+        &cache::RslipCacheEntry::from_outcome(&RslipOutcome::witness(), tmp.path()),
     )
     .unwrap();
     let (locked_tx, locked_rx) = mpsc::channel();
@@ -139,12 +160,7 @@ fn all_hit_batch_does_not_wait_for_entry_lock() {
 #[test]
 fn batch_misses_are_submitted_once_with_unique_artifacts_and_job_bound() {
     let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        "def test_a():\n    assert True\n\n\
-def test_b():\n    assert True\n",
-    )
-    .unwrap();
+    write_sample_tree(tmp.path());
     let batch_calls = Rc::new(Cell::new(0));
     let observed_jobs = Rc::new(Cell::new(0));
     let batch_calls_for_runner = Rc::clone(&batch_calls);
@@ -156,8 +172,7 @@ def test_b():\n    assert True\n",
         assert_ne!(reqs[0].artifacts[0].path, reqs[1].artifacts[0].path);
         reqs.into_iter()
             .map(|req| {
-                let path = req.artifacts[0].path.clone();
-                fs::write(&path, r#"{"files":{"/project/app.py":[1,3]}}"#).unwrap();
+                write_coverage_artifact(&req, "1,3");
                 Ok(PytestRunOutcome {
                     nodeid: req.nodeid,
                     status: TestStatus::Passed,
@@ -165,7 +180,10 @@ def test_b():\n    assert True\n",
                     stdout: Vec::new(),
                     stderr: Vec::new(),
                     duration: Duration::from_millis(1),
-                    artifacts: BTreeMap::from([(runtime::COVERAGE_ARTIFACT.to_string(), path)]),
+                    artifacts: BTreeMap::from([(
+                        runtime::COVERAGE_ARTIFACT.to_string(),
+                        req.artifacts[0].path.clone(),
+                    )]),
                 })
             })
             .collect()
@@ -186,11 +204,7 @@ def test_b():\n    assert True\n",
 #[test]
 fn duplicate_selector_requests_in_one_batch_execute_once_and_fan_out() {
     let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
+    write_sample_tree(tmp.path());
     let batch_calls = Rc::new(Cell::new(0));
     let observed_reqs = Rc::new(Cell::new(0));
     let batch_calls_for_runner = Rc::clone(&batch_calls);
@@ -201,8 +215,7 @@ fn duplicate_selector_requests_in_one_batch_execute_once_and_fan_out() {
         assert_eq!(reqs.len(), 1);
         reqs.into_iter()
             .map(|req| {
-                let path = req.artifacts[0].path.clone();
-                fs::write(&path, r#"{"files":{"/project/app.py":[1,3]}}"#).unwrap();
+                write_coverage_artifact(&req, "1,3");
                 Ok(PytestRunOutcome {
                     nodeid: req.nodeid,
                     status: TestStatus::Passed,
@@ -210,7 +223,10 @@ fn duplicate_selector_requests_in_one_batch_execute_once_and_fan_out() {
                     stdout: Vec::new(),
                     stderr: Vec::new(),
                     duration: Duration::from_millis(1),
-                    artifacts: BTreeMap::from([(runtime::COVERAGE_ARTIFACT.to_string(), path)]),
+                    artifacts: BTreeMap::from([(
+                        runtime::COVERAGE_ARTIFACT.to_string(),
+                        req.artifacts[0].path.clone(),
+                    )]),
                 })
             })
             .collect()
@@ -261,11 +277,7 @@ fn batch_invalid_request_returns_indexed_error_without_runner_call() {
 #[test]
 fn batch_runner_failure_does_not_store_cache_entry() {
     let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
+    write_sample_tree(tmp.path());
     let req = rslip_sample_request(tmp.path());
     let failing = Rslip::new(PytestRunner::from_fn(|_req| {
         Err(PytestRunError::Protocol("runner failed".to_string()))
@@ -284,18 +296,13 @@ fn batch_runner_failure_does_not_store_cache_entry() {
 #[test]
 fn batch_pytest_failure_is_stored_after_coverage_parse() {
     let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        "def test_fail():\n    assert False\n",
-    )
-    .unwrap();
+    write_sample_tree(tmp.path());
     let req = RslipRequest {
         nodeid: "test_sample.py::test_fail".to_string(),
         ..rslip_sample_request(tmp.path())
     };
     let failing = Rslip::new(PytestRunner::from_fn(|req| {
-        let path = req.artifacts[0].path.clone();
-        fs::write(&path, r#"{"files":{"/project/app.py":[1]}}"#).unwrap();
+        write_coverage_artifact(&req, "1");
         Ok(PytestRunOutcome {
             nodeid: req.nodeid,
             status: TestStatus::Failed,
@@ -303,7 +310,10 @@ fn batch_pytest_failure_is_stored_after_coverage_parse() {
             stdout: Vec::new(),
             stderr: b"assert False".to_vec(),
             duration: Duration::from_millis(1),
-            artifacts: BTreeMap::from([(runtime::COVERAGE_ARTIFACT.to_string(), path)]),
+            artifacts: BTreeMap::from([(
+                runtime::COVERAGE_ARTIFACT.to_string(),
+                req.artifacts[0].path.clone(),
+            )]),
         })
     }));
     let first = failing.run_or_reuse_many_bounded(vec![req.clone()], 1);

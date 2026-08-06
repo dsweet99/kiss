@@ -24,6 +24,7 @@ fn two_process_same_host_cold_cache_contention_prefers_first_store() {
 }
 
 fn prepare_two_process_fixture(root: &Path) {
+    fs::write(root.join("app.py"), "x = 1\n").unwrap();
     fs::write(root.join("test_sample.py"), "def test_ok():\n    assert True\n").unwrap();
     fs::create_dir(root.join("ready")).unwrap();
 }
@@ -117,7 +118,12 @@ fn run_two_process_contention_child() {
         writeln!(log, "{}", std::process::id()).unwrap();
         thread::sleep(Duration::from_millis(750));
         let path = req.artifacts[0].path.clone();
-        fs::write(&path, r#"{"files":{"/project/app.py":[1,3]}}"#).unwrap();
+        let app = req.cwd.join("app.py");
+        let payload = format!(
+            r#"{{"files":{{"{}":[1,3]}}}}"#,
+            app.to_string_lossy().replace('\\', "/")
+        );
+        fs::write(&path, payload).unwrap();
         Ok(PytestRunOutcome {
             nodeid: req.nodeid,
             status: TestStatus::Passed,

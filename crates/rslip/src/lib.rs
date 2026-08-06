@@ -5,7 +5,6 @@
 #![allow(clippy::must_use_candidate)]
 
 mod batch;
-mod batch_context_seal;
 mod cache;
 mod lock;
 mod runtime;
@@ -36,17 +35,19 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use cache::{
-    RslipCacheEntry, load_rslip_cache_entry, rslip_cache_fingerprint_from_context,
+    RslipCacheEntry, load_reusable_rslip_cache_entry, rslip_cache_fingerprint_from_context,
     rslip_request_context_fingerprint, rslip_unique_suffix,
 };
-pub use cache::{is_kiss_rslip_cache_dir, is_rslip_cache_input, should_skip_rslip_dir};
+pub use cache::{
+    is_kiss_rslip_cache_dir, is_rslip_cache_input, should_skip_rslip_dir,
+};
 pub use lock::{LocalRslipLockGuard, lock_rslip_cache_entry, lock_rslip_derived_state};
 use rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, TestStatus,
 };
 use serde::{Deserialize, Serialize};
 
-pub const CACHE_SCHEMA_VERSION: &str = "rslip-cache-v2";
+pub const CACHE_SCHEMA_VERSION: &str = "rslip-cache-v3";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RslipRequest {
@@ -176,20 +177,14 @@ pub fn load_cached_outcomes_many(
     let Some(first) = reqs.first() else {
         return Vec::new();
     };
-    let shared_context = match batch_context_seal::try_batch_context_seal(first) {
-        Some(cached) => cached,
-        None => match rslip_request_context_fingerprint(first) {
-            Ok(context) => {
-                let _ = batch_context_seal::write_batch_context_seal(first, &context);
-                context
-            }
-            Err(err) => {
-                return reqs
-                    .iter()
-                    .map(|_| Err(RslipError::Io(io::Error::new(err.kind(), err.to_string()))))
-                    .collect();
-            }
-        },
+    let shared_context = match rslip_request_context_fingerprint(first) {
+        Ok(context) => context,
+        Err(err) => {
+            return reqs
+                .iter()
+                .map(|_| Err(RslipError::Io(io::Error::new(err.kind(), err.to_string()))))
+                .collect();
+        }
     };
     reqs.iter()
         .map(|req| {
@@ -197,13 +192,31 @@ pub fn load_cached_outcomes_many(
             if !rslip_requests_share_context(first, req) {
                 let context = rslip_request_context_fingerprint(req)?;
                 let fingerprint = rslip_cache_fingerprint_from_context(&context, &req.nodeid);
-                return Ok(load_rslip_cache_entry(&req.cache_root, &fingerprint)
-                    .map(rslip_outcome_from_cache));
+                return Ok(load_reusable_rslip_cache_entry(
+                    &req.cache_root,
+                    &fingerprint,
+                    &req.source_root,
+                )
+                .map(rslip_outcome_from_cache));
             }
             let fingerprint = rslip_cache_fingerprint_from_context(&shared_context, &req.nodeid);
-            Ok(load_rslip_cache_entry(&req.cache_root, &fingerprint).map(rslip_outcome_from_cache))
+            Ok(load_reusable_rslip_cache_entry(
+                &req.cache_root,
+                &fingerprint,
+                &req.source_root,
+            )
+            .map(rslip_outcome_from_cache))
         })
         .collect()
+}
+
+/// Digest map for covered files plus the test module; `None` if any path is missing.
+pub fn covered_file_digests_for(
+    source_root: &Path,
+    nodeid: &str,
+    coverage: &LineCoverage,
+) -> Option<std::collections::BTreeMap<String, String>> {
+    cache::covered_file_digests(source_root, nodeid, coverage)
 }
 
 pub fn cache_fingerprint_for_request(req: &RslipRequest) -> Result<String, RslipError> {
@@ -342,7 +355,15 @@ fn fake_runner(calls: std::rc::Rc<std::cell::Cell<usize>>) -> PytestRunner {
         assert!(req.env.contains_key("RSLIP_COVERAGE_OUT"));
         assert!(req.env.contains_key("RSLIP_SOURCE_ROOT"));
         let path = req.artifacts[0].path.clone();
-        fs::write(&path, r#"{"files":{"/project/app.py":[1,3]}}"#).unwrap();
+        let app = req.cwd.join("app.py");
+        if !app.exists() {
+            fs::write(&app, "x = 1\n").unwrap();
+        }
+        let payload = format!(
+            r#"{{"files":{{"{}":[1,3]}}}}"#,
+            app.to_string_lossy().replace('\\', "/")
+        );
+        fs::write(&path, payload).unwrap();
         Ok(PytestRunOutcome {
             nodeid: req.nodeid,
             status: TestStatus::Passed,

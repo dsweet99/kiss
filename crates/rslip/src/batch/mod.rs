@@ -13,7 +13,7 @@ use crate::{
     Rslip, RslipError, RslipOutcome, RslipRequest, build_pytest_runner_request,
     rslip_outcome_from_cache, runtime, validate_rslip_request,
 };
-use crate::cache::load_rslip_cache_entry;
+use crate::cache::load_reusable_rslip_cache_entry;
 
 mod finalize;
 mod lock_chunk;
@@ -99,14 +99,9 @@ fn emit_prepare_resolved_progress(
 }
 
 fn shared_batch_context(reqs: &[RslipRequest]) -> Option<String> {
-    reqs.first().and_then(|first| {
-        if let Some(cached) = crate::batch_context_seal::try_batch_context_seal(first) {
-            return Some(cached);
-        }
-        let context = rslip_request_context_fingerprint(first).ok()?;
-        let _ = crate::batch_context_seal::write_batch_context_seal(first, &context);
-        Some(context)
-    })
+    // Identity-only context (no whole-tree walk). Hit/miss is coverage-digest gated.
+    reqs.first()
+        .and_then(|first| rslip_request_context_fingerprint(first).ok())
 }
 
 fn prepare_rslip_batch_slots(
@@ -123,8 +118,11 @@ fn prepare_rslip_batch_slots(
         match prepare_rslip_cache_candidate(index, req, shared_context.as_deref()) {
             Ok(candidate) => {
                 if !candidate.req.force_rerun
-                    && let Some(entry) =
-                        load_rslip_cache_entry(&candidate.req.cache_root, &candidate.fingerprint)
+                    && let Some(entry) = load_reusable_rslip_cache_entry(
+                        &candidate.req.cache_root,
+                        &candidate.fingerprint,
+                        &candidate.req.source_root,
+                    )
                 {
                     out[index] = Some(Ok(rslip_outcome_from_cache(entry)));
                 } else {

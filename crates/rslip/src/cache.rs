@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -18,10 +19,14 @@ pub(crate) struct RslipCacheEntry {
     pub(crate) exit_code: Option<i32>,
     pub(crate) duration: std::time::Duration,
     pub(crate) coverage: LineCoverage,
+    /// Content digests for covered files plus the test module path (keyed as stored
+    /// in coverage / as the nodeid module path). Empty coverage ⇒ never reusable.
+    #[serde(default)]
+    pub(crate) covered_digests: BTreeMap<String, String>,
 }
 
-impl From<&RslipOutcome> for RslipCacheEntry {
-    fn from(outcome: &RslipOutcome) -> Self {
+impl RslipCacheEntry {
+    pub(crate) fn from_outcome(outcome: &RslipOutcome, source_root: &Path) -> Self {
         Self {
             schema_version: CACHE_SCHEMA_VERSION.to_string(),
             nodeid: outcome.nodeid.clone(),
@@ -29,6 +34,8 @@ impl From<&RslipOutcome> for RslipCacheEntry {
             exit_code: outcome.exit_code,
             duration: outcome.duration,
             coverage: outcome.coverage.clone(),
+            covered_digests: covered_file_digests(source_root, &outcome.nodeid, &outcome.coverage)
+                .unwrap_or_default(),
         }
     }
 }
@@ -41,6 +48,26 @@ pub(crate) fn load_rslip_cache_entry(
     let bytes = fs::read(path).ok()?;
     let entry: RslipCacheEntry = serde_json::from_slice(&bytes).ok()?;
     (entry.schema_version == CACHE_SCHEMA_VERSION).then_some(entry)
+}
+
+/// Load a cache entry that is still valid under coverage-gated reuse rules.
+pub(crate) fn load_reusable_rslip_cache_entry(
+    cache_root: &Path,
+    fingerprint: &str,
+    source_root: &Path,
+) -> Option<RslipCacheEntry> {
+    let entry = load_rslip_cache_entry(cache_root, fingerprint)?;
+    entry_is_reusable(&entry, source_root).then_some(entry)
+}
+
+pub(crate) fn entry_is_reusable(entry: &RslipCacheEntry, source_root: &Path) -> bool {
+    if entry.coverage.files.is_empty() {
+        return false;
+    }
+    let Some(expected) = covered_file_digests(source_root, &entry.nodeid, &entry.coverage) else {
+        return false;
+    };
+    expected == entry.covered_digests
 }
 
 pub(crate) fn store_rslip_cache_entry(
@@ -89,6 +116,7 @@ pub(crate) fn rslip_request_context_fingerprint(req: &RslipRequest) -> io::Resul
     compute_rslip_request_context_fingerprint(req)
 }
 
+/// Tool/args/env identity only (no whole-tree source hash). Hit/miss uses covered digests.
 fn compute_rslip_request_context_fingerprint(req: &RslipRequest) -> io::Result<String> {
     let mut h = rslip_fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
     h = rslip_fnv1a64(h, req.python.to_string_lossy().as_bytes());
@@ -106,12 +134,6 @@ fn compute_rslip_request_context_fingerprint(req: &RslipRequest) -> io::Result<S
         h = rslip_fnv1a64(h, value.as_bytes());
         h = rslip_fnv1a64(h, &[0]);
     }
-    for file in rslip_input_files(&req.cwd)? {
-        h = rslip_fnv1a64(h, file.to_string_lossy().as_bytes());
-        h = rslip_fnv1a64(h, &[0]);
-        h = rslip_fnv1a64(h, &fs::read(file)?);
-        h = rslip_fnv1a64(h, &[0]);
-    }
     Ok(format!("{h:016x}"))
 }
 
@@ -126,6 +148,66 @@ pub(crate) fn rslip_cache_fingerprint_from_context(
     format!("{h:016x}")
 }
 
+/// Digest map for every digestable covered file path plus the test module when present.
+/// Returns `None` when coverage is empty or a digestable covered file is missing on disk.
+/// Synthetic / non-file coverage keys (`<frozen …>`, `.kiss/…`) are omitted from the map.
+pub(crate) fn covered_file_digests(
+    source_root: &Path,
+    nodeid: &str,
+    coverage: &LineCoverage,
+) -> Option<BTreeMap<String, String>> {
+    if coverage.files.is_empty() {
+        return None;
+    }
+    let mut digests = BTreeMap::new();
+    for recorded in coverage.files.keys() {
+        if is_non_digestable_coverage_path(recorded) {
+            continue;
+        }
+        let digest = digest_recorded_path(source_root, recorded)?;
+        digests.insert(recorded.clone(), digest);
+    }
+    let module = test_module_path_from_nodeid(nodeid);
+    if !module.is_empty()
+        && !is_non_digestable_coverage_path(module)
+        && let Some(digest) = digest_recorded_path(source_root, module)
+    {
+        digests.insert(module.to_string(), digest);
+    }
+    if digests.is_empty() {
+        // Coverage listed only synthetic keys: still reusable (no on-disk inputs).
+        return Some(digests);
+    }
+    Some(digests)
+}
+
+pub(crate) fn test_module_path_from_nodeid(nodeid: &str) -> &str {
+    nodeid.split_once("::").map_or(nodeid, |(module, _)| module)
+}
+
+fn is_non_digestable_coverage_path(recorded: &str) -> bool {
+    recorded.starts_with('<')
+        || recorded.starts_with(".kiss/")
+        || recorded.contains("rslip_runtime")
+}
+
+fn digest_recorded_path(source_root: &Path, recorded: &str) -> Option<String> {
+    let path = resolve_recorded_path(source_root, recorded);
+    let bytes = fs::read(path).ok()?;
+    let h = rslip_fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
+    Some(format!("{h:016x}"))
+}
+
+fn resolve_recorded_path(source_root: &Path, recorded: &str) -> PathBuf {
+    let path = Path::new(recorded);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        source_root.join(path)
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn rslip_input_files(root: &Path) -> io::Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     visit_rslip_inputs(root, &mut out)?;
@@ -133,6 +215,7 @@ pub(crate) fn rslip_input_files(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+#[cfg(test)]
 fn visit_rslip_inputs(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -201,14 +284,14 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn rslip_cache_fingerprint_changes_when_python_content_changes() {
+    fn rslip_cache_fingerprint_stable_when_unrelated_python_changes() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("pkg.py"), "def value():\n    return 1\n").unwrap();
         let req = crate::rslip_sample_request(tmp.path());
         let first = rslip_cache_fingerprint(&req).unwrap();
         fs::write(tmp.path().join("pkg.py"), "def value():\n    return 2\n").unwrap();
         let second = rslip_cache_fingerprint(&req).unwrap();
-        assert_ne!(first, second);
+        assert_eq!(first, second);
     }
 
     #[test]
@@ -221,6 +304,53 @@ mod tests {
         let second = rslip_cache_fingerprint(&req).unwrap();
 
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn coverage_gated_reuse_hits_when_covered_files_unchanged() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = tmp.path().join("app.py");
+        let test = tmp.path().join("test_sample.py");
+        fs::write(&app, "x = 1\n").unwrap();
+        fs::write(&test, "def test_ok():\n    assert True\n").unwrap();
+        let coverage = LineCoverage {
+            files: BTreeMap::from([(
+                app.to_string_lossy().into_owned(),
+                BTreeSet::from([1]),
+            )]),
+        };
+        let entry = RslipCacheEntry {
+            schema_version: CACHE_SCHEMA_VERSION.to_string(),
+            nodeid: "test_sample.py::test_ok".to_string(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: std::time::Duration::from_millis(1),
+            coverage: coverage.clone(),
+            covered_digests: covered_file_digests(tmp.path(), "test_sample.py::test_ok", &coverage)
+                .unwrap(),
+        };
+        assert!(entry_is_reusable(&entry, tmp.path()));
+        fs::write(tmp.path().join("other.py"), "y = 2\n").unwrap();
+        assert!(entry_is_reusable(&entry, tmp.path()));
+        fs::write(&app, "x = 2\n").unwrap();
+        assert!(!entry_is_reusable(&entry, tmp.path()));
+    }
+
+    #[test]
+    fn empty_coverage_is_never_reusable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let entry = RslipCacheEntry {
+            schema_version: CACHE_SCHEMA_VERSION.to_string(),
+            nodeid: "test_sample.py::test_ok".to_string(),
+            status: TestStatus::Failed,
+            exit_code: Some(1),
+            duration: std::time::Duration::from_millis(1),
+            coverage: LineCoverage {
+                files: BTreeMap::new(),
+            },
+            covered_digests: BTreeMap::new(),
+        };
+        assert!(!entry_is_reusable(&entry, tmp.path()));
     }
 
     #[test]

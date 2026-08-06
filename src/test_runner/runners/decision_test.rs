@@ -307,6 +307,7 @@ fn EngineBackers_empty_when_no_language_has_work() {
         ignore: &[],
         changed_tests: &changed_tests,
         rust_resolved: None,
+        include_prior_failures: true,
     };
 
     let backers = engine_backers(input).unwrap();
@@ -337,6 +338,7 @@ fn engine_backers_expose_manifest_env_policy() {
         ignore: &[],
         changed_tests: &changed_tests,
         rust_resolved: None,
+        include_prior_failures: true,
     };
 
     let engine_backers = engine_backers(input).unwrap();

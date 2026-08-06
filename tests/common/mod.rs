@@ -84,44 +84,15 @@ pub fn seed_python_runtime_coverage(repo: &Path, entries: &[PythonRuntimeCoverag
     let mut selectors = Vec::new();
     for (selector, coverage_files) in entries {
         selectors.push((*selector).to_string());
-        let req = rslip::RslipRequest {
-            nodeid: (*selector).to_string(),
-            cwd: repo.clone(),
-            source_root: repo.clone(),
-            python: PathBuf::from("python"),
-            python_version: python_version.clone(),
-            pytest_version: pytest_version.clone(),
-            pytest_args: Vec::new(),
-            env: env.clone(),
-            cache_root: cache_root.clone(),
-            force_rerun: false,
-            timeout: None,
-        };
-        let fingerprint = rslip::cache_fingerprint_for_request(&req).unwrap();
-        let files = coverage_files
-            .iter()
-            .map(|(file, lines)| {
-                (
-                    coverage_seed_file(repo.as_path(), file),
-                    serde_json::json!(lines),
-                )
-            })
-            .collect::<serde_json::Map<_, _>>();
-        let payload = serde_json::json!({
-            "schema_version": rslip::CACHE_SCHEMA_VERSION,
-            "nodeid": selector,
-            "status": "Passed",
-            "exit_code": 0,
-            "duration": { "secs": 0, "nanos": 1_000_000 },
-            "coverage": { "files": files },
-        });
-        fs::write(
-            cache_root
-                .join("entries")
-                .join(format!("{fingerprint}.json")),
-            format!("{}\n", serde_json::to_string(&payload).unwrap()),
-        )
-        .unwrap();
+        write_seeded_rslip_entry(
+            &repo,
+            &cache_root,
+            selector,
+            coverage_files,
+            &python_version,
+            &pytest_version,
+            &env,
+        );
     }
     selectors.sort();
     selectors.dedup();
@@ -141,6 +112,65 @@ pub fn seed_python_runtime_coverage(repo: &Path, entries: &[PythonRuntimeCoverag
     fs::write(
         cache_root.join("population.json"),
         format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap()),
+    )
+    .unwrap();
+}
+
+fn write_seeded_rslip_entry(
+    repo: &Path,
+    cache_root: &Path,
+    selector: &str,
+    coverage_files: &[(&str, Vec<u32>)],
+    python_version: &str,
+    pytest_version: &str,
+    env: &BTreeMap<String, String>,
+) {
+    let req = rslip::RslipRequest {
+        nodeid: selector.to_string(),
+        cwd: repo.to_path_buf(),
+        source_root: repo.to_path_buf(),
+        python: PathBuf::from("python"),
+        python_version: python_version.to_string(),
+        pytest_version: pytest_version.to_string(),
+        pytest_args: Vec::new(),
+        env: env.clone(),
+        cache_root: cache_root.to_path_buf(),
+        force_rerun: false,
+        timeout: None,
+    };
+    let fingerprint = rslip::cache_fingerprint_for_request(&req).unwrap();
+    let files = coverage_files
+        .iter()
+        .map(|(file, lines)| {
+            (
+                coverage_seed_file(repo, file),
+                lines.iter().copied().collect::<BTreeSet<_>>(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let coverage = rslip::LineCoverage {
+        files: files.clone(),
+    };
+    let covered_digests =
+        rslip::covered_file_digests_for(repo, selector, &coverage).unwrap_or_default();
+    let files_json = files
+        .iter()
+        .map(|(file, lines)| (file.clone(), serde_json::json!(lines)))
+        .collect::<serde_json::Map<_, _>>();
+    let payload = serde_json::json!({
+        "schema_version": rslip::CACHE_SCHEMA_VERSION,
+        "nodeid": selector,
+        "status": "Passed",
+        "exit_code": 0,
+        "duration": { "secs": 0, "nanos": 1_000_000 },
+        "coverage": { "files": files_json },
+        "covered_digests": covered_digests,
+    });
+    fs::write(
+        cache_root
+            .join("entries")
+            .join(format!("{fingerprint}.json")),
+        format!("{}\n", serde_json::to_string(&payload).unwrap()),
     )
     .unwrap();
 }

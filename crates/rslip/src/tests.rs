@@ -44,6 +44,7 @@ fn validate_rslip_request_rejects_missing_cache_key_parts() {
 #[test]
 fn run_or_reuse_uses_cache_on_second_call() {
     let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
     fs::write(
         tmp.path().join("test_sample.py"),
         "def test_ok():\n    assert True\n",
@@ -53,22 +54,21 @@ fn run_or_reuse_uses_cache_on_second_call() {
     let runner = fake_runner(Rc::clone(&calls));
     let rslip = Rslip::new(runner);
     let req = rslip_sample_request(tmp.path());
+    let app_key = tmp.path().join("app.py").to_string_lossy().replace('\\', "/");
 
     let first = rslip.run_or_reuse(req.clone()).unwrap();
     let second = rslip.run_or_reuse(req).unwrap();
 
     assert_eq!(first.cache_status, CacheStatus::MissStored);
     assert_eq!(second.cache_status, CacheStatus::Hit);
-    assert_eq!(
-        second.coverage.files["/project/app.py"],
-        BTreeSet::from([1, 3])
-    );
+    assert_eq!(second.coverage.files[&app_key], BTreeSet::from([1, 3]));
     assert_eq!(calls.get(), 1);
 }
 
 #[test]
 fn force_rerun_skips_cache_and_returns_only_fresh_output() {
     let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
     fs::write(
         tmp.path().join("test_sample.py"),
         "def test_ok():\n    assert True\n",

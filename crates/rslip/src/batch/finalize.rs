@@ -2,7 +2,7 @@ use std::io;
 
 use rpytest_runner::{PytestRunError, PytestRunOutcome};
 
-use crate::cache::{RslipCacheEntry, load_rslip_cache_entry, store_rslip_cache_entry};
+use crate::cache::{RslipCacheEntry, load_reusable_rslip_cache_entry, store_rslip_cache_entry};
 use crate::{
     CacheStatus, RslipError, RslipOutcome, rslip_coverage_from_outcome, rslip_outcome_from_cache,
 };
@@ -92,14 +92,18 @@ fn finalize_cacheable_miss_outcome(
 ) -> Result<RslipOutcome, RslipError> {
     let _guard = crate::lock_rslip_cache_entry(&miss.req.cache_root, &miss.fingerprint)?;
     if !miss.req.force_rerun
-        && let Some(entry) = load_rslip_cache_entry(&miss.req.cache_root, &miss.fingerprint)
+        && let Some(entry) = load_reusable_rslip_cache_entry(
+            &miss.req.cache_root,
+            &miss.fingerprint,
+            &miss.req.source_root,
+        )
     {
         return Ok(rslip_outcome_from_cache(entry));
     }
     store_rslip_cache_entry(
         &miss.req.cache_root,
         &miss.fingerprint,
-        &RslipCacheEntry::from(&outcome),
+        &RslipCacheEntry::from_outcome(&outcome, &miss.req.source_root),
     )?;
     Ok(outcome)
 }

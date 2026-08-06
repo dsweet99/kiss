@@ -218,6 +218,7 @@ def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
     #[test]
     fn rslip_selectors_stdout_streams_outcomes_and_tests_remaining() {
         let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
         fs::write(
             tmp.path().join("test_sample.py"),
             "def test_a():\n    assert True\n\n\
@@ -228,12 +229,18 @@ def test_b():\n    assert True\n",
             "test_sample.py::test_a".to_string(),
             "test_sample.py::test_b".to_string(),
         ];
-        let runner = PytestRunner::from_bounded_fn(|reqs, _jobs| {
+        let app_key = tmp
+            .path()
+            .join("app.py")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let runner = PytestRunner::from_bounded_fn(move |reqs, _jobs| {
             reqs.into_iter()
                 .map(|req| {
                     let path = req.artifacts[0].path.clone();
                     let artifact_name = req.artifacts[0].name.clone();
-                    fs::write(&path, r#"{"files":{"/project/app.py":[1]}}"#).unwrap();
+                    let payload = format!(r#"{{"files":{{"{app_key}":[1]}}}}"#);
+                    fs::write(&path, payload).unwrap();
                     Ok(PytestRunOutcome {
                         nodeid: req.nodeid,
                         status: TestStatus::Passed,

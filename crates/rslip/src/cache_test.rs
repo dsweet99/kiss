@@ -27,7 +27,13 @@ fn outcome() -> RslipOutcome {
 #[test]
 fn rslip_cache_round_trips_entries_atomically() {
     let tmp = tempfile::tempdir().unwrap();
-    let entry = cache::RslipCacheEntry::from(&outcome());
+    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    let entry = cache::RslipCacheEntry::from_outcome(&outcome(), tmp.path());
 
     cache::store_rslip_cache_entry(tmp.path(), "abc123", &entry).unwrap();
     let loaded = cache::load_rslip_cache_entry(tmp.path(), "abc123").unwrap();
@@ -51,7 +57,7 @@ fn rslip_cache_rejects_duplicate_temp_file_creation() {
 }
 
 #[test]
-fn rslip_cache_fingerprint_tracks_python_source_and_versions() {
+fn rslip_cache_fingerprint_is_identity_only_not_source_tree() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(tmp.path().join("app.py"), "def value():\n    return 1\n").unwrap();
     let req = rslip_sample_request(tmp.path());
@@ -62,7 +68,7 @@ fn rslip_cache_fingerprint_tracks_python_source_and_versions() {
     version_changed.python_version.push_str(" changed");
     let version_changed = cache::rslip_cache_fingerprint(&version_changed).unwrap();
 
-    assert_ne!(first, source_changed);
+    assert_eq!(first, source_changed);
     assert_ne!(source_changed, version_changed);
 }
 

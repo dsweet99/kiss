@@ -48,6 +48,8 @@ pub(crate) struct CombinedSelectorInput<'a> {
     pub(crate) ignore: &'a [String],
     pub(crate) extra_direct_python: &'a [String],
     pub(crate) extra_direct_rust: &'a [String],
+    /// When false (explicit PATH / PATH::… targets), do not load or merge prior failures.
+    pub(crate) include_prior_failures: bool,
 }
 
 #[cfg(test)]
@@ -71,6 +73,7 @@ pub(crate) fn combined_selectors(
         ignore,
         extra_direct_python: &[],
         extra_direct_rust: &[],
+        include_prior_failures: true,
     })
 }
 
@@ -121,6 +124,7 @@ pub(crate) fn combined_selectors_with_direct(
         ignore: input.ignore,
         changed_tests: &prepared.changed_tests,
         rust_resolved: prepared.rust_resolved.clone(),
+        include_prior_failures: input.include_prior_failures,
     })?;
     lap("engine_backers");
     let plan = assemble_selector_plan(prepared, engine_backers, &changed_sources)?;
@@ -201,6 +205,7 @@ struct EngineBackerInputs<'a> {
     ignore: &'a [String],
     changed_tests: &'a ChangedTestSelectors,
     rust_resolved: Option<crate::test_runner::rust_coverage_index::ResolvedRustPopulation>,
+    include_prior_failures: bool,
 }
 
 struct EngineBackers {
@@ -219,7 +224,9 @@ impl EngineBackers {
 
 fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String> {
     let mut backers = Vec::new();
-    let python_prior_failures = if input.lang_filter == Some(kiss::Language::Rust) {
+    let python_prior_failures = if !input.include_prior_failures
+        || input.lang_filter == Some(kiss::Language::Rust)
+    {
         Vec::new()
     } else {
         prior_failures_for_language(
@@ -228,7 +235,9 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
             input.python_test_args,
         )?
     };
-    let rust_prior_failures = if input.lang_filter == Some(kiss::Language::Python) {
+    let rust_prior_failures = if !input.include_prior_failures
+        || input.lang_filter == Some(kiss::Language::Python)
+    {
         Vec::new()
     } else {
         prior_failures_for_language(input.repo_root, kiss::Language::Rust, input.rust_test_args)?

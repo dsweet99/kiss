@@ -66,14 +66,15 @@ fn bounded_miss_queue_starts_third_before_slow_first_finishes() {
 }
 
 #[test]
-fn concurrent_cache_entry_wins_over_local_normal_and_timeout_outcomes() {
+fn concurrent_cache_entry_wins_over_local_normal_outcome() {
     let tmp = tempfile::tempdir().unwrap();
     write_ok_sample(tmp.path());
     assert_concurrent_normal_entry_wins(tmp.path());
-    assert_concurrent_timeout_entry_wins(tmp.path());
+    assert_empty_concurrent_entry_does_not_win_over_timeout(tmp.path());
 }
 
 fn write_ok_sample(root: &Path) {
+    fs::write(root.join("app.py"), "x = 1\n").unwrap();
     fs::write(root.join("test_sample.py"), "def test_ok():\n    assert True\n").unwrap();
 }
 
@@ -89,7 +90,12 @@ fn numbered_sample_requests(root: &Path, count: usize) -> Vec<RslipRequest> {
 
 fn ok_coverage_outcome(req: PytestRunRequest) -> Result<PytestRunOutcome, PytestRunError> {
     let path = req.artifacts[0].path.clone();
-    fs::write(&path, r#"{"files":{"/project/app.py":[1,3]}}"#).unwrap();
+    let app = req.cwd.join("app.py");
+    let payload = format!(
+        r#"{{"files":{{"{}":[1,3]}}}}"#,
+        app.to_string_lossy().replace('\\', "/")
+    );
+    fs::write(&path, payload).unwrap();
     Ok(PytestRunOutcome {
         nodeid: req.nodeid,
         status: TestStatus::Passed,
@@ -176,10 +182,11 @@ fn assert_concurrent_normal_entry_wins(root: &Path) {
     req.nodeid = "test_sample.py::test_normal".to_string();
     let fingerprint = rslip_cache_fingerprint(&req).unwrap();
     let cache_root = req.cache_root.clone();
-    let concurrent = cache::RslipCacheEntry::from(&passed_coverage_outcome(
-        &req.nodeid,
-        BTreeSet::from([2, 4]),
-    ));
+    let app_key = root.join("app.py").to_string_lossy().replace('\\', "/");
+    let concurrent = cache::RslipCacheEntry::from_outcome(
+        &passed_coverage_outcome(&req.nodeid, &app_key, BTreeSet::from([2, 4])),
+        root,
+    );
     let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |reqs, _jobs| {
         store_rslip_cache_entry(&cache_root, &fingerprint, &concurrent).unwrap();
         reqs.into_iter().map(ok_coverage_outcome).collect()
@@ -187,17 +194,22 @@ fn assert_concurrent_normal_entry_wins(root: &Path) {
     let outcomes = rslip.run_or_reuse_many_bounded(vec![req], 1);
     assert_eq!(outcomes[0].as_ref().unwrap().cache_status, CacheStatus::Hit);
     assert_eq!(
-        outcomes[0].as_ref().unwrap().coverage.files["/project/app.py"],
+        outcomes[0].as_ref().unwrap().coverage.files[&app_key],
         BTreeSet::from([2, 4])
     );
 }
 
-fn assert_concurrent_timeout_entry_wins(root: &Path) {
+fn assert_empty_concurrent_entry_does_not_win_over_timeout(root: &Path) {
+    // Empty-coverage concurrent entries are never reusable; finalize stores the
+    // live timeout outcome instead of treating the empty entry as a hit.
     let mut req = rslip_sample_request(root);
     req.nodeid = "test_sample.py::test_timeout".to_string();
     let fingerprint = rslip_cache_fingerprint(&req).unwrap();
     let cache_root = req.cache_root.clone();
-    let concurrent = cache::RslipCacheEntry::from(&failed_empty_outcome(&req.nodeid, 7));
+    let concurrent = cache::RslipCacheEntry::from_outcome(
+        &failed_empty_outcome(&req.nodeid, 7),
+        root,
+    );
     let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |reqs, _jobs| {
         store_rslip_cache_entry(&cache_root, &fingerprint, &concurrent).unwrap();
         reqs.into_iter()
@@ -205,18 +217,21 @@ fn assert_concurrent_timeout_entry_wins(root: &Path) {
             .collect()
     }));
     let outcomes = rslip.run_or_reuse_many_bounded(vec![req], 1);
-    assert_eq!(outcomes[0].as_ref().unwrap().cache_status, CacheStatus::Hit);
-    assert_eq!(outcomes[0].as_ref().unwrap().exit_code, Some(7));
+    assert_eq!(
+        outcomes[0].as_ref().unwrap().cache_status,
+        CacheStatus::MissStored
+    );
+    assert_eq!(outcomes[0].as_ref().unwrap().exit_code, Some(124));
 }
 
-fn passed_coverage_outcome(nodeid: &str, lines: BTreeSet<u32>) -> RslipOutcome {
+fn passed_coverage_outcome(nodeid: &str, app_key: &str, lines: BTreeSet<u32>) -> RslipOutcome {
     RslipOutcome {
         nodeid: nodeid.to_string(),
         status: TestStatus::Passed,
         exit_code: Some(0),
         duration: Duration::from_millis(9),
         coverage: LineCoverage {
-            files: BTreeMap::from([("/project/app.py".to_string(), lines)]),
+            files: BTreeMap::from([(app_key.to_string(), lines)]),
         },
         cache_status: CacheStatus::MissStored,
         stdout: None,
