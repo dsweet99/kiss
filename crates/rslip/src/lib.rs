@@ -281,19 +281,19 @@ fn build_pytest_runner_request(
             .to_string_lossy()
             .to_string(),
     );
-    PytestRunRequest {
-        nodeid: req.nodeid.clone(),
-        cwd: req.cwd.clone(),
-        python: req.python.clone(),
-        pytest_args: req.pytest_args.clone(),
+    PytestRunRequest::from_parts(
+        req.nodeid.clone(),
+        req.cwd.clone(),
+        req.python.clone(),
+        req.pytest_args.clone(),
         env,
-        child_preload_modules: vec![runtime::MODULE_NAME.to_string()],
-        artifacts: vec![RequestedArtifact {
+        vec![runtime::MODULE_NAME.to_string()],
+        vec![RequestedArtifact {
             name: runtime::COVERAGE_ARTIFACT.to_string(),
             path: artifact_path.to_path_buf(),
         }],
-        timeout: req.timeout,
-    }
+        req.timeout,
+    )
 }
 
 fn rslip_coverage_from_outcome(outcome: &PytestRunOutcome) -> Result<LineCoverage, RslipError> {

@@ -37,6 +37,14 @@ fn builds_pytest_runner_request_with_runtime_env_and_artifact() {
         runtime::COVERAGE_ARTIFACT.to_string()
     );
     assert_eq!(runner_req.artifacts[0].path, artifact);
+    assert!(!runner_req.bootstrap.env.contains_key("RSLIP_COVERAGE_OUT"));
+    assert!(!runner_req.bootstrap.env.contains_key("TESTMON_DATAFILE"));
+    assert_eq!(
+        runner_req.bootstrap.env.get("PYTHONPATH"),
+        runner_req.env.get("PYTHONPATH")
+    );
+    assert_eq!(runner_req.bootstrap.cwd, runner_req.cwd);
+    assert_eq!(runner_req.bootstrap.pytest_args, runner_req.pytest_args);
 }
 
 #[test]

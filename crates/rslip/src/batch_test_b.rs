@@ -63,19 +63,19 @@ def test_false():\n    assert choose(False) == 2\n",
 fn rslip_cache_candidate_and_miss_store_batch_fields() {
     let tmp = tempfile::tempdir().unwrap();
     let req = rslip_sample_request(tmp.path());
-    let runner_req = PytestRunRequest {
-        nodeid: req.nodeid.clone(),
-        cwd: req.cwd.clone(),
-        python: req.python.clone(),
-        pytest_args: req.pytest_args.clone(),
-        env: BTreeMap::new(),
-        child_preload_modules: Vec::new(),
-        artifacts: vec![RequestedArtifact {
+    let runner_req = PytestRunRequest::from_parts(
+        req.nodeid.clone(),
+        req.cwd.clone(),
+        req.python.clone(),
+        req.pytest_args.clone(),
+        BTreeMap::new(),
+        Vec::new(),
+        vec![RequestedArtifact {
             name: "coverage".to_string(),
             path: PathBuf::from("coverage.json"),
         }],
-        timeout: None,
-    };
+        None,
+    );
     let candidate = RslipCacheCandidate {
         index: 3,
         req: req.clone(),

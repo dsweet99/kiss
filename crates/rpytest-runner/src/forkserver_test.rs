@@ -20,35 +20,35 @@ macro_rules! python {
 }
 
 fn passing_req(root: &std::path::Path, nodeid: &str) -> PytestRunRequest {
-    PytestRunRequest {
-        nodeid: nodeid.to_string(),
-        cwd: root.to_path_buf(),
-        python: python!(),
-        pytest_args: vec!["-q".to_string()],
-        env: BTreeMap::new(),
-        child_preload_modules: Vec::new(),
-        artifacts: Vec::new(),
-        timeout: None,
-    }
+    PytestRunRequest::from_parts(
+        nodeid.to_string(),
+        root.to_path_buf(),
+        python!(),
+        vec!["-q".to_string()],
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    )
 }
 
 #[test]
 fn forkserver_wire_request_preserves_contract_fields() {
     let mut env = BTreeMap::new();
     env.insert("A".to_string(), "B".to_string());
-    let req = PytestRunRequest {
-        nodeid: "test_sample.py::test_ok".to_string(),
-        cwd: PathBuf::from("/tmp/project"),
-        python: python!(),
-        pytest_args: vec!["-q".to_string()],
+    let req = PytestRunRequest::from_parts(
+        "test_sample.py::test_ok".to_string(),
+        PathBuf::from("/tmp/project"),
+        python!(),
+        vec!["-q".to_string()],
         env,
-        child_preload_modules: vec!["preload_flag".to_string()],
-        artifacts: vec![RequestedArtifact {
+        vec!["preload_flag".to_string()],
+        vec![RequestedArtifact {
             name: "coverage".to_string(),
             path: PathBuf::from("coverage.json"),
         }],
-        timeout: Some(Duration::from_millis(25)),
-    };
+        Some(Duration::from_millis(25)),
+    );
 
     let wire = WireRequest::from_request(7, &req);
 
@@ -133,7 +133,7 @@ fn forkserver_controller_pid_is_reused_for_multiple_requests() {
 def test_b():\n    assert True\n",
     )
     .unwrap();
-    let mut controller = ForkserverController::start(&python!()).unwrap();
+    let mut controller = ForkserverController::start(&python!(), &passing_req(tmp.path(), "test_sample.py::test_ok").bootstrap).unwrap();
     let pid = controller.controller_pid();
 
     controller
@@ -156,15 +156,17 @@ def test_sleep():\n    time.sleep(10)\n\n\
 def test_ok():\n    assert True\n",
     )
     .unwrap();
-    let req = |nodeid: &str, timeout| PytestRunRequest {
-        nodeid: nodeid.to_string(),
-        cwd: tmp.path().to_path_buf(),
-        python: python!(),
-        pytest_args: vec!["-q".to_string()],
-        env: BTreeMap::new(),
-        child_preload_modules: Vec::new(),
-        artifacts: Vec::new(),
-        timeout,
+    let req = |nodeid: &str, timeout| {
+        PytestRunRequest::from_parts(
+            nodeid.to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            timeout,
+        )
     };
 
     let outcomes = ForkserverPytestRunner::new().run_many_bounded(
@@ -216,16 +218,16 @@ def test_b():\n    assert True\n",
             flag_path.to_string_lossy().to_string(),
         );
         env.insert("PRELOAD_VALUE".to_string(), value.to_string());
-        PytestRunRequest {
-            nodeid: nodeid.to_string(),
-            cwd: tmp.path().to_path_buf(),
-            python: python!(),
-            pytest_args: vec!["-q".to_string()],
+        PytestRunRequest::from_parts(
+            nodeid.to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
             env,
-            child_preload_modules: vec!["preload_env".to_string()],
-            artifacts: Vec::new(),
-            timeout: None,
-        }
+            vec!["preload_env".to_string()],
+            Vec::new(),
+            None,
+        )
     };
 
     let outcomes = ForkserverPytestRunner::new().run_many_bounded(
@@ -276,16 +278,16 @@ with open(os.environ['CONTROLLER_PID_PATH'], 'w') as f:\n    f.write(str(os.getp
 
     let outcome = ForkserverPytestRunner::new()
         .run_many_bounded(
-            vec![PytestRunRequest {
-                nodeid: "test_sample.py::test_ok".to_string(),
-                cwd: tmp.path().to_path_buf(),
-                python: python!(),
-                pytest_args: vec!["-q".to_string()],
+            vec![PytestRunRequest::from_parts(
+                "test_sample.py::test_ok".to_string(),
+                tmp.path().to_path_buf(),
+                python!(),
+                vec!["-q".to_string()],
                 env,
-                child_preload_modules: vec!["preload_pid".to_string()],
-                artifacts: Vec::new(),
-                timeout: None,
-            }],
+                vec!["preload_pid".to_string()],
+                Vec::new(),
+                None,
+            )],
             1,
         )
         .remove(0)
@@ -314,7 +316,7 @@ fn forkserver_controller_run_executes_one_request_directly() {
         "def test_ok():\n    assert True\n",
     )
     .unwrap();
-    let mut controller = ForkserverController::start(&python!()).unwrap();
+    let mut controller = ForkserverController::start(&python!(), &passing_req(tmp.path(), "test_sample.py::test_ok").bootstrap).unwrap();
 
     let outcome = controller
         .run(passing_req(tmp.path(), "test_sample.py::test_ok"))
@@ -331,7 +333,7 @@ fn forkserver_controller_run_reports_pytest_failure_exit_code() {
         "def test_fail():\n    assert False\n",
     )
     .unwrap();
-    let mut controller = ForkserverController::start(&python!()).unwrap();
+    let mut controller = ForkserverController::start(&python!(), &passing_req(tmp.path(), "test_sample.py::test_ok").bootstrap).unwrap();
 
     let outcome = controller
         .run(passing_req(tmp.path(), "test_sample.py::test_fail"))
@@ -406,16 +408,16 @@ fn forkserver_imports_preload_after_child_env_setup() {
     );
 
     let outcome = ForkserverPytestRunner::new()
-        .run_one(PytestRunRequest {
-            nodeid: "test_sample.py::test_ok".to_string(),
-            cwd: tmp.path().to_path_buf(),
-            python: python!(),
-            pytest_args: vec!["-q".to_string()],
+        .run_one(PytestRunRequest::from_parts(
+            "test_sample.py::test_ok".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
             env,
-            child_preload_modules: vec!["preload_flag".to_string()],
-            artifacts: Vec::new(),
-            timeout: None,
-        })
+            vec!["preload_flag".to_string()],
+            Vec::new(),
+            None,
+        ))
         .unwrap();
 
     assert_eq!(outcome.status, TestStatus::Passed);

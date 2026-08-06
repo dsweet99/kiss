@@ -100,16 +100,16 @@ pub(crate) fn concurrency_request(
     env: &BTreeMap<String, String>,
     nodeid: &str,
 ) -> PytestRunRequest {
-    PytestRunRequest {
-        nodeid: nodeid.to_string(),
-        cwd: cwd.to_path_buf(),
-        python: PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python".to_string())),
-        pytest_args: vec!["-q".to_string(), "-p".to_string(), "no:testmon".to_string()],
-        env: env.clone(),
-        child_preload_modules: Vec::new(),
-        artifacts: Vec::new(),
-        timeout: None,
-    }
+    PytestRunRequest::from_parts(
+        nodeid.to_string(),
+        cwd.to_path_buf(),
+        PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python".to_string())),
+        vec!["-q".to_string(), "-p".to_string(), "no:testmon".to_string()],
+        env.clone(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    )
 }
 
 pub(crate) fn reset_concurrency_counters(state_path: &Path, max_path: &Path) {

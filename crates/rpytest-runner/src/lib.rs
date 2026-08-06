@@ -10,6 +10,8 @@
 mod collector;
 mod forkserver;
 mod forkserver_controller;
+mod forkserver_controller_runtime;
+mod forkserver_wire;
 mod runner;
 mod types;
 
@@ -25,6 +27,9 @@ mod bounded_concurrency_test_support_test;
 #[cfg(test)]
 mod forkserver_test;
 #[cfg(test)]
+#[path = "forkserver_bootstrap_test.rs"]
+mod forkserver_bootstrap_test;
+#[cfg(test)]
 #[path = "forkserver_timeout_test.rs"]
 mod forkserver_timeout_test;
 #[cfg(test)]
@@ -39,5 +44,6 @@ pub use collector::{
 pub use forkserver::{ForkserverPytestRunner, forkserver_pytest_runner};
 pub use runner::{PytestRunner, SubprocessPytestRunner, subprocess_pytest_runner};
 pub use types::{
-    PytestRunError, PytestRunOutcome, PytestRunRequest, RequestedArtifact, TestStatus,
+    PytestBootstrap, PytestRunError, PytestRunOutcome, PytestRunRequest, RequestedArtifact,
+    TestStatus, parent_safe_env,
 };

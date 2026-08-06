@@ -92,16 +92,16 @@ raise SystemExit(0)
     unsafe { std::env::set_var("PYTEST_ADDOPTS", "--testmon --testmon") };
 
     let outcome = crate::SubprocessPytestRunner::new()
-        .run_one(PytestRunRequest {
-            nodeid: "test_sample.py::test_ok".to_string(),
-            cwd: tmp.path().to_path_buf(),
-            python: fake_python,
-            pytest_args: vec!["-q".to_string()],
-            env: BTreeMap::new(),
-            child_preload_modules: Vec::new(),
-            artifacts: Vec::new(),
-            timeout: None,
-        })
+        .run_one(PytestRunRequest::from_parts(
+        "test_sample.py::test_ok".to_string(),
+        tmp.path().to_path_buf(),
+        fake_python,
+        vec!["-q".to_string()],
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    ))
         .unwrap();
 
     match old_addopts {
@@ -131,16 +131,16 @@ fn subprocess_worker_sends_indexed_result() {
         "def test_ok():\n    assert True\n",
     )
     .unwrap();
-    let req = PytestRunRequest {
-        nodeid: "test_sample.py::test_ok".to_string(),
-        cwd: tmp.path().to_path_buf(),
-        python: python!(),
-        pytest_args: vec!["-q".to_string()],
-        env: BTreeMap::new(),
-        child_preload_modules: Vec::new(),
-        artifacts: Vec::new(),
-        timeout: None,
-    };
+    let req = PytestRunRequest::from_parts(
+        "test_sample.py::test_ok".to_string(),
+        tmp.path().to_path_buf(),
+        python!(),
+        vec!["-q".to_string()],
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    );
     let (tx, rx) = mpsc::channel();
 
     spawn_subprocess_job(3, req, tx);

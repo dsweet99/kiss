@@ -29,16 +29,16 @@ fn run_many_preserves_request_order() {
     });
 
     let cwd = PathBuf::from(".");
-    let req = |nodeid: &str| PytestRunRequest {
-        nodeid: nodeid.to_string(),
-        cwd: cwd.clone(),
-        python: PathBuf::from("python"),
-        pytest_args: Vec::new(),
-        env: BTreeMap::new(),
-        child_preload_modules: Vec::new(),
-        artifacts: Vec::new(),
-        timeout: None,
-    };
+    let req = |nodeid: &str| PytestRunRequest::from_parts(
+        nodeid.to_string(),
+        cwd.clone(),
+        PathBuf::from("python"),
+        Vec::new(),
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    );
     let got = runner.run_many(vec![req("a.py::test_a"), req("b.py::test_b")]);
     assert_eq!(got[0].as_ref().unwrap().nodeid, "a.py::test_a");
     assert_eq!(got[1].as_ref().unwrap().nodeid, "b.py::test_b");
@@ -125,16 +125,16 @@ fn subprocess_runner_runs_one_pytest_node() {
     .unwrap();
 
     let outcome = subprocess_pytest_runner()
-        .run_one(PytestRunRequest {
-            nodeid: "test_sample.py::test_ok".to_string(),
-            cwd: tmp.path().to_path_buf(),
-            python: python!(),
-            pytest_args: vec!["-q".to_string()],
-            env: BTreeMap::new(),
-            child_preload_modules: Vec::new(),
-            artifacts: Vec::new(),
-            timeout: None,
-        })
+        .run_one(PytestRunRequest::from_parts(
+        "test_sample.py::test_ok".to_string(),
+        tmp.path().to_path_buf(),
+        python!(),
+        vec!["-q".to_string()],
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    ))
         .unwrap();
 
     assert_eq!(outcome.status, TestStatus::Passed);
@@ -152,16 +152,16 @@ fn forkserver_runner_runs_one_pytest_node() {
     .unwrap();
 
     let outcome = forkserver_pytest_runner()
-        .run_one(PytestRunRequest {
-            nodeid: "test_sample.py::test_ok".to_string(),
-            cwd: tmp.path().to_path_buf(),
-            python: python!(),
-            pytest_args: vec!["-q".to_string(), "-s".to_string()],
-            env: BTreeMap::new(),
-            child_preload_modules: Vec::new(),
-            artifacts: Vec::new(),
-            timeout: None,
-        })
+        .run_one(PytestRunRequest::from_parts(
+        "test_sample.py::test_ok".to_string(),
+        tmp.path().to_path_buf(),
+        python!(),
+        vec!["-q".to_string(), "-s".to_string()],
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    ))
         .unwrap();
 
     assert_eq!(outcome.status, TestStatus::Passed);
@@ -180,16 +180,16 @@ fn forkserver_runner_ignores_inherited_pytest_addopts_testmon() {
     unsafe { std::env::set_var("PYTEST_ADDOPTS", "--testmon --testmon --testmon") };
 
     let outcome = forkserver_pytest_runner()
-        .run_one(PytestRunRequest {
-            nodeid: "test_sample.py::test_ok".to_string(),
-            cwd: tmp.path().to_path_buf(),
-            python: python!(),
-            pytest_args: vec!["-q".to_string()],
-            env: BTreeMap::new(),
-            child_preload_modules: Vec::new(),
-            artifacts: Vec::new(),
-            timeout: None,
-        })
+        .run_one(PytestRunRequest::from_parts(
+        "test_sample.py::test_ok".to_string(),
+        tmp.path().to_path_buf(),
+        python!(),
+        vec!["-q".to_string()],
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    ))
         .unwrap();
 
     match old_addopts {
@@ -216,16 +216,16 @@ fn subprocess_runner_reports_failed_pytest_node() {
     .unwrap();
 
     let outcome = subprocess_pytest_runner()
-        .run_one(PytestRunRequest {
-            nodeid: "test_sample.py::test_fail".to_string(),
-            cwd: tmp.path().to_path_buf(),
-            python: python!(),
-            pytest_args: vec!["-q".to_string()],
-            env: BTreeMap::new(),
-            child_preload_modules: Vec::new(),
-            artifacts: Vec::new(),
-            timeout: None,
-        })
+        .run_one(PytestRunRequest::from_parts(
+        "test_sample.py::test_fail".to_string(),
+        tmp.path().to_path_buf(),
+        python!(),
+        vec!["-q".to_string()],
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    ))
         .unwrap();
 
     assert_eq!(outcome.status, TestStatus::Failed);
@@ -247,16 +247,16 @@ fn subprocess_runner_run_many_preserves_order_for_real_nodes() {
         "def test_fail():\n    assert False\n",
     )
     .unwrap();
-    let req = |root: &Path, nodeid: &str| PytestRunRequest {
-        nodeid: nodeid.to_string(),
-        cwd: root.to_path_buf(),
-        python: python!(),
-        pytest_args: vec!["-q".to_string()],
-        env: BTreeMap::new(),
-        child_preload_modules: Vec::new(),
-        artifacts: Vec::new(),
-        timeout: None,
-    };
+    let req = |root: &Path, nodeid: &str| PytestRunRequest::from_parts(
+        nodeid.to_string(),
+        root.to_path_buf(),
+        python!(),
+        vec!["-q".to_string()],
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    );
 
     let outcomes = SubprocessPytestRunner.run_many(vec![
         req(ok_tmp.path(), "test_sample.py::test_ok"),
@@ -313,16 +313,16 @@ fn subprocess_runner_imports_preload_before_pytest() {
     );
 
     let outcome = subprocess_pytest_runner()
-        .run_one(PytestRunRequest {
-            nodeid: "test_sample.py::test_ok".to_string(),
-            cwd: tmp.path().to_path_buf(),
-            python: python!(),
-            pytest_args: vec!["-q".to_string()],
-            env,
-            child_preload_modules: vec!["preload_flag".to_string()],
-            artifacts: Vec::new(),
-            timeout: None,
-        })
+        .run_one(PytestRunRequest::from_parts(
+        "test_sample.py::test_ok".to_string(),
+        tmp.path().to_path_buf(),
+        python!(),
+        vec!["-q".to_string()],
+        env,
+        vec!["preload_flag".to_string()],
+        Vec::new(),
+        None,
+    ))
         .unwrap();
 
     assert_eq!(outcome.status, TestStatus::Passed);
@@ -339,16 +339,16 @@ fn subprocess_runner_enforces_timeout() {
     .unwrap();
 
     let err = subprocess_pytest_runner()
-        .run_one(PytestRunRequest {
-            nodeid: "test_sleep.py::test_sleep".to_string(),
-            cwd: tmp.path().to_path_buf(),
-            python: python!(),
-            pytest_args: vec!["-q".to_string()],
-            env: BTreeMap::new(),
-            child_preload_modules: Vec::new(),
-            artifacts: Vec::new(),
-            timeout: Some(Duration::from_millis(20)),
-        })
+        .run_one(PytestRunRequest::from_parts(
+        "test_sleep.py::test_sleep".to_string(),
+        tmp.path().to_path_buf(),
+        python!(),
+        vec!["-q".to_string()],
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        Some(Duration::from_millis(20)),
+    ))
         .unwrap_err();
 
     assert_eq!(err, PytestRunError::Timeout(Duration::from_millis(20)));
@@ -356,16 +356,16 @@ fn subprocess_runner_enforces_timeout() {
 
 #[test]
 fn invalid_request_rejects_missing_required_fields() {
-    let valid = PytestRunRequest {
-        nodeid: "test_x.py::test_x".to_string(),
-        cwd: PathBuf::from("."),
-        python: PathBuf::from("python"),
-        pytest_args: Vec::new(),
-        env: BTreeMap::new(),
-        child_preload_modules: Vec::new(),
-        artifacts: Vec::new(),
-        timeout: None,
-    };
+    let valid = PytestRunRequest::from_parts(
+        "test_x.py::test_x".to_string(),
+        PathBuf::from("."),
+        PathBuf::from("python"),
+        Vec::new(),
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    );
 
     let mut missing_nodeid = valid.clone();
     missing_nodeid.nodeid.clear();

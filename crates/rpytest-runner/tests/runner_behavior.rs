@@ -12,16 +12,16 @@ fn python() -> PathBuf {
 }
 
 fn request(root: &std::path::Path, nodeid: &str) -> PytestRunRequest {
-    PytestRunRequest {
-        nodeid: nodeid.to_string(),
-        cwd: root.to_path_buf(),
-        python: python(),
-        pytest_args: vec!["-q".to_string()],
-        env: BTreeMap::new(),
-        child_preload_modules: Vec::new(),
-        artifacts: Vec::new(),
-        timeout: None,
-    }
+    PytestRunRequest::from_parts(
+        nodeid.to_string(),
+        root.to_path_buf(),
+        python(),
+        vec!["-q".to_string()],
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    )
 }
 
 #[test]
