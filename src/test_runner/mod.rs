@@ -1,3 +1,7 @@
+#[cfg(test)]
+#[path = "capture_stdout.rs"]
+pub(crate) mod capture_stdout;
+
 pub(crate) mod check_line_coverage;
 pub(crate) mod check_runtime_refresh;
 mod coverage_decision;
@@ -6,6 +10,7 @@ pub(crate) mod last_status;
 mod line_selection;
 mod python_cache_path;
 mod python_coverage_index;
+mod final_summary;
 mod run_logic;
 mod runners;
 mod rust_coverage_index;

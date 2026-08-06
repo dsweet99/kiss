@@ -12,7 +12,9 @@ use rust_llvm_cov_runner::{
 };
 
 use super::last_status::{LastStatusIdentity, record_statuses, rust_last_status_identity};
-use super::runners::{SelectorCacheRecord, SelectorExecutionSummary};
+use super::runners::{
+    SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
+};
 use crate::test_runner::rust_coverage_index::relevant_rust_batch_env;
 use crate::test_runner::rust_llvm_cov_error::map_rust_llvm_cov_error;
 
@@ -122,11 +124,13 @@ fn cached_summary_from_check_aggregate_population(
     let mut summary = SelectorExecutionSummary::default();
     for selector in selectors {
         println!("PASSED (cached): {selector}");
-        summary.record(
-            rpytest_runner::TestStatus::Passed,
-            SelectorCacheRecord::Hit,
-            Some(0),
-        );
+        summary.record(SelectorExecutionRecord {
+            selector: selector.clone(),
+            status: rpytest_runner::TestStatus::Passed,
+            cache_record: SelectorCacheRecord::Hit,
+            exit_code: Some(0),
+            duration: std::time::Duration::ZERO,
+        });
     }
     Some(summary)
 }
@@ -397,7 +401,13 @@ fn finish_rust_coverage_batch_result(
             RustCovCacheStatus::MissStored => SelectorCacheRecord::MissStored,
             RustCovCacheStatus::FreshUnstored => SelectorCacheRecord::MissUnstored,
         };
-        summary.record(outcome.status, cache_record, outcome.exit_code);
+        summary.record(SelectorExecutionRecord {
+            selector: outcome.selector.clone(),
+            status: outcome.status,
+            cache_record,
+            exit_code: outcome.exit_code,
+            duration: outcome.duration,
+        });
     }
     record_statuses(repo_root, kiss::Language::Rust, identity, &statuses)?;
     if let Some(err) = result.batch_error {

@@ -101,6 +101,17 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
     let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
     assert_eq!(summary.total, 4);
     assert_eq!(summary.failed, 2);
+    assert_eq!(
+        summary.failed_selectors,
+        vec![
+            "tests::cached_fail".to_string(),
+            "tests::fresh_fail".to_string()
+        ]
+    );
+    assert_eq!(
+        summary.max_passing_run_duration,
+        Duration::from_millis(1)
+    );
 }
 
 #[test]
@@ -164,6 +175,17 @@ fn finish_rust_coverage_batch_result_prints_fresh_unstored_outcomes() {
     let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
     assert_eq!(summary.total, 3);
     assert_eq!(summary.failed, 2);
+    assert_eq!(
+        summary.failed_selectors,
+        vec![
+            "tests::fresh_fail".to_string(),
+            "tests::fresh_fail_empty_stderr".to_string()
+        ]
+    );
+    assert_eq!(
+        summary.max_passing_run_duration,
+        Duration::from_millis(1)
+    );
 }
 
 #[test]

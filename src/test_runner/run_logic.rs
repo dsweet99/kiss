@@ -1,6 +1,7 @@
 use super::{PlannedSelectors, SelectorRunOptions, runners};
 use crate::test_runner::coverage_decision::{LanguageExecutor, LanguageTestModule, RunContext};
-use std::time::Instant;
+use crate::test_runner::final_summary::{FinalTestSummary, print_final_test_summary};
+use std::time::{Duration, Instant};
 
 #[path = "run_logic/language_executor.rs"]
 mod language_executor;
@@ -67,6 +68,10 @@ fn finish_no_work(
         metrics.capture_cache_shape(&planned.repo_root);
         metrics.print();
     }
+    print_final_test_summary(
+        &FinalTestSummary::default(),
+        summary_total_duration(options.plan_duration, total_started),
+    );
     0
 }
 
@@ -202,7 +207,20 @@ fn finish_run_metrics(
     if options.metrics {
         metrics.print();
     }
+    let aggregate = FinalTestSummary::absorb(&[
+        &metrics.python.summary,
+        &metrics.rust_population.summary,
+        &metrics.rust_final.summary,
+    ]);
+    print_final_test_summary(
+        &aggregate,
+        summary_total_duration(options.plan_duration, total_started),
+    );
     code
+}
+
+fn summary_total_duration(plan_duration: Duration, total_started: Instant) -> Duration {
+    plan_duration + total_started.elapsed()
 }
 
 #[cfg(test)]

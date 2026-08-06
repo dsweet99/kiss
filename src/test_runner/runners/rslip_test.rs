@@ -7,6 +7,25 @@
     use std::rc::Rc;
     use std::time::Duration;
 
+    #[cfg(unix)]
+    use crate::test_runner::capture_stdout::capture_stdout;
+
+    fn assert_mixed_miss_summary(summary: &SelectorExecutionSummary) {
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.cache_misses, 2);
+        assert_eq!(summary.cache_hits, 0);
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.exit_code, 1);
+        assert_eq!(
+            summary.failed_selectors,
+            vec!["test_sample.py::test_b".to_string()]
+        );
+        assert_eq!(
+            summary.max_passing_run_duration,
+            Duration::from_millis(1)
+        );
+    }
+
     #[test]
     fn format_rslip_error_includes_context() {
         let msg = format_rslip_error(RslipError::InvalidRequest("bad selector".to_string()));
@@ -119,11 +138,7 @@ def test_b():\n    assert False\n",
         assert_eq!(batch_calls.get(), 1);
         assert_eq!(observed_jobs.get(), 3);
         assert_eq!(*observed_nodeids.borrow(), selectors);
-        assert_eq!(summary.total, 2);
-        assert_eq!(summary.cache_misses, 2);
-        assert_eq!(summary.cache_hits, 0);
-        assert_eq!(summary.failed, 1);
-        assert_eq!(summary.exit_code, 1);
+        assert_mixed_miss_summary(&summary);
     }
 
     #[cfg(target_os = "linux")]
@@ -179,39 +194,6 @@ def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
                 stderr: Some(Vec::new()),
             });
         }
-    }
-
-    #[cfg(unix)]
-    fn capture_stdout(f: impl FnOnce()) -> String {
-        use std::io::{Read, Write};
-        use std::os::fd::FromRawFd;
-        let mut fds = [0; 2];
-        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
-        let read_fd = fds[0];
-        let write_fd = fds[1];
-        let old_stdout = unsafe { libc::dup(libc::STDOUT_FILENO) };
-        assert!(old_stdout >= 0);
-        assert_eq!(
-            unsafe { libc::dup2(write_fd, libc::STDOUT_FILENO) },
-            libc::STDOUT_FILENO
-        );
-        unsafe {
-            libc::close(write_fd);
-        }
-        f();
-        let _ = std::io::stdout().flush();
-        assert_eq!(
-            unsafe { libc::dup2(old_stdout, libc::STDOUT_FILENO) },
-            libc::STDOUT_FILENO
-        );
-        unsafe {
-            libc::close(old_stdout);
-        }
-        let mut reader = unsafe { std::fs::File::from_raw_fd(read_fd) };
-        let mut buf = Vec::new();
-        reader.read_to_end(&mut buf).unwrap();
-        drop(reader);
-        String::from_utf8_lossy(&buf).into_owned()
     }
 
     #[cfg(unix)]
@@ -304,6 +286,8 @@ def test_b():\n    assert True\n",
             )
             .unwrap();
             assert_eq!(summary.cache_hits, 2);
+            assert_eq!(summary.max_passing_run_duration, Duration::ZERO);
+            assert!(summary.failed_selectors.is_empty());
         });
         assert!(
             hit_out.contains("PASSED (cached): test_sample.py::test_a"),

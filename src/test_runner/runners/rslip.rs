@@ -7,7 +7,9 @@ use rslip::{
 };
 use std::time::Duration;
 
-use super::{SelectorCacheRecord, SelectorExecutionSummary, command_stdout};
+use super::{
+    SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary, command_stdout,
+};
 use crate::test_runner::last_status::{python_last_status_identity, record_statuses};
 use crate::test_runner::python_coverage_index::python_coverage_cache_root;
 
@@ -105,25 +107,29 @@ fn run_rslip_selectors_with_runner(
         match result {
             Ok(outcome) => {
                 statuses.push((outcome.nodeid.clone(), outcome.status));
-                summary.record(
-                    outcome.status,
-                    if outcome.cache_status == PyCacheStatus::Hit {
+                summary.record(SelectorExecutionRecord {
+                    selector: outcome.nodeid.clone(),
+                    status: outcome.status,
+                    cache_record: if outcome.cache_status == PyCacheStatus::Hit {
                         SelectorCacheRecord::Hit
                     } else {
                         SelectorCacheRecord::MissStored
                     },
-                    outcome.exit_code,
-                );
+                    exit_code: outcome.exit_code,
+                    duration: outcome.duration,
+                });
             }
             // Keep population/selective batches moving: one rslip Io/runner error must
             // not discard thousands of already-resolved cache hits.
             Err(_) => {
                 statuses.push((selector.clone(), rpytest_runner::TestStatus::Failed));
-                summary.record(
-                    rpytest_runner::TestStatus::Failed,
-                    SelectorCacheRecord::MissUnstored,
-                    Some(1),
-                );
+                summary.record(SelectorExecutionRecord {
+                    selector: selector.clone(),
+                    status: rpytest_runner::TestStatus::Failed,
+                    cache_record: SelectorCacheRecord::MissUnstored,
+                    exit_code: Some(1),
+                    duration: std::time::Duration::ZERO,
+                });
             }
         }
     }
