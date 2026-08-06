@@ -282,12 +282,22 @@ fn current_python_population_manifest_identity_with_env_keys(
             repo_root,
         )?,
         pytest_args: test_args.to_vec(),
-        env: relevant_python_coverage_env(env_keys),
+        // Ignore env_keys contents for PYTHONPATH: always normalize via repo root.
+        // Callers still pass PYTHON_COVERAGE_ENV_KEYS for allowlist documentation.
+        env: {
+            let _ = env_keys;
+            kiss::python_coverage_env_map(repo_root)
+        },
     })
 }
 
-fn relevant_python_coverage_env(env_keys: &[&str]) -> BTreeMap<String, String> {
-    kiss::env_map_from_allowlist(env_keys)
+#[cfg(test)]
+fn relevant_python_coverage_env(
+    repo_root: &Path,
+    env_keys: &[&str],
+) -> BTreeMap<String, String> {
+    let _ = env_keys;
+    kiss::python_coverage_env_map(repo_root)
 }
 
 #[derive(Deserialize, Serialize)]

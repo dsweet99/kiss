@@ -266,6 +266,7 @@ fn ensure_python_runtime_coverage(
         &selectors,
         &python_extra,
         false,
+        &[],
         jobs,
     )
     .map_err(|err| CoverageRefreshError::publication("Python", err))?;

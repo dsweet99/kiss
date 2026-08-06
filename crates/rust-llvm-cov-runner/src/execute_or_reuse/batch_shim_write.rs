@@ -72,19 +72,23 @@ fn write_metadata_atomically<T: Serialize>(
 }
 
 pub(crate) fn instance_full_name(command: &[std::ffi::OsString]) -> String {
-    if let Some((binary, test_name)) = exact_test_from_command(command) {
-        let binary_id = binary
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().to_string())
-            .unwrap_or_else(|| binary.to_string_lossy().to_string());
-        return format!("{binary_id}${test_name}");
-    }
+    // Prefer nextest identity so shim keys match libtest-json event names
+    // (`pkg::bin$test`). Argv `--exact` paths use hashed file stems
+    // (`bin-<hash>`), which collide across integration tests that share a
+    // function name (common in sameq_style `kiss_bare_rule_api` fixtures).
     if should_use_nextest_env_for_instance(command)
         && let (Some(binary_id), Some(test_name)) = (
             std::env::var("NEXTEST_BINARY_ID").ok(),
             std::env::var("NEXTEST_TEST_NAME").ok(),
         )
     {
+        return format!("{binary_id}${test_name}");
+    }
+    if let Some((binary, test_name)) = exact_test_from_command(command) {
+        let binary_id = binary
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_string())
+            .unwrap_or_else(|| binary.to_string_lossy().to_string());
         return format!("{binary_id}${test_name}");
     }
     unique_shim_id()

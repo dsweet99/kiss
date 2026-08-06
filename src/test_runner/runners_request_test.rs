@@ -36,7 +36,28 @@ fn rslip_request_from_parts_uses_selector_and_kiss_cache() {
 #[test]
 fn rslip_request_from_parts_tracks_pythonpath_in_cache_env() {
     let _lock = crate::cwd_test_lock::lock();
-    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", "/repo/src");
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let custom = format!("{}:src", root.display());
+    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", &custom);
+
+    let req = rslip_request_from_parts(
+        tmp.path(),
+        "tests/test_app.py::test_ok",
+        &[],
+        "3.12.1",
+        "8.2.0",
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(req.env.get("PYTHONPATH"), Some(&custom));
+}
+
+#[test]
+fn rslip_request_from_parts_ignores_foreign_pythonpath() {
+    let _lock = crate::cwd_test_lock::lock();
+    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", "/home/dsweet/Projects/kiss");
     let tmp = TempDir::new().unwrap();
 
     let req = rslip_request_from_parts(
@@ -49,7 +70,38 @@ fn rslip_request_from_parts_tracks_pythonpath_in_cache_env() {
     )
     .unwrap();
 
-    assert_eq!(req.env.get("PYTHONPATH"), Some(&"/repo/src".to_string()));
+    let expected = tmp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(req.env.get("PYTHONPATH"), Some(&expected));
+}
+
+#[test]
+fn rslip_request_from_parts_defaults_unset_pythonpath_to_repo_root() {
+    let _lock = crate::cwd_test_lock::lock();
+    unsafe { std::env::remove_var("PYTHONPATH") };
+    let tmp = TempDir::new().unwrap();
+
+    let req = rslip_request_from_parts(
+        tmp.path(),
+        "tests/test_app.py::test_ok",
+        &[],
+        "3.12.1",
+        "8.2.0",
+        false,
+    )
+    .unwrap();
+
+    let expected = tmp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(req.env.get("PYTHONPATH"), Some(&expected));
 }
 
 #[test]

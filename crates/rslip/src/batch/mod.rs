@@ -43,70 +43,115 @@ enum PublishedRuntime {
     Error(io::ErrorKind, String),
 }
 
+/// Progress events emitted while a bounded rslip batch runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RslipBatchProgress {
+    /// Cache prepare finished; misses still need pytest execution.
+    Prepared { cache_hits: usize, cache_misses: usize },
+    /// One request resolved (cache hit, miss store, or error).
+    Resolved { remaining_misses: usize },
+}
+
 impl Rslip {
     pub fn run_or_reuse_many_bounded(
         &self,
         reqs: Vec<RslipRequest>,
         jobs: usize,
     ) -> Vec<Result<RslipOutcome, RslipError>> {
+        self.run_or_reuse_many_bounded_with_progress(reqs, jobs, |_| {})
+    }
+
+    pub fn run_or_reuse_many_bounded_with_progress(
+        &self,
+        reqs: Vec<RslipRequest>,
+        jobs: usize,
+        mut on_progress: impl FnMut(RslipBatchProgress),
+    ) -> Vec<Result<RslipOutcome, RslipError>> {
         assert!(jobs > 0, "jobs must be greater than zero");
-        let mut out = Vec::new();
-        out.resize_with(reqs.len(), || None);
-        let mut misses = Vec::new();
-        let shared_context = reqs.first().and_then(|first| {
-            if let Some(cached) = crate::batch_context_seal::try_batch_context_seal(first) {
-                return Some(cached);
-            }
-            let context = rslip_request_context_fingerprint(first).ok()?;
-            let _ = crate::batch_context_seal::write_batch_context_seal(first, &context);
-            Some(context)
+        let (mut out, misses) = prepare_rslip_batch_slots(reqs);
+        let cache_misses = misses.len();
+        on_progress(RslipBatchProgress::Prepared {
+            cache_hits: out.iter().filter(|slot| slot.is_some()).count(),
+            cache_misses,
         });
-
-        for (index, req) in reqs.into_iter().enumerate() {
-            match prepare_rslip_cache_candidate(index, req, shared_context.as_deref()) {
-                Ok(candidate) => {
-                    if !candidate.req.force_rerun
-                        && let Some(entry) = load_rslip_cache_entry(
-                            &candidate.req.cache_root,
-                            &candidate.fingerprint,
-                        )
-                    {
-                        out[index] = Some(Ok(rslip_outcome_from_cache(entry)));
-                    } else {
-                        misses.push(candidate);
-                    }
-                }
-                Err(err) => out[index] = Some(Err(err)),
-            }
-        }
-
-        // Coalesce duplicates, then lock/run in FD-bounded chunks (avoids EMFILE).
-        let mut groups = coalesce_rslip_miss_candidates(misses);
-        let chunk_size = rslip_entry_lock_chunk_size(jobs);
-        while !groups.is_empty() {
-            let take = chunk_size.min(groups.len());
-            let chunk: Vec<_> = groups.drain(..take).collect();
-            let LockedRslipMisses {
-                misses: runner_misses,
-                _guards: _entry_guards,
-            } = prepare_rslip_misses(chunk, &mut out);
-            if runner_misses.is_empty() {
-                continue;
-            }
-            let runner_reqs: Vec<_> = runner_misses
-                .iter()
-                .map(|miss| miss.runner_req.clone())
-                .collect();
-            let runner_outcomes = self.runner.run_many_bounded(runner_reqs, jobs);
-
-            for (miss, result) in runner_misses.into_iter().zip(runner_outcomes) {
-                for (index, result) in handle_rslip_miss_result(miss, result) {
-                    out[index] = Some(result);
-                }
-            }
-        }
-
+        run_rslip_miss_chunks(self, misses, cache_misses, jobs, &mut out, &mut on_progress);
         finalize_rslip_batch_results(out)
+    }
+}
+
+fn shared_batch_context(reqs: &[RslipRequest]) -> Option<String> {
+    reqs.first().and_then(|first| {
+        if let Some(cached) = crate::batch_context_seal::try_batch_context_seal(first) {
+            return Some(cached);
+        }
+        let context = rslip_request_context_fingerprint(first).ok()?;
+        let _ = crate::batch_context_seal::write_batch_context_seal(first, &context);
+        Some(context)
+    })
+}
+
+fn prepare_rslip_batch_slots(
+    reqs: Vec<RslipRequest>,
+) -> (
+    Vec<Option<Result<RslipOutcome, RslipError>>>,
+    Vec<RslipCacheCandidate>,
+) {
+    let mut out = Vec::new();
+    out.resize_with(reqs.len(), || None);
+    let mut misses = Vec::new();
+    let shared_context = shared_batch_context(&reqs);
+    for (index, req) in reqs.into_iter().enumerate() {
+        match prepare_rslip_cache_candidate(index, req, shared_context.as_deref()) {
+            Ok(candidate) => {
+                if !candidate.req.force_rerun
+                    && let Some(entry) =
+                        load_rslip_cache_entry(&candidate.req.cache_root, &candidate.fingerprint)
+                {
+                    out[index] = Some(Ok(rslip_outcome_from_cache(entry)));
+                } else {
+                    misses.push(candidate);
+                }
+            }
+            Err(err) => out[index] = Some(Err(err)),
+        }
+    }
+    (out, misses)
+}
+
+fn run_rslip_miss_chunks(
+    rslip: &Rslip,
+    misses: Vec<RslipCacheCandidate>,
+    mut remaining_misses: usize,
+    jobs: usize,
+    out: &mut [Option<Result<RslipOutcome, RslipError>>],
+    on_progress: &mut impl FnMut(RslipBatchProgress),
+) {
+    // Coalesce duplicates, then lock/run in FD-bounded chunks (avoids EMFILE).
+    let mut groups = coalesce_rslip_miss_candidates(misses);
+    let chunk_size = rslip_entry_lock_chunk_size(jobs);
+    while !groups.is_empty() {
+        let take = chunk_size.min(groups.len());
+        let chunk: Vec<_> = groups.drain(..take).collect();
+        let LockedRslipMisses {
+            misses: runner_misses,
+            _guards: _entry_guards,
+        } = prepare_rslip_misses(chunk, out);
+        if runner_misses.is_empty() {
+            continue;
+        }
+        let runner_reqs: Vec<_> = runner_misses
+            .iter()
+            .map(|miss| miss.runner_req.clone())
+            .collect();
+        let runner_outcomes = rslip.runner.run_many_bounded(runner_reqs, jobs);
+        for (miss, result) in runner_misses.into_iter().zip(runner_outcomes) {
+            let resolved = miss.indices.len();
+            for (index, result) in handle_rslip_miss_result(miss, result) {
+                out[index] = Some(result);
+            }
+            remaining_misses = remaining_misses.saturating_sub(resolved);
+            on_progress(RslipBatchProgress::Resolved { remaining_misses });
+        }
     }
 }
 
@@ -261,8 +306,33 @@ fn handle_rslip_miss_result_once(
     miss: &RslipMiss,
     result: Result<PytestRunOutcome, PytestRunError>,
 ) -> Result<RslipOutcome, RslipError> {
-    let outcome = result?;
-    let coverage = rslip_coverage_from_outcome(&outcome)?;
+    let outcome = match result {
+        Ok(outcome) => outcome,
+        // Timeouts are recorded as failed outcomes (empty coverage) so a large
+        // population can finish instead of hanging forever on one stuck test.
+        Err(PytestRunError::Timeout(timeout)) => {
+            return store_failed_miss_outcome(
+                miss,
+                timeout,
+                124,
+                format!("rslip: pytest timed out after {timeout:?}\n"),
+            );
+        }
+        Err(err) => return Err(RslipError::Runner(err)),
+    };
+    let coverage = match rslip_coverage_from_outcome(&outcome) {
+        Ok(coverage) => coverage,
+        // Missing coverage must not abort a multi-thousand-selector population.
+        Err(RslipError::MissingArtifact(name)) => {
+            return store_failed_miss_outcome(
+                miss,
+                outcome.duration,
+                outcome.exit_code.unwrap_or(1),
+                format!("rslip: missing coverage artifact {name}\n"),
+            );
+        }
+        Err(err) => return Err(err),
+    };
     let rslip_outcome = RslipOutcome {
         nodeid: outcome.nodeid,
         status: outcome.status,
@@ -272,6 +342,32 @@ fn handle_rslip_miss_result_once(
         cache_status: CacheStatus::MissStored,
         stdout: Some(outcome.stdout),
         stderr: Some(outcome.stderr),
+    };
+    store_rslip_cache_entry(
+        &miss.req.cache_root,
+        &miss.fingerprint,
+        &RslipCacheEntry::from(&rslip_outcome),
+    )?;
+    Ok(rslip_outcome)
+}
+
+fn store_failed_miss_outcome(
+    miss: &RslipMiss,
+    duration: std::time::Duration,
+    exit_code: i32,
+    stderr: String,
+) -> Result<RslipOutcome, RslipError> {
+    let rslip_outcome = RslipOutcome {
+        nodeid: miss.req.nodeid.clone(),
+        status: rpytest_runner::TestStatus::Failed,
+        exit_code: Some(exit_code),
+        duration,
+        coverage: crate::LineCoverage {
+            files: std::collections::BTreeMap::new(),
+        },
+        cache_status: CacheStatus::MissStored,
+        stdout: None,
+        stderr: Some(stderr.into_bytes()),
     };
     store_rslip_cache_entry(
         &miss.req.cache_root,
@@ -312,58 +408,5 @@ fn clone_pytest_error(err: &PytestRunError) -> PytestRunError {
         },
         PytestRunError::Timeout(timeout) => PytestRunError::Timeout(*timeout),
         PytestRunError::WorkerPanic => PytestRunError::WorkerPanic,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rpytest_runner::RequestedArtifact;
-    use std::collections::BTreeMap;
-    use std::path::PathBuf;
-
-    #[test]
-    fn rslip_cache_candidate_and_miss_store_batch_fields() {
-        let tmp = tempfile::tempdir().unwrap();
-        let req = crate::rslip_sample_request(tmp.path());
-        let runner_req = PytestRunRequest {
-            nodeid: req.nodeid.clone(),
-            cwd: req.cwd.clone(),
-            python: req.python.clone(),
-            pytest_args: req.pytest_args.clone(),
-            env: BTreeMap::new(),
-            child_preload_modules: Vec::new(),
-            artifacts: vec![RequestedArtifact {
-                name: "coverage".to_string(),
-                path: PathBuf::from("coverage.json"),
-            }],
-            timeout: None,
-        };
-
-        let candidate = RslipCacheCandidate {
-            index: 3,
-            req: req.clone(),
-            fingerprint: "abc".to_string(),
-            canonical_cache_root: req.cache_root.clone(),
-        };
-        let miss = RslipMiss {
-            indices: vec![candidate.index],
-            req: candidate.req,
-            fingerprint: candidate.fingerprint,
-            runner_req,
-        };
-
-        assert_eq!(miss.indices, vec![3]);
-        assert_eq!(miss.req.nodeid, req.nodeid);
-        assert_eq!(miss.fingerprint, "abc");
-        assert_eq!(miss.runner_req.artifacts[0].name, "coverage");
-    }
-
-    #[test]
-    fn locked_rslip_misses_and_candidate_group_types_are_test_referenced() {
-        assert!(std::any::type_name::<LockedRslipMisses>().contains("LockedRslipMisses"));
-        assert!(
-            std::any::type_name::<RslipCacheCandidateGroup>().contains("RslipCacheCandidateGroup")
-        );
     }
 }

@@ -192,13 +192,14 @@ pub(super) fn run_rslip_selectors_for_module(
     if selectors.is_empty() {
         return Ok(SelectorExecutionSummary::default());
     }
-    let force_rerun =
-        ctx.options.force_rerun || !ctx.planned.python_prior_failure_selectors.is_empty();
+    // Force-rerun only the CLI --force flag and recorded prior failures — never the
+    // entire population — otherwise one failed selector invalidates all cache hits.
     runners::run_rslip_selectors(
         &ctx.planned.repo_root,
         selectors,
         ctx.options.python_extra,
-        force_rerun,
+        ctx.options.force_rerun,
+        &ctx.planned.python_prior_failure_selectors,
         ctx.options.jobs,
     )
 }

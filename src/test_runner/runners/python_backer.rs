@@ -73,6 +73,20 @@ impl LanguagePlanner for PythonModule {
                 .map(|id| TestSelector::new(kiss::Language::Python, id))
                 .collect());
         }
+        // Mirror Rust: prefer the workspace selector cache before a full pytest
+        // collect. Warm `kiss test .` already planned from that cache; rediscovery
+        // must not re-spawn collection (sameq-scale suites hang for hours there).
+        if let Some((cached_py, _cached_rs)) =
+            crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
+                &self.repo_root,
+                &self.ignore,
+            )
+        {
+            return Ok(cached_py
+                .into_iter()
+                .map(|id| TestSelector::new(kiss::Language::Python, id))
+                .collect());
+        }
         Ok(
             enumerate_workspace_python_selectors(&self.repo_root, &self.ignore, &self.test_args)?
                 .into_iter()
@@ -204,7 +218,37 @@ pub(crate) fn select_fresh_python_source_selectors(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_runner::coverage_decision::LanguagePlanner;
+    use crate::test_runner::workspace_selector_cache::store_workspace_selectors;
+    use super::super::python_collect::{
+        full_suite_subprocess_collects_for_tests, reset_full_suite_subprocess_collects_for_tests,
+        reset_python_collect_memo_for_tests,
+    };
     use std::fs;
+
+    #[test]
+    fn discover_universe_uses_workspace_selector_cache_without_pytest_collect() {
+        reset_python_collect_memo_for_tests();
+        reset_full_suite_subprocess_collects_for_tests();
+        let tmp = tempfile::tempdir().unwrap();
+        let tests = tmp.path().join("tests");
+        fs::create_dir_all(&tests).unwrap();
+        fs::write(tests.join("test_app.py"), "def test_value():\n    assert True\n").unwrap();
+        let cached = vec![
+            "tests/test_app.py::test_value".to_string(),
+            "tests/test_other.py::test_cached_only".to_string(),
+        ];
+        store_workspace_selectors(tmp.path(), &[], &cached, &[]);
+        let before = full_suite_subprocess_collects_for_tests();
+        let module = PythonModule::for_execution(tmp.path(), &[]);
+        let discovered: Vec<String> = LanguagePlanner::discover_universe(&module)
+            .unwrap()
+            .into_iter()
+            .map(|selector| selector.id)
+            .collect();
+        assert_eq!(discovered, cached);
+        assert_eq!(full_suite_subprocess_collects_for_tests(), before);
+    }
 
     #[test]
     #[allow(non_snake_case)]
@@ -291,7 +335,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let app = tmp.path().join("app.py");
         fs::write(&app, "def alpha():\n    return 'alpha'\n").unwrap();
-        let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", "/recorded/path");
+        let root = tmp.path().canonicalize().unwrap();
+        let recorded = format!("{}:recorded", root.display());
+        let changed = format!("{}:changed", root.display());
+        let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", &recorded);
         write_python_population_manifest_for_args(
             tmp.path(),
             &["tests/test_app.py::test_alpha".to_string()],
@@ -344,7 +391,7 @@ mod tests {
             CoverageFreshness::Fresh
         );
         drop(_pythonpath);
-        let _pythonpath_b = TestEnvVarGuard::set("PYTHONPATH", "/changed/path");
+        let _pythonpath_b = TestEnvVarGuard::set("PYTHONPATH", &changed);
         assert_eq!(
             module.freshness(&universe).unwrap(),
             CoverageFreshness::Stale

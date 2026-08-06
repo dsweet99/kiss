@@ -69,10 +69,10 @@ pub(super) fn execute_language_phase(
     };
     let phase_duration = started.elapsed();
     let mut index_rebuild_duration = std::time::Duration::ZERO;
-    if matches!(phase, ExecutionPhase::Population(_))
-        && summary.exit_code == 0
-        && let ExecutionPhase::Population(selectors) = phase
-    {
+    // Publish population derived state even when some selectors failed/timed out.
+    // Otherwise a few hung/failing tests force every later `kiss test .` to re-run
+    // the full population (hours on sameq-scale suites).
+    if let ExecutionPhase::Population(selectors) = phase {
         let index_started = Instant::now();
         module.write_manifest(selectors, ctx)?;
         index_rebuild_duration = index_started.elapsed();
@@ -106,8 +106,7 @@ fn emit_execute_phase_progress(module: &dyn LanguageTestModule, phase: &Executio
 
 fn should_rebuild_index(phase: &ExecutionPhase, summary: &SelectorExecutionSummary) -> bool {
     match phase {
-        ExecutionPhase::NoWork => false,
-        ExecutionPhase::Population(_) => summary.exit_code == 0,
+        ExecutionPhase::NoWork | ExecutionPhase::Population(_) => false,
         // Cache hits do not change coverage maps; rebuild only after fresh runs.
         ExecutionPhase::Selective(_) => summary.cache_misses > 0 || summary.cache_unstored > 0,
     }

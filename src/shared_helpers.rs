@@ -16,6 +16,40 @@ pub fn env_map_from_allowlist(keys: &[&str]) -> BTreeMap<String, String> {
         .collect()
 }
 
+/// PYTHONPATH for Python coverage/cache identity.
+///
+/// When unset, empty, or pointing at paths that do not include this repo root,
+/// defaults to the canonical repo root. Otherwise a shell that exported another
+/// project's PYTHONPATH (common when driving `kiss test` from a different tree)
+/// would invalidate warm populations and re-run thousands of selectors.
+pub fn pythonpath_for_coverage_identity(repo_root: &Path) -> String {
+    let root = repo_root
+        .canonicalize()
+        .unwrap_or_else(|_| repo_root.to_path_buf());
+    let root_s = root.to_string_lossy().into_owned();
+    match std::env::var("PYTHONPATH") {
+        Ok(value) if !value.is_empty() && pythonpath_contains_repo_root(&value, &root) => value,
+        _ => root_s,
+    }
+}
+
+fn pythonpath_contains_repo_root(pythonpath: &str, root: &Path) -> bool {
+    std::env::split_paths(pythonpath).any(|part| {
+        if part == root {
+            return true;
+        }
+        part.canonicalize().is_ok_and(|canon| canon == root)
+    })
+}
+
+/// Coverage-identity env map for Python (`PYTHONPATH` only, normalized).
+pub fn python_coverage_env_map(repo_root: &Path) -> BTreeMap<String, String> {
+    BTreeMap::from([(
+        "PYTHONPATH".to_string(),
+        pythonpath_for_coverage_identity(repo_root),
+    )])
+}
+
 /// Sorted `entries/*.json` paths under a coverage/cache root.
 pub fn json_entry_paths(cache_root: &Path) -> Vec<PathBuf> {
     let entries_dir = cache_root.join("entries");

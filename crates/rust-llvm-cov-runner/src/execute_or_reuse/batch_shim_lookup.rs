@@ -11,12 +11,12 @@ pub(crate) fn resolve_shim_metadata<'a>(
     if let Some(item) = metadata_by_full_name.get(test_full_name) {
         return Ok(*item);
     }
-    let Some((_, test_name)) = test_full_name.rsplit_once('$') else {
+    let Some((binary_id, test_name)) = test_full_name.rsplit_once('$') else {
         return Err(RustLlvmCovError::InvalidRequest(format!(
             "missing target-runner metadata for test instance `{test_full_name}`"
         )));
     };
-    let matches: Vec<_> = shim_metadata
+    let suffix_matches: Vec<_> = shim_metadata
         .iter()
         .filter(|item| {
             item.full_name
@@ -24,15 +24,48 @@ pub(crate) fn resolve_shim_metadata<'a>(
                 .is_some_and(|(_, name)| name == test_name)
         })
         .collect();
-    match matches.len() {
+    match suffix_matches.len() {
         0 => Err(RustLlvmCovError::InvalidRequest(format!(
             "missing target-runner metadata for test instance `{test_full_name}`"
         ))),
-        1 => Ok(matches[0]),
-        _ => Err(RustLlvmCovError::InvalidRequest(format!(
-            "ambiguous target-runner metadata for test instance `{test_full_name}`"
-        ))),
+        1 => Ok(suffix_matches[0]),
+        _ => {
+            let compatible: Vec<_> = suffix_matches
+                .into_iter()
+                .filter(|item| {
+                    item.full_name
+                        .rsplit_once('$')
+                        .is_some_and(|(shim_bin, _)| binary_ids_compatible(binary_id, shim_bin))
+                })
+                .collect();
+            match compatible.len() {
+                1 => Ok(compatible[0]),
+                0 => Err(RustLlvmCovError::InvalidRequest(format!(
+                    "missing target-runner metadata for test instance `{test_full_name}`"
+                ))),
+                _ => Err(RustLlvmCovError::InvalidRequest(format!(
+                    "ambiguous target-runner metadata for test instance `{test_full_name}`"
+                ))),
+            }
+        }
     }
+}
+
+fn binary_ids_compatible(expected: &str, shim_binary: &str) -> bool {
+    if expected == shim_binary {
+        return true;
+    }
+    let leaf = expected.rsplit("::").next().unwrap_or(expected);
+    if shim_binary == leaf {
+        return true;
+    }
+    if shim_binary.rsplit("::").next() == Some(leaf) {
+        return true;
+    }
+    // Cargo test artifact stems look like `leaf-<hash>`.
+    shim_binary
+        .strip_prefix(leaf)
+        .is_some_and(|rest| rest.starts_with('-') && rest.len() > 1)
 }
 
 #[cfg(test)]
@@ -100,9 +133,39 @@ mod tests {
             resolve_shim_metadata(&by_full_name, &missing_items, "old-bin$case").unwrap_err();
         assert!(format!("{missing:?}").contains("missing target-runner metadata"));
 
-        let ambiguous_items = vec![shim("bin-a$case"), shim("bin-b$case")];
-        let ambiguous =
-            resolve_shim_metadata(&by_full_name, &ambiguous_items, "old-bin$case").unwrap_err();
+        // Same leaf, two hashed stems: still ambiguous after binary filtering.
+        let ambiguous_items = vec![
+            shim("aclick_usage-aaa$case"),
+            shim("aclick_usage-bbb$case"),
+        ];
+        let ambiguous = resolve_shim_metadata(
+            &by_full_name,
+            &ambiguous_items,
+            "sameq_style::aclick_usage$case",
+        )
+        .unwrap_err();
         assert!(format!("{ambiguous:?}").contains("ambiguous target-runner metadata"));
+
+        // Unrelated binary stems with a shared test suffix → missing (not ambiguous).
+        let unrelated = vec![shim("bin-a$case"), shim("bin-b$case")];
+        let missing_compat =
+            resolve_shim_metadata(&by_full_name, &unrelated, "old-bin$case").unwrap_err();
+        assert!(format!("{missing_compat:?}").contains("missing target-runner metadata"));
+    }
+
+    #[test]
+    fn disambiguates_shared_test_names_via_hashed_binary_stem() {
+        let items = vec![
+            shim("aclick_usage-abc123$kiss_bare_rule_api"),
+            shim("comment_tags-def456$kiss_bare_rule_api"),
+        ];
+        let by_full_name = BTreeMap::new();
+        let resolved = resolve_shim_metadata(
+            &by_full_name,
+            &items,
+            "sameq_style::aclick_usage$kiss_bare_rule_api",
+        )
+        .unwrap();
+        assert_eq!(resolved.full_name, "aclick_usage-abc123$kiss_bare_rule_api");
     }
 }

@@ -321,3 +321,44 @@ fn target_runner_shim_returns_one_for_malformed_runner_map() {
 
     assert_eq!(code, 1);
 }
+
+#[test]
+fn target_runner_shim_prefers_nextest_ids_over_exact_file_stem() {
+    let _env_guard = shim_test_env_lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let output = tmp.path().join("instances");
+    let runner_map = tmp.path().join("runner-map.json");
+    fs::write(&runner_map, b"{\"x86_64-unknown-linux-gnu\":[]}").unwrap();
+    // Non-.sh path so nextest env applies; hashed stem mimics cargo artifacts.
+    let binary = tmp.path().join("aclick_usage-abc123def");
+    fs::write(&binary, "#!/bin/sh\nexit 0\n").unwrap();
+    make_executable(&binary);
+    unsafe {
+        std::env::set_var("NEXTEST_TEST_PHASE", "run");
+        std::env::set_var("NEXTEST_BINARY_ID", "sameq_style::aclick_usage");
+        std::env::set_var("NEXTEST_TEST_NAME", "kiss_bare_rule_api");
+    }
+
+    let code = run_target_runner_shim(
+        &output,
+        &runner_map,
+        "x86_64-unknown-linux-gnu",
+        &[
+            binary.into_os_string(),
+            OsString::from("--exact"),
+            OsString::from("kiss_bare_rule_api"),
+        ],
+    );
+
+    assert_eq!(code, 0);
+    let metadata = shim_only_metadata(&output);
+    assert_eq!(
+        metadata.full_name,
+        "sameq_style::aclick_usage$kiss_bare_rule_api"
+    );
+    unsafe {
+        std::env::remove_var("NEXTEST_TEST_PHASE");
+        std::env::remove_var("NEXTEST_BINARY_ID");
+        std::env::remove_var("NEXTEST_TEST_NAME");
+    }
+}

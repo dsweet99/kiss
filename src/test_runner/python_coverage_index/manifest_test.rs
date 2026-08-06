@@ -44,15 +44,32 @@ fn python_manifest_rejects_v1_selector_discovery_version() {
 #[test]
 fn python_coverage_env_tracks_only_pythonpath() {
     let _lock = crate::cwd_test_lock::lock();
-    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", "src");
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let custom = format!("{}:extra", root.display());
+    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", &custom);
     let _hashseed = TestEnvVarGuard::set("PYTHONHASHSEED", "123");
     let _dontwrite = TestEnvVarGuard::set("PYTHONDONTWRITEBYTECODE", "1");
 
-    let env = relevant_python_coverage_env(PYTHON_COVERAGE_ENV_KEYS);
+    let env = relevant_python_coverage_env(tmp.path(), PYTHON_COVERAGE_ENV_KEYS);
 
     assert_eq!(
         env,
-        BTreeMap::from([("PYTHONPATH".to_string(), "src".to_string())])
+        BTreeMap::from([("PYTHONPATH".to_string(), custom)])
+    );
+}
+
+#[test]
+fn python_coverage_env_defaults_unset_pythonpath_to_repo_root() {
+    let _lock = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    unsafe { std::env::remove_var("PYTHONPATH") };
+
+    let env = relevant_python_coverage_env(tmp.path(), PYTHON_COVERAGE_ENV_KEYS);
+    let expected = tmp.path().canonicalize().unwrap().to_string_lossy().into_owned();
+    assert_eq!(
+        env,
+        BTreeMap::from([("PYTHONPATH".to_string(), expected)])
     );
 }
 
@@ -61,7 +78,9 @@ fn python_population_environment_mismatch_reports_recorded_and_current_values() 
     let _lock = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     let selector = "tests/test_app.py::test_value".to_string();
-    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", "recorded");
+    let root = tmp.path().canonicalize().unwrap();
+    let recorded = format!("{}:recorded", root.display());
+    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", &recorded);
     let identity = current_python_population_manifest_identity_with_env_keys(
         tmp.path(),
         &[],
@@ -76,28 +95,41 @@ fn python_population_environment_mismatch_reports_recorded_and_current_values() 
     .unwrap();
     unsafe { std::env::remove_var("PYTHONPATH") };
 
+    let expected_current = root.to_string_lossy().into_owned();
     assert_eq!(
         python_population_environment_mismatch(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS),
         Some((
-            BTreeMap::from([("PYTHONPATH".to_string(), "recorded".to_string())]),
-            BTreeMap::new(),
+            BTreeMap::from([("PYTHONPATH".to_string(), recorded)]),
+            BTreeMap::from([("PYTHONPATH".to_string(), expected_current)]),
         ))
     );
 }
 
 #[test]
-fn python_manifest_current_with_env_keys_uses_supplied_allowlist() {
+fn python_manifest_current_always_normalizes_pythonpath_regardless_of_allowlist() {
     let _lock = crate::cwd_test_lock::lock();
-    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", "src");
     let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let custom = format!("{}:src", root.display());
+    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", &custom);
     std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
     let selector = "tests/test_app.py::test_value".to_string();
-    let identity =
+    // Empty allowlist and PYTHON_COVERAGE_ENV_KEYS must agree: PYTHONPATH is
+    // always normalized into coverage identity (see python_coverage_env_map).
+    let identity_empty =
         current_python_population_manifest_identity_with_env_keys(tmp.path(), &[], &[]).unwrap();
+    let identity_keys = current_python_population_manifest_identity_with_env_keys(
+        tmp.path(),
+        &[],
+        PYTHON_COVERAGE_ENV_KEYS,
+    )
+    .unwrap();
+    assert_eq!(identity_empty.env, identity_keys.env);
+    assert_eq!(identity_empty.env.get("PYTHONPATH"), Some(&custom));
     write_python_population_manifest_with_identity(
         tmp.path(),
         std::slice::from_ref(&selector),
-        &identity,
+        &identity_empty,
     )
     .unwrap();
 
@@ -110,12 +142,30 @@ fn python_manifest_current_with_env_keys_uses_supplied_allowlist() {
         )
     );
     assert!(
-        !python_population_manifest_is_current_for_args_with_env_keys(
+        python_population_manifest_is_current_for_args_with_env_keys(
             tmp.path(),
             std::slice::from_ref(&selector),
             &[],
             PYTHON_COVERAGE_ENV_KEYS,
         )
+    );
+}
+
+#[test]
+fn pythonpath_from_another_project_defaults_to_repo_root() {
+    let _lock = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", "/home/dsweet/Projects/kiss");
+    let env = relevant_python_coverage_env(tmp.path(), PYTHON_COVERAGE_ENV_KEYS);
+    let expected = tmp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(
+        env,
+        BTreeMap::from([("PYTHONPATH".to_string(), expected)])
     );
 }
 

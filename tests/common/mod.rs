@@ -76,7 +76,7 @@ pub fn seed_python_runtime_coverage(repo: &Path, entries: &[PythonRuntimeCoverag
     );
     let pytest_version =
         python_command_output(&repo, &["-c", "import pytest; print(pytest.__version__)"]);
-    let env = relevant_python_env();
+    let env = relevant_python_env(&repo);
     let env_json = env
         .iter()
         .map(|(key, value)| (key.clone(), serde_json::Value::String(value.clone())))
@@ -95,6 +95,7 @@ pub fn seed_python_runtime_coverage(repo: &Path, entries: &[PythonRuntimeCoverag
             env: env.clone(),
             cache_root: cache_root.clone(),
             force_rerun: false,
+            timeout: None,
         };
         let fingerprint = rslip::cache_fingerprint_for_request(&req).unwrap();
         let files = coverage_files
@@ -279,8 +280,8 @@ fn python_command_output(repo: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
-fn relevant_python_env() -> BTreeMap<String, String> {
-    kiss::env_map_from_allowlist(&["PYTHONPATH"])
+fn relevant_python_env(repo: &Path) -> BTreeMap<String, String> {
+    kiss::python_coverage_env_map(repo)
 }
 
 pub fn parse_python_source(code: &str) -> ParsedFile {

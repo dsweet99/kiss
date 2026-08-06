@@ -10,6 +10,8 @@ mod cache;
 mod lock;
 mod runtime;
 
+pub use batch::RslipBatchProgress;
+
 #[cfg(test)]
 mod batch_error_test;
 #[cfg(test)]
@@ -18,6 +20,8 @@ mod batch_lock_chunk_test;
 mod batch_process_test;
 #[cfg(test)]
 mod batch_test;
+#[cfg(test)]
+mod batch_test_b;
 #[cfg(test)]
 mod cache_test;
 #[cfg(test)]
@@ -54,6 +58,8 @@ pub struct RslipRequest {
     pub env: BTreeMap<String, String>,
     pub cache_root: PathBuf,
     pub force_rerun: bool,
+    /// Per-test wall-clock limit for pytest execution. Not part of the cache key.
+    pub timeout: Option<Duration>,
 }
 
 #[cfg(test)]
@@ -286,7 +292,7 @@ fn build_pytest_runner_request(
             name: runtime::COVERAGE_ARTIFACT.to_string(),
             path: artifact_path.to_path_buf(),
         }],
-        timeout: None,
+        timeout: req.timeout,
     }
 }
 
@@ -295,7 +301,14 @@ fn rslip_coverage_from_outcome(outcome: &PytestRunOutcome) -> Result<LineCoverag
         .artifacts
         .get(runtime::COVERAGE_ARTIFACT)
         .ok_or_else(|| RslipError::MissingArtifact(runtime::COVERAGE_ARTIFACT.to_string()))?;
-    let bytes = fs::read(path)?;
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        // Pytest can exit before writing coverage (crash, collect error, early kill).
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            return Err(RslipError::MissingArtifact(runtime::COVERAGE_ARTIFACT.to_string()));
+        }
+        Err(err) => return Err(RslipError::Io(err)),
+    };
     Ok(serde_json::from_slice(&bytes)?)
 }
 
@@ -312,6 +325,7 @@ fn rslip_sample_request(root: &Path) -> RslipRequest {
         env: BTreeMap::new(),
         cache_root: root.join(".rslip_cache"),
         force_rerun: false,
+        timeout: None,
     }
 }
 
