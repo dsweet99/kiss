@@ -150,7 +150,7 @@ pub(crate) fn rslip_cache_fingerprint_from_context(
 
 /// Digest map for every digestable covered file path plus the test module when present.
 /// Returns `None` when coverage is empty or a digestable covered file is missing on disk.
-/// Synthetic / non-file coverage keys (`<frozen …>`, `.kiss/…`) are omitted from the map.
+/// Synthetic / non-file keys (`<frozen …>`, `.kiss/…`, `[type …]`) are omitted.
 pub(crate) fn covered_file_digests(
     source_root: &Path,
     nodeid: &str,
@@ -189,6 +189,10 @@ fn is_non_digestable_coverage_path(recorded: &str) -> bool {
     recorded.starts_with('<')
         || recorded.starts_with(".kiss/")
         || recorded.contains("rslip_runtime")
+        || Path::new(recorded)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("[type "))
 }
 
 fn digest_recorded_path(source_root: &Path, recorded: &str) -> Option<String> {

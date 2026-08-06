@@ -26,6 +26,8 @@ mod batch_test_b;
 #[cfg(test)]
 mod cache_test;
 #[cfg(test)]
+mod cache_cov_edges_test;
+#[cfg(test)]
 mod lock_test;
 
 use std::collections::{BTreeMap, BTreeSet};
