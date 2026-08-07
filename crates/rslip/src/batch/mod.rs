@@ -6,19 +6,20 @@ use std::path::{Path, PathBuf};
 use rpytest_runner::PytestRunRequest;
 
 use crate::cache::{
-    rslip_cache_fingerprint, rslip_cache_fingerprint_from_context,
-    rslip_request_context_fingerprint, rslip_unique_suffix,
+    DigestMemo, load_reusable_rslip_cache_entry_with_memo, rslip_cache_fingerprint,
+    rslip_cache_fingerprint_from_context, rslip_request_context_fingerprint, rslip_unique_suffix,
 };
 use crate::{
     Rslip, RslipError, RslipOutcome, RslipRequest, build_pytest_runner_request,
     rslip_outcome_from_cache, runtime, validate_rslip_request,
 };
-use crate::cache::load_reusable_rslip_cache_entry;
 
 mod finalize;
 mod lock_chunk;
 mod miss_run;
-use finalize::{clone_rslip_error, clone_rslip_result};
+mod warm_hit_seal;
+pub use warm_hit_seal::warm_hit_seal_exists;
+use finalize::clone_rslip_error;
 use miss_run::run_rslip_misses;
 
 pub(crate) struct RslipCacheCandidate {
@@ -53,6 +54,8 @@ pub enum RslipBatchProgress {
     SelectorFinalized {
         outcomes: Vec<(usize, Result<RslipOutcome, RslipError>)>,
     },
+    /// Preformatted cached status lines (warm-hit seal path).
+    CachedStatusDump { body: String },
     /// Miss-work heartbeat (`tests_remaining=`).
     TestsRemaining { remaining: usize },
 }
@@ -73,28 +76,153 @@ impl Rslip {
         mut on_progress: impl FnMut(RslipBatchProgress),
     ) -> Vec<Result<RslipOutcome, RslipError>> {
         assert!(jobs > 0, "jobs must be greater than zero");
-        let (mut out, misses) = prepare_rslip_batch_slots(reqs);
+        if let Some(sealed) = try_prepare_from_warm_hit_seal(&reqs) {
+            let cache_hits = sealed.len();
+            on_progress(RslipBatchProgress::Prepared {
+                cache_hits,
+                cache_misses: 0,
+            });
+            on_progress(RslipBatchProgress::CachedStatusDump {
+                body: format_cached_status_dump(&sealed),
+            });
+            let out: Vec<Option<Result<RslipOutcome, RslipError>>> =
+                sealed.into_iter().map(|outcome| Some(Ok(outcome))).collect();
+            return finalize_rslip_batch_results(out);
+        }
+        let context_fingerprint = shared_batch_context(&reqs);
+        let cache_root = reqs.first().map(|req| req.cache_root.clone());
+        let source_root = reqs.first().map(|req| req.source_root.clone());
+        let content_fingerprint = reqs
+            .first()
+            .and_then(|req| req.content_fingerprint.clone());
+        let (mut out, misses, digest_union) = prepare_rslip_batch_slots(reqs);
         let cache_misses = misses.len();
         on_progress(RslipBatchProgress::Prepared {
             cache_hits: out.iter().filter(|slot| slot.is_some()).count(),
             cache_misses,
         });
         emit_prepare_resolved_progress(&out, &mut on_progress);
+        if cache_misses == 0 {
+            if let (Some(context), Some(cache_root), Some(source_root)) =
+                (context_fingerprint.as_deref(), cache_root, source_root)
+            {
+                maybe_write_warm_hit_seal_from_hits(
+                    cache_root,
+                    source_root,
+                    context,
+                    &out,
+                    digest_union,
+                    content_fingerprint,
+                );
+            }
+            return finalize_rslip_batch_results(out);
+        }
         run_rslip_misses(self, misses, cache_misses, jobs, &mut out, &mut on_progress);
         finalize_rslip_batch_results(out)
     }
+}
+
+fn format_cached_status_dump(outcomes: &[RslipOutcome]) -> String {
+    let mut body = String::with_capacity(outcomes.len().saturating_mul(48));
+    for outcome in outcomes {
+        match outcome.status {
+            rpytest_runner::TestStatus::Passed => {
+                body.push_str("PASSED (cached): ");
+                body.push_str(&outcome.nodeid);
+                body.push('\n');
+            }
+            rpytest_runner::TestStatus::Failed => {
+                body.push_str("FAILED (cached): ");
+                body.push_str(&outcome.nodeid);
+                body.push('\n');
+            }
+        }
+    }
+    body
+}
+
+fn try_prepare_from_warm_hit_seal(reqs: &[RslipRequest]) -> Option<Vec<RslipOutcome>> {
+    let context = shared_batch_context(reqs)?;
+    warm_hit_seal::try_warm_hit_seal(reqs, &context)
+}
+
+fn maybe_write_warm_hit_seal_from_hits(
+    cache_root: PathBuf,
+    source_root: PathBuf,
+    context_fingerprint: &str,
+    out: &[Option<Result<RslipOutcome, RslipError>>],
+    digest_union: BTreeMap<String, String>,
+    content_fingerprint: Option<String>,
+) {
+    if digest_union.is_empty() {
+        return;
+    }
+    let mut nodeids = Vec::with_capacity(out.len());
+    let mut outcomes = Vec::with_capacity(out.len());
+    for slot in out {
+        let Some(Ok(outcome)) = slot else {
+            return;
+        };
+        if outcome.cache_status != crate::CacheStatus::Hit {
+            return;
+        }
+        nodeids.push(outcome.nodeid.clone());
+        outcomes.push(RslipOutcome {
+            nodeid: outcome.nodeid.clone(),
+            status: outcome.status,
+            exit_code: outcome.exit_code,
+            duration: outcome.duration,
+            coverage: crate::LineCoverage {
+                files: BTreeMap::new(),
+            },
+            cache_status: outcome.cache_status,
+            stdout: None,
+            stderr: None,
+        });
+    }
+    let _ = warm_hit_seal::write_warm_hit_seal(
+        &cache_root,
+        &source_root,
+        context_fingerprint,
+        &nodeids,
+        &outcomes,
+        digest_union,
+        content_fingerprint,
+    );
 }
 
 fn emit_prepare_resolved_progress(
     out: &[Option<Result<RslipOutcome, RslipError>>],
     on_progress: &mut impl FnMut(RslipBatchProgress),
 ) {
-    for (index, slot) in out.iter().enumerate() {
-        if let Some(result) = slot {
-            on_progress(RslipBatchProgress::SelectorFinalized {
-                outcomes: vec![(index, clone_rslip_result(result))],
-            });
-        }
+    // One batched progress event avoids 14k deep clones of coverage maps.
+    let outcomes = out
+        .iter()
+        .enumerate()
+        .filter_map(|(index, slot)| slot.as_ref().map(|result| (index, thin_rslip_result(result))))
+        .collect::<Vec<_>>();
+    if !outcomes.is_empty() {
+        on_progress(RslipBatchProgress::SelectorFinalized { outcomes });
+    }
+}
+
+fn thin_rslip_result(
+    result: &Result<RslipOutcome, RslipError>,
+) -> Result<RslipOutcome, RslipError> {
+    match result {
+        Ok(outcome) => Ok(RslipOutcome {
+            nodeid: outcome.nodeid.clone(),
+            status: outcome.status,
+            exit_code: outcome.exit_code,
+            duration: outcome.duration,
+            coverage: crate::LineCoverage {
+                files: BTreeMap::new(),
+            },
+            cache_status: outcome.cache_status,
+            stdout: None,
+            stderr: outcome.stderr.clone(),
+        }),
+        Err(err) => Err(clone_rslip_error(err)),
     }
 }
 
@@ -104,26 +232,42 @@ fn shared_batch_context(reqs: &[RslipRequest]) -> Option<String> {
         .and_then(|first| rslip_request_context_fingerprint(first).ok())
 }
 
-fn prepare_rslip_batch_slots(
-    reqs: Vec<RslipRequest>,
-) -> (
+type PreparedBatchSlots = (
     Vec<Option<Result<RslipOutcome, RslipError>>>,
     Vec<RslipCacheCandidate>,
-) {
+    BTreeMap<String, String>,
+);
+
+fn prepare_rslip_batch_slots(reqs: Vec<RslipRequest>) -> PreparedBatchSlots {
     let mut out = Vec::new();
     out.resize_with(reqs.len(), || None);
     let mut misses = Vec::new();
+    let mut digest_memo = DigestMemo::new();
+    let mut digest_union = BTreeMap::new();
     let shared_context = shared_batch_context(&reqs);
+    let shared_canonical_cache_root = reqs.first().and_then(|req| {
+        let _ = fs::create_dir_all(&req.cache_root);
+        req.cache_root.canonicalize().ok()
+    });
     for (index, req) in reqs.into_iter().enumerate() {
-        match prepare_rslip_cache_candidate(index, req, shared_context.as_deref()) {
+        match prepare_rslip_cache_candidate(
+            index,
+            req,
+            shared_context.as_deref(),
+            shared_canonical_cache_root.as_deref(),
+        ) {
             Ok(candidate) => {
                 if !candidate.req.force_rerun
-                    && let Some(entry) = load_reusable_rslip_cache_entry(
+                    && let Some(entry) = load_reusable_rslip_cache_entry_with_memo(
                         &candidate.req.cache_root,
                         &candidate.fingerprint,
                         &candidate.req.source_root,
+                        &mut digest_memo,
                     )
                 {
+                    for (path, digest) in &entry.covered_digests {
+                        digest_union.insert(path.clone(), digest.clone());
+                    }
                     out[index] = Some(Ok(rslip_outcome_from_cache(entry)));
                 } else {
                     misses.push(candidate);
@@ -132,17 +276,22 @@ fn prepare_rslip_batch_slots(
             Err(err) => out[index] = Some(Err(err)),
         }
     }
-    (out, misses)
+    (out, misses, digest_union)
 }
 
 fn prepare_rslip_cache_candidate(
     index: usize,
     req: RslipRequest,
     shared_context: Option<&str>,
+    shared_canonical_cache_root: Option<&Path>,
 ) -> Result<RslipCacheCandidate, RslipError> {
     validate_rslip_request(&req)?;
-    fs::create_dir_all(&req.cache_root)?;
-    let canonical_cache_root = req.cache_root.canonicalize()?;
+    let canonical_cache_root = if let Some(shared) = shared_canonical_cache_root {
+        shared.to_path_buf()
+    } else {
+        fs::create_dir_all(&req.cache_root)?;
+        req.cache_root.canonicalize()?
+    };
     let fingerprint = match shared_context {
         Some(context) => rslip_cache_fingerprint_from_context(context, &req.nodeid),
         None => rslip_cache_fingerprint(&req)?,

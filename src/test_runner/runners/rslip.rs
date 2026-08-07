@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use rpytest_runner::PytestRunner;
@@ -20,14 +21,18 @@ pub(crate) fn run_rslip_selectors(
     force_rerun: bool,
     force_rerun_selectors: &[String],
     jobs: usize,
+    content_fingerprint: Option<String>,
 ) -> Result<SelectorExecutionSummary, String> {
     run_rslip_selectors_with_runner(
-        repo_root,
-        selectors,
-        extra,
-        force_rerun,
-        force_rerun_selectors,
-        jobs,
+        RslipBatchArgs {
+            repo_root,
+            selectors,
+            extra,
+            force_rerun,
+            force_rerun_selectors,
+            jobs,
+            content_fingerprint,
+        },
         selected_rslip_pytest_runner(),
     )
 }
@@ -37,73 +42,57 @@ pub(crate) fn run_rslip_selectors(
 /// hung webtester/network tests from blocking `kiss test .` for hours.
 pub(crate) const DEFAULT_PYTEST_TIMEOUT: Duration = Duration::from_secs(180);
 
-fn run_rslip_selectors_with_runner(
-    repo_root: &Path,
-    selectors: &[String],
-    extra: &[String],
+struct RslipBatchArgs<'a> {
+    repo_root: &'a Path,
+    selectors: &'a [String],
+    extra: &'a [String],
     force_rerun: bool,
-    force_rerun_selectors: &[String],
+    force_rerun_selectors: &'a [String],
     jobs: usize,
+    content_fingerprint: Option<String>,
+}
+
+fn run_rslip_selectors_with_runner(
+    args: RslipBatchArgs<'_>,
     runner: PytestRunner,
 ) -> Result<SelectorExecutionSummary, String> {
-    assert!(jobs > 0, "jobs must be greater than zero");
-    let (python_version, pytest_version) = detect_rslip_versions(repo_root)?;
-    let identity = python_last_status_identity(&python_version, &pytest_version, extra);
-    let force_set: BTreeSet<&str> = force_rerun_selectors
+    assert!(args.jobs > 0, "jobs must be greater than zero");
+    let (python_version, pytest_version) = detect_rslip_versions(args.repo_root)?;
+    let identity = python_last_status_identity(&python_version, &pytest_version, args.extra);
+    let force_set: BTreeSet<&str> = args
+        .force_rerun_selectors
         .iter()
         .map(|selector| selector.as_str())
         .collect();
-    let reqs: Vec<_> = selectors
+    // Build shared request fields once; only nodeid / force_rerun vary per selector.
+    let mut template = rslip_request_from_parts(
+        args.repo_root,
+        "",
+        args.extra,
+        &python_version,
+        &pytest_version,
+        false,
+    )?;
+    template.content_fingerprint = args.content_fingerprint;
+    let reqs: Vec<_> = args
+        .selectors
         .iter()
         .map(|selector| {
-            rslip_request_from_parts(
-                repo_root,
-                selector,
-                extra,
-                &python_version,
-                &pytest_version,
-                force_rerun || force_set.contains(selector.as_str()),
-            )
+            let mut req = template.clone();
+            req.nodeid = selector.clone();
+            req.force_rerun = args.force_rerun || force_set.contains(selector.as_str());
+            req
         })
-        .collect::<Result<_, _>>()?;
+        .collect();
     let rslip = Rslip::new(runner);
     let mut summary = SelectorExecutionSummary::default();
     let mut statuses = Vec::new();
-    let results = rslip.run_or_reuse_many_bounded_with_progress(reqs, jobs, |event| match event {
-        RslipBatchProgress::Prepared {
-            cache_hits,
-            cache_misses,
-        } => {
-            crate::test_runner::emit_test_progress(&format!(
-                "kiss test: rslip prepared hits={cache_hits} misses={cache_misses}"
-            ));
-        }
-        RslipBatchProgress::SelectorFinalized { outcomes } => {
-            for (index, result) in outcomes {
-                match result {
-                    Ok(outcome) => {
-                        print_rslip_outcome(&outcome);
-                        let _ = std::io::Write::flush(&mut std::io::stdout());
-                    }
-                    Err(err) => {
-                        let selector = selectors
-                            .get(index)
-                            .map(String::as_str)
-                            .unwrap_or("<unknown>");
-                        println!("FAILED: {selector} (rslip error)");
-                        eprintln!("{}", format_rslip_error(err));
-                        let _ = std::io::Write::flush(&mut std::io::stdout());
-                    }
-                }
-            }
-        }
-        RslipBatchProgress::TestsRemaining { remaining } => {
-            crate::test_runner::emit_test_progress(&format!(
-                "kiss test: tests_remaining={remaining}"
-            ));
-        }
+    let mut stdout = std::io::BufWriter::new(std::io::stdout());
+    let results = rslip.run_or_reuse_many_bounded_with_progress(reqs, args.jobs, |event| {
+        handle_rslip_batch_progress(event, args.selectors, &mut stdout);
     });
-    for (selector, result) in selectors.iter().zip(results) {
+    let _ = std::io::Write::flush(&mut stdout);
+    for (selector, result) in args.selectors.iter().zip(results) {
         match result {
             Ok(outcome) => {
                 statuses.push((outcome.nodeid.clone(), outcome.status));
@@ -133,8 +122,52 @@ fn run_rslip_selectors_with_runner(
             }
         }
     }
-    record_statuses(repo_root, kiss::Language::Python, &identity, &statuses)?;
+    record_statuses(args.repo_root, kiss::Language::Python, &identity, &statuses)?;
     Ok(summary)
+}
+
+fn handle_rslip_batch_progress(
+    event: RslipBatchProgress,
+    selectors: &[String],
+    stdout: &mut impl Write,
+) {
+    match event {
+        RslipBatchProgress::Prepared {
+            cache_hits,
+            cache_misses,
+        } => {
+            crate::test_runner::emit_test_progress(&format!(
+                "kiss test: rslip prepared hits={cache_hits} misses={cache_misses}"
+            ));
+        }
+        RslipBatchProgress::SelectorFinalized { outcomes } => {
+            for (index, result) in outcomes {
+                match result {
+                    Ok(outcome) => {
+                        print_rslip_outcome(&outcome, stdout);
+                    }
+                    Err(err) => {
+                        let selector = selectors
+                            .get(index)
+                            .map(String::as_str)
+                            .unwrap_or("<unknown>");
+                        let _ = writeln!(stdout, "FAILED: {selector} (rslip error)");
+                        eprintln!("{}", format_rslip_error(err));
+                    }
+                }
+            }
+            let _ = stdout.flush();
+        }
+        RslipBatchProgress::CachedStatusDump { body } => {
+            let _ = stdout.write_all(body.as_bytes());
+            let _ = stdout.flush();
+        }
+        RslipBatchProgress::TestsRemaining { remaining } => {
+            crate::test_runner::emit_test_progress(&format!(
+                "kiss test: tests_remaining={remaining}"
+            ));
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -178,6 +211,7 @@ pub(crate) fn rslip_request_from_parts(
         cache_root: python_coverage_cache_root(&repo_root)?,
         force_rerun,
         timeout: Some(DEFAULT_PYTEST_TIMEOUT),
+        content_fingerprint: None,
     })
 }
 
@@ -243,20 +277,20 @@ fn python_version_supports_rslip(version: &str) -> bool {
     matches!((major, minor), (Some(major), Some(minor)) if major > 3 || (major == 3 && minor >= 12))
 }
 
-fn print_rslip_outcome(outcome: &RslipOutcome) {
+fn print_rslip_outcome(outcome: &RslipOutcome, out: &mut impl std::io::Write) {
     let duration = crate::test_runner::duration::format_test_duration(outcome.duration);
     match (outcome.status, outcome.cache_status) {
         (rpytest_runner::TestStatus::Passed, PyCacheStatus::Hit) => {
-            println!("PASSED (cached): {}", outcome.nodeid);
+            let _ = writeln!(out, "PASSED (cached): {}", outcome.nodeid);
         }
         (rpytest_runner::TestStatus::Passed, PyCacheStatus::MissStored) => {
-            println!("PASSED: {} ({duration})", outcome.nodeid);
+            let _ = writeln!(out, "PASSED: {} ({duration})", outcome.nodeid);
         }
         (rpytest_runner::TestStatus::Failed, PyCacheStatus::Hit) => {
-            println!("FAILED (cached): {}", outcome.nodeid);
+            let _ = writeln!(out, "FAILED (cached): {}", outcome.nodeid);
         }
         (rpytest_runner::TestStatus::Failed, PyCacheStatus::MissStored) => {
-            println!("FAILED: {} ({duration})", outcome.nodeid);
+            let _ = writeln!(out, "FAILED: {} ({duration})", outcome.nodeid);
             if let Some(stderr) = &outcome.stderr
                 && !stderr.is_empty()
             {

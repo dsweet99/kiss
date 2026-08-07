@@ -39,6 +39,7 @@ def test_false():\n    assert choose(False) == 2\n",
         cache_root: tmp.path().join(".rslip_cache"),
         force_rerun: false,
         timeout: None,
+        content_fingerprint: None,
     };
     let mut second_req = base_req.clone();
     second_req.nodeid = "test_app.py::test_false".to_string();

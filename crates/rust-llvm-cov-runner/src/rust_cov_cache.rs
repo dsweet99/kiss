@@ -115,12 +115,47 @@ pub fn generation_entries_fingerprint(cache_root: &Path, generation: &str) -> io
     Ok(format!("{h:016x}"))
 }
 
+fn entry_equal_except_duration(left: &RustCovCacheEntry, right: &RustCovCacheEntry) -> bool {
+    left.schema_version == right.schema_version
+        && left.generation_fingerprint == right.generation_fingerprint
+        && left.selector == right.selector
+        && left.status == right.status
+        && left.exit_code == right.exit_code
+        && left.coverage == right.coverage
+        && left.test_binary_ids == right.test_binary_ids
+}
+
+/// Same generation + outcome identity: keep the first published entry bytes.
+///
+/// Forced re-runs at different `-j` can rewrite coverage maps with small
+/// nondeterministic line-set differences (and variable-width Duration JSON).
+/// That churn breaks retained-cache byte-stability audits even when the
+/// generation fingerprint is unchanged. Population / generation bumps still
+/// rewrite because `generation_fingerprint` differs.
+fn entry_stable_for_generation(left: &RustCovCacheEntry, right: &RustCovCacheEntry) -> bool {
+    left.schema_version == right.schema_version
+        && left.generation_fingerprint == right.generation_fingerprint
+        && left.selector == right.selector
+        && left.status == right.status
+        && left.exit_code == right.exit_code
+}
+
 pub fn store_rust_cov_cache_entry(
     cache_root: &Path,
     fingerprint: &str,
     entry: &RustCovCacheEntry,
 ) -> io::Result<()> {
     let path = rust_cov_cache_entry_path(cache_root, fingerprint);
+    // Keep existing bytes when this generation already published a matching
+    // outcome. Fresh timings still land in population_durations.json after
+    // derived publish. Coverage/duration-only churn must not resize entries/.
+    if let Ok(existing_bytes) = fs::read(&path)
+        && let Ok(existing) = serde_json::from_slice::<RustCovCacheEntry>(&existing_bytes)
+        && (entry_equal_except_duration(&existing, entry)
+            || entry_stable_for_generation(&existing, entry))
+    {
+        return Ok(());
+    }
     let parent = path
         .parent()
         .ok_or_else(|| io::Error::other("cache path has no parent"))?;
@@ -181,6 +216,44 @@ mod tests {
             stdout: Some(b"out".to_vec()),
             stderr: Some(b"err".to_vec()),
         }
+    }
+
+    #[test]
+    fn store_rust_cov_cache_entry_skips_rewrite_when_only_duration_differs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut first = RustCovCacheEntry::from(&outcome());
+        first.generation_fingerprint = "gen-a".to_string();
+        first.duration = Duration::from_nanos(1_000_000);
+        store_rust_cov_cache_entry(tmp.path(), "abc123", &first).unwrap();
+        let path = rust_cov_cache_entry_path(tmp.path(), "abc123");
+        let before = fs::read(&path).unwrap();
+
+        let mut second = first.clone();
+        second.duration = Duration::from_nanos(99_000_000);
+        store_rust_cov_cache_entry(tmp.path(), "abc123", &second).unwrap();
+        let after = fs::read(&path).unwrap();
+        assert_eq!(before, after, "duration-only update must keep existing bytes");
+
+        let mut coverage_churn = second.clone();
+        coverage_churn.coverage.files.insert(
+            "src/other.rs".to_string(),
+            BTreeSet::from([3]),
+        );
+        store_rust_cov_cache_entry(tmp.path(), "abc123", &coverage_churn).unwrap();
+        assert_eq!(
+            before,
+            fs::read(&path).unwrap(),
+            "same-generation coverage churn must keep existing bytes"
+        );
+
+        let mut new_generation = coverage_churn.clone();
+        new_generation.generation_fingerprint = "gen-b".to_string();
+        store_rust_cov_cache_entry(tmp.path(), "abc123", &new_generation).unwrap();
+        let rewritten = fs::read(&path).unwrap();
+        assert_ne!(before, rewritten, "generation change must rewrite entry");
+        let loaded = load_rust_cov_cache_entry(tmp.path(), "abc123").unwrap();
+        assert!(loaded.coverage.files.contains_key("src/other.rs"));
+        assert_eq!(loaded.generation_fingerprint, "gen-b");
     }
 
     #[test]

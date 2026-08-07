@@ -34,6 +34,7 @@ pub(crate) use storage::{
 };
 pub(crate) use storage::{
     load_current_python_coverage_index, python_coverage_cache_root,
+    python_coverage_index_file_present,
     python_repo_relative_coverage_file as repo_relative_coverage_file,
     python_repo_relative_path as repo_relative_path,
 };

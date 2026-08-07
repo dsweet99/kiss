@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +33,29 @@ pub(crate) fn python_population_manifest_is_current_for_args_with_env_keys(
     else {
         return false;
     };
+    // Prefer the warm-seal plan path when available: skip tree rehash / entry restat.
+    if python_population_manifest_is_current_for_warm_seal(repo_root, selectors, &identity) {
+        return true;
+    }
     python_population_manifest_is_current_with_identity(repo_root, selectors, &identity)
+}
+
+fn python_population_manifest_is_current_for_warm_seal(
+    repo_root: &Path,
+    selectors: &[String],
+    identity: &PythonPopulationManifestIdentity,
+) -> bool {
+    let Ok(cache_root) = python_coverage_cache_root(repo_root) else {
+        return false;
+    };
+    if !rslip::warm_hit_seal_exists(&cache_root) {
+        return false;
+    }
+    let Some(manifest) = read_python_population_manifest(repo_root) else {
+        return false;
+    };
+    manifest.matches_python_identity(identity, &normalized_python_repo_root(repo_root))
+        && manifest.matches_python_selectors(selectors)
 }
 
 #[cfg(test)]
@@ -264,23 +286,13 @@ fn current_python_population_manifest_identity_with_env_keys(
     test_args: &[String],
     env_keys: &[&str],
 ) -> Result<PythonPopulationManifestIdentity, String> {
-    let python = PathBuf::from("python");
+    let (python_version, pytest_version) =
+        crate::test_runner::runners::detect_rslip_versions(repo_root)?;
     Ok(PythonPopulationManifestIdentity {
         cache_schema_version: rslip::CACHE_SCHEMA_VERSION.to_string(),
         selector_discovery_version: PYTHON_SELECTOR_DISCOVERY_VERSION.to_string(),
-        python_version: super::super::runners::command_stdout(
-            &python,
-            &[
-                "-c",
-                "import sys; print('.'.join(map(str, sys.version_info[:3])))",
-            ],
-            repo_root,
-        )?,
-        pytest_version: super::super::runners::command_stdout(
-            &python,
-            &["-c", "import pytest; print(pytest.__version__)"],
-            repo_root,
-        )?,
+        python_version,
+        pytest_version,
         pytest_args: test_args.to_vec(),
         // Ignore env_keys contents for PYTHONPATH: always normalize via repo root.
         // Callers still pass PYTHON_COVERAGE_ENV_KEYS for allowlist documentation.
@@ -333,6 +345,15 @@ impl PythonPopulationManifest {
     }
 
     pub(crate) fn matches_python_selectors(&self, selectors: &[String]) -> bool {
+        if self.selectors.len() == selectors.len()
+            && self
+                .selectors
+                .iter()
+                .zip(selectors.iter())
+                .all(|(left, right)| left == right)
+        {
+            return true;
+        }
         let mut expected = selectors.to_vec();
         expected.sort();
         expected.dedup();

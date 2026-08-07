@@ -1,6 +1,9 @@
 use super::test_support::{EnvGuard, temp_dir};
 use super::*;
 use std::fs;
+use std::path::Path;
+#[cfg(debug_assertions)]
+use std::thread;
 #[cfg(debug_assertions)]
 use std::time::Duration;
 

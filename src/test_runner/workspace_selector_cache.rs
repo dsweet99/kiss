@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::analyze_cache::fnv1a64;
 
-const SCHEMA_VERSION: &str = "workspace-test-selectors-v2";
+const SCHEMA_VERSION: &str = "workspace-test-selectors-v3";
 const CACHE_FILE_NAME: &str = "workspace_test_selectors.json";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +59,36 @@ fn hash_file_meta(h: u64, rel: &str, meta: &fs::Metadata) -> u64 {
 }
 
 fn workspace_files_fingerprint(repo_root: &Path, ignore: &[String]) -> io::Result<String> {
+    if let Ok(fp) = workspace_files_fingerprint_git(repo_root, ignore) {
+        return Ok(fp);
+    }
+    workspace_files_fingerprint_walk(repo_root, ignore)
+}
+
+fn workspace_files_fingerprint_git(repo_root: &Path, ignore: &[String]) -> io::Result<String> {
+    let output = kiss::scrubbed_git_command(repo_root)
+        .args(["ls-files", "-z", "*.py", "*.rs"])
+        .output()?;
+    if !output.status.success() {
+        return Err(io::Error::other("git ls-files failed"));
+    }
+    let mut rels = output
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|part| !part.is_empty())
+        .map(|part| String::from_utf8_lossy(part).replace('\\', "/"))
+        .filter(|rel| !ignored(rel, ignore))
+        .collect::<Vec<_>>();
+    rels.sort();
+    let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, b"workspace-selectors-fp-v3-git");
+    for rel in rels {
+        let meta = fs::metadata(repo_root.join(&rel))?;
+        h = hash_file_meta(h, &rel, &meta);
+    }
+    Ok(format!("{h:016x}"))
+}
+
+fn workspace_files_fingerprint_walk(repo_root: &Path, ignore: &[String]) -> io::Result<String> {
     let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, b"workspace-selectors-fp-v2");
     let mut stack = vec![repo_root.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -134,7 +164,7 @@ fn write_cache(repo_root: &Path, cache: &WorkspaceSelectorCache) -> io::Result<(
 pub(crate) fn load_cached_workspace_selectors(
     repo_root: &Path,
     ignore: &[String],
-) -> Option<(Vec<String>, Vec<String>)> {
+) -> Option<(Vec<String>, Vec<String>, String)> {
     let cache = read_cache(repo_root)?;
     if cache.source_root != normalized_root(repo_root) || cache.ignore != ignore {
         return None;
@@ -143,7 +173,7 @@ pub(crate) fn load_cached_workspace_selectors(
     if cache.files_fingerprint != fp {
         return None;
     }
-    Some((cache.python_selectors, cache.rust_selectors))
+    Some((cache.python_selectors, cache.rust_selectors, fp))
 }
 
 pub(crate) fn store_workspace_selectors(
@@ -151,19 +181,20 @@ pub(crate) fn store_workspace_selectors(
     ignore: &[String],
     python_selectors: &[String],
     rust_selectors: &[String],
-) {
+) -> Option<String> {
     let Ok(files_fingerprint) = workspace_files_fingerprint(repo_root, ignore) else {
-        return;
+        return None;
     };
     let cache = WorkspaceSelectorCache {
         schema_version: SCHEMA_VERSION.to_string(),
         source_root: normalized_root(repo_root),
         ignore: ignore.to_vec(),
-        files_fingerprint,
+        files_fingerprint: files_fingerprint.clone(),
         python_selectors: python_selectors.to_vec(),
         rust_selectors: rust_selectors.to_vec(),
     };
     let _ = write_cache(repo_root, &cache);
+    Some(files_fingerprint)
 }
 
 #[cfg(test)]

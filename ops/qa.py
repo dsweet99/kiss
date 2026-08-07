@@ -3506,6 +3506,7 @@ def rust_retained_cache_audit(log_dir: Path | None) -> None:
             "--force",
         )
         cache_bytes_by_jobs: dict[int, int] = {}
+        entry_listings_by_jobs: dict[int, dict[str, int]] = {}
         lines: list[str] = []
         for jobs in jobs_values:
             outcome = run(
@@ -3518,14 +3519,92 @@ def rust_retained_cache_audit(log_dir: Path | None) -> None:
             metrics = outcome.metrics()
             assert_rust_batch_invariants(outcome, jobs)
             cache_bytes_by_jobs[jobs] = metric_int(metrics, "rust_entry_cache_bytes")
+            entries_dir = rust_cache / "entries"
+            listing: dict[str, int] = {}
+            if entries_dir.is_dir():
+                for path in sorted(entries_dir.rglob("*")):
+                    if path.is_file():
+                        listing[str(path.relative_to(entries_dir))] = path.stat().st_size
+            entry_listings_by_jobs[jobs] = listing
+            if jobs == 1:
+                j1_side = Path("/tmp/kiss_qa_retained_j1_entries")
+                if j1_side.exists():
+                    shutil.rmtree(j1_side)
+                shutil.copytree(entries_dir, j1_side)
+            tmp_count = sum(1 for name in listing if name.endswith(".tmp"))
+            json_bytes = sum(
+                size for name, size in listing.items() if name.endswith(".json")
+            )
             lines.append(
                 f"jobs={jobs} rust_entry_cache_bytes={cache_bytes_by_jobs[jobs]} "
                 f"rust_entry_generation_count="
-                f"{metric_int(metrics, 'rust_entry_generation_count')}"
+                f"{metric_int(metrics, 'rust_entry_generation_count')} "
+                f"entry_files={len(listing)} json_bytes={json_bytes} tmp_files={tmp_count} "
+                f"rust_final_cache_misses="
+                f"{metric_int(metrics, 'rust_final_cache_misses')} "
+                f"rust_final_cache_hits="
+                f"{metric_int(metrics, 'rust_final_cache_hits')}"
             )
-        assert cache_bytes_by_jobs[1] == cache_bytes_by_jobs[4], (
-            f"cache bytes grew with jobs: {cache_bytes_by_jobs}"
-        )
+        if cache_bytes_by_jobs[1] != cache_bytes_by_jobs[4]:
+            before = entry_listings_by_jobs[1]
+            after = entry_listings_by_jobs[4]
+            only_after = sorted(set(after) - set(before))
+            only_before = sorted(set(before) - set(after))
+            grown = sorted(
+                (
+                    name,
+                    before[name],
+                    after[name],
+                    after[name] - before[name],
+                )
+                for name in set(before) & set(after)
+                if after[name] != before[name]
+            )
+            dump_root = Path("/tmp/kiss_qa_retained_entry_diff")
+            if dump_root.exists():
+                shutil.rmtree(dump_root)
+            dump_root.mkdir(parents=True)
+            j1_dump = dump_root / "j1"
+            j4_dump = dump_root / "j4"
+            shutil.copytree(rust_cache / "entries", j4_dump)
+            # j1 snapshot was taken into entry_listings only; recover bodies from
+            # side copies written after each jobs loop below when present.
+            j1_side = Path("/tmp/kiss_qa_retained_j1_entries")
+            if j1_side.is_dir():
+                shutil.copytree(j1_side, j1_dump)
+            coverage_diffs: list[str] = []
+            if j1_dump.is_dir():
+                for name, _, _, delta in grown[:10]:
+                    p1 = j1_dump / name
+                    p4 = j4_dump / name
+                    if not (p1.is_file() and p4.is_file()):
+                        continue
+                    e1 = json.loads(p1.read_text())
+                    e4 = json.loads(p4.read_text())
+                    files1 = {
+                        path: sorted(lines)
+                        for path, lines in e1.get("coverage", {}).get("files", {}).items()
+                    }
+                    files4 = {
+                        path: sorted(lines)
+                        for path, lines in e4.get("coverage", {}).get("files", {}).items()
+                    }
+                    only_files_4 = sorted(set(files4) - set(files1))
+                    only_files_1 = sorted(set(files1) - set(files4))
+                    line_delta = sum(len(files4[p]) for p in files4) - sum(
+                        len(files1[p]) for p in files1
+                    )
+                    coverage_diffs.append(
+                        f"{name} selector={e4.get('selector')!r} size_delta={delta} "
+                        f"line_delta={line_delta} only_files_j4={only_files_4[:5]} "
+                        f"only_files_j1={only_files_1[:5]}"
+                    )
+            raise AssertionError(
+                f"cache bytes grew with jobs: {cache_bytes_by_jobs}; "
+                f"only_after={only_after[:20]}; only_before={only_before[:20]}; "
+                f"grown={grown[:30]}; coverage_diffs={coverage_diffs}; "
+                f"dump={dump_root}; lines={lines}"
+            )
         second = run(
             "rust-retained-cache-second-generation",
             population_command + ["-j", "1"],

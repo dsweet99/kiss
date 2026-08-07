@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CACHE_SCHEMA_VERSION, LineCoverage, RslipOutcome, RslipRequest};
 
+mod memo;
+pub(crate) use memo::{DigestMemo, load_reusable_rslip_cache_entry_with_memo};
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct RslipCacheEntry {
     schema_version: String,
@@ -185,7 +188,7 @@ pub(crate) fn test_module_path_from_nodeid(nodeid: &str) -> &str {
     nodeid.split_once("::").map_or(nodeid, |(module, _)| module)
 }
 
-fn is_non_digestable_coverage_path(recorded: &str) -> bool {
+pub(super) fn is_non_digestable_coverage_path(recorded: &str) -> bool {
     recorded.starts_with('<')
         || recorded.starts_with(".kiss/")
         || recorded.contains("rslip_runtime")
@@ -195,7 +198,7 @@ fn is_non_digestable_coverage_path(recorded: &str) -> bool {
             .is_some_and(|name| name.starts_with("[type "))
 }
 
-fn digest_recorded_path(source_root: &Path, recorded: &str) -> Option<String> {
+pub(crate) fn digest_recorded_path(source_root: &Path, recorded: &str) -> Option<String> {
     let path = resolve_recorded_path(source_root, recorded);
     let bytes = fs::read(path).ok()?;
     let h = rslip_fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);

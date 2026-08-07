@@ -28,6 +28,7 @@ fn subprocess_run_records_executed_lines_and_reuses_cache() {
         cache_root: tmp.path().join(".rslip_cache"),
         force_rerun: false,
         timeout: None,
+        content_fingerprint: None,
     };
     let rslip = Rslip::new(subprocess_pytest_runner());
 
@@ -69,6 +70,7 @@ fn subprocess_run_serializes_synthetic_co_filenames_like_runtime() {
         cache_root: tmp.path().join(".rslip_cache"),
         force_rerun: false,
         timeout: None,
+        content_fingerprint: None,
     };
 
     let outcome = Rslip::new(subprocess_pytest_runner())

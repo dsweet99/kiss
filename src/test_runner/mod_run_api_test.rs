@@ -39,6 +39,7 @@ impl PlannedSelectors {
             coverage_decision_engine_used: true,
             rust_selection_basis: Default::default(),
             ignore: vec![],
+            workspace_files_fingerprint: None,
         }
     }
 }
@@ -189,6 +190,7 @@ mod plan_tests {
             coverage_decision_engine_used: true,
             rust_selection_basis: Default::default(),
             ignore: Vec::new(),
+            workspace_files_fingerprint: None,
         };
 
         let err = run_selectors(

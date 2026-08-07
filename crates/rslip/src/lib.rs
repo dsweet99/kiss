@@ -10,6 +10,7 @@ mod lock;
 mod runtime;
 
 pub use batch::RslipBatchProgress;
+pub use batch::warm_hit_seal_exists;
 
 #[cfg(test)]
 mod batch_error_test;
@@ -65,6 +66,10 @@ pub struct RslipRequest {
     pub force_rerun: bool,
     /// Per-test wall-clock limit for pytest execution. Not part of the cache key.
     pub timeout: Option<Duration>,
+    /// Optional workspace content fingerprint for warm-hit seal fast validation.
+    /// Not part of the cache key. When set and matching the seal, per-file stamps
+    /// are skipped.
+    pub content_fingerprint: Option<String>,
 }
 
 #[cfg(test)]
@@ -343,6 +348,7 @@ fn rslip_sample_request(root: &Path) -> RslipRequest {
         cache_root: root.join(".rslip_cache"),
         force_rerun: false,
         timeout: None,
+        content_fingerprint: None,
     }
 }
 

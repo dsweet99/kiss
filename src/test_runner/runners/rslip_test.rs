@@ -39,7 +39,7 @@
     fn run_rslip_selectors_rejects_zero_jobs_before_spawning() {
         let tmp = tempfile::tempdir().unwrap();
 
-        let _ = run_rslip_selectors(tmp.path(), &[], &[], false, &[], 0);
+        let _ = run_rslip_selectors(tmp.path(), &[], &[], false, &[], 0, None);
     }
 
     #[test]
@@ -125,12 +125,15 @@ def test_b():\n    assert False\n",
         });
 
         let summary = run_rslip_selectors_with_runner(
-            tmp.path(),
-            &selectors,
-            &[],
-            false,
-            &[],
-            3,
+            RslipBatchArgs {
+                repo_root: tmp.path(),
+                selectors: &selectors,
+                extra: &[],
+                force_rerun: false,
+                force_rerun_selectors: &[],
+                jobs: 3,
+                content_fingerprint: None,
+            },
             runner,
         )
         .unwrap();
@@ -159,7 +162,7 @@ def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
         ];
 
         let summary =
-            run_rslip_selectors(tmp.path(), &selectors, &["-q".to_string()], true, &[], 1)
+            run_rslip_selectors(tmp.path(), &selectors, &["-q".to_string()], true, &[], 1, None)
                 .unwrap();
 
         assert_eq!(summary.total, 2);
@@ -181,18 +184,23 @@ def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
                 PyCacheStatus::MissStored,
             ),
         ] {
-            print_rslip_outcome(&RslipOutcome {
-                nodeid: "tests/test_app.py::test_ok".to_string(),
-                status,
-                exit_code: Some(i32::from(status == rpytest_runner::TestStatus::Failed)),
-                duration: Duration::from_millis(1),
-                coverage: LineCoverage {
-                    files: BTreeMap::new(),
+            let mut sink = Vec::new();
+            print_rslip_outcome(
+                &RslipOutcome {
+                    nodeid: "tests/test_app.py::test_ok".to_string(),
+                    status,
+                    exit_code: Some(i32::from(status == rpytest_runner::TestStatus::Failed)),
+                    duration: Duration::from_millis(1),
+                    coverage: LineCoverage {
+                        files: BTreeMap::new(),
+                    },
+                    cache_status,
+                    stdout: None,
+                    stderr: Some(Vec::new()),
                 },
-                cache_status,
-                stdout: None,
-                stderr: Some(Vec::new()),
-            });
+                &mut sink,
+            );
+            assert!(!sink.is_empty());
         }
     }
 
@@ -238,12 +246,15 @@ def test_b():\n    assert True\n",
 
         let miss_out = capture_stdout(|| {
             let summary = run_rslip_selectors_with_runner(
-                tmp.path(),
-                &selectors,
-                &[],
-                false,
-                &[],
-                2,
+                RslipBatchArgs {
+                    repo_root: tmp.path(),
+                    selectors: &selectors,
+                    extra: &[],
+                    force_rerun: false,
+                    force_rerun_selectors: &[],
+                    jobs: 2,
+                    content_fingerprint: None,
+                },
                 runner,
             )
             .unwrap();
@@ -276,12 +287,15 @@ def test_b():\n    assert True\n",
         });
         let hit_out = capture_stdout(|| {
             let summary = run_rslip_selectors_with_runner(
-                tmp.path(),
-                &selectors,
-                &[],
-                false,
-                &[],
-                2,
+                RslipBatchArgs {
+                    repo_root: tmp.path(),
+                    selectors: &selectors,
+                    extra: &[],
+                    force_rerun: false,
+                    force_rerun_selectors: &[],
+                    jobs: 2,
+                    content_fingerprint: None,
+                },
                 cached_runner,
             )
             .unwrap();

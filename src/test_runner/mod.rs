@@ -232,6 +232,8 @@ pub(crate) struct PlannedSelectors {
     pub coverage_decision_engine_used: bool,
     pub rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis,
     pub ignore: Vec<String>,
+    /// Workspace py/rs fingerprint from selector-cache planning (warm seal fast path).
+    pub workspace_files_fingerprint: Option<String>,
 }
 
 pub(crate) struct SelectorRunOptions<'a> {

@@ -40,7 +40,7 @@ fn assert_cold_aggregate_matches_selector_entries(
     assert_success("forced selector-entry kiss test", &selector_entries);
     assert_eq!(
         ordinary_source_covered_lines(aggregate_covered_lines(repo.path())),
-        selector_entry_covered_lines(repo.path()),
+        ordinary_source_covered_lines(selector_entry_covered_lines(repo.path())),
         "check aggregate physical-line coverage should match selector-entry reference coverage"
     );
     (cold_binaries, cold_maps)

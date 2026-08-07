@@ -151,6 +151,7 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
         coverage_decision_engine_used: true,
         rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
         ignore: Vec::new(),
+        workspace_files_fingerprint: None,
     };
 
     crate::test_runner::apply_cold_initialization_population(&args, &mut planned);

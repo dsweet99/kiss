@@ -76,7 +76,7 @@ impl LanguagePlanner for PythonModule {
         // Mirror Rust: prefer the workspace selector cache before a full pytest
         // collect. Warm `kiss test .` already planned from that cache; rediscovery
         // must not re-spawn collection (sameq-scale suites hang for hours there).
-        if let Some((cached_py, _cached_rs)) =
+        if let Some((cached_py, _cached_rs, _fp)) =
             crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
                 &self.repo_root,
                 &self.ignore,

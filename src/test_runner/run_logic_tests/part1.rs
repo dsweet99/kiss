@@ -203,6 +203,7 @@ fn planned_selectors_carry_population_decisions_without_selector_vectors() {
         coverage_decision_engine_used: true,
         rust_selection_basis: Default::default(),
         ignore: Vec::new(),
+        workspace_files_fingerprint: None,
     };
     assert!(planned.python_population_required);
     assert!(planned.rust_population_required);

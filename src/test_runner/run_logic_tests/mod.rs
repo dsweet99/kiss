@@ -28,6 +28,7 @@ fn planned() -> PlannedSelectors {
         coverage_decision_engine_used: true,
         rust_selection_basis: Default::default(),
         ignore: Vec::new(),
+        workspace_files_fingerprint: None,
     }
 }
 

@@ -201,6 +201,7 @@ pub(super) fn run_rslip_selectors_for_module(
         ctx.options.force_rerun,
         &ctx.planned.python_prior_failure_selectors,
         ctx.options.jobs,
+        ctx.planned.workspace_files_fingerprint.clone(),
     )
 }
 

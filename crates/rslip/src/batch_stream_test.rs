@@ -131,6 +131,7 @@ fn selector_finalized_and_remaining_emit_before_batch_returns() {
         |event| {
             match &event {
                 RslipBatchProgress::SelectorFinalized { .. }
+                | RslipBatchProgress::CachedStatusDump { .. }
                 | RslipBatchProgress::TestsRemaining { .. } => {
                     *mid_progress.lock().unwrap() = true;
                 }

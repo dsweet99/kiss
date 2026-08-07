@@ -268,6 +268,7 @@ fn ensure_python_runtime_coverage(
         false,
         &[],
         jobs,
+        None,
     )
     .map_err(|err| CoverageRefreshError::publication("Python", err))?;
     if summary.exit_code != 0 {

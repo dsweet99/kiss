@@ -127,7 +127,7 @@ impl LanguagePlanner for RustModule {
     }
 
     fn discover_universe(&self) -> Result<Vec<TestSelector>, String> {
-        if let Some((_py, cached_rs)) =
+        if let Some((_py, cached_rs, _fp)) =
             crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
                 &self.repo_root,
                 &self.ignore,

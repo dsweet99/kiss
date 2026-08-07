@@ -58,7 +58,7 @@ fn plan_all_selectors(
     python_extra: &[String],
     lang_filter: Option<Language>,
 ) -> Result<PlannedSelectors, String> {
-    if let Some((cached_py, cached_rs)) =
+    if let Some((cached_py, cached_rs, fp)) =
         super::workspace_selector_cache::load_cached_workspace_selectors(repo_root, ignore)
     {
         super::emit_test_progress("kiss test: using cached selectors");
@@ -67,7 +67,14 @@ fn plan_all_selectors(
             Some(Language::Python) => (cached_py, Vec::new()),
             Some(Language::Rust) => (Vec::new(), cached_rs),
         };
-        return Ok(planned_all(repo_root, ignore, python_extra, py_sel, rs_sel));
+        return Ok(planned_all(
+            repo_root,
+            ignore,
+            python_extra,
+            py_sel,
+            rs_sel,
+            Some(fp),
+        ));
     }
     let mut py_sel = Vec::new();
     let mut rs_sel = Vec::new();
@@ -79,12 +86,21 @@ fn plan_all_selectors(
         super::emit_test_progress("kiss test: collecting rust selectors");
         rs_sel = runners::enumerate_workspace_rust_selectors(repo_root, ignore)?;
     }
-    if lang_filter.is_none() {
+    let fp = if lang_filter.is_none() {
         super::workspace_selector_cache::store_workspace_selectors(
             repo_root, ignore, &py_sel, &rs_sel,
-        );
-    }
-    Ok(planned_all(repo_root, ignore, python_extra, py_sel, rs_sel))
+        )
+    } else {
+        None
+    };
+    Ok(planned_all(
+        repo_root,
+        ignore,
+        python_extra,
+        py_sel,
+        rs_sel,
+        fp,
+    ))
 }
 
 fn planned_all(
@@ -93,6 +109,7 @@ fn planned_all(
     python_extra: &[String],
     py_sel: Vec<String>,
     rs_sel: Vec<String>,
+    workspace_files_fingerprint: Option<String>,
 ) -> PlannedSelectors {
     // Warm `kiss test .`: when coverage populations are already current for the
     // planned selector sets, run as selective reuse instead of re-populating
@@ -106,8 +123,9 @@ fn planned_all(
             &py_sel,
             python_extra,
             crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
-        ) && crate::test_runner::python_coverage_index::load_current_python_coverage_index(repo_root)
-            .is_some()));
+        ) && crate::test_runner::python_coverage_index::python_coverage_index_file_present(
+            repo_root,
+        )));
     if !rs_sel.is_empty() {
         super::emit_test_progress("kiss test: checking rust coverage population");
     }
@@ -128,6 +146,7 @@ fn planned_all(
         coverage_decision_engine_used: false,
         rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
         ignore: ignore.to_vec(),
+        workspace_files_fingerprint,
     }
 }
 
@@ -196,6 +215,7 @@ fn plan_explicit_target_selectors(
             coverage_decision_engine_used: false,
             rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
             ignore: ignore.to_vec(),
+            workspace_files_fingerprint: None,
         });
     }
     let input = runners::CombinedSelectorInput {
@@ -239,6 +259,7 @@ fn planned_from_selector_plan(
         coverage_decision_engine_used: selector_plan.coverage_decision_engine_used,
         rust_selection_basis: selector_plan.rust_selection_basis,
         ignore,
+        workspace_files_fingerprint: None,
     }
 }
 
