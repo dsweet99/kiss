@@ -22,6 +22,8 @@ pub(crate) mod batch_executor_fresh;
 
 pub(crate) mod batch_export;
 
+pub(crate) mod batch_export_merge;
+
 pub(crate) mod batch_export_catalog;
 
 pub(crate) mod batch_export_ignore;

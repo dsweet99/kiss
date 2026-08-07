@@ -154,3 +154,37 @@ fn missing_coverage_artifact_is_stored_as_failed_miss() {
     assert_eq!(second[0].as_ref().unwrap().status, TestStatus::Failed);
     assert_eq!(calls.get(), 1);
 }
+
+#[test]
+fn missing_coverage_artifact_preserves_child_stderr() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    let atexit = "Exception ignored in atexit callback\n\
+TypeError: '<' not supported between instances of 'MagicMock' and 'str'\n";
+    let req = rslip_sample_request(tmp.path());
+    let rslip = Rslip::new(PytestRunner::from_fn(move |req| {
+        let path = req.artifacts[0].path.clone();
+        Ok(PytestRunOutcome {
+            nodeid: req.nodeid,
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            stdout: Vec::new(),
+            stderr: atexit.as_bytes().to_vec(),
+            duration: Duration::from_millis(1),
+            artifacts: BTreeMap::from([(runtime::COVERAGE_ARTIFACT.to_string(), path)]),
+        })
+    }));
+    let first = rslip.run_or_reuse_many_bounded(vec![req], 1);
+    let outcome = first[0].as_ref().unwrap();
+    assert_eq!(outcome.status, TestStatus::Failed);
+    assert_eq!(outcome.cache_status, CacheStatus::MissStored);
+    assert!(outcome.coverage.files.is_empty());
+    let stderr = String::from_utf8_lossy(outcome.stderr.as_ref().unwrap());
+    let atexit_at = stderr.find("Exception ignored in atexit callback").unwrap();
+    let missing_at = stderr.find("missing coverage artifact").unwrap();
+    assert!(atexit_at < missing_at);
+}

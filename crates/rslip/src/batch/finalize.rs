@@ -46,7 +46,7 @@ fn handle_rslip_miss_result_once(
                 miss,
                 outcome.duration,
                 outcome.exit_code.unwrap_or(1),
-                format!("rslip: missing coverage artifact {name}\n"),
+                missing_artifact_stderr(&outcome.stderr, &name),
             );
         }
         Err(err) => return Err(err),
@@ -62,6 +62,17 @@ fn handle_rslip_miss_result_once(
         stderr: Some(outcome.stderr),
     };
     finalize_cacheable_miss_outcome(miss, rslip_outcome)
+}
+
+/// Keep child stderr (e.g. ignored atexit coverage-write failures) and append
+/// the synthetic missing-artifact line. Empty child stderr yields only that line.
+fn missing_artifact_stderr(child_stderr: &[u8], name: &str) -> String {
+    let mut combined = String::from_utf8_lossy(child_stderr).into_owned();
+    if !combined.is_empty() && !combined.ends_with('\n') {
+        combined.push('\n');
+    }
+    combined.push_str(&format!("rslip: missing coverage artifact {name}\n"));
+    combined
 }
 
 fn finalize_failed_miss_outcome(

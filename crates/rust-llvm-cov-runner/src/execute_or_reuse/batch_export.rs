@@ -1,16 +1,19 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use crate::execute_or_reuse::batch_events::BatchCompilerArtifact;
+use crate::execute_or_reuse::batch_export_merge::merge_instance_profile;
 use crate::execute_or_reuse::batch_export_resolve::{BinaryIdObjectMap, resolve_objects_for_profdata};
 use crate::execute_or_reuse::batch_export_tools::ExportTools;
-use crate::execute_or_reuse::llvm_cov_json::parse_llvm_cov_json;
 use crate::{RustLineCoverage, RustLlvmCovError};
+
+pub(crate) use crate::execute_or_reuse::batch_export_merge::{
+    export_instance_coverage, merge_profiles,
+};
 
 pub(crate) type BatchInstanceExportFn = Arc<
     dyn Fn(
@@ -87,7 +90,12 @@ impl SubprocessInstanceExporter {
             .parent()
             .ok_or_else(|| RustLlvmCovError::InvalidRequest("profile path has no parent".into()))?;
         let profdata_path = profile_dir.join(format!("{}.profdata", request.instance_id));
-        merge_instance_profile(&self.tools, &request.profile_path, &profdata_path)?;
+        if !merge_instance_profile(&self.tools, &request.profile_path, &profdata_path)? {
+            // Fork/_exit and similar tests can leave empty or malformed profraw.
+            return Ok(RustLineCoverage {
+                files: BTreeMap::new(),
+            });
+        }
         let objects = resolve_objects_for_profdata(
             &self.tools,
             &profdata_path,
@@ -324,73 +332,6 @@ fn drain_export_results(drain: &mut ExportDrainState<'_>) -> Result<(), RustLlvm
 }
 
 type ExportJobResult = Result<(String, RustLineCoverage), RustLlvmCovError>;
-
-pub(crate) fn merge_profiles(
-    tools: &ExportTools,
-    profile_inputs: &[PathBuf],
-    profdata_output: &Path,
-) -> Result<(), RustLlvmCovError> {
-    if profile_inputs.is_empty() {
-        return Err(RustLlvmCovError::InvalidRequest(
-            "profile merge requires at least one input".into(),
-        ));
-    }
-    let status = Command::new(&tools.llvm_profdata)
-        .arg("merge")
-        .arg("-sparse")
-        .arg("--num-threads=1")
-        .args(profile_inputs)
-        .arg("-o")
-        .arg(profdata_output)
-        .status()
-        .map_err(RustLlvmCovError::Io)?;
-    if !status.success() {
-        return Err(RustLlvmCovError::InvalidRequest(format!(
-            "llvm-profdata merge failed for {} profile input(s)",
-            profile_inputs.len()
-        )));
-    }
-    Ok(())
-}
-
-fn merge_instance_profile(
-    tools: &ExportTools,
-    profile_input: &Path,
-    profdata_output: &Path,
-) -> Result<(), RustLlvmCovError> {
-    merge_profiles(tools, &[profile_input.to_path_buf()], profdata_output)
-}
-
-pub(crate) fn export_instance_coverage(
-    tools: &ExportTools,
-    profdata: &Path,
-    source_root: &Path,
-    objects: &[PathBuf],
-    ignore_filename_regex: Option<&str>,
-) -> Result<RustLineCoverage, RustLlvmCovError> {
-    let mut command = Command::new(&tools.llvm_cov);
-    command
-        .arg("export")
-        .arg("-format=text")
-        .arg("--threads=1")
-        .arg("-instr-profile")
-        .arg(profdata);
-    if let Some(regex) = ignore_filename_regex {
-        command.arg("-ignore-filename-regex").arg(regex);
-    }
-    for object in objects {
-        command.arg("-object").arg(object);
-    }
-    let output = command.output().map_err(RustLlvmCovError::Io)?;
-    if !output.status.success() {
-        return Err(RustLlvmCovError::InvalidRequest(format!(
-            "llvm-cov export failed for {}: {}",
-            profdata.display(),
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-    parse_llvm_cov_json(&output.stdout, source_root)
-}
 
 #[cfg(test)]
 #[path = "batch_export_test.rs"]
