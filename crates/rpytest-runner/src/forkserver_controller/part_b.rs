@@ -33,7 +33,9 @@ def _run_prepared_child(req, stdout_path, stderr_path, duration_path):
         try:
             os.chdir(req["cwd"])
             os.environ.pop("PYTEST_ADDOPTS", None)
-            os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+            # Do not set PYTEST_DISABLE_PLUGIN_AUTOLOAD here: nested pytest
+            # invocations from tests need plugin autoload for pytest.ini addopts.
+            os.environ.pop("PYTEST_DISABLE_PLUGIN_AUTOLOAD", None)
             os.environ.update(req.get("env", {}))
             _apply_pythonpath_from_env()
             stdout_fd = os.open(stdout_path, os.O_WRONLY | os.O_TRUNC)

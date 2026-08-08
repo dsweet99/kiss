@@ -195,8 +195,10 @@ impl SubprocessPytestRunner {
         cmd.current_dir(&req.cwd);
         // Parent shells (e.g. malvin) may export PYTEST_ADDOPTS=--testmon; isolated
         // node runs must not inherit that, matching SubprocessPytestCollector.
+        // PYTEST_DISABLE_PLUGIN_AUTOLOAD is set inside PYTEST_MAIN only for the
+        // outer pytest.main, then cleared so nested pytest can autoload plugins.
         cmd.env_remove("PYTEST_ADDOPTS");
-        cmd.env("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1");
+        cmd.env_remove("PYTEST_DISABLE_PLUGIN_AUTOLOAD");
         cmd.envs(&req.env);
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
@@ -368,7 +370,11 @@ pub(crate) fn spawn_subprocess_job(
 
 const PYTEST_MAIN: &str = r#"
 import importlib
+import os
 import sys
+
+os.environ.pop("PYTEST_ADDOPTS", None)
+os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
 
 preloads = sys.argv[1].split("\x1f") if sys.argv[1] else []
 for module_name in preloads:
@@ -376,5 +382,10 @@ for module_name in preloads:
 
 import pytest
 
-raise SystemExit(pytest.main(sys.argv[2:]))
+class _ClearAutoloadAfterConfigure:
+    def pytest_configure(self, config):
+        # Nested pytest (shell'd from tests) needs autoload for pytest.ini addopts.
+        os.environ.pop("PYTEST_DISABLE_PLUGIN_AUTOLOAD", None)
+
+raise SystemExit(pytest.main(sys.argv[2:], plugins=[_ClearAutoloadAfterConfigure()]))
 "#;

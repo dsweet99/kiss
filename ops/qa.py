@@ -1671,7 +1671,7 @@ def run_aggregate_benchmark_trial(
     trial_env = env.copy()
     trial_env["KISS_AGG_BENCH_DIR"] = str(bench_dir)
     outcome = run(
-        f"rust-aggregate-benchmark-j{jobs}-{trial}",
+        f"timing-aggregate-parallel-j{jobs}-{trial}",
         [
             str(KISS),
             "--defaults",
@@ -1705,13 +1705,13 @@ def assert_aggregate_parallel_benchmark() -> None:
         env["PYTHONPATH"] = str(ROOT)
         env.pop("RUSTFLAGS", None)
         warm = run_aggregate_benchmark_trial(repo, env, 4, 0)
-        click.echo(f"rust-aggregate-benchmark-warmup elapsed={warm.elapsed:.2f}s")
+        click.echo(f"timing-aggregate-parallel-warmup elapsed={warm.elapsed:.2f}s")
         serial = [run_aggregate_benchmark_trial(repo, env, 1, i) for i in range(1, 4)]
         parallel = [run_aggregate_benchmark_trial(repo, env, 4, i) for i in range(1, 4)]
         serial_median = statistics.median(outcome.elapsed for outcome in serial)
         parallel_median = statistics.median(outcome.elapsed for outcome in parallel)
         click.echo(
-            "Rust aggregate benchmark medians: "
+            "timing-aggregate-parallel medians: "
             f"serial_j1={serial_median:.2f}s parallel_j4={parallel_median:.2f}s"
         )
         assert parallel_median < serial_median * 0.70, (
@@ -2479,7 +2479,7 @@ def coverage_stress() -> None:
         click.echo("QA PASS: coverage lifecycle and oracle recall held.")
 
 
-@cli.command("rust-throughput")
+@cli.command("timing-rust-throughput")
 @click.option("--runs", default=3, show_default=True, help="Samples per job value.")
 @click.option(
     "--jobs",
@@ -2496,17 +2496,17 @@ def coverage_stress() -> None:
     default=None,
     help="Optional legacy cold -j1 median seconds for acceptance comparison.",
 )
-def rust_throughput(
+def timing_rust_throughput(
     runs: int,
     job_values: tuple[int, ...],
     legacy_cold_j1_median: float | None,
 ) -> None:
-    """Measure Rust coverage throughput and external process-tree bounds."""
+    """Timing: Rust coverage throughput and external process-tree bounds."""
     assert runs > 0, runs
     assert job_values, "at least one --jobs value is required"
     assert all(jobs > 0 for jobs in job_values), job_values
     samples: list[ThroughputSample] = []
-    with qa_fixture("kiss-qa-rust-throughput-") as fixture:
+    with qa_fixture("kiss-qa-timing-rust-throughput-") as fixture:
         rust_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
         for sample_index in range(runs):
             for jobs in job_values:
@@ -2519,7 +2519,7 @@ def rust_throughput(
                     str(jobs),
                 )
                 cold = run_observed(
-                    f"rust-throughput-cold-{sample_index + 1}-j{jobs}",
+                    f"timing-rust-throughput-cold-{sample_index + 1}-j{jobs}",
                     command,
                     fixture.root,
                     fixture.env,
@@ -2535,7 +2535,7 @@ def rust_throughput(
                 echo_throughput_sample(cold_sample)
 
                 warm = run_observed(
-                    f"rust-throughput-warm-{sample_index + 1}-j{jobs}",
+                    f"timing-rust-throughput-warm-{sample_index + 1}-j{jobs}",
                     command,
                     fixture.root,
                     fixture.env,
@@ -2564,11 +2564,11 @@ def rust_throughput(
             f"than legacy cold -j1 median {legacy_cold_j1_median:.2f}s"
         )
         click.echo(
-            "QA PASS: Rust throughput median met the legacy cold -j1 acceptance threshold."
+            "QA PASS: timing-rust-throughput met the legacy cold -j1 acceptance threshold."
         )
     else:
         click.echo(
-            "QA PASS: Rust throughput medians and external process-tree bounds recorded."
+            "QA PASS: timing-rust-throughput medians and process-tree bounds recorded."
         )
 
 
@@ -3305,12 +3305,17 @@ def aggregate_coverage() -> None:
         assert "refreshing Rust runtime coverage" not in post_concurrent.stderr, (
             post_concurrent.stderr
         )
-        assert_aggregate_parallel_benchmark()
         click.echo(
             "QA PASS: Rust check aggregate cold publication, warm reuse, "
-            "identity repair, code repair, retained maps, concurrent refresh, "
-            "and serial/parallel benchmark held."
+            "identity repair, code repair, retained maps, and concurrent refresh held."
         )
+
+
+@cli.command("timing-aggregate-parallel")
+def timing_aggregate_parallel() -> None:
+    """Timing: parallel −j4 aggregate coverage median < 70% of serial −j1."""
+    assert_aggregate_parallel_benchmark()
+    click.echo("QA PASS: timing-aggregate-parallel held.")
 
 
 @cli.command("rust-phase-interrupt")
@@ -3371,7 +3376,7 @@ def rust_phase_interrupt() -> None:
         click.echo(f"QA PASS: phase-specific Ctrl-C recovery held. Log: {log_path}")
 
 
-@cli.command("rust-legacy-warm-baseline")
+@cli.command("timing-rust-legacy-warm-baseline")
 @click.option(
     "--batch-warm-median",
     type=float,
@@ -3385,8 +3390,10 @@ def rust_phase_interrupt() -> None:
     default=None,
     help="Directory for archived baseline logs.",
 )
-def rust_legacy_warm_baseline(batch_warm_median: float, log_dir: Path | None) -> None:
-    """Verify batch warm all-hit median against archived legacy baseline."""
+def timing_rust_legacy_warm_baseline(
+    batch_warm_median: float, log_dir: Path | None
+) -> None:
+    """Timing: batch warm all-hit median against archived legacy baseline."""
     archive_dir = log_dir or (
         Path.home()
         / ".malvin_home"
@@ -3414,7 +3421,8 @@ def rust_legacy_warm_baseline(batch_warm_median: float, log_dir: Path | None) ->
     )
     click.echo(f"Using archived legacy warm baseline: {log_path}")
     click.echo(
-        f"QA PASS: batch warm median {batch_warm_median:.2f}s within 10% of "
+        f"QA PASS: timing-rust-legacy-warm-baseline "
+        f"batch warm median {batch_warm_median:.2f}s within 10% of "
         f"legacy warm median {legacy_median:.2f}s."
     )
 

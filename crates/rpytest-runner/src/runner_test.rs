@@ -117,9 +117,11 @@ raise SystemExit(0)
         observed["PYTEST_ADDOPTS"].is_null(),
         "inherited PYTEST_ADDOPTS must be scrubbed: {observed}"
     );
-    assert_eq!(
-        observed["PYTEST_DISABLE_PLUGIN_AUTOLOAD"].as_str(),
-        Some("1")
+    // Autoload disable is applied inside PYTEST_MAIN (not the process env) so
+    // nested pytest invocations from tests can still autoload plugins.
+    assert!(
+        observed["PYTEST_DISABLE_PLUGIN_AUTOLOAD"].is_null(),
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD must not be exported on the process env: {observed}"
     );
 }
 

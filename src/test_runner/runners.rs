@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 pub(crate) use super::rust_llvm_cov::{
     cached_rust_check_aggregate_selectors, run_rust_llvm_cov_selectors,
 };
-use kiss::test_refs::{is_in_test_directory, is_test_file};
+use kiss::test_refs::{is_in_test_directory, is_pytest_nodeid_source_file, is_test_file};
 use kiss::{parse_rust_files, rust_test_functions_in};
 use rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
@@ -219,9 +219,13 @@ pub fn enumerate_workspace_python_selectors(
         let root = repo_root.to_string_lossy().to_string();
         let (py_files, _rs_files) =
             kiss::gather_files_by_lang(&[root], Some(kiss::Language::Python), ignore);
+        // Match pytest's default file discovery: only test_*.py / *_test.py.
+        // Passing every file under tests/ (helpers, gp.py, conftest.py) forces
+        // pytest to import modules that are not part of normal collection and
+        // can collide on shared basenames or pull in intentional-fail helpers.
         let test_paths = py_files
             .into_iter()
-            .filter(|path| is_test_file(path) || is_in_test_directory(path))
+            .filter(|path| is_pytest_nodeid_source_file(path))
             .collect::<Vec<_>>();
         return collect_python_nodeids(repo_root, Some(&test_paths), pytest_args);
     }

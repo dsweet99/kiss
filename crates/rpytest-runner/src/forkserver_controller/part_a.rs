@@ -88,6 +88,10 @@ def _bootstrap(boot):
         conf._do_configure()
         _reject_non_main_threads()
         _CONFIG = conf
+        # Nested pytest (shell'd from tests) must autoload plugins for pytest.ini
+        # addopts such as --random-order. Keep autoload disabled only while
+        # preparing this controller's config.
+        os.environ.pop("PYTEST_DISABLE_PLUGIN_AUTOLOAD", None)
         # Pytest capture replaces sys.stdin with DontReadFromInput; keep protocol I/O
         # on the dup'd stream opened at startup.
         return {

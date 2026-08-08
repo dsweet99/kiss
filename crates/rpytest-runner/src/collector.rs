@@ -21,7 +21,16 @@ class _KissCollectReporter:
 
 def main():
     config = json.loads(sys.stdin.read())
-    args = ["--collect-only", "-q", "-o", "addopts="]
+    # Clear addopts (avoids inherited random-order/full-trace/etc), but keep
+    # importlib mode so explicit multi-path collection does not collide on
+    # shared basenames such as conftest.py under pytest's default prepend mode.
+    args = [
+        "--collect-only",
+        "-q",
+        "-o",
+        "addopts=",
+        "--import-mode=importlib",
+    ]
     args.extend(config.get("pytest_args", []))
     args.extend(config.get("paths", []))
     raise SystemExit(pytest.main(args, plugins=[_KissCollectReporter()]))

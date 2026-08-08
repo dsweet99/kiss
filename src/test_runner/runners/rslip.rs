@@ -228,6 +228,12 @@ fn timeout_for_selector(selector: &str) -> Duration {
         return DEFAULT_PYTEST_TIMEOUT;
     }
     let limit = gate.unit_test_seconds_limit(selector);
+    if selector.contains("vdb_scoped") {
+        eprintln!(
+            "DEBUG timeout_for_selector rules={:?} limit={limit} selector={selector}",
+            gate.max_unit_test_seconds
+        );
+    }
     if limit == 0.0 {
         // Ban path: do not let the test run for the default 180s.
         return Duration::from_millis(1);
