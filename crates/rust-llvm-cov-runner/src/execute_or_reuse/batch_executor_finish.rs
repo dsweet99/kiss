@@ -375,7 +375,12 @@ pub(crate) fn test_binary_id_for_path(path: &Path) -> String {
 }
 
 pub(crate) fn digest_test_binary(path: &Path) -> Result<String, RustLlvmCovError> {
-    let bytes = std::fs::read(path).map_err(RustLlvmCovError::Io)?;
+    let bytes = std::fs::read(path).map_err(|err| {
+        RustLlvmCovError::Io(std::io::Error::new(
+            err.kind(),
+            format!("digest_test_binary {}: {err}", path.display()),
+        ))
+    })?;
     let h = crate::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
     Ok(format!("{h:016x}"))
 }

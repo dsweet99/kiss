@@ -88,24 +88,7 @@ pub fn repo_relative_path(source_root: &Path, path: &Path) -> Option<String> {
 }
 
 pub fn generation_entries_fingerprint(cache_root: &Path, generation: &str) -> io::Result<String> {
-    let entries_dir = cache_root.join("entries");
-    let mut names = Vec::new();
-    if entries_dir.is_dir() {
-        for entry in fs::read_dir(&entries_dir)? {
-            let path = entry?.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                continue;
-            }
-            let Ok(parsed) = serde_json::from_slice::<RustCovCacheEntry>(&fs::read(&path)?) else {
-                continue;
-            };
-            if parsed.generation_fingerprint == generation
-                && let Some(name) = path.file_name().and_then(|name| name.to_str())
-            {
-                names.push(name.to_string());
-            }
-        }
-    }
+    let mut names = collect_generation_entry_names(&cache_root.join("entries"), generation)?;
     names.sort();
     let mut h = rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
     for name in &names {
@@ -113,6 +96,51 @@ pub fn generation_entries_fingerprint(cache_root: &Path, generation: &str) -> io
         h = rust_cov_fnv1a64(h, &[0]);
     }
     Ok(format!("{h:016x}"))
+}
+
+fn collect_generation_entry_names(
+    entries_dir: &Path,
+    generation: &str,
+) -> io::Result<Vec<String>> {
+    let mut names = Vec::new();
+    let entries = match fs::read_dir(entries_dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(names),
+        Err(err) => return Err(err),
+    };
+    for entry in entries {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(err),
+        };
+        if let Some(name) = generation_entry_name_if_match(&path, generation)? {
+            names.push(name);
+        }
+    }
+    Ok(names)
+}
+
+fn generation_entry_name_if_match(path: &Path, generation: &str) -> io::Result<Option<String>> {
+    if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        return Ok(None);
+    }
+    // Concurrent publishers may remove an entry between readdir and read.
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err),
+    };
+    let Ok(parsed) = serde_json::from_slice::<RustCovCacheEntry>(&bytes) else {
+        return Ok(None);
+    };
+    if parsed.generation_fingerprint != generation {
+        return Ok(None);
+    }
+    Ok(path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_string))
 }
 
 fn entry_equal_except_duration(left: &RustCovCacheEntry, right: &RustCovCacheEntry) -> bool {
@@ -169,7 +197,13 @@ pub fn store_rust_cov_cache_entry(
             file.write_all(b"\n")?;
             Ok(())
         },
-    )?;
+    )
+    .map_err(|err| {
+        io::Error::new(
+            err.kind(),
+            format!("store_rust_cov_cache_entry {}: {err}", path.display()),
+        )
+    })?;
     crate::publish_derived::batch_entry_state::invalidate_entry_state(cache_root);
     crate::publish_derived::batch_population_durations::invalidate_population_durations(cache_root);
     Ok(())

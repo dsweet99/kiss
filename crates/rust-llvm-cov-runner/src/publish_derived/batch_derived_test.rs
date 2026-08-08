@@ -332,3 +332,58 @@ fn prune_obsolete_selective_generations_retains_population_and_current() {
         .expect("population manifest");
     assert_eq!(manifest.generation_fingerprint, population_generation);
 }
+
+#[test]
+fn count_generations_skips_entry_missing_after_readdir() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(repo.path().join("src")).unwrap();
+    std::fs::write(repo.path().join("Cargo.toml"), "[package]\n").unwrap();
+    std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+    let req = derived_fixture_request(repo.path());
+    let tools = witness_batch_tools();
+    let identity = crate::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
+    let mut coverage = BTreeMap::new();
+    coverage.insert("src/lib.rs".to_string(), BTreeSet::from([2]));
+    let entry = RustCovCacheEntry::from_outcome(
+        &RustLlvmCovOutcome {
+            selector: "alpha".to_string(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            coverage: RustLineCoverage { files: coverage },
+            test_binary_ids: vec!["test-bin".to_string()],
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        },
+        &identity.generation_fingerprint,
+    );
+    store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &entry).unwrap();
+
+    let entries = req.cache_root.join("entries");
+    std::os::unix::fs::symlink(
+        entries.join("definitely-missing-concurrent.json"),
+        entries.join("ghost.json"),
+    )
+    .unwrap();
+
+    let counters =
+        publish_derived_state(&req, &tools, &identity, &["alpha".to_string()], true).unwrap();
+    assert!(counters.entry_generation_count >= 1);
+}
+
+#[test]
+fn prune_skips_entry_missing_after_readdir() {
+    let repo = tempfile::tempdir().unwrap();
+    let cache_root = repo.path().join(".kiss/rust_llvm_cov_cache");
+    let entries = cache_root.join("entries");
+    std::fs::create_dir_all(&entries).unwrap();
+    std::os::unix::fs::symlink(
+        entries.join("definitely-missing-concurrent.json"),
+        entries.join("ghost.json"),
+    )
+    .unwrap();
+    let pruned = prune_non_current_generations(&cache_root, "current-gen").unwrap();
+    assert_eq!(pruned, 0);
+}

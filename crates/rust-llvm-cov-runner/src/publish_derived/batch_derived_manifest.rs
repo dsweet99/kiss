@@ -49,12 +49,33 @@ pub(crate) fn write_population_manifest(
         test_binaries: test_binary_records(test_binaries),
         reverse_line_index: reverse_meta,
     };
-    kiss_publication_barrier::publish_atomically("rust_population", &path, &tmp_path, |file| {
-        serde_json::to_writer_pretty(&mut *file, &payload).map_err(io::Error::other)?;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
-    .map_err(RustLlvmCovError::Io)
+    // Concurrent orphan-tmp sweep or tree replacement can yield NotFound mid-publish.
+    // Retry once with a fresh tmp name.
+    let mut last_err = None;
+    for attempt in 0..2 {
+        let attempt_tmp = if attempt == 0 {
+            tmp_path.clone()
+        } else {
+            parent.join(format!(".population.{}.tmp", rust_cov_unique_suffix()))
+        };
+        match kiss_publication_barrier::publish_atomically(
+            "rust_population",
+            &path,
+            &attempt_tmp,
+            |file| {
+                serde_json::to_writer_pretty(&mut *file, &payload).map_err(io::Error::other)?;
+                file.write_all(b"\n")?;
+                Ok(())
+            },
+        ) {
+            Ok(()) => return Ok(()),
+            Err(err) if err.kind() == io::ErrorKind::NotFound && attempt == 0 => {
+                last_err = Some(err);
+            }
+            Err(err) => return Err(RustLlvmCovError::Io(err)),
+        }
+    }
+    Err(RustLlvmCovError::Io(last_err.expect("NotFound retry path")))
 }
 
 /// Write `population.json`, then best-effort publish the durations sidecar.

@@ -54,6 +54,12 @@ pub fn load_current_population_durations(
     tools: &RustCoverageToolIdentity,
     selectors: Option<&[String]>,
 ) -> Option<Vec<(String, Duration)>> {
+    // Warm time-gate path: trust population.json + duration sidecar without
+    // loading check_aggregate / reverse indexes (those dominate warm latency).
+    if let Some(cached) = try_load_durations_from_manifest_sidecar(cache_root, identity, selectors)
+    {
+        return Some(cached);
+    }
     let population = crate::publish_derived::batch_derived_index::load_current_population_state(
         cache_root,
         source_root,
@@ -66,6 +72,40 @@ pub fn load_current_population_durations(
     let out = load_durations_from_entries(cache_root, &population, identity, req, tools)?;
     let _ = write_population_durations(cache_root, &population, &out);
     Some(out)
+}
+
+fn try_load_durations_from_manifest_sidecar(
+    cache_root: &Path,
+    identity: &RustCoverageBatchIdentity,
+    selectors: Option<&[String]>,
+) -> Option<Vec<(String, Duration)>> {
+    let manifest =
+        crate::publish_derived::batch_derived_index::read_population_manifest(cache_root)?;
+    if manifest.input_fingerprint != identity.input_digest
+        || manifest.generation_fingerprint != identity.generation_fingerprint
+        || manifest.selection_context_fingerprint != identity.selection_context_fingerprint
+    {
+        return None;
+    }
+    if let Some(selectors) = selectors {
+        let mut expected = selectors.to_vec();
+        expected.sort();
+        expected.dedup();
+        if manifest.selectors != expected {
+            return None;
+        }
+    }
+    let population = RustPopulationState {
+        input_fingerprint: manifest.input_fingerprint,
+        generation_fingerprint: manifest.generation_fingerprint,
+        selection_context_fingerprint: manifest.selection_context_fingerprint,
+        entries_fingerprint: manifest.entries_fingerprint,
+        selectors: manifest.selectors,
+        line_index: BTreeMap::new(),
+        ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
+    };
+    try_load_population_durations(cache_root, &population)
 }
 
 pub(crate) fn try_load_population_durations(

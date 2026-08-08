@@ -194,6 +194,34 @@ fn try_load_rejects_wrong_cache_schema_version() {
 }
 
 #[test]
+fn load_current_population_durations_hits_manifest_sidecar_without_index() {
+    let fixture = published_alpha_derived_fixture();
+    // Ensure sidecar exists from a prior load/publish.
+    let _ = load_current_population_durations(
+        &fixture.req.cache_root,
+        &fixture.req.source_root,
+        &fixture.identity,
+        &fixture.req,
+        &fixture.tools,
+        None,
+    )
+    .expect("seed sidecar");
+    // Remove reverse/index artifacts that full population-state load needs.
+    let _ = fs::remove_file(fixture.req.cache_root.join("index.json"));
+    let hit = load_current_population_durations(
+        &fixture.req.cache_root,
+        &fixture.req.source_root,
+        &fixture.identity,
+        &fixture.req,
+        &fixture.tools,
+        None,
+    )
+    .expect("manifest+sidecar warm path");
+    assert_eq!(hit.len(), 1);
+    assert_eq!(hit[0].0, "alpha");
+}
+
+#[test]
 fn load_current_population_durations_hits_sidecar_then_rebuilds_on_miss() {
     let fixture = published_alpha_derived_fixture();
     let hit = load_current_population_durations(

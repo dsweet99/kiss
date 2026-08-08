@@ -1,5 +1,8 @@
 //! Immutable reverse-line-index snapshot publication and pruning.
 
+use crate::publish_derived::batch_io_skip_not_found::{
+    dir_entry_path_ok_missing, read_dir_ok_missing, remove_dir_all_ok_missing,
+};
 use crate::publish_derived::batch_reverse_build::{
     BuiltReverseIndex, FileMeta, FileReverseRecord, ReverseMeta, ReversePublishInfo,
     REVERSE_LINE_INDEX_SCHEMA, build_reverse_line_index, file_record_name, hex_digest,
@@ -56,17 +59,64 @@ pub fn write_reverse_snapshot(
         short_id(entries_fingerprint),
         rust_cov_unique_suffix()
     );
+    let staged = prepare_staged_snapshot_dir(&snaps)?;
+    let selectors_digest = write_selectors_json(&staged, built)?;
+    let files_meta = write_file_records(&staged, built)?;
+    let meta = ReverseMeta {
+        schema_version: REVERSE_LINE_INDEX_SCHEMA.to_string(),
+        snapshot_id: snapshot_id.clone(),
+        generation_fingerprint: generation.to_string(),
+        entry_state_revision,
+        entries_fingerprint: entries_fingerprint.to_string(),
+        selectors_digest,
+        files: files_meta,
+    };
+    let meta_bytes = write_json_bytes(&staged.join("meta.json"), &meta, "rust_reverse_meta")?;
+    sync_dir(&staged)?;
+    activate_staged_snapshot(&snaps, &staged, &snapshot_id)?;
+    Ok(ReversePublishInfo {
+        schema_version: REVERSE_LINE_INDEX_SCHEMA.to_string(),
+        snapshot_id,
+        meta_digest: hex_digest(&meta_bytes),
+        entry_state_revision,
+    })
+}
+
+fn prepare_staged_snapshot_dir(snaps: &Path) -> Result<PathBuf, RustLlvmCovError> {
     let staged = snaps.join(format!(".staging.{}", rust_cov_unique_suffix()));
     if staged.exists() {
-        fs::remove_dir_all(&staged).map_err(RustLlvmCovError::Io)?;
+        remove_dir_all_ok_missing(&staged).map_err(|err| {
+            io_msg(
+                err,
+                &format!("remove staged reverse snapshot {}", staged.display()),
+            )
+        })?;
     }
-    fs::create_dir_all(staged.join("files")).map_err(RustLlvmCovError::Io)?;
+    fs::create_dir_all(staged.join("files")).map_err(|err| {
+        io_msg(
+            err,
+            &format!("create staged reverse snapshot {}", staged.display()),
+        )
+    })?;
+    Ok(staged)
+}
+
+fn write_selectors_json(
+    staged: &Path,
+    built: &BuiltReverseIndex,
+) -> Result<String, RustLlvmCovError> {
     let selectors_bytes = write_json_bytes(
         &staged.join("selectors.json"),
         &built.selectors,
         "rust_reverse_selectors",
     )?;
-    let selectors_digest = hex_digest(&selectors_bytes);
+    Ok(hex_digest(&selectors_bytes))
+}
+
+fn write_file_records(
+    staged: &Path,
+    built: &BuiltReverseIndex,
+) -> Result<BTreeMap<String, FileMeta>, RustLlvmCovError> {
     let mut files_meta = BTreeMap::new();
     for (rel, ranges) in &built.files {
         let record = FileReverseRecord {
@@ -87,26 +137,33 @@ pub fn write_reverse_snapshot(
             },
         );
     }
-    let meta = ReverseMeta {
-        schema_version: REVERSE_LINE_INDEX_SCHEMA.to_string(),
-        snapshot_id: snapshot_id.clone(),
-        generation_fingerprint: generation.to_string(),
-        entry_state_revision,
-        entries_fingerprint: entries_fingerprint.to_string(),
-        selectors_digest,
-        files: files_meta,
-    };
-    let meta_bytes = write_json_bytes(&staged.join("meta.json"), &meta, "rust_reverse_meta")?;
-    sync_dir(&staged)?;
-    let final_dir = snaps.join(&snapshot_id);
-    fs::rename(&staged, &final_dir).map_err(RustLlvmCovError::Io)?;
-    sync_dir(&snaps)?;
-    Ok(ReversePublishInfo {
-        schema_version: REVERSE_LINE_INDEX_SCHEMA.to_string(),
-        snapshot_id,
-        meta_digest: hex_digest(&meta_bytes),
-        entry_state_revision,
-    })
+    Ok(files_meta)
+}
+
+fn activate_staged_snapshot(
+    snaps: &Path,
+    staged: &Path,
+    snapshot_id: &str,
+) -> Result<(), RustLlvmCovError> {
+    let final_dir = snaps.join(snapshot_id);
+    fs::rename(staged, &final_dir).map_err(|err| {
+        io_msg(
+            err,
+            &format!(
+                "reverse snapshot rename {} -> {}",
+                staged.display(),
+                final_dir.display()
+            ),
+        )
+    })?;
+    sync_dir(snaps)
+}
+
+fn io_msg(err: std::io::Error, context: &str) -> RustLlvmCovError {
+    RustLlvmCovError::Io(std::io::Error::new(
+        err.kind(),
+        format!("{context}: {err}"),
+    ))
 }
 
 pub fn prune_unreferenced_snapshots(
@@ -115,28 +172,29 @@ pub fn prune_unreferenced_snapshots(
     prior_id: Option<&str>,
 ) -> Result<usize, RustLlvmCovError> {
     let snaps = snapshots_dir(cache_root);
-    if !snaps.is_dir() {
+    let Some(entries) = read_dir_ok_missing(&snaps).map_err(RustLlvmCovError::Io)? else {
         return Ok(0);
-    }
+    };
     let mut removed = 0;
-    for entry in fs::read_dir(&snaps).map_err(RustLlvmCovError::Io)? {
-        let path = entry.map_err(RustLlvmCovError::Io)?.path();
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+    for entry in entries {
+        let Some(path) = dir_entry_path_ok_missing(entry).map_err(RustLlvmCovError::Io)? else {
             continue;
         };
-        if name.starts_with('.') {
-            let _ = fs::remove_dir_all(&path);
-            removed += 1;
-            continue;
-        }
-        if name == active_id || prior_id == Some(name) {
-            continue;
-        }
-        if fs::remove_dir_all(&path).is_ok() {
-            removed += 1;
-        }
+        removed += prune_one_unreferenced_snapshot(&path, active_id, prior_id);
     }
     Ok(removed)
+}
+
+fn prune_one_unreferenced_snapshot(path: &Path, active_id: &str, prior_id: Option<&str>) -> usize {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return 0;
+    };
+    // Staging dirs (`.` prefix): another publisher may still own them; never fail.
+    let keep = !name.starts_with('.') && (name == active_id || prior_id == Some(name));
+    if keep {
+        return 0;
+    }
+    usize::from(remove_dir_all_ok_missing(path).is_ok())
 }
 
 pub fn read_prior_snapshot_id(cache_root: &Path) -> Option<String> {
@@ -183,6 +241,6 @@ fn write_json_bytes<T: Serialize>(
 }
 
 fn sync_dir(path: &Path) -> Result<(), RustLlvmCovError> {
-    let dir = File::open(path).map_err(RustLlvmCovError::Io)?;
+    let dir = File::open(path).map_err(|err| io_msg(err, &format!("sync_dir {}", path.display())))?;
     dir.sync_all().map_err(RustLlvmCovError::Io)
 }

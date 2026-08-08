@@ -987,6 +987,10 @@ def qa_fixture(prefix: str) -> Iterator[Fixture]:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(root)
         env.pop("RUSTFLAGS", None)
+        # Never inherit stale publication-barrier paths from the parent shell;
+        # a deleted barrier dir makes canonicalize() return bare NotFound mid-publish.
+        env.pop("KISS_QA_PUBLICATION_BARRIER_DIR", None)
+        env.pop("KISS_QA_PUBLICATION_BARRIER_TARGET", None)
         changed_text(
             root / PY_SOURCE,
             "return {path: partial.get(path, 0.0) for path in files}",
@@ -2681,11 +2685,31 @@ def concurrent_cache_recovery() -> None:
                 ]
             )
         cold = run_concurrent("cold-race", cold_commands, fixture.env)
-        for outcome in cold[:3]:
-            assert outcome.metrics()["python_population_required"] == "true"
-        for outcome in cold[3:]:
-            assert outcome.metrics()["rust_population_required"] == "true"
+        # Concurrent peers may finish publishing before a late starter plans, so
+        # population_required can be false with cache hits. Require at least one
+        # true cold populate per language; allow hit-followers.
+        py_cold_metrics = [outcome.metrics() for outcome in cold[:3]]
+        assert any(
+            metrics.get("python_population_required") == "true" for metrics in py_cold_metrics
+        ), py_cold_metrics
+        for outcome, metrics in zip(cold[:3], py_cold_metrics, strict=True):
+            required = metrics.get("python_population_required")
+            assert required in {"true", "false"}, (outcome.name, metrics)
+            if required == "false":
+                assert metric_int(metrics, "python_cache_hits") > 0, (outcome.name, metrics)
         rust_cold_metrics = [outcome.metrics() for outcome in cold[3:]]
+        assert any(
+            metrics.get("rust_population_required") == "true" for metrics in rust_cold_metrics
+        ), rust_cold_metrics
+        for outcome, metrics in zip(cold[3:], rust_cold_metrics, strict=True):
+            required = metrics.get("rust_population_required")
+            assert required in {"true", "false"}, (outcome.name, metrics)
+            if required == "false":
+                assert (
+                    metric_int(metrics, "rust_population_cache_hits")
+                    + metric_int(metrics, "rust_final_cache_hits")
+                    > 0
+                ), (outcome.name, metrics)
         rust_universes = {
             metric_int(metrics, "rust_population_selectors") for metrics in rust_cold_metrics
         }

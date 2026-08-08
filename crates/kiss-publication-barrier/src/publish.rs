@@ -31,21 +31,83 @@ pub fn publish_atomically(
         ));
     }
 
-    fs::create_dir_all(final_parent)?;
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(temporary_path)?;
-    write(&mut file)?;
-    file.sync_all()?;
-    after_sync_before_rename(artifact, temporary_path, final_path)?;
+    fs::create_dir_all(final_parent).map_err(|err| {
+        path_step_err(artifact, "create_dir_all", final_parent, err)
+    })?;
+    let mut file = open_publish_tmp(artifact, temporary_path, final_parent)?;
+    write(&mut file).map_err(|err| path_step_err(artifact, "write", temporary_path, err))?;
+    file.sync_all()
+        .map_err(|err| path_step_err(artifact, "sync_all", temporary_path, err))?;
+    after_sync_before_rename(artifact, temporary_path, final_path)
+        .map_err(|err| step_err(artifact, "after_sync_before_rename", err))?;
     drop(file);
     if let Err(err) = fs::rename(temporary_path, final_path) {
         let _ = fs::remove_file(temporary_path);
-        return Err(err);
+        return Err(io::Error::new(
+            err.kind(),
+            format!(
+                "publish_atomically[{artifact}] rename {} -> {}: {err}",
+                temporary_path.display(),
+                final_path.display()
+            ),
+        ));
     }
-    after_rename(artifact, temporary_path, final_path)?;
-    let parent_dir = File::open(final_parent)?;
-    parent_dir.sync_all()?;
-    Ok(())
+    after_rename(artifact, temporary_path, final_path)
+        .map_err(|err| step_err(artifact, "after_rename", err))?;
+    sync_publish_parent(artifact, final_parent)
+}
+
+fn step_err(artifact: &str, step: &str, err: io::Error) -> io::Error {
+    io::Error::new(
+        err.kind(),
+        format!("publish_atomically[{artifact}] {step}: {err}"),
+    )
+}
+
+fn path_step_err(artifact: &str, step: &str, path: &Path, err: io::Error) -> io::Error {
+    io::Error::new(
+        err.kind(),
+        format!(
+            "publish_atomically[{artifact}] {step} {}: {err}",
+            path.display()
+        ),
+    )
+}
+
+/// `create_new` the temp file; if the parent vanished, recreate and retry once.
+pub(crate) fn open_publish_tmp(
+    artifact: &str,
+    temporary_path: &Path,
+    final_parent: &Path,
+) -> io::Result<File> {
+    match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(temporary_path)
+    {
+        Ok(file) => Ok(file),
+        // Parent can vanish between create_dir_all and create_new under races.
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            fs::create_dir_all(final_parent)
+                .map_err(|retry| path_step_err(artifact, "create_dir_all retry", final_parent, retry))?;
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(temporary_path)
+                .map_err(|retry| path_step_err(artifact, "create_new retry", temporary_path, retry))
+        }
+        Err(err) => Err(path_step_err(artifact, "create_new", temporary_path, err)),
+    }
+}
+
+/// Sync the parent directory after rename. Missing parent is success: the bytes
+/// were already published, and a concurrent tree replacement can remove the dir.
+pub(crate) fn sync_publish_parent(artifact: &str, final_parent: &Path) -> io::Result<()> {
+    match File::open(final_parent) {
+        Ok(parent_dir) => parent_dir
+            .sync_all()
+            .map_err(|err| path_step_err(artifact, "parent sync_all", final_parent, err)),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(path_step_err(artifact, "sync parent", final_parent, err)),
+    }
 }

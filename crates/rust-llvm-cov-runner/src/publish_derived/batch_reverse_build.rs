@@ -85,8 +85,17 @@ fn collect_raw_coverage_by_file(
     if !entries_dir.is_dir() {
         return Ok((raw, selector_set));
     }
-    for entry in fs::read_dir(&entries_dir).map_err(RustLlvmCovError::Io)? {
-        let path = entry.map_err(RustLlvmCovError::Io)?.path();
+    let entries = match fs::read_dir(&entries_dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok((raw, selector_set)),
+        Err(err) => return Err(RustLlvmCovError::Io(err)),
+    };
+    for entry in entries {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(RustLlvmCovError::Io(err)),
+        };
         if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
             continue;
         }

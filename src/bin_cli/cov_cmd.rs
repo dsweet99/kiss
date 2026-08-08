@@ -71,6 +71,7 @@ fn evaluate_time_gate_for_cov(
     if max_secs == 0.0 {
         return RuntimeGateEval::Disabled;
     }
+    let t_timings = Instant::now();
     let timings = collect_current_unit_test_timings(TimingCollectOpts {
         universe: universe_root,
         lang_filter: args.lang_filter,
@@ -80,6 +81,12 @@ fn evaluate_time_gate_for_cov(
         },
         ignore,
     });
+    if args.timing {
+        eprintln!(
+            "TIMING:coverage_unit_test_timings_ms:{}",
+            t_timings.elapsed().as_millis()
+        );
+    }
     evaluate_runtime_gate(&timings, max_secs)
 }
 

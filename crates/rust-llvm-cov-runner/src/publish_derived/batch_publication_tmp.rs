@@ -1,8 +1,15 @@
 //! Sweep orphaned publication `*.tmp` files left by crashed publishers.
 
+use crate::publish_derived::batch_io_skip_not_found::{
+    dir_entry_ok_missing, file_type_ok_missing, read_dir_ok_missing,
+};
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::time::{Duration, SystemTime};
+
+/// Temps newer than this are assumed in-flight and left alone.
+const ORPHAN_TMP_MIN_AGE: Duration = Duration::from_secs(60);
 
 /// Remove leftover `*.tmp` files under `cache_root` (recursive).
 ///
@@ -10,29 +17,51 @@ use std::path::Path;
 /// while holding the batch lock. Do not call from `kiss check` / check-aggregate
 /// paths: crash-recovery QA starts a concurrent check reader that must leave a
 /// killed writer's staged entry temp intact for the harness to observe.
+///
+/// Only temps older than [`ORPHAN_TMP_MIN_AGE`] are removed so a concurrent
+/// publisher's in-flight `.*.tmp` is not deleted between write and rename.
 pub(crate) fn sweep_orphaned_publication_tmps(cache_root: &Path) -> io::Result<()> {
-    sweep_dir(cache_root)
+    let cutoff = SystemTime::now()
+        .checked_sub(ORPHAN_TMP_MIN_AGE)
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    sweep_dir(cache_root, cutoff)
 }
 
-fn sweep_dir(dir: &Path) -> io::Result<()> {
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(err) => return Err(err),
+fn sweep_dir(dir: &Path, cutoff: SystemTime) -> io::Result<()> {
+    let Some(entries) = read_dir_ok_missing(dir)? else {
+        return Ok(());
     };
     for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            sweep_dir(&path)?;
-            continue;
-        }
-        if path.extension().and_then(|ext| ext.to_str()) == Some("tmp") {
-            let _ = fs::remove_file(&path);
-        }
+        sweep_one(entry, cutoff)?;
     }
     Ok(())
+}
+
+fn sweep_one(entry: io::Result<fs::DirEntry>, cutoff: SystemTime) -> io::Result<()> {
+    let Some(entry) = dir_entry_ok_missing(entry)? else {
+        return Ok(());
+    };
+    let Some(file_type) = file_type_ok_missing(&entry)? else {
+        return Ok(());
+    };
+    let path = entry.path();
+    if file_type.is_dir() {
+        return sweep_dir(&path, cutoff);
+    }
+    if path.extension().and_then(|ext| ext.to_str()) != Some("tmp") {
+        return Ok(());
+    }
+    if tmp_mtime_older_than(&path, cutoff) {
+        let _ = fs::remove_file(&path);
+    }
+    Ok(())
+}
+
+fn tmp_mtime_older_than(path: &Path, cutoff: SystemTime) -> bool {
+    fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .map(|modified| modified <= cutoff)
+        .unwrap_or(true)
 }
 
 #[cfg(test)]

@@ -8,6 +8,8 @@ pub(crate) mod batch_derived;
 
 pub(crate) mod batch_derived_entries;
 
+pub(crate) mod batch_derived_generations;
+
 pub(crate) mod batch_derived_incremental;
 
 pub(crate) mod batch_derived_index;
@@ -27,6 +29,8 @@ pub(crate) mod batch_population_durations;
 pub(crate) mod batch_derived_prune;
 
 pub(crate) mod batch_entry_state;
+
+pub(crate) mod batch_io_skip_not_found;
 
 pub(crate) mod batch_reverse_build;
 

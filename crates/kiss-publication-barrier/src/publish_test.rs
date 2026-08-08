@@ -222,6 +222,38 @@ fn collect_forbidden_publish_hook_callers(
 }
 
 #[test]
+fn open_publish_tmp_retries_when_parent_is_missing() {
+    let dir = temp_dir();
+    let nested = dir.join("nested");
+    let tmp_path = nested.join("out.tmp");
+    // Parent absent → first create_new yields NotFound; helper recreates and retries.
+    let mut file = open_publish_tmp("artifact", &tmp_path, &nested).unwrap();
+    file.write_all(b"payload\n").unwrap();
+    drop(file);
+    assert_eq!(fs::read(&tmp_path).unwrap(), b"payload\n");
+}
+
+#[test]
+fn sync_publish_parent_ok_when_parent_missing() {
+    let missing = temp_dir().join("gone");
+    sync_publish_parent("artifact", &missing).unwrap();
+}
+
+#[test]
+fn publish_atomically_ignores_stale_missing_barrier_dir() {
+    let dir = temp_dir();
+    let missing_barrier = dir.join("no-such-barrier");
+    let _env = EnvGuard::set(Some(&missing_barrier), Some("artifact:after_rename"));
+    let final_path = dir.join("out.json");
+    let tmp_path = dir.join("out.tmp");
+    publish_atomically("artifact", &final_path, &tmp_path, |file| {
+        file.write_all(b"payload\n")
+    })
+    .unwrap();
+    assert_eq!(fs::read(&final_path).unwrap(), b"payload\n");
+}
+
+#[test]
 fn production_sources_do_not_call_after_sync_before_rename_directly() {
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")

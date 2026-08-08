@@ -1,20 +1,27 @@
 pub(crate) use crate::publish_derived::batch_derived_prune::maybe_prune_obsolete_selective_after_batch;
+use crate::publish_derived::batch_derived_generations::{
+    build_generation_index, count_generations,
+};
 use crate::publish_derived::batch_derived_prune::prune_non_current_generations;
 pub use crate::publish_derived::batch_derived_prune::prune_obsolete_selective_generations;
 use crate::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
 use crate::plan::batch_plan::RustCoverageBatchRequest;
-use crate::rust_cov_cache::{
-    RustCovCacheEntry, generation_entries_fingerprint, load_rust_cov_cache_entry,
-    repo_relative_coverage_file,
-};
+use crate::rust_cov_cache::{generation_entries_fingerprint, load_rust_cov_cache_entry};
 use crate::{
-    RustLineCoverage, RustLlvmCovError, RustTestBinaryIdentity,
-    batch_check_aggregate::ValidatedCheckAggregate,
+    RustLlvmCovError, RustTestBinaryIdentity, batch_check_aggregate::ValidatedCheckAggregate,
 };
-use rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io;
 use std::path::Path;
+
+// Re-exported for `#[cfg(test)]` modules that `use super::*`.
+#[cfg(test)]
+use crate::RustLineCoverage;
+#[cfg(test)]
+use crate::rust_cov_cache::RustCovCacheEntry;
+#[cfg(test)]
+use rpytest_runner::TestStatus;
 pub const INDEX_SCHEMA_VERSION: &str = "rust-llvm-cov-index-v3";
 pub const POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v6";
 
@@ -196,37 +203,42 @@ pub fn publish_derived_state_with_binaries(
     derived_repair: bool,
 ) -> Result<DerivedPublishCounters, RustLlvmCovError> {
     crate::publish_derived::batch_publication_tmp::sweep_orphaned_publication_tmps(&req.cache_root)
-        .map_err(RustLlvmCovError::Io)?;
-    let pruned = prune_non_current_generations(&req.cache_root, &identity.generation_fingerprint)?;
+        .map_err(|err| io_context("sweep_orphaned_publication_tmps", err))?;
+    let pruned = prune_non_current_generations(&req.cache_root, &identity.generation_fingerprint)
+        .map_err(|err| annotate_io("prune_non_current_generations", err))?;
     let index = build_generation_index(
         &req.cache_root,
         &req.source_root,
         &identity.generation_fingerprint,
-    )?;
+    )
+    .map_err(|err| annotate_io("build_generation_index", err))?;
     let entries_fingerprint =
         generation_entries_fingerprint(&req.cache_root, &identity.generation_fingerprint)
-            .map_err(RustLlvmCovError::Io)?;
+            .map_err(|err| io_context("generation_entries_fingerprint", err))?;
     let prior_snapshot =
         crate::publish_derived::batch_reverse_line_index::read_prior_snapshot_id(&req.cache_root);
     let revision = crate::publish_derived::batch_entry_state::publish_next_entry_state(
         &req.cache_root,
         &identity.generation_fingerprint,
         &entries_fingerprint,
-    )?;
+    )
+    .map_err(|err| annotate_io("publish_next_entry_state", err))?;
     let reverse = crate::publish_derived::batch_reverse_line_index::publish_reverse_line_index(
         &req.cache_root,
         &req.source_root,
         &identity.generation_fingerprint,
         &entries_fingerprint,
         revision,
-    )?;
+    )
+    .map_err(|err| annotate_io("publish_reverse_line_index", err))?;
     crate::publish_derived::batch_derived_index_write::write_coverage_index(
         &req.cache_root,
         &req.source_root,
         &identity.generation_fingerprint,
         &entries_fingerprint,
         &index,
-    )?;
+    )
+    .map_err(|err| annotate_io("write_coverage_index", err))?;
     crate::publish_derived::batch_derived_manifest::write_population_and_durations(
         req,
         tools,
@@ -235,7 +247,8 @@ pub fn publish_derived_state_with_binaries(
         test_binaries,
         &entries_fingerprint,
         Some(&reverse),
-    )?;
+    )
+    .map_err(|err| annotate_io("write_population_and_durations", err))?;
     let reverse_snapshots_reclaimed = match crate::publish_derived::batch_reverse_line_index::prune_unreferenced_snapshots(
         &req.cache_root,
         &reverse.snapshot_id,
@@ -257,12 +270,24 @@ pub fn publish_derived_state_with_binaries(
     );
     Ok(DerivedPublishCounters {
         derived_repair,
-        entry_generation_count: count_generations(&req.cache_root)?,
+        entry_generation_count: count_generations(&req.cache_root)
+            .map_err(|err| annotate_io("count_generations", err))?,
         current_index_generation: identity.generation_fingerprint.clone(),
         cache_pruned_entries: pruned,
         reverse_published: true,
         reverse_snapshots_reclaimed,
     })
+}
+
+fn io_context(step: &str, err: io::Error) -> RustLlvmCovError {
+    RustLlvmCovError::Io(io::Error::new(err.kind(), format!("{step}: {err}")))
+}
+
+fn annotate_io(step: &str, err: RustLlvmCovError) -> RustLlvmCovError {
+    match err {
+        RustLlvmCovError::Io(inner) => io_context(step, inner),
+        other => other,
+    }
 }
 
 pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
@@ -340,70 +365,6 @@ pub(crate) fn derived_generation_line_index(
     generation: &str,
 ) -> Result<RustCoverageIndex, RustLlvmCovError> {
     build_generation_index(cache_root, source_root, generation)
-}
-
-fn build_generation_index(
-    cache_root: &Path,
-    source_root: &Path,
-    generation: &str,
-) -> Result<RustCoverageIndex, RustLlvmCovError> {
-    let mut files: RustCoverageIndex = BTreeMap::new();
-    let entries_dir = cache_root.join("entries");
-    if !entries_dir.is_dir() {
-        return Ok(files);
-    }
-    for entry in fs::read_dir(&entries_dir).map_err(RustLlvmCovError::Io)? {
-        let path = entry.map_err(RustLlvmCovError::Io)?.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-            continue;
-        }
-        let Some((selector, status, coverage)) = load_index_entry(&path, generation) else {
-            continue;
-        };
-        if status != TestStatus::Passed || coverage.files.is_empty() {
-            continue;
-        }
-        for file in coverage.files.keys() {
-            if let Some(rel) = repo_relative_coverage_file(source_root, file) {
-                files.entry(rel).or_default().insert(selector.clone());
-            }
-        }
-    }
-    Ok(files)
-}
-
-fn load_index_entry(
-    path: &Path,
-    generation: &str,
-) -> Option<(String, TestStatus, RustLineCoverage)> {
-    let bytes = fs::read(path).ok()?;
-    let entry: RustCovCacheEntry = serde_json::from_slice(&bytes).ok()?;
-    if entry.generation_fingerprint != generation {
-        return None;
-    }
-    Some((entry.selector, entry.status, entry.coverage))
-}
-
-fn count_generations(cache_root: &Path) -> Result<usize, RustLlvmCovError> {
-    let entries_dir = cache_root.join("entries");
-    if !entries_dir.is_dir() {
-        return Ok(0);
-    }
-    let mut generations = BTreeSet::new();
-    for entry in fs::read_dir(&entries_dir).map_err(RustLlvmCovError::Io)? {
-        let path = entry.map_err(RustLlvmCovError::Io)?.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-            continue;
-        }
-        let bytes = fs::read(&path).map_err(RustLlvmCovError::Io)?;
-        let Ok(parsed): Result<RustCovCacheEntry, _> = serde_json::from_slice(&bytes) else {
-            continue;
-        };
-        if !parsed.generation_fingerprint.is_empty() {
-            generations.insert(parsed.generation_fingerprint);
-        }
-    }
-    Ok(generations.len())
 }
 
 #[cfg(test)]

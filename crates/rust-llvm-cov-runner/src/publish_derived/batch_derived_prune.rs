@@ -1,10 +1,12 @@
 use crate::publish_derived::batch_derived_index::read_population_generation;
+use crate::publish_derived::batch_io_skip_not_found::{
+    dir_entry_path_ok_missing, read_dir_ok_missing, read_ok_missing, remove_file_ok_missing,
+};
 use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
 use crate::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_cov_cache::RustCovCacheEntry;
 use crate::{CACHE_SCHEMA_VERSION, RustLlvmCovError};
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::Path;
 
 pub(crate) fn prune_non_current_generations(
@@ -54,36 +56,59 @@ fn prune_generations_except(
     current_generation: &str,
     population_generation: Option<String>,
 ) -> Result<usize, RustLlvmCovError> {
-    let entries_dir = cache_root.join("entries");
-    if !entries_dir.is_dir() {
+    let Some(entries) =
+        read_dir_ok_missing(&cache_root.join("entries")).map_err(RustLlvmCovError::Io)?
+    else {
         return Ok(0);
+    };
+    let retained = retained_generations(current_generation, population_generation);
+    let mut pruned = 0usize;
+    for entry in entries {
+        if try_prune_entry(entry, &retained)? {
+            pruned += 1;
+        }
     }
+    Ok(pruned)
+}
+
+fn retained_generations(
+    current_generation: &str,
+    population_generation: Option<String>,
+) -> BTreeSet<String> {
     let mut retained = BTreeSet::from([current_generation.to_string()]);
     if let Some(previous) =
         population_generation.filter(|generation| generation != current_generation)
     {
         retained.insert(previous);
     }
-    let mut pruned = 0usize;
-    for entry in fs::read_dir(&entries_dir).map_err(RustLlvmCovError::Io)? {
-        let path = entry.map_err(RustLlvmCovError::Io)?.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-            continue;
-        }
-        let bytes = fs::read(&path).map_err(RustLlvmCovError::Io)?;
-        let Ok(parsed): Result<RustCovCacheEntry, _> = serde_json::from_slice(&bytes) else {
-            continue;
-        };
-        if parsed.schema_version != CACHE_SCHEMA_VERSION {
-            continue;
-        }
-        if parsed.generation_fingerprint.is_empty()
-            || retained.contains(&parsed.generation_fingerprint)
-        {
-            continue;
-        }
-        fs::remove_file(path).map_err(RustLlvmCovError::Io)?;
-        pruned += 1;
+    retained
+}
+
+fn try_prune_entry(
+    entry: std::io::Result<std::fs::DirEntry>,
+    retained: &BTreeSet<String>,
+) -> Result<bool, RustLlvmCovError> {
+    let Some(path) = dir_entry_path_ok_missing(entry).map_err(RustLlvmCovError::Io)? else {
+        return Ok(false);
+    };
+    if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        return Ok(false);
     }
-    Ok(pruned)
+    let Some(bytes) = read_ok_missing(&path).map_err(RustLlvmCovError::Io)? else {
+        return Ok(false);
+    };
+    if !entry_is_obsolete_to_prune(&bytes, retained) {
+        return Ok(false);
+    }
+    remove_file_ok_missing(&path).map_err(RustLlvmCovError::Io)?;
+    Ok(true)
+}
+
+fn entry_is_obsolete_to_prune(bytes: &[u8], retained: &BTreeSet<String>) -> bool {
+    let Ok(parsed): Result<RustCovCacheEntry, _> = serde_json::from_slice(bytes) else {
+        return false;
+    };
+    parsed.schema_version == CACHE_SCHEMA_VERSION
+        && !parsed.generation_fingerprint.is_empty()
+        && !retained.contains(&parsed.generation_fingerprint)
 }

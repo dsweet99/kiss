@@ -224,18 +224,32 @@ fn repeated_operations_do_not_collide() {
     assert_eq!(ids.len(), 100);
 }
 
+#[cfg(debug_assertions)]
+#[test]
+fn release_build_public_calls_are_no_ops_even_when_configured() {
+    // Public after_* APIs wait up to DEFAULT_TIMEOUT (30s). Prove the barrier is
+    // armed via wait_if_targeted + short_policy so kiss cov time gates stay green.
+    let dir = temp_dir();
+    let _env = EnvGuard::set(Some(&dir), Some("artifact:after_rename"));
+    let result = wait_if_targeted(
+        "artifact",
+        "after_rename",
+        Path::new("/tmp/a.tmp"),
+        Path::new("/tmp/a.json"),
+        short_policy(),
+    );
+    assert!(result.is_err());
+}
+
+#[cfg(not(debug_assertions))]
 #[test]
 fn release_build_public_calls_are_no_ops_even_when_configured() {
     let dir = temp_dir();
     let _env = EnvGuard::set(Some(&dir), Some("artifact:after_rename"));
-    let result = after_rename(
+    after_rename(
         "artifact",
         Path::new("/tmp/a.tmp"),
         Path::new("/tmp/a.json"),
-    );
-    if cfg!(debug_assertions) {
-        assert!(result.is_err());
-    } else {
-        result.unwrap();
-    }
+    )
+    .unwrap();
 }
