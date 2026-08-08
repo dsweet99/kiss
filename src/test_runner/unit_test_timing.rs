@@ -156,6 +156,7 @@ pub(crate) struct RuntimeGateViolation {
     pub(crate) language: Language,
     pub(crate) selector: String,
     pub(crate) seconds: f64,
+    pub(crate) limit_seconds: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -168,20 +169,29 @@ pub(crate) enum RuntimeGateEval {
 
 pub(crate) fn evaluate_runtime_gate(
     timings: &TimingPopulation,
-    max_unit_test_seconds: f64,
+    max_unit_test_seconds: &[(String, f64)],
 ) -> RuntimeGateEval {
-    if max_unit_test_seconds == 0.0 {
+    if max_unit_test_seconds.is_empty() {
         return RuntimeGateEval::Disabled;
     }
     match timings {
         TimingPopulation::Complete(entries) => {
             let viols: Vec<RuntimeGateViolation> = entries
                 .iter()
-                .filter(|t| t.duration.as_secs_f64() >= max_unit_test_seconds)
-                .map(|t| RuntimeGateViolation {
-                    language: t.language,
-                    selector: t.selector.clone(),
-                    seconds: t.duration.as_secs_f64(),
+                .filter_map(|t| {
+                    let limit =
+                        kiss::gate_config::limit_for_selector(max_unit_test_seconds, &t.selector);
+                    let seconds = t.duration.as_secs_f64();
+                    if seconds >= limit {
+                        Some(RuntimeGateViolation {
+                            language: t.language,
+                            selector: t.selector.clone(),
+                            seconds,
+                            limit_seconds: limit,
+                        })
+                    } else {
+                        None
+                    }
                 })
                 .collect();
             if viols.is_empty() {
@@ -194,18 +204,14 @@ pub(crate) fn evaluate_runtime_gate(
     }
 }
 
-pub(crate) fn runtime_gate_failure_lines(
-    viols: &[RuntimeGateViolation],
-    limit_seconds: f64,
-) -> Vec<String> {
+pub(crate) fn runtime_gate_failure_lines(viols: &[RuntimeGateViolation]) -> Vec<String> {
     let mut ordered: Vec<&RuntimeGateViolation> = viols.iter().collect();
     ordered.sort_by(|a, b| {
         (a.language, a.selector.as_str()).cmp(&(b.language, b.selector.as_str()))
     });
     let mut lines = vec![format!(
-        "GATE_FAILED:max_unit_test_seconds: {} test(s) at or above {:.2}s",
-        ordered.len(),
-        limit_seconds
+        "GATE_FAILED:max_unit_test_seconds: {} test(s) exceeded path-pattern time limits",
+        ordered.len()
     )];
     for v in ordered {
         lines.push(format!(
@@ -213,7 +219,7 @@ pub(crate) fn runtime_gate_failure_lines(
             v.language.label(),
             v.selector,
             v.seconds,
-            limit_seconds
+            v.limit_seconds
         ));
     }
     lines

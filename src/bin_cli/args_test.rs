@@ -136,6 +136,9 @@ fn test_command_help_is_language_neutral_for_shared_options() {
     assert!(
         help.contains("Force selected tests to rerun instead of reusing test-runner caches")
     );
+    assert!(help.contains(
+        "Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"
+    ));
     assert!(help.contains("Maximum number of test jobs to run concurrently"));
     assert!(help.contains("commit|base|main|.|TARGET"));
     assert!(!help.contains("all|TARGET"));

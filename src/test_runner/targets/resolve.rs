@@ -42,6 +42,11 @@ pub(crate) fn resolve_target_operands(
         let abs = canonicalize_target_path(repo_root, &parsed)?;
         reject_ignored_target(repo_root, &abs, ignore, &parsed.raw)?;
         reject_lang_mismatch(lang_filter, parsed.language, &parsed.raw)?;
+        // Explicit single-test selectors: trust the nodeid and skip pytest --collect-only.
+        if let Some(nodeid) = explicit_python_test_selector(repo_root, &parsed, &abs) {
+            insert_direct(&mut query, Language::Python, nodeid);
+            continue;
+        }
         if !models.contains_key(&abs) {
             let mut model = load_source_model(&abs, parsed.language)?;
             if parsed.language == Language::Python {
@@ -55,12 +60,46 @@ pub(crate) fn resolve_target_operands(
     Ok(query)
 }
 
+/// Nodeid for an explicit Python test operand without running collection.
+fn explicit_python_test_selector(
+    repo_root: &Path,
+    parsed: &ParsedTestTarget,
+    abs: &Path,
+) -> Option<String> {
+    if parsed.language != Language::Python {
+        return None;
+    }
+    if let Some(nodeid) = &parsed.python_nodeid {
+        return Some(nodeid.clone());
+    }
+    if !is_test_file(abs) && !is_in_test_directory(abs) {
+        return None;
+    }
+    let rel = repo_relative(repo_root, abs)?;
+    match (&parsed.symbol, parsed.member.as_deref()) {
+        (Some(name), None) => Some(format!("{rel}::{name}")),
+        (Some(class), Some(method)) => Some(format!("{rel}::{class}::{method}")),
+        (None, _) => None,
+    }
+}
+
 fn apply_parsed_target(
     query: &mut TargetSelectionQuery,
     model: &SourceModel,
     parsed: &ParsedTestTarget,
     abs: &Path,
 ) -> Result<(), String> {
+    if let Some(nodeid) = &parsed.python_nodeid {
+        if model.direct_tests.iter().any(|t| t.selector == *nodeid) {
+            insert_direct(query, Language::Python, nodeid.clone());
+            return Ok(());
+        }
+        return Err(format!(
+            "unknown pytest nodeid '{}' in {}",
+            parsed.raw,
+            abs.display()
+        ));
+    }
     match (&parsed.symbol, parsed.member.as_deref()) {
         (None, _) => {
             for test in &model.direct_tests {
@@ -79,26 +118,58 @@ fn apply_parsed_target(
                 insert_file(query, model.language, abs);
             }
         }
-        (Some(name), member) => {
-            let def = model.find_definition(name, member)?;
-            if def.is_unit_test {
-                let selector = def.test_selector.clone().ok_or_else(|| {
-                    format!(
-                        "unit test '{}' in {} has no selector",
-                        parsed.raw,
-                        abs.display()
-                    )
-                })?;
-                insert_direct(query, model.language, selector);
-            } else {
-                let lines = model.coverage_lines_for_definition(def);
-                if !lines.is_empty() {
-                    insert_lines(query, model.language, abs, lines);
-                }
-            }
-        }
+        (Some(name), member) => apply_symbol_target(query, model, parsed, abs, name, member)?,
     }
     Ok(())
+}
+
+fn apply_symbol_target(
+    query: &mut TargetSelectionQuery,
+    model: &SourceModel,
+    parsed: &ParsedTestTarget,
+    abs: &Path,
+    name: &str,
+    member: Option<&str>,
+) -> Result<(), String> {
+    let def = model.find_definition(name, member)?;
+    if !def.is_unit_test {
+        let lines = model.coverage_lines_for_definition(def);
+        if !lines.is_empty() {
+            insert_lines(query, model.language, abs, lines);
+        }
+        return Ok(());
+    }
+    let selectors = unit_test_selectors_for_def(model, name, member);
+    if selectors.is_empty() {
+        return Err(format!(
+            "unit test '{}' in {} has no selector",
+            parsed.raw,
+            abs.display()
+        ));
+    }
+    for selector in selectors {
+        insert_direct(query, model.language, selector);
+    }
+    Ok(())
+}
+
+fn unit_test_selectors_for_def(
+    model: &SourceModel,
+    name: &str,
+    member: Option<&str>,
+) -> Vec<String> {
+    model
+        .direct_tests
+        .iter()
+        .filter(|test| match member {
+            Some(method) => {
+                test.owner.as_deref() == Some(name) && test.name == method
+            }
+            None => test.owner.is_none() && test.name == name,
+        })
+        .map(|test| test.selector.clone())
+        .filter(|selector| !selector.is_empty())
+        .collect()
 }
 
 fn attach_python_tests(

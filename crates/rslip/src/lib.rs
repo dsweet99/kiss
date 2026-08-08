@@ -349,7 +349,7 @@ fn rslip_sample_request(root: &Path) -> RslipRequest {
         env: BTreeMap::new(),
         cache_root: root.join(".rslip_cache"),
         force_rerun: false,
-        timeout: None,
+timeout: None,
         content_fingerprint: None,
     }
 }

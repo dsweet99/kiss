@@ -142,8 +142,8 @@ fn kiss_test_dot_prints_final_pass_recap() {
         "cold run must end with pass recap, last={cold_last}, stdout={cold_out}"
     );
     assert!(
-        cold_out.contains("PASSED:") || cold_out.contains("PASSED (cached):"),
-        "streaming PASSED lines must remain: {cold_out}"
+        cold_out.contains("PASS:") || cold_out.contains("PASS (cached):"),
+        "streaming PASS lines must remain: {cold_out}"
     );
 
     let warm = std::process::Command::new(bin)
@@ -197,12 +197,12 @@ fn kiss_test_python_failure_prints_failed_recap_line() {
         "failing fixture must exit 1, stderr={stderr}, stdout={stdout}"
     );
     assert!(
-        stdout.contains("FAILED:"),
-        "streaming FAILED: line must remain: {stdout}"
+        stdout.contains("FAIL:"),
+        "streaming FAIL: line must remain: {stdout}"
     );
     assert!(
-        stdout.lines().any(|line| line == "FAILED test_lib.py::test_f"),
-        "recap must include colon-free FAILED selector, stdout={stdout}"
+        stdout.lines().any(|line| line == "FAIL test_lib.py::test_f"),
+        "recap must include colon-free FAIL selector, stdout={stdout}"
     );
     assert!(
         stdout.contains(" failed ·"),
@@ -249,13 +249,13 @@ mod tests {\n\
         "failing rust fixture must exit 1, stderr={stderr}, stdout={stdout}"
     );
     assert!(
-        stdout.contains("FAILED:") || stdout.contains("FAILED ("),
-        "streaming FAILED line must remain: {stdout}"
+        stdout.contains("FAIL:") || stdout.contains("FAIL ("),
+        "streaming FAIL line must remain: {stdout}"
     );
     assert!(
         stdout
             .lines()
-            .any(|line| line == "FAILED tests::gets_value"),
+            .any(|line| line == "FAIL tests::gets_value"),
         "recap must use canonical Rust logical selector, stdout={stdout}"
     );
 }

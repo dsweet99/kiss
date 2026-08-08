@@ -67,8 +67,7 @@ fn evaluate_time_gate_for_cov(
     files: &CovFileSets,
     ignore: &[String],
 ) -> RuntimeGateEval {
-    let max_secs = args.gate_config.max_unit_test_seconds;
-    if max_secs == 0.0 {
+    if args.gate_config.unit_test_time_gate_disabled() {
         return RuntimeGateEval::Disabled;
     }
     let t_timings = Instant::now();
@@ -87,14 +86,14 @@ fn evaluate_time_gate_for_cov(
             t_timings.elapsed().as_millis()
         );
     }
-    evaluate_runtime_gate(&timings, max_secs)
+    evaluate_runtime_gate(&timings, &args.gate_config.max_unit_test_seconds)
 }
 
-fn apply_time_gate_eval(eval: &RuntimeGateEval, max_secs: f64) -> bool {
+fn apply_time_gate_eval(eval: &RuntimeGateEval) -> bool {
     match eval {
         RuntimeGateEval::Disabled | RuntimeGateEval::Passed => false,
         RuntimeGateEval::Failed(viols) => {
-            for line in runtime_gate_failure_lines(viols, max_secs) {
+            for line in runtime_gate_failure_lines(viols) {
                 println!("{line}");
             }
             true
@@ -150,7 +149,7 @@ fn evaluate_records_with_time(
     let time_eval =
         evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
     let time_failed =
-        apply_time_gate_eval(&time_eval, ctx.args.gate_config.max_unit_test_seconds);
+        apply_time_gate_eval(&time_eval);
     finish_sibling_gates(SiblingGateResult {
         coverage_failed,
         time_failed,
@@ -177,7 +176,7 @@ fn try_evaluate_records_with_time(
         ctx.args.bypass_gate,
     );
     let time_failed =
-        apply_time_gate_eval(&time_eval, ctx.args.gate_config.max_unit_test_seconds);
+        apply_time_gate_eval(&time_eval);
     Some(finish_sibling_gates(SiblingGateResult {
         coverage_failed,
         time_failed,
@@ -263,8 +262,10 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
         );
     }
     let threshold = args.gate_config.test_coverage_threshold;
-    let max_secs = args.gate_config.max_unit_test_seconds;
-    if threshold == 0 && max_secs == 0.0 && !args.bypass_gate {
+    if threshold == 0
+        && args.gate_config.unit_test_time_gate_disabled()
+        && !args.bypass_gate
+    {
         print_final_status(false);
         return 0;
     }
@@ -279,7 +280,7 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
         // Ensure populations are current so schema bumps can refresh durations once.
         let _ = load_or_refresh_snapshot(&repo_root, required, &ignore, args.jobs);
         let time_eval = evaluate_time_gate_for_cov(args, universe_root, &files, &ignore);
-        let time_failed = apply_time_gate_eval(&time_eval, max_secs);
+        let time_failed = apply_time_gate_eval(&time_eval);
         return finish_sibling_gates(SiblingGateResult {
             coverage_failed: false,
             time_failed,

@@ -52,3 +52,19 @@ fn record_updates_max_pass_only_for_fresh_passes() {
         Duration::from_millis(250)
     );
 }
+
+#[test]
+fn record_timed_out_counts_as_failed_with_timeout_selector() {
+    let mut summary = SelectorExecutionSummary::default();
+    summary.record(SelectorExecutionRecord {
+        selector: "slow".to_string(),
+        status: TestStatus::TimedOut,
+        cache_record: SelectorCacheRecord::MissStored,
+        exit_code: Some(124),
+        duration: Duration::from_secs(2),
+    });
+    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.timed_out_selectors, vec!["slow".to_string()]);
+    assert!(summary.failed_selectors.is_empty());
+    assert_eq!(summary.exit_code, 124);
+}

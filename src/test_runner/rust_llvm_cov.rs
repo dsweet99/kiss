@@ -123,12 +123,10 @@ fn cached_summary_from_check_aggregate_population(
     }
     let mut summary = SelectorExecutionSummary::default();
     for selector in selectors {
-        println!("PASSED (cached): {selector}");
+        println!("PASS (cached): {selector}");
         summary.record(SelectorExecutionRecord {
-            selector: selector.clone(),
-            status: rpytest_runner::TestStatus::Passed,
-            cache_record: SelectorCacheRecord::Hit,
-            exit_code: Some(0),
+            selector: selector.clone(), status: rpytest_runner::TestStatus::Passed,
+            cache_record: SelectorCacheRecord::Hit, exit_code: Some(0),
             duration: std::time::Duration::ZERO,
         });
     }
@@ -150,7 +148,7 @@ fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
         RustCoverageRunOptions {
             extra,
             force_rerun: true,
-            jobs,
+jobs,
             population_publication_selectors,
             coverage_output_mode: CoverageOutputMode::CheckAggregate {
                 publication_binary_ids,
@@ -351,38 +349,38 @@ pub(crate) fn detect_rust_coverage_tool_versions(
     })
 }
 
-fn print_rust_llvm_cov_outcome(outcome: &RustLlvmCovOutcome) {
-    let duration = crate::test_runner::duration::format_test_duration(outcome.duration);
-    match (outcome.status, outcome.cache_status) {
-        (rpytest_runner::TestStatus::Passed, RustCovCacheStatus::Hit) => {
-            println!("PASSED (cached): {}", outcome.selector);
-        }
-        (rpytest_runner::TestStatus::Passed, RustCovCacheStatus::MissStored) => {
-            println!("PASSED: {} ({duration})", outcome.selector);
-        }
-        (rpytest_runner::TestStatus::Passed, RustCovCacheStatus::FreshUnstored) => {
-            println!("PASSED (not cached): {} ({duration})", outcome.selector);
-        }
-        (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::Hit) => {
-            println!("FAILED (cached): {}", outcome.selector);
-        }
-        (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::MissStored) => {
-            println!("FAILED: {} ({duration})", outcome.selector);
-            if let Some(stderr) = &outcome.stderr
-                && !stderr.is_empty()
-            {
-                eprint!("{}", String::from_utf8_lossy(stderr));
-            }
-        }
-        (rpytest_runner::TestStatus::Failed, RustCovCacheStatus::FreshUnstored) => {
-            println!("FAILED (not cached): {} ({duration})", outcome.selector);
-            if let Some(stderr) = &outcome.stderr
-                && !stderr.is_empty()
-            {
-                eprint!("{}", String::from_utf8_lossy(stderr));
-            }
-        }
+fn print_rust_llvm_cov_outcome(
+    outcome: &RustLlvmCovOutcome,
+    gate: &kiss::GateConfig,
+) -> rpytest_runner::TestStatus {
+    let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
+        outcome.status,
+        &outcome.selector,
+        outcome.duration,
+        gate,
+    );
+    let (cache_tag, show_duration) = match outcome.cache_status {
+        RustCovCacheStatus::Hit => (Some("cached"), false),
+        RustCovCacheStatus::MissStored => (None, true),
+        RustCovCacheStatus::FreshUnstored => (Some("not cached"), true),
+    };
+    crate::test_runner::status_labels::print_classified_status_line(
+        status,
+        &outcome.selector,
+        outcome.duration,
+        cache_tag,
+        show_duration,
+    );
+    if matches!(
+        status,
+        rpytest_runner::TestStatus::Failed | rpytest_runner::TestStatus::TimedOut
+    ) && outcome.cache_status != RustCovCacheStatus::Hit
+        && let Some(stderr) = &outcome.stderr
+        && !stderr.is_empty()
+    {
+        eprint!("{}", String::from_utf8_lossy(stderr));
     }
+    status
 }
 
 fn finish_rust_coverage_batch_result(
@@ -392,19 +390,19 @@ fn finish_rust_coverage_batch_result(
 ) -> Result<SelectorExecutionSummary, String> {
     let mut summary = SelectorExecutionSummary::default();
     summary.record_rust_batch_counters(&result.counters);
+    let gate = kiss::GateConfig::load();
     let mut statuses = Vec::new();
     for outcome in &result.completed {
-        print_rust_llvm_cov_outcome(outcome);
-        statuses.push((outcome.selector.clone(), outcome.status));
-        let cache_record = match outcome.cache_status {
-            RustCovCacheStatus::Hit => SelectorCacheRecord::Hit,
-            RustCovCacheStatus::MissStored => SelectorCacheRecord::MissStored,
-            RustCovCacheStatus::FreshUnstored => SelectorCacheRecord::MissUnstored,
-        };
+        let status = print_rust_llvm_cov_outcome(outcome, &gate);
+        statuses.push((outcome.selector.clone(), status));
         summary.record(SelectorExecutionRecord {
             selector: outcome.selector.clone(),
-            status: outcome.status,
-            cache_record,
+            status,
+            cache_record: match outcome.cache_status {
+                RustCovCacheStatus::Hit => SelectorCacheRecord::Hit,
+                RustCovCacheStatus::MissStored => SelectorCacheRecord::MissStored,
+                RustCovCacheStatus::FreshUnstored => SelectorCacheRecord::MissUnstored,
+            },
             exit_code: outcome.exit_code,
             duration: outcome.duration,
         });

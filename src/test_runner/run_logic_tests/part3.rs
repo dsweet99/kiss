@@ -11,7 +11,7 @@ fn finish_paths_print_recap_with_plan_time_and_phase_order() {
     let no_work_options = SelectorRunOptions {
         dry_run: false,
         force_rerun: false,
-        metrics: true,
+metrics: true,
         jobs: 1,
         extra: &[],
         python_extra: &[],
@@ -51,7 +51,7 @@ fn finish_paths_print_recap_with_plan_time_and_phase_order() {
     let phase_options = SelectorRunOptions {
         dry_run: false,
         force_rerun: false,
-        metrics: false,
+metrics: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],
@@ -109,9 +109,9 @@ fn finish_paths_print_recap_with_plan_time_and_phase_order() {
         "expected failure recap: {out}"
     );
     let py_fail = out
-        .find("FAILED tests/test_a.py::test_a")
+        .find("FAIL tests/test_a.py::test_a")
         .expect("python failure");
-    let rs_fail = out.find("FAILED tests::rust_fail").expect("rust failure");
+    let rs_fail = out.find("FAIL tests::rust_fail").expect("rust failure");
     assert!(py_fail < rs_fail, "python failures before rust: {out}");
     assert!(out.contains("0.05s max pass"), "fresh rust max pass: {out}");
 }
@@ -128,7 +128,7 @@ fn dry_run_does_not_print_final_recap() {
                 SelectorRunOptions {
                     dry_run: true,
                     force_rerun: false,
-                    metrics: false,
+metrics: false,
                     jobs: 1,
                     extra: &[],
                     python_extra: &[],
@@ -145,6 +145,6 @@ fn dry_run_does_not_print_final_recap() {
     );
     assert!(
         !out.contains("FAILED "),
-        "dry-run must not print FAILED recap lines: {out}"
+        "dry-run must not print FAIL recap lines: {out}"
     );
 }

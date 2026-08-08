@@ -1,14 +1,18 @@
 use super::*;
+use kiss::Language;
 use std::time::Duration;
 
+fn rules(secs: f64) -> Vec<(String, f64)> {
+    vec![("*".to_string(), secs)]
+}
+
 #[test]
-fn format_runtime_ms_line_requires_samples() {
-    assert!(format_unit_test_runtime_ms_line(&[]).is_none());
+fn format_line_includes_n_and_percentiles() {
     let line = format_unit_test_runtime_ms_line(&[
         UnitTestTiming {
             language: Language::Python,
             selector: "a".into(),
-            duration: Duration::from_millis(12),
+            duration: Duration::from_millis(10),
         },
         UnitTestTiming {
             language: Language::Rust,
@@ -30,18 +34,19 @@ fn evaluate_runtime_gate_threshold_semantics() {
         duration: Duration::from_millis(1500),
     }]);
     assert!(matches!(
-        evaluate_runtime_gate(&timings, 0.0),
+        evaluate_runtime_gate(&timings, &[]),
         RuntimeGateEval::Disabled
     ));
-    match evaluate_runtime_gate(&timings, 1.0) {
+    match evaluate_runtime_gate(&timings, &rules(1.0)) {
         RuntimeGateEval::Failed(v) => {
             assert_eq!(v.len(), 1);
             assert_eq!(v[0].selector, "t::slow");
+            assert!((v[0].limit_seconds - 1.0).abs() < f64::EPSILON);
         }
         other => panic!("expected Failed, got {other:?}"),
     }
     assert!(matches!(
-        evaluate_runtime_gate(&timings, 2.0),
+        evaluate_runtime_gate(&timings, &rules(2.0)),
         RuntimeGateEval::Passed
     ));
     // Equality at threshold fails.
@@ -51,7 +56,7 @@ fn evaluate_runtime_gate_threshold_semantics() {
         duration: Duration::from_secs(2),
     }]);
     assert!(matches!(
-        evaluate_runtime_gate(&exact, 2.0),
+        evaluate_runtime_gate(&exact, &rules(2.0)),
         RuntimeGateEval::Failed(_)
     ));
 }
@@ -59,37 +64,64 @@ fn evaluate_runtime_gate_threshold_semantics() {
 #[test]
 fn incomplete_population_fail_closed_when_enabled() {
     assert!(matches!(
-        evaluate_runtime_gate(&TimingPopulation::Incomplete, 2.0),
+        evaluate_runtime_gate(&TimingPopulation::Incomplete, &rules(2.0)),
         RuntimeGateEval::Incomplete
     ));
 }
 
 #[test]
 fn runtime_gate_failure_lines_are_sorted_and_labeled() {
-    let lines = runtime_gate_failure_lines(
-        &[
-            RuntimeGateViolation {
-                language: Language::Rust,
-                selector: "crate::b".into(),
-                seconds: 3.0,
-            },
-            RuntimeGateViolation {
-                language: Language::Python,
-                selector: "tests/test_x.py::test_y".into(),
-                seconds: 2.41,
-            },
-        ],
-        2.0,
-    );
+    let lines = runtime_gate_failure_lines(&[
+        RuntimeGateViolation {
+            language: Language::Rust,
+            selector: "crate::b".into(),
+            seconds: 3.0,
+            limit_seconds: 2.0,
+        },
+        RuntimeGateViolation {
+            language: Language::Python,
+            selector: "tests/test_x.py::test_y".into(),
+            seconds: 2.41,
+            limit_seconds: 2.0,
+        },
+    ]);
     assert_eq!(
         lines[0],
-        "GATE_FAILED:max_unit_test_seconds: 2 test(s) at or above 2.00s"
+        "GATE_FAILED:max_unit_test_seconds: 2 test(s) exceeded path-pattern time limits"
     );
     assert_eq!(
         lines[1],
         "  [python] tests/test_x.py::test_y: 2.41s (limit 2.00s)"
     );
     assert_eq!(lines[2], "  [rust] crate::b: 3.00s (limit 2.00s)");
+}
+
+#[test]
+fn path_pattern_limits_differ_per_selector() {
+    let rules = vec![
+        ("tests/fast".to_string(), 2.0),
+        ("*".to_string(), 0.0),
+    ];
+    let timings = TimingPopulation::Complete(vec![
+        UnitTestTiming {
+            language: Language::Python,
+            selector: "tests/fast/a.py::t".into(),
+            duration: Duration::from_millis(500),
+        },
+        UnitTestTiming {
+            language: Language::Python,
+            selector: "tests/other/b.py::t".into(),
+            duration: Duration::from_millis(1),
+        },
+    ]);
+    match evaluate_runtime_gate(&timings, &rules) {
+        RuntimeGateEval::Failed(v) => {
+            assert_eq!(v.len(), 1);
+            assert_eq!(v[0].selector, "tests/other/b.py::t");
+            assert!((v[0].limit_seconds - 0.0).abs() < f64::EPSILON);
+        }
+        other => panic!("expected Failed, got {other:?}"),
+    }
 }
 
 #[test]

@@ -26,10 +26,10 @@ fn handle_rslip_miss_result_once(
 ) -> Result<RslipOutcome, RslipError> {
     let outcome = match result {
         Ok(outcome) => outcome,
-        // Timeouts are recorded as failed outcomes (empty coverage) so a large
+        // Timeouts become TimedOut outcomes (empty coverage) so a large
         // population can finish instead of hanging forever on one stuck test.
         Err(PytestRunError::Timeout(timeout)) => {
-            return finalize_failed_miss_outcome(
+            return finalize_timed_out_miss_outcome(
                 miss,
                 timeout,
                 124,
@@ -81,9 +81,40 @@ fn finalize_failed_miss_outcome(
     exit_code: i32,
     stderr: String,
 ) -> Result<RslipOutcome, RslipError> {
+    finalize_status_miss_outcome(
+        miss,
+        rpytest_runner::TestStatus::Failed,
+        duration,
+        exit_code,
+        stderr,
+    )
+}
+
+fn finalize_timed_out_miss_outcome(
+    miss: &RslipMiss,
+    duration: std::time::Duration,
+    exit_code: i32,
+    stderr: String,
+) -> Result<RslipOutcome, RslipError> {
+    finalize_status_miss_outcome(
+        miss,
+        rpytest_runner::TestStatus::TimedOut,
+        duration,
+        exit_code,
+        stderr,
+    )
+}
+
+fn finalize_status_miss_outcome(
+    miss: &RslipMiss,
+    status: rpytest_runner::TestStatus,
+    duration: std::time::Duration,
+    exit_code: i32,
+    stderr: String,
+) -> Result<RslipOutcome, RslipError> {
     let rslip_outcome = RslipOutcome {
         nodeid: miss.req.nodeid.clone(),
-        status: rpytest_runner::TestStatus::Failed,
+        status,
         exit_code: Some(exit_code),
         duration,
         coverage: crate::LineCoverage {

@@ -82,7 +82,7 @@ pub(crate) fn resolved_rust_batch_request_parts(
         test_args: test_args.to_vec(),
         env: relevant_rust_batch_env(),
         force_rerun: false,
-        jobs: 1,
+jobs: 1,
         generated_config: repo_root.join(".kiss/rust_llvm_cov_cache/runs/plan/nextest.toml"),
         population_publication_selectors: None,
         delegated_runners,

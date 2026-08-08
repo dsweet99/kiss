@@ -130,8 +130,8 @@ pub(super) const RS_RULE_SPECS: &[RuleSpec] = &[
     RuleSpec {
         metric: "max_unit_test_seconds",
         op: "<",
-        threshold: ThresholdValue::F64(|_, g| g.max_unit_test_seconds),
-        description: "max_unit_test_seconds is the maximum wall-clock duration in seconds for each current-population unit test enforced by `kiss cov` (stats reports the same timings in integer milliseconds). A test at or above the threshold fails; 0 disables the time gate. Default 2.0 (under 2s per VISION.md).",
+        threshold: ThresholdValue::F64(|_, g| g.catch_all_unit_test_seconds()),
+        description: "max_unit_test_seconds is an ordered path-pattern → seconds table (must end with \"*\"). First match wins. Enforced by `kiss cov` and used by `kiss test` for TIMEOUT labeling. Catch-all 0 bans unmatched paths. Default \"*\" = 2.0.",
     },
     RuleSpec {
         metric: "min_similarity",

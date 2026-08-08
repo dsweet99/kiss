@@ -142,7 +142,7 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
         "cold cov should announce the automatic refresh. stdout:\n{cold_stdout}\nstderr:\n{cold_stderr}"
     );
     assert!(
-        cold_stdout.contains("PASSED: test_lib.py::test_value"),
+        cold_stdout.contains("PASS: test_lib.py::test_value"),
         "cold cov should run the discovered Python population. stdout:\n{cold_stdout}"
     );
     assert!(
@@ -162,7 +162,7 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
         "warm cov should not refresh valid runtime coverage. stdout:\n{warm_stdout}\nstderr:\n{warm_stderr}"
     );
     assert!(
-        !warm_stdout.contains("PASSED:"),
+        !warm_stdout.contains("PASS:"),
         "warm cov should not run the Python population again. stdout:\n{warm_stdout}"
     );
 }
@@ -201,7 +201,7 @@ fn failed_python_check_refresh_does_not_publish_full_check_cache() {
     );
     assert!(
         fixed_stderr.contains("refreshing Python runtime coverage")
-            && fixed_stdout.contains("PASSED: test_lib.py::test_value"),
+            && fixed_stdout.contains("PASS: test_lib.py::test_value"),
         "after a failed refresh, the next valid cov should run and publish the population. \
          stdout:\n{fixed_stdout}\nstderr:\n{fixed_stderr}"
     );
@@ -233,8 +233,8 @@ fn kiss_check_succeeds_when_tests_fail_while_cov_fails_refresh() {
         "kiss check must succeed without running failing tests.\nstdout:\n{check_stdout}\nstderr:\n{check_stderr}"
     );
     assert!(
-        !check_stdout.contains("PASSED:")
-            && !check_stdout.contains("FAILED:")
+        !check_stdout.contains("PASS:")
+            && !check_stdout.contains("FAIL:")
             && !check_stderr.contains("refreshing")
             && !check_stderr.contains("population test run failed"),
         "kiss check must not execute the test population.\nstdout:\n{check_stdout}\nstderr:\n{check_stderr}"

@@ -359,6 +359,9 @@ pub enum Commands {
         /// Force selected tests to rerun instead of reusing test-runner caches
         #[arg(long)]
         force: bool,
+        /// Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT
+        #[arg(long)]
+        force_bad: bool,
         /// Print a local rubric metrics summary for this run
         #[arg(long)]
         metrics: bool,

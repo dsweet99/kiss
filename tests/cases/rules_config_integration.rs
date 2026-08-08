@@ -192,12 +192,8 @@ fn cli_config_shows_gate_settings() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains(
-            "[gate]\ntest_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_unit_test_seconds = 2\nmin_similarity = 0.90\nduplication_enabled = true\norphan_module_enabled = true"
-        ),
-        "Should show default [gate] block in emission order. stdout: {stdout}"
-    );
+    let gate = "[gate]\ntest_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmin_similarity = 0.90\nduplication_enabled = true\norphan_module_enabled = true\n\n[gate.max_unit_test_seconds]\n\"*\" = 2\n";
+    assert!(stdout.contains(gate), "default gate emission. stdout: {stdout}");
 }
 
 #[test]

@@ -13,6 +13,7 @@ fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
         base_branch_cli: None,
         dry_run: true,
         force_rerun: false,
+            force_bad: false,
         metrics: false,
         jobs: 1,
         extra: &[],
@@ -33,6 +34,7 @@ fn run_test_dry_run_commit_in_workspace_completes() {
         base_branch_cli: None,
         dry_run: true,
         force_rerun: false,
+            force_bad: false,
         metrics: false,
         jobs: 1,
         extra: &[],
@@ -56,6 +58,7 @@ fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
         base_branch_cli: None,
         dry_run: true,
         force_rerun: false,
+            force_bad: false,
         metrics: false,
         jobs: 1,
         extra: &extra,
@@ -87,7 +90,8 @@ fn cold_initialization_predicate_is_limited_to_unfiltered_base_or_main() {
             base_branch_cli: None,
             dry_run,
             force_rerun: false,
-            metrics: false,
+            force_bad: false,
+        metrics: false,
             jobs: 16,
             extra: &[],
             python_extra: &[],
@@ -128,6 +132,7 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
         base_branch_cli: None,
         dry_run: false,
         force_rerun: false,
+            force_bad: false,
         metrics: false,
         jobs: 16,
         extra: &[],
@@ -152,6 +157,7 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
         rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
+        skip_python_index_rebuild_after_selective: false,
     };
 
     crate::test_runner::apply_cold_initialization_population(&args, &mut planned);
@@ -302,4 +308,50 @@ fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
     .unwrap();
     assert_eq!(planned.repo_root, from_root.repo_root);
     assert_eq!(planned.rs_sel, from_root.rs_sel);
+}
+
+#[test]
+fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut planned = crate::test_runner::PlannedSelectors {
+        repo_root: tmp.path().to_path_buf(),
+        py_sel: vec!["tests/a.py::t".into()],
+        rs_sel: Vec::new(),
+        python_population_required: false,
+        rust_population_required: false,
+        rust_source_paths: Vec::new(),
+        rust_vcs_source_paths: 0,
+        rust_snapshot_delta_modified: 0,
+        rust_snapshot_delta_structural: false,
+        python_prior_failure_selectors: Vec::new(),
+        rust_prior_failure_selectors: Vec::new(),
+        coverage_decision_engine_used: false,
+        rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+        ignore: Vec::new(),
+        workspace_files_fingerprint: None,
+        skip_python_index_rebuild_after_selective: false,
+    };
+    let args = crate::test_runner::RunTestCmdArgs {
+        invocation: crate::bin_cli::args::TestInvocation::All,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: true,
+        force_rerun: false,
+        force_bad: false,
+        metrics: false,
+        jobs: 1,
+        extra: &[],
+        python_extra: &[],
+        ignore: &[],
+        lang_filter: None,
+        config_main_branch: None,
+    };
+    crate::test_runner::apply_force_bad(&args, &mut planned).unwrap();
+    assert!(planned.python_prior_failure_selectors.is_empty());
+    let args_on = crate::test_runner::RunTestCmdArgs {
+        force_bad: true,
+        ..args
+    };
+    crate::test_runner::apply_force_bad(&args_on, &mut planned).unwrap();
+    assert!(planned.python_prior_failure_selectors.is_empty());
 }

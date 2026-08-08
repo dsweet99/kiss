@@ -73,7 +73,7 @@ proc-macro2 = { version = "1", features = ["span-locations"] }
 petgraph = "0.7"
 
 # Configuration file parsing
-toml = "1"
+toml = { version = "1", features = ["preserve_order"] }
 fa-leiden-cd = "0.1.0"
 bincode = "1.3"
 rpytest-runner = { path = "crates/rpytest-runner" }

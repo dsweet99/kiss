@@ -233,13 +233,14 @@ fn local_rubric_metrics_carry_reusable_prior_selection_basis() {
         rust_selection_basis: RustSelectionBasis::ReusablePrior,
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
+        skip_python_index_rebuild_after_selective: false,
     };
     let options = SelectorRunOptions {
         dry_run: true,
         jobs: 1,
         plan_duration: Duration::ZERO,
         force_rerun: false,
-        metrics: false,
+metrics: false,
         extra: &[],        python_extra: &[],
 
     };

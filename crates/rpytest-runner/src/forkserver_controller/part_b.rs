@@ -1,12 +1,34 @@
 //! Embedded forkserver controller (part B: child run + protocol loop).
 
 pub(crate) const FORKSERVER_CONTROLLER_B: &str = r#"
-def _run_prepared_child(req, stdout_path, stderr_path):
+class _TestDurationPlugin(object):
+    def __init__(self):
+        self.seconds = 0.0
+        self.seen = False
+
+    def pytest_runtest_logreport(self, report):
+        # Call phase only: setup under rslip coverage includes import tracing
+        # and must not dominate max_unit_test_seconds / PASS timing.
+        if report.when == "call":
+            self.seconds = float(report.duration)
+            self.seen = True
+
+def _write_duration(path, plugin):
+    if not plugin.seen:
+        return
+    try:
+        with open(os.path.abspath(path), "w", encoding="utf-8") as handle:
+            handle.write("%.9f\n" % plugin.seconds)
+    except Exception:
+        pass
+
+def _run_prepared_child(req, stdout_path, stderr_path, duration_path):
     from _pytest.main import Session, ExitCode
     from _pytest.config.exceptions import UsageError
     from _pytest.outcomes import Failed, exit as pytest_exit
     import _pytest._code
 
+    duration_plugin = _TestDurationPlugin()
     try:
         try:
             os.chdir(req["cwd"])
@@ -40,6 +62,7 @@ def _run_prepared_child(req, stdout_path, stderr_path):
                 raise RuntimeError("controller was not bootstrapped")
 
             config = _CONFIG
+            config.pluginmanager.register(duration_plugin, "rpytest_test_duration")
             session = Session.from_config(config)
             session.exitstatus = ExitCode.OK
             initstate = 0
@@ -103,9 +126,15 @@ def _run_prepared_child(req, stdout_path, stderr_path):
                         if exc.returncode is not None:
                             session.exitstatus = exc.returncode
                         sys.stderr.write("%s: %s\n" % (type(exc).__name__, exc))
+                try:
+                    config.pluginmanager.unregister(duration_plugin)
+                except Exception:
+                    pass
+                _write_duration(duration_path, duration_plugin)
             raise SystemExit(int(session.exitstatus))
         except Exception:
             traceback.print_exc()
+            _write_duration(duration_path, duration_plugin)
             raise SystemExit(1)
     finally:
         try:
@@ -130,15 +159,32 @@ def _wait_status(pid, timeout_ms):
             return os.waitpid(pid, 0)[1], True
         time.sleep(0.005)
 
+def _read_test_duration_ms(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            text = handle.read().strip()
+        if not text:
+            return None
+        seconds = float(text)
+        if seconds < 0:
+            return None
+        return int(round(seconds * 1000.0))
+    except Exception:
+        return None
+
 def _handle_run(req):
     stdout_fd, stdout_path = tempfile.mkstemp(prefix="rpytest-forkserver-out-")
     stderr_fd, stderr_path = tempfile.mkstemp(prefix="rpytest-forkserver-err-")
+    duration_fd, duration_path = tempfile.mkstemp(prefix="rpytest-forkserver-dur-")
     os.close(stdout_fd)
     os.close(stderr_fd)
+    os.close(duration_fd)
+    # Fork outside the cleanup try/finally: SystemExit in the child would
+    # otherwise run that finally and delete duration_path before the parent reads it.
+    pid = os.fork()
+    if pid == 0:
+        _run_prepared_child(req, stdout_path, stderr_path, duration_path)
     try:
-        pid = os.fork()
-        if pid == 0:
-            _run_prepared_child(req, stdout_path, stderr_path)
         status, forced_timeout = _wait_status(pid, req.get("timeout_ms"))
         if os.WIFEXITED(status):
             exit_code = os.WEXITSTATUS(status)
@@ -160,9 +206,10 @@ def _handle_run(req):
             "artifacts": artifacts,
             "timeout": timed_out,
             "error": None,
+            "test_duration_ms": _read_test_duration_ms(duration_path),
         }
     finally:
-        for path in (stdout_path, stderr_path):
+        for path in (stdout_path, stderr_path, duration_path):
             try:
                 os.unlink(path)
             except FileNotFoundError:

@@ -1,3 +1,10 @@
+mod unit_test_seconds;
+
+pub use unit_test_seconds::{
+    catch_all_limit, default_max_unit_test_seconds, exceeds_limit, format_nested_toml_table,
+    limit_for_selector, validate_rules,
+};
+
 use crate::config::{ConfigError, check_unknown_keys, get_usize};
 use crate::defaults;
 use std::fmt;
@@ -49,7 +56,8 @@ const GATE_KEYS: &[&str] = &[
 pub struct GateConfig {
     pub test_coverage_threshold: usize,
     pub test_coverage_scope: TestCoverageScope,
-    pub max_unit_test_seconds: f64,
+    /// Ordered path-pattern → seconds limits; last entry must be `"*"`.
+    pub max_unit_test_seconds: Vec<(String, f64)>,
     pub min_similarity: f64,
     pub duplication_enabled: bool,
     pub orphan_module_enabled: bool,
@@ -60,11 +68,26 @@ impl Default for GateConfig {
         Self {
             test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD,
             test_coverage_scope: TestCoverageScope::Codebase,
-            max_unit_test_seconds: defaults::gate::MAX_UNIT_TEST_SECONDS,
+            max_unit_test_seconds: default_max_unit_test_seconds(),
             min_similarity: defaults::duplication::MIN_SIMILARITY,
             duplication_enabled: true,
             orphan_module_enabled: true,
         }
+    }
+}
+
+impl GateConfig {
+    pub fn unit_test_seconds_limit(&self, selector: &str) -> f64 {
+        limit_for_selector(&self.max_unit_test_seconds, selector)
+    }
+
+    pub fn catch_all_unit_test_seconds(&self) -> f64 {
+        catch_all_limit(&self.max_unit_test_seconds)
+            .unwrap_or(defaults::gate::MAX_UNIT_TEST_SECONDS)
+    }
+
+    pub fn unit_test_time_gate_disabled(&self) -> bool {
+        self.max_unit_test_seconds.is_empty()
     }
 }
 
@@ -167,16 +190,9 @@ impl GateConfig {
             if let Some(scope) = try_get_scope(gate)? {
                 self.test_coverage_scope = scope;
             }
-            if let Some(secs) = try_get_f64(gate, "max_unit_test_seconds")? {
-                if !is_valid_max_unit_test_seconds(secs) {
-                    return Err(ConfigError::InvalidValue {
-                        key: "max_unit_test_seconds".into(),
-                        message: format!(
-                            "must be a finite nonnegative number, got {secs}"
-                        ),
-                    });
-                }
-                self.max_unit_test_seconds = secs;
+            if let Some(value) = gate.get("max_unit_test_seconds") {
+                self.max_unit_test_seconds =
+                    unit_test_seconds::parse_max_unit_test_seconds(value)?;
             }
             if let Some(s) = try_get_f64(gate, "min_similarity")? {
                 if !(0.0..=1.0).contains(&s) {
@@ -196,21 +212,17 @@ impl GateConfig {
     }
 }
 
-fn is_valid_max_unit_test_seconds(secs: f64) -> bool {
-    secs.is_finite() && secs >= 0.0
-}
-
-fn merge_max_unit_test_seconds_lenient(gate: &toml::Table, current: &mut f64) {
-    let Some(secs) = get_f64(gate, "max_unit_test_seconds") else {
+fn merge_max_unit_test_seconds_lenient(
+    gate: &toml::Table,
+    current: &mut Vec<(String, f64)>,
+) {
+    let Some(value) = gate.get("max_unit_test_seconds") else {
         return;
     };
-    if !is_valid_max_unit_test_seconds(secs) {
-        eprintln!(
-            "Error: max_unit_test_seconds must be a finite nonnegative number, got {secs}"
-        );
-        return;
+    match unit_test_seconds::parse_max_unit_test_seconds(value) {
+        Ok(rules) => *current = rules,
+        Err(err) => eprintln!("Error: {err}"),
     }
-    *current = secs;
 }
 
 fn merge_scope_lenient(

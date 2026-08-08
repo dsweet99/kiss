@@ -14,6 +14,7 @@ pub(crate) struct SelectorExecutionSummary {
     pub(crate) cache_unstored: usize,
     pub(crate) failed: usize,
     pub(crate) failed_selectors: Vec<String>,
+    pub(crate) timed_out_selectors: Vec<String>,
     pub(crate) max_passing_run_duration: Duration,
     pub(crate) rust_build_invocations: usize,
     pub(crate) rust_test_instances: usize,
@@ -73,16 +74,23 @@ impl SelectorExecutionSummary {
                 self.cache_unstored += 1;
             }
         }
-        if record.status == rpytest_runner::TestStatus::Failed {
-            self.failed += 1;
-            self.failed_selectors.push(record.selector);
-            self.exit_code = merge_exit_codes(self.exit_code, record.exit_code.unwrap_or(1));
-            return;
-        }
-        if record.status == rpytest_runner::TestStatus::Passed
-            && record.cache_record != SelectorCacheRecord::Hit
-        {
-            self.max_passing_run_duration = self.max_passing_run_duration.max(record.duration);
+        match record.status {
+            rpytest_runner::TestStatus::Failed => {
+                self.failed += 1;
+                self.failed_selectors.push(record.selector);
+                self.exit_code = merge_exit_codes(self.exit_code, record.exit_code.unwrap_or(1));
+            }
+            rpytest_runner::TestStatus::TimedOut => {
+                self.failed += 1;
+                self.timed_out_selectors.push(record.selector);
+                self.exit_code = merge_exit_codes(self.exit_code, record.exit_code.unwrap_or(1));
+            }
+            rpytest_runner::TestStatus::Passed => {
+                if record.cache_record != SelectorCacheRecord::Hit {
+                    self.max_passing_run_duration =
+                        self.max_passing_run_duration.max(record.duration);
+                }
+            }
         }
     }
 

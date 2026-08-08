@@ -10,6 +10,8 @@ pub(crate) struct ParsedTestTarget {
     pub path: PathBuf,
     pub symbol: Option<String>,
     pub member: Option<String>,
+    /// Full pytest nodeid when the operand uses class `::` and/or `[params]`.
+    pub python_nodeid: Option<String>,
     pub language: Language,
 }
 
@@ -21,17 +23,28 @@ pub(crate) fn parse_test_target(raw: &str) -> Result<ParsedTestTarget, String> {
         if path_part.is_empty() || symbol_part.is_empty() {
             return Err("target path and symbol must both be non-empty".to_string());
         }
+        let path = PathBuf::from(path_part);
+        let language = detect_test_target_language(&path)?;
+        if language == Language::Python && is_python_nodeid_tail(symbol_part) {
+            return Ok(ParsedTestTarget {
+                raw: raw.to_string(),
+                path,
+                symbol: None,
+                member: None,
+                python_nodeid: Some(raw.to_string()),
+                language,
+            });
+        }
         if symbol_part.contains("::") {
             return Err("only one '::' separator is supported in a test target".to_string());
         }
-        let path = PathBuf::from(path_part);
-        let language = detect_test_target_language(&path)?;
         let (symbol, member) = parse_symbol_shape(symbol_part, language)?;
         Ok(ParsedTestTarget {
             raw: raw.to_string(),
             path,
             symbol: Some(symbol),
             member,
+            python_nodeid: None,
             language,
         })
     } else {
@@ -42,6 +55,7 @@ pub(crate) fn parse_test_target(raw: &str) -> Result<ParsedTestTarget, String> {
             path,
             symbol: None,
             member: None,
+            python_nodeid: None,
             language,
         })
     }
@@ -53,6 +67,11 @@ fn detect_test_target_language(path: &Path) -> Result<Language, String> {
         Some(ext) if ext.eq_ignore_ascii_case("rs") => Ok(Language::Rust),
         _ => Err("target path must end in .py or .rs".to_string()),
     }
+}
+
+fn is_python_nodeid_tail(symbol_part: &str) -> bool {
+    // Pytest class tests use extra `::`; parametrized ids use `[...]`.
+    symbol_part.contains("::") || symbol_part.contains('[')
 }
 
 fn parse_symbol_shape(

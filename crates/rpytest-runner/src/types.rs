@@ -115,6 +115,7 @@ impl PytestRunRequest {
 pub enum TestStatus {
     Passed,
     Failed,
+    TimedOut,
 }
 
 impl TestStatus {

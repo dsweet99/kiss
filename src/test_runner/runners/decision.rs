@@ -281,7 +281,7 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
     Ok(EngineBackers::new(backers, prior_failures))
 }
 
-fn prior_failures_for_language(
+pub(crate) fn prior_failures_for_language(
     repo_root: &Path,
     language: kiss::Language,
     test_args: &[String],

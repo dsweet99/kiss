@@ -218,7 +218,7 @@ fn fingerprint_excludes_gate_max_unit_test_seconds() {
     let rs = Config::rust_defaults();
     let g0 = GateConfig::default();
     let g1 = GateConfig {
-        max_unit_test_seconds: 9.5,
+        max_unit_test_seconds: vec![("*".to_string(), 9.5)],
         ..g0.clone()
     };
     assert_eq!(

@@ -60,7 +60,10 @@
         assert_eq!(req.cwd, tmp.path());
         assert_eq!(req.pytest_args, extra);
         assert!(req.force_rerun);
-        assert_eq!(req.timeout, Some(DEFAULT_PYTEST_TIMEOUT));
+        // Path-pattern time table from cwd `.kissconfig` (or default "*"=2) caps the kill timeout.
+        let expected = timeout_for_selector("tests/test_app.py::test_ok");
+        assert_eq!(req.timeout, Some(expected));
+        assert!(expected <= DEFAULT_PYTEST_TIMEOUT);
         assert!(python_version_supports_rslip("3.12.0"));
         assert!(python_version_supports_rslip("4.0.0"));
         assert!(!python_version_supports_rslip("3.11.9"));
@@ -130,7 +133,7 @@ def test_b():\n    assert False\n",
                 selectors: &selectors,
                 extra: &[],
                 force_rerun: false,
-                force_rerun_selectors: &[],
+force_rerun_selectors: &[],
                 jobs: 3,
                 content_fingerprint: None,
             },
@@ -251,7 +254,7 @@ def test_b():\n    assert True\n",
                     selectors: &selectors,
                     extra: &[],
                     force_rerun: false,
-                    force_rerun_selectors: &[],
+force_rerun_selectors: &[],
                     jobs: 2,
                     content_fingerprint: None,
                 },
@@ -265,11 +268,11 @@ def test_b():\n    assert True\n",
             "missing prepared line: {miss_out}"
         );
         assert!(
-            miss_out.contains("PASSED: test_sample.py::test_a"),
+            miss_out.contains("PASS: test_sample.py::test_a"),
             "missing miss print: {miss_out}"
         );
         assert!(
-            miss_out.contains("PASSED: test_sample.py::test_b"),
+            miss_out.contains("PASS: test_sample.py::test_b"),
             "missing miss print: {miss_out}"
         );
         assert!(
@@ -277,7 +280,7 @@ def test_b():\n    assert True\n",
             "missing tests_remaining heartbeat: {miss_out}"
         );
         assert_eq!(
-            miss_out.matches("PASSED: test_sample.py::test_a").count(),
+            miss_out.matches("PASS: test_sample.py::test_a").count(),
             1,
             "duplicate miss lines: {miss_out}"
         );
@@ -292,7 +295,7 @@ def test_b():\n    assert True\n",
                     selectors: &selectors,
                     extra: &[],
                     force_rerun: false,
-                    force_rerun_selectors: &[],
+force_rerun_selectors: &[],
                     jobs: 2,
                     content_fingerprint: None,
                 },
@@ -304,15 +307,15 @@ def test_b():\n    assert True\n",
             assert!(summary.failed_selectors.is_empty());
         });
         assert!(
-            hit_out.contains("PASSED (cached): test_sample.py::test_a"),
+            hit_out.contains("PASS (cached): test_sample.py::test_a"),
             "cache hits must print via prepare-time SelectorFinalized: {hit_out}"
         );
         assert!(
-            hit_out.contains("PASSED (cached): test_sample.py::test_b"),
+            hit_out.contains("PASS (cached): test_sample.py::test_b"),
             "cache hits must print via prepare-time SelectorFinalized: {hit_out}"
         );
         assert_eq!(
-            hit_out.matches("PASSED (cached):").count(),
+            hit_out.matches("PASS (cached):").count(),
             2,
             "duplicate cached lines: {hit_out}"
         );

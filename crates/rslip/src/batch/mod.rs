@@ -126,18 +126,14 @@ impl Rslip {
 fn format_cached_status_dump(outcomes: &[RslipOutcome]) -> String {
     let mut body = String::with_capacity(outcomes.len().saturating_mul(48));
     for outcome in outcomes {
-        match outcome.status {
-            rpytest_runner::TestStatus::Passed => {
-                body.push_str("PASSED (cached): ");
-                body.push_str(&outcome.nodeid);
-                body.push('\n');
-            }
-            rpytest_runner::TestStatus::Failed => {
-                body.push_str("FAILED (cached): ");
-                body.push_str(&outcome.nodeid);
-                body.push('\n');
-            }
-        }
+        let label = match outcome.status {
+            rpytest_runner::TestStatus::Passed => "PASS (cached): ",
+            rpytest_runner::TestStatus::Failed => "FAIL (cached): ",
+            rpytest_runner::TestStatus::TimedOut => "TIMEOUT (cached): ",
+        };
+        body.push_str(label);
+        body.push_str(&outcome.nodeid);
+        body.push('\n');
     }
     body
 }

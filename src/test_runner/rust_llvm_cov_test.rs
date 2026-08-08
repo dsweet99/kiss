@@ -132,7 +132,7 @@ fn rust_selector_path_submits_one_batch_request_to_executor() {
         RustCoverageRunOptions {
             extra: &["--exact".to_string()],
             force_rerun: true,
-            jobs: 7,
+jobs: 7,
             population_publication_selectors: None,
             coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         },
@@ -193,7 +193,7 @@ fn rust_selector_path_rejects_duplicate_batch_selectors_before_execution() {
         RustCoverageRunOptions {
             extra: &["--exact".to_string()],
             force_rerun: true,
-            jobs: 7,
+jobs: 7,
             population_publication_selectors: None,
             coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         },
@@ -231,7 +231,7 @@ fn check_aggregate_population_request_carries_population_selectors() {
         RustCoverageRunOptions {
             extra: &[],
             force_rerun: true,
-            jobs: 2,
+jobs: 2,
             population_publication_selectors: Some(population_selectors),
             coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate {
                 publication_binary_ids: None,

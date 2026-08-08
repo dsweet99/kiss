@@ -7,7 +7,7 @@ fn evaluate_records_with_time_rejects_when_coverage_gate_fails() {
     let py = Config::python_defaults();
     let rs = Config::rust_defaults();
     let gate = GateConfig {
-        max_unit_test_seconds: 0.0,
+        max_unit_test_seconds: Vec::new(),
         ..GateConfig::default()
     };
     let args = CovCommandArgs {
@@ -61,7 +61,7 @@ fn both_gates_disabled_short_circuits() {
     let rs = Config::rust_defaults();
     let gate = GateConfig {
         test_coverage_threshold: 0,
-        max_unit_test_seconds: 0.0,
+        max_unit_test_seconds: Vec::new(),
         ..GateConfig::default()
     };
     let tmp = tempfile::tempdir().unwrap();
@@ -87,11 +87,12 @@ fn runtime_gate_eval_failed_sets_time_failed() {
         language: kiss::Language::Python,
         selector: "t::test_slow".into(),
         seconds: 2.5,
+        limit_seconds: 2.0,
     }];
-    assert!(apply_time_gate_eval(&RuntimeGateEval::Failed(viols), 2.0));
-    assert!(!apply_time_gate_eval(&RuntimeGateEval::Passed, 2.0));
-    assert!(!apply_time_gate_eval(&RuntimeGateEval::Disabled, 2.0));
-    assert!(apply_time_gate_eval(&RuntimeGateEval::Incomplete, 2.0));
+    assert!(apply_time_gate_eval(&RuntimeGateEval::Failed(viols)));
+    assert!(!apply_time_gate_eval(&RuntimeGateEval::Passed));
+    assert!(!apply_time_gate_eval(&RuntimeGateEval::Disabled));
+    assert!(apply_time_gate_eval(&RuntimeGateEval::Incomplete));
 }
 
 #[test]
@@ -146,7 +147,7 @@ fn try_evaluate_records_with_time_falls_through_on_incomplete() {
     let py = Config::python_defaults();
     let rs = Config::rust_defaults();
     let gate = GateConfig {
-        max_unit_test_seconds: 2.0,
+        max_unit_test_seconds: vec![("*".to_string(), 2.0)],
         ..GateConfig::default()
     };
     let args = CovCommandArgs {
@@ -239,7 +240,7 @@ fn time_only_gate_path_runs_when_coverage_threshold_zero() {
     let rs = Config::rust_defaults();
     let gate = GateConfig {
         test_coverage_threshold: 0,
-        max_unit_test_seconds: 2.0,
+        max_unit_test_seconds: vec![("*".to_string(), 2.0)],
         ..GateConfig::default()
     };
     let tmp = tempfile::tempdir().unwrap();

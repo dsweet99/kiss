@@ -250,7 +250,7 @@ pub(crate) fn batch_request_with_args(
             helper_bin.to_string_lossy().to_string(),
         )]),
         force_rerun: true,
-        jobs,
+jobs,
         generated_config: tmp.join("batch-cache/runs/parity/nextest.toml"),
         population_publication_selectors: None,
         delegated_runners: BTreeMap::new(),

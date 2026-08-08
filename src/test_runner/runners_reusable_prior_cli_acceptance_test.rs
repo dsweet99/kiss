@@ -36,7 +36,7 @@ fn plan_selectors_commit_uses_reusable_prior_after_ordinary_rs_edit() {
         SelectorRunOptions {
             dry_run: true,
             force_rerun: false,
-            metrics: true,
+metrics: true,
             jobs: 1,
             extra: &[],
             python_extra: &[],

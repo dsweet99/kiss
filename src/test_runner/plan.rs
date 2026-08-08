@@ -147,6 +147,7 @@ fn planned_all(
         rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
         ignore: ignore.to_vec(),
         workspace_files_fingerprint,
+        skip_python_index_rebuild_after_selective: false,
     }
 }
 
@@ -216,6 +217,7 @@ fn plan_explicit_target_selectors(
             rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
             ignore: ignore.to_vec(),
             workspace_files_fingerprint: None,
+            skip_python_index_rebuild_after_selective: true,
         });
     }
     let input = runners::CombinedSelectorInput {
@@ -260,6 +262,7 @@ fn planned_from_selector_plan(
         rust_selection_basis: selector_plan.rust_selection_basis,
         ignore,
         workspace_files_fingerprint: None,
+        skip_python_index_rebuild_after_selective: false,
     }
 }
 

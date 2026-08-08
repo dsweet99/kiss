@@ -86,6 +86,9 @@ pub(crate) struct WireResponse {
     pub(crate) artifacts: BTreeMap<String, String>,
     pub(crate) timeout: bool,
     pub(crate) error: Option<String>,
+    /// Pytest call-phase duration in milliseconds, when measured.
+    #[serde(default)]
+    pub(crate) test_duration_ms: Option<u64>,
 }
 
 #[cfg(test)]
@@ -101,6 +104,7 @@ impl WireResponse {
             artifacts: BTreeMap::new(),
             timeout: false,
             error: None,
+            test_duration_ms: None,
         }
     }
 }

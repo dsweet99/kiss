@@ -179,7 +179,7 @@ orphan_module_enabled = false
 
     assert_eq!(gate.test_coverage_threshold, 91);
     assert_eq!(gate.test_coverage_scope, TestCoverageScope::Codebase);
-    assert!((gate.max_unit_test_seconds - 1.5).abs() < f64::EPSILON);
+    assert_eq!(gate.max_unit_test_seconds, vec![("*".to_string(), 1.5)]);
     assert!((gate.min_similarity - 0.75).abs() < f64::EPSILON);
     assert!(!gate.duplication_enabled);
     assert!(!gate.orphan_module_enabled);
@@ -187,7 +187,10 @@ orphan_module_enabled = false
 
 #[test]
 fn default_max_unit_test_seconds_is_two() {
-    assert!((GateConfig::default().max_unit_test_seconds - 2.0).abs() < f64::EPSILON);
+    assert_eq!(
+        GateConfig::default().max_unit_test_seconds,
+        vec![("*".to_string(), 2.0)]
+    );
 }
 
 #[test]
@@ -210,18 +213,23 @@ fn try_load_rejects_negative_and_nonfinite_max_unit_test_seconds() {
 #[test]
 fn merge_keeps_prior_max_unit_test_seconds_on_invalid() {
     let mut gate = GateConfig {
-        max_unit_test_seconds: 1.25,
+        max_unit_test_seconds: vec![("*".to_string(), 1.25)],
         ..GateConfig::default()
     };
     gate.merge_from_toml("[gate]\nmax_unit_test_seconds = -3");
-    assert!((gate.max_unit_test_seconds - 1.25).abs() < f64::EPSILON);
+    assert_eq!(gate.max_unit_test_seconds, vec![("*".to_string(), 1.25)]);
 }
 
 #[test]
-fn max_unit_test_seconds_zero_disables() {
+fn max_unit_test_seconds_zero_is_catch_all_ban() {
     let gate =
         GateConfig::try_load_from_content("[gate]\nmax_unit_test_seconds = 0").unwrap();
-    assert_eq!(gate.max_unit_test_seconds, 0.0);
+    assert_eq!(gate.max_unit_test_seconds, vec![("*".to_string(), 0.0)]);
+    assert!((gate.catch_all_unit_test_seconds() - 0.0).abs() < f64::EPSILON);
+    assert!((gate.unit_test_seconds_limit("x") - 0.0).abs() < f64::EPSILON);
+    assert!(!gate.unit_test_time_gate_disabled());
+    let empty = GateConfig { max_unit_test_seconds: Vec::new(), ..GateConfig::default() };
+    assert!(empty.unit_test_time_gate_disabled());
 }
 
 #[test]

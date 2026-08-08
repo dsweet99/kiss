@@ -11,6 +11,7 @@ mod line_selection;
 mod python_cache_path;
 mod python_coverage_index;
 mod final_summary;
+mod status_labels;
 mod run_logic;
 mod runners;
 mod rust_coverage_index;
@@ -61,6 +62,7 @@ pub struct RunTestCmdArgs<'a> {
     pub base_branch_cli: Option<&'a str>,
     pub dry_run: bool,
     pub force_rerun: bool,
+    pub force_bad: bool,
     pub metrics: bool,
     pub jobs: usize,
     pub extra: &'a [String],
@@ -69,6 +71,47 @@ pub struct RunTestCmdArgs<'a> {
     pub ignore: &'a [String],
     pub lang_filter: Option<Language>,
     pub config_main_branch: Option<&'a str>,
+}
+
+pub(crate) fn apply_force_bad(
+    a: &RunTestCmdArgs<'_>,
+    planned: &mut PlannedSelectors,
+) -> Result<(), String> {
+    if !a.force_bad {
+        return Ok(());
+    }
+    let py_bad = runners::prior_failures_for_language(
+        &planned.repo_root,
+        Language::Python,
+        a.python_extra,
+    )?;
+    let rs_bad = runners::prior_failures_for_language(
+        &planned.repo_root,
+        Language::Rust,
+        a.extra,
+    )?;
+    let mut py = planned.python_prior_failure_selectors.clone();
+    py.extend(py_bad.into_iter().map(|s| s.id));
+    py.sort();
+    py.dedup();
+    planned.python_prior_failure_selectors = py;
+    let mut rs = planned.rust_prior_failure_selectors.clone();
+    rs.extend(rs_bad.into_iter().map(|s| s.id));
+    rs.sort();
+    rs.dedup();
+    planned.rust_prior_failure_selectors = rs;
+    // Also select bad tests that normal rules omitted (e.g. warm `kiss test .`).
+    for sel in &planned.python_prior_failure_selectors {
+        if !planned.py_sel.iter().any(|s| s == sel) {
+            planned.py_sel.push(sel.clone());
+        }
+    }
+    for sel in &planned.rust_prior_failure_selectors {
+        if !planned.rs_sel.iter().any(|s| s == sel) {
+            planned.rs_sel.push(sel.clone());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -104,6 +147,10 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     match plan_for_invocation(&a) {
         Ok(mut planned) => {
             apply_cold_initialization_population(&a, &mut planned);
+            if let Err(e) = apply_force_bad(&a, &mut planned) {
+                eprintln!("{e}");
+                return RunTestOnceOutcome::Code(1);
+            }
             emit_test_progress(&format!(
                 "kiss test: selected {} python, {} rust",
                 planned.py_sel.len(),
@@ -234,6 +281,9 @@ pub(crate) struct PlannedSelectors {
     pub ignore: Vec<String>,
     /// Workspace py/rs fingerprint from selector-cache planning (warm seal fast path).
     pub workspace_files_fingerprint: Option<String>,
+    /// Pure explicit test operands: keep the selective run fast; do not rebuild the
+    /// full Python coverage index after a cache miss (entries are still stored).
+    pub skip_python_index_rebuild_after_selective: bool,
 }
 
 pub(crate) struct SelectorRunOptions<'a> {
@@ -257,6 +307,10 @@ pub(crate) mod test_mode_fixtures;
 #[cfg(test)]
 #[path = "explicit_test_targets_test.rs"]
 mod explicit_test_targets_test;
+
+#[cfg(test)]
+#[path = "single_python_harness_timing_test.rs"]
+mod single_python_harness_timing_test;
 
 #[cfg(test)]
 #[path = "test_change_modes_test.rs"]

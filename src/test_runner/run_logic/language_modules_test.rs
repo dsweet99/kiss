@@ -22,6 +22,7 @@ fn planned() -> PlannedSelectors {
         rust_selection_basis: Default::default(),
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
+        skip_python_index_rebuild_after_selective: false,
     }
 }
 
@@ -122,6 +123,25 @@ fn language_executor_methods_handle_empty_runs_and_rebuild_indexes() {
     <RustModule as LanguageExecutor>::rebuild_index(&rust, &ctx).unwrap();
     <PythonModule as LanguageExecutor>::write_manifest(&python, &[], &ctx).unwrap();
     <RustModule as LanguageExecutor>::write_manifest(&rust, &[], &ctx).unwrap();
+}
+
+#[test]
+fn python_rebuild_index_skips_when_pure_test_operand_plan() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut planned = planned();
+    planned.repo_root = tmp.path().to_path_buf();
+    planned.skip_python_index_rebuild_after_selective = true;
+    let options = options();
+    let ctx = crate::test_runner::coverage_decision::RunContext {
+        planned: &planned,
+        options: &options,
+    };
+    let python = PythonModule::for_execution(&planned.repo_root, &planned.ignore);
+    <PythonModule as LanguageExecutor>::rebuild_index(&python, &ctx).unwrap();
+    assert!(
+        !tmp.path().join(".kiss").exists(),
+        "pure test-operand selective plans must not publish a Python coverage index"
+    );
 }
 
 #[test]

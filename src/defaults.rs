@@ -67,15 +67,17 @@ pub mod gate {
 
 pub fn default_config_toml() -> String {
     format!(
-        r"# Default kiss configuration
+        r#"# Default kiss configuration
 
 [gate]
 test_coverage_threshold = {gate_coverage}
 test_coverage_scope = {gate_scope}
-max_unit_test_seconds = {max_unit_test_seconds}
 min_similarity = {min_sim}
 duplication_enabled = true
 orphan_module_enabled = true
+
+[gate.max_unit_test_seconds]
+"*" = {max_unit_test_seconds}
 
 [test]
 num_jobs = 4
@@ -127,7 +129,7 @@ imported_names_per_file = {rs_imports}
 cycle_size = {cycle_size}
 indirect_dependencies = {rs_indirect_deps}
 dependency_depth = {rs_dep_depth}
-",
+"#,
         gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
         gate_scope = gate::TEST_COVERAGE_SCOPE_TOML,
         max_unit_test_seconds = gate::MAX_UNIT_TEST_SECONDS,
@@ -192,5 +194,13 @@ mod tests {
     fn test_default_config_toml_parses() {
         let toml = default_config_toml();
         assert!(toml.parse::<toml::Table>().is_ok());
+        assert!(
+            toml.contains("[gate.max_unit_test_seconds]\n\"*\" = 2"),
+            "init default must emit nested asterisk mapping:\n{toml}"
+        );
+        assert!(
+            !toml.contains("max_unit_test_seconds = "),
+            "init default must not emit scalar max_unit_test_seconds:\n{toml}"
+        );
     }
 }

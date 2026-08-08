@@ -92,13 +92,20 @@ fn run_rslip_selectors_with_runner(
         handle_rslip_batch_progress(event, args.selectors, &mut stdout);
     });
     let _ = std::io::Write::flush(&mut stdout);
+    let gate = kiss::GateConfig::load();
     for (selector, result) in args.selectors.iter().zip(results) {
         match result {
             Ok(outcome) => {
-                statuses.push((outcome.nodeid.clone(), outcome.status));
+                let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
+                    outcome.status,
+                    &outcome.nodeid,
+                    outcome.duration,
+                    &gate,
+                );
+                statuses.push((outcome.nodeid.clone(), status));
                 summary.record(SelectorExecutionRecord {
                     selector: outcome.nodeid.clone(),
-                    status: outcome.status,
+                    status,
                     cache_record: if outcome.cache_status == PyCacheStatus::Hit {
                         SelectorCacheRecord::Hit
                     } else {
@@ -151,7 +158,7 @@ fn handle_rslip_batch_progress(
                             .get(index)
                             .map(String::as_str)
                             .unwrap_or("<unknown>");
-                        let _ = writeln!(stdout, "FAILED: {selector} (rslip error)");
+                        let _ = writeln!(stdout, "FAIL: {selector} (rslip error)");
                         eprintln!("{}", format_rslip_error(err));
                     }
                 }
@@ -210,9 +217,27 @@ pub(crate) fn rslip_request_from_parts(
         env: kiss::python_coverage_env_map(&repo_root),
         cache_root: python_coverage_cache_root(&repo_root)?,
         force_rerun,
-        timeout: Some(DEFAULT_PYTEST_TIMEOUT),
+        timeout: Some(timeout_for_selector(selector)),
         content_fingerprint: None,
     })
+}
+
+fn timeout_for_selector(selector: &str) -> Duration {
+    let gate = kiss::GateConfig::load();
+    if gate.unit_test_time_gate_disabled() {
+        return DEFAULT_PYTEST_TIMEOUT;
+    }
+    let limit = gate.unit_test_seconds_limit(selector);
+    if limit == 0.0 {
+        // Ban path: do not let the test run for the default 180s.
+        return Duration::from_millis(1);
+    }
+    let limit = Duration::from_secs_f64(limit);
+    if limit < DEFAULT_PYTEST_TIMEOUT {
+        limit
+    } else {
+        DEFAULT_PYTEST_TIMEOUT
+    }
 }
 
 pub(crate) fn detect_rslip_versions(repo_root: &Path) -> Result<(String, String), String> {
@@ -278,25 +303,33 @@ fn python_version_supports_rslip(version: &str) -> bool {
 }
 
 fn print_rslip_outcome(outcome: &RslipOutcome, out: &mut impl std::io::Write) {
+    let gate = kiss::GateConfig::load();
+    let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
+        outcome.status,
+        &outcome.nodeid,
+        outcome.duration,
+        &gate,
+    );
     let duration = crate::test_runner::duration::format_test_duration(outcome.duration);
-    match (outcome.status, outcome.cache_status) {
-        (rpytest_runner::TestStatus::Passed, PyCacheStatus::Hit) => {
-            let _ = writeln!(out, "PASSED (cached): {}", outcome.nodeid);
-        }
-        (rpytest_runner::TestStatus::Passed, PyCacheStatus::MissStored) => {
-            let _ = writeln!(out, "PASSED: {} ({duration})", outcome.nodeid);
-        }
-        (rpytest_runner::TestStatus::Failed, PyCacheStatus::Hit) => {
-            let _ = writeln!(out, "FAILED (cached): {}", outcome.nodeid);
-        }
-        (rpytest_runner::TestStatus::Failed, PyCacheStatus::MissStored) => {
-            let _ = writeln!(out, "FAILED: {} ({duration})", outcome.nodeid);
-            if let Some(stderr) = &outcome.stderr
-                && !stderr.is_empty()
-            {
-                eprint!("{}", String::from_utf8_lossy(stderr));
-            }
-        }
+    let cache_tag = match outcome.cache_status {
+        PyCacheStatus::Hit => Some("cached"),
+        PyCacheStatus::MissStored => None,
+    };
+    let line = crate::test_runner::status_labels::format_status_line(
+        status,
+        &outcome.nodeid,
+        if cache_tag.is_some() { "" } else { &duration },
+        cache_tag,
+    );
+    let _ = writeln!(out, "{line}");
+    if matches!(
+        status,
+        rpytest_runner::TestStatus::Failed | rpytest_runner::TestStatus::TimedOut
+    ) && outcome.cache_status != PyCacheStatus::Hit
+        && let Some(stderr) = &outcome.stderr
+        && !stderr.is_empty()
+    {
+        eprint!("{}", String::from_utf8_lossy(stderr));
     }
 }
 

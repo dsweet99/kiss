@@ -188,7 +188,7 @@ fn row_d_empty_diff_dry_run_exits_zero() {
             SelectorRunOptions {
                 dry_run: true,
                 force_rerun: false,
-                metrics: false,
+metrics: false,
                 jobs: 1,
                 extra: &[],
                 python_extra: &[],

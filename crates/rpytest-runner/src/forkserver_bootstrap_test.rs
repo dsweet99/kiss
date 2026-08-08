@@ -1,33 +1,13 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::forkserver::{ForkserverController, run_with_reused_controller};
-use crate::forkserver_controller_runtime::SHUTDOWN_TIMEOUT;
+use crate::forkserver_test_support::{base_req, test_python};
 use crate::{
     ForkserverPytestRunner, PytestBootstrap, PytestRunError, PytestRunRequest, TestStatus,
     parent_safe_env,
 };
-
-macro_rules! python {
-    () => {
-        PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python".to_string()))
-    };
-}
-
-fn base_req(root: &std::path::Path, nodeid: &str) -> PytestRunRequest {
-    PytestRunRequest::from_parts(
-        nodeid.to_string(),
-        root.to_path_buf(),
-        python!(),
-        vec!["-q".to_string()],
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-    )
-}
 
 #[test]
 fn parent_safe_env_strips_selector_specific_keys() {
@@ -64,7 +44,7 @@ fn forkserver_configures_pytest_once_per_controller() {
         PytestRunRequest::from_parts(
             nodeid.to_string(),
             tmp.path().to_path_buf(),
-            python!(),
+            test_python(),
             vec!["-q".to_string()],
             env.clone(),
             Vec::new(),
@@ -166,7 +146,7 @@ fn forkserver_bootstrap_rejects_plugin_that_starts_a_thread() {
     )
     .unwrap();
     let started = ForkserverController::start(
-        &python!(),
+        &test_python(),
         &base_req(tmp.path(), "test_sample.py::test_ok").bootstrap,
     );
     let err = match started {
@@ -195,7 +175,7 @@ fn forkserver_bootstrap_rejects_unsupported_pytest_major_version() {
     let mut env = BTreeMap::new();
     env.insert("RPYTEST_FORKSERVER_FAKE_MAJOR".to_string(), "7".to_string());
     let bootstrap = PytestBootstrap::new(tmp.path().to_path_buf(), vec!["-q".to_string()], env);
-    let started = ForkserverController::start(&python!(), &bootstrap);
+    let started = ForkserverController::start(&test_python(), &bootstrap);
     let err = match started {
         Ok(_) => panic!("expected bootstrap to fail for unsupported pytest major"),
         Err(error) => error,
@@ -225,7 +205,7 @@ fn forkserver_bootstrap_rejects_configure_exception() {
     )
     .unwrap();
     let started = ForkserverController::start(
-        &python!(),
+        &test_python(),
         &base_req(tmp.path(), "test_sample.py::test_ok").bootstrap,
     );
     let err = match started {
@@ -241,65 +221,6 @@ fn forkserver_bootstrap_rejects_configure_exception() {
         }
         other => panic!("unexpected error: {other:?}"),
     }
-}
-
-#[test]
-fn forkserver_shutdown_runs_pytest_unconfigure_once() {
-    let tmp = tempfile::tempdir().unwrap();
-    let marker = tmp.path().join("unconfigure.txt");
-    fs::write(
-        tmp.path().join("conftest.py"),
-        format!(
-            "def pytest_unconfigure(config):\n    open(r'{path}', 'a').write('unconfigure\\n')\n",
-            path = marker.display()
-        ),
-    )
-    .unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-    let req = base_req(tmp.path(), "test_sample.py::test_ok");
-    let mut controller = ForkserverController::start(&python!(), &req.bootstrap).unwrap();
-    controller.run(req).unwrap();
-    controller.shutdown();
-    let body = fs::read_to_string(&marker).unwrap_or_default();
-    assert_eq!(body.matches("unconfigure").count(), 1, "{body}");
-}
-
-#[test]
-fn forkserver_shutdown_force_kills_unresponsive_controller() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("conftest.py"),
-        "import time\ndef pytest_unconfigure(config):\n    time.sleep(30)\n",
-    )
-    .unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-    let req = base_req(tmp.path(), "test_sample.py::test_ok");
-    let mut controller = ForkserverController::start(&python!(), &req.bootstrap).unwrap();
-    controller.run(req).unwrap();
-    let pid = controller.controller_pid();
-    let started = Instant::now();
-    controller.shutdown();
-    let elapsed = started.elapsed();
-    assert!(
-        elapsed >= SHUTDOWN_TIMEOUT,
-        "expected wait at least {SHUTDOWN_TIMEOUT:?}, got {elapsed:?}"
-    );
-    assert!(
-        elapsed < SHUTDOWN_TIMEOUT + Duration::from_secs(2),
-        "force-kill took too long: {elapsed:?}"
-    );
-    assert!(
-        !std::path::Path::new(&format!("/proc/{pid}")).exists(),
-        "controller pid {pid} still alive after force-kill"
-    );
 }
 
 #[test]
@@ -349,7 +270,7 @@ fn forkserver_empty_selection_and_collection_error_preserve_exit_codes() {
     .unwrap();
     fs::write(tmp.path().join("test_bad.py"), "def test_bad(\n").unwrap();
     let mut controller =
-        ForkserverController::start(&python!(), &base_req(tmp.path(), "test_sample.py::test_ok").bootstrap)
+        ForkserverController::start(&test_python(), &base_req(tmp.path(), "test_sample.py::test_ok").bootstrap)
             .unwrap();
 
     let empty = controller
@@ -384,7 +305,7 @@ fn forkserver_lifecycle_errors_match_pytest_exit_codes() {
     )
     .unwrap();
     let mut controller =
-        ForkserverController::start(&python!(), &base_req(tmp.path(), "test_life.py::test_ok").bootstrap)
+        ForkserverController::start(&test_python(), &base_req(tmp.path(), "test_life.py::test_ok").bootstrap)
             .unwrap();
 
     let sys_exit = controller
@@ -408,7 +329,7 @@ fn forkserver_lifecycle_errors_match_pytest_exit_codes() {
     .unwrap();
     fs::write(boom_dir.join("test_ok.py"), "def test_ok():\n    assert True\n").unwrap();
     let mut boom = ForkserverController::start(
-        &python!(),
+        &test_python(),
         &base_req(&boom_dir, "test_ok.py::test_ok").bootstrap,
     )
     .unwrap();

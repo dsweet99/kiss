@@ -11,6 +11,7 @@ pub(crate) struct FinalTestSummary {
     pub(crate) passed: usize,
     pub(crate) failed: usize,
     pub(crate) failed_selectors: Vec<String>,
+    pub(crate) timed_out_selectors: Vec<String>,
     pub(crate) max_passing_run_duration: Duration,
 }
 
@@ -19,11 +20,13 @@ impl FinalTestSummary {
         let mut total = 0;
         let mut failed = 0;
         let mut failed_selectors = Vec::new();
+        let mut timed_out_selectors = Vec::new();
         let mut max_passing_run_duration = Duration::ZERO;
         for summary in summaries {
             total += summary.total;
             failed += summary.failed;
             failed_selectors.extend(summary.failed_selectors.iter().cloned());
+            timed_out_selectors.extend(summary.timed_out_selectors.iter().cloned());
             max_passing_run_duration =
                 max_passing_run_duration.max(summary.max_passing_run_duration);
         }
@@ -31,6 +34,7 @@ impl FinalTestSummary {
             passed: total.saturating_sub(failed),
             failed,
             failed_selectors,
+            timed_out_selectors,
             max_passing_run_duration,
         }
     }
@@ -74,11 +78,19 @@ pub(crate) fn format_final_test_summary(
     let mut lines = vec![line];
     for selector in &summary.failed_selectors {
         let failed = if color {
-            "\x1b[31mFAILED\x1b[0m"
+            "\x1b[31mFAIL\x1b[0m"
         } else {
-            "FAILED"
+            "FAIL"
         };
         lines.push(format!("{failed} {selector}"));
+    }
+    for selector in &summary.timed_out_selectors {
+        let timed_out = if color {
+            "\x1b[31mTIMEOUT\x1b[0m"
+        } else {
+            "TIMEOUT"
+        };
+        lines.push(format!("{timed_out} {selector}"));
     }
     lines.join("\n")
 }

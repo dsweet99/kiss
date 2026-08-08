@@ -20,6 +20,7 @@ pub(crate) struct TestDispatchOptions<'a> {
     pub base_branch: Option<String>,
     pub dry_run: bool,
     pub force: bool,
+    pub force_bad: bool,
     pub metrics: bool,
     pub watch: bool,
     pub jobs: Option<usize>,

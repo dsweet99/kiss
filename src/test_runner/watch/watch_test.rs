@@ -233,7 +233,7 @@ fn run_test_watch_requires_git() {
         base_branch_cli: None,
         dry_run: false,
         force_rerun: false,
-        metrics: false,
+            force_bad: false,        metrics: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],

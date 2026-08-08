@@ -154,6 +154,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) ->
         base_branch: o.base_branch.as_deref(),
         dry_run: o.dry_run,
         force: o.force,
+        force_bad: o.force_bad,
         metrics: o.metrics,
         watch: o.watch,
         jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),

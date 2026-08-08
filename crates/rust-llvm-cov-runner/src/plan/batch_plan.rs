@@ -43,7 +43,7 @@ impl RustCoverageBatchRequest {
             test_args: vec!["--exact".to_string()],
             env: BTreeMap::from([("KEEP_ME".to_string(), "1".to_string())]),
             force_rerun: true,
-            jobs: 4,
+jobs: 4,
             generated_config: PathBuf::from(
                 "/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/nextest.toml",
             ),

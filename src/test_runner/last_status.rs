@@ -135,7 +135,10 @@ pub(crate) fn record_statuses(
                 && record.selector == *selector
                 && record.identity == *identity)
         });
-        if *status == rpytest_runner::TestStatus::Failed {
+        if matches!(
+            *status,
+            rpytest_runner::TestStatus::Failed | rpytest_runner::TestStatus::TimedOut
+        ) {
             store.records.push(LastStatusRecord {
                 language: language.to_string(),
                 selector: selector.clone(),

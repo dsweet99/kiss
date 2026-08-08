@@ -29,18 +29,15 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
         "test_coverage_scope = \"{}\"",
         p.gate.test_coverage_scope
     );
-    let _ = writeln!(
-        out,
-        "max_unit_test_seconds = {}",
-        p.gate.max_unit_test_seconds
-    );
     let _ = writeln!(out, "min_similarity = {}", p.gate.min_similarity);
     let _ = writeln!(out, "duplication_enabled = {}", p.gate.duplication_enabled);
-    let _ = writeln!(
+    let _ = writeln!(out, "orphan_module_enabled = {}", p.gate.orphan_module_enabled);
+    let _ = write!(
         out,
-        "orphan_module_enabled = {}\n",
-        p.gate.orphan_module_enabled
+        "\n{}",
+        crate::gate_config::format_nested_toml_table(&p.gate.max_unit_test_seconds)
     );
+    out.push('\n');
     if p.py_n > 0 {
         append_section(
             &mut out,
@@ -111,9 +108,13 @@ mod coverage_witness {
         assert!(toml.contains("[gate]"));
         assert!(
             toml.contains(
-                "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_unit_test_seconds = 2\nmin_similarity"
+                "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmin_similarity"
             ),
             "gate emission order:\n{toml}"
+        );
+        assert!(
+            toml.contains("[gate.max_unit_test_seconds]\n\"*\" = 2\n"),
+            "default asterisk mapping:\n{toml}"
         );
     }
 }

@@ -14,7 +14,9 @@ use rust_llvm_cov_runner::{
 
 #[path = "runners/decision.rs"]
 mod decision;
-pub(crate) use decision::{CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct};
+pub(crate) use decision::{
+    CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct, prior_failures_for_language,
+};
 #[cfg(test)]
 pub(crate) use decision::combined_selectors;
 
@@ -282,7 +284,7 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         test_args: extra.to_vec(),
         env: BTreeMap::new(),
         force_rerun: false,
-        jobs,
+jobs,
         generated_config: PathBuf::from("<generated-filter>"),
         population_publication_selectors: None,
         delegated_runners,

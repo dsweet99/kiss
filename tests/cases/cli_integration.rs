@@ -26,8 +26,12 @@ fn cli_init_writes_default_config_in_current_directory() {
 
     let config = fs::read_to_string(tmp.path().join(".kissconfig")).unwrap();
     assert!(
-        config.contains("[gate]\ntest_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_unit_test_seconds = 2\nmin_similarity = 0.9\nduplication_enabled = true\norphan_module_enabled = true"),
+        config.contains("[gate]\ntest_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmin_similarity = 0.9\nduplication_enabled = true\norphan_module_enabled = true"),
         "config:\n{config}"
+    );
+    assert!(
+        config.contains("[gate.max_unit_test_seconds]\n\"*\" = 2\n"),
+        "config should use nested asterisk mapping:\n{config}"
     );
     assert!(
         config.contains(

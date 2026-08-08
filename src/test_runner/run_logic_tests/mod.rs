@@ -29,6 +29,7 @@ fn planned() -> PlannedSelectors {
         rust_selection_basis: Default::default(),
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
+        skip_python_index_rebuild_after_selective: false,
     }
 }
 

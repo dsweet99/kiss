@@ -312,7 +312,7 @@ fn all_hit_outcomes(
             status,
             exit_code: match status {
                 TestStatus::Passed => Some(0),
-                TestStatus::Failed => Some(1),
+                TestStatus::Failed | TestStatus::TimedOut => Some(1),
             },
             duration: Duration::ZERO,
             coverage: Default::default(),

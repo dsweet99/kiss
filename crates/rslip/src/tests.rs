@@ -84,7 +84,7 @@ fn force_rerun_skips_cache_and_returns_only_fresh_output() {
     let forced = rslip
         .run_or_reuse(RslipRequest {
             force_rerun: true,
-            ..req
+..req
         })
         .unwrap();
 

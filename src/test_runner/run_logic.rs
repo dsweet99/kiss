@@ -203,8 +203,8 @@ fn finish_run_metrics(
 ) -> i32 {
     metrics.exit_code = code;
     metrics.total_duration = total_started.elapsed();
-    metrics.capture_cache_shape(&planned.repo_root);
     if options.metrics {
+        metrics.capture_cache_shape(&planned.repo_root);
         metrics.print();
     }
     let aggregate = FinalTestSummary::absorb(&[

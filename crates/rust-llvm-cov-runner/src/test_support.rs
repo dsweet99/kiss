@@ -67,7 +67,7 @@ pub(crate) fn batch_executor_request(repo: &Path) -> crate::RustCoverageBatchReq
         test_args: Vec::new(),
         env: BTreeMap::new(),
         force_rerun: false,
-        jobs: 2,
+jobs: 2,
         generated_config: repo
             .join(".kiss")
             .join("rust_llvm_cov_cache")
@@ -263,7 +263,7 @@ pub(crate) fn derived_fixture_request(repo: &Path) -> crate::RustCoverageBatchRe
         test_args: Vec::new(),
         env: std::collections::BTreeMap::new(),
         force_rerun: false,
-        jobs: 1,
+jobs: 1,
         generated_config: repo.join(".kiss/rust_llvm_cov_cache/runs/run-test/nextest.toml"),
         population_publication_selectors: Some(vec!["alpha".to_string()]),
         delegated_runners,
@@ -322,7 +322,7 @@ pub(crate) fn runner_resolve_base_request(repo: &Path) -> crate::RustCoverageBat
         test_args: Vec::new(),
         env: BTreeMap::new(),
         force_rerun: false,
-        jobs: 1,
+jobs: 1,
         generated_config: repo.join(".kiss/rust_llvm_cov_cache/runs/run-test/nextest.toml"),
         population_publication_selectors: None,
         delegated_runners,

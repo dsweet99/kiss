@@ -38,7 +38,7 @@ def test_false():\n    assert choose(False) == 2\n",
         env: BTreeMap::new(),
         cache_root: tmp.path().join(".rslip_cache"),
         force_rerun: false,
-        timeout: None,
+timeout: None,
         content_fingerprint: None,
     };
     let mut second_req = base_req.clone();

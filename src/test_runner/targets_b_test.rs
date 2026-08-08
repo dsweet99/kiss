@@ -133,6 +133,38 @@ fn resolve_deduplicates_repeated_operands() {
 }
 
 #[test]
+fn resolve_python_parametrized_nodeid_is_direct_selector() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    let tests = tmp.path().join("tests");
+    fs::create_dir_all(&tests).unwrap();
+    // Collection would fail; explicit nodeids must not invoke pytest --collect-only.
+    fs::write(
+        tests.join("conftest.py"),
+        "def pytest_configure(config):\n    raise RuntimeError('collect must not run')\n",
+    )
+    .unwrap();
+    fs::write(
+        tests.join("test_params.py"),
+        "import pytest\n\n@pytest.mark.parametrize('name', ['a.py', 'b.py'])\ndef test_item(name):\n    assert name.endswith('.py')\n",
+    )
+    .unwrap();
+    let nodeid = "tests/test_params.py::test_item[a.py]";
+    let query = resolve_target_operands(
+        tmp.path(),
+        &[nodeid.into()],
+        Some(Language::Python),
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        query.direct_python.iter().collect::<Vec<_>>(),
+        vec![&nodeid.to_string()]
+    );
+}
+
+#[test]
 fn resolve_python_test_file_path_is_direct_only() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());

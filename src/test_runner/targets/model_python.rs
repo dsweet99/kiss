@@ -131,45 +131,56 @@ pub(super) fn attach_python_nodeids(
     nodeids: &[String],
     repo_relative: &str,
 ) {
-    for test in &mut model.direct_tests {
-        let Some(nodeid) =
-            match_python_nodeid(nodeids, repo_relative, &test.name, test.owner.as_deref())
-        else {
+    let pending = std::mem::take(&mut model.direct_tests);
+    for test in pending {
+        let matches =
+            match_python_nodeids(nodeids, repo_relative, &test.name, test.owner.as_deref());
+        if matches.is_empty() {
             continue;
-        };
-        test.selector = nodeid.clone();
+        }
         for def in &mut model.definitions {
-            let matches = match test.owner.as_deref() {
+            let matches_def = match test.owner.as_deref() {
                 Some(owner) => {
                     def.name == owner && def.member.as_deref() == Some(test.name.as_str())
                 }
                 None => def.name == test.name && def.member.is_none(),
             };
-            if matches && def.is_unit_test {
-                def.test_selector = Some(nodeid.clone());
+            if matches_def && def.is_unit_test {
+                def.test_selector = Some(matches[0].clone());
             }
+        }
+        for nodeid in matches {
+            let mut attached = test.clone();
+            attached.selector = nodeid;
+            model.direct_tests.push(attached);
         }
     }
 }
 
-fn match_python_nodeid(
+fn match_python_nodeids(
     nodeids: &[String],
     repo_relative: &str,
     name: &str,
     owner: Option<&str>,
-) -> Option<String> {
-    let wanted = match owner {
+) -> Vec<String> {
+    let base = match owner {
         Some(owner) => format!("{repo_relative}::{owner}::{name}"),
         None => format!("{repo_relative}::{name}"),
     };
-    nodeids.iter().find(|nodeid| *nodeid == &wanted).cloned().or_else(|| {
-        let suffix = match owner {
-            Some(owner) => format!("::{owner}::{name}"),
-            None => format!("::{name}"),
-        };
-        nodeids
-            .iter()
-            .find(|nodeid| nodeid.starts_with(repo_relative) && nodeid.ends_with(&suffix))
-            .cloned()
-    })
+    let base_param = format!("{base}[");
+    let suffix = match owner {
+        Some(owner) => format!("::{owner}::{name}"),
+        None => format!("::{name}"),
+    };
+    let suffix_param = format!("{suffix}[");
+    nodeids
+        .iter()
+        .filter(|nodeid| {
+            *nodeid == &base
+                || nodeid.starts_with(&base_param)
+                || (nodeid.starts_with(repo_relative)
+                    && (nodeid.ends_with(&suffix) || nodeid.contains(&suffix_param)))
+        })
+        .cloned()
+        .collect()
 }

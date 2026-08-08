@@ -13,10 +13,27 @@ fn parse_test_target_accepts_path_and_symbol_forms() {
     assert_eq!(with_symbol.language, Language::Python);
     assert_eq!(with_symbol.symbol.as_deref(), Some("test_y"));
     assert!(with_symbol.member.is_none());
+    assert!(with_symbol.python_nodeid.is_none());
 
     let with_member = parse_test_target("src/app.py::Foo.bar").unwrap();
     assert_eq!(with_member.symbol.as_deref(), Some("Foo"));
     assert_eq!(with_member.member.as_deref(), Some("bar"));
+
+    let parametrized = parse_test_target(
+        "tests/slow/ops/test_ops_help.py::test_ops_help[observability.py]",
+    )
+    .unwrap();
+    assert_eq!(
+        parametrized.python_nodeid.as_deref(),
+        Some("tests/slow/ops/test_ops_help.py::test_ops_help[observability.py]")
+    );
+    assert!(parametrized.symbol.is_none());
+
+    let class_test = parse_test_target("tests/test_x.py::TestBox::test_method").unwrap();
+    assert_eq!(
+        class_test.python_nodeid.as_deref(),
+        Some("tests/test_x.py::TestBox::test_method")
+    );
 }
 
 #[test]
@@ -25,7 +42,7 @@ fn parse_test_target_rejects_malformed_operands() {
     assert!(parse_test_target("::foo").is_err());
     assert!(parse_test_target("a.py::").is_err());
     assert!(parse_test_target("a.py::Foo.bar.baz").is_err());
-    assert!(parse_test_target("a.py::A::B").is_err());
+    assert!(parse_test_target("a.rs::A::B").is_err());
     assert!(parse_test_target("readme.md").is_err());
 }
 
@@ -96,6 +113,7 @@ fn python_attach_nodeids_for_function_and_class_tests() {
     let mut model = super::model::load_source_model(&path, Language::Python).unwrap();
     let nodeids = vec![
         "test_mod.py::test_top".to_string(),
+        "test_mod.py::test_top[case-a]".to_string(),
         "test_mod.py::TestBox::test_method".to_string(),
     ];
     super::model_python::attach_python_nodeids(&mut model, &nodeids, "test_mod.py");
@@ -104,6 +122,12 @@ fn python_attach_nodeids_for_function_and_class_tests() {
             .direct_tests
             .iter()
             .any(|t| t.selector == "test_mod.py::test_top")
+    );
+    assert!(
+        model
+            .direct_tests
+            .iter()
+            .any(|t| t.selector == "test_mod.py::test_top[case-a]")
     );
     assert!(
         model

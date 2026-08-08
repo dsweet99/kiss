@@ -63,6 +63,7 @@ fn explicit_single_python_test_ignores_prior_failure_fanout() {
     assert!(!planned.python_population_required);
     assert!(planned.python_prior_failure_selectors.is_empty());
     assert!(!planned.coverage_decision_engine_used);
+    assert!(planned.skip_python_index_rebuild_after_selective);
 }
 
 #[test]

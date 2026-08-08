@@ -104,10 +104,13 @@ pub fn run_config(
     println!("\n[gate]");
     println!("test_coverage_threshold = {}", gate.test_coverage_threshold);
     println!("test_coverage_scope = \"{}\"", gate.test_coverage_scope);
-    println!("max_unit_test_seconds = {}", gate.max_unit_test_seconds);
     println!("min_similarity = {:.2}", gate.min_similarity);
     println!("duplication_enabled = {}", gate.duplication_enabled);
     println!("orphan_module_enabled = {}", gate.orphan_module_enabled);
+    print!(
+        "\n{}",
+        kiss::format_nested_toml_table(&gate.max_unit_test_seconds)
+    );
     println!("\n[test]");
     println!("num_jobs = {}", test.num_jobs);
     println!("watch_settle_seconds = {}", test.watch_settle_seconds);

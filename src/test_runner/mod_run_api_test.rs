@@ -11,7 +11,7 @@ impl RunTestCmdArgs<'_> {
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
-            metrics: false,
+            force_bad: false,            metrics: false,
             jobs: 1,
             extra: &[],
             python_extra: &[],
@@ -40,6 +40,7 @@ impl PlannedSelectors {
             rust_selection_basis: Default::default(),
             ignore: vec![],
             workspace_files_fingerprint: None,
+            skip_python_index_rebuild_after_selective: false,
         }
     }
 }
@@ -49,7 +50,7 @@ impl SelectorRunOptions<'_> {
         Self {
             dry_run: true,
             force_rerun: false,
-            metrics: false,
+metrics: false,
             jobs: 1,
             extra: &[],
             python_extra: &[],
@@ -78,7 +79,7 @@ fn dry_run_rejects_unsupported_rust_test_args_without_panic() {
         SelectorRunOptions {
             dry_run: true,
             force_rerun: false,
-            metrics: false,
+metrics: false,
             jobs: 1,
             extra: &extra,
             python_extra: &[],
@@ -160,7 +161,7 @@ mod plan_tests {
             SelectorRunOptions {
                 dry_run: true,
                 force_rerun: false,
-                metrics: false,
+metrics: false,
                 jobs: 1,
                 extra: &[],
                 python_extra: &[],
@@ -191,6 +192,7 @@ mod plan_tests {
             rust_selection_basis: Default::default(),
             ignore: Vec::new(),
             workspace_files_fingerprint: None,
+            skip_python_index_rebuild_after_selective: false,
         };
 
         let err = run_selectors(
@@ -198,7 +200,7 @@ mod plan_tests {
             SelectorRunOptions {
                 dry_run: false,
                 force_rerun: false,
-                metrics: false,
+metrics: false,
                 jobs: 0,
                 extra: &[],
                 python_extra: &[],

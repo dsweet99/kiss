@@ -13,6 +13,7 @@ use crate::forkserver_wire::{
 use crate::runner::validate_request;
 use crate::{PytestBootstrap, PytestRunError, PytestRunOutcome, PytestRunRequest};
 
+#[cfg(test)]
 pub(crate) const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub(crate) struct ForkserverController {
@@ -94,7 +95,20 @@ impl ForkserverController {
         outcome_from_response(response, request_id, timeout, started)
     }
 
+    /// Fast shutdown for batch Drop: do not wait on pytest unconfigure (can be
+    /// hundreds of ms on large suites). Best-effort shutdown message, then kill.
     pub(crate) fn shutdown(&mut self) {
+        if self.shutting_down {
+            return;
+        }
+        self.shutting_down = true;
+        let _ = self.write_json(&WireShutdown { op: "shutdown" });
+        force_reap(&mut self.child);
+    }
+
+    /// Wait for graceful pytest unconfigure, then force-kill if needed.
+    #[cfg(test)]
+    pub(crate) fn shutdown_graceful(&mut self) {
         if self.shutting_down {
             return;
         }
@@ -162,6 +176,7 @@ fn force_reap(child: &mut Child) {
     let _ = child.wait();
 }
 
+#[cfg(test)]
 fn wait_or_kill(child: &mut Child, timeout: Duration) {
     let deadline = Instant::now() + timeout;
     loop {
@@ -201,13 +216,17 @@ fn outcome_from_response(
         ));
     }
     let status = response.test_status()?;
+    let duration = response
+        .test_duration_ms
+        .map(Duration::from_millis)
+        .unwrap_or_else(|| started.elapsed());
     Ok(PytestRunOutcome {
         nodeid: response.nodeid,
         status,
         exit_code: response.exit_code,
         stdout: response.stdout,
         stderr: response.stderr,
-        duration: started.elapsed(),
+        duration,
         artifacts: response
             .artifacts
             .into_iter()

@@ -36,6 +36,9 @@ impl LanguageExecutor for PythonModule {
     }
 
     fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
+        if ctx.planned.skip_python_index_rebuild_after_selective {
+            return Ok(());
+        }
         publish_python_derived_state_with_filter(
             &ctx.planned.repo_root,
             None,

@@ -27,11 +27,19 @@ mod bounded_concurrency_test_support_test;
 #[cfg(test)]
 mod forkserver_test;
 #[cfg(test)]
+mod forkserver_test_support;
+#[cfg(test)]
 #[path = "forkserver_bootstrap_test.rs"]
 mod forkserver_bootstrap_test;
 #[cfg(test)]
+#[path = "forkserver_shutdown_test.rs"]
+mod forkserver_shutdown_test;
+#[cfg(test)]
 #[path = "forkserver_timeout_test.rs"]
 mod forkserver_timeout_test;
+#[cfg(test)]
+#[path = "forkserver_duration_test.rs"]
+mod forkserver_duration_test;
 #[cfg(test)]
 mod runner_test;
 #[cfg(test)]

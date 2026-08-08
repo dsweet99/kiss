@@ -65,9 +65,9 @@ fn format_failures_preserve_order_and_full_selectors() {
     assert_eq!(
         text,
         "✗ 1 passed · 3 failed · 12.84s total · 0.20s max pass\n\
-FAILED tests/test_api.py::TestGateway::test_rejects_expired_token\n\
-FAILED tests/test_models.py::test_round_trip[parametrize-case-2]\n\
-FAILED tests::missing_file_is_not_reusable"
+FAIL tests/test_api.py::TestGateway::test_rejects_expired_token\n\
+FAIL tests/test_models.py::test_round_trip[parametrize-case-2]\n\
+FAIL tests::missing_file_is_not_reusable"
     );
 }
 
@@ -92,11 +92,12 @@ fn format_color_only_icons_and_failed_token() {
         passed: 1,
         failed: 1,
         failed_selectors: vec!["tests::boom".to_string()],
+        timed_out_selectors: Vec::new(),
         max_passing_run_duration: Duration::from_millis(50),
     };
     let colored = format_final_test_summary(&summary, Duration::from_secs(1), true);
     assert!(colored.starts_with("\x1b[31m✗\x1b[0m "));
-    assert!(colored.contains("\x1b[31mFAILED\x1b[0m tests::boom"));
+    assert!(colored.contains("\x1b[31mFAIL\x1b[0m tests::boom"));
     assert!(!colored.contains("\x1b[31m1 passed"));
     let plain = format_final_test_summary(&summary, Duration::from_secs(1), false);
     assert!(!plain.contains('\x1b'));
@@ -104,6 +105,7 @@ fn format_color_only_icons_and_failed_token() {
         passed: 2,
         failed: 0,
         failed_selectors: Vec::new(),
+        timed_out_selectors: Vec::new(),
         max_passing_run_duration: Duration::from_millis(10),
     };
     assert!(format_final_test_summary(&pass, Duration::from_secs(1), true)
