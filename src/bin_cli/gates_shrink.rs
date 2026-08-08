@@ -179,7 +179,6 @@ fn test_shrink_helper_functions() {
 #[test]
 fn test_test_cli_parse() {
     use clap::Parser;
-    assert!(Cli::try_parse_from(["kiss", "test"]).is_err());
 
     let cli = Cli::try_parse_from(["kiss", "test", "base", "--dry-run", "--metrics"]).unwrap();
     match cli.command {

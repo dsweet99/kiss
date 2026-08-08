@@ -1,7 +1,10 @@
+use std::collections::BTreeSet;
+
 use crate::{Rslip, RslipError, RslipOutcome};
 
 use super::finalize::{clone_rslip_result, handle_rslip_miss_result};
 use super::lock_chunk::{brief_lock_filter_rslip_miss_groups, coalesce_rslip_miss_candidates};
+use super::pycache::purge_pycache_under;
 use super::{
     PreparedRslipMisses, RslipBatchProgress, RslipCacheCandidate, RslipMiss, prepare_rslip_misses,
 };
@@ -38,6 +41,15 @@ pub(super) fn run_rslip_misses(
 
     if runner_misses.is_empty() {
         return;
+    }
+    // Drop timestamp-granularity bytecode so same-second same-size source edits
+    // cannot be shadowed by a still-"valid" .pyc on the subsequent miss run.
+    let source_roots: BTreeSet<_> = runner_misses
+        .iter()
+        .map(|miss| miss.req.source_root.clone())
+        .collect();
+    for root in source_roots {
+        purge_pycache_under(&root);
     }
     let runner_reqs: Vec<_> = runner_misses
         .iter()

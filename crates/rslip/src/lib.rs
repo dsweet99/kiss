@@ -25,6 +25,8 @@ mod batch_test;
 #[cfg(test)]
 mod batch_test_b;
 #[cfg(test)]
+mod batch_pycache_regression_test;
+#[cfg(test)]
 mod cache_test;
 #[cfg(test)]
 mod cache_cov_edges_test;

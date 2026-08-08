@@ -90,7 +90,10 @@ fn test_invocation_parses_modes_dot_all_and_targets() {
         parse_test_invocation(&["src".into(), "crates/foo".into()]).unwrap(),
         TestInvocation::Targets(vec!["src".into(), "crates/foo".into()])
     );
-    assert!(parse_test_invocation(&[]).is_err());
+    assert_eq!(
+        parse_test_invocation(&[]).unwrap(),
+        TestInvocation::All
+    );
     assert!(parse_test_invocation(&[".".into(), "src/lib.rs".into()]).is_err());
     assert!(parse_test_invocation(&["src::symbol".into()]).is_err());
     assert!(parse_test_invocation(&["cov".into()]).is_err());
@@ -160,7 +163,17 @@ fn test_cli_parses_targets_and_rejects_removed_modes() {
         }
         _ => panic!("expected Test"),
     }
-    assert!(Cli::try_parse_from(["kiss", "test"]).is_err());
+    let bare = Cli::try_parse_from(["kiss", "test"]).unwrap();
+    match bare.command {
+        Commands::Test { operands, .. } => {
+            assert_eq!(operands, vec![".".to_string()]);
+            assert_eq!(
+                parse_test_invocation(&operands).unwrap(),
+                TestInvocation::All
+            );
+        }
+        _ => panic!("expected Test"),
+    }
     let cli = Cli::parse_from(["kiss", "test", "cov"]);
     match cli.command {
         Commands::Test { operands, .. } => {

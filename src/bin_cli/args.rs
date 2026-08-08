@@ -72,9 +72,11 @@ fn path_has_source_ext(path_part: &str) -> bool {
 }
 
 pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, String> {
-    let first = operands.first().ok_or_else(|| {
-        format!("at least one of {TEST_OPERAND_HINT} is required")
-    })?;
+    // Bare `kiss test` is equivalent to `kiss test .`.
+    if operands.is_empty() {
+        return Ok(TestInvocation::All);
+    }
+    let first = &operands[0];
     reject_legacy_all_operand(operands)?;
     if let Some(reserved) = parse_reserved_action(first, operands.len())? {
         return Ok(reserved);
@@ -343,9 +345,9 @@ pub enum Commands {
     Test {
         /// `commit`, `base`, `main`, `.`, or one or more `PATH` / `PATH::symbol` / directory targets
         #[arg(
-            required = true,
-            num_args = 1..,
-            value_name = "commit|base|main|.|TARGET"
+            num_args = 0..,
+            value_name = "commit|base|main|.|TARGET",
+            default_value = "."
         )]
         operands: Vec<String>,
         #[arg(long, value_name = "BRANCH")]

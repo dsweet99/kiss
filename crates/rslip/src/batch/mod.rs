@@ -17,6 +17,7 @@ use crate::{
 mod finalize;
 mod lock_chunk;
 mod miss_run;
+mod pycache;
 mod warm_hit_seal;
 pub use warm_hit_seal::warm_hit_seal_exists;
 use finalize::clone_rslip_error;
