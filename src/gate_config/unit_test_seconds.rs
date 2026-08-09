@@ -248,16 +248,29 @@ mod tests {
         assert!((limit_for_selector(&[], "x.py::t") - defaults_max()).abs() < f64::EPSILON);
         assert!(pattern_matches("tests/fast", "tests/fast/a.py"));
         assert!(!pattern_matches("tests/fast", "tests/slow/a.py"));
+        assert_eq!(selector_path("a.py::t"), "a.py");
+    }
+
+    #[test]
+    fn trailing_slash_directory_prefix_matches_descendants() {
+        // Bug: ["tests/", 10] never matched tests/webtester/... because
+        // pattern_matches appended '/' without stripping a trailing slash,
+        // producing the non-matching prefix "tests//".
         assert!(pattern_matches("tests/", "tests/webtester/a.py"));
         assert!(pattern_matches("tests/", "tests/fast/a.py"));
+        assert!(pattern_matches("tests/", "tests"));
         assert!(!pattern_matches("tests/", "rust/foo.rs"));
-        assert_eq!(selector_path("a.py::t"), "a.py");
-        let with_slash = vec![
-            ("tests/fast".to_string(), 4.0),
-            ("tests/".to_string(), 10.0),
-            ("*".to_string(), 0.0),
-        ];
-        assert!((limit_for_selector(&with_slash, "tests/webtester/a.py::t") - 10.0).abs() < f64::EPSILON);
-        assert!((limit_for_selector(&with_slash, "tests/fast/a.py::t") - 4.0).abs() < f64::EPSILON);
+        assert!(!pattern_matches("tests/", "testing/foo.py"));
+
+        let arr = Value::Array(vec![
+            Value::Array(vec![Value::String("tests/fast".into()), Value::Integer(4)]),
+            Value::Array(vec![Value::String("tests/".into()), Value::Integer(10)]),
+            Value::Array(vec![Value::String("*".into()), Value::Integer(0)]),
+        ]);
+        let rules = parse_max_unit_test_seconds(&arr).unwrap();
+        assert_eq!(rules[1].0, "tests/");
+        assert!((limit_for_selector(&rules, "tests/webtester/a.py::t") - 10.0).abs() < f64::EPSILON);
+        assert!((limit_for_selector(&rules, "tests/fast/a.py::t") - 4.0).abs() < f64::EPSILON);
+        assert!((limit_for_selector(&rules, "src/lib.rs::t") - 0.0).abs() < f64::EPSILON);
     }
 }
