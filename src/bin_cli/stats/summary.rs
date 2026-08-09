@@ -1,7 +1,7 @@
 use crate::bin_cli::config_session::config_provenance;
 use crate::bin_cli::util::merge_check_ignore_prefixes;
 use crate::test_runner::unit_test_timing::{
-    TimingLangInclude, unit_test_runtime_ms_line_for_universe,
+    TimingLangInclude, unit_test_runtime_sec_line_for_universe,
 };
 use kiss::check_universe_cache::FullCheckCache;
 use kiss::discovery::gather_files_by_lang;
@@ -111,7 +111,7 @@ fn maybe_print_unit_test_runtime_line(
     let universe = Path::new(paths.first().map(String::as_str).unwrap_or("."));
     let merged = merge_check_ignore_prefixes(ignore);
     if let Some(line) =
-        unit_test_runtime_ms_line_for_universe(universe, lang_filter, include, &merged)
+        unit_test_runtime_sec_line_for_universe(universe, lang_filter, include, &merged)
     {
         println!("{line}");
     }

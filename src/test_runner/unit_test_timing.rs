@@ -203,14 +203,23 @@ pub(crate) fn runtime_gate_failure_lines(viols: &[RuntimeGateViolation]) -> Vec<
     lines
 }
 
-pub(crate) fn format_unit_test_runtime_ms_line_with_totals(
+fn format_secs_from_millis(ms: usize) -> String {
+    #[allow(clippy::cast_precision_loss)]
+    {
+        format!("{:.2}", ms as f64 / 1000.0)
+    }
+}
+
+pub(crate) fn format_unit_test_runtime_sec_line_with_totals(
     timings: &[UnitTestTiming],
     codebase_tests: Option<usize>,
 ) -> Option<String> {
     if timings.is_empty() {
         return None;
     }
-    let values: Vec<usize> = timings
+    // PercentileSummary is integer-valued; keep millisecond resolution for ranking,
+    // then render percentiles in seconds for the stats line.
+    let values_ms: Vec<usize> = timings
         .iter()
         .map(|t| {
             #[allow(clippy::cast_possible_truncation)]
@@ -219,9 +228,9 @@ pub(crate) fn format_unit_test_runtime_ms_line_with_totals(
             }
         })
         .collect();
-    let summary = PercentileSummary::from_values("unit_test_runtime_ms", &values);
+    let summary = PercentileSummary::from_values("unit_test_runtime_sec", &values_ms);
     let mut line = format!(
-        "unit_test_runtime_ms: samples={} (coverage cache; may not reflect full test set)",
+        "unit_test_runtime_sec: samples={} (coverage cache; may not reflect full test set)",
         summary.count
     );
     if let Some(total) = codebase_tests {
@@ -229,7 +238,11 @@ pub(crate) fn format_unit_test_runtime_ms_line_with_totals(
     }
     line.push_str(&format!(
         " p50={} p90={} p95={} p99={} max={}",
-        summary.p50, summary.p90, summary.p95, summary.p99, summary.max
+        format_secs_from_millis(summary.p50),
+        format_secs_from_millis(summary.p90),
+        format_secs_from_millis(summary.p95),
+        format_secs_from_millis(summary.p99),
+        format_secs_from_millis(summary.max)
     ));
     Some(line)
 }
@@ -271,7 +284,7 @@ fn cheap_codebase_test_count(
     Some(total)
 }
 
-pub(crate) fn unit_test_runtime_ms_line_for_universe(
+pub(crate) fn unit_test_runtime_sec_line_for_universe(
     universe: &Path,
     lang_filter: Option<Language>,
     include: TimingLangInclude,
@@ -284,7 +297,7 @@ pub(crate) fn unit_test_runtime_ms_line_for_universe(
         ignore,
     });
     let codebase_tests = cheap_codebase_test_count(universe, lang_filter, include, ignore);
-    format_unit_test_runtime_ms_line_with_totals(&timings, codebase_tests)
+    format_unit_test_runtime_sec_line_with_totals(&timings, codebase_tests)
 }
 
 #[derive(Clone, Copy, Debug)]

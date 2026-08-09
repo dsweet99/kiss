@@ -173,8 +173,12 @@ fn pattern_matches(pattern: &str, path: &str) -> bool {
     if pattern == "*" {
         return true;
     }
-    let pattern = pattern.trim_start_matches("./");
+    // Trailing `/` means "directory prefix" (e.g. `tests/` ≡ `tests`).
+    let pattern = pattern.trim_start_matches("./").trim_end_matches('/');
     let path = path.trim_start_matches("./");
+    if pattern.is_empty() {
+        return false;
+    }
     path == pattern
         || path.starts_with(&format!("{pattern}/"))
         || path.starts_with(&format!("{pattern}::"))
@@ -244,6 +248,16 @@ mod tests {
         assert!((limit_for_selector(&[], "x.py::t") - defaults_max()).abs() < f64::EPSILON);
         assert!(pattern_matches("tests/fast", "tests/fast/a.py"));
         assert!(!pattern_matches("tests/fast", "tests/slow/a.py"));
+        assert!(pattern_matches("tests/", "tests/webtester/a.py"));
+        assert!(pattern_matches("tests/", "tests/fast/a.py"));
+        assert!(!pattern_matches("tests/", "rust/foo.rs"));
         assert_eq!(selector_path("a.py::t"), "a.py");
+        let with_slash = vec![
+            ("tests/fast".to_string(), 4.0),
+            ("tests/".to_string(), 10.0),
+            ("*".to_string(), 0.0),
+        ];
+        assert!((limit_for_selector(&with_slash, "tests/webtester/a.py::t") - 10.0).abs() < f64::EPSILON);
+        assert!((limit_for_selector(&with_slash, "tests/fast/a.py::t") - 4.0).abs() < f64::EPSILON);
     }
 }
