@@ -356,6 +356,7 @@ jobs,
         runner_map_fingerprint,
         host_platform,
         coverage_output_mode: CoverageOutputMode::SelectorEntries,
+        selector_timeout_millis: std::collections::BTreeMap::new(),
     };
     let plan = build_rust_coverage_batch_plan(&req)?;
     let mut lines = vec![

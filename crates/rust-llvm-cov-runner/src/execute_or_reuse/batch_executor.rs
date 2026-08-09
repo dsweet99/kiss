@@ -288,7 +288,6 @@ fn all_hit_outcomes(
         return Ok(Some(synthetic_all_passed_outcomes(req)));
     }
     let mut completed = Vec::with_capacity(req.logical_selectors.len());
-    let mut all_passed = true;
     for selector in &req.logical_selectors {
         let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, selector);
         let path = crate::rust_cov_cache::rust_cov_cache_entry_path(&req.cache_root, &fingerprint);
@@ -304,16 +303,14 @@ fn all_hit_outcomes(
                 path.display()
             ))
         })?;
+        // FAIL/TIMEOUT must be re-executed; only Passed outcomes are cache-reusable.
         if status != TestStatus::Passed {
-            all_passed = false;
+            return Ok(None);
         }
         completed.push(RustLlvmCovOutcome {
             selector: selector.clone(),
             status,
-            exit_code: match status {
-                TestStatus::Passed => Some(0),
-                TestStatus::Failed | TestStatus::TimedOut => Some(1),
-            },
+            exit_code: Some(0),
             duration: Duration::ZERO,
             coverage: Default::default(),
             test_binary_ids: Vec::new(),
@@ -322,7 +319,7 @@ fn all_hit_outcomes(
             stderr: None,
         });
     }
-    let _ = crate::execute_or_reuse::batch_warm_hit_seal::write_warm_all_hit_seal(req, identity, all_passed);
+    let _ = crate::execute_or_reuse::batch_warm_hit_seal::write_warm_all_hit_seal(req, identity, true);
     Ok(Some(completed))
 }
 
@@ -347,7 +344,10 @@ fn status_from_entry_prefix(bytes: &[u8]) -> Option<TestStatus> {
     // Entries are small JSON objects; locate the status token without full deserialize.
     const FAILED: &[u8] = br#""status":"Failed""#;
     const PASSED: &[u8] = br#""status":"Passed""#;
-    if bytes.windows(FAILED.len()).any(|window| window == FAILED) {
+    const TIMED_OUT: &[u8] = br#""status":"TimedOut""#;
+    if bytes.windows(TIMED_OUT.len()).any(|window| window == TIMED_OUT) {
+        Some(TestStatus::TimedOut)
+    } else if bytes.windows(FAILED.len()).any(|window| window == FAILED) {
         Some(TestStatus::Failed)
     } else if bytes.windows(PASSED.len()).any(|window| window == PASSED) {
         Some(TestStatus::Passed)

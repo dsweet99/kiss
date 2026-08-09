@@ -325,15 +325,26 @@ fn batch_pytest_failure_is_stored_after_coverage_parse() {
 
     let calls = Rc::new(Cell::new(0));
     let calls_for_runner = Rc::clone(&calls);
-    let cached = Rslip::new(PytestRunner::from_fn(move |_req| {
+    let rerun = Rslip::new(PytestRunner::from_fn(move |req| {
         calls_for_runner.set(calls_for_runner.get() + 1);
-        Err(PytestRunError::Protocol(
-            "unexpected runner call".to_string(),
-        ))
+        write_coverage_artifact(&req, "2");
+        Ok(PytestRunOutcome {
+            nodeid: req.nodeid,
+            status: TestStatus::Failed,
+            exit_code: Some(1),
+            stdout: Vec::new(),
+            stderr: b"assert False".to_vec(),
+            duration: Duration::from_millis(1),
+            artifacts: BTreeMap::from([(
+                runtime::COVERAGE_ARTIFACT.to_string(),
+                req.artifacts[0].path.clone(),
+            )]),
+        })
     }))
     .run_or_reuse_many_bounded(vec![req], 1);
 
-    assert_eq!(cached[0].as_ref().unwrap().cache_status, CacheStatus::Hit);
-    assert_eq!(cached[0].as_ref().unwrap().status, TestStatus::Failed);
-    assert_eq!(calls.get(), 0);
+    // FAIL outcomes are never cache-reusable; kiss test must re-execute them.
+    assert_eq!(rerun[0].as_ref().unwrap().cache_status, CacheStatus::MissStored);
+    assert_eq!(rerun[0].as_ref().unwrap().status, TestStatus::Failed);
+    assert_eq!(calls.get(), 1);
 }

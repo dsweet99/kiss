@@ -31,6 +31,8 @@ pub struct BatchTestTerminal {
     pub full_name: String,
     pub test_name: String,
     pub passed: bool,
+    /// True when nextest killed the test for exceeding `slow-timeout`.
+    pub timed_out: bool,
     pub exec_time_secs: f64,
     pub stdout: Option<String>,
     pub reason: Option<String>,
@@ -181,12 +183,19 @@ fn ingest_libtest_event(
                 test_name,
             });
         }
-        "ok" | "failed" => {
+        "ok" | "failed" | "timeout" | "timed_out" => {
             let (full_name, test_name) = split_libtest_name(&record.name, line_no)?;
+            let timed_out = record.event == "timeout"
+                || record.event == "timed_out"
+                || record
+                    .reason
+                    .as_deref()
+                    .is_some_and(is_nextest_timeout_reason);
             stream.terminal_tests.push(BatchTestTerminal {
                 full_name,
                 test_name,
                 passed: record.event == "ok",
+                timed_out,
                 exec_time_secs: record.exec_time.unwrap_or(0.0),
                 stdout: record.stdout,
                 reason: record.reason,
@@ -206,6 +215,11 @@ fn ingest_libtest_event(
         }
     }
     Ok(())
+}
+
+fn is_nextest_timeout_reason(reason: &str) -> bool {
+    let lowered = reason.to_ascii_lowercase();
+    lowered.contains("time limit exceeded") || lowered.contains("timed out")
 }
 
 fn split_libtest_name(name: &str, line_no: usize) -> Result<(String, String), RustLlvmCovError> {

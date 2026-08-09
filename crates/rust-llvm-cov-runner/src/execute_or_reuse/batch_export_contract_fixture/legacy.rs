@@ -257,6 +257,7 @@ jobs,
         runner_map_fingerprint: String::new(),
         host_platform: String::new(),
         coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
+        selector_timeout_millis: std::collections::BTreeMap::new(),
     };
     resolve_batch_request_runners(&mut req).expect("resolve delegated runners");
     req

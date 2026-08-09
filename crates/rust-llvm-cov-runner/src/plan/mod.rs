@@ -17,6 +17,8 @@ pub(crate) mod batch_plan_env;
 
 pub(crate) mod batch_plan_nextest_config;
 
+pub(crate) mod batch_plan_nextest_timeouts;
+
 pub(crate) mod batch_plan_publish;
 
 pub(crate) mod batch_plan_target_runner_program;

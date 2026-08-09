@@ -80,6 +80,7 @@ fn reject_nonzero_without_terminal_events_direct_witness() {
                 full_name: "pkg::bin$alpha".to_string(),
                 test_name: "alpha".to_string(),
                 passed: true,
+                timed_out: false,
                 exec_time_secs: 0.001,
                 stdout: None,
                 reason: None,

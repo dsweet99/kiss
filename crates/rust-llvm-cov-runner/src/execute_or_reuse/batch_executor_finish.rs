@@ -55,6 +55,7 @@ pub(crate) fn build_instance_results(
                 full_name: test.full_name.clone(),
                 test_binary_id: test_binary_id_for_argv(&shim.argv)?,
                 passed: test.passed,
+                timed_out: test.timed_out,
                 exit_code,
                 duration: Duration::from_secs_f64(test.exec_time_secs),
                 stdout: shim

@@ -27,8 +27,20 @@ fn parser_collects_build_artifacts_and_terminal_tests() {
     assert_eq!(parsed.started_tests[0].full_name, "pkg::bin$alpha_case");
     assert_eq!(parsed.terminal_tests.len(), 2);
     assert!(parsed.terminal_tests[0].passed);
+    assert!(!parsed.terminal_tests[0].timed_out);
     assert!(!parsed.terminal_tests[1].passed);
+    assert!(!parsed.terminal_tests[1].timed_out);
     assert_eq!(parsed.terminal_tests[1].stdout.as_deref(), Some("boom"));
+}
+
+#[test]
+fn parser_maps_time_limit_exceeded_reason_to_timed_out() {
+    let bytes = br#"{"type":"test","event":"failed","name":"pkg::bin$slow","exec_time":1.0,"reason":"time limit exceeded"}
+"#;
+    let parsed = parse_batch_event_stream(bytes).unwrap();
+    assert_eq!(parsed.terminal_tests.len(), 1);
+    assert!(!parsed.terminal_tests[0].passed);
+    assert!(parsed.terminal_tests[0].timed_out);
 }
 
 #[test]
@@ -126,6 +138,7 @@ fn batch_event_types_are_constructible() {
         full_name: "pkg::bin$alpha".to_string(),
         test_name: "alpha".to_string(),
         passed: true,
+        timed_out: false,
         exec_time_secs: 0.1,
         stdout: None,
         reason: None,

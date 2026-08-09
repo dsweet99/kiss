@@ -8,10 +8,12 @@ pub(crate) fn build_nextest_config_toml(
     _runner_map_path: &Path,
 ) -> String {
     let default_filter = build_nextest_default_filter(req);
-    format!(
+    let mut toml = format!(
         "[profile.kiss]\ndefault-filter = {}\nretries = 0\nfail-fast = false\n",
         toml_basic_string(&default_filter),
-    )
+    );
+    super::batch_plan_nextest_timeouts::append_slow_timeout_toml(&mut toml, req);
+    toml
 }
 
 pub(crate) fn runner_map_path_for_request(req: &RustCoverageBatchRequest) -> PathBuf {
@@ -113,7 +115,7 @@ fn rust_test_args_request_exact_match(test_args: &[String]) -> bool {
     test_args.iter().any(|arg| arg == "--exact")
 }
 
-fn nextest_filter_string(value: &str, exact: bool) -> String {
+pub(crate) fn nextest_filter_string(value: &str, exact: bool) -> String {
     let escaped = escape_nextest_regex(value);
     if exact {
         format!("/(^|\\$){escaped}$/")
@@ -122,7 +124,7 @@ fn nextest_filter_string(value: &str, exact: bool) -> String {
     }
 }
 
-fn escape_nextest_regex(value: &str) -> String {
+pub(crate) fn escape_nextest_regex(value: &str) -> String {
     let mut escaped = String::new();
     for ch in value.chars() {
         match ch {
@@ -140,7 +142,7 @@ fn escape_nextest_regex(value: &str) -> String {
     escaped
 }
 
-fn toml_basic_string(value: &str) -> String {
+pub(crate) fn toml_basic_string(value: &str) -> String {
     format!(
         "\"{}\"",
         value

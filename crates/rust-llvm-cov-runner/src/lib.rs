@@ -199,7 +199,7 @@ pub use shared_input::{
 pub use worker::rust_cov_cache_tmp_parent;
 
 pub const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v4";
-pub const BATCH_EXECUTION_POLICY_VERSION: &str = "rust-batch-execution-v1";
+pub const BATCH_EXECUTION_POLICY_VERSION: &str = "rust-batch-execution-v2";
 
 pub use llvm_cov_json::RustLineCoverage;
 

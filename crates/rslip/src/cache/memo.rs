@@ -30,6 +30,9 @@ pub(crate) fn entry_is_reusable_with_memo(
     source_root: &Path,
     memo: &mut DigestMemo,
 ) -> bool {
+    if entry.status != rpytest_runner::TestStatus::Passed {
+        return false;
+    }
     if entry.coverage.files.is_empty() {
         return false;
     }

@@ -203,7 +203,10 @@ pub(crate) fn runtime_gate_failure_lines(viols: &[RuntimeGateViolation]) -> Vec<
     lines
 }
 
-pub(crate) fn format_unit_test_runtime_ms_line(timings: &[UnitTestTiming]) -> Option<String> {
+pub(crate) fn format_unit_test_runtime_ms_line_with_totals(
+    timings: &[UnitTestTiming],
+    codebase_tests: Option<usize>,
+) -> Option<String> {
     if timings.is_empty() {
         return None;
     }
@@ -217,10 +220,55 @@ pub(crate) fn format_unit_test_runtime_ms_line(timings: &[UnitTestTiming]) -> Op
         })
         .collect();
     let summary = PercentileSummary::from_values("unit_test_runtime_ms", &values);
-    Some(format!(
-        "unit_test_runtime_ms: N={} p50={} p90={} p95={} p99={} max={}",
-        summary.count, summary.p50, summary.p90, summary.p95, summary.p99, summary.max
-    ))
+    let mut line = format!(
+        "unit_test_runtime_ms: samples={} (coverage cache; may not reflect full test set)",
+        summary.count
+    );
+    if let Some(total) = codebase_tests {
+        line.push_str(&format!(" codebase_tests={total}"));
+    }
+    line.push_str(&format!(
+        " p50={} p90={} p95={} p99={} max={}",
+        summary.p50, summary.p90, summary.p95, summary.p99, summary.max
+    ));
+    Some(line)
+}
+
+/// Best-effort timings for `kiss stats`: use whatever coverage-cache durations exist.
+/// Unlike the cov gate path, a missing language population does not abort the other language.
+pub(crate) fn collect_available_unit_test_timings(opts: TimingCollectOpts<'_>) -> Vec<UnitTestTiming> {
+    let want_python = opts.include.python
+        && matches!(opts.lang_filter, None | Some(Language::Python));
+    let want_rust =
+        opts.include.rust && matches!(opts.lang_filter, None | Some(Language::Rust));
+    let repo_root = repository_root_for_universe(opts.universe);
+    let mut timings = Vec::new();
+    if want_python && let Some(python) = load_python_timings(&repo_root) {
+        timings.extend(python);
+    }
+    if want_rust && let Some(rust) = load_rust_timings(&repo_root) {
+        timings.extend(rust);
+    }
+    filter_timings_by_ignore(timings, opts.ignore)
+}
+
+fn cheap_codebase_test_count(
+    universe: &Path,
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+) -> Option<usize> {
+    let repo_root = repository_root_for_universe(universe);
+    let (py, rs, _) =
+        super::workspace_selector_cache::load_cached_workspace_selectors(&repo_root, ignore)?;
+    let mut total = 0usize;
+    if include.python && matches!(lang_filter, None | Some(Language::Python)) {
+        total += py.len();
+    }
+    if include.rust && matches!(lang_filter, None | Some(Language::Rust)) {
+        total += rs.len();
+    }
+    Some(total)
 }
 
 pub(crate) fn unit_test_runtime_ms_line_for_universe(
@@ -229,15 +277,14 @@ pub(crate) fn unit_test_runtime_ms_line_for_universe(
     include: TimingLangInclude,
     ignore: &[String],
 ) -> Option<String> {
-    match collect_current_unit_test_timings(TimingCollectOpts {
+    let timings = collect_available_unit_test_timings(TimingCollectOpts {
         universe,
         lang_filter,
         include,
         ignore,
-    }) {
-        TimingPopulation::Complete(timings) => format_unit_test_runtime_ms_line(&timings),
-        TimingPopulation::Incomplete => None,
-    }
+    });
+    let codebase_tests = cheap_codebase_test_count(universe, lang_filter, include, ignore);
+    format_unit_test_runtime_ms_line_with_totals(&timings, codebase_tests)
 }
 
 #[derive(Clone, Copy, Debug)]

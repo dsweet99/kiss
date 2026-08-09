@@ -224,6 +224,19 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
     coverage_output_mode: CoverageOutputMode,
 ) -> Result<RustCoverageBatchRequest, String> {
     validate_supported_rust_test_args(extra)?;
+    let gate = kiss::GateConfig::load();
+    let selector_timeout_millis = selectors
+        .iter()
+        .map(|selector| {
+            let secs = kiss::limit_for_selector(&gate.max_unit_test_seconds, selector);
+            let millis = if secs.is_finite() && secs > 0.0 {
+                (secs * 1000.0).round().clamp(1.0, u64::MAX as f64) as u64
+            } else {
+                0
+            };
+            (selector.clone(), millis)
+        })
+        .collect();
     let mut req = RustCoverageBatchRequest {
         cwd: repo_root.to_path_buf(),
         source_root: repo_root.to_path_buf(),
@@ -241,6 +254,7 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
         runner_map_fingerprint: String::new(),
         host_platform: String::new(),
         coverage_output_mode,
+        selector_timeout_millis,
     };
     resolve_batch_request_runners(&mut req).map_err(map_rust_llvm_cov_error)?;
     Ok(req)

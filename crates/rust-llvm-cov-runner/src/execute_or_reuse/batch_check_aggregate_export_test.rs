@@ -27,6 +27,7 @@ fn instance(name: &str, binary_id: &str, passed: bool) -> InstanceResult {
         full_name: name.to_string(),
         test_binary_id: binary_id.to_string(),
         passed,
+        timed_out: false,
         exit_code: Some(if passed { 0 } else { 1 }),
         duration: Duration::from_millis(1),
         stdout: None,

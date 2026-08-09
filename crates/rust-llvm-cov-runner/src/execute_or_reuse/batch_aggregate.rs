@@ -11,6 +11,7 @@ pub struct InstanceResult {
     pub full_name: String,
     pub test_binary_id: String,
     pub passed: bool,
+    pub timed_out: bool,
     pub exit_code: Option<i32>,
     pub duration: Duration,
     pub stdout: Option<Vec<u8>>,
@@ -69,6 +70,7 @@ fn successful_empty_outcome(selector: &str) -> RustLlvmCovOutcome {
 fn aggregate_one_selector(selector: &str, matched: &[&InstanceResult]) -> RustLlvmCovOutcome {
     let mut ordered: Vec<&InstanceResult> = matched.to_vec();
     ordered.sort_by(|left, right| left.full_name.cmp(&right.full_name));
+    let timed_out = ordered.iter().any(|instance| instance.timed_out);
     let failed = ordered.iter().any(|instance| !instance.passed);
     let duration: Duration = ordered.iter().map(|instance| instance.duration).sum();
     let mut stdout_parts = Vec::new();
@@ -84,6 +86,21 @@ fn aggregate_one_selector(selector: &str, matched: &[&InstanceResult]) -> RustLl
         {
             stderr_parts.push(stderr.clone());
         }
+    }
+    if timed_out {
+        return RustLlvmCovOutcome {
+            selector: selector.to_string(),
+            status: TestStatus::TimedOut,
+            exit_code: Some(1),
+            duration,
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
+            test_binary_ids: test_binary_ids(&ordered),
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: concat_parts(stdout_parts),
+            stderr: concat_parts(stderr_parts),
+        };
     }
     if failed {
         return RustLlvmCovOutcome {
@@ -160,6 +177,7 @@ mod tests {
             full_name: full_name.to_string(),
             test_binary_id: "test-bin".to_string(),
             passed,
+            timed_out: false,
             exit_code: Some(if passed { 0 } else { 1 }),
             duration: Duration::from_millis(2),
             stdout: None,
@@ -232,6 +250,14 @@ mod tests {
     }
 
     #[test]
+    fn timed_out_instance_aggregates_to_timed_out_status() {
+        let mut inst = instance("pkg::bin$slow", false, 1);
+        inst.timed_out = true;
+        let (outcomes, _) = aggregate_logical_selectors(&["slow".to_string()], false, &[inst]);
+        assert_eq!(outcomes[0].status, TestStatus::TimedOut);
+    }
+
+    #[test]
     fn aggregation_counter_and_instance_result_types_are_constructible() {
         let counter = AggregationCounters {
             unmatched_selectors: 1,
@@ -241,6 +267,7 @@ mod tests {
             full_name: "pkg::bin$alpha".to_string(),
             test_binary_id: "test-bin".to_string(),
             passed: true,
+            timed_out: false,
             exit_code: Some(0),
             duration: Duration::from_millis(3),
             stdout: None,

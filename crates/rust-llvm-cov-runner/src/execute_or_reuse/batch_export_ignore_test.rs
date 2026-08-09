@@ -111,6 +111,7 @@ jobs: 1,
         runner_map_fingerprint: String::new(),
         host_platform: String::new(),
         coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
+        selector_timeout_millis: std::collections::BTreeMap::new(),
     };
     assert!(resolve_ignore_filename_regex(&req, &req.cache_root.join("build/target")).is_err());
 }
@@ -142,6 +143,7 @@ jobs: 2,
         runner_map_fingerprint: String::new(),
         host_platform: String::new(),
         coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
+        selector_timeout_millis: std::collections::BTreeMap::new(),
     };
     let regex = resolve_ignore_filename_regex(&req, &req.cache_root.join("build/target"))
         .expect("kiss ignore regex")
@@ -381,6 +383,7 @@ jobs: 2,
         runner_map_fingerprint: String::new(),
         host_platform: String::new(),
         coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
+        selector_timeout_millis: std::collections::BTreeMap::new(),
     };
     let regex = super::resolve_ignore_filename_regex(&req, &req.cache_root.join("build/target"))
         .expect("ignore regex");

@@ -23,7 +23,7 @@ pub(super) const RS_RULE_SPECS: &[RuleSpec] = &[
         metric: "branches_per_function",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.branches_per_function),
-        description: "branches_per_function is the number of `if` expressions in a Rust function.",
+        description: "branches_per_function is the number of `if` expressions and `match` arms in a Rust function.",
     },
     RuleSpec {
         metric: "local_variables_per_function",

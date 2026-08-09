@@ -139,7 +139,7 @@ RULE: [Python] [min_similarity >= 0.90] min_similarity is the minimum similarity
 RULE: [Rust] [statements_per_function < 35] statements_per_function is the maximum number of statements in a Rust function/method body.
 RULE: [Rust] [positional_args < 8] positional_args is the maximum number of non-self parameters in a Rust function/method signature.
 RULE: [Rust] [max_indentation_depth < 5] max_indentation_depth is the maximum indentation depth within a Rust function/method body.
-RULE: [Rust] [branches_per_function < 9] branches_per_function is the number of `if` expressions in a Rust function.
+RULE: [Rust] [branches_per_function < 9] branches_per_function is the number of `if` expressions and `match` arms in a Rust function.
 RULE: [Rust] [local_variables_per_function < 20] local_variables_per_function is the maximum number of local bindings introduced in a Rust function.
 RULE: [Rust] [returns_per_function < 5] returns_per_function is the maximum number of `return` expressions in a Rust function.
 RULE: [Rust] [nested_function_depth < 2] nested_function_depth is the maximum nesting depth of closures within a Rust function.

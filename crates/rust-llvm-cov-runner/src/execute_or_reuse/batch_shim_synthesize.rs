@@ -273,6 +273,7 @@ mod tests {
                 .map(|(_, name)| name.to_string())
                 .unwrap(),
             passed,
+            timed_out: false,
             exec_time_secs: 0.01,
             stdout: None,
             reason: None,

@@ -54,6 +54,7 @@ jobs: 1,
         runner_map_fingerprint,
         host_platform,
         coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        selector_timeout_millis: std::collections::BTreeMap::new(),
     }
 }
 
@@ -112,6 +113,7 @@ fn witness_batch_export() {
         full_name: "pkg::bin$alpha".to_string(),
         test_binary_id: "/tmp/bin".to_string(),
         passed: true,
+        timed_out: false,
         exit_code: Some(0),
         duration: Duration::from_millis(1),
         stdout: None,

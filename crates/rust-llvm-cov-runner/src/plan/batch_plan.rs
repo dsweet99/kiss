@@ -28,6 +28,8 @@ pub struct RustCoverageBatchRequest {
     pub runner_map_fingerprint: String,
     pub host_platform: String,
     pub coverage_output_mode: CoverageOutputMode,
+    /// Per logical selector: `max_unit_test_seconds` limit in whole milliseconds.
+    pub selector_timeout_millis: BTreeMap<String, u64>,
 }
 
 #[cfg(test)]
@@ -55,6 +57,7 @@ jobs: 4,
             runner_map_fingerprint: "0000000000000000".to_string(),
             host_platform: "x86_64-unknown-linux-gnu".to_string(),
             coverage_output_mode: CoverageOutputMode::SelectorEntries,
+            selector_timeout_millis: BTreeMap::new(),
         }
     }
 }

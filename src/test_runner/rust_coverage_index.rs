@@ -22,7 +22,6 @@ pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
     "CARGO_TARGET_DIR",
     "LLVM_PROFILE_FILE",
 ];
-
 pub(crate) fn relevant_rust_batch_env() -> BTreeMap<String, String> {
     kiss::env_map_from_allowlist(RUST_COVERAGE_ENV_KEYS)
 }
@@ -89,6 +88,7 @@ jobs: 1,
         runner_map_fingerprint,
         host_platform,
         coverage_output_mode: CoverageOutputMode::SelectorEntries,
+        selector_timeout_millis: BTreeMap::new(),
     };
     resolve_batch_request_runners(&mut req).map_err(|err| format!("{err:?}"))?;
     let tools = tool_identity::cached_rust_coverage_tool_identity(repo_root)?;

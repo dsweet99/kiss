@@ -79,6 +79,7 @@ jobs: 2,
         runner_map_fingerprint,
         host_platform,
         coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
+        selector_timeout_millis: std::collections::BTreeMap::new(),
     }
 }
 
@@ -270,6 +271,7 @@ jobs: 1,
         runner_map_fingerprint,
         host_platform,
         coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
+        selector_timeout_millis: std::collections::BTreeMap::new(),
     }
 }
 
@@ -329,6 +331,7 @@ jobs: 1,
         runner_map_fingerprint,
         host_platform,
         coverage_output_mode: crate::CoverageOutputMode::SelectorEntries,
+        selector_timeout_millis: std::collections::BTreeMap::new(),
     }
 }
 
