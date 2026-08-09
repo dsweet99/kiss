@@ -96,14 +96,24 @@ fn cov_records_fingerprint(key: &CovRecordsCacheKey<'_>) -> Option<String> {
     Some(format!("{h:016x}"))
 }
 
+pub(crate) fn python_backend_identity_for_file_list(repo_root: &Path) -> Option<String> {
+    python_backend_identity(repo_root)
+}
+
 fn python_backend_identity(repo_root: &Path) -> Option<String> {
     let path = find_python_population_manifest(repo_root)?;
     let bytes = fs::read(path).ok()?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    let input = value.get("input_fingerprint")?.as_str()?;
-    let entries = value.get("entries_fingerprint")?.as_str()?;
-    let n_selectors = value.get("selectors")?.as_array()?.len();
-    Some(format!("py:{input}:{entries}:{n_selectors}"))
+    // Ignore selectors: counting them forces a full array parse of a large manifest.
+    #[derive(serde::Deserialize)]
+    struct PopHead {
+        input_fingerprint: String,
+        entries_fingerprint: String,
+    }
+    let value: PopHead = serde_json::from_slice(&bytes).ok()?;
+    Some(format!(
+        "py:{}:{}",
+        value.input_fingerprint, value.entries_fingerprint
+    ))
 }
 
 fn find_python_population_manifest(repo_root: &Path) -> Option<PathBuf> {
@@ -116,6 +126,10 @@ fn find_python_population_manifest(repo_root: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+pub(crate) fn rust_backend_identity_for_file_list(repo_root: &Path) -> Option<String> {
+    rust_backend_identity(repo_root)
 }
 
 fn rust_backend_identity(repo_root: &Path) -> Option<String> {

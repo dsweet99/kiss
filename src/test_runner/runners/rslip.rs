@@ -64,7 +64,10 @@ fn run_rslip_selectors_with_runner(
         .iter()
         .map(|selector| selector.as_str())
         .collect();
-    // Build shared request fields once; only nodeid / force_rerun vary per selector.
+    // Load gate once for the batch so concurrent `.kissconfig` writers cannot
+    // change kill timeouts mid-population.
+    let gate = kiss::GateConfig::load();
+    // Build shared request fields once; only nodeid / force_rerun / timeout vary.
     let mut template = rslip_request_from_parts(
         args.repo_root,
         "",
@@ -74,63 +77,131 @@ fn run_rslip_selectors_with_runner(
         false,
     )?;
     template.content_fingerprint = args.content_fingerprint;
-    let reqs: Vec<_> = args
-        .selectors
-        .iter()
-        .map(|selector| {
-            let mut req = template.clone();
-            req.nodeid = selector.clone();
-            req.force_rerun = args.force_rerun || force_set.contains(selector.as_str());
-            req
-        })
-        .collect();
-    let rslip = Rslip::new(runner);
     let mut summary = SelectorExecutionSummary::default();
     let mut statuses = Vec::new();
     let mut stdout = std::io::BufWriter::new(std::io::stdout());
-    let results = rslip.run_or_reuse_many_bounded_with_progress(reqs, args.jobs, |event| {
-        handle_rslip_batch_progress(event, args.selectors, &mut stdout);
-    });
+    let (reqs, runnable_selectors) = partition_rslip_requests(
+        PartitionInput {
+            selectors: args.selectors,
+            template: &template,
+            force_rerun: args.force_rerun,
+            force_set: &force_set,
+            gate: &gate,
+        },
+        &mut summary,
+        &mut statuses,
+        &mut stdout,
+    );
+    let results = Rslip::new(runner).run_or_reuse_many_bounded_with_progress(
+        reqs,
+        args.jobs,
+        |event| {
+            handle_rslip_batch_progress(event, &runnable_selectors, &mut stdout);
+        },
+    );
     let _ = std::io::Write::flush(&mut stdout);
-    let gate = kiss::GateConfig::load();
-    for (selector, result) in args.selectors.iter().zip(results) {
-        match result {
-            Ok(outcome) => {
-                let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
-                    outcome.status,
-                    &outcome.nodeid,
-                    outcome.duration,
-                    &gate,
-                );
-                statuses.push((outcome.nodeid.clone(), status));
-                summary.record(SelectorExecutionRecord {
-                    selector: outcome.nodeid.clone(),
-                    status,
-                    cache_record: if outcome.cache_status == PyCacheStatus::Hit {
-                        SelectorCacheRecord::Hit
-                    } else {
-                        SelectorCacheRecord::MissStored
-                    },
-                    exit_code: outcome.exit_code,
-                    duration: outcome.duration,
-                });
-            }
-            // Keep population/selective batches moving: one rslip Io/runner error must
-            // not discard thousands of already-resolved cache hits.
-            Err(_) => {
-                statuses.push((selector.clone(), rpytest_runner::TestStatus::Failed));
-                summary.record(SelectorExecutionRecord {
-                    selector: selector.clone(),
-                    status: rpytest_runner::TestStatus::Failed,
-                    cache_record: SelectorCacheRecord::MissUnstored,
-                    exit_code: Some(1),
-                    duration: std::time::Duration::ZERO,
-                });
-            }
-        }
+    for (selector, result) in runnable_selectors.iter().zip(results) {
+        record_rslip_selector_result(selector, result, &gate, &mut summary, &mut statuses);
     }
     record_statuses(args.repo_root, kiss::Language::Python, &identity, &statuses)?;
     Ok(summary)
+}
+
+struct PartitionInput<'a> {
+    selectors: &'a [String],
+    template: &'a RslipRequest,
+    force_rerun: bool,
+    force_set: &'a BTreeSet<&'a str>,
+    gate: &'a kiss::GateConfig,
+}
+
+fn partition_rslip_requests(
+    input: PartitionInput<'_>,
+    summary: &mut SelectorExecutionSummary,
+    statuses: &mut Vec<(String, rpytest_runner::TestStatus)>,
+    stdout: &mut impl Write,
+) -> (Vec<RslipRequest>, Vec<String>) {
+    let mut reqs = Vec::new();
+    let mut runnable = Vec::new();
+    for selector in input.selectors {
+        let timeout = timeout_for_selector_with_gate(input.gate, selector);
+        // Ban path (limit <= 0): do not invoke the runner; mark TIMEOUT immediately.
+        if timeout.is_zero() {
+            record_immediate_timeout(selector, summary, statuses, stdout);
+            continue;
+        }
+        let mut req = input.template.clone();
+        req.nodeid = selector.clone();
+        // Template uses selector "" for shared fields; per-selector timeout
+        // must follow path-pattern limits (not the catch-all from "").
+        req.timeout = Some(timeout);
+        req.force_rerun = input.force_rerun || input.force_set.contains(selector.as_str());
+        reqs.push(req);
+        runnable.push(selector.clone());
+    }
+    (reqs, runnable)
+}
+
+fn record_immediate_timeout(
+    selector: &str,
+    summary: &mut SelectorExecutionSummary,
+    statuses: &mut Vec<(String, rpytest_runner::TestStatus)>,
+    stdout: &mut impl Write,
+) {
+    let status = rpytest_runner::TestStatus::TimedOut;
+    let line = crate::test_runner::status_labels::format_status_line(status, selector, "", None);
+    let _ = writeln!(stdout, "{line}");
+    statuses.push((selector.to_string(), status));
+    summary.record(SelectorExecutionRecord {
+        selector: selector.to_string(),
+        status,
+        cache_record: SelectorCacheRecord::MissUnstored,
+        exit_code: Some(124),
+        duration: Duration::ZERO,
+    });
+}
+
+fn record_rslip_selector_result(
+    selector: &str,
+    result: Result<RslipOutcome, RslipError>,
+    gate: &kiss::GateConfig,
+    summary: &mut SelectorExecutionSummary,
+    statuses: &mut Vec<(String, rpytest_runner::TestStatus)>,
+) {
+    match result {
+        Ok(outcome) => {
+            let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
+                outcome.status,
+                &outcome.nodeid,
+                outcome.duration,
+                gate,
+            );
+            statuses.push((outcome.nodeid.clone(), status));
+            summary.record(SelectorExecutionRecord {
+                selector: outcome.nodeid.clone(),
+                status,
+                cache_record: if outcome.cache_status == PyCacheStatus::Hit {
+                    SelectorCacheRecord::Hit
+                } else {
+                    SelectorCacheRecord::MissStored
+                },
+                exit_code: outcome.exit_code,
+                duration: outcome.duration,
+            });
+        }
+        // Keep population/selective batches moving: one rslip Io/runner error must
+        // not discard thousands of already-resolved cache hits.
+        Err(_) => {
+            statuses.push((selector.to_string(), rpytest_runner::TestStatus::Failed));
+            summary.record(SelectorExecutionRecord {
+                selector: selector.to_string(),
+                status: rpytest_runner::TestStatus::Failed,
+                cache_record: SelectorCacheRecord::MissUnstored,
+                exit_code: Some(1),
+                duration: Duration::ZERO,
+            });
+        }
+    }
 }
 
 fn handle_rslip_batch_progress(
@@ -223,20 +294,18 @@ pub(crate) fn rslip_request_from_parts(
 }
 
 fn timeout_for_selector(selector: &str) -> Duration {
-    let gate = kiss::GateConfig::load();
+    timeout_for_selector_with_gate(&kiss::GateConfig::load(), selector)
+}
+
+fn timeout_for_selector_with_gate(gate: &kiss::GateConfig, selector: &str) -> Duration {
     if gate.unit_test_time_gate_disabled() {
         return DEFAULT_PYTEST_TIMEOUT;
     }
     let limit = gate.unit_test_seconds_limit(selector);
-    if selector.contains("vdb_scoped") {
-        eprintln!(
-            "DEBUG timeout_for_selector rules={:?} limit={limit} selector={selector}",
-            gate.max_unit_test_seconds
-        );
-    }
-    if limit == 0.0 {
-        // Ban path: do not let the test run for the default 180s.
-        return Duration::from_millis(1);
+    if limit <= 0.0 {
+        // Ban path: zero/negative limit ⇒ caller short-circuits to TIMEOUT
+        // without invoking the pytest runner.
+        return Duration::ZERO;
     }
     let limit = Duration::from_secs_f64(limit);
     if limit < DEFAULT_PYTEST_TIMEOUT {

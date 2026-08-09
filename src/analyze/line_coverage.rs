@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use kiss::check_universe_cache::CachedLineCoverageRecord;
+use rayon::prelude::*;
 use syn::spanned::Spanned;
 use syn::visit::Visit;
 
@@ -30,11 +31,14 @@ pub(crate) fn compute_line_coverage_records(
     snapshot: &RuntimeCoverageSnapshot,
 ) -> Vec<LineCoverageRecord> {
     let cfg_test_only_rust_files = cfg_test_only_rust_files(rs_files);
-    let mut records = py_files
+    let paths: Vec<&PathBuf> = py_files
         .iter()
         .chain(rs_files)
         .filter(|path| is_coverage_gate_file(path))
         .filter(|path| !cfg_test_only_rust_files.contains(*path))
+        .collect();
+    let mut records = paths
+        .into_par_iter()
         .map(|path| compute_file_line_coverage(repo_root, path, snapshot))
         .collect::<Vec<_>>();
     records.sort_by(|a, b| a.file.cmp(&b.file));

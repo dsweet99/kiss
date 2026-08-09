@@ -100,11 +100,36 @@ pub(super) struct BackendCoverage {
     covered_lines: BTreeMap<String, BTreeSet<u32>>,
 }
 
+/// Pytest `-p` args used when publishing/loading the Python coverage population.
+/// Must match `ensure_python_runtime_coverage` / `kiss test` publication.
+fn configured_python_coverage_pytest_args() -> Vec<String> {
+    kiss::TestSectionConfig::load().pytest_plugin_cli_args()
+}
+
 pub(super) fn load_python_runtime_coverage(
     repo_root: &Path,
 ) -> Result<BackendCoverage, RuntimeCoverageLoadError> {
-    let population = stored_python_universe_population(repo_root, &[], PYTHON_COVERAGE_ENV_KEYS)
-        .ok_or_else(|| python_population_error(repo_root))?;
+    // Must match the args used when the population was published (plugin `-p` pairs).
+    let pytest_args = configured_python_coverage_pytest_args();
+    let population =
+        stored_python_universe_population(repo_root, &pytest_args, PYTHON_COVERAGE_ENV_KEYS)
+            .ok_or_else(|| python_population_error(repo_root))?;
+    if let Some(covered_lines) =
+        crate::test_runner::python_coverage_index::try_load_python_coverage_snapshot(repo_root)
+    {
+        let identity = backend_identity(
+            "python",
+            &[
+                ("population".to_string(), population.identity),
+                ("selectors".to_string(), population.selectors.join("\n")),
+            ],
+            &covered_lines,
+        );
+        return Ok(BackendCoverage {
+            identity,
+            covered_lines,
+        });
+    }
     let selectors = population.selectors;
     let (python_version, pytest_version) = detect_rslip_versions(repo_root).map_err(|err| {
         coverage_error(
@@ -118,7 +143,7 @@ pub(super) fn load_python_runtime_coverage(
             rslip_request_from_parts(
                 repo_root,
                 selector,
-                &[],
+                &pytest_args,
                 &python_version,
                 &pytest_version,
                 false,
@@ -126,7 +151,7 @@ pub(super) fn load_python_runtime_coverage(
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| coverage_error("Python", &format!("malformed request ({err})")))?;
-    let outcomes = rslip::load_cached_outcomes_many(&reqs);
+    let outcomes = rslip::load_cached_outcomes_many_trusting_population(&reqs);
     let mut covered_lines = BTreeMap::<String, BTreeSet<u32>>::new();
     for (selector, outcome) in selectors.iter().zip(outcomes) {
         let outcome = outcome
@@ -142,6 +167,11 @@ pub(super) fn load_python_runtime_coverage(
             covered_lines.entry(rel).or_default().extend(lines);
         }
     }
+    // Persist snapshot so the next warm `kiss cov` skips per-entry aggregation.
+    let _ = crate::test_runner::python_coverage_index::write_python_coverage_snapshot(
+        repo_root,
+        &covered_lines,
+    );
     let identity = backend_identity(
         "python",
         &[
@@ -157,8 +187,9 @@ pub(super) fn load_python_runtime_coverage(
 }
 
 fn python_population_error(repo_root: &Path) -> RuntimeCoverageLoadError {
+    let pytest_args = configured_python_coverage_pytest_args();
     let Some((recorded, current)) =
-        python_population_environment_mismatch(repo_root, &[], PYTHON_COVERAGE_ENV_KEYS)
+        python_population_environment_mismatch(repo_root, &pytest_args, PYTHON_COVERAGE_ENV_KEYS)
     else {
         return coverage_error("Python", "missing or stale/incompatible population");
     };

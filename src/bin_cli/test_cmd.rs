@@ -1,8 +1,10 @@
+use std::path::Path;
 use std::time::Duration;
 
 use kiss::TestSectionConfig;
 
 use crate::bin_cli::args::TestInvocation;
+use crate::bin_cli::cov_warm::warm_cov_caches_after_tests;
 use crate::test_runner::{RunTestCmdArgs, run_test, run_test_watch};
 
 pub struct TestCommandArgs<'a> {
@@ -43,5 +45,11 @@ pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
         let settle = Duration::from_secs_f64(args.test_cfg.watch_settle_seconds);
         return run_test_watch(run_args, settle);
     }
-    run_test(run_args)
+    let code = run_test(run_args);
+    if code == 0 && !args.dry_run {
+        // Population is current; publish cov file-list/records so the next
+        // `kiss cov` does not re-walk sources + recompute per-file records.
+        warm_cov_caches_after_tests(Path::new("."), args.lang_filter, args.ignore);
+    }
+    code
 }

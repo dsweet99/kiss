@@ -7,10 +7,15 @@
 mod batch;
 mod cache;
 mod lock;
+mod outcomes_load;
 mod runtime;
 
 pub use batch::RslipBatchProgress;
 pub use batch::warm_hit_seal_exists;
+pub use outcomes_load::{
+    load_cached_outcomes_many, load_cached_outcomes_many_trusting_population,
+};
+pub(crate) use outcomes_load::rslip_outcome_from_cache;
 
 #[cfg(test)]
 mod batch_error_test;
@@ -39,10 +44,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use cache::{
-    RslipCacheEntry, load_reusable_rslip_cache_entry, rslip_cache_fingerprint_from_context,
-    rslip_request_context_fingerprint, rslip_unique_suffix,
-};
+use cache::rslip_unique_suffix;
 pub use cache::{
     is_kiss_rslip_cache_dir, is_rslip_cache_input, should_skip_rslip_dir,
 };
@@ -180,45 +182,6 @@ impl Rslip {
     }
 }
 
-pub fn load_cached_outcomes_many(
-    reqs: &[RslipRequest],
-) -> Vec<Result<Option<RslipOutcome>, RslipError>> {
-    let Some(first) = reqs.first() else {
-        return Vec::new();
-    };
-    let shared_context = match rslip_request_context_fingerprint(first) {
-        Ok(context) => context,
-        Err(err) => {
-            return reqs
-                .iter()
-                .map(|_| Err(RslipError::Io(io::Error::new(err.kind(), err.to_string()))))
-                .collect();
-        }
-    };
-    reqs.iter()
-        .map(|req| {
-            validate_rslip_request(req)?;
-            if !rslip_requests_share_context(first, req) {
-                let context = rslip_request_context_fingerprint(req)?;
-                let fingerprint = rslip_cache_fingerprint_from_context(&context, &req.nodeid);
-                return Ok(load_reusable_rslip_cache_entry(
-                    &req.cache_root,
-                    &fingerprint,
-                    &req.source_root,
-                )
-                .map(rslip_outcome_from_cache));
-            }
-            let fingerprint = rslip_cache_fingerprint_from_context(&shared_context, &req.nodeid);
-            Ok(load_reusable_rslip_cache_entry(
-                &req.cache_root,
-                &fingerprint,
-                &req.source_root,
-            )
-            .map(rslip_outcome_from_cache))
-        })
-        .collect()
-}
-
 /// Digest map for covered files plus the test module; `None` if any path is missing.
 pub fn covered_file_digests_for(
     source_root: &Path,
@@ -233,31 +196,7 @@ pub fn cache_fingerprint_for_request(req: &RslipRequest) -> Result<String, Rslip
     Ok(cache::rslip_cache_fingerprint(req)?)
 }
 
-fn rslip_requests_share_context(first: &RslipRequest, other: &RslipRequest) -> bool {
-    first.cwd == other.cwd
-        && first.source_root == other.source_root
-        && first.python == other.python
-        && first.python_version == other.python_version
-        && first.pytest_version == other.pytest_version
-        && first.pytest_args == other.pytest_args
-        && first.env == other.env
-        && first.cache_root == other.cache_root
-}
-
-fn rslip_outcome_from_cache(entry: RslipCacheEntry) -> RslipOutcome {
-    RslipOutcome {
-        nodeid: entry.nodeid,
-        status: entry.status,
-        exit_code: entry.exit_code,
-        duration: entry.duration,
-        coverage: entry.coverage,
-        cache_status: CacheStatus::Hit,
-        stdout: None,
-        stderr: None,
-    }
-}
-
-fn validate_rslip_request(req: &RslipRequest) -> Result<(), RslipError> {
+pub(crate) fn validate_rslip_request(req: &RslipRequest) -> Result<(), RslipError> {
     if req.nodeid.trim().is_empty() {
         return Err(RslipError::InvalidRequest(
             "pytest node id must not be empty".to_string(),

@@ -9,7 +9,7 @@ pub(crate) mod duration;
 pub(crate) mod last_status;
 mod line_selection;
 mod python_cache_path;
-mod python_coverage_index;
+pub(crate) mod python_coverage_index;
 mod final_summary;
 mod status_labels;
 mod run_logic;

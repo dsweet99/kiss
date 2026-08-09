@@ -1,0 +1,84 @@
+//! Aggregated Python covered-lines snapshot for warm `kiss cov`.
+//!
+//! Built while scanning rslip entries for the coverage index, so `kiss cov` can
+//! load one compact file instead of re-parsing thousands of per-test entries.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use super::manifest::read_python_population_manifest;
+use super::storage::{python_coverage_cache_root, python_unique_suffix};
+use super::POPULATION_SCHEMA_VERSION;
+
+pub(crate) const COVERAGE_SNAPSHOT_SCHEMA: &str = "rslip-python-coverage-snapshot-v1";
+
+pub(crate) type CoveredLinesMap = BTreeMap<String, BTreeSet<u32>>;
+
+#[derive(Serialize, Deserialize)]
+struct CoverageSnapshotFile {
+    schema_version: String,
+    cache_schema_version: String,
+    input_fingerprint: String,
+    entries_fingerprint: String,
+    covered_lines: CoveredLinesMap,
+}
+
+fn coverage_snapshot_path(cache_root: &Path) -> PathBuf {
+    cache_root.join("coverage_snapshot.json")
+}
+
+pub(crate) fn try_load_python_coverage_snapshot(
+    repo_root: &Path,
+) -> Option<CoveredLinesMap> {
+    let manifest = read_python_population_manifest(repo_root)?;
+    if manifest.schema_version != POPULATION_SCHEMA_VERSION {
+        return None;
+    }
+    let cache_root = python_coverage_cache_root(repo_root).ok()?;
+    let bytes = fs::read(coverage_snapshot_path(&cache_root)).ok()?;
+    let file: CoverageSnapshotFile = serde_json::from_slice(&bytes).ok()?;
+    if file.schema_version != COVERAGE_SNAPSHOT_SCHEMA
+        || file.cache_schema_version != manifest.cache_schema_version
+        || file.input_fingerprint != manifest.input_fingerprint
+        || file.entries_fingerprint != manifest.entries_fingerprint
+    {
+        return None;
+    }
+    Some(file.covered_lines)
+}
+
+pub(crate) fn write_python_coverage_snapshot(
+    repo_root: &Path,
+    covered_lines: &CoveredLinesMap,
+) -> Result<(), String> {
+    let Some(manifest) = read_python_population_manifest(repo_root) else {
+        // Population not published yet; skip snapshot (caller may publish next).
+        return Ok(());
+    };
+    let cache_root = python_coverage_cache_root(repo_root)?;
+    let payload = CoverageSnapshotFile {
+        schema_version: COVERAGE_SNAPSHOT_SCHEMA.to_string(),
+        cache_schema_version: manifest.cache_schema_version,
+        input_fingerprint: manifest.input_fingerprint,
+        entries_fingerprint: manifest.entries_fingerprint,
+        covered_lines: covered_lines.clone(),
+    };
+    let path = coverage_snapshot_path(&cache_root);
+    let parent = path
+        .parent()
+        .ok_or_else(|| "error: kiss: Python coverage snapshot path has no parent".to_string())?;
+    let tmp_path = parent.join(format!(
+        ".coverage_snapshot.{}.tmp",
+        python_unique_suffix()
+    ));
+    kiss_publication_barrier::publish_atomically("python_coverage_snapshot", &path, &tmp_path, |file| {
+        serde_json::to_writer(&mut *file, &payload).map_err(std::io::Error::other)?;
+        use std::io::Write;
+        file.write_all(b"\n")?;
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
+}

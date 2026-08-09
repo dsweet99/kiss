@@ -9,9 +9,11 @@ use crate::test_runner::check_line_coverage::{
     repository_root_for_universe,
 };
 use crate::test_runner::unit_test_timing::{
-    RuntimeGateEval, TimingCollectOpts, TimingLangInclude, collect_current_unit_test_timings,
-    evaluate_runtime_gate, runtime_gate_failure_lines,
+    CovTimeGateOpts, RuntimeGateEval, TimingLangInclude, evaluate_cov_time_gate,
+    runtime_gate_failure_lines,
 };
+#[cfg(test)]
+use crate::test_runner::unit_test_timing::TimingCollectOpts;
 use kiss::Language;
 use kiss::cli_output::{print_final_status, print_no_files_message, print_violations};
 use std::path::{Path, PathBuf};
@@ -70,8 +72,7 @@ fn evaluate_time_gate_for_cov(
     if args.gate_config.unit_test_time_gate_disabled() {
         return RuntimeGateEval::Disabled;
     }
-    let t_timings = Instant::now();
-    let timings = collect_current_unit_test_timings(TimingCollectOpts {
+    evaluate_cov_time_gate(CovTimeGateOpts {
         universe: universe_root,
         lang_filter: args.lang_filter,
         include: TimingLangInclude {
@@ -79,14 +80,9 @@ fn evaluate_time_gate_for_cov(
             rust: !files.rs_files.is_empty(),
         },
         ignore,
-    });
-    if args.timing {
-        eprintln!(
-            "TIMING:coverage_unit_test_timings_ms:{}",
-            t_timings.elapsed().as_millis()
-        );
-    }
-    evaluate_runtime_gate(&timings, &args.gate_config.max_unit_test_seconds)
+        limits: &args.gate_config.max_unit_test_seconds,
+        timing: args.timing,
+    })
 }
 
 fn apply_time_gate_eval(eval: &RuntimeGateEval) -> bool {
@@ -193,7 +189,25 @@ fn gather_cov_files(
     lang_filter: Option<Language>,
     ignore: &[String],
 ) -> Option<CovFileSets> {
-    let (py_files, rs_files) = gather_files(universe_root, lang_filter, ignore);
+    let repo_root = repository_root_for_universe(universe_root);
+    let list_key = crate::analyze::cov_file_list_cache::CovFileListKey {
+        repo_root: &repo_root,
+        lang_filter,
+        ignore,
+    };
+    let (py_files, rs_files) =
+        if let Some(cached) = crate::analyze::cov_file_list_cache::try_load_cov_file_list(&list_key)
+        {
+            cached
+        } else {
+            let (py_files, rs_files) = gather_files(universe_root, lang_filter, ignore);
+            if !py_files.is_empty() || !rs_files.is_empty() {
+                crate::analyze::cov_file_list_cache::store_cov_file_list(
+                    &list_key, &py_files, &rs_files,
+                );
+            }
+            (py_files, rs_files)
+        };
     if py_files.is_empty() && rs_files.is_empty() {
         None
     } else {

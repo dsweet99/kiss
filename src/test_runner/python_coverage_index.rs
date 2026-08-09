@@ -25,6 +25,16 @@ pub(crate) use manifest::{
     write_python_population_manifest_with_identity,
 };
 
+mod population_durations;
+pub(crate) use population_durations::{
+    load_current_python_population_durations, load_current_python_population_max_duration,
+};
+
+mod coverage_snapshot;
+pub(crate) use coverage_snapshot::{
+    try_load_python_coverage_snapshot, write_python_coverage_snapshot,
+};
+
 mod storage;
 #[cfg(test)]
 pub(crate) use storage::{
@@ -66,7 +76,7 @@ pub(crate) fn publish_python_derived_state_with_filter(
 ) -> Result<PythonCoverageIndex, String> {
     let cache_root = python_coverage_cache_root(repo_root)?;
     let _guard = rslip::lock_rslip_derived_state(&cache_root).map_err(|err| err.to_string())?;
-    let (index, entries_fingerprint) =
+    let (index, covered_lines, entries_fingerprint) =
         build_stable_python_coverage_index(repo_root, &cache_root, is_indexable)?;
     storage::write_python_coverage_index_with_entries_fingerprint(
         repo_root,
@@ -90,6 +100,9 @@ pub(crate) fn publish_python_derived_state_with_filter(
             &identity,
             &entries_fingerprint,
         )?;
+        // Best-effort: warm `kiss cov` time gate should not re-read full coverage entries.
+        let _ = population_durations::try_publish_python_population_durations(repo_root, test_args);
+        let _ = coverage_snapshot::write_python_coverage_snapshot(repo_root, &covered_lines);
     }
     Ok(index)
 }
@@ -98,13 +111,14 @@ fn build_stable_python_coverage_index(
     repo_root: &Path,
     cache_root: &Path,
     is_indexable: impl Fn(&Path, &Path) -> bool,
-) -> Result<(PythonCoverageIndex, String), String> {
+) -> Result<(PythonCoverageIndex, coverage_snapshot::CoveredLinesMap, String), String> {
     for _ in 0..3 {
         let before = storage::python_entries_fingerprint(cache_root).map_err(|e| e.to_string())?;
-        let index = build_python_coverage_index_with_filter(repo_root, &is_indexable);
+        let (index, covered_lines) =
+            build_python_coverage_index_and_lines(repo_root, &is_indexable);
         let after = storage::python_entries_fingerprint(cache_root).map_err(|e| e.to_string())?;
         if before == after {
-            return Ok((index, after));
+            return Ok((index, covered_lines, after));
         }
     }
     Err(
@@ -153,19 +167,21 @@ pub(crate) fn select_python_source_selectors_hybrid(
 
 #[cfg(test)]
 pub(crate) fn build_python_coverage_index(repo_root: &Path) -> PythonCoverageIndex {
-    build_python_coverage_index_with_filter(repo_root, |path, repo_root| {
+    build_python_coverage_index_and_lines(repo_root, |path, repo_root| {
         repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
     })
+    .0
 }
 
-fn build_python_coverage_index_with_filter(
+fn build_python_coverage_index_and_lines(
     repo_root: &Path,
     is_indexable: impl Fn(&Path, &Path) -> bool,
-) -> PythonCoverageIndex {
+) -> (PythonCoverageIndex, coverage_snapshot::CoveredLinesMap) {
     let Ok(cache_root) = python_coverage_cache_root(repo_root) else {
-        return BTreeMap::new();
+        return (BTreeMap::new(), BTreeMap::new());
     };
     let mut files: PythonCoverageIndex = BTreeMap::new();
+    let mut covered_lines: coverage_snapshot::CoveredLinesMap = BTreeMap::new();
     for entry_path in storage::python_coverage_entry_paths(&cache_root) {
         let Some((selector, status, coverage)) = load_python_entry_for_index(&entry_path) else {
             continue;
@@ -173,16 +189,20 @@ fn build_python_coverage_index_with_filter(
         if status != TestStatus::Passed || coverage.files.is_empty() {
             continue;
         }
-        for file in coverage.files.keys() {
-            let path = Path::new(file);
+        for (file, lines) in coverage.files {
+            let path = Path::new(&file);
             if is_indexable(path, repo_root) {
-                let rel = repo_relative_coverage_file(repo_root, file)
+                let rel = repo_relative_coverage_file(repo_root, &file)
                     .expect("indexable Python coverage path has repo-relative form");
-                files.entry(rel).or_default().insert(selector.clone());
+                files
+                    .entry(rel.clone())
+                    .or_default()
+                    .insert(selector.clone());
+                covered_lines.entry(rel).or_default().extend(lines);
             }
         }
     }
-    files
+    (files, covered_lines)
 }
 
 pub(crate) fn load_python_entry_for_index(

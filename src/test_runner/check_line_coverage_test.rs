@@ -158,3 +158,51 @@ fn repository_root_for_universe_walks_up_to_git_directory() {
         tmp.path().join("repo").canonicalize().unwrap()
     );
 }
+
+#[test]
+fn load_python_runtime_coverage_matches_configured_pytest_plugin_args() {
+    // Regression: sameq-3 publishes population with `-p` plugin args, but kiss cov
+    // previously validated with `[]`, so every warm cov refreshed then failed.
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    fs::write(
+        tmp.path().join(".kissconfig"),
+        "[test]\npytest_plugins = [\"pytest_asyncio.plugin\", \"random_order.plugin\"]\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
+    let selector = "tests/test_app.py::test_value".to_string();
+    let plugin_args = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
+    assert_eq!(
+        plugin_args,
+        vec![
+            "-p".to_string(),
+            "pytest_asyncio.plugin".to_string(),
+            "-p".to_string(),
+            "random_order.plugin".to_string(),
+        ]
+    );
+    crate::test_runner::python_coverage_index::write_python_population_manifest_for_args(
+        tmp.path(),
+        std::slice::from_ref(&selector),
+        &plugin_args,
+    )
+    .unwrap();
+
+    let err = match load_python_runtime_coverage(tmp.path()) {
+        Ok(_) => panic!(
+            "empty rslip cache should fail closed, but must get past population identity"
+        ),
+        Err(err) => err,
+    };
+    let msg = err.to_string();
+    assert!(
+        !msg.contains("missing or stale/incompatible population"),
+        "configured plugin args must match published population; got: {msg}"
+    );
+    assert!(
+        msg.contains("incomplete population"),
+        "expected incomplete cache after identity match; got: {msg}"
+    );
+}
