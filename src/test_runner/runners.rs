@@ -10,6 +10,7 @@ use kiss::test_refs::{is_in_test_directory, is_pytest_nodeid_source_file, is_tes
 use kiss::{parse_rust_files, rust_test_functions_in};
 use rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
+    repo_relative_path,
 };
 
 #[path = "runners/decision.rs"]
@@ -184,6 +185,60 @@ pub fn enumerate_workspace_rust_selectors(
     repo_root: &Path,
     ignore: &[String],
 ) -> Result<Vec<String>, String> {
+    let mut selectors = BTreeSet::new();
+    for (_path, selector) in enumerate_workspace_rust_test_entries(
+        repo_root,
+        ignore,
+        ParseErrorPolicy::Fail,
+    )? {
+        selectors.insert(selector);
+    }
+    Ok(selectors.into_iter().collect())
+}
+
+/// Map nextest-style logical selectors (`tests::fn`) to `kiss test` PATH::symbol
+/// ids (`path/file.rs::fn`) for PASS/FAIL/TIMEOUT reporting.
+pub(crate) fn rust_logical_to_kiss_test_ids(
+    repo_root: &Path,
+    ignore: &[String],
+) -> Result<BTreeMap<String, String>, String> {
+    let mut map = BTreeMap::new();
+    // Reporting must not collapse to logical ids because an unrelated file is
+    // temporarily unparseable; skip those files and keep mapping the rest.
+    for (path, logical) in enumerate_workspace_rust_test_entries(
+        repo_root,
+        ignore,
+        ParseErrorPolicy::Skip,
+    )? {
+        let Some(rel) = repo_relative_path(repo_root, &path) else {
+            continue;
+        };
+        let bare = logical
+            .rsplit_once("::")
+            .map_or(logical.as_str(), |(_, name)| name)
+            .to_string();
+        map.insert(logical, format!("{rel}::{bare}"));
+    }
+    Ok(map)
+}
+
+pub(crate) fn kiss_test_report_id(map: &BTreeMap<String, String>, logical: &str) -> String {
+    map.get(logical)
+        .cloned()
+        .unwrap_or_else(|| logical.to_string())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ParseErrorPolicy {
+    Fail,
+    Skip,
+}
+
+fn enumerate_workspace_rust_test_entries(
+    repo_root: &Path,
+    ignore: &[String],
+    parse_errors: ParseErrorPolicy,
+) -> Result<Vec<(PathBuf, String)>, String> {
     let root = repo_root.to_string_lossy().to_string();
     let (_py_files, rs_files) =
         kiss::gather_files_by_lang(&[root], Some(kiss::Language::Rust), ignore);
@@ -195,19 +250,25 @@ pub fn enumerate_workspace_rust_selectors(
         Err(_) => rs_files,
     };
     let parsed = parse_rust_files(&rs_files);
-    let mut selectors = BTreeSet::new();
+    let mut entries = Vec::new();
     for (path, result) in rs_files.iter().zip(parsed) {
-        let pf = result.map_err(|e| {
-            format!(
-                "error: kiss test: failed to parse Rust workspace file {}: {e}",
-                path.display()
-            )
-        })?;
+        let pf = match result {
+            Ok(pf) => pf,
+            Err(e) => {
+                if parse_errors == ParseErrorPolicy::Skip {
+                    continue;
+                }
+                return Err(format!(
+                    "error: kiss test: failed to parse Rust workspace file {}: {e}",
+                    path.display()
+                ));
+            }
+        };
         for selector in rust_test_functions_in(&pf) {
-            selectors.insert(selector);
+            entries.push((pf.path.clone(), selector));
         }
     }
-    Ok(selectors.into_iter().collect())
+    Ok(entries)
 }
 
 pub fn enumerate_workspace_python_selectors(

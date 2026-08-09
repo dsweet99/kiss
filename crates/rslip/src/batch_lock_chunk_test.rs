@@ -217,11 +217,14 @@ fn assert_empty_concurrent_entry_does_not_win_over_timeout(root: &Path) {
             .collect()
     }));
     let outcomes = rslip.run_or_reuse_many_bounded(vec![req], 1);
-    assert_eq!(
-        outcomes[0].as_ref().unwrap().cache_status,
-        CacheStatus::MissStored
+    let outcome = outcomes[0].as_ref().unwrap();
+    assert_eq!(outcome.cache_status, CacheStatus::MissStored);
+    assert_eq!(outcome.exit_code, Some(124));
+    let stderr = outcome.stderr.as_deref().unwrap_or(b"");
+    assert!(
+        !String::from_utf8_lossy(stderr).contains("rslip: pytest timed out"),
+        "timeout must not emit the redundant rslip pytest-timeout stderr line"
     );
-    assert_eq!(outcomes[0].as_ref().unwrap().exit_code, Some(124));
 }
 
 fn passed_coverage_outcome(nodeid: &str, app_key: &str, lines: BTreeSet<u32>) -> RslipOutcome {

@@ -275,6 +275,7 @@ jobs: 2,
 
 #[test]
 fn check_aggregate_population_can_return_cached_summary() {
+    let tmp = tempfile::tempdir().unwrap();
     let selectors = vec!["tests::case".to_string(), "tests::other".to_string()];
     let population = rust_llvm_cov_runner::RustPopulationState {
         input_fingerprint: "input".to_string(),
@@ -287,7 +288,9 @@ fn check_aggregate_population_can_return_cached_summary() {
         test_binaries: BTreeMap::new(),
     };
 
-    let summary = cached_summary_from_check_aggregate_population(&selectors, &population).unwrap();
+    let summary =
+        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population)
+            .unwrap();
 
     assert_eq!(summary.total, 2);
     assert_eq!(summary.cache_hits, 2);
@@ -295,7 +298,10 @@ fn check_aggregate_population_can_return_cached_summary() {
 
     let mut entry_backed = population;
     entry_backed.entries_fingerprint = "entry-fingerprint".to_string();
-    assert!(cached_summary_from_check_aggregate_population(&selectors, &entry_backed).is_none());
+    assert!(
+        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &entry_backed)
+            .is_none()
+    );
 }
 
 #[test]

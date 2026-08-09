@@ -2,8 +2,8 @@
 use super::*;
 use crate::test_runner::runners::SelectorExecutionSummary;
 use rust_llvm_cov_runner::{
-    RustCoverageBatchCounters, RustCoverageBatchResult, RustLineCoverage, RustLlvmCovError,
-    RustLlvmCovOutcome,
+    RustCovCacheStatus, RustCoverageBatchCounters, RustCoverageBatchResult, RustLineCoverage,
+    RustLlvmCovError, RustLlvmCovOutcome,
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -25,6 +25,61 @@ fn run_rust_llvm_cov_selectors_rejects_unsupported_test_args_before_tool_detecti
 
     assert!(err.contains("unsupported Rust test argument"));
     assert!(err.contains("--format"));
+}
+
+#[test]
+fn finish_rust_coverage_batch_result_reports_kiss_test_path_symbol_ids() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    std::fs::create_dir(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        r#"
+pub fn value() -> u32 { 1 }
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn gets_value() { assert_eq!(super::value(), 1); }
+}
+"#,
+    )
+    .unwrap();
+    let identity = rust_last_status_identity(
+        "cargo 1.88.0",
+        "cargo-llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        "cargo-nextest 0.9.0",
+        &[],
+        "0000000000000000",
+    );
+    let result = RustCoverageBatchResult {
+        completed: vec![RustLlvmCovOutcome {
+            selector: "tests::gets_value".to_string(),
+            status: rpytest_runner::TestStatus::TimedOut,
+            exit_code: Some(124),
+            duration: Duration::from_secs(1),
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
+            test_binary_ids: vec!["bin".to_string()],
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        }],
+        batch_error: None,
+        counters: RustCoverageBatchCounters::default(),
+        test_binaries: Vec::new(),
+    };
+
+    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
+    assert_eq!(
+        summary.timed_out_selectors,
+        vec!["src/lib.rs::gets_value".to_string()]
+    );
 }
 
 #[test]

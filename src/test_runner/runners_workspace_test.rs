@@ -1,9 +1,11 @@
 use std::fs;
+use std::path::PathBuf;
 
 use tempfile::TempDir;
 
 use super::runners::{
     enumerate_tests_in_changed_files, enumerate_workspace_rust_selectors, rust_backer,
+    rust_logical_to_kiss_test_ids,
 };
 
 fn write_demo_crate(tmp: &TempDir, lib_rs: &str) {
@@ -38,6 +40,44 @@ fn enumerate_workspace_rust_selectors_finds_cfg_test_modules() {
     let selectors = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap();
 
     assert_eq!(selectors, vec!["tests::gets_value".to_string()]);
+}
+
+#[test]
+fn rust_logical_to_kiss_test_ids_uses_path_and_bare_fn_name() {
+    let tmp = TempDir::new().unwrap();
+    write_demo_crate(&tmp, demo_test_lib());
+
+    let map = rust_logical_to_kiss_test_ids(tmp.path(), &[]).unwrap();
+
+    assert_eq!(
+        map.get("tests::gets_value").map(String::as_str),
+        Some("src/lib.rs::gets_value")
+    );
+}
+
+#[test]
+fn rust_logical_to_kiss_test_ids_maps_repo_path_test_file() {
+    // Regression: *_test.rs fixtures must not fall back to bare logical ids.
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let map = rust_logical_to_kiss_test_ids(&repo, &[]).unwrap();
+    let logical = "format_failures_preserve_order_and_full_selectors";
+    assert_eq!(
+        map.get(logical).map(String::as_str),
+        Some("src/test_runner/final_summary_test.rs::format_failures_preserve_order_and_full_selectors"),
+        "map miss would leave non-pasteable report ids"
+    );
+}
+
+#[test]
+fn rust_logical_to_kiss_test_ids_survives_sibling_parse_error() {
+    let tmp = TempDir::new().unwrap();
+    write_demo_crate(&tmp, demo_test_lib());
+    fs::write(tmp.path().join("src").join("broken_test.rs"), "fn broken(\n").unwrap();
+    let map = rust_logical_to_kiss_test_ids(tmp.path(), &[]).expect("parse errors must not wipe map");
+    assert_eq!(
+        map.get("tests::gets_value").map(String::as_str),
+        Some("src/lib.rs::gets_value")
+    );
 }
 
 #[test]

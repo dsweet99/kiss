@@ -29,12 +29,8 @@ fn handle_rslip_miss_result_once(
         // Timeouts become TimedOut outcomes (empty coverage) so a large
         // population can finish instead of hanging forever on one stuck test.
         Err(PytestRunError::Timeout(timeout)) => {
-            return finalize_timed_out_miss_outcome(
-                miss,
-                timeout,
-                124,
-                format!("rslip: pytest timed out after {timeout:?}\n"),
-            );
+            // TimedOut is already reported on stdout as TIMEOUT; no stderr noise.
+            return finalize_timed_out_miss_outcome(miss, timeout, 124, String::new());
         }
         Err(err) => return Err(RslipError::Runner(err)),
     };

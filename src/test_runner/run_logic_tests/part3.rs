@@ -80,7 +80,7 @@ metrics: false,
         summary: SelectorExecutionSummary {
             total: 2,
             failed: 1,
-            failed_selectors: vec!["tests::rust_fail".to_string()],
+            failed_selectors: vec!["src/lib.rs::rust_fail".to_string()],
             max_passing_run_duration: Duration::from_millis(50),
             exit_code: 1,
             ..SelectorExecutionSummary::default()
@@ -111,7 +111,9 @@ metrics: false,
     let py_fail = out
         .find("FAIL tests/test_a.py::test_a")
         .expect("python failure");
-    let rs_fail = out.find("FAIL tests::rust_fail").expect("rust failure");
+    let rs_fail = out
+        .find("FAIL src/lib.rs::rust_fail")
+        .expect("rust failure");
     assert!(py_fail < rs_fail, "python failures before rust: {out}");
     assert!(out.contains("0.05s max pass"), "fresh rust max pass: {out}");
 }

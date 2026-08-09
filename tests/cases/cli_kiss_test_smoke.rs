@@ -255,7 +255,12 @@ mod tests {\n\
     assert!(
         stdout
             .lines()
-            .any(|line| line == "FAIL tests::gets_value"),
-        "recap must use canonical Rust logical selector, stdout={stdout}"
+            .any(|line| line == "FAIL src/lib.rs::gets_value"),
+        "recap must use kiss-test PATH::symbol id, stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("FAIL: src/lib.rs::gets_value")
+            || stdout.contains("FAIL ("),
+        "streaming FAIL line must use PATH::symbol id: {stdout}"
     );
 }
