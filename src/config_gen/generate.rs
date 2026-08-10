@@ -62,6 +62,7 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
     let _ = writeln!(out, "num_jobs = 4");
     let _ = writeln!(out, "watch_settle_seconds = 1.0");
     let _ = writeln!(out, "pytest_plugins = []");
+    let _ = writeln!(out, "ignore = []");
     out
 }
 
@@ -115,6 +116,10 @@ mod coverage_witness {
         assert!(
             toml.contains("[gate.max_unit_test_seconds]\n\"*\" = 2\n"),
             "default asterisk mapping:\n{toml}"
+        );
+        assert!(
+            toml.contains("[test]\nnum_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"),
+            "test section defaults:\n{toml}"
         );
     }
 }

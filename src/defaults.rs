@@ -83,6 +83,7 @@ orphan_module_enabled = true
 num_jobs = 4
 watch_settle_seconds = 1.0
 pytest_plugins = []
+ignore = []
 
 [python]
 statements_per_function = {py_statements}

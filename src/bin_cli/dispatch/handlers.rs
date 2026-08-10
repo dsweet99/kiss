@@ -148,6 +148,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_shrink(o: ShrinkDispatchOptions<'_>
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) -> i32 {
+    let ignore = o.test_cfg.merged_ignore(&o.ignore);
     run_test_command(crate::bin_cli::test_cmd::TestCommandArgs {
         invocation: o.invocation,
         main_branch: o.main_branch.as_deref(),
@@ -158,7 +159,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) ->
         metrics: o.metrics,
         watch: o.watch,
         jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
-        ignore: &o.ignore,
+        ignore: &ignore,
         extra: &o.extra,
         lang_filter: o.lang,
         test_cfg: o.test_cfg,

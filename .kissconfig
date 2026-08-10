@@ -12,6 +12,7 @@ min_similarity = 0.9
 num_jobs = 32
 watch_settle_seconds = 1.0
 pytest_plugins = []
+ignore = []
 
 
 [python]

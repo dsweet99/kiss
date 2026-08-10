@@ -117,21 +117,25 @@ pub fn run_config(
     if let Some(main) = &test.main_branch {
         println!("main_branch = \"{}\"", main);
     }
-    if test.pytest_plugins.is_empty() {
-        println!("pytest_plugins = []");
-    } else {
-        let rendered = test
-            .pytest_plugins
-            .iter()
-            .map(|p| format!("\"{p}\""))
-            .collect::<Vec<_>>()
-            .join(", ");
-        println!("pytest_plugins = [{rendered}]");
-    }
+    print_test_string_list("pytest_plugins", &test.pytest_plugins);
+    print_test_string_list("ignore", &test.ignore);
     println!("\n[python]");
     print_python_config(py);
     println!("\n[rust]");
     print_rust_config(rs);
+}
+
+fn print_test_string_list(key: &str, values: &[String]) {
+    if values.is_empty() {
+        println!("{key} = []");
+        return;
+    }
+    let rendered = values
+        .iter()
+        .map(|p| format!("\"{p}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!("{key} = [{rendered}]");
 }
 
 fn print_python_config(c: &Config) {

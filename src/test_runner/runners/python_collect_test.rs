@@ -60,6 +60,33 @@ fn workspace_collection_respects_kiss_ignore_prefixes() {
 }
 
 #[test]
+fn workspace_collection_respects_test_section_config_ignore() {
+    reset_python_collect_memo_for_tests();
+    let tmp = TempDir::new().unwrap();
+    let tests = tmp.path().join("tests");
+    let ignored = tmp.path().join("ignored_tests");
+    fs::create_dir_all(&tests).unwrap();
+    fs::create_dir_all(&ignored).unwrap();
+    fs::write(
+        tests.join("test_kept.py"),
+        "def test_kept():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(
+        ignored.join("test_ignored.py"),
+        "def test_ignored():\n    assert True\n",
+    )
+    .unwrap();
+    let cfg = kiss::TestSectionConfig {
+        ignore: vec!["ignored_tests/".to_string()],
+        ..Default::default()
+    };
+    let ignore = cfg.merged_ignore(&[]);
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &ignore, &[]).unwrap();
+    assert_eq!(selectors, vec!["tests/test_kept.py::test_kept".to_string()]);
+}
+
+#[test]
 fn path_subset_collection_returns_only_requested_file_nodeids() {
     reset_python_collect_memo_for_tests();
     let tmp = TempDir::new().unwrap();
