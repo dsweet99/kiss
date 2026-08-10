@@ -120,6 +120,19 @@ mod tests {
     }
 
     #[test]
+    fn test_run_init_command_writes_test_section_defaults() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        assert_eq!(run_init_command(tmp.path()), 0);
+        let created = std::fs::read_to_string(tmp.path().join(".kissconfig")).unwrap();
+        assert!(
+            created.contains(
+                "[test]\nnum_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
+            ),
+            "kiss init must write [test] defaults:\n{created}"
+        );
+    }
+
+    #[test]
     fn test_ensure_default_config_exists_runs_clamp() {
         let _cwd_guard = crate::cwd_test_lock::lock();
         let tmp = tempfile::TempDir::new().unwrap();
@@ -132,6 +145,23 @@ mod tests {
         assert!(
             Path::new(".kissconfig").exists(),
             "missing local .kissconfig should be created by clamp"
+        );
+        let created = std::fs::read_to_string(".kissconfig").unwrap();
+        assert!(
+            created.contains("[test]"),
+            "created .kissconfig must include [test]:\n{created}"
+        );
+        assert!(
+            created.contains("num_jobs = 4"),
+            "created .kissconfig must set num_jobs = 4:\n{created}"
+        );
+        assert!(
+            created.contains("pytest_plugins = []"),
+            "created .kissconfig must set pytest_plugins = []:\n{created}"
+        );
+        assert!(
+            created.contains("ignore = []"),
+            "created .kissconfig must set ignore = []:\n{created}"
         );
 
         std::env::set_current_dir(orig_dir).unwrap();

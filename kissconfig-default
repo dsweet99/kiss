@@ -12,6 +12,8 @@ orphan_module_enabled = true
 # Maximum jobs used to refresh runtime coverage during `kiss check`.
 num_jobs = 4
 watch_settle_seconds = 1.0
+pytest_plugins = []
+ignore = []
 
 [python]
 boolean_parameters = 1

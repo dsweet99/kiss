@@ -203,5 +203,11 @@ mod tests {
             !toml.contains("max_unit_test_seconds = "),
             "init default must not emit scalar max_unit_test_seconds:\n{toml}"
         );
+        assert!(
+            toml.contains(
+                "[test]\nnum_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
+            ),
+            "init default must emit [test] defaults:\n{toml}"
+        );
     }
 }

@@ -182,3 +182,63 @@ fn test_merge_config_toml_smoke() {
     );
     assert!(merged.contains("statements_per_function"));
 }
+
+#[test]
+fn merge_keeps_existing_test_section() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("cfg.toml");
+    std::fs::write(
+        &path,
+        "[python]\nstatements_per_function = 1\n[test]\nnum_jobs = 8\npytest_plugins = [\"x\"]\nignore = [\"vendor\"]\n",
+    )
+    .unwrap();
+    let merged = merge_config_toml(
+        &path,
+        "[python]\nstatements_per_function = 2\n[test]\nnum_jobs = 4\npytest_plugins = []\nignore = []\n",
+        MergeLanguageUpdate::PythonOnly,
+    );
+    assert!(
+        merged.contains("[test]"),
+        "merged output must include [test]:\n{merged}"
+    );
+    assert!(
+        merged.contains("num_jobs = 8"),
+        "existing num_jobs must be preserved:\n{merged}"
+    );
+    assert!(
+        merged.contains("pytest_plugins = [\"x\"]"),
+        "existing pytest_plugins must be preserved:\n{merged}"
+    );
+    assert!(
+        merged.contains("ignore = [\"vendor\"]"),
+        "existing ignore must be preserved:\n{merged}"
+    );
+}
+
+#[test]
+fn merge_adds_test_section_from_new_when_missing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("cfg.toml");
+    std::fs::write(&path, "[python]\nstatements_per_function = 1\n").unwrap();
+    let merged = merge_config_toml(
+        &path,
+        "[python]\nstatements_per_function = 2\n[test]\nnum_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n",
+        MergeLanguageUpdate::PythonOnly,
+    );
+    assert!(
+        merged.contains("[test]"),
+        "merged output must include [test]:\n{merged}"
+    );
+    assert!(
+        merged.contains("num_jobs = 4"),
+        "new num_jobs default must be present:\n{merged}"
+    );
+    assert!(
+        merged.contains("pytest_plugins = []"),
+        "new pytest_plugins default must be present:\n{merged}"
+    );
+    assert!(
+        merged.contains("ignore = []"),
+        "new ignore default must be present:\n{merged}"
+    );
+}
