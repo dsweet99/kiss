@@ -111,25 +111,51 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
     let cache_root = rust_coverage_cache_root(repo_root);
     // Prefer population selectors from the validated current state (covers both
     // SelectorEntries and CheckAggregate populations) without scanning orphans.
-    let pairs = rust_llvm_cov_runner::load_current_population_durations(
+    if let Some(pairs) = rust_llvm_cov_runner::load_current_population_durations(
         &cache_root,
         repo_root,
         &identity,
         &req,
         &tools,
         None,
-    )?;
-    // Durable cache keys are nextest logical ids; path-pattern limits need
-    // PATH::symbol report ids so ["rust", N] matches instead of falling through to ["*", 0].
-    // Warm cov uses a fingerprint-keyed disk cache to avoid re-parsing the workspace.
+    ) {
+        let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]);
+        return Some(
+            pairs
+                .into_iter()
+                .map(|(selector, duration)| UnitTestTiming {
+                    language: Language::Rust,
+                    selector: kiss_test_report_id(&report_ids, &selector),
+                    duration,
+                })
+                .collect(),
+        );
+    }
+    load_rust_timings_from_witness(repo_root, &identity)
+}
+
+fn load_rust_timings_from_witness(
+    repo_root: &Path,
+    identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
+) -> Option<Vec<UnitTestTiming>> {
+    use crate::test_runner::execution_witness::{
+        try_load_rust_execution_witness, try_warm_rust_cached_summary,
+    };
+    let witness = try_load_rust_execution_witness(repo_root).ok()?;
+    let _ = try_warm_rust_cached_summary(repo_root, &witness.selectors, identity)?;
+    if witness.durations_ns.len() != witness.selectors.len() {
+        return None;
+    }
     let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]);
     Some(
-        pairs
-            .into_iter()
-            .map(|(selector, duration)| UnitTestTiming {
+        witness
+            .selectors
+            .iter()
+            .zip(witness.durations_ns.iter())
+            .map(|(selector, &ns)| UnitTestTiming {
                 language: Language::Rust,
-                selector: kiss_test_report_id(&report_ids, &selector),
-                duration,
+                selector: kiss_test_report_id(&report_ids, selector),
+                duration: Duration::from_nanos(ns),
             })
             .collect(),
     )

@@ -1,5 +1,8 @@
 use super::runners;
 use crate::test_runner::coverage_decision::{LanguageExecutor, RunContext};
+use crate::test_runner::execution_witness::{
+    RustWarmDecision, maybe_bootstrap_rust_witness, rust_warm_or_miss_selectors,
+};
 use crate::test_runner::python_coverage_index::repo_relative_coverage_file as python_repo_relative_coverage_file;
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::runners::python_backer::PythonModule;
@@ -26,6 +29,16 @@ impl LanguageExecutor for PythonModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
+        if !ctx.options.force_rerun
+            && let Some(summary) =
+                crate::test_runner::execution_witness::try_warm_python_cached_summary(
+                    &ctx.planned.repo_root,
+                    selectors,
+                    ctx.options.python_extra,
+                )
+        {
+            return Ok(summary);
+        }
         run_rslip_selectors_for_module(selectors, ctx)
     }
 
@@ -34,6 +47,16 @@ impl LanguageExecutor for PythonModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
+        if !ctx.options.force_rerun
+            && let Some(summary) =
+                crate::test_runner::execution_witness::try_warm_python_cached_summary(
+                    &ctx.planned.repo_root,
+                    selectors,
+                    ctx.options.python_extra,
+                )
+        {
+            return Ok(summary);
+        }
         run_rslip_selectors_for_module(selectors, ctx)
     }
 
@@ -189,11 +212,35 @@ pub(super) fn run_rust_selectors_for_module(
     if selectors.is_empty() {
         return Ok(SelectorExecutionSummary::default());
     }
+    let force_rerun =
+        ctx.options.force_rerun || !ctx.planned.rust_prior_failure_selectors.is_empty();
+    if !force_rerun
+        && let Ok(identity) =
+            crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+                &ctx.planned.repo_root,
+                ctx.options.extra,
+            )
+    {
+        maybe_bootstrap_rust_witness(&ctx.planned.repo_root, selectors, &identity);
+        match rust_warm_or_miss_selectors(&ctx.planned.repo_root, selectors, &identity) {
+            RustWarmDecision::Warm(summary) => return Ok(*summary),
+            RustWarmDecision::RunMisses(misses) => {
+                let publication = population_publication_selectors
+                    .clone()
+                    .or_else(|| Some(selectors.to_vec()));
+                return runners::run_rust_llvm_cov_selectors(
+                    &ctx.planned.repo_root,
+                    &misses,
+                    ctx.options.extra,
+                    force_rerun,
+                    ctx.options.jobs,
+                    publication,
+                );
+            }
+            RustWarmDecision::Miss => {}
+        }
+    }
     if let Some(population_selectors) = population_publication_selectors {
-        // Population runs publish via SelectorEntries (population.json + reverse_line_index).
-        // CheckAggregate refresh remains owned by `kiss cov`, not `kiss test`.
-        let force_rerun =
-            ctx.options.force_rerun || !ctx.planned.rust_prior_failure_selectors.is_empty();
         return runners::run_rust_llvm_cov_selectors(
             &ctx.planned.repo_root,
             selectors,
@@ -203,9 +250,7 @@ pub(super) fn run_rust_selectors_for_module(
             Some(population_selectors),
         );
     }
-    let force_rerun =
-        ctx.options.force_rerun || !ctx.planned.rust_prior_failure_selectors.is_empty();
-    if should_try_cached_rust_check_aggregate(force_rerun, &population_publication_selectors)
+    if should_try_cached_rust_check_aggregate(force_rerun, &None)
         && let Some(summary) = runners::cached_rust_check_aggregate_selectors(
             &ctx.planned.repo_root,
             selectors,
@@ -220,7 +265,7 @@ pub(super) fn run_rust_selectors_for_module(
         ctx.options.extra,
         force_rerun,
         ctx.options.jobs,
-        population_publication_selectors,
+        None,
     )
 }
 

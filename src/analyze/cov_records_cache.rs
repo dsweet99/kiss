@@ -16,7 +16,7 @@ use crate::analyze::line_coverage::{
 use crate::analyze_cache::{fnv1a64, mix_sorted_paths_len_mtime};
 use crate::test_runner::check_line_coverage::RequiredCoverageLanguages;
 
-const SCHEMA_VERSION: &str = "kiss-cov-records-v2";
+const SCHEMA_VERSION: &str = "kiss-cov-records-v3";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CovRecordsCache {
@@ -136,6 +136,14 @@ pub(crate) fn rust_backend_identity_for_file_list(repo_root: &Path) -> Option<St
 
 fn rust_backend_identity(repo_root: &Path) -> Option<String> {
     let cache = repo_root.join(".kiss").join("rust_llvm_cov_cache");
+    if let Ok(witness) =
+        crate::test_runner::execution_witness::try_load_rust_execution_witness(repo_root)
+    {
+        return Some(format!(
+            "rs-wit:{}:{}:{}",
+            witness.generation_id, witness.identity_digest, witness.selectors.len()
+        ));
+    }
     if let Some(identity) = rust_check_aggregate_backend_identity(&cache) {
         return Some(identity);
     }

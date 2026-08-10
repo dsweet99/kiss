@@ -15,6 +15,7 @@ use check_runtime_refresh_repair::try_repair_rust_check_aggregate_labeled;
 #[cfg(test)]
 pub(crate) use check_runtime_refresh_repair::{
     CheckAggregateRepairDecision, classify_check_aggregate_repair,
+    maybe_downgrade_rerun_when_witness_warm, retained_maps_ignoring_digest_mismatch,
 };
 
 #[path = "check_runtime_refresh_apply.rs"]

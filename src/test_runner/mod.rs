@@ -6,6 +6,7 @@ pub(crate) mod check_line_coverage;
 pub(crate) mod check_runtime_refresh;
 mod coverage_decision;
 pub(crate) mod duration;
+pub(crate) mod execution_witness;
 pub(crate) mod last_status;
 mod line_selection;
 mod python_cache_path;

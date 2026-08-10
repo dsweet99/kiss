@@ -155,6 +155,7 @@ fn aggregate_repair_ignores_unmapped_binary_digest_changes() {
     ));
 }
 
+
 fn aggregate_prior(
     selectors: &[String],
     binaries: &[(&str, &str)],
@@ -222,6 +223,9 @@ fn test_binary(id: &str, digest: &str) -> rust_llvm_cov_runner::RustTestBinaryId
         digest: digest.to_string(),
     }
 }
+
+#[path = "check_runtime_refresh_witness_test.rs"]
+mod witness_tests;
 
 #[test]
 fn coverage_refresh_error_constructors_and_display_cover_all_arms() {

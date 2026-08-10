@@ -15,6 +15,8 @@ pub(crate) struct SelectorExecutionSummary {
     pub(crate) failed: usize,
     pub(crate) failed_selectors: Vec<String>,
     pub(crate) timed_out_selectors: Vec<String>,
+    /// Per-selector wall times observed in this summary (logical or report id).
+    pub(crate) selector_durations_ns: std::collections::BTreeMap<String, u64>,
     pub(crate) max_passing_run_duration: Duration,
     pub(crate) rust_build_invocations: usize,
     pub(crate) rust_test_instances: usize,
@@ -66,6 +68,8 @@ pub(crate) struct SelectorExecutionRecord {
 impl SelectorExecutionSummary {
     pub(crate) fn record(&mut self, record: SelectorExecutionRecord) {
         self.total += 1;
+        self.selector_durations_ns
+            .insert(record.selector.clone(), record.duration.as_nanos() as u64);
         match record.cache_record {
             SelectorCacheRecord::Hit => self.cache_hits += 1,
             SelectorCacheRecord::MissStored => self.cache_misses += 1,

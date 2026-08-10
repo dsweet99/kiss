@@ -19,9 +19,12 @@ use crate::test_runner::rust_llvm_cov_error::map_rust_llvm_cov_error;
 
 #[path = "rust_llvm_cov_finish.rs"]
 mod rust_llvm_cov_finish;
+#[path = "rust_llvm_cov_witness.rs"]
+mod rust_llvm_cov_witness;
 pub(crate) use rust_llvm_cov_finish::{
     cached_summary_from_check_aggregate_population, finish_rust_coverage_batch_result,
 };
+use rust_llvm_cov_witness::publish_rust_witness_after_batch;
 
 pub(crate) fn validate_rust_extra_args(extra: &[String]) -> Result<(), String> {
     validate_supported_rust_test_args(extra)
@@ -94,8 +97,22 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
     extra: &[String],
 ) -> Result<Option<SelectorExecutionSummary>, String> {
     let cache_root = repo_root.join(".kiss").join("rust_llvm_cov_cache");
-    // No derived population index ⇒ check-aggregate warm path cannot hit. Avoid
-    // cargo -vV / toolchain probes that current_rust_coverage_batch_identity pays.
+    // Shared execution witness is the warm authority (no llvm-cov export).
+    if cache_root.join("execution_witness.json").is_file()
+        || cache_root.join("index.json").is_file()
+    {
+        let identity =
+            crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+                repo_root, extra,
+            )?;
+        if let Some(summary) = crate::test_runner::execution_witness::try_warm_rust_cached_summary(
+            repo_root, selectors, &identity,
+        ) {
+            return Ok(Some(summary));
+        }
+    }
+    // Legacy check-aggregate shortcut: only when population is explicitly marked
+    // and selector universe matches (never with expected_selectors = None).
     if !cache_root.join("index.json").is_file() {
         return Ok(None);
     }
@@ -200,7 +217,9 @@ where
         &batch_req.runner_map_fingerprint,
     );
     let result = execute_batch(&batch_req, &versions)?;
-    finish_rust_coverage_batch_result(repo_root, &identity, result)
+    let summary = finish_rust_coverage_batch_result(repo_root, &identity, result)?;
+    publish_rust_witness_after_batch(repo_root, &batch_req, &summary)?;
+    Ok(summary)
 }
 
 fn execute_rust_coverage_batch_compat(

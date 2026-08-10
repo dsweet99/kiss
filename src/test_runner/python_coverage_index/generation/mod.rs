@@ -19,6 +19,7 @@ pub(crate) use current::{
 #[allow(unused_imports)]
 pub(crate) use evidence::{PopulationEvidence, SelectorEvidence};
 pub(crate) use identity::current_python_execution_identity;
+pub(crate) use identity::identity_matches_current;
 #[allow(unused_imports)]
 pub(crate) use identity::population_plan_for_selectors;
 #[allow(unused_imports)]
@@ -38,8 +39,8 @@ pub(crate) use repair::{
 };
 #[allow(unused_imports)]
 pub(crate) use types::{
-    GenerationReason, PinnedPythonGeneration, POINTER_SCHEMA_VERSION, SelectorTimingRecord,
-    TimingCacheDisposition,
+    GenerationReason, PinnedPythonGeneration, POINTER_SCHEMA_VERSION, PythonExecutionIdentity,
+    PythonPopulationPlan, SelectorTimingRecord, TimingCacheDisposition,
 };
 pub(crate) use durations_load::{
     try_load_generation_durations_pairs, try_load_generation_max_duration,
