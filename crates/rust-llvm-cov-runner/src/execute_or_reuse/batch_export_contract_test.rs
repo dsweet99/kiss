@@ -170,6 +170,17 @@ fn assert_parity_batch_result(
     batch_req: &crate::RustCoverageBatchRequest,
     fixture_root: &Path,
 ) {
+    let debug = parity_debug(case, batch, batch_req);
+    if matches!(
+        case.name,
+        "unmatched-selector" | "mixed-matched-unmatched" | "exact-prefix-zero-instances"
+    ) {
+        assert!(
+            assert_parity_special_case(case, batch, selectors, legacy, batch_req, &debug),
+            "unmatched-style case must be fully handled specially\n{debug}"
+        );
+        return;
+    }
     assert!(
         batch.batch_error.is_none(),
         "batch error in case `{}`: {:?}",
@@ -182,7 +193,6 @@ fn assert_parity_batch_result(
         "case `{}`",
         case.name
     );
-    let debug = parity_debug(case, batch, batch_req);
     if assert_parity_special_case(case, batch, selectors, legacy, batch_req, &debug) {
         return;
     }
@@ -230,7 +240,7 @@ fn assert_parity_special_case(
         }
         "mixed-matched-unmatched" => {
             assert_mixed_matched_unmatched(batch, debug);
-            false
+            true
         }
         "exact-prefix-zero-instances" => {
             assert_exact_prefix_zero_instances(batch, selectors, debug);
@@ -292,37 +302,6 @@ fn assert_concurrency_bound(
         "{debug}"
     );
     assert!(batch.counters.max_active_exports <= case.jobs, "{debug}");
-}
-
-fn assert_unmatched_selector(batch: &crate::RustCoverageBatchResult, debug: &str) {
-    assert_eq!(batch.counters.unmatched_selectors, 1, "{debug}");
-    assert_eq!(batch.completed.len(), 1);
-    let outcome = &batch.completed[0];
-    assert_eq!(outcome.status, rpytest_runner::TestStatus::Passed);
-    assert!(outcome.coverage.files.is_empty());
-}
-
-fn assert_mixed_matched_unmatched(batch: &crate::RustCoverageBatchResult, debug: &str) {
-    assert_eq!(batch.counters.unmatched_selectors, 1, "{debug}");
-    assert_eq!(batch.completed.len(), 2);
-}
-
-fn assert_exact_prefix_zero_instances(
-    batch: &crate::RustCoverageBatchResult,
-    selectors: &[String],
-    debug: &str,
-) {
-    assert_eq!(
-        batch.counters.unmatched_selectors,
-        selectors.len(),
-        "{debug}"
-    );
-    assert!(
-        batch
-            .completed
-            .iter()
-            .all(|outcome| outcome.coverage.files.is_empty())
-    );
 }
 
 fn assert_nocapture_live_output(
@@ -420,3 +399,7 @@ fn real_tool_batch_leaves_repository_target_untouched() {
     assert_eq!(fs::read(&marker).expect("read marker after batch"), before);
     assert!(repo_target.is_dir());
 }
+
+#[path = "batch_export_contract_unmatched_test.rs"]
+mod unmatched_asserts;
+use unmatched_asserts::*;

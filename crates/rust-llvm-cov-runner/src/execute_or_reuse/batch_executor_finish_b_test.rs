@@ -249,3 +249,56 @@ fn build_instance_export_requests_errors_when_objects_missing() {
     let err = build_instance_export_requests(&instances, &[shim], &[]).unwrap_err();
     assert!(format!("{err:?}").contains("no instrumented objects"));
 }
+
+#[test]
+fn selective_finish_rejects_unmatched_selectors_before_storing() {
+    use super::finish_fresh_batch_after_export;
+    let repo = batch_executor_fixture_repo();
+    let mut req = batch_executor_request(repo.path());
+    req.population_publication_selectors = None;
+    let tools = witness_batch_tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let instances = vec![crate::execute_or_reuse::batch_aggregate::InstanceResult {
+        full_name: "pkg::bin$alpha".to_string(),
+        test_binary_id: "/tmp/bin".to_string(),
+        passed: true,
+        timed_out: false,
+        exit_code: Some(0),
+        duration: Duration::from_millis(1),
+        stdout: None,
+        stderr: None,
+        coverage: RustLineCoverage {
+            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+        },
+    }];
+    let result = finish_fresh_batch_after_export(
+        &req,
+        &tools,
+        &identity,
+        false,
+        instances,
+        vec![(
+            "pkg::bin$alpha".to_string(),
+            RustLineCoverage {
+                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+            },
+        )],
+        ExportCounters {
+            export_jobs: 1,
+            max_active_exports: 1,
+            max_objects_per_export: 1,
+        },
+        finish_context(),
+    )
+    .expect("finish should return a batch error result");
+
+    assert!(result.completed.is_empty());
+    assert!(matches!(
+        result.batch_error,
+        Some(crate::RustLlvmCovError::InvalidRequest(ref message))
+            if message.contains("selective coverage batch did not execute 1 requested Rust selector")
+    ));
+    assert_eq!(result.counters.unmatched_selectors, 1);
+    let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
+    assert!(load_rust_cov_cache_entry(&req.cache_root, &fingerprint).is_none());
+}

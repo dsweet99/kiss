@@ -53,6 +53,7 @@ pub(crate) use execute_or_reuse::batch_executor_finish;
 pub(crate) use execute_or_reuse::batch_executor_finish_entries;
 pub(crate) use execute_or_reuse::batch_executor_finish_export;
 pub(crate) use execute_or_reuse::batch_executor_finish_store;
+pub(crate) use execute_or_reuse::batch_executor_finish_bans;
 pub(crate) use execute_or_reuse::batch_executor_fresh;
 pub(crate) use execute_or_reuse::batch_export;
 pub(crate) use execute_or_reuse::batch_export_catalog;

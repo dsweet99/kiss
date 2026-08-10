@@ -10,7 +10,9 @@ pub(crate) fn append_slow_timeout_toml(out: &mut String, req: &RustCoverageBatch
     if req.selector_timeout_millis.is_empty() {
         return;
     }
-    let exact = req.test_args.iter().any(|arg| arg == "--exact");
+    // Timeout overrides always use exact/anchored filters so one selector's
+    // limit cannot kill substring-overlapping tests.
+    let exact = true;
     let mut by_period: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     for selector in &req.logical_selectors {
         let Some(&millis) = req.selector_timeout_millis.get(selector) else {
@@ -75,8 +77,17 @@ mod tests {
         assert!(toml.contains("terminate-after = 1"), "toml={toml}");
         assert!(toml.contains("period = \"2s\""), "toml={toml}");
         assert!(toml.contains("period = \"500ms\""), "toml={toml}");
-        assert!(toml.contains("test(/alpha/)"), "toml={toml}");
-        assert!(toml.contains("test(/beta/)"), "toml={toml}");
-        assert!(toml.contains("test(/gamma/)"), "toml={toml}");
+        assert!(
+            toml.contains("alpha$/") && toml.contains("(^|"),
+            "timeout filters must be exact/anchored, toml={toml}"
+        );
+        assert!(
+            toml.contains("beta$/") && toml.contains("gamma$/"),
+            "toml={toml}"
+        );
+        assert!(
+            !toml.contains("filter = \"test(/alpha/)\""),
+            "unanchored timeout filter must not appear, toml={toml}"
+        );
     }
 }

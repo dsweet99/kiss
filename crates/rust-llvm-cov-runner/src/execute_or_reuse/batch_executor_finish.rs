@@ -5,10 +5,11 @@ use std::time::Duration;
 pub(crate) use crate::execute_or_reuse::batch_executor_finish_export::FreshCheckAggregateExport;
 use crate::{
     RustLineCoverage, RustLlvmCovError, RustTestBinaryIdentity,
-    batch_aggregate::{InstanceResult, aggregate_logical_selectors},
+    batch_aggregate::InstanceResult,
     batch_check_aggregate::{
         build_check_aggregate, publish_check_aggregate, selector_binary_ids_from_outcomes,
     },
+    batch_executor_finish_bans::{aggregate_with_zero_limit_bans, unmatched_selectors_batch_error},
     batch_executor_finish_entries::attach_binary_line_maps_to_completed_outcomes,
     batch_executor_finish_store::store_completed_outcomes,
     batch_export::{InstanceExportRequest, object_paths_for_executable},
@@ -137,31 +138,31 @@ pub(crate) fn finish_fresh_batch_after_export(
             instance
         })
         .collect();
-    let (mut completed, agg_counters) =
-        aggregate_logical_selectors(&req.logical_selectors, exact, &instances_with_coverage);
+    let (mut completed, unmatched_selectors) =
+        aggregate_with_zero_limit_bans(req, exact, &instances_with_coverage);
     let counters = RustCoverageBatchCounters {
         build_invocations: 1,
-        test_instances: agg_counters.test_instances,
+        test_instances: instances_with_coverage.len(),
         export_jobs: export_counters.export_jobs,
-        max_active_test_instances: agg_counters.test_instances.min(req.jobs),
+        max_active_test_instances: instances_with_coverage.len().min(req.jobs),
         max_active_exports: export_counters.max_active_exports,
-        unmatched_selectors: agg_counters.unmatched_selectors,
+        unmatched_selectors,
         max_objects_per_export: export_counters.max_objects_per_export,
         build_target_baseline_bytes: finish.build_target_baseline_bytes,
         export_phase_ms,
         process_residual_count: finish.process_residual_count,
         ..Default::default()
     };
-    if req.population_publication_selectors.is_some() && agg_counters.unmatched_selectors > 0 {
-        return Ok(RustCoverageBatchResult {
-            completed: Vec::new(),
-            batch_error: Some(RustLlvmCovError::InvalidRequest(format!(
-                "population coverage batch did not execute {} requested Rust selector(s)",
-                agg_counters.unmatched_selectors
-            ))),
-            counters,
-            test_binaries: Vec::new(),
-        });
+    // Selective and population finishes both reject unmatched selectors so a
+    // never-executed selector cannot be reported or cached as PASS.
+    let kind = if req.population_publication_selectors.is_some() {
+        "population coverage"
+    } else {
+        "selective coverage"
+    };
+    if let Some(err) = unmatched_selectors_batch_error(kind, unmatched_selectors, counters.clone())
+    {
+        return Ok(err);
     }
     match store_completed_outcomes(req, tools, identity, &mut completed) {
         Ok(()) => Ok(RustCoverageBatchResult {
@@ -187,32 +188,26 @@ pub(crate) fn finish_fresh_check_aggregate_after_export(
     finish: FreshBatchFinishContext,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
     let export_phase_ms = finish.export_started.elapsed().as_millis();
-    let (mut completed, agg_counters) =
-        aggregate_logical_selectors(&req.logical_selectors, export.exact, &export.instances);
+    let (mut completed, unmatched_selectors) =
+        aggregate_with_zero_limit_bans(req, export.exact, &export.instances);
     let mut counters = RustCoverageBatchCounters {
         build_invocations: 1,
-        test_instances: agg_counters.test_instances,
+        test_instances: export.instances.len(),
         aggregate_binaries: export.exported.len(),
         aggregate_exports: export.counters.export_jobs,
-        max_active_test_instances: agg_counters.test_instances.min(req.jobs),
+        max_active_test_instances: export.instances.len().min(req.jobs),
         max_active_exports: export.counters.max_active_exports,
-        unmatched_selectors: agg_counters.unmatched_selectors,
+        unmatched_selectors,
         max_objects_per_export: export.counters.max_objects_per_export,
         build_target_baseline_bytes: finish.build_target_baseline_bytes,
         export_phase_ms,
         process_residual_count: finish.process_residual_count,
         ..Default::default()
     };
-    if agg_counters.unmatched_selectors > 0 {
-        return Ok(RustCoverageBatchResult {
-            completed: Vec::new(),
-            batch_error: Some(RustLlvmCovError::InvalidRequest(format!(
-                "check aggregate batch did not execute {} requested Rust selector(s)",
-                agg_counters.unmatched_selectors
-            ))),
-            counters,
-            test_binaries: Vec::new(),
-        });
+    if let Some(err) =
+        unmatched_selectors_batch_error("check aggregate", unmatched_selectors, counters.clone())
+    {
+        return Ok(err);
     }
     if completed
         .iter()

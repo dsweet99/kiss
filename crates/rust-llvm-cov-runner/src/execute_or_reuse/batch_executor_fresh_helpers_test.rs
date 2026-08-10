@@ -25,10 +25,11 @@ pub(crate) fn fake_runner() -> BatchSubprocessRunner {
         let bin = plan.build_target.join("bin");
         fs::write(&bin, b"binary").unwrap();
         write_shim_metadata(&plan.target_runner_output_dir, "pkg::bin$alpha", &bin);
+        write_shim_metadata(&plan.target_runner_output_dir, "pkg::bin$beta", &bin);
         Ok(crate::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
             exit_code: Some(0),
             stdout: format!(
-                "{{\"reason\":\"compiler-artifact\",\"executable\":\"{}\",\"filenames\":[\"/tmp/a.o\"],\"fresh\":false}}\n{{\"reason\":\"build-finished\",\"success\":true}}\n{{\"type\":\"test\",\"event\":\"ok\",\"name\":\"pkg::bin$alpha\",\"exec_time\":0.001}}\n",
+                "{{\"reason\":\"compiler-artifact\",\"executable\":\"{}\",\"filenames\":[\"/tmp/a.o\"],\"fresh\":false}}\n{{\"reason\":\"build-finished\",\"success\":true}}\n{{\"type\":\"test\",\"event\":\"ok\",\"name\":\"pkg::bin$alpha\",\"exec_time\":0.001}}\n{{\"type\":\"test\",\"event\":\"ok\",\"name\":\"pkg::bin$beta\",\"exec_time\":0.001}}\n",
                 bin.display()
             )
             .into_bytes(),
@@ -48,16 +49,15 @@ pub(crate) fn execute_rust_coverage_batch_fresh_with_fake(
     let plan = build_rust_coverage_batch_plan(req)
         .map_err(|message| RustLlvmCovError::InvalidRequest(format!("batch plan: {message}")))?;
     let _batch_guard = lock_batch(&req.cache_root)?;
+    let coverage_files = RustLineCoverage {
+        files: BTreeMap::from([(
+            "src/lib.rs".to_string(),
+            std::collections::BTreeSet::from([1]),
+        )]),
+    };
     let mut coverage = BTreeMap::new();
-    coverage.insert(
-        "pkg::bin$alpha".to_string(),
-        RustLineCoverage {
-            files: BTreeMap::from([(
-                "src/lib.rs".to_string(),
-                std::collections::BTreeSet::from([1]),
-            )]),
-        },
-    );
+    coverage.insert("pkg::bin$alpha".to_string(), coverage_files.clone());
+    coverage.insert("pkg::bin$beta".to_string(), coverage_files);
     let fake = Arc::new(FakeInstanceExporter::new(coverage));
     super::execute_fresh_batch_with_export_fn(
         req,

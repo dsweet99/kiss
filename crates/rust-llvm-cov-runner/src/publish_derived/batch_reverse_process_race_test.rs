@@ -124,7 +124,12 @@ fn assert_single_activation(
         &BTreeMap::from([("src/lib.rs".into(), BTreeSet::from([1_u32]))]),
     );
     if let Some(map) = hit {
-        assert!(map.values().all(|s| s.is_empty()) || map.is_empty());
+        // Fixture entries now carry real coverage for src/lib.rs:1.
+        let covered: BTreeSet<&str> = map.values().flatten().map(String::as_str).collect();
+        assert!(
+            covered.is_empty() || covered.contains("alpha") || covered.contains("beta"),
+            "reverse index must be coherent after concurrent publish: {map:?}"
+        );
     }
 }
 

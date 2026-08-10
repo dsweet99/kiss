@@ -18,6 +18,8 @@ pub(crate) mod batch_executor_finish_export;
 
 pub(crate) mod batch_executor_finish_store;
 
+pub(crate) mod batch_executor_finish_bans;
+
 pub(crate) mod batch_executor_fresh;
 
 pub(crate) mod batch_export;

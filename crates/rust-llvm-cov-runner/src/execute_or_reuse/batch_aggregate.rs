@@ -43,7 +43,8 @@ pub fn aggregate_logical_selectors(
         if matched.is_empty() {
             eprintln!("kiss: unmatched rust selector during aggregate: {selector}");
             counters.unmatched_selectors += 1;
-            outcomes.push(successful_empty_outcome(selector));
+            // Never report PASS for a selector that did not execute.
+            outcomes.push(unmatched_failed_outcome(selector));
             continue;
         }
         outcomes.push(aggregate_one_selector(selector, &matched));
@@ -51,17 +52,17 @@ pub fn aggregate_logical_selectors(
     (outcomes, counters)
 }
 
-fn successful_empty_outcome(selector: &str) -> RustLlvmCovOutcome {
+fn unmatched_failed_outcome(selector: &str) -> RustLlvmCovOutcome {
     RustLlvmCovOutcome {
         selector: selector.to_string(),
-        status: TestStatus::Passed,
-        exit_code: Some(0),
+        status: TestStatus::Failed,
+        exit_code: Some(1),
         duration: Duration::ZERO,
         coverage: RustLineCoverage {
             files: BTreeMap::new(),
         },
         test_binary_ids: Vec::new(),
-        cache_status: RustCovCacheStatus::MissStored,
+        cache_status: RustCovCacheStatus::FreshUnstored,
         stdout: None,
         stderr: None,
     }
@@ -217,12 +218,13 @@ mod tests {
     }
 
     #[test]
-    fn unmatched_selector_is_successful_empty() {
+    fn unmatched_selector_is_failed_not_pass() {
         let instances = vec![instance("pkg::bin$alpha", true, 1)];
         let (outcomes, counters) =
             aggregate_logical_selectors(&["missing".to_string()], false, &instances);
-        assert_eq!(outcomes[0].status, TestStatus::Passed);
-        assert_eq!(outcomes[0].exit_code, Some(0));
+        assert_eq!(outcomes[0].status, TestStatus::Failed);
+        assert_eq!(outcomes[0].exit_code, Some(1));
+        assert!(outcomes[0].coverage.files.is_empty());
         assert_eq!(counters.unmatched_selectors, 1);
     }
 

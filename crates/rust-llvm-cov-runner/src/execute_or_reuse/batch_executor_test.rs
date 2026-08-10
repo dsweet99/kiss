@@ -3,6 +3,7 @@ use crate::RustCovCacheStatus;
 use crate::RustLineCoverage;
 use crate::RustLlvmCovError;
 use crate::execute_or_reuse::batch_lock::lock_batch;
+use crate::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
 use crate::publish_derived_state;
 use crate::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
 use crate::test_support::{
@@ -37,6 +38,89 @@ fn all_hit_batch_returns_without_batch_lock_or_spawn() {
             .iter()
             .all(|outcome| { outcome.cache_status == RustCovCacheStatus::Hit })
     );
+    assert!(
+        result
+            .completed
+            .iter()
+            .all(|outcome| outcome.duration == Duration::from_millis(7)),
+        "warm hits must preserve entry durations"
+    );
+    assert!(
+        result
+            .completed
+            .iter()
+            .all(|outcome| !outcome.coverage.files.is_empty()),
+        "warm hits must carry non-empty coverage"
+    );
+}
+
+#[test]
+fn all_hit_rejects_empty_coverage_pass_entries() {
+    let repo = batch_executor_fixture_repo();
+    let req = batch_executor_request(repo.path());
+    store_batch_executor_selector(repo.path(), &req, "alpha");
+    store_batch_executor_selector(repo.path(), &req, "beta");
+    // Overwrite alpha with empty-coverage PASS (poison shape from old unmatched path).
+    let tools = tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
+    let path = crate::rust_cov_cache::rust_cov_cache_entry_path(&req.cache_root, &fingerprint);
+    let poison = RustCovCacheEntry::from_outcome(
+        &crate::RustLlvmCovOutcome {
+            selector: "alpha".to_string(),
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
+            test_binary_ids: Vec::new(),
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        },
+        &identity.generation_fingerprint,
+    );
+    // Bypass store_rust_cov_cache_entry stability guard so we can plant poison bytes.
+    fs::write(&path, serde_json::to_vec(&poison).unwrap()).unwrap();
+
+    let result = execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {
+        Ok(RustCoverageBatchResult {
+            completed: Vec::new(),
+            counters: RustCoverageBatchCounters {
+                build_invocations: 1,
+                ..Default::default()
+            },
+            batch_error: None,
+            test_binaries: Vec::new(),
+        })
+    })
+    .unwrap();
+    assert_eq!(result.counters.build_invocations, 1);
+    assert_eq!(result.counters.cache_hits, 0);
+}
+
+#[test]
+fn zero_limit_selectors_are_banned_without_fresh_execution() {
+    let repo = batch_executor_fixture_repo();
+    let mut req = batch_executor_request(repo.path());
+    req.force_rerun = true;
+    req.selector_timeout_millis = BTreeMap::from([
+        ("alpha".to_string(), 0),
+        ("beta".to_string(), 0),
+    ]);
+    let result = execute_rust_coverage_batch_with_fresh(&req, &tools(), |_req, _tools, _identity, _plan| {
+        panic!("banned selectors must not invoke fresh execution");
+    })
+    .unwrap();
+    assert_eq!(result.completed.len(), 2);
+    assert!(
+        result
+            .completed
+            .iter()
+            .all(|outcome| outcome.status == TestStatus::TimedOut)
+    );
+    assert_eq!(result.counters.build_invocations, 0);
 }
 
 #[test]

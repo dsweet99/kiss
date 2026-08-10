@@ -77,7 +77,8 @@ fn build_instance_results_and_export_requests_cover_finish_helpers() {
 #[test]
 fn finish_fresh_batch_after_export_stores_completed_outcomes() {
     let repo = batch_executor_fixture_repo();
-    let req = batch_executor_request(repo.path());
+    let mut req = batch_executor_request(repo.path());
+    req.logical_selectors = vec!["alpha".to_string()];
     let tools = witness_batch_tools();
     let identity = batch_identity(&req, &tools).unwrap();
     let instances = vec![crate::execute_or_reuse::batch_aggregate::InstanceResult {
@@ -110,7 +111,7 @@ fn finish_fresh_batch_after_export_stores_completed_outcomes() {
     )
     .expect("finish_fresh_batch_after_export");
     assert!(result.batch_error.is_none());
-    assert_eq!(result.completed.len(), 2);
+    assert_eq!(result.completed.len(), 1);
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     assert!(load_rust_cov_cache_entry(&req.cache_root, &fingerprint).is_some());
 }

@@ -101,7 +101,7 @@ fn load_and_publish_durations_from_entries_round_trip() {
     let pairs = load_durations_from_entries(&req.cache_root, &pop, &identity, &req, &tools)
         .expect("entry durations");
     assert_eq!(pairs.len(), 2);
-    assert!(pairs.iter().all(|(_, d)| *d == Duration::from_millis(1)));
+    assert!(pairs.iter().all(|(_, d)| *d == Duration::from_millis(7)));
 
     try_publish_durations_after_population(
         &req.cache_root,

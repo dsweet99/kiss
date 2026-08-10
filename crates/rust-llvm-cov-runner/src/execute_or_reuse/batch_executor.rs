@@ -70,6 +70,25 @@ where
     let plan = build_rust_coverage_batch_plan(req)
         .map_err(|message| RustLlvmCovError::InvalidRequest(format!("batch plan: {message}")))?;
 
+    // Zero-limit bans never execute, even under force_rerun.
+    if !req.logical_selectors.is_empty()
+        && req
+            .logical_selectors
+            .iter()
+            .all(|selector| selector_timeout_is_ban(req, selector))
+    {
+        return Ok(with_process_reverse_query_counters(RustCoverageBatchResult {
+            completed: req
+                .logical_selectors
+                .iter()
+                .map(|selector| banned_timeout_outcome(selector))
+                .collect(),
+            batch_error: None,
+            counters: RustCoverageBatchCounters::default(),
+            test_binaries: Vec::new(),
+        }));
+    }
+
     if matches!(
         req.coverage_output_mode,
         CoverageOutputMode::SelectorEntries
@@ -203,11 +222,15 @@ fn all_hit_batch_result(
     let Some(completed) = all_hit_outcomes(req, tools, identity)? else {
         return Ok(None);
     };
+    let cache_hits = completed
+        .iter()
+        .filter(|outcome| outcome.cache_status == RustCovCacheStatus::Hit)
+        .count();
     Ok(Some(RustCoverageBatchResult {
         completed,
         batch_error: None,
         counters: RustCoverageBatchCounters {
-            cache_hits: req.logical_selectors.len(),
+            cache_hits,
             ..Default::default()
         },
         test_binaries: Vec::new(),
@@ -284,79 +307,60 @@ fn all_hit_outcomes(
     tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
 ) -> Result<Option<Vec<RustLlvmCovOutcome>>, RustLlvmCovError> {
-    if let Some(true) = crate::execute_or_reuse::batch_warm_hit_seal::try_warm_all_hit_seal(req, identity) {
-        return Ok(Some(synthetic_all_passed_outcomes(req)));
+    // Negative seal: known incomplete set → skip per-entry opens.
+    if let Some(false) =
+        crate::execute_or_reuse::batch_warm_hit_seal::try_warm_all_hit_seal(req, identity)
+    {
+        return Ok(None);
     }
     let mut completed = Vec::with_capacity(req.logical_selectors.len());
+    let mut saw_cache_hit = false;
     for selector in &req.logical_selectors {
+        if selector_timeout_is_ban(req, selector) {
+            completed.push(banned_timeout_outcome(selector));
+            continue;
+        }
         let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, selector);
-        let path = crate::rust_cov_cache::rust_cov_cache_entry_path(&req.cache_root, &fingerprint);
-        let mut file = match std::fs::File::open(&path) {
-            Ok(file) => file,
-            Err(_) => return Ok(None),
+        let Some(entry) =
+            crate::rust_cov_cache::load_rust_cov_cache_entry(&req.cache_root, &fingerprint)
+        else {
+            return Ok(None);
         };
-        let mut prefix = [0_u8; 512];
-        let n = std::io::Read::read(&mut file, &mut prefix).map_err(RustLlvmCovError::Io)?;
-        let status = status_from_entry_prefix(&prefix[..n]).ok_or_else(|| {
-            RustLlvmCovError::InvalidRequest(format!(
-                "invalid rust cov cache entry {}",
-                path.display()
-            ))
-        })?;
         // FAIL/TIMEOUT must be re-executed; only Passed outcomes are cache-reusable.
-        if status != TestStatus::Passed {
+        if entry.status != TestStatus::Passed {
             return Ok(None);
         }
-        completed.push(RustLlvmCovOutcome {
-            selector: selector.clone(),
-            status,
-            exit_code: Some(0),
-            duration: Duration::ZERO,
-            coverage: Default::default(),
-            test_binary_ids: Vec::new(),
-            cache_status: RustCovCacheStatus::Hit,
-            stdout: None,
-            stderr: None,
-        });
+        // Match Python entry_is_reusable: empty coverage is not reusable.
+        if entry.coverage.files.is_empty() {
+            return Ok(None);
+        }
+        completed.push(outcome_from_entry(entry, RustCovCacheStatus::Hit));
+        saw_cache_hit = true;
     }
-    let _ = crate::execute_or_reuse::batch_warm_hit_seal::write_warm_all_hit_seal(req, identity, true);
+    if saw_cache_hit {
+        let _ = crate::execute_or_reuse::batch_warm_hit_seal::write_warm_all_hit_seal(req, identity, true);
+    }
     Ok(Some(completed))
 }
 
-fn synthetic_all_passed_outcomes(req: &RustCoverageBatchRequest) -> Vec<RustLlvmCovOutcome> {
-    req.logical_selectors
-        .iter()
-        .map(|selector| RustLlvmCovOutcome {
-            selector: selector.clone(),
-            status: TestStatus::Passed,
-            exit_code: Some(0),
-            duration: Duration::ZERO,
-            coverage: Default::default(),
-            test_binary_ids: Vec::new(),
-            cache_status: RustCovCacheStatus::Hit,
-            stdout: None,
-            stderr: None,
-        })
-        .collect()
+fn selector_timeout_is_ban(req: &RustCoverageBatchRequest, selector: &str) -> bool {
+    req.selector_timeout_millis.get(selector) == Some(&0)
 }
 
-fn status_from_entry_prefix(bytes: &[u8]) -> Option<TestStatus> {
-    // Entries are small JSON objects; locate the status token without full deserialize.
-    const FAILED: &[u8] = br#""status":"Failed""#;
-    const PASSED: &[u8] = br#""status":"Passed""#;
-    const TIMED_OUT: &[u8] = br#""status":"TimedOut""#;
-    if bytes.windows(TIMED_OUT.len()).any(|window| window == TIMED_OUT) {
-        Some(TestStatus::TimedOut)
-    } else if bytes.windows(FAILED.len()).any(|window| window == FAILED) {
-        Some(TestStatus::Failed)
-    } else if bytes.windows(PASSED.len()).any(|window| window == PASSED) {
-        Some(TestStatus::Passed)
-    } else {
-        None
+fn banned_timeout_outcome(selector: &str) -> RustLlvmCovOutcome {
+    RustLlvmCovOutcome {
+        selector: selector.to_string(),
+        status: TestStatus::TimedOut,
+        exit_code: Some(124),
+        duration: Duration::ZERO,
+        coverage: Default::default(),
+        test_binary_ids: Vec::new(),
+        cache_status: RustCovCacheStatus::FreshUnstored,
+        stdout: None,
+        stderr: None,
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn outcome_from_entry(
     entry: crate::rust_cov_cache::RustCovCacheEntry,
     cache_status: RustCovCacheStatus,

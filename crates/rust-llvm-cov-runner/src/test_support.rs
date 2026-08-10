@@ -106,9 +106,12 @@ pub(crate) fn store_batch_executor_selector(
             selector: selector.to_string(),
             status: TestStatus::Passed,
             exit_code: Some(0),
-            duration: Duration::from_millis(1),
+            duration: Duration::from_millis(7),
             coverage: RustLineCoverage {
-                files: BTreeMap::new(),
+                files: BTreeMap::from([(
+                    "src/lib.rs".to_string(),
+                    std::collections::BTreeSet::from([1]),
+                )]),
             },
             test_binary_ids: vec!["test-bin".to_string()],
             cache_status: RustCovCacheStatus::MissStored,

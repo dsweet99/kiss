@@ -96,16 +96,36 @@ fn build_nextest_default_filter(req: &RustCoverageBatchRequest) -> String {
     // A full CheckAggregate population enumerates thousands of selectors. Building
     // an OR of every test name makes nextest matching pathologically slow and
     // dominates cold `kiss cov` wall time versus native llvm-cov nextest.
+    let runnable: Vec<&String> = req
+        .logical_selectors
+        .iter()
+        .filter(|selector| req.selector_timeout_millis.get(*selector) != Some(&0))
+        .collect();
     if matches!(
         req.coverage_output_mode,
         CoverageOutputMode::CheckAggregate { .. }
     ) && req.logical_selectors.len() > 64
     {
-        return "all()".to_string();
+        if runnable.len() == req.logical_selectors.len() {
+            return "all()".to_string();
+        }
+        // Still run the population, but exclude zero-limit bans from execution.
+        let excludes = req
+            .logical_selectors
+            .iter()
+            .filter(|selector| req.selector_timeout_millis.get(*selector) == Some(&0))
+            .map(|selector| format!("not test({})", nextest_filter_string(selector, true)))
+            .collect::<Vec<_>>()
+            .join(" & ");
+        return format!("all() & {excludes}");
+    }
+    if runnable.is_empty() {
+        // No runnable selectors (all banned): nextest must match nothing.
+        return "not all()".to_string();
     }
     let exact = rust_test_args_request_exact_match(&req.test_args);
-    req.logical_selectors
-        .iter()
+    runnable
+        .into_iter()
         .map(|selector| format!("test({})", nextest_filter_string(selector, exact)))
         .collect::<Vec<_>>()
         .join(" | ")

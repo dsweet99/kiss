@@ -47,7 +47,7 @@ fn fresh_batch_stores_passed_selector_entries() {
             && outcome.cache_status == RustCovCacheStatus::MissStored
     }));
     assert_eq!(result.counters.build_invocations, 1);
-    assert_eq!(result.counters.export_jobs, 1);
+    assert_eq!(result.counters.export_jobs, 2);
     assert_eq!(result.counters.build_target_baseline_bytes, 12);
 }
 
@@ -178,7 +178,8 @@ fn subprocess_exporter_wrapper_propagates_pre_export_failures() {
 #[test]
 fn subprocess_exporter_wrapper_handles_failed_test_without_export_jobs() {
     let repo = batch_executor_fixture_repo();
-    let req = batch_executor_request(repo.path());
+    let mut req = batch_executor_request(repo.path());
+    req.logical_selectors = vec!["alpha".to_string()];
     let runner = BatchSubprocessRunner::from_fn(|_, plan| {
         fs::create_dir_all(&plan.build_target).unwrap();
         let bin = plan.build_target.join("bin");

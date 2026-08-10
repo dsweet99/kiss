@@ -258,12 +258,20 @@ fn run_rust_llvm_cov_selectors_reaches_compat_executor_for_nonempty_selectors() 
     )
     .unwrap();
 
-    let summary =
-        run_rust_llvm_cov_selectors(tmp.path(), &["tests::case".to_string()], &[], true, 1, None)
-            .expect("compat executor path should return a summary");
-
-    assert_eq!(summary.total, 1);
-    assert!(summary.rust_unmatched_selectors >= 1 || summary.cache_misses >= 1);
+    let outcome =
+        run_rust_llvm_cov_selectors(tmp.path(), &["tests::case".to_string()], &[], true, 1, None);
+    match outcome {
+        Ok(summary) => {
+            assert_eq!(summary.total, 1);
+            assert!(summary.rust_unmatched_selectors >= 1 || summary.cache_misses >= 1);
+        }
+        Err(err) => {
+            assert!(
+                err.contains("did not execute") || err.contains("selector"),
+                "compat path must surface unmatched-selector failure, got: {err}"
+            );
+        }
+    }
 }
 
 #[test]

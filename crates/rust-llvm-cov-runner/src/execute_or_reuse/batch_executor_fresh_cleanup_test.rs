@@ -131,7 +131,8 @@ fn fresh_batch_rejects_nonzero_exit_without_terminal_events() {
 #[test]
 fn fresh_batch_allows_nonzero_exit_when_terminal_events_exist() {
     let repo = batch_executor_fixture_repo();
-    let req = batch_executor_request(repo.path());
+    let mut req = batch_executor_request(repo.path());
+    req.logical_selectors = vec!["alpha".to_string()];
     let runner = BatchSubprocessRunner::from_fn(|_, plan| {
         fs::create_dir_all(&plan.build_target).unwrap();
         let bin = plan.build_target.join("bin");
