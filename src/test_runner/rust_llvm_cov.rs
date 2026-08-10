@@ -11,7 +11,9 @@ use rust_llvm_cov_runner::{
 };
 
 use super::last_status::rust_last_status_identity;
-use super::runners::SelectorExecutionSummary;
+use super::runners::{
+    SelectorExecutionSummary, kiss_test_report_id, rust_logical_to_kiss_test_ids,
+};
 use crate::test_runner::rust_coverage_index::relevant_rust_batch_env;
 use crate::test_runner::rust_llvm_cov_error::map_rust_llvm_cov_error;
 
@@ -225,10 +227,13 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
 ) -> Result<RustCoverageBatchRequest, String> {
     validate_supported_rust_test_args(extra)?;
     let gate = kiss::GateConfig::load();
+    // Map logical nextest ids → PATH::symbol before applying path-pattern limits.
+    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
     let selector_timeout_millis = selectors
         .iter()
         .map(|selector| {
-            let secs = kiss::limit_for_selector(&gate.max_unit_test_seconds, selector);
+            let for_limit = kiss_test_report_id(&report_ids, selector);
+            let secs = kiss::limit_for_selector(&gate.max_unit_test_seconds, &for_limit);
             let millis = if secs.is_finite() && secs > 0.0 {
                 (secs * 1000.0).round().clamp(1.0, u64::MAX as f64) as u64
             } else {

@@ -41,12 +41,12 @@ fn run_rslip_selectors_rejects_zero_jobs_before_spawning() {
 
 #[test]
 fn batch_template_applies_per_selector_timeouts() {
-    // Regression: empty-selector templates used to force the "*" catch-all timeout.
+    // Allowed paths share the generous wall kill; zero/ban still short-circuits.
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),
         r#"[gate]
-max_unit_test_seconds = [["tests/slow/dbs", 180], ["*", 60]]
+max_unit_test_seconds = [["tests/slow/dbs", 180], ["tests/allowed", 60], ["*", 0]]
 "#,
     )
     .unwrap();
@@ -55,10 +55,12 @@ max_unit_test_seconds = [["tests/slow/dbs", 180], ["*", 60]]
     let slow = timeout_for_selector(
         "tests/slow/dbs/test_vdb_scoped_integration.py::test_aremove_bulk_eckv_integration",
     );
-    let fast = timeout_for_selector("tests/fast/test_foo.py::test_ok");
+    let allowed = timeout_for_selector("tests/allowed/test_foo.py::test_ok");
+    let banned = timeout_for_selector("tests/fast/test_foo.py::test_ok");
     std::env::set_current_dir(previous).unwrap();
-    assert_eq!(slow, Duration::from_secs(180));
-    assert_eq!(fast, Duration::from_secs(60));
+    assert_eq!(slow, DEFAULT_PYTEST_TIMEOUT);
+    assert_eq!(allowed, DEFAULT_PYTEST_TIMEOUT);
+    assert_eq!(banned, Duration::ZERO);
 }
 
 #[test]
@@ -154,10 +156,11 @@ fn rslip_request_and_version_contracts_are_explicit() {
     assert_eq!(req.cwd, tmp.path());
     assert_eq!(req.pytest_args, extra);
     assert!(req.force_rerun);
-    // Path-pattern time table from cwd `.kissconfig` (or default "*"=2) caps the kill timeout.
+    // Allowed paths use a generous wall kill; path-pattern SLA is applied to
+    // call-phase duration after the test finishes.
     let expected = timeout_for_selector("tests/test_app.py::test_ok");
     assert_eq!(req.timeout, Some(expected));
-    assert!(expected <= DEFAULT_PYTEST_TIMEOUT);
+    assert_eq!(expected, DEFAULT_PYTEST_TIMEOUT);
     assert!(python_version_supports_rslip("3.12.0"));
     assert!(python_version_supports_rslip("4.0.0"));
     assert!(!python_version_supports_rslip("3.11.9"));

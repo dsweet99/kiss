@@ -43,9 +43,11 @@ fn print_rust_llvm_cov_outcome(
     report_id: &str,
     gate: &kiss::GateConfig,
 ) -> rpytest_runner::TestStatus {
+    // Limits must use PATH::symbol report ids so patterns like ["rust", 10] match.
+    // Logical nextest ids (bare fn / tests::fn) fall through to ["*", 0] otherwise.
     let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
         outcome.status,
-        &outcome.selector,
+        report_id,
         outcome.duration,
         gate,
     );

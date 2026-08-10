@@ -307,12 +307,9 @@ fn timeout_for_selector_with_gate(gate: &kiss::GateConfig, selector: &str) -> Du
         // without invoking the pytest runner.
         return Duration::ZERO;
     }
-    let limit = Duration::from_secs_f64(limit);
-    if limit < DEFAULT_PYTEST_TIMEOUT {
-        limit
-    } else {
-        DEFAULT_PYTEST_TIMEOUT
-    }
+    // Wall kill must outlast coverage/import setup. SLA enforcement uses
+    // call-phase duration via apply_unit_test_time_limit, not this timer.
+    DEFAULT_PYTEST_TIMEOUT
 }
 
 pub(crate) fn detect_rslip_versions(repo_root: &Path) -> Result<(String, String), String> {

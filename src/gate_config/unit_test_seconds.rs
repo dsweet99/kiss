@@ -273,4 +273,30 @@ mod tests {
         assert!((limit_for_selector(&rules, "tests/fast/a.py::t") - 4.0).abs() < f64::EPSILON);
         assert!((limit_for_selector(&rules, "src/lib.rs::t") - 0.0).abs() < f64::EPSILON);
     }
+
+    #[test]
+    fn rust_path_pattern_matches_report_ids_not_bare_logical_names() {
+        // .kissconfig ["rust", 10] is meant for PATH::symbol report ids.
+        // Bare nextest logical ids must not silently fall through to ["*", 0]
+        // when the caller maps them via rust_logical_to_kiss_test_ids first.
+        let arr = Value::Array(vec![
+            Value::Array(vec![Value::String("rust".into()), Value::Integer(10)]),
+            Value::Array(vec![Value::String("*".into()), Value::Integer(0)]),
+        ]);
+        let rules = parse_max_unit_test_seconds(&arr).unwrap();
+        assert!(
+            (limit_for_selector(&rules, "rust/sameq_style/src/lib.rs::test_check_clean") - 10.0)
+                .abs()
+                < f64::EPSILON
+        );
+        assert!(
+            (limit_for_selector(&rules, "rust/sameq_style/tests/aclick_usage.rs::kiss_bare_rule_api")
+                - 10.0)
+                .abs()
+                < f64::EPSILON
+        );
+        // Without the path prefix, first-match falls through to the catch-all ban.
+        assert!((limit_for_selector(&rules, "kiss_bare_rule_api") - 0.0).abs() < f64::EPSILON);
+        assert!((limit_for_selector(&rules, "tests::test_check_clean") - 0.0).abs() < f64::EPSILON);
+    }
 }

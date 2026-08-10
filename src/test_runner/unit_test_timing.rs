@@ -10,6 +10,7 @@ use kiss::Language;
 use kiss::stats::PercentileSummary;
 
 use crate::test_runner::check_line_coverage::repository_root_for_universe;
+use crate::test_runner::runners::{kiss_test_report_id, rust_logical_to_kiss_test_ids};
 use crate::test_runner::rust_coverage_index::{
     resolved_rust_batch_request_parts, rust_coverage_cache_root,
 };
@@ -117,12 +118,15 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
         &tools,
         None,
     )?;
+    // Durable cache keys are nextest logical ids; path-pattern limits need
+    // PATH::symbol report ids so ["rust", N] matches instead of falling through to ["*", 0].
+    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
     Some(
         pairs
             .into_iter()
             .map(|(selector, duration)| UnitTestTiming {
                 language: Language::Rust,
-                selector,
+                selector: kiss_test_report_id(&report_ids, &selector),
                 duration,
             })
             .collect(),

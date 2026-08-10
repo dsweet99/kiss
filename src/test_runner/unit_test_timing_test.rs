@@ -130,6 +130,36 @@ fn path_pattern_limits_differ_per_selector() {
 }
 
 #[test]
+fn rust_report_id_selectors_match_rust_path_pattern() {
+    // Regression: bare nextest logical ids fall through to ["*", 0].
+    // load_rust_timings maps them to PATH::symbol before evaluate_runtime_gate.
+    let rules = vec![
+        ("rust".to_string(), 10.0),
+        ("*".to_string(), 0.0),
+    ];
+    let timings = TimingPopulation::Complete(vec![
+        UnitTestTiming {
+            language: Language::Rust,
+            selector: "rust/sameq_style/src/lib.rs::test_check_clean".into(),
+            duration: Duration::from_millis(500),
+        },
+        UnitTestTiming {
+            language: Language::Rust,
+            selector: "bare_logical_name".into(),
+            duration: Duration::from_millis(1),
+        },
+    ]);
+    match evaluate_runtime_gate(&timings, &rules) {
+        RuntimeGateEval::Failed(v) => {
+            assert_eq!(v.len(), 1);
+            assert_eq!(v[0].selector, "bare_logical_name");
+            assert!((v[0].limit_seconds - 0.0).abs() < f64::EPSILON);
+        }
+        other => panic!("expected Failed, got {other:?}"),
+    }
+}
+
+#[test]
 fn empty_lang_selection_is_complete_empty() {
     let tmp = tempfile::tempdir().unwrap();
     let pop = collect_current_unit_test_timings(TimingCollectOpts {
