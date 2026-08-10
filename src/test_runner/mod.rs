@@ -18,6 +18,7 @@ mod rust_coverage_index;
 mod rust_llvm_cov;
 mod targets;
 pub(crate) mod unit_test_timing;
+mod rust_report_id_cache;
 mod watch;
 mod rust_batch_interrupt;
 mod rust_llvm_cov_error;
@@ -147,6 +148,7 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     match plan_for_invocation(&a) {
         Ok(mut planned) => {
             apply_cold_initialization_population(&a, &mut planned);
+            apply_force_complete_population(&a, &mut planned);
             if let Err(e) = apply_force_bad(&a, &mut planned) {
                 eprintln!("{e}");
                 return RunTestOnceOutcome::Code(1);
@@ -260,6 +262,34 @@ pub(crate) fn apply_cold_initialization_population(a: &RunTestCmdArgs<'_>, plann
         None => {
             planned.python_population_required = true;
             planned.rust_population_required = true;
+        }
+    }
+}
+
+/// Complete `--force` always requires a full population phase, even when the
+/// prior generation is current (plan invariant 2).
+pub(crate) fn apply_force_complete_population(a: &RunTestCmdArgs<'_>, planned: &mut PlannedSelectors) {
+    if !a.force_rerun {
+        return;
+    }
+    match a.lang_filter {
+        Some(Language::Python) => {
+            if !planned.py_sel.is_empty() {
+                planned.python_population_required = true;
+            }
+        }
+        Some(Language::Rust) => {
+            if !planned.rs_sel.is_empty() {
+                planned.rust_population_required = true;
+            }
+        }
+        None => {
+            if !planned.py_sel.is_empty() {
+                planned.python_population_required = true;
+            }
+            if !planned.rs_sel.is_empty() {
+                planned.rust_population_required = true;
+            }
         }
     }
 }

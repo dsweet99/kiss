@@ -16,7 +16,7 @@ use crate::analyze::line_coverage::{
 use crate::analyze_cache::{fnv1a64, mix_sorted_paths_len_mtime};
 use crate::test_runner::check_line_coverage::RequiredCoverageLanguages;
 
-const SCHEMA_VERSION: &str = "kiss-cov-records-v1";
+const SCHEMA_VERSION: &str = "kiss-cov-records-v2";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CovRecordsCache {
@@ -101,7 +101,15 @@ pub(crate) fn python_backend_identity_for_file_list(repo_root: &Path) -> Option<
 }
 
 fn python_backend_identity(repo_root: &Path) -> Option<String> {
-    let path = find_python_population_manifest(repo_root)?;
+    if let Ok(pinned) =
+        crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(repo_root)
+    {
+        return Some(format!(
+            "py-gen:{}:{}",
+            pinned.generation_id, pinned.plan.base_identity.input_fingerprint
+        ));
+    }
+    let path = python_coverage_cache_root_population(repo_root)?;
     let bytes = fs::read(path).ok()?;
     // Ignore selectors: counting them forces a full array parse of a large manifest.
     #[derive(serde::Deserialize)]
@@ -116,16 +124,10 @@ fn python_backend_identity(repo_root: &Path) -> Option<String> {
     ))
 }
 
-fn find_python_population_manifest(repo_root: &Path) -> Option<PathBuf> {
-    let hosts = repo_root.join(".kiss/rslip_cache/hosts");
-    let host_dirs = fs::read_dir(hosts).ok()?;
-    for entry in host_dirs.flatten() {
-        let candidate = entry.path().join("population.json");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
+fn python_coverage_cache_root_population(repo_root: &Path) -> Option<PathBuf> {
+    let cache = crate::test_runner::python_coverage_index::python_coverage_cache_root(repo_root).ok()?;
+    let candidate = cache.join("population.json");
+    candidate.is_file().then_some(candidate)
 }
 
 pub(crate) fn rust_backend_identity_for_file_list(repo_root: &Path) -> Option<String> {

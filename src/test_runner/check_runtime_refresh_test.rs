@@ -241,6 +241,7 @@ fn coverage_refresh_error_constructors_and_display_cover_all_arms() {
         crate::test_runner::check_line_coverage::RuntimeCoverageLoadError {
             language: "Rust",
             reason: "missing aggregate".into(),
+            problem_selectors: Vec::new(),
         },
     );
     let exec = super::CoverageRefreshError::TestExecution {

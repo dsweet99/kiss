@@ -355,3 +355,43 @@ fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
     crate::test_runner::apply_force_bad(&args_on, &mut planned).unwrap();
     assert!(planned.python_prior_failure_selectors.is_empty());
 }
+
+#[test]
+fn apply_force_complete_population_requires_python_population() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut planned = crate::test_runner::PlannedSelectors {
+        repo_root: tmp.path().to_path_buf(),
+        py_sel: vec!["tests/a.py::t".into()],
+        rs_sel: Vec::new(),
+        python_population_required: false,
+        rust_population_required: false,
+        rust_source_paths: Vec::new(),
+        rust_vcs_source_paths: 0,
+        rust_snapshot_delta_modified: 0,
+        rust_snapshot_delta_structural: false,
+        python_prior_failure_selectors: Vec::new(),
+        rust_prior_failure_selectors: Vec::new(),
+        coverage_decision_engine_used: false,
+        rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+        ignore: Vec::new(),
+        workspace_files_fingerprint: None,
+        skip_python_index_rebuild_after_selective: false,
+    };
+    let args = crate::test_runner::RunTestCmdArgs {
+        invocation: crate::bin_cli::args::TestInvocation::All,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: false,
+        force_rerun: true,
+        force_bad: false,
+        metrics: false,
+        jobs: 1,
+        extra: &[],
+        python_extra: &[],
+        ignore: &[],
+        lang_filter: None,
+        config_main_branch: None,
+    };
+    crate::test_runner::apply_force_complete_population(&args, &mut planned);
+    assert!(planned.python_population_required);
+}

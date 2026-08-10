@@ -1,27 +1,12 @@
 use super::{CovFileListKey, store_cov_file_list, try_load_cov_file_list};
-use std::fs;
+use crate::analyze::cov_cache_test_support::write_python_population_for_cache_tests;
 use std::path::PathBuf;
-
-fn write_python_population(repo: &std::path::Path) {
-    let host = repo.join(".kiss/rslip_cache/hosts/testhost");
-    fs::create_dir_all(&host).unwrap();
-    fs::write(
-        host.join("population.json"),
-        r#"{
-            "schema_version":"rslip-python-population-v1",
-            "input_fingerprint":"abc",
-            "entries_fingerprint":"def",
-            "selectors":["t::one"]
-        }"#,
-    )
-    .unwrap();
-}
 
 #[test]
 fn cov_file_list_cache_round_trip_and_population_invalidation() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
-    write_python_population(repo);
+    write_python_population_for_cache_tests(repo, "abc");
     let py = PathBuf::from("pkg/a.py");
     let key = CovFileListKey {
         repo_root: repo,
@@ -34,15 +19,6 @@ fn cov_file_list_cache_round_trip_and_population_invalidation() {
     assert_eq!(loaded_py, vec![py]);
     assert!(loaded_rs.is_empty());
 
-    fs::write(
-        repo.join(".kiss/rslip_cache/hosts/testhost/population.json"),
-        r#"{
-            "schema_version":"rslip-python-population-v1",
-            "input_fingerprint":"changed",
-            "entries_fingerprint":"def",
-            "selectors":["t::one"]
-        }"#,
-    )
-    .unwrap();
+    write_python_population_for_cache_tests(repo, "changed");
     assert!(try_load_cov_file_list(&key).is_none());
 }

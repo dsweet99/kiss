@@ -206,3 +206,120 @@ fn load_python_runtime_coverage_matches_configured_pytest_plugin_args() {
         "expected incomplete cache after identity match; got: {msg}"
     );
 }
+
+#[test]
+fn incomplete_generation_reports_problem_selectors() {
+    use crate::test_runner::python_coverage_index::generation::{
+        PopulationEvidence, SelectorEvidence, TimingCacheDisposition,
+        population_plan_for_selectors, publish_python_population_generation,
+    };
+    use crate::test_runner::python_coverage_index::{
+        GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
+    };
+    use crate::test_runner::runners::detect_rslip_versions;
+    use rpytest_runner::TestStatus;
+    use std::collections::BTreeMap;
+    use std::time::Duration;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
+    let Ok((py, pt)) = detect_rslip_versions(repo) else {
+        return;
+    };
+    let selectors = vec!["t.py::ok".into(), "t.py::bad".into()];
+    let mut plan = population_plan_for_selectors(repo, &selectors, &[]).unwrap();
+    plan.base_identity.python_version = py;
+    plan.base_identity.pytest_version = pt;
+    plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
+    let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
+    evidence.absorb_selector(SelectorEvidence {
+        selector: "t.py::ok".into(),
+        raw_status: TestStatus::Passed,
+        effective_status: TestStatus::Passed,
+        duration: Some(Duration::from_millis(1)),
+        cache_disposition: TimingCacheDisposition::MissStored,
+        reason: None,
+        coverage: BTreeMap::from([("app.py".into(), [1u32].into_iter().collect())]),
+    });
+    evidence.absorb_selector(SelectorEvidence {
+        selector: "t.py::bad".into(),
+        raw_status: TestStatus::Failed,
+        effective_status: TestStatus::Failed,
+        duration: Some(Duration::from_millis(1)),
+        cache_disposition: TimingCacheDisposition::MissStored,
+        reason: Some("boom".into()),
+        coverage: BTreeMap::new(),
+    });
+    publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
+        .unwrap();
+    clear_python_generation_warm_memo();
+    let err = load_python_runtime_coverage(repo).expect_err("incomplete");
+    assert_eq!(err.reason, "incomplete population");
+    assert_eq!(err.problem_selectors, vec!["t.py::bad".to_string()]);
+}
+
+#[test]
+fn load_rust_runtime_coverage_fails_closed_without_cache() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join(".git")).unwrap();
+    let err = load_rust_runtime_coverage(tmp.path(), &[]).expect_err("no rust cache");
+    assert_eq!(err.language, "Rust");
+}
+
+#[test]
+fn validated_cov_inputs_captures_generation_id_when_present() {
+    use super::ValidatedCovInputs;
+    use crate::analyze::line_coverage::RuntimeCoverageSnapshot;
+    use crate::test_runner::python_coverage_index::generation::{
+        PopulationEvidence, SelectorEvidence, TimingCacheDisposition, population_plan_for_selectors,
+        publish_python_population_generation,
+    };
+    use crate::test_runner::python_coverage_index::{
+        GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
+    };
+    use crate::test_runner::runners::detect_rslip_versions;
+    use rpytest_runner::TestStatus;
+    use std::collections::BTreeMap;
+    use std::time::Duration;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
+    let Ok((py, pt)) = detect_rslip_versions(repo) else {
+        return;
+    };
+    let selector = "t.py::test_a".to_string();
+    let mut plan = population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    plan.base_identity.python_version = py;
+    plan.base_identity.pytest_version = pt;
+    plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
+    let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
+    evidence.absorb_selector(SelectorEvidence {
+        selector: selector.clone(),
+        raw_status: TestStatus::Passed,
+        effective_status: TestStatus::Passed,
+        duration: Some(Duration::from_millis(1)),
+        cache_disposition: TimingCacheDisposition::MissStored,
+        reason: None,
+        coverage: BTreeMap::from([("app.py".into(), [1u32].into_iter().collect())]),
+    });
+    let gen_id =
+        publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
+            .unwrap();
+    clear_python_generation_warm_memo();
+    let inputs = ValidatedCovInputs::from_snapshot(
+        RequiredCoverageLanguages {
+            python: true,
+            rust: false,
+        },
+        RuntimeCoverageSnapshot {
+            identity: "snap".into(),
+            covered_lines: BTreeMap::new(),
+        },
+        repo,
+    );
+    assert_eq!(inputs.python_generation_id.as_deref(), Some(gen_id.as_str()));
+}

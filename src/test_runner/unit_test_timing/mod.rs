@@ -4,13 +4,14 @@
 //! loads validated durable durations for the current Python/Rust populations.
 
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use kiss::Language;
 use kiss::stats::PercentileSummary;
 
 use crate::test_runner::check_line_coverage::repository_root_for_universe;
-use crate::test_runner::runners::{kiss_test_report_id, rust_logical_to_kiss_test_ids};
+use crate::test_runner::runners::kiss_test_report_id;
+use crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached;
 use crate::test_runner::rust_coverage_index::{
     resolved_rust_batch_request_parts, rust_coverage_cache_root,
 };
@@ -78,7 +79,7 @@ fn filter_timings_by_ignore(
     timings
 }
 
-fn selector_matches_ignore_prefix(selector: &str, ignore: &[String]) -> bool {
+pub(super) fn selector_matches_ignore_prefix(selector: &str, ignore: &[String]) -> bool {
     let path_part = selector.split_once("::").map_or(selector, |(p, _)| p);
     ignore.iter().any(|prefix| {
         path_part == prefix.as_str() || path_part.starts_with(&format!("{prefix}/"))
@@ -120,7 +121,8 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
     )?;
     // Durable cache keys are nextest logical ids; path-pattern limits need
     // PATH::symbol report ids so ["rust", N] matches instead of falling through to ["*", 0].
-    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
+    // Warm cov uses a fingerprint-keyed disk cache to avoid re-parsing the workspace.
+    let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]);
     Some(
         pairs
             .into_iter()
@@ -304,105 +306,11 @@ pub(crate) fn unit_test_runtime_sec_line_for_universe(
     format_unit_test_runtime_sec_line_with_totals(&timings, codebase_tests)
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct CovTimeGateOpts<'a> {
-    pub(crate) universe: &'a Path,
-    pub(crate) lang_filter: Option<Language>,
-    pub(crate) include: TimingLangInclude,
-    pub(crate) ignore: &'a [String],
-    pub(crate) limits: &'a [(String, f64)],
-    pub(crate) timing: bool,
-}
-
-/// Evaluate the unit-test time gate for `kiss cov`, with a fast path for sole `"*"`.
-pub(crate) fn evaluate_cov_time_gate(opts: CovTimeGateOpts<'_>) -> RuntimeGateEval {
-    if opts.limits.is_empty() {
-        return RuntimeGateEval::Disabled;
-    }
-    if opts.limits.len() == 1 && opts.limits[0].0 == "*" {
-        let fast = evaluate_sole_star_time_gate(opts, opts.limits[0].1);
-        if !matches!(fast, RuntimeGateEval::Incomplete) {
-            return fast;
-        }
-    }
-    let t_timings = Instant::now();
-    let timings = collect_current_unit_test_timings(TimingCollectOpts {
-        universe: opts.universe,
-        lang_filter: opts.lang_filter,
-        include: opts.include,
-        ignore: opts.ignore,
-    });
-    emit_timings_ms(opts.timing, t_timings);
-    evaluate_runtime_gate(&timings, opts.limits)
-}
-
-fn evaluate_sole_star_time_gate(opts: CovTimeGateOpts<'_>, limit_seconds: f64) -> RuntimeGateEval {
-    let t_timings = Instant::now();
-    let repo_root = repository_root_for_universe(opts.universe);
-    let want_python = opts.include.python
-        && matches!(opts.lang_filter, None | Some(Language::Python));
-    let want_rust =
-        opts.include.rust && matches!(opts.lang_filter, None | Some(Language::Rust));
-    let mut max = Duration::ZERO;
-    if want_python {
-        let pytest_args = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
-        let Some(py_max) =
-            crate::test_runner::python_coverage_index::load_current_python_population_max_duration(
-                &repo_root,
-                &pytest_args,
-            )
-        else {
-            emit_timings_ms(opts.timing, t_timings);
-            return RuntimeGateEval::Incomplete;
-        };
-        max = max.max(py_max);
-    }
-    if want_rust {
-        match collect_current_unit_test_timings(TimingCollectOpts {
-            universe: opts.universe,
-            lang_filter: Some(Language::Rust),
-            include: TimingLangInclude {
-                python: false,
-                rust: true,
-            },
-            ignore: opts.ignore,
-        }) {
-            TimingPopulation::Complete(rust) => {
-                for t in &rust {
-                    max = max.max(t.duration);
-                }
-            }
-            TimingPopulation::Incomplete => {
-                emit_timings_ms(opts.timing, t_timings);
-                return RuntimeGateEval::Incomplete;
-            }
-        }
-    }
-    emit_timings_ms(opts.timing, t_timings);
-    if max.as_secs_f64() < limit_seconds {
-        return RuntimeGateEval::Passed;
-    }
-    let timings = collect_current_unit_test_timings(TimingCollectOpts {
-        universe: opts.universe,
-        lang_filter: opts.lang_filter,
-        include: TimingLangInclude {
-            python: want_python,
-            rust: want_rust,
-        },
-        ignore: opts.ignore,
-    });
-    evaluate_runtime_gate(&timings, opts.limits)
-}
-
-fn emit_timings_ms(timing: bool, started: Instant) {
-    if timing {
-        eprintln!(
-            "TIMING:coverage_unit_test_timings_ms:{}",
-            started.elapsed().as_millis()
-        );
-    }
-}
+mod cov_gate;
+pub(crate) use cov_gate::{CovTimeGateOpts, evaluate_cov_time_gate};
+#[cfg(test)]
+use cov_gate::evaluate_path_max_runtime_violations;
 
 #[cfg(test)]
-#[path = "unit_test_timing_test.rs"]
+#[path = "mod_test.rs"]
 mod tests;

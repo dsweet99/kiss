@@ -21,6 +21,9 @@ pub(crate) fn python_coverage_index_path(repo_root: &Path) -> Result<PathBuf, St
 
 /// Cheap presence check for warm `kiss test .` planning (avoids parsing the index).
 pub(crate) fn python_coverage_index_file_present(repo_root: &Path) -> bool {
+    if super::generation::try_load_pinned_python_generation(repo_root).is_ok() {
+        return true;
+    }
     python_coverage_index_path(repo_root)
         .ok()
         .is_some_and(|path| path.is_file())
@@ -63,6 +66,9 @@ pub(crate) fn write_python_coverage_index_with_entries_fingerprint(
 }
 
 pub(crate) fn load_current_python_coverage_index(repo_root: &Path) -> Option<PythonCoverageIndex> {
+    if let Ok(pinned) = super::generation::try_load_pinned_python_generation(repo_root) {
+        return Some(super::generation::generation_file_index(&pinned));
+    }
     #[derive(Deserialize)]
     struct OnDiskIndex {
         schema_version: String,

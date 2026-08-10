@@ -1,10 +1,12 @@
 use super::runners;
 use crate::test_runner::coverage_decision::{LanguageExecutor, RunContext};
-use crate::test_runner::python_coverage_index::publish_python_derived_state_with_filter;
 use crate::test_runner::python_coverage_index::repo_relative_coverage_file as python_repo_relative_coverage_file;
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::runners::python_backer::PythonModule;
 use crate::test_runner::runners::rust_backer::RustModule;
+
+#[path = "python_generation_hooks.rs"]
+mod python_generation_hooks;
 
 impl LanguageExecutor for PythonModule {
     fn language(&self) -> kiss::Language {
@@ -36,40 +38,11 @@ impl LanguageExecutor for PythonModule {
     }
 
     fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        if ctx.planned.skip_python_index_rebuild_after_selective {
-            return Ok(());
-        }
-        publish_python_derived_state_with_filter(
-            &ctx.planned.repo_root,
-            None,
-            ctx.options.python_extra,
-            |path, repo_root| self.is_indexable_source(path, repo_root),
-        )?;
-        Ok(())
+        python_generation_hooks::rebuild_python_index(self, ctx)
     }
 
     fn write_manifest(&self, selectors: &[String], ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        // Manifest currentness alone is not enough: a corrupt index.json must still
-        // be republished (QA concurrent-cache-recovery corrupts index on purpose).
-        if crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
-            &ctx.planned.repo_root,
-            selectors,
-            ctx.options.python_extra,
-            crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
-        ) && crate::test_runner::python_coverage_index::load_current_python_coverage_index(
-            &ctx.planned.repo_root,
-        )
-        .is_some()
-        {
-            return Ok(());
-        }
-        publish_python_derived_state_with_filter(
-            &ctx.planned.repo_root,
-            Some(selectors),
-            ctx.options.python_extra,
-            |path, repo_root| self.is_indexable_source(path, repo_root),
-        )?;
-        Ok(())
+        python_generation_hooks::write_python_manifest(self, selectors, ctx)
     }
 
     fn is_indexable_source(&self, path: &std::path::Path, repo_root: &std::path::Path) -> bool {

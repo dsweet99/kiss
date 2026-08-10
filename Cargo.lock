@@ -477,6 +477,7 @@ dependencies = [
  "rust-llvm-cov-runner",
  "serde",
  "serde_json",
+ "sha2",
  "syn",
  "tempfile",
  "toml",

@@ -330,45 +330,45 @@ mod tests {
     #[test]
     fn pythonpath_mismatch_forces_stale_even_with_line_precise_entries() {
         use crate::test_runner::TestEnvVarGuard;
-        use crate::test_runner::python_coverage_index::write_python_population_manifest_for_args;
+        use crate::test_runner::python_coverage_index::generation::{
+            PopulationEvidence, SelectorEvidence, TimingCacheDisposition,
+            population_plan_for_selectors, publish_python_population_generation,
+        };
+        use crate::test_runner::python_coverage_index::GenerationReason;
+        use std::time::Duration;
 
         let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
         let app = tmp.path().join("app.py");
         fs::write(&app, "def alpha():\n    return 'alpha'\n").unwrap();
+        let Ok((_py, _pt)) =
+            crate::test_runner::runners::detect_rslip_versions(tmp.path())
+        else {
+            return;
+        };
         let root = tmp.path().canonicalize().unwrap();
         let recorded = format!("{}:recorded", root.display());
         let changed = format!("{}:changed", root.display());
         let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", &recorded);
-        write_python_population_manifest_for_args(
-            tmp.path(),
-            &["tests/test_app.py::test_alpha".to_string()],
-            &[],
-        )
-        .unwrap();
-        let cache_root =
-            crate::test_runner::python_coverage_index::python_coverage_cache_root(tmp.path())
+        let selector = "tests/test_app.py::test_alpha".to_string();
+        let plan =
+            population_plan_for_selectors(tmp.path(), std::slice::from_ref(&selector), &[])
                 .unwrap();
-        fs::create_dir_all(cache_root.join("entries")).unwrap();
-        fs::write(
-            cache_root.join("entries/alpha.json"),
-            format!(
-                "{{\"schema_version\":\"{}\",\"nodeid\":\"tests/test_app.py::test_alpha\",\"status\":\"Passed\",\"coverage\":{{\"files\":{{\"{}\":[2]}}}}}}\n",
-                rslip::CACHE_SCHEMA_VERSION,
-                app.display()
-            ),
-        )
-        .unwrap();
-        crate::test_runner::python_coverage_index::publish_python_derived_state_with_filter(
+        let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
+        evidence.absorb_selector(SelectorEvidence {
+            selector: selector.clone(),
+            raw_status: rpytest_runner::TestStatus::Passed,
+            effective_status: rpytest_runner::TestStatus::Passed,
+            duration: Some(Duration::from_millis(1)),
+            cache_disposition: TimingCacheDisposition::MissStored,
+            reason: None,
+            coverage: BTreeMap::from([("app.py".to_string(), BTreeSet::from([2u32]))]),
+        });
+        publish_python_population_generation(
             tmp.path(),
-            None,
-            &[],
-            |path, repo_root| {
-                crate::test_runner::python_coverage_index::repo_relative_coverage_file(
-                    repo_root,
-                    &path.to_string_lossy(),
-                )
-                .is_some()
-            },
+            &plan,
+            &evidence,
+            GenerationReason::Complete,
         )
         .unwrap();
         let changed_lines = BTreeMap::from([(app.clone(), BTreeSet::from([2_u32]))]);

@@ -6,19 +6,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 fn write_python_population(repo: &std::path::Path) {
-    let host = repo
-        .join(".kiss/rslip_cache/hosts/testhost");
-    fs::create_dir_all(&host).unwrap();
-    fs::write(
-        host.join("population.json"),
-        r#"{
-            "schema_version":"rslip-python-population-v1",
-            "input_fingerprint":"abc",
-            "entries_fingerprint":"def",
-            "selectors":["t::one"]
-        }"#,
-    )
-    .unwrap();
+    crate::analyze::cov_cache_test_support::write_python_population_for_cache_tests(repo, "abc");
 }
 
 fn write_rust_aggregate(repo: &std::path::Path) {

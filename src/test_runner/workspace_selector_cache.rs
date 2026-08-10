@@ -65,6 +65,14 @@ fn workspace_files_fingerprint(repo_root: &Path, ignore: &[String]) -> io::Resul
     workspace_files_fingerprint_walk(repo_root, ignore)
 }
 
+/// Shared fingerprint for other warm caches (report-id map, etc.).
+pub(crate) fn workspace_files_fingerprint_for_cache(
+    repo_root: &Path,
+    ignore: &[String],
+) -> io::Result<String> {
+    workspace_files_fingerprint(repo_root, ignore)
+}
+
 fn workspace_files_fingerprint_git(repo_root: &Path, ignore: &[String]) -> io::Result<String> {
     let output = kiss::scrubbed_git_command(repo_root)
         .args(["ls-files", "-z", "*.py", "*.rs"])
@@ -126,7 +134,7 @@ fn workspace_files_fingerprint_walk(repo_root: &Path, ignore: &[String]) -> io::
     Ok(format!("{h:016x}"))
 }
 
-fn normalized_root(repo_root: &Path) -> String {
+pub(crate) fn normalized_root(repo_root: &Path) -> String {
     repo_root
         .canonicalize()
         .unwrap_or_else(|_| repo_root.to_path_buf())

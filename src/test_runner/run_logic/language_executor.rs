@@ -76,7 +76,7 @@ pub(super) fn execute_language_phase(
         let index_started = Instant::now();
         module.write_manifest(selectors, ctx)?;
         index_rebuild_duration = index_started.elapsed();
-    } else if should_rebuild_index(phase, &summary) {
+    } else if should_rebuild_after_selective(module, phase, &summary) {
         let index_started = Instant::now();
         module.rebuild_index(ctx)?;
         index_rebuild_duration = index_started.elapsed();
@@ -104,11 +104,21 @@ fn emit_execute_phase_progress(module: &dyn LanguageTestModule, phase: &Executio
     ));
 }
 
-fn should_rebuild_index(phase: &ExecutionPhase, summary: &SelectorExecutionSummary) -> bool {
+fn should_rebuild_after_selective(
+    module: &dyn LanguageTestModule,
+    phase: &ExecutionPhase,
+    summary: &SelectorExecutionSummary,
+) -> bool {
     match phase {
         ExecutionPhase::NoWork | ExecutionPhase::Population(_) => false,
-        // Cache hits do not change coverage maps; rebuild only after fresh runs.
-        ExecutionPhase::Selective(_) => summary.cache_misses > 0 || summary.cache_unstored > 0,
+        ExecutionPhase::Selective(_) => {
+            // Python compares evidence digests and skips rewrite when unchanged,
+            // including pure cache hits that still must not leave stale coverage.
+            if LanguageExecutor::language(module) == kiss::Language::Python {
+                return true;
+            }
+            summary.cache_misses > 0 || summary.cache_unstored > 0
+        }
     }
 }
 

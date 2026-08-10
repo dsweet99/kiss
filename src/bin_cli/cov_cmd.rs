@@ -36,9 +36,10 @@ fn load_or_refresh_snapshot(
     required: RequiredCoverageLanguages,
     ignore: &[String],
     jobs: usize,
-) -> Result<RuntimeCoverageSnapshot, i32> {
-    match load_check_runtime_coverage(repo_root, required, ignore) {
-        Ok(snapshot) => Ok(snapshot),
+) -> Result<crate::test_runner::check_line_coverage::ValidatedCovInputs, i32> {
+    use crate::test_runner::check_line_coverage::ValidatedCovInputs;
+    let snapshot = match load_check_runtime_coverage(repo_root, required, ignore) {
+        Ok(snapshot) => snapshot,
         Err(_) => {
             if let Err(err) = ensure_check_runtime_coverage(repo_root, required, ignore, jobs) {
                 eprintln!("{err}");
@@ -47,9 +48,12 @@ fn load_or_refresh_snapshot(
             load_check_runtime_coverage(repo_root, required, ignore).map_err(|err| {
                 eprintln!("{err}");
                 1
-            })
+            })?
         }
-    }
+    };
+    Ok(ValidatedCovInputs::from_snapshot(
+        required, snapshot, repo_root,
+    ))
 }
 
 struct SiblingGateResult {
@@ -254,6 +258,7 @@ fn compute_and_store_records(
 }
 
 pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
+    crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
     let _ = (args.py_config, args.rs_config);
     let ignore = merge_check_ignore_prefixes(args.ignore);
     validate_paths(args.paths);
@@ -352,12 +357,23 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
     if let Some(code) = try_cov_records_fast_path(&cache_key, &eval_ctx, t0) {
         return code;
     }
-    let snapshot = match load_or_refresh_snapshot(&repo_root, required, p.ignore, p.args.jobs) {
-        Ok(snapshot) => snapshot,
+    let validated = match load_or_refresh_snapshot(&repo_root, required, p.ignore, p.args.jobs) {
+        Ok(validated) => validated,
         Err(code) => return code,
     };
-    let records =
-        compute_and_store_records(&cache_key, &repo_root, p.files, &snapshot, p.args.timing, t0);
+    if p.args.timing
+        && let Some(id) = validated.python_generation_id.as_ref()
+    {
+        eprintln!("TIMING:python_generation_id:{id}");
+    }
+    let records = compute_and_store_records(
+        &cache_key,
+        &repo_root,
+        p.files,
+        &validated.snapshot,
+        p.args.timing,
+        t0,
+    );
     evaluate_records_with_time(&records, &eval_ctx)
 }
 

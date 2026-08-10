@@ -46,6 +46,28 @@ pub(crate) fn load_current_python_population_durations(
     repo_root: &Path,
     pytest_args: &[String],
 ) -> Option<Vec<(String, Duration)>> {
+    if let Some(pairs) = super::generation::try_load_generation_durations_pairs(repo_root) {
+        return Some(pairs);
+    }
+    if let Ok(pinned) = super::generation::try_load_pinned_python_generation_warm(repo_root) {
+        let exec =
+            super::generation::current_python_execution_identity(repo_root, pytest_args).ok()?;
+        if pinned.plan.base_identity == exec {
+            return Some(
+                pinned
+                    .timings
+                    .into_iter()
+                    .map(|row| {
+                        (
+                            row.selector,
+                            Duration::from_nanos(row.duration_ns.unwrap_or(0)),
+                        )
+                    })
+                    .collect(),
+            );
+        }
+        return None;
+    }
     let population =
         stored_python_universe_population(repo_root, pytest_args, PYTHON_COVERAGE_ENV_KEYS)?;
     let manifest = read_python_population_manifest(repo_root)?;
@@ -65,6 +87,23 @@ pub(crate) fn load_current_python_population_max_duration(
     repo_root: &Path,
     pytest_args: &[String],
 ) -> Option<Duration> {
+    if let Some(max) = super::generation::try_load_generation_max_duration(repo_root) {
+        return Some(max);
+    }
+    if let Ok(pinned) = super::generation::try_load_pinned_python_generation_warm(repo_root) {
+        let exec =
+            super::generation::current_python_execution_identity(repo_root, pytest_args).ok()?;
+        if pinned.plan.base_identity == exec {
+            let max_ns = pinned
+                .timings
+                .iter()
+                .filter_map(|row| row.duration_ns)
+                .max()
+                .unwrap_or(0);
+            return Some(Duration::from_nanos(max_ns));
+        }
+        return None;
+    }
     let identity = super::manifest::current_python_population_manifest_identity(repo_root, pytest_args)
         .ok()?;
     let cache_root = python_coverage_cache_root(repo_root).ok()?;
@@ -103,6 +142,18 @@ pub(crate) fn load_current_python_population_max_duration(
     Some(Duration::from_nanos(file.max_duration_ns))
 }
 
+/// Path-prefix max durations for multi-pattern warm time gates.
+pub(crate) fn load_current_python_population_path_maxes(
+    repo_root: &Path,
+    pytest_args: &[String],
+) -> Option<Vec<super::generation::PathMaxDuration>> {
+    if let Some(path_maxes) = super::generation::try_load_generation_path_maxes_only(repo_root) {
+        return Some(path_maxes);
+    }
+    let pairs = load_current_python_population_durations(repo_root, pytest_args)?;
+    Some(super::generation::path_maxes_from_selector_durations(&pairs))
+}
+
 #[derive(Deserialize)]
 struct PopulationDurationsMaxOnly {
     schema_version: String,
@@ -125,6 +176,7 @@ struct PopulationIdentityOnly {
 }
 
 /// Publish durations for the just-written population (best-effort).
+#[allow(dead_code)]
 pub(crate) fn try_publish_python_population_durations(
     repo_root: &Path,
     pytest_args: &[String],
@@ -146,7 +198,7 @@ pub(crate) fn try_publish_python_population_durations(
     write_population_durations(&cache_root, &manifest, &pairs)
 }
 
-fn try_load_population_durations(
+pub(super) fn try_load_population_durations(
     cache_root: &Path,
     manifest: &PythonPopulationManifest,
 ) -> Option<Vec<(String, Duration)>> {
@@ -171,7 +223,7 @@ fn try_load_population_durations(
     )
 }
 
-fn write_population_durations(
+pub(crate) fn write_population_durations(
     cache_root: &Path,
     manifest: &PythonPopulationManifest,
     pairs: &[(String, Duration)],
@@ -226,6 +278,24 @@ fn load_durations_from_entry_probes(
     pytest_args: &[String],
     selectors: &[String],
 ) -> Option<Vec<(String, Duration)>> {
+    load_durations_from_entry_probes_inner(repo_root, pytest_args, selectors, true)
+}
+
+/// Like [`load_durations_from_entry_probes`], but keeps durations for non-Passed entries.
+pub(super) fn load_durations_from_entry_probes_allow_non_passed(
+    repo_root: &Path,
+    pytest_args: &[String],
+    selectors: &[String],
+) -> Option<Vec<(String, Duration)>> {
+    load_durations_from_entry_probes_inner(repo_root, pytest_args, selectors, false)
+}
+
+fn load_durations_from_entry_probes_inner(
+    repo_root: &Path,
+    pytest_args: &[String],
+    selectors: &[String],
+    require_passed: bool,
+) -> Option<Vec<(String, Duration)>> {
     let (python_version, pytest_version) = detect_rslip_versions(repo_root).ok()?;
     let mut out = Vec::with_capacity(selectors.len());
     for selector in selectors {
@@ -245,7 +315,10 @@ fn load_durations_from_entry_probes(
             .join(format!("{fingerprint}.json"));
         let bytes = fs::read(path).ok()?;
         let entry: DurationProbeEntry = serde_json::from_slice(&bytes).ok()?;
-        if entry.nodeid != *selector || entry.status != TestStatus::Passed {
+        if entry.nodeid != *selector {
+            return None;
+        }
+        if require_passed && entry.status != TestStatus::Passed {
             return None;
         }
         out.push((selector.clone(), entry.duration));

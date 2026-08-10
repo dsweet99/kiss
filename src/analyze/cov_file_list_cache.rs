@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::analyze::cov_records_cache::{python_backend_identity_for_file_list, rust_backend_identity_for_file_list};
 use crate::analyze_cache::fnv1a64;
 
-const SCHEMA_VERSION: &str = "kiss-cov-file-list-v1";
+const SCHEMA_VERSION: &str = "kiss-cov-file-list-v2";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CovFileListCache {

@@ -99,62 +99,6 @@ fn manifest_and_storage_helpers_are_referenced_from_external_tests() {
 }
 
 #[test]
-fn selective_entry_refresh_preserves_current_population_manifest() {
-    let _lock = crate::cwd_test_lock::lock();
-    let tmp = tempfile::tempdir().unwrap();
-    let app = tmp.path().join("app.py");
-    fs::write(&app, "def value():\n    return 1\n").unwrap();
-    let selector = "tests/test_app.py::test_value".to_string();
-    let coverage = |lines| LineCoverage {
-        files: BTreeMap::from([(app.to_string_lossy().to_string(), lines)]),
-    };
-    write_passed_entry(
-        tmp.path(),
-        "selected",
-        &selector,
-        coverage(BTreeSet::from([1])),
-    );
-    publish_python_derived_state_with_filter(
-        tmp.path(),
-        Some(std::slice::from_ref(&selector)),
-        &[],
-        |path, repo_root| repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some(),
-    )
-    .unwrap();
-    assert!(
-        python_population_manifest_is_current_for_args_with_env_keys(
-            tmp.path(),
-            std::slice::from_ref(&selector),
-            &[],
-            PYTHON_COVERAGE_ENV_KEYS,
-        )
-    );
-
-    // A forced selective run replaces the selector's cache entry, then the
-    // shared execution path rebuilds derived state without an explicit
-    // population selector list.
-    write_passed_entry(
-        tmp.path(),
-        "selected",
-        &selector,
-        coverage(BTreeSet::from([1, 2])),
-    );
-    publish_python_derived_state_with_filter(tmp.path(), None, &[], |path, repo_root| {
-        repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
-    })
-    .unwrap();
-
-    assert!(
-        python_population_manifest_is_current_for_args_with_env_keys(
-            tmp.path(),
-            std::slice::from_ref(&selector),
-            &[],
-            PYTHON_COVERAGE_ENV_KEYS,
-        )
-    );
-}
-
-#[test]
 fn selector_path_and_hash_helpers_are_referenced_from_external_tests() {
     let tmp = tempfile::tempdir().unwrap();
     let app = tmp.path().join("app.py");

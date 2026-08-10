@@ -28,6 +28,10 @@ pub(crate) fn python_population_manifest_is_current_for_args_with_env_keys(
     test_args: &[String],
     env_keys: &[&str],
 ) -> bool {
+    let _ = env_keys;
+    if super::generation::current_complete_generation_matches(repo_root, selectors, test_args) {
+        return true;
+    }
     let Ok(identity) =
         current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
     else {
@@ -74,6 +78,7 @@ pub(crate) fn write_python_population_manifest_with_identity(
     )
 }
 
+#[allow(dead_code)]
 pub(crate) fn write_python_population_manifest_with_identity_and_entries_fingerprint(
     repo_root: &Path,
     selectors: &[String],
@@ -157,6 +162,18 @@ pub(crate) fn stored_python_universe_population(
     test_args: &[String],
     env_keys: &[&str],
 ) -> Option<StoredPythonPopulation> {
+    let _ = env_keys;
+    if let Ok(pinned) = super::generation::try_load_pinned_python_generation(repo_root) {
+        let exec = super::generation::current_python_execution_identity(repo_root, test_args).ok()?;
+        if pinned.plan.base_identity == exec && pinned.complete {
+            valid_stored_selectors(&pinned.plan.selectors)?;
+            return Some(StoredPythonPopulation {
+                selectors: pinned.plan.selectors.clone(),
+                identity: format!("gen:{}", pinned.generation_id),
+            });
+        }
+        // Incompatible/incomplete generation: fall through to v1 sidecars when present.
+    }
     let identity =
         current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
             .ok()?;
@@ -183,6 +200,14 @@ pub(crate) fn stored_python_universe_selectors_for_current_inputs(
     test_args: &[String],
     env_keys: &[&str],
 ) -> Option<Vec<String>> {
+    if let Ok(pinned) = super::generation::try_load_pinned_python_generation(repo_root) {
+        let exec = super::generation::current_python_execution_identity(repo_root, test_args).ok()?;
+        if pinned.plan.base_identity == exec {
+            valid_stored_selectors(&pinned.plan.selectors)?;
+            return Some(pinned.plan.selectors.clone());
+        }
+        return None;
+    }
     let identity =
         current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
             .ok()?;
@@ -206,6 +231,10 @@ pub(crate) fn python_population_environment_mismatch(
     let identity =
         current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
             .ok()?;
+    if let Ok(pinned) = super::generation::try_load_pinned_python_generation(repo_root) {
+        return (pinned.plan.base_identity.env != identity.env)
+            .then_some((pinned.plan.base_identity.env.clone(), identity.env));
+    }
     let manifest = read_python_population_manifest(repo_root)?;
     (manifest.env != identity.env).then_some((manifest.env, identity.env))
 }

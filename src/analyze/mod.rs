@@ -6,6 +6,8 @@ mod coverage_gate;
 mod coverage_types;
 pub(crate) mod cov_records_cache;
 pub(crate) mod cov_file_list_cache;
+#[cfg(test)]
+pub(crate) mod cov_cache_test_support;
 mod dry;
 mod dup_detect;
 mod entry;

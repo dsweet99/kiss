@@ -13,10 +13,10 @@ use crate::test_runner::python_coverage_index::{
     repo_relative_path as python_repo_relative_path, stored_python_universe_population,
 };
 use crate::test_runner::runners::{detect_rslip_versions, rslip_request_from_parts};
-use crate::test_runner::rust_coverage_index::{
-    current_rust_coverage_batch_identity,
-    repo_relative_coverage_file as rust_repo_relative_coverage_file, rust_coverage_cache_root,
-};
+
+#[path = "check_line_coverage_rust.rs"]
+mod check_line_coverage_rust;
+pub(crate) use check_line_coverage_rust::load_rust_runtime_coverage;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct RequiredCoverageLanguages {
@@ -74,6 +74,7 @@ pub(crate) fn load_check_runtime_coverage(
 pub(crate) struct RuntimeCoverageLoadError {
     pub(crate) language: &'static str,
     pub(crate) reason: String,
+    pub(crate) problem_selectors: Vec<String>,
 }
 
 impl RuntimeCoverageLoadError {
@@ -81,6 +82,15 @@ impl RuntimeCoverageLoadError {
         Self {
             language,
             reason: reason.into(),
+            problem_selectors: Vec::new(),
+        }
+    }
+
+    fn incomplete_population(language: &'static str, problem_selectors: Vec<String>) -> Self {
+        Self {
+            language,
+            reason: "incomplete population".to_string(),
+            problem_selectors,
         }
     }
 }
@@ -95,9 +105,42 @@ impl fmt::Display for RuntimeCoverageLoadError {
     }
 }
 
-pub(super) struct BackendCoverage {
-    identity: String,
-    covered_lines: BTreeMap<String, BTreeSet<u32>>,
+#[derive(Clone, Debug)]
+pub(crate) struct BackendCoverage {
+    pub(crate) identity: String,
+    pub(crate) covered_lines: BTreeMap<String, BTreeSet<u32>>,
+}
+
+/// Command-scoped cov inputs: source/backend validation computed once per `kiss cov`.
+#[derive(Clone, Debug)]
+pub(crate) struct ValidatedCovInputs {
+    pub(crate) snapshot: RuntimeCoverageSnapshot,
+    #[allow(dead_code)]
+    pub(crate) required: RequiredCoverageLanguages,
+    pub(crate) python_generation_id: Option<String>,
+}
+
+impl ValidatedCovInputs {
+    pub(crate) fn from_snapshot(
+        required: RequiredCoverageLanguages,
+        snapshot: RuntimeCoverageSnapshot,
+        repo_root: &Path,
+    ) -> Self {
+        let python_generation_id = if required.python {
+            crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(
+                repo_root,
+            )
+            .ok()
+            .map(|pinned| pinned.generation_id)
+        } else {
+            None
+        };
+        Self {
+            required,
+            snapshot,
+            python_generation_id,
+        }
+    }
 }
 
 /// Pytest `-p` args used when publishing/loading the Python coverage population.
@@ -106,31 +149,108 @@ fn configured_python_coverage_pytest_args() -> Vec<String> {
     kiss::TestSectionConfig::load().pytest_plugin_cli_args()
 }
 
-pub(super) fn load_python_runtime_coverage(
+pub(crate) fn load_python_runtime_coverage(
     repo_root: &Path,
 ) -> Result<BackendCoverage, RuntimeCoverageLoadError> {
-    // Must match the args used when the population was published (plugin `-p` pairs).
     let pytest_args = configured_python_coverage_pytest_args();
+    if let Some(coverage) = try_coverage_from_generation(repo_root, &pytest_args)? {
+        return Ok(coverage);
+    }
+    // Opportunistic v1→v2 migrate so warm cov can pin one generation without entry rewalk.
+    if crate::test_runner::python_coverage_index::try_migrate_complete_v1_generation(
+        repo_root,
+        &pytest_args,
+        &|path, root| {
+            python_repo_relative_coverage_file(root, &path.to_string_lossy()).is_some()
+        },
+    )
+    .ok()
+    .flatten()
+    .is_some()
+    {
+        crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
+        if let Some(coverage) = try_coverage_from_generation(repo_root, &pytest_args)? {
+            return Ok(coverage);
+        }
+    }
     let population =
         stored_python_universe_population(repo_root, &pytest_args, PYTHON_COVERAGE_ENV_KEYS)
             .ok_or_else(|| python_population_error(repo_root))?;
     if let Some(covered_lines) =
         crate::test_runner::python_coverage_index::try_load_python_coverage_snapshot(repo_root)
     {
-        let identity = backend_identity(
+        return Ok(backend_from_population(
+            &population.identity,
+            &population.selectors,
+            covered_lines,
+        ));
+    }
+    load_python_coverage_from_entries(repo_root, &pytest_args, &population)
+}
+
+fn try_coverage_from_generation(
+    repo_root: &Path,
+    pytest_args: &[String],
+) -> Result<Option<BackendCoverage>, RuntimeCoverageLoadError> {
+    let Ok(pinned) =
+        crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(repo_root)
+    else {
+        return Ok(None);
+    };
+    let exec = crate::test_runner::python_coverage_index::current_python_execution_identity(
+        repo_root,
+        pytest_args,
+    )
+    .map_err(|err| coverage_error("Python", &err))?;
+    if pinned.plan.base_identity == exec && pinned.complete {
+        return Ok(Some(BackendCoverage {
+            identity: backend_identity(
+                "python",
+                &[
+                    ("generation".to_string(), pinned.generation_id.clone()),
+                    ("selectors".to_string(), pinned.plan.selectors.join("\n")),
+                ],
+                &pinned.coverage,
+            ),
+            covered_lines: pinned.coverage,
+        }));
+    }
+    if pinned.plan.base_identity == exec && !pinned.complete {
+        let problems = crate::test_runner::python_coverage_index::problem_selectors_from_timings(
+            &pinned.timings,
+        );
+        return Err(RuntimeCoverageLoadError::incomplete_population(
+            "Python",
+            problems,
+        ));
+    }
+    Ok(None)
+}
+
+fn backend_from_population(
+    population_identity: &str,
+    selectors: &[String],
+    covered_lines: BTreeMap<String, BTreeSet<u32>>,
+) -> BackendCoverage {
+    BackendCoverage {
+        identity: backend_identity(
             "python",
             &[
-                ("population".to_string(), population.identity),
-                ("selectors".to_string(), population.selectors.join("\n")),
+                ("population".to_string(), population_identity.to_string()),
+                ("selectors".to_string(), selectors.join("\n")),
             ],
             &covered_lines,
-        );
-        return Ok(BackendCoverage {
-            identity,
-            covered_lines,
-        });
+        ),
+        covered_lines,
     }
-    let selectors = population.selectors;
+}
+
+fn load_python_coverage_from_entries(
+    repo_root: &Path,
+    pytest_args: &[String],
+    population: &crate::test_runner::python_coverage_index::StoredPythonPopulation,
+) -> Result<BackendCoverage, RuntimeCoverageLoadError> {
+    let selectors = &population.selectors;
     let (python_version, pytest_version) = detect_rslip_versions(repo_root).map_err(|err| {
         coverage_error(
             "Python",
@@ -143,7 +263,7 @@ pub(super) fn load_python_runtime_coverage(
             rslip_request_from_parts(
                 repo_root,
                 selector,
-                &pytest_args,
+                pytest_args,
                 &python_version,
                 &pytest_version,
                 false,
@@ -152,6 +272,23 @@ pub(super) fn load_python_runtime_coverage(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| coverage_error("Python", &format!("malformed request ({err})")))?;
     let outcomes = rslip::load_cached_outcomes_many_trusting_population(&reqs);
+    let covered_lines = aggregate_passed_outcomes(repo_root, selectors, outcomes)?;
+    let _ = crate::test_runner::python_coverage_index::write_python_coverage_snapshot(
+        repo_root,
+        &covered_lines,
+    );
+    Ok(backend_from_population(
+        &population.identity,
+        selectors,
+        covered_lines,
+    ))
+}
+
+fn aggregate_passed_outcomes(
+    repo_root: &Path,
+    selectors: &[String],
+    outcomes: Vec<Result<Option<rslip::RslipOutcome>, rslip::RslipError>>,
+) -> Result<BTreeMap<String, BTreeSet<u32>>, RuntimeCoverageLoadError> {
     let mut covered_lines = BTreeMap::<String, BTreeSet<u32>>::new();
     for (selector, outcome) in selectors.iter().zip(outcomes) {
         let outcome = outcome
@@ -167,23 +304,7 @@ pub(super) fn load_python_runtime_coverage(
             covered_lines.entry(rel).or_default().extend(lines);
         }
     }
-    // Persist snapshot so the next warm `kiss cov` skips per-entry aggregation.
-    let _ = crate::test_runner::python_coverage_index::write_python_coverage_snapshot(
-        repo_root,
-        &covered_lines,
-    );
-    let identity = backend_identity(
-        "python",
-        &[
-            ("population".to_string(), population.identity),
-            ("selectors".to_string(), selectors.join("\n")),
-        ],
-        &covered_lines,
-    );
-    Ok(BackendCoverage {
-        identity,
-        covered_lines,
-    })
+    Ok(covered_lines)
 }
 
 fn python_population_error(repo_root: &Path) -> RuntimeCoverageLoadError {
@@ -238,66 +359,7 @@ fn classify_python_coverage_file(
     Ok(None)
 }
 
-pub(super) fn load_rust_runtime_coverage(
-    repo_root: &Path,
-    ignore: &[String],
-) -> Result<BackendCoverage, RuntimeCoverageLoadError> {
-    let identity = current_rust_coverage_batch_identity(repo_root, &[]).map_err(|err| {
-        coverage_error("Rust", &format!("stale/incompatible tool identity ({err})"))
-    })?;
-    let cache_root = rust_coverage_cache_root(repo_root);
-    // Prefer aggregate hit without re-enumerating workspace selectors. Source digests in
-    // `identity` already invalidate when test/source files change.
-    if let Some(snapshot) = rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
-        &cache_root,
-        repo_root,
-        &identity,
-        None,
-    ) {
-        return Ok(BackendCoverage {
-            identity: snapshot.identity,
-            covered_lines: snapshot.covered_lines,
-        });
-    }
-    let selectors =
-        crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
-            .map_err(|err| coverage_error("Rust", &format!("selector discovery failed ({err})")))?;
-    if let Some(snapshot) = rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
-        &cache_root,
-        repo_root,
-        &identity,
-        Some(&selectors),
-    ) {
-        return Ok(BackendCoverage {
-            identity: snapshot.identity,
-            covered_lines: snapshot.covered_lines,
-        });
-    }
-    let snapshot = rust_llvm_cov_runner::load_current_generation_coverage_snapshot(
-        &cache_root,
-        repo_root,
-        &identity,
-        Some(&selectors),
-    )
-    .ok_or_else(|| {
-        coverage_error(
-            "Rust",
-            "missing, stale/incompatible, incomplete, or malformed population",
-        )
-    })?;
-    let mut covered_lines = BTreeMap::<String, BTreeSet<u32>>::new();
-    for (file, lines) in snapshot.covered_lines {
-        let rel = rust_repo_relative_coverage_file(repo_root, &file)
-            .ok_or_else(|| coverage_error("Rust", "malformed out-of-repository path"))?;
-        covered_lines.entry(rel).or_default().extend(lines);
-    }
-    Ok(BackendCoverage {
-        identity: snapshot.identity,
-        covered_lines,
-    })
-}
-
-fn coverage_error(language: &'static str, reason: &str) -> RuntimeCoverageLoadError {
+pub(super) fn coverage_error(language: &'static str, reason: &str) -> RuntimeCoverageLoadError {
     RuntimeCoverageLoadError::new(language, reason)
 }
 

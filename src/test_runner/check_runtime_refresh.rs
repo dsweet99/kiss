@@ -6,12 +6,7 @@ use std::sync::Mutex;
 use fs2::FileExt;
 
 use crate::test_runner::check_line_coverage::{
-    RequiredCoverageLanguages, RuntimeCoverageLoadError, load_python_runtime_coverage,
-    load_rust_runtime_coverage,
-};
-use crate::test_runner::python_coverage_index::{
-    publish_python_derived_state_with_filter,
-    repo_relative_coverage_file as python_repo_relative_coverage_file,
+    RequiredCoverageLanguages, RuntimeCoverageLoadError, load_rust_runtime_coverage,
 };
 
 #[path = "check_runtime_refresh_repair.rs"]
@@ -29,6 +24,14 @@ pub(crate) use check_runtime_refresh_apply::finalize_population_summary_labeled;
 pub(crate) use check_runtime_refresh_apply::{
     RerunRepairArgs, apply_identity_only_repair, apply_rerun_repair, finalize_population_summary,
 };
+
+#[path = "check_runtime_refresh_python.rs"]
+mod check_runtime_refresh_python;
+use check_runtime_refresh_python::ensure_python_runtime_coverage;
+
+#[cfg(test)]
+#[path = "check_runtime_refresh_python_test.rs"]
+mod python_refresh_tests;
 
 pub(crate) const COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV: &str =
     "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE";
@@ -164,7 +167,7 @@ fn refresh_python_and_rust_parallel(
     })
 }
 
-struct RefreshLockGuard {
+pub(super) struct RefreshLockGuard {
     _file: File,
 }
 
@@ -216,7 +219,7 @@ pub(crate) fn restore_refresh_active_env(old: Option<std::ffi::OsString>) {
     }
 }
 
-fn lock_refresh(
+pub(super) fn lock_refresh(
     repo_root: &Path,
     language: &'static str,
 ) -> Result<RefreshLockGuard, CoverageRefreshError> {
@@ -238,59 +241,6 @@ fn lock_refresh(
     file.lock_exclusive()
         .map_err(|err| CoverageRefreshError::lock(language, err))?;
     Ok(RefreshLockGuard { _file: file })
-}
-
-fn ensure_python_runtime_coverage(
-    repo_root: &Path,
-    ignore: &[String],
-    jobs: usize,
-) -> Result<(), CoverageRefreshError> {
-    let _guard = lock_refresh(repo_root, "Python")?;
-    if load_python_runtime_coverage(repo_root).is_ok() {
-        return Ok(());
-    }
-    let python_extra = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
-    let selectors = crate::test_runner::runners::enumerate_workspace_python_selectors(
-        repo_root,
-        ignore,
-        &python_extra,
-    )
-    .map_err(|err| CoverageRefreshError::discovery("Python", err))?;
-    eprintln!(
-        "kiss cov: refreshing Python runtime coverage ({} tests)",
-        selectors.len()
-    );
-    let _refresh_env = ScopedRefreshEnvGuard::set();
-    let summary = crate::test_runner::runners::run_rslip_selectors(
-        repo_root,
-        &selectors,
-        &python_extra,
-        false,
-        &[],
-        jobs,
-        None,
-    )
-    .map_err(|err| CoverageRefreshError::publication("Python", err))?;
-    if summary.exit_code != 0 {
-        return Err(CoverageRefreshError::TestExecution {
-            language: "Python",
-            total: summary.total,
-            failed: summary.failed,
-            exit_code: summary.exit_code,
-        });
-    }
-    publish_python_derived_state_with_filter(
-        repo_root,
-        Some(&selectors),
-        &python_extra,
-        |path, repo_root| {
-            python_repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
-        },
-    )
-    .map_err(|err| CoverageRefreshError::publication("Python", err))?;
-    load_python_runtime_coverage(repo_root)
-        .map(|_| ())
-        .map_err(|err| CoverageRefreshError::validation("Python", err))
 }
 
 fn ensure_rust_runtime_coverage(
