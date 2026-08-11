@@ -20,7 +20,7 @@ pub(crate) use check_runtime_refresh_repair::{
 
 #[path = "check_runtime_refresh_apply.rs"]
 mod check_runtime_refresh_apply;
-pub(crate) use check_runtime_refresh_apply::finalize_population_summary_labeled;
+use check_runtime_refresh_apply::finalize_population_summary_labeled;
 #[cfg(test)]
 pub(crate) use check_runtime_refresh_apply::{
     RerunRepairArgs, apply_identity_only_repair, apply_rerun_repair, finalize_population_summary,
@@ -259,28 +259,47 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     caller_label: &str,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     let _guard = lock_refresh(repo_root, "Rust")?;
-    match load_rust_runtime_coverage(repo_root, ignore) {
-        Ok(_) => Ok(CoverageRefreshStats::default()),
-        Err(_) => {
-            let selectors =
-                crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
-                    .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
-            if let Some(stats) =
-                try_repair_rust_check_aggregate_labeled(repo_root, ignore, &selectors, jobs, caller_label)?
-            {
-                return Ok(stats);
-            }
-            refresh_full_rust_check_aggregate_labeled(repo_root, ignore, &selectors, jobs, caller_label)
-        }
+    if load_rust_runtime_coverage(repo_root, ignore).is_ok() {
+        return Ok(CoverageRefreshStats::default());
     }
+    let request = crate::test_runner::ensure_runtime::ensure_request_for_all(
+        repo_root,
+        ignore,
+        jobs,
+        Some(kiss::Language::Rust),
+        false,
+    )
+    .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
+    // Incremental CheckAggregate repair stays language-owned; command path still
+    // funnels full refresh through the shared ensure factory/kernel.
+    if let Some(stats) = try_repair_rust_check_aggregate_labeled(
+        repo_root,
+        ignore,
+        &request.planned_rust,
+        jobs,
+        caller_label,
+    )? {
+        return Ok(stats);
+    }
+    eprintln!(
+        "{caller_label}: refreshing Rust runtime coverage ({} tests)",
+        request.planned_rust.len()
+    );
+    let _refresh_env = ScopedRefreshEnvGuard::set();
+    let result = crate::test_runner::ensure_runtime::ensure_languages_runtime(&request)
+        .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
+    let summary = result
+        .rust
+        .as_ref()
+        .map(|r| r.summary.clone())
+        .unwrap_or_default();
+    finalize_population_summary_labeled(repo_root, ignore, &summary, true, caller_label)
 }
 
 /// Shared Rust ensure/refresh entry point used by `kiss cov`.
 ///
-/// Runs the lock / load / repair / full-refresh body against repo-local
-/// `./.kiss` coverage artifacts. Returns a `SelectorExecutionSummary` with
-/// cached-hit accounting when coverage was already loadable, or the real batch
-/// summary after a full refresh.
+/// Runs through the shared ensure factory/kernel against repo-local `./.kiss`
+/// coverage artifacts.
 pub(crate) fn ensure_rust_runtime_coverage_shared(
     repo_root: &Path,
     ignore: &[String],
@@ -306,30 +325,6 @@ pub(crate) fn ensure_rust_runtime_coverage_shared(
         rust_aggregate_exports: stats.rust_aggregate_exports,
         ..Default::default()
     })
-}
-
-fn refresh_full_rust_check_aggregate_labeled(
-    repo_root: &Path,
-    ignore: &[String],
-    selectors: &[String],
-    jobs: usize,
-    caller_label: &str,
-) -> Result<CoverageRefreshStats, CoverageRefreshError> {
-    eprintln!(
-        "{caller_label}: refreshing Rust runtime coverage ({} tests)",
-        selectors.len()
-    );
-    let _refresh_env = ScopedRefreshEnvGuard::set();
-    let summary = crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_check_aggregate_selectors(
-        repo_root,
-        selectors,
-        &[],
-        jobs,
-        None,
-        None,
-    )
-    .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
-    finalize_population_summary_labeled(repo_root, ignore, &summary, true, caller_label)
 }
 
 #[cfg(test)]

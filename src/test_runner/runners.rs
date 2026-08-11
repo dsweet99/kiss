@@ -21,22 +21,14 @@ pub(crate) use decision::{
 #[cfg(test)]
 pub(crate) use decision::combined_selectors;
 
-#[path = "runners/python_backer.rs"]
-pub(crate) mod python_backer;
-#[path = "runners/python_collect.rs"]
-mod python_collect;
-#[cfg(test)]
-#[path = "runners/python_collect_acceptance_test.rs"]
-mod python_collect_acceptance_test;
-#[cfg(test)]
-#[path = "runners/python_collect_error_test.rs"]
-mod python_collect_error_test;
-use super::python_coverage_index::{
+pub(crate) use crate::test_runner::lang_python::backer as python_backer;
+pub(crate) use crate::test_runner::lang_python::collect;
+use crate::test_runner::python_coverage_index::{
     PYTHON_COVERAGE_ENV_KEYS, repo_relative_path as python_repo_relative_path,
     stored_python_universe_selectors,
 };
-use python_collect::collect_python_nodeids;
-pub(crate) use python_collect::clear_python_collect_memo;
+use collect::collect_python_nodeids;
+pub(crate) use collect::clear_python_collect_memo;
 pub(crate) fn collect_python_nodeids_for_targets(
     repo_root: &Path,
     paths: Option<&[PathBuf]>,
@@ -44,18 +36,17 @@ pub(crate) fn collect_python_nodeids_for_targets(
 ) -> Result<Vec<String>, String> {
     collect_python_nodeids(repo_root, paths, pytest_args)
 }
-#[cfg(test)]
-#[path = "runners/python_collect_test.rs"]
-mod python_collect_test;
-#[path = "runners/rust_backer.rs"]
-pub(crate) mod rust_backer;
+pub(crate) use crate::test_runner::lang_rust::backer as rust_backer;
 
-#[path = "runners/rust_workspace.rs"]
-mod rust_workspace;
-use rust_workspace::{cargo_workspace_member_manifest_dirs, is_workspace_rust_selector_file};
+use crate::test_runner::lang_rust::workspace::{
+    cargo_workspace_member_manifest_dirs, is_workspace_rust_selector_file,
+};
 
-#[path = "runners/rslip.rs"]
-mod rslip;
+pub(crate) use crate::test_runner::lang_python::rslip::run_rslip_selectors;
+pub(crate) use crate::test_runner::lang_python::rslip::{
+    detect_rslip_versions, rslip_request_from_parts,
+};
+
 #[path = "runners/rust_batch_counters.rs"]
 mod rust_batch_counters;
 #[path = "runners/execution_summary.rs"]
@@ -63,8 +54,6 @@ mod execution_summary;
 pub(crate) use execution_summary::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
 };
-pub(crate) use rslip::run_rslip_selectors;
-pub(crate) use rslip::{detect_rslip_versions, rslip_request_from_parts};
 
 pub const NO_COVERING_TESTS_MSG: &str = "NO COVERING TESTS";
 

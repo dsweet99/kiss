@@ -8,10 +8,10 @@ use super::{
 use crate::test_runner::check_line_coverage::{
     RuntimeCoverageLoadError, load_python_runtime_coverage,
 };
-use crate::test_runner::python_coverage_index::{
-    publish_python_derived_state_with_filter,
-    repo_relative_coverage_file as python_repo_relative_coverage_file,
+use crate::test_runner::ensure_runtime::{
+    ensure_languages_runtime, ensure_request_for_all, ensure_request_for_selectors,
 };
+use crate::test_runner::python_coverage_index::try_load_pinned_python_generation;
 use crate::test_runner::runners::SelectorExecutionSummary;
 
 pub(super) fn ensure_python_runtime_coverage(
@@ -23,100 +23,60 @@ pub(super) fn ensure_python_runtime_coverage(
     match load_python_runtime_coverage(repo_root) {
         Ok(_) => return Ok(()),
         Err(err) if !err.problem_selectors.is_empty() => {
-            return repair_incomplete_python_generation(
-                repo_root,
-                &err.problem_selectors,
-                jobs,
+            let planned = planned_selectors_for_incomplete(repo_root, &err.problem_selectors);
+            return run_python_ensure(
+                ensure_request_for_selectors(
+                    repo_root,
+                    ignore,
+                    jobs,
+                    kiss::Language::Python,
+                    false,
+                    planned,
+                    vec![],
+                ),
             );
         }
         Err(_) => {}
     }
-    refresh_full_python_runtime_coverage(repo_root, ignore, jobs)
+    let request = ensure_request_for_all(repo_root, ignore, jobs, Some(kiss::Language::Python), false)
+        .map_err(|err| CoverageRefreshError::discovery("Python", err))?;
+    run_python_ensure(request)
 }
 
-fn refresh_full_python_runtime_coverage(
+fn planned_selectors_for_incomplete(
     repo_root: &Path,
-    ignore: &[String],
-    jobs: usize,
+    problem_selectors: &[String],
+) -> Vec<String> {
+    if let Ok(pinned) = try_load_pinned_python_generation(repo_root) {
+        let mut planned = pinned.plan.selectors;
+        planned.sort();
+        planned.dedup();
+        if !planned.is_empty() {
+            return planned;
+        }
+    }
+    problem_selectors.to_vec()
+}
+
+fn run_python_ensure(
+    request: crate::test_runner::lang_iface::EnsureRequest,
 ) -> Result<(), CoverageRefreshError> {
-    let python_extra = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
-    let selectors = crate::test_runner::runners::enumerate_workspace_python_selectors(
-        repo_root,
-        ignore,
-        &python_extra,
-    )
-    .map_err(|err| CoverageRefreshError::discovery("Python", err))?;
     eprintln!(
         "kiss cov: refreshing Python runtime coverage ({} tests)",
-        selectors.len()
+        request.planned_python.len()
     );
     let _refresh_env = ScopedRefreshEnvGuard::set();
-    let summary = crate::test_runner::runners::run_rslip_selectors(
-        repo_root,
-        &selectors,
-        &python_extra,
-        false,
-        &[],
-        jobs,
-        None,
-    )
-    .map_err(|err| CoverageRefreshError::publication("Python", err))?;
+    let result = ensure_languages_runtime(&request)
+        .map_err(|err| CoverageRefreshError::publication("Python", err))?;
+    let summary = result
+        .python
+        .as_ref()
+        .map(|r| r.summary.clone())
+        .unwrap_or_default();
     if summary.exit_code != 0 {
         return Err(execution_error(&summary));
     }
-    publish_python_derived_state_with_filter(
-        repo_root,
-        Some(&selectors),
-        &python_extra,
-        |path, repo_root| {
-            python_repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
-        },
-    )
-    .map_err(|err| CoverageRefreshError::publication("Python", err))?;
-    crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
-    load_python_runtime_coverage(repo_root)
-        .map(|_| ())
-        .map_err(|err| CoverageRefreshError::validation("Python", err))
-}
-
-fn repair_incomplete_python_generation(
-    repo_root: &Path,
-    problem_selectors: &[String],
-    jobs: usize,
-) -> Result<(), CoverageRefreshError> {
-    let python_extra = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
-    eprintln!(
-        "kiss cov: repairing incomplete Python generation ({} problem selectors)",
-        problem_selectors.len()
-    );
-    let _refresh_env = ScopedRefreshEnvGuard::set();
-    let summary = crate::test_runner::runners::run_rslip_selectors(
-        repo_root,
-        problem_selectors,
-        &python_extra,
-        false,
-        &[],
-        jobs,
-        None,
-    )
-    .map_err(|err| CoverageRefreshError::publication("Python", err))?;
-    let deltas = crate::test_runner::python_coverage_index::selector_deltas_from_cached_outcomes(
-        repo_root,
-        problem_selectors,
-        &python_extra,
-        &|path, root| {
-            python_repo_relative_coverage_file(root, &path.to_string_lossy()).is_some()
-        },
-    )
-    .map_err(|err| CoverageRefreshError::publication("Python", err))?;
-    let _ = crate::test_runner::python_coverage_index::repair_python_population_generation(
-        repo_root,
-        &deltas,
-        crate::test_runner::python_coverage_index::GenerationReason::IncompleteRepair,
-    )
-    .map_err(|err| CoverageRefreshError::publication("Python", err))?;
-    crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
-    finalize_incomplete_repair_load(repo_root, &summary)
+    finalize_incomplete_repair_load(&request.repo_root, &summary)
 }
 
 pub(super) fn finalize_incomplete_repair_load(

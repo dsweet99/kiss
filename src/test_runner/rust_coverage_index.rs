@@ -126,6 +126,7 @@ pub(crate) fn publish_rust_derived_state_with_filter(
     Ok(())
 }
 
+#[allow(dead_code)] // ensure owns publish; tests assert manifest currency
 pub(crate) fn rust_population_manifest_is_current_for_args(
     repo_root: &Path,
     selectors: &[String],
@@ -146,6 +147,7 @@ pub(crate) fn rust_population_manifest_is_current_for_args(
     .is_some()
 }
 
+#[allow(dead_code)] // cfg(test) hybrid selection + manifest tests
 pub(crate) fn load_current_rust_population_state(
     repo_root: &Path,
     selectors: Option<&[String]>,
@@ -417,11 +419,9 @@ mod reusable_tests;
 #[cfg(test)]
 #[path = "rust_coverage_index_reusable_line_test.rs"]
 mod reusable_line_tests;
-
 #[cfg(test)]
 #[path = "rust_coverage_index_reusable_integration_test.rs"]
 mod reusable_integration_tests;
-
 #[cfg(test)]
 #[path = "rust_coverage_index_manifest_test.rs"]
 mod manifest_tests;

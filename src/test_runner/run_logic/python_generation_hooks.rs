@@ -31,6 +31,7 @@ pub(super) fn rebuild_python_index(
     Ok(())
 }
 
+#[allow(dead_code)] // population publish owned by ensure kernel; hook retained for tests
 pub(super) fn write_python_manifest(
     module: &PythonModule,
     selectors: &[String],
@@ -58,6 +59,7 @@ pub(super) fn write_python_manifest(
     Ok(())
 }
 
+#[allow(dead_code)] // used by write_python_manifest and generation hook unit tests
 pub(super) fn generation_already_current(ctx: &RunContext<'_, '_>, selectors: &[String]) -> bool {
     if current_complete_generation_matches(
         &ctx.planned.repo_root,

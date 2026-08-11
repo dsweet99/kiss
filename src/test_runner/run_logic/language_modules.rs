@@ -29,17 +29,7 @@ impl LanguageExecutor for PythonModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
-        if !ctx.options.force_rerun
-            && let Some(summary) =
-                crate::test_runner::execution_witness::try_warm_python_cached_summary(
-                    &ctx.planned.repo_root,
-                    selectors,
-                    ctx.options.python_extra,
-                )
-        {
-            return Ok(summary);
-        }
-        run_rslip_selectors_for_module(selectors, ctx)
+        ensure_python_via_kernel(selectors, ctx, crate::test_runner::lang_iface::AcceptMode::All)
     }
 
     fn run_selective(
@@ -47,17 +37,11 @@ impl LanguageExecutor for PythonModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
-        if !ctx.options.force_rerun
-            && let Some(summary) =
-                crate::test_runner::execution_witness::try_warm_python_cached_summary(
-                    &ctx.planned.repo_root,
-                    selectors,
-                    ctx.options.python_extra,
-                )
-        {
-            return Ok(summary);
-        }
-        run_rslip_selectors_for_module(selectors, ctx)
+        ensure_python_via_kernel(
+            selectors,
+            ctx,
+            crate::test_runner::lang_iface::AcceptMode::Subset,
+        )
     }
 
     fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
@@ -65,7 +49,9 @@ impl LanguageExecutor for PythonModule {
     }
 
     fn write_manifest(&self, selectors: &[String], ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        python_generation_hooks::write_python_manifest(self, selectors, ctx)
+        // Publication is owned by the ensure kernel; skip duplicate write on population.
+        let _ = (self, selectors, ctx);
+        Ok(())
     }
 
     fn is_indexable_source(&self, path: &std::path::Path, repo_root: &std::path::Path) -> bool {
@@ -91,6 +77,34 @@ impl LanguageExecutor for PythonModule {
     }
 }
 
+fn ensure_python_via_kernel(
+    selectors: &[String],
+    ctx: &RunContext<'_, '_>,
+    mode: crate::test_runner::lang_iface::AcceptMode,
+) -> Result<SelectorExecutionSummary, String> {
+    use crate::test_runner::ensure_runtime::{
+        ensure_languages_runtime, ensure_request_from_planned,
+    };
+    let mut planned = ctx.planned.clone();
+    planned.py_sel = selectors.to_vec();
+    planned.rs_sel.clear();
+    let request = ensure_request_from_planned(
+        &planned,
+        mode,
+        Some(kiss::Language::Python),
+        ctx.options.force_rerun,
+        ctx.options.jobs,
+        ctx.options.python_extra,
+        ctx.options.extra,
+        None,
+    );
+    let result = ensure_languages_runtime(&request)?;
+    Ok(result
+        .python
+        .map(|r| r.summary)
+        .unwrap_or_default())
+}
+
 impl LanguageExecutor for RustModule {
     fn language(&self) -> kiss::Language {
         kiss::Language::Rust
@@ -110,8 +124,7 @@ impl LanguageExecutor for RustModule {
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
         assert!(ctx.options.jobs > 0, "jobs must be greater than zero");
-        let manifest_selectors = self.population_manifest_selectors()?;
-        run_rust_selectors_for_module(selectors, ctx, Some(manifest_selectors))
+        ensure_rust_via_kernel(selectors, ctx, crate::test_runner::lang_iface::AcceptMode::All)
     }
 
     fn run_selective(
@@ -120,10 +133,15 @@ impl LanguageExecutor for RustModule {
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
         assert!(ctx.options.jobs > 0, "jobs must be greater than zero");
-        run_rust_selectors_for_module(selectors, ctx, None)
+        ensure_rust_via_kernel(
+            selectors,
+            ctx,
+            crate::test_runner::lang_iface::AcceptMode::Subset,
+        )
     }
 
     fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
+        // Ensure kernel owns witness publish; derived index rebuild stays for selective hits.
         crate::test_runner::rust_coverage_index::publish_rust_derived_state_with_filter(
             &ctx.planned.repo_root,
             None,
@@ -137,25 +155,8 @@ impl LanguageExecutor for RustModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<(), String> {
-        if crate::test_runner::rust_coverage_index::rust_population_manifest_is_current_for_args(
-            &ctx.planned.repo_root,
-            selectors,
-            ctx.options.extra,
-        ) && crate::test_runner::rust_coverage_index::load_current_rust_population_state(
-            &ctx.planned.repo_root,
-            None,
-            ctx.options.extra,
-        )
-        .is_some()
-        {
-            return Ok(());
-        }
-        crate::test_runner::rust_coverage_index::publish_rust_derived_state_with_filter(
-            &ctx.planned.repo_root,
-            Some(selectors),
-            ctx.options.extra,
-            |path, repo_root| self.is_indexable_source(path, repo_root),
-        )
+        let _ = (self, selectors, ctx);
+        Ok(())
     }
 
     fn is_indexable_source(&self, path: &std::path::Path, repo_root: &std::path::Path) -> bool {
@@ -184,6 +185,33 @@ impl LanguageExecutor for RustModule {
     }
 }
 
+fn ensure_rust_via_kernel(
+    selectors: &[String],
+    ctx: &RunContext<'_, '_>,
+    mode: crate::test_runner::lang_iface::AcceptMode,
+) -> Result<SelectorExecutionSummary, String> {
+    use crate::test_runner::ensure_runtime::{
+        ensure_languages_runtime, ensure_request_from_planned,
+    };
+    let force = ctx.options.force_rerun || !ctx.planned.rust_prior_failure_selectors.is_empty();
+    let mut planned = ctx.planned.clone();
+    planned.rs_sel = selectors.to_vec();
+    planned.py_sel.clear();
+    let request = ensure_request_from_planned(
+        &planned,
+        mode,
+        Some(kiss::Language::Rust),
+        force,
+        ctx.options.jobs,
+        ctx.options.python_extra,
+        ctx.options.extra,
+        None,
+    );
+    let result = ensure_languages_runtime(&request)?;
+    Ok(result.rust.map(|r| r.summary).unwrap_or_default())
+}
+
+#[allow(dead_code)] // test seam + legacy selective path retained for unit coverage
 pub(super) fn run_rslip_selectors_for_module(
     selectors: &[String],
     ctx: &RunContext<'_, '_>,
@@ -204,6 +232,7 @@ pub(super) fn run_rslip_selectors_for_module(
     )
 }
 
+#[allow(dead_code)] // test seam for selective/population llvm-cov behavior
 pub(super) fn run_rust_selectors_for_module(
     selectors: &[String],
     ctx: &RunContext<'_, '_>,

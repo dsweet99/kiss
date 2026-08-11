@@ -198,7 +198,7 @@ pub(crate) fn try_publish_python_population_durations(
     write_population_durations(&cache_root, &manifest, &pairs)
 }
 
-pub(super) fn try_load_population_durations(
+pub(crate) fn try_load_population_durations(
     cache_root: &Path,
     manifest: &PythonPopulationManifest,
 ) -> Option<Vec<(String, Duration)>> {
@@ -282,7 +282,7 @@ fn load_durations_from_entry_probes(
 }
 
 /// Like [`load_durations_from_entry_probes`], but keeps durations for non-Passed entries.
-pub(super) fn load_durations_from_entry_probes_allow_non_passed(
+pub(crate) fn load_durations_from_entry_probes_allow_non_passed(
     repo_root: &Path,
     pytest_args: &[String],
     selectors: &[String],

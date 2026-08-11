@@ -6,7 +6,11 @@ pub(crate) mod check_line_coverage;
 pub(crate) mod check_runtime_refresh;
 mod coverage_decision;
 pub(crate) mod duration;
+pub(crate) mod ensure_runtime;
 pub(crate) mod execution_witness;
+pub(crate) mod lang_iface;
+pub(crate) mod lang_python;
+pub(crate) mod lang_rust;
 pub(crate) mod last_status;
 mod line_selection;
 mod python_cache_path;
@@ -16,13 +20,14 @@ mod status_labels;
 mod run_logic;
 mod runners;
 mod rust_coverage_index;
-mod rust_llvm_cov;
 mod targets;
 pub(crate) mod unit_test_timing;
 mod rust_report_id_cache;
 mod watch;
 mod rust_batch_interrupt;
-mod rust_llvm_cov_error;
+
+/// Compatibility path: llvm-cov adapters live under `lang_rust::llvm_cov`.
+pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -295,6 +300,7 @@ pub(crate) fn apply_force_complete_population(a: &RunTestCmdArgs<'_>, planned: &
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct PlannedSelectors {
     pub repo_root: PathBuf,
     pub py_sel: Vec<String>,

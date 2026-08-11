@@ -12,7 +12,7 @@ pub(crate) const INDEX_SCHEMA_VERSION: &str = "rslip-python-index-v1";
 pub(crate) const POPULATION_SCHEMA_VERSION: &str = "rslip-python-population-v1";
 pub(crate) const PYTHON_SELECTOR_DISCOVERY_VERSION: &str = "python-selector-discovery-v2";
 
-mod manifest;
+pub(crate) mod manifest;
 pub(crate) use manifest::{
     PYTHON_COVERAGE_ENV_KEYS, StoredPythonPopulation, python_population_environment_mismatch,
     python_population_manifest_is_current_for_args_with_env_keys,
@@ -25,7 +25,7 @@ pub(crate) use manifest::{
     write_python_population_manifest_with_identity,
 };
 
-mod population_durations;
+pub(crate) mod population_durations;
 pub(crate) use population_durations::{
     load_current_python_population_durations, load_current_python_population_max_duration,
     load_current_python_population_path_maxes,
@@ -33,12 +33,12 @@ pub(crate) use population_durations::{
 #[cfg(test)]
 pub(crate) use population_durations::write_population_durations;
 
-mod coverage_snapshot;
+pub(crate) mod coverage_snapshot;
 pub(crate) use coverage_snapshot::{
     try_load_python_coverage_snapshot, write_python_coverage_snapshot,
 };
 
-mod storage;
+pub(crate) mod storage;
 #[cfg(test)]
 pub(crate) use storage::{
     create_new_python_file, is_kiss_rslip_cache_dir, normalized_python_repo_root,
@@ -53,7 +53,7 @@ pub(crate) use storage::{
     python_repo_relative_path as repo_relative_path,
 };
 
-pub(crate) mod generation;
+pub(crate) use crate::test_runner::lang_python::generation;
 pub(crate) use generation::{
     GenerationReason, clear_python_generation_warm_memo, current_complete_generation_matches,
     current_python_execution_identity, problem_selectors_from_timings,

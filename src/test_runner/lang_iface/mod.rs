@@ -1,0 +1,23 @@
+//! Language-neutral contracts for the shared ensure-runtime funnel.
+
+mod witness;
+mod runtime;
+
+pub(crate) use witness::{
+    AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
+    miss_selectors_for_repair, reclassify_statuses_with_gate, summary_from_accepted_witness,
+};
+pub(crate) use runtime::{
+    EnsureRequest, EnsureRuntimeResult, LanguageEnsureResult, LanguageRuntime, OutcomeBatch,
+    PublishBatch,
+};
+#[allow(unused_imports)] // contract types used by LanguageRuntime default methods / call sites
+pub(crate) use runtime::{CoverageSnapshot, StatusTimingSnapshot};
+
+#[cfg(test)]
+#[path = "witness_test.rs"]
+mod witness_test;
+
+#[cfg(test)]
+#[path = "runtime_layout_test.rs"]
+mod runtime_layout_test;

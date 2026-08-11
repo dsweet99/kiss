@@ -1,38 +1,27 @@
-//! Shared execution witness: one warm authority for `kiss test` and `kiss cov`.
+//! Shared execution witness: re-exports from language packages.
 //!
-//! Design resolutions (from plan CP review):
-//! - One Full pointer per language is All-mode current; subset runs filter that
-//!   Full witness and do not publish a competing pinned Subset pointer.
-//! - Time limits are applied at accept from stored raw durations (not baked into
-//!   identity).
-//! - `--lang` is All-mode relative to that language's discovered universe.
+//! Accept types live in `lang_iface`; Python view in `lang_python`; Rust store
+//! in `lang_rust`. This module remains as a stable import path for call sites
+//! not yet migrated to the language packages directly.
 
-mod accept;
-mod python_view;
-mod rust_store;
-
-pub(crate) use accept::{ExecutionWitness, WitnessScope, WitnessStatus};
-pub(crate) use python_view::try_warm_python_cached_summary;
-pub(crate) use rust_store::{
+pub(crate) use crate::test_runner::lang_iface::{ExecutionWitness, WitnessScope, WitnessStatus};
+#[allow(unused_imports)] // compatibility re-exports for migrated call sites
+pub(crate) use crate::test_runner::lang_python::try_warm_python_cached_summary;
+pub(crate) use crate::test_runner::lang_rust::{
     PublishRustWitness, RustWarmDecision, maybe_bootstrap_rust_witness,
     publish_rust_execution_witness, rust_identity_digest_from_batch, rust_warm_or_miss_selectors,
     try_load_rust_execution_witness, try_warm_rust_cached_summary,
 };
-#[cfg(test)]
-pub(crate) use rust_store::rust_miss_selectors;
+
+/// Compatibility shim for callers that still import `execution_witness::accept`.
+#[allow(unused_imports)]
+pub(crate) mod accept {
+    pub(crate) use crate::test_runner::lang_iface::{
+        AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
+        miss_selectors_for_repair, reclassify_statuses_with_gate, summary_from_accepted_witness,
+    };
+}
 
 #[cfg(test)]
-#[path = "accept_test.rs"]
-mod accept_test;
-
-#[cfg(test)]
-#[path = "rust_store_test.rs"]
-mod rust_store_test;
-
-#[cfg(test)]
-#[path = "python_view_test.rs"]
-mod python_view_test;
-
-#[cfg(test)]
-#[path = "bootstrap_test.rs"]
-mod bootstrap_test;
+#[allow(unused_imports)]
+pub(crate) use crate::test_runner::lang_rust::rust_miss_selectors;
