@@ -2,10 +2,8 @@
 
 use std::path::Path;
 
-use super::identity::{
-    current_python_execution_identity, identity_matches_current, population_plan_for_selectors,
-};
-use super::load::{GenerationLoadError, try_load_pinned_python_generation};
+use super::identity::{current_python_execution_identity, identity_matches_current};
+use super::load::{GenerationLoadError, try_load_pinned_python_generation_warm};
 use super::types::PinnedPythonGeneration;
 
 pub(crate) fn current_complete_generation_matches(
@@ -13,8 +11,22 @@ pub(crate) fn current_complete_generation_matches(
     selectors: &[String],
     test_args: &[String],
 ) -> bool {
-    match try_load_pinned_python_generation(repo_root) {
+    match try_load_pinned_python_generation_warm(repo_root) {
         Ok(pinned) => generation_matches(&pinned, repo_root, selectors, test_args) && pinned.complete,
+        Err(_) => false,
+    }
+}
+
+/// Identity + selector-universe match, including incomplete generations.
+/// Planning uses this so warm incomplete sameq-scale suites stay selective; the
+/// ensure kernel owns incomplete repair/reporting.
+pub(crate) fn current_generation_plan_matches(
+    repo_root: &Path,
+    selectors: &[String],
+    test_args: &[String],
+) -> bool {
+    match try_load_pinned_python_generation_warm(repo_root) {
+        Ok(pinned) => generation_matches(&pinned, repo_root, selectors, test_args),
         Err(_) => false,
     }
 }
@@ -24,7 +36,7 @@ pub(crate) fn current_generation_matches_plan(
     selectors: &[String],
     test_args: &[String],
 ) -> Option<PinnedPythonGeneration> {
-    let pinned = try_load_pinned_python_generation(repo_root).ok()?;
+    let pinned = try_load_pinned_python_generation_warm(repo_root).ok()?;
     generation_matches(&pinned, repo_root, selectors, test_args).then_some(pinned)
 }
 
@@ -37,17 +49,19 @@ pub(crate) fn generation_matches(
     if !identity_matches_current(repo_root, &pinned.plan.base_identity, test_args) {
         return false;
     }
-    let Ok(plan) = population_plan_for_selectors(repo_root, selectors, test_args) else {
-        return false;
-    };
-    pinned.plan.selectors == plan.selectors
+    // Compare the selector universe directly; rebuilding a plan would rehash
+    // the whole Python tree via current_python_execution_identity.
+    let mut expected = selectors.to_vec();
+    expected.sort();
+    expected.dedup();
+    pinned.plan.selectors == expected
 }
 
 #[allow(dead_code)]
 pub(crate) fn load_generation_or_stale(
     repo_root: &Path,
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {
-    try_load_pinned_python_generation(repo_root)
+    try_load_pinned_python_generation_warm(repo_root)
 }
 
 #[allow(dead_code)]

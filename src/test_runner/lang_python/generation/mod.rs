@@ -15,6 +15,7 @@ mod durations_load;
 
 pub(crate) use current::{
     current_complete_generation_matches, current_generation_matches_plan,
+    current_generation_plan_matches,
 };
 #[allow(unused_imports)]
 pub(crate) use evidence::{PopulationEvidence, SelectorEvidence};
@@ -24,8 +25,8 @@ pub(crate) use identity::identity_matches_current;
 pub(crate) use identity::population_plan_for_selectors;
 #[allow(unused_imports)]
 pub(crate) use load::{
-    GenerationLoadError, generation_file_index, try_load_pinned_python_generation,
-    try_load_pinned_python_generation_warm,
+    GenerationLoadError, generation_file_index, pinned_python_generation_artifacts_present,
+    try_load_pinned_python_generation, try_load_pinned_python_generation_warm,
 };
 pub(crate) use materialize::{
     materialize_and_publish_from_cached_outcomes, selector_deltas_from_cached_outcomes,

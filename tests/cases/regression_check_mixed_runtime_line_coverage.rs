@@ -79,10 +79,10 @@ fn write_mixed_runtime_repo(repo: &TempDir) {
 
 fn run_kiss_cov_all(home: &TempDir, repo: &TempDir) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("cov")
+        .arg("__coverage")
         .arg("--all")
         .arg(repo.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss cov should run")
+        .expect("kiss test should run")
 }

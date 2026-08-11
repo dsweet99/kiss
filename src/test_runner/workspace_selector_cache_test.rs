@@ -20,3 +20,38 @@ fn workspace_selector_cache_round_trips_then_misses_on_touch() {
     fs::write(&py, "def test_a():\n    assert True\n# touch\n").unwrap();
     assert!(load_cached_workspace_selectors(root, &[]).is_none());
 }
+
+#[test]
+fn git_fingerprint_includes_untracked_sources() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    let init = kiss::scrubbed_git_command(root)
+        .args(["init"])
+        .output()
+        .unwrap();
+    assert!(init.status.success(), "git init failed");
+    fs::write(root.join(".gitignore"), "target/\n").unwrap();
+    fs::create_dir_all(root.join("src")).unwrap();
+    let tracked = root.join("src").join("lib.rs");
+    fs::write(&tracked, "pub fn a() {}\n").unwrap();
+    let add = kiss::scrubbed_git_command(root)
+        .args(["add", "src/lib.rs", ".gitignore"])
+        .output()
+        .unwrap();
+    assert!(add.status.success(), "git add failed");
+    let commit = kiss::scrubbed_git_command(root)
+        .args(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "t"])
+        .output()
+        .unwrap();
+    assert!(commit.status.success(), "git commit failed");
+
+    store_workspace_selectors(root, &[], &[], &["a".into()]);
+    assert!(load_cached_workspace_selectors(root, &[]).is_some());
+
+    // Untracked source must invalidate: discovery will see its tests.
+    fs::write(root.join("src").join("extra.rs"), "pub fn b() {}\n").unwrap();
+    assert!(
+        load_cached_workspace_selectors(root, &[]).is_none(),
+        "untracked .rs must miss selector cache"
+    );
+}

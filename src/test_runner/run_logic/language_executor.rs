@@ -105,18 +105,15 @@ fn emit_execute_phase_progress(module: &dyn LanguageTestModule, phase: &Executio
 }
 
 fn should_rebuild_after_selective(
-    module: &dyn LanguageTestModule,
+    _module: &dyn LanguageTestModule,
     phase: &ExecutionPhase,
     summary: &SelectorExecutionSummary,
 ) -> bool {
     match phase {
         ExecutionPhase::NoWork | ExecutionPhase::Population(_) => false,
         ExecutionPhase::Selective(_) => {
-            // Python compares evidence digests and skips rewrite when unchanged,
-            // including pure cache hits that still must not leave stale coverage.
-            if LanguageExecutor::language(module) == kiss::Language::Python {
-                return true;
-            }
+            // Skip rewrite when this selective phase only re-read cache hits.
+            // (Python used to always rebuild; that reloaded sameq-scale line_index.)
             summary.cache_misses > 0 || summary.cache_unstored > 0
         }
     }

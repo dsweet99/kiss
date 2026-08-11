@@ -42,7 +42,7 @@ fn dispatch_analyze(
             timing,
             cfg,
         }),
-        Commands::Cov {
+        Commands::Coverage {
             paths,
             all,
             ignore,
@@ -173,7 +173,7 @@ fn dispatch_tools(
 fn dispatch_test_command(
     lang: Option<kiss::Language>,
     command: Commands,
-    _cfg: &TriConfig<'_>,
+    cfg: &TriConfig<'_>,
     test_section: &TestSectionConfig,
 ) -> i32 {
     match command {
@@ -185,6 +185,7 @@ fn dispatch_test_command(
             force,
             force_bad,
             metrics,
+            coverage_all,
             watch,
             jobs,
             ignore,
@@ -218,11 +219,13 @@ fn dispatch_test_command(
                 force,
                 force_bad,
                 metrics,
+                coverage_all,
                 watch,
                 jobs,
                 ignore,
                 extra,
                 test_cfg: test_section,
+                cfg,
             })
         }
         _ => 2,
@@ -249,7 +252,7 @@ pub fn dispatch(
             config: _,
             command:
                 command @ (Commands::Check { .. }
-                | Commands::Cov { .. }
+                | Commands::Coverage { .. }
                 | Commands::Stats { .. }
                 | Commands::Mimic { .. }
                 | Commands::Clamp { .. }

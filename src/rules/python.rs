@@ -143,13 +143,13 @@ pub(super) const PY_RULE_SPECS: &[RuleSpec] = &[
         metric: "test_coverage_threshold",
         op: ">=",
         threshold: ThresholdValue::Usize(|_, g| g.test_coverage_threshold),
-        description: "test_coverage_threshold is the minimum percent of syntactically coverable source lines covered by cached rslip runtime coverage. Enforcement is per file or codebase-wide according to `test_coverage_scope` (default `codebase`). `kiss cov` uses a current cache and refreshes missing or stale Python coverage before enforcing it.",
+        description: "test_coverage_threshold is the minimum percent of syntactically coverable source lines covered by cached rslip runtime coverage. Enforcement is per file or codebase-wide according to `test_coverage_scope` (default `codebase`). `kiss test` uses a current cache and refreshes missing or stale Python coverage before enforcing it.",
     },
     RuleSpec {
         metric: "max_unit_test_seconds",
         op: "<",
         threshold: ThresholdValue::F64(|_, g| g.catch_all_unit_test_seconds()),
-        description: "max_unit_test_seconds is an ordered path-pattern → seconds table (must end with \"*\"). First match wins. Enforced by `kiss cov` and used by `kiss test` for TIMEOUT labeling. Catch-all 0 bans unmatched paths. Default \"*\" = 2.0.",
+        description: "max_unit_test_seconds is an ordered path-pattern → seconds table (must end with \"*\"). First match wins. Enforced by `kiss test` and used by `kiss test` for TIMEOUT labeling. Catch-all 0 bans unmatched paths. Default \"*\" = 2.0.",
     },
     RuleSpec {
         metric: "min_similarity",

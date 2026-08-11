@@ -28,17 +28,17 @@ pub(crate) fn python_population_manifest_is_current_for_args_with_env_keys(
     test_args: &[String],
     env_keys: &[&str],
 ) -> bool {
-    let _ = env_keys;
-    if super::generation::current_complete_generation_matches(repo_root, selectors, test_args) {
-        return true;
-    }
     let Ok(identity) =
         current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
     else {
         return false;
     };
-    // Prefer the warm-seal plan path when available: skip tree rehash / entry restat.
+    // Prefer the warm-seal plan path first: skip tree rehash / entry restat.
     if python_population_manifest_is_current_for_warm_seal(repo_root, selectors, &identity) {
+        return true;
+    }
+    // Complete or incomplete generation with matching identity/universe.
+    if super::generation::current_generation_plan_matches(repo_root, selectors, test_args) {
         return true;
     }
     python_population_manifest_is_current_with_identity(repo_root, selectors, &identity)
@@ -55,11 +55,42 @@ fn python_population_manifest_is_current_for_warm_seal(
     if !rslip::warm_hit_seal_exists(&cache_root) {
         return false;
     }
+    // v2: population.json is a pointer, not a v1 manifest. Use warm generation
+    // (no line_index) and skip source-tree rehash while the seal file exists.
+    if let Ok(pinned) =
+        super::generation::try_load_pinned_python_generation_warm(repo_root)
+    {
+        return generation_matches_tools_and_selectors(&pinned, repo_root, selectors, identity);
+    }
     let Some(manifest) = read_python_population_manifest(repo_root) else {
         return false;
     };
     manifest.matches_python_identity(identity, &normalized_python_repo_root(repo_root))
         && manifest.matches_python_selectors(selectors)
+}
+
+fn generation_matches_tools_and_selectors(
+    pinned: &super::generation::PinnedPythonGeneration,
+    repo_root: &Path,
+    selectors: &[String],
+    identity: &PythonPopulationManifestIdentity,
+) -> bool {
+    let exec = &pinned.plan.base_identity;
+    let source_root = normalized_python_repo_root(repo_root);
+    identity.has_python_tool_versions()
+        && exec.source_root == source_root
+        && exec.cache_schema_version == identity.cache_schema_version
+        && exec.selector_discovery_version == identity.selector_discovery_version
+        && exec.python_version == identity.python_version
+        && exec.pytest_version == identity.pytest_version
+        && exec.pytest_args == identity.pytest_args
+        && exec.env == identity.env
+        && {
+            let mut expected = selectors.to_vec();
+            expected.sort();
+            expected.dedup();
+            pinned.plan.selectors == expected
+        }
 }
 
 #[cfg(test)]

@@ -130,16 +130,16 @@ fn kiss_test_dot_prints_final_pass_recap() {
         cold.status.success(),
         "cold kiss test . should pass, stderr={cold_err}, stdout={cold_out}"
     );
-    let cold_last = cold_out
+    let cold_recap = cold_out
         .lines()
         .rev()
-        .find(|line| !line.trim().is_empty())
+        .find(|line| line.starts_with("✓ ") || line.starts_with("✗ "))
         .unwrap_or("");
     assert!(
-        cold_last.starts_with("✓ ")
-            && cold_last.contains(" passed · ")
-            && cold_last.contains(" total · "),
-        "cold run must end with pass recap, last={cold_last}, stdout={cold_out}"
+        cold_recap.starts_with("✓ ")
+            && cold_recap.contains(" passed · ")
+            && cold_recap.contains(" total · "),
+        "cold run must include pass recap, recap={cold_recap}, stdout={cold_out}"
     );
     assert!(
         cold_out.contains("PASS:") || cold_out.contains("PASS (cached):"),
@@ -158,16 +158,16 @@ fn kiss_test_dot_prints_final_pass_recap() {
         warm.status.success(),
         "warm kiss test . should pass, stderr={warm_err}, stdout={warm_out}"
     );
-    let warm_last = warm_out
+    let warm_recap = warm_out
         .lines()
         .rev()
-        .find(|line| !line.trim().is_empty())
+        .find(|line| line.starts_with("✓ ") || line.starts_with("✗ "))
         .unwrap_or("");
     assert!(
-        warm_last.starts_with("✓ ")
-            && warm_last.contains(" passed · ")
-            && warm_last.ends_with("0s max pass"),
-        "warm cache hits must keep pass count and 0s max pass, last={warm_last}, stdout={warm_out}"
+        warm_recap.starts_with("✓ ")
+            && warm_recap.contains(" passed · ")
+            && warm_recap.ends_with("0s max pass"),
+        "warm cache hits must keep pass count and 0s max pass, recap={warm_recap}, stdout={warm_out}"
     );
 }
 

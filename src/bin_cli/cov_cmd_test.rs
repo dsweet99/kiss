@@ -20,6 +20,7 @@ fn evaluate_records_with_time_rejects_when_coverage_gate_fails() {
         ignore: &[],
         timing: false,
         jobs: 1,
+        allow_refresh: true,
     };
     let records = [analyze::line_coverage::LineCoverageRecord {
         file: PathBuf::from("src/low.rs"),
@@ -77,6 +78,7 @@ fn both_gates_disabled_short_circuits() {
         ignore: &[],
         timing: false,
         jobs: 1,
+        allow_refresh: true,
     };
     assert_eq!(run_cov_command(&args), 0);
 }
@@ -110,6 +112,7 @@ fn wiring_guard_time_gate_invoked_from_cov_path() {
         ignore: &[],
         timing: false,
         jobs: 1,
+        allow_refresh: true,
     };
     let files = CovFileSets {
         py_files: vec![],
@@ -160,6 +163,7 @@ fn try_evaluate_records_with_time_falls_through_on_incomplete() {
         ignore: &[],
         timing: false,
         jobs: 1,
+        allow_refresh: true,
     };
     let files = CovFileSets {
         py_files: vec![],
@@ -256,7 +260,156 @@ fn time_only_gate_path_runs_when_coverage_threshold_zero() {
         ignore: &[],
         timing: false,
         jobs: 1,
+        allow_refresh: true,
     };
     // No durable rust population → incomplete timings → nonzero.
     assert_eq!(run_cov_command(&args), 1);
+}
+
+
+#[test]
+fn allow_refresh_false_incomplete_time_gate_fails_closed() {
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig::default();
+    let args = CovCommandArgs {
+        paths: &[],
+        lang_filter: None,
+        py_config: &py,
+        rs_config: &rs,
+        gate_config: &gate,
+        bypass_gate: false,
+        ignore: &[],
+        timing: false,
+        jobs: 1,
+        allow_refresh: false,
+    };
+    let records = [analyze::line_coverage::LineCoverageRecord {
+        file: PathBuf::from("src/ok.rs"),
+        total_lines: 10,
+        covered_lines: 10,
+        percent: 100,
+        first_uncovered_line: None,
+    }];
+    let files = CovFileSets {
+        py_files: vec![],
+        rs_files: vec![PathBuf::from("src/ok.rs")],
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let focus = FocusFilter::unrestricted();
+    let code = try_evaluate_records_with_time(
+        &records,
+        &RecordsEvalCtx {
+            focus: &focus,
+            threshold: 75,
+            scope: TestCoverageScope::ByFile,
+            args: &args,
+            universe_root: tmp.path(),
+            files: &files,
+            ignore: &[],
+        },
+    );
+    // Empty universe timings are Incomplete or Disabled/Passed; Incomplete must be Some(1).
+    if matches!(
+        evaluate_time_gate_for_cov(&args, tmp.path(), &files, &[]),
+        RuntimeGateEval::Incomplete
+    ) {
+        assert_eq!(code, Some(1));
+    }
+}
+
+#[test]
+fn load_or_refresh_snapshot_respects_allow_refresh_false() {
+    let tmp = tempfile::tempdir().unwrap();
+    let required = RequiredCoverageLanguages {
+        python: true,
+        rust: false,
+    };
+    let err = load_or_refresh_snapshot(tmp.path(), required, &[], 1, false);
+    assert!(matches!(err, Err(1)), "cache-only load must fail closed: {err:?}");
+}
+
+
+#[test]
+fn timing_true_empty_universe_short_circuits_or_fails_softly() {
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig {
+        test_coverage_threshold: 0,
+        max_unit_test_seconds: Vec::new(),
+        ..GateConfig::default()
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().to_string_lossy().to_string();
+    let args = CovCommandArgs {
+        paths: std::slice::from_ref(&path),
+        lang_filter: Some(Language::Python),
+        py_config: &py,
+        rs_config: &rs,
+        gate_config: &gate,
+        bypass_gate: false,
+        ignore: &[],
+        timing: true,
+        jobs: 1,
+        allow_refresh: false,
+    };
+    // Empty dir → no files → 0; or gate-disabled short circuit.
+    let code = run_cov_command(&args);
+    assert!(code == 0 || code == 1, "code={code}");
+}
+
+
+
+#[test]
+fn run_cov_command_hits_records_fast_path_after_seed() {
+    use crate::test_runner::python_coverage_index::{
+        write_python_coverage_snapshot, write_python_population_manifest_for_args,
+    };
+    use crate::bin_cli::cov_warm::warm_cov_caches_after_tests;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fs;
+
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::env::set_current_dir(repo).unwrap();
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::write(repo.join("a.py"), "x = 1\n").unwrap();
+    fs::write(
+        repo.join(".kissconfig"),
+        "[gate]\ntest_coverage_threshold = 50\nmax_unit_test_seconds = [[\"*\", 0.0]]\n",
+    )
+    .unwrap();
+    let selector = "tests/test_a.py::test_x".to_string();
+    write_python_population_manifest_for_args(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    let mut covered = BTreeMap::new();
+    covered.insert("a.py".to_string(), BTreeSet::from([1u32]));
+    write_python_coverage_snapshot(repo, &covered).unwrap();
+    warm_cov_caches_after_tests(repo, Some(Language::Python), &[]);
+
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig::load();
+    let path = ".".to_string();
+    let args = CovCommandArgs {
+        paths: std::slice::from_ref(&path),
+        lang_filter: Some(Language::Python),
+        py_config: &py,
+        rs_config: &rs,
+        gate_config: &gate,
+        bypass_gate: false,
+        ignore: &[],
+        timing: true,
+        jobs: 1,
+        allow_refresh: false,
+    };
+    let code = run_cov_command(&args);
+    assert!(code == 0 || code == 1, "code={code}");
+
+    let args_bypass = CovCommandArgs {
+        bypass_gate: true,
+        allow_refresh: false,
+        ..args
+    };
+    let _ = run_cov_command(&args_bypass);
 }

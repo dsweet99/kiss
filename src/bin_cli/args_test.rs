@@ -22,20 +22,21 @@ fn witness_cli_types() {
 }
 
 #[test]
-fn cov_accepts_jobs_override() {
-    let cli = Cli::parse_from(["kiss", "cov", "-j", "7"]);
-    assert!(matches!(cli.command, Commands::Cov { jobs: Some(7), .. }));
+fn cov_subcommand_is_removed() {
+    assert!(Cli::try_parse_from(["kiss", "cov"]).is_err());
+    assert!(Cli::try_parse_from(["kiss", "cov", ".", "-j", "7"]).is_err());
 }
 
 #[test]
-fn cov_jobs_defaults_to_none_for_config_num_jobs() {
-    let cli = Cli::parse_from(["kiss", "cov"]);
-    assert!(matches!(cli.command, Commands::Cov { jobs: None, .. }));
-}
-
-#[test]
-fn cov_rejects_zero_jobs_override() {
-    assert!(Cli::try_parse_from(["kiss", "cov", "-j", "0"]).is_err());
+fn test_accepts_coverage_all_flag() {
+    let cli = Cli::parse_from(["kiss", "test", ".", "--coverage-all"]);
+    assert!(matches!(
+        cli.command,
+        Commands::Test {
+            coverage_all: true,
+            ..
+        }
+    ));
 }
 
 #[test]

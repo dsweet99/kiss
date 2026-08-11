@@ -40,16 +40,6 @@ fn call_handler_dispatchers(
         timing: false,
         cfg,
     });
-    let _ = handlers::dispatch_cov(options::CovDispatchOptions {
-        lang: None,
-        paths: vec![".".to_string()],
-        bypass_gate: true,
-        ignore: vec![],
-        timing: false,
-        jobs: None,
-        cfg,
-        test_cfg: test,
-    });
     let _ = handlers::dispatch_stats(options::StatsDispatchOptions {
         lang: None,
         paths: vec![".".to_string()],
@@ -115,11 +105,13 @@ fn call_handler_dispatchers(
         dry_run: true,
         force: false,
         force_bad: false,        metrics: false,
+        coverage_all: false,
         watch: false,
         jobs: None,
         ignore: vec![],
         extra: vec![],
         test_cfg: test,
+        cfg,
     });
     let _ = handlers::dispatch_mv(options::MvDispatchOptions {
         lang: None,
@@ -204,6 +196,7 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
                 dry_run: true,
                 force: false,
         force_bad: false,                metrics: false,
+                coverage_all: false,
                 watch: false,
                 jobs: None,
                 ignore: vec![],
@@ -349,6 +342,7 @@ fn dispatch_test_rejects_watch_with_dry_run() {
                 dry_run: true,
                 force: false,
         force_bad: false,                metrics: false,
+                coverage_all: false,
                 watch: true,
                 jobs: None,
                 ignore: vec![],

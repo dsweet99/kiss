@@ -5,7 +5,8 @@ mod runtime;
 
 pub(crate) use witness::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
-    miss_selectors_for_repair, reclassify_statuses_with_gate, summary_from_accepted_witness,
+    all_misses_warm_skippable, miss_selectors_for_repair, reclassify_statuses_with_gate,
+    summary_from_accepted_witness, summary_from_witness_statuses,
 };
 pub(crate) use runtime::{
     EnsureRequest, EnsureRuntimeResult, LanguageEnsureResult, LanguageRuntime, OutcomeBatch,

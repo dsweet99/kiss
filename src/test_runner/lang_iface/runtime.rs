@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use kiss::Language;
 
-use super::witness::{AcceptMode, ExecutionWitness, WitnessStatus};
+use super::witness::{AcceptMode, ExecutionWitness, WitnessStatus, summary_from_witness_statuses};
 use crate::test_runner::runners::SelectorExecutionSummary;
 
 #[derive(Clone, Debug)]
@@ -156,4 +156,25 @@ pub(crate) trait LanguageRuntime {
         planned: &[String],
         witness: &ExecutionWitness,
     ) -> SelectorExecutionSummary;
+
+    /// Report planned selectors from a witness without assuming all Passed.
+    fn cached_witness_summary(
+        &self,
+        request: &EnsureRequest,
+        planned: &[String],
+        witness: &ExecutionWitness,
+    ) -> SelectorExecutionSummary {
+        let _ = request;
+        summary_from_witness_statuses(planned, witness, |selector| selector.to_string(), false)
+    }
+
+    /// Selectors used when applying `max_unit_test_seconds` during accept.
+    /// Rust witnesses store nextest logical ids; time-gate patterns expect PATH::symbol.
+    fn selectors_for_time_gate(
+        &self,
+        _request: &EnsureRequest,
+        selectors: &[String],
+    ) -> Vec<String> {
+        selectors.to_vec()
+    }
 }

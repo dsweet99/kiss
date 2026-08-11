@@ -1011,7 +1011,7 @@ def load_json(path: Path) -> dict:
 
 
 def parse_rust_aggregate_refresh(stderr: str) -> tuple[int, int] | None:
-    prefix = "kiss cov: refreshed Rust runtime coverage "
+    prefix = "kiss test: refreshed Rust runtime coverage "
     for line in stderr.splitlines():
         if not line.startswith(prefix):
             continue
@@ -1283,7 +1283,7 @@ def witness_env(repo: Path, marker_dir: Path) -> dict[str, str]:
 
 
 def witness_check_command(language: str, repo: Path, jobs: int | None = None) -> list[str]:
-    command = [str(KISS), "--defaults", "--lang", language, "cov"]
+    command = [str(KISS), "--defaults", "--lang", language, "__coverage"]
     if jobs is not None:
         command.extend(["-j", str(jobs)])
     command.append(str(repo))
@@ -1403,7 +1403,7 @@ def wait_for_barrier_ready(barrier_dir: Path, artifact: str, phase: str) -> dict
 
 
 def force_publication_target(repo: Path, language: str, artifact: str) -> None:
-    # Warm cov_records_cache short-circuits kiss cov before language caches
+    # Warm cov_records_cache short-circuits kiss test before language caches
     # republish; clear it so publication barriers and recovery paths run.
     (repo / ".kiss" / "cov_records_cache.json").unlink(missing_ok=True)
     if language == "python":
@@ -1473,7 +1473,7 @@ def publication_writer_command(
 ) -> list[str]:
     if language == "rust" and artifact in RUST_SELECTOR_PUBLISH_ARTIFACTS:
         # Population + --force takes SelectorEntries publish (entry_state/reverse),
-        # not the CheckAggregate ensure path used by plain kiss cov / kiss test.
+        # not the CheckAggregate ensure path used by plain kiss test / kiss test.
         command = [
             str(KISS),
             "--defaults",
@@ -1677,7 +1677,7 @@ def run_aggregate_benchmark_trial(
             "--defaults",
             "--lang",
             "rust",
-            "cov",
+            "__coverage",
             "-j",
             str(jobs),
             str(repo),
@@ -1860,7 +1860,7 @@ def coverage_cache_witness() -> None:
         assert_rust_coverage_witness(rs_repo, rs_markers)
         click.echo(
             "QA PASS: kiss test primes Python and Rust coverage populations; "
-            "warm kiss cov reuses them without refresh; covered-line, warm "
+            "warm kiss test reuses them without refresh; covered-line, warm "
             "reuse, and changed-line dry-run selection held."
         )
 
@@ -3169,7 +3169,7 @@ def aggregate_coverage() -> None:
             "--defaults",
             "--lang",
             "rust",
-            "cov",
+            "__coverage",
             "-j",
             str(jobs),
             *fixture.ignores["rust"],

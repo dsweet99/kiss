@@ -142,7 +142,7 @@ fn runtime_coverage_error_display_includes_language_and_reason() {
 
     assert_eq!(
         err.to_string(),
-        "error: kiss cov: Rust runtime line coverage is missing population."
+        "error: kiss test: Rust runtime line coverage is missing population."
     );
 }
 

@@ -3,9 +3,9 @@
 Global code feedback for LLM coding agents
 
 ## tl;dr
-`kiss check` provides feedback to LLMs about code complexity and duplication; `kiss cov` refreshes and enforces cached runtime line coverage. Add an AI coder rule (e.g., a Cursor rule) like
+`kiss check` provides feedback to LLMs about code complexity and duplication; `kiss test` refreshes and enforces cached runtime line coverage. Add an AI coder rule (e.g., a Cursor rule) like
 ```
-When you write code, always make sure `pytest -sv tests`, `ruff check`, `kiss check`, and `kiss cov` pass.
+When you write code, always make sure `pytest -sv tests`, `ruff check`, `kiss check`, and `kiss test` pass.
 Iterate until they do.
 ```
 kiss will help your LLM/agent produce simpler, clearer, more maintainable code. kiss works on Python and Rust.
@@ -14,7 +14,7 @@ kiss will help your LLM/agent produce simpler, clearer, more maintainable code. 
 ## The Problem: Missing Global Context
 LLMs operate locally, focusing on whatever code they are editing plus bits and pieces of other, relevant code. They ignore the overall structure of the codebase because they don't see it. Over time, code tends to be a little more tangled, a little less DRY, harder to read and harder to update. To counteract this, LLMs need global information about the codebase.
 
-kiss attempts to provide that in the form of stats about files, functions, etc., code-graph metrics, detected duplication, and low runtime line coverage. `kiss check` stays fast and static; run `kiss cov` when you need coverage enforcement. kiss's output is compact, so it won't bloat context.
+kiss attempts to provide that in the form of stats about files, functions, etc., code-graph metrics, detected duplication, and low runtime line coverage. `kiss check` stays fast and static; run `kiss test` when you need coverage enforcement. kiss's output is compact, so it won't bloat context.
 
 ## Installation
 
@@ -102,7 +102,7 @@ FIRST STEP: After the user's first request, before doing anything else, call `ki
 ```
 
 
-The rules that `kiss rules` dumps to stdout are enforced by `kiss check` for static rules and by `kiss cov` for coverage. Note that the threshold numbers in the output you see will come from your actual kiss config.
+The rules that `kiss rules` dumps to stdout are enforced by `kiss check` for static rules and by `kiss test` for coverage. Note that the threshold numbers in the output you see will come from your actual kiss config.
 
 ```
 $ kiss rules
@@ -134,7 +134,7 @@ RULE: [Python] [imported_names_per_file < 30] imported_names_per_file is the max
 RULE: [Python] [cycle_size < 0] cycle_size is the maximum allowed number of modules participating in an import cycle.
 RULE: [Python] [indirect_dependencies < 10] indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).
 RULE: [Python] [dependency_depth < 3] dependency_depth is the maximum length of an import chain in the dependency graph.
-RULE: [Python] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of syntactically coverable source lines per Python file covered by cached rslip runtime coverage. `kiss cov` uses a current cache; when Python coverage is missing or stale, it refreshes the full Python test population before enforcing the gate.
+RULE: [Python] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of syntactically coverable source lines per Python file covered by cached rslip runtime coverage. `kiss test` uses a current cache; when Python coverage is missing or stale, it refreshes the full Python test population before enforcing the gate.
 RULE: [Python] [min_similarity >= 0.90] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 RULE: [Rust] [statements_per_function < 35] statements_per_function is the maximum number of statements in a Rust function/method body.
 RULE: [Rust] [positional_args < 8] positional_args is the maximum number of non-self parameters in a Rust function/method signature.
@@ -156,7 +156,7 @@ RULE: [Rust] [imported_names_per_file < 50] imported_names_per_file is the maxim
 RULE: [Rust] [cycle_size < 0] cycle_size is the maximum allowed number of modules participating in a dependency cycle.
 RULE: [Rust] [indirect_dependencies < 10] indirect_dependencies is the number of modules reachable only through other modules (total reachable minus direct fan-out).
 RULE: [Rust] [dependency_depth < 3] dependency_depth is the maximum length of a module dependency chain in the dependency graph.
-RULE: [Rust] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of syntactically coverable source lines per Rust file covered by cached llvm-cov runtime coverage. `kiss cov` uses a current cache; when Rust coverage is stale, it reuses selector coverage only when the compiled test executable digest is unchanged, reruns invalidated selectors, and falls back to a full Rust test-population refresh whenever reuse cannot be proven safe.
+RULE: [Rust] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of syntactically coverable source lines per Rust file covered by cached llvm-cov runtime coverage. `kiss test` uses a current cache; when Rust coverage is stale, it reuses selector coverage only when the compiled test executable digest is unchanged, reruns invalidated selectors, and falls back to a full Rust test-population refresh whenever reuse cannot be proven safe.
 RULE: [Rust] [min_similarity >= 0.90] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 ```
 

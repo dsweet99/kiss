@@ -29,6 +29,9 @@ pub struct CovCommandArgs<'a> {
     pub ignore: &'a [String],
     pub timing: bool,
     pub jobs: usize,
+    /// When false, evaluate from the current cache only (no population refresh).
+    /// Used after a successful `kiss test` run that already ensured the cache.
+    pub allow_refresh: bool,
 }
 
 fn load_or_refresh_snapshot(
@@ -36,11 +39,16 @@ fn load_or_refresh_snapshot(
     required: RequiredCoverageLanguages,
     ignore: &[String],
     jobs: usize,
+    allow_refresh: bool,
 ) -> Result<crate::test_runner::check_line_coverage::ValidatedCovInputs, i32> {
     use crate::test_runner::check_line_coverage::ValidatedCovInputs;
     let snapshot = match load_check_runtime_coverage(repo_root, required, ignore) {
         Ok(snapshot) => snapshot,
-        Err(_) => {
+        Err(load_err) => {
+            if !allow_refresh {
+                eprintln!("{load_err}");
+                return Err(1);
+            }
             if let Err(err) = ensure_check_runtime_coverage(repo_root, required, ignore, jobs) {
                 eprintln!("{err}");
                 return Err(1);
@@ -100,7 +108,7 @@ fn apply_time_gate_eval(eval: &RuntimeGateEval) -> bool {
         }
         RuntimeGateEval::Incomplete => {
             eprintln!(
-                "error: kiss cov: unit-test timing cache is incomplete for the current population"
+                "error: kiss test: unit-test timing cache is incomplete for the current population"
             );
             true
         }
@@ -165,7 +173,13 @@ fn try_evaluate_records_with_time(
     let time_eval =
         evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
     if matches!(time_eval, RuntimeGateEval::Incomplete) {
-        // Schema bump / stale entries: force cold path so kiss cov can refresh once.
+        if !ctx.args.allow_refresh {
+            eprintln!(
+                "error: kiss test: unit-test timing cache is incomplete for the current population"
+            );
+            return Some(1);
+        }
+        // Schema bump / stale entries: force cold path so coverage can refresh once.
         return None;
     }
     let coverage_failed = evaluate_coverage_gate(
@@ -297,7 +311,13 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
             rust: !files.rs_files.is_empty(),
         };
         // Ensure populations are current so schema bumps can refresh durations once.
-        let _ = load_or_refresh_snapshot(&repo_root, required, &ignore, args.jobs);
+        let _ = load_or_refresh_snapshot(
+            &repo_root,
+            required,
+            &ignore,
+            args.jobs,
+            args.allow_refresh,
+        );
         let time_eval = evaluate_time_gate_for_cov(args, universe_root, &files, &ignore);
         let time_failed = apply_time_gate_eval(&time_eval);
         return finish_sibling_gates(SiblingGateResult {
@@ -357,7 +377,13 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
     if let Some(code) = try_cov_records_fast_path(&cache_key, &eval_ctx, t0) {
         return code;
     }
-    let validated = match load_or_refresh_snapshot(&repo_root, required, p.ignore, p.args.jobs) {
+    let validated = match load_or_refresh_snapshot(
+        &repo_root,
+        required,
+        p.ignore,
+        p.args.jobs,
+        p.args.allow_refresh,
+    ) {
         Ok(validated) => validated,
         Err(code) => return code,
     };

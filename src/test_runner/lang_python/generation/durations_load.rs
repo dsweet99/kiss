@@ -198,3 +198,8 @@ fn read_plan_selectors(gen_dir: &Path) -> Option<Vec<String>> {
     let manifest: ManifestSelectorsOnly = serde_json::from_slice(&bytes).ok()?;
     Some(manifest.plan.selectors)
 }
+
+#[cfg(test)]
+#[path = "durations_load_test.rs"]
+mod tests;
+

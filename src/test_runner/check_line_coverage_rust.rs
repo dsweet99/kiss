@@ -4,9 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use super::{BackendCoverage, RuntimeCoverageLoadError, coverage_error};
-use crate::test_runner::execution_witness::{
-    try_load_rust_execution_witness, try_warm_rust_cached_summary,
-};
+use crate::test_runner::execution_witness::try_load_rust_execution_witness;
 use crate::test_runner::rust_coverage_index::{
     current_rust_coverage_batch_identity,
     repo_relative_coverage_file as rust_repo_relative_coverage_file, rust_coverage_cache_root,
@@ -20,9 +18,7 @@ pub(crate) fn load_rust_runtime_coverage(
         coverage_error("Rust", &format!("stale/incompatible tool identity ({err})"))
     })?;
     let cache_root = rust_coverage_cache_root(repo_root);
-    let selectors =
-        crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
-            .map_err(|err| coverage_error("Rust", &format!("selector discovery failed ({err})")))?;
+    let selectors = rust_selectors_for_coverage_load(repo_root, ignore)?;
     if let Some(cov) = try_load_rust_coverage_from_witness(repo_root, &identity, &selectors) {
         return Ok(cov);
     }
@@ -60,17 +56,36 @@ pub(crate) fn load_rust_runtime_coverage(
     ))
 }
 
+fn rust_selectors_for_coverage_load(
+    repo_root: &Path,
+    ignore: &[String],
+) -> Result<Vec<String>, RuntimeCoverageLoadError> {
+    // Prefer the warm workspace selector cache (same plan as `kiss test`) so
+    // post-test coverage does not re-walk/parse the whole Rust tree.
+    if let Some((_, rust_selectors, _)) =
+        crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
+            repo_root, ignore,
+        )
+    {
+        return Ok(rust_selectors);
+    }
+    crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
+        .map_err(|err| coverage_error("Rust", &format!("selector discovery failed ({err})")))
+}
+
 pub(super) fn try_load_rust_coverage_from_witness(
     repo_root: &Path,
     identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
     selectors: &[String],
 ) -> Option<BackendCoverage> {
-    let witness = try_load_rust_execution_witness(repo_root).ok()?;
+    let mut witness = try_load_rust_execution_witness(repo_root).ok()?;
     if witness.covered_lines.is_empty() {
         return None;
     }
-    // Accept-or-miss via the shared warm helper (All vs Subset chosen inside).
-    let _summary = try_warm_rust_cached_summary(repo_root, selectors, identity)?;
+    // Silent Accept (do not print PASS lines or rebuild report-id maps).
+    if !rust_witness_accepts_planned(repo_root, &mut witness, identity, selectors) {
+        return None;
+    }
     let covered: BTreeMap<String, BTreeSet<u32>> = witness
         .covered_lines
         .into_iter()
@@ -79,14 +94,49 @@ pub(super) fn try_load_rust_coverage_from_witness(
     Some(backend_from_lines(witness.generation_id, covered))
 }
 
+fn rust_witness_accepts_planned(
+    _repo_root: &Path,
+    witness: &mut crate::test_runner::lang_iface::ExecutionWitness,
+    identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    selectors: &[String],
+) -> bool {
+    use crate::test_runner::execution_witness::rust_identity_digest_from_batch;
+    use crate::test_runner::lang_iface::{
+        AcceptDecision, AcceptMode, accept_witness, reclassify_statuses_with_gate,
+    };
+    use kiss::GateConfig;
+    let current = rust_identity_digest_from_batch(identity);
+    if witness.identity_digest != current {
+        return false;
+    }
+    let gate = GateConfig::load();
+    witness.statuses = reclassify_statuses_with_gate(
+        &witness.selectors,
+        &witness.statuses,
+        &witness.durations_ns,
+        &gate,
+    );
+    let mut planned = selectors.to_vec();
+    planned.sort();
+    planned.dedup();
+    let mode = if planned == witness.selectors {
+        AcceptMode::All
+    } else {
+        AcceptMode::Subset
+    };
+    accept_witness(mode, &planned, &current, witness) == AcceptDecision::Accept
+}
+
 pub(super) fn try_load_rust_coverage_from_witness_prior(
     repo_root: &Path,
     cache_root: &Path,
     identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
     selectors: &[String],
 ) -> Option<BackendCoverage> {
-    let witness = try_load_rust_execution_witness(repo_root).ok()?;
-    let _summary = try_warm_rust_cached_summary(repo_root, selectors, identity)?;
+    let mut witness = try_load_rust_execution_witness(repo_root).ok()?;
+    if !rust_witness_accepts_planned(repo_root, &mut witness, identity, selectors) {
+        return None;
+    }
     // Load prior against the Full witness universe (not the possibly ignore-filtered
     // cov planned set). `load_reusable_prior_check_aggregate` requires exact
     // selector equality with the on-disk aggregate.

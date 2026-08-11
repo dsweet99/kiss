@@ -75,6 +75,20 @@ pub(crate) fn try_load_pinned_python_generation_warm(
     super::memo::try_load_pinned_python_generation_warm_memoized(repo_root)
 }
 
+/// Presence only: pointer + core artifacts. Does not read or parse line_index.
+pub(crate) fn pinned_python_generation_artifacts_present(repo_root: &Path) -> bool {
+    let Ok(cache_root) = python_coverage_cache_root(repo_root) else {
+        return false;
+    };
+    let Ok(pointer) = read_pointer(&cache_root) else {
+        return false;
+    };
+    let gen_dir = generation_dir(&cache_root, &pointer.generation_id);
+    gen_dir.join("manifest.json").is_file()
+        && gen_dir.join("coverage.json").is_file()
+        && gen_dir.join("timings.json").is_file()
+}
+
 pub(crate) fn load_pinned_warm_locked(
     cache_root: &Path,
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {

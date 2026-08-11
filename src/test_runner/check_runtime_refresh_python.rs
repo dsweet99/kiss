@@ -1,4 +1,4 @@
-//! Python incomplete-generation repair and full cold refresh for `kiss cov`.
+//! Python incomplete-generation repair and full cold refresh for `kiss test`.
 
 use std::path::Path;
 
@@ -62,7 +62,7 @@ fn run_python_ensure(
     request: crate::test_runner::lang_iface::EnsureRequest,
 ) -> Result<(), CoverageRefreshError> {
     eprintln!(
-        "kiss cov: refreshing Python runtime coverage ({} tests)",
+        "kiss test: refreshing Python runtime coverage ({} tests)",
         request.planned_python.len()
     );
     let _refresh_env = ScopedRefreshEnvGuard::set();

@@ -44,7 +44,7 @@ fn kpop_python_none_test_coverage_threshold() {
     // RULE: test_coverage_threshold
     //
     // Static-reference coverage was removed. Runtime coverage is owned by
-    // `kiss cov`; this test only asserts the threshold config remains loadable
+    // `kiss test`; this test only asserts the threshold config remains loadable
     // and the static-reference APIs are gone.
     let gate = kiss::GateConfig {
         test_coverage_threshold: 90,

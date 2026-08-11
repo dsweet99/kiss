@@ -82,12 +82,12 @@ fn run_cov_from_corpus_root(
     kiss_binary()
         .current_dir(root)
         .env("HOME", home)
-        .arg("cov")
+        .arg("__coverage")
         .arg("--lang")
         .arg("python")
         .arg(target)
         .output()
-        .expect("kiss cov should run")
+        .expect("kiss test should run")
 }
 
 /// Explicit `by_file`: whole-repo must fail when any production file is below the threshold,

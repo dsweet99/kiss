@@ -10,7 +10,7 @@ use std::path::PathBuf;
     about = "Code-quality metrics tool for Python and Rust"
 )]
 #[command(
-    after_help = "EXAMPLES:\n  kiss check .                 Run static analysis on current directory\n  kiss check . src/module/     Analyze module against full codebase (focus mode)\n  kiss cov .                   Refresh and check runtime line coverage\n  kiss check --lang rust src/  Analyze only Rust files in src/\n  kiss mimic . --out .kissconfig   Generate config from codebase\n  kiss init .                  Write a default .kissconfig"
+    after_help = "EXAMPLES:\n  kiss check .                 Run static analysis on current directory\n  kiss check . src/module/     Analyze module against full codebase (focus mode)\n  kiss test                    Run tests and enforce runtime coverage\n  kiss check --lang rust src/  Analyze only Rust files in src/\n  kiss mimic . --out .kissconfig   Generate config from codebase\n  kiss init .                  Write a default .kissconfig"
 )]
 pub struct Cli {
     /// Path to custom config file (default: .kissconfig)
@@ -119,7 +119,7 @@ fn parse_path_or_directory_targets(
 ) -> Result<TestInvocation, String> {
     if matches!(first, "cov" | "validate-selection") {
         return Err(format!(
-            "unknown test target '{first}'. Use {TEST_OPERAND_HINT}. Coverage is `kiss cov`."
+            "unknown test target '{first}'. Use {TEST_OPERAND_HINT}. Coverage is enforced by `kiss test`."
         ));
     }
     if let Some(operand) = operands
@@ -218,25 +218,6 @@ pub enum Commands {
         /// Show timing breakdown for performance analysis
         #[arg(long)]
         timing: bool,
-    },
-    /// Refresh and check runtime line coverage
-    Cov {
-        /// First path is UNIVERSE (coverage scope), additional paths are FOCUS (report only these)
-        #[arg(default_value = ".")]
-        paths: Vec<String>,
-        /// Bypass coverage gate and show all coverage violations
-        #[arg(long)]
-        all: bool,
-        /// Ignore files/directories starting with PREFIX (repeatable)
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-        /// Show timing breakdown for coverage loading/refresh/evaluation
-        #[arg(long)]
-        timing: bool,
-        /// Maximum test jobs when refreshing runtime coverage
-        /// (default: [test] num_jobs from config)
-        #[arg(short = 'j', long, value_name = "JOBS", value_parser = parse_positive_usize)]
-        jobs: Option<usize>,
     },
     /// Show metric statistics for codebase
     Stats {
@@ -340,7 +321,7 @@ pub enum Commands {
         #[arg(long, value_name = "PREFIX")]
         ignore: Vec<String>,
     },
-    /// Run pytest / cargo nextest for covering tests (git modes, `.`, or PATH targets)
+    /// Run covering tests, then enforce runtime line coverage and unit-test time gates
     #[command(alias = "t")]
     Test {
         /// `commit`, `base`, `main`, `.`, or one or more `PATH` / `PATH::symbol` / directory targets
@@ -365,6 +346,9 @@ pub enum Commands {
         /// Print a local rubric metrics summary for this run
         #[arg(long)]
         metrics: bool,
+        /// Bypass the coverage threshold and print all coverage findings
+        #[arg(long)]
+        coverage_all: bool,
         /// Re-run covering tests when sources settle (background; errors → `.kiss/watch/`)
         #[arg(long)]
         watch: bool,
@@ -376,6 +360,20 @@ pub enum Commands {
         ignore: Vec<String>,
         #[arg(last = true)]
         extra: Vec<String>,
+    },
+    /// Hidden coverage-only evaluation (formerly `kiss cov`); prefer `kiss test`.
+    #[command(name = "__coverage", hide = true)]
+    Coverage {
+        #[arg(default_value = ".")]
+        paths: Vec<String>,
+        #[arg(long)]
+        all: bool,
+        #[arg(long, value_name = "PREFIX")]
+        ignore: Vec<String>,
+        #[arg(long)]
+        timing: bool,
+        #[arg(short = 'j', long, value_name = "JOBS", value_parser = parse_positive_usize)]
+        jobs: Option<usize>,
     },
     /// Internal target-runner shim for compile-once Rust coverage.
     #[command(name = "__rust-llvm-cov-target-runner", hide = true)]

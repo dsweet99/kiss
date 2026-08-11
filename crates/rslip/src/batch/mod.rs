@@ -14,12 +14,14 @@ use crate::{
     rslip_outcome_from_cache, runtime, validate_rslip_request,
 };
 
+mod cached_status;
 mod finalize;
 mod lock_chunk;
 mod miss_run;
 mod pycache;
 mod warm_hit_seal;
 pub use warm_hit_seal::warm_hit_seal_exists;
+use cached_status::{emit_prepare_resolved_progress, format_cached_status_dump};
 use finalize::clone_rslip_error;
 use miss_run::run_rslip_misses;
 
@@ -123,21 +125,6 @@ impl Rslip {
     }
 }
 
-fn format_cached_status_dump(outcomes: &[RslipOutcome]) -> String {
-    let mut body = String::with_capacity(outcomes.len().saturating_mul(48));
-    for outcome in outcomes {
-        let label = match outcome.status {
-            rpytest_runner::TestStatus::Passed => "PASS (cached): ",
-            rpytest_runner::TestStatus::Failed => "FAIL (cached): ",
-            rpytest_runner::TestStatus::TimedOut => "TIMEOUT (cached): ",
-        };
-        body.push_str(label);
-        body.push_str(&outcome.nodeid);
-        body.push('\n');
-    }
-    body
-}
-
 fn try_prepare_from_warm_hit_seal(reqs: &[RslipRequest]) -> Option<Vec<RslipOutcome>> {
     let context = shared_batch_context(reqs)?;
     warm_hit_seal::try_warm_hit_seal(reqs, &context)
@@ -186,41 +173,6 @@ fn maybe_write_warm_hit_seal_from_hits(
         digest_union,
         content_fingerprint,
     );
-}
-
-fn emit_prepare_resolved_progress(
-    out: &[Option<Result<RslipOutcome, RslipError>>],
-    on_progress: &mut impl FnMut(RslipBatchProgress),
-) {
-    // One batched progress event avoids 14k deep clones of coverage maps.
-    let outcomes = out
-        .iter()
-        .enumerate()
-        .filter_map(|(index, slot)| slot.as_ref().map(|result| (index, thin_rslip_result(result))))
-        .collect::<Vec<_>>();
-    if !outcomes.is_empty() {
-        on_progress(RslipBatchProgress::SelectorFinalized { outcomes });
-    }
-}
-
-fn thin_rslip_result(
-    result: &Result<RslipOutcome, RslipError>,
-) -> Result<RslipOutcome, RslipError> {
-    match result {
-        Ok(outcome) => Ok(RslipOutcome {
-            nodeid: outcome.nodeid.clone(),
-            status: outcome.status,
-            exit_code: outcome.exit_code,
-            duration: outcome.duration,
-            coverage: crate::LineCoverage {
-                files: BTreeMap::new(),
-            },
-            cache_status: outcome.cache_status,
-            stdout: None,
-            stderr: outcome.stderr.clone(),
-        }),
-        Err(err) => Err(clone_rslip_error(err)),
-    }
 }
 
 fn shared_batch_context(reqs: &[RslipRequest]) -> Option<String> {

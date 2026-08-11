@@ -74,8 +74,19 @@ pub(crate) fn workspace_files_fingerprint_for_cache(
 }
 
 fn workspace_files_fingerprint_git(repo_root: &Path, ignore: &[String]) -> io::Result<String> {
+    // Include untracked (non-ignored) sources: discovery finds their tests, but
+    // plain `git ls-files` would leave the selector cache falsely current.
     let output = kiss::scrubbed_git_command(repo_root)
-        .args(["ls-files", "-z", "*.py", "*.rs"])
+        .args([
+            "ls-files",
+            "-z",
+            "-c",
+            "-o",
+            "--exclude-standard",
+            "--",
+            "*.py",
+            "*.rs",
+        ])
         .output()?;
     if !output.status.success() {
         return Err(io::Error::other("git ls-files failed"));
@@ -88,7 +99,8 @@ fn workspace_files_fingerprint_git(repo_root: &Path, ignore: &[String]) -> io::R
         .filter(|rel| !ignored(rel, ignore))
         .collect::<Vec<_>>();
     rels.sort();
-    let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, b"workspace-selectors-fp-v3-git");
+    rels.dedup();
+    let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, b"workspace-selectors-fp-v4-git");
     for rel in rels {
         let meta = fs::metadata(repo_root.join(&rel))?;
         h = hash_file_meta(h, &rel, &meta);

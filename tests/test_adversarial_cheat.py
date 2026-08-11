@@ -109,7 +109,7 @@ def test_cheat_report_and_verify(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 
     metrics = cheat_mod.CheatMetrics(True, (("src/a.py", 100.0, 12.0),))
     report = cheat_mod.format_cheat_report(metrics)
-    assert "kiss cov: pass" in report
+    assert "kiss test: pass" in report
     assert "cheat gap count: 1" in report
 
     monkeypatch.setattr(cheat_mod, "run_kiss_check", lambda _r: (0, "kiss ok\n"))

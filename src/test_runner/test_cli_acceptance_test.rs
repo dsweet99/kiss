@@ -43,9 +43,9 @@ fn kiss_test_rejects_removed_cov_and_validate_selection() {
         );
     }
     let cov = Command::new(kiss_bin())
-        .args(["cov", "--help"])
+        .args(["test", "--help"])
         .output()
-        .expect("spawn kiss cov --help");
+        .expect("spawn kiss test --help");
     assert!(cov.status.success());
 }
 

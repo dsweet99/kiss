@@ -38,7 +38,7 @@ fn kpop_rust_none_dependency_depth() {
 #[test]
 fn kpop_rust_none_test_coverage_threshold() {
     // RULE: test_coverage_threshold (Rust)
-    // Static-reference coverage was removed; runtime coverage is owned by `kiss cov`.
+    // Static-reference coverage was removed; runtime coverage is owned by `kiss test`.
     let gate = kiss::GateConfig {
         test_coverage_threshold: 90,
         ..Default::default()

@@ -9,7 +9,7 @@ fn kiss_binary() -> Command {
 
 fn run_default_cov(home: &std::path::Path, repo: &std::path::Path) -> std::process::Output {
     kiss_binary()
-        .arg("cov")
+        .arg("__coverage")
         .arg("--config")
         .arg(repo.join(".kissconfig"))
         .arg("--lang")
@@ -105,7 +105,7 @@ fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
     assert!(!cold_stdout.contains("VIOLATION:test_coverage"));
 
     let all = kiss_binary()
-        .arg("cov")
+        .arg("__coverage")
         .arg("--config")
         .arg(repo.path().join(".kissconfig"))
         .arg("--lang")
@@ -144,7 +144,7 @@ fn regression_default_gate_fail_still_reports_timing() {
     seed_python_runtime_coverage(repo.path(), &[("test_default.py::test_default", vec![])]);
 
     let out = kiss_binary()
-        .arg("cov")
+        .arg("__coverage")
         .arg("--config")
         .arg(repo.path().join(".kissconfig"))
         .arg("--timing")
@@ -199,7 +199,7 @@ fn kiss_check_ignores_seeded_below_threshold_runtime_coverage() {
     );
     assert!(
         !stderr.contains("refreshing")
-            && !stderr.contains("kiss cov:")
+            && !stderr.contains("kiss test:")
             && !stderr.contains("PASSED:"),
         "check must not refresh or run the test population. stderr:\n{stderr}\nstdout:\n{stdout}"
     );

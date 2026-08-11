@@ -14,7 +14,7 @@ fn cli_check_default_gate_emits_hint_on_coverage_failure() {
     fs::write(tmp.path().join("orphan.py"), "def orphan():\n    pass\n").unwrap();
     seed_python_runtime_coverage(tmp.path(), &[("tests/test_orphan.py::test_orphan", vec![])]);
     let output = kiss_binary()
-        .arg("cov")
+        .arg("__coverage")
         .arg("--defaults")
         .arg(tmp.path())
         .output()

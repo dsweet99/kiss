@@ -20,8 +20,11 @@ pub(crate) fn python_coverage_index_path(repo_root: &Path) -> Result<PathBuf, St
 }
 
 /// Cheap presence check for warm `kiss test .` planning (avoids parsing the index).
+///
+/// Must not load `line_index.json` (sameq-scale ~1GiB). Presence of the v2 pointer
+/// plus core generation artifacts is enough for selective planning.
 pub(crate) fn python_coverage_index_file_present(repo_root: &Path) -> bool {
-    if super::generation::try_load_pinned_python_generation(repo_root).is_ok() {
+    if super::generation::pinned_python_generation_artifacts_present(repo_root) {
         return true;
     }
     python_coverage_index_path(repo_root)

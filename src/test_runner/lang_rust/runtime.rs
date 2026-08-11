@@ -9,9 +9,7 @@ use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
     WitnessScope, summary_from_accepted_witness,
 };
-use crate::test_runner::runners::{
-    SelectorExecutionSummary, kiss_test_report_id, rust_logical_to_kiss_test_ids,
-};
+use crate::test_runner::runners::{SelectorExecutionSummary, kiss_test_report_id};
 use crate::test_runner::rust_coverage_index::{
     current_rust_coverage_batch_identity, repo_relative_coverage_file,
 };
@@ -140,10 +138,48 @@ impl LanguageRuntime for RustRuntime {
         planned: &[String],
         witness: &ExecutionWitness,
     ) -> SelectorExecutionSummary {
-        let report_ids =
-            rust_logical_to_kiss_test_ids(&request.repo_root, &[]).unwrap_or_default();
+        // Warm accept must not re-parse the Rust workspace; use the fingerprint
+        // cache shared with cov time gates (`rust_report_id_cache`).
+        let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
+            &request.repo_root,
+            &request.ignore,
+        );
         summary_from_accepted_witness(planned, witness, |selector| {
             kiss_test_report_id(&report_ids, selector)
         })
+    }
+
+    fn cached_witness_summary(
+        &self,
+        request: &EnsureRequest,
+        planned: &[String],
+        witness: &ExecutionWitness,
+    ) -> SelectorExecutionSummary {
+        let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
+            &request.repo_root,
+            &request.ignore,
+        );
+        crate::test_runner::lang_iface::summary_from_witness_statuses(
+            planned,
+            witness,
+            |selector| kiss_test_report_id(&report_ids, selector),
+            false,
+        )
+    }
+
+    fn selectors_for_time_gate(
+        &self,
+        request: &EnsureRequest,
+        selectors: &[String],
+    ) -> Vec<String> {
+        // Witness stores nextest logical ids; ["rust", N] gates match PATH::symbol.
+        let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
+            &request.repo_root,
+            &request.ignore,
+        );
+        selectors
+            .iter()
+            .map(|selector| kiss_test_report_id(&report_ids, selector))
+            .collect()
     }
 }

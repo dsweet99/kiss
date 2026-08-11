@@ -42,6 +42,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_cov(o: CovDispatchOptions<'_>) -> i
         ignore: &o.ignore,
         timing: o.timing,
         jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
+        allow_refresh: true,
     };
     cov_cmd::run_cov_command(&args)
 }
@@ -157,12 +158,16 @@ pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) ->
         force: o.force,
         force_bad: o.force_bad,
         metrics: o.metrics,
+        coverage_all: o.coverage_all,
         watch: o.watch,
         jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
         ignore: &ignore,
         extra: &o.extra,
         lang_filter: o.lang,
         test_cfg: o.test_cfg,
+        py_config: o.cfg.py,
+        rs_config: o.cfg.rs,
+        gate_config: o.cfg.gate,
     })
 }
 

@@ -86,9 +86,36 @@ pub(crate) fn finish_rust_coverage_batch_result(
     let gate = kiss::GateConfig::load();
     let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
     let mut statuses = Vec::new();
+    let emit_each = result.completed.len() <= 64;
+    let mut cached_pass = 0usize;
+    if !emit_each {
+        for outcome in &result.completed {
+            if matches!(outcome.cache_status, RustCovCacheStatus::Hit)
+                && outcome.status == rpytest_runner::TestStatus::Passed
+            {
+                cached_pass += 1;
+            }
+        }
+        if cached_pass > 0 {
+            println!("PASS (cached): {cached_pass} selectors");
+        }
+    }
     for outcome in &result.completed {
         let report_id = kiss_test_report_id(&report_ids, &outcome.selector);
-        let status = print_rust_llvm_cov_outcome(outcome, &report_id, &gate);
+        let status = if emit_each
+            || !matches!(outcome.cache_status, RustCovCacheStatus::Hit)
+            || outcome.status != rpytest_runner::TestStatus::Passed
+        {
+            print_rust_llvm_cov_outcome(outcome, &report_id, &gate)
+        } else {
+            // Already counted in the collapsed PASS (cached) line above.
+            crate::test_runner::status_labels::apply_unit_test_time_limit(
+                outcome.status,
+                &report_id,
+                outcome.duration,
+                &gate,
+            )
+        };
         // last_status keeps nextest logical ids for prior-failure replay.
         statuses.push((outcome.selector.clone(), status));
         summary.record(SelectorExecutionRecord {

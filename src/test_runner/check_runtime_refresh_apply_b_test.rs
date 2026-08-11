@@ -47,7 +47,7 @@ fn apply_rerun_repair_on_bare_index_reports_publication_or_execution_failure() {
         replacement_binary_ids: std::collections::BTreeSet::from(["bin".into()]),
         retained_binary_line_maps: std::collections::BTreeMap::new(),
         jobs: 1,
-        caller_label: "kiss cov",
+        caller_label: "kiss test",
     })
     .expect_err("rerun repair should fail on a bare crate");
     let rendered = err.to_string();
@@ -89,7 +89,7 @@ fn apply_repair_helpers_are_metamorphic_on_error_language_tag() {
         replacement_binary_ids: std::collections::BTreeSet::from(["bin".into()]),
         retained_binary_line_maps: std::collections::BTreeMap::new(),
         jobs: 1,
-        caller_label: "kiss cov",
+        caller_label: "kiss test",
     })
     .unwrap_err()
     .to_string();

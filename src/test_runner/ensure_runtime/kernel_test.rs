@@ -241,6 +241,34 @@ fn second_ensure_after_partial_failure_runs_only_problem_selectors() {
 }
 
 #[test]
+fn terminal_incomplete_reports_without_run_or_publish() {
+    let state = Rc::new(RefCell::new(FakeState {
+        witness: Some(ExecutionWitness {
+            language: "python".into(),
+            scope: WitnessScope::Full,
+            identity_digest: "id".into(),
+            selectors: vec!["a".into(), "b".into()],
+            statuses: vec![WitnessStatus::Passed, WitnessStatus::Unresolved],
+            durations_ns: vec![1, 5],
+            covered_lines: BTreeMap::new(),
+            complete: false,
+            generation_id: "g".into(),
+        }),
+        run_exit_code: 1,
+        ..Default::default()
+    }));
+    let runtime = FakeRuntime {
+        language: Language::Python,
+        state: Rc::clone(&state),
+    };
+    let result = ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime])
+        .expect("ensure");
+    assert_ne!(result.exit_code, 0);
+    assert!(state.borrow().run_calls.is_empty());
+    assert_eq!(state.borrow().publish_calls, 0);
+}
+
+#[test]
 fn empty_all_mode_publishes_empty_full_without_run() {
     let state = Rc::new(RefCell::new(FakeState::default()));
     let runtime = FakeRuntime {

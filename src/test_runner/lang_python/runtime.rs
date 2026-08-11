@@ -13,7 +13,7 @@ use crate::test_runner::lang_iface::{
 use crate::test_runner::python_coverage_index::{
     GenerationReason, publish_python_derived_state_with_filter,
     repair_python_population_generation, repo_relative_coverage_file,
-    selector_deltas_from_cached_outcomes, try_load_pinned_python_generation,
+    selector_deltas_from_cached_outcomes, try_load_pinned_python_generation_warm,
 };
 use crate::test_runner::python_coverage_index::generation::{
     current_python_execution_identity, identity_matches_current,
@@ -30,7 +30,7 @@ impl LanguageRuntime for PythonRuntime {
     }
 
     fn current_identity(&self, request: &EnsureRequest) -> Result<String, String> {
-        if let Ok(pinned) = try_load_pinned_python_generation(&request.repo_root)
+        if let Ok(pinned) = try_load_pinned_python_generation_warm(&request.repo_root)
             && identity_matches_current(
                 &request.repo_root,
                 &pinned.plan.base_identity,
@@ -44,7 +44,8 @@ impl LanguageRuntime for PythonRuntime {
     }
 
     fn load_full_witness(&self, repo_root: &Path) -> Result<ExecutionWitness, String> {
-        let pinned = try_load_pinned_python_generation(repo_root)
+        // Accept/repair only needs statuses + timings; skip line_index (sameq ~1GiB).
+        let pinned = try_load_pinned_python_generation_warm(repo_root)
             .map_err(|e| format!("python witness load: {e:?}"))?;
         Ok(python_witness_from_pinned(&pinned))
     }
@@ -67,11 +68,15 @@ impl LanguageRuntime for PythonRuntime {
             None,
         )?;
         let (statuses, durations_ns) = statuses_from_summary(&summary, miss_set);
+        // Full cold All-mode: publish the planned universe. Incomplete repair of a
+        // subset must delta-repair (publication_universe=None), not rebuild.
         let publication_universe = match request.mode {
-            crate::test_runner::lang_iface::AcceptMode::All => {
+            crate::test_runner::lang_iface::AcceptMode::All
+                if miss_set.len() == request.planned_python.len() =>
+            {
                 Some(request.planned_python.clone())
             }
-            crate::test_runner::lang_iface::AcceptMode::Subset => None,
+            _ => None,
         };
         Ok(OutcomeBatch {
             summary,

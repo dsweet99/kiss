@@ -107,11 +107,11 @@ impl fmt::Display for CoverageRefreshError {
         match self {
             CoverageRefreshError::Lock { language, reason } => write!(
                 f,
-                "error: kiss cov: failed to refresh {language} runtime line coverage during lock acquisition: {reason}"
+                "error: kiss test: failed to refresh {language} runtime line coverage during lock acquisition: {reason}"
             ),
             CoverageRefreshError::Discovery { language, reason } => write!(
                 f,
-                "error: kiss cov: failed to refresh {language} runtime line coverage during test discovery: {reason}"
+                "error: kiss test: failed to refresh {language} runtime line coverage during test discovery: {reason}"
             ),
             CoverageRefreshError::TestExecution {
                 language,
@@ -120,15 +120,15 @@ impl fmt::Display for CoverageRefreshError {
                 exit_code,
             } => write!(
                 f,
-                "error: kiss cov: failed to refresh {language} runtime line coverage because the population test run failed ({failed}/{total} tests failed, exit code {exit_code})"
+                "error: kiss test: failed to refresh {language} runtime line coverage because the population test run failed ({failed}/{total} tests failed, exit code {exit_code})"
             ),
             CoverageRefreshError::Publication { language, reason } => write!(
                 f,
-                "error: kiss cov: failed to refresh {language} runtime line coverage during publication: {reason}"
+                "error: kiss test: failed to refresh {language} runtime line coverage during publication: {reason}"
             ),
             CoverageRefreshError::PostRefreshValidation { language, reason } => write!(
                 f,
-                "error: kiss cov: failed to refresh {language} runtime line coverage during post-refresh validation: {reason}"
+                "error: kiss test: failed to refresh {language} runtime line coverage during post-refresh validation: {reason}"
             ),
         }
     }
@@ -249,7 +249,7 @@ fn ensure_rust_runtime_coverage(
     ignore: &[String],
     jobs: usize,
 ) -> Result<(), CoverageRefreshError> {
-    ensure_rust_runtime_coverage_shared(repo_root, ignore, jobs, "kiss cov").map(|_| ())
+    ensure_rust_runtime_coverage_shared(repo_root, ignore, jobs, "kiss test").map(|_| ())
 }
 
 fn ensure_rust_runtime_coverage_with_stats_labeled(
@@ -296,7 +296,7 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     finalize_population_summary_labeled(repo_root, ignore, &summary, true, caller_label)
 }
 
-/// Shared Rust ensure/refresh entry point used by `kiss cov`.
+/// Shared Rust ensure/refresh entry point used by `kiss test`.
 ///
 /// Runs through the shared ensure factory/kernel against repo-local `./.kiss`
 /// coverage artifacts.
@@ -334,7 +334,7 @@ pub(crate) fn try_repair_rust_check_aggregate(
     selectors: &[String],
     jobs: usize,
 ) -> Result<Option<CoverageRefreshStats>, CoverageRefreshError> {
-    try_repair_rust_check_aggregate_labeled(repo_root, ignore, selectors, jobs, "kiss cov")
+    try_repair_rust_check_aggregate_labeled(repo_root, ignore, selectors, jobs, "kiss test")
 }
 
 #[cfg(test)]

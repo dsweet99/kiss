@@ -11,6 +11,10 @@ use super::{
 };
 use crate::test_git::TestChangeMode;
 
+#[path = "plan_rust.rs"]
+mod plan_rust;
+use plan_rust::rust_population_current_for_all_selectors;
+
 pub(crate) enum TargetPlanKind<'a> {
     All,
     Targets(&'a [String]),
@@ -151,26 +155,6 @@ fn planned_all(
     }
 }
 
-fn rust_population_current_for_all_selectors(
-    repo_root: &std::path::Path,
-    selectors: &[String],
-) -> bool {
-    let Ok(identity) =
-        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(repo_root, &[])
-    else {
-        return false;
-    };
-    let mut expected = selectors.to_vec();
-    expected.sort();
-    expected.dedup();
-    rust_llvm_cov_runner::load_current_population_state(
-        &crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root),
-        repo_root,
-        &identity,
-        Some(&expected),
-    )
-    .is_some()
-}
 
 fn plan_explicit_target_selectors(
     repo_root: &std::path::Path,
@@ -343,3 +327,5 @@ pub(crate) fn plan_selectors(req: PlanSelectorsRequest<'_>) -> Result<PlannedSel
         ignore_norm,
     ))
 }
+
+

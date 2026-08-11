@@ -22,27 +22,16 @@ pub(crate) struct TestDispatchOptions<'a> {
     pub force: bool,
     pub force_bad: bool,
     pub metrics: bool,
+    pub coverage_all: bool,
     pub watch: bool,
     pub jobs: Option<usize>,
     pub ignore: Vec<String>,
     pub extra: Vec<String>,
     pub test_cfg: &'a TestSectionConfig,
+    pub cfg: &'a TriConfig<'a>,
 }
 
 #[cfg(test)]
-mod coverage_witness {
-    use super::*;
+#[path = "opt_batch_c_test.rs"]
+mod coverage_witness;
 
-    impl ShrinkDispatchOptions<'_> {
-        fn witness() {}
-    }
-    impl TestDispatchOptions<'_> {
-        fn witness() {}
-    }
-
-    #[test]
-    fn witness_opt_batch_c() {
-        ShrinkDispatchOptions::witness();
-        TestDispatchOptions::witness();
-    }
-}

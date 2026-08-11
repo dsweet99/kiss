@@ -128,7 +128,7 @@ fn cli_check_requires_runtime_coverage_for_universe_languages_before_focus() {
     );
 
     let focused = kiss_binary()
-        .arg("cov")
+        .arg("__coverage")
         .arg("--all")
         .arg(root)
         .arg(root.join("app.py"))

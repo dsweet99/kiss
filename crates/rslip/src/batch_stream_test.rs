@@ -190,7 +190,7 @@ fn stopped_stream_leaves_completed_misses_as_hits_on_rerun() {
 }
 
 #[test]
-fn prepare_hits_emit_selector_finalized_without_tests_remaining() {
+fn prepare_hits_emit_cached_dump_without_tests_remaining() {
     let tmp = tempfile::tempdir().unwrap();
     write_ok_sample(tmp.path());
     let mut hit = rslip_sample_request(tmp.path());
@@ -211,19 +211,18 @@ fn prepare_hits_emit_selector_finalized_without_tests_remaining() {
         events_for_cb.lock().unwrap().push(event);
     });
     let events = events.lock().unwrap();
-    let prepare_finalized = events.iter().position(|event| {
-        matches!(
-            event,
-            RslipBatchProgress::SelectorFinalized { outcomes }
-                if outcomes.len() == 1 && outcomes[0].0 == 0
-        )
+    let prepare_dump = events.iter().position(|event| {
+        matches!(event, RslipBatchProgress::CachedStatusDump { .. })
     });
     let first_remaining = events
         .iter()
         .position(|event| matches!(event, RslipBatchProgress::TestsRemaining { .. }));
-    assert!(prepare_finalized.is_some());
     assert!(
-        first_remaining.is_none() || prepare_finalized.unwrap() < first_remaining.unwrap(),
-        "cache-hit SelectorFinalized must not wait on TestsRemaining"
+        prepare_dump.is_some(),
+        "expected CachedStatusDump for prepare hits; events={events:?}"
+    );
+    assert!(
+        first_remaining.is_none() || prepare_dump.unwrap() < first_remaining.unwrap(),
+        "cache-hit CachedStatusDump must not wait on TestsRemaining"
     );
 }

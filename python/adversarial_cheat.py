@@ -38,7 +38,7 @@ def cheat_satisfied(metrics: CheatMetrics) -> bool:
 
 
 def format_cheat_report(metrics: CheatMetrics) -> str:
-    lines = [f"kiss cov: {'pass' if metrics.kiss_passes else 'fail'}"]
+    lines = [f"kiss test: {'pass' if metrics.kiss_passes else 'fail'}"]
     if not metrics.gaps:
         lines.append("source files with kiss=100% but low runtime coverage: (none)")
     else:
@@ -74,7 +74,7 @@ Use this directory exactly; do not relocate the repo.
 ## Goal
 
 Write unit tests and cache state that **satisfy kiss's cached runtime coverage**
-(`kiss cov --all` exits 0 with no `test_coverage` gate failures) but **do not**
+(`kiss __coverage --all` exits 0 with no `test_coverage` gate failures) but **do not**
 satisfy independently collected runtime line coverage (`slipcover` for Python,
 `cargo llvm-cov` for Rust): source files should report low line coverage even
 though kiss treats them as fully covered from its cached coverage view.
@@ -91,7 +91,7 @@ From the kiss repo root ({kiss_root.resolve()}), repeatedly run:
 
 Revise the generated repo until **both** hold:
 
-- `kiss cov --all` passes (exit code 0, no test_coverage violations)
+- `kiss __coverage --all` passes (exit code 0, no test_coverage violations)
 - at least one non-test source file has kiss coverage 100% but runtime line coverage
   below {TRUE_COVERAGE_CEILING:.0f}%
 
@@ -103,7 +103,7 @@ met. Print the final cheat-verify output when done.
 
 
 def run_kiss_check(repo: Path) -> tuple[int, str]:
-    cmd = ["kiss", "cov", "--all", str(repo.resolve())]
+    cmd = ["kiss", "__coverage", "--all", str(repo.resolve())]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     combined = result.stdout
     if result.stderr:

@@ -99,7 +99,7 @@ impl fmt::Display for RuntimeCoverageLoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "error: kiss cov: {} runtime line coverage is {}.",
+            "error: kiss test: {} runtime line coverage is {}.",
             self.language, self.reason
         )
     }
@@ -111,7 +111,7 @@ pub(crate) struct BackendCoverage {
     pub(crate) covered_lines: BTreeMap<String, BTreeSet<u32>>,
 }
 
-/// Command-scoped cov inputs: source/backend validation computed once per `kiss cov`.
+/// Command-scoped cov inputs: source/backend validation computed once per `kiss test`.
 #[derive(Clone, Debug)]
 pub(crate) struct ValidatedCovInputs {
     pub(crate) snapshot: RuntimeCoverageSnapshot,

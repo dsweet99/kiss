@@ -29,14 +29,14 @@ fn synthetic_python_runtime_coverage_paths_do_not_make_check_malformed() {
     );
 
     let out = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("cov")
+        .arg("__coverage")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
         .current_dir(repo.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss cov should run");
+        .expect("kiss test should run");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
@@ -71,14 +71,14 @@ fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
     );
 
     let first = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("cov")
+        .arg("__coverage")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
         .current_dir(repo.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss cov should run");
+        .expect("kiss test should run");
     assert!(
         first.status.success(),
         "fresh seeded coverage should pass before the source changes. stdout:\n{}\nstderr:\n{}",
@@ -88,14 +88,14 @@ fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
 
     fs::write(repo.path().join("lib.py"), "VALUE = 1\nOTHER = 2\n").unwrap();
     let second = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("cov")
+        .arg("__coverage")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
         .current_dir(repo.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss cov should run");
+        .expect("kiss test should run");
     let stdout = String::from_utf8_lossy(&second.stdout);
     let stderr = String::from_utf8_lossy(&second.stderr);
 
@@ -245,12 +245,12 @@ fn kiss_check_succeeds_when_tests_fail_while_cov_fails_refresh() {
     let cov_stderr = String::from_utf8_lossy(&cov.stderr);
     assert!(
         !cov.status.success(),
-        "kiss cov must fail when the population tests fail.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
+        "kiss test must fail when the population tests fail.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
     );
     assert!(
         cov_stderr.contains("failed to refresh Python runtime line coverage")
             && cov_stderr.contains("population test run failed"),
-        "kiss cov must report the existing refresh/population failure.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
+        "kiss test must report the existing refresh/population failure.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
     );
 }
 
@@ -273,12 +273,12 @@ fn write_refreshable_python_repo(repo: &TempDir, assertion: &str) {
 
 fn run_python_check(home: &TempDir, repo: &TempDir) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("cov")
+        .arg("__coverage")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
         .current_dir(repo.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss cov should run")
+        .expect("kiss test should run")
 }

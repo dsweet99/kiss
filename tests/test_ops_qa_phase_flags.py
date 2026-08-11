@@ -12,7 +12,7 @@ from ops.qa import (
 def test_force_publication_target_clears_cov_records_cache(tmp_path: Path) -> None:
     """Forcing republication must invalidate the warm records cache.
 
-    Otherwise kiss cov short-circuits on cov_records_cache.json and never
+    Otherwise kiss test short-circuits on cov_records_cache.json and never
     re-enters rslip/rust publication (breaking publication-crash barriers).
     """
     kiss = tmp_path / ".kiss"

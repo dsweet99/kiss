@@ -24,7 +24,7 @@ pub(crate) fn apply_identity_only_repair(
         selectors,
         prior_generation,
         retained_binary_line_maps,
-        "kiss cov",
+        "kiss test",
     )
 }
 
@@ -80,7 +80,7 @@ pub(crate) fn finalize_population_summary(
     summary: &SelectorExecutionSummary,
     full_refresh: bool,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
-    finalize_population_summary_labeled(repo_root, ignore, summary, full_refresh, "kiss cov")
+    finalize_population_summary_labeled(repo_root, ignore, summary, full_refresh, "kiss test")
 }
 
 pub(crate) fn finalize_population_summary_labeled(
