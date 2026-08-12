@@ -1,8 +1,8 @@
 mod unit_test_seconds;
 
 pub use unit_test_seconds::{
-    catch_all_limit, default_max_unit_test_seconds, exceeds_limit, format_nested_toml_table,
-    limit_for_selector, validate_rules,
+    MatchedUnitTestSecondsRule, catch_all_limit, default_max_unit_test_seconds, exceeds_limit,
+    format_nested_toml_table, limit_for_selector, matched_rule_for_selector, validate_rules,
 };
 
 use crate::config::{ConfigError, check_unknown_keys, get_usize};

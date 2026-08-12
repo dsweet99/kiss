@@ -51,6 +51,8 @@ pub use options::{AnalyzeOptions, AnalyzeResult};
 #[allow(unused_imports)]
 pub(crate) use pipeline::{FullPipelineInput, FullPipelineResult, run_full_pipeline};
 #[cfg(test)]
+pub(crate) use pipeline::empty_full_pipeline_result_for_tests;
+#[cfg(test)]
 mod tests_coverage;
 #[cfg(test)]
 mod tests_smoke;

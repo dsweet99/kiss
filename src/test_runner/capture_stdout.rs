@@ -1,10 +1,17 @@
 //! Shared stdout capture for unit tests that assert printed recap/progress lines.
 
 use std::io::{Read, Write};
+use std::sync::Mutex;
 
 #[cfg(unix)]
 pub(crate) fn capture_stdout(f: impl FnOnce()) -> String {
     use std::os::fd::FromRawFd;
+    // Parallel `cargo test` threads must not interleave STDOUT fd redirection.
+    static LOCK: Mutex<()> = Mutex::new(());
+    let _guard = LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
     let mut fds = [0; 2];
     assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
     let read_fd = fds[0];

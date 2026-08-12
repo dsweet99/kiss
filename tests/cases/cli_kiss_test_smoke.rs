@@ -211,6 +211,122 @@ fn kiss_test_python_failure_prints_failed_recap_line() {
 }
 
 #[test]
+fn kiss_test_force_explicit_python_target_stays_selective_on_dry_run() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    write_python_fixture(tmp.path());
+    std::fs::write(
+        tmp.path().join("test_other.py"),
+        "def test_other():\n    assert True\n",
+    )
+    .unwrap();
+    commit_all(tmp.path(), "init");
+    let out = kiss_test_dry_run(
+        tmp.path(),
+        &["test", "test_lib.py::test_f", "--force", "--dry-run", "--lang", "python"],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "forced explicit python dry-run should exit 0, stderr={stderr}, stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("test_lib.py::test_f"),
+        "expected selected selector in dry-run, got {stdout}"
+    );
+    assert!(
+        !stdout.contains("test_other.py::test_other"),
+        "forced explicit target must not widen to sibling tests, got {stdout}"
+    );
+    assert!(
+        !stdout.contains("PYTHON COVERAGE POPULATION"),
+        "forced explicit target must not print population marker, got {stdout}"
+    );
+}
+
+#[test]
+fn kiss_test_force_explicit_rust_target_stays_selective_on_dry_run() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "pub fn value() -> u32 { 1 }\n\
+#[cfg(test)]\n\
+mod tests {\n\
+    #[test]\n\
+    fn gets_value() {\n\
+        assert_eq!(super::value(), 1);\n\
+    }\n\
+    #[test]\n\
+    fn other() {\n\
+        assert_eq!(super::value(), 1);\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+    crate::common::generate_lockfile(tmp.path());
+    commit_all(tmp.path(), "init");
+    let out = kiss_test_dry_run(
+        tmp.path(),
+        &[
+            "test",
+            "src/lib.rs::gets_value",
+            "--force",
+            "--dry-run",
+            "--lang",
+            "rust",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "forced explicit rust dry-run should exit 0, stderr={stderr}, stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("gets_value"),
+        "expected selected selector in dry-run, got {stdout}"
+    );
+    assert!(
+        !stdout.contains("::other") && !stdout.contains(" tests::other"),
+        "forced explicit target must not widen to sibling tests, got {stdout}"
+    );
+    assert!(
+        !stdout.contains("RUST COVERAGE POPULATION"),
+        "forced explicit target must not print population marker, got {stdout}"
+    );
+}
+
+#[test]
+fn kiss_test_force_dot_python_dry_run_prints_population_marker() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    write_python_fixture(tmp.path());
+    commit_all(tmp.path(), "init");
+    let out = kiss_test_dry_run(
+        tmp.path(),
+        &["test", ".", "--force", "--dry-run", "--lang", "python"],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "forced . python dry-run should exit 0, stderr={stderr}, stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("PYTHON COVERAGE POPULATION"),
+        "kiss test . --force must keep complete-population dry-run, got {stdout}"
+    );
+}
+
+#[test]
 fn kiss_test_rust_failure_prints_canonical_failed_recap_line() {
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());

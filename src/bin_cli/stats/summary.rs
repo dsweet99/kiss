@@ -1,7 +1,7 @@
 use crate::bin_cli::config_session::config_provenance;
 use crate::bin_cli::util::merge_check_ignore_prefixes;
 use crate::test_runner::unit_test_timing::{
-    TimingLangInclude, unit_test_runtime_sec_line_for_universe,
+    TimingLangInclude, unit_test_runtime_sec_report_for_universe,
 };
 use kiss::check_universe_cache::FullCheckCache;
 use kiss::discovery::gather_files_by_lang;
@@ -99,7 +99,13 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         py_stats: Some(&pipeline.py_stats),
         rs_stats: Some(&pipeline.rs_stats),
     });
-    print_summary_from_pipeline(input.paths, &pipeline, input.lang_filter, input.ignore);
+    print_summary_from_pipeline(
+        input.paths,
+        &pipeline,
+        input.lang_filter,
+        input.ignore,
+        input.gate,
+    );
 }
 
 fn maybe_print_unit_test_runtime_line(
@@ -107,13 +113,12 @@ fn maybe_print_unit_test_runtime_line(
     lang_filter: Option<Language>,
     include: TimingLangInclude,
     ignore: &[String],
+    rules: &[(String, f64)],
 ) {
-    let universe = Path::new(paths.first().map(String::as_str).unwrap_or("."));
-    let merged = merge_check_ignore_prefixes(ignore);
-    if let Some(line) =
-        unit_test_runtime_sec_line_for_universe(universe, lang_filter, include, &merged)
+    if let Some(report) =
+        unit_test_runtime_section_for_rules(paths, lang_filter, include, ignore, rules)
     {
-        println!("{line}");
+        println!("{report}");
     }
 }
 
@@ -122,6 +127,7 @@ fn print_summary_from_pipeline(
     pipeline: &crate::analyze::FullPipelineResult,
     lang_filter: Option<Language>,
     ignore: &[String],
+    gate: &GateConfig,
 ) {
     let duplicate_total = pipeline.py_dups_all.len() + pipeline.rs_dups_all.len();
     let orphan_total = pipeline
@@ -186,6 +192,7 @@ fn print_summary_from_pipeline(
             rust: !pipeline.result.rs_parsed.is_empty(),
         },
         ignore,
+        &gate.max_unit_test_seconds,
     );
 }
 
@@ -220,6 +227,7 @@ fn maybe_print_cached_stats_summary(args: CachedStatsSummaryArgs<'_>) -> bool {
             rust: !args.rs_files.is_empty(),
         },
         args.ignore,
+        args.gate,
     );
     true
 }
@@ -230,6 +238,7 @@ fn print_cached_summary(
     lang_filter: Option<Language>,
     include: TimingLangInclude,
     ignore: &[String],
+    gate: &GateConfig,
 ) {
     let dup_total = cache.py_duplicates.len() + cache.rs_duplicates.len();
     let orphan_total = cache
@@ -271,69 +280,31 @@ fn print_cached_summary(
             format_stats_table(&compute_summaries(stats))
         );
     }
-    maybe_print_unit_test_runtime_line(paths, lang_filter, include, ignore);
+    maybe_print_unit_test_runtime_line(
+        paths,
+        lang_filter,
+        include,
+        ignore,
+        &gate.max_unit_test_seconds,
+    );
+}
+
+/// Pure helper for summary-path tests: build the runtime section from resolved rules.
+fn unit_test_runtime_section_for_rules(
+    paths: &[String],
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+    rules: &[(String, f64)],
+) -> Option<String> {
+    let universe = Path::new(paths.first().map(String::as_str).unwrap_or("."));
+    let merged = merge_check_ignore_prefixes(ignore);
+    unit_test_runtime_sec_report_for_universe(universe, lang_filter, include, &merged, rules)
 }
 
 #[cfg(test)]
-mod summary_tests {
-    use super::*;
-    use kiss::{Config, GateConfig};
-
-    #[test]
-    fn maybe_print_cached_stats_summary_returns_false_on_miss() {
-        let paths = vec![".".to_string()];
-        let py: Vec<PathBuf> = Vec::new();
-        let rs: Vec<PathBuf> = Vec::new();
-        let py_cfg = Config::default();
-        let rs_cfg = Config::default();
-        let gate = GateConfig::default();
-        assert!(!maybe_print_cached_stats_summary(CachedStatsSummaryArgs {
-            paths: &paths,
-            py_files: &py,
-            rs_files: &rs,
-            py_cfg: &py_cfg,
-            rs_cfg: &rs_cfg,
-            gate: &gate,
-            lang_filter: None,
-            ignore: &[],
-        }));
-    }
-
-    #[test]
-    fn print_cached_summary_emits_stats_header() {
-        use kiss::check_universe_cache::FullCheckCache;
-        let cache = FullCheckCache {
-            fingerprint: "test".into(),
-            py_stats: None,
-            rs_stats: None,
-            py_paths: vec![],
-            focus_paths: vec![],
-            focus_restrict: false,
-            rs_paths: vec![],
-            py_file_count: 1,
-            rs_file_count: 0,
-            code_unit_count: 3,
-            statement_count: 5,
-            graph_nodes: 1,
-            graph_edges: 0,
-            base_violations: vec![],
-            graph_violations: vec![],
-            py_duplicates: vec![],
-            rs_duplicates: vec![],
-            file_content_digests: vec![],
-        };
-        print_cached_summary(
-            &[".".into()],
-            &cache,
-            None,
-            TimingLangInclude {
-                python: true,
-                rust: false,
-            },
-            &[],
-        );
-    }
-}
+#[path = "summary_test.rs"]
+mod summary_tests;
 
 #[cfg(test)]
 mod coverage_witness {

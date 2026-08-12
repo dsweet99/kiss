@@ -7,31 +7,6 @@ fn rules(secs: f64) -> Vec<(String, f64)> {
 }
 
 #[test]
-fn format_line_includes_n_and_percentiles() {
-    let line = format_unit_test_runtime_sec_line_with_totals(
-        &[
-            UnitTestTiming {
-                language: Language::Python,
-                selector: "a".into(),
-                duration: Duration::from_millis(10),
-            },
-            UnitTestTiming {
-                language: Language::Rust,
-                selector: "b".into(),
-                duration: Duration::from_millis(40),
-            },
-        ],
-        Some(10),
-    )
-    .unwrap();
-    assert!(line.contains("codebase_tests=10"));
-    assert!(line.starts_with("unit_test_runtime_sec: samples=2 "));
-    assert!(line.contains("coverage cache; may not reflect full test set"));
-    assert!(line.contains("p50="));
-    assert!(line.contains("max=0.04"));
-}
-
-#[test]
 fn evaluate_runtime_gate_threshold_semantics() {
     let timings = TimingPopulation::Complete(vec![UnitTestTiming {
         language: Language::Python,

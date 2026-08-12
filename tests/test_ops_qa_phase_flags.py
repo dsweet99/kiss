@@ -9,6 +9,18 @@ from ops.qa import (
 )
 
 
+def test_publication_writer_command_rust_selector_uses_dot_force_metrics() -> None:
+    from ops.qa import RUST_SELECTOR_PUBLISH_ARTIFACTS, publication_writer_command
+
+    artifact = next(iter(RUST_SELECTOR_PUBLISH_ARTIFACTS))
+    cmd = publication_writer_command("rust", Path("/tmp/repo"), artifact, jobs=2)
+    assert cmd[cmd.index("test") + 1] == "."
+    assert "--force" in cmd
+    assert "--metrics" in cmd
+    assert "-j" in cmd and "2" in cmd
+    assert "commit" not in cmd
+
+
 def test_force_publication_target_clears_cov_records_cache(tmp_path: Path) -> None:
     """Forcing republication must invalidate the warm records cache.
 
@@ -27,7 +39,6 @@ def test_force_publication_target_clears_cov_records_cache(tmp_path: Path) -> No
 
     assert not records.exists(), "cov_records_cache.json must be cleared to force republication"
     assert not entries.exists()
-
 
 def test_cargo_executable_name_reads_trailing_binary_name() -> None:
     assert (

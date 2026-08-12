@@ -177,6 +177,35 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
     })
 }
 
+/// Minimal pipeline fixture for stats summary tests (no parse / no coverage cache).
+#[cfg(test)]
+pub(crate) fn empty_full_pipeline_result_for_tests() -> FullPipelineResult {
+    use crate::analyze::parallel::RustAnalysis;
+    let now = Instant::now();
+    FullPipelineResult {
+        result: ParseResult {
+            py_parsed: Vec::new(),
+            rs_parsed: Vec::new(),
+            violations: Vec::new(),
+            code_unit_count: 0,
+            statement_count: 0,
+        },
+        viols: Vec::new(),
+        file_count: 0,
+        py_graph: None,
+        rs: RustAnalysis {
+            graph: None,
+            dups: Vec::new(),
+        },
+        graph_viols_all: Vec::new(),
+        py_dups_all: Vec::new(),
+        rs_dups_all: Vec::new(),
+        py_stats: kiss::MetricStats::default(),
+        rs_stats: kiss::MetricStats::default(),
+        timings: (now, now, now),
+    }
+}
+
 #[cfg(test)]
 mod pipeline_tests {
     use super::*;
@@ -185,5 +214,6 @@ mod pipeline_tests {
     fn full_pipeline_input_is_coverage_free() {
         let _ = std::mem::size_of::<FullPipelineInput<'_>>();
         let _ = std::mem::size_of::<FullPipelineResult>();
+        let _ = empty_full_pipeline_result_for_tests();
     }
 }

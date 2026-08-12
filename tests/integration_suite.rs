@@ -96,6 +96,8 @@ mod regression_init_py_imports_sync;
 mod regression_stats_all_metric_registry;
 #[path = "cases/regression_stats_cold_eq_warm.rs"]
 mod regression_stats_cold_eq_warm;
+#[path = "cases/regression_stats_grouped_unit_test_runtime.rs"]
+mod regression_stats_grouped_unit_test_runtime;
 #[path = "cases/regression_stats_summary_headers_and_coverage.rs"]
 mod regression_stats_summary_headers_and_coverage;
 #[path = "cases/regression_stats_summary_uses_cache.rs"]

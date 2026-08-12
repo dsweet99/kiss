@@ -154,7 +154,7 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     match plan_for_invocation(&a) {
         Ok(mut planned) => {
             apply_cold_initialization_population(&a, &mut planned);
-            apply_force_complete_population(&a, &mut planned);
+            apply_force_all_population(&a, &mut planned);
             if let Err(e) = apply_force_bad(&a, &mut planned) {
                 eprintln!("{e}");
                 return RunTestOnceOutcome::Code(1);
@@ -272,10 +272,15 @@ pub(crate) fn apply_cold_initialization_population(a: &RunTestCmdArgs<'_>, plann
     }
 }
 
-/// Complete `--force` always requires a full population phase, even when the
-/// prior generation is current (plan invariant 2).
-pub(crate) fn apply_force_complete_population(a: &RunTestCmdArgs<'_>, planned: &mut PlannedSelectors) {
+/// `kiss test . --force` requires a full population phase, even when the prior
+/// generation is current. Selective invocations (`Targets`, `Commit`, `Base`,
+/// `Main`) keep their existing selector plan; `--force` only bypasses caches
+/// for those planned selectors.
+pub(crate) fn apply_force_all_population(a: &RunTestCmdArgs<'_>, planned: &mut PlannedSelectors) {
     if !a.force_rerun {
+        return;
+    }
+    if !matches!(a.invocation, crate::bin_cli::args::TestInvocation::All) {
         return;
     }
     match a.lang_filter {
@@ -348,6 +353,18 @@ mod explicit_test_targets_test;
 #[cfg(test)]
 #[path = "single_python_harness_timing_test.rs"]
 mod single_python_harness_timing_test;
+
+#[cfg(test)]
+#[path = "python_named_target_args.rs"]
+mod python_named_target_args;
+
+#[cfg(test)]
+#[path = "force_selected_python_e2e_test.rs"]
+mod force_selected_python_e2e_test;
+
+#[cfg(test)]
+#[path = "force_all_population_test.rs"]
+mod force_all_population_test;
 
 #[cfg(test)]
 #[path = "test_change_modes_test.rs"]

@@ -12,16 +12,38 @@ pub const fn defaults_max() -> f64 {
     crate::defaults::gate::MAX_UNIT_TEST_SECONDS
 }
 
+/// First matching ordered rule for `selector`, if any.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MatchedUnitTestSecondsRule<'a> {
+    pub index: usize,
+    pub pattern: &'a str,
+    pub limit_seconds: f64,
+}
+
 /// First matching pattern wins. `"*"` matches every selector.
-pub fn limit_for_selector(rules: &[(String, f64)], selector: &str) -> f64 {
+pub fn matched_rule_for_selector<'a>(
+    rules: &'a [(String, f64)],
+    selector: &str,
+) -> Option<MatchedUnitTestSecondsRule<'a>> {
     let path = selector_path(selector);
-    for (pattern, secs) in rules {
+    for (index, (pattern, secs)) in rules.iter().enumerate() {
         if pattern_matches(pattern, path) {
-            return *secs;
+            return Some(MatchedUnitTestSecondsRule {
+                index,
+                pattern: pattern.as_str(),
+                limit_seconds: *secs,
+            });
         }
     }
-    // Parser requires a trailing "*"; keep a safe fallback for empty/partial tables.
-    defaults_max()
+    None
+}
+
+/// First matching pattern wins. `"*"` matches every selector.
+pub fn limit_for_selector(rules: &[(String, f64)], selector: &str) -> f64 {
+    matched_rule_for_selector(rules, selector)
+        .map(|m| m.limit_seconds)
+        // Parser requires a trailing "*"; keep a safe fallback for empty/partial tables.
+        .unwrap_or_else(defaults_max)
 }
 
 pub fn catch_all_limit(rules: &[(String, f64)]) -> Option<f64> {
@@ -298,5 +320,43 @@ mod tests {
         // Without the path prefix, first-match falls through to the catch-all ban.
         assert!((limit_for_selector(&rules, "kiss_bare_rule_api") - 0.0).abs() < f64::EPSILON);
         assert!((limit_for_selector(&rules, "tests::test_check_clean") - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn matched_rule_resolver_nested_prefixes_rust_and_star() {
+        let rules = vec![
+            ("tests/slow/dbs".to_string(), 180.0),
+            ("tests/slow".to_string(), 60.0),
+            ("tests/fast".to_string(), 2.0),
+            ("tests/".to_string(), 10.0),
+            ("rust".to_string(), 10.0),
+            ("*".to_string(), 0.0),
+        ];
+        let nested = matched_rule_for_selector(&rules, "tests/slow/dbs/q.py::t").unwrap();
+        assert_eq!(nested.index, 0);
+        assert_eq!(nested.pattern, "tests/slow/dbs");
+        assert!((nested.limit_seconds - 180.0).abs() < f64::EPSILON);
+        assert!(
+            (limit_for_selector(&rules, "tests/slow/dbs/q.py::t") - nested.limit_seconds).abs()
+                < f64::EPSILON
+        );
+
+        let slow = matched_rule_for_selector(&rules, "tests/slow/other.py::t").unwrap();
+        assert_eq!(slow.index, 1);
+        assert_eq!(slow.pattern, "tests/slow");
+
+        let rust = matched_rule_for_selector(
+            &rules,
+            "rust/sameq_style/src/lib.rs::test_check_clean",
+        )
+        .unwrap();
+        assert_eq!(rust.index, 4);
+        assert_eq!(rust.pattern, "rust");
+
+        let catch_all = matched_rule_for_selector(&rules, "src/lib.rs::t").unwrap();
+        assert_eq!(catch_all.index, 5);
+        assert_eq!(catch_all.pattern, "*");
+
+        assert!(matched_rule_for_selector(&[], "anything").is_none());
     }
 }

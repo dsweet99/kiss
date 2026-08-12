@@ -8,9 +8,9 @@ use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
 
-use crate::bin_cli::args::TestInvocation;
 use crate::cwd_test_lock;
-use crate::test_runner::{RunTestCmdArgs, run_test};
+use crate::test_runner::python_named_target_args::python_named_target_args;
+use crate::test_runner::run_test;
 
 const HARNESS_BUDGET: Duration = Duration::from_millis(50);
 
@@ -25,22 +25,8 @@ fn write_trivial_python_test(root: &Path) {
     fs::write(tests.join("test_fast.py"), "def test_ok():\n    assert True\n").unwrap();
 }
 
-fn run_args(force_rerun: bool) -> RunTestCmdArgs<'static> {
-    RunTestCmdArgs {
-        invocation: TestInvocation::Targets(vec!["tests/test_fast.py::test_ok".into()]),
-        main_branch_cli: None,
-        base_branch_cli: None,
-        dry_run: false,
-        force_rerun,
-        force_bad: false,
-        metrics: false,
-        jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: Some(kiss::Language::Python),
-        config_main_branch: None,
-    }
+fn run_args(force_rerun: bool) -> crate::test_runner::RunTestCmdArgs<'static> {
+    python_named_target_args("tests/test_fast.py::test_ok", force_rerun)
 }
 
 #[cfg(unix)]

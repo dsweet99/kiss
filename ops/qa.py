@@ -1472,15 +1472,15 @@ def publication_writer_command(
     jobs: int | None = None,
 ) -> list[str]:
     if language == "rust" and artifact in RUST_SELECTOR_PUBLISH_ARTIFACTS:
-        # Population + --force takes SelectorEntries publish (entry_state/reverse),
-        # not the CheckAggregate ensure path used by plain kiss test / kiss test.
+        # Complete `.` + --force takes SelectorEntries publish (entry_state/reverse),
+        # not the CheckAggregate ensure path used by plain kiss test.
         command = [
             str(KISS),
             "--defaults",
             "--lang",
             "rust",
             "test",
-            "commit",
+            ".",
             "--force",
             "--metrics",
         ]
@@ -1492,7 +1492,7 @@ def publication_writer_command(
 
 def prepare_rust_selector_publish_diff(repo: Path) -> None:
     # write_rust_witness_repo already commits a baseline; leave an uncommitted edit
-    # so `kiss test commit --force` requires a population SelectorEntries publish.
+    # so the publication-crash scenario has a dirty tree under `. --force`.
     lib = repo / "src" / "lib.rs"
     lib.write_text(lib.read_text() + "\n// reverse-publish trigger\n", encoding="utf-8")
 

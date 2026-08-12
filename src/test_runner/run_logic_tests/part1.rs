@@ -18,6 +18,63 @@ fn force_rerun_does_not_make_rust_population_required() {
 }
 
 #[test]
+fn force_all_population_helper_keeps_targets_selective() {
+    let mut planned = planned();
+    planned.py_sel = vec!["tests/a.py::only".to_string()];
+    let args = crate::test_runner::RunTestCmdArgs {
+        invocation: crate::bin_cli::args::TestInvocation::Targets(vec![
+            "tests/a.py::only".into(),
+        ]),
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: true,
+        force_rerun: true,
+        force_bad: false,
+        metrics: false,
+        jobs: 1,
+        extra: &[],
+        python_extra: &[],
+        ignore: &[],
+        lang_filter: Some(Language::Python),
+        config_main_branch: None,
+    };
+    crate::test_runner::apply_force_all_population(&args, &mut planned);
+    assert!(!planned.python_population_required);
+    let options = options(true);
+    let ctx = RunContext {
+        planned: &planned,
+        options: &options,
+    };
+    assert_eq!(
+        execution_phase(&execution_module_python(&planned), &ctx).unwrap(),
+        ExecutionPhase::Selective(vec!["tests/a.py::only".to_string()])
+    );
+}
+
+#[test]
+fn force_all_population_helper_sets_population_for_all() {
+    let mut planned = planned();
+    planned.py_sel = vec!["tests/a.py::only".to_string()];
+    let args = crate::test_runner::RunTestCmdArgs {
+        invocation: crate::bin_cli::args::TestInvocation::All,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: true,
+        force_rerun: true,
+        force_bad: false,
+        metrics: false,
+        jobs: 1,
+        extra: &[],
+        python_extra: &[],
+        ignore: &[],
+        lang_filter: Some(Language::Python),
+        config_main_branch: None,
+    };
+    crate::test_runner::apply_force_all_population(&args, &mut planned);
+    assert!(planned.python_population_required);
+}
+
+#[test]
 fn rust_population_phase_uses_discover_universe() {
     let tmp = tempfile::tempdir().unwrap();
     let src = tmp.path().join("src");

@@ -17,9 +17,9 @@ pub(crate) fn repair_python_population_generation(
     let pinned = match try_load_pinned_python_generation(repo_root) {
         Ok(pinned) => pinned,
         Err(GenerationLoadError::MissingOrStale) => {
-            return Err(
-                "error: kiss: no compatible Python population generation to repair".to_string(),
-            );
+            // Cold selective runs store outcomes in the rslip cache only; there is
+            // no population generation to delta-repair until a complete publish.
+            return Ok(None);
         }
         Err(GenerationLoadError::Corrupt(msg)) => {
             return Err(format!("error: kiss: corrupt Python generation: {msg}"));

@@ -7,7 +7,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use kiss::Language;
-use kiss::stats::PercentileSummary;
 
 use crate::test_runner::check_line_coverage::repository_root_for_universe;
 use crate::test_runner::runners::kiss_test_report_id;
@@ -235,50 +234,6 @@ pub(crate) fn runtime_gate_failure_lines(viols: &[RuntimeGateViolation]) -> Vec<
     lines
 }
 
-fn format_secs_from_millis(ms: usize) -> String {
-    #[allow(clippy::cast_precision_loss)]
-    {
-        format!("{:.2}", ms as f64 / 1000.0)
-    }
-}
-
-pub(crate) fn format_unit_test_runtime_sec_line_with_totals(
-    timings: &[UnitTestTiming],
-    codebase_tests: Option<usize>,
-) -> Option<String> {
-    if timings.is_empty() {
-        return None;
-    }
-    // PercentileSummary is integer-valued; keep millisecond resolution for ranking,
-    // then render percentiles in seconds for the stats line.
-    let values_ms: Vec<usize> = timings
-        .iter()
-        .map(|t| {
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                t.duration.as_millis() as usize
-            }
-        })
-        .collect();
-    let summary = PercentileSummary::from_values("unit_test_runtime_sec", &values_ms);
-    let mut line = format!(
-        "unit_test_runtime_sec: samples={} (coverage cache; may not reflect full test set)",
-        summary.count
-    );
-    if let Some(total) = codebase_tests {
-        line.push_str(&format!(" codebase_tests={total}"));
-    }
-    line.push_str(&format!(
-        " p50={} p90={} p95={} p99={} max={}",
-        format_secs_from_millis(summary.p50),
-        format_secs_from_millis(summary.p90),
-        format_secs_from_millis(summary.p95),
-        format_secs_from_millis(summary.p99),
-        format_secs_from_millis(summary.max)
-    ));
-    Some(line)
-}
-
 /// Best-effort timings for `kiss stats`: use whatever coverage-cache durations exist.
 /// Unlike the cov gate path, a missing language population does not abort the other language.
 pub(crate) fn collect_available_unit_test_timings(opts: TimingCollectOpts<'_>) -> Vec<UnitTestTiming> {
@@ -316,11 +271,12 @@ fn cheap_codebase_test_count(
     Some(total)
 }
 
-pub(crate) fn unit_test_runtime_sec_line_for_universe(
+pub(crate) fn unit_test_runtime_sec_report_for_universe(
     universe: &Path,
     lang_filter: Option<Language>,
     include: TimingLangInclude,
     ignore: &[String],
+    rules: &[(String, f64)],
 ) -> Option<String> {
     let timings = collect_available_unit_test_timings(TimingCollectOpts {
         universe,
@@ -329,8 +285,14 @@ pub(crate) fn unit_test_runtime_sec_line_for_universe(
         ignore,
     });
     let codebase_tests = cheap_codebase_test_count(universe, lang_filter, include, ignore);
-    format_unit_test_runtime_sec_line_with_totals(&timings, codebase_tests)
+    let report = build_unit_test_runtime_grouped_report(&timings, rules, codebase_tests)?;
+    Some(format_unit_test_runtime_grouped_report(&report))
 }
+
+mod runtime_report;
+pub(crate) use runtime_report::{
+    build_unit_test_runtime_grouped_report, format_unit_test_runtime_grouped_report,
+};
 
 mod cov_gate;
 pub(crate) use cov_gate::{CovTimeGateOpts, evaluate_cov_time_gate};

@@ -116,6 +116,28 @@ fn problem_selectors_and_out_of_universe_repair() {
 }
 
 #[test]
+fn cold_selective_repair_is_noop_without_population() {
+    let tmp = tempdir().unwrap();
+    let repo = tmp.path();
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    let repaired = repair_python_population_generation(
+        repo,
+        &[SelectorEvidence {
+            selector: "t.py::test_a".into(),
+            raw_status: TestStatus::Passed,
+            effective_status: TestStatus::Passed,
+            duration: None,
+            cache_disposition: TimingCacheDisposition::Unknown,
+            reason: None,
+            coverage: BTreeMap::new(),
+        }],
+        GenerationReason::IncompleteRepair,
+    )
+    .expect("cold selective repair must not fail");
+    assert_eq!(repaired, None);
+}
+
+#[test]
 fn corrupt_pointer_does_not_prune_finalized_generations() {
     let tmp = tempdir().unwrap();
     let repo = tmp.path();
