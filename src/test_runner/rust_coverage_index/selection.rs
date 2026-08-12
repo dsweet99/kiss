@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::test_runner::coverage_decision::{CoverageFreshness, RustSelectionBasis};
+use crate::test_runner::coverage_decision::{CoverageFreshness, SelectionBasis};
 
 use super::{
     changed_line_rels, current_rust_coverage_batch_identity, repo_relative_path,
@@ -32,11 +32,11 @@ impl ResolvedRustPopulation {
         }
     }
 
-    pub(crate) fn basis(&self) -> RustSelectionBasis {
+    pub(crate) fn basis(&self) -> SelectionBasis {
         match self {
-            Self::Current { .. } => RustSelectionBasis::Current,
-            Self::ReusablePrior { .. } => RustSelectionBasis::ReusablePrior,
-            Self::StructuralStale | Self::ColdStale => RustSelectionBasis::Population,
+            Self::Current { .. } => SelectionBasis::Current,
+            Self::ReusablePrior { .. } => SelectionBasis::ReusablePrior,
+            Self::StructuralStale | Self::ColdStale => SelectionBasis::Population,
         }
     }
 

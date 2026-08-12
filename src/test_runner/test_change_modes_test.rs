@@ -20,8 +20,10 @@ fn plan(
         main_branch_cli: main,
         base_branch_cli: base,
         ignore,
-        extra: &[],
-        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         lang_filter: lang,
         config_main_branch: None,
     })
@@ -190,8 +192,10 @@ fn row_d_empty_diff_dry_run_exits_zero() {
                 force_rerun: false,
 metrics: false,
                 jobs: 1,
-                extra: &[],
-                python_extra: &[],
+                extras: crate::test_runner::language_keyed::LanguageKeyed {
+                    python: &[],
+                    rust: &[],
+                },
                 plan_duration: std::time::Duration::ZERO,
             gate: kiss::GateConfig::default()
             },

@@ -19,8 +19,10 @@ fn options() -> SelectorRunOptions<'static> {
         force_rerun: false,
         metrics: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         plan_duration: Duration::ZERO,
     gate: kiss::GateConfig::default()
     }
@@ -118,7 +120,7 @@ fn python_rebuild_index_skips_when_pure_test_operand_plan() {
     let tmp = tempfile::tempdir().unwrap();
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
-    planned.skip_python_index_rebuild_after_selective = true;
+    planned.skip_index_rebuild_after_selective.python = true;
     let options = options();
     let ctx = crate::test_runner::coverage_decision::RunContext {
         planned: &planned,
@@ -298,7 +300,7 @@ fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
     planned.repo_root = tmp.path().to_path_buf();
     planned.ignore = Vec::new();
     let mut options = options();
-    options.extra = &[];
+    options.extras.rust = &[];
     options.force_rerun = false;
     options.jobs = 1;
     let ctx = crate::test_runner::coverage_decision::RunContext {

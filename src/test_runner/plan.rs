@@ -23,8 +23,7 @@ pub(crate) enum TargetPlanKind<'a> {
 pub(crate) fn plan_target_selectors(
     kind: TargetPlanKind<'_>,
     ignore: &[String],
-    extra: &[String],
-    python_extra: &[String],
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
     lang_filter: Option<Language>,
 ) -> Result<PlannedSelectors, String> {
     let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
@@ -32,25 +31,28 @@ pub(crate) fn plan_target_selectors(
     let repo_root = crate::test_git::require_git_repo_root(&cwd)
         .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
     if matches!(lang_filter, Some(Language::Rust)) {
-        rust_llvm_cov::validate_rust_extra_args(extra)?;
+        rust_llvm_cov::validate_rust_extra_args(extras.rust)?;
     }
     match kind {
-        TargetPlanKind::All => plan_all_selectors(&repo_root, &ignore_norm, python_extra, lang_filter),
+        TargetPlanKind::All => {
+            plan_all_selectors(&repo_root, &ignore_norm, extras.python, lang_filter)
+        }
         TargetPlanKind::Targets(targets) => {
             match expand_target_operands(&repo_root, targets, &ignore_norm, lang_filter)
                 .map_err(|e| format!("error: kiss test: {e}"))?
             {
                 ExpandedTargetPlan::All => {
-                    plan_all_selectors(&repo_root, &ignore_norm, python_extra, lang_filter)
+                    plan_all_selectors(&repo_root, &ignore_norm, extras.python, lang_filter)
                 }
-                ExpandedTargetPlan::Files(files) => plan_explicit_target_selectors(
-                    &repo_root,
-                    &files,
-                    &ignore_norm,
-                    extra,
-                    python_extra,
-                    lang_filter,
-                ),
+                ExpandedTargetPlan::Files(files) => {
+                    plan_explicit_target_selectors(
+                        &repo_root,
+                        &files,
+                        &ignore_norm,
+                        extras,
+                        lang_filter,
+                    )
+                }
             }
         }
     }
@@ -136,19 +138,37 @@ fn planned_all(
             python: python_population_required,
             rust: rust_population_required,
         },
-        rust_source_paths: Vec::new(),
-        rust_vcs_source_paths: 0,
-        rust_snapshot_delta_modified: 0,
-        rust_snapshot_delta_structural: false,
+        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: Vec::new(),
             rust: Vec::new(),
         },
         coverage_decision_engine_used: false,
-        rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+        selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
+            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+        },
         ignore: ignore.to_vec(),
         workspace_files_fingerprint,
-        skip_python_index_rebuild_after_selective: false,
+        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
     }
 }
 
@@ -157,11 +177,10 @@ fn plan_explicit_target_selectors(
     repo_root: &std::path::Path,
     targets: &[String],
     ignore: &[String],
-    extra: &[String],
-    python_extra: &[String],
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
     lang_filter: Option<Language>,
 ) -> Result<PlannedSelectors, String> {
-    let query = resolve_target_operands(repo_root, targets, lang_filter, ignore, python_extra)
+    let query = resolve_target_operands(repo_root, targets, lang_filter, ignore, extras.python)
         .map_err(|e| format!("error: kiss test: {e}"))?;
     let mut source_paths = Vec::new();
     source_paths.extend(query.python_files.iter().cloned());
@@ -193,19 +212,37 @@ fn plan_explicit_target_selectors(
                 python: false,
                 rust: false,
             },
-            rust_source_paths: Vec::new(),
-            rust_vcs_source_paths: 0,
-            rust_snapshot_delta_modified: 0,
-            rust_snapshot_delta_structural: false,
+            source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+                python: Vec::new(),
+                rust: Vec::new(),
+            },
+            vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+                python: 0,
+                rust: 0,
+            },
+            snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+                python: 0,
+                rust: 0,
+            },
+            snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+                python: false,
+                rust: false,
+            },
             prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
                 python: Vec::new(),
                 rust: Vec::new(),
             },
             coverage_decision_engine_used: false,
-            rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+            selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
+                python: crate::test_runner::coverage_decision::SelectionBasis::Current,
+                rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            },
             ignore: ignore.to_vec(),
             workspace_files_fingerprint: None,
-            skip_python_index_rebuild_after_selective: true,
+            skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+                python: true,
+                rust: false,
+            },
         });
     }
     let input = runners::CombinedSelectorInput {
@@ -213,8 +250,7 @@ fn plan_explicit_target_selectors(
         source_paths: &source_paths,
         test_paths: &[],
         changed_lines: &changed_lines,
-        rust_test_args: extra,
-        python_test_args: python_extra,
+        test_args: extras,
         lang_filter,
         ignore,
         extra_direct_python: &direct_python,
@@ -277,19 +313,22 @@ fn planned_from_selector_plan(
             python: selector_plan.population_required.python,
             rust: selector_plan.population_required.rust,
         },
-        rust_source_paths: selector_plan.rust_source_paths,
-        rust_vcs_source_paths: selector_plan.rust_vcs_source_paths,
-        rust_snapshot_delta_modified: selector_plan.rust_snapshot_delta_modified,
-        rust_snapshot_delta_structural: selector_plan.rust_snapshot_delta_structural,
+        source_paths: selector_plan.source_paths,
+        vcs_source_paths: selector_plan.vcs_source_paths,
+        snapshot_delta_modified: selector_plan.snapshot_delta_modified,
+        snapshot_delta_structural: selector_plan.snapshot_delta_structural,
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: selector_plan.prior_failure_selectors.python,
             rust: selector_plan.prior_failure_selectors.rust,
         },
         coverage_decision_engine_used: selector_plan.coverage_decision_engine_used,
-        rust_selection_basis: selector_plan.rust_selection_basis,
+        selection_basis: selector_plan.selection_basis,
         ignore,
         workspace_files_fingerprint: None,
-        skip_python_index_rebuild_after_selective: false,
+        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
     }
 }
 
@@ -298,8 +337,8 @@ pub(crate) struct PlanSelectorsRequest<'a> {
     pub main_branch_cli: Option<&'a str>,
     pub base_branch_cli: Option<&'a str>,
     pub ignore: &'a [String],
-    pub extra: &'a [String],
-    pub python_extra: &'a [String],
+    /// Per-language CLI extras packed for planning.
+    pub extras: crate::test_runner::language_keyed::LanguageKeyed<&'a [String]>,
     pub lang_filter: Option<Language>,
     pub config_main_branch: Option<&'a str>,
 }
@@ -333,7 +372,7 @@ pub(crate) fn plan_selectors(req: PlanSelectorsRequest<'_>) -> Result<PlannedSel
         Language::Rust => crate::test_git::TestLangFilter::Rust,
     });
     if matches!(lang_filter, Some(crate::test_git::TestLangFilter::Rust)) {
-        rust_llvm_cov::validate_rust_extra_args(req.extra)?;
+        rust_llvm_cov::validate_rust_extra_args(req.extras.rust)?;
     }
     let abs_paths = crate::test_git::resolve_changed_source_paths(
         &repo_root,
@@ -353,8 +392,7 @@ pub(crate) fn plan_selectors(req: PlanSelectorsRequest<'_>) -> Result<PlannedSel
         source_paths: &source_changed,
         test_paths: &test_changed,
         changed_lines: &changed_lines,
-        rust_test_args: req.extra,
-        python_test_args: req.python_extra,
+        test_args: req.extras,
         lang_filter: lang_filter.map(|l| match l {
             crate::test_git::TestLangFilter::Python => Language::Python,
             crate::test_git::TestLangFilter::Rust => Language::Rust,

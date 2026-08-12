@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn force_rerun_does_not_make_rust_population_required() {
     let mut planned = planned();
-    planned.rust_source_paths = vec![PathBuf::from("src/lib.rs")];
+    planned.source_paths.rust = vec![PathBuf::from("src/lib.rs")];
     planned.sel.rust = vec!["crate::tests::test_selected".to_string()];
     let options = options(true);
     let ctx = RunContext {
@@ -94,7 +94,7 @@ fn rust_population_phase_uses_discover_universe() {
 
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
-    planned.rust_source_paths = vec![src.join("lib.rs")];
+    planned.source_paths.rust = vec![src.join("lib.rs")];
     planned.population_required.rust = true;
     let options = options(false);
     let ctx = RunContext {
@@ -130,7 +130,7 @@ fn rust_population_phase_also_executes_current_selected_tests() {
     let selected = "external_selected::test_case".to_string();
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
-    planned.rust_source_paths = vec![src.join("lib.rs")];
+    planned.source_paths.rust = vec![src.join("lib.rs")];
     planned.population_required.rust = true;
     planned.sel.rust = vec![selected.clone()];
     let options = options(false);
@@ -257,19 +257,34 @@ fn planned_selectors_carry_population_decisions_without_selector_vectors() {
             python: true,
             rust: true,
         },
-        rust_source_paths: Vec::new(),
-        rust_vcs_source_paths: 0,
-        rust_snapshot_delta_modified: 0,
-        rust_snapshot_delta_structural: false,
+        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: Vec::new(),
             rust: Vec::new(),
         },
         coverage_decision_engine_used: true,
-        rust_selection_basis: Default::default(),
+        selection_basis: Default::default(),
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
-        skip_python_index_rebuild_after_selective: false,
+        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
     };
     assert!(planned.population_required.python);
     assert!(planned.population_required.rust);

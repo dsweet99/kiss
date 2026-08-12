@@ -13,8 +13,10 @@ fn finish_paths_print_recap_with_plan_time_and_phase_order() {
         force_rerun: false,
 metrics: true,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         plan_duration: Duration::from_millis(200),
     gate: kiss::GateConfig::default()
     };
@@ -54,8 +56,10 @@ metrics: true,
         force_rerun: false,
 metrics: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         plan_duration: Duration::from_millis(200),
     gate: kiss::GateConfig::default()
     };
@@ -134,8 +138,10 @@ fn dry_run_does_not_print_final_recap() {
                     force_rerun: false,
 metrics: false,
                     jobs: 1,
-                    extra: &[],
-                    python_extra: &[],
+                    extras: crate::test_runner::language_keyed::LanguageKeyed {
+                        python: &[],
+                        rust: &[],
+                    },
                     plan_duration: Duration::from_millis(10),
                 gate: kiss::GateConfig::default()
                 },

@@ -180,7 +180,7 @@ fn clone_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a> {
         ignore: args.ignore,
         lang_filter: args.lang_filter,
         config_main_branch: args.config_main_branch,
-    gate_config: kiss::GateConfig::default()
+        gate_config: args.gate_config.clone(),
     }
 }
 
@@ -251,7 +251,7 @@ mod tests {
             force_bad: false,            metrics: false,
             jobs: 1,
             extra: &[],
-            python_extra: &[],
+        python_extra: &[],
             ignore: &[],
             lang_filter: Some(kiss::Language::Python),
             config_main_branch: None,
@@ -291,7 +291,7 @@ mod tests {
             force_bad: false,            metrics: false,
             jobs: 1,
             extra: &[],
-            python_extra: &[],
+        python_extra: &[],
             ignore: &[],
             lang_filter: Some(kiss::Language::Python),
             config_main_branch: None,
@@ -327,7 +327,7 @@ mod tests {
             force_bad: false,            metrics: false,
             jobs: 1,
             extra: &[],
-            python_extra: &[],
+        python_extra: &[],
             ignore: &[],
             lang_filter: Some(kiss::Language::Python),
             config_main_branch: None,

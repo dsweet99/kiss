@@ -120,10 +120,7 @@ pub(super) fn print_dry_run(
             ExecutionPhase::Population(selectors) => (selectors.as_slice(), true),
             ExecutionPhase::Selective(selectors) => (selectors.as_slice(), false),
         };
-        let extra = match LanguageExecutor::language(*module) {
-            kiss::Language::Python => options.python_extra,
-            kiss::Language::Rust => options.extra,
-        };
+        let extra = *options.extras.get(LanguageExecutor::language(*module));
         for line in module.dry_run_lines(selectors, population, extra, options.jobs)? {
             println!("{line}");
         }

@@ -23,9 +23,9 @@ fn selector_plan_default_has_no_work_or_engine_claim() {
     assert!(plan.selectors.rust.is_empty());
     assert!(!plan.population_required.python);
     assert!(!plan.population_required.rust);
-    assert!(plan.rust_source_paths.is_empty());
-    assert!(plan.python_changed_lines.is_empty());
-    assert!(plan.rust_changed_lines.is_empty());
+    assert!(plan.source_paths.rust.is_empty());
+    assert!(plan.changed_lines.python.is_empty());
+    assert!(plan.changed_lines.rust.is_empty());
     assert!(plan.prior_failure_selectors.python.is_empty());
     assert!(plan.prior_failure_selectors.rust.is_empty());
     assert!(!plan.coverage_decision_engine_used);
@@ -238,7 +238,7 @@ fn combined_selectors_routes_changed_python_and_rust_tests() {
             .any(|selector| selector.contains("rust_changed"))
     );
     assert!(plan.coverage_decision_engine_used);
-    assert_eq!(plan.rust_vcs_source_paths, 0);
+    assert_eq!(plan.vcs_source_paths.rust, 0);
 }
 
 #[test]
@@ -255,8 +255,10 @@ fn EngineBackers_empty_when_no_language_has_work() {
         python_changed_lines: &python_changed_lines,
         rust_source_paths: &[],
         rust_changed_lines: &rust_changed_lines,
-        rust_test_args: &[],
-        python_test_args: &[],
+        test_args: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         lang_filter: None,
         ignore: &[],
         changed_tests: &changed_tests,
@@ -286,8 +288,10 @@ fn engine_backers_expose_manifest_env_policy() {
         python_changed_lines: &python_changed_lines,
         rust_source_paths: std::slice::from_ref(&lib),
         rust_changed_lines: &rust_changed_lines,
-        rust_test_args: &[],
-        python_test_args: &[],
+        test_args: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         lang_filter: None,
         ignore: &[],
         changed_tests: &changed_tests,

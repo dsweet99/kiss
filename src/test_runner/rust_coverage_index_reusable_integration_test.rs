@@ -1,4 +1,4 @@
-use crate::test_runner::coverage_decision::{CoverageFreshness, RustSelectionBasis};
+use crate::test_runner::coverage_decision::{CoverageFreshness, SelectionBasis};
 use crate::test_runner::rust_coverage_index::{
     current_rust_coverage_batch_identity, rebuild_rust_coverage_index,
     resolve_rust_population_state, select_rust_source_selectors_for_basis,
@@ -47,7 +47,7 @@ fn resolve_reusable_prior_population_after_ordinary_source_edit() {
     let resolved = resolve_rust_population_state(tmp.path(), &[], std::slice::from_ref(&lib), &[])
         .expect("resolved population");
     assert_eq!(resolved.freshness(), CoverageFreshness::ReusablePrior);
-    assert_eq!(resolved.basis(), RustSelectionBasis::ReusablePrior);
+    assert_eq!(resolved.basis(), SelectionBasis::ReusablePrior);
     let selected = select_rust_source_selectors_for_basis(
         tmp.path(),
         std::slice::from_ref(&lib),

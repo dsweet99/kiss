@@ -16,18 +16,33 @@ pub(crate) fn empty_planned_selectors(repo_root: PathBuf) -> PlannedSelectors {
             python: false,
             rust: false,
         },
-        rust_source_paths: Vec::new(),
-        rust_vcs_source_paths: 0,
-        rust_snapshot_delta_modified: 0,
-        rust_snapshot_delta_structural: false,
+        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         prior_failure_selectors: LanguageKeyed {
             python: Vec::new(),
             rust: Vec::new(),
         },
         coverage_decision_engine_used: true,
-        rust_selection_basis: Default::default(),
+        selection_basis: Default::default(),
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
-        skip_python_index_rebuild_after_selective: false,
+        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
     }
 }

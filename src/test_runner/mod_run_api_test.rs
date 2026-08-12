@@ -11,7 +11,8 @@ impl RunTestCmdArgs<'_> {
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
-            force_bad: false,            metrics: false,
+            force_bad: false,
+            metrics: false,
             jobs: 1,
             extra: &[],
             python_extra: &[],
@@ -35,19 +36,34 @@ impl PlannedSelectors {
                 python: false,
                 rust: false,
             },
-            rust_source_paths: vec![],
-            rust_vcs_source_paths: 0,
-            rust_snapshot_delta_modified: 0,
-            rust_snapshot_delta_structural: false,
+            source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+                python: Vec::new(),
+                rust: vec![],
+            },
+            vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+                python: 0,
+                rust: 0,
+            },
+            snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+                python: 0,
+                rust: 0,
+            },
+            snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+                python: false,
+                rust: false,
+            },
             prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
                 python: Vec::new(),
                 rust: Vec::new(),
             },
             coverage_decision_engine_used: true,
-            rust_selection_basis: Default::default(),
+            selection_basis: Default::default(),
             ignore: vec![],
             workspace_files_fingerprint: None,
-            skip_python_index_rebuild_after_selective: false,
+            skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+                python: false,
+                rust: false,
+            },
         }
     }
 }
@@ -59,8 +75,10 @@ impl SelectorRunOptions<'_> {
             force_rerun: false,
 metrics: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                python: &[],
+                rust: &[],
+            },
             plan_duration: Duration::ZERO,
             gate: kiss::GateConfig::default(),
         }
@@ -89,8 +107,10 @@ fn dry_run_rejects_unsupported_rust_test_args_without_panic() {
             force_rerun: false,
 metrics: false,
             jobs: 1,
-            extra: &extra,
-            python_extra: &[],
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                python: &[],
+                rust: &extra,
+            },
             plan_duration: Duration::ZERO,
         gate: kiss::GateConfig::default()
         },
@@ -156,8 +176,10 @@ mod plan_tests {
                 main_branch_cli: None,
                 base_branch_cli: None,
                 ignore: &[],
-                extra: &[],
-                python_extra: &[],
+                extras: crate::test_runner::language_keyed::LanguageKeyed {
+                    python: &[],
+                    rust: &[],
+                },
                 lang_filter: None,
                 config_main_branch: None,
             }).unwrap();
@@ -172,8 +194,10 @@ mod plan_tests {
                 force_rerun: false,
 metrics: false,
                 jobs: 1,
-                extra: &[],
-                python_extra: &[],
+                extras: crate::test_runner::language_keyed::LanguageKeyed {
+                    python: &[],
+                    rust: &[],
+                },
                 plan_duration: Duration::ZERO,
             gate: kiss::GateConfig::default()
             },
@@ -196,19 +220,34 @@ metrics: false,
                 python: false,
                 rust: false,
             },
-            rust_source_paths: Vec::new(),
-            rust_vcs_source_paths: 0,
-            rust_snapshot_delta_modified: 0,
-            rust_snapshot_delta_structural: false,
+            source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+                python: Vec::new(),
+                rust: Vec::new(),
+            },
+            vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+                python: 0,
+                rust: 0,
+            },
+            snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+                python: 0,
+                rust: 0,
+            },
+            snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+                python: false,
+                rust: false,
+            },
             prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
                 python: Vec::new(),
                 rust: Vec::new(),
             },
             coverage_decision_engine_used: true,
-            rust_selection_basis: Default::default(),
+            selection_basis: Default::default(),
             ignore: Vec::new(),
             workspace_files_fingerprint: None,
-            skip_python_index_rebuild_after_selective: false,
+            skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+                python: false,
+                rust: false,
+            },
         };
 
         let err = run_selectors(
@@ -218,8 +257,10 @@ metrics: false,
                 force_rerun: false,
 metrics: false,
                 jobs: 0,
-                extra: &[],
-                python_extra: &[],
+                extras: crate::test_runner::language_keyed::LanguageKeyed {
+                    python: &[],
+                    rust: &[],
+                },
                 plan_duration: Duration::ZERO,
             gate: kiss::GateConfig::default()
             },

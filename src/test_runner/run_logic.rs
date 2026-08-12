@@ -59,7 +59,7 @@ fn finish_no_work(
             false,
             0,
             planned.sel.rust.len(),
-            planned.rust_selection_basis,
+            planned.selection_basis.rust,
         );
         metrics.total_duration = total_started.elapsed();
         metrics.capture_cache_shape(&planned.repo_root);
@@ -89,7 +89,7 @@ fn finish_dry_run(
             matches!(rust_phase, ExecutionPhase::Population(_)),
             population_selector_count(rust_phase),
             selective_selector_count(rust_phase),
-            planned.rust_selection_basis,
+            planned.selection_basis.rust,
         );
         metrics.total_duration = total_started.elapsed();
         metrics.capture_cache_shape(&planned.repo_root);
@@ -113,7 +113,7 @@ fn run_selected_phases(
         matches!(rust_phase, ExecutionPhase::Population(_)),
         population_selector_count(rust_phase),
         selective_selector_count(rust_phase),
-        planned.rust_selection_basis,
+        planned.selection_basis.rust,
     );
     let ctx = RunContext { planned, options };
     for (module, phase) in modules {

@@ -103,7 +103,7 @@ fn combined_selectors_uses_existing_rust_index_for_source_changes() {
     .unwrap();
 
     assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
-    assert_eq!(plan.rust_source_paths, vec![lib]);
+    assert_eq!(plan.source_paths.rust, vec![lib]);
     assert!(!plan.population_required.rust);
 }
 
@@ -204,7 +204,7 @@ fn combined_selectors_prefers_rust_changed_line_matches() {
     .unwrap();
 
     assert_eq!(plan.selectors.rust, vec!["tests::second".to_string()]);
-    assert_eq!(plan.rust_source_paths, vec![lib]);
+    assert_eq!(plan.source_paths.rust, vec![lib]);
     assert!(!plan.population_required.rust);
 }
 
@@ -306,7 +306,7 @@ fn combined_selectors_marks_missing_rust_index_for_population() {
     .unwrap();
 
     assert!(plan.selectors.rust.is_empty());
-    assert_eq!(plan.rust_source_paths, vec![lib]);
+    assert_eq!(plan.source_paths.rust, vec![lib]);
     assert!(plan.population_required.rust);
 }
 
@@ -316,7 +316,7 @@ fn combined_selectors_empty_without_sources() {
     let plan = combined_selectors(tmp.path(), &[], &[], &BTreeMap::new(), &[], None, &[]).unwrap();
     assert!(plan.selectors.python.is_empty());
     assert!(plan.selectors.rust.is_empty());
-    assert!(plan.rust_source_paths.is_empty());
+    assert!(plan.source_paths.rust.is_empty());
     assert!(!plan.population_required.rust);
 }
 

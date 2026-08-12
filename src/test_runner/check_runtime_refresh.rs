@@ -30,6 +30,11 @@ pub(crate) use check_runtime_refresh_apply::{
 mod check_runtime_refresh_python;
 use check_runtime_refresh_python::ensure_python_runtime_coverage;
 
+#[path = "check_runtime_refresh_types.rs"]
+mod check_runtime_refresh_types;
+use check_runtime_refresh_types::{PythonRuntimeRefresh, RustRuntimeRefresh};
+pub(crate) use check_runtime_refresh_types::CoverageRuntimeRefresh;
+
 #[cfg(test)]
 #[path = "check_runtime_refresh_python_test.rs"]
 mod python_refresh_tests;
@@ -37,13 +42,21 @@ mod python_refresh_tests;
 pub(crate) const COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV: &str =
     "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE";
 
+/// Per-language runtime-refresh counters (filled by each language's refresh impl).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LanguageRefreshStats {
+    pub(crate) test_instances: usize,
+    pub(crate) aggregate_binaries: usize,
+    pub(crate) aggregate_exports: usize,
+    pub(crate) identity_only_repair: bool,
+    pub(crate) full_refresh: bool,
+}
+
+/// Coverage runtime-refresh outcome keyed by supported language (not rust_*-only product fields).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct CoverageRefreshStats {
-    pub(crate) rust_test_instances: usize,
-    pub(crate) rust_aggregate_binaries: usize,
-    pub(crate) rust_aggregate_exports: usize,
-    pub(crate) rust_identity_only_repair: bool,
-    pub(crate) rust_full_refresh: bool,
+    pub(crate) by_language:
+        crate::test_runner::language_keyed::LanguageKeyed<LanguageRefreshStats>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -141,9 +154,17 @@ pub(crate) fn ensure_check_runtime_coverage(
     jobs: usize,
 ) -> Result<(), CoverageRefreshError> {
     match (required.python, required.rust) {
-        (true, true) => refresh_python_and_rust_parallel(repo_root, ignore, jobs),
-        (true, false) => ensure_python_runtime_coverage(repo_root, ignore, jobs),
-        (false, true) => ensure_rust_runtime_coverage(repo_root, ignore, jobs),
+        (true, true) => refresh_python_and_rust_parallel(repo_root, ignore, jobs).map(|_| ()),
+        (true, false) => {
+            let refresh = PythonRuntimeRefresh;
+            debug_assert_eq!(refresh.language(), kiss::Language::Python);
+            refresh.ensure(repo_root, ignore, jobs).map(|_| ())
+        }
+        (false, true) => {
+            let refresh = RustRuntimeRefresh;
+            debug_assert_eq!(refresh.language(), kiss::Language::Rust);
+            refresh.ensure(repo_root, ignore, jobs).map(|_| ())
+        }
         (false, false) => Ok(()),
     }
 }
@@ -152,19 +173,24 @@ fn refresh_python_and_rust_parallel(
     repo_root: &Path,
     ignore: &[String],
     jobs: usize,
-) -> Result<(), CoverageRefreshError> {
+) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     // Per-language file locks allow overlap. Refcounted ScopedRefreshEnvGuard makes
     // the process-wide refresh env marker safe across these two threads.
     std::thread::scope(|scope| {
         let python = scope.spawn(|| ensure_python_runtime_coverage(repo_root, ignore, jobs));
-        let rust = ensure_rust_runtime_coverage(repo_root, ignore, jobs);
+        let rust = ensure_rust_runtime_coverage(repo_root, ignore, jobs)?;
         let python = python
             .join()
             .unwrap_or_else(|_| Err(CoverageRefreshError::publication(
                 "Python",
                 "python refresh thread panicked",
-            )));
-        rust.and(python)
+            )))?;
+        Ok(CoverageRefreshStats {
+            by_language: crate::test_runner::language_keyed::LanguageKeyed {
+                python: python.by_language.python,
+                rust: rust.by_language.rust,
+            },
+        })
     })
 }
 
@@ -244,12 +270,12 @@ pub(super) fn lock_refresh(
     Ok(RefreshLockGuard { _file: file })
 }
 
-fn ensure_rust_runtime_coverage(
+pub(super) fn ensure_rust_runtime_coverage(
     repo_root: &Path,
     ignore: &[String],
     jobs: usize,
-) -> Result<(), CoverageRefreshError> {
-    ensure_rust_runtime_coverage_shared(repo_root, ignore, jobs, "kiss test").map(|_| ())
+) -> Result<CoverageRefreshStats, CoverageRefreshError> {
+    ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, "kiss test")
 }
 
 fn ensure_rust_runtime_coverage_with_stats_labeled(
@@ -300,6 +326,7 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
 ///
 /// Runs through the shared ensure factory/kernel against repo-local `./.kiss`
 /// coverage artifacts.
+#[allow(dead_code)] // summary-shaped API retained for cov/runtime callers
 pub(crate) fn ensure_rust_runtime_coverage_shared(
     repo_root: &Path,
     ignore: &[String],
@@ -320,9 +347,9 @@ pub(crate) fn ensure_rust_runtime_coverage_shared(
     }
     let stats = ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, caller_label)?;
     Ok(crate::test_runner::runners::SelectorExecutionSummary {
-        rust_test_instances: stats.rust_test_instances,
-        rust_aggregate_binaries: stats.rust_aggregate_binaries,
-        rust_aggregate_exports: stats.rust_aggregate_exports,
+        rust_test_instances: stats.by_language.rust.test_instances,
+        rust_aggregate_binaries: stats.by_language.rust.aggregate_binaries,
+        rust_aggregate_exports: stats.by_language.rust.aggregate_exports,
         ..Default::default()
     })
 }

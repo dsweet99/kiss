@@ -236,8 +236,8 @@ fn apply_identity_only_repair_publishes_when_maps_match_injected_index() {
         retained,
     )
     .expect("identity-only repair should publish a valid aggregate");
-    assert!(stats.rust_identity_only_repair);
-    assert_eq!(stats.rust_aggregate_binaries, 1);
+    assert!(stats.by_language.rust.identity_only_repair);
+    assert_eq!(stats.by_language.rust.aggregate_binaries, 1);
 }
 
 #[test]
@@ -310,10 +310,10 @@ fn finalize_population_summary_accepts_zero_exit_after_identity_publish() {
     };
     let stats = super::finalize_population_summary(tmp.path(), &[], &summary, true)
         .expect("zero-exit summary should validate published aggregate");
-    assert!(stats.rust_full_refresh);
-    assert_eq!(stats.rust_aggregate_binaries, 1);
-    assert_eq!(stats.rust_aggregate_exports, 1);
-    assert_eq!(stats.rust_test_instances, 2);
+    assert!(stats.by_language.rust.full_refresh);
+    assert_eq!(stats.by_language.rust.aggregate_binaries, 1);
+    assert_eq!(stats.by_language.rust.aggregate_exports, 1);
+    assert_eq!(stats.by_language.rust.test_instances, 2);
 }
 
 #[test]

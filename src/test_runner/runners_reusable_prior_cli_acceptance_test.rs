@@ -1,7 +1,7 @@
 use tempfile::TempDir;
 
 use crate::test_git::TestChangeMode;
-use crate::test_runner::coverage_decision::RustSelectionBasis;
+use crate::test_runner::coverage_decision::SelectionBasis;
 use crate::test_runner::runners::enumerate_workspace_rust_selectors;
 use crate::test_runner::test_mode_fixtures::{
     RS_COVERING_SELECTOR, edit_rust_covered_source, warm_committed_rust_demo,
@@ -24,8 +24,10 @@ fn plan_selectors_commit_uses_reusable_prior_after_ordinary_rs_edit() {
         main_branch_cli: None,
         base_branch_cli: None,
         ignore: &[],
-        extra: &[],
-        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         lang_filter: Some(kiss::Language::Rust),
         config_main_branch: None,
     })
@@ -38,8 +40,10 @@ fn plan_selectors_commit_uses_reusable_prior_after_ordinary_rs_edit() {
             force_rerun: false,
 metrics: true,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                python: &[],
+                rust: &[],
+            },
             plan_duration: std::time::Duration::ZERO,
         gate: kiss::GateConfig::default()
         },
@@ -50,8 +54,8 @@ metrics: true,
     assert_eq!(code, 0);
     assert!(!planned.population_required.rust);
     assert_eq!(
-        planned.rust_selection_basis,
-        RustSelectionBasis::ReusablePrior
+        planned.selection_basis.rust,
+        SelectionBasis::ReusablePrior
     );
     assert_eq!(planned.sel.rust, vec![RS_COVERING_SELECTOR.to_string()]);
     assert!(planned.sel.rust.len() < universe.len() || universe.len() == 1);

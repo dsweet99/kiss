@@ -48,12 +48,7 @@ fn explicit_single_python_test_ignores_prior_failure_fanout() {
 
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    let planned = plan_target_selectors(
-        TargetPlanKind::Targets(&["tests/test_a.py::test_x".into()]),
-        &[],
-        &[],
-        &[],
-        Some(kiss::Language::Python),
+    let planned = plan_target_selectors(TargetPlanKind::Targets(&["tests/test_a.py::test_x".into()]), &[], crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] }, Some(kiss::Language::Python),
     );
     std::env::set_current_dir(orig).unwrap();
     let planned = planned.expect("plan explicit test");
@@ -63,7 +58,7 @@ fn explicit_single_python_test_ignores_prior_failure_fanout() {
     assert!(!planned.population_required.python);
     assert!(planned.prior_failure_selectors.python.is_empty());
     assert!(!planned.coverage_decision_engine_used);
-    assert!(planned.skip_python_index_rebuild_after_selective);
+    assert!(planned.skip_index_rebuild_after_selective.python);
 }
 
 #[test]
@@ -87,12 +82,7 @@ fn explicit_python_test_file_selects_only_that_file() {
 
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    let planned = plan_target_selectors(
-        TargetPlanKind::Targets(&["tests/test_a.py".into()]),
-        &[],
-        &[],
-        &[],
-        Some(kiss::Language::Python),
+    let planned = plan_target_selectors(TargetPlanKind::Targets(&["tests/test_a.py".into()]), &[], crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] }, Some(kiss::Language::Python),
     );
     std::env::set_current_dir(orig).unwrap();
     let planned = planned.expect("plan explicit test file");
@@ -142,12 +132,7 @@ fn explicit_nested_non_member_rust_target_is_rejected() {
 
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    let planned = plan_target_selectors(
-        TargetPlanKind::Targets(&["nested".into()]),
-        &[],
-        &[],
-        &[],
-        Some(kiss::Language::Rust),
+    let planned = plan_target_selectors(TargetPlanKind::Targets(&["nested".into()]), &[], crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] }, Some(kiss::Language::Rust),
     );
     std::env::set_current_dir(orig).unwrap();
     let err = match planned {

@@ -6,7 +6,7 @@ use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
-use crate::test_runner::coverage_decision::RustSelectionBasis;
+use crate::test_runner::coverage_decision::SelectionBasis;
 use crate::test_runner::runners::combined_selectors;
 use crate::test_runner::rust_coverage_index::{
     current_rust_coverage_batch_identity, rebuild_rust_coverage_index,
@@ -34,8 +34,8 @@ fn build_script_edit_forces_population_while_ordinary_lib_stays_reusable() {
     .unwrap();
     assert!(!ordinary.population_required.rust);
     assert_eq!(
-        ordinary.rust_selection_basis,
-        RustSelectionBasis::ReusablePrior
+        ordinary.selection_basis.rust,
+        SelectionBasis::ReusablePrior
     );
 
     fs::write(
@@ -55,8 +55,8 @@ fn build_script_edit_forces_population_while_ordinary_lib_stays_reusable() {
     .unwrap();
     assert!(compile_time.population_required.rust);
     assert_eq!(
-        compile_time.rust_selection_basis,
-        RustSelectionBasis::Population
+        compile_time.selection_basis.rust,
+        SelectionBasis::Population
     );
 }
 
@@ -84,8 +84,8 @@ fn manifest_only_compile_time_edit_forces_population() {
 
     assert!(compile_time.population_required.rust);
     assert_eq!(
-        compile_time.rust_selection_basis,
-        RustSelectionBasis::Population
+        compile_time.selection_basis.rust,
+        SelectionBasis::Population
     );
 }
 
@@ -110,8 +110,8 @@ fn proc_macro_edit_forces_population_while_ordinary_lib_stays_reusable() {
     .unwrap();
     assert!(!ordinary.population_required.rust);
     assert_eq!(
-        ordinary.rust_selection_basis,
-        RustSelectionBasis::ReusablePrior
+        ordinary.selection_basis.rust,
+        SelectionBasis::ReusablePrior
     );
 
     fs::write(
@@ -131,8 +131,8 @@ fn proc_macro_edit_forces_population_while_ordinary_lib_stays_reusable() {
     .unwrap();
     assert!(compile_time.population_required.rust);
     assert_eq!(
-        compile_time.rust_selection_basis,
-        RustSelectionBasis::Population
+        compile_time.selection_basis.rust,
+        SelectionBasis::Population
     );
 }
 

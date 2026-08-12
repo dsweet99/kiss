@@ -38,6 +38,7 @@ pub mod test_refs;
 pub mod test_section_config;
 pub mod units;
 
+pub mod lang_analysis;
 pub mod rust_counts;
 pub mod rust_fn_metrics;
 pub mod rust_graph;

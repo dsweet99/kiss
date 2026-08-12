@@ -7,7 +7,7 @@ mod decision_rust_paths;
 #[path = "decision_prior.rs"]
 mod decision_prior;
 use crate::test_runner::coverage_decision::{
-    ChangedSource, CoverageDecisionEngine, LanguagePlanner, RustSelectionBasis, TestSelector,
+    ChangedSource, CoverageDecisionEngine, LanguagePlanner, SelectionBasis, TestSelector,
 };
 
 #[cfg(test)]
@@ -21,15 +21,17 @@ use super::rust_backer::{RustModule, select_fresh_rust_source_selectors};
 pub(crate) struct SelectorPlan {
     pub(crate) selectors: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
     pub(crate) population_required: crate::test_runner::language_keyed::LanguageKeyed<bool>,
-    pub(crate) rust_source_paths: Vec<PathBuf>,
-    pub(crate) rust_vcs_source_paths: usize,
-    pub(crate) rust_snapshot_delta_modified: usize,
-    pub(crate) rust_snapshot_delta_structural: bool,
-    pub(crate) python_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
-    pub(crate) rust_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
+    pub(crate) source_paths: crate::test_runner::language_keyed::LanguageKeyed<Vec<PathBuf>>,
+    pub(crate) vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed<usize>,
+    pub(crate) snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed<usize>,
+    pub(crate) snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed<bool>,
+    pub(crate) changed_lines: crate::test_runner::language_keyed::LanguageKeyed<
+        BTreeMap<PathBuf, BTreeSet<u32>>,
+    >,
     pub(crate) prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
     pub(crate) coverage_decision_engine_used: bool,
-    pub(crate) rust_selection_basis: RustSelectionBasis,
+    pub(crate) selection_basis:
+        crate::test_runner::language_keyed::LanguageKeyed<SelectionBasis>,
 }
 
 #[derive(Clone, Copy)]
@@ -38,8 +40,8 @@ pub(crate) struct CombinedSelectorInput<'a> {
     pub(crate) source_paths: &'a [PathBuf],
     pub(crate) test_paths: &'a [PathBuf],
     pub(crate) changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
-    pub(crate) rust_test_args: &'a [String],
-    pub(crate) python_test_args: &'a [String],
+    /// Per-language CLI test extras (same abstract slot as `EnsureRequest.extras`).
+    pub(crate) test_args: crate::test_runner::language_keyed::LanguageKeyed<&'a [String]>,
     pub(crate) lang_filter: Option<kiss::Language>,
     pub(crate) ignore: &'a [String],
     pub(crate) extra_direct_python: &'a [String],
@@ -63,8 +65,10 @@ pub(crate) fn combined_selectors(
         source_paths,
         test_paths,
         changed_lines: rust_changed_lines,
-        rust_test_args,
-        python_test_args: rust_test_args,
+        test_args: crate::test_runner::language_keyed::LanguageKeyed {
+            python: rust_test_args,
+            rust: rust_test_args,
+        },
         lang_filter,
         ignore,
         extra_direct_python: &[],
@@ -89,7 +93,7 @@ pub(crate) fn combined_selectors_with_direct(
         input.source_paths,
         input.test_paths,
         input.changed_lines,
-        input.rust_test_args,
+        input.test_args.rust,
         input.lang_filter,
         input.ignore,
     )?;
@@ -114,8 +118,7 @@ pub(crate) fn combined_selectors_with_direct(
         python_changed_lines: &prepared.python_changed_lines,
         rust_source_paths: &prepared.rust_source_paths,
         rust_changed_lines: &prepared.rust_changed_lines,
-        rust_test_args: input.rust_test_args,
-        python_test_args: input.python_test_args,
+        test_args: input.test_args,
         lang_filter: input.lang_filter,
         ignore: input.ignore,
         changed_tests: &prepared.changed_tests,
@@ -137,7 +140,7 @@ fn assemble_selector_plan(
         selectors_for_language(&engine_backers.prior_failures, kiss::Language::Python);
     let rust_prior_failure_selectors =
         selectors_for_language(&engine_backers.prior_failures, kiss::Language::Rust);
-    let pre_rust_selection_basis = engine_backers.rust_selection_basis;
+    let mut selection_basis = engine_backers.selection_basis;
     let engine_plan = CoverageDecisionEngine::new(engine_backers.backers).plan(changed_sources)?;
     let (selected_py, selected_rs) = selectors_by_language(&engine_plan.selected);
     let (population_py, population_rs) = selectors_by_language(&engine_plan.population);
@@ -147,11 +150,12 @@ fn assemble_selector_plan(
     let rust_population_required = engine_plan
         .population_languages
         .contains(&kiss::Language::Rust);
-    let rust_selection_basis = if rust_population_required {
-        RustSelectionBasis::Population
-    } else {
-        pre_rust_selection_basis
-    };
+    if python_population_required {
+        selection_basis.python = SelectionBasis::Population;
+    }
+    if rust_population_required {
+        selection_basis.rust = SelectionBasis::Population;
+    }
     let py_selectors = if python_population_required {
         population_py
     } else {
@@ -171,18 +175,32 @@ fn assemble_selector_plan(
             python: python_population_required,
             rust: rust_population_required,
         },
-        rust_source_paths: prepared.rust_source_paths,
-        rust_vcs_source_paths: prepared.rust_vcs_source_paths,
-        rust_snapshot_delta_modified: prepared.rust_snapshot_delta_modified,
-        rust_snapshot_delta_structural: prepared.rust_snapshot_delta_structural,
-        python_changed_lines: prepared.python_changed_lines,
-        rust_changed_lines: prepared.rust_changed_lines,
+        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: prepared.py_source_paths,
+            rust: prepared.rust_source_paths,
+        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: prepared.rust_vcs_source_paths,
+        },
+        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: prepared.rust_snapshot_delta_modified,
+        },
+        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: prepared.rust_snapshot_delta_structural,
+        },
+        changed_lines: crate::test_runner::language_keyed::LanguageKeyed {
+            python: prepared.python_changed_lines,
+            rust: prepared.rust_changed_lines,
+        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: python_prior_failure_selectors,
             rust: rust_prior_failure_selectors,
         },
         coverage_decision_engine_used: true,
-        rust_selection_basis,
+        selection_basis,
     })
 }
 
@@ -192,8 +210,7 @@ struct EngineBackerInputs<'a> {
     python_changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
     rust_source_paths: &'a [PathBuf],
     rust_changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
-    rust_test_args: &'a [String],
-    python_test_args: &'a [String],
+    test_args: crate::test_runner::language_keyed::LanguageKeyed<&'a [String]>,
     lang_filter: Option<kiss::Language>,
     ignore: &'a [String],
     changed_tests: &'a ChangedTestSelectors,
@@ -204,22 +221,8 @@ struct EngineBackerInputs<'a> {
 struct EngineBackers {
     backers: Vec<Box<dyn LanguagePlanner>>,
     prior_failures: Vec<TestSelector>,
-    /// Captured from the concrete Rust module — not a LanguagePlanner method.
-    rust_selection_basis: RustSelectionBasis,
-}
-
-impl EngineBackers {
-    fn new(
-        backers: Vec<Box<dyn LanguagePlanner>>,
-        prior_failures: Vec<TestSelector>,
-        rust_selection_basis: RustSelectionBasis,
-    ) -> Self {
-        EngineBackers {
-            backers,
-            prior_failures,
-            rust_selection_basis,
-        }
-    }
+    /// From each planner's `LanguagePlanner::selection_basis`.
+    selection_basis: crate::test_runner::language_keyed::LanguageKeyed<SelectionBasis>,
 }
 
 fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String> {
@@ -232,7 +235,7 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
         prior_failures_for_language(
             input.repo_root,
             kiss::Language::Python,
-            input.python_test_args,
+            input.test_args.python,
         )?
     };
     let rust_prior_failures = if !input.include_prior_failures
@@ -240,7 +243,7 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
     {
         Vec::new()
     } else {
-        prior_failures_for_language(input.repo_root, kiss::Language::Rust, input.rust_test_args)?
+        prior_failures_for_language(input.repo_root, kiss::Language::Rust, input.test_args.rust)?
     };
     if input.lang_filter != Some(kiss::Language::Rust)
         && (!input.py_source_paths.is_empty()
@@ -251,41 +254,42 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
             input.repo_root,
             input.py_source_paths,
             input.python_changed_lines,
-            input.python_test_args,
+            input.test_args.python,
             input.ignore,
             &input.changed_tests.python,
             &python_prior_failures,
         ));
     }
-    let mut rust_selection_basis = RustSelectionBasis::Current;
     if input.lang_filter != Some(kiss::Language::Python)
         && (!input.rust_source_paths.is_empty()
             || !input.changed_tests.rust.is_empty()
             || !rust_prior_failures.is_empty()
             || input.rust_resolved.as_ref().is_some_and(|resolved| {
-                resolved.basis() == RustSelectionBasis::Population
+                resolved.basis() == SelectionBasis::Population
             }))
     {
-        let (backer, basis) = rust_llvm_cov_backer(RustBackerInput {
+        backers.push(rust_llvm_cov_backer(RustBackerInput {
             repo_root: input.repo_root,
             rust_source_paths: input.rust_source_paths,
             rust_changed_lines: input.rust_changed_lines,
-            rust_test_args: input.rust_test_args,
+            rust_test_args: input.test_args.rust,
             ignore: input.ignore,
             changed_tests: &input.changed_tests.rust,
             prior_failures: &rust_prior_failures,
             resolved: input.rust_resolved,
-        });
-        rust_selection_basis = basis;
-        backers.push(backer);
+        }));
+    }
+    let mut selection_basis = crate::test_runner::language_keyed::LanguageKeyed::default();
+    for backer in &backers {
+        *selection_basis.get_mut(backer.language()) = backer.selection_basis();
     }
     let mut prior_failures = python_prior_failures;
     prior_failures.extend(rust_prior_failures);
-    Ok(EngineBackers::new(
+    Ok(EngineBackers {
         backers,
         prior_failures,
-        rust_selection_basis,
-    ))
+        selection_basis,
+    })
 }
 
 pub(crate) use decision_prior::prior_failures_for_language;

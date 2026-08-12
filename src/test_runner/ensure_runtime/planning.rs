@@ -63,8 +63,8 @@ pub(crate) fn ensure_request_from_planned(args: EnsureFromPlanned<'_>) -> Ensure
         jobs: args.jobs,
         gate: args.gate,
         extras: LanguageKeyed {
-            python: args.python_extra.to_vec(),
-            rust: args.rust_extra.to_vec(),
+            python: args.extras.python.to_vec(),
+            rust: args.extras.rust.to_vec(),
         },
         planned: LanguageKeyed {
             python: args.planned.sel.python.clone(),

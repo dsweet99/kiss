@@ -7,7 +7,7 @@ use rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
 use crate::test_runner::coverage_decision::{
-    CoverageFreshness, LanguagePlanner, RustSelectionBasis,
+    CoverageFreshness, LanguagePlanner, SelectionBasis,
 };
 use crate::test_runner::runners::rust_backer::RustModule;
 use crate::test_runner::runners::{combined_selectors, enumerate_workspace_rust_selectors};
@@ -47,7 +47,7 @@ fn reusable_prior_real_cache_fixture() {
         CoverageFreshness::ReusablePrior
     );
     assert!(!plan.population_required.rust);
-    assert_eq!(plan.rust_selection_basis, RustSelectionBasis::ReusablePrior);
+    assert_eq!(plan.selection_basis.rust, SelectionBasis::ReusablePrior);
     assert!(!plan.selectors.rust.is_empty());
     assert!(plan.selectors.rust.len() < universe.len());
 }
@@ -103,7 +103,7 @@ fn combined_selectors_uses_reusable_prior_after_ordinary_source_edit() {
 
     assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
     assert!(!plan.population_required.rust);
-    assert_eq!(plan.rust_selection_basis, RustSelectionBasis::ReusablePrior);
+    assert_eq!(plan.selection_basis.rust, SelectionBasis::ReusablePrior);
 }
 
 #[test]
@@ -158,11 +158,11 @@ fn reusable_prior_uses_snapshot_delta_instead_of_historical_vcs_sources() {
     .unwrap();
 
     assert!(!plan.population_required.rust);
-    assert_eq!(plan.rust_selection_basis, RustSelectionBasis::ReusablePrior);
-    assert_eq!(plan.rust_source_paths, vec![lib]);
-    assert_eq!(plan.rust_vcs_source_paths, 2);
-    assert_eq!(plan.rust_snapshot_delta_modified, 1);
-    assert!(!plan.rust_snapshot_delta_structural);
+    assert_eq!(plan.selection_basis.rust, SelectionBasis::ReusablePrior);
+    assert_eq!(plan.source_paths.rust, vec![lib]);
+    assert_eq!(plan.vcs_source_paths.rust, 2);
+    assert_eq!(plan.snapshot_delta_modified.rust, 1);
+    assert!(!plan.snapshot_delta_structural.rust);
     assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
 }
 
@@ -228,13 +228,13 @@ fn rust_module_reports_reusable_prior_after_ordinary_source_edit() {
         vec!["tests::gets_value"]
     );
     assert_eq!(
-        module.selection_basis().unwrap(),
-        RustSelectionBasis::ReusablePrior
+        module.selection_basis(),
+        SelectionBasis::ReusablePrior
     );
     let empty_module = RustModule::new(tmp.path(), &[], &BTreeMap::new(), &[], &[], &[], &[]);
     assert_eq!(
-        empty_module.selection_basis().unwrap(),
-        RustSelectionBasis::Current
+        empty_module.selection_basis(),
+        SelectionBasis::Current
     );
 }
 
@@ -258,7 +258,7 @@ fn cargo_toml_invalidator_forces_population_after_warm_snapshot() {
     )
     .unwrap();
     assert!(plan.population_required.rust);
-    assert_eq!(plan.rust_selection_basis, RustSelectionBasis::Population);
+    assert_eq!(plan.selection_basis.rust, SelectionBasis::Population);
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn corrupt_prior_index_row_forces_population() {
     )
     .unwrap();
     assert!(plan.population_required.rust);
-    assert_eq!(plan.rust_selection_basis, RustSelectionBasis::Population);
+    assert_eq!(plan.selection_basis.rust, SelectionBasis::Population);
 }
 
 #[test]
@@ -312,7 +312,7 @@ fn renamed_production_rs_path_forces_population() {
     )
     .unwrap();
     assert!(plan.population_required.rust);
-    assert_eq!(plan.rust_selection_basis, RustSelectionBasis::Population);
+    assert_eq!(plan.selection_basis.rust, SelectionBasis::Population);
 }
 
 fn warm_demo_repo(root: &Path) -> std::path::PathBuf {

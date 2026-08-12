@@ -15,7 +15,7 @@ pub(super) fn rebuild_python_index(
     module: &PythonModule,
     ctx: &RunContext<'_, '_>,
 ) -> Result<(), String> {
-    if ctx.planned.skip_python_index_rebuild_after_selective {
+    if ctx.planned.skip_index_rebuild_after_selective.python {
         return Ok(());
     }
     let selective = ctx.planned.sel.python.clone();
@@ -25,7 +25,7 @@ pub(super) fn rebuild_python_index(
     publish_python_derived_state_with_filter(
         &ctx.planned.repo_root,
         None,
-        ctx.options.python_extra,
+        ctx.options.extras.python,
         |path, repo_root| is_indexable(module, path, repo_root),
     )?;
     Ok(())
@@ -44,7 +44,7 @@ pub(super) fn write_python_manifest(
         publish_python_derived_state_with_filter_force(
             &ctx.planned.repo_root,
             Some(selectors),
-            ctx.options.python_extra,
+            ctx.options.extras.python,
             true,
             |path, repo_root| is_indexable(module, path, repo_root),
         )?;
@@ -52,7 +52,7 @@ pub(super) fn write_python_manifest(
         publish_python_derived_state_with_filter(
             &ctx.planned.repo_root,
             Some(selectors),
-            ctx.options.python_extra,
+            ctx.options.extras.python,
             |path, repo_root| is_indexable(module, path, repo_root),
         )?;
     }
@@ -64,7 +64,7 @@ pub(super) fn generation_already_current(ctx: &RunContext<'_, '_>, selectors: &[
     if current_complete_generation_matches(
         &ctx.planned.repo_root,
         selectors,
-        ctx.options.python_extra,
+        ctx.options.extras.python,
     ) && load_current_python_coverage_index(&ctx.planned.repo_root).is_some()
     {
         return true;
@@ -72,7 +72,7 @@ pub(super) fn generation_already_current(ctx: &RunContext<'_, '_>, selectors: &[
     if python_population_manifest_is_current_for_args_with_env_keys(
         &ctx.planned.repo_root,
         selectors,
-        ctx.options.python_extra,
+        ctx.options.extras.python,
         PYTHON_COVERAGE_ENV_KEYS,
     ) && load_current_python_coverage_index(&ctx.planned.repo_root).is_some()
         && try_load_pinned_python_generation(&ctx.planned.repo_root).is_ok()
@@ -90,7 +90,7 @@ fn try_selective_generation_repair(
     let Ok(pinned) = try_load_pinned_python_generation(&ctx.planned.repo_root) else {
         return Ok(false);
     };
-    let exec = current_python_execution_identity(&ctx.planned.repo_root, ctx.options.python_extra)?;
+    let exec = current_python_execution_identity(&ctx.planned.repo_root, ctx.options.extras.python)?;
     if pinned.plan.base_identity != exec {
         return Ok(false);
     }
@@ -103,7 +103,7 @@ fn try_selective_generation_repair(
     let deltas = selector_deltas_from_cached_outcomes(
         &ctx.planned.repo_root,
         selective,
-        ctx.options.python_extra,
+        ctx.options.extras.python,
         &|path, repo_root| is_indexable(module, path, repo_root),
         &ctx.options.gate,
     )?;

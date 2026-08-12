@@ -94,14 +94,14 @@ fn cold_initialization_predicate_is_limited_to_unfiltered_base_or_main() {
             dry_run,
             force_rerun: false,
             force_bad: false,
-        metrics: false,
+            metrics: false,
             jobs: 16,
             extra: &[],
             python_extra: &[],
             ignore: &[],
             lang_filter,
             config_main_branch: None,
-        gate_config: kiss::GateConfig::default()
+            gate_config: kiss::GateConfig::default(),
         }
     }
     let base = args(TestChangeMode::Base, false, None);
@@ -156,19 +156,37 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
             python: false,
             rust: false,
         },
-        rust_source_paths: Vec::new(),
-        rust_vcs_source_paths: 0,
-        rust_snapshot_delta_modified: 0,
-        rust_snapshot_delta_structural: false,
+        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: Vec::new(),
             rust: Vec::new(),
         },
         coverage_decision_engine_used: true,
-        rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+        selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
+            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+        },
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
-        skip_python_index_rebuild_after_selective: false,
+        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
     };
 
     crate::test_runner::apply_cold_initialization_population(&args, &mut planned);
@@ -182,8 +200,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
     let both = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        &[],
-        &[],
+        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         None,
     )
     .unwrap();
@@ -194,8 +211,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
     let python_only = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        &[],
-        &[],
+        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Python),
     )
     .unwrap();
@@ -206,8 +222,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
     let rust_only = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        &[],
-        &[],
+        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
     )
     .unwrap();
@@ -224,24 +239,21 @@ fn plan_repo_root_target_matches_all_via_dot() {
     let via_all = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        &[],
-        &[],
+        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
     )
     .unwrap();
     let via_root = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&[root.to_string_lossy().into_owned()]),
         &[],
-        &[],
-        &[],
+        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
     )
     .unwrap();
     let via_dot = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&[".".into()]),
         &[],
-        &[],
-        &[],
+        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
     )
     .unwrap();
@@ -272,23 +284,21 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
     let planned = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&["src/bin_cli".into()]),
         &[],
-        &[],
-        &[],
+        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
     )
     .unwrap();
     let all = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        &[],
-        &[],
+        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
     )
     .unwrap();
     assert!(!planned.sel.rust.is_empty());
-    assert!(!planned.rust_source_paths.is_empty());
+    assert!(!planned.source_paths.rust.is_empty());
     assert!(planned.coverage_decision_engine_used);
-    assert!(all.rust_source_paths.is_empty());
+    assert!(all.source_paths.rust.is_empty());
     assert!(!all.coverage_decision_engine_used);
     // Partial targets stay on the decision-engine path (not planned_all). The engine
     // may still request population for cold/missing coverage; that is not All broadening.
@@ -303,8 +313,7 @@ fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
     let planned = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        &[],
-        &[],
+        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
     );
     std::env::set_current_dir(&cwd).unwrap();
@@ -312,8 +321,7 @@ fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
     let from_root = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        &[],
-        &[],
+        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
     )
     .unwrap();
@@ -334,19 +342,37 @@ fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
             python: false,
             rust: false,
         },
-        rust_source_paths: Vec::new(),
-        rust_vcs_source_paths: 0,
-        rust_snapshot_delta_modified: 0,
-        rust_snapshot_delta_structural: false,
+        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: Vec::new(),
             rust: Vec::new(),
         },
         coverage_decision_engine_used: false,
-        rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+        selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
+            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+        },
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
-        skip_python_index_rebuild_after_selective: false,
+        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
     };
     let args = crate::test_runner::RunTestCmdArgs {
         invocation: crate::bin_cli::args::TestInvocation::All,

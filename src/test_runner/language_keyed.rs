@@ -19,7 +19,6 @@ impl<T> LanguageKeyed<T> {
         }
     }
 
-    #[allow(dead_code)] // mutator for future language-keyed plan updates
     pub(crate) fn get_mut(&mut self, language: Language) -> &mut T {
         match language {
             Language::Python => &mut self.python,

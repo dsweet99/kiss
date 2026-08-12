@@ -1,5 +1,6 @@
 use super::types::{
-    ChangedDiff, CoverageFreshness, PopulationPlan, SelectionDecision, TestSelector,
+    ChangedDiff, CoverageFreshness, PopulationPlan, SelectionBasis, SelectionDecision,
+    TestSelector,
 };
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::{PlannedSelectors, SelectorRunOptions};
@@ -25,6 +26,10 @@ macro_rules! define_language_policy_traits {
             fn population_plan(&self, universe: &[TestSelector]) -> PopulationPlan;
             fn select(&self) -> Result<SelectionDecision, String>;
             fn manifest_env_allowlist(&self) -> &'static [&'static str];
+            /// How this language chose covering tests (symmetric for Python and Rust).
+            fn selection_basis(&self) -> SelectionBasis {
+                SelectionBasis::Current
+            }
         }
 
         pub(crate) trait LanguageExecutor {

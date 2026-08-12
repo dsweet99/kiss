@@ -1,4 +1,4 @@
-use crate::test_runner::coverage_decision::{CoverageFreshness, RustSelectionBasis};
+use crate::test_runner::coverage_decision::{CoverageFreshness, SelectionBasis};
 use crate::test_runner::rust_coverage_index::{
     ResolvedRustPopulation, resolve_rust_population_state, select_rust_source_selectors_for_basis,
 };
@@ -248,7 +248,7 @@ fn resolve_stale_population_when_no_manifest_matches() {
             .expect("resolved population");
     assert_eq!(resolved, ResolvedRustPopulation::ColdStale);
     assert_eq!(resolved.freshness(), CoverageFreshness::Stale);
-    assert_eq!(resolved.basis(), RustSelectionBasis::Population);
+    assert_eq!(resolved.basis(), SelectionBasis::Population);
     assert!(resolved.state().is_none());
 }
 

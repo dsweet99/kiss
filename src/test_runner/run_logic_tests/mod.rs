@@ -22,8 +22,10 @@ fn options(force_rerun: bool) -> SelectorRunOptions<'static> {
         force_rerun,
         metrics: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         plan_duration: Duration::ZERO,
         gate: kiss::GateConfig::default(),
     }

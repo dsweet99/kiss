@@ -2,7 +2,7 @@ use super::{
     ResolvedRustPopulation, current_partial_population_covers_selection,
     select_rust_source_selectors_for_basis,
 };
-use crate::test_runner::coverage_decision::{CoverageFreshness, RustSelectionBasis};
+use crate::test_runner::coverage_decision::{CoverageFreshness, SelectionBasis};
 use rust_llvm_cov_runner::RustPopulationState;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,7 +21,7 @@ fn witness_resolved_population_enum() {
         },
         delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
-    assert_eq!(resolved.basis(), RustSelectionBasis::ReusablePrior);
+    assert_eq!(resolved.basis(), SelectionBasis::ReusablePrior);
     assert_eq!(resolved.freshness(), CoverageFreshness::ReusablePrior);
     assert!(resolved.state().is_some());
 }

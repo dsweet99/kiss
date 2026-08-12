@@ -288,3 +288,37 @@ fn finalize_population_summary_labeled_uses_caller_label_not_kiss_cov() {
     // — that is acceptable since errors are always from the shared runtime path).
     assert_eq!(err_cov.to_string(), err_test.to_string());
 }
+
+#[test]
+fn ensure_check_runtime_coverage_no_languages_is_ok() {
+    let tmp = tempfile::tempdir().unwrap();
+    let required = crate::test_runner::check_line_coverage::RequiredCoverageLanguages {
+        python: false,
+        rust: false,
+    };
+    super::ensure_check_runtime_coverage(tmp.path(), required, &[], 1).unwrap();
+}
+
+#[test]
+fn coverage_refresh_stats_for_rust_helper_sets_rust_slot() {
+    let stats = super::CoverageRefreshStats::for_rust(super::LanguageRefreshStats {
+        test_instances: 3,
+        full_refresh: true,
+        ..Default::default()
+    });
+    assert_eq!(stats.by_language.rust.test_instances, 3);
+    assert!(stats.by_language.rust.full_refresh);
+    assert_eq!(stats.by_language.python.test_instances, 0);
+}
+
+#[test]
+fn runtime_refresh_trait_language_identity() {
+    assert_eq!(
+        super::CoverageRuntimeRefresh::language(&super::PythonRuntimeRefresh),
+        kiss::Language::Python
+    );
+    assert_eq!(
+        super::CoverageRuntimeRefresh::language(&super::RustRuntimeRefresh),
+        kiss::Language::Rust
+    );
+}

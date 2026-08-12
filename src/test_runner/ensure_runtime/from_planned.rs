@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use kiss::{GateConfig, Language};
 
 use crate::test_runner::lang_iface::AcceptMode;
+use crate::test_runner::language_keyed::LanguageKeyed;
 use crate::test_runner::PlannedSelectors;
 
 pub(crate) struct EnsureFromPlanned<'a> {
@@ -13,8 +14,8 @@ pub(crate) struct EnsureFromPlanned<'a> {
     pub(crate) lang_filter: Option<Language>,
     pub(crate) force: bool,
     pub(crate) jobs: usize,
-    pub(crate) python_extra: &'a [String],
-    pub(crate) rust_extra: &'a [String],
+    /// Per-language CLI extras (same abstract slot as `EnsureRequest.extras`).
+    pub(crate) extras: LanguageKeyed<&'a [String]>,
     pub(crate) repo_root_override: Option<PathBuf>,
     pub(crate) gate: GateConfig,
 }

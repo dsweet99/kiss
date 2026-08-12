@@ -21,8 +21,10 @@ fn plan(
         main_branch_cli: main,
         base_branch_cli: base,
         ignore: &[],
-        extra: &[],
-        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         lang_filter: lang,
         config_main_branch: None,
     })
@@ -68,11 +70,11 @@ fn row_g_untracked_rust_source_commit_only() {
     .expect("commit plan");
     assert!(
         commit
-            .rust_source_paths
+            .source_paths.rust
             .iter()
             .any(|p| p.ends_with("new_src.rs")),
         "commit: untracked Rust source must appear in rust_source_paths, got {:?}",
-        commit.rust_source_paths
+        commit.source_paths.rust
     );
     let base = with_cwd(tmp.path(), || {
         plan(
@@ -85,11 +87,11 @@ fn row_g_untracked_rust_source_commit_only() {
     .expect("base plan");
     assert!(
         !base
-            .rust_source_paths
+            .source_paths.rust
             .iter()
             .any(|p| p.ends_with("new_src.rs")),
         "base: untracked Rust source must not appear, got {:?}",
-        base.rust_source_paths
+        base.source_paths.rust
     );
     let main = with_cwd(tmp.path(), || {
         plan(
@@ -102,11 +104,11 @@ fn row_g_untracked_rust_source_commit_only() {
     .expect("main plan");
     assert!(
         !main
-            .rust_source_paths
+            .source_paths.rust
             .iter()
             .any(|p| p.ends_with("new_src.rs")),
         "main: untracked Rust source must not appear, got {:?}",
-        main.rust_source_paths
+        main.source_paths.rust
     );
 }
 
@@ -203,14 +205,15 @@ fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Optio
             base_branch_cli: base,
             dry_run: true,
             force_rerun: false,
-            force_bad: false,            metrics: false,
+            force_bad: false,
+            metrics: false,
             jobs: 1,
             extra: &[],
             python_extra: &[],
             ignore: &[],
             lang_filter: Some(kiss::Language::Rust),
             config_main_branch: None,
-        gate_config: kiss::GateConfig::default()
+            gate_config: kiss::GateConfig::default(),
         })
     });
     assert_eq!(code, 0, "{mode:?}: run_test dry-run exit");
@@ -275,7 +278,7 @@ fn row_k_run_test_base_without_other_refs_fails() {
             force_bad: false,            metrics: false,
             jobs: 1,
             extra: &[],
-            python_extra: &[],
+        python_extra: &[],
             ignore: &[],
             lang_filter: Some(kiss::Language::Rust),
             config_main_branch: None,

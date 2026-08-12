@@ -13,7 +13,7 @@ pub(crate) use language_module::{
 #[cfg(test)]
 pub(crate) use types::CoverageDecisionPlan;
 pub(crate) use types::{
-    ChangedDiff, ChangedSource, CoverageFreshness, PopulationPlan, RustSelectionBasis,
+    ChangedDiff, ChangedSource, CoverageFreshness, PopulationPlan, SelectionBasis,
     SelectionDecision, TestSelector, full_population_plan,
 };
 

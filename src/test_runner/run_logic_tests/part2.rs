@@ -60,8 +60,10 @@ fn run_selected_phases_records_rust_population_selective_and_prints_metrics() {
         force_rerun: false,
 metrics: true,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         plan_duration: Duration::ZERO,
     gate: kiss::GateConfig::default()
     };
@@ -122,8 +124,10 @@ fn run_selectors_rejects_zero_jobs_at_entry() {
             force_rerun: false,
 metrics: false,
             jobs: 0,
-            extra: &[],
-            python_extra: &[],
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                python: &[],
+                rust: &[],
+            },
             plan_duration: Duration::ZERO,
         gate: kiss::GateConfig::default()
         },
@@ -152,8 +156,10 @@ fn run_selectors_non_dry_run_executes_python_selective_phase() {
             force_rerun: true,
 metrics: true,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                python: &[],
+                rust: &[],
+            },
             plan_duration: Duration::ZERO,
         gate: kiss::GateConfig::default()
         },
@@ -182,8 +188,10 @@ fn run_selectors_no_work_and_dry_run_with_metrics() {
                 force_rerun: false,
 metrics: true,
                 jobs: 1,
-                extra: &[],
-                python_extra: &[],
+                extras: crate::test_runner::language_keyed::LanguageKeyed {
+                    python: &[],
+                    rust: &[],
+                },
                 plan_duration: Duration::ZERO,
             gate: kiss::GateConfig::default()
             },
@@ -202,8 +210,10 @@ metrics: true,
                 force_rerun: false,
 metrics: true,
                 jobs: 1,
-                extra: &[],
-                python_extra: &[],
+                extras: crate::test_runner::language_keyed::LanguageKeyed {
+                    python: &[],
+                    rust: &[],
+                },
                 plan_duration: Duration::ZERO,
             gate: kiss::GateConfig::default()
             },

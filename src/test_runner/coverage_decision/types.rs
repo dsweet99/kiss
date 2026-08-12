@@ -88,8 +88,9 @@ impl CoverageFreshness {
     }
 }
 
+/// How a language planner chose covering tests (Current / reuse prior / full population).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub(crate) enum RustSelectionBasis {
+pub(crate) enum SelectionBasis {
     #[default]
     Current,
     ReusablePrior,

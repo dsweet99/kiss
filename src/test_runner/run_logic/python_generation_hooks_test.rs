@@ -28,19 +28,37 @@ fn planned(repo: &Path) -> PlannedSelectors {
             python: false,
             rust: false,
         },
-        rust_source_paths: Vec::new(),
-        rust_vcs_source_paths: 0,
-        rust_snapshot_delta_modified: 0,
-        rust_snapshot_delta_structural: false,
+        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: Vec::new(),
             rust: Vec::new(),
         },
         coverage_decision_engine_used: false,
-        rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+        selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
+            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+        },
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
-        skip_python_index_rebuild_after_selective: false,
+        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
     }
 }
 
@@ -77,8 +95,10 @@ fn hook_helpers_detect_current_generation_and_indexable_paths() {
         force_rerun: false,
         metrics: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         plan_duration: Duration::ZERO,
         gate: kiss::GateConfig::default(),
     };
@@ -110,14 +130,16 @@ fn rebuild_skips_when_selective_index_flag_set() {
     std::fs::create_dir_all(repo.join(".git")).unwrap();
     std::fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
     let mut planned = planned(repo);
-    planned.skip_python_index_rebuild_after_selective = true;
+    planned.skip_index_rebuild_after_selective.python = true;
     let options = SelectorRunOptions {
         dry_run: false,
         force_rerun: false,
         metrics: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         plan_duration: Duration::ZERO,
         gate: kiss::GateConfig::default(),
     };
@@ -140,8 +162,10 @@ fn generation_already_current_is_false_without_cache() {
         force_rerun: false,
         metrics: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         plan_duration: Duration::ZERO,
         gate: kiss::GateConfig::default(),
     };

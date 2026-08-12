@@ -1,6 +1,6 @@
 use super::{
     ChangedDiff, ChangedSource, ChangedTestSelector, CoverageDecisionEngine, CoverageDecisionPlan,
-    CoverageFreshness, LanguagePlanner, PopulationPlan, RustSelectionBasis, SelectionDecision,
+    CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionBasis, SelectionDecision,
     TestSelector, full_population_plan,
 };
 use kiss::Language;
@@ -131,10 +131,10 @@ fn witness_changed_diff_and_freshness_are_exhaustive() {
                 | CoverageFreshness::Unknown
         ));
     }
-    assert_eq!(RustSelectionBasis::default(), RustSelectionBasis::Current);
+    assert_eq!(SelectionBasis::default(), SelectionBasis::Current);
     assert_ne!(
-        RustSelectionBasis::ReusablePrior,
-        RustSelectionBasis::Population
+        SelectionBasis::ReusablePrior,
+        SelectionBasis::Population
     );
 }
 

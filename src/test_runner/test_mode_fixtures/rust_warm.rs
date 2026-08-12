@@ -6,7 +6,7 @@ use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
-use crate::test_runner::coverage_decision::RustSelectionBasis;
+use crate::test_runner::coverage_decision::SelectionBasis;
 use crate::test_runner::rust_coverage_index::{
     rebuild_rust_coverage_index, write_rust_population_manifest_for_args, write_test_entry,
 };
@@ -109,17 +109,17 @@ pub(crate) fn warm_base_demo_with_historical_source(tmp: &TempDir) -> (String, P
 
 pub(crate) fn assert_base_delta_plan(planned: &PlannedSelectors, lib: &Path) {
     assert_eq!(
-        planned.rust_selection_basis,
-        RustSelectionBasis::ReusablePrior
+        planned.selection_basis.rust,
+        SelectionBasis::ReusablePrior
     );
     assert!(!planned.population_required.rust);
-    assert_eq!(planned.rust_source_paths, vec![lib.to_path_buf()]);
+    assert_eq!(planned.source_paths.rust, vec![lib.to_path_buf()]);
     assert!(
-        planned.rust_vcs_source_paths >= 2,
+        planned.vcs_source_paths.rust >= 2,
         "base/main: VCS range must include historical + edited paths, got {}",
-        planned.rust_vcs_source_paths
+        planned.vcs_source_paths.rust
     );
-    assert_eq!(planned.rust_snapshot_delta_modified, 1);
-    assert!(!planned.rust_snapshot_delta_structural);
+    assert_eq!(planned.snapshot_delta_modified.rust, 1);
+    assert!(!planned.snapshot_delta_structural.rust);
     assert_eq!(planned.sel.rust, vec![RS_COVERING_SELECTOR.to_string()]);
 }

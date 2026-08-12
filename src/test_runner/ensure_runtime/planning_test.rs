@@ -17,19 +17,37 @@ fn ensure_request_from_planned_copies_selectors_and_root() {
             python: false,
             rust: false,
         },
-        rust_source_paths: vec![],
-        rust_vcs_source_paths: 0,
-        rust_snapshot_delta_modified: 0,
-        rust_snapshot_delta_structural: false,
+        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: vec![],
+        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: vec![],
             rust: vec![],
         },
         coverage_decision_engine_used: false,
-        rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+        selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
+            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+        },
         ignore: vec!["tmp".into()],
         workspace_files_fingerprint: None,
-        skip_python_index_rebuild_after_selective: false,
+        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
     };
     let req = ensure_request_from_planned(super::EnsureFromPlanned {
         planned: &planned,
@@ -37,8 +55,10 @@ fn ensure_request_from_planned_copies_selectors_and_root() {
         lang_filter: Some(kiss::Language::Python),
         force: true,
         jobs: 4,
-        python_extra: &["-p".into()],
-        rust_extra: &["--extra".into()],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &["-p".into()],
+            rust: &["--extra".into()],
+        },
         repo_root_override: None,
         gate: kiss::GateConfig::default(),
     });
@@ -61,19 +81,37 @@ fn ensure_request_carries_session_gate_without_reload() {
             python: false,
             rust: false,
         },
-        rust_source_paths: vec![],
-        rust_vcs_source_paths: 0,
-        rust_snapshot_delta_modified: 0,
-        rust_snapshot_delta_structural: false,
+        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: vec![],
+        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: vec![],
             rust: vec![],
         },
         coverage_decision_engine_used: false,
-        rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+        selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
+            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+        },
         ignore: vec![],
         workspace_files_fingerprint: None,
-        skip_python_index_rebuild_after_selective: false,
+        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
     };
     let session_gate = kiss::GateConfig {
         max_unit_test_seconds: vec![("session-only".into(), 7.0), ("*".into(), 1.0)],
@@ -85,8 +123,10 @@ fn ensure_request_carries_session_gate_without_reload() {
         lang_filter: Some(kiss::Language::Python),
         force: false,
         jobs: 1,
-        python_extra: &[],
-        rust_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         repo_root_override: None,
         gate: session_gate.clone(),
     });

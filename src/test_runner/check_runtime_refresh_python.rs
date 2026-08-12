@@ -3,7 +3,8 @@
 use std::path::Path;
 
 use super::{
-    CoverageRefreshError, ScopedRefreshEnvGuard, lock_refresh,
+    CoverageRefreshError, CoverageRefreshStats, LanguageRefreshStats, ScopedRefreshEnvGuard,
+    lock_refresh,
 };
 use crate::test_runner::check_line_coverage::{
     RuntimeCoverageLoadError, load_python_runtime_coverage,
@@ -18,10 +19,10 @@ pub(super) fn ensure_python_runtime_coverage(
     repo_root: &Path,
     ignore: &[String],
     jobs: usize,
-) -> Result<(), CoverageRefreshError> {
+) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     let _guard = lock_refresh(repo_root, "Python")?;
     match load_python_runtime_coverage(repo_root) {
-        Ok(_) => return Ok(()),
+        Ok(_) => return Ok(CoverageRefreshStats::default()),
         Err(err) if !err.problem_selectors.is_empty() => {
             let planned = planned_selectors_for_incomplete(repo_root, &err.problem_selectors);
             return run_python_ensure(
@@ -68,7 +69,7 @@ fn planned_selectors_for_incomplete(
 
 fn run_python_ensure(
     request: crate::test_runner::lang_iface::EnsureRequest,
-) -> Result<(), CoverageRefreshError> {
+) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     eprintln!(
         "kiss test: refreshing Python runtime coverage ({} tests)",
         request.planned.python.len()
@@ -83,7 +84,17 @@ fn run_python_ensure(
     if summary.exit_code != 0 {
         return Err(execution_error(&summary));
     }
-    finalize_incomplete_repair_load(&request.repo_root, &summary)
+    finalize_incomplete_repair_load(&request.repo_root, &summary)?;
+    Ok(CoverageRefreshStats {
+        by_language: crate::test_runner::language_keyed::LanguageKeyed {
+            python: LanguageRefreshStats {
+                test_instances: summary.total,
+                full_refresh: true,
+                ..Default::default()
+            },
+            rust: LanguageRefreshStats::default(),
+        },
+    })
 }
 
 pub(super) fn finalize_incomplete_repair_load(

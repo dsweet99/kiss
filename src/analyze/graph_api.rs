@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use kiss::{
     Config, DependencyGraph, GateConfig, ParsedFile, ParsedRustFile, Violation, analyze_graph,
-    build_dependency_graph, build_rust_dependency_graph,
+};
+use kiss::lang_analysis::{
+    LanguageGraph, LanguageParser, PythonAnalysis, RustAnalysis, build_graphs as build_lang_graphs,
 };
 
 /// Config bundle for graph orphan analysis on Python and Rust graphs.
@@ -41,43 +43,35 @@ pub fn graph_for_path<'a>(
 
 /// Build a Python dependency graph from a list of Python file paths.
 pub fn build_py_graph_from_files(py_files: &[PathBuf]) -> std::io::Result<DependencyGraph> {
-    let results = kiss::parse_files(py_files).map_err(|e| std::io::Error::other(e.to_string()))?;
+    let results = PythonAnalysis
+        .parse_many(py_files)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-    Ok(build_dependency_graph(&parsed))
+    Ok(PythonAnalysis.build_graph(&parsed))
 }
 
 /// Build a Rust dependency graph from a list of Rust file paths.
 pub fn build_rs_graph_from_files(rs_files: &[PathBuf]) -> DependencyGraph {
-    let results = kiss::rust_parsing::parse_rust_files(rs_files);
+    let results = RustAnalysis
+        .parse_many(rs_files)
+        .unwrap_or_else(|_| Vec::new());
     let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-    build_rust_dependency_graph(&parsed)
+    RustAnalysis.build_graph(&parsed)
 }
 
 pub(crate) fn build_py_graph(py_parsed: &[ParsedFile]) -> Option<DependencyGraph> {
-    if py_parsed.is_empty() {
-        None
-    } else {
-        Some(build_dependency_graph(
-            &py_parsed.iter().collect::<Vec<_>>(),
-        ))
-    }
+    build_lang_graphs(py_parsed, &[]).0
 }
 
 pub(crate) fn build_rs_graph(rs_parsed: &[ParsedRustFile]) -> Option<DependencyGraph> {
-    if rs_parsed.is_empty() {
-        None
-    } else {
-        Some(build_rust_dependency_graph(
-            &rs_parsed.iter().collect::<Vec<_>>(),
-        ))
-    }
+    build_lang_graphs(&[], rs_parsed).1
 }
 
 pub fn build_graphs(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],
 ) -> (Option<DependencyGraph>, Option<DependencyGraph>) {
-    (build_py_graph(py_parsed), build_rs_graph(rs_parsed))
+    build_lang_graphs(py_parsed, rs_parsed)
 }
 
 pub(crate) fn graph_stats(

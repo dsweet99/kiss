@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use crate::test_runner::coverage_decision::{
-    ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan, RustSelectionBasis,
+    ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionBasis,
     SelectionDecision, TestSelector, full_population_plan,
 };
 use crate::test_runner::rust_coverage_index::{
@@ -24,15 +24,9 @@ pub(crate) struct RustBackerInput<'a> {
     pub(crate) resolved: Option<ResolvedRustPopulation>,
 }
 
-/// Build the Rust planner and its selection basis (Rust-only; not on `LanguagePlanner`).
-pub(crate) fn rust_llvm_cov_backer(
-    input: RustBackerInput<'_>,
-) -> (Box<dyn LanguagePlanner>, RustSelectionBasis) {
-    let module = RustModule::new_with_resolved(input);
-    let basis = module
-        .selection_basis()
-        .unwrap_or(RustSelectionBasis::Current);
-    (Box::new(module), basis)
+/// Build the Rust language planner (selection basis is on `LanguagePlanner`).
+pub(crate) fn rust_llvm_cov_backer(input: RustBackerInput<'_>) -> Box<dyn LanguagePlanner> {
+    Box::new(RustModule::new_with_resolved(input))
 }
 
 pub(crate) struct RustModule {
@@ -104,15 +98,6 @@ impl RustModule {
         enumerate_workspace_rust_selectors(&self.repo_root, &self.ignore)
     }
 
-    pub(crate) fn selection_basis(&self) -> Result<RustSelectionBasis, String> {
-        if self.rust_source_paths.is_empty()
-            && self.changed_tests.is_empty()
-            && self.resolved.get().is_none()
-        {
-            return Ok(RustSelectionBasis::Current);
-        }
-        Ok(self.resolved_state()?.basis())
-    }
 
     fn resolved_state(&self) -> Result<&ResolvedRustPopulation, String> {
         self.resolved
@@ -204,6 +189,18 @@ impl LanguagePlanner for RustModule {
 
     fn manifest_env_allowlist(&self) -> &'static [&'static str] {
         RUST_COVERAGE_ENV_KEYS
+    }
+
+    fn selection_basis(&self) -> SelectionBasis {
+        if self.rust_source_paths.is_empty()
+            && self.changed_tests.is_empty()
+            && self.resolved.get().is_none()
+        {
+            return SelectionBasis::Current;
+        }
+        self.resolved_state()
+            .map(ResolvedRustPopulation::basis)
+            .unwrap_or(SelectionBasis::Current)
     }
 }
 

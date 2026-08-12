@@ -189,7 +189,7 @@ fn empty_metrics() -> LocalRubricMetrics {
         rust_population_required: false,
         rust_population_selectors: 0,
         rust_final_selectors: 0,
-        rust_selection_basis: Default::default(),
+        selection_basis: Default::default(),
         coverage_decision_engine_used: true,
         python: PhaseMetrics::default(),
         python_index_rebuild_duration: Duration::ZERO,
@@ -214,7 +214,7 @@ fn empty_metrics() -> LocalRubricMetrics {
 
 #[test]
 fn local_rubric_metrics_carry_reusable_prior_selection_basis() {
-    use crate::test_runner::coverage_decision::RustSelectionBasis;
+    use crate::test_runner::coverage_decision::SelectionBasis;
     use crate::test_runner::{PlannedSelectors, SelectorRunOptions};
 
     let planned = PlannedSelectors {
@@ -227,19 +227,37 @@ fn local_rubric_metrics_carry_reusable_prior_selection_basis() {
             python: false,
             rust: false,
         },
-        rust_source_paths: vec![PathBuf::from("src/lib.rs")],
-        rust_vcs_source_paths: 168,
-        rust_snapshot_delta_modified: 1,
-        rust_snapshot_delta_structural: false,
+        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: vec![PathBuf::from("src/lib.rs")],
+        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 168,
+        },
+        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 1,
+        },
+        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: Vec::new(),
             rust: Vec::new(),
         },
         coverage_decision_engine_used: true,
-        rust_selection_basis: RustSelectionBasis::ReusablePrior,
+        selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
+            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            rust: SelectionBasis::ReusablePrior,
+        },
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
-        skip_python_index_rebuild_after_selective: false,
+        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
     };
     let options = SelectorRunOptions {
         dry_run: true,
@@ -247,7 +265,7 @@ fn local_rubric_metrics_carry_reusable_prior_selection_basis() {
         plan_duration: Duration::ZERO,
         force_rerun: false,
 metrics: false,
-        extra: &[],        python_extra: &[],
+        extras: crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
 
     gate: kiss::GateConfig::default()
 
@@ -259,11 +277,11 @@ metrics: false,
         false,
         0,
         planned.sel.rust.len(),
-        planned.rust_selection_basis,
+        planned.selection_basis.rust,
     );
     assert_eq!(
-        metrics.rust_selection_basis,
-        RustSelectionBasis::ReusablePrior
+        metrics.selection_basis,
+        SelectionBasis::ReusablePrior
     );
     assert_eq!(metrics.rust_vcs_source_paths, 168);
     assert_eq!(metrics.rust_snapshot_delta_modified, 1);

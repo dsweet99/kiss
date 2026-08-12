@@ -3,7 +3,6 @@ use crate::test_runner::coverage_decision::{LanguageExecutor, RunContext};
 use crate::test_runner::execution_witness::{
     RustWarmDecision, maybe_bootstrap_rust_witness, rust_warm_or_miss_selectors,
 };
-use crate::test_runner::python_coverage_index::repo_relative_coverage_file as python_repo_relative_coverage_file;
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::runners::python_backer::PythonModule;
 use crate::test_runner::runners::rust_backer::RustModule;
@@ -45,6 +44,8 @@ impl LanguageExecutor for PythonModule {
     }
 
     fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
+        let index = crate::test_runner::coverage_index::for_language(kiss::Language::Python);
+        let _ = (index.cache_root(&ctx.planned.repo_root), index.index_file_present(&ctx.planned.repo_root));
         python_generation_hooks::rebuild_python_index(self, ctx)
     }
 
@@ -55,7 +56,9 @@ impl LanguageExecutor for PythonModule {
     }
 
     fn is_indexable_source(&self, path: &std::path::Path, repo_root: &std::path::Path) -> bool {
-        python_repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
+        crate::test_runner::coverage_index::for_language(kiss::Language::Python)
+            .repo_relative_coverage_file(repo_root, &path.to_string_lossy())
+            .is_some()
     }
 
     fn dry_run_lines(
@@ -94,8 +97,7 @@ fn ensure_python_via_kernel(
         lang_filter: Some(kiss::Language::Python),
         force: ctx.options.force_rerun,
         jobs: ctx.options.jobs,
-        python_extra: ctx.options.python_extra,
-        rust_extra: ctx.options.extra,
+        extras: ctx.options.extras,
         repo_root_override: None,
         gate: ctx.options.gate.clone(),
     });
@@ -142,11 +144,13 @@ impl LanguageExecutor for RustModule {
     }
 
     fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
+        let index = crate::test_runner::coverage_index::for_language(kiss::Language::Rust);
+        let _ = (index.cache_root(&ctx.planned.repo_root), index.index_file_present(&ctx.planned.repo_root));
         // Ensure kernel owns witness publish; derived index rebuild stays for selective hits.
         crate::test_runner::rust_coverage_index::publish_rust_derived_state_with_filter(
             &ctx.planned.repo_root,
             None,
-            ctx.options.extra,
+            ctx.options.extras.rust,
             |path, repo_root| self.is_indexable_source(path, repo_root),
         )
     }
@@ -161,11 +165,9 @@ impl LanguageExecutor for RustModule {
     }
 
     fn is_indexable_source(&self, path: &std::path::Path, repo_root: &std::path::Path) -> bool {
-        crate::test_runner::rust_coverage_index::repo_relative_coverage_file(
-            repo_root,
-            &path.to_string_lossy(),
-        )
-        .is_some()
+        crate::test_runner::coverage_index::for_language(kiss::Language::Rust)
+            .repo_relative_coverage_file(repo_root, &path.to_string_lossy())
+            .is_some()
     }
 
     fn dry_run_lines(
@@ -204,8 +206,7 @@ fn ensure_rust_via_kernel(
         lang_filter: Some(kiss::Language::Rust),
         force,
         jobs: ctx.options.jobs,
-        python_extra: ctx.options.python_extra,
-        rust_extra: ctx.options.extra,
+        extras: ctx.options.extras,
         repo_root_override: None,
         gate: ctx.options.gate.clone(),
     });
@@ -226,7 +227,7 @@ pub(super) fn run_rslip_selectors_for_module(
     runners::run_rslip_selectors(
         &ctx.planned.repo_root,
         selectors,
-        ctx.options.python_extra,
+        ctx.options.extras.python,
         ctx.options.force_rerun,
         &ctx.planned.prior_failure_selectors.python,
         ctx.options.jobs,
@@ -250,7 +251,7 @@ pub(super) fn run_rust_selectors_for_module(
         && let Ok(identity) =
             crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
                 &ctx.planned.repo_root,
-                ctx.options.extra,
+                ctx.options.extras.rust,
             )
     {
         maybe_bootstrap_rust_witness(&ctx.planned.repo_root, selectors, &identity);
@@ -263,7 +264,7 @@ pub(super) fn run_rust_selectors_for_module(
                 return runners::run_rust_llvm_cov_selectors(
                     &ctx.planned.repo_root,
                     &misses,
-                    ctx.options.extra,
+                    ctx.options.extras.rust,
                     force_rerun,
                     ctx.options.jobs,
                     publication,
@@ -277,7 +278,7 @@ pub(super) fn run_rust_selectors_for_module(
         return runners::run_rust_llvm_cov_selectors(
             &ctx.planned.repo_root,
             selectors,
-            ctx.options.extra,
+            ctx.options.extras.rust,
             force_rerun,
             ctx.options.jobs,
             Some(population_selectors),
@@ -288,7 +289,7 @@ pub(super) fn run_rust_selectors_for_module(
         && let Some(summary) = runners::cached_rust_check_aggregate_selectors(
             &ctx.planned.repo_root,
             selectors,
-            ctx.options.extra,
+            ctx.options.extras.rust,
         )?
     {
         return Ok(summary);
@@ -296,7 +297,7 @@ pub(super) fn run_rust_selectors_for_module(
     runners::run_rust_llvm_cov_selectors(
         &ctx.planned.repo_root,
         selectors,
-        ctx.options.extra,
+        ctx.options.extras.rust,
         force_rerun,
         ctx.options.jobs,
         None,
@@ -334,7 +335,7 @@ where
         &ctx.planned.repo_root,
         selectors,
         crate::test_runner::rust_llvm_cov::RustCoverageRunOptions {
-            extra: ctx.options.extra,
+            extra: ctx.options.extras.rust,
             force_rerun,
             jobs: ctx.options.jobs,
             population_publication_selectors: Some(population_publication_selectors),

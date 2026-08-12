@@ -15,6 +15,7 @@ pub(crate) mod last_status;
 mod line_selection;
 mod python_cache_path;
 pub(crate) mod python_coverage_index;
+pub(crate) mod coverage_index;
 mod final_summary;
 mod status_labels;
 mod run_logic;
@@ -25,14 +26,18 @@ pub(crate) mod unit_test_timing;
 mod rust_report_id_cache;
 mod selector_ids;
 mod language_keyed;
+mod planned_selectors;
 mod watch;
 mod rust_batch_interrupt;
+pub(crate) use planned_selectors::{
+    PlannedSelectors, SelectorRunOptions, apply_cold_initialization_population,
+    apply_force_all_population,
+};
+#[cfg(test)]
+pub(crate) use planned_selectors::should_force_cold_initialization;
 
 /// Compatibility path: llvm-cov adapters live under `lang_rust::llvm_cov`.
 pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
-
-use std::path::PathBuf;
-use std::time::Duration;
 
 use kiss::Language;
 
@@ -167,8 +172,10 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
                     force_rerun,
                     metrics,
                     jobs,
-                    extra,
-                    python_extra,
+                    extras: crate::test_runner::language_keyed::LanguageKeyed {
+                        python: python_extra,
+                        rust: extra,
+                    },
                     plan_duration: plan_started.elapsed(),
                     gate: a.gate_config.clone(),
                 },
@@ -200,8 +207,10 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
             main_branch_cli: a.main_branch_cli,
             base_branch_cli: a.base_branch_cli,
             ignore: a.ignore,
-            extra: a.extra,
-            python_extra: a.python_extra,
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                python: a.python_extra,
+                rust: a.extra,
+            },
             lang_filter: a.lang_filter,
             config_main_branch: a.config_main_branch,
         }),
@@ -210,8 +219,10 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
             main_branch_cli: a.main_branch_cli,
             base_branch_cli: a.base_branch_cli,
             ignore: a.ignore,
-            extra: a.extra,
-            python_extra: a.python_extra,
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                python: a.python_extra,
+                rust: a.extra,
+            },
             lang_filter: a.lang_filter,
             config_main_branch: a.config_main_branch,
         }),
@@ -220,120 +231,32 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
             main_branch_cli: a.main_branch_cli,
             base_branch_cli: a.base_branch_cli,
             ignore: a.ignore,
-            extra: a.extra,
-            python_extra: a.python_extra,
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                python: a.python_extra,
+                rust: a.extra,
+            },
             lang_filter: a.lang_filter,
             config_main_branch: a.config_main_branch,
         }),
         TestInvocation::All => plan_target_selectors(
             TargetPlanKind::All,
             a.ignore,
-            a.extra,
-            a.python_extra,
+            crate::test_runner::language_keyed::LanguageKeyed {
+                python: a.python_extra,
+                rust: a.extra,
+            },
             a.lang_filter,
         ),
         TestInvocation::Targets(targets) => plan_target_selectors(
             TargetPlanKind::Targets(targets.as_slice()),
             a.ignore,
-            a.extra,
-            a.python_extra,
+            crate::test_runner::language_keyed::LanguageKeyed {
+                python: a.python_extra,
+                rust: a.extra,
+            },
             a.lang_filter,
         ),
     }
-}
-
-pub(crate) fn should_force_cold_initialization(a: &RunTestCmdArgs<'_>, repo_root: &std::path::Path) -> bool {
-    matches!(
-        a.invocation,
-        TestInvocation::Base | TestInvocation::Main
-    ) && !a.dry_run
-        && !a.force_rerun
-        && !a.metrics
-        && a.extra.is_empty()
-        && a.ignore.is_empty()
-        && a.lang_filter.is_none()
-        && !repo_root.join(".kiss").exists()
-}
-
-pub(crate) fn apply_cold_initialization_population(a: &RunTestCmdArgs<'_>, planned: &mut PlannedSelectors) {
-    if !should_force_cold_initialization(a, &planned.repo_root) {
-        return;
-    }
-    match a.lang_filter {
-        Some(Language::Python) => planned.population_required.python = true,
-        Some(Language::Rust) => planned.population_required.rust = true,
-        None => {
-            planned.population_required.python = true;
-            planned.population_required.rust = true;
-        }
-    }
-}
-
-/// `kiss test . --force` requires a full population phase, even when the prior
-/// generation is current. Selective invocations (`Targets`, `Commit`, `Base`,
-/// `Main`) keep their existing selector plan; `--force` only bypasses caches
-/// for those planned selectors.
-pub(crate) fn apply_force_all_population(a: &RunTestCmdArgs<'_>, planned: &mut PlannedSelectors) {
-    if !a.force_rerun {
-        return;
-    }
-    if !matches!(a.invocation, crate::bin_cli::args::TestInvocation::All) {
-        return;
-    }
-    match a.lang_filter {
-        Some(Language::Python) => {
-            if !planned.sel.python.is_empty() {
-                planned.population_required.python = true;
-            }
-        }
-        Some(Language::Rust) => {
-            if !planned.sel.rust.is_empty() {
-                planned.population_required.rust = true;
-            }
-        }
-        None => {
-            if !planned.sel.python.is_empty() {
-                planned.population_required.python = true;
-            }
-            if !planned.sel.rust.is_empty() {
-                planned.population_required.rust = true;
-            }
-        }
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct PlannedSelectors {
-    pub repo_root: PathBuf,
-    /// Planned selectors keyed by language (not parallel py_sel/rs_sel product fields).
-    pub sel: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
-    pub population_required: crate::test_runner::language_keyed::LanguageKeyed<bool>,
-    pub rust_source_paths: Vec<PathBuf>,
-    pub rust_vcs_source_paths: usize,
-    pub rust_snapshot_delta_modified: usize,
-    pub rust_snapshot_delta_structural: bool,
-    pub prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
-    pub coverage_decision_engine_used: bool,
-    pub rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis,
-    pub ignore: Vec<String>,
-    /// Workspace py/rs fingerprint from selector-cache planning (warm seal fast path).
-    pub workspace_files_fingerprint: Option<String>,
-    /// Pure explicit test operands: keep the selective run fast; do not rebuild the
-    /// full Python coverage index after a cache miss (entries are still stored).
-    pub skip_python_index_rebuild_after_selective: bool,
-}
-
-pub(crate) struct SelectorRunOptions<'a> {
-    pub dry_run: bool,
-    pub force_rerun: bool,
-    pub metrics: bool,
-    pub jobs: usize,
-    pub extra: &'a [String],
-    /// Python-only: configured pytest `-p` plugins plus CLI extras.
-    pub python_extra: &'a [String],
-    pub plan_duration: Duration,
-    /// Same session gate the CLI loaded for this `kiss test` invocation.
-    pub gate: kiss::GateConfig,
 }
 
 mod plan;
