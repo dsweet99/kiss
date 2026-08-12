@@ -66,6 +66,7 @@ impl LanguageRuntime for FakeRuntime {
             summary.record(SelectorExecutionRecord {
                 selector: sel.clone(),
                 status,
+                raw_status: Some(status),
                 cache_record: SelectorCacheRecord::MissStored,
                 exit_code: Some(self.state.borrow().run_exit_code),
                 duration: std::time::Duration::from_millis(1),
@@ -143,6 +144,7 @@ impl LanguageRuntime for FakeRuntime {
             summary.record(SelectorExecutionRecord {
                 selector: sel.clone(),
                 status: TestStatus::Passed,
+                raw_status: Some(TestStatus::Passed),
                 cache_record: SelectorCacheRecord::Hit,
                 exit_code: Some(0),
                 duration: std::time::Duration::from_millis(1),
@@ -160,10 +162,15 @@ fn request(planned: Vec<String>) -> EnsureRequest {
         ignore: vec![],
         force: false,
         jobs: 1,
-        python_extra: vec![],
-        rust_extra: vec![],
-        planned_python: planned,
-        planned_rust: vec![],
+        gate: kiss::GateConfig::default(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![],
+        },
+        planned: crate::test_runner::language_keyed::LanguageKeyed {
+            python: planned,
+            rust: vec![],
+        },
     }
 }
 
@@ -211,7 +218,7 @@ fn accept_skips_run() {
     assert_eq!(result.exit_code, 0);
     assert!(state.borrow().run_calls.is_empty());
     assert_eq!(state.borrow().publish_calls, 0);
-    assert!(!result.python.unwrap().published);
+    assert!(!result.by_language.python.unwrap().published);
 }
 
 #[test]
@@ -309,8 +316,8 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
     };
     let mut req = request(vec![]);
     req.lang_filter = Some(Language::Rust);
-    req.planned_python.clear();
-    req.planned_rust = vec!["a".into(), "b".into()];
+    req.planned.python.clear();
+    req.planned.rust = vec!["a".into(), "b".into()];
     let result = ensure_runtime_cache(&req, &[&runtime]).expect("accept");
     assert_eq!(result.exit_code, 0);
     assert!(state.borrow().run_calls.is_empty(), "Accept must not run selectors");

@@ -57,11 +57,9 @@ pub(crate) fn load_current_python_population_durations(
                 pinned
                     .timings
                     .into_iter()
-                    .map(|row| {
-                        (
-                            row.selector,
-                            Duration::from_nanos(row.duration_ns.unwrap_or(0)),
-                        )
+                    .filter_map(|row| {
+                        row.duration_ns
+                            .map(|ns| (row.selector, Duration::from_nanos(ns)))
                     })
                     .collect(),
             );
@@ -306,7 +304,8 @@ fn load_durations_from_entry_probes_inner(
             &python_version,
             &pytest_version,
             false,
-        )
+        &kiss::GateConfig::load(),
+    )
         .ok()?;
         let fingerprint = rslip::cache_fingerprint_for_request(&req).ok()?;
         let path = req

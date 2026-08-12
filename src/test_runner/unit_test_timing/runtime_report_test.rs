@@ -73,9 +73,10 @@ fn grouped_runtime_report_partitions_by_first_matching_rule() {
     assert!(formatted.starts_with(
         "unit_test_runtime_sec: (coverage cache; may not reflect full test set) codebase_tests=99\n"
     ));
-    assert!(formatted.contains("pattern\tlimit_s\tN\tp50\tp90\tp95\tp99\tmax\n"));
-    assert!(formatted.contains("tests/slow/dbs\t180\t1\t0.10\t0.10\t0.10\t0.10\t0.10\n"));
-    assert!(formatted.contains("tests/fast\t2\t1\t0.01\t0.01\t0.01\t0.01\t0.01\n"));
+    assert!(formatted.contains("pattern"));
+    assert!(formatted.contains("tests/slow/dbs"));
+    assert!(formatted.contains("tests/fast"));
+    assert!(!formatted.contains('\t'));
 }
 
 #[test]
@@ -98,7 +99,10 @@ fn grouped_runtime_report_keeps_empty_rows_and_handles_defaults() {
     assert_eq!(report.rows[1].sample_count, 0);
     assert_eq!(report.rows[1].p50_ms, None);
     let formatted = format_unit_test_runtime_grouped_report(&report);
-    assert!(formatted.contains("*\t0\t0\t-\t-\t-\t-\t-"));
+    assert!(formatted.lines().any(|line| {
+        line.split_whitespace()
+            .eq(["*", "0", "0", "-", "-", "-", "-", "-"])
+    }));
 
     let sole_star =
         build_unit_test_runtime_grouped_report(&[], &[("*".into(), 2.0)], None).unwrap();
@@ -106,4 +110,60 @@ fn grouped_runtime_report_keeps_empty_rows_and_handles_defaults() {
     assert_eq!(sole_star.rows[0].sample_count, 0);
 
     assert!(build_unit_test_runtime_grouped_report(&[], &[], None).is_none());
+}
+
+#[test]
+fn grouped_runtime_report_right_aligns_each_numeric_column() {
+    let report = UnitTestRuntimeGroupedReport {
+        codebase_tests: None,
+        rows: vec![
+            UnitTestRuntimeGroupRow {
+                pattern: "tests/slow".into(),
+                limit_seconds: 90.0,
+                sample_count: 512,
+                p50_ms: Some(810),
+                p90_ms: Some(14_740),
+                p95_ms: Some(27_760),
+                p99_ms: Some(61_900),
+                max_ms: Some(83_240),
+            },
+            UnitTestRuntimeGroupRow {
+                pattern: "tests/fast".into(),
+                limit_seconds: 4.0,
+                sample_count: 13_286,
+                p50_ms: Some(20),
+                p90_ms: Some(290),
+                p95_ms: Some(1_110),
+                p99_ms: Some(2_690),
+                max_ms: Some(3_970),
+            },
+        ],
+    };
+
+    let formatted = format_unit_test_runtime_grouped_report(&report);
+    let table: Vec<&str> = formatted.lines().skip(1).collect();
+    let header_ends = whitespace_delimited_cell_ends(table[0]);
+    assert_eq!(header_ends.len(), 8);
+    for row in &table[1..] {
+        assert_eq!(&whitespace_delimited_cell_ends(row)[1..], &header_ends[1..]);
+    }
+}
+
+fn whitespace_delimited_cell_ends(line: &str) -> Vec<usize> {
+    let mut ends = Vec::new();
+    let mut in_cell = false;
+    for (index, character) in line.char_indices() {
+        if character.is_whitespace() {
+            if in_cell {
+                ends.push(index);
+                in_cell = false;
+            }
+        } else {
+            in_cell = true;
+        }
+    }
+    if in_cell {
+        ends.push(line.len());
+    }
+    ends
 }

@@ -102,9 +102,9 @@ fn combined_selectors_uses_existing_rust_index_for_source_changes() {
     )
     .unwrap();
 
-    assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
+    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
     assert_eq!(plan.rust_source_paths, vec![lib]);
-    assert!(!plan.rust_population_required);
+    assert!(!plan.population_required.rust);
 }
 
 #[test]
@@ -145,8 +145,8 @@ fn combined_selectors_repopulates_when_rust_test_args_change() {
     )
     .unwrap();
 
-    assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
-    assert!(plan.rust_population_required);
+    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
+    assert!(plan.population_required.rust);
 }
 
 #[test]
@@ -203,9 +203,9 @@ fn combined_selectors_prefers_rust_changed_line_matches() {
     )
     .unwrap();
 
-    assert_eq!(plan.rust_selectors, vec!["tests::second".to_string()]);
+    assert_eq!(plan.selectors.rust, vec!["tests::second".to_string()]);
     assert_eq!(plan.rust_source_paths, vec![lib]);
-    assert!(!plan.rust_population_required);
+    assert!(!plan.population_required.rust);
 }
 
 #[test]
@@ -243,8 +243,8 @@ fn combined_selectors_requires_complete_rust_population_manifest() {
     )
     .unwrap();
 
-    assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
-    assert!(plan.rust_population_required);
+    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
+    assert!(plan.population_required.rust);
 }
 
 #[test]
@@ -278,12 +278,12 @@ fn combined_selectors_carries_changed_rust_tests_into_population_plan() {
     )
     .unwrap();
 
-    assert!(plan.rust_population_required);
+    assert!(plan.population_required.rust);
     assert!(
-        plan.rust_selectors
+        plan.selectors.rust
             .contains(&"tests::gets_value".to_string())
     );
-    assert!(plan.rust_selectors.contains(&"changed_extra".to_string()));
+    assert!(plan.selectors.rust.contains(&"changed_extra".to_string()));
 }
 
 #[test]
@@ -305,19 +305,19 @@ fn combined_selectors_marks_missing_rust_index_for_population() {
     )
     .unwrap();
 
-    assert!(plan.rust_selectors.is_empty());
+    assert!(plan.selectors.rust.is_empty());
     assert_eq!(plan.rust_source_paths, vec![lib]);
-    assert!(plan.rust_population_required);
+    assert!(plan.population_required.rust);
 }
 
 #[test]
 fn combined_selectors_empty_without_sources() {
     let tmp = TempDir::new().unwrap();
     let plan = combined_selectors(tmp.path(), &[], &[], &BTreeMap::new(), &[], None, &[]).unwrap();
-    assert!(plan.py_selectors.is_empty());
-    assert!(plan.rust_selectors.is_empty());
+    assert!(plan.selectors.python.is_empty());
+    assert!(plan.selectors.rust.is_empty());
     assert!(plan.rust_source_paths.is_empty());
-    assert!(!plan.rust_population_required);
+    assert!(!plan.population_required.rust);
 }
 
 #[test]

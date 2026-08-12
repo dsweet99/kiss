@@ -76,7 +76,7 @@ fn runtime_rows(stdout: &str) -> Vec<&str> {
         .lines()
         .skip_while(|l| !l.starts_with("unit_test_runtime_sec:"))
         .skip(2)
-        .take_while(|l| !l.is_empty() && l.contains('\t'))
+        .take_while(|l| l.split_whitespace().count() == 8)
         .collect()
 }
 
@@ -88,20 +88,25 @@ fn assert_grouped_rows(rows: &[&str]) {
         rows.join("\n")
     );
     let expected = [
-        "tests/slow/dbs\t180\t1\t",
-        "tests/slow\t60\t1\t",
-        "tests/fast\t2\t1\t",
-        "tests/\t10\t1\t",
-        "rust\t10\t0\t-\t",
-        "*\t0\t1\t",
+        ["tests/slow/dbs", "180", "1"],
+        ["tests/slow", "60", "1"],
+        ["tests/fast", "2", "1"],
+        ["tests/", "10", "1"],
+        ["rust", "10", "0"],
+        ["*", "0", "1"],
     ];
-    for (row, prefix) in rows.iter().zip(expected) {
-        assert!(row.starts_with(prefix), "row `{row}` missing `{prefix}`");
+    for (row, expected_cells) in rows.iter().zip(expected) {
+        let cells: Vec<&str> = row.split_whitespace().collect();
+        assert_eq!(
+            &cells[..3],
+            expected_cells,
+            "row `{row}` did not begin with the expected cells"
+        );
     }
     let n_values: Vec<usize> = rows
         .iter()
         .map(|row| {
-            row.split('\t')
+            row.split_whitespace()
                 .nth(2)
                 .and_then(|n| n.parse().ok())
                 .unwrap_or_else(|| panic!("bad N cell in {row}"))

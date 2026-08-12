@@ -45,6 +45,7 @@ pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
         ignore: args.ignore,
         lang_filter: args.lang_filter,
         config_main_branch: args.test_cfg.main_branch.as_deref(),
+        gate_config: args.gate_config.clone(),
     };
     if args.watch {
         let settle = Duration::from_secs_f64(args.test_cfg.watch_settle_seconds);

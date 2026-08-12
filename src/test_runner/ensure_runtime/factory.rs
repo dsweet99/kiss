@@ -1,5 +1,6 @@
 //! Composition root: construct language modules and call the ensure kernel.
 
+use crate::test_runner::coverage_decision::SupportedLanguage;
 use crate::test_runner::ensure_runtime::ensure_runtime_cache;
 use crate::test_runner::lang_iface::{EnsureRequest, EnsureRuntimeResult, LanguageRuntime};
 use crate::test_runner::lang_python::PythonRuntime;
@@ -11,10 +12,10 @@ pub(crate) fn ensure_languages_runtime(
     let python = PythonRuntime;
     let rust = RustRuntime;
     let mut modules: Vec<&dyn LanguageRuntime> = Vec::new();
-    if request.requires(kiss::Language::Python) {
+    if request.requires(SupportedLanguage::language(&python)) {
         modules.push(&python);
     }
-    if request.requires(kiss::Language::Rust) {
+    if request.requires(SupportedLanguage::language(&rust)) {
         modules.push(&rust);
     }
     ensure_runtime_cache(request, &modules)

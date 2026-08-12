@@ -154,6 +154,7 @@ fn load_durations_allow_non_passed_keeps_failed_entries() {
     let selector = "t.py::test_a".to_string();
     let req = crate::test_runner::runners::rslip_request_from_parts(
         repo, &selector, &[], &py, &pt, false,
+        &kiss::GateConfig::default(),
     )
     .unwrap();
     let fingerprint = rslip::cache_fingerprint_for_request(&req).unwrap();

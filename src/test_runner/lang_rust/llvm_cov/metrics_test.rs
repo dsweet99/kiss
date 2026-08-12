@@ -32,7 +32,9 @@ fn batch_counters_are_preserved_for_rust_metrics() {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
+    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result,
+        &kiss::GateConfig::default(),
+    ).unwrap();
 
     assert_eq!(summary.rust_build_invocations, 1);
     assert_eq!(summary.rust_test_instances, 7);
@@ -75,7 +77,9 @@ fn finish_preserves_reverse_batch_counters_in_summary() {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
+    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result,
+        &kiss::GateConfig::default(),
+    ).unwrap();
 
     assert_eq!(summary.rust_reverse_query_hits, 3);
     assert_eq!(summary.rust_reverse_unavailable_schema, 1);

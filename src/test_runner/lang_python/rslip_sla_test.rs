@@ -1,0 +1,54 @@
+//! Python wall-kill vs path-pattern SLA eccentricity lock.
+
+use super::{DEFAULT_PYTEST_TIMEOUT, timeout_for_selector};
+use std::fs;
+use std::time::Duration;
+
+#[test]
+fn batch_template_applies_per_selector_timeouts() {
+    // Allowed paths share the generous wall kill; zero/ban still short-circuits.
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join(".kissconfig"),
+        r#"[gate]
+max_unit_test_seconds = [["tests/slow/dbs", 180], ["tests/allowed", 60], ["*", 0]]
+"#,
+    )
+    .unwrap();
+    let previous = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let slow = timeout_for_selector(
+        "tests/slow/dbs/test_vdb_scoped_integration.py::test_aremove_bulk_eckv_integration",
+    );
+    let allowed = timeout_for_selector("tests/allowed/test_foo.py::test_ok");
+    let banned = timeout_for_selector("tests/fast/test_foo.py::test_ok");
+    std::env::set_current_dir(previous).unwrap();
+    assert_eq!(slow, DEFAULT_PYTEST_TIMEOUT);
+    assert_eq!(allowed, DEFAULT_PYTEST_TIMEOUT);
+    assert_eq!(banned, Duration::ZERO);
+}
+
+#[test]
+fn nonzero_sla_does_not_become_pytest_wall_kill() {
+    // Wall kill must outlast coverage/import setup (180s). Path-pattern SLA is
+    // enforced later via apply_unit_test_time_limit on call-phase duration.
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join(".kissconfig"),
+        r#"[gate]
+max_unit_test_seconds = [["tests/allowed", 60], ["*", 0]]
+"#,
+    )
+    .unwrap();
+    let previous = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let allowed = timeout_for_selector("tests/allowed/test_foo.py::test_ok");
+    std::env::set_current_dir(previous).unwrap();
+    assert_eq!(DEFAULT_PYTEST_TIMEOUT, Duration::from_secs(180));
+    assert_eq!(allowed, DEFAULT_PYTEST_TIMEOUT);
+    assert_ne!(
+        allowed,
+        Duration::from_secs(60),
+        "allowed SLA (60s) must not become the pytest wall kill"
+    );
+}

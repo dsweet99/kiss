@@ -268,6 +268,7 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
         jobs,
         Some(kiss::Language::Rust),
         false,
+        kiss::GateConfig::load(),
     )
     .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
     // Incremental CheckAggregate repair stays language-owned; command path still
@@ -275,7 +276,7 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     if let Some(stats) = try_repair_rust_check_aggregate_labeled(
         repo_root,
         ignore,
-        &request.planned_rust,
+        &request.planned.rust,
         jobs,
         caller_label,
     )? {
@@ -283,14 +284,13 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     }
     eprintln!(
         "{caller_label}: refreshing Rust runtime coverage ({} tests)",
-        request.planned_rust.len()
+        request.planned.rust.len()
     );
     let _refresh_env = ScopedRefreshEnvGuard::set();
     let result = crate::test_runner::ensure_runtime::ensure_languages_runtime(&request)
         .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
     let summary = result
-        .rust
-        .as_ref()
+        .rust()
         .map(|r| r.summary.clone())
         .unwrap_or_default();
     finalize_population_summary_labeled(repo_root, ignore, &summary, true, caller_label)

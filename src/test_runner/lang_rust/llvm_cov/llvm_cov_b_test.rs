@@ -20,6 +20,7 @@ fn run_rust_llvm_cov_selectors_rejects_unsupported_test_args_before_tool_detecti
         false,
         1,
         None,
+        &kiss::GateConfig::default(),
     )
     .unwrap_err();
 
@@ -75,7 +76,9 @@ mod tests {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
+    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result,
+        &kiss::GateConfig::default(),
+    ).unwrap();
     assert_eq!(
         summary.timed_out_selectors,
         vec!["src/lib.rs::gets_value".to_string()]
@@ -153,7 +156,9 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
+    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result,
+        &kiss::GateConfig::default(),
+    ).unwrap();
     assert_eq!(summary.total, 4);
     assert_eq!(summary.failed, 2);
     assert_eq!(
@@ -227,7 +232,9 @@ fn finish_rust_coverage_batch_result_prints_fresh_unstored_outcomes() {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
+    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result,
+        &kiss::GateConfig::default(),
+    ).unwrap();
     assert_eq!(summary.total, 3);
     assert_eq!(summary.failed, 2);
     assert_eq!(
@@ -259,7 +266,9 @@ fn run_rust_llvm_cov_selectors_reaches_compat_executor_for_nonempty_selectors() 
     .unwrap();
 
     let outcome =
-        run_rust_llvm_cov_selectors(tmp.path(), &["tests::case".to_string()], &[], true, 1, None);
+        run_rust_llvm_cov_selectors(tmp.path(), &["tests::case".to_string()], &[], true, 1, None,
+        &kiss::GateConfig::default(),
+    );
     match outcome {
         Ok(summary) => {
             assert_eq!(summary.total, 1);

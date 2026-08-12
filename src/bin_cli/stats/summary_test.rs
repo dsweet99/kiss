@@ -1,5 +1,4 @@
 use super::*;
-use crate::test_runner::capture_stdout::capture_stdout;
 use kiss::{Config, GateConfig};
 use std::path::PathBuf;
 
@@ -23,12 +22,22 @@ fn assert_nested_runtime_table(stdout: &str) {
         .lines()
         .skip_while(|l| !l.starts_with("unit_test_runtime_sec:"))
         .skip(2)
-        .take_while(|l| l.contains('\t'))
+        .take_while(|l| l.split_whitespace().count() == 8)
         .collect();
     assert_eq!(rows.len(), 3, "rows:\n{}\nfull:\n{stdout}", rows.join("\n"));
-    assert!(rows[0].starts_with("tests/slow/dbs\t180\t0\t"), "{}", rows[0]);
-    assert!(rows[1].starts_with("tests/slow\t60\t0\t"), "{}", rows[1]);
-    assert!(rows[2].starts_with("*\t0\t0\t"), "{}", rows[2]);
+    assert!(
+        rows[0]
+            .split_whitespace()
+            .take(3)
+            .eq(["tests/slow/dbs", "180", "0"])
+    );
+    assert!(
+        rows[1]
+            .split_whitespace()
+            .take(3)
+            .eq(["tests/slow", "60", "0"])
+    );
+    assert!(rows[2].split_whitespace().take(3).eq(["*", "0", "0"]));
 }
 
 #[test]
@@ -52,56 +61,42 @@ fn maybe_print_cached_stats_summary_returns_false_on_miss() {
 }
 
 #[test]
-fn print_cached_summary_forwards_resolved_gate_runtime_rules() {
+fn runtime_section_helper_preserves_resolved_rule_order() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = [tmp.path().to_string_lossy().into_owned()];
-    let cache = FullCheckCache {
-        fingerprint: "test".into(),
-        py_stats: None,
-        rs_stats: None,
-        py_paths: vec![],
-        focus_paths: vec![],
-        focus_restrict: false,
-        rs_paths: vec![],
-        py_file_count: 1,
-        rs_file_count: 0,
-        code_unit_count: 3,
-        statement_count: 5,
-        graph_nodes: 1,
-        graph_edges: 0,
-        base_violations: vec![],
-        graph_violations: vec![],
-        py_duplicates: vec![],
-        rs_duplicates: vec![],
-        file_content_digests: vec![],
-    };
     let gate = nested_runtime_gate();
-    let stdout = capture_stdout(|| {
-        print_cached_summary(
-            &paths,
-            &cache,
-            None,
-            TimingLangInclude {
-                python: true,
-                rust: false,
-            },
-            &[],
-            &gate,
-        );
-    });
-    assert_nested_runtime_table(&stdout);
+    let report = unit_test_runtime_section_for_rules(
+        &paths,
+        None,
+        TimingLangInclude {
+            python: true,
+            rust: false,
+        },
+        &[],
+        &gate.max_unit_test_seconds,
+    )
+    .expect("configured rules should emit a runtime table");
+    assert_nested_runtime_table(&report);
 }
 
 #[test]
-fn print_summary_from_pipeline_forwards_resolved_gate_runtime_rules() {
+fn runtime_section_helper_accepts_pipeline_language_selection() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = [tmp.path().to_string_lossy().into_owned()];
     let pipeline = crate::analyze::empty_full_pipeline_result_for_tests();
     let gate = nested_runtime_gate();
-    let stdout = capture_stdout(|| {
-        print_summary_from_pipeline(&paths, &pipeline, None, &[], &gate);
-    });
-    assert_nested_runtime_table(&stdout);
+    let report = unit_test_runtime_section_for_rules(
+        &paths,
+        None,
+        TimingLangInclude {
+            python: !pipeline.result.py_parsed.is_empty(),
+            rust: !pipeline.result.rs_parsed.is_empty(),
+        },
+        &[],
+        &gate.max_unit_test_seconds,
+    )
+    .expect("configured rules should emit a runtime table");
+    assert_nested_runtime_table(&report);
 }
 
 #[test]
@@ -138,5 +133,8 @@ fn runtime_section_helper_covers_defaults_and_disabled_rules() {
     )
     .expect("default catch-all should emit a runtime table");
     assert!(default_report.starts_with("unit_test_runtime_sec:"));
-    assert!(default_report.contains("*\t2\t0\t-\t-\t-\t-\t-"));
+    assert!(default_report.lines().any(|line| {
+        line.split_whitespace()
+            .eq(["*", "2", "0", "-", "-", "-", "-", "-"])
+    }));
 }

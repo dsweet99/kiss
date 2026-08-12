@@ -7,9 +7,13 @@ use super::publish_merge::{
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, PublishBatch, WitnessScope, WitnessStatus,
 };
-use crate::test_runner::runners::SelectorExecutionSummary;
+use crate::test_runner::runners::{
+    SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
+};
+use rpytest_runner::TestStatus;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 fn witness(complete: bool) -> ExecutionWitness {
     ExecutionWitness {
@@ -49,10 +53,9 @@ fn merge_updates_only_ran_selectors_and_preserves_siblings() {
         ignore: vec![],
         force: false,
         jobs: 1,
-        python_extra: vec![],
-        rust_extra: vec![],
-        planned_python: vec![],
-        planned_rust: universe.clone(),
+        gate: kiss::GateConfig::default(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
+        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: universe.clone() },
     };
     assert!(publish_complete(&req, &universe, &statuses, Some(&prior)));
 }
@@ -96,4 +99,21 @@ fn statuses_from_summary_classifies_failed_and_timeout() {
         ]
     );
     assert_eq!(dur, vec![3, 0, 0]);
+}
+
+#[test]
+fn statuses_from_summary_prefers_raw_over_effective_sla() {
+    // Cold run may mark TimedOut for exit/SLA while witness storage must keep runner-raw Passed.
+    let mut summary = SelectorExecutionSummary::default();
+    summary.record(SelectorExecutionRecord {
+        selector: "slow_but_passed".into(),
+        status: TestStatus::TimedOut,
+        raw_status: Some(TestStatus::Passed),
+        cache_record: SelectorCacheRecord::MissStored,
+        exit_code: Some(124),
+        duration: Duration::from_secs(2),
+    });
+    assert_eq!(summary.timed_out_selectors, vec!["slow_but_passed".to_string()]);
+    let (st, _) = statuses_from_summary(&summary, &["slow_but_passed".into()]);
+    assert_eq!(st, vec![WitnessStatus::Passed]);
 }

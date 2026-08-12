@@ -6,24 +6,11 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 fn planned() -> PlannedSelectors {
-    PlannedSelectors {
-        repo_root: PathBuf::from("."),
-        py_sel: vec!["tests/test_app.py::test_ok".to_string()],
-        rs_sel: vec!["crate::tests::test_ok".to_string()],
-        python_population_required: false,
-        rust_population_required: false,
-        rust_source_paths: Vec::new(),
-        rust_vcs_source_paths: 0,
-        rust_snapshot_delta_modified: 0,
-        rust_snapshot_delta_structural: false,
-        python_prior_failure_selectors: Vec::new(),
-        rust_prior_failure_selectors: Vec::new(),
-        coverage_decision_engine_used: true,
-        rust_selection_basis: Default::default(),
-        ignore: Vec::new(),
-        workspace_files_fingerprint: None,
-        skip_python_index_rebuild_after_selective: false,
-    }
+    let mut planned =
+        crate::test_runner::test_mode_fixtures::empty_planned_selectors(PathBuf::from("."));
+    planned.sel.python = vec!["tests/test_app.py::test_ok".to_string()];
+    planned.sel.rust = vec!["crate::tests::test_ok".to_string()];
+    planned
 }
 
 fn options() -> SelectorRunOptions<'static> {
@@ -35,6 +22,7 @@ fn options() -> SelectorRunOptions<'static> {
         extra: &[],
         python_extra: &[],
         plan_duration: Duration::ZERO,
+    gate: kiss::GateConfig::default()
     }
 }
 
@@ -42,7 +30,7 @@ fn options() -> SelectorRunOptions<'static> {
 #[allow(non_snake_case)]
 fn PythonModule_policy_reads_python_population_decision() {
     let mut planned = planned();
-    planned.python_population_required = true;
+    planned.population_required.python = true;
     let options = options();
     let ctx = crate::test_runner::coverage_decision::RunContext {
         planned: &planned,
@@ -63,7 +51,7 @@ fn PythonModule_policy_reads_python_population_decision() {
 #[allow(non_snake_case)]
 fn RustModule_policy_reads_rust_population_decision() {
     let mut planned = planned();
-    planned.rust_population_required = true;
+    planned.population_required.rust = true;
     let options = options();
     let ctx = crate::test_runner::coverage_decision::RunContext {
         planned: &planned,

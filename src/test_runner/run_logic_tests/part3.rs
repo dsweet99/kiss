@@ -16,6 +16,7 @@ metrics: true,
         extra: &[],
         python_extra: &[],
         plan_duration: Duration::from_millis(200),
+    gate: kiss::GateConfig::default()
     };
     let no_work = capture_stdout(|| {
         assert_eq!(run_selectors(&planned, no_work_options).unwrap(), 0);
@@ -56,6 +57,7 @@ metrics: false,
         extra: &[],
         python_extra: &[],
         plan_duration: Duration::from_millis(200),
+    gate: kiss::GateConfig::default()
     };
     let python = FakeLanguageModule {
         language: Language::Python,
@@ -122,7 +124,7 @@ metrics: false,
 #[test]
 fn dry_run_does_not_print_final_recap() {
     let mut with_work = planned();
-    with_work.py_sel = vec!["tests/test_app.py::test_ok".to_string()];
+    with_work.sel.python = vec!["tests/test_app.py::test_ok".to_string()];
     let out = capture_stdout(|| {
         assert_eq!(
             run_selectors(
@@ -135,6 +137,7 @@ metrics: false,
                     extra: &[],
                     python_extra: &[],
                     plan_duration: Duration::from_millis(10),
+                gate: kiss::GateConfig::default()
                 },
             )
             .unwrap(),

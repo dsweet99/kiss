@@ -8,8 +8,8 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use super::publish::{
-    GENERATION_DURATIONS_SCHEMA, GenerationDurationsFile, PathMaxDuration,
-    path_maxes_from_selector_durations,
+    GENERATION_DURATIONS_SCHEMA, GENERATION_DURATIONS_SCHEMA_V1, GenerationDurationsFile,
+    PathMaxDuration, path_maxes_from_selector_durations,
 };
 use crate::test_runner::python_coverage_index::storage::python_coverage_cache_root;
 use super::paths::{generation_dir, pointer_path};
@@ -86,10 +86,11 @@ fn load_memoized(repo_root: &Path) -> Option<LoadedDurations> {
         return None;
     }
     let max = Duration::from_nanos(file.max_duration_ns);
+    // Omit unresolved (None) slots so warm gates never treat absence as 0 ns.
     let pairs: Vec<(String, Duration)> = selectors
         .into_iter()
         .zip(file.durations_ns.iter().copied())
-        .map(|(selector, ns)| (selector, Duration::from_nanos(ns)))
+        .filter_map(|(selector, ns)| ns.map(|n| (selector, Duration::from_nanos(n))))
         .collect();
     if file.path_maxes.is_empty() {
         file.path_maxes = path_maxes_from_selector_durations(&pairs);
@@ -180,7 +181,10 @@ fn read_pointer(cache_root: &Path) -> Option<PopulationPointer> {
 fn read_durations_file(gen_dir: &Path) -> Option<GenerationDurationsFile> {
     let bytes = fs::read(gen_dir.join("durations.json")).ok()?;
     let file: GenerationDurationsFile = serde_json::from_slice(&bytes).ok()?;
-    (file.schema_version == GENERATION_DURATIONS_SCHEMA).then_some(file)
+    // v1 wrote bare u64 (serde still maps into Option as Some); v2 writes null for unknown.
+    (file.schema_version == GENERATION_DURATIONS_SCHEMA
+        || file.schema_version == GENERATION_DURATIONS_SCHEMA_V1)
+        .then_some(file)
 }
 
 #[derive(Deserialize)]

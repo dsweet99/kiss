@@ -133,6 +133,7 @@ fn test_gather_stats_normalize_validate() {
 }
 
 fn exercise_stats_modes_and_mimic(p: &str) {
+    let gate = kiss::GateConfig::default();
     let p_owned = p.to_string();
     let paths = std::slice::from_ref(&p_owned);
     run_stats(RunStatsArgs {
@@ -143,7 +144,7 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         table: false,
         py_config: &kiss::Config::python_defaults(),
         rs_config: &kiss::Config::rust_defaults(),
-        gate_config: &kiss::GateConfig::default(),
+        gate_config: &gate,
     });
     run_stats(RunStatsArgs {
         paths,
@@ -153,7 +154,7 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         table: false,
         py_config: &kiss::Config::python_defaults(),
         rs_config: &kiss::Config::rust_defaults(),
-        gate_config: &kiss::GateConfig::default(),
+        gate_config: &gate,
     });
     run_stats(RunStatsArgs {
         paths,
@@ -163,7 +164,7 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         table: true,
         py_config: &kiss::Config::python_defaults(),
         rs_config: &kiss::Config::rust_defaults(),
-        gate_config: &kiss::GateConfig::default(),
+        gate_config: &gate,
     });
     run_mimic(paths, None, Some(Language::Python), &[]);
 }

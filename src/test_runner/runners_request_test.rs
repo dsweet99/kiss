@@ -13,6 +13,7 @@ fn rslip_request_from_parts_uses_selector_and_kiss_cache() {
         "3.12.1",
         "8.2.0",
         true,
+        &kiss::GateConfig::default(),
     )
     .unwrap();
 
@@ -48,6 +49,7 @@ fn rslip_request_from_parts_tracks_pythonpath_in_cache_env() {
         "3.12.1",
         "8.2.0",
         false,
+        &kiss::GateConfig::default(),
     )
     .unwrap();
 
@@ -67,6 +69,7 @@ fn rslip_request_from_parts_ignores_foreign_pythonpath() {
         "3.12.1",
         "8.2.0",
         false,
+        &kiss::GateConfig::default(),
     )
     .unwrap();
 
@@ -92,6 +95,7 @@ fn rslip_request_from_parts_defaults_unset_pythonpath_to_repo_root() {
         "3.12.1",
         "8.2.0",
         false,
+        &kiss::GateConfig::default(),
     )
     .unwrap();
 
@@ -114,6 +118,7 @@ fn rslip_request_from_parts_rejects_python_before_312() {
         "3.11.9",
         "8.2.0",
         false,
+        &kiss::GateConfig::default(),
     )
     .unwrap_err();
 
@@ -130,6 +135,7 @@ fn rslip_request_from_parts_accepts_python_after_312() {
         "3.13.0",
         "8.2.0",
         false,
+        &kiss::GateConfig::default(),
     )
     .unwrap();
 
@@ -152,6 +158,7 @@ fn rslip_request_from_parts_canonicalizes_repo_identity() {
         "3.12.1",
         "8.2.0",
         false,
+        &kiss::GateConfig::default(),
     )
     .unwrap();
     let symlinked = rslip_request_from_parts(
@@ -161,6 +168,7 @@ fn rslip_request_from_parts_canonicalizes_repo_identity() {
         "3.12.1",
         "8.2.0",
         false,
+        &kiss::GateConfig::default(),
     )
     .unwrap();
 

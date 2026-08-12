@@ -63,10 +63,10 @@ impl LocalRubricMetrics {
         Self {
             plan_duration: options.plan_duration,
             total_duration: Duration::ZERO,
-            selected_python: planned.py_sel.len(),
-            python_population_required: planned.python_population_required,
+            selected_python: planned.sel.python.len(),
+            python_population_required: planned.population_required.python,
             python_population_selectors,
-            selected_rust_initial: planned.rs_sel.len(),
+            selected_rust_initial: planned.sel.rust.len(),
             rust_source_paths: planned.rust_source_paths.len(),
             rust_vcs_source_paths: planned.rust_vcs_source_paths,
             rust_snapshot_delta_modified: planned.rust_snapshot_delta_modified,

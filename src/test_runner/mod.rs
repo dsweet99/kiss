@@ -23,6 +23,8 @@ mod rust_coverage_index;
 mod targets;
 pub(crate) mod unit_test_timing;
 mod rust_report_id_cache;
+mod selector_ids;
+mod language_keyed;
 mod watch;
 mod rust_batch_interrupt;
 
@@ -78,6 +80,8 @@ pub struct RunTestCmdArgs<'a> {
     pub ignore: &'a [String],
     pub lang_filter: Option<Language>,
     pub config_main_branch: Option<&'a str>,
+    /// Session gate from CLI config load; runtime must not reload independently.
+    pub gate_config: kiss::GateConfig,
 }
 
 pub(crate) fn apply_force_bad(
@@ -97,25 +101,25 @@ pub(crate) fn apply_force_bad(
         Language::Rust,
         a.extra,
     )?;
-    let mut py = planned.python_prior_failure_selectors.clone();
+    let mut py = planned.prior_failure_selectors.python.clone();
     py.extend(py_bad.into_iter().map(|s| s.id));
     py.sort();
     py.dedup();
-    planned.python_prior_failure_selectors = py;
-    let mut rs = planned.rust_prior_failure_selectors.clone();
+    planned.prior_failure_selectors.python = py;
+    let mut rs = planned.prior_failure_selectors.rust.clone();
     rs.extend(rs_bad.into_iter().map(|s| s.id));
     rs.sort();
     rs.dedup();
-    planned.rust_prior_failure_selectors = rs;
+    planned.prior_failure_selectors.rust = rs;
     // Also select bad tests that normal rules omitted (e.g. warm `kiss test .`).
-    for sel in &planned.python_prior_failure_selectors {
-        if !planned.py_sel.iter().any(|s| s == sel) {
-            planned.py_sel.push(sel.clone());
+    for sel in &planned.prior_failure_selectors.python {
+        if !planned.sel.python.iter().any(|s| s == sel) {
+            planned.sel.python.push(sel.clone());
         }
     }
-    for sel in &planned.rust_prior_failure_selectors {
-        if !planned.rs_sel.iter().any(|s| s == sel) {
-            planned.rs_sel.push(sel.clone());
+    for sel in &planned.prior_failure_selectors.rust {
+        if !planned.sel.rust.iter().any(|s| s == sel) {
+            planned.sel.rust.push(sel.clone());
         }
     }
     Ok(())
@@ -161,8 +165,8 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
             }
             emit_test_progress(&format!(
                 "kiss test: selected {} python, {} rust",
-                planned.py_sel.len(),
-                planned.rs_sel.len()
+                planned.sel.python.len(),
+                planned.sel.rust.len()
             ));
             match run_selectors(
                 &planned,
@@ -174,6 +178,7 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
                     extra,
                     python_extra,
                     plan_duration: plan_started.elapsed(),
+                    gate: a.gate_config.clone(),
                 },
             ) {
                 Ok(c) => RunTestOnceOutcome::Code(c),
@@ -263,11 +268,11 @@ pub(crate) fn apply_cold_initialization_population(a: &RunTestCmdArgs<'_>, plann
         return;
     }
     match a.lang_filter {
-        Some(Language::Python) => planned.python_population_required = true,
-        Some(Language::Rust) => planned.rust_population_required = true,
+        Some(Language::Python) => planned.population_required.python = true,
+        Some(Language::Rust) => planned.population_required.rust = true,
         None => {
-            planned.python_population_required = true;
-            planned.rust_population_required = true;
+            planned.population_required.python = true;
+            planned.population_required.rust = true;
         }
     }
 }
@@ -285,21 +290,21 @@ pub(crate) fn apply_force_all_population(a: &RunTestCmdArgs<'_>, planned: &mut P
     }
     match a.lang_filter {
         Some(Language::Python) => {
-            if !planned.py_sel.is_empty() {
-                planned.python_population_required = true;
+            if !planned.sel.python.is_empty() {
+                planned.population_required.python = true;
             }
         }
         Some(Language::Rust) => {
-            if !planned.rs_sel.is_empty() {
-                planned.rust_population_required = true;
+            if !planned.sel.rust.is_empty() {
+                planned.population_required.rust = true;
             }
         }
         None => {
-            if !planned.py_sel.is_empty() {
-                planned.python_population_required = true;
+            if !planned.sel.python.is_empty() {
+                planned.population_required.python = true;
             }
-            if !planned.rs_sel.is_empty() {
-                planned.rust_population_required = true;
+            if !planned.sel.rust.is_empty() {
+                planned.population_required.rust = true;
             }
         }
     }
@@ -308,16 +313,14 @@ pub(crate) fn apply_force_all_population(a: &RunTestCmdArgs<'_>, planned: &mut P
 #[derive(Clone)]
 pub(crate) struct PlannedSelectors {
     pub repo_root: PathBuf,
-    pub py_sel: Vec<String>,
-    pub rs_sel: Vec<String>,
-    pub python_population_required: bool,
-    pub rust_population_required: bool,
+    /// Planned selectors keyed by language (not parallel py_sel/rs_sel product fields).
+    pub sel: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
+    pub population_required: crate::test_runner::language_keyed::LanguageKeyed<bool>,
     pub rust_source_paths: Vec<PathBuf>,
     pub rust_vcs_source_paths: usize,
     pub rust_snapshot_delta_modified: usize,
     pub rust_snapshot_delta_structural: bool,
-    pub python_prior_failure_selectors: Vec<String>,
-    pub rust_prior_failure_selectors: Vec<String>,
+    pub prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
     pub coverage_decision_engine_used: bool,
     pub rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis,
     pub ignore: Vec<String>,
@@ -337,6 +340,8 @@ pub(crate) struct SelectorRunOptions<'a> {
     /// Python-only: configured pytest `-p` plugins plus CLI extras.
     pub python_extra: &'a [String],
     pub plan_duration: Duration,
+    /// Same session gate the CLI loaded for this `kiss test` invocation.
+    pub gate: kiss::GateConfig,
 }
 
 mod plan;

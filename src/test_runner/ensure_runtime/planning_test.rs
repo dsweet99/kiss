@@ -9,37 +9,96 @@ use std::path::PathBuf;
 fn ensure_request_from_planned_copies_selectors_and_root() {
     let planned = PlannedSelectors {
         repo_root: PathBuf::from("/repo"),
-        py_sel: vec!["a".into()],
-        rs_sel: vec!["b".into()],
-        python_population_required: false,
-        rust_population_required: false,
+        sel: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec!["a".into()],
+            rust: vec!["b".into()],
+        },
+        population_required: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         rust_source_paths: vec![],
         rust_vcs_source_paths: 0,
         rust_snapshot_delta_modified: 0,
         rust_snapshot_delta_structural: false,
-        python_prior_failure_selectors: vec![],
-        rust_prior_failure_selectors: vec![],
+        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![],
+        },
         coverage_decision_engine_used: false,
         rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
         ignore: vec!["tmp".into()],
         workspace_files_fingerprint: None,
         skip_python_index_rebuild_after_selective: false,
     };
-    let req = ensure_request_from_planned(
-        &planned,
-        AcceptMode::Subset,
-        Some(kiss::Language::Python),
-        true,
-        4,
-        &["-p".into()],
-        &["--extra".into()],
-        None,
-    );
-    assert_eq!(req.planned_python, vec!["a".to_string()]);
-    assert_eq!(req.planned_rust, vec!["b".to_string()]);
+    let req = ensure_request_from_planned(super::EnsureFromPlanned {
+        planned: &planned,
+        mode: AcceptMode::Subset,
+        lang_filter: Some(kiss::Language::Python),
+        force: true,
+        jobs: 4,
+        python_extra: &["-p".into()],
+        rust_extra: &["--extra".into()],
+        repo_root_override: None,
+        gate: kiss::GateConfig::default(),
+    });
+    assert_eq!(req.planned.python, vec!["a".to_string()]);
+    assert_eq!(req.planned.rust, vec!["b".to_string()]);
     assert_eq!(req.repo_root, PathBuf::from("/repo"));
     assert!(req.force);
     assert_eq!(req.jobs, 4);
+}
+
+#[test]
+fn ensure_request_carries_session_gate_without_reload() {
+    let planned = PlannedSelectors {
+        repo_root: PathBuf::from("/repo"),
+        sel: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec!["a".into()],
+            rust: vec![],
+        },
+        population_required: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
+        rust_source_paths: vec![],
+        rust_vcs_source_paths: 0,
+        rust_snapshot_delta_modified: 0,
+        rust_snapshot_delta_structural: false,
+        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![],
+        },
+        coverage_decision_engine_used: false,
+        rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
+        ignore: vec![],
+        workspace_files_fingerprint: None,
+        skip_python_index_rebuild_after_selective: false,
+    };
+    let session_gate = kiss::GateConfig {
+        max_unit_test_seconds: vec![("session-only".into(), 7.0), ("*".into(), 1.0)],
+        ..kiss::GateConfig::default()
+    };
+    let req = ensure_request_from_planned(super::EnsureFromPlanned {
+        planned: &planned,
+        mode: AcceptMode::Subset,
+        lang_filter: Some(kiss::Language::Python),
+        force: false,
+        jobs: 1,
+        python_extra: &[],
+        rust_extra: &[],
+        repo_root_override: None,
+        gate: session_gate.clone(),
+    });
+    assert_eq!(
+        req.gate.max_unit_test_seconds, session_gate.max_unit_test_seconds,
+        "EnsureRequest must keep the CLI session gate, not reload from cwd"
+    );
+    assert!(
+        (kiss::limit_for_selector(&req.gate.max_unit_test_seconds, "session-only/x.py::t") - 7.0)
+            .abs()
+            < f64::EPSILON
+    );
 }
 
 #[test]
@@ -52,7 +111,8 @@ fn ensure_request_for_selectors_sets_lang_filter() {
         false,
         vec![],
         vec!["t".into()],
+        kiss::GateConfig::default(),
     );
     assert_eq!(req.lang_filter, Some(kiss::Language::Rust));
-    assert_eq!(req.planned_rust, vec!["t".to_string()]);
+    assert_eq!(req.planned.rust, vec!["t".to_string()]);
 }

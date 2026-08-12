@@ -15,3 +15,6 @@ pub(crate) use rust_warm::{
     RS_COVERING_SELECTOR, assert_base_delta_plan, edit_rust_covered_source,
     warm_base_demo_with_historical_source, warm_committed_rust_demo, warm_multi_branch_rust_demo,
 };
+
+mod planned;
+pub(crate) use planned::empty_planned_selectors;

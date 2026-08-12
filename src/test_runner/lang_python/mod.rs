@@ -5,7 +5,9 @@ mod runtime;
 pub(crate) mod generation;
 pub(crate) mod collect;
 pub(crate) mod backer;
+pub(crate) mod rslip_request;
 pub(crate) mod rslip;
+
 
 pub(crate) use witness_view::try_warm_python_cached_summary;
 #[allow(unused_imports)]

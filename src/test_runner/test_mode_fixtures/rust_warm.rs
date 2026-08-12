@@ -112,7 +112,7 @@ pub(crate) fn assert_base_delta_plan(planned: &PlannedSelectors, lib: &Path) {
         planned.rust_selection_basis,
         RustSelectionBasis::ReusablePrior
     );
-    assert!(!planned.rust_population_required);
+    assert!(!planned.population_required.rust);
     assert_eq!(planned.rust_source_paths, vec![lib.to_path_buf()]);
     assert!(
         planned.rust_vcs_source_paths >= 2,
@@ -121,5 +121,5 @@ pub(crate) fn assert_base_delta_plan(planned: &PlannedSelectors, lib: &Path) {
     );
     assert_eq!(planned.rust_snapshot_delta_modified, 1);
     assert!(!planned.rust_snapshot_delta_structural);
-    assert_eq!(planned.rs_sel, vec![RS_COVERING_SELECTOR.to_string()]);
+    assert_eq!(planned.sel.rust, vec![RS_COVERING_SELECTOR.to_string()]);
 }

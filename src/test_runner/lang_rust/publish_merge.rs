@@ -102,7 +102,7 @@ pub(super) fn publish_complete(
 ) -> bool {
     statuses.iter().all(|s| *s == WitnessStatus::Passed)
         && match request.mode {
-            AcceptMode::All => universe.len() == request.planned_rust.len(),
+            AcceptMode::All => universe.len() == request.planned.rust.len(),
             AcceptMode::Subset => prior.is_some_and(|w| w.complete),
         }
 }
@@ -111,19 +111,22 @@ pub(super) fn statuses_from_summary(
     summary: &crate::test_runner::runners::SelectorExecutionSummary,
     selectors: &[String],
 ) -> (Vec<WitnessStatus>, Vec<u64>) {
-    let failed: std::collections::BTreeSet<_> =
-        summary.failed_selectors.iter().cloned().collect();
-    let timed: std::collections::BTreeSet<_> =
-        summary.timed_out_selectors.iter().cloned().collect();
+    use rpytest_runner::TestStatus;
     let mut statuses = Vec::with_capacity(selectors.len());
     let mut durations = Vec::with_capacity(selectors.len());
     for sel in selectors {
-        let status = if timed.contains(sel) {
-            WitnessStatus::TimedOut
-        } else if failed.contains(sel) {
-            WitnessStatus::Failed
-        } else {
-            WitnessStatus::Passed
+        let status = match summary.raw_statuses.get(sel).copied().unwrap_or_else(|| {
+            if summary.timed_out_selectors.iter().any(|s| s == sel) {
+                TestStatus::TimedOut
+            } else if summary.failed_selectors.iter().any(|s| s == sel) {
+                TestStatus::Failed
+            } else {
+                TestStatus::Passed
+            }
+        }) {
+            TestStatus::TimedOut => WitnessStatus::TimedOut,
+            TestStatus::Failed => WitnessStatus::Failed,
+            TestStatus::Passed => WitnessStatus::Passed,
         };
         statuses.push(status);
         durations.push(

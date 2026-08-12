@@ -21,5 +21,6 @@ pub(crate) fn python_named_target_args(
         ignore: &[],
         lang_filter: Some(kiss::Language::Python),
         config_main_branch: None,
+    gate_config: kiss::GateConfig::default()
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+
 use rpytest_runner::{PytestRunOutcome, TestStatus};
 use rslip::LineCoverage;
 use std::cell::{Cell, RefCell};
@@ -36,31 +37,7 @@ fn format_rslip_error_includes_context() {
 fn run_rslip_selectors_rejects_zero_jobs_before_spawning() {
     let tmp = tempfile::tempdir().unwrap();
 
-    let _ = run_rslip_selectors(tmp.path(), &[], &[], false, &[], 0, None);
-}
-
-#[test]
-fn batch_template_applies_per_selector_timeouts() {
-    // Allowed paths share the generous wall kill; zero/ban still short-circuits.
-    let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join(".kissconfig"),
-        r#"[gate]
-max_unit_test_seconds = [["tests/slow/dbs", 180], ["tests/allowed", 60], ["*", 0]]
-"#,
-    )
-    .unwrap();
-    let previous = std::env::current_dir().unwrap();
-    std::env::set_current_dir(tmp.path()).unwrap();
-    let slow = timeout_for_selector(
-        "tests/slow/dbs/test_vdb_scoped_integration.py::test_aremove_bulk_eckv_integration",
-    );
-    let allowed = timeout_for_selector("tests/allowed/test_foo.py::test_ok");
-    let banned = timeout_for_selector("tests/fast/test_foo.py::test_ok");
-    std::env::set_current_dir(previous).unwrap();
-    assert_eq!(slow, DEFAULT_PYTEST_TIMEOUT);
-    assert_eq!(allowed, DEFAULT_PYTEST_TIMEOUT);
-    assert_eq!(banned, Duration::ZERO);
+    let _ = run_rslip_selectors(tmp.path(), &[], &[], false, &[], 0, None, &kiss::GateConfig::default());
 }
 
 #[test]
@@ -107,8 +84,15 @@ max_unit_test_seconds = [["tests/allowed", 60], ["*", 0]]
     });
     let previous = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
+    let gate = kiss::GateConfig {
+        max_unit_test_seconds: vec![
+            ("tests/allowed".into(), 60.0),
+            ("*".into(), 0.0),
+        ],
+        ..kiss::GateConfig::default()
+    };
     assert_eq!(
-        timeout_for_selector("tests/banned/test_sample.py::test_banned"),
+        timeout_for_selector_with_gate(&gate, "tests/banned/test_sample.py::test_banned"),
         Duration::ZERO
     );
     let summary = run_rslip_selectors_with_runner(
@@ -120,6 +104,7 @@ max_unit_test_seconds = [["tests/allowed", 60], ["*", 0]]
             force_rerun_selectors: &[],
             jobs: 1,
             content_fingerprint: None,
+            gate,
         },
         runner,
     )
@@ -149,6 +134,7 @@ fn rslip_request_and_version_contracts_are_explicit() {
         "3.12.1",
         "8.3.0",
         true,
+        &kiss::GateConfig::default(),
     )
     .unwrap();
 
@@ -233,6 +219,7 @@ def test_b():\n    assert False\n",
             force_rerun_selectors: &[],
             jobs: 3,
             content_fingerprint: None,
+        gate: kiss::GateConfig::default(),
         },
         runner,
     )
@@ -269,6 +256,7 @@ def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
         &[],
         1,
         None,
+        &kiss::GateConfig::default(),
     )
     .unwrap();
 
@@ -305,6 +293,7 @@ fn print_rslip_outcome_accepts_all_status_cache_shapes() {
                 stdout: None,
                 stderr: Some(Vec::new()),
             },
+            &kiss::GateConfig::default(),
             &mut sink,
         );
         assert!(!sink.is_empty());
@@ -361,6 +350,7 @@ def test_b():\n    assert True\n",
                 force_rerun_selectors: &[],
                 jobs: 2,
                 content_fingerprint: None,
+            gate: kiss::GateConfig::default(),
             },
             runner,
         )
@@ -402,6 +392,7 @@ def test_b():\n    assert True\n",
                 force_rerun_selectors: &[],
                 jobs: 2,
                 content_fingerprint: None,
+            gate: kiss::GateConfig::default(),
             },
             cached_runner,
         )

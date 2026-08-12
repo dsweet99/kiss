@@ -109,24 +109,30 @@ fn apply_force_all_population_only_for_all_invocation() {
         let tmp = tempfile::tempdir().unwrap();
         let mut planned = crate::test_runner::PlannedSelectors {
             repo_root: tmp.path().to_path_buf(),
-            py_sel: if case.has_py {
+            sel: crate::test_runner::language_keyed::LanguageKeyed {
+                python: if case.has_py {
                 vec!["tests/a.py::t".into()]
             } else {
                 Vec::new()
             },
-            rs_sel: if case.has_rs {
+                rust: if case.has_rs {
                 vec!["crate::tests::t".into()]
             } else {
                 Vec::new()
             },
-            python_population_required: false,
-            rust_population_required: false,
+            },
+            population_required: crate::test_runner::language_keyed::LanguageKeyed {
+                python: false,
+                rust: false,
+            },
             rust_source_paths: Vec::new(),
             rust_vcs_source_paths: 0,
             rust_snapshot_delta_modified: 0,
             rust_snapshot_delta_structural: false,
-            python_prior_failure_selectors: Vec::new(),
-            rust_prior_failure_selectors: Vec::new(),
+            prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+                python: Vec::new(),
+                rust: Vec::new(),
+            },
             coverage_decision_engine_used: false,
             rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
             ignore: Vec::new(),
@@ -147,15 +153,16 @@ fn apply_force_all_population_only_for_all_invocation() {
             ignore: &[],
             lang_filter: case.lang_filter,
             config_main_branch: None,
+        gate_config: kiss::GateConfig::default()
         };
         crate::test_runner::apply_force_all_population(&args, &mut planned);
         assert_eq!(
-            planned.python_population_required, case.expect_py_pop,
+            planned.population_required.python, case.expect_py_pop,
             "python_population_required for {:?} lang={:?}",
             case.invocation, case.lang_filter
         );
         assert_eq!(
-            planned.rust_population_required, case.expect_rs_pop,
+            planned.population_required.rust, case.expect_rs_pop,
             "rust_population_required for {:?} lang={:?}",
             case.invocation, case.lang_filter
         );

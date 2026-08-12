@@ -3,7 +3,7 @@ use super::super::paths::{generation_dir, pointer_path};
 use super::super::publish::{
     GENERATION_DURATIONS_SCHEMA, GenerationDurationsFile, PathMaxDuration,
 };
-use super::super::types::{POINTER_SCHEMA_VERSION, PopulationPointer};
+use super::super::types::{POINTER_SCHEMA_VERSION, PopulationPointer, SelectorTimingRecord};
 use crate::test_runner::python_coverage_index::storage::python_coverage_cache_root;
 use std::time::Duration;
 
@@ -41,7 +41,7 @@ fn write_generation_fixture(repo: &Path, with_path_maxes: bool) -> PathBuf {
     };
     let durations = GenerationDurationsFile {
         schema_version: GENERATION_DURATIONS_SCHEMA.to_string(),
-        durations_ns: vec![1_000_000, 5_000_000],
+        durations_ns: vec![Some(1_000_000), Some(5_000_000)],
         max_duration_ns: 5_000_000,
         path_maxes,
     };
@@ -124,7 +124,7 @@ fn missing_or_mismatched_artifacts_return_none() {
     let gen_dir = write_generation_fixture(tmp.path(), true);
     let bad = GenerationDurationsFile {
         schema_version: GENERATION_DURATIONS_SCHEMA.to_string(),
-        durations_ns: vec![1],
+        durations_ns: vec![Some(1)],
         max_duration_ns: 1,
         path_maxes: vec![],
     };
@@ -135,4 +135,52 @@ fn missing_or_mismatched_artifacts_return_none() {
     .unwrap();
     clear_generation_durations_memo();
     assert!(try_load_generation_durations_pairs(tmp.path()).is_none());
+}
+
+#[test]
+fn unresolved_durations_are_not_collapsed_to_zero_in_sidecars() {
+    use super::super::types::TimingCacheDisposition;
+    let timings = vec![
+        SelectorTimingRecord {
+            selector: "tests/a.py::known".into(),
+            raw_status: "passed".into(),
+            effective_status: "passed".into(),
+            duration_ns: Some(4_000_000),
+            cache_disposition: TimingCacheDisposition::MissStored,
+            reason: None,
+        },
+        SelectorTimingRecord {
+            selector: "tests/a.py::unresolved".into(),
+            raw_status: "unresolved".into(),
+            effective_status: "unresolved".into(),
+            duration_ns: None,
+            cache_disposition: TimingCacheDisposition::Unknown,
+            reason: Some("missing outcome".into()),
+        },
+        SelectorTimingRecord {
+            selector: "tests/b.py::only_unresolved".into(),
+            raw_status: "unresolved".into(),
+            effective_status: "unresolved".into(),
+            duration_ns: None,
+            cache_disposition: TimingCacheDisposition::Unknown,
+            reason: Some("missing outcome".into()),
+        },
+    ];
+    let file = super::super::publish::generation_durations_file(&timings);
+    assert_eq!(
+        file.durations_ns,
+        vec![Some(4_000_000), None, None],
+        "absence must remain None, not 0"
+    );
+    assert_eq!(file.max_duration_ns, 4_000_000);
+    let paths: Vec<_> = file.path_maxes.iter().map(|p| p.path.as_str()).collect();
+    assert_eq!(paths, vec!["tests/a.py"]);
+    assert_eq!(file.path_maxes[0].max_duration_ns, 4_000_000);
+    assert!(
+        !file
+            .path_maxes
+            .iter()
+            .any(|p| p.path == "tests/b.py" || p.max_duration_ns == 0),
+        "path with only unresolved timings must not invent a 0 ns max"
+    );
 }

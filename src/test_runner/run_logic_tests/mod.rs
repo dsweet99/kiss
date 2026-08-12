@@ -13,24 +13,7 @@ use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::runners::{python_backer, rust_backer};
 
 fn planned() -> PlannedSelectors {
-    PlannedSelectors {
-        repo_root: PathBuf::from("."),
-        py_sel: Vec::new(),
-        rs_sel: Vec::new(),
-        python_population_required: false,
-        rust_population_required: false,
-        rust_source_paths: Vec::new(),
-        rust_vcs_source_paths: 0,
-        rust_snapshot_delta_modified: 0,
-        rust_snapshot_delta_structural: false,
-        python_prior_failure_selectors: Vec::new(),
-        rust_prior_failure_selectors: Vec::new(),
-        coverage_decision_engine_used: true,
-        rust_selection_basis: Default::default(),
-        ignore: Vec::new(),
-        workspace_files_fingerprint: None,
-        skip_python_index_rebuild_after_selective: false,
-    }
+    crate::test_runner::test_mode_fixtures::empty_planned_selectors(PathBuf::from("."))
 }
 
 fn options(force_rerun: bool) -> SelectorRunOptions<'static> {
@@ -42,6 +25,7 @@ fn options(force_rerun: bool) -> SelectorRunOptions<'static> {
         extra: &[],
         python_extra: &[],
         plan_duration: Duration::ZERO,
+        gate: kiss::GateConfig::default(),
     }
 }
 

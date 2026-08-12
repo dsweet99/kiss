@@ -9,9 +9,12 @@ use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
     WitnessScope, summary_from_accepted_witness,
 };
-use crate::test_runner::runners::{SelectorExecutionSummary, kiss_test_report_id};
+use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::{
     current_rust_coverage_batch_identity, repo_relative_coverage_file,
+};
+use crate::test_runner::selector_ids::{
+    report_string_for_logical_string, report_strings_for_logical_strings,
 };
 
 use super::witness_store::{
@@ -28,7 +31,7 @@ impl LanguageRuntime for RustRuntime {
 
     fn current_identity(&self, request: &EnsureRequest) -> Result<String, String> {
         let identity =
-            current_rust_coverage_batch_identity(&request.repo_root, &request.rust_extra)?;
+            current_rust_coverage_batch_identity(&request.repo_root, &request.extras.rust)?;
         Ok(rust_identity_digest_from_batch(&identity))
     }
 
@@ -45,19 +48,20 @@ impl LanguageRuntime for RustRuntime {
             return Ok(OutcomeBatch::default());
         }
         let publication = match request.mode {
-            AcceptMode::All => Some(request.planned_rust.clone()),
+            AcceptMode::All => Some(request.planned.rust.clone()),
             AcceptMode::Subset => Some(miss_set.to_vec()),
         };
         let summary = match request.mode {
             AcceptMode::All => {
                 // Cov / Full population: CheckAggregate path (binary-level publish).
-                crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_check_aggregate_selectors(
+                crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_check_aggregate_selectors_with_gate(
                     &request.repo_root,
                     miss_set,
-                    &request.rust_extra,
+                    &request.extras.rust,
                     request.jobs,
                     None,
                     None,
+                    &request.gate,
                 )?
             }
             AcceptMode::Subset => {
@@ -65,10 +69,11 @@ impl LanguageRuntime for RustRuntime {
                 crate::test_runner::runners::run_rust_llvm_cov_selectors(
                     &request.repo_root,
                     miss_set,
-                    &request.rust_extra,
+                    &request.extras.rust,
                     request.force,
                     request.jobs,
                     publication.clone(),
+                    &request.gate,
                 )?
             }
         };
@@ -90,7 +95,7 @@ impl LanguageRuntime for RustRuntime {
         batch: &PublishBatch,
     ) -> Result<(), String> {
         let identity =
-            current_rust_coverage_batch_identity(&request.repo_root, &request.rust_extra)?;
+            current_rust_coverage_batch_identity(&request.repo_root, &request.extras.rust)?;
         let prior = try_load_rust_execution_witness(&request.repo_root).ok();
         let universe = super::publish_merge::publication_universe(batch, prior.as_ref());
         let (statuses, durations) =
@@ -145,7 +150,7 @@ impl LanguageRuntime for RustRuntime {
             &request.ignore,
         );
         summary_from_accepted_witness(planned, witness, |selector| {
-            kiss_test_report_id(&report_ids, selector)
+            report_string_for_logical_string(&report_ids, selector)
         })
     }
 
@@ -162,7 +167,7 @@ impl LanguageRuntime for RustRuntime {
         crate::test_runner::lang_iface::summary_from_witness_statuses(
             planned,
             witness,
-            |selector| kiss_test_report_id(&report_ids, selector),
+            |selector| report_string_for_logical_string(&report_ids, selector),
             false,
         )
     }
@@ -173,13 +178,17 @@ impl LanguageRuntime for RustRuntime {
         selectors: &[String],
     ) -> Vec<String> {
         // Witness stores nextest logical ids; ["rust", N] gates match PATH::symbol.
+        // Conversion goes through LogicalSelectorId → ReportSelectorId (not bare String).
         let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
             &request.repo_root,
             &request.ignore,
         );
-        selectors
-            .iter()
-            .map(|selector| kiss_test_report_id(&report_ids, selector))
-            .collect()
+        report_strings_for_logical_strings(&report_ids, selectors)
+    }
+}
+
+impl crate::test_runner::coverage_decision::SupportedLanguage for RustRuntime {
+    fn language(&self) -> Language {
+        Language::Rust
     }
 }

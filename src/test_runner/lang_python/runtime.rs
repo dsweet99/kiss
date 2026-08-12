@@ -34,12 +34,12 @@ impl LanguageRuntime for PythonRuntime {
             && identity_matches_current(
                 &request.repo_root,
                 &pinned.plan.base_identity,
-                &request.python_extra,
+                &request.extras.python,
             )
         {
             return Ok(python_identity_digest(&pinned));
         }
-        let exec = current_python_execution_identity(&request.repo_root, &request.python_extra)?;
+        let exec = current_python_execution_identity(&request.repo_root, &request.extras.python)?;
         Ok(format!("py:{}:pending", exec.input_fingerprint))
     }
 
@@ -61,20 +61,21 @@ impl LanguageRuntime for PythonRuntime {
         let summary = crate::test_runner::runners::run_rslip_selectors(
             &request.repo_root,
             miss_set,
-            &request.python_extra,
+            &request.extras.python,
             request.force,
             &[],
             request.jobs,
             None,
+            &request.gate,
         )?;
         let (statuses, durations_ns) = statuses_from_summary(&summary, miss_set);
         // Full cold All-mode: publish the planned universe. Incomplete repair of a
         // subset must delta-repair (publication_universe=None), not rebuild.
         let publication_universe = match request.mode {
             crate::test_runner::lang_iface::AcceptMode::All
-                if miss_set.len() == request.planned_python.len() =>
+                if miss_set.len() == request.planned.python.len() =>
             {
-                Some(request.planned_python.clone())
+                Some(request.planned.python.clone())
             }
             _ => None,
         };
@@ -100,15 +101,16 @@ impl LanguageRuntime for PythonRuntime {
             publish_python_derived_state_with_filter(
                 &request.repo_root,
                 Some(universe),
-                &request.python_extra,
+                &request.extras.python,
                 is_indexable,
             )?;
         } else {
             let deltas = selector_deltas_from_cached_outcomes(
                 &request.repo_root,
                 &batch.selectors,
-                &request.python_extra,
+                &request.extras.python,
                 &is_indexable,
+                &request.gate,
             )?;
             let _ = repair_python_population_generation(
                 &request.repo_root,
@@ -156,19 +158,22 @@ fn statuses_from_summary(
     summary: &SelectorExecutionSummary,
     selectors: &[String],
 ) -> (Vec<WitnessStatus>, Vec<u64>) {
-    let failed: std::collections::BTreeSet<_> =
-        summary.failed_selectors.iter().cloned().collect();
-    let timed: std::collections::BTreeSet<_> =
-        summary.timed_out_selectors.iter().cloned().collect();
     let mut statuses = Vec::with_capacity(selectors.len());
     let mut durations = Vec::with_capacity(selectors.len());
     for sel in selectors {
-        let status = if timed.contains(sel) {
-            WitnessStatus::TimedOut
-        } else if failed.contains(sel) {
-            WitnessStatus::Failed
-        } else {
-            WitnessStatus::Passed
+        // Prefer runner-raw status for witness storage; accept-path reclassify owns SLA.
+        let status = match summary.raw_statuses.get(sel).copied().unwrap_or_else(|| {
+            if summary.timed_out_selectors.iter().any(|s| s == sel) {
+                TestStatus::TimedOut
+            } else if summary.failed_selectors.iter().any(|s| s == sel) {
+                TestStatus::Failed
+            } else {
+                TestStatus::Passed
+            }
+        }) {
+            TestStatus::TimedOut => WitnessStatus::TimedOut,
+            TestStatus::Failed => WitnessStatus::Failed,
+            TestStatus::Passed => WitnessStatus::Passed,
         };
         statuses.push(status);
         durations.push(
@@ -179,6 +184,11 @@ fn statuses_from_summary(
                 .unwrap_or(0),
         );
     }
-    let _ = TestStatus::Passed;
     (statuses, durations)
+}
+
+impl crate::test_runner::coverage_decision::SupportedLanguage for PythonRuntime {
+    fn language(&self) -> Language {
+        Language::Python
+    }
 }

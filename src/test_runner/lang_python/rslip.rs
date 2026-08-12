@@ -1,19 +1,26 @@
 use std::collections::BTreeSet;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::time::Duration;
 
 use rpytest_runner::PytestRunner;
 use rslip::{
     CacheStatus as PyCacheStatus, Rslip, RslipBatchProgress, RslipError, RslipOutcome, RslipRequest,
 };
-use std::time::Duration;
 
 use crate::test_runner::runners::{
-    SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary, command_stdout,
+    SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
 };
 use crate::test_runner::last_status::{python_last_status_identity, record_statuses};
-use crate::test_runner::python_coverage_index::python_coverage_cache_root;
 
+use super::rslip_request::timeout_for_selector_with_gate;
+pub(crate) use super::rslip_request::{detect_rslip_versions, rslip_request_from_parts};
+#[cfg(test)]
+pub(crate) use super::rslip_request::{DEFAULT_PYTEST_TIMEOUT, timeout_for_selector};
+#[cfg(test)]
+use super::rslip_request::python_version_supports_rslip;
+
+#[allow(clippy::too_many_arguments)] // session gate added; callers pass EnsureRequest fields
 pub(crate) fn run_rslip_selectors(
     repo_root: &Path,
     selectors: &[String],
@@ -22,6 +29,7 @@ pub(crate) fn run_rslip_selectors(
     force_rerun_selectors: &[String],
     jobs: usize,
     content_fingerprint: Option<String>,
+    gate: &kiss::GateConfig,
 ) -> Result<SelectorExecutionSummary, String> {
     run_rslip_selectors_with_runner(
         RslipBatchArgs {
@@ -32,15 +40,11 @@ pub(crate) fn run_rslip_selectors(
             force_rerun_selectors,
             jobs,
             content_fingerprint,
+            gate: gate.clone(),
         },
         selected_rslip_pytest_runner(),
     )
 }
-
-/// Default per-test ceiling for python population/selective runs.
-/// Large enough for sameq slow tests (~137s observed), short enough to stop
-/// hung webtester/network tests from blocking `kiss test .` for hours.
-pub(crate) const DEFAULT_PYTEST_TIMEOUT: Duration = Duration::from_secs(180);
 
 struct RslipBatchArgs<'a> {
     repo_root: &'a Path,
@@ -50,6 +54,7 @@ struct RslipBatchArgs<'a> {
     force_rerun_selectors: &'a [String],
     jobs: usize,
     content_fingerprint: Option<String>,
+    gate: kiss::GateConfig,
 }
 
 fn run_rslip_selectors_with_runner(
@@ -64,9 +69,9 @@ fn run_rslip_selectors_with_runner(
         .iter()
         .map(|selector| selector.as_str())
         .collect();
-    // Load gate once for the batch so concurrent `.kissconfig` writers cannot
-    // change kill timeouts mid-population.
-    let gate = kiss::GateConfig::load();
+    // Use the session gate passed by the caller (CLI / EnsureRequest). Do not reload
+    // from cwd here — that can disagree with `--config` / defaults for one kiss test.
+    let gate = &args.gate;
     // Build shared request fields once; only nodeid / force_rerun / timeout vary.
     let mut template = rslip_request_from_parts(
         args.repo_root,
@@ -75,6 +80,7 @@ fn run_rslip_selectors_with_runner(
         &python_version,
         &pytest_version,
         false,
+        gate,
     )?;
     template.content_fingerprint = args.content_fingerprint;
     let mut summary = SelectorExecutionSummary::default();
@@ -86,7 +92,7 @@ fn run_rslip_selectors_with_runner(
             template: &template,
             force_rerun: args.force_rerun,
             force_set: &force_set,
-            gate: &gate,
+            gate,
         },
         &mut summary,
         &mut statuses,
@@ -96,12 +102,12 @@ fn run_rslip_selectors_with_runner(
         reqs,
         args.jobs,
         |event| {
-            handle_rslip_batch_progress(event, &runnable_selectors, &mut stdout);
+            handle_rslip_batch_progress(event, &runnable_selectors, gate, &mut stdout);
         },
     );
     let _ = std::io::Write::flush(&mut stdout);
     for (selector, result) in runnable_selectors.iter().zip(results) {
-        record_rslip_selector_result(selector, result, &gate, &mut summary, &mut statuses);
+        record_rslip_selector_result(selector, result, gate, &mut summary, &mut statuses);
     }
     record_statuses(args.repo_root, kiss::Language::Python, &identity, &statuses)?;
     Ok(summary)
@@ -155,6 +161,7 @@ fn record_immediate_timeout(
     summary.record(SelectorExecutionRecord {
         selector: selector.to_string(),
         status,
+        raw_status: None,
         cache_record: SelectorCacheRecord::MissUnstored,
         exit_code: Some(124),
         duration: Duration::ZERO,
@@ -170,16 +177,21 @@ fn record_rslip_selector_result(
 ) {
     match result {
         Ok(outcome) => {
-            let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
-                outcome.status,
+            // Storage ownership: keep runner-raw status in `statuses` (last_status /
+            // witness publish inputs). SLA reclassification for exit/reporting uses
+            // `apply_unit_test_time_limit`; warm accept reclassifies stored raw again.
+            let raw = outcome.status;
+            let effective = crate::test_runner::status_labels::apply_unit_test_time_limit(
+                raw,
                 &outcome.nodeid,
                 outcome.duration,
                 gate,
             );
-            statuses.push((outcome.nodeid.clone(), status));
+            statuses.push((outcome.nodeid.clone(), raw));
             summary.record(SelectorExecutionRecord {
                 selector: outcome.nodeid.clone(),
-                status,
+                status: effective,
+                raw_status: Some(raw),
                 cache_record: if outcome.cache_status == PyCacheStatus::Hit {
                     SelectorCacheRecord::Hit
                 } else {
@@ -196,6 +208,7 @@ fn record_rslip_selector_result(
             summary.record(SelectorExecutionRecord {
                 selector: selector.to_string(),
                 status: rpytest_runner::TestStatus::Failed,
+                raw_status: None,
                 cache_record: SelectorCacheRecord::MissUnstored,
                 exit_code: Some(1),
                 duration: Duration::ZERO,
@@ -207,6 +220,7 @@ fn record_rslip_selector_result(
 fn handle_rslip_batch_progress(
     event: RslipBatchProgress,
     selectors: &[String],
+    gate: &kiss::GateConfig,
     stdout: &mut impl Write,
 ) {
     match event {
@@ -222,7 +236,7 @@ fn handle_rslip_batch_progress(
             for (index, result) in outcomes {
                 match result {
                     Ok(outcome) => {
-                        print_rslip_outcome(&outcome, stdout);
+                        print_rslip_outcome(&outcome, gate, stdout);
                     }
                     Err(err) => {
                         let selector = selectors
@@ -258,129 +272,16 @@ fn selected_rslip_pytest_runner() -> PytestRunner {
     rpytest_runner::subprocess_pytest_runner()
 }
 
-pub(crate) fn rslip_request_from_parts(
-    repo_root: &Path,
-    selector: &str,
-    extra: &[String],
-    python_version: &str,
-    pytest_version: &str,
-    force_rerun: bool,
-) -> Result<RslipRequest, String> {
-    if !python_version_supports_rslip(python_version) {
-        return Err(format!(
-            "error: kiss test: rslip requires Python 3.12+, found {python_version}"
-        ));
-    }
-    let repo_root = repo_root.canonicalize().map_err(|err| {
-        format!(
-            "error: kiss test: failed to canonicalize repository root {}: {err}",
-            repo_root.display()
-        )
-    })?;
-    Ok(RslipRequest {
-        nodeid: selector.to_string(),
-        cwd: repo_root.clone(),
-        source_root: repo_root.clone(),
-        python: PathBuf::from("python"),
-        python_version: python_version.to_string(),
-        pytest_version: pytest_version.to_string(),
-        pytest_args: extra.to_vec(),
-        env: kiss::python_coverage_env_map(&repo_root),
-        cache_root: python_coverage_cache_root(&repo_root)?,
-        force_rerun,
-        timeout: Some(timeout_for_selector(selector)),
-        content_fingerprint: None,
-    })
-}
-
-fn timeout_for_selector(selector: &str) -> Duration {
-    timeout_for_selector_with_gate(&kiss::GateConfig::load(), selector)
-}
-
-fn timeout_for_selector_with_gate(gate: &kiss::GateConfig, selector: &str) -> Duration {
-    if gate.unit_test_time_gate_disabled() {
-        return DEFAULT_PYTEST_TIMEOUT;
-    }
-    let limit = gate.unit_test_seconds_limit(selector);
-    if limit <= 0.0 {
-        // Ban path: zero/negative limit ⇒ caller short-circuits to TIMEOUT
-        // without invoking the pytest runner.
-        return Duration::ZERO;
-    }
-    // Wall kill must outlast coverage/import setup. SLA enforcement uses
-    // call-phase duration via apply_unit_test_time_limit, not this timer.
-    DEFAULT_PYTEST_TIMEOUT
-}
-
-pub(crate) fn detect_rslip_versions(repo_root: &Path) -> Result<(String, String), String> {
-    if let Some(cached) = read_cached_python_tool_versions(repo_root) {
-        return Ok(cached);
-    }
-    let python = PathBuf::from("python");
-    let python_version = command_stdout(
-        &python,
-        &[
-            "-c",
-            "import sys; print('.'.join(map(str, sys.version_info[:3])))",
-        ],
-        repo_root,
-    )?;
-    let pytest_version = command_stdout(
-        &python,
-        &["-c", "import pytest; print(pytest.__version__)"],
-        repo_root,
-    )?;
-    let _ = write_cached_python_tool_versions(repo_root, &python_version, &pytest_version);
-    Ok((python_version, pytest_version))
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-struct PythonToolVersionsCache {
-    python: String,
-    pytest: String,
-}
-
-fn python_tool_versions_cache_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join("python_tool_versions.json")
-}
-
-fn read_cached_python_tool_versions(repo_root: &Path) -> Option<(String, String)> {
-    let bytes = std::fs::read(python_tool_versions_cache_path(repo_root)).ok()?;
-    let cached: PythonToolVersionsCache = serde_json::from_slice(&bytes).ok()?;
-    Some((cached.python, cached.pytest))
-}
-
-fn write_cached_python_tool_versions(
-    repo_root: &Path,
-    python: &str,
-    pytest: &str,
-) -> std::io::Result<()> {
-    let path = python_tool_versions_cache_path(repo_root);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let cached = PythonToolVersionsCache {
-        python: python.to_string(),
-        pytest: pytest.to_string(),
-    };
-    let bytes = serde_json::to_vec(&cached).map_err(std::io::Error::other)?;
-    std::fs::write(path, bytes)
-}
-
-fn python_version_supports_rslip(version: &str) -> bool {
-    let mut parts = version.split('.');
-    let major = parts.next().and_then(|part| part.parse::<u32>().ok());
-    let minor = parts.next().and_then(|part| part.parse::<u32>().ok());
-    matches!((major, minor), (Some(major), Some(minor)) if major > 3 || (major == 3 && minor >= 12))
-}
-
-fn print_rslip_outcome(outcome: &RslipOutcome, out: &mut impl std::io::Write) {
-    let gate = kiss::GateConfig::load();
+fn print_rslip_outcome(
+    outcome: &RslipOutcome,
+    gate: &kiss::GateConfig,
+    out: &mut impl std::io::Write,
+) {
     let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
         outcome.status,
         &outcome.nodeid,
         outcome.duration,
-        &gate,
+        gate,
     );
     let duration = crate::test_runner::duration::format_test_duration(outcome.duration);
     let cache_tag = match outcome.cache_status {
@@ -412,3 +313,7 @@ fn format_rslip_error(err: RslipError) -> String {
 #[cfg(test)]
 #[path = "rslip_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "rslip_sla_test.rs"]
+mod sla_tests;

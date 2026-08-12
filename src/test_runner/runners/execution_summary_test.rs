@@ -6,6 +6,7 @@ fn passed_miss(selector: &str, duration: Duration) -> SelectorExecutionRecord {
     SelectorExecutionRecord {
         selector: selector.to_string(),
         status: TestStatus::Passed,
+                raw_status: None,
         cache_record: SelectorCacheRecord::MissStored,
         exit_code: Some(0),
         duration,
@@ -21,6 +22,7 @@ fn record_updates_max_pass_only_for_fresh_passes() {
     summary.record(SelectorExecutionRecord {
         selector: "cached".to_string(),
         status: TestStatus::Passed,
+                raw_status: None,
         cache_record: SelectorCacheRecord::Hit,
         exit_code: Some(0),
         duration: Duration::from_secs(9),
@@ -28,6 +30,7 @@ fn record_updates_max_pass_only_for_fresh_passes() {
     summary.record(SelectorExecutionRecord {
         selector: "fail".to_string(),
         status: TestStatus::Failed,
+                raw_status: None,
         cache_record: SelectorCacheRecord::MissStored,
         exit_code: Some(1),
         duration: Duration::from_secs(4),
@@ -35,6 +38,7 @@ fn record_updates_max_pass_only_for_fresh_passes() {
     summary.record(SelectorExecutionRecord {
         selector: "fresh_unstored".to_string(),
         status: TestStatus::Passed,
+                raw_status: None,
         cache_record: SelectorCacheRecord::MissUnstored,
         exit_code: Some(0),
         duration: Duration::from_millis(200),
@@ -59,6 +63,7 @@ fn record_timed_out_counts_as_failed_with_timeout_selector() {
     summary.record(SelectorExecutionRecord {
         selector: "slow".to_string(),
         status: TestStatus::TimedOut,
+                raw_status: None,
         cache_record: SelectorCacheRecord::MissStored,
         exit_code: Some(124),
         duration: Duration::from_secs(2),

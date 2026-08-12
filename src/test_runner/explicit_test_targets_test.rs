@@ -58,10 +58,10 @@ fn explicit_single_python_test_ignores_prior_failure_fanout() {
     std::env::set_current_dir(orig).unwrap();
     let planned = planned.expect("plan explicit test");
 
-    assert_eq!(planned.py_sel, vec!["tests/test_a.py::test_x".to_string()]);
-    assert!(planned.rs_sel.is_empty());
-    assert!(!planned.python_population_required);
-    assert!(planned.python_prior_failure_selectors.is_empty());
+    assert_eq!(planned.sel.python, vec!["tests/test_a.py::test_x".to_string()]);
+    assert!(planned.sel.rust.is_empty());
+    assert!(!planned.population_required.python);
+    assert!(planned.prior_failure_selectors.python.is_empty());
     assert!(!planned.coverage_decision_engine_used);
     assert!(planned.skip_python_index_rebuild_after_selective);
 }
@@ -98,13 +98,13 @@ fn explicit_python_test_file_selects_only_that_file() {
     let planned = planned.expect("plan explicit test file");
 
     assert_eq!(
-        planned.py_sel,
+        planned.sel.python,
         vec![
             "tests/test_a.py::test_x".to_string(),
             "tests/test_a.py::test_y".to_string(),
         ]
     );
-    assert!(planned.python_prior_failure_selectors.is_empty());
-    assert!(!planned.python_population_required);
+    assert!(planned.prior_failure_selectors.python.is_empty());
+    assert!(!planned.population_required.python);
     assert!(!planned.coverage_decision_engine_used);
 }

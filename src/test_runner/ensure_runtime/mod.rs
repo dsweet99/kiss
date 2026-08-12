@@ -3,8 +3,10 @@
 mod kernel;
 mod factory;
 mod planning;
+mod from_planned;
 
 pub(crate) use factory::ensure_languages_runtime;
+pub(crate) use from_planned::EnsureFromPlanned;
 pub(crate) use kernel::ensure_runtime_cache;
 pub(crate) use planning::{
     ensure_request_for_all, ensure_request_for_selectors, ensure_request_from_planned,

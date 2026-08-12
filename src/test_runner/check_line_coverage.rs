@@ -267,7 +267,8 @@ fn load_python_coverage_from_entries(
                 &python_version,
                 &pytest_version,
                 false,
-            )
+        &kiss::GateConfig::load(),
+    )
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| coverage_error("Python", &format!("malformed request ({err})")))?;

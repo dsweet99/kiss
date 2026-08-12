@@ -41,18 +41,19 @@ metrics: true,
             extra: &[],
             python_extra: &[],
             plan_duration: std::time::Duration::ZERO,
+        gate: kiss::GateConfig::default()
         },
     )
     .unwrap();
     std::env::set_current_dir(orig).unwrap();
 
     assert_eq!(code, 0);
-    assert!(!planned.rust_population_required);
+    assert!(!planned.population_required.rust);
     assert_eq!(
         planned.rust_selection_basis,
         RustSelectionBasis::ReusablePrior
     );
-    assert_eq!(planned.rs_sel, vec![RS_COVERING_SELECTOR.to_string()]);
-    assert!(planned.rs_sel.len() < universe.len() || universe.len() == 1);
-    assert!(!planned.rs_sel.is_empty());
+    assert_eq!(planned.sel.rust, vec![RS_COVERING_SELECTOR.to_string()]);
+    assert!(planned.sel.rust.len() < universe.len() || universe.len() == 1);
+    assert!(!planned.sel.rust.is_empty());
 }

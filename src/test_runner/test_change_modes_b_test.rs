@@ -163,22 +163,22 @@ fn row_i_base_and_main_same_tree_yield_identical_selectors() {
     })
     .expect("main same-tree");
     assert_eq!(
-        base_planned.rs_sel, main_planned.rs_sel,
+        base_planned.sel.rust, main_planned.sel.rust,
         "base≡main same-tree: rs_sel must match"
     );
     assert_eq!(
-        base_planned.py_sel, main_planned.py_sel,
+        base_planned.sel.python, main_planned.sel.python,
         "base≡main same-tree: py_sel must match"
     );
     assert_eq!(
-        base_planned.rust_population_required, main_planned.rust_population_required,
+        base_planned.population_required.rust, main_planned.population_required.rust,
         "base≡main same-tree: rust_population_required must match"
     );
     assert_eq!(
-        base_planned.python_population_required, main_planned.python_population_required,
+        base_planned.population_required.python, main_planned.population_required.python,
         "base≡main same-tree: python_population_required must match"
     );
-    assert_eq!(base_planned.rs_sel, vec![RS_COVERING_SELECTOR.to_string()]);
+    assert_eq!(base_planned.sel.rust, vec![RS_COVERING_SELECTOR.to_string()]);
 }
 
 fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Option<&str>) {
@@ -188,7 +188,7 @@ fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Optio
     let planned = with_cwd(tmp.path(), || plan(mode, main, base, Some(kiss::Language::Rust)))
         .unwrap_or_else(|e| panic!("{mode:?} plan: {e}"));
     assert_eq!(
-        planned.rs_sel,
+        planned.sel.rust,
         vec![RS_COVERING_SELECTOR.to_string()],
         "{mode:?}: dry-run covering selector"
     );
@@ -210,6 +210,7 @@ fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Optio
             ignore: &[],
             lang_filter: Some(kiss::Language::Rust),
             config_main_branch: None,
+        gate_config: kiss::GateConfig::default()
         })
     });
     assert_eq!(code, 0, "{mode:?}: run_test dry-run exit");
@@ -278,6 +279,7 @@ fn row_k_run_test_base_without_other_refs_fails() {
             ignore: &[],
             lang_filter: Some(kiss::Language::Rust),
             config_main_branch: None,
+        gate_config: kiss::GateConfig::default()
         })
     });
     assert_ne!(code, 0, "base: run_test without other refs must be non-zero");

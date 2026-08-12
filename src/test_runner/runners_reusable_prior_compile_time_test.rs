@@ -32,7 +32,7 @@ fn build_script_edit_forces_population_while_ordinary_lib_stays_reusable() {
         &[],
     )
     .unwrap();
-    assert!(!ordinary.rust_population_required);
+    assert!(!ordinary.population_required.rust);
     assert_eq!(
         ordinary.rust_selection_basis,
         RustSelectionBasis::ReusablePrior
@@ -53,7 +53,7 @@ fn build_script_edit_forces_population_while_ordinary_lib_stays_reusable() {
         &[],
     )
     .unwrap();
-    assert!(compile_time.rust_population_required);
+    assert!(compile_time.population_required.rust);
     assert_eq!(
         compile_time.rust_selection_basis,
         RustSelectionBasis::Population
@@ -82,7 +82,7 @@ fn manifest_only_compile_time_edit_forces_population() {
     )
     .unwrap();
 
-    assert!(compile_time.rust_population_required);
+    assert!(compile_time.population_required.rust);
     assert_eq!(
         compile_time.rust_selection_basis,
         RustSelectionBasis::Population
@@ -108,7 +108,7 @@ fn proc_macro_edit_forces_population_while_ordinary_lib_stays_reusable() {
         &[],
     )
     .unwrap();
-    assert!(!ordinary.rust_population_required);
+    assert!(!ordinary.population_required.rust);
     assert_eq!(
         ordinary.rust_selection_basis,
         RustSelectionBasis::ReusablePrior
@@ -129,7 +129,7 @@ fn proc_macro_edit_forces_population_while_ordinary_lib_stays_reusable() {
         &[],
     )
     .unwrap();
-    assert!(compile_time.rust_population_required);
+    assert!(compile_time.population_required.rust);
     assert_eq!(
         compile_time.rust_selection_basis,
         RustSelectionBasis::Population

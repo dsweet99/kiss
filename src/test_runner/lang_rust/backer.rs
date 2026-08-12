@@ -24,8 +24,15 @@ pub(crate) struct RustBackerInput<'a> {
     pub(crate) resolved: Option<ResolvedRustPopulation>,
 }
 
-pub(crate) fn rust_llvm_cov_backer(input: RustBackerInput<'_>) -> Box<dyn LanguagePlanner> {
-    Box::new(RustModule::new_with_resolved(input))
+/// Build the Rust planner and its selection basis (Rust-only; not on `LanguagePlanner`).
+pub(crate) fn rust_llvm_cov_backer(
+    input: RustBackerInput<'_>,
+) -> (Box<dyn LanguagePlanner>, RustSelectionBasis) {
+    let module = RustModule::new_with_resolved(input);
+    let basis = module
+        .selection_basis()
+        .unwrap_or(RustSelectionBasis::Current);
+    (Box::new(module), basis)
 }
 
 pub(crate) struct RustModule {
@@ -198,10 +205,6 @@ impl LanguagePlanner for RustModule {
     fn manifest_env_allowlist(&self) -> &'static [&'static str] {
         RUST_COVERAGE_ENV_KEYS
     }
-
-    fn rust_selection_basis(&self) -> Option<RustSelectionBasis> {
-        self.selection_basis().ok()
-    }
 }
 
 #[cfg(test)]
@@ -220,6 +223,12 @@ pub(crate) fn select_fresh_rust_source_selectors(
         rust_test_args,
         &resolved,
     )
+}
+
+impl crate::test_runner::coverage_decision::SupportedLanguage for RustModule {
+    fn language(&self) -> kiss::Language {
+        kiss::Language::Rust
+    }
 }
 
 #[cfg(test)]

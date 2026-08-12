@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_runner::coverage_decision::{ChangedDiff, LanguagePlanner, SelectionDecision};
+use crate::test_runner::coverage_decision::{LanguagePlanner, SelectionDecision};
 use crate::test_runner::python_coverage_index::{
     python_coverage_cache_root, rebuild_python_coverage_index,
 };
@@ -19,15 +19,15 @@ mod policy_tests;
 fn selector_plan_default_has_no_work_or_engine_claim() {
     let plan = SelectorPlan::default();
 
-    assert!(plan.py_selectors.is_empty());
-    assert!(plan.rust_selectors.is_empty());
-    assert!(!plan.python_population_required);
-    assert!(!plan.rust_population_required);
+    assert!(plan.selectors.python.is_empty());
+    assert!(plan.selectors.rust.is_empty());
+    assert!(!plan.population_required.python);
+    assert!(!plan.population_required.rust);
     assert!(plan.rust_source_paths.is_empty());
     assert!(plan.python_changed_lines.is_empty());
     assert!(plan.rust_changed_lines.is_empty());
-    assert!(plan.python_prior_failure_selectors.is_empty());
-    assert!(plan.rust_prior_failure_selectors.is_empty());
+    assert!(plan.prior_failure_selectors.python.is_empty());
+    assert!(plan.prior_failure_selectors.rust.is_empty());
     assert!(!plan.coverage_decision_engine_used);
 }
 
@@ -71,48 +71,6 @@ fn decision_helper_splitters_preserve_language_and_line_filters() {
     assert_eq!(rs_sel, vec!["rs::test".to_string()]);
 }
 
-struct NoBasisPlanner;
-
-impl LanguagePlanner for NoBasisPlanner {
-    fn language(&self) -> kiss::Language {
-        kiss::Language::Rust
-    }
-
-    fn discover_universe(&self) -> Result<Vec<TestSelector>, String> {
-        Ok(Vec::new())
-    }
-
-    fn changed_tests(&self, _diff: &ChangedDiff) -> Vec<TestSelector> {
-        Vec::new()
-    }
-
-    fn prior_failures(&self) -> Vec<TestSelector> {
-        Vec::new()
-    }
-
-    fn freshness(
-        &self,
-        _universe: &[TestSelector],
-    ) -> Result<crate::test_runner::coverage_decision::CoverageFreshness, String> {
-        Ok(crate::test_runner::coverage_decision::CoverageFreshness::Fresh)
-    }
-
-    fn population_plan(
-        &self,
-        universe: &[TestSelector],
-    ) -> crate::test_runner::coverage_decision::PopulationPlan {
-        crate::test_runner::coverage_decision::full_population_plan(universe)
-    }
-
-    fn select(&self) -> Result<SelectionDecision, String> {
-        Ok(SelectionDecision::default())
-    }
-
-    fn manifest_env_allowlist(&self) -> &'static [&'static str] {
-        &[]
-    }
-}
-
 #[test]
 fn prior_failure_and_basis_helpers_have_empty_cases() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -126,10 +84,6 @@ fn prior_failure_and_basis_helpers_have_empty_cases() {
         prior_failures_for_language(tmp.path(), kiss::Language::Rust, &[])
             .unwrap()
             .is_empty()
-    );
-    assert_eq!(
-        rust_selection_basis_from_backers(&[Box::new(NoBasisPlanner)]),
-        RustSelectionBasis::Current
     );
 }
 
@@ -274,12 +228,12 @@ fn combined_selectors_routes_changed_python_and_rust_tests() {
     .unwrap();
 
     assert!(
-        plan.py_selectors
+        plan.selectors.python
             .iter()
             .any(|selector| selector.ends_with("test_app.py::test_py_changed"))
     );
     assert!(
-        plan.rust_selectors
+        plan.selectors.rust
             .iter()
             .any(|selector| selector.contains("rust_changed"))
     );

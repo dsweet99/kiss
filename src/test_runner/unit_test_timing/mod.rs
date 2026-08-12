@@ -9,7 +9,7 @@ use std::time::Duration;
 use kiss::Language;
 
 use crate::test_runner::check_line_coverage::repository_root_for_universe;
-use crate::test_runner::runners::kiss_test_report_id;
+use crate::test_runner::selector_ids::report_string_for_logical_string;
 use crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached;
 use crate::test_runner::rust_coverage_index::{
     resolved_rust_batch_request_parts, rust_coverage_cache_root,
@@ -28,11 +28,8 @@ pub(crate) enum TimingPopulation {
     Incomplete,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct TimingLangInclude {
-    pub(crate) python: bool,
-    pub(crate) rust: bool,
-}
+/// Per-language include flags for timing collection (LanguageKeyed, not a parallel product).
+pub(crate) type TimingLangInclude = crate::test_runner::language_keyed::LanguageKeyed<bool>;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TimingCollectOpts<'a> {
@@ -124,7 +121,7 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
                 .into_iter()
                 .map(|(selector, duration)| UnitTestTiming {
                     language: Language::Rust,
-                    selector: kiss_test_report_id(&report_ids, &selector),
+                    selector: report_string_for_logical_string(&report_ids, &selector),
                     duration,
                 })
                 .collect(),
@@ -153,7 +150,7 @@ fn load_rust_timings_from_witness(
             .zip(witness.durations_ns.iter())
             .map(|(selector, &ns)| UnitTestTiming {
                 language: Language::Rust,
-                selector: kiss_test_report_id(&report_ids, selector),
+                selector: report_string_for_logical_string(&report_ids, selector),
                 duration: Duration::from_nanos(ns),
             })
             .collect(),

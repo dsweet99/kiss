@@ -4,7 +4,7 @@ use super::*;
 fn force_rerun_does_not_make_rust_population_required() {
     let mut planned = planned();
     planned.rust_source_paths = vec![PathBuf::from("src/lib.rs")];
-    planned.rs_sel = vec!["crate::tests::test_selected".to_string()];
+    planned.sel.rust = vec!["crate::tests::test_selected".to_string()];
     let options = options(true);
     let ctx = RunContext {
         planned: &planned,
@@ -20,7 +20,7 @@ fn force_rerun_does_not_make_rust_population_required() {
 #[test]
 fn force_all_population_helper_keeps_targets_selective() {
     let mut planned = planned();
-    planned.py_sel = vec!["tests/a.py::only".to_string()];
+    planned.sel.python = vec!["tests/a.py::only".to_string()];
     let args = crate::test_runner::RunTestCmdArgs {
         invocation: crate::bin_cli::args::TestInvocation::Targets(vec![
             "tests/a.py::only".into(),
@@ -37,9 +37,10 @@ fn force_all_population_helper_keeps_targets_selective() {
         ignore: &[],
         lang_filter: Some(Language::Python),
         config_main_branch: None,
+    gate_config: kiss::GateConfig::default()
     };
     crate::test_runner::apply_force_all_population(&args, &mut planned);
-    assert!(!planned.python_population_required);
+    assert!(!planned.population_required.python);
     let options = options(true);
     let ctx = RunContext {
         planned: &planned,
@@ -54,7 +55,7 @@ fn force_all_population_helper_keeps_targets_selective() {
 #[test]
 fn force_all_population_helper_sets_population_for_all() {
     let mut planned = planned();
-    planned.py_sel = vec!["tests/a.py::only".to_string()];
+    planned.sel.python = vec!["tests/a.py::only".to_string()];
     let args = crate::test_runner::RunTestCmdArgs {
         invocation: crate::bin_cli::args::TestInvocation::All,
         main_branch_cli: None,
@@ -69,9 +70,10 @@ fn force_all_population_helper_sets_population_for_all() {
         ignore: &[],
         lang_filter: Some(Language::Python),
         config_main_branch: None,
+    gate_config: kiss::GateConfig::default()
     };
     crate::test_runner::apply_force_all_population(&args, &mut planned);
-    assert!(planned.python_population_required);
+    assert!(planned.population_required.python);
 }
 
 #[test]
@@ -93,7 +95,7 @@ fn rust_population_phase_uses_discover_universe() {
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
     planned.rust_source_paths = vec![src.join("lib.rs")];
-    planned.rust_population_required = true;
+    planned.population_required.rust = true;
     let options = options(false);
     let ctx = RunContext {
         planned: &planned,
@@ -129,8 +131,8 @@ fn rust_population_phase_also_executes_current_selected_tests() {
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
     planned.rust_source_paths = vec![src.join("lib.rs")];
-    planned.rust_population_required = true;
-    planned.rs_sel = vec![selected.clone()];
+    planned.population_required.rust = true;
+    planned.sel.rust = vec![selected.clone()];
     let options = options(false);
     let ctx = RunContext {
         planned: &planned,
@@ -166,8 +168,8 @@ fn rust_dry_run_is_population_xor_selective() {
     let selective = vec!["crate::selective_test".to_string()];
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
-    planned.rs_sel = selective.clone();
-    planned.rust_population_required = true;
+    planned.sel.rust = selective.clone();
+    planned.population_required.rust = true;
     let options = options(false);
     let ctx = RunContext {
         planned: &planned,
@@ -179,7 +181,7 @@ fn rust_dry_run_is_population_xor_selective() {
         ExecutionPhase::Population(_)
     ));
 
-    planned.rust_population_required = false;
+    planned.population_required.rust = false;
     let ctx = RunContext {
         planned: &planned,
         options: &options,
@@ -200,7 +202,7 @@ fn python_population_phase_uses_discover_universe() {
 
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
-    planned.python_population_required = true;
+    planned.population_required.python = true;
     let options = options(false);
     let ctx = RunContext {
         planned: &planned,
@@ -225,8 +227,8 @@ fn python_population_phase_uses_discover_universe() {
 fn selective_execution_does_not_require_discoverable_repo() {
     let mut planned = planned();
     planned.repo_root = PathBuf::from("/nonexistent/repo/for/selective");
-    planned.py_sel = vec!["tests/test_app.py::test_ok".to_string()];
-    planned.rs_sel = vec!["crate::tests::test_ok".to_string()];
+    planned.sel.python = vec!["tests/test_app.py::test_ok".to_string()];
+    planned.sel.rust = vec!["crate::tests::test_ok".to_string()];
     let options = options(false);
     let ctx = RunContext {
         planned: &planned,
@@ -247,24 +249,30 @@ fn selective_execution_does_not_require_discoverable_repo() {
 fn planned_selectors_carry_population_decisions_without_selector_vectors() {
     let planned = PlannedSelectors {
         repo_root: PathBuf::from("."),
-        py_sel: Vec::new(),
-        rs_sel: Vec::new(),
-        python_population_required: true,
-        rust_population_required: true,
+        sel: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
+        population_required: crate::test_runner::language_keyed::LanguageKeyed {
+            python: true,
+            rust: true,
+        },
         rust_source_paths: Vec::new(),
         rust_vcs_source_paths: 0,
         rust_snapshot_delta_modified: 0,
         rust_snapshot_delta_structural: false,
-        python_prior_failure_selectors: Vec::new(),
-        rust_prior_failure_selectors: Vec::new(),
+        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
         coverage_decision_engine_used: true,
         rust_selection_basis: Default::default(),
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
         skip_python_index_rebuild_after_selective: false,
     };
-    assert!(planned.python_population_required);
-    assert!(planned.rust_population_required);
+    assert!(planned.population_required.python);
+    assert!(planned.population_required.rust);
 }
 
 #[test]

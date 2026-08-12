@@ -34,10 +34,9 @@ fn python_accepted_summary_counts_hits() {
         ignore: vec![],
         force: false,
         jobs: 1,
-        python_extra: vec![],
-        rust_extra: vec![],
-        planned_python: vec!["a".into()],
-        planned_rust: vec![],
+        gate: kiss::GateConfig::default(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
+        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec!["a".into()], rust: vec![] },
     };
     let witness = ExecutionWitness {
         language: "python".into(),
@@ -70,10 +69,9 @@ fn python_runtime_empty_run_and_identity_paths() {
         ignore: vec![],
         force: false,
         jobs: 1,
-        python_extra: vec![],
-        rust_extra: vec![],
-        planned_python: vec!["a".into()],
-        planned_rust: vec![],
+        gate: kiss::GateConfig::default(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
+        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec!["a".into()], rust: vec![] },
     };
     let batch = rt.run_selectors(&req, &[]).expect("empty");
     assert_eq!(batch.summary.total, 0);

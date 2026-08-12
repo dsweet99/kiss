@@ -30,10 +30,9 @@ fn accepted_summary_emits_cached_passes() {
         ignore: vec![],
         force: false,
         jobs: 1,
-        python_extra: vec![],
-        rust_extra: vec![],
-        planned_python: vec![],
-        planned_rust: vec!["a".into()],
+        gate: kiss::GateConfig::default(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
+        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec!["a".into()] },
     };
     let witness = ExecutionWitness {
         language: "rust".into(),
@@ -66,10 +65,9 @@ fn rust_runtime_empty_run_and_load_miss() {
         ignore: vec![],
         force: false,
         jobs: 1,
-        python_extra: vec![],
-        rust_extra: vec![],
-        planned_python: vec![],
-        planned_rust: vec!["a".into()],
+        gate: kiss::GateConfig::default(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
+        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec!["a".into()] },
     };
     let batch = rt.run_selectors(&req, &[]).expect("empty run");
     assert_eq!(batch.summary.total, 0);
@@ -98,11 +96,48 @@ fn rust_runtime_nonempty_miss_hits_mode_branches() {
             ignore: vec![],
             force: false,
             jobs: 1,
-            python_extra: vec![],
-            rust_extra: vec![],
-            planned_python: vec![],
-            planned_rust: vec!["a".into(), "b".into()],
+            gate: kiss::GateConfig::default(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
+        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec!["a".into(), "b".into()] },
         };
         assert!(rt.run_selectors(&req, &["a".into()]).is_err());
     }
+}
+
+#[test]
+fn selectors_for_time_gate_uses_typed_logical_to_report_boundary() {
+    // Empty repo → empty map → unmapped logicals stay explicit (same as report_id_for_logical).
+    let rt = RustRuntime;
+    let tmp = tempfile::tempdir().unwrap();
+    let req = EnsureRequest {
+        repo_root: tmp.path().to_path_buf(),
+        mode: AcceptMode::Subset,
+        lang_filter: Some(kiss::Language::Rust),
+        ignore: vec![],
+        force: false,
+        jobs: 1,
+        gate: kiss::GateConfig::default(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![],
+        },
+        planned: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec!["tests::case".into()],
+        },
+    };
+    let out = rt.selectors_for_time_gate(&req, &["tests::case".into(), "bare".into()]);
+    assert_eq!(out, vec!["tests::case".to_string(), "bare".to_string()]);
+    // Matches the shared typed helper (regression: bypassing LogicalSelectorId would drift).
+    let map = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
+        &req.repo_root,
+        &req.ignore,
+    );
+    assert_eq!(
+        out,
+        crate::test_runner::selector_ids::report_strings_for_logical_strings(
+            &map,
+            &["tests::case".into(), "bare".into()],
+        )
+    );
 }

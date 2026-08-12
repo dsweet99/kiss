@@ -46,10 +46,10 @@ fn reusable_prior_real_cache_fixture() {
             .freshness(),
         CoverageFreshness::ReusablePrior
     );
-    assert!(!plan.rust_population_required);
+    assert!(!plan.population_required.rust);
     assert_eq!(plan.rust_selection_basis, RustSelectionBasis::ReusablePrior);
-    assert!(!plan.rust_selectors.is_empty());
-    assert!(plan.rust_selectors.len() < universe.len());
+    assert!(!plan.selectors.rust.is_empty());
+    assert!(plan.selectors.rust.len() < universe.len());
 }
 
 #[test]
@@ -101,8 +101,8 @@ fn combined_selectors_uses_reusable_prior_after_ordinary_source_edit() {
     )
     .unwrap();
 
-    assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
-    assert!(!plan.rust_population_required);
+    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
+    assert!(!plan.population_required.rust);
     assert_eq!(plan.rust_selection_basis, RustSelectionBasis::ReusablePrior);
 }
 
@@ -157,13 +157,13 @@ fn reusable_prior_uses_snapshot_delta_instead_of_historical_vcs_sources() {
     )
     .unwrap();
 
-    assert!(!plan.rust_population_required);
+    assert!(!plan.population_required.rust);
     assert_eq!(plan.rust_selection_basis, RustSelectionBasis::ReusablePrior);
     assert_eq!(plan.rust_source_paths, vec![lib]);
     assert_eq!(plan.rust_vcs_source_paths, 2);
     assert_eq!(plan.rust_snapshot_delta_modified, 1);
     assert!(!plan.rust_snapshot_delta_structural);
-    assert_eq!(plan.rust_selectors, vec!["tests::gets_value".to_string()]);
+    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
 }
 
 #[test]
@@ -217,10 +217,6 @@ fn rust_module_reports_reusable_prior_after_ordinary_source_edit() {
         <RustModule as LanguagePlanner>::freshness(&module, &universe).unwrap(),
         CoverageFreshness::ReusablePrior
     );
-    assert_eq!(
-        module.rust_selection_basis().unwrap(),
-        RustSelectionBasis::ReusablePrior
-    );
     let selection = <RustModule as LanguagePlanner>::select(&module).unwrap();
     assert!(selection.complete);
     assert_eq!(
@@ -261,7 +257,7 @@ fn cargo_toml_invalidator_forces_population_after_warm_snapshot() {
         &[],
     )
     .unwrap();
-    assert!(plan.rust_population_required);
+    assert!(plan.population_required.rust);
     assert_eq!(plan.rust_selection_basis, RustSelectionBasis::Population);
 }
 
@@ -295,7 +291,7 @@ fn corrupt_prior_index_row_forces_population() {
         &[],
     )
     .unwrap();
-    assert!(plan.rust_population_required);
+    assert!(plan.population_required.rust);
     assert_eq!(plan.rust_selection_basis, RustSelectionBasis::Population);
 }
 
@@ -315,7 +311,7 @@ fn renamed_production_rs_path_forces_population() {
         &[],
     )
     .unwrap();
-    assert!(plan.rust_population_required);
+    assert!(plan.population_required.rust);
     assert_eq!(plan.rust_selection_basis, RustSelectionBasis::Population);
 }
 

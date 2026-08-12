@@ -18,6 +18,7 @@ impl RunTestCmdArgs<'_> {
             ignore: &[],
             lang_filter: None,
             config_main_branch: None,
+            gate_config: kiss::GateConfig::default(),
         }
     }
 }
@@ -26,16 +27,22 @@ impl PlannedSelectors {
     fn empty(repo_root: PathBuf) -> Self {
         Self {
             repo_root,
-            py_sel: vec![],
-            rs_sel: vec![],
-            python_population_required: false,
-            rust_population_required: false,
+            sel: crate::test_runner::language_keyed::LanguageKeyed {
+                python: vec![],
+                rust: vec![],
+            },
+            population_required: crate::test_runner::language_keyed::LanguageKeyed {
+                python: false,
+                rust: false,
+            },
             rust_source_paths: vec![],
             rust_vcs_source_paths: 0,
             rust_snapshot_delta_modified: 0,
             rust_snapshot_delta_structural: false,
-            python_prior_failure_selectors: Vec::new(),
-            rust_prior_failure_selectors: Vec::new(),
+            prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+                python: Vec::new(),
+                rust: Vec::new(),
+            },
             coverage_decision_engine_used: true,
             rust_selection_basis: Default::default(),
             ignore: vec![],
@@ -55,6 +62,7 @@ metrics: false,
             extra: &[],
             python_extra: &[],
             plan_duration: Duration::ZERO,
+            gate: kiss::GateConfig::default(),
         }
     }
 }
@@ -71,7 +79,7 @@ fn run_selectors_accepts_empty_plan() {
 #[test]
 fn dry_run_rejects_unsupported_rust_test_args_without_panic() {
     let mut planned = PlannedSelectors::empty(std::env::current_dir().unwrap_or_default());
-    planned.rs_sel = vec!["tests::case".to_string()];
+    planned.sel.rust = vec!["tests::case".to_string()];
     let extra = vec!["--format".to_string(), "json".to_string()];
 
     let err = run_selectors(
@@ -84,6 +92,7 @@ metrics: false,
             extra: &extra,
             python_extra: &[],
             plan_duration: Duration::ZERO,
+        gate: kiss::GateConfig::default()
         },
     )
     .unwrap_err();
@@ -154,8 +163,8 @@ mod plan_tests {
             }).unwrap();
         std::env::set_current_dir(orig).unwrap();
         assert_eq!(planned.repo_root, tmp.path().canonicalize().unwrap());
-        assert!(planned.py_sel.is_empty());
-        assert!(planned.rs_sel.is_empty());
+        assert!(planned.sel.python.is_empty());
+        assert!(planned.sel.rust.is_empty());
         let code = run_selectors(
             &planned,
             SelectorRunOptions {
@@ -166,6 +175,7 @@ metrics: false,
                 extra: &[],
                 python_extra: &[],
                 plan_duration: Duration::ZERO,
+            gate: kiss::GateConfig::default()
             },
         )
         .unwrap();
@@ -178,16 +188,22 @@ metrics: false,
         let tmp = TempDir::new().unwrap();
         let planned = PlannedSelectors {
             repo_root: tmp.path().to_path_buf(),
-            py_sel: vec!["tests/test_app.py::test_ok".to_string()],
-            rs_sel: Vec::new(),
-            python_population_required: false,
-            rust_population_required: false,
+            sel: crate::test_runner::language_keyed::LanguageKeyed {
+                python: vec!["tests/test_app.py::test_ok".to_string()],
+                rust: Vec::new(),
+            },
+            population_required: crate::test_runner::language_keyed::LanguageKeyed {
+                python: false,
+                rust: false,
+            },
             rust_source_paths: Vec::new(),
             rust_vcs_source_paths: 0,
             rust_snapshot_delta_modified: 0,
             rust_snapshot_delta_structural: false,
-            python_prior_failure_selectors: Vec::new(),
-            rust_prior_failure_selectors: Vec::new(),
+            prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+                python: Vec::new(),
+                rust: Vec::new(),
+            },
             coverage_decision_engine_used: true,
             rust_selection_basis: Default::default(),
             ignore: Vec::new(),
@@ -205,6 +221,7 @@ metrics: false,
                 extra: &[],
                 python_extra: &[],
                 plan_duration: Duration::ZERO,
+            gate: kiss::GateConfig::default()
             },
         )
         .unwrap_err();

@@ -33,12 +33,20 @@ pub(super) fn ensure_python_runtime_coverage(
                     false,
                     planned,
                     vec![],
+                    kiss::GateConfig::load(),
                 ),
             );
         }
         Err(_) => {}
     }
-    let request = ensure_request_for_all(repo_root, ignore, jobs, Some(kiss::Language::Python), false)
+    let request = ensure_request_for_all(
+        repo_root,
+        ignore,
+        jobs,
+        Some(kiss::Language::Python),
+        false,
+        kiss::GateConfig::load(),
+    )
         .map_err(|err| CoverageRefreshError::discovery("Python", err))?;
     run_python_ensure(request)
 }
@@ -63,14 +71,13 @@ fn run_python_ensure(
 ) -> Result<(), CoverageRefreshError> {
     eprintln!(
         "kiss test: refreshing Python runtime coverage ({} tests)",
-        request.planned_python.len()
+        request.planned.python.len()
     );
     let _refresh_env = ScopedRefreshEnvGuard::set();
     let result = ensure_languages_runtime(&request)
         .map_err(|err| CoverageRefreshError::publication("Python", err))?;
     let summary = result
-        .python
-        .as_ref()
+        .python()
         .map(|r| r.summary.clone())
         .unwrap_or_default();
     if summary.exit_code != 0 {

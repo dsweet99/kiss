@@ -180,6 +180,7 @@ fn clone_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a> {
         ignore: args.ignore,
         lang_filter: args.lang_filter,
         config_main_branch: args.config_main_branch,
+    gate_config: kiss::GateConfig::default()
     }
 }
 
@@ -254,6 +255,7 @@ mod tests {
             ignore: &[],
             lang_filter: Some(kiss::Language::Python),
             config_main_branch: None,
+        gate_config: kiss::GateConfig::default()
         };
         let code = run_watch_loop(args, Duration::from_millis(5), tmp.path(), &mut src);
         env::set_current_dir(orig).unwrap();
@@ -293,6 +295,7 @@ mod tests {
             ignore: &[],
             lang_filter: Some(kiss::Language::Python),
             config_main_branch: None,
+        gate_config: kiss::GateConfig::default()
         };
         let code = run_watch_loop(args, Duration::from_millis(5), tmp.path(), &mut src);
         env::set_current_dir(orig).unwrap();
@@ -328,6 +331,7 @@ mod tests {
             ignore: &[],
             lang_filter: Some(kiss::Language::Python),
             config_main_branch: None,
+        gate_config: kiss::GateConfig::default()
         };
         let (root, _source, pid_path) = prepare_watch_session(&args).expect("prepare");
         assert_eq!(

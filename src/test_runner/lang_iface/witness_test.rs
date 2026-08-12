@@ -198,6 +198,34 @@ fn time_limit_reclassify_forces_miss_on_affected_selector() {
 }
 
 #[test]
+fn warm_accept_reclassify_applies_tighter_session_gate() {
+    // Stored Passed + long duration must become TimedOut when the current gate
+    // tightens — ownership of time-limit policy on the accept/warm side.
+    let loose = GateConfig {
+        max_unit_test_seconds: vec![("*".into(), 3600.0)],
+        ..GateConfig::default()
+    };
+    let tight = GateConfig {
+        max_unit_test_seconds: vec![("*".into(), 0.5)],
+        ..GateConfig::default()
+    };
+    let under_loose = reclassify_statuses_with_gate(
+        &["tests/a.py::t".into()],
+        &[WitnessStatus::Passed],
+        &[2_000_000_000], // 2s
+        &loose,
+    );
+    assert_eq!(under_loose, vec![WitnessStatus::Passed]);
+    let under_tight = reclassify_statuses_with_gate(
+        &["tests/a.py::t".into()],
+        &[WitnessStatus::Passed],
+        &[2_000_000_000],
+        &tight,
+    );
+    assert_eq!(under_tight, vec![WitnessStatus::TimedOut]);
+}
+
+#[test]
 fn shape_mismatch_rejects() {
     let mut w = witness(
         WitnessScope::Full,

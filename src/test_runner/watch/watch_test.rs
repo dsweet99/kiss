@@ -240,6 +240,7 @@ fn run_test_watch_requires_git() {
         ignore: &[],
         lang_filter: None,
         config_main_branch: None,
+    gate_config: kiss::GateConfig::default()
     };
     let code = run_test_watch(args, Duration::from_millis(10));
     std::env::set_current_dir(orig).unwrap();

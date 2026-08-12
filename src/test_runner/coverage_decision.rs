@@ -8,7 +8,7 @@ mod types;
 pub(crate) use changed_test_selector::ChangedTestSelector;
 pub(crate) use engine::CoverageDecisionEngine;
 pub(crate) use language_module::{
-    LanguageExecutor, LanguagePlanner, LanguageTestModule, RunContext,
+    LanguageExecutor, LanguagePlanner, LanguageTestModule, RunContext, SupportedLanguage,
 };
 #[cfg(test)]
 pub(crate) use types::CoverageDecisionPlan;

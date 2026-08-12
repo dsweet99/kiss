@@ -17,11 +17,11 @@ impl LanguageExecutor for PythonModule {
     }
 
     fn population_required(&self, ctx: &RunContext<'_, '_>) -> bool {
-        ctx.planned.python_population_required
+        ctx.planned.population_required.python
     }
 
     fn selective_selectors(&self, ctx: &RunContext<'_, '_>) -> Vec<String> {
-        ctx.planned.py_sel.clone()
+        ctx.planned.sel.python.clone()
     }
 
     fn run_population(
@@ -86,22 +86,23 @@ fn ensure_python_via_kernel(
         ensure_languages_runtime, ensure_request_from_planned,
     };
     let mut planned = ctx.planned.clone();
-    planned.py_sel = selectors.to_vec();
-    planned.rs_sel.clear();
-    let request = ensure_request_from_planned(
-        &planned,
+    planned.sel.python = selectors.to_vec();
+    planned.sel.rust.clear();
+    let request = ensure_request_from_planned(crate::test_runner::ensure_runtime::EnsureFromPlanned {
+        planned: &planned,
         mode,
-        Some(kiss::Language::Python),
-        ctx.options.force_rerun,
-        ctx.options.jobs,
-        ctx.options.python_extra,
-        ctx.options.extra,
-        None,
-    );
+        lang_filter: Some(kiss::Language::Python),
+        force: ctx.options.force_rerun,
+        jobs: ctx.options.jobs,
+        python_extra: ctx.options.python_extra,
+        rust_extra: ctx.options.extra,
+        repo_root_override: None,
+        gate: ctx.options.gate.clone(),
+    });
     let result = ensure_languages_runtime(&request)?;
     Ok(result
-        .python
-        .map(|r| r.summary)
+        .python()
+        .map(|r| r.summary.clone())
         .unwrap_or_default())
 }
 
@@ -111,11 +112,11 @@ impl LanguageExecutor for RustModule {
     }
 
     fn population_required(&self, ctx: &RunContext<'_, '_>) -> bool {
-        ctx.planned.rust_population_required
+        ctx.planned.population_required.rust
     }
 
     fn selective_selectors(&self, ctx: &RunContext<'_, '_>) -> Vec<String> {
-        ctx.planned.rs_sel.clone()
+        ctx.planned.sel.rust.clone()
     }
 
     fn run_population(
@@ -193,22 +194,23 @@ fn ensure_rust_via_kernel(
     use crate::test_runner::ensure_runtime::{
         ensure_languages_runtime, ensure_request_from_planned,
     };
-    let force = ctx.options.force_rerun || !ctx.planned.rust_prior_failure_selectors.is_empty();
+    let force = ctx.options.force_rerun || !ctx.planned.prior_failure_selectors.rust.is_empty();
     let mut planned = ctx.planned.clone();
-    planned.rs_sel = selectors.to_vec();
-    planned.py_sel.clear();
-    let request = ensure_request_from_planned(
-        &planned,
+    planned.sel.rust = selectors.to_vec();
+    planned.sel.python.clear();
+    let request = ensure_request_from_planned(crate::test_runner::ensure_runtime::EnsureFromPlanned {
+        planned: &planned,
         mode,
-        Some(kiss::Language::Rust),
+        lang_filter: Some(kiss::Language::Rust),
         force,
-        ctx.options.jobs,
-        ctx.options.python_extra,
-        ctx.options.extra,
-        None,
-    );
+        jobs: ctx.options.jobs,
+        python_extra: ctx.options.python_extra,
+        rust_extra: ctx.options.extra,
+        repo_root_override: None,
+        gate: ctx.options.gate.clone(),
+    });
     let result = ensure_languages_runtime(&request)?;
-    Ok(result.rust.map(|r| r.summary).unwrap_or_default())
+    Ok(result.rust().map(|r| r.summary.clone()).unwrap_or_default())
 }
 
 #[allow(dead_code)] // test seam + legacy selective path retained for unit coverage
@@ -226,9 +228,10 @@ pub(super) fn run_rslip_selectors_for_module(
         selectors,
         ctx.options.python_extra,
         ctx.options.force_rerun,
-        &ctx.planned.python_prior_failure_selectors,
+        &ctx.planned.prior_failure_selectors.python,
         ctx.options.jobs,
         ctx.planned.workspace_files_fingerprint.clone(),
+        &ctx.options.gate,
     )
 }
 
@@ -242,7 +245,7 @@ pub(super) fn run_rust_selectors_for_module(
         return Ok(SelectorExecutionSummary::default());
     }
     let force_rerun =
-        ctx.options.force_rerun || !ctx.planned.rust_prior_failure_selectors.is_empty();
+        ctx.options.force_rerun || !ctx.planned.prior_failure_selectors.rust.is_empty();
     if !force_rerun
         && let Ok(identity) =
             crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
@@ -264,6 +267,7 @@ pub(super) fn run_rust_selectors_for_module(
                     force_rerun,
                     ctx.options.jobs,
                     publication,
+                    &ctx.options.gate,
                 );
             }
             RustWarmDecision::Miss => {}
@@ -277,7 +281,8 @@ pub(super) fn run_rust_selectors_for_module(
             force_rerun,
             ctx.options.jobs,
             Some(population_selectors),
-        );
+        &ctx.options.gate,
+    );
     }
     if should_try_cached_rust_check_aggregate(force_rerun, &None)
         && let Some(summary) = runners::cached_rust_check_aggregate_selectors(
@@ -295,6 +300,7 @@ pub(super) fn run_rust_selectors_for_module(
         force_rerun,
         ctx.options.jobs,
         None,
+        &ctx.options.gate,
     )
 }
 
@@ -323,7 +329,7 @@ where
     ) -> Result<rust_llvm_cov_runner::RustCoverageBatchResult, String>,
 {
     let force_rerun =
-        ctx.options.force_rerun || !ctx.planned.rust_prior_failure_selectors.is_empty();
+        ctx.options.force_rerun || !ctx.planned.prior_failure_selectors.rust.is_empty();
     crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_selectors_with_deps(
         &ctx.planned.repo_root,
         selectors,
@@ -333,6 +339,7 @@ where
             jobs: ctx.options.jobs,
             population_publication_selectors: Some(population_publication_selectors),
             coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        gate: kiss::GateConfig::default(),
         },
         detect_versions,
         execute_batch,

@@ -1,11 +1,13 @@
 //! Single planning API that produces `EnsureRequest` for test and cov.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use kiss::Language;
+use kiss::{GateConfig, Language};
 
 use crate::test_runner::lang_iface::{AcceptMode, EnsureRequest};
-use crate::test_runner::{PlannedSelectors, runners};
+use crate::test_runner::language_keyed::LanguageKeyed;
+use crate::test_runner::ensure_runtime::EnsureFromPlanned;
+use crate::test_runner::runners;
 
 /// Build an All-mode ensure request from the shared planning API (cov / full universe).
 ///
@@ -16,6 +18,7 @@ pub(crate) fn ensure_request_for_all(
     jobs: usize,
     lang_filter: Option<Language>,
     force: bool,
+    gate: GateConfig,
 ) -> Result<EnsureRequest, String> {
     let python_extra = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
     let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
@@ -35,40 +38,43 @@ pub(crate) fn ensure_request_for_all(
         ignore: ignore_norm,
         force,
         jobs,
-        python_extra,
-        rust_extra: vec![],
-        planned_python,
-        planned_rust,
+        gate,
+        extras: LanguageKeyed {
+            python: python_extra,
+            rust: vec![],
+        },
+        planned: LanguageKeyed {
+            python: planned_python,
+            rust: planned_rust,
+        },
     })
 }
 
 /// Build an ensure request from already-planned selectors (kiss test).
-#[allow(clippy::too_many_arguments)] // mirrors EnsureRequest field set at the planning boundary
-pub(crate) fn ensure_request_from_planned(
-    planned: &PlannedSelectors,
-    mode: AcceptMode,
-    lang_filter: Option<Language>,
-    force: bool,
-    jobs: usize,
-    python_extra: &[String],
-    rust_extra: &[String],
-    repo_root_override: Option<PathBuf>,
-) -> EnsureRequest {
+pub(crate) fn ensure_request_from_planned(args: EnsureFromPlanned<'_>) -> EnsureRequest {
     EnsureRequest {
-        repo_root: repo_root_override.unwrap_or_else(|| planned.repo_root.clone()),
-        mode,
-        lang_filter,
-        ignore: planned.ignore.clone(),
-        force,
-        jobs,
-        python_extra: python_extra.to_vec(),
-        rust_extra: rust_extra.to_vec(),
-        planned_python: planned.py_sel.clone(),
-        planned_rust: planned.rs_sel.clone(),
+        repo_root: args
+            .repo_root_override
+            .unwrap_or_else(|| args.planned.repo_root.clone()),
+        mode: args.mode,
+        lang_filter: args.lang_filter,
+        ignore: args.planned.ignore.clone(),
+        force: args.force,
+        jobs: args.jobs,
+        gate: args.gate,
+        extras: LanguageKeyed {
+            python: args.python_extra.to_vec(),
+            rust: args.rust_extra.to_vec(),
+        },
+        planned: LanguageKeyed {
+            python: args.planned.sel.python.clone(),
+            rust: args.planned.sel.rust.clone(),
+        },
     }
 }
 
 /// Cov All-mode request with an explicit planned universe (e.g. incomplete repair).
+#[allow(clippy::too_many_arguments)] // mirrors EnsureRequest field set at the planning boundary
 pub(crate) fn ensure_request_for_selectors(
     repo_root: &Path,
     ignore: &[String],
@@ -77,6 +83,7 @@ pub(crate) fn ensure_request_for_selectors(
     force: bool,
     python: Vec<String>,
     rust: Vec<String>,
+    gate: GateConfig,
 ) -> EnsureRequest {
     let python_extra = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
     EnsureRequest {
@@ -86,9 +93,14 @@ pub(crate) fn ensure_request_for_selectors(
         ignore: ignore.to_vec(),
         force,
         jobs,
-        python_extra,
-        rust_extra: vec![],
-        planned_python: python,
-        planned_rust: rust,
+        gate,
+        extras: LanguageKeyed {
+            python: python_extra,
+            rust: vec![],
+        },
+        planned: LanguageKeyed {
+            python,
+            rust,
+        },
     }
 }

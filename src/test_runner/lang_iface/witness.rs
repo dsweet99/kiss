@@ -202,6 +202,11 @@ fn selector_index(selectors: &[String]) -> BTreeMap<&str, usize> {
 }
 
 /// Reclassify raw stored statuses under the current unit-test time-limit gate.
+///
+/// Ownership: this is the authoritative warm-path application of
+/// `max_unit_test_seconds`. Live runners may also call `apply_unit_test_time_limit`
+/// for immediate stdout/summary labeling; stored witness rows are reclassified
+/// here so a later gate change still takes effect on accept without re-running.
 pub(crate) fn reclassify_statuses_with_gate(
     selectors: &[String],
     raw_statuses: &[WitnessStatus],
@@ -255,6 +260,7 @@ pub(crate) fn summary_from_witness_statuses(
         summary.record(SelectorExecutionRecord {
             selector: report,
             status,
+            raw_status: None,
             cache_record: SelectorCacheRecord::Hit,
             exit_code: Some(exit_code_for_test_status(status)),
             duration,

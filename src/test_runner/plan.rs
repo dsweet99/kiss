@@ -137,16 +137,22 @@ fn planned_all(
         || rust_population_current_for_all_selectors(repo_root, &rs_sel));
     PlannedSelectors {
         repo_root: repo_root.to_path_buf(),
-        py_sel,
-        rs_sel,
-        python_population_required,
-        rust_population_required,
+        sel: crate::test_runner::language_keyed::LanguageKeyed {
+            python: py_sel,
+            rust: rs_sel,
+        },
+        population_required: crate::test_runner::language_keyed::LanguageKeyed {
+            python: python_population_required,
+            rust: rust_population_required,
+        },
         rust_source_paths: Vec::new(),
         rust_vcs_source_paths: 0,
         rust_snapshot_delta_modified: 0,
         rust_snapshot_delta_structural: false,
-        python_prior_failure_selectors: Vec::new(),
-        rust_prior_failure_selectors: Vec::new(),
+        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
         coverage_decision_engine_used: false,
         rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
         ignore: ignore.to_vec(),
@@ -187,16 +193,22 @@ fn plan_explicit_target_selectors(
     if source_paths.is_empty() {
         return Ok(PlannedSelectors {
             repo_root: repo_root.to_path_buf(),
-            py_sel: direct_python,
-            rs_sel: direct_rust,
-            python_population_required: false,
-            rust_population_required: false,
+            sel: crate::test_runner::language_keyed::LanguageKeyed {
+                python: direct_python,
+                rust: direct_rust,
+            },
+            population_required: crate::test_runner::language_keyed::LanguageKeyed {
+                python: false,
+                rust: false,
+            },
             rust_source_paths: Vec::new(),
             rust_vcs_source_paths: 0,
             rust_snapshot_delta_modified: 0,
             rust_snapshot_delta_structural: false,
-            python_prior_failure_selectors: Vec::new(),
-            rust_prior_failure_selectors: Vec::new(),
+            prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+                python: Vec::new(),
+                rust: Vec::new(),
+            },
             coverage_decision_engine_used: false,
             rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
             ignore: ignore.to_vec(),
@@ -232,16 +244,22 @@ fn planned_from_selector_plan(
 ) -> PlannedSelectors {
     PlannedSelectors {
         repo_root,
-        py_sel: selector_plan.py_selectors,
-        rs_sel: selector_plan.rust_selectors,
-        python_population_required: selector_plan.python_population_required,
-        rust_population_required: selector_plan.rust_population_required,
+        sel: crate::test_runner::language_keyed::LanguageKeyed {
+            python: selector_plan.selectors.python,
+            rust: selector_plan.selectors.rust,
+        },
+        population_required: crate::test_runner::language_keyed::LanguageKeyed {
+            python: selector_plan.population_required.python,
+            rust: selector_plan.population_required.rust,
+        },
         rust_source_paths: selector_plan.rust_source_paths,
         rust_vcs_source_paths: selector_plan.rust_vcs_source_paths,
         rust_snapshot_delta_modified: selector_plan.rust_snapshot_delta_modified,
         rust_snapshot_delta_structural: selector_plan.rust_snapshot_delta_structural,
-        python_prior_failure_selectors: selector_plan.python_prior_failure_selectors,
-        rust_prior_failure_selectors: selector_plan.rust_prior_failure_selectors,
+        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: selector_plan.prior_failure_selectors.python,
+            rust: selector_plan.prior_failure_selectors.rust,
+        },
         coverage_decision_engine_used: selector_plan.coverage_decision_engine_used,
         rust_selection_basis: selector_plan.rust_selection_basis,
         ignore,

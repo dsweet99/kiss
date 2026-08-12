@@ -63,6 +63,7 @@ metrics: true,
         extra: &[],
         python_extra: &[],
         plan_duration: Duration::ZERO,
+    gate: kiss::GateConfig::default()
     };
     let python = FakeLanguageModule {
         language: Language::Python,
@@ -124,6 +125,7 @@ metrics: false,
             extra: &[],
             python_extra: &[],
             plan_duration: Duration::ZERO,
+        gate: kiss::GateConfig::default()
         },
     )
     .unwrap_err();
@@ -142,7 +144,7 @@ fn run_selectors_non_dry_run_executes_python_selective_phase() {
     .unwrap();
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
-    planned.py_sel = vec!["tests/test_app.py::test_ok".to_string()];
+    planned.sel.python = vec!["tests/test_app.py::test_ok".to_string()];
     let code = run_selectors(
         &planned,
         SelectorRunOptions {
@@ -153,6 +155,7 @@ metrics: true,
             extra: &[],
             python_extra: &[],
             plan_duration: Duration::ZERO,
+        gate: kiss::GateConfig::default()
         },
     );
     // Local temp repos may lack rslip population; accept success or a controlled runner error.
@@ -182,6 +185,7 @@ metrics: true,
                 extra: &[],
                 python_extra: &[],
                 plan_duration: Duration::ZERO,
+            gate: kiss::GateConfig::default()
             },
         )
         .unwrap(),
@@ -189,7 +193,7 @@ metrics: true,
     );
 
     let mut with_work = planned();
-    with_work.py_sel = vec!["tests/test_app.py::test_ok".to_string()];
+    with_work.sel.python = vec!["tests/test_app.py::test_ok".to_string()];
     assert_eq!(
         run_selectors(
             &with_work,
@@ -201,6 +205,7 @@ metrics: true,
                 extra: &[],
                 python_extra: &[],
                 plan_duration: Duration::ZERO,
+            gate: kiss::GateConfig::default()
             },
         )
         .unwrap(),

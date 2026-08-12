@@ -33,6 +33,7 @@ pub(crate) fn selector_deltas_from_cached_outcomes(
     selectors: &[String],
     test_args: &[String],
     is_indexable: &dyn Fn(&Path, &Path) -> bool,
+    gate: &kiss::GateConfig,
 ) -> Result<Vec<SelectorEvidence>, String> {
     if selectors.is_empty() {
         return Ok(Vec::new());
@@ -48,11 +49,11 @@ pub(crate) fn selector_deltas_from_cached_outcomes(
                 &python_version,
                 &pytest_version,
                 false,
+                gate,
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
     let outcomes = rslip::load_cached_outcomes_many_trusting_population(&reqs);
-    let gate = kiss::GateConfig::load();
     let mut deltas = Vec::new();
     for (selector, outcome) in selectors.iter().zip(outcomes) {
         let Some(outcome) = outcome
@@ -66,7 +67,7 @@ pub(crate) fn selector_deltas_from_cached_outcomes(
         deltas.push(outcome_to_evidence(
             repo_root,
             &outcome,
-            &gate,
+            gate,
             selector,
             is_indexable,
         ));
@@ -85,6 +86,7 @@ pub(crate) fn evidence_from_cached_outcomes(
         &plan.selectors,
         test_args,
         is_indexable,
+        &kiss::GateConfig::load(),
     )?;
     let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
     for delta in deltas {

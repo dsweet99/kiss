@@ -20,16 +20,22 @@ use std::time::Duration;
 fn planned(repo: &Path) -> PlannedSelectors {
     PlannedSelectors {
         repo_root: repo.to_path_buf(),
-        py_sel: vec!["t.py::test_a".into()],
-        rs_sel: Vec::new(),
-        python_population_required: false,
-        rust_population_required: false,
+        sel: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec!["t.py::test_a".into()],
+            rust: Vec::new(),
+        },
+        population_required: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         rust_source_paths: Vec::new(),
         rust_vcs_source_paths: 0,
         rust_snapshot_delta_modified: 0,
         rust_snapshot_delta_structural: false,
-        python_prior_failure_selectors: Vec::new(),
-        rust_prior_failure_selectors: Vec::new(),
+        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
         coverage_decision_engine_used: false,
         rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
         ignore: Vec::new(),
@@ -74,6 +80,7 @@ fn hook_helpers_detect_current_generation_and_indexable_paths() {
         extra: &[],
         python_extra: &[],
         plan_duration: Duration::ZERO,
+        gate: kiss::GateConfig::default(),
     };
     let ctx = RunContext {
         planned: &planned,
@@ -93,7 +100,7 @@ fn hook_helpers_detect_current_generation_and_indexable_paths() {
         planned: &planned,
         options: &force_options,
     };
-    let _ = super::write_python_manifest(&module, &planned.py_sel, &force_ctx);
+    let _ = super::write_python_manifest(&module, &planned.sel.python, &force_ctx);
 }
 
 #[test]
@@ -112,6 +119,7 @@ fn rebuild_skips_when_selective_index_flag_set() {
         extra: &[],
         python_extra: &[],
         plan_duration: Duration::ZERO,
+        gate: kiss::GateConfig::default(),
     };
     let ctx = RunContext {
         planned: &planned,
@@ -135,10 +143,11 @@ fn generation_already_current_is_false_without_cache() {
         extra: &[],
         python_extra: &[],
         plan_duration: Duration::ZERO,
+        gate: kiss::GateConfig::default(),
     };
     let ctx = RunContext {
         planned: &planned,
         options: &options,
     };
-    assert!(!generation_already_current(&ctx, &planned.py_sel));
+    assert!(!generation_already_current(&ctx, &planned.sel.python));
 }

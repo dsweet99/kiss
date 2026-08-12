@@ -61,7 +61,7 @@ fn finish_no_work(
             0,
             false,
             0,
-            planned.rs_sel.len(),
+            planned.sel.rust.len(),
             planned.rust_selection_basis,
         );
         metrics.total_duration = total_started.elapsed();
@@ -188,10 +188,10 @@ fn phase_for_language<'a>(
 }
 
 fn planned_has_work(planned: &PlannedSelectors) -> bool {
-    planned.python_population_required
-        || planned.rust_population_required
-        || !planned.py_sel.is_empty()
-        || !planned.rs_sel.is_empty()
+    planned.population_required.python
+        || planned.population_required.rust
+        || !planned.sel.python.is_empty()
+        || !planned.sel.rust.is_empty()
 }
 
 fn finish_run_metrics(

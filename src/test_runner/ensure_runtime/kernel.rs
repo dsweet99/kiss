@@ -13,17 +13,17 @@ pub(crate) fn ensure_runtime_cache(
     modules: &[&dyn LanguageRuntime],
 ) -> Result<EnsureRuntimeResult, String> {
     let mut result = EnsureRuntimeResult::default();
-    let gate = GateConfig::load();
+    let gate = &request.gate;
     for module in modules {
         let language = module.language();
         if !request.requires(language) {
             continue;
         }
-        let lang_result = ensure_one_language(request, *module, &gate)?;
+        let lang_result = ensure_one_language(request, *module, gate)?;
         let exit = lang_result.summary.exit_code;
         match language {
-            Language::Python => result.python = Some(lang_result),
-            Language::Rust => result.rust = Some(lang_result),
+            Language::Python => result.by_language.python = Some(lang_result),
+            Language::Rust => result.by_language.rust = Some(lang_result),
         }
         if exit != 0 {
             result.exit_code = exit;

@@ -215,6 +215,12 @@ pub(crate) fn select_fresh_python_source_selectors(
     select_python_source_selectors_from_index(repo_root, py_source_paths)
 }
 
+impl crate::test_runner::coverage_decision::SupportedLanguage for PythonModule {
+    fn language(&self) -> kiss::Language {
+        kiss::Language::Python
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

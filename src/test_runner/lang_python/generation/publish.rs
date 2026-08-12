@@ -172,22 +172,27 @@ pub(crate) struct PathMaxDuration {
 pub(crate) struct GenerationDurationsFile {
     pub(crate) schema_version: String,
     /// Parallel to generation plan selector order (see manifest.plan.selectors).
-    pub(crate) durations_ns: Vec<u64>,
+    /// `None` means unresolved / unknown timing (not a zero-length run).
+    pub(crate) durations_ns: Vec<Option<u64>>,
     pub(crate) max_duration_ns: u64,
     /// Unique path → max duration; empty on legacy artifacts until backfilled.
     #[serde(default)]
     pub(crate) path_maxes: Vec<PathMaxDuration>,
 }
 
-pub(crate) const GENERATION_DURATIONS_SCHEMA: &str = "rslip-python-generation-durations-v1";
+pub(crate) const GENERATION_DURATIONS_SCHEMA: &str = "rslip-python-generation-durations-v2";
+pub(crate) const GENERATION_DURATIONS_SCHEMA_V1: &str = "rslip-python-generation-durations-v1";
 
-fn generation_durations_file(timings: &[SelectorTimingRecord]) -> GenerationDurationsFile {
+pub(crate) fn generation_durations_file(timings: &[SelectorTimingRecord]) -> GenerationDurationsFile {
     let mut max_duration_ns = 0_u64;
     let mut durations_ns = Vec::with_capacity(timings.len());
     for row in timings {
-        let ns = row.duration_ns.unwrap_or(0);
-        max_duration_ns = max_duration_ns.max(ns);
-        durations_ns.push(ns);
+        // Preserve absence: do not collapse None into 0 (indistinguishable from a
+        // true zero-length run once written to the durations sidecar).
+        if let Some(ns) = row.duration_ns {
+            max_duration_ns = max_duration_ns.max(ns);
+        }
+        durations_ns.push(row.duration_ns);
     }
     GenerationDurationsFile {
         schema_version: GENERATION_DURATIONS_SCHEMA.to_string(),
@@ -203,7 +208,10 @@ pub(crate) fn path_maxes_from_timing_rows(
     use std::collections::BTreeMap;
     let mut by_path: BTreeMap<String, (u64, String)> = BTreeMap::new();
     for row in timings {
-        let ns = row.duration_ns.unwrap_or(0);
+        // Skip unknown timings so path maxes never invent a fake 0 ns run.
+        let Some(ns) = row.duration_ns else {
+            continue;
+        };
         let path = row
             .selector
             .split_once("::")

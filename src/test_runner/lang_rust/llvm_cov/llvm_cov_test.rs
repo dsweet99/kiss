@@ -69,7 +69,9 @@ fn batch_result_records_completed_outcomes_before_returning_late_error() {
         test_binaries: Vec::new(),
     };
 
-    let err = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap_err();
+    let err = finish_rust_coverage_batch_result(tmp.path(), &identity, result,
+        &kiss::GateConfig::default(),
+    ).unwrap_err();
 
     assert!(err.contains("late derived publication failed"));
     assert_eq!(
@@ -108,7 +110,9 @@ fn fresh_unstored_batch_outcome_is_counted_explicitly() {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result).unwrap();
+    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result,
+        &kiss::GateConfig::default(),
+    ).unwrap();
 
     assert_eq!(summary.total, 1);
     assert_eq!(summary.cache_misses, 1);
@@ -135,6 +139,7 @@ fn rust_selector_path_submits_one_batch_request_to_executor() {
 jobs: 7,
             population_publication_selectors: None,
             coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        gate: kiss::GateConfig::default(),
         },
         move |repo_root| {
             detector_calls_for_closure.set(detector_calls_for_closure.get() + 1);
@@ -196,6 +201,7 @@ fn rust_selector_path_rejects_duplicate_batch_selectors_before_execution() {
 jobs: 7,
             population_publication_selectors: None,
             coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        gate: kiss::GateConfig::default(),
         },
         move |_repo_root| {
             detector_calls_for_closure.set(detector_calls_for_closure.get() + 1);
@@ -237,6 +243,7 @@ jobs: 2,
                 publication_binary_ids: None,
                 repair_publication: None,
             },
+        gate: kiss::GateConfig::default(),
         },
         |_repo_root| {
             Ok(RustCoverageToolVersions {
@@ -327,7 +334,9 @@ fn rust_selector_wrappers_return_empty_summary_without_tool_detection() {
     let tmp = tempfile::tempdir().unwrap();
 
     let selector_summary =
-        run_rust_llvm_cov_selectors(tmp.path(), &[], &[], false, 1, None).unwrap();
+        run_rust_llvm_cov_selectors(tmp.path(), &[], &[], false, 1, None,
+        &kiss::GateConfig::default(),
+    ).unwrap();
     let aggregate_summary =
         run_rust_llvm_cov_check_aggregate_selectors(tmp.path(), &[], &[], 1, None, None).unwrap();
 
@@ -340,7 +349,9 @@ fn rust_selector_wrappers_return_empty_summary_without_tool_detection() {
 fn run_rust_llvm_cov_selectors_rejects_zero_jobs_before_spawning() {
     let tmp = tempfile::tempdir().unwrap();
 
-    let _ = run_rust_llvm_cov_selectors(tmp.path(), &[], &[], false, 0, None);
+    let _ = run_rust_llvm_cov_selectors(tmp.path(), &[], &[], false, 0, None,
+        &kiss::GateConfig::default(),
+    );
 }
 
 

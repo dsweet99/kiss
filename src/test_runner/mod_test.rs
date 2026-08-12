@@ -21,6 +21,7 @@ fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
         ignore: &[],
         lang_filter: None,
         config_main_branch: None,
+    gate_config: kiss::GateConfig::default()
     });
     std::env::set_current_dir(old).unwrap();
     assert_eq!(code, 1);
@@ -42,6 +43,7 @@ fn run_test_dry_run_commit_in_workspace_completes() {
         ignore: &[],
         lang_filter: Some(Language::Rust),
         config_main_branch: None,
+    gate_config: kiss::GateConfig::default()
     });
     assert!(
         code == 0 || code == 1,
@@ -66,6 +68,7 @@ fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
         ignore: &[],
         lang_filter: Some(Language::Rust),
         config_main_branch: None,
+    gate_config: kiss::GateConfig::default()
     });
     assert_eq!(code, 1);
 }
@@ -98,6 +101,7 @@ fn cold_initialization_predicate_is_limited_to_unfiltered_base_or_main() {
             ignore: &[],
             lang_filter,
             config_main_branch: None,
+        gate_config: kiss::GateConfig::default()
         }
     }
     let base = args(TestChangeMode::Base, false, None);
@@ -140,19 +144,26 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
         ignore: &[],
         lang_filter: None,
         config_main_branch: None,
+    gate_config: kiss::GateConfig::default()
     };
     let mut planned = crate::test_runner::PlannedSelectors {
         repo_root: tmp.path().to_path_buf(),
-        py_sel: Vec::new(),
-        rs_sel: Vec::new(),
-        python_population_required: false,
-        rust_population_required: false,
+        sel: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
+        population_required: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         rust_source_paths: Vec::new(),
         rust_vcs_source_paths: 0,
         rust_snapshot_delta_modified: 0,
         rust_snapshot_delta_structural: false,
-        python_prior_failure_selectors: Vec::new(),
-        rust_prior_failure_selectors: Vec::new(),
+        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
         coverage_decision_engine_used: true,
         rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
         ignore: Vec::new(),
@@ -162,8 +173,8 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
 
     crate::test_runner::apply_cold_initialization_population(&args, &mut planned);
 
-    assert!(planned.python_population_required);
-    assert!(planned.rust_population_required);
+    assert!(planned.population_required.python);
+    assert!(planned.population_required.rust);
 }
 
 #[test]
@@ -176,8 +187,8 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
         None,
     )
     .unwrap();
-    assert!(!both.py_sel.is_empty());
-    assert!(!both.rs_sel.is_empty());
+    assert!(!both.sel.python.is_empty());
+    assert!(!both.sel.rust.is_empty());
     // Warm coverage populations may clear population_required; cold trees keep it.
 
     let python_only = crate::test_runner::plan_target_selectors(
@@ -188,9 +199,9 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
         Some(Language::Python),
     )
     .unwrap();
-    assert!(!python_only.rust_population_required);
-    assert!(!python_only.py_sel.is_empty());
-    assert!(python_only.rs_sel.is_empty());
+    assert!(!python_only.population_required.rust);
+    assert!(!python_only.sel.python.is_empty());
+    assert!(python_only.sel.rust.is_empty());
 
     let rust_only = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
@@ -200,9 +211,9 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
         Some(Language::Rust),
     )
     .unwrap();
-    assert!(!rust_only.python_population_required);
-    assert!(rust_only.py_sel.is_empty());
-    assert!(!rust_only.rs_sel.is_empty());
+    assert!(!rust_only.population_required.python);
+    assert!(rust_only.sel.python.is_empty());
+    assert!(!rust_only.sel.rust.is_empty());
 }
 
 #[test]
@@ -234,23 +245,23 @@ fn plan_repo_root_target_matches_all_via_dot() {
         Some(Language::Rust),
     )
     .unwrap();
-    assert_eq!(via_all.rs_sel, via_root.rs_sel);
-    assert_eq!(via_all.py_sel, via_root.py_sel);
-    assert_eq!(via_all.rust_population_required, via_root.rust_population_required);
+    assert_eq!(via_all.sel.rust, via_root.sel.rust);
+    assert_eq!(via_all.sel.python, via_root.sel.python);
+    assert_eq!(via_all.population_required.rust, via_root.population_required.rust);
     assert_eq!(
-        via_all.python_population_required,
-        via_root.python_population_required
+        via_all.population_required.python,
+        via_root.population_required.python
     );
-    assert_eq!(via_all.rs_sel, via_dot.rs_sel);
-    assert_eq!(via_all.py_sel, via_dot.py_sel);
-    assert_eq!(via_all.rust_population_required, via_dot.rust_population_required);
+    assert_eq!(via_all.sel.rust, via_dot.sel.rust);
+    assert_eq!(via_all.sel.python, via_dot.sel.python);
+    assert_eq!(via_all.population_required.rust, via_dot.population_required.rust);
     assert_eq!(
-        via_all.python_population_required,
-        via_dot.python_population_required
+        via_all.population_required.python,
+        via_dot.population_required.python
     );
     // All forces population only when the on-disk coverage population is not
     // already current for the planned selector set (warm reuse stays selective).
-    assert!(!via_all.python_population_required);
+    assert!(!via_all.population_required.python);
     assert!(!via_all.coverage_decision_engine_used);
     assert!(!via_root.coverage_decision_engine_used);
     assert!(!via_dot.coverage_decision_engine_used);
@@ -274,7 +285,7 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
         Some(Language::Rust),
     )
     .unwrap();
-    assert!(!planned.rs_sel.is_empty());
+    assert!(!planned.sel.rust.is_empty());
     assert!(!planned.rust_source_paths.is_empty());
     assert!(planned.coverage_decision_engine_used);
     assert!(all.rust_source_paths.is_empty());
@@ -307,7 +318,7 @@ fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
     )
     .unwrap();
     assert_eq!(planned.repo_root, from_root.repo_root);
-    assert_eq!(planned.rs_sel, from_root.rs_sel);
+    assert_eq!(planned.sel.rust, from_root.sel.rust);
 }
 
 #[test]
@@ -315,16 +326,22 @@ fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
     let tmp = tempfile::tempdir().unwrap();
     let mut planned = crate::test_runner::PlannedSelectors {
         repo_root: tmp.path().to_path_buf(),
-        py_sel: vec!["tests/a.py::t".into()],
-        rs_sel: Vec::new(),
-        python_population_required: false,
-        rust_population_required: false,
+        sel: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec!["tests/a.py::t".into()],
+            rust: Vec::new(),
+        },
+        population_required: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         rust_source_paths: Vec::new(),
         rust_vcs_source_paths: 0,
         rust_snapshot_delta_modified: 0,
         rust_snapshot_delta_structural: false,
-        python_prior_failure_selectors: Vec::new(),
-        rust_prior_failure_selectors: Vec::new(),
+        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
         coverage_decision_engine_used: false,
         rust_selection_basis: crate::test_runner::coverage_decision::RustSelectionBasis::Current,
         ignore: Vec::new(),
@@ -345,13 +362,14 @@ fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
         ignore: &[],
         lang_filter: None,
         config_main_branch: None,
+        gate_config: kiss::GateConfig::default(),
     };
     crate::test_runner::apply_force_bad(&args, &mut planned).unwrap();
-    assert!(planned.python_prior_failure_selectors.is_empty());
+    assert!(planned.prior_failure_selectors.python.is_empty());
     let args_on = crate::test_runner::RunTestCmdArgs {
         force_bad: true,
         ..args
     };
     crate::test_runner::apply_force_bad(&args_on, &mut planned).unwrap();
-    assert!(planned.python_prior_failure_selectors.is_empty());
+    assert!(planned.prior_failure_selectors.python.is_empty());
 }

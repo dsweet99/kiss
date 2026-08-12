@@ -352,3 +352,23 @@ fn multiple_language_backers_combine_without_selector_collisions() {
     );
     assert!(plan.population.is_empty());
 }
+
+#[test]
+fn supported_language_unifies_planner_and_runtime_stacks() {
+    use crate::test_runner::coverage_decision::SupportedLanguage;
+    use crate::test_runner::lang_iface::LanguageRuntime;
+    use crate::test_runner::lang_python::PythonRuntime;
+    use crate::test_runner::lang_rust::RustRuntime;
+    use kiss::Language;
+
+    assert_eq!(
+        <PythonRuntime as SupportedLanguage>::language(&PythonRuntime),
+        Language::Python
+    );
+    assert_eq!(
+        <RustRuntime as SupportedLanguage>::language(&RustRuntime),
+        Language::Rust
+    );
+    assert_eq!(LanguageRuntime::language(&PythonRuntime), Language::Python);
+    assert_eq!(LanguageRuntime::language(&RustRuntime), Language::Rust);
+}

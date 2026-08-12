@@ -4,8 +4,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use kiss::Language;
+use kiss::GateConfig;
 
 use super::witness::{AcceptMode, ExecutionWitness, WitnessStatus, summary_from_witness_statuses};
+use crate::test_runner::language_keyed::LanguageKeyed;
 use crate::test_runner::runners::SelectorExecutionSummary;
 
 #[derive(Clone, Debug)]
@@ -17,18 +19,17 @@ pub(crate) struct EnsureRequest {
     pub(crate) ignore: Vec<String>,
     pub(crate) force: bool,
     pub(crate) jobs: usize,
-    pub(crate) python_extra: Vec<String>,
-    pub(crate) rust_extra: Vec<String>,
-    pub(crate) planned_python: Vec<String>,
-    pub(crate) planned_rust: Vec<String>,
+    /// Session gate for this ensure (loaded once by CLI / caller; do not reload).
+    pub(crate) gate: GateConfig,
+    /// Per-language CLI extras (pytest plugins / cargo test args) — not parallel product fields.
+    pub(crate) extras: LanguageKeyed<Vec<String>>,
+    /// Planned selectors keyed by language.
+    pub(crate) planned: LanguageKeyed<Vec<String>>,
 }
 
 impl EnsureRequest {
     pub(crate) fn planned_for(&self, language: Language) -> &[String] {
-        match language {
-            Language::Python => &self.planned_python,
-            Language::Rust => &self.planned_rust,
-        }
+        self.planned.planned_for(language)
     }
 
     /// Whether this request includes `language`.
@@ -80,9 +81,19 @@ pub(crate) struct LanguageEnsureResult {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EnsureRuntimeResult {
-    pub(crate) python: Option<LanguageEnsureResult>,
-    pub(crate) rust: Option<LanguageEnsureResult>,
+    /// Per-language ensure outcomes (not parallel Option product fields).
+    pub(crate) by_language: LanguageKeyed<Option<LanguageEnsureResult>>,
     pub(crate) exit_code: i32,
+}
+
+impl EnsureRuntimeResult {
+    pub(crate) fn python(&self) -> Option<&LanguageEnsureResult> {
+        self.by_language.python.as_ref()
+    }
+
+    pub(crate) fn rust(&self) -> Option<&LanguageEnsureResult> {
+        self.by_language.rust.as_ref()
+    }
 }
 
 #[derive(Clone, Debug, Default)]

@@ -1,5 +1,6 @@
 //! Grouped `unit_test_runtime_sec` table for `kiss stats`.
 
+use std::fmt::Write;
 use std::time::Duration;
 
 use kiss::stats::PercentileSummary;
@@ -116,22 +117,57 @@ pub(crate) fn format_unit_test_runtime_grouped_report(
         out.push_str(&format!(" codebase_tests={total}"));
     }
     out.push('\n');
-    out.push_str("pattern\tlimit_s\tN\tp50\tp90\tp95\tp99\tmax");
-    for row in &report.rows {
+    let header = ["pattern", "limit_s", "N", "p50", "p90", "p95", "p99", "max"];
+    let cells: Vec<[String; 8]> = report
+        .rows
+        .iter()
+        .map(|row| {
+            [
+                row.pattern.clone(),
+                format_limit_seconds(row.limit_seconds),
+                row.sample_count.to_string(),
+                format_optional_secs(row.p50_ms),
+                format_optional_secs(row.p90_ms),
+                format_optional_secs(row.p95_ms),
+                format_optional_secs(row.p99_ms),
+                format_optional_secs(row.max_ms),
+            ]
+        })
+        .collect();
+    let widths = table_column_widths(&header, &cells);
+    write_runtime_table_row(&mut out, &header, &widths);
+    for row in &cells {
         out.push('\n');
-        out.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            row.pattern,
-            format_limit_seconds(row.limit_seconds),
-            row.sample_count,
-            format_optional_secs(row.p50_ms),
-            format_optional_secs(row.p90_ms),
-            format_optional_secs(row.p95_ms),
-            format_optional_secs(row.p99_ms),
-            format_optional_secs(row.max_ms),
-        ));
+        write_runtime_table_row(&mut out, row, &widths);
     }
     out
+}
+
+fn table_column_widths(header: &[&str; 8], rows: &[[String; 8]]) -> [usize; 8] {
+    let mut widths = header.map(str::len);
+    for row in rows {
+        for (width, cell) in widths.iter_mut().zip(row) {
+            *width = (*width).max(cell.len());
+        }
+    }
+    widths
+}
+
+fn write_runtime_table_row<T: AsRef<str>>(
+    out: &mut String,
+    cells: &[T; 8],
+    widths: &[usize; 8],
+) {
+    for (index, (cell, width)) in cells.iter().zip(widths).enumerate() {
+        if index > 0 {
+            out.push_str("  ");
+        }
+        if index == 0 {
+            let _ = write!(out, "{:<width$}", cell.as_ref());
+        } else {
+            let _ = write!(out, "{:>width$}", cell.as_ref());
+        }
+    }
 }
 
 fn format_limit_seconds(secs: f64) -> String {

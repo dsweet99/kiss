@@ -6,9 +6,10 @@ use rust_llvm_cov_runner::{
 
 use crate::test_runner::last_status::{LastStatusIdentity, record_statuses};
 use crate::test_runner::runners::{
-    SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary, kiss_test_report_id,
+    SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
     rust_logical_to_kiss_test_ids,
 };
+use crate::test_runner::selector_ids::report_string_for_logical_string;
 use crate::test_runner::lang_rust::llvm_cov::error::map_rust_llvm_cov_error;
 
 #[allow(dead_code)] // check-aggregate warm path retired from production; kept for unit tests
@@ -26,11 +27,12 @@ pub(crate) fn cached_summary_from_check_aggregate_population(
     let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
     let mut summary = SelectorExecutionSummary::default();
     for selector in selectors {
-        let report = kiss_test_report_id(&report_ids, selector);
+        let report = report_string_for_logical_string(&report_ids, selector);
         println!("PASS (cached): {report}");
         summary.record(SelectorExecutionRecord {
             selector: report,
             status: rpytest_runner::TestStatus::Passed,
+                raw_status: None,
             cache_record: SelectorCacheRecord::Hit,
             exit_code: Some(0),
             duration: std::time::Duration::ZERO,
@@ -80,10 +82,10 @@ pub(crate) fn finish_rust_coverage_batch_result(
     repo_root: &Path,
     identity: &LastStatusIdentity,
     result: RustCoverageBatchResult,
+    gate: &kiss::GateConfig,
 ) -> Result<SelectorExecutionSummary, String> {
     let mut summary = SelectorExecutionSummary::default();
     summary.record_rust_batch_counters(&result.counters);
-    let gate = kiss::GateConfig::load();
     let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
     let mut statuses = Vec::new();
     let emit_each = result.completed.len() <= 64;
@@ -101,26 +103,28 @@ pub(crate) fn finish_rust_coverage_batch_result(
         }
     }
     for outcome in &result.completed {
-        let report_id = kiss_test_report_id(&report_ids, &outcome.selector);
-        let status = if emit_each
+        let report_id = report_string_for_logical_string(&report_ids, &outcome.selector);
+        let raw = outcome.status;
+        let effective = if emit_each
             || !matches!(outcome.cache_status, RustCovCacheStatus::Hit)
             || outcome.status != rpytest_runner::TestStatus::Passed
         {
-            print_rust_llvm_cov_outcome(outcome, &report_id, &gate)
+            print_rust_llvm_cov_outcome(outcome, &report_id, gate)
         } else {
             // Already counted in the collapsed PASS (cached) line above.
             crate::test_runner::status_labels::apply_unit_test_time_limit(
                 outcome.status,
                 &report_id,
                 outcome.duration,
-                &gate,
+                gate,
             )
         };
-        // last_status keeps nextest logical ids for prior-failure replay.
-        statuses.push((outcome.selector.clone(), status));
+        // last_status / witness storage keep runner-raw; SLA is accept-owned.
+        statuses.push((outcome.selector.clone(), raw));
         summary.record(SelectorExecutionRecord {
-            selector: report_id,
-            status,
+            selector: report_id.clone(),
+            status: effective,
+            raw_status: Some(raw),
             cache_record: match outcome.cache_status {
                 RustCovCacheStatus::Hit => SelectorCacheRecord::Hit,
                 RustCovCacheStatus::MissStored => SelectorCacheRecord::MissStored,
@@ -129,6 +133,13 @@ pub(crate) fn finish_rust_coverage_batch_result(
             exit_code: outcome.exit_code,
             duration: outcome.duration,
         });
+        // Also index raw by logical id so ensure miss_set lookups hit storage status.
+        summary
+            .raw_statuses
+            .insert(outcome.selector.clone(), raw);
+        summary
+            .selector_durations_ns
+            .insert(outcome.selector.clone(), outcome.duration.as_nanos() as u64);
     }
     record_statuses(repo_root, kiss::Language::Rust, identity, &statuses)?;
     if let Some(err) = result.batch_error {

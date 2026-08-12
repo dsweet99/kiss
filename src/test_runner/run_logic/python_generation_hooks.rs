@@ -18,7 +18,7 @@ pub(super) fn rebuild_python_index(
     if ctx.planned.skip_python_index_rebuild_after_selective {
         return Ok(());
     }
-    let selective = ctx.planned.py_sel.clone();
+    let selective = ctx.planned.sel.python.clone();
     if try_selective_generation_repair(module, ctx, &selective)? {
         return Ok(());
     }
@@ -105,6 +105,7 @@ fn try_selective_generation_repair(
         selective,
         ctx.options.python_extra,
         &|path, repo_root| is_indexable(module, path, repo_root),
+        &ctx.options.gate,
     )?;
     let _ = repair_python_population_generation(
         &ctx.planned.repo_root,

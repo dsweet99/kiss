@@ -4,11 +4,10 @@ use std::path::{Path, PathBuf};
 use super::enumerate_tests_in_changed_files;
 #[path = "decision_rust_paths.rs"]
 mod decision_rust_paths;
+#[path = "decision_prior.rs"]
+mod decision_prior;
 use crate::test_runner::coverage_decision::{
     ChangedSource, CoverageDecisionEngine, LanguagePlanner, RustSelectionBasis, TestSelector,
-};
-use crate::test_runner::last_status::{
-    has_language_records, prior_failures, python_last_status_identity, rust_last_status_identity,
 };
 
 #[cfg(test)]
@@ -20,18 +19,15 @@ use super::rust_backer::{RustModule, select_fresh_rust_source_selectors};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SelectorPlan {
-    pub(crate) py_selectors: Vec<String>,
-    pub(crate) rust_selectors: Vec<String>,
-    pub(crate) python_population_required: bool,
-    pub(crate) rust_population_required: bool,
+    pub(crate) selectors: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
+    pub(crate) population_required: crate::test_runner::language_keyed::LanguageKeyed<bool>,
     pub(crate) rust_source_paths: Vec<PathBuf>,
     pub(crate) rust_vcs_source_paths: usize,
     pub(crate) rust_snapshot_delta_modified: usize,
     pub(crate) rust_snapshot_delta_structural: bool,
     pub(crate) python_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
     pub(crate) rust_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
-    pub(crate) python_prior_failure_selectors: Vec<String>,
-    pub(crate) rust_prior_failure_selectors: Vec<String>,
+    pub(crate) prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
     pub(crate) coverage_decision_engine_used: bool,
     pub(crate) rust_selection_basis: RustSelectionBasis,
 }
@@ -141,7 +137,7 @@ fn assemble_selector_plan(
         selectors_for_language(&engine_backers.prior_failures, kiss::Language::Python);
     let rust_prior_failure_selectors =
         selectors_for_language(&engine_backers.prior_failures, kiss::Language::Rust);
-    let pre_rust_selection_basis = rust_selection_basis_from_backers(&engine_backers.backers);
+    let pre_rust_selection_basis = engine_backers.rust_selection_basis;
     let engine_plan = CoverageDecisionEngine::new(engine_backers.backers).plan(changed_sources)?;
     let (selected_py, selected_rs) = selectors_by_language(&engine_plan.selected);
     let (population_py, population_rs) = selectors_by_language(&engine_plan.population);
@@ -167,30 +163,27 @@ fn assemble_selector_plan(
         selected_rs
     };
     Ok(SelectorPlan {
-        py_selectors,
-        rust_selectors,
-        python_population_required,
-        rust_population_required,
+        selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: py_selectors,
+            rust: rust_selectors,
+        },
+        population_required: crate::test_runner::language_keyed::LanguageKeyed {
+            python: python_population_required,
+            rust: rust_population_required,
+        },
         rust_source_paths: prepared.rust_source_paths,
         rust_vcs_source_paths: prepared.rust_vcs_source_paths,
         rust_snapshot_delta_modified: prepared.rust_snapshot_delta_modified,
         rust_snapshot_delta_structural: prepared.rust_snapshot_delta_structural,
         python_changed_lines: prepared.python_changed_lines,
         rust_changed_lines: prepared.rust_changed_lines,
-        python_prior_failure_selectors,
-        rust_prior_failure_selectors,
+        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: python_prior_failure_selectors,
+            rust: rust_prior_failure_selectors,
+        },
         coverage_decision_engine_used: true,
         rust_selection_basis,
     })
-}
-
-fn rust_selection_basis_from_backers(backers: &[Box<dyn LanguagePlanner>]) -> RustSelectionBasis {
-    for backer in backers {
-        if let Some(basis) = backer.rust_selection_basis() {
-            return basis;
-        }
-    }
-    RustSelectionBasis::Current
 }
 
 struct EngineBackerInputs<'a> {
@@ -211,13 +204,20 @@ struct EngineBackerInputs<'a> {
 struct EngineBackers {
     backers: Vec<Box<dyn LanguagePlanner>>,
     prior_failures: Vec<TestSelector>,
+    /// Captured from the concrete Rust module — not a LanguagePlanner method.
+    rust_selection_basis: RustSelectionBasis,
 }
 
 impl EngineBackers {
-    fn new(backers: Vec<Box<dyn LanguagePlanner>>, prior_failures: Vec<TestSelector>) -> Self {
+    fn new(
+        backers: Vec<Box<dyn LanguagePlanner>>,
+        prior_failures: Vec<TestSelector>,
+        rust_selection_basis: RustSelectionBasis,
+    ) -> Self {
         EngineBackers {
             backers,
             prior_failures,
+            rust_selection_basis,
         }
     }
 }
@@ -257,6 +257,7 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
             &python_prior_failures,
         ));
     }
+    let mut rust_selection_basis = RustSelectionBasis::Current;
     if input.lang_filter != Some(kiss::Language::Python)
         && (!input.rust_source_paths.is_empty()
             || !input.changed_tests.rust.is_empty()
@@ -265,7 +266,7 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
                 resolved.basis() == RustSelectionBasis::Population
             }))
     {
-        backers.push(rust_llvm_cov_backer(RustBackerInput {
+        let (backer, basis) = rust_llvm_cov_backer(RustBackerInput {
             repo_root: input.repo_root,
             rust_source_paths: input.rust_source_paths,
             rust_changed_lines: input.rust_changed_lines,
@@ -274,67 +275,20 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
             changed_tests: &input.changed_tests.rust,
             prior_failures: &rust_prior_failures,
             resolved: input.rust_resolved,
-        }));
+        });
+        rust_selection_basis = basis;
+        backers.push(backer);
     }
     let mut prior_failures = python_prior_failures;
     prior_failures.extend(rust_prior_failures);
-    Ok(EngineBackers::new(backers, prior_failures))
+    Ok(EngineBackers::new(
+        backers,
+        prior_failures,
+        rust_selection_basis,
+    ))
 }
 
-pub(crate) fn prior_failures_for_language(
-    repo_root: &Path,
-    language: kiss::Language,
-    test_args: &[String],
-) -> Result<Vec<TestSelector>, String> {
-    if !has_language_records(repo_root, language)? {
-        return Ok(Vec::new());
-    }
-    let identity = match language {
-        kiss::Language::Python => {
-            let python = PathBuf::from("python");
-            let python_version = super::command_stdout(
-                &python,
-                &[
-                    "-c",
-                    "import sys; print('.'.join(map(str, sys.version_info[:3])))",
-                ],
-                repo_root,
-            )?;
-            let pytest_version = super::command_stdout(
-                &python,
-                &["-c", "import pytest; print(pytest.__version__)"],
-                repo_root,
-            )?;
-            python_last_status_identity(&python_version, &pytest_version, test_args)
-        }
-        kiss::Language::Rust => {
-            let cargo = PathBuf::from("cargo");
-            let rustc = PathBuf::from("rustc");
-            let cargo_version = super::command_stdout(&cargo, &["--version"], repo_root)?;
-            let llvm_cov_version =
-                super::command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?;
-            let cargo_nextest_version =
-                super::command_stdout(&cargo, &["nextest", "--version"], repo_root)?;
-            let rustc_version = super::command_stdout(&rustc, &["-Vv"], repo_root)?;
-            let runner_map_fingerprint =
-                crate::test_runner::rust_coverage_index::current_rust_runner_map_fingerprint(
-                    repo_root, test_args,
-                )?;
-            rust_last_status_identity(
-                &cargo_version,
-                &llvm_cov_version,
-                &rustc_version,
-                &cargo_nextest_version,
-                test_args,
-                &runner_map_fingerprint,
-            )
-        }
-    };
-    Ok(prior_failures(repo_root, language, &identity)?
-        .into_iter()
-        .map(|id| TestSelector::new(language, id))
-        .collect())
-}
+pub(crate) use decision_prior::prior_failures_for_language;
 
 fn selectors_for_language(selectors: &[TestSelector], language: kiss::Language) -> Vec<String> {
     selectors

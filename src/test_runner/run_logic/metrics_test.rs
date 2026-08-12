@@ -219,16 +219,22 @@ fn local_rubric_metrics_carry_reusable_prior_selection_basis() {
 
     let planned = PlannedSelectors {
         repo_root: PathBuf::from("/repo"),
-        py_sel: Vec::new(),
-        rs_sel: vec!["tests::gets_value".to_string()],
-        python_population_required: false,
-        rust_population_required: false,
+        sel: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: vec!["tests::gets_value".to_string()],
+        },
+        population_required: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
         rust_source_paths: vec![PathBuf::from("src/lib.rs")],
         rust_vcs_source_paths: 168,
         rust_snapshot_delta_modified: 1,
         rust_snapshot_delta_structural: false,
-        python_prior_failure_selectors: Vec::new(),
-        rust_prior_failure_selectors: Vec::new(),
+        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
         coverage_decision_engine_used: true,
         rust_selection_basis: RustSelectionBasis::ReusablePrior,
         ignore: Vec::new(),
@@ -243,6 +249,8 @@ fn local_rubric_metrics_carry_reusable_prior_selection_basis() {
 metrics: false,
         extra: &[],        python_extra: &[],
 
+    gate: kiss::GateConfig::default()
+
     };
     let metrics = LocalRubricMetrics::new(
         &planned,
@@ -250,7 +258,7 @@ metrics: false,
         0,
         false,
         0,
-        planned.rs_sel.len(),
+        planned.sel.rust.len(),
         planned.rust_selection_basis,
     );
     assert_eq!(
