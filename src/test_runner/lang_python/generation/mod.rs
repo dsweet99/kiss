@@ -56,3 +56,7 @@ mod publish_test;
 #[cfg(test)]
 #[path = "coverage_witness_test.rs"]
 mod coverage_witness_test;
+
+#[cfg(test)]
+#[path = "identity_test.rs"]
+mod identity_test;
