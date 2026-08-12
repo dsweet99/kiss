@@ -25,13 +25,6 @@ pub(super) fn execution_phase(
 ) -> Result<ExecutionPhase, String> {
     if module.population_required(ctx) {
         let language = LanguagePlanner::language(module);
-        crate::test_runner::emit_test_progress(&format!(
-            "kiss test: discovering {} universe",
-            match language {
-                kiss::Language::Python => "python",
-                kiss::Language::Rust => "rust",
-            }
-        ));
         let mut selectors: Vec<_> = LanguagePlanner::discover_universe(module)?
             .into_iter()
             .map(|selector| {
@@ -60,7 +53,6 @@ pub(super) fn execute_language_phase(
     phase: &ExecutionPhase,
     ctx: &RunContext<'_, '_>,
 ) -> Result<LanguagePhaseOutcome, String> {
-    emit_execute_phase_progress(module, phase);
     let started = Instant::now();
     let summary = match phase {
         ExecutionPhase::NoWork => SelectorExecutionSummary::default(),
@@ -87,21 +79,6 @@ pub(super) fn execute_language_phase(
         phase_duration,
         index_rebuild_duration,
     })
-}
-
-fn emit_execute_phase_progress(module: &dyn LanguageTestModule, phase: &ExecutionPhase) {
-    let language = match LanguageExecutor::language(module) {
-        kiss::Language::Python => "python",
-        kiss::Language::Rust => "rust",
-    };
-    let (kind, count) = match phase {
-        ExecutionPhase::NoWork => return,
-        ExecutionPhase::Population(selectors) => ("population", selectors.len()),
-        ExecutionPhase::Selective(selectors) => ("selective", selectors.len()),
-    };
-    crate::test_runner::emit_test_progress(&format!(
-        "kiss test: running {language} {kind} ({count})"
-    ));
 }
 
 fn should_rebuild_after_selective(

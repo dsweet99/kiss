@@ -100,6 +100,42 @@ fn rust_input_snapshot_keeps_compile_time_rs_out_of_ordinary_map() {
 }
 
 #[test]
+fn rust_input_snapshot_excludes_nested_non_member_crate_sources() {
+    let tmp = write_nested_non_member_fixture();
+    let mut req = crate::plan::batch_plan::RustCoverageBatchRequest::witness();
+    req.cwd = tmp.path().to_path_buf();
+    req.source_root = tmp.path().to_path_buf();
+    req.cargo_args.clear();
+    let snapshot = rust_input_snapshot(tmp.path(), &req).unwrap();
+    assert!(snapshot.ordinary_source_digests.contains_key("member/src/lib.rs"));
+    assert!(!snapshot.ordinary_source_digests.contains_key("nested/src/lib.rs"));
+}
+
+fn write_nested_non_member_fixture() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("member/src")).unwrap();
+    fs::create_dir_all(tmp.path().join("nested/src")).unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"member\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("member/Cargo.toml"),
+        "[package]\nname='member'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("member/src/lib.rs"), "pub fn member_fn() {}\n").unwrap();
+    fs::write(
+        tmp.path().join("nested/Cargo.toml"),
+        "[package]\nname='nested'\nversion='0.1.0'\nedition='2024'\n\n[workspace]\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("nested/src/lib.rs"), "pub fn nested_fn() {}\n").unwrap();
+    tmp
+}
+
+#[test]
 fn input_snapshot_rejects_duplicate_normalized_ordinary_sources() {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir_all(tmp.path().join("src")).unwrap();

@@ -265,6 +265,66 @@ impl WorkspaceMetadata {
             _ => None,
         }
     }
+
+    /// Repository-relative crate root for a nested non-member local Cargo package.
+    pub(crate) fn non_member_local_crate_root(
+        &self,
+        source_root: &Path,
+        file: &Path,
+    ) -> Option<String> {
+        let root = source_root
+            .canonicalize()
+            .unwrap_or_else(|_| source_root.to_path_buf());
+        let absolute = if file.is_absolute() {
+            file.canonicalize().unwrap_or_else(|_| file.to_path_buf())
+        } else {
+            root.join(file)
+                .canonicalize()
+                .unwrap_or_else(|_| root.join(file))
+        };
+        let nearest = nearest_cargo_manifest_dir(&absolute)?;
+        if !nearest.starts_with(&root) {
+            return None;
+        }
+        let known = self.packages.iter().any(|record| {
+            let dir = record
+                .package
+                .manifest_dir
+                .canonicalize()
+                .unwrap_or_else(|_| record.package.manifest_dir.clone());
+            dir == nearest
+        });
+        if known {
+            return None;
+        }
+        let rel = crate::rust_cov_cache::repo_relative_path(source_root, &nearest)?;
+        (!rel.is_empty()).then_some(rel)
+    }
+
+    /// True when `file` sits under a local `Cargo.toml` that is not any package
+    /// known to this cargo metadata (nested non-member / foreign crate).
+    #[cfg(test)]
+    pub(crate) fn is_non_member_local_crate_source(
+        &self,
+        source_root: &Path,
+        file: &Path,
+    ) -> bool {
+        self.non_member_local_crate_root(source_root, file).is_some()
+    }
+}
+
+fn nearest_cargo_manifest_dir(path: &Path) -> Option<PathBuf> {
+    let mut dir = if path.is_file() {
+        path.parent()?
+    } else {
+        path
+    };
+    loop {
+        if dir.join("Cargo.toml").is_file() {
+            return Some(dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf()));
+        }
+        dir = dir.parent()?;
+    }
 }
 
 pub(crate) fn effective_manifest_path(cwd: &Path, cargo_args: &[String]) -> PathBuf {
@@ -318,50 +378,3 @@ pub(crate) fn workspace_package_for_test(
 #[cfg(test)]
 #[path = "cargo_workspace_metadata_test.rs"]
 mod tests;
-
-#[cfg(test)]
-mod coverage_witness {
-    use std::path::PathBuf;
-
-    use super::{
-        CargoMetadata, CargoMetadataDependency, CargoMetadataPackage, CargoMetadataTarget,
-        WorkspaceMetadata, WorkspacePackageRecord, workspace_package_for_test,
-    };
-
-    #[test]
-    fn witness_workspace_metadata_struct_fields() {
-        let _ = std::mem::size_of::<WorkspacePackageRecord>();
-        let _ = std::mem::size_of::<CargoMetadataTarget>();
-        let _ = std::mem::size_of::<CargoMetadataDependency>();
-        let package = workspace_package_for_test("pkg", "name", PathBuf::from("/repo"));
-        assert_eq!(package.name, "name");
-        let metadata = CargoMetadata {
-            packages: vec![CargoMetadataPackage {
-                id: "pkg".to_string(),
-                name: "name".to_string(),
-                manifest_path: "/repo/Cargo.toml".to_string(),
-                targets: vec![
-                    serde_json::from_value(serde_json::json!({
-                        "kind": ["lib"],
-                        "crate_types": ["lib"]
-                    }))
-                    .unwrap(),
-                ],
-                dependencies: vec![
-                    serde_json::from_value(serde_json::json!({
-                        "name": "dep",
-                        "path": "/repo/dep"
-                    }))
-                    .unwrap(),
-                ],
-            }],
-            workspace_members: vec!["pkg".to_string()],
-            workspace_root: Some("/repo".to_string()),
-        };
-        let workspace = WorkspaceMetadata::from_cargo_metadata(&metadata);
-        assert_eq!(workspace.compile_time_package_ids().len(), 0);
-        let packages = metadata.workspace_packages();
-        assert_eq!(packages[0].id, "pkg");
-        assert_eq!(package.manifest_dir, PathBuf::from("/repo"));
-    }
-}

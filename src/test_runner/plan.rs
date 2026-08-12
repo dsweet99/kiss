@@ -65,7 +65,6 @@ fn plan_all_selectors(
     if let Some((cached_py, cached_rs, fp)) =
         super::workspace_selector_cache::load_cached_workspace_selectors(repo_root, ignore)
     {
-        super::emit_test_progress("kiss test: using cached selectors");
         let (py_sel, rs_sel) = match lang_filter {
             None => (cached_py, cached_rs),
             Some(Language::Python) => (cached_py, Vec::new()),
@@ -83,11 +82,9 @@ fn plan_all_selectors(
     let mut py_sel = Vec::new();
     let mut rs_sel = Vec::new();
     if lang_filter != Some(Language::Rust) {
-        super::emit_test_progress("kiss test: collecting python selectors");
         py_sel = runners::enumerate_workspace_python_selectors(repo_root, ignore, python_extra)?;
     }
     if lang_filter != Some(Language::Python) {
-        super::emit_test_progress("kiss test: collecting rust selectors");
         rs_sel = runners::enumerate_workspace_rust_selectors(repo_root, ignore)?;
     }
     let fp = if lang_filter.is_none() {
@@ -118,9 +115,6 @@ fn planned_all(
     // Warm `kiss test .`: when coverage populations are already current for the
     // planned selector sets, run as selective reuse instead of re-populating
     // (avoids rediscovery + index republish on every third warm run).
-    if !py_sel.is_empty() {
-        super::emit_test_progress("kiss test: checking python coverage population");
-    }
     let python_population_required = !(py_sel.is_empty()
         || (crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
             repo_root,
@@ -130,9 +124,6 @@ fn planned_all(
         ) && crate::test_runner::python_coverage_index::python_coverage_index_file_present(
             repo_root,
         )));
-    if !rs_sel.is_empty() {
-        super::emit_test_progress("kiss test: checking rust coverage population");
-    }
     let rust_population_required = !(rs_sel.is_empty()
         || rust_population_current_for_all_selectors(repo_root, &rs_sel));
     PlannedSelectors {
@@ -179,6 +170,7 @@ fn plan_explicit_target_selectors(
     source_paths.extend(query.rust_lines.keys().cloned());
     source_paths.sort();
     source_paths.dedup();
+    reject_non_member_rust_targets(repo_root, &query)?;
     let mut changed_lines: BTreeMap<PathBuf, BTreeSet<u32>> = BTreeMap::new();
     for (path, lines) in query.python_lines.iter().chain(query.rust_lines.iter()) {
         changed_lines
@@ -234,6 +226,39 @@ fn plan_explicit_target_selectors(
         repo_root.to_path_buf(),
         selector_plan,
         ignore.to_vec(),
+    ))
+}
+
+fn reject_non_member_rust_targets(
+    repo_root: &std::path::Path,
+    query: &crate::test_runner::targets::TargetSelectionQuery,
+) -> Result<(), String> {
+    let mut rust_paths: Vec<PathBuf> = query.rust_files.iter().cloned().collect();
+    rust_paths.extend(query.rust_lines.keys().cloned());
+    // Direct rust selectors are PATH::symbol strings; recover file paths when present.
+    for selector in &query.direct_rust {
+        let path_part = selector.split_once("::").map_or(selector.as_str(), |(p, _)| p);
+        let candidate = PathBuf::from(path_part);
+        if candidate.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("rs")) {
+            let abs = if candidate.is_absolute() {
+                candidate
+            } else {
+                repo_root.join(candidate)
+            };
+            rust_paths.push(abs);
+        }
+    }
+    rust_paths.sort();
+    rust_paths.dedup();
+    let roots = crate::test_runner::lang_rust::workspace::non_member_rust_crate_roots(
+        repo_root, &rust_paths,
+    )?;
+    if roots.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "error: kiss test: nested Cargo crate(s) are not root workspace members (coverage unsupported): {}",
+        roots.join(", ")
     ))
 }
 

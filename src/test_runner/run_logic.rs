@@ -28,7 +28,6 @@ pub(crate) fn run_selectors(
     if !planned_has_work(planned) {
         return Ok(finish_no_work(planned, &options, total_started));
     }
-    crate::test_runner::emit_test_progress("kiss test: deciding execution phases");
     let ctx = RunContext {
         planned,
         options: &options,
@@ -36,9 +35,7 @@ pub(crate) fn run_selectors(
     let python =
         runners::python_backer::PythonModule::for_execution(&planned.repo_root, &planned.ignore);
     let rust = runners::rust_backer::RustModule::for_execution(&planned.repo_root, &planned.ignore);
-    crate::test_runner::emit_test_progress("kiss test: deciding python phase");
     let python_phase = execution_phase(&python, &ctx)?;
-    crate::test_runner::emit_test_progress("kiss test: deciding rust phase");
     let rust_phase = execution_phase(&rust, &ctx)?;
     let modules: [(&dyn LanguageTestModule, ExecutionPhase); 2] =
         [(&python, python_phase), (&rust, rust_phase)];

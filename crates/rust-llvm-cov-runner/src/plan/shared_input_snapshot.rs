@@ -1,7 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use crate::RustLlvmCovError;
 use crate::plan::batch_plan::RustCoverageBatchRequest;
@@ -20,7 +21,8 @@ pub(crate) fn rust_input_snapshot(
 ) -> Result<RustInputSnapshot, RustLlvmCovError> {
     let metadata = workspace_metadata_from_cargo(&req.cwd, &req.cargo, &req.cargo_args).ok();
     let files = super::rust_cov_input_files(root).map_err(RustLlvmCovError::Io)?;
-    digest_input_file_snapshot(
+    let mut skipped_non_member_roots = BTreeSet::new();
+    let snapshot = digest_input_file_snapshot(
         root,
         &files,
         |path| fs::read(path),
@@ -38,13 +40,37 @@ pub(crate) fn rust_input_snapshot(
             let Some(metadata) = metadata.as_ref() else {
                 return Ok(is_inc || is_default_ordinary_rust_source(file));
             };
+            if let Some(crate_root) = metadata.non_member_local_crate_root(root, file) {
+                skipped_non_member_roots.insert(crate_root);
+                return Ok(false);
+            }
             match metadata.rs_compile_time_classification(root, file) {
                 Some(false) => Ok(true),
                 Some(true) => Ok(false),
                 None => Ok(is_inc || is_default_ordinary_rust_source(file)),
             }
         },
-    )
+    )?;
+    warn_skipped_non_member_coverage_crates(root, &skipped_non_member_roots);
+    Ok(snapshot)
+}
+
+fn warn_skipped_non_member_coverage_crates(root: &Path, crate_roots: &BTreeSet<String>) {
+    if crate_roots.is_empty() {
+        return;
+    }
+    static WARNED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+    let root_key = root.to_string_lossy().into_owned();
+    let Ok(mut warned) = WARNED.lock() else {
+        return;
+    };
+    if !warned.insert(root_key) {
+        return;
+    }
+    let list = crate_roots.iter().cloned().collect::<Vec<_>>().join(", ");
+    eprintln!(
+        "kiss: skipping coverage scoring for nested non-member Cargo crate(s): {list}"
+    );
 }
 
 fn is_default_ordinary_rust_source(file: &Path) -> bool {

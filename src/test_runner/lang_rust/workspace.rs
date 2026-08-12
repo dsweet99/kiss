@@ -12,6 +12,40 @@ pub(crate) fn is_workspace_rust_selector_file(
         && nearest_cargo_manifest_dir(path).is_some_and(|dir| member_manifest_dirs.contains(&dir))
 }
 
+/// Repository-relative crate roots for Rust paths that are not root workspace members.
+pub(crate) fn non_member_rust_crate_roots(
+    repo_root: &Path,
+    rust_paths: &[PathBuf],
+) -> Result<Vec<String>, String> {
+    if rust_paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let member_manifest_dirs = cargo_workspace_member_manifest_dirs(repo_root)?;
+    let root = repo_root
+        .canonicalize()
+        .unwrap_or_else(|_| repo_root.to_path_buf());
+    let mut roots = BTreeSet::new();
+    for path in rust_paths {
+        if is_workspace_rust_selector_file(path, &member_manifest_dirs) {
+            continue;
+        }
+        let Some(manifest_dir) = nearest_cargo_manifest_dir(path) else {
+            continue;
+        };
+        if !member_manifest_dirs.contains(&manifest_dir) {
+            let rel = manifest_dir
+                .strip_prefix(&root)
+                .unwrap_or(&manifest_dir)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if !rel.is_empty() {
+                roots.insert(rel);
+            }
+        }
+    }
+    Ok(roots.into_iter().collect())
+}
+
 pub(crate) fn cargo_workspace_member_manifest_dirs(
     repo_root: &Path,
 ) -> Result<BTreeSet<PathBuf>, String> {
@@ -122,5 +156,41 @@ mod tests {
             &tmp.path().join("outside.rs"),
             &members
         ));
+    }
+
+    #[test]
+    fn non_member_rust_crate_roots_lists_nested_workspace() {
+        let tmp = tempfile::tempdir().unwrap();
+        let member = tmp.path().join("member");
+        let nested = tmp.path().join("nested");
+        std::fs::create_dir_all(member.join("src")).unwrap();
+        std::fs::create_dir_all(nested.join("src")).unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"member\"]\nresolver = \"2\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            member.join("Cargo.toml"),
+            "[package]\nname='member'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        .unwrap();
+        std::fs::write(member.join("src").join("lib.rs"), "pub fn m() {}\n").unwrap();
+        std::fs::write(
+            nested.join("Cargo.toml"),
+            "[package]\nname='nested'\nversion='0.1.0'\nedition='2024'\n\n[workspace]\n",
+        )
+        .unwrap();
+        std::fs::write(nested.join("src").join("lib.rs"), "pub fn n() {}\n").unwrap();
+
+        let roots = non_member_rust_crate_roots(
+            tmp.path(),
+            &[
+                member.join("src").join("lib.rs"),
+                nested.join("src").join("lib.rs"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(roots, vec!["nested".to_string()]);
     }
 }

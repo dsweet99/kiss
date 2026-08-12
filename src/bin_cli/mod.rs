@@ -4,6 +4,7 @@ pub mod args;
 mod check_cmd;
 mod config_session;
 mod cov_cmd;
+mod cov_workspace_files;
 mod cov_warm;
 pub mod dispatch;
 mod mimic;

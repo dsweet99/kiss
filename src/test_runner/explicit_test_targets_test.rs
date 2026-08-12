@@ -108,3 +108,54 @@ fn explicit_python_test_file_selects_only_that_file() {
     assert!(!planned.population_required.python);
     assert!(!planned.coverage_decision_engine_used);
 }
+
+#[test]
+fn explicit_nested_non_member_rust_target_is_rejected() {
+    let _cwd = cwd_test_lock::lock();
+    let tmp = TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    let member = tmp.path().join("member");
+    let nested = tmp.path().join("nested");
+    fs::create_dir_all(member.join("src")).unwrap();
+    fs::create_dir_all(nested.join("src")).unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"member\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::write(
+        member.join("Cargo.toml"),
+        "[package]\nname='member'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::write(member.join("src").join("lib.rs"), "pub fn m() {}\n").unwrap();
+    fs::write(
+        nested.join("Cargo.toml"),
+        "[package]\nname='nested'\nversion='0.1.0'\nedition='2024'\n\n[workspace]\n",
+    )
+    .unwrap();
+    fs::write(
+        nested.join("src").join("lib.rs"),
+        "#[cfg(test)]\nmod tests { #[test] fn nested_only() {} }\npub fn n() {}\n",
+    )
+    .unwrap();
+
+    let orig = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let planned = plan_target_selectors(
+        TargetPlanKind::Targets(&["nested".into()]),
+        &[],
+        &[],
+        &[],
+        Some(kiss::Language::Rust),
+    );
+    std::env::set_current_dir(orig).unwrap();
+    let err = match planned {
+        Ok(_) => panic!("nested non-member must fail fast"),
+        Err(err) => err,
+    };
+    assert!(
+        err.contains("nested Cargo crate") && err.contains("nested"),
+        "unexpected error: {err}"
+    );
+}

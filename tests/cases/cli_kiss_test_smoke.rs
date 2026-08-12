@@ -89,7 +89,7 @@ fn kiss_test_base_dry_run_single_branch_exits_nonzero() {
 }
 
 #[test]
-fn kiss_test_non_watch_prints_planning_feedback_on_stdout() {
+fn kiss_test_non_watch_omits_excess_progress_logging() {
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
     write_python_fixture(tmp.path());
@@ -101,14 +101,23 @@ fn kiss_test_non_watch_prints_planning_feedback_on_stdout() {
         out.status.success(),
         "kiss test . --dry-run should exit 0, stderr={stderr}, stdout={stdout}"
     );
-    assert!(
-        stdout.contains("kiss test: planning"),
-        "non-watch kiss test must log planning feedback on stdout, got {stdout}"
-    );
-    assert!(
-        stdout.contains("kiss test: selected "),
-        "non-watch kiss test must log selected counts on stdout, got {stdout}"
-    );
+    for excess in [
+        "kiss test: planning",
+        "kiss test: using cached selectors",
+        "kiss test: checking python coverage population",
+        "kiss test: checking rust coverage population",
+        "kiss test: selected ",
+        "kiss test: deciding execution phases",
+        "kiss test: deciding python phase",
+        "kiss test: discovering python universe",
+        "kiss test: deciding rust phase",
+        "kiss test: running python population",
+    ] {
+        assert!(
+            !stdout.contains(excess),
+            "non-watch kiss test must not emit excess progress {excess:?}, got {stdout}"
+        );
+    }
 }
 
 #[test]

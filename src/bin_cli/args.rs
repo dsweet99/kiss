@@ -361,8 +361,8 @@ pub enum Commands {
         #[arg(last = true)]
         extra: Vec<String>,
     },
-    /// Hidden coverage-only evaluation (formerly `kiss cov`); prefer `kiss test`.
-    #[command(name = "__coverage", hide = true)]
+    /// Coverage-only evaluation (prefer `kiss test` for the full path)
+    #[command(name = "cov", alias = "__coverage")]
     Coverage {
         #[arg(default_value = ".")]
         paths: Vec<String>,

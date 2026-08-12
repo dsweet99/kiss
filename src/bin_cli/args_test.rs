@@ -22,9 +22,17 @@ fn witness_cli_types() {
 }
 
 #[test]
-fn cov_subcommand_is_removed() {
-    assert!(Cli::try_parse_from(["kiss", "cov"]).is_err());
-    assert!(Cli::try_parse_from(["kiss", "cov", ".", "-j", "7"]).is_err());
+fn cov_subcommand_parses_as_coverage() {
+    let cli = Cli::parse_from(["kiss", "cov", ".", "-j", "7"]);
+    assert!(matches!(
+        cli.command,
+        Commands::Coverage {
+            jobs: Some(7),
+            ..
+        }
+    ));
+    let cli_alias = Cli::parse_from(["kiss", "__coverage", "."]);
+    assert!(matches!(cli_alias.command, Commands::Coverage { .. }));
 }
 
 #[test]

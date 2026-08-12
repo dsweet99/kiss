@@ -12,7 +12,7 @@ use kiss::Language;
 pub(crate) use expand::{ExpandedTargetPlan, expand_target_operands};
 #[cfg(test)]
 pub(crate) use parse::parse_test_target;
-pub(crate) use resolve::resolve_target_operands;
+pub(crate) use resolve::{TargetSelectionQuery, resolve_target_operands};
 
 pub(super) fn language_label(language: Language) -> &'static str {
     language.label()

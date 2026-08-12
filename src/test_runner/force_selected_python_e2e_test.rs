@@ -27,10 +27,6 @@ fn write_two_python_tests(root: &Path) {
 
 fn assert_forced_selected_only(stdout: &str) {
     assert!(
-        stdout.contains("kiss test: selected 1 python, 0 rust"),
-        "force must keep a one-selector plan, got:\n{stdout}"
-    );
-    assert!(
         !stdout.contains("kiss test: discovering python universe"),
         "force must not discover the python universe, got:\n{stdout}"
     );

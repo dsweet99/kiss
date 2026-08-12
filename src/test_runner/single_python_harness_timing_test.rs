@@ -105,11 +105,6 @@ fn explicit_single_python_test_harness_stays_under_50ms() {
     let (force_wall, force_lines) = capture_stdout_line_times(|| {
         assert_eq!(run_test(run_args(true)), 0);
     });
-    let plan_gap = gap_between(
-        &force_lines,
-        "kiss test: planning",
-        "kiss test: selected 1 python, 0 rust",
-    );
     let summary_gap = gap_between(&force_lines, "kiss test: tests_remaining=0", "✓");
     let prepared_at = force_lines
         .iter()
@@ -127,18 +122,9 @@ fn explicit_single_python_test_harness_stays_under_50ms() {
     let (hit_wall, hit_lines) = capture_stdout_line_times(|| {
         assert_eq!(run_test(run_args(false)), 0);
     });
-    let hit_plan_gap = gap_between(
-        &hit_lines,
-        "kiss test: planning",
-        "kiss test: selected 1 python, 0 rust",
-    );
 
     std::env::set_current_dir(orig).unwrap();
 
-    assert!(
-        plan_gap <= HARNESS_BUDGET,
-        "force planning→selected {plan_gap:?} exceeds {HARNESS_BUDGET:?}; lines={force_lines:?}"
-    );
     assert!(
         summary_gap <= HARNESS_BUDGET,
         "force tests_remaining→summary {summary_gap:?} exceeds {HARNESS_BUDGET:?}; lines={force_lines:?}"
@@ -146,10 +132,6 @@ fn explicit_single_python_test_harness_stays_under_50ms() {
     assert!(
         force_harness <= HARNESS_BUDGET,
         "force harness excluding execution {force_harness:?} (wall {force_wall:?} - exec {execution_wall:?}) exceeds {HARNESS_BUDGET:?}"
-    );
-    assert!(
-        hit_plan_gap <= HARNESS_BUDGET,
-        "hit planning→selected {hit_plan_gap:?} exceeds {HARNESS_BUDGET:?}"
     );
     assert!(
         hit_wall <= HARNESS_BUDGET,

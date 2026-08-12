@@ -213,7 +213,7 @@ fn gather_cov_files(
         lang_filter,
         ignore,
     };
-    let (py_files, rs_files) =
+    let (py_files, mut rs_files) =
         if let Some(cached) = crate::analyze::cov_file_list_cache::try_load_cov_file_list(&list_key)
         {
             cached
@@ -226,6 +226,7 @@ fn gather_cov_files(
             }
             (py_files, rs_files)
         };
+    rs_files = super::cov_workspace_files::filter_root_workspace_rust_cov_files(&repo_root, rs_files);
     if py_files.is_empty() && rs_files.is_empty() {
         None
     } else {

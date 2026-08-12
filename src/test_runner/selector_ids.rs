@@ -155,12 +155,28 @@ mod tests {
         let report = ReportSelectorId::new("src/lib.rs::case");
         assert_eq!(logical.as_str(), "tests::case");
         assert_eq!(report.as_str(), "src/lib.rs::case");
+        assert_eq!(logical.clone().into_string(), "tests::case");
         // Conversion requires an explicit map — no silent String coercion either way.
         let map = BTreeMap::from([("tests::case".into(), "src/lib.rs::case".into())]);
         assert_eq!(
             report_id_for_logical(&map, &logical).as_str(),
             "src/lib.rs::case"
         );
+    }
+
+    #[test]
+    fn selector_id_display_deref_and_from_cover_both_types() {
+        let logical: LogicalSelectorId = "bare".into();
+        let logical_owned: LogicalSelectorId = String::from("owned").into();
+        let report: ReportSelectorId = "src/a.rs::t".into();
+        let report_owned: ReportSelectorId = String::from("src/b.rs::t").into();
+        assert_eq!(&*logical, "bare");
+        assert_eq!(&*logical_owned, "owned");
+        assert_eq!(&*report, "src/a.rs::t");
+        assert_eq!(&*report_owned, "src/b.rs::t");
+        assert_eq!(format!("{logical}"), "bare");
+        assert_eq!(format!("{report}"), "src/a.rs::t");
+        assert_eq!(report_owned.into_string(), "src/b.rs::t");
     }
 
     #[test]
@@ -197,5 +213,11 @@ mod tests {
             report_string_for_logical_string(&map, "tests::a"),
             "src/a.rs::a"
         );
+        let typed = report_ids_for_logicals(
+            &map,
+            &[LogicalSelectorId::new("tests::a"), LogicalSelectorId::new("tests::b")],
+        );
+        assert_eq!(typed[0].as_str(), "src/a.rs::a");
+        assert_eq!(typed[1].as_str(), "src/b.rs::b");
     }
 }

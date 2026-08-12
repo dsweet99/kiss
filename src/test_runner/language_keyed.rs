@@ -55,4 +55,17 @@ mod tests {
         assert_eq!(keyed.planned_for(Language::Python), &["py".to_string()]);
         assert_eq!(keyed.planned_for(Language::Rust), &["rs".to_string()]);
     }
+
+    #[test]
+    fn language_keyed_get_mut_and_map() {
+        let mut keyed = LanguageKeyed {
+            python: 1,
+            rust: 2,
+        };
+        *keyed.get_mut(Language::Python) = 10;
+        *keyed.get_mut(Language::Rust) = 20;
+        let mapped = keyed.map(|n| n * 2);
+        assert_eq!(mapped.python, 20);
+        assert_eq!(mapped.rust, 40);
+    }
 }

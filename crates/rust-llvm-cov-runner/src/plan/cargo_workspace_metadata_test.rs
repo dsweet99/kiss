@@ -1,9 +1,46 @@
 use std::path::{Path, PathBuf};
 
 use crate::plan::cargo_workspace_metadata::{
-    CargoMetadata, CargoMetadataDependency, CargoMetadataTarget, WorkspaceMetadata,
-    workspace_package_for_test,
+    CargoMetadata, CargoMetadataDependency, CargoMetadataPackage, CargoMetadataTarget,
+    WorkspaceMetadata, WorkspacePackageRecord, workspace_package_for_test,
 };
+
+#[test]
+fn witness_workspace_metadata_struct_fields() {
+    let _ = std::mem::size_of::<WorkspacePackageRecord>();
+    let _ = std::mem::size_of::<CargoMetadataTarget>();
+    let _ = std::mem::size_of::<CargoMetadataDependency>();
+    let package = workspace_package_for_test("pkg", "name", PathBuf::from("/repo"));
+    assert_eq!(package.name, "name");
+    let metadata = CargoMetadata {
+        packages: vec![CargoMetadataPackage {
+            id: "pkg".to_string(),
+            name: "name".to_string(),
+            manifest_path: "/repo/Cargo.toml".to_string(),
+            targets: vec![
+                serde_json::from_value(serde_json::json!({
+                    "kind": ["lib"],
+                    "crate_types": ["lib"]
+                }))
+                .unwrap(),
+            ],
+            dependencies: vec![
+                serde_json::from_value(serde_json::json!({
+                    "name": "dep",
+                    "path": "/repo/dep"
+                }))
+                .unwrap(),
+            ],
+        }],
+        workspace_members: vec!["pkg".to_string()],
+        workspace_root: Some("/repo".to_string()),
+    };
+    let workspace = WorkspaceMetadata::from_cargo_metadata(&metadata);
+    assert_eq!(workspace.compile_time_package_ids().len(), 0);
+    let packages = metadata.workspace_packages();
+    assert_eq!(packages[0].id, "pkg");
+    assert_eq!(package.manifest_dir, PathBuf::from("/repo"));
+}
 
 #[test]
 fn default_target_and_dependency_structs_are_empty() {
@@ -70,6 +107,49 @@ fn temp_repo_ordinary_lib_rs_classifies_as_non_compile_time() {
         metadata.rs_compile_time_classification(tmp.path(), &tmp.path().join("src/lib.rs")),
         Some(false)
     );
+}
+
+#[test]
+fn nested_non_member_crate_sources_are_detected() {
+    let tmp = write_nested_non_member_fixture();
+    let metadata = crate::plan::cargo_workspace_metadata::workspace_metadata_from_cargo(
+        tmp.path(),
+        std::path::Path::new("cargo"),
+        &[],
+    )
+    .expect("metadata");
+    let nested_lib = tmp.path().join("nested/src/lib.rs");
+    let member_lib = tmp.path().join("member/src/lib.rs");
+    assert!(metadata.is_non_member_local_crate_source(tmp.path(), &nested_lib));
+    assert!(!metadata.is_non_member_local_crate_source(tmp.path(), &member_lib));
+    assert_eq!(
+        metadata.non_member_local_crate_root(tmp.path(), &nested_lib).as_deref(),
+        Some("nested")
+    );
+}
+
+fn write_nested_non_member_fixture() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("member/src")).unwrap();
+    std::fs::create_dir_all(tmp.path().join("nested/src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"member\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("member/Cargo.toml"),
+        "[package]\nname='member'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("member/src/lib.rs"), "pub fn x() {}\n").unwrap();
+    std::fs::write(
+        tmp.path().join("nested/Cargo.toml"),
+        "[package]\nname='nested'\nversion='0.1.0'\nedition='2024'\n\n[workspace]\n",
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("nested/src/lib.rs"), "pub fn y() {}\n").unwrap();
+    tmp
 }
 
 #[test]

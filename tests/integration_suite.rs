@@ -12,6 +12,8 @@ mod bug_indirect_dependencies_check;
 mod bug_test_coverage_aggregate_gate_masking;
 #[path = "cases/bug_test_coverage_violation_message.rs"]
 mod bug_test_coverage_violation_message;
+#[path = "cases/bug_nested_non_member_coverage_universe.rs"]
+mod bug_nested_non_member_coverage_universe;
 #[path = "cases/cache_integration.rs"]
 mod cache_integration;
 #[path = "cases/cli_check_hint.rs"]

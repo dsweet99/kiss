@@ -132,9 +132,6 @@ pub enum RunTestOnceOutcome {
 }
 
 pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
-    // Non-watch entry only (`--watch` calls `run_test_once` directly). Emit before
-    // planning so long selector collection is not silent on stdout.
-    emit_test_progress("kiss test: planning");
     match run_test_once(a) {
         RunTestOnceOutcome::Code(code) => code,
         RunTestOnceOutcome::Interrupted => 130,
@@ -163,11 +160,6 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
                 eprintln!("{e}");
                 return RunTestOnceOutcome::Code(1);
             }
-            emit_test_progress(&format!(
-                "kiss test: selected {} python, {} rust",
-                planned.sel.python.len(),
-                planned.sel.rust.len()
-            ));
             match run_selectors(
                 &planned,
                 SelectorRunOptions {
