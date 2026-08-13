@@ -387,5 +387,8 @@ class _ClearAutoloadAfterConfigure:
         # Nested pytest (shell'd from tests) needs autoload for pytest.ini addopts.
         os.environ.pop("PYTEST_DISABLE_PLUGIN_AUTOLOAD", None)
 
-raise SystemExit(pytest.main(sys.argv[2:], plugins=[_ClearAutoloadAfterConfigure()]))
+# Clear ini addopts while autoload is disabled (matches collector / forkserver
+# bootstrap). Otherwise pytest.ini flags like --random-order fail as unknown.
+args = ["-o", "addopts=", "--import-mode=importlib"] + sys.argv[2:]
+raise SystemExit(pytest.main(args, plugins=[_ClearAutoloadAfterConfigure()]))
 "#;

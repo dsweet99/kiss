@@ -83,7 +83,15 @@ def _bootstrap(boot):
         os.chdir(boot["cwd"])
         _set_parent_env(boot.get("env", {}))
         pytest, pconfig, _Session = _validate_pytest8()
-        args = list(boot.get("pytest_args", [])) + ["."]
+        # Clear ini addopts (same as SubprocessPytestCollector): with plugin
+        # autoload disabled, flags like --random-order are unrecognized. Keep
+        # importlib mode so multi-path / shared-basename projects still work.
+        # Explicit -p plugins still come from boot["pytest_args"].
+        args = (
+            ["-o", "addopts=", "--import-mode=importlib"]
+            + list(boot.get("pytest_args", []))
+            + ["."]
+        )
         conf = pconfig._prepareconfig(args, plugins=[])
         conf._do_configure()
         _reject_non_main_threads()

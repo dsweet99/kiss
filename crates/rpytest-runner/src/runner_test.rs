@@ -126,6 +126,34 @@ raise SystemExit(0)
 }
 
 #[test]
+fn subprocess_runner_clears_ini_addopts_unknown_without_plugins() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("pytest.ini"),
+        "[pytest]\naddopts = --random-order --full-trace --durations=10 --import-mode=importlib\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    let outcome = crate::SubprocessPytestRunner::new()
+        .run_one(PytestRunRequest::from_parts(
+            "test_sample.py::test_ok".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        ))
+        .unwrap();
+    assert_eq!(outcome.status, TestStatus::Passed);
+}
+
+#[test]
 fn subprocess_worker_sends_indexed_result() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(

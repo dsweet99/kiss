@@ -1,6 +1,5 @@
 # /home/dsweet/.cargo/bin/kiss check
- ~/.local/bin/kiss-new check .
- ~/.local/bin/kiss-new cov .
+kiss-0.4.8 check
 ruff check .
 pytest -sv tests
 cargo clippy --all-targets --all-features -- -D warnings -W clippy::cargo

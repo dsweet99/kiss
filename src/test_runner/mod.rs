@@ -156,6 +156,8 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     let jobs = a.jobs;
     let extra = a.extra;
     let python_extra = a.python_extra;
+    // Emit before planning so long selector/coverage work is not silent.
+    emit_test_progress("kiss test: Planning ...");
     let plan_started = std::time::Instant::now();
     match plan_for_invocation(&a) {
         Ok(mut planned) => {
@@ -297,6 +299,10 @@ mod test_change_modes_b_test;
 #[cfg(test)]
 #[path = "mod_test.rs"]
 mod mod_test;
+
+#[cfg(test)]
+#[path = "planning_heartbeat_test.rs"]
+mod planning_heartbeat_test;
 
 #[cfg(test)]
 #[path = "mod_run_api_test.rs"]

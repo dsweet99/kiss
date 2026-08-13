@@ -101,8 +101,11 @@ fn kiss_test_non_watch_omits_excess_progress_logging() {
         out.status.success(),
         "kiss test . --dry-run should exit 0, stderr={stderr}, stdout={stdout}"
     );
+    assert!(
+        stdout.contains("kiss test: Planning ..."),
+        "kiss test must emit an early planning heartbeat, got {stdout}"
+    );
     for excess in [
-        "kiss test: planning",
         "kiss test: using cached selectors",
         "kiss test: checking python coverage population",
         "kiss test: checking rust coverage population",

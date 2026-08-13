@@ -224,6 +224,34 @@ fn forkserver_bootstrap_rejects_configure_exception() {
 }
 
 #[test]
+fn forkserver_bootstrap_clears_ini_addopts_unknown_without_plugins() {
+    // Repos like sameq-3 put --random-order in pytest.ini addopts. With
+    // PYTEST_DISABLE_PLUGIN_AUTOLOAD, that flag is unrecognized unless we
+    // clear addopts during bootstrap (collector already does this).
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("pytest.ini"),
+        "[pytest]\naddopts = --random-order --full-trace --durations=10 --import-mode=importlib\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    let outcomes = ForkserverPytestRunner::new().run_many_bounded(
+        vec![base_req(tmp.path(), "test_sample.py::test_ok")],
+        1,
+    );
+    assert!(
+        outcomes[0].is_ok(),
+        "bootstrap must tolerate ini addopts without autoloaded plugins: {:?}",
+        outcomes[0].as_ref().err()
+    );
+    assert_eq!(outcomes[0].as_ref().unwrap().status, TestStatus::Passed);
+}
+
+#[test]
 fn configured_parent_path_is_faster_than_two_cold_subprocess_configures() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
