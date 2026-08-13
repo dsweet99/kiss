@@ -68,42 +68,10 @@ fn plan_all_selectors(
     python_extra: &[String],
     lang_filter: Option<Language>,
 ) -> Result<PlannedSelectors, String> {
-    if let Some((cached_py, cached_rs, fp)) =
-        super::workspace_selector_cache::load_cached_workspace_selectors(repo_root, ignore)
-    {
-        let (py_sel, rs_sel) = match lang_filter {
-            None => (cached_py, cached_rs),
-            Some(Language::Python) => (cached_py, Vec::new()),
-            Some(Language::Rust) => (Vec::new(), cached_rs),
-        };
-        return Ok(planned_all(
-            repo_root,
-            ignore,
-            python_extra,
-            py_sel,
-            rs_sel,
-            Some(fp),
-        ));
+    if let Some(planned) = try_plan_all_from_cache(repo_root, ignore, python_extra, lang_filter) {
+        return Ok(planned);
     }
-    let want_python = lang_filter != Some(Language::Rust);
-    let want_rust = lang_filter != Some(Language::Python);
-    let (py_sel, rs_sel) = if want_python && want_rust {
-        let (py_res, rs_res) = rayon::join(
-            || runners::enumerate_workspace_python_selectors(repo_root, ignore, python_extra),
-            || runners::enumerate_workspace_rust_selectors(repo_root, ignore),
-        );
-        (py_res?, rs_res?)
-    } else if want_python {
-        (
-            runners::enumerate_workspace_python_selectors(repo_root, ignore, python_extra)?,
-            Vec::new(),
-        )
-    } else {
-        (
-            Vec::new(),
-            runners::enumerate_workspace_rust_selectors(repo_root, ignore)?,
-        )
-    };
+    let (py_sel, rs_sel) = discover_all_selectors(repo_root, ignore, python_extra, lang_filter)?;
     let fp = if lang_filter.is_none() {
         super::workspace_selector_cache::store_workspace_selectors(
             repo_root, ignore, &py_sel, &rs_sel,
@@ -119,6 +87,79 @@ fn plan_all_selectors(
         rs_sel,
         fp,
     ))
+}
+
+fn try_plan_all_from_cache(
+    repo_root: &std::path::Path,
+    ignore: &[String],
+    python_extra: &[String],
+    lang_filter: Option<Language>,
+) -> Option<PlannedSelectors> {
+    let cache_started = std::time::Instant::now();
+    let (cached_py, cached_rs, fp) =
+        super::workspace_selector_cache::load_cached_workspace_selectors(repo_root, ignore)?;
+    let (py_sel, rs_sel) = match lang_filter {
+        None => (cached_py, cached_rs),
+        Some(Language::Python) => (cached_py, Vec::new()),
+        Some(Language::Rust) => (Vec::new(), cached_rs),
+    };
+    crate::test_runner::emit_stage_time("plan_cache", cache_started.elapsed());
+    Some(planned_all(
+        repo_root,
+        ignore,
+        python_extra,
+        py_sel,
+        rs_sel,
+        Some(fp),
+    ))
+}
+
+fn timed_python_selectors(
+    repo_root: &std::path::Path,
+    ignore: &[String],
+    python_extra: &[String],
+) -> (Result<Vec<String>, String>, std::time::Duration) {
+    let started = std::time::Instant::now();
+    let out = runners::enumerate_workspace_python_selectors(repo_root, ignore, python_extra);
+    (out, started.elapsed())
+}
+
+fn timed_rust_selectors(
+    repo_root: &std::path::Path,
+    ignore: &[String],
+) -> (Result<Vec<String>, String>, std::time::Duration) {
+    let started = std::time::Instant::now();
+    let out = runners::enumerate_workspace_rust_selectors(repo_root, ignore);
+    (out, started.elapsed())
+}
+
+fn discover_all_selectors(
+    repo_root: &std::path::Path,
+    ignore: &[String],
+    python_extra: &[String],
+    lang_filter: Option<Language>,
+) -> Result<(Vec<String>, Vec<String>), String> {
+    let want_python = lang_filter != Some(Language::Rust);
+    let want_rust = lang_filter != Some(Language::Python);
+    if want_python && want_rust {
+        let (py_res, rs_res) = rayon::join(
+            || timed_python_selectors(repo_root, ignore, python_extra),
+            || timed_rust_selectors(repo_root, ignore),
+        );
+        let (py_sel, py_elapsed) = (py_res.0?, py_res.1);
+        let (rs_sel, rs_elapsed) = (rs_res.0?, rs_res.1);
+        crate::test_runner::emit_stage_time("plan_python", py_elapsed);
+        crate::test_runner::emit_stage_time("plan_rust", rs_elapsed);
+        return Ok((py_sel, rs_sel));
+    }
+    if want_python {
+        let (py_sel, py_elapsed) = timed_python_selectors(repo_root, ignore, python_extra);
+        crate::test_runner::emit_stage_time("plan_python", py_elapsed);
+        return Ok((py_sel?, Vec::new()));
+    }
+    let (rs_sel, rs_elapsed) = timed_rust_selectors(repo_root, ignore);
+    crate::test_runner::emit_stage_time("plan_rust", rs_elapsed);
+    Ok((Vec::new(), rs_sel?))
 }
 
 fn planned_all(

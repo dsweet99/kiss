@@ -149,6 +149,14 @@ pub(crate) fn emit_test_progress(message: &str) {
     let _ = std::io::stdout().flush();
 }
 
+/// Log a named stage duration to stdout (`kiss test: stage <name> <ms>ms`).
+pub(crate) fn emit_stage_time(stage: &str, duration: std::time::Duration) {
+    emit_test_progress(&format!(
+        "kiss test: stage {stage} {}ms",
+        duration.as_millis()
+    ));
+}
+
 pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     let dry_run = a.dry_run;
     let force_rerun = a.force_rerun;

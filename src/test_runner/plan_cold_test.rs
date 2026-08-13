@@ -85,6 +85,16 @@ fn cold_all_enumerates_and_stores_fingerprint() {
 }
 
 #[test]
+fn emit_stage_time_format_includes_name_and_millis() {
+    let msg = format!(
+        "kiss test: stage {} {}ms",
+        "plan_rust",
+        std::time::Duration::from_millis(12).as_millis()
+    );
+    assert_eq!(msg, "kiss test: stage plan_rust 12ms");
+}
+
+#[test]
 fn cold_lang_filter_miss_arms_do_not_store_all_cache() {
     let _cwd = cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();

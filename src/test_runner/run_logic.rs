@@ -146,6 +146,9 @@ fn record_python_outcome(metrics: &mut LocalRubricMetrics, outcome: LanguagePhas
     metrics.python.summary = outcome.summary;
     metrics.python.duration = outcome.phase_duration;
     metrics.python_index_rebuild_duration += outcome.index_rebuild_duration;
+    if outcome.phase != ExecutionPhase::NoWork {
+        crate::test_runner::emit_stage_time("python", outcome.phase_duration);
+    }
 }
 
 fn record_rust_outcome(metrics: &mut LocalRubricMetrics, outcome: LanguagePhaseOutcome) {
@@ -154,11 +157,13 @@ fn record_rust_outcome(metrics: &mut LocalRubricMetrics, outcome: LanguagePhaseO
             metrics.rust_population.summary = outcome.summary;
             metrics.rust_population.duration = outcome.phase_duration;
             metrics.rust_index_rebuild_duration += outcome.index_rebuild_duration;
+            crate::test_runner::emit_stage_time("rust_population", outcome.phase_duration);
         }
         ExecutionPhase::Selective(_) => {
             metrics.rust_final.summary = outcome.summary;
             metrics.rust_final.duration = outcome.phase_duration;
             metrics.rust_index_rebuild_duration += outcome.index_rebuild_duration;
+            crate::test_runner::emit_stage_time("rust_final", outcome.phase_duration);
         }
         ExecutionPhase::NoWork => {}
     }

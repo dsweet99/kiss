@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -8,8 +8,17 @@ pub(crate) fn is_workspace_rust_selector_file(
     path: &Path,
     member_manifest_dirs: &BTreeSet<PathBuf>,
 ) -> bool {
+    is_workspace_rust_selector_file_cached(path, member_manifest_dirs, &mut HashMap::new())
+}
+
+pub(crate) fn is_workspace_rust_selector_file_cached(
+    path: &Path,
+    member_manifest_dirs: &BTreeSet<PathBuf>,
+    nearest_manifest_cache: &mut HashMap<PathBuf, Option<PathBuf>>,
+) -> bool {
     !is_rust_selector_fixture_path(path)
-        && nearest_cargo_manifest_dir(path).is_some_and(|dir| member_manifest_dirs.contains(&dir))
+        && nearest_cargo_manifest_dir_cached(path, nearest_manifest_cache)
+            .is_some_and(|dir| member_manifest_dirs.contains(&dir))
 }
 
 /// Repository-relative crate roots for Rust paths that are not root workspace members.
@@ -102,13 +111,33 @@ fn canonical_manifest_dir(path: &Path) -> PathBuf {
 }
 
 fn nearest_cargo_manifest_dir(path: &Path) -> Option<PathBuf> {
-    let mut dir = path.parent()?;
-    loop {
-        if dir.join("Cargo.toml").is_file() {
-            return Some(canonical_manifest_dir(dir));
-        }
-        dir = dir.parent()?;
+    nearest_cargo_manifest_dir_cached(path, &mut HashMap::new())
+}
+
+fn nearest_cargo_manifest_dir_cached(
+    path: &Path,
+    cache: &mut HashMap<PathBuf, Option<PathBuf>>,
+) -> Option<PathBuf> {
+    let start = path.parent()?.to_path_buf();
+    if let Some(hit) = cache.get(&start) {
+        return hit.clone();
     }
+    let mut dir = start.as_path();
+    let mut walked = Vec::new();
+    let found = loop {
+        walked.push(dir.to_path_buf());
+        if dir.join("Cargo.toml").is_file() {
+            break Some(canonical_manifest_dir(dir));
+        }
+        match dir.parent() {
+            Some(parent) => dir = parent,
+            None => break None,
+        }
+    };
+    for d in walked {
+        cache.insert(d, found.clone());
+    }
+    found
 }
 
 #[cfg(test)]

@@ -109,6 +109,20 @@ pub fn gather_files_by_lang(
     lang_filter: Option<Language>,
     ignore_prefixes: &[String],
 ) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    gather_files_by_lang_opts(paths, lang_filter, ignore_prefixes, true)
+}
+
+/// Like [`gather_files_by_lang`], but optionally skips `include!` expansion.
+///
+/// Selector enumeration walks the tree for every `.rs` file already; expanding
+/// `include!` targets requires a second full syn parse of the workspace and
+/// dominated cold `kiss test` Rust planning.
+pub fn gather_files_by_lang_opts(
+    paths: &[String],
+    lang_filter: Option<Language>,
+    ignore_prefixes: &[String],
+    expand_rust_includes: bool,
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let (mut py_files, mut rs_files) = (Vec::new(), Vec::new());
     for path in paths {
         for sf in find_source_files_with_ignore(Path::new(path), ignore_prefixes) {
@@ -120,7 +134,11 @@ pub fn gather_files_by_lang(
             }
         }
     }
-    let rs_files = crate::rust_graph::expand_rust_files(rs_files);
+    let rs_files = if expand_rust_includes {
+        crate::rust_graph::expand_rust_files(rs_files)
+    } else {
+        rs_files
+    };
     (py_files, rs_files)
 }
 

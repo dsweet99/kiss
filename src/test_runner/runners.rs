@@ -3,16 +3,13 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use rayon::prelude::*;
-
 pub(crate) use super::rust_llvm_cov::{
     cached_rust_check_aggregate_selectors, run_rust_llvm_cov_selectors,
 };
 use kiss::test_refs::{is_in_test_directory, is_pytest_nodeid_source_file, is_test_file};
-use kiss::{parse_rust_file, parse_rust_files, rust_test_functions_in};
+use kiss::{parse_rust_files, rust_test_functions_in};
 use rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
-    repo_relative_path,
 };
 
 #[path = "runners/decision.rs"]
@@ -22,6 +19,11 @@ pub(crate) use decision::{
 };
 #[cfg(test)]
 pub(crate) use decision::combined_selectors;
+
+#[path = "runners/rust_enumerate.rs"]
+mod rust_enumerate;
+pub use rust_enumerate::enumerate_workspace_rust_selectors;
+pub(crate) use rust_enumerate::rust_logical_to_kiss_test_ids;
 
 pub(crate) use crate::test_runner::lang_python::backer as python_backer;
 pub(crate) use crate::test_runner::lang_python::collect;
@@ -172,105 +174,10 @@ fn python_nodeids_from_stored_universe(
     Some(out)
 }
 
-pub fn enumerate_workspace_rust_selectors(
-    repo_root: &Path,
-    ignore: &[String],
-) -> Result<Vec<String>, String> {
-    let mut selectors = BTreeSet::new();
-    for (_path, selector) in enumerate_workspace_rust_test_entries(
-        repo_root,
-        ignore,
-        ParseErrorPolicy::Fail,
-    )? {
-        selectors.insert(selector);
-    }
-    Ok(selectors.into_iter().collect())
-}
-
-/// Map nextest-style logical selectors (`tests::fn`) to `kiss test` PATH::symbol
-/// ids (`path/file.rs::fn`) for PASS/FAIL/TIMEOUT reporting.
-pub(crate) fn rust_logical_to_kiss_test_ids(
-    repo_root: &Path,
-    ignore: &[String],
-) -> Result<BTreeMap<String, String>, String> {
-    let mut map = BTreeMap::new();
-    // Reporting must not collapse to logical ids because an unrelated file is
-    // temporarily unparseable; skip those files and keep mapping the rest.
-    for (path, logical) in enumerate_workspace_rust_test_entries(
-        repo_root,
-        ignore,
-        ParseErrorPolicy::Skip,
-    )? {
-        let Some(rel) = repo_relative_path(repo_root, &path) else {
-            continue;
-        };
-        let bare = logical
-            .rsplit_once("::")
-            .map_or(logical.as_str(), |(_, name)| name)
-            .to_string();
-        map.insert(logical, format!("{rel}::{bare}"));
-    }
-    Ok(map)
-}
-
 pub(crate) fn kiss_test_report_id(map: &BTreeMap<String, String>, logical: &str) -> String {
     map.get(logical)
         .cloned()
         .unwrap_or_else(|| logical.to_string())
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ParseErrorPolicy {
-    Fail,
-    Skip,
-}
-
-fn enumerate_workspace_rust_test_entries(
-    repo_root: &Path,
-    ignore: &[String],
-    parse_errors: ParseErrorPolicy,
-) -> Result<Vec<(PathBuf, String)>, String> {
-    let root = repo_root.to_string_lossy().to_string();
-    let (_py_files, rs_files) =
-        kiss::gather_files_by_lang(&[root], Some(kiss::Language::Rust), ignore);
-    let rs_files: Vec<_> = match cargo_workspace_member_manifest_dirs(repo_root) {
-        Ok(member_manifest_dirs) => rs_files
-            .into_iter()
-            .filter(|path| is_workspace_rust_selector_file(path, &member_manifest_dirs))
-            .collect(),
-        Err(_) => rs_files,
-    };
-    // Parse + extract selectors inside each worker so syn ASTs stay thread-local
-    // (syn/proc-macro2 types are !Send). Only Send selector strings cross threads.
-    let parsed: Vec<Result<(PathBuf, Vec<String>), String>> = rs_files
-        .par_iter()
-        .map(|path| {
-            let pf = parse_rust_file(path).map_err(|e| {
-                format!(
-                    "error: kiss test: failed to parse Rust workspace file {}: {e}",
-                    path.display()
-                )
-            })?;
-            let selectors = rust_test_functions_in(&pf);
-            Ok((pf.path, selectors))
-        })
-        .collect();
-    let mut entries = Vec::new();
-    for result in parsed {
-        let (path, selectors) = match result {
-            Ok(v) => v,
-            Err(e) => {
-                if parse_errors == ParseErrorPolicy::Skip {
-                    continue;
-                }
-                return Err(e);
-            }
-        };
-        for selector in selectors {
-            entries.push((path.clone(), selector));
-        }
-    }
-    Ok(entries)
 }
 
 pub fn enumerate_workspace_python_selectors(

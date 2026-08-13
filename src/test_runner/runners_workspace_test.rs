@@ -153,7 +153,9 @@ fn rust_module_population_manifest_selectors_uses_workspace_discovery() {
 #[test]
 fn enumerate_workspace_rust_selectors_fails_fast_on_invalid_syntax() {
     let tmp = TempDir::new().unwrap();
-    write_demo_crate(&tmp, "fn broken(\n");
+    // Must include bare #[test] so the file is syn-parsed (non-test files are
+    // skipped; they cannot contribute selectors under rust_test_functions_in).
+    write_demo_crate(&tmp, "#[test]\nfn broken(\n");
 
     let err = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap_err();
 

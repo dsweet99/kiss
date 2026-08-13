@@ -26,6 +26,15 @@ fn cache_path(repo_root: &Path) -> PathBuf {
     repo_root.join(".kiss").join(CACHE_FILE_NAME)
 }
 
+/// Survives `rm -rf .kiss` so cold-dot planning can reuse a fingerprint-checked
+/// selector list without re-running pytest/syn rediscovery.
+fn durable_cache_path(repo_root: &Path) -> PathBuf {
+    repo_root
+        .join("target")
+        .join("kiss-plan")
+        .join(CACHE_FILE_NAME)
+}
+
 fn should_skip_dir(name: &str) -> bool {
     matches!(
         name,
@@ -154,14 +163,13 @@ pub(crate) fn normalized_root(repo_root: &Path) -> String {
         .to_string()
 }
 
-fn read_cache(repo_root: &Path) -> Option<WorkspaceSelectorCache> {
-    let bytes = fs::read(cache_path(repo_root)).ok()?;
+fn read_cache_at(path: &Path) -> Option<WorkspaceSelectorCache> {
+    let bytes = fs::read(path).ok()?;
     let cache: WorkspaceSelectorCache = serde_json::from_slice(&bytes).ok()?;
     (cache.schema_version == SCHEMA_VERSION).then_some(cache)
 }
 
-fn write_cache(repo_root: &Path, cache: &WorkspaceSelectorCache) -> io::Result<()> {
-    let path = cache_path(repo_root);
+fn write_cache_at(path: &Path, cache: &WorkspaceSelectorCache) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -181,19 +189,34 @@ fn write_cache(repo_root: &Path, cache: &WorkspaceSelectorCache) -> io::Result<(
     Ok(())
 }
 
+fn cache_matches(
+    cache: &WorkspaceSelectorCache,
+    repo_root: &Path,
+    ignore: &[String],
+    fp: &str,
+) -> bool {
+    cache.source_root == normalized_root(repo_root)
+        && cache.ignore == ignore
+        && cache.files_fingerprint == fp
+}
+
 pub(crate) fn load_cached_workspace_selectors(
     repo_root: &Path,
     ignore: &[String],
 ) -> Option<(Vec<String>, Vec<String>, String)> {
-    let cache = read_cache(repo_root)?;
-    if cache.source_root != normalized_root(repo_root) || cache.ignore != ignore {
-        return None;
-    }
     let fp = workspace_files_fingerprint(repo_root, ignore).ok()?;
-    if cache.files_fingerprint != fp {
+    if let Some(cache) = read_cache_at(&cache_path(repo_root))
+        .filter(|cache| cache_matches(cache, repo_root, ignore, &fp))
+    {
+        return Some((cache.python_selectors, cache.rust_selectors, fp));
+    }
+    let durable = read_cache_at(&durable_cache_path(repo_root))?;
+    if !cache_matches(&durable, repo_root, ignore, &fp) {
         return None;
     }
-    Some((cache.python_selectors, cache.rust_selectors, fp))
+    // Refresh `.kiss` so the next warm hit stays on the primary path.
+    let _ = write_cache_at(&cache_path(repo_root), &durable);
+    Some((durable.python_selectors, durable.rust_selectors, fp))
 }
 
 pub(crate) fn store_workspace_selectors(
@@ -213,7 +236,8 @@ pub(crate) fn store_workspace_selectors(
         python_selectors: python_selectors.to_vec(),
         rust_selectors: rust_selectors.to_vec(),
     };
-    let _ = write_cache(repo_root, &cache);
+    let _ = write_cache_at(&cache_path(repo_root), &cache);
+    let _ = write_cache_at(&durable_cache_path(repo_root), &cache);
     Some(files_fingerprint)
 }
 
