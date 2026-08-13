@@ -1052,9 +1052,11 @@ def commit_fixture_baseline(repo: Path) -> None:
 
 
 def write_witness_config(repo: Path) -> None:
+    # Threshold 0: witness repos intentionally leave `gamma` untested so cache /
+    # selection behavior can be observed without a coverage-gate failure.
     (repo / ".kissconfig").write_text(
         "[gate]\n"
-        "test_coverage_threshold = 100\n"
+        "test_coverage_threshold = 0\n"
         "duplication_enabled = false\n"
         "orphan_module_enabled = false\n",
     )
@@ -1234,6 +1236,36 @@ def assert_population_selectors(manifest: dict, expected_parts: tuple[str, str])
         assert any(part in selector for selector in selectors), selectors
 
 
+def pinned_python_generation_dir(cache: Path) -> Path:
+    """Resolve `generations/<id>` from the v2 population pointer."""
+    pointer = load_json(cache / "population.json")
+    generation_id = pointer.get("generation_id")
+    assert isinstance(generation_id, str) and generation_id, pointer
+    gen_dir = cache / "generations" / generation_id
+    assert gen_dir.is_dir(), f"missing pinned Python generation dir: {gen_dir}"
+    return gen_dir
+
+
+def load_python_generation_line_index(cache: Path) -> dict:
+    """Build an index-like `{files: {source: [selectors...]}}` from line_index.json."""
+    line_index = load_json(pinned_python_generation_dir(cache) / "line_index.json")
+    files: dict[str, list[str]] = {}
+    for source, lines in line_index.items():
+        selectors: set[str] = set()
+        for ids in lines.values():
+            selectors.update(str(selector) for selector in ids)
+        files[source] = sorted(selectors)
+    return {"files": files}
+
+
+def load_python_generation_population(cache: Path) -> dict:
+    """Selectors live on the generation manifest plan under rslip population v2."""
+    manifest = load_json(pinned_python_generation_dir(cache) / "manifest.json")
+    selectors = manifest.get("plan", {}).get("selectors")
+    assert isinstance(selectors, list), manifest
+    return {"selectors": selectors}
+
+
 def assert_dry_run_selects_exactly(
     outcome: Outcome,
     expected_part: str,
@@ -1268,7 +1300,7 @@ def run_witness_dry_run(language: str, repo: Path, marker_dir: Path) -> Outcome:
     env.pop("RUSTFLAGS", None)
     return run(
         f"{language}-witness-dry-run",
-        [str(KISS), "--defaults", "--lang", language, "test", "commit", "--dry-run", "--metrics"],
+        [str(KISS), "--lang", language, "test", "commit", "--dry-run", "--metrics"],
         repo,
         env,
     )
@@ -1283,7 +1315,8 @@ def witness_env(repo: Path, marker_dir: Path) -> dict[str, str]:
 
 
 def witness_check_command(language: str, repo: Path, jobs: int | None = None) -> list[str]:
-    command = [str(KISS), "--defaults", "--lang", language, "__coverage"]
+    # Honor the fixture `.kissconfig` (do not pass `--defaults`).
+    command = [str(KISS), "--lang", language, "__coverage"]
     if jobs is not None:
         command.extend(["-j", str(jobs)])
     command.append(str(repo))
@@ -1291,7 +1324,8 @@ def witness_check_command(language: str, repo: Path, jobs: int | None = None) ->
 
 
 def witness_test_command(language: str, repo: Path, jobs: int | None = None) -> list[str]:
-    command = [str(KISS), "--defaults", "--lang", language, "test"]
+    # Honor the fixture `.kissconfig` (do not pass `--defaults`).
+    command = [str(KISS), "--lang", language, "test"]
     if jobs is not None:
         command.extend(["-j", str(jobs)])
     command.append(str(repo))
@@ -1335,13 +1369,17 @@ def assert_python_coverage_witness(repo: Path, marker_dir: Path) -> None:
     cache = python_rslip_cache_root(repo)
     entry_payloads = selector_entry_payloads(cache)
     assert_disjoint_entry_lines(entry_payloads, "app.py", 2, 5, 8)
-    index = load_json(cache / "index.json")
-    manifest = load_json(cache / "population.json")
+    index = load_python_generation_line_index(cache)
+    manifest = load_python_generation_population(cache)
     assert_index_source_selectors(index, "app.py", ("test_alpha", "test_beta"))
     assert_population_selectors(manifest, ("test_alpha", "test_beta"))
+    gen_dir = pinned_python_generation_dir(cache)
     artifact_paths = sorted((cache / "entries").glob("*.json")) + [
-        cache / "index.json",
         cache / "population.json",
+        gen_dir / "line_index.json",
+        gen_dir / "manifest.json",
+        gen_dir / "coverage.json",
+        gen_dir / "selector_coverage.json",
     ]
     post_test_bytes = cache_tree_bytes(cache, artifact_paths)
     clear_markers(marker_dir)
@@ -1366,10 +1404,12 @@ def assert_rust_coverage_witness(repo: Path, marker_dir: Path) -> None:
     manifest = load_json(cache / "population.json")
     assert_index_source_selectors(index, "src/lib.rs", ("test_alpha", "test_beta"))
     assert_population_selectors(manifest, ("test_alpha", "test_beta"))
-    assert manifest.get("reverse_line_index") is not None, manifest
+    # Check-aggregate publication omits reverse metadata (no exact line→selector
+    # ownership). Exact reverse snapshots remain optional; validate when present.
     assert_rust_reverse_cache_integrity(repo)
     reverse_paths = reverse_line_index_files(cache)
-    assert reverse_paths, f"missing reverse_line_index files under {cache}"
+    if manifest.get("reverse_line_index") is not None:
+        assert reverse_paths, f"missing reverse_line_index files under {cache}"
     artifact_paths = entry_paths + [
         cache / "index.json",
         cache / "population.json",
@@ -1410,13 +1450,10 @@ def force_publication_target(repo: Path, language: str, artifact: str) -> None:
         cache = python_rslip_cache_root(repo)
         if artifact == "rslip_selector_entry":
             shutil.rmtree(cache / "entries", ignore_errors=True)
-        elif artifact == "python_index":
-            shutil.rmtree(cache / "entries", ignore_errors=True)
-            (cache / "index.json").unlink(missing_ok=True)
-        elif artifact == "python_population":
-            shutil.rmtree(cache / "entries", ignore_errors=True)
-            (cache / "index.json").unlink(missing_ok=True)
+        elif artifact == "python_population_pointer":
+            # Generation publish rewrites the v2 population pointer atomically.
             (cache / "population.json").unlink(missing_ok=True)
+            shutil.rmtree(cache / "generations", ignore_errors=True)
         else:
             raise AssertionError(f"unknown Python publication artifact: {artifact}")
     else:
@@ -1457,6 +1494,7 @@ def force_publication_target(repo: Path, language: str, artifact: str) -> None:
 
 RUST_SELECTOR_PUBLISH_ARTIFACTS = frozenset(
     {
+        "rust_selector_entry",
         "rust_entry_state",
         "rust_reverse_selectors",
         "rust_reverse_file",
@@ -1471,16 +1509,38 @@ def publication_writer_command(
     artifact: str,
     jobs: int | None = None,
 ) -> list[str]:
-    if language == "rust" and artifact in RUST_SELECTOR_PUBLISH_ARTIFACTS:
-        # Complete `.` + --force takes SelectorEntries publish (entry_state/reverse),
-        # not the CheckAggregate ensure path used by plain kiss test.
+    if language == "python":
+        # Warm `__coverage` does not republish rslip entries or generation pointers.
+        # Forced `kiss test` re-executes and hits the publication barriers.
         command = [
             str(KISS),
-            "--defaults",
+            "--lang",
+            "python",
+            "test",
+            ".",
+            "--force",
+            "--metrics",
+        ]
+        if jobs is not None:
+            command.extend(["-j", str(jobs)])
+        return command
+    if language == "rust":
+        # Honor fixture `.kissconfig` (no `--defaults`).
+        # - Selector/reverse artifacts need AcceptMode::Subset (file targets) so
+        #   SelectorEntries publish hits rust_entry_state / rust_reverse_* barriers.
+        # - Aggregate/population/index artifacts need AcceptMode::All (`test .`) so
+        #   CheckAggregate publish hits rust_check_aggregate / rust_population /
+        #   rust_derived_index. Warm `__coverage` can skip those republishes.
+        if artifact in RUST_SELECTOR_PUBLISH_ARTIFACTS:
+            targets = ["tests/alpha.rs", "tests/beta.rs"]
+        else:
+            targets = ["."]
+        command = [
+            str(KISS),
             "--lang",
             "rust",
             "test",
-            ".",
+            *targets,
             "--force",
             "--metrics",
         ]
@@ -1600,9 +1660,11 @@ def run_publication_crash_scenario(
 
 
 def reset_rust_check_aggregate_outputs(repo: Path) -> None:
+    # Timing trials must re-populate coverage. Clearing only check_aggregate.json
+    # leaves selector entries warm, so `kiss cov` can exit in tens of milliseconds
+    # without refreshing or re-running tests.
     rust_cache = repo / ".kiss/rust_llvm_cov_cache"
-    (rust_cache / "check_aggregate.json").unlink(missing_ok=True)
-    shutil.rmtree(rust_cache / "runs", ignore_errors=True)
+    shutil.rmtree(rust_cache, ignore_errors=True)
 
 
 def write_aggregate_benchmark_repo(repo: Path) -> None:
@@ -1941,8 +2003,7 @@ def coverage_publication_crash_recovery() -> None:
     assert KISS.is_file(), f"local binary missing: {KISS}"
     scenarios = [
         ("python", "rslip_selector_entry"),
-        ("python", "python_index"),
-        ("python", "python_population"),
+        ("python", "python_population_pointer"),
         ("rust", "rust_selector_entry"),
         ("rust", "rust_entry_state"),
         ("rust", "rust_derived_index"),
@@ -3273,8 +3334,11 @@ def aggregate_coverage() -> None:
             final_warm.combined
         )
         assert "refreshing Rust runtime coverage" not in final_warm.stderr, final_warm.stderr
-        aggregate.unlink()
-        shutil.rmtree(fixture.root / ".kiss/rust_llvm_cov_cache/runs", ignore_errors=True)
+        # Deleting only check_aggregate.json leaves selector/population caches warm, so
+        # `kiss cov` can skip refresh. Wipe the Rust coverage cache (and records seal)
+        # so concurrent callers contend on a real aggregate rebuild.
+        reset_rust_check_aggregate_outputs(fixture.root)
+        (fixture.root / ".kiss" / "cov_records_cache.json").unlink(missing_ok=True)
         concurrent = run_concurrent(
             "rust-aggregate-concurrent-check",
             [(command, fixture.root), (command, fixture.root)],
@@ -3394,13 +3458,7 @@ def timing_rust_legacy_warm_baseline(
     batch_warm_median: float, log_dir: Path | None
 ) -> None:
     """Timing: batch warm all-hit median against archived legacy baseline."""
-    archive_dir = log_dir or (
-        Path.home()
-        / ".malvin_home"
-        / "logs"
-        / "d5af67e712b1a200"
-        / "20260711_175351_ua0kwyo6"
-    )
+    archive_dir = log_dir or (ROOT / "ops" / "testdata")
     archive_dir.mkdir(parents=True, exist_ok=True)
     log_path = archive_dir / "legacy_warm_baseline.log"
     assert log_path.is_file(), (

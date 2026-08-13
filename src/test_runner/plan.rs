@@ -1,19 +1,23 @@
 //! Planning adapters for git modes, `.` (All), and explicit PATH / directory targets.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
-
 use kiss::Language;
 
 use super::{
     PlannedSelectors, runners, rust_llvm_cov,
-    targets::{ExpandedTargetPlan, expand_target_operands, resolve_target_operands},
+    targets::{ExpandedTargetPlan, expand_target_operands},
 };
-use crate::test_git::TestChangeMode;
 
 #[path = "plan_rust.rs"]
 mod plan_rust;
 use plan_rust::rust_population_current_for_all_selectors;
+
+#[path = "plan_explicit.rs"]
+mod plan_explicit;
+use plan_explicit::plan_explicit_target_selectors;
+
+#[path = "plan_vcs.rs"]
+mod plan_vcs;
+pub(crate) use plan_vcs::{PlanSelectorsRequest, plan_selectors};
 
 pub(crate) enum TargetPlanKind<'a> {
     All,
@@ -81,14 +85,25 @@ fn plan_all_selectors(
             Some(fp),
         ));
     }
-    let mut py_sel = Vec::new();
-    let mut rs_sel = Vec::new();
-    if lang_filter != Some(Language::Rust) {
-        py_sel = runners::enumerate_workspace_python_selectors(repo_root, ignore, python_extra)?;
-    }
-    if lang_filter != Some(Language::Python) {
-        rs_sel = runners::enumerate_workspace_rust_selectors(repo_root, ignore)?;
-    }
+    let want_python = lang_filter != Some(Language::Rust);
+    let want_rust = lang_filter != Some(Language::Python);
+    let (py_sel, rs_sel) = if want_python && want_rust {
+        let (py_res, rs_res) = rayon::join(
+            || runners::enumerate_workspace_python_selectors(repo_root, ignore, python_extra),
+            || runners::enumerate_workspace_rust_selectors(repo_root, ignore),
+        );
+        (py_res?, rs_res?)
+    } else if want_python {
+        (
+            runners::enumerate_workspace_python_selectors(repo_root, ignore, python_extra)?,
+            Vec::new(),
+        )
+    } else {
+        (
+            Vec::new(),
+            runners::enumerate_workspace_rust_selectors(repo_root, ignore)?,
+        )
+    };
     let fp = if lang_filter.is_none() {
         super::workspace_selector_cache::store_workspace_selectors(
             repo_root, ignore, &py_sel, &rs_sel,
@@ -117,17 +132,26 @@ fn planned_all(
     // Warm `kiss test .`: when coverage populations are already current for the
     // planned selector sets, run as selective reuse instead of re-populating
     // (avoids rediscovery + index republish on every third warm run).
-    let python_population_required = !(py_sel.is_empty()
-        || (crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
+    // Check cheap artifact presence before identity / tool-version work.
+    let python_population_required = if py_sel.is_empty() {
+        false
+    } else if !crate::test_runner::python_coverage_index::python_coverage_index_file_present(
+        repo_root,
+    ) {
+        true
+    } else {
+        !crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
             repo_root,
             &py_sel,
             python_extra,
             crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
-        ) && crate::test_runner::python_coverage_index::python_coverage_index_file_present(
-            repo_root,
-        )));
-    let rust_population_required = !(rs_sel.is_empty()
-        || rust_population_current_for_all_selectors(repo_root, &rs_sel));
+        )
+    };
+    let rust_population_required = if rs_sel.is_empty() {
+        false
+    } else {
+        !rust_population_current_for_all_selectors(repo_root, &rs_sel)
+    };
     PlannedSelectors {
         repo_root: repo_root.to_path_buf(),
         sel: crate::test_runner::language_keyed::LanguageKeyed {
@@ -172,134 +196,8 @@ fn planned_all(
     }
 }
 
-
-fn plan_explicit_target_selectors(
-    repo_root: &std::path::Path,
-    targets: &[String],
-    ignore: &[String],
-    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
-    lang_filter: Option<Language>,
-) -> Result<PlannedSelectors, String> {
-    let query = resolve_target_operands(repo_root, targets, lang_filter, ignore, extras.python)
-        .map_err(|e| format!("error: kiss test: {e}"))?;
-    let mut source_paths = Vec::new();
-    source_paths.extend(query.python_files.iter().cloned());
-    source_paths.extend(query.rust_files.iter().cloned());
-    source_paths.extend(query.python_lines.keys().cloned());
-    source_paths.extend(query.rust_lines.keys().cloned());
-    source_paths.sort();
-    source_paths.dedup();
-    reject_non_member_rust_targets(repo_root, &query)?;
-    let mut changed_lines: BTreeMap<PathBuf, BTreeSet<u32>> = BTreeMap::new();
-    for (path, lines) in query.python_lines.iter().chain(query.rust_lines.iter()) {
-        changed_lines
-            .entry(path.clone())
-            .or_default()
-            .extend(lines.iter().copied());
-    }
-    let direct_python: Vec<_> = query.direct_python.into_iter().collect();
-    let direct_rust: Vec<_> = query.direct_rust.into_iter().collect();
-    // Pure test-operand plans: run only named selectors; no covering selection,
-    // population, or prior-failure fan-out.
-    if source_paths.is_empty() {
-        return Ok(PlannedSelectors {
-            repo_root: repo_root.to_path_buf(),
-            sel: crate::test_runner::language_keyed::LanguageKeyed {
-                python: direct_python,
-                rust: direct_rust,
-            },
-            population_required: crate::test_runner::language_keyed::LanguageKeyed {
-                python: false,
-                rust: false,
-            },
-            source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-                python: Vec::new(),
-                rust: Vec::new(),
-            },
-            vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-                python: 0,
-                rust: 0,
-            },
-            snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-                python: 0,
-                rust: 0,
-            },
-            snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-                python: false,
-                rust: false,
-            },
-            prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
-                python: Vec::new(),
-                rust: Vec::new(),
-            },
-            coverage_decision_engine_used: false,
-            selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
-                python: crate::test_runner::coverage_decision::SelectionBasis::Current,
-                rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
-            },
-            ignore: ignore.to_vec(),
-            workspace_files_fingerprint: None,
-            skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
-                python: true,
-                rust: false,
-            },
-        });
-    }
-    let input = runners::CombinedSelectorInput {
-        repo_root,
-        source_paths: &source_paths,
-        test_paths: &[],
-        changed_lines: &changed_lines,
-        test_args: extras,
-        lang_filter,
-        ignore,
-        extra_direct_python: &direct_python,
-        extra_direct_rust: &direct_rust,
-        include_prior_failures: false,
-    };
-    let selector_plan = runners::combined_selectors_with_direct(input)?;
-    Ok(planned_from_selector_plan(
-        repo_root.to_path_buf(),
-        selector_plan,
-        ignore.to_vec(),
-    ))
-}
-
-fn reject_non_member_rust_targets(
-    repo_root: &std::path::Path,
-    query: &crate::test_runner::targets::TargetSelectionQuery,
-) -> Result<(), String> {
-    let mut rust_paths: Vec<PathBuf> = query.rust_files.iter().cloned().collect();
-    rust_paths.extend(query.rust_lines.keys().cloned());
-    // Direct rust selectors are PATH::symbol strings; recover file paths when present.
-    for selector in &query.direct_rust {
-        let path_part = selector.split_once("::").map_or(selector.as_str(), |(p, _)| p);
-        let candidate = PathBuf::from(path_part);
-        if candidate.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("rs")) {
-            let abs = if candidate.is_absolute() {
-                candidate
-            } else {
-                repo_root.join(candidate)
-            };
-            rust_paths.push(abs);
-        }
-    }
-    rust_paths.sort();
-    rust_paths.dedup();
-    let roots = crate::test_runner::lang_rust::workspace::non_member_rust_crate_roots(
-        repo_root, &rust_paths,
-    )?;
-    if roots.is_empty() {
-        return Ok(());
-    }
-    Err(format!(
-        "error: kiss test: nested Cargo crate(s) are not root workspace members (coverage unsupported): {}",
-        roots.join(", ")
-    ))
-}
-
-fn planned_from_selector_plan(
-    repo_root: PathBuf,
+pub(super) fn planned_from_selector_plan(
+    repo_root: std::path::PathBuf,
     selector_plan: crate::test_runner::runners::SelectorPlan,
     ignore: Vec<String>,
 ) -> PlannedSelectors {
@@ -332,81 +230,6 @@ fn planned_from_selector_plan(
     }
 }
 
-pub(crate) struct PlanSelectorsRequest<'a> {
-    pub mode: TestChangeMode,
-    pub main_branch_cli: Option<&'a str>,
-    pub base_branch_cli: Option<&'a str>,
-    pub ignore: &'a [String],
-    /// Per-language CLI extras packed for planning.
-    pub extras: crate::test_runner::language_keyed::LanguageKeyed<&'a [String]>,
-    pub lang_filter: Option<Language>,
-    pub config_main_branch: Option<&'a str>,
-}
-
-pub(crate) fn plan_selectors(req: PlanSelectorsRequest<'_>) -> Result<PlannedSelectors, String> {
-    let ignore_norm = kiss::normalize_ignore_prefixes(req.ignore);
-    let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
-    let repo_root = crate::test_git::require_git_repo_root(&cwd)
-        .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
-    let diff_target = crate::test_git::resolve_diff_target(
-        &repo_root,
-        req.mode,
-        req.config_main_branch,
-        req.main_branch_cli,
-        req.base_branch_cli,
-    )?;
-    let rel_changed = match req.mode {
-        TestChangeMode::Commit => crate::test_git::changed_paths_commit(&repo_root)?,
-        TestChangeMode::Base | TestChangeMode::Main => {
-            crate::test_git::changed_paths_since(&repo_root, diff_target.as_ref().unwrap())?
-        }
-    };
-    let rel_changed_lines = match req.mode {
-        TestChangeMode::Commit => crate::test_git::changed_lines_commit(&repo_root)?,
-        TestChangeMode::Base | TestChangeMode::Main => {
-            crate::test_git::changed_lines_since(&repo_root, diff_target.as_ref().unwrap())?
-        }
-    };
-    let lang_filter = req.lang_filter.map(|l| match l {
-        Language::Python => crate::test_git::TestLangFilter::Python,
-        Language::Rust => crate::test_git::TestLangFilter::Rust,
-    });
-    if matches!(lang_filter, Some(crate::test_git::TestLangFilter::Rust)) {
-        rust_llvm_cov::validate_rust_extra_args(req.extras.rust)?;
-    }
-    let abs_paths = crate::test_git::resolve_changed_source_paths(
-        &repo_root,
-        &rel_changed,
-        &ignore_norm,
-        lang_filter,
-    );
-    let changed_lines = crate::test_git::resolve_changed_line_paths(
-        &repo_root,
-        &rel_changed_lines,
-        &ignore_norm,
-        lang_filter,
-    );
-    let (source_changed, test_changed) = runners::partition_changed_paths(&abs_paths);
-    let selector_plan = runners::combined_selectors_with_direct(runners::CombinedSelectorInput {
-        repo_root: &repo_root,
-        source_paths: &source_changed,
-        test_paths: &test_changed,
-        changed_lines: &changed_lines,
-        test_args: req.extras,
-        lang_filter: lang_filter.map(|l| match l {
-            crate::test_git::TestLangFilter::Python => Language::Python,
-            crate::test_git::TestLangFilter::Rust => Language::Rust,
-        }),
-        ignore: &ignore_norm,
-        extra_direct_python: &[],
-        extra_direct_rust: &[],
-        include_prior_failures: true,
-    })?;
-    Ok(planned_from_selector_plan(
-        repo_root,
-        selector_plan,
-        ignore_norm,
-    ))
-}
-
-
+#[cfg(test)]
+#[path = "plan_cold_test.rs"]
+mod plan_cold_test;

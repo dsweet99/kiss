@@ -3,11 +3,13 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use rayon::prelude::*;
+
 pub(crate) use super::rust_llvm_cov::{
     cached_rust_check_aggregate_selectors, run_rust_llvm_cov_selectors,
 };
 use kiss::test_refs::{is_in_test_directory, is_pytest_nodeid_source_file, is_test_file};
-use kiss::{parse_rust_files, rust_test_functions_in};
+use kiss::{parse_rust_file, parse_rust_files, rust_test_functions_in};
 use rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
     repo_relative_path,
@@ -238,23 +240,34 @@ fn enumerate_workspace_rust_test_entries(
             .collect(),
         Err(_) => rs_files,
     };
-    let parsed = parse_rust_files(&rs_files);
+    // Parse + extract selectors inside each worker so syn ASTs stay thread-local
+    // (syn/proc-macro2 types are !Send). Only Send selector strings cross threads.
+    let parsed: Vec<Result<(PathBuf, Vec<String>), String>> = rs_files
+        .par_iter()
+        .map(|path| {
+            let pf = parse_rust_file(path).map_err(|e| {
+                format!(
+                    "error: kiss test: failed to parse Rust workspace file {}: {e}",
+                    path.display()
+                )
+            })?;
+            let selectors = rust_test_functions_in(&pf);
+            Ok((pf.path, selectors))
+        })
+        .collect();
     let mut entries = Vec::new();
-    for (path, result) in rs_files.iter().zip(parsed) {
-        let pf = match result {
-            Ok(pf) => pf,
+    for result in parsed {
+        let (path, selectors) = match result {
+            Ok(v) => v,
             Err(e) => {
                 if parse_errors == ParseErrorPolicy::Skip {
                     continue;
                 }
-                return Err(format!(
-                    "error: kiss test: failed to parse Rust workspace file {}: {e}",
-                    path.display()
-                ));
+                return Err(e);
             }
         };
-        for selector in rust_test_functions_in(&pf) {
-            entries.push((pf.path.clone(), selector));
+        for selector in selectors {
+            entries.push((path.clone(), selector));
         }
     }
     Ok(entries)
@@ -278,6 +291,13 @@ pub fn enumerate_workspace_python_selectors(
             .filter(|path| is_pytest_nodeid_source_file(path))
             .collect::<Vec<_>>();
         return collect_python_nodeids(repo_root, Some(&test_paths), pytest_args);
+    }
+    // Bound collection to `tests/` when present. Empty paths make pytest walk the
+    // whole repo (including `target/`, crates, etc.), which dominated cold planning
+    // even when every nodeid lived under tests/.
+    let tests_root = repo_root.join("tests");
+    if tests_root.is_dir() {
+        return collect_python_nodeids(repo_root, Some(&[tests_root]), pytest_args);
     }
     collect_python_nodeids(repo_root, None, pytest_args)
 }

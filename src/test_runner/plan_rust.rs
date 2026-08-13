@@ -12,6 +12,15 @@ pub(super) fn rust_population_current_for_all_selectors(
     repo_root: &std::path::Path,
     selectors: &[String],
 ) -> bool {
+    // Cold `.kiss` (no population / witness): skip batch_identity. That path
+    // digests the ordinary Rust source tree and dominated wiped-cache planning.
+    let cache_root =
+        crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root);
+    if !cache_root.join("population.json").is_file()
+        && !cache_root.join("execution_witness.json").is_file()
+    {
+        return false;
+    }
     let Ok(identity) =
         crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(repo_root, &[])
     else {
