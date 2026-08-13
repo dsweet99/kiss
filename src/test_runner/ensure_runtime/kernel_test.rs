@@ -71,6 +71,9 @@ impl LanguageRuntime for FakeRuntime {
                 exit_code: Some(self.state.borrow().run_exit_code),
                 duration: std::time::Duration::from_millis(1),
             });
+            if self.state.borrow().run_exit_code == 0 {
+                println!("PASS: {sel}");
+            }
         }
         Ok(OutcomeBatch {
             summary,
@@ -172,6 +175,14 @@ fn request(planned: Vec<String>) -> EnsureRequest {
             rust: vec![],
         },
     }
+}
+
+fn rust_request(planned: Vec<String>) -> EnsureRequest {
+    let mut req = request(vec![]);
+    req.lang_filter = Some(Language::Rust);
+    req.planned.python.clear();
+    req.planned.rust = planned;
+    req
 }
 
 #[test]
@@ -314,10 +325,7 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
         language: Language::Rust,
         state: Rc::clone(&state),
     };
-    let mut req = request(vec![]);
-    req.lang_filter = Some(Language::Rust);
-    req.planned.python.clear();
-    req.planned.rust = vec!["a".into(), "b".into()];
+    let req = rust_request(vec!["a".into(), "b".into()]);
     let result = ensure_runtime_cache(&req, &[&runtime]).expect("accept");
     assert_eq!(result.exit_code, 0);
     assert!(state.borrow().run_calls.is_empty(), "Accept must not run selectors");
@@ -331,4 +339,73 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
     assert_eq!(result.exit_code, 0);
     assert_eq!(state.borrow().run_calls, vec![vec!["b".to_string()]]);
     assert_eq!(state.borrow().publish_calls, 1);
+}
+
+#[test]
+fn rust_miss_emits_rust_identity_before_pass() {
+    let state = Rc::new(RefCell::new(FakeState::default()));
+    let runtime = FakeRuntime {
+        language: Language::Rust,
+        state: Rc::clone(&state),
+    };
+    let req = rust_request(vec!["a".into()]);
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let _ = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
+    });
+    let identity_idx = out
+        .find("kiss test: stage rust_identity")
+        .expect("rust_identity stage line");
+    let pass_idx = out.find("PASS:").expect("PASS line from run_selectors");
+    assert!(
+        identity_idx < pass_idx,
+        "rust_identity must precede PASS on stdout:\n{out}"
+    );
+    assert_eq!(state.borrow().run_calls.len(), 1);
+}
+
+#[test]
+fn python_miss_does_not_emit_rust_identity() {
+    let state = Rc::new(RefCell::new(FakeState::default()));
+    let runtime = FakeRuntime {
+        language: Language::Python,
+        state: Rc::clone(&state),
+    };
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let _ = ensure_runtime_cache(&request(vec!["a".into()]), &[&runtime]).expect("ensure");
+    });
+    assert!(
+        !out.contains("kiss test: stage rust_identity"),
+        "Python ensure must not emit rust_identity:\n{out}"
+    );
+}
+
+#[test]
+fn rust_warm_accept_still_emits_rust_identity_without_run() {
+    let state = Rc::new(RefCell::new(FakeState {
+        witness: Some(ExecutionWitness {
+            language: "rust".into(),
+            scope: WitnessScope::Full,
+            identity_digest: "id".into(),
+            selectors: vec!["a".into()],
+            statuses: vec![WitnessStatus::Passed],
+            durations_ns: vec![1],
+            covered_lines: BTreeMap::new(),
+            complete: true,
+            generation_id: "g".into(),
+        }),
+        ..Default::default()
+    }));
+    let runtime = FakeRuntime {
+        language: Language::Rust,
+        state: Rc::clone(&state),
+    };
+    let req = rust_request(vec!["a".into()]);
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let _ = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
+    });
+    assert!(
+        out.contains("kiss test: stage rust_identity"),
+        "warm accept must still emit rust_identity:\n{out}"
+    );
+    assert!(state.borrow().run_calls.is_empty(), "warm accept must not run");
 }

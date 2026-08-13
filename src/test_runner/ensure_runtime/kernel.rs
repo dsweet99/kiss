@@ -41,7 +41,11 @@ fn ensure_one_language(
     if let Some(empty) = try_publish_empty_all(request, module, &planned)? {
         return Ok(empty);
     }
+    let identity_started = std::time::Instant::now();
     let identity = module.current_identity(request)?;
+    if module.language() == Language::Rust {
+        crate::test_runner::emit_stage_time("rust_identity", identity_started.elapsed());
+    }
     let loaded = module.load_full_witness(&request.repo_root).ok();
     let mut witness = loaded.clone();
     if let Some(ref mut w) = witness {
