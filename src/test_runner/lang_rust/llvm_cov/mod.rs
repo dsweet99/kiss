@@ -228,6 +228,7 @@ where
     if selectors.is_empty() {
         return Ok(SelectorExecutionSummary::default());
     }
+    let stage_started = std::time::Instant::now();
     let batch_req = rust_coverage_batch_request_from_parts(
         repo_root,
         selectors,
@@ -249,6 +250,7 @@ where
         &batch_req.runner_map_fingerprint,
     );
     let result = execute_batch(&batch_req, &versions)?;
+    crate::test_runner::emit_stage_time("rust_llvm_cov", stage_started.elapsed());
     let summary = finish_rust_coverage_batch_result(repo_root, &identity, result, &options.gate)?;
     publish_rust_witness_after_batch(repo_root, &batch_req, &summary)?;
     Ok(summary)
@@ -412,3 +414,6 @@ mod tests;
 #[cfg(test)]
 #[path = "llvm_cov_b_test.rs"]
 mod tests_b;
+#[cfg(test)]
+#[path = "llvm_cov_c_test.rs"]
+mod tests_c;
