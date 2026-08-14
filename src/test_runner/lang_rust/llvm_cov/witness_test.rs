@@ -51,7 +51,7 @@ fn full_witness(selectors: &[&str]) -> ExecutionWitness {
         identity_digest: "rs:publish-input:publish-gen:publish-sel".into(),
         selectors: selectors.iter().map(|s| (*s).to_string()).collect(),
         statuses: vec![WitnessStatus::Passed; selectors.len()],
-        durations_ns: vec![0; selectors.len()],
+        durations_ns: vec![Some(0); selectors.len()],
         covered_lines: Default::default(),
         complete: true,
         generation_id: "rust-wit-test".into(),
@@ -173,7 +173,30 @@ fn align_statuses_requires_complete_universe() {
     .unwrap()
     .unwrap();
     assert_eq!(aligned.statuses, vec![WitnessStatus::Passed]);
-    assert_eq!(aligned.durations_ns, vec![42]);
+    assert_eq!(aligned.durations_ns, vec![Some(42)]);
+}
+
+#[test]
+fn align_statuses_preserves_missing_duration_as_none() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn a() {}\n}\n",
+    )
+    .unwrap();
+    let by = BTreeMap::from([("tests::a".into(), WitnessStatus::Passed)]);
+    let summary = SelectorExecutionSummary::default(); // no duration map entry
+    let aligned = align_statuses(tmp.path(), &["tests::a".into()], &by, &summary, None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(aligned.statuses, vec![WitnessStatus::Passed]);
+    assert_eq!(aligned.durations_ns, vec![None]);
 }
 
 #[test]
@@ -225,7 +248,7 @@ fn publish_refuses_to_shrink_full_via_store_guard() {
         scope: WitnessScope::Full,
         selectors: &full,
         statuses: &[WitnessStatus::Passed; 3],
-        durations_ns: &[0; 3],
+        durations_ns: &[Some(0); 3],
         covered_lines: &empty_cov,
         complete: true,
     })
@@ -237,7 +260,7 @@ fn publish_refuses_to_shrink_full_via_store_guard() {
         scope: WitnessScope::Full,
         selectors: &shrink,
         statuses: &[WitnessStatus::Passed],
-        durations_ns: &[0],
+        durations_ns: &[Some(0)],
         covered_lines: &empty_cov,
         complete: true,
     })

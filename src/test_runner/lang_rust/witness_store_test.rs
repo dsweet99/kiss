@@ -37,7 +37,7 @@ fn publish_load_round_trip_and_warm_accept() {
     let identity = sample_identity();
     let selectors = vec!["a".into(), "b".into()];
     let statuses = vec![WitnessStatus::Passed, WitnessStatus::Passed];
-    let durations = vec![10, 20];
+    let durations = vec![Some(10), Some(20)];
     let empty_cov = Default::default();
     let id = publish_rust_execution_witness(PublishRustWitness {
         repo_root: tmp.path(),
@@ -60,16 +60,16 @@ fn publish_load_round_trip_and_warm_accept() {
         loaded.identity_digest,
         rust_identity_digest_from_batch(&identity)
     );
-    assert!(try_warm_rust_cached_summary(tmp.path(), &selectors, &identity).is_some());
+    assert!(try_warm_rust_cached_summary(tmp.path(), &selectors, &identity, &kiss::GateConfig::default()).is_some());
     assert_eq!(
-        rust_miss_selectors(tmp.path(), &["a".into(), "c".into()], &identity),
+        rust_miss_selectors(tmp.path(), &["a".into(), "c".into()], &identity, &kiss::GateConfig::default()),
         Some(vec!["c".into()])
     );
-    match rust_warm_or_miss_selectors(tmp.path(), &["a".into(), "c".into()], &identity) {
+    match rust_warm_or_miss_selectors(tmp.path(), &["a".into(), "c".into()], &identity, &kiss::GateConfig::default()) {
         RustWarmDecision::RunMisses(misses) => assert_eq!(misses, vec!["c".to_string()]),
         other => panic!("expected RunMisses, got {other:?}"),
     }
-    match rust_warm_or_miss_selectors(tmp.path(), &selectors, &identity) {
+    match rust_warm_or_miss_selectors(tmp.path(), &selectors, &identity, &kiss::GateConfig::default()) {
         RustWarmDecision::Warm(_) => {}
         other => panic!("expected Warm, got {other:?}"),
     }
@@ -90,7 +90,7 @@ fn subset_scope_does_not_overwrite_full_pointer() {
         scope: WitnessScope::Full,
         selectors: &full_sels,
         statuses: &[WitnessStatus::Passed],
-        durations_ns: &[1],
+        durations_ns: &[Some(1)],
         covered_lines: &empty_cov,
         complete: true,
     })
@@ -102,7 +102,7 @@ fn subset_scope_does_not_overwrite_full_pointer() {
         scope: WitnessScope::Subset,
         selectors: &subset_sels,
         statuses: &[WitnessStatus::Passed],
-        durations_ns: &[1],
+        durations_ns: &[Some(1)],
         covered_lines: &empty_cov,
         complete: false,
     })
@@ -126,7 +126,7 @@ fn checksum_mismatch_rejects_load() {
         scope: WitnessScope::Full,
         selectors: &sels,
         statuses: &[WitnessStatus::Passed],
-        durations_ns: &[1],
+        durations_ns: &[Some(1)],
         covered_lines: &empty_cov,
         complete: true,
     })
@@ -140,4 +140,45 @@ fn checksum_mismatch_rejects_load() {
     raw = raw.replace("\"complete\": true", "\"complete\": false");
     std::fs::write(&path, raw).unwrap();
     assert!(try_load_rust_execution_witness(tmp.path()).is_err());
+}
+
+#[test]
+fn warm_helpers_use_caller_gate_not_cwd_defaults() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_minimal_repo(tmp.path());
+    let identity = sample_identity();
+    let selectors = vec!["a".into()];
+    let empty_cov = Default::default();
+    // 2s Passed witness.
+    publish_rust_execution_witness(PublishRustWitness {
+        repo_root: tmp.path(),
+        identity: &identity,
+        scope: WitnessScope::Full,
+        selectors: &selectors,
+        statuses: &[WitnessStatus::Passed],
+        durations_ns: &[Some(2_000_000_000)],
+        covered_lines: &empty_cov,
+        complete: true,
+    })
+    .unwrap();
+    let loose = kiss::GateConfig {
+        max_unit_test_seconds: vec![("*".into(), 3600.0)],
+        ..kiss::GateConfig::default()
+    };
+    let tight = kiss::GateConfig {
+        max_unit_test_seconds: vec![("*".into(), 0.5)],
+        ..kiss::GateConfig::default()
+    };
+    assert!(
+        try_warm_rust_cached_summary(tmp.path(), &selectors, &identity, &loose).is_some(),
+        "loose session gate must warm-accept"
+    );
+    assert!(
+        try_warm_rust_cached_summary(tmp.path(), &selectors, &identity, &tight).is_none(),
+        "tight session gate must reject the same witness"
+    );
+    assert_eq!(
+        rust_miss_selectors(tmp.path(), &selectors, &identity, &tight),
+        Some(vec!["a".into()])
+    );
 }

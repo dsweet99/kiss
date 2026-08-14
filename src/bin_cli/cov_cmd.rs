@@ -40,28 +40,27 @@ fn load_or_refresh_snapshot(
     ignore: &[String],
     jobs: usize,
     allow_refresh: bool,
+    gate: &kiss::GateConfig,
 ) -> Result<crate::test_runner::check_line_coverage::ValidatedCovInputs, i32> {
     use crate::test_runner::check_line_coverage::ValidatedCovInputs;
-    let snapshot = match load_check_runtime_coverage(repo_root, required, ignore) {
+    let snapshot = match load_check_runtime_coverage(repo_root, required, ignore, gate) {
         Ok(snapshot) => snapshot,
         Err(load_err) => {
             if !allow_refresh {
                 eprintln!("{load_err}");
                 return Err(1);
             }
-            if let Err(err) = ensure_check_runtime_coverage(repo_root, required, ignore, jobs) {
+            ensure_check_runtime_coverage(repo_root, required, ignore, jobs).map_err(|err| {
                 eprintln!("{err}");
-                return Err(1);
-            }
-            load_check_runtime_coverage(repo_root, required, ignore).map_err(|err| {
+                1
+            })?;
+            load_check_runtime_coverage(repo_root, required, ignore, gate).map_err(|err| {
                 eprintln!("{err}");
                 1
             })?
         }
     };
-    Ok(ValidatedCovInputs::from_snapshot(
-        required, snapshot, repo_root,
-    ))
+    Ok(ValidatedCovInputs::from_snapshot(required, snapshot, repo_root))
 }
 
 struct SiblingGateResult {
@@ -70,9 +69,8 @@ struct SiblingGateResult {
 }
 
 fn finish_sibling_gates(result: SiblingGateResult) -> i32 {
-    let failed = result.coverage_failed || result.time_failed;
-    print_final_status(failed);
-    i32::from(failed)
+    print_final_status(result.coverage_failed || result.time_failed);
+    i32::from(result.coverage_failed || result.time_failed)
 }
 
 fn evaluate_time_gate_for_cov(
@@ -318,6 +316,7 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
             &ignore,
             args.jobs,
             args.allow_refresh,
+            args.gate_config,
         );
         let time_eval = evaluate_time_gate_for_cov(args, universe_root, &files, &ignore);
         let time_failed = apply_time_gate_eval(&time_eval);
@@ -384,6 +383,7 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
         p.ignore,
         p.args.jobs,
         p.args.allow_refresh,
+        p.args.gate_config,
     ) {
         Ok(validated) => validated,
         Err(code) => return code,

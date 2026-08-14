@@ -30,16 +30,16 @@ fn bootstrap_repo_rust_witness_when_env_set() {
             w.identity_digest,
             w.complete
         );
-        let misses = rust_miss_selectors(root, &planned, &identity);
+        let misses = rust_miss_selectors(root, &planned, &identity, &kiss::GateConfig::default());
         eprintln!("misses={:?}", misses.as_ref().map(|m| m.len()));
         eprintln!(
             "warm={}",
-            try_warm_rust_cached_summary(root, &planned, &identity).is_some()
+            try_warm_rust_cached_summary(root, &planned, &identity, &kiss::GateConfig::default()).is_some()
         );
     }
     // Publish Full for *current planned* universe so All-mode can accept.
     let statuses = vec![WitnessStatus::Passed; planned.len()];
-    let durations = vec![0u64; planned.len()];
+    let durations = vec![Some(0u64); planned.len()];
     let empty_cov = Default::default();
     let id = publish_rust_execution_witness(PublishRustWitness {
         repo_root: root,
@@ -53,5 +53,5 @@ fn bootstrap_repo_rust_witness_when_env_set() {
     })
     .expect("publish");
     eprintln!("published {id} n={}", planned.len());
-    assert!(try_warm_rust_cached_summary(root, &planned, &identity).is_some());
+    assert!(try_warm_rust_cached_summary(root, &planned, &identity, &kiss::GateConfig::default()).is_some());
 }

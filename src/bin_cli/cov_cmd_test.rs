@@ -325,7 +325,14 @@ fn load_or_refresh_snapshot_respects_allow_refresh_false() {
         python: true,
         rust: false,
     };
-    let err = load_or_refresh_snapshot(tmp.path(), required, &[], 1, false);
+    let err = load_or_refresh_snapshot(
+        tmp.path(),
+        required,
+        &[],
+        1,
+        false,
+        &kiss::GateConfig::default(),
+    );
     assert!(matches!(err, Err(1)), "cache-only load must fail closed: {err:?}");
 }
 

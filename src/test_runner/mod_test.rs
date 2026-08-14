@@ -202,7 +202,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
         &[],
         crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         None,
-    )
+        &kiss::GateConfig::default())
     .unwrap();
     assert!(!both.sel.python.is_empty());
     assert!(!both.sel.rust.is_empty());
@@ -213,7 +213,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
         &[],
         crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Python),
-    )
+        &kiss::GateConfig::default())
     .unwrap();
     assert!(!python_only.population_required.rust);
     assert!(!python_only.sel.python.is_empty());
@@ -224,7 +224,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
         &[],
         crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
-    )
+        &kiss::GateConfig::default())
     .unwrap();
     assert!(!rust_only.population_required.python);
     assert!(rust_only.sel.python.is_empty());
@@ -241,21 +241,21 @@ fn plan_repo_root_target_matches_all_via_dot() {
         &[],
         crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
-    )
+        &kiss::GateConfig::default())
     .unwrap();
     let via_root = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&[root.to_string_lossy().into_owned()]),
         &[],
         crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
-    )
+        &kiss::GateConfig::default())
     .unwrap();
     let via_dot = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&[".".into()]),
         &[],
         crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
-    )
+        &kiss::GateConfig::default())
     .unwrap();
     assert_eq!(via_all.sel.rust, via_root.sel.rust);
     assert_eq!(via_all.sel.python, via_root.sel.python);
@@ -286,14 +286,14 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
         &[],
         crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
-    )
+        &kiss::GateConfig::default())
     .unwrap();
     let all = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
         crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
-    )
+        &kiss::GateConfig::default())
     .unwrap();
     assert!(!planned.sel.rust.is_empty());
     assert!(!planned.source_paths.rust.is_empty());
@@ -315,7 +315,7 @@ fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
         &[],
         crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
-    );
+        &kiss::GateConfig::default());
     std::env::set_current_dir(&cwd).unwrap();
     let planned = planned.unwrap();
     let from_root = crate::test_runner::plan_target_selectors(
@@ -323,7 +323,7 @@ fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
         &[],
         crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
         Some(Language::Rust),
-    )
+        &kiss::GateConfig::default())
     .unwrap();
     assert_eq!(planned.repo_root, from_root.repo_root);
     assert_eq!(planned.sel.rust, from_root.sel.rust);

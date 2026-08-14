@@ -138,7 +138,7 @@ fn load_rust_timings_from_witness(
         try_load_rust_execution_witness, try_warm_rust_cached_summary,
     };
     let witness = try_load_rust_execution_witness(repo_root).ok()?;
-    let _ = try_warm_rust_cached_summary(repo_root, &witness.selectors, identity)?;
+    let _ = try_warm_rust_cached_summary(repo_root, &witness.selectors, identity, &kiss::GateConfig::default())?;
     if witness.durations_ns.len() != witness.selectors.len() {
         return None;
     }
@@ -151,7 +151,7 @@ fn load_rust_timings_from_witness(
             .map(|(selector, &ns)| UnitTestTiming {
                 language: Language::Rust,
                 selector: report_string_for_logical_string(&report_ids, selector),
-                duration: Duration::from_nanos(ns),
+                duration: Duration::from_nanos(ns.unwrap_or(0)),
             })
             .collect(),
     )

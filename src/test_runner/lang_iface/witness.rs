@@ -75,7 +75,7 @@ pub(crate) struct ExecutionWitness {
     pub(crate) identity_digest: String,
     pub(crate) selectors: Vec<String>,
     pub(crate) statuses: Vec<WitnessStatus>,
-    pub(crate) durations_ns: Vec<u64>,
+    pub(crate) durations_ns: Vec<Option<u64>>,
     /// Aggregate covered lines (repo-relative paths). Empty when unknown.
     pub(crate) covered_lines: BTreeMap<String, Vec<u32>>,
     pub(crate) complete: bool,
@@ -221,19 +221,32 @@ fn selector_index(selectors: &[String]) -> BTreeMap<&str, usize> {
 /// `max_unit_test_seconds`. Live runners may also call `apply_unit_test_time_limit`
 /// for immediate stdout/summary labeling; stored witness rows are reclassified
 /// here so a later gate change still takes effect on accept without re-running.
+///
+/// Missing timings (`None`) are not collapsed to zero: under an active time gate,
+/// a Passed row without a duration fails closed to Failed so repair re-runs it
+/// (TimedOut would warm-skip and strand the selector without a measured time).
 pub(crate) fn reclassify_statuses_with_gate(
     selectors: &[String],
     raw_statuses: &[WitnessStatus],
-    durations_ns: &[u64],
+    durations_ns: &[Option<u64>],
     gate: &GateConfig,
 ) -> Vec<WitnessStatus> {
     selectors
         .iter()
         .zip(raw_statuses.iter())
         .zip(durations_ns.iter())
-        .map(|((selector, raw), &ns)| {
+        .map(|((selector, raw), ns)| {
             let Some(base) = raw.to_test_status() else {
                 return WitnessStatus::Unresolved;
+            };
+            let Some(ns) = *ns else {
+                if gate.unit_test_time_gate_disabled() {
+                    return WitnessStatus::from_test_status(base);
+                }
+                return match base {
+                    TestStatus::Passed => WitnessStatus::Failed,
+                    other => WitnessStatus::from_test_status(other),
+                };
             };
             let effective = apply_unit_test_time_limit(
                 base,
@@ -302,7 +315,7 @@ fn planned_witness_records(
         records.push((
             report_id(selector),
             status,
-            Duration::from_nanos(witness.durations_ns[i]),
+            Duration::from_nanos(witness.durations_ns[i].unwrap_or(0)),
         ));
     }
     records

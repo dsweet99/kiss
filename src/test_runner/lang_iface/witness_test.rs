@@ -20,7 +20,7 @@ fn witness(
         identity_digest: identity.into(),
         selectors: selectors.iter().map(|s| (*s).to_string()).collect(),
         statuses: statuses.to_vec(),
-        durations_ns: vec![1_000_000; selectors.len()],
+        durations_ns: vec![Some(1_000_000); selectors.len()],
         covered_lines: Default::default(),
         complete,
         generation_id: "gen-1".into(),
@@ -176,7 +176,7 @@ fn time_limit_reclassify_forces_miss_on_affected_selector() {
     let effective = reclassify_statuses_with_gate(
         &["a".into(), "b".into()],
         &[WitnessStatus::Passed, WitnessStatus::Passed],
-        &[1_000_000_000, 0],
+        &[Some(1_000_000_000), Some(0)],
         &gate,
     );
     assert_eq!(
@@ -212,17 +212,43 @@ fn warm_accept_reclassify_applies_tighter_session_gate() {
     let under_loose = reclassify_statuses_with_gate(
         &["tests/a.py::t".into()],
         &[WitnessStatus::Passed],
-        &[2_000_000_000], // 2s
+        &[Some(2_000_000_000)], // 2s
         &loose,
     );
     assert_eq!(under_loose, vec![WitnessStatus::Passed]);
     let under_tight = reclassify_statuses_with_gate(
         &["tests/a.py::t".into()],
         &[WitnessStatus::Passed],
-        &[2_000_000_000],
+        &[Some(2_000_000_000)],
         &tight,
     );
     assert_eq!(under_tight, vec![WitnessStatus::TimedOut]);
+}
+
+#[test]
+fn missing_duration_fails_closed_under_active_time_gate() {
+    let gate = GateConfig {
+        max_unit_test_seconds: vec![("*".into(), 60.0)],
+        ..GateConfig::default()
+    };
+    let effective = reclassify_statuses_with_gate(
+        &["a".into()],
+        &[WitnessStatus::Passed],
+        &[None],
+        &gate,
+    );
+    assert_eq!(effective, vec![WitnessStatus::Failed]);
+    let disabled = GateConfig {
+        max_unit_test_seconds: vec![],
+        ..GateConfig::default()
+    };
+    let kept = reclassify_statuses_with_gate(
+        &["a".into()],
+        &[WitnessStatus::Passed],
+        &[None],
+        &disabled,
+    );
+    assert_eq!(kept, vec![WitnessStatus::Passed]);
 }
 
 #[test]

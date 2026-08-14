@@ -260,7 +260,12 @@ pub(super) fn run_rust_selectors_for_module(
             )
     {
         maybe_bootstrap_rust_witness(&ctx.planned.repo_root, selectors, &identity);
-        let warm = rust_warm_or_miss_selectors(&ctx.planned.repo_root, selectors, &identity);
+        let warm = rust_warm_or_miss_selectors(
+            &ctx.planned.repo_root,
+            selectors,
+            &identity,
+            &ctx.options.gate,
+        );
         let mut run_only: Option<Vec<String>> = match warm {
             RustWarmDecision::Warm(summary) => {
                 let forced: Vec<String> = ctx

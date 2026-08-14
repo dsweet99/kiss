@@ -49,6 +49,7 @@ pub(crate) fn load_check_runtime_coverage(
     repo_root: &Path,
     required: RequiredCoverageLanguages,
     ignore: &[String],
+    gate: &kiss::GateConfig,
 ) -> Result<RuntimeCoverageSnapshot, RuntimeCoverageLoadError> {
     let mut covered_lines = BTreeMap::<String, BTreeSet<u32>>::new();
     let mut identity_parts = Vec::new();
@@ -58,7 +59,7 @@ pub(crate) fn load_check_runtime_coverage(
         merge_lines(&mut covered_lines, python.covered_lines);
     }
     if required.rust {
-        let rust = load_rust_runtime_coverage(repo_root, ignore)?;
+        let rust = load_rust_runtime_coverage(repo_root, ignore, gate)?;
         identity_parts.push(("rust".to_string(), rust.identity));
         merge_lines(&mut covered_lines, rust.covered_lines);
     }

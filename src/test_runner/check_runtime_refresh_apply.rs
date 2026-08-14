@@ -59,7 +59,7 @@ pub(crate) fn apply_identity_only_repair_labeled(
     .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
     rust_llvm_cov_runner::publish_check_aggregate(&build.request, &aggregate)
         .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
-    load_rust_runtime_coverage(repo_root, ignore)
+    load_rust_runtime_coverage(repo_root, ignore, &kiss::GateConfig::default())
         .map(|_| ())
         .map_err(|err| CoverageRefreshError::validation("Rust", err))?;
     eprintln!(
@@ -102,7 +102,7 @@ pub(crate) fn finalize_population_summary_labeled(
             exit_code: summary.exit_code,
         });
     }
-    load_rust_runtime_coverage(repo_root, ignore)
+    load_rust_runtime_coverage(repo_root, ignore, &kiss::GateConfig::default())
         .map(|_| ())
         .map_err(|err| CoverageRefreshError::validation("Rust", err))?;
     Ok(CoverageRefreshStats::for_rust(super::LanguageRefreshStats {

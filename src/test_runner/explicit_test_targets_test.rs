@@ -49,7 +49,7 @@ fn explicit_single_python_test_ignores_prior_failure_fanout() {
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let planned = plan_target_selectors(TargetPlanKind::Targets(&["tests/test_a.py::test_x".into()]), &[], crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] }, Some(kiss::Language::Python),
-    );
+        &kiss::GateConfig::default());
     std::env::set_current_dir(orig).unwrap();
     let planned = planned.expect("plan explicit test");
 
@@ -83,7 +83,7 @@ fn explicit_python_test_file_selects_only_that_file() {
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let planned = plan_target_selectors(TargetPlanKind::Targets(&["tests/test_a.py".into()]), &[], crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] }, Some(kiss::Language::Python),
-    );
+        &kiss::GateConfig::default());
     std::env::set_current_dir(orig).unwrap();
     let planned = planned.expect("plan explicit test file");
 
@@ -133,7 +133,7 @@ fn explicit_nested_non_member_rust_target_is_rejected() {
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let planned = plan_target_selectors(TargetPlanKind::Targets(&["nested".into()]), &[], crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] }, Some(kiss::Language::Rust),
-    );
+        &kiss::GateConfig::default());
     std::env::set_current_dir(orig).unwrap();
     let err = match planned {
         Ok(_) => panic!("nested non-member must fail fast"),

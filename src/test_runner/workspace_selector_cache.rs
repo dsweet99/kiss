@@ -236,9 +236,15 @@ pub(crate) fn store_workspace_selectors(
         python_selectors: python_selectors.to_vec(),
         rust_selectors: rust_selectors.to_vec(),
     };
-    let _ = write_cache_at(&cache_path(repo_root), &cache);
-    let _ = write_cache_at(&durable_cache_path(repo_root), &cache);
-    Some(files_fingerprint)
+    // Fail closed: a returned fingerprint means the store succeeded. Prefer both
+    // writes; accept durable-only so load's durable fallback can still warm.
+    let primary_ok = write_cache_at(&cache_path(repo_root), &cache).is_ok();
+    let durable_ok = write_cache_at(&durable_cache_path(repo_root), &cache).is_ok();
+    if primary_ok || durable_ok {
+        Some(files_fingerprint)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

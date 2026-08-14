@@ -253,7 +253,7 @@ pub(super) fn align_statuses(
 ) -> Result<Option<AlignedWitnessStatuses>, String> {
     let report_ids =
         crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, selectors)?;
-    let mut prior_durations: BTreeMap<&str, u64> = BTreeMap::new();
+    let mut prior_durations: BTreeMap<&str, Option<u64>> = BTreeMap::new();
     if let Some(existing) = existing_full {
         for (sel, dur) in existing.selectors.iter().zip(existing.durations_ns.iter()) {
             prior_durations.insert(sel.as_str(), *dur);
@@ -272,8 +272,10 @@ pub(super) fn align_statuses(
             .get(sel)
             .or_else(|| summary.selector_durations_ns.get(&report))
             .copied()
+            .map(Some)
             .or_else(|| prior_durations.get(sel.as_str()).copied())
-            .unwrap_or(0);
+            .flatten();
+        // Preserve absence: do not collapse missing timings into 0.
         durations_ns.push(dur);
     }
     Ok(Some(AlignedWitnessStatuses {
@@ -284,7 +286,7 @@ pub(super) fn align_statuses(
 
 pub(super) struct AlignedWitnessStatuses {
     pub(super) statuses: Vec<WitnessStatus>,
-    pub(super) durations_ns: Vec<u64>,
+    pub(super) durations_ns: Vec<Option<u64>>,
 }
 
 fn capture_covered_lines(

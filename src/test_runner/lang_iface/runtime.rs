@@ -56,7 +56,7 @@ pub(crate) struct OutcomeBatch {
     pub(crate) summary: SelectorExecutionSummary,
     pub(crate) selectors: Vec<String>,
     pub(crate) statuses: Vec<WitnessStatus>,
-    pub(crate) durations_ns: Vec<u64>,
+    pub(crate) durations_ns: Vec<Option<u64>>,
     pub(crate) covered_lines: BTreeMap<String, Vec<u32>>,
     /// Full planned universe for Full publication; None means delta/repair only.
     pub(crate) publication_universe: Option<Vec<String>>,
@@ -66,7 +66,7 @@ pub(crate) struct OutcomeBatch {
 pub(crate) struct PublishBatch {
     pub(crate) selectors: Vec<String>,
     pub(crate) statuses: Vec<WitnessStatus>,
-    pub(crate) durations_ns: Vec<u64>,
+    pub(crate) durations_ns: Vec<Option<u64>>,
     pub(crate) covered_lines: BTreeMap<String, Vec<u32>>,
     pub(crate) publication_universe: Option<Vec<String>>,
     #[allow(dead_code)]
@@ -109,7 +109,7 @@ pub(crate) struct CoverageSnapshot {
 pub(crate) struct StatusTimingSnapshot {
     pub(crate) selectors: Vec<String>,
     pub(crate) statuses: Vec<WitnessStatus>,
-    pub(crate) durations_ns: Vec<u64>,
+    pub(crate) durations_ns: Vec<Option<u64>>,
 }
 
 /// Per-language cache/run/publish policy for the shared ensure kernel.

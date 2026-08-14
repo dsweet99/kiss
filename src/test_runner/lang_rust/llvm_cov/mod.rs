@@ -133,7 +133,7 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
                 repo_root, extra,
             )?;
         if let Some(summary) = crate::test_runner::execution_witness::try_warm_rust_cached_summary(
-            repo_root, selectors, &identity,
+            repo_root, selectors, &identity, &kiss::GateConfig::load(),
         ) {
             return Ok(Some(summary));
         }

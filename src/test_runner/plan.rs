@@ -29,6 +29,7 @@ pub(crate) fn plan_target_selectors(
     ignore: &[String],
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
     lang_filter: Option<Language>,
+    gate: &kiss::GateConfig,
 ) -> Result<PlannedSelectors, String> {
     let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
@@ -39,14 +40,14 @@ pub(crate) fn plan_target_selectors(
     }
     match kind {
         TargetPlanKind::All => {
-            plan_all_selectors(&repo_root, &ignore_norm, extras.python, lang_filter)
+            plan_all_selectors(&repo_root, &ignore_norm, extras.python, lang_filter, gate)
         }
         TargetPlanKind::Targets(targets) => {
             match expand_target_operands(&repo_root, targets, &ignore_norm, lang_filter)
                 .map_err(|e| format!("error: kiss test: {e}"))?
             {
                 ExpandedTargetPlan::All => {
-                    plan_all_selectors(&repo_root, &ignore_norm, extras.python, lang_filter)
+                    plan_all_selectors(&repo_root, &ignore_norm, extras.python, lang_filter, gate)
                 }
                 ExpandedTargetPlan::Files(files) => {
                     plan_explicit_target_selectors(
@@ -67,8 +68,10 @@ fn plan_all_selectors(
     ignore: &[String],
     python_extra: &[String],
     lang_filter: Option<Language>,
+    gate: &kiss::GateConfig,
 ) -> Result<PlannedSelectors, String> {
-    if let Some(planned) = try_plan_all_from_cache(repo_root, ignore, python_extra, lang_filter) {
+    if let Some(planned) = try_plan_all_from_cache(repo_root, ignore, python_extra, lang_filter, gate)
+    {
         return Ok(planned);
     }
     let (py_sel, rs_sel) = discover_all_selectors(repo_root, ignore, python_extra, lang_filter)?;
@@ -86,6 +89,7 @@ fn plan_all_selectors(
         py_sel,
         rs_sel,
         fp,
+        gate,
     ))
 }
 
@@ -94,6 +98,7 @@ fn try_plan_all_from_cache(
     ignore: &[String],
     python_extra: &[String],
     lang_filter: Option<Language>,
+    gate: &kiss::GateConfig,
 ) -> Option<PlannedSelectors> {
     let cache_started = std::time::Instant::now();
     let (cached_py, cached_rs, fp) =
@@ -111,6 +116,7 @@ fn try_plan_all_from_cache(
         py_sel,
         rs_sel,
         Some(fp),
+        gate,
     ))
 }
 
@@ -169,6 +175,7 @@ fn planned_all(
     py_sel: Vec<String>,
     rs_sel: Vec<String>,
     workspace_files_fingerprint: Option<String>,
+    gate: &kiss::GateConfig,
 ) -> PlannedSelectors {
     // Warm `kiss test .`: when coverage populations are already current for the
     // planned selector sets, run as selective reuse instead of re-populating
@@ -191,7 +198,7 @@ fn planned_all(
     let rust_population_required = if rs_sel.is_empty() {
         false
     } else {
-        !rust_population_current_for_all_selectors(repo_root, &rs_sel)
+        !rust_population_current_for_all_selectors(repo_root, &rs_sel, gate)
     };
     PlannedSelectors {
         repo_root: repo_root.to_path_buf(),

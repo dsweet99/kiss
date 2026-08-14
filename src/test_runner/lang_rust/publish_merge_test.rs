@@ -22,7 +22,7 @@ fn witness(complete: bool) -> ExecutionWitness {
         identity_digest: "id".into(),
         selectors: vec!["a".into(), "b".into()],
         statuses: vec![WitnessStatus::Passed, WitnessStatus::Failed],
-        durations_ns: vec![1, 2],
+        durations_ns: vec![Some(1), Some(2)],
         covered_lines: BTreeMap::from([("f.rs".into(), vec![1])]),
         complete,
         generation_id: "g".into(),
@@ -35,7 +35,7 @@ fn merge_updates_only_ran_selectors_and_preserves_siblings() {
     let batch = PublishBatch {
         selectors: vec!["b".into()],
         statuses: vec![WitnessStatus::Passed],
-        durations_ns: vec![9],
+        durations_ns: vec![Some(9)],
         covered_lines: BTreeMap::new(),
         publication_universe: Some(vec!["a".into(), "b".into()]),
         summary: SelectorExecutionSummary::default(),
@@ -43,7 +43,7 @@ fn merge_updates_only_ran_selectors_and_preserves_siblings() {
     let universe = publication_universe(&batch, Some(&prior));
     let (statuses, durations) = merge_statuses(&universe, Some(&prior), &batch);
     assert_eq!(statuses, vec![WitnessStatus::Passed, WitnessStatus::Passed]);
-    assert_eq!(durations, vec![1, 9]);
+    assert_eq!(durations, vec![Some(1), Some(9)]);
     let covered = covered_sets_for_publish(&batch, Some(&prior));
     assert!(covered.contains_key("f.rs"));
     let req = EnsureRequest {
@@ -66,7 +66,7 @@ fn empty_prior_baseline_is_unresolved() {
     let batch = PublishBatch {
         selectors: vec!["a".into()],
         statuses: vec![WitnessStatus::Passed],
-        durations_ns: vec![1],
+        durations_ns: vec![Some(1)],
         covered_lines: BTreeMap::from([("x.rs".into(), vec![2])]),
         publication_universe: None,
         summary: SelectorExecutionSummary::default(),
@@ -99,7 +99,7 @@ fn statuses_from_summary_classifies_failed_and_timeout() {
             WitnessStatus::TimedOut
         ]
     );
-    assert_eq!(dur, vec![3, 0, 0]);
+    assert_eq!(dur, vec![Some(3), None, None]);
 }
 
 #[test]

@@ -3,6 +3,26 @@ use std::fs;
 use tempfile::tempdir;
 
 #[test]
+fn store_workspace_selectors_fails_closed_when_writes_fail() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(
+        root.join("tests").join("test_a.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+    // Block both primary (.kiss/...) and durable (target/kiss-plan/...) parents.
+    fs::write(root.join(".kiss"), "not-a-directory").unwrap();
+    fs::write(root.join("target"), "not-a-directory").unwrap();
+    assert!(
+        store_workspace_selectors(root, &[], &["tests/test_a.py::test_a".into()], &[]).is_none(),
+        "unwritable cache parents must not report a successful fingerprint"
+    );
+    assert!(load_cached_workspace_selectors(root, &[]).is_none());
+}
+
+#[test]
 fn workspace_selector_cache_round_trips_then_misses_on_touch() {
     let tmp = tempdir().unwrap();
     let root = tmp.path();

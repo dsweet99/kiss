@@ -11,6 +11,7 @@ use kiss::GateConfig;
 pub(super) fn rust_population_current_for_all_selectors(
     repo_root: &std::path::Path,
     selectors: &[String],
+    gate: &GateConfig,
 ) -> bool {
     // Cold `.kiss` (no population / witness): skip batch_identity. That path
     // digests the ordinary Rust source tree and dominated wiped-cache planning.
@@ -41,13 +42,14 @@ pub(super) fn rust_population_current_for_all_selectors(
     }
     // Derived population.json can lag the execution witness when all-hit publishes
     // skip index rewrite. A complete Accepting witness is enough for selective reuse.
-    rust_witness_accepts_full_universe(repo_root, &expected, &identity)
+    rust_witness_accepts_full_universe(repo_root, &expected, &identity, gate)
 }
 
 fn rust_witness_accepts_full_universe(
     repo_root: &std::path::Path,
     selectors: &[String],
     identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    gate: &GateConfig,
 ) -> bool {
     let Ok(mut witness) = try_load_rust_execution_witness(repo_root) else {
         return false;
@@ -56,12 +58,11 @@ fn rust_witness_accepts_full_universe(
     if witness.identity_digest != current || !witness.complete {
         return false;
     }
-    let gate = GateConfig::load();
     witness.statuses = reclassify_statuses_with_gate(
         &witness.selectors,
         &witness.statuses,
         &witness.durations_ns,
-        &gate,
+        gate,
     );
     accept_witness(AcceptMode::All, selectors, &current, &witness) == AcceptDecision::Accept
 }
@@ -73,6 +74,7 @@ mod tests {
         PublishRustWitness, WitnessScope, WitnessStatus, publish_rust_execution_witness,
         rust_identity_digest_from_batch,
     };
+    use kiss::GateConfig;
     use std::collections::{BTreeMap, BTreeSet};
 
     fn identity() -> rust_llvm_cov_runner::RustCoverageBatchIdentity {
@@ -89,8 +91,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let id = identity();
         let selectors = vec!["a".into()];
-        assert!(!rust_witness_accepts_full_universe(tmp.path(), &selectors, &id));
-        assert!(!rust_population_current_for_all_selectors(tmp.path(), &selectors));
+        let gate = GateConfig::default();
+        assert!(!rust_witness_accepts_full_universe(tmp.path(), &selectors, &id, &gate));
+        assert!(!rust_population_current_for_all_selectors(tmp.path(), &selectors, &gate));
     }
 
     #[test]
@@ -112,13 +115,14 @@ mod tests {
             scope: WitnessScope::Full,
             selectors: &selectors,
             statuses: &[WitnessStatus::Passed, WitnessStatus::Passed],
-            durations_ns: &[1, 1],
+            durations_ns: &[Some(1), Some(1)],
             covered_lines: &covered,
             complete: true,
         })
         .unwrap();
         assert!(!rust_identity_digest_from_batch(&id).is_empty());
-        assert!(rust_witness_accepts_full_universe(tmp.path(), &selectors, &id));
+        let gate = GateConfig::default();
+        assert!(rust_witness_accepts_full_universe(tmp.path(), &selectors, &id, &gate));
 
         publish_rust_execution_witness(PublishRustWitness {
             repo_root: tmp.path(),
@@ -126,11 +130,11 @@ mod tests {
             scope: WitnessScope::Full,
             selectors: &selectors,
             statuses: &[WitnessStatus::Passed, WitnessStatus::Unresolved],
-            durations_ns: &[1, 1],
+            durations_ns: &[Some(1), Some(1)],
             covered_lines: &covered,
             complete: false,
         })
         .unwrap();
-        assert!(!rust_witness_accepts_full_universe(tmp.path(), &selectors, &id));
+        assert!(!rust_witness_accepts_full_universe(tmp.path(), &selectors, &id, &gate));
     }
 }

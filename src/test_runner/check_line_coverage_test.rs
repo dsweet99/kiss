@@ -75,6 +75,7 @@ fn missing_python_population_error_has_no_manual_refresh_instruction() {
             rust: false,
         },
         &[],
+        &kiss::GateConfig::default(),
     )
     .expect_err("missing Python coverage should fail");
     let msg = err.to_string();
@@ -264,7 +265,7 @@ fn incomplete_generation_reports_problem_selectors() {
 fn load_rust_runtime_coverage_fails_closed_without_cache() {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir_all(tmp.path().join(".git")).unwrap();
-    let err = load_rust_runtime_coverage(tmp.path(), &[]).expect_err("no rust cache");
+    let err = load_rust_runtime_coverage(tmp.path(), &[], &kiss::GateConfig::default()).expect_err("no rust cache");
     assert_eq!(err.language, "Rust");
 }
 

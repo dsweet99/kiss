@@ -21,13 +21,13 @@ pub(crate) fn python_identity_digest(pinned: &PinnedPythonGeneration) -> String 
 }
 
 pub(crate) fn python_witness_from_pinned(pinned: &PinnedPythonGeneration) -> ExecutionWitness {
-    let mut by_sel: std::collections::BTreeMap<String, (WitnessStatus, u64)> = pinned
+    let mut by_sel: std::collections::BTreeMap<String, (WitnessStatus, Option<u64>)> = pinned
         .timings
         .iter()
         .map(|t| {
             (
                 t.selector.clone(),
-                (WitnessStatus::parse(&t.raw_status), t.duration_ns.unwrap_or(0)),
+                (WitnessStatus::parse(&t.raw_status), t.duration_ns),
             )
         })
         .collect();
@@ -44,7 +44,7 @@ pub(crate) fn python_witness_from_pinned(pinned: &PinnedPythonGeneration) -> Exe
             }
             None => {
                 statuses.push(WitnessStatus::Unresolved);
-                durations_ns.push(0);
+                durations_ns.push(None);
             }
         }
     }

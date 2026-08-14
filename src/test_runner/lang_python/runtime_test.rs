@@ -45,7 +45,7 @@ fn python_accepted_summary_counts_hits() {
         identity_digest: "id".into(),
         selectors: vec!["a".into()],
         statuses: vec![WitnessStatus::Passed],
-        durations_ns: vec![1],
+        durations_ns: vec![Some(1)],
         covered_lines: BTreeMap::new(),
         complete: true,
         generation_id: "g".into(),

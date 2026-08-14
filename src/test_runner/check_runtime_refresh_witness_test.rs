@@ -110,7 +110,7 @@ fn witness_warm_downgrades_rerun_to_identity_only() {
         scope: WitnessScope::Full,
         selectors: &selectors,
         statuses: &[WitnessStatus::Passed, WitnessStatus::Passed],
-        durations_ns: &[0, 0],
+        durations_ns: &[Some(0), Some(0)],
         covered_lines: &empty_cov,
         complete: true,
     })

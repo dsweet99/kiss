@@ -73,7 +73,7 @@ pub(crate) fn warm_cov_caches_after_tests(
     if try_load_cov_records(&cache_key).is_some() {
         return;
     }
-    let Ok(snapshot) = load_check_runtime_coverage(&repo_root, required, &ignore) else {
+    let Ok(snapshot) = load_check_runtime_coverage(&repo_root, required, &ignore, &gate) else {
         return;
     };
     let records = compute_line_coverage_records(&repo_root, &py_files, &rs_files, &snapshot);

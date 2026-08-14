@@ -41,7 +41,7 @@ fn accepted_summary_emits_cached_passes() {
         identity_digest: "id".into(),
         selectors: vec!["a".into()],
         statuses: vec![WitnessStatus::Passed],
-        durations_ns: vec![1],
+        durations_ns: vec![Some(1)],
         covered_lines: BTreeMap::new(),
         complete: true,
         generation_id: "g".into(),
@@ -78,7 +78,7 @@ fn rust_runtime_empty_run_and_load_miss() {
     let publish = PublishBatch {
         selectors: vec!["a".into()],
         statuses: vec![WitnessStatus::Passed],
-        durations_ns: vec![1],
+        durations_ns: vec![Some(1)],
         covered_lines: BTreeMap::new(),
         publication_universe: Some(vec!["a".into()]),
         summary: Default::default(),

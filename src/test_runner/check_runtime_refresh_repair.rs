@@ -129,6 +129,7 @@ pub(crate) fn maybe_downgrade_rerun_when_witness_warm(
         repo_root,
         selectors,
         current_identity,
+        &kiss::GateConfig::default(),
     )
     .is_none()
     {

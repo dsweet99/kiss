@@ -121,6 +121,11 @@ fn successful_ensure_does_not_create_xdg_kiss_cov_durable() {
         !cache_home.join("kiss").join("kiss-cov-durable").exists(),
         "successful ensure must not publish $XDG_CACHE_HOME/kiss/kiss-cov-durable"
     );
-    crate::test_runner::check_line_coverage::load_check_runtime_coverage(repo, required, &[])
+    crate::test_runner::check_line_coverage::load_check_runtime_coverage(
+        repo,
+        required,
+        &[],
+        &kiss::GateConfig::default(),
+    )
         .expect("coverage must remain loadable from ./.kiss");
 }

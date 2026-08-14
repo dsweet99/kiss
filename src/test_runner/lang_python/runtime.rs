@@ -157,7 +157,7 @@ impl LanguageRuntime for PythonRuntime {
 fn statuses_from_summary(
     summary: &SelectorExecutionSummary,
     selectors: &[String],
-) -> (Vec<WitnessStatus>, Vec<u64>) {
+) -> (Vec<WitnessStatus>, Vec<Option<u64>>) {
     let mut statuses = Vec::with_capacity(selectors.len());
     let mut durations = Vec::with_capacity(selectors.len());
     for sel in selectors {
@@ -176,13 +176,8 @@ fn statuses_from_summary(
             TestStatus::Passed => WitnessStatus::Passed,
         };
         statuses.push(status);
-        durations.push(
-            summary
-                .selector_durations_ns
-                .get(sel)
-                .copied()
-                .unwrap_or(0),
-        );
+        // Preserve absence: do not collapse missing timings into 0.
+        durations.push(summary.selector_durations_ns.get(sel).copied());
     }
     (statuses, durations)
 }

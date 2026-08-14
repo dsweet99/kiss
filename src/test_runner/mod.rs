@@ -257,6 +257,7 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
                 rust: a.extra,
             },
             a.lang_filter,
+            &a.gate_config,
         ),
         TestInvocation::Targets(targets) => plan_target_selectors(
             TargetPlanKind::Targets(targets.as_slice()),
@@ -266,6 +267,7 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
                 rust: a.extra,
             },
             a.lang_filter,
+            &a.gate_config,
         ),
     }
 }

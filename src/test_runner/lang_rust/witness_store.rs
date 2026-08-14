@@ -31,7 +31,7 @@ struct OnDiskRustWitness {
     complete: bool,
     selectors: Vec<String>,
     statuses: Vec<String>,
-    durations_ns: Vec<u64>,
+    durations_ns: Vec<Option<u64>>,
     #[serde(default)]
     covered_lines: BTreeMap<String, Vec<u32>>,
     content_sha256: String,
@@ -54,7 +54,7 @@ pub(crate) struct PublishRustWitness<'a> {
     pub scope: WitnessScope,
     pub selectors: &'a [String],
     pub statuses: &'a [WitnessStatus],
-    pub durations_ns: &'a [u64],
+    pub durations_ns: &'a [Option<u64>],
     pub covered_lines: &'a BTreeMap<String, BTreeSet<u32>>,
     pub complete: bool,
 }
@@ -118,9 +118,9 @@ fn covered_lines_for_disk(
 fn order_witness_rows(
     selectors: &[String],
     statuses: &[WitnessStatus],
-    durations_ns: &[u64],
-) -> (Vec<String>, Vec<WitnessStatus>, Vec<u64>) {
-    let mut ordered: Vec<(String, WitnessStatus, u64)> = selectors
+    durations_ns: &[Option<u64>],
+) -> (Vec<String>, Vec<WitnessStatus>, Vec<Option<u64>>) {
+    let mut ordered: Vec<(String, WitnessStatus, Option<u64>)> = selectors
         .iter()
         .cloned()
         .zip(statuses.iter().copied())
@@ -213,6 +213,7 @@ pub(crate) fn rust_miss_selectors(
     repo_root: &Path,
     planned_selectors: &[String],
     identity: &RustCoverageBatchIdentity,
+    gate: &GateConfig,
 ) -> Option<Vec<String>> {
     let Ok(mut witness) = try_load_rust_execution_witness(repo_root) else {
         return None;
@@ -220,12 +221,11 @@ pub(crate) fn rust_miss_selectors(
     if witness.identity_digest != rust_identity_digest_from_batch(identity) {
         return None;
     }
-    let gate = GateConfig::load();
     witness.statuses = reclassify_statuses_with_gate(
         &witness.selectors,
         &witness.statuses,
         &witness.durations_ns,
-        &gate,
+        gate,
     );
     let index: std::collections::BTreeMap<&str, usize> = witness
         .selectors
@@ -247,16 +247,16 @@ pub(crate) fn try_warm_rust_cached_summary(
     repo_root: &Path,
     planned_selectors: &[String],
     identity: &RustCoverageBatchIdentity,
+    gate: &GateConfig,
 ) -> Option<SelectorExecutionSummary> {
     let Ok(mut witness) = try_load_rust_execution_witness(repo_root) else {
         return None;
     };
-    let gate = GateConfig::load();
     witness.statuses = reclassify_statuses_with_gate(
         &witness.selectors,
         &witness.statuses,
         &witness.durations_ns,
-        &gate,
+        gate,
     );
     let current = rust_identity_digest_from_batch(identity);
     let mut planned = planned_selectors.to_vec();
@@ -283,13 +283,17 @@ pub(crate) fn rust_warm_or_miss_selectors(
     repo_root: &Path,
     planned_selectors: &[String],
     identity: &RustCoverageBatchIdentity,
+    gate: &GateConfig,
 ) -> RustWarmDecision {
-    if let Some(summary) = try_warm_rust_cached_summary(repo_root, planned_selectors, identity) {
+    if let Some(summary) =
+        try_warm_rust_cached_summary(repo_root, planned_selectors, identity, gate)
+    {
         return RustWarmDecision::Warm(Box::new(summary));
     }
-    match rust_miss_selectors(repo_root, planned_selectors, identity) {
+    match rust_miss_selectors(repo_root, planned_selectors, identity, gate) {
         Some(misses) if misses.is_empty() => {
-            if let Some(summary) = try_warm_rust_cached_summary(repo_root, planned_selectors, identity)
+            if let Some(summary) =
+                try_warm_rust_cached_summary(repo_root, planned_selectors, identity, gate)
             {
                 RustWarmDecision::Warm(Box::new(summary))
             } else {
@@ -317,7 +321,7 @@ pub(crate) fn maybe_bootstrap_rust_witness(
         return;
     }
     let statuses = vec![WitnessStatus::Passed; selectors.len()];
-    let durations = vec![0u64; selectors.len()];
+    let durations = vec![Some(0u64); selectors.len()];
     let _ = publish_rust_execution_witness(PublishRustWitness {
         repo_root,
         identity,

@@ -21,7 +21,7 @@ pub(super) fn merge_statuses(
     universe: &[String],
     prior: Option<&ExecutionWitness>,
     batch: &PublishBatch,
-) -> (Vec<WitnessStatus>, Vec<u64>) {
+) -> (Vec<WitnessStatus>, Vec<Option<u64>>) {
     let (mut statuses, mut durations) = baseline_from_prior(universe, prior);
     let ran_index: BTreeMap<&str, usize> = batch
         .selectors
@@ -46,11 +46,11 @@ pub(super) fn merge_statuses(
 fn baseline_from_prior(
     universe: &[String],
     prior: Option<&ExecutionWitness>,
-) -> (Vec<WitnessStatus>, Vec<u64>) {
+) -> (Vec<WitnessStatus>, Vec<Option<u64>>) {
     let Some(w) = prior else {
         return (
             vec![WitnessStatus::Unresolved; universe.len()],
-            vec![0u64; universe.len()],
+            vec![None; universe.len()],
         );
     };
     let index: BTreeMap<&str, usize> = w
@@ -67,7 +67,7 @@ fn baseline_from_prior(
             dur.push(w.durations_ns[i]);
         } else {
             st.push(WitnessStatus::Unresolved);
-            dur.push(0);
+            dur.push(None);
         }
     }
     (st, dur)
@@ -110,7 +110,7 @@ pub(super) fn publish_complete(
 pub(super) fn statuses_from_summary(
     summary: &crate::test_runner::runners::SelectorExecutionSummary,
     selectors: &[String],
-) -> (Vec<WitnessStatus>, Vec<u64>) {
+) -> (Vec<WitnessStatus>, Vec<Option<u64>>) {
     use rpytest_runner::TestStatus;
     let mut statuses = Vec::with_capacity(selectors.len());
     let mut durations = Vec::with_capacity(selectors.len());
@@ -129,13 +129,8 @@ pub(super) fn statuses_from_summary(
             TestStatus::Passed => WitnessStatus::Passed,
         };
         statuses.push(status);
-        durations.push(
-            summary
-                .selector_durations_ns
-                .get(sel)
-                .copied()
-                .unwrap_or(0),
-        );
+        // Preserve absence: do not collapse missing timings into 0.
+        durations.push(summary.selector_durations_ns.get(sel).copied());
     }
     (statuses, durations)
 }

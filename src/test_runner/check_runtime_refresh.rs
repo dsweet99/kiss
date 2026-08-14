@@ -285,7 +285,8 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     caller_label: &str,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     let _guard = lock_refresh(repo_root, "Rust")?;
-    if load_rust_runtime_coverage(repo_root, ignore).is_ok() {
+    let gate = kiss::GateConfig::load();
+    if load_rust_runtime_coverage(repo_root, ignore, &gate).is_ok() {
         return Ok(CoverageRefreshStats::default());
     }
     let request = crate::test_runner::ensure_runtime::ensure_request_for_all(
@@ -294,7 +295,7 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
         jobs,
         Some(kiss::Language::Rust),
         false,
-        kiss::GateConfig::load(),
+        gate,
     )
     .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
     // Incremental CheckAggregate repair stays language-owned; command path still
@@ -333,7 +334,7 @@ pub(crate) fn ensure_rust_runtime_coverage_shared(
     jobs: usize,
     caller_label: &str,
 ) -> Result<crate::test_runner::runners::SelectorExecutionSummary, CoverageRefreshError> {
-    if load_rust_runtime_coverage(repo_root, ignore).is_ok() {
+    if load_rust_runtime_coverage(repo_root, ignore, &kiss::GateConfig::load()).is_ok() {
         let rust_batch_cache_hits =
             crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
                 .unwrap_or_default()
