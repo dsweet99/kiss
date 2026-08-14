@@ -13,6 +13,8 @@ pub(crate) struct EnsureFromPlanned<'a> {
     pub(crate) mode: AcceptMode,
     pub(crate) lang_filter: Option<Language>,
     pub(crate) force: bool,
+    /// Prior-failure selectors that must invalidate reuse without batch-wide force.
+    pub(crate) force_selectors: Vec<String>,
     pub(crate) jobs: usize,
     /// Per-language CLI extras (same abstract slot as `EnsureRequest.extras`).
     pub(crate) extras: LanguageKeyed<&'a [String]>,

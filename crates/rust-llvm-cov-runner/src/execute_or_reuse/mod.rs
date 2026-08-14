@@ -44,6 +44,8 @@ pub(crate) mod batch_output_channel_token;
 
 pub(crate) mod batch_process_tree;
 
+pub(crate) mod progress;
+
 pub(crate) mod batch_result;
 
 pub(crate) mod batch_run;

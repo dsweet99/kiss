@@ -13,9 +13,7 @@ use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::{
     current_rust_coverage_batch_identity, repo_relative_coverage_file,
 };
-use crate::test_runner::selector_ids::{
-    report_string_for_logical_string, report_strings_for_logical_strings,
-};
+use crate::test_runner::selector_ids::report_string_for_logical_string;
 
 use super::witness_store::{
     PublishRustWitness, publish_rust_execution_witness, rust_identity_digest_from_batch,
@@ -148,7 +146,8 @@ impl LanguageRuntime for RustRuntime {
         let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
             &request.repo_root,
             &request.ignore,
-        );
+        )
+        .unwrap_or_default();
         summary_from_accepted_witness(planned, witness, |selector| {
             report_string_for_logical_string(&report_ids, selector)
         })
@@ -163,7 +162,8 @@ impl LanguageRuntime for RustRuntime {
         let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
             &request.repo_root,
             &request.ignore,
-        );
+        )
+        .unwrap_or_default();
         crate::test_runner::lang_iface::summary_from_witness_statuses(
             planned,
             witness,
@@ -176,14 +176,19 @@ impl LanguageRuntime for RustRuntime {
         &self,
         request: &EnsureRequest,
         selectors: &[String],
-    ) -> Vec<String> {
+    ) -> Result<Vec<String>, String> {
         // Witness stores nextest logical ids; ["rust", N] gates match PATH::symbol.
-        // Conversion goes through LogicalSelectorId → ReportSelectorId (not bare String).
         let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
             &request.repo_root,
             &request.ignore,
-        );
-        report_strings_for_logical_strings(&report_ids, selectors)
+        )?;
+        for selector in selectors {
+            crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector)?;
+        }
+        Ok(crate::test_runner::selector_ids::report_strings_for_logical_strings(
+            &report_ids,
+            selectors,
+        ))
     }
 }
 

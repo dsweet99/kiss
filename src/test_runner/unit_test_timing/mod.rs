@@ -115,7 +115,7 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
         &tools,
         None,
     ) {
-        let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]);
+        let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).ok()?;
         return Some(
             pairs
                 .into_iter()
@@ -142,7 +142,7 @@ fn load_rust_timings_from_witness(
     if witness.durations_ns.len() != witness.selectors.len() {
         return None;
     }
-    let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]);
+    let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).ok()?;
     Some(
         witness
             .selectors

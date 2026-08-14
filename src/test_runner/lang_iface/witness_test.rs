@@ -288,3 +288,28 @@ fn force_and_missing_witness_run_all_planned() {
         miss_selectors_for_repair(AcceptMode::All, &planned, "id", Some(&w), false).is_empty()
     );
 }
+
+#[test]
+fn force_selectors_invalidate_stale_passed_without_batch_force() {
+    let planned = vec!["a".into(), "b".into()];
+    let w = witness(
+        WitnessScope::Full,
+        "id",
+        &["a", "b"],
+        &[WitnessStatus::Passed, WitnessStatus::Passed],
+        true,
+    );
+    let mut misses =
+        miss_selectors_for_repair(AcceptMode::Subset, &planned, "id", Some(&w), false);
+    assert!(misses.is_empty(), "stale Passed witness would warm-accept");
+    crate::test_runner::lang_iface::union_force_selectors_into_misses(
+        &planned,
+        &mut misses,
+        &["a".into()],
+    );
+    assert_eq!(misses, vec!["a".to_string()]);
+    assert!(
+        miss_selectors_for_repair(AcceptMode::Subset, &planned, "id", Some(&w), false).is_empty(),
+        "batch force remains false: other selectors stay warm-eligible"
+    );
+}

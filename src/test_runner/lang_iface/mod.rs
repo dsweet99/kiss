@@ -7,6 +7,7 @@ pub(crate) use witness::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
     all_misses_warm_skippable, miss_selectors_for_repair, reclassify_statuses_with_gate,
     summary_from_accepted_witness, summary_from_witness_statuses,
+    union_force_selectors_into_misses,
 };
 pub(crate) use runtime::{
     EnsureRequest, EnsureRuntimeResult, LanguageEnsureResult, LanguageRuntime, OutcomeBatch,

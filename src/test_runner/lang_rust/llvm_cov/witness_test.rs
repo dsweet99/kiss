@@ -142,16 +142,38 @@ fn align_statuses_requires_complete_universe() {
         "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
     )
     .unwrap();
-    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-    let by = BTreeMap::from([("a".into(), WitnessStatus::Passed)]);
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn a() {}\n    #[test]\n    fn b() {}\n}\n",
+    )
+    .unwrap();
+    let by = BTreeMap::from([("tests::a".into(), WitnessStatus::Passed)]);
     let summary = SelectorExecutionSummary {
-        selector_durations_ns: BTreeMap::from([("a".into(), 42)]),
+        selector_durations_ns: BTreeMap::from([("tests::a".into(), 42)]),
         ..Default::default()
     };
-    assert!(align_statuses(tmp.path(), &["a".into(), "b".into()], &by, &summary, None).is_none());
-    let (statuses, durs) = align_statuses(tmp.path(), &["a".into()], &by, &summary, None).unwrap();
-    assert_eq!(statuses, vec![WitnessStatus::Passed]);
-    assert_eq!(durs, vec![42]);
+    assert!(
+        align_statuses(
+            tmp.path(),
+            &["tests::a".into(), "tests::b".into()],
+            &by,
+            &summary,
+            None
+        )
+        .unwrap()
+        .is_none()
+    );
+    let aligned = align_statuses(
+        tmp.path(),
+        &["tests::a".into()],
+        &by,
+        &summary,
+        None,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(aligned.statuses, vec![WitnessStatus::Passed]);
+    assert_eq!(aligned.durations_ns, vec![42]);
 }
 
 #[test]
@@ -163,17 +185,21 @@ fn merged_statuses_overlays_repair_on_existing_full() {
         "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
     )
     .unwrap();
-    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-    let existing = full_witness(&["a", "b"]);
-    let req = check_aggregate_req(&["b"]);
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn a() {}\n    #[test]\n    fn b() {}\n}\n",
+    )
+    .unwrap();
+    let existing = full_witness(&["tests::a", "tests::b"]);
+    let req = check_aggregate_req(&["tests::b"]);
     let summary = SelectorExecutionSummary {
         total: 1,
         failed: 0,
         ..Default::default()
     };
-    let merged = merged_statuses(tmp.path(), &req, &summary, Some(&existing));
-    assert_eq!(merged.get("a"), Some(&WitnessStatus::Passed));
-    assert_eq!(merged.get("b"), Some(&WitnessStatus::Passed));
+    let merged = merged_statuses(tmp.path(), &req, &summary, Some(&existing)).unwrap();
+    assert_eq!(merged.get("tests::a"), Some(&WitnessStatus::Passed));
+    assert_eq!(merged.get("tests::b"), Some(&WitnessStatus::Passed));
 }
 
 #[test]

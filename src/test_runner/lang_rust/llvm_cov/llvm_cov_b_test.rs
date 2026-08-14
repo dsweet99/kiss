@@ -88,6 +88,10 @@ mod tests {
 #[test]
 fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
     let tmp = tempfile::tempdir().unwrap();
+    super::tests::write_rust_test_crate(
+        tmp.path(),
+        &["cached_pass", "fresh_pass", "cached_fail", "fresh_fail"],
+    );
     let identity = rust_last_status_identity(
         "cargo 1.88.0",
         "cargo-llvm-cov 0.6.0",
@@ -164,8 +168,8 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
     assert_eq!(
         summary.failed_selectors,
         vec![
-            "tests::cached_fail".to_string(),
-            "tests::fresh_fail".to_string()
+            "src/lib.rs::cached_fail".to_string(),
+            "src/lib.rs::fresh_fail".to_string()
         ]
     );
     assert_eq!(
@@ -177,6 +181,10 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
 #[test]
 fn finish_rust_coverage_batch_result_prints_fresh_unstored_outcomes() {
     let tmp = tempfile::tempdir().unwrap();
+    super::tests::write_rust_test_crate(
+        tmp.path(),
+        &["fresh_pass", "fresh_fail", "fresh_fail_empty_stderr"],
+    );
     let identity = rust_last_status_identity(
         "cargo 1.88.0",
         "cargo-llvm-cov 0.6.0",
@@ -240,8 +248,8 @@ fn finish_rust_coverage_batch_result_prints_fresh_unstored_outcomes() {
     assert_eq!(
         summary.failed_selectors,
         vec![
-            "tests::fresh_fail".to_string(),
-            "tests::fresh_fail_empty_stderr".to_string()
+            "src/lib.rs::fresh_fail".to_string(),
+            "src/lib.rs::fresh_fail_empty_stderr".to_string()
         ]
     );
     assert_eq!(
@@ -261,7 +269,7 @@ fn run_rust_llvm_cov_selectors_reaches_compat_executor_for_nonempty_selectors() 
     std::fs::create_dir_all(tmp.path().join("src")).unwrap();
     std::fs::write(
         tmp.path().join("src").join("lib.rs"),
-        "pub fn v() -> u32 { 1 }\n",
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn case() {}\n}\n",
     )
     .unwrap();
 
@@ -344,6 +352,15 @@ fn build_current_rust_test_executable_index_on_bare_temp_repo_indexes_or_errors(
                 vec!["missing_case".to_string()]
             );
         }
-        Err(err) => assert!(!err.is_empty(), "error path must carry a message"),
+        Err(err) => {
+            assert!(
+                !err.is_empty(),
+                "error path must carry a message"
+            );
+            assert!(
+                err.contains("missing PATH::symbol report id") || err.contains("missing_case"),
+                "unexpected err: {err}"
+            );
+        }
     }
 }

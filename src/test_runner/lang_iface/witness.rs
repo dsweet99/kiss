@@ -137,6 +137,20 @@ pub(crate) fn miss_selectors_for_repair(
     }
 }
 
+/// Prior-failure selectors must re-run even when the witness still says Passed
+/// (failure skips witness publish, leaving stale Passed). Does not batch-force.
+pub(crate) fn union_force_selectors_into_misses(
+    planned: &[String],
+    misses: &mut Vec<String>,
+    force_selectors: &[String],
+) {
+    for sel in force_selectors {
+        if planned.iter().any(|p| p == sel) && !misses.iter().any(|m| m == sel) {
+            misses.push(sel.clone());
+        }
+    }
+}
+
 fn non_passed_planned(planned: &[String], witness: &ExecutionWitness) -> Vec<String> {
     let index = selector_index(&witness.selectors);
     planned

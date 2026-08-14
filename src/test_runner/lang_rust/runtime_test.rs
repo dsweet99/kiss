@@ -29,6 +29,7 @@ fn accepted_summary_emits_cached_passes() {
         lang_filter: Some(kiss::Language::Rust),
         ignore: vec![],
         force: false,
+        force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
         extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
@@ -64,6 +65,7 @@ fn rust_runtime_empty_run_and_load_miss() {
         lang_filter: Some(kiss::Language::Rust),
         ignore: vec![],
         force: false,
+        force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
         extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
@@ -95,6 +97,7 @@ fn rust_runtime_nonempty_miss_hits_mode_branches() {
             lang_filter: Some(kiss::Language::Rust),
             ignore: vec![],
             force: false,
+            force_selectors: Vec::new(),
             jobs: 1,
             gate: kiss::GateConfig::default(),
         extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
@@ -105,8 +108,7 @@ fn rust_runtime_nonempty_miss_hits_mode_branches() {
 }
 
 #[test]
-fn selectors_for_time_gate_uses_typed_logical_to_report_boundary() {
-    // Empty repo → empty map → unmapped logicals stay explicit (same as report_id_for_logical).
+fn selectors_for_time_gate_fails_closed_without_report_ids() {
     let rt = RustRuntime;
     let tmp = tempfile::tempdir().unwrap();
     let req = EnsureRequest {
@@ -115,6 +117,7 @@ fn selectors_for_time_gate_uses_typed_logical_to_report_boundary() {
         lang_filter: Some(kiss::Language::Rust),
         ignore: vec![],
         force: false,
+        force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
         extras: crate::test_runner::language_keyed::LanguageKeyed {
@@ -126,18 +129,50 @@ fn selectors_for_time_gate_uses_typed_logical_to_report_boundary() {
             rust: vec!["tests::case".into()],
         },
     };
-    let out = rt.selectors_for_time_gate(&req, &["tests::case".into(), "bare".into()]);
-    assert_eq!(out, vec!["tests::case".to_string(), "bare".to_string()]);
-    // Matches the shared typed helper (regression: bypassing LogicalSelectorId would drift).
-    let map = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
-        &req.repo_root,
-        &req.ignore,
+    let err = rt
+        .selectors_for_time_gate(&req, &["tests::case".into(), "bare".into()])
+        .unwrap_err();
+    assert!(
+        err.contains("missing PATH::symbol report id"),
+        "unexpected err: {err}"
     );
-    assert_eq!(
-        out,
-        crate::test_runner::selector_ids::report_strings_for_logical_strings(
-            &map,
-            &["tests::case".into(), "bare".into()],
-        )
-    );
+}
+
+#[test]
+fn selectors_for_time_gate_maps_logical_to_path_symbol() {
+    let rt = RustRuntime;
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname=\"t\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("src/lib.rs"),
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn case() {}\n}\n",
+    )
+    .unwrap();
+    let req = EnsureRequest {
+        repo_root: tmp.path().to_path_buf(),
+        mode: AcceptMode::Subset,
+        lang_filter: Some(kiss::Language::Rust),
+        ignore: vec![],
+        force: false,
+        force_selectors: Vec::new(),
+        jobs: 1,
+        gate: kiss::GateConfig::default(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![],
+        },
+        planned: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec!["tests::case".into()],
+        },
+    };
+    let out = rt
+        .selectors_for_time_gate(&req, &["tests::case".into()])
+        .unwrap();
+    assert_eq!(out, vec!["src/lib.rs::case".to_string()]);
 }

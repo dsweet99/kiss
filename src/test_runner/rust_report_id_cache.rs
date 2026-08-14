@@ -37,13 +37,13 @@ fn cache_path(repo_root: &Path) -> PathBuf {
 pub(crate) fn rust_logical_to_kiss_test_ids_cached(
     repo_root: &Path,
     ignore: &[String],
-) -> BTreeMap<String, String> {
+) -> Result<BTreeMap<String, String>, String> {
     if let Some(map) = try_load_cached(repo_root, ignore) {
-        return map;
+        return Ok(map);
     }
-    let map = rust_logical_to_kiss_test_ids(repo_root, ignore).unwrap_or_default();
+    let map = rust_logical_to_kiss_test_ids(repo_root, ignore)?;
     let _ = store_cached(repo_root, ignore, &map);
-    map
+    Ok(map)
 }
 
 fn try_load_cached(repo_root: &Path, ignore: &[String]) -> Option<BTreeMap<String, String>> {

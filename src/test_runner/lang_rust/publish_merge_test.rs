@@ -52,6 +52,7 @@ fn merge_updates_only_ran_selectors_and_preserves_siblings() {
         lang_filter: Some(kiss::Language::Rust),
         ignore: vec![],
         force: false,
+        force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
         extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },

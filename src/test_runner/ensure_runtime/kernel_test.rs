@@ -164,6 +164,7 @@ fn request(planned: Vec<String>) -> EnsureRequest {
         lang_filter: Some(Language::Python),
         ignore: vec![],
         force: false,
+        force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
         extras: crate::test_runner::language_keyed::LanguageKeyed {

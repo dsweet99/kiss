@@ -145,14 +145,17 @@ where
                     &prepared.shim_metadata,
                     &prepared.parsed.compiler_artifacts,
                 )?;
-                let object_catalog = crate::execute_or_reuse::batch_export_catalog::build_object_catalog(
-                    &prepared.parsed.compiler_artifacts,
-                    &plan.build_target,
-                    &export_requests,
-                    &req.env,
-                );
                 let (exported, export_counters) =
-                    export_step(req, &req.source_root, &object_catalog, export_requests)?;
+                    crate::execute_or_reuse::progress::log_named_step("llvm-cov", || {
+                        let object_catalog =
+                            crate::execute_or_reuse::batch_export_catalog::build_object_catalog(
+                                &prepared.parsed.compiler_artifacts,
+                                &plan.build_target,
+                                &export_requests,
+                                &req.env,
+                            );
+                        export_step(req, &req.source_root, &object_catalog, export_requests)
+                    })?;
                 finish_fresh_batch_after_export(
                     req,
                     tools,
@@ -180,23 +183,27 @@ where
                     &prepared.parsed.compiler_artifacts,
                     publication_binary_ids.as_ref(),
                 )?;
-                let mut object_catalog = crate::execute_or_reuse::batch_export_catalog::build_object_catalog(
-                    &prepared.parsed.compiler_artifacts,
-                    &plan.build_target,
-                    &[],
-                    &req.env,
-                );
-                for request in &aggregate_requests {
-                    object_catalog.extend(request.objects.iter().cloned());
-                }
-                object_catalog.sort();
-                object_catalog.dedup();
-                let (exported, export_counters) = export_check_aggregates_bounded(
-                    req.jobs,
-                    &req.source_root,
-                    &object_catalog,
-                    aggregate_requests,
-                )?;
+                let (exported, export_counters) =
+                    crate::execute_or_reuse::progress::log_named_step("llvm-cov", || {
+                        let mut object_catalog =
+                            crate::execute_or_reuse::batch_export_catalog::build_object_catalog(
+                                &prepared.parsed.compiler_artifacts,
+                                &plan.build_target,
+                                &[],
+                                &req.env,
+                            );
+                        for request in &aggregate_requests {
+                            object_catalog.extend(request.objects.iter().cloned());
+                        }
+                        object_catalog.sort();
+                        object_catalog.dedup();
+                        export_check_aggregates_bounded(
+                            req.jobs,
+                            &req.source_root,
+                            &object_catalog,
+                            aggregate_requests,
+                        )
+                    })?;
                 finish_fresh_check_aggregate_after_export(
                     req,
                     tools,
@@ -241,7 +248,10 @@ fn prepare_fresh_batch_run(
     runner: &BatchSubprocessRunner,
     build_identity: BuildIdentityPreparation,
 ) -> Result<PreparedFreshBatchRun, RustLlvmCovError> {
-    crate::plan::batch_runner_resolve::write_runner_map(&plan.runner_map_path, &req.delegated_runners)?;
+    crate::plan::batch_runner_resolve::write_runner_map(
+        &plan.runner_map_path,
+        &req.delegated_runners,
+    )?;
     crate::plan::batch_plan_publish::publish_generated_nextest_config(plan, req)?;
     let run = runner.run(&req.cwd, plan).map_err(RustLlvmCovError::from)?;
     let parsed = parse_batch_event_stream(&run.stdout)?;

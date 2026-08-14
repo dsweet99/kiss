@@ -180,6 +180,30 @@ pub(crate) fn kiss_test_report_id(map: &BTreeMap<String, String>, logical: &str)
         .unwrap_or_else(|| logical.to_string())
 }
 
+/// PATH::symbol id required for path-pattern limits; missing entries are hard errors.
+pub(crate) fn require_kiss_test_report_id(
+    map: &BTreeMap<String, String>,
+    logical: &str,
+) -> Result<String, String> {
+    map.get(logical).cloned().ok_or_else(|| {
+        format!(
+            "error: kiss: missing PATH::symbol report id for rust selector `{logical}`"
+        )
+    })
+}
+
+/// Build the logical→report map and require every selector to be present.
+pub(crate) fn rust_report_ids_for_selectors(
+    repo_root: &Path,
+    selectors: &[String],
+) -> Result<BTreeMap<String, String>, String> {
+    let map = rust_logical_to_kiss_test_ids(repo_root, &[])?;
+    for selector in selectors {
+        require_kiss_test_report_id(&map, selector)?;
+    }
+    Ok(map)
+}
+
 pub fn enumerate_workspace_python_selectors(
     repo_root: &Path,
     ignore: &[String],

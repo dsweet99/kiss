@@ -294,7 +294,18 @@ fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
     }
 
     let tmp = tempfile::tempdir().unwrap();
-    let selectors = vec!["crate::tests::alpha".to_string()];
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn alpha() {}\n}\n",
+    )
+    .unwrap();
+    let selectors = vec!["tests::alpha".to_string()];
     let expected_selectors = selectors.clone();
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
@@ -303,6 +314,7 @@ fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
     options.extras.rust = &[];
     options.force_rerun = false;
     options.jobs = 1;
+    options.dry_run = false;
     let ctx = crate::test_runner::coverage_decision::RunContext {
         planned: &planned,
         options: &options,
@@ -386,7 +398,11 @@ fn rust_execution_helper_tries_cached_selective_before_falling_through() {
         "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
     )
     .unwrap();
-    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn case() {}\n}\n",
+    )
+    .unwrap();
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
     let mut options = options();

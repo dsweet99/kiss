@@ -49,7 +49,7 @@ fn ensure_one_language(
     let loaded = module.load_full_witness(&request.repo_root).ok();
     let mut witness = loaded.clone();
     if let Some(ref mut w) = witness {
-        let gate_selectors = module.selectors_for_time_gate(request, &w.selectors);
+        let gate_selectors = module.selectors_for_time_gate(request, &w.selectors)?;
         w.statuses = reclassify_statuses_with_gate(
             &gate_selectors,
             &w.statuses,
@@ -57,12 +57,17 @@ fn ensure_one_language(
             gate,
         );
     }
-    let misses = miss_selectors_for_repair(
+    let mut misses = miss_selectors_for_repair(
         request.mode,
         &planned,
         &identity,
         witness.as_ref(),
         request.force,
+    );
+    crate::test_runner::lang_iface::union_force_selectors_into_misses(
+        &planned,
+        &mut misses,
+        &request.force_selectors,
     );
     if let Some(accepted) = try_accept_or_warm_report(request, module, &planned, &witness, &misses) {
         return Ok(accepted);

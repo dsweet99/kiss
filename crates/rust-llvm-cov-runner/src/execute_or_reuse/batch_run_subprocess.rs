@@ -1,16 +1,20 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
-use std::io;
+use std::io::{self, BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::execute_or_reuse::batch_output_channel::{
     OutputChannelServer, apply_output_channel_env, create_output_channel_config,
 };
-use crate::plan::batch_plan::RustCoverageBatchPlan;
-use crate::execute_or_reuse::batch_process_tree::{BatchProcessTreeGuard, record_child_process_group};
+use crate::execute_or_reuse::batch_process_tree::{
+    BatchProcessTreeGuard, record_child_process_group,
+};
 use crate::execute_or_reuse::batch_shim::load_live_shim_process_identities;
+use crate::execute_or_reuse::progress::{CargoNextestProgress, FinishCargoNextestProgress};
+use crate::plan::batch_plan::RustCoverageBatchPlan;
 
 use super::{BatchSubprocessRunError, BatchSubprocessRunOutcome};
 
@@ -25,7 +29,9 @@ impl OutputChannelShutdown {
         }
     }
 
-    fn stop_with_errors(mut self) -> crate::execute_or_reuse::batch_output_channel::OutputChannelStop {
+    fn stop_with_errors(
+        mut self,
+    ) -> crate::execute_or_reuse::batch_output_channel::OutputChannelStop {
         self.server
             .take()
             .expect("output channel server present")
@@ -73,9 +79,7 @@ pub(crate) fn run_batch_subprocess(
     } else {
         let grace = Duration::from_millis(250);
         let deadline = std::time::Instant::now() + grace;
-        while std::time::Instant::now() < deadline
-            && process_tree.registry().residual_count() > 0
-        {
+        while std::time::Instant::now() < deadline && process_tree.registry().residual_count() > 0 {
             std::thread::sleep(Duration::from_millis(25));
         }
         if process_tree.registry().residual_count() == 0 {
@@ -135,28 +139,10 @@ fn run_tracked_batch_command(
 ) -> Result<std::process::Output, BatchSubprocessRunError> {
     let argv = &plan.argv;
     let program = argv.first().cloned().unwrap_or_else(|| "cargo".to_string());
-    let mut command = Command::new(&program);
-    command
-        .args(&argv[1..])
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    apply_batch_subprocess_env(&mut command, env);
-    let mut child = process_tree
-        .spawn_batch_command(&mut command)
-        .map_err(|err| spawn_component_error(&program, err.to_string()))?;
-    record_child_process_group(process_tree.registry().as_ref(), &child);
-    let stdout_pipe = child
-        .stdout
-        .take()
-        .ok_or_else(|| spawn_component_error(&program, "missing stdout pipe".to_string()))?;
-    let stderr_pipe = child
-        .stderr
-        .take()
-        .ok_or_else(|| spawn_component_error(&program, "missing stderr pipe".to_string()))?;
-    let stdout_handle = std::thread::spawn(move || read_pipe_to_end(stdout_pipe));
-    let stderr_handle = std::thread::spawn(move || read_pipe_to_end(stderr_pipe));
+    let mut child = spawn_tracked_batch_child(cwd, plan, env, process_tree, &program)?;
+    let _finish_progress = begin_cargo_nextest_progress();
+    let (stdout_handle, stderr_handle) =
+        spawn_batch_pipe_readers(&mut child, &program, &_finish_progress.0)?;
     let output_dir = plan.target_runner_output_dir.clone();
     let mut seen_shim_metadata = HashSet::new();
     let wait_result = wait_child_with_interruption(
@@ -179,6 +165,55 @@ fn run_tracked_batch_command(
         stdout,
         stderr,
     })
+}
+
+fn spawn_tracked_batch_child(
+    cwd: &Path,
+    plan: &RustCoverageBatchPlan,
+    env: &BTreeMap<String, String>,
+    process_tree: &BatchProcessTreeGuard,
+    program: &str,
+) -> Result<std::process::Child, BatchSubprocessRunError> {
+    let argv = &plan.argv;
+    let mut command = Command::new(program);
+    command
+        .args(&argv[1..])
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_batch_subprocess_env(&mut command, env);
+    let child = process_tree
+        .spawn_batch_command(&mut command)
+        .map_err(|err| spawn_component_error(program, err.to_string()))?;
+    record_child_process_group(process_tree.registry().as_ref(), &child);
+    Ok(child)
+}
+
+fn begin_cargo_nextest_progress() -> FinishCargoNextestProgress {
+    FinishCargoNextestProgress(Arc::new(Mutex::new(CargoNextestProgress::start())))
+}
+
+type PipeReaderHandle = std::thread::JoinHandle<io::Result<Vec<u8>>>;
+
+fn spawn_batch_pipe_readers(
+    child: &mut std::process::Child,
+    program: &str,
+    progress: &Arc<Mutex<CargoNextestProgress>>,
+) -> Result<(PipeReaderHandle, PipeReaderHandle), BatchSubprocessRunError> {
+    let stdout_pipe = child
+        .stdout
+        .take()
+        .ok_or_else(|| spawn_component_error(program, "missing stdout pipe".to_string()))?;
+    let stderr_pipe = child
+        .stderr
+        .take()
+        .ok_or_else(|| spawn_component_error(program, "missing stderr pipe".to_string()))?;
+    let stdout_progress = Arc::clone(progress);
+    let stdout_handle =
+        std::thread::spawn(move || read_stdout_tracking_progress(stdout_pipe, stdout_progress));
+    let stderr_handle = std::thread::spawn(move || read_pipe_to_end(stderr_pipe));
+    Ok((stdout_handle, stderr_handle))
 }
 
 fn wait_child_with_interruption(
@@ -246,9 +281,30 @@ fn join_pipe_reader(
         .map_err(|err| spawn_component_error(program, err.to_string()))
 }
 
-fn read_pipe_to_end<R: io::Read>(mut pipe: R) -> io::Result<Vec<u8>> {
+fn read_pipe_to_end<R: Read>(mut pipe: R) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     pipe.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn read_stdout_tracking_progress<R: Read>(
+    pipe: R,
+    progress: Arc<Mutex<CargoNextestProgress>>,
+) -> io::Result<Vec<u8>> {
+    let mut reader = BufReader::new(pipe);
+    let mut bytes = Vec::new();
+    loop {
+        let mut line = Vec::new();
+        let n = reader.read_until(b'\n', &mut line)?;
+        if n == 0 {
+            break;
+        }
+        progress
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .observe_line(&line);
+        bytes.extend_from_slice(&line);
+    }
     Ok(bytes)
 }
 

@@ -13,7 +13,7 @@ use crate::test_runner::execution_witness::{
     publish_rust_execution_witness, rust_identity_digest_from_batch, try_load_rust_execution_witness,
 };
 use crate::test_runner::runners::{
-    SelectorExecutionSummary, kiss_test_report_id, rust_logical_to_kiss_test_ids,
+    SelectorExecutionSummary,
 };
 
 pub(super) fn publish_rust_witness_after_batch(
@@ -31,7 +31,7 @@ pub(super) fn publish_rust_witness_after_batch(
         )?;
     let existing_full = load_matching_full_witness(repo_root, &batch_identity);
     let by_logical =
-        merged_statuses(repo_root, batch_req, summary, existing_full.as_ref());
+        merged_statuses(repo_root, batch_req, summary, existing_full.as_ref())?;
     let Some(selectors) = full_publication_selectors(
         batch_req,
         repo_root,
@@ -41,17 +41,17 @@ pub(super) fn publish_rust_witness_after_batch(
     ) else {
         return Ok(());
     };
-    let Some((statuses, durations_ns)) = align_statuses(
+    let Some(aligned) = align_statuses(
         repo_root,
         &selectors,
         &by_logical,
         summary,
         existing_full.as_ref(),
-    ) else {
+    )? else {
         // Incomplete relative to the Full universe: leave the Full pointer unchanged.
         return Ok(());
     };
-    let all_passed = statuses.iter().all(|s| *s == WitnessStatus::Passed);
+    let all_passed = aligned.statuses.iter().all(|s| *s == WitnessStatus::Passed);
     let covered_lines = capture_covered_lines(
         repo_root,
         batch_req,
@@ -64,8 +64,8 @@ pub(super) fn publish_rust_witness_after_batch(
         identity: &batch_identity,
         scope: WitnessScope::Full,
         selectors: &selectors,
-        statuses: &statuses,
-        durations_ns: &durations_ns,
+        statuses: &aligned.statuses,
+        durations_ns: &aligned.durations_ns,
         covered_lines: &covered_lines,
         complete: all_passed,
     })?;
@@ -221,8 +221,9 @@ pub(super) fn merged_statuses(
     batch_req: &RustCoverageBatchRequest,
     summary: &SelectorExecutionSummary,
     existing_full: Option<&ExecutionWitness>,
-) -> BTreeMap<String, WitnessStatus> {
-    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
+) -> Result<BTreeMap<String, WitnessStatus>, String> {
+    let report_ids =
+        crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, &batch_req.logical_selectors)?;
     let mut by_logical = BTreeMap::new();
     if let Some(existing) = existing_full {
         for (sel, st) in existing.selectors.iter().zip(existing.statuses.iter()) {
@@ -230,7 +231,7 @@ pub(super) fn merged_statuses(
         }
     }
     for logical in &batch_req.logical_selectors {
-        let report = kiss_test_report_id(&report_ids, logical);
+        let report = crate::test_runner::runners::require_kiss_test_report_id(&report_ids, logical)?;
         let status = if summary.failed_selectors.iter().any(|s| s == &report) {
             WitnessStatus::Failed
         } else if summary.timed_out_selectors.iter().any(|s| s == &report) {
@@ -240,7 +241,7 @@ pub(super) fn merged_statuses(
         };
         by_logical.insert(logical.clone(), status);
     }
-    by_logical
+    Ok(by_logical)
 }
 
 pub(super) fn align_statuses(
@@ -249,8 +250,9 @@ pub(super) fn align_statuses(
     by_logical: &BTreeMap<String, WitnessStatus>,
     summary: &SelectorExecutionSummary,
     existing_full: Option<&ExecutionWitness>,
-) -> Option<(Vec<WitnessStatus>, Vec<u64>)> {
-    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
+) -> Result<Option<AlignedWitnessStatuses>, String> {
+    let report_ids =
+        crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, selectors)?;
     let mut prior_durations: BTreeMap<&str, u64> = BTreeMap::new();
     if let Some(existing) = existing_full {
         for (sel, dur) in existing.selectors.iter().zip(existing.durations_ns.iter()) {
@@ -260,9 +262,11 @@ pub(super) fn align_statuses(
     let mut statuses = Vec::with_capacity(selectors.len());
     let mut durations_ns = Vec::with_capacity(selectors.len());
     for sel in selectors {
-        let st = by_logical.get(sel)?;
+        let Some(st) = by_logical.get(sel) else {
+            return Ok(None);
+        };
         statuses.push(*st);
-        let report = kiss_test_report_id(&report_ids, sel);
+        let report = crate::test_runner::runners::require_kiss_test_report_id(&report_ids, sel)?;
         let dur = summary
             .selector_durations_ns
             .get(sel)
@@ -272,7 +276,15 @@ pub(super) fn align_statuses(
             .unwrap_or(0);
         durations_ns.push(dur);
     }
-    Some((statuses, durations_ns))
+    Ok(Some(AlignedWitnessStatuses {
+        statuses,
+        durations_ns,
+    }))
+}
+
+pub(super) struct AlignedWitnessStatuses {
+    pub(super) statuses: Vec<WitnessStatus>,
+    pub(super) durations_ns: Vec<u64>,
 }
 
 fn capture_covered_lines(

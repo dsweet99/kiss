@@ -6,7 +6,7 @@ fn apply_identity_only_repair_on_bare_index_reports_structured_failure() {
     super::apply_tests::bare_crate_with_lib(&tmp);
     let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
         tmp.path(),
-        &["missing_case".into()],
+        &["tests::missing_case".into()],
         &[],
         1,
     )
@@ -15,7 +15,7 @@ fn apply_identity_only_repair_on_bare_index_reports_structured_failure() {
         tmp.path(),
         &[],
         &build,
-        &["missing_case".into()],
+        &["tests::missing_case".into()],
         "prior-generation",
         std::collections::BTreeMap::new(),
     )
@@ -33,7 +33,7 @@ fn apply_rerun_repair_on_bare_index_reports_publication_or_execution_failure() {
     super::apply_tests::bare_crate_with_lib(&tmp);
     let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
         tmp.path(),
-        &["missing_case".into()],
+        &["tests::missing_case".into()],
         &[],
         1,
     )
@@ -43,7 +43,7 @@ fn apply_rerun_repair_on_bare_index_reports_publication_or_execution_failure() {
         ignore: &[],
         build: &build,
         prior_generation: "prior-generation",
-        rerun_selectors: vec!["missing_case".into()],
+        rerun_selectors: vec!["tests::missing_case".into()],
         replacement_binary_ids: std::collections::BTreeSet::from(["bin".into()]),
         retained_binary_line_maps: std::collections::BTreeMap::new(),
         jobs: 1,
@@ -65,7 +65,7 @@ fn apply_repair_helpers_are_metamorphic_on_error_language_tag() {
     super::apply_tests::bare_crate_with_lib(&tmp);
     let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
         tmp.path(),
-        &["missing_case".into()],
+        &["tests::missing_case".into()],
         &[],
         1,
     )
@@ -74,7 +74,7 @@ fn apply_repair_helpers_are_metamorphic_on_error_language_tag() {
         tmp.path(),
         &[],
         &build,
-        &["missing_case".into()],
+        &["tests::missing_case".into()],
         "prior-generation",
         std::collections::BTreeMap::new(),
     )
@@ -85,7 +85,7 @@ fn apply_repair_helpers_are_metamorphic_on_error_language_tag() {
         ignore: &[],
         build: &build,
         prior_generation: "prior-generation",
-        rerun_selectors: vec!["missing_case".into()],
+        rerun_selectors: vec!["tests::missing_case".into()],
         replacement_binary_ids: std::collections::BTreeSet::from(["bin".into()]),
         retained_binary_line_maps: std::collections::BTreeMap::new(),
         jobs: 1,

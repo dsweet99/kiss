@@ -12,7 +12,7 @@ use rust_llvm_cov_runner::{
 
 use crate::test_runner::last_status::rust_last_status_identity;
 use crate::test_runner::runners::{
-    SelectorExecutionSummary, kiss_test_report_id, rust_logical_to_kiss_test_ids,
+    SelectorExecutionSummary,
 };
 use crate::test_runner::rust_coverage_index::relevant_rust_batch_env;
 
@@ -282,20 +282,24 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
 ) -> Result<RustCoverageBatchRequest, String> {
     validate_supported_rust_test_args(extra)?;
     // Map logical nextest ids → PATH::symbol before applying path-pattern limits.
-    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
+    // Fail closed: never apply catch-all limits against bare logical ids.
+    let report_ids = crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, selectors)?;
     let selector_timeout_millis = selectors
         .iter()
         .map(|selector| {
-            let for_limit = kiss_test_report_id(&report_ids, selector);
+            let for_limit = crate::test_runner::runners::require_kiss_test_report_id(
+                &report_ids,
+                selector,
+            )?;
             let secs = kiss::limit_for_selector(&gate.max_unit_test_seconds, &for_limit);
             let millis = if secs.is_finite() && secs > 0.0 {
                 (secs * 1000.0).round().clamp(1.0, u64::MAX as f64) as u64
             } else {
                 0
             };
-            (selector.clone(), millis)
+            Ok((selector.clone(), millis))
         })
-        .collect();
+        .collect::<Result<BTreeMap<_, _>, String>>()?;
     let mut req = RustCoverageBatchRequest {
         cwd: repo_root.to_path_buf(),
         source_root: repo_root.to_path_buf(),

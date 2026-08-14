@@ -307,12 +307,6 @@ fn all_hit_outcomes(
     tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
 ) -> Result<Option<Vec<RustLlvmCovOutcome>>, RustLlvmCovError> {
-    // Negative seal: known incomplete set → skip per-entry opens.
-    if let Some(false) =
-        crate::execute_or_reuse::batch_warm_hit_seal::try_warm_all_hit_seal(req, identity)
-    {
-        return Ok(None);
-    }
     let mut completed = Vec::with_capacity(req.logical_selectors.len());
     let mut saw_cache_hit = false;
     for selector in &req.logical_selectors {
@@ -338,7 +332,8 @@ fn all_hit_outcomes(
         saw_cache_hit = true;
     }
     if saw_cache_hit {
-        let _ = crate::execute_or_reuse::batch_warm_hit_seal::write_warm_all_hit_seal(req, identity, true);
+        crate::execute_or_reuse::batch_warm_hit_seal::write_warm_all_hit_seal(req, identity)
+            .map_err(RustLlvmCovError::Io)?;
     }
     Ok(Some(completed))
 }

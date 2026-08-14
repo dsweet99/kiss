@@ -37,6 +37,7 @@ pub(crate) fn ensure_request_for_all(
         lang_filter,
         ignore: ignore_norm,
         force,
+        force_selectors: Vec::new(),
         jobs,
         gate,
         extras: LanguageKeyed {
@@ -60,6 +61,7 @@ pub(crate) fn ensure_request_from_planned(args: EnsureFromPlanned<'_>) -> Ensure
         lang_filter: args.lang_filter,
         ignore: args.planned.ignore.clone(),
         force: args.force,
+        force_selectors: args.force_selectors,
         jobs: args.jobs,
         gate: args.gate,
         extras: LanguageKeyed {
@@ -92,6 +94,7 @@ pub(crate) fn ensure_request_for_selectors(
         lang_filter: Some(lang_filter),
         ignore: ignore.to_vec(),
         force,
+        force_selectors: Vec::new(),
         jobs,
         gate,
         extras: LanguageKeyed {

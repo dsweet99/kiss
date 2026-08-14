@@ -1,6 +1,7 @@
 use super::*;
 use std::cell::Cell;
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -11,6 +12,23 @@ use rust_llvm_cov_runner::{
 
 use crate::test_runner::last_status::prior_failures;
 use crate::test_runner::lang_rust::llvm_cov::error::format_rust_llvm_cov_error;
+
+pub(crate) fn write_rust_test_crate(root: &Path, test_fns: &[&str]) {
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname=\"demo\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    let mut body = String::from("#[cfg(test)]\nmod tests {\n");
+    for name in test_fns {
+        body.push_str("    #[test]\n    fn ");
+        body.push_str(name);
+        body.push_str("() {}\n");
+    }
+    body.push_str("}\n");
+    std::fs::write(root.join("src/lib.rs"), body).unwrap();
+}
 
 pub(crate) fn passed_rust_llvm_cov_outcome(selector: String) -> RustLlvmCovOutcome {
     RustLlvmCovOutcome {
@@ -40,6 +58,7 @@ fn format_rust_llvm_cov_error_preserves_context_and_message() {
 #[test]
 fn batch_result_records_completed_outcomes_before_returning_late_error() {
     let tmp = tempfile::tempdir().unwrap();
+    write_rust_test_crate(tmp.path(), &["failing_case"]);
     let identity = rust_last_status_identity(
         "cargo 1.88.0",
         "cargo-llvm-cov 0.6.0",
@@ -83,6 +102,7 @@ fn batch_result_records_completed_outcomes_before_returning_late_error() {
 #[test]
 fn fresh_unstored_batch_outcome_is_counted_explicitly() {
     let tmp = tempfile::tempdir().unwrap();
+    write_rust_test_crate(tmp.path(), &["passed_but_unstored"]);
     let identity = rust_last_status_identity(
         "cargo 1.88.0",
         "cargo-llvm-cov 0.6.0",
@@ -122,6 +142,7 @@ fn fresh_unstored_batch_outcome_is_counted_explicitly() {
 #[test]
 fn rust_selector_path_submits_one_batch_request_to_executor() {
     let tmp = tempfile::tempdir().unwrap();
+    write_rust_test_crate(tmp.path(), &["case", "other"]);
     let selectors = vec!["tests::case".to_string(), "tests::other".to_string()];
     let detector_calls = Rc::new(Cell::new(0usize));
     let detector_calls_for_closure = Rc::clone(&detector_calls);
@@ -182,6 +203,7 @@ jobs: 7,
 #[test]
 fn rust_selector_path_rejects_duplicate_batch_selectors_before_execution() {
     let tmp = tempfile::tempdir().unwrap();
+    write_rust_test_crate(tmp.path(), &["case", "other"]);
     let selectors = vec![
         "tests::case".to_string(),
         "tests::case".to_string(),
@@ -227,6 +249,7 @@ jobs: 7,
 #[test]
 fn check_aggregate_population_request_carries_population_selectors() {
     let tmp = tempfile::tempdir().unwrap();
+    write_rust_test_crate(tmp.path(), &["case", "other"]);
     let selectors = vec!["tests::case".to_string()];
     let population_selectors = vec!["tests::case".to_string(), "tests::other".to_string()];
     let expected_population_selectors = population_selectors.clone();
@@ -283,6 +306,7 @@ jobs: 2,
 #[test]
 fn check_aggregate_population_can_return_cached_summary() {
     let tmp = tempfile::tempdir().unwrap();
+    write_rust_test_crate(tmp.path(), &["case", "other"]);
     let selectors = vec!["tests::case".to_string(), "tests::other".to_string()];
     let population = rust_llvm_cov_runner::RustPopulationState {
         input_fingerprint: "input".to_string(),
@@ -360,3 +384,4 @@ fn interrupted_error_maps_without_string_matching() {
     let err = RustLlvmCovError::Interrupted;
     assert!(matches!(err, RustLlvmCovError::Interrupted));
 }
+

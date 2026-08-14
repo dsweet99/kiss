@@ -270,7 +270,7 @@ pub(crate) fn try_warm_rust_cached_summary(
     if accept_witness(mode, &planned, &current, &witness) != AcceptDecision::Accept {
         return None;
     }
-    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
+    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).ok()?;
     Some(summary_from_accepted_witness(
         &planned,
         &witness,

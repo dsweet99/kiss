@@ -9,7 +9,6 @@ use crate::test_runner::runners::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
     rust_logical_to_kiss_test_ids,
 };
-use crate::test_runner::selector_ids::report_string_for_logical_string;
 use crate::test_runner::lang_rust::llvm_cov::error::map_rust_llvm_cov_error;
 
 #[allow(dead_code)] // check-aggregate warm path retired from production; kept for unit tests
@@ -24,10 +23,11 @@ pub(crate) fn cached_summary_from_check_aggregate_population(
     {
         return None;
     }
-    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
+    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).ok()?;
     let mut summary = SelectorExecutionSummary::default();
     for selector in selectors {
-        let report = report_string_for_logical_string(&report_ids, selector);
+        let report = crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector)
+            .ok()?;
         println!("PASS (cached): {report}");
         summary.record(SelectorExecutionRecord {
             selector: report,
@@ -86,7 +86,7 @@ pub(crate) fn finish_rust_coverage_batch_result(
 ) -> Result<SelectorExecutionSummary, String> {
     let mut summary = SelectorExecutionSummary::default();
     summary.record_rust_batch_counters(&result.counters);
-    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).unwrap_or_default();
+    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[])?;
     let mut statuses = Vec::new();
     let emit_each = result.completed.len() <= 64;
     let mut cached_pass = 0usize;
@@ -103,7 +103,10 @@ pub(crate) fn finish_rust_coverage_batch_result(
         }
     }
     for outcome in &result.completed {
-        let report_id = report_string_for_logical_string(&report_ids, &outcome.selector);
+        let report_id = crate::test_runner::runners::require_kiss_test_report_id(
+            &report_ids,
+            &outcome.selector,
+        )?;
         let raw = outcome.status;
         let effective = if emit_each
             || !matches!(outcome.cache_status, RustCovCacheStatus::Hit)

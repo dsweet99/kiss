@@ -1,5 +1,6 @@
-//! Compact warm all-hit seal: skip per-entry opens when a prior all-passed
-//! batch under the same generation / selector set is still valid.
+//! Positive-only warm all-hit seal: record that a prior all-passed batch under
+//! the same generation / selector set was observed. The reader returns whether
+//! that positive record is still valid; there is no negative-seal contract.
 
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -22,6 +23,8 @@ struct WarmAllHitSeal {
     entries_fingerprint: String,
     selectors_fingerprint: String,
     selector_count: usize,
+    /// Retained for on-disk compatibility; readers require `true`. Writers always
+    /// emit `true` (positive-only contract).
     all_passed: bool,
 }
 
@@ -38,10 +41,16 @@ pub(crate) fn selectors_fingerprint(selectors: &[String]) -> String {
     format!("{h:016x}")
 }
 
+/// Returns `Some(())` when a valid positive all-hit seal matches this request.
+/// Seals with `all_passed: false`, mismatches, or unreadable data yield `None`.
+///
+/// Callers currently load per-entry coverage even on a hit (seal has no payloads);
+/// the reader exists so the positive-only contract stays testable and honest.
+#[allow(dead_code)] // exercised by unit tests; write path is production
 pub(crate) fn try_warm_all_hit_seal(
     req: &RustCoverageBatchRequest,
     identity: &RustCoverageBatchIdentity,
-) -> Option<bool> {
+) -> Option<()> {
     let bytes = fs::read(seal_path(&req.cache_root)).ok()?;
     let seal: WarmAllHitSeal = serde_json::from_slice(&bytes).ok()?;
     let entry_state = crate::publish_derived::batch_entry_state::read_entry_state(&req.cache_root)?;
@@ -53,17 +62,15 @@ pub(crate) fn try_warm_all_hit_seal(
         && seal.selectors_fingerprint == selectors_fp
         && entry_state.generation_fingerprint == identity.generation_fingerprint
         && seal.entries_fingerprint == entry_state.entries_fingerprint;
-    ok.then_some(true)
+    ok.then_some(())
 }
 
 pub(crate) fn write_warm_all_hit_seal(
     req: &RustCoverageBatchRequest,
     identity: &RustCoverageBatchIdentity,
-    all_passed: bool,
 ) -> io::Result<()> {
-    let entry_state = crate::publish_derived::batch_entry_state::read_entry_state(&req.cache_root).ok_or_else(|| {
-        io::Error::other("warm all-hit seal requires entry_state.json")
-    })?;
+    let entry_state = crate::publish_derived::batch_entry_state::read_entry_state(&req.cache_root)
+        .ok_or_else(|| io::Error::other("warm all-hit seal requires entry_state.json"))?;
     if entry_state.generation_fingerprint != identity.generation_fingerprint {
         return Err(io::Error::other(
             "warm all-hit seal generation mismatch with entry_state",
@@ -75,7 +82,7 @@ pub(crate) fn write_warm_all_hit_seal(
         entries_fingerprint: entry_state.entries_fingerprint,
         selectors_fingerprint: selectors_fingerprint(&req.logical_selectors),
         selector_count: req.logical_selectors.len(),
-        all_passed,
+        all_passed: true,
     };
     let path = seal_path(&req.cache_root);
     if let Some(parent) = path.parent() {
@@ -94,3 +101,7 @@ pub(crate) fn write_warm_all_hit_seal(
     fs::rename(tmp, path)?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "batch_warm_hit_seal_test.rs"]
+mod tests;

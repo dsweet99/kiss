@@ -54,6 +54,7 @@ fn ensure_request_from_planned_copies_selectors_and_root() {
         mode: AcceptMode::Subset,
         lang_filter: Some(kiss::Language::Python),
         force: true,
+        force_selectors: Vec::new(),
         jobs: 4,
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             python: &["-p".into()],
@@ -122,6 +123,7 @@ fn ensure_request_carries_session_gate_without_reload() {
         mode: AcceptMode::Subset,
         lang_filter: Some(kiss::Language::Python),
         force: false,
+        force_selectors: Vec::new(),
         jobs: 1,
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             python: &[],

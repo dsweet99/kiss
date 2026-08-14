@@ -1,5 +1,5 @@
 use super::*;
-use super::tests::passed_rust_llvm_cov_outcome;
+use super::tests::{passed_rust_llvm_cov_outcome, write_rust_test_crate};
 use rust_llvm_cov_runner::RustCoverageBatchCounters;
 
 fn default_tool_versions() -> RustCoverageToolVersions {
@@ -25,6 +25,7 @@ fn default_run_options<'a>() -> RustCoverageRunOptions<'a> {
 #[test]
 fn rust_llvm_cov_stage_emits_before_pass() {
     let tmp = tempfile::tempdir().unwrap();
+    write_rust_test_crate(tmp.path(), &["case"]);
     let selectors = vec!["tests::case".to_string()];
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
         let summary = run_rust_llvm_cov_selectors_with_deps(
@@ -82,6 +83,7 @@ fn empty_selectors_do_not_emit_rust_llvm_cov_stage() {
 #[test]
 fn executor_error_does_not_emit_rust_llvm_cov_stage() {
     let tmp = tempfile::tempdir().unwrap();
+    write_rust_test_crate(tmp.path(), &["case"]);
     let selectors = vec!["tests::case".to_string()];
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
         let err = run_rust_llvm_cov_selectors_with_deps(
@@ -101,5 +103,61 @@ fn executor_error_does_not_emit_rust_llvm_cov_stage() {
     assert!(
         !out.contains("PASS:"),
         "executor Err must not print PASS:\n{out}"
+    );
+}
+
+#[test]
+fn rust_coverage_batch_request_fails_closed_without_report_ids() {
+    let tmp = tempfile::tempdir().unwrap();
+    // Empty package: no #[test] symbols → map omits the requested selector.
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname=\"demo\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("src/lib.rs"), "pub fn x() {}\n").unwrap();
+    let err = rust_coverage_batch_request_from_parts(
+        tmp.path(),
+        &["tests::case".to_string()],
+        &[],
+        false,
+        1,
+        None,
+        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        &kiss::GateConfig::default(),
+    )
+    .unwrap_err();
+    assert!(
+        err.contains("missing PATH::symbol report id"),
+        "unexpected err: {err}"
+    );
+}
+
+#[test]
+fn rust_coverage_batch_request_applies_path_limits_with_report_ids() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_rust_test_crate(tmp.path(), &["case"]);
+    let gate = kiss::GateConfig {
+        max_unit_test_seconds: vec![
+            ("src/lib.rs".to_string(), 10.0),
+            ("*".to_string(), 0.0),
+        ],
+        ..Default::default()
+    };
+    let req = rust_coverage_batch_request_from_parts(
+        tmp.path(),
+        &["tests::case".to_string()],
+        &[],
+        false,
+        1,
+        None,
+        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        &gate,
+    )
+    .unwrap();
+    assert_eq!(
+        req.selector_timeout_millis.get("tests::case"),
+        Some(&10_000)
     );
 }

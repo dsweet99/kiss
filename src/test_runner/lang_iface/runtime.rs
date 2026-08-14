@@ -18,6 +18,8 @@ pub(crate) struct EnsureRequest {
     #[allow(dead_code)] // reserved for future ignore-aware discovery in LanguageRuntime
     pub(crate) ignore: Vec<String>,
     pub(crate) force: bool,
+    /// Selectors that must re-run even if the witness still says Passed (prior failures).
+    pub(crate) force_selectors: Vec<String>,
     pub(crate) jobs: usize,
     /// Session gate for this ensure (loaded once by CLI / caller; do not reload).
     pub(crate) gate: GateConfig,
@@ -185,7 +187,7 @@ pub(crate) trait LanguageRuntime {
         &self,
         _request: &EnsureRequest,
         selectors: &[String],
-    ) -> Vec<String> {
-        selectors.to_vec()
+    ) -> Result<Vec<String>, String> {
+        Ok(selectors.to_vec())
     }
 }
