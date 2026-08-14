@@ -94,6 +94,35 @@ impl SettleMachine {
         self.deadline = Some(now + self.settle);
     }
 
+    /// Skip the quiet period and return pending paths (or `ScopeDirty`) immediately.
+    ///
+    /// Idle with an empty pending set is not handled here: callers should run a cycle
+    /// directly instead of calling `force_ready`.
+    pub(crate) fn force_ready(
+        &mut self,
+        now: Instant,
+        mut refresh: impl FnMut(&Path) -> PathSignature,
+    ) -> SettlePoll {
+        if self.scope_dirty {
+            self.scope_dirty = false;
+            self.deadline = None;
+            self.last_event = None;
+            self.pending.clear();
+            return SettlePoll::ScopeDirty;
+        }
+        if self.pending.is_empty() {
+            return SettlePoll::Idle;
+        }
+        // Refresh once so callers see current signatures, but do not re-arm settle.
+        let _ = self.refresh_pending_unsettled(now, &mut refresh);
+        let mut paths: Vec<PathBuf> = self.pending.keys().cloned().collect();
+        self.pending.clear();
+        self.deadline = None;
+        self.last_event = None;
+        paths.sort();
+        SettlePoll::Ready(paths)
+    }
+
     pub(crate) fn poll(
         &mut self,
         now: Instant,
@@ -273,6 +302,25 @@ mod tests {
         assert_eq!(
             m.poll(t0 + settle, |_| any.clone()),
             SettlePoll::ScopeDirty
+        );
+    }
+
+    #[test]
+    fn force_ready_returns_pending_before_settle() {
+        let settle = Duration::from_secs(30);
+        let mut m = SettleMachine::new(settle);
+        let t0 = Instant::now();
+        let settled_sig = sig(true, Duration::from_secs(60));
+        m.note_path(PathBuf::from("a.py"), t0, settled_sig.clone());
+        assert_eq!(
+            m.poll(t0 + Duration::from_millis(1), |_| settled_sig.clone()),
+            SettlePoll::Waiting
+        );
+        let ready = m.force_ready(t0 + Duration::from_millis(1), |_| settled_sig.clone());
+        assert!(matches!(ready, SettlePoll::Ready(paths) if paths == [PathBuf::from("a.py")]));
+        assert_eq!(
+            m.poll(t0 + Duration::from_millis(2), |_| settled_sig.clone()),
+            SettlePoll::Idle
         );
     }
 }

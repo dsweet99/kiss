@@ -7,7 +7,7 @@ pub fn ensure_default_config_exists() {
     if local_config.exists() {
         return;
     }
-    let quiet = crate::test_runner::watch_background_active();
+    let quiet = false;
     let code = run_mimic_with_quiet(&[".".to_string()], Some(local_config), None, &[], quiet);
     if code != 0 {
         std::process::exit(code);

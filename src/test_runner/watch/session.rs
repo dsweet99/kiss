@@ -1,9 +1,11 @@
-//! Watch session orchestration for `kiss test --watch` / `--watch-bg`.
+//! Watch session orchestration for `kiss test --watch`.
 
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::SyncSender;
 use std::time::{Duration, Instant};
 
-use super::daemon::{ensure_watch_log_paths, write_watch_pid};
+#[cfg(unix)]
+use super::control::{NudgeReplyMsg, NudgeRequest, WatchSessionOwner};
 use super::event_source::{NativeWatchEventSource, WatchEventSource};
 use super::filter::WatchPathFilter;
 use super::roots::resolve_watch_registrations;
@@ -13,26 +15,52 @@ use crate::test_runner::runners::clear_python_collect_memo;
 use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome, run_test_once};
 
 const EXIT_INTERRUPTED: i32 = 130;
+const NUDGE_POLL_SLICE: Duration = Duration::from_millis(100);
+
+struct QueuedCycle {
+    replies: Vec<SyncSender<NudgeReplyMsg>>,
+    force: bool,
+    force_bad: bool,
+    metrics: bool,
+}
 
 pub(crate) fn run_test_watch(args: RunTestCmdArgs<'_>, settle: Duration) -> i32 {
     match prepare_watch_session(&args) {
-        Ok((repo_root, mut source, pid_path)) => {
-            if let Err(e) = write_watch_pid(&pid_path) {
-                eprintln!("error: kiss test --watch: {e}");
-                return 1;
+        Ok(PreparedWatch {
+            repo_root,
+            mut source,
+            owner,
+        }) => {
+            #[cfg(unix)]
+            {
+                run_watch_loop(
+                    args,
+                    settle,
+                    &repo_root,
+                    &mut source,
+                    Some(&owner.control.nudge_rx),
+                )
             }
-            if std::env::var_os("KISS_WATCH_EXIT_AFTER_PID").is_some() {
-                return 0;
+            #[cfg(not(unix))]
+            {
+                let _ = owner;
+                run_watch_loop(args, settle, &repo_root, &mut source, None)
             }
-            run_watch_loop(args, settle, &repo_root, &mut source)
         }
         Err(code) => code,
     }
 }
 
-fn prepare_watch_session(
-    args: &RunTestCmdArgs<'_>,
-) -> Result<(PathBuf, NativeWatchEventSource, PathBuf), i32> {
+struct PreparedWatch {
+    repo_root: PathBuf,
+    source: NativeWatchEventSource,
+    #[cfg(unix)]
+    owner: WatchSessionOwner,
+    #[cfg(not(unix))]
+    owner: (),
+}
+
+fn prepare_watch_session(args: &RunTestCmdArgs<'_>) -> Result<PreparedWatch, i32> {
     let cwd = std::env::current_dir().map_err(|e| {
         eprintln!("error: kiss test: {e}");
         1
@@ -46,15 +74,24 @@ fn prepare_watch_session(
             eprintln!("error: kiss test --watch: {e}");
             1
         })?;
-    let log_paths = ensure_watch_log_paths(&repo_root).map_err(|e| {
+
+    #[cfg(unix)]
+    let owner = WatchSessionOwner::acquire(&repo_root).map_err(|e| {
         eprintln!("error: kiss test --watch: {e}");
         1
     })?;
+    #[cfg(not(unix))]
+    let owner = ();
+
     let source = NativeWatchEventSource::register(&registrations).map_err(|e| {
         eprintln!("error: kiss test --watch: {e}");
         1
     })?;
-    Ok((repo_root, source, log_paths.pid_path))
+    Ok(PreparedWatch {
+        repo_root,
+        source,
+        owner,
+    })
 }
 
 pub(crate) fn run_watch_loop(
@@ -62,38 +99,176 @@ pub(crate) fn run_watch_loop(
     settle: Duration,
     repo_root: &Path,
     source: &mut dyn WatchEventSource,
+    nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
 ) -> i32 {
+    run_watch_loop_with(args, settle, repo_root, source, nudge_rx, run_test_once)
+}
+
+/// Like `run_watch_loop`, but the cycle body is injectable (unit tests).
+pub(crate) fn run_watch_loop_with<F>(
+    args: RunTestCmdArgs<'_>,
+    settle: Duration,
+    repo_root: &Path,
+    source: &mut dyn WatchEventSource,
+    nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
+    mut run_cycle: F,
+) -> i32
+where
+    F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
+{
     let mut filter = WatchPathFilter::build(repo_root, args.ignore, args.lang_filter, &args.invocation);
     let mut machine = SettleMachine::new(settle);
+    let mut queued: Option<QueuedCycle> = None;
     let mut initial = true;
     loop {
         if !initial {
             clear_python_collect_memo();
         }
         initial = false;
-        match run_test_once(clone_args(&args)) {
-            RunTestOnceOutcome::Interrupted => return EXIT_INTERRUPTED,
-            RunTestOnceOutcome::Code(_code) => {}
+        match run_one_watch_cycle(
+            &args,
+            &mut queued,
+            source,
+            &mut filter,
+            &mut machine,
+            repo_root,
+            &mut run_cycle,
+        ) {
+            CycleOutcome::Interrupted => return EXIT_INTERRUPTED,
+            CycleOutcome::Error => return 1,
+            CycleOutcome::Continue => {}
         }
-        if let Some(msg) = drain_into_machine(source, &mut filter, &mut machine, repo_root, Duration::ZERO)
+        coalesce_nudges(nudge_rx, &mut queued);
+        if queued.is_some() {
+            force_ready_if_pending(&mut machine, repo_root);
+            continue;
+        }
+        if let Some(code) =
+            wait_until_next_cycle(source, &mut filter, &mut machine, repo_root, nudge_rx, &mut queued)
         {
-            eprintln!("error: kiss test --watch: {msg}");
-            return 1;
+            return code;
         }
-        loop {
-            match wait_for_settled_batch(source, &mut filter, &mut machine, repo_root) {
-                WaitOutcome::Settled(paths) => {
-                    print_cycle_summary(&paths);
-                    break;
-                }
-                WaitOutcome::Terminal(msg) => {
-                    eprintln!("error: kiss test --watch: {msg}");
-                    return 1;
-                }
-                WaitOutcome::Continue => {}
+    }
+}
+
+enum CycleOutcome {
+    Continue,
+    Interrupted,
+    Error,
+}
+
+fn run_one_watch_cycle<F>(
+    args: &RunTestCmdArgs<'_>,
+    queued: &mut Option<QueuedCycle>,
+    source: &mut dyn WatchEventSource,
+    filter: &mut WatchPathFilter,
+    machine: &mut SettleMachine,
+    repo_root: &Path,
+    run_cycle: &mut F,
+) -> CycleOutcome
+where
+    F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
+{
+    let (cycle_args, replies) = take_queued_cycle_args(args, queued);
+    let exit_code = match run_cycle(cycle_args) {
+        RunTestOnceOutcome::Interrupted => {
+            reply_all(&replies, EXIT_INTERRUPTED);
+            return CycleOutcome::Interrupted;
+        }
+        RunTestOnceOutcome::Code(code) => code,
+    };
+    reply_all(&replies, exit_code);
+    if let Some(msg) = drain_into_machine(source, filter, machine, repo_root, Duration::ZERO) {
+        eprintln!("error: kiss test --watch: {msg}");
+        return CycleOutcome::Error;
+    }
+    CycleOutcome::Continue
+}
+
+fn take_queued_cycle_args<'a>(
+    args: &RunTestCmdArgs<'a>,
+    queued: &mut Option<QueuedCycle>,
+) -> (RunTestCmdArgs<'a>, Vec<SyncSender<NudgeReplyMsg>>) {
+    let mut cycle_args = clone_args(args);
+    let mut replies = Vec::new();
+    if let Some(q) = queued.take() {
+        cycle_args.force_rerun |= q.force;
+        cycle_args.force_bad |= q.force_bad;
+        cycle_args.metrics |= q.metrics;
+        replies = q.replies;
+    }
+    (cycle_args, replies)
+}
+
+fn wait_until_next_cycle(
+    source: &mut dyn WatchEventSource,
+    filter: &mut WatchPathFilter,
+    machine: &mut SettleMachine,
+    repo_root: &Path,
+    nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
+    queued: &mut Option<QueuedCycle>,
+) -> Option<i32> {
+    loop {
+        coalesce_nudges(nudge_rx, queued);
+        if queued.is_some() {
+            force_ready_if_pending(machine, repo_root);
+            return None;
+        }
+        match wait_for_settled_batch(source, filter, machine, repo_root, nudge_rx) {
+            WaitOutcome::Settled(paths) => {
+                print_cycle_summary(&paths);
+                return None;
+            }
+            WaitOutcome::Terminal(msg) => {
+                eprintln!("error: kiss test --watch: {msg}");
+                return Some(1);
+            }
+            WaitOutcome::Continue => {}
+        }
+    }
+}
+
+fn reply_all(replies: &[SyncSender<NudgeReplyMsg>], exit_code: i32) {
+    let msg = NudgeReplyMsg {
+        exit_code,
+        pid: std::process::id(),
+    };
+    for reply in replies {
+        let _ = reply.send(msg.clone());
+    }
+}
+
+fn coalesce_nudges(
+    nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
+    queued: &mut Option<QueuedCycle>,
+) {
+    let Some(rx) = nudge_rx else {
+        return;
+    };
+    while let Ok(req) = rx.try_recv() {
+        match queued {
+            Some(q) => {
+                q.force |= req.msg.force;
+                q.force_bad |= req.msg.force_bad;
+                q.metrics |= req.msg.metrics;
+                q.replies.push(req.reply);
+            }
+            None => {
+                *queued = Some(QueuedCycle {
+                    replies: vec![req.reply],
+                    force: req.msg.force,
+                    force_bad: req.msg.force_bad,
+                    metrics: req.msg.metrics,
+                });
             }
         }
     }
+}
+
+fn force_ready_if_pending(machine: &mut SettleMachine, repo_root: &Path) {
+    let _ = machine.force_ready(Instant::now(), |path| {
+        PathSignature::from_path(&repo_root.join(path))
+    });
 }
 
 enum WaitOutcome {
@@ -107,11 +282,20 @@ fn wait_for_settled_batch(
     filter: &mut WatchPathFilter,
     machine: &mut SettleMachine,
     repo_root: &Path,
+    nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
 ) -> WaitOutcome {
-    let timeout = machine
+    // Cap idle/settle waits so the outer loop can coalesce control nudges promptly.
+    // Do not try_recv here: that would consume a nudge before coalesce_nudges runs.
+    let settle_timeout = machine
         .deadline()
         .map(|deadline| deadline.saturating_duration_since(Instant::now()))
         .unwrap_or(Duration::from_secs(3600));
+    let timeout = if nudge_rx.is_some() {
+        settle_timeout.min(NUDGE_POLL_SLICE)
+    } else {
+        settle_timeout
+    };
+
     match source.recv_timeout(timeout) {
         Ok(events) => {
             for event in events {
@@ -125,6 +309,7 @@ fn wait_for_settled_batch(
             return WaitOutcome::Terminal(msg);
         }
     }
+
     match machine.poll(Instant::now(), |path| {
         PathSignature::from_path(&repo_root.join(path))
     }) {
@@ -184,166 +369,36 @@ fn clone_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests {
+/// Shared helpers for unit tests that need stub nudge types on all targets.
+#[cfg(not(unix))]
+use nudge_stub::*;
+#[cfg(not(unix))]
+mod nudge_stub {
     use super::*;
-    use crate::bin_cli::args::TestInvocation;
-    use crate::test_runner::test_mode_fixtures::{git_in, init_git};
-    use crate::test_runner::watch::event_source::{
-        FakeWatchEventSource, NormalizedWatchEvent, RecvTimeout,
-    };
-    use std::collections::VecDeque;
-    use std::env;
+    use std::sync::mpsc::SyncSender;
 
-    struct ScriptedSource {
-        steps: VecDeque<Result<Vec<NormalizedWatchEvent>, RecvTimeout>>,
+    #[derive(Clone)]
+    pub(crate) struct NudgeReplyMsg {
+        pub exit_code: i32,
+        pub pid: u32,
     }
 
-    impl WatchEventSource for ScriptedSource {
-        fn recv_timeout(
-            &mut self,
-            timeout: Duration,
-        ) -> Result<Vec<NormalizedWatchEvent>, RecvTimeout> {
-            match self.steps.pop_front() {
-                Some(Err(RecvTimeout::Timeout)) => {
-                    std::thread::sleep(timeout.min(Duration::from_millis(20)));
-                    Err(RecvTimeout::Timeout)
-                }
-                Some(other) => other,
-                None => Err(RecvTimeout::Disconnected("done".into())),
-            }
-        }
+    pub(crate) struct NudgeRequestMsg {
+        pub force: bool,
+        pub force_bad: bool,
+        pub metrics: bool,
     }
 
-    #[test]
-    fn settle_cycle_then_disconnect() {
-        let _cwd = crate::cwd_test_lock::lock();
-        let tmp = tempfile::tempdir().unwrap();
-        init_git(&tmp);
-        let file = tmp.path().join("a.py");
-        std::fs::write(&file, "x=1\n").unwrap();
-        // Old mtime so settle age succeeds quickly.
-        let _ = std::process::Command::new("touch")
-            .args(["-d", "1970-01-01 00:00:01", file.to_str().unwrap()])
-            .status();
-        assert!(git_in(tmp.path()).args(["add", "a.py"]).status().unwrap().success());
-        assert!(
-            git_in(tmp.path())
-                .args(["commit", "-m", "init"])
-                .status()
-                .unwrap()
-                .success()
-        );
-        let orig = env::current_dir().unwrap();
-        env::set_current_dir(tmp.path()).unwrap();
-        let mut steps = VecDeque::new();
-        steps.push_back(Err(RecvTimeout::Timeout)); // drain after first run
-        steps.push_back(Ok(vec![NormalizedWatchEvent::Paths(vec![file.clone()])]));
-        steps.push_back(Err(RecvTimeout::Timeout)); // settle wait
-        steps.push_back(Err(RecvTimeout::Disconnected("done".into()))); // after second run drain
-        let mut src = ScriptedSource { steps };
-        let args = RunTestCmdArgs {
-            invocation: TestInvocation::Targets(vec!["a.py".into()]),
-            main_branch_cli: None,
-            base_branch_cli: None,
-            dry_run: true,
-            force_rerun: false,
-            force_bad: false,            metrics: false,
-            jobs: 1,
-            extra: &[],
-        python_extra: &[],
-            ignore: &[],
-            lang_filter: Some(kiss::Language::Python),
-            config_main_branch: None,
-        gate_config: kiss::GateConfig::default()
-        };
-        let code = run_watch_loop(args, Duration::from_millis(5), tmp.path(), &mut src);
-        env::set_current_dir(orig).unwrap();
-        assert_eq!(code, 1);
-    }
-
-    #[test]
-    fn fake_disconnect_after_first_cycle() {
-        let _cwd = crate::cwd_test_lock::lock();
-        let tmp = tempfile::tempdir().unwrap();
-        init_git(&tmp);
-        std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-        assert!(git_in(tmp.path()).args(["add", "a.py"]).status().unwrap().success());
-        assert!(
-            git_in(tmp.path())
-                .args(["commit", "-m", "init"])
-                .status()
-                .unwrap()
-                .success()
-        );
-        let orig = env::current_dir().unwrap();
-        env::set_current_dir(tmp.path()).unwrap();
-        let mut src = FakeWatchEventSource {
-            events: vec![],
-            disconnected: Some("boom".into()),
-        };
-        let args = RunTestCmdArgs {
-            invocation: TestInvocation::Targets(vec!["a.py".into()]),
-            main_branch_cli: None,
-            base_branch_cli: None,
-            dry_run: true,
-            force_rerun: false,
-            force_bad: false,            metrics: false,
-            jobs: 1,
-            extra: &[],
-        python_extra: &[],
-            ignore: &[],
-            lang_filter: Some(kiss::Language::Python),
-            config_main_branch: None,
-        gate_config: kiss::GateConfig::default()
-        };
-        let code = run_watch_loop(args, Duration::from_millis(5), tmp.path(), &mut src);
-        env::set_current_dir(orig).unwrap();
-        assert_eq!(code, 1);
-    }
-
-    #[test]
-    fn prepare_watch_session_in_git_repo() {
-        let _cwd = crate::cwd_test_lock::lock();
-        let tmp = tempfile::tempdir().unwrap();
-        init_git(&tmp);
-        std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-        assert!(git_in(tmp.path()).args(["add", "a.py"]).status().unwrap().success());
-        assert!(
-            git_in(tmp.path())
-                .args(["commit", "-m", "init"])
-                .status()
-                .unwrap()
-                .success()
-        );
-        let orig = env::current_dir().unwrap();
-        env::set_current_dir(tmp.path()).unwrap();
-        let args = RunTestCmdArgs {
-            invocation: TestInvocation::Targets(vec!["a.py".into()]),
-            main_branch_cli: None,
-            base_branch_cli: None,
-            dry_run: true,
-            force_rerun: false,
-            force_bad: false,            metrics: false,
-            jobs: 1,
-            extra: &[],
-        python_extra: &[],
-            ignore: &[],
-            lang_filter: Some(kiss::Language::Python),
-            config_main_branch: None,
-        gate_config: kiss::GateConfig::default()
-        };
-        let (root, _source, pid_path) = prepare_watch_session(&args).expect("prepare");
-        assert_eq!(
-            root.canonicalize().unwrap(),
-            tmp.path().canonicalize().unwrap()
-        );
-        assert!(pid_path.extension().is_some_and(|e| e == "pid"));
-        write_watch_pid(&pid_path).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&pid_path).unwrap().trim(),
-            std::process::id().to_string()
-        );
-        env::set_current_dir(orig).unwrap();
+    pub(crate) struct NudgeRequest {
+        pub msg: NudgeRequestMsg,
+        pub reply: SyncSender<NudgeReplyMsg>,
     }
 }
+
+#[cfg(test)]
+#[path = "session_test.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "session_nudge_test.rs"]
+mod nudge_tests;

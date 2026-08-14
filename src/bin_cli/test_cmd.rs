@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -28,7 +29,25 @@ pub struct TestCommandArgs<'a> {
     pub gate_config: &'a kiss::GateConfig,
 }
 
+thread_local! {
+    /// Test-only: when set, `run_test_command` uses this instead of probing/nudging W.
+    static CLIENT_RESULT_OVERRIDE: Cell<Option<Result<Option<i32>, String>>> = const { Cell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn set_client_result_override_for_test(value: Option<Result<Option<i32>, String>>) {
+    CLIENT_RESULT_OVERRIDE.with(|c| c.set(value));
+}
+
 pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
+    run_test_command_with(args, run_test)
+}
+
+/// Injectable local runner for unit tests (assert client path never calls it).
+pub(crate) fn run_test_command_with(
+    args: TestCommandArgs<'_>,
+    run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
+) -> i32 {
     let python_extra_owned =
         kiss::effective_python_pytest_args(&args.test_cfg.pytest_plugins, args.extra);
     let run_args = RunTestCmdArgs {
@@ -51,15 +70,76 @@ pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
         let settle = Duration::from_secs_f64(args.test_cfg.watch_settle_seconds);
         return run_test_watch(run_args, settle);
     }
-    let code = run_test(run_args);
-    if code != 0 || args.dry_run {
+    if args.dry_run {
+        return run_local(run_args);
+    }
+
+    #[cfg(unix)]
+    {
+        match try_run_as_watcher_client(&args) {
+            Ok(Some(code)) => return code,
+            Ok(None) => {}
+            Err(e) => {
+                eprintln!("error: kiss test: {e}");
+                return 1;
+            }
+        }
+    }
+
+    let code = run_local(run_args);
+    if code != 0 {
         return code;
     }
-    // After a successful run the population is current; evaluate coverage and
-    // unit-test time gates (formerly `kiss cov`) against that cache.
+    finish_with_coverage(&args, code)
+}
+
+/// If a live watcher owns the repo, nudge it and evaluate coverage from cache.
+///
+/// Returns `Ok(None)` when no watcher is present (caller runs tests locally).
+#[cfg(unix)]
+fn try_run_as_watcher_client(args: &TestCommandArgs<'_>) -> Result<Option<i32>, String> {
+    if let Some(overridden) = CLIENT_RESULT_OVERRIDE.with(Cell::take) {
+        return match overridden {
+            Ok(None) => Ok(None),
+            Ok(Some(exit_code)) => Ok(Some(apply_watcher_client_exit(args, exit_code))),
+            Err(e) => Err(e),
+        };
+    }
+
+    use crate::test_runner::{NudgeRequestMsg, nudge_watcher_with_retry, probe_live_watcher};
+
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let repo_root = crate::test_git::require_git_repo_root(&cwd)?;
+    let Some(session) = probe_live_watcher(&repo_root)? else {
+        return Ok(None);
+    };
+    println!("kiss test: waiting for watcher (pid {})", session.pid);
+    let reply = nudge_watcher_with_retry(
+        &repo_root,
+        &session,
+        &NudgeRequestMsg {
+            force: args.force,
+            force_bad: args.force_bad,
+            metrics: args.metrics,
+        },
+    )?;
+    Ok(Some(apply_watcher_client_exit(args, reply.exit_code)))
+}
+
+#[cfg(unix)]
+fn apply_watcher_client_exit(args: &TestCommandArgs<'_>, exit_code: i32) -> i32 {
+    println!("kiss test: watcher cycle complete");
+    if exit_code != 0 {
+        println!("FAIL");
+        return exit_code;
+    }
+    println!("PASS");
+    finish_with_coverage(args, exit_code)
+}
+
+/// Client path after a successful watcher nudge: evaluate coverage from cache only.
+pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -> i32 {
     let universe = universe_root_for_test_invocation(&args.invocation);
-    // Prime file-list/records caches from the just-ensured population so coverage
-    // evaluation can stay on the warm read path without a second ensure.
     warm_cov_caches_after_tests(&universe, args.lang_filter, args.ignore);
     let universe_s = universe.to_string_lossy().into_owned();
     let paths = [universe_s];
@@ -75,7 +155,11 @@ pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
         jobs: args.jobs,
         allow_refresh: false,
     });
-    if cov_code != 0 { cov_code } else { code }
+    if cov_code != 0 {
+        cov_code
+    } else {
+        test_exit
+    }
 }
 
 /// Universe root for post-test cov warming: single path/dir target when present,
@@ -98,6 +182,7 @@ fn universe_root_for_test_invocation(invocation: &TestInvocation) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn universe_root_defaults_to_dot_for_all_modes() {
@@ -122,6 +207,47 @@ mod tests {
                 "src/lib.rs::my_test".into()
             ])),
             PathBuf::from("src/lib.rs")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn injected_client_result_skips_local_run_test() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            force: false,
+            force_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            ignore: &[],
+            extra: &[],
+            lang_filter: Some(kiss::Language::Python),
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+        };
+        set_client_result_override_for_test(Some(Ok(Some(9))));
+        let calls = AtomicUsize::new(0);
+        let code = run_test_command_with(args, |_a| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            0
+        });
+        set_client_result_override_for_test(None);
+        assert_eq!(code, 9);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "client path must not call the local test runner"
         );
     }
 }

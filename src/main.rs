@@ -34,12 +34,10 @@ fn run_kiss_main() -> i32 {
     let _profraw_guard = KissProfrawProcessGuard::for_current_process(&repo_root);
     let exit_code = run();
     let d = t0.elapsed();
-    if !crate::test_runner::watch_background_active() {
-        if d.as_secs() >= 1 {
-            eprintln!("kiss: {:.2}s", d.as_secs_f64());
-        } else {
-            eprintln!("kiss: {}ms", d.as_millis());
-        }
+    if d.as_secs() >= 1 {
+        eprintln!("kiss: {:.2}s", d.as_secs_f64());
+    } else {
+        eprintln!("kiss: {}ms", d.as_millis());
     }
     exit_code
 }

@@ -1,95 +1,76 @@
-//! Subprocess SIGINT acceptance for `kiss test --watch-bg`.
+//! Subprocess SIGINT acceptance for foreground `kiss test --watch`.
 
 #![cfg(unix)]
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::os::unix::process::ExitStatusExt;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::support::git::{commit_all, init_git_repo};
 
-struct WatchDaemon {
-    pid: i32,
-    child: Option<Child>,
+struct WatchProc {
+    child: Child,
 }
 
-impl WatchDaemon {
+impl WatchProc {
     fn pid(&self) -> i32 {
-        self.pid
+        self.child.id() as i32
     }
 }
 
-impl Drop for WatchDaemon {
+impl Drop for WatchProc {
     fn drop(&mut self) {
-        let _ = unsafe { libc::kill(self.pid, libc::SIGKILL) };
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        let _ = unsafe { libc::kill(self.pid(), libc::SIGKILL) };
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
-fn assert_watch_interrupted_gone(mut daemon: WatchDaemon, timeout: Duration) {
-    let pid = daemon.pid();
+fn assert_watch_interrupted_gone(mut watch: WatchProc, timeout: Duration) {
+    let pid = watch.pid();
     let deadline = Instant::now() + timeout;
     loop {
-        let alive = unsafe { libc::kill(pid, 0) == 0 };
-        if !alive {
-            if let Some(mut child) = daemon.child.take() {
-                let _ = child.wait();
-            }
-            std::mem::forget(daemon);
+        // Prefer waitpid: a SIGINT-killed child is a zombie until reaped, and
+        // `kill(pid, 0)` still succeeds on zombies.
+        if let Ok(Some(status)) = watch.child.try_wait() {
+            std::mem::forget(watch);
+            assert!(
+                status.code() == Some(130)
+                    || status.signal() == Some(libc::SIGINT)
+                    || !status.success(),
+                "expected interrupted exit, got {status:?}"
+            );
             return;
         }
         if Instant::now() >= deadline {
-            drop(daemon);
-            panic!("timed out waiting for watch daemon pid={pid} to exit after SIGINT");
+            drop(watch);
+            panic!("timed out waiting for watch pid={pid} to exit after SIGINT");
         }
         std::thread::sleep(Duration::from_millis(50));
     }
 }
 
-fn note_parent_exit(child: &mut Child, parent_exited_ok: &mut bool) {
-    if *parent_exited_ok {
-        return;
-    }
-    if let Ok(Some(status)) = child.try_wait() {
-        assert!(
-            status.success(),
-            "watch parent should exit 0 after daemonize; status={status:?}"
-        );
-        *parent_exited_ok = true;
-    }
-}
-
-fn start_watch_daemon(args: &[&str], dir: &Path) -> WatchDaemon {
+#[allow(clippy::zombie_processes)] // WatchProc::Drop always reaps the child.
+fn start_watch(args: &[&str], dir: &Path) -> WatchProc {
     let mut child = Command::new(env!("CARGO_BIN_EXE_kiss"))
         .args(args)
         .current_dir(dir)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .expect("spawn kiss test --watch-bg");
-    let mut parent_exited_ok = false;
+        .expect("spawn kiss test --watch");
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
-        if let Some(pid) = read_alive_watch_pid(dir) {
-            note_parent_exit(&mut child, &mut parent_exited_ok);
-            if parent_exited_ok || child.id() as i32 != pid {
-                return WatchDaemon { pid, child: None };
-            }
-            return WatchDaemon {
-                pid,
-                child: Some(child),
-            };
+        if session_ready(dir) {
+            return WatchProc { child };
         }
-        note_parent_exit(&mut child, &mut parent_exited_ok);
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
             panic!(
-                "timed out waiting for watch pid under {}",
+                "timed out waiting for watch session under {}",
                 dir.join(".kiss").join("watch").display()
             );
         }
@@ -97,27 +78,16 @@ fn start_watch_daemon(args: &[&str], dir: &Path) -> WatchDaemon {
     }
 }
 
-fn read_alive_watch_pid(repo: &Path) -> Option<i32> {
-    let watch_dir = repo.join(".kiss").join("watch");
-    let pid = read_watch_pid(&watch_dir)?;
-    if unsafe { libc::kill(pid, 0) } == 0 {
-        Some(pid)
-    } else {
-        None
-    }
+fn session_ready(repo: &Path) -> bool {
+    let session = repo.join(".kiss").join("watch").join("session.json");
+    session.is_file()
 }
 
-fn read_watch_pid(watch_dir: &Path) -> Option<i32> {
-    let mut pids: Vec<PathBuf> = fs::read_dir(watch_dir)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "pid"))
-        .collect();
-    pids.sort();
-    let path = pids.last()?;
+fn read_session_pid(repo: &Path) -> Option<u32> {
+    let path = repo.join(".kiss").join("watch").join("session.json");
     let body = fs::read_to_string(path).ok()?;
-    body.trim().parse().ok()
+    let v: serde_json::Value = serde_json::from_str(&body).ok()?;
+    v.get("pid")?.as_u64().map(|p| p as u32)
 }
 
 fn write_python_repo(root: &Path) {
@@ -136,7 +106,6 @@ fn write_rust_sleep_repo(root: &Path) {
     )
     .unwrap();
     std::fs::create_dir_all(root.join("src")).unwrap();
-    // Marker file lets the acceptance test wait until the Rust batch is in-flight.
     std::fs::write(
         root.join("src").join("lib.rs"),
         "#[test]\nfn sleeps() {\n    let _ = std::fs::write(\"BATCH_RUNNING\", b\"1\");\n    std::thread::sleep(std::time::Duration::from_secs(60));\n}\n",
@@ -157,7 +126,6 @@ fn wait_for_path(path: &Path, timeout: Duration) {
 
 #[test]
 fn watch_sigint_python_exits_130() {
-    // Coverage runtimes can install SIGINT handlers that keep the process alive.
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
@@ -165,15 +133,15 @@ fn watch_sigint_python_exits_130() {
     init_git_repo(tmp.path());
     write_python_repo(tmp.path());
     commit_all(tmp.path(), "init");
-    let daemon = start_watch_daemon(
-        &["test", "--watch-bg", "--lang", "python", "test_lib.py"],
+    let watch = start_watch(
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
         tmp.path(),
     );
     std::thread::sleep(Duration::from_millis(500));
     unsafe {
-        assert_eq!(libc::kill(daemon.pid(), libc::SIGINT), 0);
+        assert_eq!(libc::kill(watch.pid(), libc::SIGINT), 0);
     }
-    assert_watch_interrupted_gone(daemon, Duration::from_secs(30));
+    assert_watch_interrupted_gone(watch, Duration::from_secs(30));
 }
 
 #[test]
@@ -185,55 +153,12 @@ fn watch_sigint_rust_batch_exits_130() {
     init_git_repo(tmp.path());
     write_rust_sleep_repo(tmp.path());
     commit_all(tmp.path(), "init");
-    let daemon = start_watch_daemon(&["test", "--watch-bg", "--lang", "rust", "."], tmp.path());
+    let watch = start_watch(&["test", "--watch", "--lang", "rust", "."], tmp.path());
     wait_for_path(&tmp.path().join("BATCH_RUNNING"), Duration::from_secs(90));
     unsafe {
-        assert_eq!(libc::kill(daemon.pid(), libc::SIGINT), 0);
+        assert_eq!(libc::kill(watch.pid(), libc::SIGINT), 0);
     }
-    assert_watch_interrupted_gone(daemon, Duration::from_secs(30));
-}
-
-#[test]
-fn watch_daemon_parent_reports_backgrounded_pid() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_repo(tmp.path());
-    commit_all(tmp.path(), "init");
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .env("KISS_WATCH_EXIT_AFTER_PID", "1")
-        .args(["test", "--watch-bg", "--lang", "python", "test_lib.py"])
-        .current_dir(tmp.path())
-        .output()
-        .expect("run kiss test --watch-bg");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stdout = stdout.trim_end();
-    let prefix = "Backgrounded, pid = ";
-    assert!(
-        stdout.starts_with(prefix),
-        "stdout={stdout:?}"
-    );
-    let reported: i32 = stdout[prefix.len()..]
-        .parse()
-        .unwrap_or_else(|_| panic!("pid not an integer: {stdout:?}"));
-    assert!(
-        output.stderr.is_empty(),
-        "stderr={:?}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let watch_dir = tmp.path().join(".kiss").join("watch");
-    let deadline = Instant::now() + Duration::from_secs(30);
-    let file_pid = loop {
-        if let Some(pid) = read_watch_pid(&watch_dir) {
-            break pid;
-        }
-        if Instant::now() >= deadline {
-            panic!("daemon pid file not written after Backgrounded parent exit");
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    };
-    assert_eq!(reported, file_pid, "stdout pid must match .pid file");
-    let _ = unsafe { libc::kill(file_pid, libc::SIGKILL) };
+    assert_watch_interrupted_gone(watch, Duration::from_secs(30));
 }
 
 fn spawn_foreground_watch(dir: &Path) -> Child {
@@ -292,32 +217,21 @@ fn collect_stdout_until(child: &mut Child, needle_a: &str, needle_b: &str, timeo
 }
 
 #[test]
-fn watch_foreground_does_not_print_backgrounded() {
+fn watch_foreground_writes_session_json() {
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
     write_python_repo(tmp.path());
     commit_all(tmp.path(), "init");
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .env("KISS_WATCH_EXIT_AFTER_PID", "1")
-        .args(["test", "--watch", "--lang", "python", "test_lib.py"])
-        .current_dir(tmp.path())
-        .output()
-        .expect("run kiss test --watch");
-    assert!(
-        output.status.success(),
-        "stderr={:?}",
-        String::from_utf8_lossy(&output.stderr)
+    let watch = start_watch(
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+        tmp.path(),
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        !stdout.contains("Backgrounded"),
-        "foreground --watch must not daemonize; stdout={stdout:?}"
-    );
-    let watch_dir = tmp.path().join(".kiss").join("watch");
-    assert!(
-        read_watch_pid(&watch_dir).is_some(),
-        "foreground --watch should still write a pid file"
-    );
+    let pid = read_session_pid(tmp.path()).expect("session pid");
+    assert_eq!(pid, watch.pid() as u32);
+    unsafe {
+        assert_eq!(libc::kill(watch.pid(), libc::SIGINT), 0);
+    }
+    assert_watch_interrupted_gone(watch, Duration::from_secs(30));
 }
 
 #[test]
@@ -344,4 +258,31 @@ fn watch_foreground_logs_planning_and_pass() {
         stdout.contains("PASS:"),
         "foreground --watch must log PASS/FAIL/TIMEOUT lines; stdout={stdout:?}"
     );
+}
+
+#[test]
+fn second_watch_fails_while_first_alive() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    write_python_repo(tmp.path());
+    commit_all(tmp.path(), "init");
+    let watch = start_watch(
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+        tmp.path(),
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+        .args(["test", "--watch", "--lang", "python", "test_lib.py"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("second watch");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("already running"),
+        "stderr={stderr:?}"
+    );
+    unsafe {
+        assert_eq!(libc::kill(watch.pid(), libc::SIGINT), 0);
+    }
+    assert_watch_interrupted_gone(watch, Duration::from_secs(30));
 }

@@ -1,20 +1,20 @@
 //! Native filesystem watch session for `kiss test --watch`.
 
-mod daemon;
+#[cfg(unix)]
+pub(crate) mod control;
 mod event_source;
 mod filter;
+mod lock;
 mod roots;
 mod session;
 mod settle;
 
-#[allow(unused_imports)] // re-exported for sibling modules and tests
-pub(crate) use daemon::{
-    enter_watch_background, ensure_watch_log_paths, watch_background_active, write_watch_pid,
-};
-#[allow(unused_imports)] // re-exported for sibling modules and tests
+#[allow(unused_imports)]
 pub(crate) use event_source::{NativeWatchEventSource, NormalizedWatchEvent, WatchEventSource};
 #[allow(unused_imports)]
 pub(crate) use filter::WatchPathFilter;
+#[allow(unused_imports)]
+pub(crate) use lock::{WatchLockGuard, watch_lock_path};
 #[allow(unused_imports)]
 pub(crate) use roots::resolve_watch_registrations;
 pub(crate) use session::run_test_watch;

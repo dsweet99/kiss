@@ -142,7 +142,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
         force_bad: false,                    metrics: false,
                 coverage_all: false,
                 watch: false,
-                watch_bg: false,
                     jobs: None,
                     ignore: vec![],
                     extra: vec![],
@@ -185,7 +184,6 @@ fn dispatch_test_command_routes_valid_test_mode() {
         force_bad: false,            metrics: false,
                 coverage_all: false,
                 watch: false,
-                watch_bg: false,
             jobs: None,
             ignore: vec![],
             extra: vec![],
@@ -224,7 +222,6 @@ fn dispatch_test_command_rejects_removed_validate_selection() {
         force_bad: false,            metrics: false,
                 coverage_all: false,
                 watch: false,
-                watch_bg: false,
             jobs: None,
             ignore: vec![],
             extra: vec![],
@@ -237,74 +234,4 @@ fn dispatch_test_command_rejects_removed_validate_selection() {
     assert_eq!(code, 2);
 }
 
-#[test]
-fn dispatch_test_rejects_watch_bg_with_dry_run() {
-    let test = TestSectionConfig::default();
-    let py = kiss::Config::python_defaults();
-    let rs = kiss::Config::rust_defaults();
-    let gate = kiss::GateConfig::default();
-    let cfg = super::TriConfig {
-        py: &py,
-        rs: &rs,
-        gate: &gate,
-    };
-    assert_eq!(
-        super::dispatch_test_command(
-            None,
-            Commands::Test {
-                operands: vec![".".to_string()],
-                main_branch: None,
-                base_branch: None,
-                dry_run: true,
-                force: false,
-                force_bad: false,
-                metrics: false,
-                coverage_all: false,
-                watch: false,
-                watch_bg: true,
-                jobs: None,
-                ignore: vec![],
-                extra: vec![],
-            },
-            &cfg,
-            &test,
-        ),
-        2
-    );
-}
 
-#[test]
-fn dispatch_test_rejects_watch_with_watch_bg() {
-    let test = TestSectionConfig::default();
-    let py = kiss::Config::python_defaults();
-    let rs = kiss::Config::rust_defaults();
-    let gate = kiss::GateConfig::default();
-    let cfg = super::TriConfig {
-        py: &py,
-        rs: &rs,
-        gate: &gate,
-    };
-    assert_eq!(
-        super::dispatch_test_command(
-            None,
-            Commands::Test {
-                operands: vec![".".to_string()],
-                main_branch: None,
-                base_branch: None,
-                dry_run: false,
-                force: false,
-                force_bad: false,
-                metrics: false,
-                coverage_all: false,
-                watch: true,
-                watch_bg: true,
-                jobs: None,
-                ignore: vec![],
-                extra: vec![],
-            },
-            &cfg,
-            &test,
-        ),
-        2
-    );
-}

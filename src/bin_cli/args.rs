@@ -352,9 +352,6 @@ pub enum Commands {
         /// Re-run covering tests when sources settle (foreground; logs planning and PASS/FAIL/TIMEOUT)
         #[arg(long)]
         watch: bool,
-        /// Same as `--watch`, but daemonize; errors → `.kiss/watch/`
-        #[arg(long)]
-        watch_bg: bool,
         /// Maximum number of test jobs to run concurrently
         /// (default: [test] num_jobs from config)
         #[arg(short = 'j', long, value_name = "JOBS", value_parser = parse_positive_usize)]

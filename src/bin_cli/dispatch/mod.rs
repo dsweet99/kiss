@@ -187,7 +187,6 @@ fn dispatch_test_command(
             metrics,
             coverage_all,
             watch,
-            watch_bg,
             jobs,
             ignore,
             extra,
@@ -207,13 +206,8 @@ fn dispatch_test_command(
                 eprintln!("error: kiss test: {e}");
                 return 2;
             }
-            if watch && watch_bg {
-                eprintln!("error: kiss test: --watch cannot be combined with --watch-bg");
-                return 2;
-            }
-            if (watch || watch_bg) && dry_run {
-                let flag = if watch_bg { "--watch-bg" } else { "--watch" };
-                eprintln!("error: kiss test: {flag} cannot be combined with --dry-run");
+            if watch && dry_run {
+                eprintln!("error: kiss test: --watch cannot be combined with --dry-run");
                 return 2;
             }
             dispatch_test(TestDispatchOptions {
@@ -226,7 +220,7 @@ fn dispatch_test_command(
                 force_bad,
                 metrics,
                 coverage_all,
-                watch: watch || watch_bg,
+                watch,
                 jobs,
                 ignore,
                 extra,
