@@ -1,4 +1,4 @@
-//! Watch session orchestration for `kiss test --watch`.
+//! Watch session orchestration for `kiss test --watch` / `--watch-bg`.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};

@@ -201,10 +201,25 @@ fn test_watch_flag_parses() {
     match cli.command {
         Commands::Test {
             watch: true,
+            watch_bg: false,
             operands,
             ..
         } => assert_eq!(operands, vec!["commit".to_string()]),
         _ => panic!("expected watch"),
+    }
+}
+
+#[test]
+fn test_watch_bg_flag_parses() {
+    let cli = Cli::try_parse_from(["kiss", "test", "--watch-bg", "commit"]).unwrap();
+    match cli.command {
+        Commands::Test {
+            watch: false,
+            watch_bg: true,
+            operands,
+            ..
+        } => assert_eq!(operands, vec!["commit".to_string()]),
+        _ => panic!("expected watch_bg"),
     }
 }
 

@@ -186,7 +186,8 @@ fn test_test_cli_parse() {
             operands,
             dry_run: true,
             metrics: true,
-                watch: false,
+            watch: false,
+            watch_bg: false,
             ..
         } => assert_eq!(operands, vec!["base".to_string()]),
         _ => panic!("expected Test base dry-run"),

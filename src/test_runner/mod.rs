@@ -149,7 +149,7 @@ pub(crate) fn emit_test_progress(message: &str) {
     let _ = std::io::stdout().flush();
 }
 
-/// Log a named stage duration to stdout (`kiss test: stage <name> <ms>ms`).
+/// Log a named stage duration to stdout as `kiss test: stage <name> <ms>ms`.
 pub(crate) fn emit_stage_time(stage: &str, duration: std::time::Duration) {
     emit_test_progress(&format!(
         "kiss test: stage {stage} {}ms",

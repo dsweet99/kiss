@@ -28,20 +28,8 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
     if let Commands::Init { repo_path } = &cli.command {
         return run_init_command(repo_path);
     }
-    if let Commands::Test {
-        watch: true,
-        dry_run,
-        ..
-    } = &cli.command
-    {
-        if *dry_run {
-            eprintln!("error: kiss test: --watch cannot be combined with --dry-run");
-            return 2;
-        }
-        if let Err(e) = crate::test_runner::enter_watch_background() {
-            eprintln!("error: kiss test --watch: {e}");
-            return 1;
-        }
+    if let Some(code) = prepare_watch_flags(&cli) {
+        return code;
     }
     ensure_default_config_exists();
     let (py_config, rs_config) = load_configs(cli.config.as_ref(), cli.defaults);
@@ -54,6 +42,37 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
         }
     };
     dispatch(cli, &py_config, &rs_config, &gate_config, &test_section)
+}
+
+/// Validate `--watch` / `--watch-bg`, and daemonize when `--watch-bg` is set.
+///
+/// Returns `Some(exit_code)` on validation or backgrounding failure; `None` to continue.
+fn prepare_watch_flags(cli: &Cli) -> Option<i32> {
+    let Commands::Test {
+        watch,
+        watch_bg,
+        dry_run,
+        ..
+    } = &cli.command
+    else {
+        return None;
+    };
+    if *watch && *watch_bg {
+        eprintln!("error: kiss test: --watch cannot be combined with --watch-bg");
+        return Some(2);
+    }
+    if (*watch || *watch_bg) && *dry_run {
+        let flag = if *watch_bg { "--watch-bg" } else { "--watch" };
+        eprintln!("error: kiss test: {flag} cannot be combined with --dry-run");
+        return Some(2);
+    }
+    if *watch_bg
+        && let Err(e) = crate::test_runner::enter_watch_background()
+    {
+        eprintln!("error: kiss test --watch-bg: {e}");
+        return Some(1);
+    }
+    None
 }
 
 pub(crate) fn parse_cli() -> Cli {

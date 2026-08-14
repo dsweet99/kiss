@@ -14,11 +14,23 @@ fn watch_flag_parses_and_rejects_dry_run() {
     match cli.command {
         Commands::Test {
             watch: true,
+            watch_bg: false,
             dry_run: false,
             operands,
             ..
         } => assert_eq!(operands, vec![".".to_string()]),
         _ => panic!("expected watch"),
+    }
+    let cli = Cli::try_parse_from(["kiss", "test", "--watch-bg", "."]).unwrap();
+    match cli.command {
+        Commands::Test {
+            watch: false,
+            watch_bg: true,
+            dry_run: false,
+            operands,
+            ..
+        } => assert_eq!(operands, vec![".".to_string()]),
+        _ => panic!("expected watch_bg"),
     }
     let cli = Cli::try_parse_from(["kiss", "test", "--watch", "--dry-run", "."]).unwrap();
     match cli.command {
@@ -28,6 +40,15 @@ fn watch_flag_parses_and_rejects_dry_run() {
             ..
         } => {}
         _ => panic!("expected both flags parse; dispatch rejects combo"),
+    }
+    let cli = Cli::try_parse_from(["kiss", "test", "--watch-bg", "--dry-run", "."]).unwrap();
+    match cli.command {
+        Commands::Test {
+            watch_bg: true,
+            dry_run: true,
+            ..
+        } => {}
+        _ => panic!("expected watch_bg and dry_run parse; dispatch rejects combo"),
     }
 }
 

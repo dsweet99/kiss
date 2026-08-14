@@ -303,7 +303,7 @@ fn redirect_daemon_stdio(log_path: &Path) -> Result<(), String> {
 #[doc = "kiss-coverage-off"]
 pub(crate) fn daemonize_watch(log_path: &Path) -> Result<(), String> {
     let _ = log_path;
-    Err("kiss test --watch background mode requires a Unix host".into())
+    Err("kiss test --watch-bg requires a Unix host".into())
 }
 
 pub(crate) fn should_daemonize_watch() -> bool {
