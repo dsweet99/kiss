@@ -331,7 +331,14 @@ fn all_hit_outcomes(
         completed.push(outcome_from_entry(entry, RustCovCacheStatus::Hit));
         saw_cache_hit = true;
     }
-    if saw_cache_hit {
+    // Positive-only seal binds to entry_state.json. On all-hit before derived
+    // publish (or when stores invalidated entry_state), skip rather than fail
+    // the reusable hit path; seal write errors still propagate when state is present.
+    if saw_cache_hit
+        && crate::publish_derived::batch_entry_state::read_entry_state(&req.cache_root).is_some_and(
+            |state| state.generation_fingerprint == identity.generation_fingerprint,
+        )
+    {
         crate::execute_or_reuse::batch_warm_hit_seal::write_warm_all_hit_seal(req, identity)
             .map_err(RustLlvmCovError::Io)?;
     }

@@ -1,6 +1,8 @@
 # /home/dsweet/.cargo/bin/kiss check
 kiss-0.4.8 check
+kiss check
 ruff check .
-pytest -sv tests
+#pytest -sv tests
 cargo clippy --all-targets --all-features -- -D warnings -W clippy::cargo
-cargo nextest run
+# cargo nextest run
+kiss test
