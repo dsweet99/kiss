@@ -208,6 +208,8 @@ fn wait_until_next_cycle(
     nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
     queued: &mut Option<QueuedCycle>,
 ) -> Option<i32> {
+    // Once per idle/settle wait (not each nudge poll slice).
+    crate::test_runner::emit_test_progress("kiss test: Waiting");
     loop {
         coalesce_nudges(nudge_rx, queued);
         if queued.is_some() {

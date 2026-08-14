@@ -246,8 +246,8 @@ fn watch_foreground_logs_planning_and_pass() {
     let mut child = spawn_foreground_watch(tmp.path());
     let stdout = collect_stdout_until(
         &mut child,
-        "kiss test: Planning ...",
         "PASS:",
+        "kiss test: Waiting",
         Duration::from_secs(90),
     );
     assert!(
@@ -257,6 +257,10 @@ fn watch_foreground_logs_planning_and_pass() {
     assert!(
         stdout.contains("PASS:"),
         "foreground --watch must log PASS/FAIL/TIMEOUT lines; stdout={stdout:?}"
+    );
+    assert!(
+        stdout.contains("kiss test: Waiting"),
+        "foreground --watch must log Waiting while idle; stdout={stdout:?}"
     );
 }
 
