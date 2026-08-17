@@ -63,8 +63,8 @@ pub mod gate {
     pub const TEST_COVERAGE_SCOPE_TOML: &str = "\"codebase\"";
     /// Max wall seconds per unit test (`kiss test`); `0` disables. VISION: under 2s.
     pub const MAX_UNIT_TEST_SECONDS: f64 = 2.0;
-    /// Maximum unit-test count for `kiss test`; `0` disables.
-    pub const MAX_NUM_TESTS: usize = 0;
+    /// Default maximum unit-test population size (`kiss test` / `kiss cov`).
+    pub const MAX_NUM_TESTS: usize = 999_999;
 }
 
 pub fn default_config_toml() -> String {
@@ -216,7 +216,7 @@ mod tests {
             "init default must emit coverage under [test]:\n{toml}"
         );
         assert!(
-            toml.contains("max_num_tests = 0"),
+            toml.contains("max_num_tests = 999999"),
             "init default must emit max_num_tests under [test]:\n{toml}"
         );
         assert!(

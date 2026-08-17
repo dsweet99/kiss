@@ -187,6 +187,18 @@ max_num_tests = 12
     assert!((gate.min_similarity - 0.75).abs() < f64::EPSILON);
     assert!(!gate.duplication_enabled);
     assert!(!gate.orphan_module_enabled);
+
+    let zero = GateConfig::try_load_from_content("[test]\nmax_num_tests = 0").unwrap();
+    assert_eq!(zero.max_num_tests, 0);
+    let err = GateConfig::try_load_from_content("[test]\nmax_num_tests = \"inf\"").unwrap_err();
+    assert!(
+        matches!(
+            err,
+            ConfigError::InvalidValue { ref key, .. } if key == "max_num_tests"
+        ),
+        "err={err:?}"
+    );
+    assert_eq!(GateConfig::default().max_num_tests, 999_999);
 }
 
 #[test]

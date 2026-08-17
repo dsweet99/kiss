@@ -48,8 +48,10 @@ pub(super) fn merge_test_gates_lenient(config: &mut GateConfig, test: &toml::Tab
         eprintln!("Error: {msg}");
     }
     merge_max_unit_test_seconds_lenient(test, &mut config.max_unit_test_seconds);
-    if let Some(n) = get_usize(test, "max_num_tests") {
-        config.max_num_tests = n;
+    match try_get_max_num_tests(test) {
+        Ok(Some(n)) => config.max_num_tests = n,
+        Ok(None) => {}
+        Err(err) => eprintln!("Error: {err}"),
     }
 }
 
@@ -69,26 +71,30 @@ pub(super) fn merge_test_gates_strict(config: &mut GateConfig, test: &toml::Tabl
     if let Some(value) = test.get("max_unit_test_seconds") {
         config.max_unit_test_seconds = unit_test_seconds::parse_max_unit_test_seconds(value)?;
     }
-    if let Some(n) = try_get_usize_nonneg(test, "max_num_tests")? {
+    if let Some(n) = try_get_max_num_tests(test)? {
         config.max_num_tests = n;
     }
     Ok(())
 }
 
-pub(super) fn try_get_usize_nonneg(table: &toml::Table, key: &str) -> Result<Option<usize>, ConfigError> {
-    let Some(value) = table.get(key) else {
+/// Parse `max_num_tests`: nonnegative integer (`0` means any test fails).
+pub(super) fn try_get_max_num_tests(table: &toml::Table) -> Result<Option<usize>, ConfigError> {
+    let Some(value) = table.get("max_num_tests") else {
         return Ok(None);
     };
     let Some(n) = value.as_integer() else {
         return Err(ConfigError::InvalidValue {
-            key: key.into(),
-            message: format!("expected nonnegative integer, got {}", value.type_str()),
+            key: "max_num_tests".into(),
+            message: format!(
+                "expected nonnegative integer, got {}",
+                value.type_str()
+            ),
         });
     };
     usize::try_from(n)
         .map(Some)
         .map_err(|_| ConfigError::InvalidValue {
-            key: key.into(),
+            key: "max_num_tests".into(),
             message: format!("expected nonnegative integer, got {n}"),
         })
 }

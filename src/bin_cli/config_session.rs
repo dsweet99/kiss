@@ -129,7 +129,7 @@ mod tests {
                 && created.contains("watch_settle_seconds = 1.0")
                 && created.contains("pytest_plugins = []")
                 && created.contains("ignore = []")
-                && created.contains("max_num_tests = 0")
+                && created.contains("max_num_tests = 999999")
                 && created.contains("[test.max_unit_test_seconds]"),
             "kiss init must write [test] defaults:\n{created}"
         );

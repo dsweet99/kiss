@@ -61,7 +61,8 @@ pub struct GateConfig {
     pub test_coverage_scope: TestCoverageScope,
     /// Ordered path-pattern → seconds limits; last entry must be `"*"`.
     pub max_unit_test_seconds: Vec<(String, f64)>,
-    /// Maximum number of unit tests in the current population; `0` disables.
+    /// Maximum number of unit tests in the current population.
+    /// `0` means any test count greater than zero fails.
     pub max_num_tests: usize,
     pub min_similarity: f64,
     pub duplication_enabled: bool,
@@ -94,10 +95,6 @@ impl GateConfig {
 
     pub fn unit_test_time_gate_disabled(&self) -> bool {
         self.max_unit_test_seconds.is_empty()
-    }
-
-    pub fn max_num_tests_gate_disabled(&self) -> bool {
-        self.max_num_tests == 0
     }
 }
 

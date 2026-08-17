@@ -32,7 +32,7 @@ fn cli_init_writes_default_config_in_current_directory() {
             && config.contains("orphan_module_enabled = true")
             && config.contains("test_coverage_threshold = 90")
             && config.contains("test_coverage_scope = \"codebase\"")
-            && config.contains("max_num_tests = 0"),
+            && config.contains("max_num_tests = 999999"),
         "config:\n{config}"
     );
     assert!(

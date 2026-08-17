@@ -16,7 +16,7 @@ use crate::test_runner::unit_test_timing::RuntimeGateEval;
 #[cfg(test)]
 use crate::test_runner::unit_test_timing::TimingCollectOpts;
 use kiss::Language;
-use kiss::cli_output::{print_final_status, print_no_files_message, print_violations};
+use kiss::cli_output::{print_no_files_message, print_violations};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -256,14 +256,6 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
         );
     }
     let threshold = args.gate_config.test_coverage_threshold;
-    if threshold == 0
-        && args.gate_config.unit_test_time_gate_disabled()
-        && args.gate_config.max_num_tests_gate_disabled()
-        && !args.bypass_gate
-    {
-        print_final_status(false);
-        return 0;
-    }
     // Time-only / count-only: skip line-coverage record computation when coverage gate and --all
     // do not need records.
     if threshold == 0 && !args.bypass_gate {

@@ -89,30 +89,6 @@ fn evaluate_time_gate_disabled_without_limits() {
 }
 
 #[test]
-fn max_num_tests_gate_disabled_when_limit_zero() {
-    let py = Config::python_defaults();
-    let rs = Config::rust_defaults();
-    let gate = GateConfig {
-        max_num_tests: 0,
-        ..GateConfig::default()
-    };
-    let args = CovCommandArgs {
-        paths: &[],
-        lang_filter: None,
-        py_config: &py,
-        rs_config: &rs,
-        gate_config: &gate,
-        bypass_gate: false,
-        ignore: &[],
-        timing: false,
-        jobs: 1,
-        allow_refresh: false,
-        pytest_args: &[],
-    };
-    assert!(!evaluate_max_num_tests_gate(&args, Path::new("."), &[]));
-}
-
-#[test]
 fn max_num_tests_gate_skipped_when_bypass() {
     let py = Config::python_defaults();
     let rs = Config::rust_defaults();

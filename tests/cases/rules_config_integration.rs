@@ -196,7 +196,7 @@ fn cli_config_shows_gate_settings() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let gate = "[global]\nmin_similarity = 0.90\nduplication_enabled = true\norphan_module_enabled = true\n\n[test]\ntest_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_num_tests = 0\n[test.max_unit_test_seconds]\n\"*\" = 2\n";
+    let gate = "[global]\nmin_similarity = 0.90\nduplication_enabled = true\norphan_module_enabled = true\n\n[test]\ntest_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_num_tests = 999999\n[test.max_unit_test_seconds]\n\"*\" = 2\n";
     assert!(stdout.contains(gate), "default gate emission. stdout: {stdout}");
 }
 

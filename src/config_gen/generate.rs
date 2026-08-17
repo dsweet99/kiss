@@ -111,7 +111,7 @@ mod coverage_witness {
         assert!(toml.contains("[global]"));
         assert!(
             toml.contains(
-                "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_num_tests = 0\n"
+                "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_num_tests = 999999\n"
             ),
             "test gate emission:\n{toml}"
         );

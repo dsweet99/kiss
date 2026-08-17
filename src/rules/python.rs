@@ -155,7 +155,7 @@ pub(super) const PY_RULE_SPECS: &[RuleSpec] = &[
         metric: "max_num_tests",
         op: "<=",
         threshold: ThresholdValue::Usize(|_, g| g.max_num_tests),
-        description: "max_num_tests is the maximum number of unit tests in the current population (Python + Rust). Enforced by `kiss test` alongside coverage. `0` disables. Config key lives under `[test]`.",
+        description: "max_num_tests is the maximum number of unit tests in the current population (Python + Rust). Enforced by `kiss test` alongside coverage. `0` means any test fails. Default is 999999. Config key lives under `[test]`.",
     },
     RuleSpec {
         metric: "min_similarity",

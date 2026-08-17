@@ -70,7 +70,7 @@ pub(crate) fn evaluate_max_num_tests_gate(
     universe_root: &Path,
     ignore: &[String],
 ) -> bool {
-    if args.bypass_gate || args.gate_config.max_num_tests_gate_disabled() {
+    if args.bypass_gate {
         return false;
     }
     let Some(count) = crate::test_runner::unit_test_timing::codebase_test_count_for_cov(

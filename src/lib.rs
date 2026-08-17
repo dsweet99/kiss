@@ -77,8 +77,8 @@ pub use duplication::{
     extract_rust_chunks_for_duplication,
 };
 pub use gate_config::{
-    GateConfig, MatchedUnitTestSecondsRule, TestCoverageScope, catch_all_limit, exceeds_limit,
-    format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
+    GateConfig, MatchedUnitTestSecondsRule, TestCoverageScope, catch_all_limit,
+    exceeds_limit, format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
 };
 pub use graph::{
     CycleInfo, DependencyGraph, ModuleGraphMetrics, analyze_graph, build_dependency_graph,
