@@ -72,7 +72,7 @@ fn ensure_one_language(
     if let Some(accepted) = try_accept_or_warm_report(request, module, &planned, &witness, &misses) {
         return Ok(accepted);
     }
-    run_misses_and_maybe_publish(request, module, &planned, witness, &misses)
+    run_misses_and_maybe_publish(request, module, &planned, witness, &misses, &identity)
 }
 
 fn try_publish_empty_all(
@@ -137,6 +137,7 @@ fn run_misses_and_maybe_publish(
     planned: &[String],
     witness: Option<crate::test_runner::lang_iface::ExecutionWitness>,
     misses: &[String],
+    identity: &str,
 ) -> Result<LanguageEnsureResult, String> {
     let batch = module.run_selectors(request, misses)?;
     // Full All-mode cold runs set publication_universe to the planned universe.
@@ -159,7 +160,12 @@ fn run_misses_and_maybe_publish(
     };
     // Skip republish when repair only re-read unchanged cache hits (common for
     // incomplete generations whose TimedOut/Failed selectors remain terminal).
-    if outcomes_unchanged_vs_prior(witness.as_ref(), &batch) {
+    // Do not skip when identity drifted: rslip all-hit must publish the current
+    // fingerprint so coverage load accepts without re-running pytest.
+    let identity_unchanged = witness
+        .as_ref()
+        .is_some_and(|w| w.identity_digest == identity);
+    if outcomes_unchanged_vs_prior(witness.as_ref(), &batch) && identity_unchanged {
         return Ok(LanguageEnsureResult {
             summary: merge_accept_and_run(planned, witness.as_ref(), &batch),
             published: false,

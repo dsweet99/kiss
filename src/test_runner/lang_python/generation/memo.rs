@@ -20,6 +20,7 @@ pub(crate) fn clear_python_generation_warm_memo() {
         *guard = None;
     }
     super::durations_load::clear_generation_durations_memo();
+    super::identity_memo::clear_python_execution_identity_memo();
 }
 
 pub(crate) fn try_load_pinned_python_generation_warm_memoized(

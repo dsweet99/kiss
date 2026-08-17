@@ -2,14 +2,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
-
 use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, RustCoverageToolIdentity, RustLineCoverage,
     placeholder_delegated_runner_fields, resolve_batch_request_runners,
 };
 use serde::Deserialize;
-
 use crate::test_runner::line_selection;
 
 pub(crate) const CACHE_SCHEMA_VERSION: &str = rust_llvm_cov_runner::CACHE_SCHEMA_VERSION;
@@ -21,6 +19,8 @@ pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
     "RUSTDOCFLAGS",
     "CARGO_TARGET_DIR",
     "LLVM_PROFILE_FILE",
+    // QA: HOLD_BEFORE_GO must reach shim via plan.env (not only inheritance).
+    "KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS",
 ];
 pub(crate) fn relevant_rust_batch_env() -> BTreeMap<String, String> {
     kiss::env_map_from_allowlist(RUST_COVERAGE_ENV_KEYS)

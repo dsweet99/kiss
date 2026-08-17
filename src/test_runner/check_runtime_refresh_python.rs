@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use kiss::GateConfig;
+
 use super::{
     CoverageRefreshError, CoverageRefreshStats, LanguageRefreshStats, ScopedRefreshEnvGuard,
     lock_refresh,
@@ -19,23 +21,28 @@ pub(super) fn ensure_python_runtime_coverage(
     repo_root: &Path,
     ignore: &[String],
     jobs: usize,
+    pytest_args: &[String],
+    gate: &GateConfig,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     let _guard = lock_refresh(repo_root, "Python")?;
-    match load_python_runtime_coverage(repo_root) {
+    match load_python_runtime_coverage(repo_root, pytest_args, gate) {
         Ok(_) => return Ok(CoverageRefreshStats::default()),
         Err(err) if !err.problem_selectors.is_empty() => {
             let planned = planned_selectors_for_incomplete(repo_root, &err.problem_selectors);
             return run_python_ensure(
-                ensure_request_for_selectors(
+                ensure_request_for_selectors(crate::test_runner::ensure_runtime::EnsureSelectorsArgs {
                     repo_root,
                     ignore,
                     jobs,
-                    kiss::Language::Python,
-                    false,
-                    planned,
-                    vec![],
-                    kiss::GateConfig::load(),
-                ),
+                    lang_filter: kiss::Language::Python,
+                    force: false,
+                    python: planned,
+                    rust: vec![],
+                    gate: gate.clone(),
+                    pytest_args: pytest_args.to_vec(),
+                }),
+                pytest_args,
+                gate,
             );
         }
         Err(_) => {}
@@ -46,10 +53,11 @@ pub(super) fn ensure_python_runtime_coverage(
         jobs,
         Some(kiss::Language::Python),
         false,
-        kiss::GateConfig::load(),
+        gate.clone(),
+        pytest_args.to_vec(),
     )
-        .map_err(|err| CoverageRefreshError::discovery("Python", err))?;
-    run_python_ensure(request)
+    .map_err(|err| CoverageRefreshError::discovery("Python", err))?;
+    run_python_ensure(request, pytest_args, gate)
 }
 
 fn planned_selectors_for_incomplete(
@@ -69,6 +77,8 @@ fn planned_selectors_for_incomplete(
 
 fn run_python_ensure(
     request: crate::test_runner::lang_iface::EnsureRequest,
+    pytest_args: &[String],
+    gate: &GateConfig,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     eprintln!(
         "kiss test: refreshing Python runtime coverage ({} tests)",
@@ -84,7 +94,7 @@ fn run_python_ensure(
     if summary.exit_code != 0 {
         return Err(execution_error(&summary));
     }
-    finalize_incomplete_repair_load(&request.repo_root, &summary)?;
+    finalize_incomplete_repair_load(&request.repo_root, &summary, pytest_args, gate)?;
     Ok(CoverageRefreshStats {
         by_language: crate::test_runner::language_keyed::LanguageKeyed {
             python: LanguageRefreshStats {
@@ -100,8 +110,10 @@ fn run_python_ensure(
 pub(super) fn finalize_incomplete_repair_load(
     repo_root: &Path,
     summary: &SelectorExecutionSummary,
+    pytest_args: &[String],
+    gate: &GateConfig,
 ) -> Result<(), CoverageRefreshError> {
-    match load_python_runtime_coverage(repo_root) {
+    match load_python_runtime_coverage(repo_root, pytest_args, gate) {
         Ok(_) => Ok(()),
         Err(err) if incomplete_repair_became_test_failure(&err, summary.exit_code) => {
             Err(execution_error(summary))

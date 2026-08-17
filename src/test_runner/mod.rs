@@ -29,6 +29,7 @@ mod language_keyed;
 mod planned_selectors;
 mod watch;
 mod rust_batch_interrupt;
+pub(crate) use rust_batch_interrupt::consume_rust_batch_interrupted;
 pub(crate) use planned_selectors::{
     PlannedSelectors, SelectorRunOptions, apply_cold_initialization_population,
     apply_force_all_population,
@@ -164,6 +165,8 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     let jobs = a.jobs;
     let extra = a.extra;
     let python_extra = a.python_extra;
+    // Fresh identity + collect memos for this test/watch cycle.
+    crate::test_runner::runners::clear_python_collect_memo();
     // Emit before planning so long selector/coverage work is not silent.
     emit_test_progress("kiss test: Planning ...");
     let plan_started = std::time::Instant::now();
@@ -207,7 +210,7 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     }
 }
 
-pub(crate) use watch::run_test_watch;
+pub(crate) use watch::{WatchCoverageParams, WatchCoverageResult, run_test_watch};
 #[cfg(unix)]
 pub(crate) use watch::control::{NudgeRequestMsg, nudge_watcher_with_retry, probe_live_watcher};
 

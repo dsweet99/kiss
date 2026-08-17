@@ -3,6 +3,7 @@
 mod types;
 mod paths;
 mod identity;
+mod identity_memo;
 mod evidence;
 mod publish;
 mod load;
@@ -21,6 +22,7 @@ pub(crate) use current::{
 pub(crate) use evidence::{PopulationEvidence, SelectorEvidence};
 pub(crate) use identity::current_python_execution_identity;
 pub(crate) use identity::identity_matches_current;
+pub(crate) use identity_memo::clear_python_execution_identity_memo;
 #[allow(unused_imports)]
 pub(crate) use identity::population_plan_for_selectors;
 #[allow(unused_imports)]

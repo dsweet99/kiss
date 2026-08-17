@@ -20,6 +20,7 @@ pub(crate) struct CovTimeGateOpts<'a> {
     pub(crate) ignore: &'a [String],
     pub(crate) limits: &'a [(String, f64)],
     pub(crate) timing: bool,
+    pub(crate) pytest_args: &'a [String],
 }
 
 /// Evaluate the unit-test time gate for `kiss cov`, with a fast path for sole `"*"`.
@@ -42,6 +43,7 @@ pub(crate) fn evaluate_cov_time_gate(opts: CovTimeGateOpts<'_>) -> RuntimeGateEv
         lang_filter: opts.lang_filter,
         include: opts.include,
         ignore: opts.ignore,
+        pytest_args: opts.pytest_args,
     });
     emit_timings_ms(opts.timing, t_timings);
     evaluate_runtime_gate(&timings, opts.limits)
@@ -58,12 +60,12 @@ fn try_evaluate_multi_prefix_path_max_gate(opts: CovTimeGateOpts<'_>) -> Option<
     }
     let t_timings = Instant::now();
     let repo_root = repository_root_for_universe(opts.universe);
-    let pytest_args = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
+    let pytest_args = opts.pytest_args;
     let t_py = Instant::now();
     let path_maxes =
         crate::test_runner::python_coverage_index::load_current_python_population_path_maxes(
             &repo_root,
-            &pytest_args,
+            pytest_args,
         )?;
     if opts.timing {
         eprintln!(
@@ -84,6 +86,7 @@ fn try_evaluate_multi_prefix_path_max_gate(opts: CovTimeGateOpts<'_>) -> Option<
                 rust: true,
             },
             ignore: opts.ignore,
+            pytest_args: opts.pytest_args,
         }) {
             TimingPopulation::Complete(rust) => {
                 if opts.timing {
@@ -146,11 +149,10 @@ fn evaluate_sole_star_time_gate(opts: CovTimeGateOpts<'_>, limit_seconds: f64) -
         opts.include.rust && matches!(opts.lang_filter, None | Some(Language::Rust));
     let mut max = Duration::ZERO;
     if want_python {
-        let pytest_args = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
         let Some(py_max) =
             crate::test_runner::python_coverage_index::load_current_python_population_max_duration(
                 &repo_root,
-                &pytest_args,
+                opts.pytest_args,
             )
         else {
             emit_timings_ms(opts.timing, t_timings);
@@ -167,6 +169,7 @@ fn evaluate_sole_star_time_gate(opts: CovTimeGateOpts<'_>, limit_seconds: f64) -
                 rust: true,
             },
             ignore: opts.ignore,
+            pytest_args: opts.pytest_args,
         }) {
             TimingPopulation::Complete(rust) => {
                 for t in &rust {
@@ -191,6 +194,7 @@ fn evaluate_sole_star_time_gate(opts: CovTimeGateOpts<'_>, limit_seconds: f64) -
             rust: want_rust,
         },
         ignore: opts.ignore,
+        pytest_args: opts.pytest_args,
     });
     evaluate_runtime_gate(&timings, opts.limits)
 }

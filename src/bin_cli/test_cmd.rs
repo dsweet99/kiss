@@ -7,7 +7,9 @@ use kiss::TestSectionConfig;
 use crate::bin_cli::args::TestInvocation;
 use crate::bin_cli::cov_cmd::{CovCommandArgs, run_cov_command};
 use crate::bin_cli::cov_warm::warm_cov_caches_after_tests;
-use crate::test_runner::{RunTestCmdArgs, run_test, run_test_watch};
+use crate::test_runner::{
+    RunTestCmdArgs, WatchCoverageParams, WatchCoverageResult, run_test, run_test_watch,
+};
 
 pub struct TestCommandArgs<'a> {
     pub invocation: TestInvocation,
@@ -68,7 +70,14 @@ pub(crate) fn run_test_command_with(
     };
     if args.watch {
         let settle = Duration::from_secs_f64(args.test_cfg.watch_settle_seconds);
-        return run_test_watch(run_args, settle);
+        let cov_params = WatchCoverageParams {
+            py_config: args.py_config,
+            rs_config: args.rs_config,
+            coverage_all: args.coverage_all,
+        };
+        return run_test_watch(run_args, settle, |cycle| {
+            evaluate_watch_coverage(cycle, &cov_params)
+        });
     }
     if args.dry_run {
         return run_local(run_args);
@@ -101,7 +110,7 @@ fn try_run_as_watcher_client(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
     if let Some(overridden) = CLIENT_RESULT_OVERRIDE.with(Cell::take) {
         return match overridden {
             Ok(None) => Ok(None),
-            Ok(Some(exit_code)) => Ok(Some(apply_watcher_client_exit(args, exit_code))),
+            Ok(Some(exit_code)) => Ok(Some(apply_watcher_client_exit(exit_code, None))),
             Err(e) => Err(e),
         };
     }
@@ -123,24 +132,140 @@ fn try_run_as_watcher_client(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
             metrics: args.metrics,
         },
     )?;
-    Ok(Some(apply_watcher_client_exit(args, reply.exit_code)))
+    Ok(Some(apply_watcher_client_exit(reply.exit_code, reply.error)))
 }
 
 #[cfg(unix)]
-fn apply_watcher_client_exit(args: &TestCommandArgs<'_>, exit_code: i32) -> i32 {
+fn apply_watcher_client_exit(exit_code: i32, error: Option<String>) -> i32 {
     println!("kiss test: watcher cycle complete");
     if exit_code != 0 {
         println!("FAIL");
+        if let Some(err) = error {
+            eprintln!("{err}");
+        }
         return exit_code;
     }
     println!("PASS");
-    finish_with_coverage(args, exit_code)
+    exit_code
 }
 
-/// Client path after a successful watcher nudge: evaluate coverage from cache only.
+/// Watcher coverage step: same gates as one-shot, but `allow_refresh: true` so a
+/// load Err is repaired in this cycle instead of FAIL-looping.
+pub(crate) fn evaluate_watch_coverage(
+    cycle: &RunTestCmdArgs<'_>,
+    cov: &WatchCoverageParams<'_>,
+) -> WatchCoverageResult {
+    let universe = universe_root_for_test_invocation(&cycle.invocation);
+    warm_cov_caches_after_tests(
+        &universe,
+        cycle.lang_filter,
+        cycle.ignore,
+        &cycle.gate_config,
+        cycle.python_extra,
+    );
+    let universe_s = universe.to_string_lossy().into_owned();
+    let paths = [universe_s];
+    let args = CovCommandArgs {
+        paths: &paths,
+        lang_filter: cycle.lang_filter,
+        py_config: cov.py_config,
+        rs_config: cov.rs_config,
+        gate_config: &cycle.gate_config,
+        bypass_gate: cov.coverage_all,
+        ignore: cycle.ignore,
+        timing: false,
+        jobs: cycle.jobs,
+        allow_refresh: true,
+        pytest_args: cycle.python_extra,
+    };
+    let (cov_code, error) = run_cov_for_watch(&args);
+    if crate::test_runner::consume_rust_batch_interrupted() {
+        return WatchCoverageResult::interrupted();
+    }
+    if cov_code == 0 {
+        WatchCoverageResult::ok(0)
+    } else {
+        WatchCoverageResult::failed(
+            cov_code,
+            error.unwrap_or_else(|| "coverage gate failed".to_string()),
+        )
+    }
+}
+
+fn run_cov_for_watch(args: &CovCommandArgs<'_>) -> (i32, Option<String>) {
+    use crate::analyze::gather_files;
+    use crate::bin_cli::util::merge_check_ignore_prefixes;
+    use crate::test_runner::check_line_coverage::{
+        RequiredCoverageLanguages, ensure_check_runtime_coverage, load_check_runtime_coverage,
+        repository_root_for_universe,
+    };
+
+    if args.gate_config.test_coverage_threshold == 0
+        && args.gate_config.unit_test_time_gate_disabled()
+        && !args.bypass_gate
+    {
+        return (run_cov_command(args), None);
+    }
+
+    let ignore = merge_check_ignore_prefixes(args.ignore);
+    let universe = PathBuf::from(args.paths.first().map(String::as_str).unwrap_or("."));
+    let repo_root = repository_root_for_universe(&universe);
+    let (py_files, rs_files) = gather_files(&universe, args.lang_filter, &ignore);
+    let required = RequiredCoverageLanguages {
+        python: !py_files.is_empty(),
+        rust: !rs_files.is_empty(),
+    };
+    if let Err(_load_err) = load_check_runtime_coverage(
+        &repo_root,
+        required,
+        &ignore,
+        args.gate_config,
+        args.pytest_args,
+    ) {
+        if let Err(refresh_err) = ensure_check_runtime_coverage(
+            &repo_root,
+            required,
+            &ignore,
+            args.jobs,
+            args.pytest_args,
+            args.gate_config,
+        ) {
+            let msg = refresh_err.to_string();
+            eprintln!("{msg}");
+            return (1, Some(msg));
+        }
+        if let Err(err) = load_check_runtime_coverage(
+            &repo_root,
+            required,
+            &ignore,
+            args.gate_config,
+            args.pytest_args,
+        ) {
+            let msg = err.to_string();
+            eprintln!("{msg}");
+            return (1, Some(msg));
+        }
+    }
+    let code = run_cov_command(args);
+    if code == 0 {
+        (0, None)
+    } else {
+        (code, Some("coverage gate failed".to_string()))
+    }
+}
+
+/// Local one-shot path after successful tests: evaluate coverage from cache only.
 pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -> i32 {
     let universe = universe_root_for_test_invocation(&args.invocation);
-    warm_cov_caches_after_tests(&universe, args.lang_filter, args.ignore);
+    let python_extra =
+        kiss::effective_python_pytest_args(&args.test_cfg.pytest_plugins, args.extra);
+    warm_cov_caches_after_tests(
+        &universe,
+        args.lang_filter,
+        args.ignore,
+        args.gate_config,
+        &python_extra,
+    );
     let universe_s = universe.to_string_lossy().into_owned();
     let paths = [universe_s];
     let cov_code = run_cov_command(&CovCommandArgs {
@@ -154,6 +279,7 @@ pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -
         timing: false,
         jobs: args.jobs,
         allow_refresh: false,
+        pytest_args: &python_extra,
     });
     if cov_code != 0 {
         cov_code
@@ -182,7 +308,6 @@ fn universe_root_for_test_invocation(invocation: &TestInvocation) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn universe_root_defaults_to_dot_for_all_modes() {
@@ -209,45 +334,8 @@ mod tests {
             PathBuf::from("src/lib.rs")
         );
     }
-
-    #[cfg(unix)]
-    #[test]
-    fn injected_client_result_skips_local_run_test() {
-        let test_cfg = TestSectionConfig::default();
-        let py = kiss::Config::python_defaults();
-        let rs = kiss::Config::rust_defaults();
-        let gate = kiss::GateConfig::default();
-        let args = TestCommandArgs {
-            invocation: TestInvocation::All,
-            main_branch: None,
-            base_branch: None,
-            dry_run: false,
-            force: false,
-            force_bad: false,
-            metrics: false,
-            coverage_all: false,
-            watch: false,
-            jobs: 1,
-            ignore: &[],
-            extra: &[],
-            lang_filter: Some(kiss::Language::Python),
-            test_cfg: &test_cfg,
-            py_config: &py,
-            rs_config: &rs,
-            gate_config: &gate,
-        };
-        set_client_result_override_for_test(Some(Ok(Some(9))));
-        let calls = AtomicUsize::new(0);
-        let code = run_test_command_with(args, |_a| {
-            calls.fetch_add(1, Ordering::SeqCst);
-            0
-        });
-        set_client_result_override_for_test(None);
-        assert_eq!(code, 9);
-        assert_eq!(
-            calls.load(Ordering::SeqCst),
-            0,
-            "client path must not call the local test runner"
-        );
-    }
 }
+
+#[cfg(test)]
+#[path = "test_cmd_client_test.rs"]
+mod client_tests;

@@ -36,6 +36,8 @@ pub(crate) struct NudgeRequestMsg {
 pub(crate) struct NudgeReplyMsg {
     pub exit_code: i32,
     pub pid: u32,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -145,7 +145,8 @@ fn empty_lang_selection_is_complete_empty() {
             rust: false,
         },
         ignore: &[],
-    });
+        pytest_args: &[],
+});
     assert_eq!(pop, TimingPopulation::Complete(vec![]));
 }
 
@@ -225,7 +226,8 @@ fn evaluate_cov_time_gate_disabled_without_limits() {
         ignore: &[],
         limits: &[],
         timing: false,
-    });
+        pytest_args: &[],
+});
     assert_eq!(eval, RuntimeGateEval::Disabled);
 }
 
@@ -279,7 +281,8 @@ fn evaluate_cov_time_gate_sole_star_from_python_generation() {
         ignore: &[],
         limits: &limits,
         timing: true,
-    });
+        pytest_args: &[],
+});
     assert_eq!(passed, RuntimeGateEval::Passed);
 
     let tight = vec![("*".to_string(), 0.001)];
@@ -293,7 +296,8 @@ fn evaluate_cov_time_gate_sole_star_from_python_generation() {
         ignore: &[],
         limits: &tight,
         timing: false,
-    });
+        pytest_args: &[],
+});
     assert!(matches!(failed, RuntimeGateEval::Failed(_)));
 }
 
@@ -321,7 +325,8 @@ fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
         ignore: &[],
         limits: &[("*".to_string(), 1.0)],
         timing: false,
-    });
+        pytest_args: &[],
+});
     assert_eq!(incomplete, RuntimeGateEval::Incomplete);
 
     let tmp = tempfile::tempdir().unwrap();
@@ -364,7 +369,8 @@ fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
         ignore: &[],
         limits: &limits,
         timing: true,
-    });
+        pytest_args: &[],
+});
     // Sole-* is Incomplete-or-Failed first; multi-prefix path_max should Pass for tests/fast.
     assert!(
         matches!(eval, RuntimeGateEval::Passed | RuntimeGateEval::Failed(_)),

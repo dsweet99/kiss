@@ -32,6 +32,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) 
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_cov(o: CovDispatchOptions<'_>) -> i32 {
+    let pytest_args = o.test_cfg.pytest_plugin_cli_args();
     let args = cov_cmd::CovCommandArgs {
         paths: &o.paths,
         lang_filter: o.lang,
@@ -43,6 +44,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_cov(o: CovDispatchOptions<'_>) -> i
         timing: o.timing,
         jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
         allow_refresh: true,
+        pytest_args: &pytest_args,
     };
     cov_cmd::run_cov_command(&args)
 }

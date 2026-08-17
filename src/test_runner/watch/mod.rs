@@ -1,5 +1,12 @@
 //! Native filesystem watch session for `kiss test --watch`.
+//!
+//! One watcher per repo serves every one-shot client (`kiss test` / `kiss test .`),
+//! including clients whose `--lang` / path targets differ from the watcher's
+//! invocation. The client's `--lang` does not change the watcher's universe;
+//! coverage refresh in a cycle uses the watcher's invocation. The client reports
+//! the watcher's combined (tests + coverage) exit code.
 
+mod coverage;
 #[cfg(unix)]
 pub(crate) mod control;
 mod event_source;
@@ -7,8 +14,10 @@ mod filter;
 mod lock;
 mod roots;
 mod session;
+mod session_idle;
 mod settle;
 
+pub(crate) use coverage::{WatchCoverageParams, WatchCoverageResult};
 #[allow(unused_imports)]
 pub(crate) use event_source::{NativeWatchEventSource, NormalizedWatchEvent, WatchEventSource};
 #[allow(unused_imports)]
@@ -17,9 +26,8 @@ pub(crate) use filter::WatchPathFilter;
 pub(crate) use lock::{WatchLockGuard, watch_lock_path};
 #[allow(unused_imports)]
 pub(crate) use roots::resolve_watch_registrations;
-pub(crate) use session::run_test_watch;
-#[allow(unused_imports)]
-pub(crate) use session::run_watch_loop;
+#[allow(unused_imports)] // unit tests import via `super::*` / sibling modules
+pub(crate) use session::{run_test_watch, run_watch_loop, run_watch_loop_with};
 #[allow(unused_imports)]
 pub(crate) use settle::{PathSignature, SettleMachine, SettlePoll};
 

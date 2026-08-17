@@ -46,8 +46,8 @@ fn ensure_python_short_circuits_when_complete_generation_present() {
     publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
         .unwrap();
     clear_python_generation_warm_memo();
-    assert!(load_python_runtime_coverage(repo).is_ok());
-    ensure_python_runtime_coverage(repo, &[], 1).expect("already complete");
+    assert!(load_python_runtime_coverage(repo, &[], &kiss::GateConfig::default()).is_ok());
+    ensure_python_runtime_coverage(repo, &[], 1, &[], &kiss::GateConfig::default()).expect("already complete");
 }
 
 #[test]
@@ -86,10 +86,10 @@ fn ensure_python_attempts_incomplete_repair_for_problem_selectors() {
     publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
         .unwrap();
     clear_python_generation_warm_memo();
-    let err = load_python_runtime_coverage(repo).expect_err("incomplete");
+    let err = load_python_runtime_coverage(repo, &[], &kiss::GateConfig::default()).expect_err("incomplete");
     assert_eq!(err.problem_selectors, vec!["t.py::bad".to_string()]);
     // Repair attempts to rerun only problem selectors; without a real pytest node it fails closed.
-    let _ = ensure_python_runtime_coverage(repo, &[], 1);
+    let _ = ensure_python_runtime_coverage(repo, &[], 1, &[], &kiss::GateConfig::default());
 }
 
 #[test]
@@ -151,13 +151,25 @@ fn incomplete_repair_classifier_and_finalize_arms() {
         exit_code: 1,
         ..SelectorExecutionSummary::default()
     };
-    let err = finalize_incomplete_repair_load(repo, &failed_summary).expect_err("still incomplete");
+    let err = finalize_incomplete_repair_load(
+        repo,
+        &failed_summary,
+        &[],
+        &kiss::GateConfig::default(),
+    )
+    .expect_err("still incomplete");
     assert!(matches!(
         err,
         super::CoverageRefreshError::TestExecution { exit_code: 1, .. }
     ));
     let ok_summary = SelectorExecutionSummary::default();
-    let err = finalize_incomplete_repair_load(repo, &ok_summary).expect_err("incomplete + exit0");
+    let err = finalize_incomplete_repair_load(
+        repo,
+        &ok_summary,
+        &[],
+        &kiss::GateConfig::default(),
+    )
+    .expect_err("incomplete + exit0");
     assert!(matches!(
         err,
         super::CoverageRefreshError::PostRefreshValidation { .. }
@@ -171,5 +183,5 @@ fn ensure_python_falls_through_to_full_refresh_without_generation() {
     std::fs::create_dir_all(repo.join(".git")).unwrap();
     std::fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
     // No population/generation: cold path runs discovery + refresh (fails closed without tests).
-    let _ = ensure_python_runtime_coverage(repo, &[], 1);
+    let _ = ensure_python_runtime_coverage(repo, &[], 1, &[], &kiss::GateConfig::default());
 }

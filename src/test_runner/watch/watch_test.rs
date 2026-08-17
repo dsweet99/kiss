@@ -224,7 +224,7 @@ fn apply_event_error_is_terminal() {
 
 #[test]
 fn run_test_watch_requires_git() {
-    use crate::test_runner::{RunTestCmdArgs, run_test_watch};
+    use crate::test_runner::{RunTestCmdArgs, WatchCoverageResult, run_test_watch};
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     let orig = std::env::current_dir().unwrap();
@@ -244,7 +244,9 @@ fn run_test_watch_requires_git() {
         config_main_branch: None,
     gate_config: kiss::GateConfig::default()
     };
-    let code = run_test_watch(args, Duration::from_millis(10));
+    let code = run_test_watch(args, Duration::from_millis(10), |_a| {
+        WatchCoverageResult::ok(0)
+    });
     std::env::set_current_dir(orig).unwrap();
     assert_eq!(code, 1);
 }

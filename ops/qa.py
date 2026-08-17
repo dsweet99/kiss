@@ -625,11 +625,14 @@ def run_interrupt_after_distinct_live_groups(
                 for info in [snapshot.get(pid)]
                 if info is not None and info.command
             ]
-            _, test_active, export_active = sample_phase_flags_with_repo(
+            _, test_active, _export_active = sample_phase_flags_with_repo(
                 command_lines,
                 repo_root,
             )
-            if test_active and not export_active:
+            # Pipelined batches can overlap test shims with llvm-cov export. Distinct
+            # nextest/shim/delegated groups are what matter here, not a pure test-only
+            # window (unlike run_interrupt_on_phase("test")).
+            if test_active:
                 test_phase_seen = True
                 live_groups = distinct_live_process_groups(
                     process.pid,
@@ -639,10 +642,8 @@ def run_interrupt_after_distinct_live_groups(
                     os.killpg(os.getpgid(process.pid), signal.SIGINT)
                     signaled = True
                     break
-                # Narrow triple-role windows need denser sampling than idle phases.
-                time.sleep(0.01)
-            else:
-                time.sleep(0.05)
+            # Dense poll until the triple-role window is caught; shims are brief.
+            time.sleep(0.01)
         else:
             if process.poll() is None:
                 process.kill()
@@ -669,7 +670,10 @@ def run_interrupt_after_distinct_live_groups(
             observer.observation,
         )
     if not test_phase_seen:
-        raise AssertionError(f"{name}: test phase never became active")
+        raise AssertionError(
+            f"{name}: test phase never became active "
+            f"(rc={outcome.returncode})\nstdout:\n{outcome.stdout}\nstderr:\n{outcome.stderr}"
+        )
     if live_groups is None:
         if signaled:
             raise AssertionError(
@@ -959,9 +963,12 @@ def kiss_command(
     *options: str,
     trailing_test_args: tuple[str, ...] = (),
 ) -> list[str]:
+    # Honor the fixture `.kissconfig` (do not pass `--defaults`). Sparse
+    # `--ignore` populations cannot meet the default 90% codebase threshold;
+    # `qa_fixture` sets `test_coverage_threshold = 0` so finish_with_coverage
+    # does not turn successful test runs into GATE_FAILED exits.
     argv = [
         str(KISS),
-        "--defaults",
         "--lang",
         language,
         "test",
@@ -984,6 +991,22 @@ def qa_fixture(prefix: str) -> Iterator[Fixture]:
         copy_fixture(root)
         nested = root / "src" / "test_runner"
         assert nested.is_dir(), nested
+        # Sparse ignore lists leave most of the copied tree uncovered. Disable the
+        # coverage gate so population/warm QA measures caching, not gate %, and so
+        # `kiss test`'s post-run finish_with_coverage does not force rc=1.
+        # GateConfig::load() reads only CWD `.kissconfig`; path-isolation and
+        # concurrent races also run from `nested`, so write the same file there
+        # (otherwise ensure_default_config_exists / defaults restore threshold 90).
+        kissconfig = (
+            "[gate]\n"
+            "test_coverage_threshold = 0\n"
+            "duplication_enabled = false\n"
+            "orphan_module_enabled = false\n"
+            "[gate.max_unit_test_seconds]\n"
+            '"*" = 30\n'
+        )
+        (root / ".kissconfig").write_text(kissconfig)
+        (nested / ".kissconfig").write_text(kissconfig)
         env = os.environ.copy()
         env["PYTHONPATH"] = str(root)
         env.pop("RUSTFLAGS", None)
@@ -2035,13 +2058,14 @@ def reverse_index_concurrency_stress() -> None:
     writer_slots = 8
     reader_count = 16
     with qa_fixture("kiss-qa-reverse-stress-") as fixture:
-        # --force takes SelectorEntries publish so reverse snapshots are activated.
+        # Full empty-cache population uses CheckAggregate (no reverse). A follow-up
+        # --force on the edited Rust source remasures via SelectorEntries and
+        # activates reverse_line_index for the oracle races below.
         cold = run(
             "rust-cold-population",
             kiss_command(
                 "rust",
                 fixture.ignores["rust"],
-                "--force",
                 "--metrics",
                 "-j",
                 str(jobs),
@@ -2050,6 +2074,24 @@ def reverse_index_concurrency_stress() -> None:
             fixture.env,
         )
         assert_metric(cold.metrics(), "rust_population_required", "true")
+        reverse_prime = run(
+            "rust-reverse-prime",
+            [
+                str(KISS),
+                "--lang",
+                "rust",
+                "test",
+                RS_SOURCE.as_posix(),
+                "--force",
+                "--metrics",
+                "-j",
+                str(jobs),
+            ],
+            fixture.root,
+            fixture.env,
+        )
+        assert reverse_prime.returncode == 0, reverse_prime.stderr
+        assert_metric(reverse_prime.metrics(), "rust_population_required", "false")
         population = load_json(
             fixture.root / ".kiss/rust_llvm_cov_cache" / "population.json"
         )
@@ -2432,13 +2474,17 @@ def coverage_stress() -> None:
                 "population manifest"
             )
 
-        py_selected = metric_int(warm["python"].metrics(), "python_total")
+        # Warm may execute a covering/repair subset (python_total) while the plan
+        # still lists every commit selector (selected_python). --force remasures
+        # the full planned set, so compare forced misses to selected_python.
+        py_executed = metric_int(warm["python"].metrics(), "python_total")
+        py_planned = metric_int(warm["python"].metrics(), "selected_python")
         rs_selected = metric_int(warm["rust"].metrics(), "rust_final_total")
-        assert 0 < py_selected <= py_population
+        assert 0 < py_executed <= py_planned <= py_population
         assert 0 < rs_selected <= rs_population
-        assert metric_int(warm["python"].metrics(), "python_cache_hits") == py_selected
+        assert metric_int(warm["python"].metrics(), "python_cache_hits") == py_executed
         assert metric_int(warm["rust"].metrics(), "rust_final_cache_hits") == rs_selected
-        assert metric_int(forced["python"].metrics(), "python_cache_misses") == py_selected
+        assert metric_int(forced["python"].metrics(), "python_cache_misses") == py_planned
         assert (
             metric_int(forced["rust"].metrics(), "rust_final_cache_misses") == rs_selected
         )
@@ -2673,11 +2719,17 @@ def path_isolation() -> None:
 
         py_cache = python_rslip_cache_root(fixture.root)
         rs_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
-        py_index = load_json(py_cache / "index.json")
+        py_gen_manifest = load_json(
+            pinned_python_generation_dir(py_cache) / "manifest.json"
+        )
+        py_source_root = Path(py_gen_manifest["plan"]["base_identity"]["source_root"])
+        assert py_source_root.resolve() == fixture.root.resolve()
+        py_index = load_python_generation_line_index(py_cache)
+        py_index["source_root"] = str(py_source_root)
+        py_manifest = load_python_generation_population(py_cache)
         rs_index = load_json(rs_cache / "index.json")
-        py_manifest = load_json(py_cache / "population.json")
         rs_manifest = load_json(rs_cache / "population.json")
-        for payload in (py_index, rs_index, py_manifest, rs_manifest):
+        for payload in (rs_index, rs_manifest):
             assert Path(payload["source_root"]).resolve() == fixture.root.resolve()
         assert_repo_relative_index(py_index, PY_SOURCE.as_posix())
         assert_repo_relative_index(rs_index, RS_SOURCE.as_posix())
@@ -2860,29 +2912,34 @@ def concurrent_cache_recovery() -> None:
             assert len(set(plans)) == 1
             assert "COVERAGE POPULATION" not in plans[0]
 
-        # Clear aggregate-only derived state, then --force SelectorEntries publish
-        # so reverse snapshots are activated for oracle races.
+        # Clear reverse/index/aggregate tokens, but keep population.json so planning
+        # stays selective. Then --force the edited Rust source only: commit-mode
+        # selection can include logical ids that lack PATH::symbol report ids, which
+        # SelectorEntries rejects; RS_SOURCE targets are report-id safe and still
+        # activate reverse_line_index for the oracle races below.
         rs_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
-        (rs_cache / "population.json").unlink(missing_ok=True)
         (rs_cache / "index.json").unlink(missing_ok=True)
         (rs_cache / "entry_state.json").unlink(missing_ok=True)
         (rs_cache / "check_aggregate.json").unlink(missing_ok=True)
         shutil.rmtree(rs_cache / "reverse_line_index", ignore_errors=True)
         reverse_prime = run(
             "rust-reverse-prime",
-            kiss_command(
+            [
+                str(KISS),
+                "--lang",
                 "rust",
-                fixture.ignores["rust"],
+                "test",
+                RS_SOURCE.as_posix(),
                 "--force",
                 "--metrics",
                 "-j",
                 str(jobs),
-            ),
+            ],
             fixture.root,
             fixture.env,
         )
         assert reverse_prime.returncode == 0, reverse_prime.stderr
-        assert_metric(reverse_prime.metrics(), "rust_population_required", "true")
+        assert_metric(reverse_prime.metrics(), "rust_population_required", "false")
         population = load_json(rs_cache / "population.json")
         assert population.get("reverse_line_index") is not None, population
         assert_rust_reverse_cache_integrity(fixture.root)
@@ -2994,11 +3051,12 @@ def concurrent_cache_recovery() -> None:
                 assert_metric(metrics, "rust_external_tmp_residual_count", "0")
                 assert_metric(metrics, "rust_external_tmp_residuals_pass", "true")
 
-        for language, index_path in (
-            ("python", py_cache / "index.json"),
+        for language, corrupt_path in (
+            # Python rslip v2: population.json is the generation pointer (no index.json).
+            ("python", py_cache / "population.json"),
             ("rust", rs_cache / "index.json"),
         ):
-            index_path.write_text("{ deliberately broken")
+            corrupt_path.write_text("{ deliberately broken")
             corrupted_dry = run(
                 f"{language}-corrupt-index-dry",
                 kiss_command(
@@ -3026,7 +3084,9 @@ def concurrent_cache_recovery() -> None:
                 fixture.env,
             )
             assert repaired.metrics()[f"{language}_population_required"] == "true"
-            json.loads(index_path.read_text())
+            json.loads(corrupt_path.read_text())
+            if language == "python":
+                pinned_python_generation_dir(py_cache)
 
         assert_json_integrity(py_cache)
         assert_json_integrity(rs_cache)
@@ -3763,8 +3823,9 @@ def rust_distinct_groups_interrupt() -> None:
     log_path = log_dir / "distinct_groups_interrupt.log"
     with qa_fixture("kiss-qa-distinct-groups-") as fixture:
         # Widen the simultaneous nextest/shim/delegated window for observation.
-        # Production paths leave this unset (zero hold).
-        fixture.env["KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS"] = "750"
+        # Production paths leave this unset (zero hold). Larger than the phase-
+        # interrupt hold: distinct-groups must observe three roles at once.
+        fixture.env["KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS"] = "2000"
         population_command = kiss_command(
             "rust",
             fixture.ignores["rust"],
@@ -3773,6 +3834,16 @@ def rust_distinct_groups_interrupt() -> None:
             "-j",
             str(jobs),
         )
+        # Cold compile can finish before the observer arms; warm the batch first
+        # (same pattern as rust-phase-interrupt) so the interrupt run spends its
+        # wall time in SelectorEntries with HOLD applied.
+        warm = run(
+            "rust-distinct-groups-warmup",
+            population_command,
+            fixture.root,
+            fixture.env,
+        )
+        assert warm.returncode == 0, warm.combined
         interrupted, live_groups = run_interrupt_after_distinct_live_groups(
             "rust-distinct-groups-interrupt",
             population_command,

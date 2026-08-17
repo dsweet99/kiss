@@ -19,6 +19,7 @@ fn protocol_round_trip_on_socket() {
             &NudgeReplyMsg {
                 exit_code: 7,
                 pid: 42,
+                error: None,
             },
         )
         .unwrap();
@@ -38,7 +39,8 @@ fn protocol_round_trip_on_socket() {
         reply,
         NudgeReplyMsg {
             exit_code: 7,
-            pid: 42
+            pid: 42,
+            error: None,
         }
     );
     server.join().unwrap();
@@ -74,6 +76,7 @@ fn lock_held_missing_session_retries_then_ok() {
         let _ = req.reply.send(NudgeReplyMsg {
             exit_code: 0,
             pid: std::process::id(),
+            error: None,
         });
         thread::sleep(Duration::from_millis(50));
         drop(control);

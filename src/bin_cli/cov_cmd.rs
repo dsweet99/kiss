@@ -29,9 +29,10 @@ pub struct CovCommandArgs<'a> {
     pub ignore: &'a [String],
     pub timing: bool,
     pub jobs: usize,
-    /// When false, evaluate from the current cache only (no population refresh).
-    /// Used after a successful `kiss test` run that already ensured the cache.
+    /// When false, cache-only (no refresh); after `kiss test` the cache is already ensured.
     pub allow_refresh: bool,
+    /// Session pytest args (plugins + CLI extras); must match test publication.
+    pub pytest_args: &'a [String],
 }
 
 fn load_or_refresh_snapshot(
@@ -41,23 +42,28 @@ fn load_or_refresh_snapshot(
     jobs: usize,
     allow_refresh: bool,
     gate: &kiss::GateConfig,
+    pytest_args: &[String],
 ) -> Result<crate::test_runner::check_line_coverage::ValidatedCovInputs, i32> {
     use crate::test_runner::check_line_coverage::ValidatedCovInputs;
-    let snapshot = match load_check_runtime_coverage(repo_root, required, ignore, gate) {
+    let snapshot = match load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args)
+    {
         Ok(snapshot) => snapshot,
         Err(load_err) => {
             if !allow_refresh {
                 eprintln!("{load_err}");
                 return Err(1);
             }
-            ensure_check_runtime_coverage(repo_root, required, ignore, jobs).map_err(|err| {
-                eprintln!("{err}");
-                1
-            })?;
-            load_check_runtime_coverage(repo_root, required, ignore, gate).map_err(|err| {
-                eprintln!("{err}");
-                1
-            })?
+            ensure_check_runtime_coverage(repo_root, required, ignore, jobs, pytest_args, gate)
+                .map_err(|err| {
+                    eprintln!("{err}");
+                    1
+                })?;
+            load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args).map_err(
+                |err| {
+                    eprintln!("{err}");
+                    1
+                },
+            )?
         }
     };
     Ok(ValidatedCovInputs::from_snapshot(required, snapshot, repo_root))
@@ -92,6 +98,7 @@ fn evaluate_time_gate_for_cov(
         ignore,
         limits: &args.gate_config.max_unit_test_seconds,
         timing: args.timing,
+        pytest_args: args.pytest_args,
     })
 }
 
@@ -162,8 +169,6 @@ fn evaluate_records_with_time(
     })
 }
 
-/// Like [`evaluate_records_with_time`], but returns `None` when the time gate needs a
-/// cold population refresh (incomplete durable timings) so the caller can fall through.
 fn try_evaluate_records_with_time(
     records: &[analyze::line_coverage::LineCoverageRecord],
     ctx: &RecordsEvalCtx<'_>,
@@ -317,6 +322,7 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
             args.jobs,
             args.allow_refresh,
             args.gate_config,
+            args.pytest_args,
         );
         let time_eval = evaluate_time_gate_for_cov(args, universe_root, &files, &ignore);
         let time_failed = apply_time_gate_eval(&time_eval);
@@ -374,8 +380,16 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
         files: p.files,
         ignore: p.ignore,
     };
-    if let Some(code) = try_cov_records_fast_path(&cache_key, &eval_ctx, t0) {
-        return code;
+    if let Some(records) = try_load_cov_records(&cache_key) {
+        if p.args.timing {
+            eprintln!(
+                "TIMING:coverage_records_cache_hit_ms:{}",
+                t0.elapsed().as_millis()
+            );
+        }
+        if let Some(code) = try_evaluate_records_with_time(&records, &eval_ctx) {
+            return code;
+        }
     }
     let validated = match load_or_refresh_snapshot(
         &repo_root,
@@ -384,6 +398,7 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
         p.args.jobs,
         p.args.allow_refresh,
         p.args.gate_config,
+        p.args.pytest_args,
     ) {
         Ok(validated) => validated,
         Err(code) => return code,
@@ -404,22 +419,9 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
     evaluate_records_with_time(&records, &eval_ctx)
 }
 
-/// Hit `cov_records_cache` when present under `./.kiss`.
-fn try_cov_records_fast_path(
-    cache_key: &CovRecordsCacheKey<'_>,
-    ctx: &RecordsEvalCtx<'_>,
-    t0: Instant,
-) -> Option<i32> {
-    let records = try_load_cov_records(cache_key)?;
-    if ctx.args.timing {
-        eprintln!(
-            "TIMING:coverage_records_cache_hit_ms:{}",
-            t0.elapsed().as_millis()
-        );
-    }
-    try_evaluate_records_with_time(&records, ctx)
-}
-
 #[cfg(test)]
 #[path = "cov_cmd_test.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "cov_cmd_refresh_test.rs"]
+mod refresh_tests;

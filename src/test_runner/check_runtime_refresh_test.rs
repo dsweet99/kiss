@@ -296,7 +296,15 @@ fn ensure_check_runtime_coverage_no_languages_is_ok() {
         python: false,
         rust: false,
     };
-    super::ensure_check_runtime_coverage(tmp.path(), required, &[], 1).unwrap();
+    super::ensure_check_runtime_coverage(
+        tmp.path(),
+        required,
+        &[],
+        1,
+        &[],
+        &kiss::GateConfig::default(),
+    )
+    .unwrap();
 }
 
 #[test]

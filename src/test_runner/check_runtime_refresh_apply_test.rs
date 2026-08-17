@@ -95,7 +95,7 @@ fn ensure_check_runtime_coverage_on_empty_repo_reports_refresh_failure() {
         python: false,
         rust: true,
     };
-    let err = super::ensure_check_runtime_coverage(repo, required, &[], 1).unwrap_err();
+    let err = super::ensure_check_runtime_coverage(repo, required, &[], 1, &[], &kiss::GateConfig::default()).unwrap_err();
     let rendered = err.to_string();
     assert!(rendered.contains("runtime line coverage"), "{rendered}");
 }

@@ -116,7 +116,7 @@ fn successful_ensure_does_not_create_xdg_kiss_cov_durable() {
         python: true,
         rust: false,
     };
-    super::ensure_check_runtime_coverage(repo, required, &[], 1).expect("warm ensure");
+    super::ensure_check_runtime_coverage(repo, required, &[], 1, &[], &kiss::GateConfig::default()).expect("warm ensure");
     assert!(
         !cache_home.join("kiss").join("kiss-cov-durable").exists(),
         "successful ensure must not publish $XDG_CACHE_HOME/kiss/kiss-cov-durable"
@@ -126,6 +126,7 @@ fn successful_ensure_does_not_create_xdg_kiss_cov_durable() {
         required,
         &[],
         &kiss::GateConfig::default(),
+        &[],
     )
         .expect("coverage must remain loadable from ./.kiss");
 }

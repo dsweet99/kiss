@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use kiss::Language;
+use kiss::{GateConfig, Language};
 
 use crate::analyze::cov_records_cache::{
     CovRecordsCacheKey, store_cov_records, try_load_cov_records,
@@ -25,9 +25,10 @@ pub(crate) fn warm_cov_caches_after_tests(
     universe_root: &Path,
     lang_filter: Option<Language>,
     ignore_user: &[String],
+    gate: &GateConfig,
+    pytest_args: &[String],
 ) {
     let ignore = merge_check_ignore_prefixes(ignore_user);
-    let gate = kiss::GateConfig::load();
     if gate.test_coverage_threshold == 0 && gate.unit_test_time_gate_disabled() {
         return;
     }
@@ -73,7 +74,9 @@ pub(crate) fn warm_cov_caches_after_tests(
     if try_load_cov_records(&cache_key).is_some() {
         return;
     }
-    let Ok(snapshot) = load_check_runtime_coverage(&repo_root, required, &ignore, &gate) else {
+    let Ok(snapshot) =
+        load_check_runtime_coverage(&repo_root, required, &ignore, gate, pytest_args)
+    else {
         return;
     };
     let records = compute_line_coverage_records(&repo_root, &py_files, &rs_files, &snapshot);

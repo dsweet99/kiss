@@ -7,8 +7,7 @@ use crate::test_runner::python_coverage_index::manifest::{
     current_python_population_manifest_identity,
 };
 use crate::test_runner::python_coverage_index::storage::{
-    normalized_python_repo_root, python_coverage_cache_root, python_fnv1a64,
-    python_source_input_fingerprint,
+    normalized_python_repo_root, python_fnv1a64, python_source_input_fingerprint,
 };
 use crate::test_runner::python_coverage_index::PYTHON_SELECTOR_DISCOVERY_VERSION;
 use super::types::{
@@ -20,8 +19,10 @@ pub(crate) fn current_python_execution_identity(
     repo_root: &Path,
     test_args: &[String],
 ) -> Result<PythonExecutionIdentity, String> {
-    let base = current_python_population_manifest_identity(repo_root, test_args)?;
-    identity_from_manifest_identity(repo_root, &base)
+    super::identity_memo::memoized_or_compute_identity(repo_root, test_args, || {
+        let base = current_python_population_manifest_identity(repo_root, test_args)?;
+        identity_from_manifest_identity(repo_root, &base)
+    })
 }
 
 pub(crate) fn identity_from_manifest_identity(
@@ -70,44 +71,13 @@ pub(crate) fn identity_matches_current(
     identity: &PythonExecutionIdentity,
     test_args: &[String],
 ) -> bool {
-    // Warm seal present: skip python_source_input_fingerprint (sameq-scale tree
-    // walk). Seal existence matches planning's warm-seal contract; selective
-    // rslip still detects content drift on miss.
-    if let Ok(cache_root) = python_coverage_cache_root(repo_root)
-        && rslip::warm_hit_seal_exists(&cache_root)
-    {
-        return identity_matches_current_tools_only(repo_root, identity, test_args);
-    }
+    // Full equality including input_fingerprint. Planning, test ensure, and
+    // coverage load share this predicate so a fingerprint change cannot
+    // warm-accept a generation that cov would reject.
     let Ok(current) = current_python_execution_identity(repo_root, test_args) else {
         return false;
     };
     identity == &current
-}
-
-fn identity_matches_current_tools_only(
-    repo_root: &Path,
-    identity: &PythonExecutionIdentity,
-    test_args: &[String],
-) -> bool {
-    let Ok(base) = current_python_population_manifest_identity(repo_root, test_args) else {
-        return false;
-    };
-    let env = kiss::python_coverage_env_map(repo_root);
-    identity.schema_version == GENERATION_SCHEMA_VERSION
-        && identity.runner_semantics_version == RUNNER_SEMANTICS_VERSION
-        && identity.collector_semantics_version == COLLECTOR_SEMANTICS_VERSION
-        && identity.source_root == normalized_python_repo_root(repo_root)
-        && identity.interpreter_identity == base.python_version
-        && identity.python_version == base.python_version
-        && identity.pytest_version == base.pytest_version
-        && identity.pytest_args == base.pytest_args
-        && identity.cache_schema_version == base.cache_schema_version
-        && identity.selector_discovery_version == base.selector_discovery_version
-        && identity.env == env
-        && identity.plugin_identities == plugin_identities_from_args(&base.pytest_args)
-        && identity.pytest_config_digest == digest_string_list(&base.pytest_args)
-        && identity.kissconfig_test_digest == kissconfig_test_digest(repo_root)
-        && identity.coverage_env_digest == digest_env_map(&env)
 }
 
 fn plugin_identities_from_args(args: &[String]) -> Vec<String> {

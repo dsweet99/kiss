@@ -299,7 +299,15 @@ fn unit_test_runtime_section_for_rules(
 ) -> Option<String> {
     let universe = Path::new(paths.first().map(String::as_str).unwrap_or("."));
     let merged = merge_check_ignore_prefixes(ignore);
-    unit_test_runtime_sec_report_for_universe(universe, lang_filter, include, &merged, rules)
+    let pytest_args = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
+    unit_test_runtime_sec_report_for_universe(
+        universe,
+        lang_filter,
+        include,
+        &merged,
+        rules,
+        &pytest_args,
+    )
 }
 
 #[cfg(test)]

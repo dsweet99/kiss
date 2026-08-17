@@ -76,6 +76,7 @@ fn missing_python_population_error_has_no_manual_refresh_instruction() {
         },
         &[],
         &kiss::GateConfig::default(),
+        &[],
     )
     .expect_err("missing Python coverage should fail");
     let msg = err.to_string();
@@ -191,7 +192,7 @@ fn load_python_runtime_coverage_matches_configured_pytest_plugin_args() {
     )
     .unwrap();
 
-    let err = match load_python_runtime_coverage(tmp.path()) {
+    let err = match load_python_runtime_coverage(tmp.path(), &plugin_args, &kiss::GateConfig::default()) {
         Ok(_) => panic!(
             "empty rslip cache should fail closed, but must get past population identity"
         ),
@@ -256,7 +257,7 @@ fn incomplete_generation_reports_problem_selectors() {
     publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
         .unwrap();
     clear_python_generation_warm_memo();
-    let err = load_python_runtime_coverage(repo).expect_err("incomplete");
+    let err = load_python_runtime_coverage(repo, &[], &kiss::GateConfig::default()).expect_err("incomplete");
     assert_eq!(err.reason, "incomplete population");
     assert_eq!(err.problem_selectors, vec!["t.py::bad".to_string()]);
 }
@@ -324,3 +325,25 @@ fn validated_cov_inputs_captures_generation_id_when_present() {
     );
     assert_eq!(inputs.python_generation_id.as_deref(), Some(gen_id.as_str()));
 }
+
+#[test]
+fn load_python_runtime_coverage_honors_session_pytest_extra() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join(".git")).unwrap();
+    fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
+    let session_extra = vec!["--tb=short".to_string()];
+    let err = load_python_runtime_coverage(
+        tmp.path(),
+        &session_extra,
+        &kiss::GateConfig::default(),
+    )
+    .expect_err("no population");
+    // Must use session extras (not reload plugin-only config) when probing identity.
+    let msg = err.to_string();
+    assert!(
+        msg.contains("missing or stale/incompatible population")
+            || msg.contains("generation identity mismatch"),
+        "got: {msg}"
+    );
+}
+

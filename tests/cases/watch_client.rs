@@ -31,11 +31,15 @@ fn write_python_fixture(root: &Path) {
 }
 
 fn write_kissconfig(root: &Path, settle: f64) {
+    write_kissconfig_with_threshold(root, settle, 0);
+}
+
+fn write_kissconfig_with_threshold(root: &Path, settle: f64, threshold: u8) {
     std::fs::write(
         root.join(".kissconfig"),
         format!(
             "[gate]\n\
-             test_coverage_threshold = 0\n\
+             test_coverage_threshold = {threshold}\n\
              duplication_enabled = false\n\
              orphan_module_enabled = false\n\
              \n\
@@ -270,3 +274,104 @@ fn oneshot_waits_out_long_inflight_cycle() {
     );
     let _ = elapsed;
 }
+
+#[test]
+fn oneshot_with_coverage_gate_defers_to_watcher() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    write_python_fixture(tmp.path());
+    // Low threshold so the tiny fully-covered fixture can pass.
+    write_kissconfig_with_threshold(tmp.path(), 1.0, 1);
+    commit_all(tmp.path(), "init");
+
+    let _watch = start_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "."],
+    );
+    wait_watch_idle_cycle(tmp.path());
+    // Give the watcher time to finish coverage after the first test cycle.
+    std::thread::sleep(Duration::from_secs(5));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+        .args(["test", "--lang", "python", "."])
+        .current_dir(tmp.path())
+        .output()
+        .expect("oneshot T with coverage");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "status={:?} stdout={stdout:?} stderr={stderr:?}",
+        output.status
+    );
+    assert!(
+        stdout.contains("waiting for watcher"),
+        "stdout={stdout:?}"
+    );
+    assert!(
+        !stderr.contains("missing or stale/incompatible population"),
+        "stderr={stderr:?}"
+    );
+    assert!(
+        !stdout.contains("kiss test: Planning"),
+        "client must not plan; stdout={stdout:?}"
+    );
+    assert!(stdout.contains("PASS"), "stdout={stdout:?}");
+}
+
+#[test]
+fn stale_generation_repaired_on_watcher_not_client() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    write_python_fixture(tmp.path());
+    write_kissconfig_with_threshold(tmp.path(), 1.0, 1);
+    commit_all(tmp.path(), "init");
+
+    let _watch = start_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "."],
+    );
+    wait_watch_idle_cycle(tmp.path());
+    // Allow first cycle's coverage refresh to finish.
+    std::thread::sleep(Duration::from_secs(5));
+
+    // Drift the Python source fingerprint while keeping tests green.
+    std::fs::write(
+        tmp.path().join("lib.py"),
+        "def f():\n    return 0\n# fingerprint-drift\n",
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+        .args(["test", "--lang", "python", "."])
+        .current_dir(tmp.path())
+        .output()
+        .expect("oneshot T after fingerprint drift");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stdout.contains("waiting for watcher"),
+        "stdout={stdout:?}"
+    );
+    assert!(
+        !stderr.contains("missing or stale/incompatible population"),
+        "T must not own cov/load; stderr={stderr:?}"
+    );
+    assert!(
+        !stdout.contains("kiss test: Planning"),
+        "client must not plan; stdout={stdout:?}"
+    );
+    // W refreshes in-cycle; combined exit should be success for this tiny fixture.
+    assert!(
+        output.status.success(),
+        "status={:?} stdout={stdout:?} stderr={stderr:?}",
+        output.status
+    );
+}
+

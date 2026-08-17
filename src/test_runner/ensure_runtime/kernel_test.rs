@@ -23,6 +23,8 @@ struct FakeState {
     run_calls: Vec<Vec<String>>,
     publish_calls: usize,
     run_exit_code: i32,
+    /// Override for `current_identity` (default `"id"`).
+    identity: Option<String>,
 }
 
 struct FakeRuntime {
@@ -36,7 +38,12 @@ impl LanguageRuntime for FakeRuntime {
     }
 
     fn current_identity(&self, _request: &EnsureRequest) -> Result<String, String> {
-        Ok("id".into())
+        Ok(self
+            .state
+            .borrow()
+            .identity
+            .clone()
+            .unwrap_or_else(|| "id".into()))
     }
 
     fn load_full_witness(&self, _repo_root: &Path) -> Result<ExecutionWitness, String> {
@@ -101,6 +108,12 @@ impl LanguageRuntime for FakeRuntime {
     ) -> Result<(), String> {
         self.state.borrow_mut().publish_calls += 1;
         let complete = batch.statuses.iter().all(|s| *s == WitnessStatus::Passed);
+        let identity_digest = self
+            .state
+            .borrow()
+            .identity
+            .clone()
+            .unwrap_or_else(|| "id".into());
         self.state.borrow_mut().witness = Some(ExecutionWitness {
             language: match self.language {
                 Language::Python => "python",
@@ -108,7 +121,7 @@ impl LanguageRuntime for FakeRuntime {
             }
             .into(),
             scope: WitnessScope::Full,
-            identity_digest: "id".into(),
+            identity_digest,
             selectors: batch
                 .publication_universe
                 .clone()
@@ -410,3 +423,5 @@ fn rust_warm_accept_still_emits_rust_identity_without_run() {
     );
     assert!(state.borrow().run_calls.is_empty(), "warm accept must not run");
 }
+#[path = "kernel_identity_publish_test.rs"]
+mod identity_publish;

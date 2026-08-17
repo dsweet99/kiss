@@ -152,18 +152,26 @@ pub(crate) fn ensure_check_runtime_coverage(
     required: RequiredCoverageLanguages,
     ignore: &[String],
     jobs: usize,
+    pytest_args: &[String],
+    gate: &kiss::GateConfig,
 ) -> Result<(), CoverageRefreshError> {
     match (required.python, required.rust) {
-        (true, true) => refresh_python_and_rust_parallel(repo_root, ignore, jobs).map(|_| ()),
+        (true, true) => {
+            refresh_python_and_rust_parallel(repo_root, ignore, jobs, pytest_args, gate).map(|_| ())
+        }
         (true, false) => {
             let refresh = PythonRuntimeRefresh;
             debug_assert_eq!(refresh.language(), kiss::Language::Python);
-            refresh.ensure(repo_root, ignore, jobs).map(|_| ())
+            refresh
+                .ensure(repo_root, ignore, jobs, pytest_args, gate)
+                .map(|_| ())
         }
         (false, true) => {
             let refresh = RustRuntimeRefresh;
             debug_assert_eq!(refresh.language(), kiss::Language::Rust);
-            refresh.ensure(repo_root, ignore, jobs).map(|_| ())
+            refresh
+                .ensure(repo_root, ignore, jobs, pytest_args, gate)
+                .map(|_| ())
         }
         (false, false) => Ok(()),
     }
@@ -173,12 +181,16 @@ fn refresh_python_and_rust_parallel(
     repo_root: &Path,
     ignore: &[String],
     jobs: usize,
+    pytest_args: &[String],
+    gate: &kiss::GateConfig,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     // Per-language file locks allow overlap. Refcounted ScopedRefreshEnvGuard makes
     // the process-wide refresh env marker safe across these two threads.
     std::thread::scope(|scope| {
-        let python = scope.spawn(|| ensure_python_runtime_coverage(repo_root, ignore, jobs));
-        let rust = ensure_rust_runtime_coverage(repo_root, ignore, jobs)?;
+        let python = scope.spawn(|| {
+            ensure_python_runtime_coverage(repo_root, ignore, jobs, pytest_args, gate)
+        });
+        let rust = ensure_rust_runtime_coverage(repo_root, ignore, jobs, gate)?;
         let python = python
             .join()
             .unwrap_or_else(|_| Err(CoverageRefreshError::publication(
@@ -274,8 +286,9 @@ pub(super) fn ensure_rust_runtime_coverage(
     repo_root: &Path,
     ignore: &[String],
     jobs: usize,
+    gate: &kiss::GateConfig,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
-    ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, "kiss test")
+    ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, "kiss test", gate)
 }
 
 fn ensure_rust_runtime_coverage_with_stats_labeled(
@@ -283,10 +296,10 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     ignore: &[String],
     jobs: usize,
     caller_label: &str,
+    gate: &kiss::GateConfig,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
     let _guard = lock_refresh(repo_root, "Rust")?;
-    let gate = kiss::GateConfig::load();
-    if load_rust_runtime_coverage(repo_root, ignore, &gate).is_ok() {
+    if load_rust_runtime_coverage(repo_root, ignore, gate).is_ok() {
         return Ok(CoverageRefreshStats::default());
     }
     let request = crate::test_runner::ensure_runtime::ensure_request_for_all(
@@ -295,7 +308,8 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
         jobs,
         Some(kiss::Language::Rust),
         false,
-        gate,
+        gate.clone(),
+        vec![],
     )
     .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
     // Incremental CheckAggregate repair stays language-owned; command path still
@@ -333,8 +347,9 @@ pub(crate) fn ensure_rust_runtime_coverage_shared(
     ignore: &[String],
     jobs: usize,
     caller_label: &str,
+    gate: &kiss::GateConfig,
 ) -> Result<crate::test_runner::runners::SelectorExecutionSummary, CoverageRefreshError> {
-    if load_rust_runtime_coverage(repo_root, ignore, &kiss::GateConfig::load()).is_ok() {
+    if load_rust_runtime_coverage(repo_root, ignore, gate).is_ok() {
         let rust_batch_cache_hits =
             crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
                 .unwrap_or_default()
@@ -346,7 +361,8 @@ pub(crate) fn ensure_rust_runtime_coverage_shared(
             ..Default::default()
         });
     }
-    let stats = ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, caller_label)?;
+    let stats =
+        ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, caller_label, gate)?;
     Ok(crate::test_runner::runners::SelectorExecutionSummary {
         rust_test_instances: stats.by_language.rust.test_instances,
         rust_aggregate_binaries: stats.by_language.rust.aggregate_binaries,

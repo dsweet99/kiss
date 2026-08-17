@@ -37,6 +37,7 @@ pub(crate) struct TimingCollectOpts<'a> {
     pub(crate) lang_filter: Option<Language>,
     pub(crate) include: TimingLangInclude,
     pub(crate) ignore: &'a [String],
+    pub(crate) pytest_args: &'a [String],
 }
 
 pub(crate) fn collect_current_unit_test_timings(opts: TimingCollectOpts<'_>) -> TimingPopulation {
@@ -50,7 +51,7 @@ pub(crate) fn collect_current_unit_test_timings(opts: TimingCollectOpts<'_>) -> 
     let repo_root = repository_root_for_universe(opts.universe);
     let mut timings = Vec::new();
     if want_python {
-        match load_python_timings(&repo_root) {
+        match load_python_timings(&repo_root, opts.pytest_args) {
             Some(python) => timings.extend(python),
             None => return TimingPopulation::Incomplete,
         }
@@ -82,12 +83,11 @@ pub(super) fn selector_matches_ignore_prefix(selector: &str, ignore: &[String]) 
     })
 }
 
-fn load_python_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
+fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<UnitTestTiming>> {
     // Must match population publication / `load_python_runtime_coverage` pytest args.
-    let pytest_args = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
     let pairs = crate::test_runner::python_coverage_index::load_current_python_population_durations(
         repo_root,
-        &pytest_args,
+        pytest_args,
     )?;
     Some(
         pairs
@@ -240,7 +240,7 @@ pub(crate) fn collect_available_unit_test_timings(opts: TimingCollectOpts<'_>) -
         opts.include.rust && matches!(opts.lang_filter, None | Some(Language::Rust));
     let repo_root = repository_root_for_universe(opts.universe);
     let mut timings = Vec::new();
-    if want_python && let Some(python) = load_python_timings(&repo_root) {
+    if want_python && let Some(python) = load_python_timings(&repo_root, opts.pytest_args) {
         timings.extend(python);
     }
     if want_rust && let Some(rust) = load_rust_timings(&repo_root) {
@@ -274,12 +274,14 @@ pub(crate) fn unit_test_runtime_sec_report_for_universe(
     include: TimingLangInclude,
     ignore: &[String],
     rules: &[(String, f64)],
+    pytest_args: &[String],
 ) -> Option<String> {
     let timings = collect_available_unit_test_timings(TimingCollectOpts {
         universe,
         lang_filter,
         include,
         ignore,
+        pytest_args,
     });
     let codebase_tests = cheap_codebase_test_count(universe, lang_filter, include, ignore);
     let report = build_unit_test_runtime_grouped_report(&timings, rules, codebase_tests)?;

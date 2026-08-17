@@ -16,8 +16,9 @@ fn warm_cov_caches_after_tests_is_callable_without_panicking() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
     write_src(repo);
+    let gate = kiss::GateConfig::default();
     // Missing snapshot/runtime coverage: warmer must no-op, not fail the test run.
-    warm_cov_caches_after_tests(repo, Some(kiss::Language::Python), &[]);
+    warm_cov_caches_after_tests(repo, Some(kiss::Language::Python), &[], &gate, &[]);
     assert!(!repo.join(".kiss/cov_records_cache.json").exists());
 }
 
@@ -40,7 +41,8 @@ fn warm_cov_caches_after_tests_writes_records_when_snapshot_present() {
     covered.insert("a.py".to_string(), BTreeSet::from([1u32]));
     write_python_coverage_snapshot(repo, &covered).unwrap();
 
-    warm_cov_caches_after_tests(repo, Some(kiss::Language::Python), &[]);
+    let gate = kiss::GateConfig::load();
+    warm_cov_caches_after_tests(repo, Some(kiss::Language::Python), &[], &gate, &[]);
     assert!(
         repo.join(".kiss/cov_records_cache.json").is_file(),
         "expected records cache after successful warm"
@@ -55,7 +57,7 @@ fn warm_cov_caches_after_tests_writes_records_when_snapshot_present() {
         .unwrap()
         .modified()
         .unwrap();
-    warm_cov_caches_after_tests(repo, Some(kiss::Language::Python), &[]);
+    warm_cov_caches_after_tests(repo, Some(kiss::Language::Python), &[], &gate, &[]);
     let after = fs::metadata(repo.join(".kiss/cov_records_cache.json"))
         .unwrap()
         .modified()
