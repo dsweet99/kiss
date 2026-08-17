@@ -112,6 +112,8 @@ fn call_handler_dispatchers(
         extra: vec![],
         test_cfg: test,
         cfg,
+        reload_kissconfig: true,
+        config_path: None,
     });
     let _ = handlers::dispatch_mv(options::MvDispatchOptions {
         lang: None,
@@ -189,6 +191,8 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
     assert_eq!(
         super::dispatch_test_command(
             None,
+            true,
+            None,
             Commands::Test {
                 operands: vec!["all".to_string()],
                 main_branch: None,
@@ -208,7 +212,7 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
         2
     );
     assert_eq!(
-        super::dispatch_test_command(None, Commands::Rules, &cfg, &test),
+        super::dispatch_test_command(None, true, None, Commands::Rules, &cfg, &test),
         2
     );
 }
@@ -334,6 +338,8 @@ fn dispatch_test_rejects_watch_with_dry_run() {
     };
     assert_eq!(
         super::dispatch_test_command(
+            None,
+            true,
             None,
             Commands::Test {
                 operands: vec![".".to_string()],

@@ -8,6 +8,7 @@ use crate::test_runner::watch::control::NudgeRequestMsg;
 use crate::test_runner::watch::event_source::{NormalizedWatchEvent, RecvTimeout};
 use std::collections::VecDeque;
 use std::env;
+use std::path::Path;
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
@@ -122,11 +123,12 @@ fn forwarded_force_applies_to_queued_cycle_then_clears() {
     assert_eq!(q.replies.len(), 2);
     let base = py_dry_args();
     assert!(!base.force_rerun && !base.force_bad && !base.metrics);
-    let (cycle1, replies) = take_queued_cycle_args(&base, &mut queued);
+    let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+    let (cycle1, replies) = take_queued_cycle_args(&live, &mut queued);
     assert!(queued.is_none(), "queue consumed");
     assert!(cycle1.force_rerun && cycle1.force_bad && cycle1.metrics);
     assert_eq!(replies.len(), 2);
-    let (cycle2, replies2) = take_queued_cycle_args(&base, &mut queued);
+    let (cycle2, replies2) = take_queued_cycle_args(&live, &mut queued);
     assert!(!cycle2.force_rerun && !cycle2.force_bad && !cycle2.metrics);
     assert!(replies2.is_empty());
 }

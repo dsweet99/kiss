@@ -62,6 +62,13 @@ impl SettleMachine {
         }
     }
 
+    pub(crate) fn set_settle(&mut self, settle: Duration) {
+        self.settle = settle;
+        if let Some(last) = self.last_event {
+            self.deadline = Some(last + settle);
+        }
+    }
+
     pub(crate) fn deadline(&self) -> Option<Instant> {
         self.deadline
     }
@@ -114,7 +121,7 @@ impl SettleMachine {
             return SettlePoll::Idle;
         }
         // Refresh once so callers see current signatures, but do not re-arm settle.
-        let _ = self.refresh_pending_unsettled(now, &mut refresh);
+        let _ = refresh_pending_unsettled(self, now, &mut refresh);
         let mut paths: Vec<PathBuf> = self.pending.keys().cloned().collect();
         self.pending.clear();
         self.deadline = None;
@@ -128,16 +135,16 @@ impl SettleMachine {
         now: Instant,
         mut refresh: impl FnMut(&Path) -> PathSignature,
     ) -> SettlePoll {
-        if let Some(outcome) = self.poll_scope_dirty(now) {
+        if let Some(outcome) = poll_scope_dirty(self, now) {
             return outcome;
         }
         if self.pending.is_empty() {
             return SettlePoll::Idle;
         }
-        if !self.deadline_elapsed(now) {
+        if !deadline_elapsed(self, now) {
             return SettlePoll::Waiting;
         }
-        if self.refresh_pending_unsettled(now, &mut refresh) {
+        if refresh_pending_unsettled(self, now, &mut refresh) {
             self.deadline = Some(now + self.settle);
             return SettlePoll::Waiting;
         }
@@ -148,60 +155,62 @@ impl SettleMachine {
         paths.sort();
         SettlePoll::Ready(paths)
     }
+}
 
-    fn poll_scope_dirty(&mut self, now: Instant) -> Option<SettlePoll> {
-        if !self.scope_dirty {
-            return None;
+fn poll_scope_dirty(machine: &mut SettleMachine, now: Instant) -> Option<SettlePoll> {
+    if !machine.scope_dirty {
+        return None;
+    }
+    if deadline_elapsed(machine, now) {
+        machine.scope_dirty = false;
+        machine.deadline = None;
+        machine.last_event = None;
+        machine.pending.clear();
+        Some(SettlePoll::ScopeDirty)
+    } else {
+        Some(SettlePoll::Waiting)
+    }
+}
+
+fn deadline_elapsed(machine: &SettleMachine, now: Instant) -> bool {
+    machine
+        .deadline
+        .is_some_and(|deadline| now >= deadline)
+}
+
+fn refresh_pending_unsettled(
+    machine: &mut SettleMachine,
+    now: Instant,
+    refresh: &mut impl FnMut(&Path) -> PathSignature,
+) -> bool {
+    let paths: Vec<PathBuf> = machine.pending.keys().cloned().collect();
+    let mut unsettled = false;
+    for path in paths {
+        if update_one_pending(machine, &path, now, refresh) {
+            unsettled = true;
         }
-        if self.deadline_elapsed(now) {
-            self.scope_dirty = false;
-            self.deadline = None;
-            self.last_event = None;
-            self.pending.clear();
-            Some(SettlePoll::ScopeDirty)
+    }
+    unsettled
+}
+
+fn update_one_pending(
+    machine: &mut SettleMachine,
+    path: &Path,
+    now: Instant,
+    refresh: &mut impl FnMut(&Path) -> PathSignature,
+) -> bool {
+    let fresh = refresh(path);
+    let entry = machine.pending.get_mut(path).expect("pending path");
+    if fresh != entry.signature {
+        entry.missing_since = if fresh.exists {
+            None
         } else {
-            Some(SettlePoll::Waiting)
-        }
+            Some(entry.missing_since.unwrap_or(now))
+        };
+        entry.signature = fresh;
+        return true;
     }
-
-    fn deadline_elapsed(&self, now: Instant) -> bool {
-        self.deadline.is_some_and(|deadline| now >= deadline)
-    }
-
-    fn refresh_pending_unsettled(
-        &mut self,
-        now: Instant,
-        refresh: &mut impl FnMut(&Path) -> PathSignature,
-    ) -> bool {
-        let paths: Vec<PathBuf> = self.pending.keys().cloned().collect();
-        let mut unsettled = false;
-        for path in paths {
-            if self.update_one_pending(&path, now, refresh) {
-                unsettled = true;
-            }
-        }
-        unsettled
-    }
-
-    fn update_one_pending(
-        &mut self,
-        path: &Path,
-        now: Instant,
-        refresh: &mut impl FnMut(&Path) -> PathSignature,
-    ) -> bool {
-        let fresh = refresh(path);
-        let entry = self.pending.get_mut(path).expect("pending path");
-        if fresh != entry.signature {
-            entry.missing_since = if fresh.exists {
-                None
-            } else {
-                Some(entry.missing_since.unwrap_or(now))
-            };
-            entry.signature = fresh;
-            return true;
-        }
-        !path_age_settled(entry, now, self.settle)
-    }
+    !path_age_settled(entry, now, machine.settle)
 }
 
 fn path_age_settled(entry: &PendingPath, now: Instant, settle: Duration) -> bool {
@@ -322,5 +331,20 @@ mod tests {
             m.poll(t0 + Duration::from_millis(2), |_| settled_sig.clone()),
             SettlePoll::Idle
         );
+    }
+
+    #[test]
+    fn set_settle_rearms_deadline_from_last_event() {
+        let mut m = SettleMachine::new(Duration::from_secs(10));
+        let t0 = Instant::now();
+        let settled_sig = sig(true, Duration::from_secs(60));
+        m.note_path(PathBuf::from("a.py"), t0, settled_sig.clone());
+        assert_eq!(
+            m.poll(t0 + Duration::from_secs(1), |_| settled_sig.clone()),
+            SettlePoll::Waiting
+        );
+        m.set_settle(Duration::from_millis(50));
+        let ready = m.poll(t0 + Duration::from_millis(50), |_| settled_sig.clone());
+        assert!(matches!(ready, SettlePoll::Ready(_)));
     }
 }

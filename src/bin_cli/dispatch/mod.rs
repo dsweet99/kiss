@@ -147,7 +147,7 @@ fn dispatch_tools(
             cfg,
         }),
         test_command @ Commands::Test { .. } => {
-            dispatch_test_command(lang, test_command, cfg, test_section)
+            dispatch_test_command(lang, defaults, config.as_ref(), test_command, cfg, test_section)
         }
         Commands::Mv {
             query,
@@ -172,6 +172,8 @@ fn dispatch_tools(
 
 fn dispatch_test_command(
     lang: Option<kiss::Language>,
+    defaults: bool,
+    config_path: Option<&std::path::PathBuf>,
     command: Commands,
     cfg: &TriConfig<'_>,
     test_section: &TestSectionConfig,
@@ -226,6 +228,8 @@ fn dispatch_test_command(
                 extra,
                 test_cfg: test_section,
                 cfg,
+                reload_kissconfig: !defaults,
+                config_path,
             })
         }
         _ => 2,

@@ -303,3 +303,67 @@ fn stale_generation_repaired_on_watcher_not_client() {
         output.status
     );
 }
+
+#[test]
+fn watcher_reloads_kissconfig_threshold_change() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    std::fs::write(
+        tmp.path().join("lib.py"),
+        "def f():\n    return 0\ndef unused():\n    return 1\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("test_lib.py"),
+        "from lib import f\n\ndef test_f():\n    assert f() == 0\n",
+    )
+    .unwrap();
+    // Start with threshold 0 so the first cycle passes despite unused().
+    write_kissconfig_with_threshold(tmp.path(), 1.0, 0);
+    commit_all(tmp.path(), "init");
+
+    let _watch = start_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "."],
+    );
+    wait_watch_idle_cycle(tmp.path());
+
+    let ok = Command::new(env!("CARGO_BIN_EXE_kiss"))
+        .args(["test", "--lang", "python", "."])
+        .current_dir(tmp.path())
+        .output()
+        .expect("oneshot before reload");
+    assert!(
+        ok.status.success(),
+        "pre-reload must pass; stdout={:?} stderr={:?}",
+        String::from_utf8_lossy(&ok.stdout),
+        String::from_utf8_lossy(&ok.stderr)
+    );
+
+    // Raise threshold; watcher should reload and fail coverage on the next cycle.
+    write_kissconfig_with_threshold(tmp.path(), 1.0, 90);
+    std::thread::sleep(Duration::from_secs(4));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+        .args(["test", "--lang", "python", "."])
+        .current_dir(tmp.path())
+        .output()
+        .expect("oneshot after kissconfig reload");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "expected coverage fail after reload; stdout={stdout:?} stderr={stderr:?}"
+    );
+    assert!(
+        stdout.contains("waiting for watcher"),
+        "stdout={stdout:?}"
+    );
+    assert!(
+        stdout.contains("VIOLATION:test_coverage:") || stderr.contains("VIOLATION:test_coverage:"),
+        "reloaded threshold must produce coverage VIOLATION; stdout={stdout:?} stderr={stderr:?}"
+    );
+}

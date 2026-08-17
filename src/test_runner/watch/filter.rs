@@ -67,7 +67,15 @@ impl WatchPathFilter {
             )
     }
 
+    #[cfg(test)]
+    pub(crate) fn is_kissconfig_file(&self, rel: &Path) -> bool {
+        is_kissconfig_path(rel)
+    }
+
     pub(crate) fn is_relevant(&self, rel: &Path) -> bool {
+        if is_kissconfig_path(rel) {
+            return true;
+        }
         if is_hard_excluded(rel) {
             return is_git_support_path(rel, &self.invocation);
         }
@@ -83,6 +91,7 @@ impl WatchPathFilter {
 
     fn is_support_or_source(&self, rel: &Path) -> bool {
         if self.is_ignore_file(rel)
+            || is_kissconfig_path(rel)
             || is_git_support_path(rel, &self.invocation)
             || is_support_input(rel)
         {
@@ -172,6 +181,10 @@ fn is_git_support_path(rel: &Path, invocation: &TestInvocation) -> bool {
         && (rel.starts_with(".git/refs/heads") || rel == Path::new(".git/packed-refs"))
 }
 
+fn is_kissconfig_path(rel: &Path) -> bool {
+    rel == Path::new(".kissconfig")
+}
+
 fn is_support_input(rel: &Path) -> bool {
     if rel.file_name().and_then(|n| n.to_str()) == Some("conftest.py") {
         return true;
@@ -201,6 +214,27 @@ mod tests {
         assert!(!f.is_relevant(Path::new("target/debug/foo")));
         assert!(f.is_relevant(Path::new("src/lib.rs")));
         assert!(f.is_relevant(Path::new("pkg/mod.py")));
+    }
+
+    #[test]
+    fn kissconfig_is_relevant_support_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
+        assert!(f.is_kissconfig_file(Path::new(".kissconfig")));
+        assert!(f.is_relevant(Path::new(".kissconfig")));
+        assert!(!f.is_kissconfig_file(Path::new("nested/.kissconfig")));
+        assert!(!f.is_relevant(Path::new("nested/.kissconfig")));
+    }
+
+    #[test]
+    fn gitignored_kissconfig_is_still_relevant() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(".gitignore"), ".kissconfig\n").unwrap();
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
+        assert!(
+            f.is_relevant(Path::new(".kissconfig")),
+            "H2: gitignored .kissconfig must remain watch-relevant"
+        );
     }
 
     #[test]

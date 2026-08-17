@@ -29,6 +29,8 @@ pub(crate) struct TestDispatchOptions<'a> {
     pub extra: Vec<String>,
     pub test_cfg: &'a TestSectionConfig,
     pub cfg: &'a TriConfig<'a>,
+    pub reload_kissconfig: bool,
+    pub config_path: Option<&'a std::path::PathBuf>,
 }
 
 #[cfg(test)]

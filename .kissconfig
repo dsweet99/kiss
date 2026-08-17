@@ -8,7 +8,7 @@ min_similarity = 0.9
 [test]
 test_coverage_scope = "by_file"
 test_coverage_threshold = 75
-max_num_tests = 10000
+max_num_tests = 2850
 num_jobs = 32
 watch_settle_seconds = 1.0
 pytest_plugins = []

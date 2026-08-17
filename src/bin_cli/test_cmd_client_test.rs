@@ -23,13 +23,17 @@ fn injected_client_result_skips_local_run_test() {
         coverage_all: false,
         watch: false,
         jobs: 1,
+        jobs_cli: Some(1),
         ignore: &[],
+        cli_ignore: &[],
         extra: &[],
         lang_filter: Some(kiss::Language::Python),
         test_cfg: &test_cfg,
         py_config: &py,
         rs_config: &rs,
         gate_config: &gate,
+        reload_kissconfig: true,
+        config_path: None,
     };
     set_client_result_override_for_test(Some(Ok(Some(9))));
     let calls = AtomicUsize::new(0);
@@ -67,13 +71,17 @@ fn injected_client_pass_does_not_run_local_coverage() {
         coverage_all: false,
         watch: false,
         jobs: 1,
+        jobs_cli: Some(1),
         ignore: &[],
+        cli_ignore: &[],
         extra: &[],
         lang_filter: Some(kiss::Language::Python),
         test_cfg: &test_cfg,
         py_config: &py,
         rs_config: &rs,
         gate_config: &gate,
+        reload_kissconfig: true,
+        config_path: None,
     };
     set_client_result_override_for_test(Some(Ok(Some(0))));
     let calls = AtomicUsize::new(0);

@@ -22,13 +22,20 @@ pub struct TestCommandArgs<'a> {
     pub coverage_all: bool,
     pub watch: bool,
     pub jobs: usize,
+    /// Explicit `--jobs` when set; `None` means jobs came from config (reloadable).
+    pub jobs_cli: Option<usize>,
     pub ignore: &'a [String],
+    /// CLI `--ignore` only (before config merge); used when reloading `.kissconfig`.
+    pub cli_ignore: &'a [String],
     pub extra: &'a [String],
     pub lang_filter: Option<kiss::Language>,
     pub test_cfg: &'a TestSectionConfig,
     pub py_config: &'a kiss::Config,
     pub rs_config: &'a kiss::Config,
     pub gate_config: &'a kiss::GateConfig,
+    /// When false (`--defaults`), the watcher does not reload `.kissconfig`.
+    pub reload_kissconfig: bool,
+    pub config_path: Option<&'a PathBuf>,
 }
 
 thread_local! {
@@ -70,14 +77,34 @@ pub(crate) fn run_test_command_with(
     };
     if args.watch {
         let settle = Duration::from_secs_f64(args.test_cfg.watch_settle_seconds);
-        let cov_params = WatchCoverageParams {
-            py_config: args.py_config,
-            rs_config: args.rs_config,
+        let seed = crate::test_runner::WatchReloadSeed {
+            cli_ignore: args.cli_ignore.to_vec(),
+            jobs_cli: args.jobs_cli,
+            extra: args.extra.to_vec(),
             coverage_all: args.coverage_all,
+            enabled: args.reload_kissconfig,
+            config_path: args
+                .config_path
+                .cloned()
+                .unwrap_or_else(|| PathBuf::from(".kissconfig")),
         };
-        return run_test_watch(run_args, settle, |cycle| {
-            evaluate_watch_coverage(cycle, &cov_params)
-        });
+        return run_test_watch(
+            run_args,
+            settle,
+            seed,
+            args.py_config.clone(),
+            args.rs_config.clone(),
+            |cycle, live| {
+                evaluate_watch_coverage(
+                    cycle,
+                    &WatchCoverageParams {
+                        py_config: &live.py_config,
+                        rs_config: &live.rs_config,
+                        coverage_all: live.coverage_all,
+                    },
+                )
+            },
+        );
     }
     if args.dry_run {
         return run_local(run_args);

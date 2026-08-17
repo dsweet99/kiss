@@ -224,7 +224,9 @@ fn apply_event_error_is_terminal() {
 
 #[test]
 fn run_test_watch_requires_git() {
-    use crate::test_runner::{RunTestCmdArgs, WatchCoverageResult, run_test_watch};
+    use crate::test_runner::{
+        RunTestCmdArgs, WatchCoverageResult, WatchReloadSeed, run_test_watch,
+    };
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     let orig = std::env::current_dir().unwrap();
@@ -235,18 +237,32 @@ fn run_test_watch_requires_git() {
         base_branch_cli: None,
         dry_run: false,
         force_rerun: false,
-            force_bad: false,        metrics: false,
+        force_bad: false,
+        metrics: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],
         ignore: &[],
         lang_filter: None,
         config_main_branch: None,
-    gate_config: kiss::GateConfig::default()
+        gate_config: kiss::GateConfig::default(),
     };
-    let code = run_test_watch(args, Duration::from_millis(10), |_a| {
-        WatchCoverageResult::ok(0)
-    });
+    let seed = WatchReloadSeed {
+        cli_ignore: Vec::new(),
+        jobs_cli: Some(1),
+        extra: Vec::new(),
+        coverage_all: false,
+        enabled: false,
+        config_path: std::path::PathBuf::from(".kissconfig"),
+    };
+    let code = run_test_watch(
+        args,
+        Duration::from_millis(10),
+        seed,
+        kiss::Config::python_defaults(),
+        kiss::Config::rust_defaults(),
+        |_a, _live| WatchCoverageResult::ok(0),
+    );
     std::env::set_current_dir(orig).unwrap();
     assert_eq!(code, 1);
 }

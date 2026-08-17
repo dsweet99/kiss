@@ -106,6 +106,20 @@ impl TestSectionConfig {
         Ok(c)
     }
 
+    /// Load `[test]` from `path` only (no cwd `.kissconfig` merge).
+    pub fn try_load_path_only(path: &Path) -> Result<Self, ConfigError> {
+        let mut c = Self::default();
+        if !path.exists() {
+            return Ok(c);
+        }
+        let s = std::fs::read_to_string(path).map_err(|e| ConfigError::IoError {
+            path: path.display().to_string(),
+            message: e.to_string(),
+        })?;
+        c.try_merge_from_toml(&s)?;
+        Ok(c)
+    }
+
     fn merge_from_toml(&mut self, toml_str: &str) {
         let Ok(value) = toml_str.parse::<toml::Table>() else {
             return;

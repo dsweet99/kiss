@@ -14,8 +14,11 @@ mod client_report;
 mod event_source;
 mod filter;
 mod lock;
+mod reload;
 mod roots;
 mod session;
+mod session_cycle;
+mod session_entry;
 mod session_idle;
 mod settle;
 
@@ -27,9 +30,12 @@ pub(crate) use filter::WatchPathFilter;
 #[allow(unused_imports)]
 pub(crate) use lock::{WatchLockGuard, watch_lock_path};
 #[allow(unused_imports)]
+pub(crate) use reload::{WatchLiveConfig, WatchReloadSeed};
+#[allow(unused_imports)]
 pub(crate) use roots::resolve_watch_registrations;
 #[allow(unused_imports)] // unit tests import via `super::*` / sibling modules
-pub(crate) use session::{run_test_watch, run_watch_loop, run_watch_loop_with};
+pub(crate) use session::{run_watch_loop, run_watch_loop_with};
+pub(crate) use session_entry::run_test_watch;
 #[allow(unused_imports)]
 pub(crate) use settle::{PathSignature, SettleMachine, SettlePoll};
 

@@ -8,6 +8,12 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use super::roots::{WatchRegistration, WatchRootKind};
 
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(test)]
+pub(crate) static TEST_IMMEDIATE_DISCONNECT: AtomicBool = AtomicBool::new(false);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NormalizedWatchEvent {
     Paths(Vec<PathBuf>),
@@ -58,6 +64,12 @@ impl NativeWatchEventSource {
 
 impl WatchEventSource for NativeWatchEventSource {
     fn recv_timeout(&mut self, timeout: Duration) -> Result<Vec<NormalizedWatchEvent>, RecvTimeout> {
+        #[cfg(test)]
+        if TEST_IMMEDIATE_DISCONNECT.load(Ordering::SeqCst) {
+            return Err(RecvTimeout::Disconnected(
+                "TEST_IMMEDIATE_DISCONNECT".into(),
+            ));
+        }
         let first = match self.rx.recv_timeout(timeout) {
             Ok(msg) => msg,
             Err(RecvTimeoutError::Timeout) => return Err(RecvTimeout::Timeout),

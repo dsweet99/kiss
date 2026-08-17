@@ -86,7 +86,8 @@ pub struct RunTestCmdArgs<'a> {
     pub ignore: &'a [String],
     pub lang_filter: Option<Language>,
     pub config_main_branch: Option<&'a str>,
-    /// Session gate from CLI config load; runtime must not reload independently.
+    /// Session gate from CLI config load; runtime must not reload independently
+    /// except `kiss test --watch`, which reloads when `.kissconfig` changes.
     pub gate_config: kiss::GateConfig,
 }
 
@@ -210,7 +211,7 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     }
 }
 
-pub(crate) use watch::{WatchCoverageParams, WatchCoverageResult, run_test_watch};
+pub(crate) use watch::{WatchCoverageParams, WatchCoverageResult, WatchReloadSeed, run_test_watch};
 #[cfg(unix)]
 pub(crate) use watch::control::{NudgeRequestMsg, nudge_watcher_with_retry, probe_live_watcher};
 
