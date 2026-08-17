@@ -67,7 +67,7 @@ fn runtime_gate_failure_lines_are_sorted_and_labeled() {
     ]);
     assert_eq!(
         lines[0],
-        "GATE_FAILED:max_unit_test_seconds: 2 test(s) exceeded path-pattern time limits"
+        "VIOLATION:max_unit_test_seconds: 2 test(s) exceeded path-pattern time limits"
     );
     assert_eq!(
         lines[1],

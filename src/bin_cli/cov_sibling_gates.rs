@@ -91,7 +91,7 @@ pub(crate) fn evaluate_max_num_tests_gate(
     let limit = args.gate_config.max_num_tests;
     if count > limit {
         println!(
-            "GATE_FAILED:max_num_tests: {count} test(s) exceeds max_num_tests={limit}"
+            "VIOLATION:max_num_tests: {count} test(s) exceeds max_num_tests={limit}"
         );
         true
     } else {

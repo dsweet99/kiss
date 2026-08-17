@@ -216,7 +216,7 @@ pub(crate) fn runtime_gate_failure_lines(viols: &[RuntimeGateViolation]) -> Vec<
         (a.language, a.selector.as_str()).cmp(&(b.language, b.selector.as_str()))
     });
     let mut lines = vec![format!(
-        "GATE_FAILED:max_unit_test_seconds: {} test(s) exceeded path-pattern time limits",
+        "VIOLATION:max_unit_test_seconds: {} test(s) exceeded path-pattern time limits",
         ordered.len()
     )];
     for v in ordered {

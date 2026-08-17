@@ -32,7 +32,7 @@ pub fn print_codebase_coverage_gate_failure(ctx: &CodebaseCoverageGateFailureCtx
 
 pub fn codebase_coverage_gate_failure_lines(ctx: &CodebaseCoverageGateFailureCtx<'_>) -> Vec<String> {
     let mut lines = vec![format!(
-        "GATE_FAILED:test_coverage: codebase coverage {}% below {}% threshold",
+        "VIOLATION:test_coverage: codebase coverage {}% below {}% threshold",
         ctx.percent, ctx.threshold
     )];
     for (file, line, pct) in ctx.diagnostics {
@@ -58,7 +58,7 @@ pub fn coverage_gate_failure_lines(ctx: &CoverageGateFailureCtx<'_>) -> Vec<Stri
         .collect();
     failing.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lines = vec![format!(
-        "GATE_FAILED:test_coverage: {n} file(s) below {threshold}% threshold (per-file enforcement)",
+        "VIOLATION:test_coverage: {n} file(s) below {threshold}% threshold (per-file enforcement)",
         n = failing.len()
     )];
     for (file, pct) in &failing {
@@ -101,8 +101,8 @@ mod tests {
             "diagnostic lines omit final status so sibling gates can print once: {stdout}"
         );
         assert!(
-            stdout.contains("GATE_FAILED:test_coverage:"),
-            "expected gate failure in stdout: {stdout}"
+            stdout.contains("VIOLATION:test_coverage:"),
+            "expected coverage violation in stdout: {stdout}"
         );
         assert!(
             stdout.contains("per-file enforcement"),
@@ -124,7 +124,7 @@ mod tests {
         let stdout = lines.join("\n");
         assert!(
             stdout.contains(
-                "GATE_FAILED:test_coverage: codebase coverage 80% below 90% threshold"
+                "VIOLATION:test_coverage: codebase coverage 80% below 90% threshold"
             ),
             "stdout:\n{stdout}"
         );

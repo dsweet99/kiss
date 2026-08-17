@@ -966,7 +966,7 @@ def kiss_command(
     # Honor the fixture `.kissconfig` (do not pass `--defaults`). Sparse
     # `--ignore` populations cannot meet the default 90% codebase threshold;
     # `qa_fixture` sets `test_coverage_threshold = 0` so finish_with_coverage
-    # does not turn successful test runs into GATE_FAILED exits.
+    # does not turn successful test runs into VIOLATION exits.
     argv = [
         str(KISS),
         "--lang",
@@ -1051,7 +1051,7 @@ def parse_rust_aggregate_refresh(stderr: str) -> tuple[int, int] | None:
 
 
 def assert_check_gate_allowed(outcome: Outcome) -> None:
-    assert outcome.returncode == 0 or "GATE_FAILED:test_coverage" in outcome.stdout, (
+    assert outcome.returncode == 0 or "VIOLATION:test_coverage" in outcome.stdout, (
         f"{outcome.name}: unexpected check result\nstdout:\n{outcome.stdout}\nstderr:\n{outcome.stderr}"
     )
 
@@ -3306,7 +3306,7 @@ def aggregate_coverage() -> None:
             fixture.env,
             expected=None,
         )
-        assert "GATE_FAILED:test_coverage" in cold.stdout or cold.returncode == 0, cold.combined
+        assert "VIOLATION:test_coverage" in cold.stdout or cold.returncode == 0, cold.combined
         cold_counts = parse_rust_aggregate_refresh(cold.stderr)
         assert cold_counts is not None, cold.stderr
         cold_binaries, cold_exports = cold_counts
@@ -3334,7 +3334,7 @@ def aggregate_coverage() -> None:
             fixture.env,
             expected=None,
         )
-        assert "GATE_FAILED:test_coverage" in warm.stdout or warm.returncode == 0, warm.combined
+        assert "VIOLATION:test_coverage" in warm.stdout or warm.returncode == 0, warm.combined
         assert "refreshing Rust runtime coverage" not in warm.stderr, warm.stderr
 
         source = fixture.root / RS_SOURCE
@@ -3346,7 +3346,7 @@ def aggregate_coverage() -> None:
             fixture.env,
             expected=None,
         )
-        assert "GATE_FAILED:test_coverage" in identity.stdout or identity.returncode == 0, (
+        assert "VIOLATION:test_coverage" in identity.stdout or identity.returncode == 0, (
             identity.combined
         )
         identity_counts = parse_rust_aggregate_refresh(identity.stderr)
@@ -3363,7 +3363,7 @@ def aggregate_coverage() -> None:
             fixture.env,
             expected=None,
         )
-        assert "GATE_FAILED:test_coverage" in repair.stdout or repair.returncode == 0, (
+        assert "VIOLATION:test_coverage" in repair.stdout or repair.returncode == 0, (
             repair.combined
         )
         repair_counts = parse_rust_aggregate_refresh(repair.stderr)
@@ -3393,7 +3393,7 @@ def aggregate_coverage() -> None:
             fixture.env,
             expected=None,
         )
-        assert "GATE_FAILED:test_coverage" in final_warm.stdout or final_warm.returncode == 0, (
+        assert "VIOLATION:test_coverage" in final_warm.stdout or final_warm.returncode == 0, (
             final_warm.combined
         )
         assert "refreshing Rust runtime coverage" not in final_warm.stderr, final_warm.stderr

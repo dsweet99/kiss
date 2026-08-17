@@ -68,13 +68,13 @@ impl std::fmt::Display for ShrinkViolation {
         if self.is_target {
             write!(
                 f,
-                "GATE_FAILED:shrink: {} {} > {} (target not met)",
+                "VIOLATION:shrink: {} {} > {} (target not met)",
                 self.metric, self.current, self.limit
             )
         } else {
             write!(
                 f,
-                "GATE_FAILED:shrink: {} {} > {} (constraint exceeded baseline)",
+                "VIOLATION:shrink: {} {} > {} (constraint exceeded baseline)",
                 self.metric, self.current, self.limit
             )
         }

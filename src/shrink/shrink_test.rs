@@ -137,7 +137,7 @@ fn test_shrink_violation_display() {
     };
     assert_eq!(
         target_viol.to_string(),
-        "GATE_FAILED:shrink: graph_edges 110 > 100 (target not met)"
+        "VIOLATION:shrink: graph_edges 110 > 100 (target not met)"
     );
 
     let constraint_viol = ShrinkViolation {
@@ -148,6 +148,6 @@ fn test_shrink_violation_display() {
     };
     assert_eq!(
         constraint_viol.to_string(),
-        "GATE_FAILED:shrink: code_units 960 > 950 (constraint exceeded baseline)"
+        "VIOLATION:shrink: code_units 960 > 950 (constraint exceeded baseline)"
     );
 }

@@ -22,7 +22,7 @@ pub(super) fn emit_cached_bypass(
 }
 
 /// Cached counterpart to the gated default flow: if the cached coverage data
-/// would trip the `test_coverage` gate, emit `GATE_FAILED` and per-definition
+/// would trip the `test_coverage` gate, emit `VIOLATION` and per-definition
 /// coverage violations exactly like `evaluate_gate` does in the live path; on
 /// success, emit base + graph violations + duplicates.
 pub(super) fn emit_cached_gated(

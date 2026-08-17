@@ -77,8 +77,8 @@ fn regression_check_default_warm_gate_matches_cold_and_warm_output() {
         String::from_utf8_lossy(&warm.stdout),
         "default warm-hit output should match cold-hit output"
     );
-    assert!(String::from_utf8_lossy(&cold.stdout).contains("GATE_FAILED:test_coverage:"));
-    assert!(String::from_utf8_lossy(&warm.stdout).contains("GATE_FAILED:test_coverage:"));
+    assert!(String::from_utf8_lossy(&cold.stdout).contains("VIOLATION:test_coverage:"));
+    assert!(String::from_utf8_lossy(&warm.stdout).contains("VIOLATION:test_coverage:"));
 }
 
 #[test]
@@ -101,7 +101,6 @@ fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
     let cold = run_default_check_with_config(home.path(), repo.path());
     let cold_stdout = String::from_utf8_lossy(&cold.stdout).to_string();
     assert_eq!(cold.status.code(), Some(0));
-    assert!(!cold_stdout.contains("GATE_FAILED:test_coverage:"));
     assert!(!cold_stdout.contains("VIOLATION:test_coverage"));
 
     let all = kiss_binary()
@@ -122,7 +121,6 @@ fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
     let warm_default = run_default_check_with_config(home.path(), repo.path());
     let warm_stdout = String::from_utf8_lossy(&warm_default.stdout).to_string();
     assert_eq!(warm_default.status.code(), cold.status.code());
-    assert!(!warm_stdout.contains("GATE_FAILED:test_coverage:"));
     assert!(!warm_stdout.contains("VIOLATION:test_coverage"));
 }
 
@@ -193,8 +191,7 @@ fn kiss_check_ignores_seeded_below_threshold_runtime_coverage() {
         "static check must pass despite below-threshold seeded coverage.\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        !stdout.contains("GATE_FAILED:test_coverage")
-            && !stdout.contains("VIOLATION:test_coverage"),
+        !stdout.contains("VIOLATION:test_coverage"),
         "check must not emit coverage gates/violations. stdout:\n{stdout}"
     );
     assert!(

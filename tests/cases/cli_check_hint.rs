@@ -21,8 +21,8 @@ fn cli_check_default_gate_emits_hint_on_coverage_failure() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("GATE_FAILED:test_coverage:"),
-        "expected coverage gate failure. stdout: {stdout}"
+        stdout.contains("VIOLATION:test_coverage:"),
+        "expected coverage violation. stdout: {stdout}"
     );
     assert!(
         stdout.contains(VIOLATIONS_FIX_HINT),
