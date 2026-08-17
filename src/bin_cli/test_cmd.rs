@@ -110,7 +110,7 @@ fn try_run_as_watcher_client(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
     if let Some(overridden) = CLIENT_RESULT_OVERRIDE.with(Cell::take) {
         return match overridden {
             Ok(None) => Ok(None),
-            Ok(Some(exit_code)) => Ok(Some(apply_watcher_client_exit(exit_code, None))),
+            Ok(Some(exit_code)) => Ok(Some(apply_watcher_client_exit(exit_code, None, None))),
             Err(e) => Err(e),
         };
     }
@@ -132,20 +132,36 @@ fn try_run_as_watcher_client(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
             metrics: args.metrics,
         },
     )?;
-    Ok(Some(apply_watcher_client_exit(reply.exit_code, reply.error)))
+    Ok(Some(apply_watcher_client_exit(
+        reply.exit_code,
+        reply.error,
+        reply.output,
+    )))
 }
 
 #[cfg(unix)]
-fn apply_watcher_client_exit(exit_code: i32, error: Option<String>) -> i32 {
+fn apply_watcher_client_exit(
+    exit_code: i32,
+    error: Option<String>,
+    output: Option<String>,
+) -> i32 {
     println!("kiss test: watcher cycle complete");
+    let has_report = output.as_ref().is_some_and(|s| !s.is_empty());
+    if has_report {
+        println!("{}", output.as_deref().unwrap_or(""));
+    }
     if exit_code != 0 {
-        println!("FAIL");
+        if !has_report {
+            println!("FAIL");
+        }
         if let Some(err) = error {
             eprintln!("{err}");
         }
         return exit_code;
     }
-    println!("PASS");
+    if !has_report {
+        println!("PASS");
+    }
     exit_code
 }
 

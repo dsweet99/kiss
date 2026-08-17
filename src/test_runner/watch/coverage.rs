@@ -5,6 +5,8 @@
 pub(crate) struct WatchCoverageResult {
     pub exit_code: i32,
     pub error: Option<String>,
+    /// FAIL/VIOLATION report text for one-shot clients (optional inject for tests).
+    pub output: Option<String>,
     pub interrupted: bool,
 }
 
@@ -13,6 +15,7 @@ impl WatchCoverageResult {
         Self {
             exit_code,
             error: None,
+            output: None,
             interrupted: false,
         }
     }
@@ -21,6 +24,21 @@ impl WatchCoverageResult {
         Self {
             exit_code,
             error: Some(error.into()),
+            output: None,
+            interrupted: false,
+        }
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn failed_with_output(
+        exit_code: i32,
+        error: impl Into<String>,
+        output: impl Into<String>,
+    ) -> Self {
+        Self {
+            exit_code,
+            error: Some(error.into()),
+            output: Some(output.into()),
             interrupted: false,
         }
     }
@@ -29,6 +47,7 @@ impl WatchCoverageResult {
         Self {
             exit_code: 130,
             error: None,
+            output: None,
             interrupted: true,
         }
     }
@@ -55,6 +74,7 @@ mod tests {
         let failed = WatchCoverageResult::failed(1, "coverage gate failed");
         assert_eq!(failed.exit_code, 1);
         assert_eq!(failed.error.as_deref(), Some("coverage gate failed"));
+        assert!(failed.output.is_none());
         assert!(!failed.interrupted);
 
         let interrupted = WatchCoverageResult::interrupted();

@@ -99,3 +99,30 @@ fn injected_client_pass_does_not_run_local_coverage() {
         "stdout must report PASS; got: {out:?}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn apply_watcher_client_exit_prints_output_not_bare_fail() {
+    let code = apply_watcher_client_exit(
+        1,
+        None,
+        Some(
+            "✓ 1 passed · 0.1s total · 0s max pass\n\
+             VIOLATION:test_coverage: codebase coverage 75% below 90% threshold\n\
+             Run 'kiss rules' for more information about fixing violations."
+                .into(),
+        ),
+    );
+    assert_eq!(code, 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_watcher_client_exit_prints_fail_report() {
+    let code = apply_watcher_client_exit(
+        1,
+        None,
+        Some("✗ 0 passed · 1 failed · 0.2s total · 0s max pass\nFAIL tests/a.py::t".into()),
+    );
+    assert_eq!(code, 1);
+}

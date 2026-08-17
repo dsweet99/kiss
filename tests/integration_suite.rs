@@ -28,6 +28,8 @@ mod cli_kiss_test_smoke;
 mod watch_sigint;
 #[path = "cases/watch_client.rs"]
 mod watch_client;
+#[path = "cases/watch_client_violations.rs"]
+mod watch_client_violations;
 #[path = "cases/config_tests.rs"]
 mod config_tests;
 #[path = "cases/coverage_corpus.rs"]

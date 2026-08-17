@@ -20,6 +20,7 @@ fn protocol_round_trip_on_socket() {
                 exit_code: 7,
                 pid: 42,
                 error: None,
+                output: Some("FAIL tests/a.py::t".into()),
             },
         )
         .unwrap();
@@ -41,6 +42,7 @@ fn protocol_round_trip_on_socket() {
             exit_code: 7,
             pid: 42,
             error: None,
+            output: Some("FAIL tests/a.py::t".into()),
         }
     );
     server.join().unwrap();
@@ -77,6 +79,7 @@ fn lock_held_missing_session_retries_then_ok() {
             exit_code: 0,
             pid: std::process::id(),
             error: None,
+            output: None,
         });
         thread::sleep(Duration::from_millis(50));
         drop(control);

@@ -18,7 +18,8 @@ use super::lock::{WatchLockGuard, watch_dir, watch_lock_path};
 pub(crate) const WATCH_SOCKET_TMP_DIR: &str = "/tmp/.kiss-watch";
 
 const SESSION_FILE_NAME: &str = "session.json";
-const MAX_FRAME_LEN: u32 = 64 * 1024;
+/// Large enough for FAIL/VIOLATION report text forwarded to one-shot clients.
+const MAX_FRAME_LEN: u32 = 256 * 1024;
 const CLIENT_SESSION_RETRY: Duration = Duration::from_millis(200);
 const CLIENT_SESSION_SLEEP: Duration = Duration::from_millis(10);
 
@@ -38,6 +39,10 @@ pub(crate) struct NudgeReplyMsg {
     pub pid: u32,
     #[serde(default)]
     pub error: Option<String>,
+    /// FAIL / VIOLATION report lines for the one-shot client to print on stdout
+    /// (same shape as a non-watcher `kiss test`).
+    #[serde(default)]
+    pub output: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

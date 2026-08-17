@@ -196,3 +196,56 @@ fn watch_cycle_interrupted_during_cov_replies_130() {
     sender.join().unwrap();
     assert_eq!(code, 130);
 }
+
+#[test]
+fn watch_cycle_forwards_violation_stdout_to_client_reply() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+    let (tx, rx) = mpsc::sync_channel::<NudgeRequest>(4);
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let sender = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(30));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg::default(),
+            reply: reply_tx,
+        })
+        .unwrap();
+        let reply = reply_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(reply.exit_code, 1);
+        assert!(
+            reply.error.is_none(),
+            "generic cov error suppressed when output set"
+        );
+        let out = reply.output.expect("output");
+        assert!(
+            out.contains("VIOLATION:test_coverage:"),
+            "output={out:?}"
+        );
+        assert!(out.contains("Run 'kiss rules'"), "output={out:?}");
+    });
+    let mut src = NudgeScript {
+        steps: timeout_steps(8),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        |_a| RunTestOnceOutcome::Code(0),
+        |_a| {
+            WatchCoverageResult::failed_with_output(
+                1,
+                "coverage gate failed",
+                "✓ 1 passed · 0.1s total · 0s max pass\n\
+                 VIOLATION:test_coverage: codebase coverage 75% below 90% threshold\n\
+                 Run 'kiss rules' for more information about fixing violations.",
+            )
+        },
+    );
+    sender.join().unwrap();
+    assert_eq!(code, 1);
+}
