@@ -43,11 +43,13 @@ fn write_nested_workspace_repo(root: &std::path::Path) {
     .unwrap();
     fs::write(
         root.join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 75\n\
-         test_coverage_scope = \"by_file\"\n\
+        "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n",
+         orphan_module_enabled = false\n\
+\n\
+[test]\n\
+         test_coverage_threshold = 75\n\
+         test_coverage_scope = \"by_file\"\n",
     )
     .unwrap();
     let mut git = kiss::scrubbed_git_command(root);

@@ -5,7 +5,7 @@ pub use unit_test_seconds::{
     format_nested_toml_table, limit_for_selector, matched_rule_for_selector, validate_rules,
 };
 
-use crate::config::{ConfigError, check_unknown_keys, get_usize};
+use crate::config::{ConfigError, check_unknown_keys};
 use crate::defaults;
 use std::fmt;
 use std::path::Path;
@@ -43,14 +43,17 @@ impl fmt::Display for TestCoverageScope {
     }
 }
 
-const GATE_KEYS: &[&str] = &[
-    "test_coverage_threshold",
-    "test_coverage_scope",
-    "max_unit_test_seconds",
+/// Keys that live under `[global]` in `.kissconfig`.
+const GLOBAL_KEYS: &[&str] = &[
     "min_similarity",
     "duplication_enabled",
     "orphan_module_enabled",
 ];
+
+const GATE_RENAMED_MSG: &str = "\
+[gate] was renamed: put min_similarity/duplication_enabled/orphan_module_enabled under \
+[global], and test_coverage_threshold/test_coverage_scope/max_unit_test_seconds/max_num_tests \
+under [test]";
 
 #[derive(Debug, Clone)]
 pub struct GateConfig {
@@ -58,6 +61,8 @@ pub struct GateConfig {
     pub test_coverage_scope: TestCoverageScope,
     /// Ordered path-pattern → seconds limits; last entry must be `"*"`.
     pub max_unit_test_seconds: Vec<(String, f64)>,
+    /// Maximum number of unit tests in the current population; `0` disables.
+    pub max_num_tests: usize,
     pub min_similarity: f64,
     pub duplication_enabled: bool,
     pub orphan_module_enabled: bool,
@@ -69,6 +74,7 @@ impl Default for GateConfig {
             test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD,
             test_coverage_scope: TestCoverageScope::Codebase,
             max_unit_test_seconds: default_max_unit_test_seconds(),
+            max_num_tests: defaults::gate::MAX_NUM_TESTS,
             min_similarity: defaults::duplication::MIN_SIMILARITY,
             duplication_enabled: true,
             orphan_module_enabled: true,
@@ -88,6 +94,10 @@ impl GateConfig {
 
     pub fn unit_test_time_gate_disabled(&self) -> bool {
         self.max_unit_test_seconds.is_empty()
+    }
+
+    pub fn max_num_tests_gate_disabled(&self) -> bool {
+        self.max_num_tests == 0
     }
 }
 
@@ -137,35 +147,20 @@ impl GateConfig {
         let Ok(value) = toml_str.parse::<toml::Table>() else {
             return;
         };
-        if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
-            if let Err(e) = check_unknown_keys(gate, GATE_KEYS, "gate") {
+        if value.get("gate").is_some() {
+            eprintln!("Error: {GATE_RENAMED_MSG}");
+            return;
+        }
+        if let Some(global) = value.get("global").and_then(|v| v.as_table()) {
+            if let Err(e) = check_unknown_keys(global, GLOBAL_KEYS, "global") {
                 eprintln!("Error: {e}");
                 return;
             }
-            if let Some(t) = get_usize(gate, "test_coverage_threshold") {
-                if t > 100 {
-                    eprintln!("Error: test_coverage_threshold must be 0-100, got {t}");
-                    return;
-                }
-                self.test_coverage_threshold = t;
-            }
-            if let Err(msg) = merge_scope_lenient(gate, &mut self.test_coverage_scope) {
-                eprintln!("Error: {msg}");
-            }
-            merge_max_unit_test_seconds_lenient(gate, &mut self.max_unit_test_seconds);
-            if let Some(s) = get_f64(gate, "min_similarity") {
-                if !(0.0..=1.0).contains(&s) {
-                    eprintln!("Error: min_similarity must be 0.0-1.0, got {s}");
-                    return;
-                }
-                self.min_similarity = s;
-            }
-            if let Some(v) = get_bool(gate, "duplication_enabled") {
-                self.duplication_enabled = v;
-            }
-            if let Some(v) = get_bool(gate, "orphan_module_enabled") {
-                self.orphan_module_enabled = v;
-            }
+            merge_global_lenient(self, global);
+        }
+        if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
+            // TestSectionConfig owns full [test] unknown-key validation.
+            merge_test_gates_lenient(self, test);
         }
     }
 
@@ -176,151 +171,29 @@ impl GateConfig {
             .map_err(|e| ConfigError::ParseError {
                 message: e.to_string(),
             })?;
-        if let Some(gate) = value.get("gate").and_then(|v| v.as_table()) {
-            check_unknown_keys(gate, GATE_KEYS, "gate")?;
-            if let Some(t) = get_usize(gate, "test_coverage_threshold") {
-                if t > 100 {
-                    return Err(ConfigError::InvalidValue {
-                        key: "test_coverage_threshold".into(),
-                        message: format!("must be 0-100, got {t}"),
-                    });
-                }
-                self.test_coverage_threshold = t;
-            }
-            if let Some(scope) = try_get_scope(gate)? {
-                self.test_coverage_scope = scope;
-            }
-            if let Some(value) = gate.get("max_unit_test_seconds") {
-                self.max_unit_test_seconds =
-                    unit_test_seconds::parse_max_unit_test_seconds(value)?;
-            }
-            if let Some(s) = try_get_f64(gate, "min_similarity")? {
-                if !(0.0..=1.0).contains(&s) {
-                    return Err(ConfigError::InvalidValue {
-                        key: "min_similarity".into(),
-                        message: format!("must be 0.0-1.0, got {s}"),
-                    });
-                }
-                self.min_similarity = s;
-            }
-            self.duplication_enabled =
-                try_get_bool(gate, "duplication_enabled", self.duplication_enabled)?;
-            self.orphan_module_enabled =
-                try_get_bool(gate, "orphan_module_enabled", self.orphan_module_enabled)?;
+        if value.get("gate").is_some() {
+            return Err(ConfigError::InvalidValue {
+                key: "gate".into(),
+                message: GATE_RENAMED_MSG.into(),
+            });
+        }
+        if let Some(global) = value.get("global").and_then(|v| v.as_table()) {
+            check_unknown_keys(global, GLOBAL_KEYS, "global")?;
+            merge_global_strict(self, global)?;
+        }
+        if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
+            merge_test_gates_strict(self, test)?;
         }
         Ok(())
     }
 }
 
-fn merge_max_unit_test_seconds_lenient(
-    gate: &toml::Table,
-    current: &mut Vec<(String, f64)>,
-) {
-    let Some(value) = gate.get("max_unit_test_seconds") else {
-        return;
-    };
-    match unit_test_seconds::parse_max_unit_test_seconds(value) {
-        Ok(rules) => *current = rules,
-        Err(err) => eprintln!("Error: {err}"),
-    }
-}
-
-fn merge_scope_lenient(
-    gate: &toml::Table,
-    current: &mut TestCoverageScope,
-) -> Result<(), String> {
-    let Some(value) = gate.get("test_coverage_scope") else {
-        return Ok(());
-    };
-    let Some(raw) = value.as_str() else {
-        return Err(format!(
-            "test_coverage_scope must be \"by_file\" or \"codebase\", got {}",
-            value.type_str()
-        ));
-    };
-    match TestCoverageScope::parse(raw) {
-        Ok(scope) => {
-            *current = scope;
-            Ok(())
-        }
-        Err(message) => Err(format!("test_coverage_scope {message}")),
-    }
-}
-
-fn try_get_scope(gate: &toml::Table) -> Result<Option<TestCoverageScope>, ConfigError> {
-    let Some(value) = gate.get("test_coverage_scope") else {
-        return Ok(None);
-    };
-    let Some(raw) = value.as_str() else {
-        return Err(ConfigError::InvalidValue {
-            key: "test_coverage_scope".into(),
-            message: format!(
-                "must be \"by_file\" or \"codebase\", got {}",
-                value.type_str()
-            ),
-        });
-    };
-    TestCoverageScope::parse(raw)
-        .map(Some)
-        .map_err(|message| ConfigError::InvalidValue {
-            key: "test_coverage_scope".into(),
-            message,
-        })
-}
-
-#[allow(clippy::cast_precision_loss)]
-const fn int_to_f64(i: i64) -> f64 {
-    i as f64
-}
-
-fn try_get_f64(table: &toml::Table, key: &str) -> Result<Option<f64>, ConfigError> {
-    let Some(value) = table.get(key) else {
-        return Ok(None);
-    };
-    value
-        .as_float()
-        .or_else(|| value.as_integer().map(int_to_f64))
-        .map(Some)
-        .ok_or_else(|| ConfigError::InvalidValue {
-            key: key.into(),
-            message: format!("expected float, got {}", value.type_str()),
-        })
-}
-
-fn get_bool(table: &toml::Table, key: &str) -> Option<bool> {
-    if let Some(v) = table.get(key) {
-        if let Some(b) = v.as_bool() {
-            return Some(b);
-        }
-        eprintln!("Warning: Config key '{key}' expected bool");
-    }
-    None
-}
-
-fn try_get_bool(table: &toml::Table, key: &str, default: bool) -> Result<bool, ConfigError> {
-    let Some(value) = table.get(key) else {
-        return Ok(default);
-    };
-    value.as_bool().ok_or_else(|| ConfigError::InvalidValue {
-        key: key.into(),
-        message: "expected bool".into(),
-    })
-}
-
-fn get_f64(table: &toml::Table, key: &str) -> Option<f64> {
-    let value = table.get(key)?;
-    value
-        .as_float()
-        .or_else(|| value.as_integer().map(int_to_f64))
-        .or_else(|| {
-            eprintln!(
-                "Warning: Config key '{key}' expected float, got {}",
-                value.type_str()
-            );
-            None
-        })
-}
+mod toml_merge;
+use toml_merge::*;
 
 #[cfg(test)]
 #[path = "gate_config_test.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "gate_rename_test.rs"]
+mod rename_tests;

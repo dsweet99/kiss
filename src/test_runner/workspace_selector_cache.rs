@@ -219,6 +219,29 @@ pub(crate) fn load_cached_workspace_selectors(
     Some((durable.python_selectors, durable.rust_selectors, fp))
 }
 
+/// Load selector lists for population counting (`max_num_tests`).
+///
+/// Unlike planning loads, this does not require a fingerprint match: the cache
+/// was written by the test run that is immediately evaluating gates. Prefer an
+/// ignore-list match when present; otherwise accept the on-disk population.
+pub(crate) fn load_workspace_selectors_for_count(
+    repo_root: &Path,
+    ignore: &[String],
+) -> Option<(Vec<String>, Vec<String>)> {
+    let root = normalized_root(repo_root);
+    let cache = read_cache_at(&cache_path(repo_root))
+        .or_else(|| read_cache_at(&durable_cache_path(repo_root)))?;
+    if cache.source_root != root {
+        return None;
+    }
+    if !ignore.is_empty() && cache.ignore != ignore && !cache.ignore.is_empty() {
+        // Prefer an exact ignore match when the cache recorded a non-empty list.
+        // Empty-cache ignore is the common test-plan case under cov's check-ignore merge.
+        return None;
+    }
+    Some((cache.python_selectors, cache.rust_selectors))
+}
+
 pub(crate) fn store_workspace_selectors(
     repo_root: &Path,
     ignore: &[String],

@@ -29,7 +29,10 @@ pub(crate) fn warm_cov_caches_after_tests(
     pytest_args: &[String],
 ) {
     let ignore = merge_check_ignore_prefixes(ignore_user);
-    if gate.test_coverage_threshold == 0 && gate.unit_test_time_gate_disabled() {
+    if gate.test_coverage_threshold == 0
+        && gate.unit_test_time_gate_disabled()
+        && gate.max_num_tests_gate_disabled()
+    {
         return;
     }
     let repo_root = repository_root_for_universe(universe_root);

@@ -19,15 +19,19 @@ pub(crate) fn check_unknown_keys(
 }
 
 pub(crate) fn check_unknown_sections(table: &toml::Table) -> Result<(), ConfigError> {
-    const VALID: &[&str] = &["python", "rust", "shared", "thresholds", "gate", "test"];
+    const VALID: &[&str] = &["python", "rust", "shared", "thresholds", "global", "test"];
     for key in table.keys() {
         if VALID.contains(&key.as_str()) {
             continue;
         }
-        let hint = VALID
-            .iter()
-            .find(|v| similar(key, v))
-            .map(|s| (*s).to_string());
+        let hint = if key == "gate" {
+            Some("global".to_string())
+        } else {
+            VALID
+                .iter()
+                .find(|v| similar(key, v))
+                .map(|s| (*s).to_string())
+        };
         return Err(ConfigError::UnknownSection {
             section: key.clone(),
             hint,

@@ -125,9 +125,12 @@ mod tests {
         assert_eq!(run_init_command(tmp.path()), 0);
         let created = std::fs::read_to_string(tmp.path().join(".kissconfig")).unwrap();
         assert!(
-            created.contains(
-                "[test]\nnum_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
-            ),
+            created.contains("num_jobs = 4")
+                && created.contains("watch_settle_seconds = 1.0")
+                && created.contains("pytest_plugins = []")
+                && created.contains("ignore = []")
+                && created.contains("max_num_tests = 0")
+                && created.contains("[test.max_unit_test_seconds]"),
             "kiss init must write [test] defaults:\n{created}"
         );
     }

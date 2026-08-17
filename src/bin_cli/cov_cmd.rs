@@ -4,14 +4,15 @@ use crate::analyze::line_coverage::RuntimeCoverageSnapshot;
 use crate::analyze::line_coverage::compute_line_coverage_records;
 use crate::analyze::{build_focus_filter, gather_files};
 use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
+use crate::bin_cli::cov_sibling_gates::{
+    SiblingGateResult, apply_time_gate_eval, evaluate_max_num_tests_gate,
+    evaluate_time_gate_for_cov, finish_sibling_gates,
+};
 use crate::test_runner::check_line_coverage::{
     RequiredCoverageLanguages, ensure_check_runtime_coverage, load_check_runtime_coverage,
     repository_root_for_universe,
 };
-use crate::test_runner::unit_test_timing::{
-    CovTimeGateOpts, RuntimeGateEval, TimingLangInclude, evaluate_cov_time_gate,
-    runtime_gate_failure_lines,
-};
+use crate::test_runner::unit_test_timing::RuntimeGateEval;
 #[cfg(test)]
 use crate::test_runner::unit_test_timing::TimingCollectOpts;
 use kiss::Language;
@@ -69,56 +70,6 @@ fn load_or_refresh_snapshot(
     Ok(ValidatedCovInputs::from_snapshot(required, snapshot, repo_root))
 }
 
-struct SiblingGateResult {
-    coverage_failed: bool,
-    time_failed: bool,
-}
-
-fn finish_sibling_gates(result: SiblingGateResult) -> i32 {
-    print_final_status(result.coverage_failed || result.time_failed);
-    i32::from(result.coverage_failed || result.time_failed)
-}
-
-fn evaluate_time_gate_for_cov(
-    args: &CovCommandArgs<'_>,
-    universe_root: &Path,
-    files: &CovFileSets,
-    ignore: &[String],
-) -> RuntimeGateEval {
-    if args.gate_config.unit_test_time_gate_disabled() {
-        return RuntimeGateEval::Disabled;
-    }
-    evaluate_cov_time_gate(CovTimeGateOpts {
-        universe: universe_root,
-        lang_filter: args.lang_filter,
-        include: TimingLangInclude {
-            python: !files.py_files.is_empty(),
-            rust: !files.rs_files.is_empty(),
-        },
-        ignore,
-        limits: &args.gate_config.max_unit_test_seconds,
-        timing: args.timing,
-        pytest_args: args.pytest_args,
-    })
-}
-
-fn apply_time_gate_eval(eval: &RuntimeGateEval) -> bool {
-    match eval {
-        RuntimeGateEval::Disabled | RuntimeGateEval::Passed => false,
-        RuntimeGateEval::Failed(viols) => {
-            for line in runtime_gate_failure_lines(viols) {
-                println!("{line}");
-            }
-            true
-        }
-        RuntimeGateEval::Incomplete => {
-            eprintln!(
-                "error: kiss test: unit-test timing cache is incomplete for the current population"
-            );
-            true
-        }
-    }
-}
 
 fn evaluate_coverage_gate(
     records: &[analyze::line_coverage::LineCoverageRecord],
@@ -163,9 +114,12 @@ fn evaluate_records_with_time(
         evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
     let time_failed =
         apply_time_gate_eval(&time_eval);
+    let max_num_tests_failed =
+        evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.ignore);
     finish_sibling_gates(SiblingGateResult {
         coverage_failed,
         time_failed,
+        max_num_tests_failed,
     })
 }
 
@@ -194,15 +148,18 @@ fn try_evaluate_records_with_time(
     );
     let time_failed =
         apply_time_gate_eval(&time_eval);
+    let max_num_tests_failed =
+        evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.ignore);
     Some(finish_sibling_gates(SiblingGateResult {
         coverage_failed,
         time_failed,
+        max_num_tests_failed,
     }))
 }
 
-struct CovFileSets {
-    py_files: Vec<PathBuf>,
-    rs_files: Vec<PathBuf>,
+pub(crate) struct CovFileSets {
+    pub(crate) py_files: Vec<PathBuf>,
+    pub(crate) rs_files: Vec<PathBuf>,
 }
 
 fn gather_cov_files(
@@ -301,12 +258,13 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
     let threshold = args.gate_config.test_coverage_threshold;
     if threshold == 0
         && args.gate_config.unit_test_time_gate_disabled()
+        && args.gate_config.max_num_tests_gate_disabled()
         && !args.bypass_gate
     {
         print_final_status(false);
         return 0;
     }
-    // Time-only: skip line-coverage record computation when coverage gate and --all
+    // Time-only / count-only: skip line-coverage record computation when coverage gate and --all
     // do not need records.
     if threshold == 0 && !args.bypass_gate {
         let repo_root = repository_root_for_universe(universe_root);
@@ -326,9 +284,12 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
         );
         let time_eval = evaluate_time_gate_for_cov(args, universe_root, &files, &ignore);
         let time_failed = apply_time_gate_eval(&time_eval);
+        let max_num_tests_failed =
+            evaluate_max_num_tests_gate(args, universe_root, &ignore);
         return finish_sibling_gates(SiblingGateResult {
             coverage_failed: false,
             time_failed,
+            max_num_tests_failed,
         });
     }
     evaluate_gathered_cov(EvaluateGatheredCov {

@@ -219,12 +219,13 @@ def test_helpers():
 fn write_zero_threshold_config(path: &std::path::Path) {
     fs::write(
         path,
-        r"[gate]
-test_coverage_threshold = 0
+        r"[global]
 min_similarity = 1.0
 duplication_enabled = false
 orphan_module_enabled = false
 
+[test]
+test_coverage_threshold = 0
 [thresholds]
 statements_per_function = 0
 methods_per_class = 0

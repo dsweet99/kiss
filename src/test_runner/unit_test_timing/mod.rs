@@ -256,8 +256,16 @@ fn cheap_codebase_test_count(
     ignore: &[String],
 ) -> Option<usize> {
     let repo_root = repository_root_for_universe(universe);
-    let (py, rs, _) =
-        super::workspace_selector_cache::load_cached_workspace_selectors(&repo_root, ignore)?;
+    let (py, rs) = super::workspace_selector_cache::load_workspace_selectors_for_count(
+        &repo_root, ignore,
+    )
+    .or_else(|| {
+        if ignore.is_empty() {
+            None
+        } else {
+            super::workspace_selector_cache::load_workspace_selectors_for_count(&repo_root, &[])
+        }
+    })?;
     let mut total = 0usize;
     if include.python && matches!(lang_filter, None | Some(Language::Python)) {
         total += py.len();
@@ -266,6 +274,32 @@ fn cheap_codebase_test_count(
         total += rs.len();
     }
     Some(total)
+}
+
+/// Count helper for `kiss test` / `kiss cov` `max_num_tests` sibling gate.
+///
+/// Prefer the warm workspace selector cache; fall back to current unit-test
+/// timing population size when the cache is missing or ignore-mismatched.
+pub(crate) fn codebase_test_count_for_cov(
+    universe: &Path,
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+    pytest_args: &[String],
+) -> Option<usize> {
+    if let Some(n) = cheap_codebase_test_count(universe, lang_filter, include, ignore) {
+        return Some(n);
+    }
+    match collect_current_unit_test_timings(TimingCollectOpts {
+        universe,
+        lang_filter,
+        include,
+        ignore,
+        pytest_args,
+    }) {
+        TimingPopulation::Complete(entries) => Some(entries.len()),
+        TimingPopulation::Incomplete => None,
+    }
 }
 
 pub(crate) fn unit_test_runtime_sec_report_for_universe(

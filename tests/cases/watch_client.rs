@@ -38,16 +38,16 @@ fn write_kissconfig_with_threshold(root: &Path, settle: f64, threshold: u8) {
     std::fs::write(
         root.join(".kissconfig"),
         format!(
-            "[gate]\n\
-             test_coverage_threshold = {threshold}\n\
+            "[global]\n\
              duplication_enabled = false\n\
              orphan_module_enabled = false\n\
              \n\
-             [gate.max_unit_test_seconds]\n\
-             \"*\" = 60\n\
+[test]\n\
+             test_coverage_threshold = {threshold}\n\
+             watch_settle_seconds = {settle}\n\
              \n\
-             [test]\n\
-             watch_settle_seconds = {settle}\n"
+             [test.max_unit_test_seconds]\n\
+             \"*\" = 60\n"
         ),
     )
     .unwrap();

@@ -45,7 +45,7 @@ fn zero_limit_selectors_timeout_without_invoking_runner() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),
-        r#"[gate]
+        r#"[test]
 max_unit_test_seconds = [["tests/allowed", 60], ["*", 0]]
 "#,
     )

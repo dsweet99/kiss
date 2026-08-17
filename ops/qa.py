@@ -998,11 +998,12 @@ def qa_fixture(prefix: str) -> Iterator[Fixture]:
         # concurrent races also run from `nested`, so write the same file there
         # (otherwise ensure_default_config_exists / defaults restore threshold 90).
         kissconfig = (
-            "[gate]\n"
-            "test_coverage_threshold = 0\n"
+            "[global]\n"
             "duplication_enabled = false\n"
             "orphan_module_enabled = false\n"
-            "[gate.max_unit_test_seconds]\n"
+            "[test]\n"
+            "test_coverage_threshold = 0\n"
+            "[test.max_unit_test_seconds]\n"
             '"*" = 30\n'
         )
         (root / ".kissconfig").write_text(kissconfig)
@@ -1078,10 +1079,11 @@ def write_witness_config(repo: Path) -> None:
     # Threshold 0: witness repos intentionally leave `gamma` untested so cache /
     # selection behavior can be observed without a coverage-gate failure.
     (repo / ".kissconfig").write_text(
-        "[gate]\n"
-        "test_coverage_threshold = 0\n"
+        "[global]\n"
         "duplication_enabled = false\n"
-        "orphan_module_enabled = false\n",
+        "orphan_module_enabled = false\n"
+        "[test]\n"
+        "test_coverage_threshold = 0\n",
     )
     (repo / ".gitignore").write_text(".kiss/\ntarget/\n.pytest_cache/\n__pycache__/\n")
 
@@ -1694,10 +1696,11 @@ def write_aggregate_benchmark_repo(repo: Path) -> None:
     (repo / "src").mkdir(parents=True)
     (repo / "tests").mkdir(parents=True)
     (repo / ".kissconfig").write_text(
-        "[gate]\n"
-        "test_coverage_threshold = 0\n"
+        "[global]\n"
         "duplication_enabled = false\n"
-        "orphan_module_enabled = false\n",
+        "orphan_module_enabled = false\n"
+        "[test]\n"
+        "test_coverage_threshold = 0\n",
     )
     (repo / "Cargo.toml").write_text(
         "[package]\n"

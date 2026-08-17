@@ -202,6 +202,7 @@ fn run_cov_for_watch(args: &CovCommandArgs<'_>) -> (i32, Option<String>) {
 
     if args.gate_config.test_coverage_threshold == 0
         && args.gate_config.unit_test_time_gate_disabled()
+        && args.gate_config.max_num_tests_gate_disabled()
         && !args.bypass_gate
     {
         return (run_cov_command(args), None);

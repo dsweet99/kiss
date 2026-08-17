@@ -14,10 +14,12 @@ fn cli_corpus_exercises_analysis_gate_paths() {
     let config = home.path().join("permissive.toml");
     fs::write(
         &config,
-        "[gate]\n\
-         test_coverage_threshold = 0\n\
+        "[global]\n\
          duplication_enabled = false\n\
          orphan_module_enabled = false\n\
+         \n\
+[test]\n\
+         test_coverage_threshold = 0\n\
          \n\
          [python]\n\
          statements_per_function = 1000\n\
@@ -180,7 +182,7 @@ fn cli_corpus_exercises_mixed_repo_reporting_paths() {
         );
     }
 
-    assert!(fs::read_to_string(mimic_out).unwrap().contains("[gate]"));
+    assert!(fs::read_to_string(mimic_out).unwrap().contains("[global]"));
     assert!(fs::read_to_string(graph_out).unwrap().contains("graph"));
 }
 
@@ -189,10 +191,12 @@ fn write_mixed_repo(repo: &std::path::Path) {
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(
         repo.join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 0\n\
+        "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n",
+         orphan_module_enabled = false\n\
+\n\
+[test]\n\
+         test_coverage_threshold = 0\n",
     )
     .unwrap();
     fs::write(

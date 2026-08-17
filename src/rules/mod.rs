@@ -101,17 +101,18 @@ pub fn run_config(
     } else {
         println!("# Source: .kissconfig");
     }
-    println!("\n[gate]");
-    println!("test_coverage_threshold = {}", gate.test_coverage_threshold);
-    println!("test_coverage_scope = \"{}\"", gate.test_coverage_scope);
+    println!("\n[global]");
     println!("min_similarity = {:.2}", gate.min_similarity);
     println!("duplication_enabled = {}", gate.duplication_enabled);
     println!("orphan_module_enabled = {}", gate.orphan_module_enabled);
+    println!("\n[test]");
+    println!("test_coverage_threshold = {}", gate.test_coverage_threshold);
+    println!("test_coverage_scope = \"{}\"", gate.test_coverage_scope);
+    println!("max_num_tests = {}", gate.max_num_tests);
     print!(
-        "\n{}",
+        "{}",
         kiss::format_nested_toml_table(&gate.max_unit_test_seconds)
     );
-    println!("\n[test]");
     println!("num_jobs = {}", test.num_jobs);
     println!("watch_settle_seconds = {}", test.watch_settle_seconds);
     if let Some(main) = &test.main_branch {

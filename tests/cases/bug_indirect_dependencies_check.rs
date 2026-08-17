@@ -17,10 +17,12 @@ fn bug_check_reports_indirect_dependencies_for_fan_in_zero_entry() {
     seed_python_runtime_coverage(root, &[("tests/test_entry.py::test_entry", vec![])]);
     fs::write(
         root.join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 0\n\
+        "[global]\n\
          duplication_enabled = false\n\
          orphan_module_enabled = false\n\
+         \n\
+[test]\n\
+         test_coverage_threshold = 0\n\
          \n\
          [python]\n\
          indirect_dependencies = 0\n",

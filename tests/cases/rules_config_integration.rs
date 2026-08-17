@@ -156,8 +156,12 @@ fn cli_config_shows_effective_configuration() {
         "Should show rust section. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("[gate]"),
-        "Should show gate section. stdout: {stdout}"
+        stdout.contains("[global]"),
+        "Should show global section. stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("[test]"),
+        "Should show test section. stdout: {stdout}"
     );
 }
 
@@ -192,7 +196,7 @@ fn cli_config_shows_gate_settings() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let gate = "[gate]\ntest_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmin_similarity = 0.90\nduplication_enabled = true\norphan_module_enabled = true\n\n[gate.max_unit_test_seconds]\n\"*\" = 2\n";
+    let gate = "[global]\nmin_similarity = 0.90\nduplication_enabled = true\norphan_module_enabled = true\n\n[test]\ntest_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_num_tests = 0\n[test.max_unit_test_seconds]\n\"*\" = 2\n";
     assert!(stdout.contains(gate), "default gate emission. stdout: {stdout}");
 }
 

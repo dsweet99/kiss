@@ -31,7 +31,7 @@ fn warm_cov_caches_after_tests_writes_records_when_snapshot_present() {
     write_src(repo);
     fs::write(
         repo.join(".kissconfig"),
-        "[gate]\ntest_coverage_threshold = 75\n",
+        "[test]\ntest_coverage_threshold = 75\n",
     )
     .unwrap();
 

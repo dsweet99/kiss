@@ -39,10 +39,12 @@ fn write_mixed_runtime_repo(repo: &TempDir) {
     fs::create_dir_all(repo.path().join("src")).unwrap();
     fs::write(
         repo.path().join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 100\n\
+        "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n",
+         orphan_module_enabled = false\n\
+\n\
+[test]\n\
+         test_coverage_threshold = 100\n",
     )
     .unwrap();
     fs::write(

@@ -1,5 +1,6 @@
 use super::*;
 use crate::analyze::FocusFilter;
+use crate::test_runner::unit_test_timing::TimingLangInclude;
 use kiss::{Config, GateConfig, TestCoverageScope};
 #[test]
 fn evaluate_records_with_time_rejects_when_coverage_gate_fails() {
@@ -198,30 +199,6 @@ fn try_evaluate_records_with_time_falls_through_on_incomplete() {
     assert!(code.is_none());
 }
 
-#[test]
-fn finish_sibling_gates_exits_nonzero_when_either_fails() {
-    assert_eq!(
-        finish_sibling_gates(SiblingGateResult {
-            coverage_failed: true,
-            time_failed: false,
-        }),
-        1
-    );
-    assert_eq!(
-        finish_sibling_gates(SiblingGateResult {
-            coverage_failed: false,
-            time_failed: true,
-        }),
-        1
-    );
-    assert_eq!(
-        finish_sibling_gates(SiblingGateResult {
-            coverage_failed: false,
-            time_failed: false,
-        }),
-        0
-    );
-}
 
 #[test]
 fn evaluate_coverage_gate_bypass_still_prints_violations() {
@@ -388,7 +365,7 @@ fn run_cov_command_hits_records_fast_path_after_seed() {
     fs::write(repo.join("a.py"), "x = 1\n").unwrap();
     fs::write(
         repo.join(".kissconfig"),
-        "[gate]\ntest_coverage_threshold = 50\nmax_unit_test_seconds = [[\"*\", 0.0]]\n",
+        "[test]\ntest_coverage_threshold = 50\nmax_unit_test_seconds = [[\"*\", 0.0]]\n",
     )
     .unwrap();
     let selector = "tests/test_a.py::test_x".to_string();

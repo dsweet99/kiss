@@ -28,7 +28,7 @@ fn test_language_and_config() {
     );
     let tmp = tempfile::TempDir::new().unwrap();
     let path = tmp.path().join("kiss.toml");
-    std::fs::write(&path, "[gate]\ntest_coverage_threshold = 80\n").unwrap();
+    std::fs::write(&path, "[test]\ntest_coverage_threshold = 80\n").unwrap();
     assert_eq!(
         load_gate_config(Some(&path), false).test_coverage_threshold,
         80

@@ -63,27 +63,30 @@ pub mod gate {
     pub const TEST_COVERAGE_SCOPE_TOML: &str = "\"codebase\"";
     /// Max wall seconds per unit test (`kiss test`); `0` disables. VISION: under 2s.
     pub const MAX_UNIT_TEST_SECONDS: f64 = 2.0;
+    /// Maximum unit-test count for `kiss test`; `0` disables.
+    pub const MAX_NUM_TESTS: usize = 0;
 }
 
 pub fn default_config_toml() -> String {
     format!(
         r#"# Default kiss configuration
 
-[gate]
-test_coverage_threshold = {gate_coverage}
-test_coverage_scope = {gate_scope}
+[global]
 min_similarity = {min_sim}
 duplication_enabled = true
 orphan_module_enabled = true
 
-[gate.max_unit_test_seconds]
-"*" = {max_unit_test_seconds}
-
 [test]
+test_coverage_threshold = {gate_coverage}
+test_coverage_scope = {gate_scope}
+max_num_tests = {max_num_tests}
 num_jobs = 4
 watch_settle_seconds = 1.0
 pytest_plugins = []
 ignore = []
+
+[test.max_unit_test_seconds]
+"*" = {max_unit_test_seconds}
 
 [python]
 statements_per_function = {py_statements}
@@ -134,6 +137,7 @@ dependency_depth = {rs_dep_depth}
         gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
         gate_scope = gate::TEST_COVERAGE_SCOPE_TOML,
         max_unit_test_seconds = gate::MAX_UNIT_TEST_SECONDS,
+        max_num_tests = gate::MAX_NUM_TESTS,
         min_sim = duplication::MIN_SIMILARITY,
         py_statements = python::STATEMENTS_PER_FUNCTION,
         py_pos_args = python::POSITIONAL_ARGS,
@@ -196,7 +200,7 @@ mod tests {
         let toml = default_config_toml();
         assert!(toml.parse::<toml::Table>().is_ok());
         assert!(
-            toml.contains("[gate.max_unit_test_seconds]\n\"*\" = 2"),
+            toml.contains("[test.max_unit_test_seconds]\n\"*\" = 2"),
             "init default must emit nested asterisk mapping:\n{toml}"
         );
         assert!(
@@ -204,10 +208,20 @@ mod tests {
             "init default must not emit scalar max_unit_test_seconds:\n{toml}"
         );
         assert!(
-            toml.contains(
-                "[test]\nnum_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
-            ),
-            "init default must emit [test] defaults:\n{toml}"
+            toml.contains("[global]\n"),
+            "init default must emit [global]:\n{toml}"
+        );
+        assert!(
+            toml.contains("test_coverage_threshold = 90"),
+            "init default must emit coverage under [test]:\n{toml}"
+        );
+        assert!(
+            toml.contains("max_num_tests = 0"),
+            "init default must emit max_num_tests under [test]:\n{toml}"
+        );
+        assert!(
+            toml.contains("num_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"),
+            "init default must emit [test] runtime defaults:\n{toml}"
         );
     }
 }

@@ -174,7 +174,7 @@ mod run_coverage {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(
             tmp.path().join(".kissconfig"),
-            "[test]\nnum_jobs = 0\n[gate]\ntest_coverage_threshold = 0\n",
+            "[test]\nnum_jobs = 0\ntest_coverage_threshold = 0\n",
         )
         .unwrap();
         fs::write(tmp.path().join("sample.py"), "def f():\n    return 1\n").unwrap();
@@ -198,7 +198,7 @@ mod run_coverage {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(
             tmp.path().join(".kissconfig"),
-            "[gate]\ntest_coverage_threshold = 0\nduplication_enabled = false\n",
+            "[global]\nduplication_enabled = false\n[test]\ntest_coverage_threshold = 0\n",
         )
         .unwrap();
         fs::write(
@@ -270,7 +270,7 @@ mod run_coverage {
             }),
             0
         );
-        assert!(fs::read_to_string(&mimic_out).unwrap().contains("[gate]"));
+        assert!(fs::read_to_string(&mimic_out).unwrap().contains("[global]"));
 
         let viz_out = tmp.path().join("graph.mmd");
         assert_eq!(

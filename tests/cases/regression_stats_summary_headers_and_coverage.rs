@@ -191,13 +191,13 @@ fn cli_stats_summary_respects_explicit_config_override_for_gate_behavior() {
     let local = tmp.path().join(".kissconfig");
     fs::write(
         &local,
-        "[gate]\nduplication_enabled = true\norphan_module_enabled = true\nmin_similarity = 0.7\n",
+        "[global]\nduplication_enabled = true\norphan_module_enabled = true\nmin_similarity = 0.7\n",
     )
     .unwrap();
     let custom = tmp.path().join("custom.toml");
     fs::write(
         &custom,
-        "[gate]\nduplication_enabled = false\norphan_module_enabled = false\nmin_similarity = 1.0\n",
+        "[global]\nduplication_enabled = false\norphan_module_enabled = false\nmin_similarity = 1.0\n",
     )
     .unwrap();
     let home = tmp.path().join("home");
@@ -249,7 +249,7 @@ fn cli_stats_summary_defaults_can_disable_local_config_and_restore_defaults() {
 
     fs::write(
         tmp.path().join(".kissconfig"),
-        "[gate]\nduplication_enabled = false\norphan_module_enabled = false\n",
+        "[global]\nduplication_enabled = false\norphan_module_enabled = false\n",
     )
     .unwrap();
 

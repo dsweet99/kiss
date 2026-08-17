@@ -10,7 +10,7 @@ fn batch_template_applies_per_selector_timeouts() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),
-        r#"[gate]
+        r#"[test]
 max_unit_test_seconds = [["tests/slow/dbs", 180], ["tests/allowed", 60], ["*", 0]]
 "#,
     )
@@ -35,7 +35,7 @@ fn nonzero_sla_does_not_become_pytest_wall_kill() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),
-        r#"[gate]
+        r#"[test]
 max_unit_test_seconds = [["tests/allowed", 60], ["*", 0]]
 "#,
     )

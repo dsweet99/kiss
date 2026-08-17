@@ -27,11 +27,13 @@ fn write_permissive_config_with_scope(root: &std::path::Path, scope: Option<&str
     fs::write(
         root.join(".kissconfig"),
         format!(
-            "[gate]\n\
-             test_coverage_threshold = 90\n\
-             {scope_line}\
+            "[global]\n\
              duplication_enabled = false\n\
              orphan_module_enabled = false\n\
+             \n\
+             [test]\n\
+             test_coverage_threshold = 90\n\
+             {scope_line}\
              \n\
              [python]\n\
              functions_per_file = 100\n\

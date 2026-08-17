@@ -44,10 +44,12 @@ fn write_corpus(dir: &std::path::Path) {
     // satisfied by the static test reference above.
     fs::write(
         dir.join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 0\n\
+        "[global]\n\
          duplication_enabled = false\n\
          orphan_module_enabled = false\n\
+         \n\
+[test]\n\
+         test_coverage_threshold = 0\n\
          \n\
          [thresholds]\n\
          statements_per_function = 100\n\

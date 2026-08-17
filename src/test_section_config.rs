@@ -7,6 +7,11 @@ const TEST_SECTION_KEYS: &[&str] = &[
     "watch_settle_seconds",
     "pytest_plugins",
     "ignore",
+    // Gate metrics loaded by GateConfig from the same [test] table.
+    "test_coverage_threshold",
+    "test_coverage_scope",
+    "max_unit_test_seconds",
+    "max_num_tests",
 ];
 
 #[derive(Debug, Clone)]

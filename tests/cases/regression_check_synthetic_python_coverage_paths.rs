@@ -10,10 +10,12 @@ fn synthetic_python_runtime_coverage_paths_do_not_make_check_malformed() {
     fs::write(repo.path().join("lib.py"), "VALUE = 1\n").unwrap();
     fs::write(
         repo.path().join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 100\n\
+        "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n",
+         orphan_module_enabled = false\n\
+\n\
+[test]\n\
+         test_coverage_threshold = 100\n",
     )
     .unwrap();
     seed_python_runtime_coverage(
@@ -59,10 +61,12 @@ fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
     fs::write(repo.path().join("lib.py"), "VALUE = 1\n").unwrap();
     fs::write(
         repo.path().join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 100\n\
+        "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n",
+         orphan_module_enabled = false\n\
+\n\
+[test]\n\
+         test_coverage_threshold = 100\n",
     )
     .unwrap();
     seed_python_runtime_coverage(
@@ -123,10 +127,12 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
     .unwrap();
     fs::write(
         repo.path().join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 100\n\
+        "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n",
+         orphan_module_enabled = false\n\
+\n\
+[test]\n\
+         test_coverage_threshold = 100\n",
     )
     .unwrap();
 
@@ -263,10 +269,12 @@ fn write_refreshable_python_repo(repo: &TempDir, assertion: &str) {
     .unwrap();
     fs::write(
         repo.path().join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 100\n\
+        "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n",
+         orphan_module_enabled = false\n\
+\n\
+[test]\n\
+         test_coverage_threshold = 100\n",
     )
     .unwrap();
 }

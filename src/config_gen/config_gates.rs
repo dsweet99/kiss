@@ -165,7 +165,7 @@ fn test_infer_gate_config_no_orphans_module_enabled() {
 fn test_write_mimic_config_smoke() {
     let tmp = tempfile::tempdir().unwrap();
     let out = tmp.path().join("mimic_out.toml");
-    let toml = "[gate]\ntest_coverage_threshold = 90\n";
+    let toml = "[test]\ntest_coverage_threshold = 90\n";
     write_mimic_config(&out, toml, 0, 0).unwrap();
     assert!(out.exists());
 }

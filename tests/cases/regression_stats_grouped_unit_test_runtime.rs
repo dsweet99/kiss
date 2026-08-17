@@ -7,12 +7,14 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
-const CONFIG: &str = "[gate]\n\
-test_coverage_threshold = 0\n\
+const CONFIG: &str = "[global]\n\
 duplication_enabled = false\n\
 orphan_module_enabled = false\n\
 \n\
-[gate.max_unit_test_seconds]\n\
+[test]\n\
+test_coverage_threshold = 0\n\
+\n\
+[test.max_unit_test_seconds]\n\
 \"tests/slow/dbs\" = 180\n\
 \"tests/slow\" = 60\n\
 \"tests/fast\" = 2\n\

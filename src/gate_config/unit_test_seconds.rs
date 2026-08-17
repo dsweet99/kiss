@@ -103,12 +103,12 @@ pub fn format_toml_rules(rules: &[(String, f64)]) -> String {
     for (pattern, secs) in rules {
         out.push_str(&format!("\"{pattern}\" = {secs}\n"));
     }
-    // Caller wraps as [gate.max_unit_test_seconds] when multi-entry.
+    // Caller wraps as [test.max_unit_test_seconds] when multi-entry.
     out
 }
 
 pub fn format_nested_toml_table(rules: &[(String, f64)]) -> String {
-    let mut out = String::from("[gate.max_unit_test_seconds]\n");
+    let mut out = String::from("[test.max_unit_test_seconds]\n");
     for (pattern, secs) in rules {
         out.push_str(&format!("\"{pattern}\" = {secs}\n"));
     }
@@ -262,7 +262,7 @@ mod tests {
         assert!(format_nested_toml_table(&rules).contains("tests/fast"));
         assert_eq!(
             format_nested_toml_table(&default_max_unit_test_seconds()),
-            "[gate.max_unit_test_seconds]\n\"*\" = 2\n"
+            "[test.max_unit_test_seconds]\n\"*\" = 2\n"
         );
         assert_eq!(catch_all_limit(&rules), Some(0.0));
         assert!(validate_rules(&[]).is_err());

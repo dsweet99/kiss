@@ -206,10 +206,12 @@ fn write_incremental_rust_repo(repo: &TempDir, value: &str) {
     fs::create_dir_all(stable.join("tests")).unwrap();
     fs::write(
         repo.path().join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 100\n\
+        "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n",
+         orphan_module_enabled = false\n\
+\n\
+[test]\n\
+         test_coverage_threshold = 100\n",
     )
     .unwrap();
     fs::write(

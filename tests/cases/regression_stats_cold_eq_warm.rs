@@ -19,7 +19,7 @@ fn regression_stats_cold_and_warm_are_identical() {
     .unwrap();
     fs::write(
         repo.path().join(".kissconfig"),
-        "[gate]\ntest_coverage_threshold = 0\n",
+        "[test]\ntest_coverage_threshold = 0\n",
     )
     .unwrap();
 
