@@ -149,6 +149,12 @@ fn record_python_outcome(metrics: &mut LocalRubricMetrics, outcome: LanguagePhas
     if outcome.phase != ExecutionPhase::NoWork {
         crate::test_runner::emit_stage_time("python", outcome.phase_duration);
     }
+    if outcome.index_rebuild_duration.as_millis() > 0 {
+        crate::test_runner::emit_stage_time(
+            "selective_index_repair",
+            outcome.index_rebuild_duration,
+        );
+    }
 }
 
 fn record_rust_outcome(metrics: &mut LocalRubricMetrics, outcome: LanguagePhaseOutcome) {
@@ -158,12 +164,24 @@ fn record_rust_outcome(metrics: &mut LocalRubricMetrics, outcome: LanguagePhaseO
             metrics.rust_population.duration = outcome.phase_duration;
             metrics.rust_index_rebuild_duration += outcome.index_rebuild_duration;
             crate::test_runner::emit_stage_time("rust_population", outcome.phase_duration);
+            if outcome.index_rebuild_duration.as_millis() > 0 {
+                crate::test_runner::emit_stage_time(
+                    "selective_index_repair",
+                    outcome.index_rebuild_duration,
+                );
+            }
         }
         ExecutionPhase::Selective(_) => {
             metrics.rust_final.summary = outcome.summary;
             metrics.rust_final.duration = outcome.phase_duration;
             metrics.rust_index_rebuild_duration += outcome.index_rebuild_duration;
             crate::test_runner::emit_stage_time("rust_final", outcome.phase_duration);
+            if outcome.index_rebuild_duration.as_millis() > 0 {
+                crate::test_runner::emit_stage_time(
+                    "selective_index_repair",
+                    outcome.index_rebuild_duration,
+                );
+            }
         }
         ExecutionPhase::NoWork => {}
     }

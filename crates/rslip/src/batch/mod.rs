@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use rpytest_runner::PytestRunRequest;
 
@@ -52,7 +53,11 @@ enum PublishedRuntime {
 #[derive(Debug)]
 pub enum RslipBatchProgress {
     /// Cache prepare finished; misses still need pytest execution.
-    Prepared { cache_hits: usize, cache_misses: usize },
+    Prepared {
+        cache_hits: usize,
+        cache_misses: usize,
+        elapsed: Duration,
+    },
     /// One or more selectors finalized (print payload only).
     SelectorFinalized {
         outcomes: Vec<(usize, Result<RslipOutcome, RslipError>)>,
@@ -79,11 +84,13 @@ impl Rslip {
         mut on_progress: impl FnMut(RslipBatchProgress),
     ) -> Vec<Result<RslipOutcome, RslipError>> {
         assert!(jobs > 0, "jobs must be greater than zero");
+        let prepare_started = Instant::now();
         if let Some(sealed) = try_prepare_from_warm_hit_seal(&reqs) {
             let cache_hits = sealed.len();
             on_progress(RslipBatchProgress::Prepared {
                 cache_hits,
                 cache_misses: 0,
+                elapsed: prepare_started.elapsed(),
             });
             on_progress(RslipBatchProgress::CachedStatusDump {
                 body: format_cached_status_dump(&sealed),
@@ -100,11 +107,6 @@ impl Rslip {
             .and_then(|req| req.content_fingerprint.clone());
         let (mut out, misses, digest_union) = prepare_rslip_batch_slots(reqs);
         let cache_misses = misses.len();
-        on_progress(RslipBatchProgress::Prepared {
-            cache_hits: out.iter().filter(|slot| slot.is_some()).count(),
-            cache_misses,
-        });
-        emit_prepare_resolved_progress(&out, &mut on_progress);
         if cache_misses == 0 {
             if let (Some(context), Some(cache_root), Some(source_root)) =
                 (context_fingerprint.as_deref(), cache_root, source_root)
@@ -118,8 +120,20 @@ impl Rslip {
                     content_fingerprint,
                 );
             }
+            on_progress(RslipBatchProgress::Prepared {
+                cache_hits: out.iter().filter(|slot| slot.is_some()).count(),
+                cache_misses,
+                elapsed: prepare_started.elapsed(),
+            });
+            emit_prepare_resolved_progress(&out, &mut on_progress);
             return finalize_rslip_batch_results(out);
         }
+        on_progress(RslipBatchProgress::Prepared {
+            cache_hits: out.iter().filter(|slot| slot.is_some()).count(),
+            cache_misses,
+            elapsed: prepare_started.elapsed(),
+        });
+        emit_prepare_resolved_progress(&out, &mut on_progress);
         run_rslip_misses(self, misses, cache_misses, jobs, &mut out, &mut on_progress);
         finalize_rslip_batch_results(out)
     }

@@ -146,9 +146,24 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
 }
 
 pub(crate) fn emit_test_progress(message: &str) {
-    use std::io::Write;
-    println!("{message}");
-    let _ = std::io::stdout().flush();
+    // Write the current STDOUT fd so watch/progress lines stay visible after
+    // `dup2` capture and do not flush a separate `std::io::stdout()` handle
+    // that may already be wrapped by a `BufWriter`.
+    #[cfg(unix)]
+    {
+        let mut line = Vec::with_capacity(message.len() + 1);
+        line.extend_from_slice(message.as_bytes());
+        line.push(b'\n');
+        unsafe {
+            let _ = libc::write(libc::STDOUT_FILENO, line.as_ptr().cast(), line.len());
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        use std::io::Write;
+        println!("{message}");
+        let _ = std::io::stdout().flush();
+    }
 }
 
 /// Log a named stage duration to stdout as `kiss test: stage <name> <ms>ms`.

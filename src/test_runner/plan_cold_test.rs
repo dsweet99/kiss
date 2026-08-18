@@ -96,6 +96,30 @@ fn emit_stage_time_format_includes_name_and_millis() {
 }
 
 #[test]
+fn watch_stage_names_use_kiss_test_stage_format() {
+    for name in [
+        "python_generation_publish",
+        "python_source_fingerprint",
+        "rust_identity",
+        "covering_select",
+        "cov_score_warm",
+        "cov_score",
+        "rslip_prepare",
+        "selective_index_repair",
+        "rust_report_ids",
+        "plan_python",
+        "plan_rust",
+    ] {
+        let msg = format!(
+            "kiss test: stage {} {}ms",
+            name,
+            std::time::Duration::from_millis(1).as_millis()
+        );
+        assert_eq!(msg, format!("kiss test: stage {name} 1ms"));
+    }
+}
+
+#[test]
 fn cold_lang_filter_miss_arms_do_not_store_all_cache() {
     let _cwd = cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();

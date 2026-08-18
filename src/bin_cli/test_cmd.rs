@@ -247,7 +247,7 @@ fn run_cov_for_watch(args: &CovCommandArgs<'_>) -> (i32, Option<String>) {
         && args.gate_config.unit_test_time_gate_disabled()
         && !args.bypass_gate
     {
-        return (run_cov_command(args), None);
+        return (run_watch_cov_score(args), None);
     }
 
     let ignore = merge_check_ignore_prefixes(args.ignore);
@@ -289,12 +289,19 @@ fn run_cov_for_watch(args: &CovCommandArgs<'_>) -> (i32, Option<String>) {
             return (1, Some(msg));
         }
     }
-    let code = run_cov_command(args);
+    let code = run_watch_cov_score(args);
     if code == 0 {
         (0, None)
     } else {
         (code, Some("coverage gate failed".to_string()))
     }
+}
+
+fn run_watch_cov_score(args: &CovCommandArgs<'_>) -> i32 {
+    let started = std::time::Instant::now();
+    let code = run_cov_command(args);
+    crate::test_runner::emit_stage_time("cov_score", started.elapsed());
+    code
 }
 
 /// Local one-shot path after successful tests: evaluate coverage from cache only.

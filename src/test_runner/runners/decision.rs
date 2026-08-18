@@ -80,6 +80,15 @@ pub(crate) fn combined_selectors(
 pub(crate) fn combined_selectors_with_direct(
     input: CombinedSelectorInput<'_>,
 ) -> Result<SelectorPlan, String> {
+    let covering_started = std::time::Instant::now();
+    let plan = combined_selectors_with_direct_inner(input)?;
+    crate::test_runner::emit_stage_time("covering_select", covering_started.elapsed());
+    Ok(plan)
+}
+
+fn combined_selectors_with_direct_inner(
+    input: CombinedSelectorInput<'_>,
+) -> Result<SelectorPlan, String> {
     let plan_trace = std::env::var_os("KISS_PLAN_TRACE").is_some();
     let mut mark = std::time::Instant::now();
     let mut lap = |label: &str| {

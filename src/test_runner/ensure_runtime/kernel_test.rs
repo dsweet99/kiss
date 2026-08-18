@@ -79,7 +79,7 @@ impl LanguageRuntime for FakeRuntime {
                 duration: std::time::Duration::from_millis(1),
             });
             if self.state.borrow().run_exit_code == 0 {
-                println!("PASS: {sel}");
+                crate::test_runner::emit_test_progress(&format!("PASS: {sel}"));
             }
         }
         Ok(OutcomeBatch {

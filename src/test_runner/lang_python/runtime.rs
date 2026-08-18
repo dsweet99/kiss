@@ -98,13 +98,16 @@ impl LanguageRuntime for PythonRuntime {
             repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
         };
         if let Some(universe) = batch.publication_universe.as_ref() {
+            let started = std::time::Instant::now();
             publish_python_derived_state_with_filter(
                 &request.repo_root,
                 Some(universe),
                 &request.extras.python,
                 is_indexable,
             )?;
+            crate::test_runner::emit_stage_time("python_generation_publish", started.elapsed());
         } else {
+            let started = std::time::Instant::now();
             let deltas = selector_deltas_from_cached_outcomes(
                 &request.repo_root,
                 &batch.selectors,
@@ -117,6 +120,7 @@ impl LanguageRuntime for PythonRuntime {
                 &deltas,
                 GenerationReason::IncompleteRepair,
             )?;
+            crate::test_runner::emit_stage_time("selective_index_repair", started.elapsed());
         }
         crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
         Ok(())

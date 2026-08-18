@@ -28,6 +28,18 @@ pub(crate) fn warm_cov_caches_after_tests(
     gate: &GateConfig,
     pytest_args: &[String],
 ) {
+    let started = std::time::Instant::now();
+    warm_cov_caches_after_tests_inner(universe_root, lang_filter, ignore_user, gate, pytest_args);
+    crate::test_runner::emit_stage_time("cov_score_warm", started.elapsed());
+}
+
+fn warm_cov_caches_after_tests_inner(
+    universe_root: &Path,
+    lang_filter: Option<Language>,
+    ignore_user: &[String],
+    gate: &GateConfig,
+    pytest_args: &[String],
+) {
     let ignore = merge_check_ignore_prefixes(ignore_user);
     if gate.test_coverage_threshold == 0 && gate.unit_test_time_gate_disabled() {
         return;

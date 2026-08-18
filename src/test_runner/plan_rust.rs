@@ -22,11 +22,14 @@ pub(super) fn rust_population_current_for_all_selectors(
     {
         return false;
     }
+    let identity_started = std::time::Instant::now();
     let Ok(identity) =
         crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(repo_root, &[])
     else {
+        crate::test_runner::emit_stage_time("rust_identity", identity_started.elapsed());
         return false;
     };
+    crate::test_runner::emit_stage_time("rust_identity", identity_started.elapsed());
     let mut expected = selectors.to_vec();
     expected.sort();
     expected.dedup();

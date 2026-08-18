@@ -102,6 +102,9 @@ fn run_rslip_selectors_with_runner(
         reqs,
         args.jobs,
         |event| {
+            if let RslipBatchProgress::Prepared { elapsed, .. } = &event {
+                crate::test_runner::emit_stage_time("rslip_prepare", *elapsed);
+            }
             handle_rslip_batch_progress(event, &runnable_selectors, gate, &mut stdout);
         },
     );
@@ -227,6 +230,7 @@ fn handle_rslip_batch_progress(
         RslipBatchProgress::Prepared {
             cache_hits,
             cache_misses,
+            elapsed: _,
         } => {
             crate::test_runner::emit_test_progress(&format!(
                 "kiss test: rslip prepared hits={cache_hits} misses={cache_misses}"
