@@ -3,13 +3,15 @@ use super::{
     FreshCheckAggregateExport, build_instance_export_requests, build_instance_results,
     finish_fresh_batch_after_export, finish_fresh_check_aggregate_after_export,
 };
-use crate::execute_or_reuse::batch_events::{BatchCompilerArtifact, BatchTestStarted, BatchTestTerminal};
+use crate::execute_or_reuse::batch_events::{
+    BatchCompilerArtifact, BatchTestStarted, BatchTestTerminal,
+};
 use crate::execute_or_reuse::batch_export::ExportCounters;
+use crate::execute_or_reuse::batch_shim::BatchShimMetadata;
 use crate::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
 use crate::plan::batch_plan::{
     CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
 };
-use crate::execute_or_reuse::batch_shim::BatchShimMetadata;
 use crate::rust_cov_cache::load_rust_cov_cache_entry;
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, witness_batch_tools,
@@ -65,9 +67,9 @@ fn build_instance_results_and_export_requests_cover_finish_helpers() {
         executable: Some("/tmp/bin".to_string()),
         filenames: vec!["/tmp/a.o".to_string()],
         nextest_binary_id: None,
-    libtest_binary_prefix: None,
-    src_path: None,
-    is_test_harness: false,
+        libtest_binary_prefix: None,
+        src_path: None,
+        is_test_harness: false,
     }];
     let requests =
         build_instance_export_requests(&instances, &[shim], &artifacts).expect("export requests");
@@ -382,7 +384,26 @@ fn finish_fresh_check_aggregate_success_publishes_final_state_after_entries() {
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     let entry = load_rust_cov_cache_entry(&req.cache_root, &fingerprint)
         .expect("entry is readable after final publication");
-    assert_eq!(entry.coverage.files["src/lib.rs"], BTreeSet::from([1]));
+    assert!(
+        entry.coverage.files.is_empty(),
+        "check-aggregate entries must not duplicate binary line maps"
+    );
+    let aggregate: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(req.cache_root.join("check_aggregate.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        aggregate["binaries"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|binary| {
+                binary["line_map"]["src/lib.rs"]
+                    .as_array()
+                    .is_some_and(|lines| lines.iter().any(|line| line.as_u64() == Some(1)))
+            }),
+        "binary line map must live in check_aggregate.json: {aggregate}"
+    );
     assert!(req.cache_root.join("check_aggregate.json").exists());
     assert!(req.cache_root.join("index.json").exists());
     assert!(req.cache_root.join("population.json").exists());

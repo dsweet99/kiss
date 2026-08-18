@@ -37,6 +37,29 @@ fn strict_current_rejects_stale_identity_but_reusable_prior_accepts_it() {
 }
 
 #[test]
+fn selector_coverage_from_generation_unions_binary_line_maps() {
+    let fixture = AggregateFixture::new();
+    publish_check_aggregate(&fixture.req, &fixture.aggregate).unwrap();
+    let maps = selector_coverage_from_check_aggregate_generation(
+        &fixture.req.cache_root,
+        &fixture.identity.generation_fingerprint,
+    )
+    .expect("generation coverage");
+    let selector = fixture.aggregate.selectors[0].as_str();
+    let coverage = maps.get(selector).expect("selector coverage");
+    assert!(coverage.files.contains_key("src/lib.rs"));
+    assert!(
+        selector_coverage_from_check_aggregate_generation(
+            &fixture.req.cache_root,
+            "other-generation",
+        )
+        .is_none()
+    );
+    let from_validated = selector_coverage_from_validated(&fixture.aggregate, selector);
+    assert_eq!(from_validated.files, coverage.files);
+}
+
+#[test]
 fn loader_rejects_incomplete_selector_mapping() {
     let fixture = AggregateFixture::new();
     publish_check_aggregate(&fixture.req, &fixture.aggregate).unwrap();

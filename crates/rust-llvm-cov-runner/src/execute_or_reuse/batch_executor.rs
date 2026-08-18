@@ -1,18 +1,18 @@
-use crate::publish_derived::batch_derived::population_derived_state_stale;
 use crate::execute_or_reuse::batch_executor_fresh::execute_fresh_batch_with_exporter;
 use crate::execute_or_reuse::batch_export::SubprocessInstanceExporter;
 use crate::execute_or_reuse::batch_export_tools::resolve_export_tools_from_rustc;
+use crate::execute_or_reuse::batch_lock::lock_batch;
+use crate::execute_or_reuse::batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult};
+use crate::execute_or_reuse::batch_run::default_batch_subprocess_runner;
+use crate::execute_or_reuse::worker::cleanup_legacy_worker_data_nonblocking;
 use crate::plan::batch_fingerprint::{
     RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity, entry_fingerprint,
 };
-use crate::execute_or_reuse::batch_lock::lock_batch;
 use crate::plan::batch_plan::{
     CoverageOutputMode, RustCoverageBatchPlan, RustCoverageBatchRequest,
     build_rust_coverage_batch_plan,
 };
-use crate::execute_or_reuse::batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult};
-use crate::execute_or_reuse::batch_run::default_batch_subprocess_runner;
-use crate::execute_or_reuse::worker::cleanup_legacy_worker_data_nonblocking;
+use crate::publish_derived::batch_derived::population_derived_state_stale;
 use crate::{RustCovCacheStatus, RustLlvmCovError, RustLlvmCovOutcome};
 use rpytest_runner::TestStatus;
 use std::collections::BTreeMap;
@@ -24,7 +24,10 @@ fn default_instance_exporter(
 ) -> Result<SubprocessInstanceExporter, RustLlvmCovError> {
     let export_tools = resolve_export_tools_from_rustc(std::ffi::OsStr::new("rustc"))?;
     let ignore_filename_regex =
-        crate::execute_or_reuse::batch_export_ignore::resolve_ignore_filename_regex(req, &plan.build_target)?;
+        crate::execute_or_reuse::batch_export_ignore::resolve_ignore_filename_regex(
+            req,
+            &plan.build_target,
+        )?;
     Ok(SubprocessInstanceExporter::new(
         export_tools,
         ignore_filename_regex,
@@ -77,16 +80,18 @@ where
             .iter()
             .all(|selector| selector_timeout_is_ban(req, selector))
     {
-        return Ok(with_process_reverse_query_counters(RustCoverageBatchResult {
-            completed: req
-                .logical_selectors
-                .iter()
-                .map(|selector| banned_timeout_outcome(selector))
-                .collect(),
-            batch_error: None,
-            counters: RustCoverageBatchCounters::default(),
-            test_binaries: Vec::new(),
-        }));
+        return Ok(with_process_reverse_query_counters(
+            RustCoverageBatchResult {
+                completed: req
+                    .logical_selectors
+                    .iter()
+                    .map(|selector| banned_timeout_outcome(selector))
+                    .collect(),
+                batch_error: None,
+                counters: RustCoverageBatchCounters::default(),
+                test_binaries: Vec::new(),
+            },
+        ));
     }
 
     if matches!(
@@ -131,9 +136,7 @@ where
 fn with_process_reverse_query_counters(
     mut result: RustCoverageBatchResult,
 ) -> RustCoverageBatchResult {
-    result
-        .counters
-        .incorporate_process_reverse_query_counters();
+    result.counters.incorporate_process_reverse_query_counters();
     result
 }
 
@@ -152,7 +155,9 @@ fn finalize_after_fresh_batch(
         return Ok(());
     }
     apply_population_derived_publication(req, tools, identity, result)?;
-    crate::publish_derived::batch_derived::maybe_prune_obsolete_selective_after_batch(req, identity, result)?;
+    crate::publish_derived::batch_derived::maybe_prune_obsolete_selective_after_batch(
+        req, identity, result,
+    )?;
     result.counters.legacy_cleanup_deferred = legacy_cleanup_deferred;
     Ok(())
 }
@@ -176,14 +181,19 @@ fn apply_population_derived_publication(
     if result.batch_error.is_some() {
         return Ok(());
     }
-    let selectors = req.population_publication_selectors.as_deref().unwrap_or(&[]);
-    if let Some(publish) = crate::publish_derived::batch_derived::try_publish_population_derived_state_with_binaries(
-        req,
-        tools,
-        identity,
-        selectors,
-        &result.test_binaries,
-    )? {
+    let selectors = req
+        .population_publication_selectors
+        .as_deref()
+        .unwrap_or(&[]);
+    if let Some(publish) =
+        crate::publish_derived::batch_derived::try_publish_population_derived_state_with_binaries(
+            req,
+            tools,
+            identity,
+            selectors,
+            &result.test_binaries,
+        )?
+    {
         result.counters.derived_state_published = true;
         result.counters.derived_repair = publish.derived_repair;
         result.counters.entry_generation_count = publish.entry_generation_count;
@@ -309,13 +319,20 @@ fn all_hit_outcomes(
 ) -> Result<Option<Vec<RustLlvmCovOutcome>>, RustLlvmCovError> {
     let mut completed = Vec::with_capacity(req.logical_selectors.len());
     let mut saw_cache_hit = false;
+    let aggregate = crate::load_current_check_aggregate_snapshot(
+        &req.cache_root,
+        &req.source_root,
+        identity,
+        None,
+    )
+    .map(|snapshot| snapshot.aggregate);
     for selector in &req.logical_selectors {
         if selector_timeout_is_ban(req, selector) {
             completed.push(banned_timeout_outcome(selector));
             continue;
         }
         let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, selector);
-        let Some(entry) =
+        let Some(mut entry) =
             crate::rust_cov_cache::load_rust_cov_cache_entry(&req.cache_root, &fingerprint)
         else {
             return Ok(None);
@@ -323,6 +340,11 @@ fn all_hit_outcomes(
         // FAIL/TIMEOUT must be re-executed; only Passed outcomes are cache-reusable.
         if entry.status != TestStatus::Passed {
             return Ok(None);
+        }
+        if entry.coverage.files.is_empty()
+            && let Some(aggregate) = &aggregate
+        {
+            entry.coverage = crate::selector_coverage_from_validated(aggregate, selector);
         }
         // Match Python entry_is_reusable: empty coverage is not reusable.
         if entry.coverage.files.is_empty() {
@@ -335,9 +357,8 @@ fn all_hit_outcomes(
     // publish (or when stores invalidated entry_state), skip rather than fail
     // the reusable hit path; seal write errors still propagate when state is present.
     if saw_cache_hit
-        && crate::publish_derived::batch_entry_state::read_entry_state(&req.cache_root).is_some_and(
-            |state| state.generation_fingerprint == identity.generation_fingerprint,
-        )
+        && crate::publish_derived::batch_entry_state::read_entry_state(&req.cache_root)
+            .is_some_and(|state| state.generation_fingerprint == identity.generation_fingerprint)
     {
         crate::execute_or_reuse::batch_warm_hit_seal::write_warm_all_hit_seal(req, identity)
             .map_err(RustLlvmCovError::Io)?;

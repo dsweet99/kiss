@@ -151,12 +151,19 @@ fn conservative_check_aggregate_publish_writes_valid_population_index() {
     .expect("aggregate-backed population state");
     assert!(state.line_index.contains_key("src/a.rs"));
     assert!(state.line_index.contains_key("src/b.rs"));
-    // In-memory check-aggregate index is compact (keys only); on-disk index.json
-    // still stores the full conservative file→all-selectors map for other readers.
+    // In-memory and on-disk check-aggregate indexes are compact (keys only).
     assert!(state.line_index["src/a.rs"].is_empty());
     assert!(state.line_index["src/b.rs"].is_empty());
     assert_eq!(state.selectors, fixture.selectors);
     assert!(crate::is_check_aggregate_population(&state));
+    let index: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(fixture.req.cache_root.join("index.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        index["files"]["src/a.rs"],
+        serde_json::json!([]),
+        "on-disk check-aggregate index must not duplicate the selector universe per file"
+    );
     let population: serde_json::Value = serde_json::from_slice(
         &std::fs::read(fixture.req.cache_root.join("population.json")).unwrap(),
     )

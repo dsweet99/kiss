@@ -53,15 +53,13 @@ pub(super) fn witness_batch_derived(
     assert!(counters.derived_repair);
     assert_eq!(
         generation_entries_fingerprint(&req.cache_root, &identity.generation_fingerprint).unwrap(),
-        std::fs::read_to_string(req.cache_root.join("index.json"))
-            .unwrap()
-            .lines()
-            .find_map(|line| {
-                line.trim()
-                    .strip_prefix("\"entries_fingerprint\": \"")
-                    .and_then(|rest| rest.strip_suffix("\","))
-            })
+        serde_json::from_slice::<serde_json::Value>(
+            &std::fs::read(req.cache_root.join("index.json")).unwrap()
+        )
+        .unwrap()["entries_fingerprint"]
+            .as_str()
             .expect("entries fingerprint in index")
+            .to_string()
     );
     assert!(!population_derived_state_stale(req, tools, &identity).unwrap());
     witness_population_state_loaders(root, req, &identity);

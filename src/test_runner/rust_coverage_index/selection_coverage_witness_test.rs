@@ -1,6 +1,6 @@
 use super::{
     ResolvedRustPopulation, current_partial_population_covers_selection,
-    select_rust_source_selectors_for_basis,
+    planned_check_aggregate_line_selectors, select_rust_source_selectors_for_basis,
 };
 use crate::test_runner::coverage_decision::{CoverageFreshness, SelectionBasis};
 use rust_llvm_cov_runner::RustPopulationState;
@@ -116,6 +116,26 @@ fn check_aggregate_source_selection_returns_population_or_empty() {
     )
     .expect("selection");
     assert!(selected.is_empty());
+}
+
+#[test]
+fn check_aggregate_line_selectors_drop_names_outside_the_planned_population() {
+    let planned = vec!["tests::covers_src".to_string()];
+    let selected = BTreeSet::from([
+        "build_check_aggregate_reports_missing_binary_identity_and_line_map".to_string(),
+        "tests::covers_src".to_string(),
+    ]);
+    assert_eq!(
+        planned_check_aggregate_line_selectors(&selected, &planned),
+        BTreeSet::from(["tests::covers_src".to_string()])
+    );
+    assert!(
+        planned_check_aggregate_line_selectors(
+            &BTreeSet::from(["nextest_only_name".to_string()]),
+            &planned
+        )
+        .is_empty()
+    );
 }
 
 #[test]

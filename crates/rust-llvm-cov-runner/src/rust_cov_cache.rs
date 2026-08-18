@@ -56,7 +56,6 @@ pub fn repo_relative_coverage_file(source_root: &Path, file: &str) -> Option<Str
     (rel.ends_with(".rs") && !rel.starts_with(".kiss/") && !rel.starts_with('<')).then_some(rel)
 }
 
-
 pub(crate) fn normalized_source_root(source_root: &std::path::Path) -> String {
     source_root
         .canonicalize()
@@ -98,10 +97,7 @@ pub fn generation_entries_fingerprint(cache_root: &Path, generation: &str) -> io
     Ok(format!("{h:016x}"))
 }
 
-fn collect_generation_entry_names(
-    entries_dir: &Path,
-    generation: &str,
-) -> io::Result<Vec<String>> {
+fn collect_generation_entry_names(entries_dir: &Path, generation: &str) -> io::Result<Vec<String>> {
     let mut names = Vec::new();
     let entries = match fs::read_dir(entries_dir) {
         Ok(entries) => entries,
@@ -161,6 +157,12 @@ fn entry_equal_except_duration(left: &RustCovCacheEntry, right: &RustCovCacheEnt
 /// generation fingerprint is unchanged. Population / generation bumps still
 /// rewrite because `generation_fingerprint` differs.
 fn entry_stable_for_generation(left: &RustCovCacheEntry, right: &RustCovCacheEntry) -> bool {
+    if left.coverage.files.is_empty() && !right.coverage.files.is_empty() {
+        // CheckAggregate stores compact entries (no line maps). A later
+        // SelectorEntries publish for the same generation must be allowed to
+        // fill coverage; empty-to-full is not map churn.
+        return false;
+    }
     left.schema_version == right.schema_version
         && left.generation_fingerprint == right.generation_fingerprint
         && left.selector == right.selector
@@ -188,16 +190,11 @@ pub fn store_rust_cov_cache_entry(
         .parent()
         .ok_or_else(|| io::Error::other("cache path has no parent"))?;
     let tmp_path = parent.join(format!(".{}.{}.tmp", fingerprint, rust_cov_unique_suffix()));
-    kiss_publication_barrier::publish_atomically(
-        "rust_selector_entry",
-        &path,
-        &tmp_path,
-        |file| {
-            serde_json::to_writer(&mut *file, entry).map_err(io::Error::other)?;
-            file.write_all(b"\n")?;
-            Ok(())
-        },
-    )
+    kiss_publication_barrier::publish_atomically("rust_selector_entry", &path, &tmp_path, |file| {
+        serde_json::to_writer(&mut *file, entry).map_err(io::Error::other)?;
+        file.write_all(b"\n")?;
+        Ok(())
+    })
     .map_err(|err| {
         io::Error::new(
             err.kind(),
@@ -266,13 +263,16 @@ mod tests {
         second.duration = Duration::from_nanos(99_000_000);
         store_rust_cov_cache_entry(tmp.path(), "abc123", &second).unwrap();
         let after = fs::read(&path).unwrap();
-        assert_eq!(before, after, "duration-only update must keep existing bytes");
+        assert_eq!(
+            before, after,
+            "duration-only update must keep existing bytes"
+        );
 
         let mut coverage_churn = second.clone();
-        coverage_churn.coverage.files.insert(
-            "src/other.rs".to_string(),
-            BTreeSet::from([3]),
-        );
+        coverage_churn
+            .coverage
+            .files
+            .insert("src/other.rs".to_string(), BTreeSet::from([3]));
         store_rust_cov_cache_entry(tmp.path(), "abc123", &coverage_churn).unwrap();
         assert_eq!(
             before,
@@ -288,6 +288,24 @@ mod tests {
         let loaded = load_rust_cov_cache_entry(tmp.path(), "abc123").unwrap();
         assert!(loaded.coverage.files.contains_key("src/other.rs"));
         assert_eq!(loaded.generation_fingerprint, "gen-b");
+    }
+
+    #[test]
+    fn store_rust_cov_cache_entry_fills_empty_check_aggregate_coverage() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut empty = RustCovCacheEntry::from(&outcome());
+        empty.generation_fingerprint = "gen-a".to_string();
+        empty.coverage.files.clear();
+        store_rust_cov_cache_entry(tmp.path(), "abc123", &empty).unwrap();
+
+        let mut filled = empty.clone();
+        filled
+            .coverage
+            .files
+            .insert("src/lib.rs".to_string(), BTreeSet::from([1, 2]));
+        store_rust_cov_cache_entry(tmp.path(), "abc123", &filled).unwrap();
+        let loaded = load_rust_cov_cache_entry(tmp.path(), "abc123").unwrap();
+        assert_eq!(loaded.coverage.files["src/lib.rs"], BTreeSet::from([1, 2]));
     }
 
     #[test]

@@ -6,9 +6,9 @@ use super::{
 use crate::RustLineCoverage;
 use crate::execute_or_reuse::batch_events::BatchTestTerminal;
 use crate::execute_or_reuse::batch_export::ExportCounters;
+use crate::execute_or_reuse::batch_shim::BatchShimMetadata;
 use crate::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
 use crate::plan::batch_plan::CoverageOutputMode;
-use crate::execute_or_reuse::batch_shim::BatchShimMetadata;
 use crate::rust_cov_cache::load_rust_cov_cache_entry;
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, witness_batch_tools,
@@ -66,7 +66,10 @@ fn finish_fresh_check_aggregate_publishes_successful_outcomes() {
             let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
             let entry = load_rust_cov_cache_entry(&req.cache_root, &fingerprint)
                 .expect("check-aggregate success should publish selector entries");
-            assert_eq!(entry.coverage.files["src/lib.rs"], BTreeSet::from([1]));
+            assert!(
+                entry.coverage.files.is_empty(),
+                "check-aggregate entries must not duplicate binary line maps"
+            );
         }
         Err(err) => {
             let rendered = format!("{err:?}");

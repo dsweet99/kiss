@@ -5,17 +5,23 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
+use crate::plan::batch_plan::RustCoverageBatchRequest;
 use crate::publish_derived::batch_check_aggregate_identity::{
     integrity_fingerprint, stable_check_aggregate_identity, union_binary_maps, validate_line_map,
     validate_ordinary_source_digests,
 };
 use crate::publish_derived::batch_derived_index::normalized_source_root;
-use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
-use crate::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_cov_cache::{repo_relative_coverage_file, repo_relative_path};
 use crate::{
     CACHE_SCHEMA_VERSION, RustLineCoverage, RustLlvmCovError, RustSnapshotDelta,
     RustTestBinaryIdentity,
+};
+
+#[path = "batch_check_aggregate_coverage.rs"]
+mod batch_check_aggregate_coverage;
+pub use batch_check_aggregate_coverage::{
+    selector_coverage_from_check_aggregate_generation, selector_coverage_from_validated,
 };
 
 pub const CHECK_AGGREGATE_SCHEMA_VERSION: &str = "rust-check-aggregate-v1";
@@ -331,16 +337,11 @@ pub fn publish_check_aggregate(
         crate::rust_cov_cache::rust_cov_unique_suffix()
     ));
     let raw = on_disk_from_validated(req, aggregate);
-    kiss_publication_barrier::publish_atomically(
-        "rust_check_aggregate",
-        &path,
-        &tmp,
-        |file| {
-            serde_json::to_writer(&mut *file, &raw).map_err(io::Error::other)?;
-            file.write_all(b"\n")?;
-            Ok(())
-        },
-    )
+    kiss_publication_barrier::publish_atomically("rust_check_aggregate", &path, &tmp, |file| {
+        serde_json::to_writer(&mut *file, &raw).map_err(io::Error::other)?;
+        file.write_all(b"\n")?;
+        Ok(())
+    })
     .map_err(RustLlvmCovError::Io)
 }
 
@@ -382,7 +383,11 @@ pub fn reusable_check_aggregate_delta(
     prior: &BTreeMap<String, String>,
     current: &BTreeMap<String, String>,
 ) -> RustSnapshotDelta {
-    crate::publish_derived::batch_derived_index::reusable_snapshot_delta(source_root, prior, current)
+    crate::publish_derived::batch_derived_index::reusable_snapshot_delta(
+        source_root,
+        prior,
+        current,
+    )
 }
 
 fn normalize_coverage_map(

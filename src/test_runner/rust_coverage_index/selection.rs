@@ -246,7 +246,14 @@ fn select_check_aggregate_current_basis(
                 .get(&rel)
                 .filter(|selected| !selected.is_empty())
             {
-                selectors.extend(selected_for_file.iter().cloned());
+                let narrowed = planned_check_aggregate_line_selectors(
+                    selected_for_file,
+                    &population.selectors,
+                );
+                if narrowed.is_empty() {
+                    return Some(population.selectors.iter().cloned().collect());
+                }
+                selectors.extend(narrowed);
             } else {
                 return Some(population.selectors.iter().cloned().collect());
             }
@@ -257,6 +264,14 @@ fn select_check_aggregate_current_basis(
         return Some(BTreeSet::new());
     }
     select_check_aggregate_source_selectors(repo_root, rust_source_paths, population)
+}
+
+fn planned_check_aggregate_line_selectors(
+    selected_for_file: &BTreeSet<String>,
+    population_selectors: &[String],
+) -> BTreeSet<String> {
+    let planned: BTreeSet<String> = population_selectors.iter().cloned().collect();
+    selected_for_file.intersection(&planned).cloned().collect()
 }
 
 fn select_check_aggregate_source_selectors(

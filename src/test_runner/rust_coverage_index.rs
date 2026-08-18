@@ -1,14 +1,18 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, OpenOptions};
-use std::io;
-use std::path::{Path, PathBuf};
+use crate::test_runner::line_selection;
+#[cfg(test)]
 use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::{
-    CoverageOutputMode, RustCoverageBatchRequest, RustCoverageToolIdentity, RustLineCoverage,
+    CoverageOutputMode, RustCoverageBatchRequest, RustCoverageToolIdentity,
     placeholder_delegated_runner_fields, resolve_batch_request_runners,
 };
-use serde::Deserialize;
-use crate::test_runner::line_selection;
+#[cfg(test)]
+use rust_llvm_cov_runner::RustLineCoverage;
+use std::collections::{BTreeMap, BTreeSet};
+#[cfg(test)]
+use std::fs;
+use std::fs::OpenOptions;
+use std::io;
+use std::path::{Path, PathBuf};
 
 pub(crate) const CACHE_SCHEMA_VERSION: &str = rust_llvm_cov_runner::CACHE_SCHEMA_VERSION;
 #[cfg(test)]
@@ -42,11 +46,11 @@ pub(crate) fn unique_suffix() -> String {
     kiss_publication_barrier::unique_process_suffix()
 }
 
-pub(crate) use rust_llvm_cov_runner::{repo_relative_coverage_file, repo_relative_path};
 #[cfg(test)]
 pub(crate) use crate::test_runner::runners::command_stdout;
 #[cfg(test)]
 pub(crate) use rust_llvm_cov_runner::is_cargo_config_input_path;
+pub(crate) use rust_llvm_cov_runner::{repo_relative_coverage_file, repo_relative_path};
 
 pub(crate) fn current_rust_coverage_batch_identity(
     repo_root: &Path,
@@ -81,7 +85,7 @@ pub(crate) fn resolved_rust_batch_request_parts(
         test_args: test_args.to_vec(),
         env: relevant_rust_batch_env(),
         force_rerun: false,
-jobs: 1,
+        jobs: 1,
         generated_config: repo_root.join(".kiss/rust_llvm_cov_cache/runs/plan/nextest.toml"),
         population_publication_selectors: None,
         delegated_runners,
@@ -171,6 +175,12 @@ mod selection;
 pub(crate) use selection::{
     ResolvedRustPopulation, resolve_rust_population_state, select_rust_source_selectors_for_basis,
 };
+
+#[path = "rust_coverage_index/line_select.rs"]
+mod line_select;
+pub(crate) use line_select::selectors_by_changed_file_line;
+#[cfg(test)]
+use line_select::{load_entries_for_line_selection, load_entry_for_line_selection};
 
 pub(crate) type RustCoverageIndex = BTreeMap<String, BTreeSet<String>>;
 
@@ -277,37 +287,6 @@ fn changed_line_rels(
     line_selection::changed_line_rels(repo_root, changed_lines, repo_relative_path)
 }
 
-fn selectors_by_changed_file_line(
-    repo_root: &Path,
-    changed_rels: &BTreeMap<String, BTreeSet<u32>>,
-    generation_fingerprint: &str,
-) -> BTreeMap<String, BTreeSet<String>> {
-    if changed_rels.is_empty() {
-        return BTreeMap::new();
-    }
-    let cache_root = rust_coverage_cache_root(repo_root);
-    if let Some(from_reverse) = rust_llvm_cov_runner::query_reverse_line_index(
-        &cache_root,
-        generation_fingerprint,
-        changed_rels,
-    ) {
-        return from_reverse;
-    }
-    let entries = load_entries_for_line_selection(&cache_root, generation_fingerprint);
-    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for (selector, coverage) in entries {
-        for (file, covered_lines) in coverage.files {
-            if let Some(rel) = repo_relative_coverage_file(repo_root, &file)
-                && let Some(wanted_lines) = changed_rels.get(&rel)
-                && !wanted_lines.is_disjoint(&covered_lines)
-            {
-                out.entry(rel).or_default().insert(selector.clone());
-            }
-        }
-    }
-    out
-}
-
 pub(crate) fn selectors_for_source_paths(
     repo_root: &Path,
     source_paths: &[PathBuf],
@@ -321,21 +300,6 @@ pub(crate) fn selectors_for_source_paths(
         }
     }
     Some(selectors)
-}
-
-fn load_entries_for_line_selection(
-    cache_root: &Path,
-    generation_fingerprint: &str,
-) -> Vec<(String, RustLineCoverage)> {
-    rust_coverage_entry_paths(cache_root)
-        .into_iter()
-        .filter_map(|entry_path| {
-            let (selector, status, coverage) =
-                load_entry_for_line_selection(&entry_path, generation_fingerprint)?;
-            (status == TestStatus::Passed && !coverage.files.is_empty())
-                .then_some((selector, coverage))
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -365,31 +329,6 @@ fn build_rust_coverage_index_with_filter(
     Ok(files)
 }
 
-fn load_entry_for_line_selection(
-    path: &Path,
-    generation_fingerprint: &str,
-) -> Option<(String, TestStatus, RustLineCoverage)> {
-    #[derive(Deserialize)]
-    struct RustCovCacheEntryForIndex {
-        schema_version: String,
-        generation_fingerprint: String,
-        selector: String,
-        status: TestStatus,
-        coverage: RustLineCoverage,
-    }
-
-    let bytes = fs::read(path).ok()?;
-    let entry: RustCovCacheEntryForIndex = serde_json::from_slice(&bytes).ok()?;
-    if entry.schema_version != CACHE_SCHEMA_VERSION {
-        return None;
-    }
-    if !generation_fingerprint.is_empty() && entry.generation_fingerprint != generation_fingerprint
-    {
-        return None;
-    }
-    Some((entry.selector, entry.status, entry.coverage))
-}
-
 #[cfg(test)]
 #[path = "rust_coverage_index/test_support.rs"]
 mod test_support;
@@ -397,8 +336,8 @@ mod test_support;
 #[cfg(test)]
 pub(crate) use test_support::{
     load_current_rust_coverage_index, normalized_repo_root, rebuild_rust_coverage_index,
-    rust_coverage_index_path, rust_population_manifest_path, write_rust_population_manifest_for_args,
-    write_test_entry,
+    rust_coverage_index_path, rust_population_manifest_path,
+    write_rust_population_manifest_for_args, write_test_entry,
 };
 
 #[cfg(test)]
@@ -417,11 +356,11 @@ mod tests_b;
 mod reusable_tests;
 
 #[cfg(test)]
-#[path = "rust_coverage_index_reusable_line_test.rs"]
-mod reusable_line_tests;
+#[path = "rust_coverage_index_manifest_test.rs"]
+mod manifest_tests;
 #[cfg(test)]
 #[path = "rust_coverage_index_reusable_integration_test.rs"]
 mod reusable_integration_tests;
 #[cfg(test)]
-#[path = "rust_coverage_index_manifest_test.rs"]
-mod manifest_tests;
+#[path = "rust_coverage_index_reusable_line_test.rs"]
+mod reusable_line_tests;

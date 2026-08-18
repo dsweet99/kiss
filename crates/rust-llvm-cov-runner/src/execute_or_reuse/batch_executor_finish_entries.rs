@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{RustLineCoverage, RustLlvmCovOutcome};
 
+#[cfg(test)]
 pub(crate) fn attach_binary_line_maps_to_completed_outcomes(
     completed: &mut [RustLlvmCovOutcome],
     selector_binary_ids: &BTreeMap<String, Vec<String>>,

@@ -255,5 +255,14 @@ mod tests {
             src.matches("log_named_step(\"llvm-cov\"").count() >= 2,
             "selector-entry and check-aggregate exports must both log llvm-cov"
         );
+        let finish = include_str!("batch_executor_finish_check_aggregate.rs");
+        assert!(
+            finish.contains("log_named_step(\"entry-store\""),
+            "check-aggregate finish must log Running/Ran entry-store"
+        );
+        assert!(
+            finish.contains("log_named_step(\"derived-publish\""),
+            "check-aggregate finish must log Running/Ran derived-publish"
+        );
     }
 }

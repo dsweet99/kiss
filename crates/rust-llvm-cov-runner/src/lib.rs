@@ -118,6 +118,7 @@ pub use batch_check_aggregate::{
     CHECK_AGGREGATE_SCHEMA_VERSION, CheckAggregateBinaryRecord, CheckAggregateSnapshot,
     ValidatedCheckAggregate, build_check_aggregate, load_current_check_aggregate_snapshot,
     load_reusable_prior_check_aggregate, publish_check_aggregate, reusable_check_aggregate_delta,
+    selector_coverage_from_check_aggregate_generation, selector_coverage_from_validated,
 };
 pub use batch_derived::{
     DerivedPublishCounters, INDEX_SCHEMA_VERSION as BATCH_INDEX_SCHEMA_VERSION,

@@ -140,6 +140,21 @@ fn selectors_for_time_gate_fails_closed_without_report_ids() {
 
 #[test]
 fn selectors_for_time_gate_maps_logical_to_path_symbol() {
+    assert_eq!(
+        time_gate_report_ids(&[]).unwrap(),
+        vec!["src/lib.rs::case".to_string()]
+    );
+}
+
+#[test]
+fn selectors_for_time_gate_maps_tests_in_ignored_files() {
+    assert_eq!(
+        time_gate_report_ids(&["lib.rs".to_string()]).unwrap(),
+        vec!["src/lib.rs::case".to_string()]
+    );
+}
+
+fn time_gate_report_ids(ignore: &[String]) -> Result<Vec<String>, String> {
     let rt = RustRuntime;
     let tmp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(tmp.path().join("src")).unwrap();
@@ -157,7 +172,7 @@ fn selectors_for_time_gate_maps_logical_to_path_symbol() {
         repo_root: tmp.path().to_path_buf(),
         mode: AcceptMode::Subset,
         lang_filter: Some(kiss::Language::Rust),
-        ignore: vec![],
+        ignore: ignore.to_vec(),
         force: false,
         force_selectors: Vec::new(),
         jobs: 1,
@@ -171,8 +186,5 @@ fn selectors_for_time_gate_maps_logical_to_path_symbol() {
             rust: vec!["tests::case".into()],
         },
     };
-    let out = rt
-        .selectors_for_time_gate(&req, &["tests::case".into()])
-        .unwrap();
-    assert_eq!(out, vec!["src/lib.rs::case".to_string()]);
+    rt.selectors_for_time_gate(&req, &["tests::case".into()])
 }

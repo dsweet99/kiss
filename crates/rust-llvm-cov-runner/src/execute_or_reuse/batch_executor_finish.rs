@@ -6,11 +6,7 @@ pub(crate) use crate::execute_or_reuse::batch_executor_finish_export::FreshCheck
 use crate::{
     RustLineCoverage, RustLlvmCovError, RustTestBinaryIdentity,
     batch_aggregate::InstanceResult,
-    batch_check_aggregate::{
-        build_check_aggregate, publish_check_aggregate, selector_binary_ids_from_outcomes,
-    },
     batch_executor_finish_bans::{aggregate_with_zero_limit_bans, unmatched_selectors_batch_error},
-    batch_executor_finish_entries::attach_binary_line_maps_to_completed_outcomes,
     batch_executor_finish_store::store_completed_outcomes,
     batch_export::{InstanceExportRequest, object_paths_for_executable},
     batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity},
@@ -19,6 +15,9 @@ use crate::{
     batch_shim::BatchShimMetadata,
     batch_shim_lookup::resolve_shim_metadata,
 };
+
+#[path = "batch_executor_finish_check_aggregate.rs"]
+mod batch_executor_finish_check_aggregate;
 
 pub(crate) struct FreshBatchFinishContext {
     pub(crate) export_started: std::time::Instant,
@@ -188,9 +187,9 @@ pub(crate) fn finish_fresh_check_aggregate_after_export(
     finish: FreshBatchFinishContext,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
     let export_phase_ms = finish.export_started.elapsed().as_millis();
-    let (mut completed, unmatched_selectors) =
+    let (completed, unmatched_selectors) =
         aggregate_with_zero_limit_bans(req, export.exact, &export.instances);
-    let mut counters = RustCoverageBatchCounters {
+    let counters = RustCoverageBatchCounters {
         build_invocations: 1,
         test_instances: export.instances.len(),
         aggregate_binaries: export.exported.len(),
@@ -220,84 +219,9 @@ pub(crate) fn finish_fresh_check_aggregate_after_export(
             test_binaries: finish.test_binaries,
         });
     }
-    let (aggregate_selectors, selector_binary_ids, test_binaries, binary_line_maps) =
-        match finish.repair_publication.clone() {
-            Some(repair) => {
-                let selectors = repair
-                    .selector_binary_ids
-                    .keys()
-                    .cloned()
-                    .collect::<Vec<_>>();
-                let mut maps = repair.retained_binary_line_maps;
-                maps.extend(export.exported);
-                (
-                    selectors,
-                    repair.selector_binary_ids,
-                    repair.test_binaries,
-                    maps,
-                )
-            }
-            None => (
-                req.logical_selectors.clone(),
-                selector_binary_ids_from_outcomes(&completed),
-                finish.test_binaries.clone(),
-                export.exported,
-            ),
-        };
-    attach_binary_line_maps_to_completed_outcomes(
-        &mut completed,
-        &selector_binary_ids,
-        &binary_line_maps,
-    );
-    if let Err(store_err) = store_completed_outcomes(req, tools, identity, &mut completed) {
-        return Ok(RustCoverageBatchResult {
-            completed,
-            batch_error: Some(store_err),
-            counters,
-            test_binaries: Vec::new(),
-        });
-    }
-    if let Some(repair) = &finish.repair_publication {
-        let fresh: BTreeSet<_> = completed.iter().map(|o| o.selector.clone()).collect();
-        let retained: Vec<String> = aggregate_selectors
-            .iter()
-            .filter(|selector| !fresh.contains(*selector))
-            .cloned()
-            .collect();
-        if let Err(store_err) = crate::rekey_selector_entries_to_identity(
-            req,
-            tools,
-            identity,
-            &repair.prior_generation,
-            &retained,
-        ) {
-            return Ok(RustCoverageBatchResult {
-                completed,
-                batch_error: Some(store_err),
-                counters,
-                test_binaries: Vec::new(),
-            });
-        }
-    }
-    let aggregate = build_check_aggregate(
-        req,
-        identity,
-        &aggregate_selectors,
-        selector_binary_ids,
-        &test_binaries,
-        binary_line_maps,
-    )?;
-    publish_check_aggregate(req, &aggregate)?;
-    crate::publish_derived::batch_derived::publish_conservative_derived_state_from_check_aggregate(
-        req, tools, identity, &aggregate,
-    )?;
-    counters.aggregate_binaries = aggregate.binaries.len();
-    Ok(RustCoverageBatchResult {
-        completed,
-        batch_error: None,
-        counters,
-        test_binaries: finish.test_binaries,
-    })
+    batch_executor_finish_check_aggregate::store_and_publish_check_aggregate(
+        req, tools, identity, export, finish, completed, counters,
+    )
 }
 
 fn reject_missing_terminal_events(

@@ -297,11 +297,14 @@ pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
     aggregate: &ValidatedCheckAggregate,
 ) -> Result<DerivedPublishCounters, RustLlvmCovError> {
     let pruned = prune_non_current_generations(&req.cache_root, &identity.generation_fingerprint)?;
-    let selector_set = aggregate.selectors.iter().cloned().collect::<BTreeSet<_>>();
+    // Compact on-disk index: covered-file keys only. CheckAggregate cannot
+    // attribute lines to individual selectors; loaders already treat key
+    // presence as "whole selector universe". Duplicating all selector names
+    // under every file made index.json ~110MB and dominated cold publish.
     let index = aggregate
         .aggregate_covered_lines
         .keys()
-        .map(|file| (file.clone(), selector_set.clone()))
+        .map(|file| (file.clone(), BTreeSet::new()))
         .collect::<RustCoverageIndex>();
     let entries_fingerprint =
         crate::publish_derived::batch_derived_index::check_aggregate_entries_fingerprint(aggregate);

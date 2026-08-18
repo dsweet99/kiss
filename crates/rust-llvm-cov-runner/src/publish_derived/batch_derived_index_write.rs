@@ -1,8 +1,8 @@
 //! Atomic write for derived `index.json`.
 
+use crate::RustLlvmCovError;
 use crate::publish_derived::batch_derived::INDEX_SCHEMA_VERSION;
 use crate::rust_cov_cache::rust_cov_unique_suffix;
-use crate::RustLlvmCovError;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
@@ -43,7 +43,7 @@ pub(crate) fn write_coverage_index(
         files: index,
     };
     kiss_publication_barrier::publish_atomically("rust_derived_index", &path, &tmp_path, |file| {
-        serde_json::to_writer_pretty(&mut *file, &payload).map_err(io::Error::other)?;
+        serde_json::to_writer(&mut *file, &payload).map_err(io::Error::other)?;
         file.write_all(b"\n")?;
         Ok(())
     })

@@ -145,7 +145,7 @@ impl LanguageRuntime for RustRuntime {
         // cache shared with cov time gates (`rust_report_id_cache`).
         let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
             &request.repo_root,
-            &request.ignore,
+            &[],
         )
         .unwrap_or_default();
         summary_from_accepted_witness(planned, witness, |selector| {
@@ -161,7 +161,7 @@ impl LanguageRuntime for RustRuntime {
     ) -> SelectorExecutionSummary {
         let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
             &request.repo_root,
-            &request.ignore,
+            &[],
         )
         .unwrap_or_default();
         crate::test_runner::lang_iface::summary_from_witness_statuses(
@@ -177,10 +177,14 @@ impl LanguageRuntime for RustRuntime {
         request: &EnsureRequest,
         selectors: &[String],
     ) -> Result<Vec<String>, String> {
-        // Witness stores nextest logical ids; ["rust", N] gates match PATH::symbol.
+        // Witness stores nextest logical ids for every executed selector, including
+        // tests whose source files are `--ignore`d for coverage. Map them the same
+        // way cold batch construction does (`rust_report_ids_for_selectors` uses
+        // an empty ignore list). An ignore-filtered map misses those names and
+        // fails closed on warm time-gate reclassify.
         let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
             &request.repo_root,
-            &request.ignore,
+            &[],
         )?;
         for selector in selectors {
             crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector)?;

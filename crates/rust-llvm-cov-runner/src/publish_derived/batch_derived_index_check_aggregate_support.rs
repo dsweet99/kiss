@@ -1,3 +1,4 @@
+use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
 use crate::publish_derived::batch_derived_index::{
     PopulationLoadMode, RustPopulationState, population_current_identity_matches,
     population_selection_context_matches,
@@ -5,7 +6,6 @@ use crate::publish_derived::batch_derived_index::{
 use crate::publish_derived::batch_derived_index_types::{
     OnDiskIndexWithFiles, PopulationManifestOnDisk, RustCoverageIndex,
 };
-use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
@@ -153,12 +153,14 @@ pub(crate) fn index_matches_check_aggregate(
         selection_context_fingerprint: manifest.selection_context_fingerprint.clone(),
         ordinary_source_digests: manifest.ordinary_source_digests.clone(),
     };
-    let Some(snapshot) = crate::publish_derived::batch_check_aggregate::load_current_check_aggregate_snapshot(
-        cache_root,
-        source_root,
-        &identity,
-        Some(&manifest.selectors),
-    ) else {
+    let Some(snapshot) =
+        crate::publish_derived::batch_check_aggregate::load_current_check_aggregate_snapshot(
+            cache_root,
+            source_root,
+            &identity,
+            Some(&manifest.selectors),
+        )
+    else {
         return false;
     };
     manifest.entries_fingerprint == check_aggregate_entries_fingerprint(&snapshot.aggregate)
@@ -168,10 +170,9 @@ pub(crate) fn index_matches_check_aggregate(
 fn conservative_check_aggregate_index(
     aggregate: &crate::publish_derived::batch_check_aggregate::ValidatedCheckAggregate,
 ) -> RustCoverageIndex {
-    let selectors = aggregate.selectors.iter().cloned().collect::<BTreeSet<_>>();
     aggregate
         .aggregate_covered_lines
         .keys()
-        .map(|file| (file.clone(), selectors.clone()))
+        .map(|file| (file.clone(), BTreeSet::new()))
         .collect()
 }
