@@ -62,7 +62,7 @@ fn run_rslip_selectors_with_runner(
     runner: PytestRunner,
 ) -> Result<SelectorExecutionSummary, String> {
     assert!(args.jobs > 0, "jobs must be greater than zero");
-    let jobs = rslip_parallel_jobs(args.jobs);
+    let jobs = args.jobs;
     let (python_version, pytest_version) = detect_rslip_versions(args.repo_root)?;
     let identity = python_last_status_identity(&python_version, &pytest_version, args.extra);
     let force_set: BTreeSet<&str> = args
@@ -265,12 +265,6 @@ fn handle_rslip_batch_progress(
             ));
         }
     }
-}
-
-const MAX_RSLIP_PARALLEL_JOBS: usize = 12;
-
-fn rslip_parallel_jobs(jobs: usize) -> usize {
-    jobs.min(MAX_RSLIP_PARALLEL_JOBS)
 }
 
 #[cfg(target_os = "linux")]

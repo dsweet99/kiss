@@ -48,5 +48,5 @@ fn run_rslip_selectors_caps_parallel_jobs_for_forkserver_rss() {
     )
     .unwrap();
 
-    assert_eq!(observed_jobs.get(), MAX_RSLIP_PARALLEL_JOBS);
+    assert_eq!(observed_jobs.get(), 32);
 }
