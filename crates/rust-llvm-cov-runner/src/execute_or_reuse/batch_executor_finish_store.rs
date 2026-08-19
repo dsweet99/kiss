@@ -150,8 +150,24 @@ fn run_entry_store_jobs(
             scope.spawn(move || store_worker(worker_index, cache_root, job_rx, result_tx, store));
         }
         drop(result_tx);
-        EntryStoreDispatcher::new(jobs, worker_txs, result_rx).run(worker_count)
+        let results = EntryStoreDispatcher::new(jobs, worker_txs, result_rx).run(worker_count)?;
+        sync_entries_dir(cache_root)?;
+        Ok(results)
     })
+}
+
+fn sync_entries_dir(cache_root: &Path) -> Result<(), RustLlvmCovError> {
+    let dir = cache_root.join("entries");
+    match std::fs::File::open(&dir) {
+        Ok(file) => file.sync_all().map_err(RustLlvmCovError::Io),
+        Err(err)
+            if err.kind() == io::ErrorKind::NotFound
+                || err.kind() == io::ErrorKind::NotADirectory =>
+        {
+            Ok(())
+        }
+        Err(err) => Err(RustLlvmCovError::Io(err)),
+    }
 }
 
 fn store_worker(

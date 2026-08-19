@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 mod publish;
 mod wait;
-pub use publish::publish_atomically;
+pub use publish::{publish_atomically, publish_atomically_without_parent_sync};
 
 #[cfg(test)]
 pub(crate) use wait::{BARRIER_DIR_ENV, BARRIER_TARGET_ENV, unique_nanos};

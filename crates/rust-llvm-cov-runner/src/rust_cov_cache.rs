@@ -190,11 +190,16 @@ pub fn store_rust_cov_cache_entry(
         .parent()
         .ok_or_else(|| io::Error::other("cache path has no parent"))?;
     let tmp_path = parent.join(format!(".{}.{}.tmp", fingerprint, rust_cov_unique_suffix()));
-    kiss_publication_barrier::publish_atomically("rust_selector_entry", &path, &tmp_path, |file| {
-        serde_json::to_writer(&mut *file, entry).map_err(io::Error::other)?;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
+    kiss_publication_barrier::publish_atomically_without_parent_sync(
+        "rust_selector_entry",
+        &path,
+        &tmp_path,
+        |file| {
+            serde_json::to_writer(&mut *file, entry).map_err(io::Error::other)?;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
     .map_err(|err| {
         io::Error::new(
             err.kind(),

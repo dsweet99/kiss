@@ -59,3 +59,18 @@ fn build_object_catalog_skips_nested_llvm_cov_target_trees() {
     assert!(catalog.contains(&keep));
     assert!(!catalog.contains(&skip));
 }
+
+#[test]
+fn build_object_catalog_skips_rmeta_sidecar_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    let deps = tmp.path().join("debug").join("deps");
+    fs::create_dir_all(&deps).unwrap();
+    let rlib = deps.join("libfoo-abc.rlib");
+    let rmeta = deps.join("libfoo-abc.rmeta");
+    fs::write(&rlib, b"rlib").unwrap();
+    fs::write(&rmeta, b"rmeta").unwrap();
+
+    let catalog = build_object_catalog(&[], tmp.path(), &[], &BTreeMap::new());
+    assert!(catalog.contains(&rlib));
+    assert!(!catalog.contains(&rmeta));
+}

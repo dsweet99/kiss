@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 use serde_json::Value;
@@ -61,28 +61,52 @@ pub fn parse_batch_event_stream(stdout: &[u8]) -> Result<BatchEventStream, RustL
         if line.is_empty() {
             continue;
         }
-        let value: Value = serde_json::from_slice(line).map_err(|err| {
-            RustLlvmCovError::InvalidRequest(format!(
-                "structured stdout line {} is not valid JSON: {err}",
-                line_no + 1
-            ))
-        })?;
-        ingest_event_line(&mut stream, &mut package_names, &value, line_no + 1)?;
+        // Nocapture / live relay can leak test stdout onto this stream.
+        // Cargo and libtest-json-plus records always start with `{`.
+        if line.first() != Some(&b'{') {
+            continue;
+        }
+        if skip_unneeded_cargo_message(line) {
+            continue;
+        }
+        let Ok(value) = serde_json::from_slice::<Value>(line) else {
+            continue;
+        };
+        ingest_event_line(&mut stream, &mut package_names, value, line_no + 1)?;
     }
     Ok(stream)
+}
+
+fn skip_unneeded_cargo_message(line: &[u8]) -> bool {
+    if peeked_top_level_string_field(line, br#""type":""#).is_some() {
+        return false;
+    }
+    match peeked_top_level_string_field(line, br#""reason":""#) {
+        Some(b"compiler-artifact" | b"build-finished") => false,
+        Some(_) => true,
+        None => false,
+    }
+}
+
+fn peeked_top_level_string_field<'a>(line: &'a [u8], key: &[u8]) -> Option<&'a [u8]> {
+    let prefix = &line[..line.len().min(128)];
+    let start = prefix.windows(key.len()).position(|window| window == key)?;
+    let rest = &prefix[start + key.len()..];
+    let end = rest.iter().position(|byte| *byte == b'"')?;
+    Some(&rest[..end])
 }
 
 fn ingest_event_line(
     stream: &mut BatchEventStream,
     package_names: &mut BTreeMap<PathBuf, String>,
-    value: &Value,
+    value: Value,
     line_no: usize,
 ) -> Result<(), RustLlvmCovError> {
     if value.get("type").is_some() {
         return ingest_libtest_event(stream, value, line_no);
     }
     if let Some(reason) = value.get("reason").and_then(Value::as_str) {
-        return ingest_cargo_message(stream, package_names, reason, value, line_no);
+        return ingest_cargo_message(stream, package_names, reason.to_string(), value, line_no);
     }
     Err(RustLlvmCovError::InvalidRequest(format!(
         "structured stdout line {line_no} is neither a Cargo message nor a libtest-json-plus record"
@@ -92,13 +116,13 @@ fn ingest_event_line(
 fn ingest_cargo_message(
     stream: &mut BatchEventStream,
     package_names: &mut BTreeMap<PathBuf, String>,
-    reason: &str,
-    value: &Value,
+    reason: String,
+    value: Value,
     line_no: usize,
 ) -> Result<(), RustLlvmCovError> {
-    match reason {
+    match reason.as_str() {
         "compiler-artifact" => {
-            let artifact = serde_json::from_value::<CargoCompilerArtifact>(value.clone())
+            let artifact = serde_json::from_value::<CargoCompilerArtifact>(value)
                 .map_err(|err| json_shape_error(line_no, err))?;
             let (nextest_binary_id, libtest_binary_prefix) =
                 artifact_binary_ids(&artifact, package_names);
@@ -114,7 +138,7 @@ fn ingest_cargo_message(
             });
         }
         "build-finished" => {
-            let finished = serde_json::from_value::<CargoBuildFinished>(value.clone())
+            let finished = serde_json::from_value::<CargoBuildFinished>(value)
                 .map_err(|err| json_shape_error(line_no, err))?;
             stream.build_succeeded = Some(finished.success);
         }
@@ -128,7 +152,9 @@ fn artifact_binary_ids(
     artifact: &CargoCompilerArtifact,
     package_names: &mut BTreeMap<PathBuf, String>,
 ) -> (Option<String>, Option<String>) {
-    if artifact.executable.is_none() || artifact.manifest_path.is_empty() || artifact.target.name.is_empty()
+    if artifact.executable.is_none()
+        || artifact.manifest_path.is_empty()
+        || artifact.target.name.is_empty()
     {
         return (None, None);
     }
@@ -137,11 +163,7 @@ fn artifact_binary_ids(
     else {
         return (None, None);
     };
-    let nextest = nextest_binary_id(
-        &package_name,
-        &artifact.target.name,
-        &artifact.target.kind,
-    );
+    let nextest = nextest_binary_id(&package_name, &artifact.target.name, &artifact.target.kind);
     let libtest = libtest_binary_prefix(&package_name, &artifact.target.name);
     (Some(nextest), Some(libtest))
 }
@@ -157,34 +179,35 @@ fn non_empty_string(value: String) -> Option<String> {
 
 fn ingest_libtest_event(
     stream: &mut BatchEventStream,
-    value: &Value,
+    value: Value,
     line_no: usize,
 ) -> Result<(), RustLlvmCovError> {
-    let Some(record_type) = value.get("type").and_then(Value::as_str) else {
-        return Ok(());
-    };
-    if record_type != "test" {
+    if value.get("type").and_then(Value::as_str) != Some("test") {
         return Ok(());
     }
-    let record = serde_json::from_value::<LibtestRecord>(value.clone())
+    let record = serde_json::from_value::<LibtestRecord>(value)
         .map_err(|err| json_shape_error(line_no, err))?;
+    apply_libtest_record(stream, record, line_no)
+}
+
+fn apply_libtest_record(
+    stream: &mut BatchEventStream,
+    record: LibtestRecord,
+    line_no: usize,
+) -> Result<(), RustLlvmCovError> {
+    let Some((full_name, test_name)) = split_libtest_name(&record.name) else {
+        return skip_nameless_libtest_event(&record.event, line_no);
+    };
     match record.event.as_str() {
-        "discovered" => {
-            let (full_name, test_name) = split_libtest_name(&record.name, line_no)?;
-            stream.discovered_tests.push(BatchTestStarted {
-                full_name,
-                test_name,
-            });
-        }
-        "started" => {
-            let (full_name, test_name) = split_libtest_name(&record.name, line_no)?;
-            stream.started_tests.push(BatchTestStarted {
-                full_name,
-                test_name,
-            });
-        }
+        "discovered" => stream.discovered_tests.push(BatchTestStarted {
+            full_name,
+            test_name,
+        }),
+        "started" => stream.started_tests.push(BatchTestStarted {
+            full_name,
+            test_name,
+        }),
         "ok" | "failed" | "timeout" | "timed_out" => {
-            let (full_name, test_name) = split_libtest_name(&record.name, line_no)?;
             let timed_out = record.event == "timeout"
                 || record.event == "timed_out"
                 || record
@@ -201,20 +224,28 @@ fn ingest_libtest_event(
                 reason: record.reason,
             });
         }
-        "ignored" => {
-            let (full_name, test_name) = split_libtest_name(&record.name, line_no)?;
-            stream.ignored_tests.push(BatchTestStarted {
-                full_name,
-                test_name,
-            });
-        }
+        "ignored" => stream.ignored_tests.push(BatchTestStarted {
+            full_name,
+            test_name,
+        }),
         other => {
-            return Err(RustLlvmCovError::InvalidRequest(format!(
-                "structured stdout line {line_no} has unsupported libtest event `{other}`"
-            )));
+            return Err(unsupported_libtest_event(line_no, other));
         }
     }
     Ok(())
+}
+
+fn skip_nameless_libtest_event(event: &str, line_no: usize) -> Result<(), RustLlvmCovError> {
+    match event {
+        "discovered" | "started" | "ok" | "failed" | "timeout" | "timed_out" | "ignored" => Ok(()),
+        other => Err(unsupported_libtest_event(line_no, other)),
+    }
+}
+
+fn unsupported_libtest_event(line_no: usize, event: &str) -> RustLlvmCovError {
+    RustLlvmCovError::InvalidRequest(format!(
+        "structured stdout line {line_no} has unsupported libtest event `{event}`"
+    ))
 }
 
 fn is_nextest_timeout_reason(reason: &str) -> bool {
@@ -222,13 +253,9 @@ fn is_nextest_timeout_reason(reason: &str) -> bool {
     lowered.contains("time limit exceeded") || lowered.contains("timed out")
 }
 
-fn split_libtest_name(name: &str, line_no: usize) -> Result<(String, String), RustLlvmCovError> {
-    let Some((_prefix, test_name)) = name.rsplit_once('$') else {
-        return Err(RustLlvmCovError::InvalidRequest(format!(
-            "structured stdout line {line_no} libtest name `{name}` is missing `$` test suffix"
-        )));
-    };
-    Ok((name.to_string(), test_name.to_string()))
+fn split_libtest_name(name: &str) -> Option<(String, String)> {
+    let (_prefix, test_name) = name.rsplit_once('$')?;
+    Some((name.to_string(), test_name.to_string()))
 }
 
 fn json_shape_error(line_no: usize, err: serde_json::Error) -> RustLlvmCovError {
@@ -246,6 +273,69 @@ pub fn selector_matches_test(full_name: &str, selector: &str, exact: bool) -> bo
     } else {
         full_name.contains(selector)
     }
+}
+
+/// Indexed matcher: exact/`$` suffix lookup once the selector set is large.
+pub struct SelectorMatchIndex<'a> {
+    indexed: bool,
+    names: HashSet<&'a str>,
+    selectors: &'a [String],
+    exact: bool,
+}
+
+impl<'a> SelectorMatchIndex<'a> {
+    pub fn new(selectors: &'a [String], exact: bool) -> Self {
+        let indexed = exact || selectors.len() > 64;
+        Self {
+            indexed,
+            names: if indexed {
+                selectors.iter().map(String::as_str).collect()
+            } else {
+                HashSet::new()
+            },
+            selectors,
+            exact,
+        }
+    }
+
+    pub fn matches(&self, full_name: &str) -> bool {
+        if self.indexed {
+            indexed_name_tokens(full_name).any(|token| self.names.contains(token))
+        } else {
+            self.selectors
+                .iter()
+                .any(|selector| selector_matches_test(full_name, selector, self.exact))
+        }
+    }
+
+    pub fn matching_selectors(&self, full_name: &str) -> Vec<String> {
+        if self.indexed {
+            let mut out = Vec::new();
+            for token in indexed_name_tokens(full_name) {
+                if self.names.contains(token) && !out.iter().any(|existing| existing == token) {
+                    out.push(token.to_string());
+                }
+            }
+            out
+        } else {
+            aggregate_selectors_for_test(full_name, self.selectors, self.exact)
+        }
+    }
+}
+
+fn indexed_name_tokens(full_name: &str) -> impl Iterator<Item = &str> {
+    let suffix = full_name
+        .rsplit_once('$')
+        .map(|(_, test)| test)
+        .unwrap_or(full_name);
+    std::iter::once(full_name)
+        .chain(std::iter::once(suffix))
+        .chain(suffix_after_each_colon_colon(suffix))
+}
+
+fn suffix_after_each_colon_colon(name: &str) -> impl Iterator<Item = &str> {
+    name.match_indices("::")
+        .map(|(index, _)| &name[index + 2..])
 }
 
 pub fn aggregate_selectors_for_test(

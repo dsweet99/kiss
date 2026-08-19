@@ -48,7 +48,7 @@ fn fresh_batch_stores_passed_selector_entries() {
     }));
     assert_eq!(result.counters.build_invocations, 1);
     assert_eq!(result.counters.export_jobs, 2);
-    assert_eq!(result.counters.build_target_baseline_bytes, 12);
+    assert_eq!(result.counters.build_target_baseline_bytes, 0);
 }
 
 #[test]

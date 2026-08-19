@@ -7,7 +7,7 @@ test:
 	pytest tests && cargo nextest run
 
 lint:
-	/home/dsweet/.cargo/bin/kiss check
+	$(HOME)/kiss-tmp check
 	ruff check .
 	cargo clippy --all-targets --all-features -- -D warnings -W clippy::cargo
 

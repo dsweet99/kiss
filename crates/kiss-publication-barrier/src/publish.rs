@@ -1,5 +1,5 @@
 use std::fs::{self, File, OpenOptions};
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 
 use crate::{after_rename, after_sync_before_rename};
@@ -13,6 +13,33 @@ pub fn publish_atomically(
     artifact: &str,
     final_path: &Path,
     temporary_path: &Path,
+    write: impl FnOnce(&mut File) -> io::Result<()>,
+) -> io::Result<()> {
+    publish_atomically_inner(artifact, final_path, temporary_path, PublishSync::FileAndParent, write)
+}
+
+/// Same publish order as [`publish_atomically`], but skip per-file and parent
+/// `sync_all`. Batch writers flush bytes, then fsync the directory once.
+pub fn publish_atomically_without_parent_sync(
+    artifact: &str,
+    final_path: &Path,
+    temporary_path: &Path,
+    write: impl FnOnce(&mut File) -> io::Result<()>,
+) -> io::Result<()> {
+    publish_atomically_inner(artifact, final_path, temporary_path, PublishSync::FlushOnly, write)
+}
+
+#[derive(Clone, Copy)]
+enum PublishSync {
+    FileAndParent,
+    FlushOnly,
+}
+
+fn publish_atomically_inner(
+    artifact: &str,
+    final_path: &Path,
+    temporary_path: &Path,
+    sync: PublishSync,
     write: impl FnOnce(&mut File) -> io::Result<()>,
 ) -> io::Result<()> {
     let final_parent = final_path.parent().ok_or_else(|| {
@@ -36,8 +63,14 @@ pub fn publish_atomically(
     })?;
     let mut file = open_publish_tmp(artifact, temporary_path, final_parent)?;
     write(&mut file).map_err(|err| path_step_err(artifact, "write", temporary_path, err))?;
-    file.sync_all()
-        .map_err(|err| path_step_err(artifact, "sync_all", temporary_path, err))?;
+    match sync {
+        PublishSync::FileAndParent => file
+            .sync_all()
+            .map_err(|err| path_step_err(artifact, "sync_all", temporary_path, err))?,
+        PublishSync::FlushOnly => file
+            .flush()
+            .map_err(|err| path_step_err(artifact, "flush", temporary_path, err))?,
+    }
     after_sync_before_rename(artifact, temporary_path, final_path)
         .map_err(|err| step_err(artifact, "after_sync_before_rename", err))?;
     drop(file);
@@ -54,7 +87,10 @@ pub fn publish_atomically(
     }
     after_rename(artifact, temporary_path, final_path)
         .map_err(|err| step_err(artifact, "after_rename", err))?;
-    sync_publish_parent(artifact, final_parent)
+    match sync {
+        PublishSync::FileAndParent => sync_publish_parent(artifact, final_parent),
+        PublishSync::FlushOnly => Ok(()),
+    }
 }
 
 fn step_err(artifact: &str, step: &str, err: io::Error) -> io::Error {

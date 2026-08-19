@@ -39,13 +39,16 @@ pub fn execute_rust_coverage_batch(
     tools: &RustCoverageToolIdentity,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
     execute_rust_coverage_batch_with_fresh(req, tools, |req, tools, identity, plan| {
+        let exporter = crate::execute_or_reuse::progress::log_named_step("export-prep", || {
+            default_instance_exporter(req, plan)
+        })?;
         execute_fresh_batch_with_exporter(
             req,
             tools,
             identity,
             plan,
             &default_batch_subprocess_runner(),
-            default_instance_exporter(req, plan)?,
+            exporter,
         )
     })
 }
@@ -69,9 +72,13 @@ where
     ) -> Result<RustCoverageBatchResult, RustLlvmCovError>,
 {
     crate::plan::batch_platform::ensure_batch_platform_supported()?;
-    let identity = batch_identity(req, tools)?;
-    let plan = build_rust_coverage_batch_plan(req)
-        .map_err(|message| RustLlvmCovError::InvalidRequest(format!("batch plan: {message}")))?;
+    let identity = crate::execute_or_reuse::progress::log_named_step("batch-identity", || {
+        batch_identity(req, tools).map_err(RustLlvmCovError::Io)
+    })?;
+    let plan = crate::execute_or_reuse::progress::log_named_step("batch-plan", || {
+        build_rust_coverage_batch_plan(req)
+            .map_err(|message| RustLlvmCovError::InvalidRequest(format!("batch plan: {message}")))
+    })?;
 
     // Zero-limit bans never execute, even under force_rerun.
     if !req.logical_selectors.is_empty()
@@ -122,7 +129,8 @@ where
             },
         );
     }
-    if let Some(mut result) = try_check_aggregate_hit_after_lock(req, &identity)? {
+    if let Some(mut result) = try_check_aggregate_hit_after_lock(req, &identity)?
+    {
         result.counters.legacy_cleanup_deferred = legacy_cleanup.deferred;
         return Ok(with_process_reverse_query_counters(result));
     }

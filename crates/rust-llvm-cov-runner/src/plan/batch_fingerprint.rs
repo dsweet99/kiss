@@ -25,9 +25,12 @@ pub fn batch_identity(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> io::Result<RustCoverageBatchIdentity> {
-    if let Some(cached) =
-        crate::plan::batch_identity_seal::try_identity_from_mtime_seal(&req.cache_root, &req.source_root, req, tools)
-    {
+    if let Some(cached) = crate::plan::batch_identity_seal::try_identity_from_mtime_seal(
+        &req.cache_root,
+        &req.source_root,
+        req,
+        tools,
+    ) {
         return Ok(cached);
     }
     let snapshot = rust_input_snapshot(&req.source_root, req)
@@ -121,7 +124,10 @@ fn generation_hash(
     }
     h = hash_env(&mut h, &req.env);
     h = hash_string_list(&mut h, &req.cargo_args);
-    hash_string_list(&mut h, &req.test_args)
+    hash_string_list(
+        &mut h,
+        &crate::plan::batch_plan_test_args::identity_relevant_test_args(&req.test_args),
+    )
 }
 
 fn hash_env(h: &mut u64, env: &BTreeMap<String, String>) -> u64 {

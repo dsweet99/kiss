@@ -19,6 +19,9 @@ use crate::test_runner::rust_coverage_index::relevant_rust_batch_env;
 pub(crate) mod error;
 use error::map_rust_llvm_cov_error;
 
+mod timeout;
+use timeout::selector_timeout_millis_for_batch;
+
 mod finish;
 mod witness;
 pub(crate) use finish::{
@@ -229,6 +232,8 @@ where
         return Ok(SelectorExecutionSummary::default());
     }
     let stage_started = std::time::Instant::now();
+    println!("kiss test: Running batch-request");
+    let request_started = std::time::Instant::now();
     let batch_req = rust_coverage_batch_request_from_parts(
         repo_root,
         selectors,
@@ -239,6 +244,10 @@ where
         options.coverage_output_mode,
         &options.gate,
     )?;
+    println!(
+        "kiss test: Ran batch-request {:.1}ms",
+        request_started.elapsed().as_secs_f64() * 1000.0
+    );
     build_rust_coverage_batch_plan(&batch_req)?;
     let versions = detect_versions(repo_root)?;
     let identity = rust_last_status_identity(
@@ -281,25 +290,12 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
     gate: &kiss::GateConfig,
 ) -> Result<RustCoverageBatchRequest, String> {
     validate_supported_rust_test_args(extra)?;
-    // Map logical nextest ids → PATH::symbol before applying path-pattern limits.
-    // Fail closed: never apply catch-all limits against bare logical ids.
-    let report_ids = crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, selectors)?;
-    let selector_timeout_millis = selectors
-        .iter()
-        .map(|selector| {
-            let for_limit = crate::test_runner::runners::require_kiss_test_report_id(
-                &report_ids,
-                selector,
-            )?;
-            let secs = kiss::limit_for_selector(&gate.max_unit_test_seconds, &for_limit);
-            let millis = if secs.is_finite() && secs > 0.0 {
-                (secs * 1000.0).round().clamp(1.0, u64::MAX as f64) as u64
-            } else {
-                0
-            };
-            Ok((selector.clone(), millis))
-        })
-        .collect::<Result<BTreeMap<_, _>, String>>()?;
+    let selector_timeout_millis = selector_timeout_millis_for_batch(
+        repo_root,
+        selectors,
+        &coverage_output_mode,
+        gate,
+    )?;
     let mut req = RustCoverageBatchRequest {
         cwd: repo_root.to_path_buf(),
         source_root: repo_root.to_path_buf(),

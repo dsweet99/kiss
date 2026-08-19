@@ -118,6 +118,33 @@ fn binary_id_object_map_builds_from_catalog() {
 }
 
 #[test]
+#[cfg(unix)]
+fn binary_id_object_map_build_with_jobs_matches_serial() {
+    let tmp = tempfile::tempdir().unwrap();
+    let first = tmp.path().join("deps").join("a");
+    let second = tmp.path().join("deps").join("b");
+    std::fs::create_dir_all(first.parent().unwrap()).unwrap();
+    std::fs::write(&first, b"a").unwrap();
+    std::fs::write(&second, b"b").unwrap();
+    let llvm_readobj = write_executable(
+        tmp.path().join("llvm-readobj"),
+        "#!/bin/sh\ncase \"$2\" in *b) printf 'Build ID: bbbbbbbb\\n' ;; *) printf 'Build ID: aaaaaaaa\\n' ;; esac\nexit 0\n",
+    );
+    let tools = ExportTools {
+        llvm_profdata: PathBuf::from("/bin/false"),
+        llvm_cov: PathBuf::from("/bin/false"),
+        llvm_readobj,
+    };
+    let catalog = vec![first.clone(), second.clone()];
+    let serial = BinaryIdObjectMap::build(&tools, &catalog).expect("serial");
+    let parallel = BinaryIdObjectMap::build_with_jobs(&tools, &catalog, 4).expect("parallel");
+    assert_eq!(serial.lookup("aaaaaaaa"), parallel.lookup("aaaaaaaa"));
+    assert_eq!(serial.lookup("bbbbbbbb"), parallel.lookup("bbbbbbbb"));
+    assert_eq!(serial.lookup("aaaaaaaa"), Some(&first));
+    assert_eq!(serial.lookup("bbbbbbbb"), Some(&second));
+}
+
+#[test]
 fn resolve_objects_for_profdata_requires_seed_objects() {
     let tools = ExportTools {
         llvm_profdata: PathBuf::from("/bin/false"),

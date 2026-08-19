@@ -466,6 +466,35 @@ def run_observed(
         f"peak_processes={outcome.observation.peak_process_count} "
         f"peak_threads={outcome.observation.peak_thread_count}"
     )
+    metrics = outcome.metrics()
+    interesting = (
+        "selected_python",
+        "selected_rust_initial",
+        "python_population_required",
+        "rust_population_required",
+        "python_population_selectors",
+        "rust_population_selectors",
+        "python_total",
+        "python_cache_hits",
+        "python_cache_misses",
+        "rust_population_total",
+        "rust_population_cache_hits",
+        "rust_population_cache_misses",
+        "rust_final_total",
+        "rust_final_cache_hits",
+        "rust_final_cache_misses",
+        "raw_artifact_count",
+        "rust_concurrency_budget",
+        "rust_build_target_count",
+        "rust_max_active_test_instances",
+        "rust_max_active_exports",
+        "rust_transient_residual_count",
+        "rust_external_tmp_residual_bytes",
+        "rust_external_tmp_residual_count",
+    )
+    summary = ", ".join(f"{key}={metrics[key]}" for key in interesting if key in metrics)
+    if summary:
+        click.echo(f"  {summary}")
     if expected is not None and outcome.returncode != expected:
         raise AssertionError(
             f"{name}: expected rc={expected}, got {outcome.returncode}\n"
@@ -881,6 +910,39 @@ def assert_metric(metrics: dict[str, str], key: str, expected: str) -> None:
 def metric_int(metrics: dict[str, str], key: str) -> int:
     assert key in metrics, f"missing metric {key}: {metrics}"
     return int(metrics[key])
+
+
+def assert_forced_rust_reexecuted(name: str, metrics: dict[str, str], *, every: bool) -> None:
+    """`--force` with `test commit` re-runs selected tests; it does not
+    invalidate coverage identity. Output-only `--nocapture` therefore leaves
+    the population current, so re-execution shows up on `rust_final_*`.
+    """
+    population = metric_int(metrics, "rust_population_selectors")
+    population_misses = metric_int(metrics, "rust_population_cache_misses")
+    final_total = metric_int(metrics, "rust_final_total")
+    final_misses = metric_int(metrics, "rust_final_cache_misses")
+    if population > 0:
+        if every:
+            assert population_misses == population, (
+                f"{name}: forced fresh batch should miss every population selector, "
+                f"misses={population_misses}, population={population}"
+            )
+        else:
+            assert population_misses > 0, (
+                f"{name}: forced run should miss population cache, "
+                f"misses={population_misses}"
+            )
+        return
+    if every:
+        assert final_misses == final_total and final_total > 0, (
+            f"{name}: forced fresh batch should miss every selected selector, "
+            f"final_misses={final_misses}, final_total={final_total}"
+        )
+        return
+    assert final_misses > 0, (
+        f"{name}: forced run should re-execute selected tests, "
+        f"final_misses={final_misses} population_misses={population_misses}"
+    )
 
 
 def rendered_plan(outcome: Outcome) -> str:
@@ -3157,7 +3219,7 @@ def rust_batch_e2e() -> None:
         assert nocapture.returncode == 0, nocapture.combined
         assert "KISS TEST METRICS" in nocapture.stdout
         assert_rust_batch_invariants(nocapture, jobs)
-        assert metric_int(nocapture_metrics, "rust_population_cache_misses") > 0
+        assert_forced_rust_reexecuted("rust-e2e-nocapture", nocapture_metrics, every=False)
 
         forced_commands = [
             (
@@ -3186,12 +3248,7 @@ def rust_batch_e2e() -> None:
         forced = run_concurrent("rust-e2e-concurrent-forced", forced_commands, fixture.env)
         for outcome in forced:
             metrics = outcome.metrics()
-            population = metric_int(metrics, "rust_population_selectors")
-            misses = metric_int(metrics, "rust_population_cache_misses")
-            assert misses == population, (
-                f"{outcome.name}: forced fresh batch should miss every selector, "
-                f"misses={misses}, population={population}"
-            )
+            assert_forced_rust_reexecuted(outcome.name, metrics, every=True)
             assert_rust_batch_invariants(outcome, jobs)
 
         population_path = rust_cache / "population.json"
@@ -3574,7 +3631,6 @@ def rust_full_repo_observer(jobs: int, log_dir: Path | None) -> None:
     shutil.rmtree(rust_cache, ignore_errors=True)
     command = [
         str(kiss_bin),
-        "--defaults",
         "--lang",
         "rust",
         "test",
@@ -3652,12 +3708,18 @@ def rust_retained_cache_audit(log_dir: Path | None) -> None:
     jobs_values = (1, 4)
     with qa_fixture("kiss-qa-retained-cache-") as fixture:
         rust_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
-        population_command = kiss_command(
+        # All `--force` keeps every job count on CheckAggregate. `test commit
+        # --force` after a current population writes per-selector entries, and
+        # a second cold `commit --force` exceeded the 1200s QA run timeout.
+        population_command = [
+            str(KISS),
+            "--lang",
             "rust",
-            fixture.ignores["rust"],
+            "test",
             "--metrics",
             "--force",
-        )
+            *fixture.ignores["rust"],
+        ]
         cache_bytes_by_jobs: dict[int, int] = {}
         entry_listings_by_jobs: dict[int, dict[str, int]] = {}
         lines: list[str] = []

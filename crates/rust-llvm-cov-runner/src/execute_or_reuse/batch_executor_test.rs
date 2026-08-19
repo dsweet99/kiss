@@ -1,15 +1,15 @@
 use super::*;
-use crate::RustCovCacheStatus;
-use crate::RustLineCoverage;
-use crate::RustLlvmCovError;
 use crate::execute_or_reuse::batch_lock::lock_batch;
 use crate::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
 use crate::publish_derived_state;
-use crate::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
+use crate::rust_cov_cache::{store_rust_cov_cache_entry, RustCovCacheEntry};
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, store_alpha_entry,
     store_batch_executor_selector, witness_batch_tools,
 };
+use crate::RustCovCacheStatus;
+use crate::RustLineCoverage;
+use crate::RustLlvmCovError;
 use rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -32,12 +32,10 @@ fn all_hit_batch_returns_without_batch_lock_or_spawn() {
     assert!(result.batch_error.is_none());
     assert_eq!(result.counters.cache_hits, 2);
     assert_eq!(result.counters.build_invocations, 0);
-    assert!(
-        result
-            .completed
-            .iter()
-            .all(|outcome| { outcome.cache_status == RustCovCacheStatus::Hit })
-    );
+    assert!(result
+        .completed
+        .iter()
+        .all(|outcome| { outcome.cache_status == RustCovCacheStatus::Hit }));
     assert!(
         result
             .completed
@@ -84,18 +82,19 @@ fn all_hit_rejects_empty_coverage_pass_entries() {
     // Bypass store_rust_cov_cache_entry stability guard so we can plant poison bytes.
     fs::write(&path, serde_json::to_vec(&poison).unwrap()).unwrap();
 
-    let result = execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {
-        Ok(RustCoverageBatchResult {
-            completed: Vec::new(),
-            counters: RustCoverageBatchCounters {
-                build_invocations: 1,
-                ..Default::default()
-            },
-            batch_error: None,
-            test_binaries: Vec::new(),
+    let result =
+        execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {
+            Ok(RustCoverageBatchResult {
+                completed: Vec::new(),
+                counters: RustCoverageBatchCounters {
+                    build_invocations: 1,
+                    ..Default::default()
+                },
+                batch_error: None,
+                test_binaries: Vec::new(),
+            })
         })
-    })
-    .unwrap();
+        .unwrap();
     assert_eq!(result.counters.build_invocations, 1);
     assert_eq!(result.counters.cache_hits, 0);
 }
@@ -105,21 +104,18 @@ fn zero_limit_selectors_are_banned_without_fresh_execution() {
     let repo = batch_executor_fixture_repo();
     let mut req = batch_executor_request(repo.path());
     req.force_rerun = true;
-    req.selector_timeout_millis = BTreeMap::from([
-        ("alpha".to_string(), 0),
-        ("beta".to_string(), 0),
-    ]);
-    let result = execute_rust_coverage_batch_with_fresh(&req, &tools(), |_req, _tools, _identity, _plan| {
-        panic!("banned selectors must not invoke fresh execution");
-    })
-    .unwrap();
+    req.selector_timeout_millis =
+        BTreeMap::from([("alpha".to_string(), 0), ("beta".to_string(), 0)]);
+    let result =
+        execute_rust_coverage_batch_with_fresh(&req, &tools(), |_req, _tools, _identity, _plan| {
+            panic!("banned selectors must not invoke fresh execution");
+        })
+        .unwrap();
     assert_eq!(result.completed.len(), 2);
-    assert!(
-        result
-            .completed
-            .iter()
-            .all(|outcome| outcome.status == TestStatus::TimedOut)
-    );
+    assert!(result
+        .completed
+        .iter()
+        .all(|outcome| outcome.status == TestStatus::TimedOut));
     assert_eq!(result.counters.build_invocations, 0);
 }
 
@@ -150,7 +146,9 @@ fn all_hit_derived_repair_reports_deferred_legacy_cleanup() {
     population_req.population_publication_selectors =
         Some(vec!["alpha".to_string(), "beta".to_string()]);
     fs::create_dir_all(population_req.cache_root.join("workers").join("slot-0")).unwrap();
-    let _slot_guard = crate::execute_or_reuse::worker::lock_worker_for_test(&population_req.cache_root, 0).unwrap();
+    let _slot_guard =
+        crate::execute_or_reuse::worker::lock_worker_for_test(&population_req.cache_root, 0)
+            .unwrap();
 
     let result = execute_rust_coverage_batch(&population_req, &tools()).unwrap();
 
@@ -244,15 +242,15 @@ fn failed_selective_fresh_batch_preserves_population_through_executor() {
         fs::read(selective.cache_root.join("index.json")).unwrap(),
         before_index
     );
-    assert!(
-        selective
-            .cache_root
-            .join("entries")
-            .join("obsoleteselective01.json")
-            .is_file()
-    );
-    let manifest = crate::publish_derived::batch_derived_index::read_population_manifest(&selective.cache_root)
-        .expect("population manifest");
+    assert!(selective
+        .cache_root
+        .join("entries")
+        .join("obsoleteselective01.json")
+        .is_file());
+    let manifest = crate::publish_derived::batch_derived_index::read_population_manifest(
+        &selective.cache_root,
+    )
+    .expect("population manifest");
     assert_eq!(
         manifest.generation_fingerprint,
         population_identity.generation_fingerprint
@@ -288,7 +286,6 @@ fn check_aggregate_population_rechecks_cache_after_lock_without_fresh_run() {
     let binary_path = repo.path().join("target").join("bin-a");
     fs::write(&binary_path, "binary-a").unwrap();
     let mut req = batch_executor_request(repo.path());
-    req.force_rerun = true;
     req.population_publication_selectors = Some(req.logical_selectors.clone());
     req.coverage_output_mode = CoverageOutputMode::CheckAggregate {
         publication_binary_ids: None,
@@ -333,12 +330,10 @@ fn check_aggregate_population_rechecks_cache_after_lock_without_fresh_run() {
     assert_eq!(result.completed.len(), 2);
     assert_eq!(result.counters.cache_hits, 2);
     assert_eq!(result.counters.build_invocations, 0);
-    assert!(
-        result
-            .completed
-            .iter()
-            .all(|outcome| outcome.cache_status == RustCovCacheStatus::Hit)
-    );
+    assert!(result
+        .completed
+        .iter()
+        .all(|outcome| outcome.cache_status == RustCovCacheStatus::Hit));
 }
 
 #[test]

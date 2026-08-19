@@ -74,15 +74,19 @@ fn population_manifest_requires_matching_generation_and_selectors() {
         &exact_args,
     ));
 
-    let mut changed = exact_args.clone();
-    changed.push("--nocapture".to_string());
+    let mut with_nocapture = exact_args.clone();
+    with_nocapture.push("--nocapture".to_string());
     assert!(
-        !rust_population_manifest_is_current_for_args(
+        rust_population_manifest_is_current_for_args(
             tmp.path(),
             &["test_lib".to_string()],
-            &changed,
+            &with_nocapture,
         ),
-        "coverage-affecting test args invalidate population freshness"
+        "output-only --nocapture must not invalidate population freshness"
+    );
+    assert!(
+        !rust_population_manifest_is_current_for_args(tmp.path(), &["test_lib".to_string()], &[],),
+        "coverage-affecting --exact invalidates population freshness"
     );
 
     assert!(

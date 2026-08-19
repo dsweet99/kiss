@@ -56,7 +56,7 @@ fn is_object_file(path: &str) -> bool {
     Path::new(path)
         .extension()
         .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| matches!(ext, "o" | "rlib" | "rmeta"))
+        .is_some_and(|ext| matches!(ext, "o" | "rlib"))
 }
 
 /// Scan only cargo's immediate debug output dirs.
@@ -109,7 +109,7 @@ fn is_instrumented_catalog_executable(path: &Path) -> bool {
 
 fn is_instrumented_catalog_object(path: &Path) -> bool {
     if let Some(ext) = path.extension().and_then(|value| value.to_str()) {
-        return matches!(ext, "o" | "rlib" | "rmeta");
+        return matches!(ext, "o" | "rlib");
     }
     path.parent()
         .and_then(|parent| parent.file_name())

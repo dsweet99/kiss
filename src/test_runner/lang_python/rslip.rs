@@ -62,6 +62,7 @@ fn run_rslip_selectors_with_runner(
     runner: PytestRunner,
 ) -> Result<SelectorExecutionSummary, String> {
     assert!(args.jobs > 0, "jobs must be greater than zero");
+    let jobs = rslip_parallel_jobs(args.jobs);
     let (python_version, pytest_version) = detect_rslip_versions(args.repo_root)?;
     let identity = python_last_status_identity(&python_version, &pytest_version, args.extra);
     let force_set: BTreeSet<&str> = args
@@ -100,7 +101,7 @@ fn run_rslip_selectors_with_runner(
     );
     let results = Rslip::new(runner).run_or_reuse_many_bounded_with_progress(
         reqs,
-        args.jobs,
+        jobs,
         |event| {
             if let RslipBatchProgress::Prepared { elapsed, .. } = &event {
                 crate::test_runner::emit_stage_time("rslip_prepare", *elapsed);
@@ -266,6 +267,15 @@ fn handle_rslip_batch_progress(
     }
 }
 
+/// Each Linux forkserver worker is a bootstrapped pytest process (~100 MiB
+/// VmRSS). `kiss test --watch` with `num_jobs = 32` otherwise keeps 32 of
+/// those alive at once, which is what dominated first-cycle peak RSS.
+const MAX_RSLIP_PARALLEL_JOBS: usize = 12;
+
+fn rslip_parallel_jobs(jobs: usize) -> usize {
+    jobs.min(MAX_RSLIP_PARALLEL_JOBS)
+}
+
 #[cfg(target_os = "linux")]
 fn selected_rslip_pytest_runner() -> PytestRunner {
     rpytest_runner::forkserver_pytest_runner()
@@ -317,6 +327,10 @@ fn format_rslip_error(err: RslipError) -> String {
 #[cfg(test)]
 #[path = "rslip_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "rslip_jobs_test.rs"]
+mod jobs_tests;
 
 #[cfg(test)]
 #[path = "rslip_sla_test.rs"]

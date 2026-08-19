@@ -145,6 +145,8 @@ pub(crate) fn objects_satisfy_profile(
         .arg("export")
         .arg("-format=text")
         .arg("--threads=1")
+        .arg("-skip-expansions")
+        .arg("-skip-functions")
         .arg("-instr-profile")
         .arg(profdata)
         .arg("-check-binary-ids");

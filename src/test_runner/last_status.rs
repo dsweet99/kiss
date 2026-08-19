@@ -75,7 +75,7 @@ pub(crate) fn rust_last_status_identity(
             ),
             ("runner-map".to_string(), runner_map_fingerprint.to_string()),
         ]),
-        test_args,
+        &rust_llvm_cov_runner::identity_relevant_test_args(test_args),
         BTreeMap::new(),
     )
 }

@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 
 use crate::RustLlvmCovError;
 use crate::execute_or_reuse::batch_export_tools::{ExportTools, read_profdata_binary_ids};
@@ -12,38 +14,22 @@ pub struct BinaryIdObjectMap {
 
 impl BinaryIdObjectMap {
     pub fn build(tools: &ExportTools, catalog: &[PathBuf]) -> Result<Self, RustLlvmCovError> {
+        Self::build_with_jobs(tools, catalog, 1)
+    }
+
+    pub fn build_with_jobs(
+        tools: &ExportTools,
+        catalog: &[PathBuf],
+        jobs: usize,
+    ) -> Result<Self, RustLlvmCovError> {
+        assert!(jobs > 0, "jobs must be greater than zero");
+        let ids = read_catalog_binary_ids(tools, catalog, jobs)?;
         let mut id_to_object = std::collections::BTreeMap::new();
-        for object in catalog {
-            let Some(id) = read_object_binary_id(tools, object)? else {
+        for (object, id) in catalog.iter().zip(ids) {
+            let Some(id) = id else {
                 continue;
             };
-            match id_to_object.get(&id) {
-                None => {
-                    id_to_object.insert(id, object.clone());
-                }
-                Some(existing) if existing == object => {}
-                Some(existing) => {
-                    let existing_in_deps = existing
-                        .parent()
-                        .and_then(|parent| parent.file_name())
-                        .is_some_and(|name| name == "deps");
-                    let candidate_in_deps = object
-                        .parent()
-                        .and_then(|parent| parent.file_name())
-                        .is_some_and(|name| name == "deps");
-                    if existing_in_deps == candidate_in_deps {
-                        return Err(RustLlvmCovError::InvalidRequest(format!(
-                            "ambiguous catalog objects [{existing:?}, {object:?}] for binary id `{id}`"
-                        )));
-                    }
-                    let preferred = if candidate_in_deps {
-                        object.clone()
-                    } else {
-                        existing.clone()
-                    };
-                    id_to_object.insert(id, preferred);
-                }
-            }
+            insert_catalog_object(&mut id_to_object, object, id)?;
         }
         Ok(Self { id_to_object })
     }
@@ -57,6 +43,91 @@ impl BinaryIdObjectMap {
             .iter()
             .find_map(|(id, path)| (path == object).then_some(id.as_str()))
     }
+}
+
+fn insert_catalog_object(
+    id_to_object: &mut std::collections::BTreeMap<String, PathBuf>,
+    object: &Path,
+    id: String,
+) -> Result<(), RustLlvmCovError> {
+    match id_to_object.get(&id) {
+        None => {
+            id_to_object.insert(id, object.to_path_buf());
+        }
+        Some(existing) if existing == object => {}
+        Some(existing) => {
+            let existing_in_deps = existing
+                .parent()
+                .and_then(|parent| parent.file_name())
+                .is_some_and(|name| name == "deps");
+            let candidate_in_deps = object
+                .parent()
+                .and_then(|parent| parent.file_name())
+                .is_some_and(|name| name == "deps");
+            if existing_in_deps == candidate_in_deps {
+                return Err(RustLlvmCovError::InvalidRequest(format!(
+                    "ambiguous catalog objects [{existing:?}, {object:?}] for binary id `{id}`"
+                )));
+            }
+            let preferred = if candidate_in_deps {
+                object.to_path_buf()
+            } else {
+                existing.clone()
+            };
+            id_to_object.insert(id, preferred);
+        }
+    }
+    Ok(())
+}
+
+fn read_catalog_binary_ids(
+    tools: &ExportTools,
+    catalog: &[PathBuf],
+    jobs: usize,
+) -> Result<Vec<Option<String>>, RustLlvmCovError> {
+    if catalog.is_empty() {
+        return Ok(Vec::new());
+    }
+    if jobs == 1 || catalog.len() == 1 {
+        return catalog
+            .iter()
+            .map(|object| read_object_binary_id(tools, object))
+            .collect();
+    }
+    let worker_count = jobs.min(catalog.len());
+    let next = AtomicUsize::new(0);
+    let (tx, rx) = mpsc::channel();
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            let tx = tx.clone();
+            let next = &next;
+            scope.spawn(move || {
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    if index >= catalog.len() {
+                        break;
+                    }
+                    let result = read_object_binary_id(tools, &catalog[index]);
+                    if tx.send((index, result)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    drop(tx);
+    let mut slots = vec![None; catalog.len()];
+    let mut received = 0usize;
+    while let Ok((index, result)) = rx.recv() {
+        slots[index] = Some(result?);
+        received += 1;
+    }
+    if received != catalog.len() {
+        return Err(RustLlvmCovError::InvalidRequest(
+            "catalog binary-id workers exited before covering every object".into(),
+        ));
+    }
+    Ok(slots.into_iter().map(Option::unwrap).collect())
 }
 
 pub(crate) fn resolve_objects_for_profdata(

@@ -159,7 +159,7 @@ pub(crate) fn export_check_aggregates_bounded(
         return Ok((BTreeMap::new(), ExportCounters::default()));
     }
     let tools = resolve_export_tools_from_rustc(std::ffi::OsStr::new("rustc"))?;
-    let binary_id_map = BinaryIdObjectMap::build(&tools, catalog)?;
+    let binary_id_map = BinaryIdObjectMap::build_with_jobs(&tools, catalog, jobs)?;
     let exporter = CheckAggregateExporter {
         tools,
         binary_id_map,

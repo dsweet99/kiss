@@ -43,11 +43,11 @@ pub(crate) fn prepare_build_target_for_identity(
         && previous.input == expected
     {
         let baseline = previous.build_target_baseline_bytes;
-        if baseline > 0 {
+        if baseline > 0 && build_target_is_cache_owned {
             let current_bytes = path_size_bytes(&plan.build_target)?;
             let growth_limit = baseline.saturating_mul(BUILD_TARGET_GROWTH_NUMERATOR)
                 / BUILD_TARGET_GROWTH_DENOMINATOR;
-            if build_target_is_cache_owned && current_bytes > growth_limit {
+            if current_bytes > growth_limit {
                 remove_build_target(&plan.build_target)?;
                 return Ok(BuildIdentityPreparation {
                     previous_baseline_bytes: 0,
@@ -55,7 +55,11 @@ pub(crate) fn prepare_build_target_for_identity(
             }
         }
         return Ok(BuildIdentityPreparation {
-            previous_baseline_bytes: baseline,
+            previous_baseline_bytes: if build_target_is_cache_owned {
+                baseline
+            } else {
+                0
+            },
         });
     }
     if build_target_is_cache_owned {
@@ -72,7 +76,15 @@ pub(crate) fn publish_successful_build_identity(
     plan: &RustCoverageBatchPlan,
     previous_baseline_bytes: u64,
 ) -> io::Result<u64> {
-    let current_target_bytes = path_size_bytes(&plan.build_target)?;
+    let build_target_is_cache_owned = plan.build_target.starts_with(&req.cache_root);
+    // Repo `target/` is retained across samples and can be tens of GB of
+    // incremental objects. The growth cap only deletes cache-owned trees, so
+    // do not recursively size the external target on the cold coverage path.
+    let current_target_bytes = if build_target_is_cache_owned {
+        path_size_bytes(&plan.build_target)?
+    } else {
+        0
+    };
     let baseline_bytes = if previous_baseline_bytes == 0 {
         current_target_bytes
     } else {

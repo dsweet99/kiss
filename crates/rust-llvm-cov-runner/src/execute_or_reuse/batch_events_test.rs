@@ -44,9 +44,9 @@ fn parser_maps_time_limit_exceeded_reason_to_timed_out() {
 }
 
 #[test]
-fn parser_rejects_non_json_lines() {
-    let err = parse_batch_event_stream(b"not json\n").unwrap_err();
-    assert!(matches!(err, RustLlvmCovError::InvalidRequest(_)));
+fn parser_ignores_non_json_noise_lines() {
+    let parsed = parse_batch_event_stream(b"not json\nchild-out\n{\n").unwrap();
+    assert!(parsed.terminal_tests.is_empty());
 }
 
 #[test]
@@ -58,6 +58,19 @@ fn selector_matching_shares_substring_and_exact_semantics() {
     assert_eq!(
         aggregate_selectors_for_test(full, &["alpha".to_string(), "beta".to_string()], false),
         vec!["alpha".to_string(), "beta".to_string()]
+    );
+}
+
+#[test]
+fn large_selector_index_matches_suffix_without_substring() {
+    let selectors: Vec<String> = (0..80).map(|i| format!("t{i}")).collect();
+    let index = SelectorMatchIndex::new(&selectors, false);
+    assert!(index.matches("pkg::bin$t12"));
+    assert!(index.matches("kiss::kiss$mod::nested::t12"));
+    assert!(!index.matches("pkg::bin$t12_extra"));
+    assert_eq!(
+        index.matching_selectors("kiss::kiss$mod::nested::t12"),
+        vec!["t12".to_string()]
     );
 }
 
@@ -88,15 +101,14 @@ fn parser_ignores_build_script_and_non_test_libtest_records() {
 }
 
 #[test]
-fn parser_rejects_missing_dollar_suffix_and_unsupported_events() {
-    let missing_suffix =
-        parse_batch_event_stream(br#"{"type":"test","event":"ok","name":"badname"}"#)
-            .unwrap_err();
-    assert!(matches!(
-        missing_suffix,
-        RustLlvmCovError::InvalidRequest(_)
-    ));
+fn parser_ignores_nested_libtest_names_without_dollar_suffix() {
+    let parsed =
+        parse_batch_event_stream(br#"{"type":"test","event":"ok","name":"alpha"}"#).unwrap();
+    assert!(parsed.terminal_tests.is_empty());
+}
 
+#[test]
+fn parser_rejects_unsupported_libtest_events() {
     let unsupported =
         parse_batch_event_stream(br#"{"type":"test","event":"unknown","name":"pkg::bin$x"}"#)
             .unwrap_err();
@@ -125,14 +137,28 @@ fn parser_records_failed_build_marker() {
 }
 
 #[test]
+fn parser_skips_compiler_message_payloads_without_full_parse() {
+    let mut stdout = b"{\"reason\":\"compiler-message\",\"message\":\"".to_vec();
+    stdout.extend(std::iter::repeat_n(b'x', 64_000));
+    stdout.extend_from_slice(br#""}
+{"reason":"build-finished","success":true}
+{"type":"test","event":"ok","name":"pkg::bin$alpha","exec_time":0.001,"reason":"time limit exceeded"}
+"#);
+    let parsed = parse_batch_event_stream(&stdout).unwrap();
+    assert_eq!(parsed.build_succeeded, Some(true));
+    assert_eq!(parsed.terminal_tests.len(), 1);
+    assert!(parsed.terminal_tests[0].timed_out);
+}
+
+#[test]
 fn batch_event_types_are_constructible() {
     let artifact = BatchCompilerArtifact {
         executable: Some("/tmp/bin".to_string()),
         filenames: vec!["/tmp/a.o".to_string()],
         nextest_binary_id: None,
-    libtest_binary_prefix: None,
-    src_path: None,
-    is_test_harness: false,
+        libtest_binary_prefix: None,
+        src_path: None,
+        is_test_harness: false,
     };
     let terminal = BatchTestTerminal {
         full_name: "pkg::bin$alpha".to_string(),

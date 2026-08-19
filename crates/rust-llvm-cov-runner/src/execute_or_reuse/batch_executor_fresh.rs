@@ -36,7 +36,7 @@ pub(crate) fn execute_fresh_batch_with_exporter(
         runner,
         CurrentRunCleanup::default(),
         |req, source_root, object_catalog, export_requests| {
-            let exporter = exporter.with_catalog_map(object_catalog)?;
+            let exporter = exporter.with_catalog_map(object_catalog, req.jobs)?;
             export_instances_bounded(
                 req.jobs,
                 exporter,
@@ -254,7 +254,9 @@ fn prepare_fresh_batch_run(
     )?;
     crate::plan::batch_plan_publish::publish_generated_nextest_config(plan, req)?;
     let run = runner.run(&req.cwd, plan).map_err(RustLlvmCovError::from)?;
-    let parsed = parse_batch_event_stream(&run.stdout)?;
+    let parsed = crate::execute_or_reuse::progress::log_named_step("event-parse", || {
+        parse_batch_event_stream(&run.stdout)
+    })?;
     reject_failed_build_without_tests(&run, &parsed)?;
     reject_nonzero_without_terminal_events(&run, &parsed)?;
     if batch_run::batch_scope_interrupted() {
@@ -277,25 +279,29 @@ fn prepare_fresh_batch_run(
                 &plan.build_target,
                 run_root,
             );
-            crate::execute_or_reuse::batch_shim_synthesize::synthesize_check_aggregate_shim_metadata(
-                &parsed,
-                &profile,
-                &req.cwd,
-            )?
+            crate::execute_or_reuse::progress::log_named_step("shim-synth", || {
+                crate::execute_or_reuse::batch_shim_synthesize::synthesize_check_aggregate_shim_metadata(
+                    &parsed,
+                    &profile,
+                    &req.cwd,
+                )
+            })?
         }
         CoverageOutputMode::SelectorEntries => {
             load_target_runner_shim_metadata(&plan.target_runner_output_dir)?
         }
     };
     let test_binaries = test_binaries_from_shim_metadata(&shim_metadata)?;
-    let instances = build_instance_results(
-        &parsed.started_tests,
-        &parsed.ignored_tests,
-        &parsed.terminal_tests,
-        &shim_metadata,
-        exact,
-        req,
-    )?;
+    let instances = crate::execute_or_reuse::progress::log_named_step("instance-map", || {
+        build_instance_results(
+            &parsed.started_tests,
+            &parsed.ignored_tests,
+            &parsed.terminal_tests,
+            &shim_metadata,
+            exact,
+            req,
+        )
+    })?;
     Ok(PreparedFreshBatchRun {
         parsed,
         exact,

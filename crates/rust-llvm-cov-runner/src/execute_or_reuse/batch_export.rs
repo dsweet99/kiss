@@ -68,8 +68,14 @@ impl SubprocessInstanceExporter {
         }
     }
 
-    pub fn with_catalog_map(mut self, catalog: &[PathBuf]) -> Result<Self, RustLlvmCovError> {
-        self.binary_id_map = Some(BinaryIdObjectMap::build(&self.tools, catalog)?);
+    pub fn with_catalog_map(
+        mut self,
+        catalog: &[PathBuf],
+        jobs: usize,
+    ) -> Result<Self, RustLlvmCovError> {
+        self.binary_id_map = Some(BinaryIdObjectMap::build_with_jobs(
+            &self.tools, catalog, jobs,
+        )?);
         Ok(self)
     }
 
@@ -339,3 +345,7 @@ mod tests;
 
 #[cfg(test)]
 pub use tests::{FakeInstanceExporter, write_fake_profile};
+
+#[cfg(test)]
+#[path = "batch_export_exporter_test.rs"]
+mod exporter_tests;

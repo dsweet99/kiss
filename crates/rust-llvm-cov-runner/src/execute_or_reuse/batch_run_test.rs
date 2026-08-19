@@ -166,7 +166,7 @@ fn build_identity_helpers_are_executable_witnesses() {
 
     publish_successful_build_identity(&req, &tools, &plan, 0).unwrap();
     let prep = prepare_build_target_for_identity(&req, &tools, &plan).unwrap();
-    assert_eq!(prep.previous_baseline_bytes, 5);
+    assert_eq!(prep.previous_baseline_bytes, 0);
 }
 
 #[test]

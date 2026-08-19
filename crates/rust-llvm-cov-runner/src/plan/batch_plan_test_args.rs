@@ -28,9 +28,19 @@ pub fn validate_supported_rust_test_args(test_args: &[String]) -> Result<(), Str
     Ok(())
 }
 
+/// Output-only flags do not change which tests run or their coverage.
+#[must_use]
+pub fn identity_relevant_test_args(test_args: &[String]) -> Vec<String> {
+    test_args
+        .iter()
+        .filter(|arg| !matches!(arg.as_str(), "--nocapture" | "--no-capture"))
+        .cloned()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::validate_supported_rust_test_args;
+    use super::{identity_relevant_test_args, validate_supported_rust_test_args};
 
     #[test]
     fn validate_supported_rust_test_args_accepts_supported_forms() {
@@ -66,5 +76,17 @@ mod tests {
                 .contains("requires")
         );
         assert!(validate_supported_rust_test_args(&["--skip=".to_string()]).is_err());
+    }
+
+    #[test]
+    fn identity_relevant_test_args_drops_nocapture_flags() {
+        assert_eq!(
+            identity_relevant_test_args(&[
+                "--exact".to_string(),
+                "--nocapture".to_string(),
+                "--no-capture".to_string(),
+            ]),
+            vec!["--exact".to_string()]
+        );
     }
 }

@@ -32,8 +32,14 @@ fn accepted_summary_emits_cached_passes() {
         force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
-        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
-        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec!["a".into()] },
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![],
+        },
+        planned: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec!["a".into()],
+        },
     };
     let witness = ExecutionWitness {
         language: "rust".into(),
@@ -49,6 +55,7 @@ fn accepted_summary_emits_cached_passes() {
     let summary = rt.accepted_summary(&req, &["a".into()], &witness);
     assert_eq!(summary.total, 1);
     assert_eq!(summary.cache_hits, 1);
+    assert!(!summary.rust_derived_repair);
     let tmp = tempfile::tempdir().unwrap();
     let _ = rt.discover_universe(&req);
     let _ = rt.coverage_snapshot(tmp.path());
@@ -68,8 +75,14 @@ fn rust_runtime_empty_run_and_load_miss() {
         force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
-        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
-        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec!["a".into()] },
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![],
+        },
+        planned: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec!["a".into()],
+        },
     };
     let batch = rt.run_selectors(&req, &[]).expect("empty run");
     assert_eq!(batch.summary.total, 0);
@@ -100,8 +113,14 @@ fn rust_runtime_nonempty_miss_hits_mode_branches() {
             force_selectors: Vec::new(),
             jobs: 1,
             gate: kiss::GateConfig::default(),
-        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
-        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec!["a".into(), "b".into()] },
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                python: vec![],
+                rust: vec![],
+            },
+            planned: crate::test_runner::language_keyed::LanguageKeyed {
+                python: vec![],
+                rust: vec!["a".into(), "b".into()],
+            },
         };
         assert!(rt.run_selectors(&req, &["a".into()]).is_err());
     }

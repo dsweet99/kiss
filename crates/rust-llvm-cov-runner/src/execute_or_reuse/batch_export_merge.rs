@@ -82,6 +82,8 @@ pub(crate) fn export_instance_coverage(
         .arg("export")
         .arg("-format=text")
         .arg("--threads=1")
+        .arg("-skip-expansions")
+        .arg("-skip-functions")
         .arg("-instr-profile")
         .arg(profdata);
     if let Some(regex) = ignore_filename_regex {

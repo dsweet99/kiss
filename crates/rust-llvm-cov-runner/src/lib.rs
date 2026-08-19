@@ -177,7 +177,7 @@ pub use batch_plan::{
     RustCoverageBatchRequest, build_rust_coverage_batch_plan, validate_supported_rust_cargo_args,
 };
 pub use batch_plan_publish::publish_generated_nextest_config;
-pub use batch_plan_test_args::validate_supported_rust_test_args;
+pub use batch_plan_test_args::{identity_relevant_test_args, validate_supported_rust_test_args};
 pub use batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult};
 pub use batch_runner_resolve::{
     DelegatedRunnerMap, RUNNER_RESOLVER_POLICY_VERSION, delegated_runner_for_platform,

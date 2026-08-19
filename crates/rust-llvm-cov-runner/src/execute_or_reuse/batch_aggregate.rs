@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use rpytest_runner::TestStatus;
 
-use crate::execute_or_reuse::batch_events::selector_matches_test;
+use crate::execute_or_reuse::batch_events::SelectorMatchIndex;
 use crate::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -30,16 +30,21 @@ pub fn aggregate_logical_selectors(
     exact: bool,
     instances: &[InstanceResult],
 ) -> (Vec<RustLlvmCovOutcome>, AggregationCounters) {
+    let index = SelectorMatchIndex::new(selectors, exact);
+    let mut by_selector: BTreeMap<String, Vec<&InstanceResult>> = BTreeMap::new();
+    for instance in instances {
+        for selector in index.matching_selectors(&instance.full_name) {
+            by_selector.entry(selector).or_default().push(instance);
+        }
+    }
     let mut counters = AggregationCounters {
         test_instances: instances.len(),
         ..Default::default()
     };
     let mut outcomes = Vec::with_capacity(selectors.len());
     for selector in selectors {
-        let matched: Vec<_> = instances
-            .iter()
-            .filter(|instance| selector_matches_test(&instance.full_name, selector, exact))
-            .collect();
+        let empty: Vec<&InstanceResult> = Vec::new();
+        let matched = by_selector.get(selector).unwrap_or(&empty);
         if matched.is_empty() {
             eprintln!("kiss: unmatched rust selector during aggregate: {selector}");
             counters.unmatched_selectors += 1;
@@ -47,7 +52,7 @@ pub fn aggregate_logical_selectors(
             outcomes.push(unmatched_failed_outcome(selector));
             continue;
         }
-        outcomes.push(aggregate_one_selector(selector, &matched));
+        outcomes.push(aggregate_one_selector(selector, matched.as_slice()));
     }
     (outcomes, counters)
 }

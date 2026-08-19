@@ -161,3 +161,33 @@ fn rust_coverage_batch_request_applies_path_limits_with_report_ids() {
         Some(&10_000)
     );
 }
+
+#[test]
+fn rust_coverage_batch_request_check_aggregate_skips_report_ids_for_catch_all_timeouts() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname=\"demo\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("src/lib.rs"), "pub fn x() {}\n").unwrap();
+    let req = rust_coverage_batch_request_from_parts(
+        tmp.path(),
+        &["tests::case".to_string()],
+        &[],
+        false,
+        1,
+        None,
+        rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate {
+            publication_binary_ids: None,
+            repair_publication: None,
+        },
+        &kiss::GateConfig::default(),
+    )
+    .expect("catch-all CheckAggregate timeouts must not require report ids");
+    assert_eq!(
+        req.selector_timeout_millis.get("tests::case"),
+        Some(&2_000)
+    );
+}

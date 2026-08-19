@@ -36,19 +36,15 @@ pub(crate) fn build_instance_results(
     req: &RustCoverageBatchRequest,
 ) -> Result<Vec<InstanceResult>, RustLlvmCovError> {
     reject_missing_terminal_events(started_tests, ignored_tests, terminal_tests, exact, req)?;
+    let selector_index =
+        crate::execute_or_reuse::batch_events::SelectorMatchIndex::new(&req.logical_selectors, exact);
     let metadata_by_id: BTreeMap<_, _> = shim_metadata
         .iter()
         .map(|item| (item.full_name.clone(), item))
         .collect();
     let mut instances = Vec::new();
     for test in terminal_tests {
-        if !crate::execute_or_reuse::batch_events::aggregate_selectors_for_test(
-            &test.full_name,
-            &req.logical_selectors,
-            exact,
-        )
-        .is_empty()
-        {
+        if selector_index.matches(&test.full_name) {
             let shim = resolve_shim_metadata(&metadata_by_id, shim_metadata, &test.full_name)?;
             let exit_code = shim.exit_code.or(Some(if test.passed { 0 } else { 1 }));
             instances.push(InstanceResult {
@@ -244,17 +240,14 @@ fn reject_missing_terminal_events(
                 .map(|test| test.full_name.as_str())
                 .collect()
         };
+    let selector_index =
+        crate::execute_or_reuse::batch_events::SelectorMatchIndex::new(&req.logical_selectors, exact);
     let missing = started_tests
         .iter()
         .filter(|test| {
             !terminal_names.contains(test.full_name.as_str())
                 && !ignored_names.contains(test.full_name.as_str())
-                && !crate::execute_or_reuse::batch_events::aggregate_selectors_for_test(
-                    &test.full_name,
-                    &req.logical_selectors,
-                    exact,
-                )
-                .is_empty()
+                && selector_index.matches(&test.full_name)
         })
         .map(|test| test.full_name.clone())
         .collect::<Vec<_>>();

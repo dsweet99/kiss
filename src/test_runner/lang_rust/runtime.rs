@@ -6,8 +6,8 @@ use std::path::Path;
 use kiss::Language;
 
 use crate::test_runner::lang_iface::{
-    AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
-    WitnessScope, summary_from_accepted_witness,
+    summary_from_accepted_witness, AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime,
+    OutcomeBatch, PublishBatch, WitnessScope,
 };
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::{
@@ -16,9 +16,12 @@ use crate::test_runner::rust_coverage_index::{
 use crate::test_runner::selector_ids::report_string_for_logical_string;
 
 use super::witness_store::{
-    PublishRustWitness, publish_rust_execution_witness, rust_identity_digest_from_batch,
-    try_load_rust_execution_witness,
+    publish_rust_execution_witness, rust_identity_digest_from_batch,
+    try_load_rust_execution_witness, PublishRustWitness,
 };
+
+#[path = "population_repair.rs"]
+mod population_repair;
 
 pub(crate) struct RustRuntime;
 
@@ -129,9 +132,11 @@ impl LanguageRuntime for RustRuntime {
         if population {
             lines.push("RUST COVERAGE POPULATION".to_string());
         }
-        lines.extend(crate::test_runner::runners::build_rust_coverage_batch_dry_run_lines(
-            selectors, extra, jobs,
-        )?);
+        lines.extend(
+            crate::test_runner::runners::build_rust_coverage_batch_dry_run_lines(
+                selectors, extra, jobs,
+            )?,
+        );
         Ok(lines)
     }
 
@@ -143,14 +148,19 @@ impl LanguageRuntime for RustRuntime {
     ) -> SelectorExecutionSummary {
         // Warm accept must not re-parse the Rust workspace; use the fingerprint
         // cache shared with cov time gates (`rust_report_id_cache`).
-        let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
-            &request.repo_root,
-            &[],
-        )
-        .unwrap_or_default();
-        summary_from_accepted_witness(planned, witness, |selector| {
+        let report_ids =
+            crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
+                &request.repo_root,
+                &[],
+            )
+            .unwrap_or_default();
+        let mut summary = summary_from_accepted_witness(planned, witness, |selector| {
             report_string_for_logical_string(&report_ids, selector)
-        })
+        });
+        if population_repair::repair_stale_population_on_all_mode_accept(request, planned) {
+            summary.rust_derived_repair = true;
+        }
+        summary
     }
 
     fn cached_witness_summary(
@@ -159,11 +169,12 @@ impl LanguageRuntime for RustRuntime {
         planned: &[String],
         witness: &ExecutionWitness,
     ) -> SelectorExecutionSummary {
-        let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
-            &request.repo_root,
-            &[],
-        )
-        .unwrap_or_default();
+        let report_ids =
+            crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
+                &request.repo_root,
+                &[],
+            )
+            .unwrap_or_default();
         crate::test_runner::lang_iface::summary_from_witness_statuses(
             planned,
             witness,
@@ -182,17 +193,20 @@ impl LanguageRuntime for RustRuntime {
         // way cold batch construction does (`rust_report_ids_for_selectors` uses
         // an empty ignore list). An ignore-filtered map misses those names and
         // fails closed on warm time-gate reclassify.
-        let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
-            &request.repo_root,
-            &[],
-        )?;
+        let report_ids =
+            crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
+                &request.repo_root,
+                &[],
+            )?;
         for selector in selectors {
             crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector)?;
         }
-        Ok(crate::test_runner::selector_ids::report_strings_for_logical_strings(
-            &report_ids,
-            selectors,
-        ))
+        Ok(
+            crate::test_runner::selector_ids::report_strings_for_logical_strings(
+                &report_ids,
+                selectors,
+            ),
+        )
     }
 }
 
@@ -201,3 +215,7 @@ impl crate::test_runner::coverage_decision::SupportedLanguage for RustRuntime {
         Language::Rust
     }
 }
+
+#[cfg(test)]
+#[path = "population_repair_test.rs"]
+mod population_repair_tests;

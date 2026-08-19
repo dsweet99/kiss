@@ -130,7 +130,6 @@ pub(crate) fn publish_rust_derived_state_with_filter(
     Ok(())
 }
 
-#[allow(dead_code)] // ensure owns publish; tests assert manifest currency
 pub(crate) fn rust_population_manifest_is_current_for_args(
     repo_root: &Path,
     selectors: &[String],
