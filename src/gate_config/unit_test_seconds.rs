@@ -42,7 +42,6 @@ pub fn matched_rule_for_selector<'a>(
 pub fn limit_for_selector(rules: &[(String, f64)], selector: &str) -> f64 {
     matched_rule_for_selector(rules, selector)
         .map(|m| m.limit_seconds)
-
         .unwrap_or_else(defaults_max)
 }
 
@@ -55,9 +54,7 @@ pub fn validate_rules(rules: &[(String, f64)]) -> Result<(), String> {
         return Err("max_unit_test_seconds must be non-empty".to_string());
     }
     if rules.last().map(|(p, _)| p.as_str()) != Some("*") {
-        return Err(
-            "max_unit_test_seconds must end with a \"*\" catch-all pattern".to_string(),
-        );
+        return Err("max_unit_test_seconds must end with a \"*\" catch-all pattern".to_string());
     }
     for (pattern, secs) in rules {
         if pattern.is_empty() {
@@ -205,7 +202,6 @@ fn pattern_matches(pattern: &str, path: &str) -> bool {
         || path.starts_with(&format!("{pattern}/"))
         || path.starts_with(&format!("{pattern}::"))
         || path.starts_with(pattern) && {
-
             path.as_bytes().get(pattern.len()) == Some(&b'/')
                 || path.as_bytes().get(pattern.len()) == Some(&b':')
                 || path.len() == pattern.len()
@@ -275,9 +271,6 @@ mod tests {
 
     #[test]
     fn trailing_slash_directory_prefix_matches_descendants() {
-
-
-
         assert!(pattern_matches("tests/", "tests/webtester/a.py"));
         assert!(pattern_matches("tests/", "tests/fast/a.py"));
         assert!(pattern_matches("tests/", "tests"));
@@ -291,16 +284,15 @@ mod tests {
         ]);
         let rules = parse_max_unit_test_seconds(&arr).unwrap();
         assert_eq!(rules[1].0, "tests/");
-        assert!((limit_for_selector(&rules, "tests/webtester/a.py::t") - 10.0).abs() < f64::EPSILON);
+        assert!(
+            (limit_for_selector(&rules, "tests/webtester/a.py::t") - 10.0).abs() < f64::EPSILON
+        );
         assert!((limit_for_selector(&rules, "tests/fast/a.py::t") - 4.0).abs() < f64::EPSILON);
         assert!((limit_for_selector(&rules, "src/lib.rs::t") - 0.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn rust_path_pattern_matches_report_ids_not_bare_logical_names() {
-
-
-
         let arr = Value::Array(vec![
             Value::Array(vec![Value::String("rust".into()), Value::Integer(10)]),
             Value::Array(vec![Value::String("*".into()), Value::Integer(0)]),
@@ -312,8 +304,10 @@ mod tests {
                 < f64::EPSILON
         );
         assert!(
-            (limit_for_selector(&rules, "rust/sameq_style/tests/aclick_usage.rs::kiss_bare_rule_api")
-                - 10.0)
+            (limit_for_selector(
+                &rules,
+                "rust/sameq_style/tests/aclick_usage.rs::kiss_bare_rule_api"
+            ) - 10.0)
                 .abs()
                 < f64::EPSILON
         );
@@ -345,11 +339,9 @@ mod tests {
         assert_eq!(slow.index, 1);
         assert_eq!(slow.pattern, "tests/slow");
 
-        let rust = matched_rule_for_selector(
-            &rules,
-            "rust/sameq_style/src/lib.rs::test_check_clean",
-        )
-        .unwrap();
+        let rust =
+            matched_rule_for_selector(&rules, "rust/sameq_style/src/lib.rs::test_check_clean")
+                .unwrap();
         assert_eq!(rust.index, 4);
         assert_eq!(rust.pattern, "rust");
 

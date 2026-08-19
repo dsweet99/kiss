@@ -31,6 +31,7 @@ fn cli_init_writes_default_config_in_current_directory() {
             && config.contains("duplication_enabled = true")
             && config.contains("orphan_module_enabled = true")
             && config.contains("comment_removal_enabled = false")
+            && config.contains("docs_allowed = []")
             && config.contains("test_coverage_threshold = 90")
             && config.contains("test_coverage_scope = \"codebase\"")
             && config.contains("max_num_tests = 999999"),

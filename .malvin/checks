@@ -1,7 +1,7 @@
 # /home/dsweet/.cargo/bin/kiss check
-~/kiss-tmp check
+~/kiss-tmp-2 check
 ruff check .
 #pytest -sv tests
 cargo clippy --all-targets --all-features -- -D warnings -W clippy::cargo
 # cargo nextest run
-~/kiss-tmp test
+~/kiss-tmp-2 test

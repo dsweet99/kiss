@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import python.adversarial as adv
 from click.testing import CliRunner
-from ops.adversarial_foil import foil
+from python.adversarial_foil_cli import foil
 from python.adversarial_foil_stubs import stub_foil_env
 
 

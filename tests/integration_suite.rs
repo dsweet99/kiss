@@ -8,12 +8,12 @@ mod support;
 mod break_c2_orphans;
 #[path = "cases/bug_indirect_dependencies_check.rs"]
 mod bug_indirect_dependencies_check;
+#[path = "cases/bug_nested_non_member_coverage_universe.rs"]
+mod bug_nested_non_member_coverage_universe;
 #[path = "cases/bug_test_coverage_aggregate_gate_masking.rs"]
 mod bug_test_coverage_aggregate_gate_masking;
 #[path = "cases/bug_test_coverage_violation_message.rs"]
 mod bug_test_coverage_violation_message;
-#[path = "cases/bug_nested_non_member_coverage_universe.rs"]
-mod bug_nested_non_member_coverage_universe;
 #[path = "cases/cache_integration.rs"]
 mod cache_integration;
 #[path = "cases/cli_check_hint.rs"]
@@ -26,16 +26,12 @@ mod cli_integration_2;
 mod cli_kiss_test_smoke;
 #[path = "cases/comment_removal_check.rs"]
 mod comment_removal_check;
-#[path = "cases/watch_sigint.rs"]
-mod watch_sigint;
-#[path = "cases/watch_client.rs"]
-mod watch_client;
-#[path = "cases/watch_client_violations.rs"]
-mod watch_client_violations;
 #[path = "cases/config_tests.rs"]
 mod config_tests;
 #[path = "cases/coverage_corpus.rs"]
 mod coverage_corpus;
+#[path = "cases/docs_allowed_check.rs"]
+mod docs_allowed_check;
 #[path = "cases/fix_h1_error_nodes.rs"]
 mod fix_h1_error_nodes;
 #[path = "cases/fix_h5_phantom_orphans.rs"]
@@ -172,3 +168,9 @@ mod symbol_mv_regressions_8;
 mod symbol_mv_regressions_9;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;
+#[path = "cases/watch_client.rs"]
+mod watch_client;
+#[path = "cases/watch_client_violations.rs"]
+mod watch_client_violations;
+#[path = "cases/watch_sigint.rs"]
+mod watch_sigint;

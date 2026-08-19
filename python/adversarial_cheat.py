@@ -50,7 +50,7 @@ def format_cheat_report(metrics: CheatMetrics) -> str:
 
 
 def build_cheat_prompt(kiss_root: Path, repo_dir: Path, lang: str) -> str:
-    adversarial_py = (kiss_root / "ops" / "adversarial.py").resolve()
+    adversarial_py = (kiss_root / "python" / "adversarial_cli.py").resolve()
     lang_instruction = {
         "rust": (
             "Rust only (include `Cargo.toml`, tests runnable via "

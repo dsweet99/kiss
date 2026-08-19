@@ -1,5 +1,3 @@
-"""Foil command for adversarial CLI."""
-
 from __future__ import annotations
 
 import shutil
@@ -7,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 import click
+
 from python.adversarial_common import (
     allocate_adversarial_id,
     ensure_import_path,
@@ -68,7 +67,7 @@ def _run_foil_session(
     return _persist_foil_repo(repo_dir)
 
 
-@click.command()
+@click.command(help="Run malvin to create a /tmp repo that violates coverage comfort bands.")
 @click.option(
     "--lang",
     type=click.Choice(["rust", "python", "both"]),
@@ -76,7 +75,6 @@ def _run_foil_session(
     help="Repo language mix (default: random per run).",
 )
 def foil(lang: str | None) -> None:
-    """Run malvin to create a /tmp repo that violates coverage comfort bands."""
     ensure_import_path()
     kiss_root = repo_root()
     repo_dir = Path(tempfile.mkdtemp(prefix="kiss_foil_", dir="/tmp"))

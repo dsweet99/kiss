@@ -46,7 +46,7 @@ def format_fix_cheat_report(metrics: FixCheatMetrics) -> str:
 
 
 def build_fix_cheat_prompt(kiss_root: Path, repos: Sequence[Path]) -> str:
-    adversarial_py = (kiss_root / "ops" / "adversarial.py").resolve()
+    adversarial_py = (kiss_root / "python" / "adversarial_cli.py").resolve()
     paths = normalize_repos(repos)
     repo_block = format_repo_paths(paths)
     one = len(paths) == 1

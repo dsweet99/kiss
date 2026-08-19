@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::gate_config::GateConfig;
-use crate::stats::{MetricStats, PercentileSummary, compute_summaries};
+use crate::stats::{compute_summaries, MetricStats, PercentileSummary};
 
 use super::config_keys::{python_config_key, rust_config_key};
 use super::defaults_append::{append_python_defaults, append_rust_defaults};
@@ -21,12 +21,17 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
     let _ = writeln!(out, "[global]");
     let _ = writeln!(out, "min_similarity = {}", p.gate.min_similarity);
     let _ = writeln!(out, "duplication_enabled = {}", p.gate.duplication_enabled);
-    let _ = writeln!(out, "orphan_module_enabled = {}", p.gate.orphan_module_enabled);
+    let _ = writeln!(
+        out,
+        "orphan_module_enabled = {}",
+        p.gate.orphan_module_enabled
+    );
     let _ = writeln!(
         out,
         "comment_removal_enabled = {}",
         p.gate.comment_removal_enabled
     );
+    write_toml_string_list(&mut out, "docs_allowed", &p.gate.docs_allowed);
     out.push('\n');
     let _ = writeln!(out, "[test]");
     let _ = writeln!(
@@ -71,6 +76,19 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
         append_rust_defaults(&mut out);
     }
     out
+}
+
+fn write_toml_string_list(out: &mut String, key: &str, values: &[String]) {
+    if values.is_empty() {
+        let _ = writeln!(out, "{key} = []");
+        return;
+    }
+    let rendered = values
+        .iter()
+        .map(|p| format!("\"{p}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let _ = writeln!(out, "{key} = [{rendered}]");
 }
 
 pub fn append_section(
@@ -119,6 +137,10 @@ mod coverage_witness {
             "global comment_removal emission:\n{toml}"
         );
         assert!(
+            toml.contains("docs_allowed = []"),
+            "global docs_allowed emission:\n{toml}"
+        );
+        assert!(
             toml.contains(
                 "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_num_tests = 999999\n"
             ),
@@ -128,9 +150,6 @@ mod coverage_witness {
             toml.contains("[test.max_unit_test_seconds]\n\"*\" = 2\n"),
             "default asterisk mapping:\n{toml}"
         );
-        assert!(
-            toml.contains("[test]\n"),
-            "test section present:\n{toml}"
-        );
+        assert!(toml.contains("[test]\n"), "test section present:\n{toml}");
     }
 }

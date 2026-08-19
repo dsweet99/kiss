@@ -76,6 +76,7 @@ min_similarity = {min_sim}
 duplication_enabled = true
 orphan_module_enabled = true
 comment_removal_enabled = false
+docs_allowed = []
 
 [test]
 test_coverage_threshold = {gate_coverage}
@@ -217,6 +218,10 @@ mod tests {
             "init default must emit comment_removal_enabled=false:\n{toml}"
         );
         assert!(
+            toml.contains("docs_allowed = []"),
+            "init default must emit docs_allowed=[]:\n{toml}"
+        );
+        assert!(
             toml.contains("test_coverage_threshold = 90"),
             "init default must emit coverage under [test]:\n{toml}"
         );
@@ -225,7 +230,9 @@ mod tests {
             "init default must emit max_num_tests under [test]:\n{toml}"
         );
         assert!(
-            toml.contains("num_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"),
+            toml.contains(
+                "num_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
+            ),
             "init default must emit [test] runtime defaults:\n{toml}"
         );
     }

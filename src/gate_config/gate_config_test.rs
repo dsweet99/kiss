@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::{ConfigError, get_usize};
+use crate::config::{get_usize, ConfigError};
 
 #[test]
 fn test_gate_config_merge_from_toml() {
@@ -20,6 +20,7 @@ fn default_gate_config_scope_is_codebase() {
         TestCoverageScope::Codebase
     );
     assert!(!GateConfig::default().comment_removal_enabled);
+    assert!(GateConfig::default().docs_allowed.is_empty());
 }
 
 #[test]
@@ -74,12 +75,8 @@ fn test_get_usize() {
     assert_eq!(get_usize(&table, "negative"), None);
 }
 
-
-
 #[test]
 fn test_min_similarity_integer_accepted() {
-
-
     let mut gate = GateConfig::default();
     gate.merge_from_toml("[global]\nmin_similarity = 1");
     assert!(
@@ -173,6 +170,7 @@ min_similarity = 0.75
 duplication_enabled = false
 orphan_module_enabled = false
 comment_removal_enabled = true
+docs_allowed = [\"docs\", \"src/api\"]
 
 [test]
 test_coverage_threshold = 91
@@ -191,6 +189,10 @@ max_num_tests = 12
     assert!(!gate.duplication_enabled);
     assert!(!gate.orphan_module_enabled);
     assert!(gate.comment_removal_enabled);
+    assert_eq!(
+        gate.docs_allowed,
+        vec!["docs".to_string(), "src/api".to_string()]
+    );
 
     let zero = GateConfig::try_load_from_content("[test]\nmax_num_tests = 0").unwrap();
     assert_eq!(zero.max_num_tests, 0);
@@ -203,6 +205,23 @@ max_num_tests = 12
         "err={err:?}"
     );
     assert_eq!(GateConfig::default().max_num_tests, 999_999);
+    let err = GateConfig::try_load_from_content("[global]\ndocs_allowed = \"docs\"").unwrap_err();
+    assert!(
+        matches!(
+            err,
+            ConfigError::InvalidValue { ref key, .. } if key == "docs_allowed"
+        ),
+        "err={err:?}"
+    );
+    let empty_item =
+        GateConfig::try_load_from_content("[global]\ndocs_allowed = [\"\"]").unwrap_err();
+    assert!(
+        matches!(
+            empty_item,
+            ConfigError::InvalidValue { ref key, .. } if key == "docs_allowed"
+        ),
+        "err={empty_item:?}"
+    );
 }
 
 #[test]
@@ -216,10 +235,9 @@ fn default_max_unit_test_seconds_is_two() {
 #[test]
 fn try_load_rejects_negative_and_nonfinite_max_unit_test_seconds() {
     for raw in ["-1", "nan", "inf", "-inf"] {
-        let err = GateConfig::try_load_from_content(&format!(
-            "[test]\nmax_unit_test_seconds = {raw}"
-        ))
-        .unwrap_err();
+        let err =
+            GateConfig::try_load_from_content(&format!("[test]\nmax_unit_test_seconds = {raw}"))
+                .unwrap_err();
         assert!(
             matches!(
                 err,
@@ -242,13 +260,15 @@ fn merge_keeps_prior_max_unit_test_seconds_on_invalid() {
 
 #[test]
 fn max_unit_test_seconds_zero_is_catch_all_ban() {
-    let gate =
-        GateConfig::try_load_from_content("[test]\nmax_unit_test_seconds = 0").unwrap();
+    let gate = GateConfig::try_load_from_content("[test]\nmax_unit_test_seconds = 0").unwrap();
     assert_eq!(gate.max_unit_test_seconds, vec![("*".to_string(), 0.0)]);
     assert!((gate.catch_all_unit_test_seconds() - 0.0).abs() < f64::EPSILON);
     assert!((gate.unit_test_seconds_limit("x") - 0.0).abs() < f64::EPSILON);
     assert!(!gate.unit_test_time_gate_disabled());
-    let empty = GateConfig { max_unit_test_seconds: Vec::new(), ..GateConfig::default() };
+    let empty = GateConfig {
+        max_unit_test_seconds: Vec::new(),
+        ..GateConfig::default()
+    };
     assert!(empty.unit_test_time_gate_disabled());
 }
 
@@ -275,7 +295,8 @@ fn try_load_from_content_rejects_out_of_range_gate_values() {
         ConfigError::InvalidValue { ref key, .. } if key == "test_coverage_threshold"
     ));
 
-    let similarity = GateConfig::try_load_from_content("[global]\nmin_similarity = 1.5").unwrap_err();
+    let similarity =
+        GateConfig::try_load_from_content("[global]\nmin_similarity = 1.5").unwrap_err();
     assert!(matches!(
         similarity,
         ConfigError::InvalidValue { ref key, .. } if key == "min_similarity"
@@ -300,5 +321,3 @@ fn merge_from_toml_ignores_out_of_range_and_unknown_gate_values() {
         defaults::gate::TEST_COVERAGE_THRESHOLD
     );
 }
-
-

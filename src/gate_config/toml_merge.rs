@@ -1,7 +1,7 @@
 //! TOML merge helpers for GateConfig.
 
 use super::*;
-use crate::config::{ConfigError, get_usize};
+use crate::config::{apply_lenient_string_list, get_usize, parse_string_list_key, ConfigError};
 
 pub(super) fn merge_global_lenient(config: &mut GateConfig, global: &toml::Table) {
     if let Some(s) = get_f64(global, "min_similarity") {
@@ -20,9 +20,15 @@ pub(super) fn merge_global_lenient(config: &mut GateConfig, global: &toml::Table
     if let Some(v) = get_bool(global, "comment_removal_enabled") {
         config.comment_removal_enabled = v;
     }
+    apply_lenient_string_list(global, "docs_allowed", "directory names", |v| {
+        config.docs_allowed = v;
+    });
 }
 
-pub(super) fn merge_global_strict(config: &mut GateConfig, global: &toml::Table) -> Result<(), ConfigError> {
+pub(super) fn merge_global_strict(
+    config: &mut GateConfig,
+    global: &toml::Table,
+) -> Result<(), ConfigError> {
     if let Some(s) = try_get_f64(global, "min_similarity")? {
         if !(0.0..=1.0).contains(&s) {
             return Err(ConfigError::InvalidValue {
@@ -34,13 +40,19 @@ pub(super) fn merge_global_strict(config: &mut GateConfig, global: &toml::Table)
     }
     config.duplication_enabled =
         try_get_bool(global, "duplication_enabled", config.duplication_enabled)?;
-    config.orphan_module_enabled =
-        try_get_bool(global, "orphan_module_enabled", config.orphan_module_enabled)?;
+    config.orphan_module_enabled = try_get_bool(
+        global,
+        "orphan_module_enabled",
+        config.orphan_module_enabled,
+    )?;
     config.comment_removal_enabled = try_get_bool(
         global,
         "comment_removal_enabled",
         config.comment_removal_enabled,
     )?;
+    if let Some(v) = global.get("docs_allowed") {
+        config.docs_allowed = parse_string_list_key(v, "docs_allowed", "directory names")?;
+    }
     Ok(())
 }
 
@@ -63,7 +75,10 @@ pub(super) fn merge_test_gates_lenient(config: &mut GateConfig, test: &toml::Tab
     }
 }
 
-pub(super) fn merge_test_gates_strict(config: &mut GateConfig, test: &toml::Table) -> Result<(), ConfigError> {
+pub(super) fn merge_test_gates_strict(
+    config: &mut GateConfig,
+    test: &toml::Table,
+) -> Result<(), ConfigError> {
     if let Some(t) = get_usize(test, "test_coverage_threshold") {
         if t > 100 {
             return Err(ConfigError::InvalidValue {
@@ -93,10 +108,7 @@ pub(super) fn try_get_max_num_tests(table: &toml::Table) -> Result<Option<usize>
     let Some(n) = value.as_integer() else {
         return Err(ConfigError::InvalidValue {
             key: "max_num_tests".into(),
-            message: format!(
-                "expected nonnegative integer, got {}",
-                value.type_str()
-            ),
+            message: format!("expected nonnegative integer, got {}", value.type_str()),
         });
     };
     usize::try_from(n)
@@ -192,7 +204,11 @@ pub(super) fn get_bool(table: &toml::Table, key: &str) -> Option<bool> {
     None
 }
 
-pub(super) fn try_get_bool(table: &toml::Table, key: &str, default: bool) -> Result<bool, ConfigError> {
+pub(super) fn try_get_bool(
+    table: &toml::Table,
+    key: &str,
+    default: bool,
+) -> Result<bool, ConfigError> {
     let Some(value) = table.get(key) else {
         return Ok(default);
     };

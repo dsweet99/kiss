@@ -1,11 +1,10 @@
-"""Fix command for adversarial CLI."""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import click
+
 from python.adversarial_common import ensure_import_path, repo_root
 from python.adversarial_multi_repo import adversarial_prompt_path, normalize_repos
 
@@ -59,7 +58,7 @@ def failed_fix_descriptions(
     ]
 
 
-@click.command()
+@click.command(help="Run malvin to edit kiss until coverage comfort bands pass on REPO(s).")
 @click.argument(
     "repos",
     nargs=-1,
@@ -67,7 +66,6 @@ def failed_fix_descriptions(
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
 def fix(repos: tuple[Path, ...]) -> None:
-    """Run malvin to edit kiss until coverage comfort bands pass on REPO(s)."""
     ensure_import_path()
     from python.adversarial import (
         build_fix_prompt,

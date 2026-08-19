@@ -106,6 +106,7 @@ pub fn run_config(
     println!("duplication_enabled = {}", gate.duplication_enabled);
     println!("orphan_module_enabled = {}", gate.orphan_module_enabled);
     println!("comment_removal_enabled = {}", gate.comment_removal_enabled);
+    print_test_string_list("docs_allowed", &gate.docs_allowed);
     println!("\n[test]");
     println!("test_coverage_threshold = {}", gate.test_coverage_threshold);
     println!("test_coverage_scope = \"{}\"", gate.test_coverage_scope);

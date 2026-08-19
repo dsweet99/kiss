@@ -1,11 +1,11 @@
 mod unit_test_seconds;
 
 pub use unit_test_seconds::{
-    MatchedUnitTestSecondsRule, catch_all_limit, default_max_unit_test_seconds, exceeds_limit,
-    format_nested_toml_table, limit_for_selector, matched_rule_for_selector, validate_rules,
+    catch_all_limit, default_max_unit_test_seconds, exceeds_limit, format_nested_toml_table,
+    limit_for_selector, matched_rule_for_selector, validate_rules, MatchedUnitTestSecondsRule,
 };
 
-use crate::config::{ConfigError, check_unknown_keys};
+use crate::config::{check_unknown_keys, ConfigError};
 use crate::defaults;
 use std::fmt;
 use std::path::Path;
@@ -49,12 +49,13 @@ const GLOBAL_KEYS: &[&str] = &[
     "duplication_enabled",
     "orphan_module_enabled",
     "comment_removal_enabled",
+    "docs_allowed",
 ];
 
 const GATE_RENAMED_MSG: &str = "\
 [gate] was renamed: put min_similarity/duplication_enabled/orphan_module_enabled/\
-comment_removal_enabled under [global], and test_coverage_threshold/test_coverage_scope/\
-max_unit_test_seconds/max_num_tests under [test]";
+comment_removal_enabled/docs_allowed under [global], and test_coverage_threshold/\
+test_coverage_scope/max_unit_test_seconds/max_num_tests under [test]";
 
 #[derive(Debug, Clone)]
 pub struct GateConfig {
@@ -69,6 +70,9 @@ pub struct GateConfig {
     pub duplication_enabled: bool,
     pub orphan_module_enabled: bool,
     pub comment_removal_enabled: bool,
+    /// Directory prefixes, relative to the repository root, where Python docstrings
+    /// and Rust doc comments are allowed. Empty allows documentation in no directory.
+    pub docs_allowed: Vec<String>,
 }
 
 impl Default for GateConfig {
@@ -82,6 +86,7 @@ impl Default for GateConfig {
             duplication_enabled: true,
             orphan_module_enabled: true,
             comment_removal_enabled: false,
+            docs_allowed: Vec::new(),
         }
     }
 }
@@ -159,7 +164,6 @@ impl GateConfig {
             merge_global_lenient(self, global);
         }
         if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
-
             merge_test_gates_lenient(self, test);
         }
     }
@@ -192,8 +196,8 @@ mod toml_merge;
 use toml_merge::*;
 
 #[cfg(test)]
-#[path = "gate_config_test.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "gate_rename_test.rs"]
 mod rename_tests;
+#[cfg(test)]
+#[path = "gate_config_test.rs"]
+mod tests;

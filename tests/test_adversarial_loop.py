@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import python.adversarial_loop as adv_loop
 from click.testing import CliRunner
-from ops.adversarial_loop import loop
+from python.adversarial_loop_cli import loop
 
 
 def test_loop_cli_success(monkeypatch: pytest.MonkeyPatch) -> None:

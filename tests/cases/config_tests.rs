@@ -1,4 +1,4 @@
-use kiss::{Config, ConfigLanguage, GateConfig, TestCoverageScope, default_config_toml};
+use kiss::{default_config_toml, Config, ConfigLanguage, GateConfig, TestCoverageScope};
 
 #[test]
 fn default_config_has_reasonable_values() {
@@ -24,6 +24,7 @@ fn verify_gate_defaults(gate: &GateConfig) {
     assert!(gate.duplication_enabled);
     assert!(gate.orphan_module_enabled);
     assert!(!gate.comment_removal_enabled);
+    assert!(gate.docs_allowed.is_empty());
 }
 
 fn verify_python_defaults(c: &Config) {

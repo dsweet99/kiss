@@ -1,10 +1,10 @@
-use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
-use crate::analyze::focus::{FocusFilter, filter_viols_by_focus};
+use crate::analyze::finalize::{finalize_analysis, AnalysisProducts, FinalizeAnalysisIn};
+use crate::analyze::focus::{filter_viols_by_focus, FocusFilter};
 use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
-use crate::analyze::parallel::{ParallelPyIn, run_parallel_py_analysis, run_rust_analysis};
+use crate::analyze::parallel::{run_parallel_py_analysis, run_rust_analysis, ParallelPyIn};
 use crate::analyze::params::RunAnalyzeUncached;
 use crate::analyze::print::log_parse_timing;
-use crate::analyze_parse::{ParseAllTimedParams, ParseResult, parse_all_timed};
+use crate::analyze_parse::{parse_all_timed, ParseAllTimedParams, ParseResult};
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::path::PathBuf;
 use std::time::Instant;
@@ -109,6 +109,12 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
             &result.rs_parsed,
         ));
     }
+    result.violations.extend(kiss::collect_doc_violations(
+        &result.py_parsed,
+        &result.rs_parsed,
+        &opts.gate_config.docs_allowed,
+        &crate::analyze_cache::repo_root_for_universe(opts.universe),
+    ));
     let file_count = result.py_parsed.len() + result.rs_parsed.len();
     let viols = filter_viols_by_focus(result.violations.clone(), focus);
     let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config);

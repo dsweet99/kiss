@@ -1,4 +1,6 @@
-use crate::config::{ConfigError, check_unknown_keys};
+use crate::config::{
+    apply_lenient_string_list, check_unknown_keys, parse_string_list_key, ConfigError,
+};
 use std::path::Path;
 
 const TEST_SECTION_KEYS: &[&str] = &[
@@ -7,7 +9,6 @@ const TEST_SECTION_KEYS: &[&str] = &[
     "watch_settle_seconds",
     "pytest_plugins",
     "ignore",
-
     "test_coverage_threshold",
     "test_coverage_scope",
     "max_unit_test_seconds",
@@ -178,10 +179,12 @@ fn apply_strict_test_table(
 }
 
 fn parse_positive_usize(value: &toml::Value, key: &str) -> Result<usize, ConfigError> {
-    let n = value.as_integer().ok_or_else(|| ConfigError::InvalidValue {
-        key: key.into(),
-        message: "expected a positive integer".into(),
-    })?;
+    let n = value
+        .as_integer()
+        .ok_or_else(|| ConfigError::InvalidValue {
+            key: key.into(),
+            message: "expected a positive integer".into(),
+        })?;
     usize::try_from(n)
         .ok()
         .filter(|n| *n > 0)
@@ -207,17 +210,6 @@ fn parse_positive_f64(value: &toml::Value, key: &str) -> Result<f64, ConfigError
             message: "expected a finite number greater than zero".into(),
         })
     }
-}
-
-fn parse_string_list_key(
-    value: &toml::Value,
-    key: &str,
-    empty_label: &str,
-) -> Result<Vec<String>, ConfigError> {
-    parse_string_list(value, empty_label).map_err(|message| ConfigError::InvalidValue {
-        key: key.into(),
-        message,
-    })
 }
 
 fn apply_lenient_test_table(config: &mut TestSectionConfig, table: &toml::Table) {
@@ -248,39 +240,6 @@ fn apply_lenient_test_table(config: &mut TestSectionConfig, table: &toml::Table)
     apply_lenient_string_list(table, "ignore", "ignore patterns", |v| {
         config.ignore = v;
     });
-}
-
-fn apply_lenient_string_list(
-    table: &toml::Table,
-    key: &str,
-    empty_label: &str,
-    set: impl FnOnce(Vec<String>),
-) {
-    let Some(v) = table.get(key) else {
-        return;
-    };
-    match parse_string_list(v, empty_label) {
-        Ok(values) => set(values),
-        Err(message) => eprintln!("Warning: Config key '{key}' {message}"),
-    }
-}
-
-fn parse_string_list(value: &toml::Value, empty_label: &str) -> Result<Vec<String>, String> {
-    let arr = value
-        .as_array()
-        .ok_or_else(|| "expected an array of strings".to_string())?;
-    let mut out = Vec::with_capacity(arr.len());
-    for item in arr {
-        let s = item
-            .as_str()
-            .ok_or_else(|| "expected an array of strings".to_string())?;
-        let name = s.trim();
-        if name.is_empty() {
-            return Err(format!("{empty_label} must be non-empty"));
-        }
-        out.push(name.to_string());
-    }
-    Ok(out)
 }
 
 #[cfg(test)]

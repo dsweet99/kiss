@@ -1,5 +1,3 @@
-"""Lazy Click group for adversarial subcommands."""
-
 from __future__ import annotations
 
 from collections.abc import Callable

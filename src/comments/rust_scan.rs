@@ -1,17 +1,33 @@
 use crate::rust_parsing::ParsedRustFile;
 use crate::violation::Violation;
 
-use super::comment_violation;
+use super::{comment_violation, doc_violation};
+
+#[derive(Clone, Copy)]
+enum ScanMode {
+    Plain,
+    Doc,
+}
 
 pub(super) fn append_rust_comment_violations(parsed: &ParsedRustFile, out: &mut Vec<Violation>) {
+    append_rust_comment_kind(parsed, out, ScanMode::Plain);
+}
+
+pub(super) fn append_rust_doc_violations(parsed: &ParsedRustFile, out: &mut Vec<Violation>) {
+    append_rust_comment_kind(parsed, out, ScanMode::Doc);
+}
+
+fn append_rust_comment_kind(parsed: &ParsedRustFile, out: &mut Vec<Violation>, mode: ScanMode) {
     let bytes = parsed.source.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if let Some(next) = take_line_comment(parsed, bytes, i, out) {
+        if let Some((is_doc, next)) = take_line_comment(bytes, i) {
+            push_kind(parsed, out, mode, is_doc, i);
             i = next;
             continue;
         }
-        if let Some(next) = take_block_comment(parsed, bytes, i, out) {
+        if let Some((is_doc, next)) = take_block_comment(bytes, i) {
+            push_kind(parsed, out, mode, is_doc, i);
             i = next;
             continue;
         }
@@ -23,34 +39,37 @@ pub(super) fn append_rust_comment_violations(parsed: &ParsedRustFile, out: &mut 
     }
 }
 
-fn take_line_comment(
+fn push_kind(
     parsed: &ParsedRustFile,
-    bytes: &[u8],
-    i: usize,
     out: &mut Vec<Violation>,
-) -> Option<usize> {
+    mode: ScanMode,
+    is_doc: bool,
+    byte_idx: usize,
+) {
+    let want_doc = matches!(mode, ScanMode::Doc);
+    if is_doc != want_doc {
+        return;
+    }
+    let line = line_number(&parsed.source, byte_idx);
+    out.push(if want_doc {
+        doc_violation(&parsed.path, line)
+    } else {
+        comment_violation(&parsed.path, line)
+    });
+}
+
+fn take_line_comment(bytes: &[u8], i: usize) -> Option<(bool, usize)> {
     if i + 1 >= bytes.len() || bytes[i] != b'/' || bytes[i + 1] != b'/' {
         return None;
     }
-    if !is_doc_line_comment(bytes, i) {
-        out.push(comment_violation(&parsed.path, line_number(&parsed.source, i)));
-    }
-    Some(skip_to_eol(bytes, i + 2))
+    Some((is_doc_line_comment(bytes, i), skip_to_eol(bytes, i + 2)))
 }
 
-fn take_block_comment(
-    parsed: &ParsedRustFile,
-    bytes: &[u8],
-    i: usize,
-    out: &mut Vec<Violation>,
-) -> Option<usize> {
+fn take_block_comment(bytes: &[u8], i: usize) -> Option<(bool, usize)> {
     if i + 1 >= bytes.len() || bytes[i] != b'/' || bytes[i + 1] != b'*' {
         return None;
     }
-    if !is_doc_block_comment(bytes, i) {
-        out.push(comment_violation(&parsed.path, line_number(&parsed.source, i)));
-    }
-    Some(skip_nested_block(bytes, i))
+    Some((is_doc_block_comment(bytes, i), skip_nested_block(bytes, i)))
 }
 
 fn is_doc_line_comment(bytes: &[u8], i: usize) -> bool {

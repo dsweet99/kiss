@@ -5,6 +5,7 @@ orphan_module_enabled = true
 duplication_enabled = true
 comment_removal_enabled = true
 min_similarity = 0.9
+docs_allowed = ["ops/", "crates/", "python/", "src/", "tests/"]
 
 [test]
 test_coverage_scope = "by_file"

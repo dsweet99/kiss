@@ -1,12 +1,7 @@
 //! Library crate for kiss metrics and analysis.
 
-
 #![allow(clippy::redundant_pub_crate)]
-
-
 #![allow(clippy::must_use_candidate)]
-
-
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
 
@@ -57,13 +52,12 @@ pub(crate) mod symbol_mv_support;
 #[cfg(test)]
 pub mod test_utils;
 
-pub use comments::{COMMENT_METRIC, collect_comment_violations, has_non_doc_comments};
 pub use cli_output::print_dry_results;
-pub use config::{Config, ConfigError, ConfigLanguage, is_similar};
-pub use shared_helpers::{
-    env_map_from_allowlist, json_entry_paths, python_coverage_env_map,
-    pythonpath_for_coverage_identity, scrubbed_git_command,
+pub use comments::{
+    COMMENT_METRIC, DOC_METRIC, collect_comment_violations, collect_doc_violations,
+    has_non_doc_comments,
 };
+pub use config::{Config, ConfigError, ConfigLanguage, is_similar};
 pub use counts::analyze_file;
 pub use counts::analyze_file_with_statement_count;
 pub use defaults::default_config_toml;
@@ -79,8 +73,8 @@ pub use duplication::{
     extract_rust_chunks_for_duplication,
 };
 pub use gate_config::{
-    GateConfig, MatchedUnitTestSecondsRule, TestCoverageScope, catch_all_limit,
-    exceeds_limit, format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
+    GateConfig, MatchedUnitTestSecondsRule, TestCoverageScope, catch_all_limit, exceeds_limit,
+    format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
 };
 pub use graph::{
     CycleInfo, DependencyGraph, ModuleGraphMetrics, analyze_graph, build_dependency_graph,
@@ -93,6 +87,10 @@ pub use parsing::{ParseError, ParsedFile, create_parser, parse_file, parse_files
 pub use py_metrics::{
     ClassMetrics, FileMetrics, FunctionMetrics, compute_class_metrics, compute_file_metrics,
     compute_function_metrics,
+};
+pub use shared_helpers::{
+    env_map_from_allowlist, json_entry_paths, python_coverage_env_map,
+    pythonpath_for_coverage_identity, scrubbed_git_command,
 };
 pub use stats::{
     METRICS, MetricDef, MetricScope, MetricStats, PercentileSummary, compute_summaries,
@@ -117,9 +115,7 @@ pub use rust_fn_metrics::{
 pub use rust_graph::build_rust_dependency_graph;
 pub use rust_graph::{IncludeGraph, build_include_graph, expand_rust_files};
 pub use rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file, parse_rust_files};
-pub use rust_test_refs::{
-    is_binary_entry_point, is_rust_test_file, rust_test_functions_in,
-};
+pub use rust_test_refs::{is_binary_entry_point, is_rust_test_file, rust_test_functions_in};
 pub use rust_units::{RustCodeUnit, extract_rust_code_units};
 
 pub use rule_defs::{Applicability, RULES, Rule, RuleCategory, rules_for_python, rules_for_rust};

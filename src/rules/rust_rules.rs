@@ -149,6 +149,12 @@ pub(super) const RS_RULE_SPECS: &[RuleSpec] = &[
         metric: "comment",
         op: "==",
         threshold: ThresholdValue::Usize(|_, _| 0),
-        description: "comment counts non-doc comments. Enforced only when comment_removal_enabled=true. Python docstrings and Rust doc comments (///, //!, /**, /*!) are allowed.",
+        description: "comment counts non-doc comments. Enforced only when comment_removal_enabled=true. Python docstrings and Rust doc comments (///, //!, /**, /*!) are allowed in docs_allowed directories.",
+    },
+    RuleSpec {
+        metric: "doc",
+        op: "==",
+        threshold: ThresholdValue::Usize(|_, _| 0),
+        description: "doc counts Python docstrings and Rust doc comments (///, //!, /**, /*!). Allowed only under docs_allowed directory prefixes (relative to the repository root). Empty docs_allowed allows documentation in no directory. Default is [].",
     },
 ];

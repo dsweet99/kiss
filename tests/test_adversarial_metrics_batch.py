@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-from ops.adversarial_metrics import metrics as adversarial_metrics_command
 from python.adversarial_metrics_batch import (
     RepoMetricsRow,
     format_metric,
@@ -14,6 +13,7 @@ from python.adversarial_metrics_batch import (
     parse_files_compared,
     run_metrics_batch,
 )
+from python.adversarial_metrics_cli import metrics as adversarial_metrics_command
 
 
 def test_parse_files_compared_variants() -> None:
@@ -96,7 +96,7 @@ def test_metrics_cli_delegates_to_batch_runner(
     called = {"ensure": False, "batch": False}
 
     monkeypatch.setattr(
-        "ops.adversarial_metrics.ensure_import_path",
+        "python.adversarial_metrics_cli.ensure_import_path",
         lambda: called.__setitem__("ensure", True),
     )
     monkeypatch.setattr(

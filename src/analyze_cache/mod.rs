@@ -6,8 +6,8 @@ use crate::analyze::{filter_duplicates_by_focus, filter_viols_by_focus};
 use emit::{emit_cached_bypass, emit_cached_gated};
 use kiss::check_cache;
 use kiss::check_universe_cache::FullCheckCache;
-use kiss::{Config, DuplicateCluster, GateConfig, Violation};
 use kiss::DependencyGraph;
+use kiss::{Config, DuplicateCluster, GateConfig, Violation};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -16,12 +16,10 @@ mod stats_top;
 mod store_full;
 pub(crate) use content_digest::load_verified_full_cache;
 use path_helpers::{cache_path_full, same_cached_paths};
-pub(crate) use stats_top::{
-    try_run_cached_stats_summary,
-};
-pub use store_full::{FullCacheInputs, store_full_cache_from_run};
+pub(crate) use stats_top::try_run_cached_stats_summary;
+pub use store_full::{store_full_cache_from_run, FullCacheInputs};
 
-const CACHE_SCHEMA_VERSION: &str = "v12-static";
+const CACHE_SCHEMA_VERSION: &str = "v13-static";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -103,6 +101,17 @@ fn mix_gate_into_fingerprint(mut h: u64, gate: &GateConfig) -> u64 {
     h = fnv1a64(h, &[u8::from(gate.duplication_enabled)]);
     h = fnv1a64(h, &[u8::from(gate.orphan_module_enabled)]);
     h = fnv1a64(h, &[u8::from(gate.comment_removal_enabled)]);
+    h = fnv1a64(
+        h,
+        u64::try_from(gate.docs_allowed.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes()
+            .as_slice(),
+    );
+    for dir in &gate.docs_allowed {
+        h = fnv1a64(h, dir.as_bytes());
+        h = fnv1a64(h, &[0]);
+    }
     h
 }
 
@@ -131,7 +140,6 @@ pub fn store_full_cache(repo_root: &std::path::Path, cache: &FullCheckCache) {
     };
     let _ = std::fs::write(cache_path_full(repo_root, &cache.fingerprint), bytes);
 }
-
 
 fn cached_duplicates(
     cache: FullCheckCache,
@@ -188,7 +196,6 @@ fn cached_duplicates(
     (viols, py_dups, rs_dups, cache)
 }
 
-
 pub fn try_run_cached_all(
     opts: &crate::analyze::AnalyzeOptions<'_>,
     py_files: &[PathBuf],
@@ -230,7 +237,6 @@ pub fn graph_counts(
         + rs_graph.as_ref().map_or(0, |g| g.graph.edge_count());
     (nodes, edges)
 }
-
 
 #[cfg(test)]
 mod coverage_witness {

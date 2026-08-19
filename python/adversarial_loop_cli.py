@@ -1,10 +1,9 @@
-"""Loop command for adversarial CLI."""
-
 from __future__ import annotations
 
 from pathlib import Path
 
 import click
+
 from python.adversarial_common import ensure_import_path, repo_root
 
 LOOP_PARAMS = (
@@ -24,13 +23,15 @@ LOOP_PARAMS = (
 )
 
 
-@click.command(params=list(LOOP_PARAMS))
+@click.command(
+    params=list(LOOP_PARAMS),
+    help="Run one or more foil → fix calibration cycles.",
+)
 def loop(num_iterations: int, lang: str | None) -> None:
-    """Run one or more foil → fix calibration cycles."""
     ensure_import_path()
     from python.adversarial_loop import AdversarialLoopConfig, run_adversarial_loop
 
-    script = Path(__file__).resolve().parent / "adversarial.py"
+    script = Path(__file__).resolve().parent / "adversarial_cli.py"
     try:
         run_adversarial_loop(
             AdversarialLoopConfig(

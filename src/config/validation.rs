@@ -104,3 +104,50 @@ pub(crate) fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
 pub fn is_similar(a: &str, b: &str) -> bool {
     similar(a, b)
 }
+
+pub(crate) fn parse_string_list(
+    value: &toml::Value,
+    empty_label: &str,
+) -> Result<Vec<String>, String> {
+    let arr = value
+        .as_array()
+        .ok_or_else(|| "expected an array of strings".to_string())?;
+    let mut out = Vec::with_capacity(arr.len());
+    for item in arr {
+        let s = item
+            .as_str()
+            .ok_or_else(|| "expected an array of strings".to_string())?;
+        let name = s.trim();
+        if name.is_empty() {
+            return Err(format!("{empty_label} must be non-empty"));
+        }
+        out.push(name.to_string());
+    }
+    Ok(out)
+}
+
+pub(crate) fn parse_string_list_key(
+    value: &toml::Value,
+    key: &str,
+    empty_label: &str,
+) -> Result<Vec<String>, ConfigError> {
+    parse_string_list(value, empty_label).map_err(|message| ConfigError::InvalidValue {
+        key: key.into(),
+        message,
+    })
+}
+
+pub(crate) fn apply_lenient_string_list(
+    table: &toml::Table,
+    key: &str,
+    empty_label: &str,
+    set: impl FnOnce(Vec<String>),
+) {
+    let Some(v) = table.get(key) else {
+        return;
+    };
+    match parse_string_list(v, empty_label) {
+        Ok(values) => set(values),
+        Err(message) => eprintln!("Warning: Config key '{key}' {message}"),
+    }
+}

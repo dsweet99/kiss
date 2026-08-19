@@ -1,5 +1,3 @@
-"""Adversarial ops: find kiss coverage counterexamples via malvin."""
-
 from __future__ import annotations
 
 import importlib
@@ -17,19 +15,19 @@ def _bootstrap_import_path() -> None:
 
 _bootstrap_import_path()
 
-_ag = importlib.import_module("ops.adversarial_group")
+_ag = importlib.import_module("python.adversarial_group")
 AdversarialGroup = _ag.AdversarialGroup
 CommandSpecs = _ag.CommandSpecs
 
 _COMMAND_SPECS: CommandSpecs = {
-    "cheat": ("ops.adversarial_cheat", "cheat"),
-    "cheat-verify": ("ops.adversarial_cheat", "cheat_verify"),
-    "fix": ("ops.adversarial_fix", "fix"),
-    "fix-cheat": ("ops.adversarial_fix_cheat", "fix_cheat"),
-    "fix-cheat-verify": ("ops.adversarial_fix_cheat", "fix_cheat_verify"),
-    "foil": ("ops.adversarial_foil", "foil"),
-    "loop": ("ops.adversarial_loop", "loop"),
-    "metrics": ("ops.adversarial_metrics", "metrics"),
+    "cheat": ("python.adversarial_cheat_cli", "cheat"),
+    "cheat-verify": ("python.adversarial_cheat_cli", "cheat_verify"),
+    "fix": ("python.adversarial_fix_cli", "fix"),
+    "fix-cheat": ("python.adversarial_fix_cheat_cli", "fix_cheat"),
+    "fix-cheat-verify": ("python.adversarial_fix_cheat_cli", "fix_cheat_verify"),
+    "foil": ("python.adversarial_foil_cli", "foil"),
+    "loop": ("python.adversarial_loop_cli", "loop"),
+    "metrics": ("python.adversarial_metrics_cli", "metrics"),
 }
 
 

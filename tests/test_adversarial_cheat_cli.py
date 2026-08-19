@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import ops.adversarial_cheat as cheat_cli
 import pytest
 import python.adversarial as adv
 import python.adversarial_cheat as cheat_mod
+import python.adversarial_cheat_cli as cheat_cli
 import python.adversarial_common as cli
 from click.testing import CliRunner
-from ops.adversarial_cheat import cheat
+from python.adversarial_cheat_cli import cheat
 
 
 @pytest.mark.parametrize("expect_success", [True, False])
@@ -18,8 +18,8 @@ def test_cheat_cli(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, expect_success: bool
 ) -> None:
     kiss = tmp_path / "kiss"
-    (kiss / "ops").mkdir(parents=True)
-    (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
+    (kiss / "python").mkdir(parents=True)
+    (kiss / "python" / "adversarial_cli.py").write_text("# stub\n", encoding="utf-8")
     adv_root = tmp_path / "kiss-adversarial"
     monkeypatch.setattr(cli, "adversarial_root", lambda: adv_root)
 
@@ -49,8 +49,8 @@ def test_cheat_success_moves_repo_to_kiss_adversarial(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     kiss = tmp_path / "kiss"
-    (kiss / "ops").mkdir(parents=True)
-    (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
+    (kiss / "python").mkdir(parents=True)
+    (kiss / "python" / "adversarial_cli.py").write_text("# stub\n", encoding="utf-8")
     adv_root = tmp_path / "kiss-adversarial"
     monkeypatch.setattr(cli, "repo_root", lambda: kiss)
     monkeypatch.setattr(cli, "adversarial_root", lambda: adv_root)
@@ -88,7 +88,7 @@ def test_cheat_failure_leaves_no_kiss_adversarial_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     kiss = tmp_path / "kiss"
-    (kiss / "ops").mkdir(parents=True)
+    kiss.mkdir(parents=True)
     adv_root = tmp_path / "kiss-adversarial"
     monkeypatch.setattr(cli, "adversarial_root", lambda: adv_root)
 

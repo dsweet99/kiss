@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import click
-from ops.adversarial_group import AdversarialGroup
+from python.adversarial_group import AdversarialGroup
 
 
 def test_list_commands_returns_sorted_names() -> None:
@@ -20,11 +20,11 @@ def test_adversarial_group___init___stores_specs() -> None:
     group = object.__new__(AdversarialGroup)
     AdversarialGroup.__init__(
         group,
-        {"foil": ("ops.adversarial_foil", "foil")},
+        {"foil": ("python.adversarial_foil_cli", "foil")},
         lambda _n: None,
         help="adversarial",
     )
-    assert group._specs == {"foil": ("ops.adversarial_foil", "foil")}
+    assert group._specs == {"foil": ("python.adversarial_foil_cli", "foil")}
 
 
 def test_get_command_uses_loader() -> None:

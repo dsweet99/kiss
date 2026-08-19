@@ -1,5 +1,3 @@
-"""Cheat commands for adversarial CLI."""
-
 from __future__ import annotations
 
 import shutil
@@ -7,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 import click
+
 from python.adversarial_common import (
     allocate_adversarial_id,
     ensure_import_path,
@@ -64,10 +63,12 @@ def _run_cheat_session(
     return _persist_cheat_repo(repo_dir)
 
 
-@click.command("cheat-verify")
+@click.command(
+    "cheat-verify",
+    help="Print cheat verification metrics for REPO (used by malvin loop).",
+)
 @click.argument("repo", type=click.Path(exists=True, file_okay=False, path_type=Path))
 def cheat_verify(repo: Path) -> None:
-    """Print cheat verification metrics for REPO (used by malvin loop)."""
     ensure_import_path()
     from python.adversarial_cheat import verify_cheat
 
@@ -78,7 +79,7 @@ def cheat_verify(repo: Path) -> None:
         raise SystemExit(1)
 
 
-@click.command()
+@click.command(help="Run malvin to create a repo that passes kiss but not runtime coverage.")
 @click.option(
     "--lang",
     type=click.Choice(["rust", "python", "both"]),
@@ -86,7 +87,6 @@ def cheat_verify(repo: Path) -> None:
     help="Repo language mix (default: random per run).",
 )
 def cheat(lang: str | None) -> None:
-    """Run malvin to create a repo that passes kiss but not runtime coverage."""
     ensure_import_path()
     kiss_root = repo_root()
     repo_dir = Path(tempfile.mkdtemp(prefix="kiss_cheat_", dir="/tmp"))

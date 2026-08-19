@@ -243,16 +243,27 @@ fn fingerprint_includes_gate_comment_removal_enabled() {
 }
 
 #[test]
+fn fingerprint_includes_gate_docs_allowed() {
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let g0 = GateConfig::default();
+    let g1 = GateConfig {
+        docs_allowed: vec!["docs".to_string()],
+        ..g0.clone()
+    };
+    assert_ne!(
+        fingerprint_for_check(&[], &[], &py, &rs, &g0),
+        fingerprint_for_check(&[], &[], &py, &rs, &g1),
+    );
+}
+
+#[test]
 fn fingerprint_covers_all_config_fields() {
-
-
     let field_count = std::mem::size_of::<Config>() / std::mem::size_of::<usize>();
     assert_eq!(
         field_count, 23,
         "Config field count changed; update mix_config_into_fingerprint and this test"
     );
-
-
 
     let Config {
         statements_per_function: _,

@@ -1,15 +1,17 @@
-"""Fix-cheat command for adversarial CLI."""
-
 from __future__ import annotations
 
 from pathlib import Path
 
 import click
+
 from python.adversarial_common import ensure_import_path, repo_root
 from python.adversarial_multi_repo import normalize_repos
 
 
-@click.command("fix-cheat-verify")
+@click.command(
+    "fix-cheat-verify",
+    help="Print fix-cheat verification metrics for REPO(s) (used by malvin loop).",
+)
 @click.argument(
     "repos",
     nargs=-1,
@@ -17,7 +19,6 @@ from python.adversarial_multi_repo import normalize_repos
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
 def fix_cheat_verify(repos: tuple[Path, ...]) -> None:
-    """Print fix-cheat verification metrics for REPO(s) (used by malvin loop)."""
     ensure_import_path()
     from python.adversarial_verify_batch import verify_fix_cheat_repos
 
@@ -29,7 +30,10 @@ def fix_cheat_verify(repos: tuple[Path, ...]) -> None:
         raise SystemExit(1)
 
 
-@click.command("fix-cheat")
+@click.command(
+    "fix-cheat",
+    help="Run malvin to edit kiss until cheat counterexamples are detected on source only.",
+)
 @click.argument(
     "repos",
     nargs=-1,
@@ -37,7 +41,6 @@ def fix_cheat_verify(repos: tuple[Path, ...]) -> None:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
 def fix_cheat(repos: tuple[Path, ...]) -> None:
-    """Run malvin to edit kiss until cheat counterexamples are detected on source only."""
     ensure_import_path()
     from python.adversarial_fix_cheat_session import run_fix_cheat_session
 
