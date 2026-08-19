@@ -23,6 +23,7 @@ pub mod violation;
 
 pub mod check_cache;
 pub mod check_universe_cache;
+pub mod comments;
 pub mod counts;
 pub mod discovery;
 pub mod duplication;
@@ -56,6 +57,7 @@ pub(crate) mod symbol_mv_support;
 #[cfg(test)]
 pub mod test_utils;
 
+pub use comments::{COMMENT_METRIC, collect_comment_violations, has_non_doc_comments};
 pub use cli_output::print_dry_results;
 pub use config::{Config, ConfigError, ConfigLanguage, is_similar};
 pub use shared_helpers::{

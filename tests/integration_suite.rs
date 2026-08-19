@@ -24,6 +24,8 @@ mod cli_integration;
 mod cli_integration_2;
 #[path = "cases/cli_kiss_test_smoke.rs"]
 mod cli_kiss_test_smoke;
+#[path = "cases/comment_removal_check.rs"]
+mod comment_removal_check;
 #[path = "cases/watch_sigint.rs"]
 mod watch_sigint;
 #[path = "cases/watch_client.rs"]

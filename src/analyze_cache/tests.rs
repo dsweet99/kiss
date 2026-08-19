@@ -228,6 +228,21 @@ fn fingerprint_excludes_gate_max_unit_test_seconds() {
 }
 
 #[test]
+fn fingerprint_includes_gate_comment_removal_enabled() {
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let g0 = GateConfig::default();
+    let g1 = GateConfig {
+        comment_removal_enabled: true,
+        ..g0.clone()
+    };
+    assert_ne!(
+        fingerprint_for_check(&[], &[], &py, &rs, &g0),
+        fingerprint_for_check(&[], &[], &py, &rs, &g1),
+    );
+}
+
+#[test]
 fn fingerprint_covers_all_config_fields() {
     // All Config fields are `usize`, so struct size / field size == field count.
     // If a non-usize field is ever added, this will catch it as a count mismatch.

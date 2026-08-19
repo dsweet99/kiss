@@ -102,6 +102,7 @@ fn mix_gate_into_fingerprint(mut h: u64, gate: &GateConfig) -> u64 {
     h = fnv1a64(h, gate.min_similarity.to_bits().to_le_bytes().as_slice());
     h = fnv1a64(h, &[u8::from(gate.duplication_enabled)]);
     h = fnv1a64(h, &[u8::from(gate.orphan_module_enabled)]);
+    h = fnv1a64(h, &[u8::from(gate.comment_removal_enabled)]);
     h
 }
 

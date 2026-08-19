@@ -163,4 +163,10 @@ pub(super) const PY_RULE_SPECS: &[RuleSpec] = &[
         threshold: ThresholdValue::F64(|_, g| g.min_similarity),
         description: "min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).",
     },
+    RuleSpec {
+        metric: "comment",
+        op: "==",
+        threshold: ThresholdValue::Usize(|_, _| 0),
+        description: "comment counts non-doc comments. Enforced only when comment_removal_enabled=true. Python docstrings and Rust doc comments (///, //!, /**, /*!) are allowed.",
+    },
 ];

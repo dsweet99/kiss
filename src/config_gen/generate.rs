@@ -22,6 +22,11 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
     let _ = writeln!(out, "min_similarity = {}", p.gate.min_similarity);
     let _ = writeln!(out, "duplication_enabled = {}", p.gate.duplication_enabled);
     let _ = writeln!(out, "orphan_module_enabled = {}", p.gate.orphan_module_enabled);
+    let _ = writeln!(
+        out,
+        "comment_removal_enabled = {}",
+        p.gate.comment_removal_enabled
+    );
     out.push('\n');
     let _ = writeln!(out, "[test]");
     let _ = writeln!(
@@ -109,6 +114,10 @@ mod coverage_witness {
         };
         let toml = generate_config_toml_by_language(&p);
         assert!(toml.contains("[global]"));
+        assert!(
+            toml.contains("comment_removal_enabled = false"),
+            "global comment_removal emission:\n{toml}"
+        );
         assert!(
             toml.contains(
                 "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_num_tests = 999999\n"

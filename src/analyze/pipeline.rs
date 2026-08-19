@@ -102,7 +102,13 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
     let focus = in_.focus;
     let timings = in_.timings;
     log_parse_timing(opts.show_timing, &in_.parse_timing);
-    let result = in_.result;
+    let mut result = in_.result;
+    if opts.gate_config.comment_removal_enabled {
+        result.violations.extend(kiss::collect_comment_violations(
+            &result.py_parsed,
+            &result.rs_parsed,
+        ));
+    }
     let file_count = result.py_parsed.len() + result.rs_parsed.len();
     let viols = filter_viols_by_focus(result.violations.clone(), focus);
     let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config);

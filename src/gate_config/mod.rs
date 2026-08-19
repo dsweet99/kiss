@@ -48,12 +48,13 @@ const GLOBAL_KEYS: &[&str] = &[
     "min_similarity",
     "duplication_enabled",
     "orphan_module_enabled",
+    "comment_removal_enabled",
 ];
 
 const GATE_RENAMED_MSG: &str = "\
-[gate] was renamed: put min_similarity/duplication_enabled/orphan_module_enabled under \
-[global], and test_coverage_threshold/test_coverage_scope/max_unit_test_seconds/max_num_tests \
-under [test]";
+[gate] was renamed: put min_similarity/duplication_enabled/orphan_module_enabled/\
+comment_removal_enabled under [global], and test_coverage_threshold/test_coverage_scope/\
+max_unit_test_seconds/max_num_tests under [test]";
 
 #[derive(Debug, Clone)]
 pub struct GateConfig {
@@ -67,6 +68,7 @@ pub struct GateConfig {
     pub min_similarity: f64,
     pub duplication_enabled: bool,
     pub orphan_module_enabled: bool,
+    pub comment_removal_enabled: bool,
 }
 
 impl Default for GateConfig {
@@ -79,6 +81,7 @@ impl Default for GateConfig {
             min_similarity: defaults::duplication::MIN_SIMILARITY,
             duplication_enabled: true,
             orphan_module_enabled: true,
+            comment_removal_enabled: false,
         }
     }
 }

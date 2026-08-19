@@ -4,6 +4,7 @@
 min_similarity = 0.9
 duplication_enabled = true
 orphan_module_enabled = true
+comment_removal_enabled = false
 
 [test]
 # Optional trunk name for `kiss test` main-mode resolution (see `kiss test --help`).

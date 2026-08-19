@@ -23,6 +23,7 @@ const NON_SHARED_METRICS: &[&str] = &[
     "cycle_size",
     "duplication",
     "orphan_module",
+    "comment",
     "test_coverage",
     "fan_in",
     "fan_out",

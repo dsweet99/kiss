@@ -1,0 +1,178 @@
+use crate::rust_parsing::ParsedRustFile;
+use crate::violation::Violation;
+
+use super::comment_violation;
+
+pub(super) fn append_rust_comment_violations(parsed: &ParsedRustFile, out: &mut Vec<Violation>) {
+    let bytes = parsed.source.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if let Some(next) = take_line_comment(parsed, bytes, i, out) {
+            i = next;
+            continue;
+        }
+        if let Some(next) = take_block_comment(parsed, bytes, i, out) {
+            i = next;
+            continue;
+        }
+        if let Some(next) = skip_string_or_char(bytes, i) {
+            i = next;
+            continue;
+        }
+        i += 1;
+    }
+}
+
+fn take_line_comment(
+    parsed: &ParsedRustFile,
+    bytes: &[u8],
+    i: usize,
+    out: &mut Vec<Violation>,
+) -> Option<usize> {
+    if i + 1 >= bytes.len() || bytes[i] != b'/' || bytes[i + 1] != b'/' {
+        return None;
+    }
+    if !is_doc_line_comment(bytes, i) {
+        out.push(comment_violation(&parsed.path, line_number(&parsed.source, i)));
+    }
+    Some(skip_to_eol(bytes, i + 2))
+}
+
+fn take_block_comment(
+    parsed: &ParsedRustFile,
+    bytes: &[u8],
+    i: usize,
+    out: &mut Vec<Violation>,
+) -> Option<usize> {
+    if i + 1 >= bytes.len() || bytes[i] != b'/' || bytes[i + 1] != b'*' {
+        return None;
+    }
+    if !is_doc_block_comment(bytes, i) {
+        out.push(comment_violation(&parsed.path, line_number(&parsed.source, i)));
+    }
+    Some(skip_nested_block(bytes, i))
+}
+
+fn is_doc_line_comment(bytes: &[u8], i: usize) -> bool {
+    let third = bytes.get(i + 2).copied();
+    match third {
+        Some(b'!') => true,
+        Some(b'/') => bytes.get(i + 3).copied() != Some(b'/'),
+        _ => false,
+    }
+}
+
+fn is_doc_block_comment(bytes: &[u8], i: usize) -> bool {
+    match bytes.get(i + 2).copied() {
+        Some(b'!') => true,
+        Some(b'*') => {
+            let fourth = bytes.get(i + 3).copied();
+            fourth != Some(b'*') && fourth != Some(b'/')
+        }
+        _ => false,
+    }
+}
+
+fn skip_to_eol(bytes: &[u8], mut i: usize) -> usize {
+    while i < bytes.len() && bytes[i] != b'\n' {
+        i += 1;
+    }
+    if i < bytes.len() {
+        i + 1
+    } else {
+        i
+    }
+}
+
+fn skip_nested_block(bytes: &[u8], start: usize) -> usize {
+    let mut i = start + 2;
+    let mut depth = 1;
+    while i + 1 < bytes.len() && depth > 0 {
+        if bytes[i] == b'/' && bytes[i + 1] == b'*' {
+            depth += 1;
+            i += 2;
+        } else if bytes[i] == b'*' && bytes[i + 1] == b'/' {
+            depth -= 1;
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    i
+}
+
+fn skip_string_or_char(bytes: &[u8], i: usize) -> Option<usize> {
+    if let Some((hashes, consumed)) = raw_string_start(bytes, i) {
+        return Some(skip_raw_string(bytes, i + consumed, hashes));
+    }
+    if bytes[i] == b'"' {
+        return Some(skip_double_string(bytes, i));
+    }
+    try_char_literal(bytes, i)
+}
+
+fn raw_string_start(bytes: &[u8], i: usize) -> Option<(usize, usize)> {
+    if bytes[i] != b'r' {
+        return None;
+    }
+    let mut hashes = 0;
+    let mut check = i + 1;
+    while check < bytes.len() && bytes[check] == b'#' {
+        hashes += 1;
+        check += 1;
+    }
+    (check < bytes.len() && bytes[check] == b'"').then_some((hashes, 2 + hashes))
+}
+
+fn skip_raw_string(bytes: &[u8], mut i: usize, hashes: usize) -> usize {
+    while i < bytes.len() {
+        if bytes[i] == b'"' && following_hashes(bytes, i + 1, hashes) {
+            return i + 1 + hashes;
+        }
+        i += 1;
+    }
+    i
+}
+
+fn following_hashes(bytes: &[u8], start: usize, hashes: usize) -> bool {
+    bytes
+        .get(start..start.saturating_add(hashes))
+        .is_some_and(|slice| slice.iter().all(|&b| b == b'#'))
+}
+
+fn skip_double_string(bytes: &[u8], start: usize) -> usize {
+    let mut i = start + 1;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'"' {
+            return i + 1;
+        }
+        i += 1;
+    }
+    i
+}
+
+fn try_char_literal(bytes: &[u8], i: usize) -> Option<usize> {
+    if bytes[i] != b'\'' || i + 1 >= bytes.len() {
+        return None;
+    }
+    if bytes[i + 1] == b'\\' {
+        let mut end = i + 2;
+        while end < bytes.len() && bytes[end] != b'\'' {
+            end += 1;
+        }
+        return (end < bytes.len()).then_some(end + 1);
+    }
+    (i + 2 < bytes.len() && bytes[i + 2] == b'\'').then_some(3 + i)
+}
+
+fn line_number(source: &str, byte_idx: usize) -> usize {
+    source.as_bytes()[..byte_idx.min(source.len())]
+        .iter()
+        .filter(|&&b| b == b'\n')
+        .count()
+        + 1
+}

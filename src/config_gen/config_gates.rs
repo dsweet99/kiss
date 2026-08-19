@@ -161,6 +161,32 @@ fn test_infer_gate_config_no_orphans_module_enabled() {
         "no orphan modules should set orphan_module_enabled=true"
     );
 }
+
+#[test]
+fn test_infer_gate_config_comment_removal_enabled() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("a.py"), "from b import bar\ndef foo():\n    bar()\n").unwrap();
+    std::fs::write(tmp.path().join("b.py"), "def bar():\n    pass\n").unwrap();
+    let paths = vec![tmp.path().to_string_lossy().to_string()];
+    let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]);
+    assert!(
+        gate.comment_removal_enabled,
+        "comment-free python should enable comment_removal"
+    );
+
+    let tmp2 = TempDir::new().unwrap();
+    std::fs::write(
+        tmp2.path().join("noted.py"),
+        "# keep this\ndef foo():\n    return 1\n",
+    )
+    .unwrap();
+    let paths2 = vec![tmp2.path().to_string_lossy().to_string()];
+    let gated = infer_gate_config_for_paths(&paths2, Some(Language::Python), &[]);
+    assert!(
+        !gated.comment_removal_enabled,
+        "comments should set comment_removal_enabled=false"
+    );
+}
 #[test]
 fn test_write_mimic_config_smoke() {
     let tmp = tempfile::tempdir().unwrap();

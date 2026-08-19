@@ -75,6 +75,7 @@ pub fn default_config_toml() -> String {
 min_similarity = {min_sim}
 duplication_enabled = true
 orphan_module_enabled = true
+comment_removal_enabled = false
 
 [test]
 test_coverage_threshold = {gate_coverage}
@@ -210,6 +211,10 @@ mod tests {
         assert!(
             toml.contains("[global]\n"),
             "init default must emit [global]:\n{toml}"
+        );
+        assert!(
+            toml.contains("comment_removal_enabled = false"),
+            "init default must emit comment_removal_enabled=false:\n{toml}"
         );
         assert!(
             toml.contains("test_coverage_threshold = 90"),

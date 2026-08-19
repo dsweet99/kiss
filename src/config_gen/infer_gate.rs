@@ -42,6 +42,7 @@ pub fn infer_gate_config_for_paths(
     gate.duplication_enabled =
         !has_reportable_duplicates(&py_parsed, &rs_parsed, gate.min_similarity);
     gate.orphan_module_enabled = !has_orphan_modules(&py_parsed, &rs_parsed);
+    gate.comment_removal_enabled = !crate::has_non_doc_comments(&py_parsed, &rs_parsed);
     gate
 }
 

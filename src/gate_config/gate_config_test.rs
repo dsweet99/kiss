@@ -5,11 +5,12 @@ use crate::config::{ConfigError, get_usize};
 fn test_gate_config_merge_from_toml() {
     let mut gate = GateConfig::default();
     gate.merge_from_toml(
-        "[test]\ntest_coverage_threshold = 50\n[global]\nmin_similarity = 0.8\nduplication_enabled = false",
+        "[test]\ntest_coverage_threshold = 50\n[global]\nmin_similarity = 0.8\nduplication_enabled = false\ncomment_removal_enabled = true",
     );
     assert_eq!(gate.test_coverage_threshold, 50);
     assert!((gate.min_similarity - 0.8).abs() < 0.01);
     assert!(!gate.duplication_enabled);
+    assert!(gate.comment_removal_enabled);
 }
 
 #[test]
@@ -18,6 +19,7 @@ fn default_gate_config_scope_is_codebase() {
         GateConfig::default().test_coverage_scope,
         TestCoverageScope::Codebase
     );
+    assert!(!GateConfig::default().comment_removal_enabled);
 }
 
 #[test]
@@ -170,6 +172,7 @@ fn try_load_from_content_accepts_all_gate_fields() {
 min_similarity = 0.75
 duplication_enabled = false
 orphan_module_enabled = false
+comment_removal_enabled = true
 
 [test]
 test_coverage_threshold = 91
@@ -187,6 +190,7 @@ max_num_tests = 12
     assert!((gate.min_similarity - 0.75).abs() < f64::EPSILON);
     assert!(!gate.duplication_enabled);
     assert!(!gate.orphan_module_enabled);
+    assert!(gate.comment_removal_enabled);
 
     let zero = GateConfig::try_load_from_content("[test]\nmax_num_tests = 0").unwrap();
     assert_eq!(zero.max_num_tests, 0);
