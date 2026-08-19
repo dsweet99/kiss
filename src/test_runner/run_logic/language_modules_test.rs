@@ -368,18 +368,18 @@ fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
 /// This test does not claim per-test attribution from the aggregate cache.
 #[test]
 fn aggregate_selection_scope_is_conservative_not_per_test() {
-    // The aggregate cache is keyed on identity with empty test_args. It stores
-    // line coverage aggregated across all tests, not per-test entries. A symbol
-    // request backed only by aggregate coverage therefore conservatively selects
-    // the whole population rather than a narrow subset. This is documented behavior
-    // per the plan: "the change must not claim per-test attribution."
-    //
-    // We record this invariant by asserting that `rust_batch_cache_hits` is
-    // populated on a warm shared-ensure summary, and that `rust_entry_generation_count`
-    // (which counts per-test entries) is zero — confirming aggregate-only semantics.
+
+
+
+
+
+
+
+
+
     let summary = crate::test_runner::runners::SelectorExecutionSummary {
         rust_batch_cache_hits: 42,
-        rust_entry_generation_count: 0, // no per-test entries in aggregate cache
+        rust_entry_generation_count: 0,
         ..Default::default()
     };
     assert_eq!(summary.rust_batch_cache_hits, 42);

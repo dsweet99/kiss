@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
-// Default MinHash size - precompute coefficients for common case
+
 const DEFAULT_MINHASH_SIZE: usize = 100;
 
-// Precomputed coefficients for universal hash family (avoids regeneration per chunk)
+
 static DEFAULT_COEFFICIENTS: LazyLock<[(u64, u64); DEFAULT_MINHASH_SIZE]> = LazyLock::new(|| {
     let mut coeffs = [(0u64, 0u64); DEFAULT_MINHASH_SIZE];
     for (i, coeff) in coeffs.iter_mut().enumerate() {
@@ -53,7 +53,7 @@ pub fn generate_shingles(text: &str, shingle_size: usize) -> HashSet<u64> {
     }
 
     let tokens: Vec<&str> = text.split_whitespace().collect();
-    // Upper bound: one shingle per token window.
+
     let approx = tokens.len().saturating_sub(shingle_size).saturating_add(1);
     let mut shingles = HashSet::with_capacity(approx);
 
@@ -74,9 +74,9 @@ pub fn compute_minhash<S: std::hash::BuildHasher>(
 ) -> MinHashSignature {
     let mut hashes = vec![u64::MAX; size];
 
-    // Use precomputed coefficients for default size, compute dynamically for custom sizes
-    // Coefficients for universal hash family: h(x) = (a*x + b)
-    // Constants from SplitMix64/xxHash with good avalanche properties
+
+
+
     if size == DEFAULT_MINHASH_SIZE {
         for &shingle in shingles {
             for (i, &(a, b)) in DEFAULT_COEFFICIENTS.iter().enumerate() {
@@ -119,7 +119,7 @@ pub fn estimate_similarity(sig1: &MinHashSignature, sig2: &MinHashSignature) -> 
         .zip(&sig2.hashes)
         .filter(|(a, b)| a == b)
         .count();
-    // Safe: matching <= max_len which is typically 100, result is 0.0-1.0
+
     #[allow(clippy::cast_precision_loss)]
     let sim = matching as f64 / max_len as f64;
     sim

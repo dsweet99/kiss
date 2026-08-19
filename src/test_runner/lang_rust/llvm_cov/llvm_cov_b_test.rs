@@ -336,7 +336,7 @@ fn build_current_rust_test_executable_index_on_bare_temp_repo_indexes_or_errors(
         build_current_rust_test_executable_index(tmp.path(), &["missing_case".into()], &[], 1);
     match result {
         Ok(build) => {
-            // Index construction lists executables; unmatched selectors stay absent/empty.
+
             let mapped = build
                 .index
                 .selector_binary_ids

@@ -48,7 +48,7 @@ fn forkserver_shutdown_force_kills_unresponsive_controller() {
     controller.run(req).unwrap();
     let pid = controller.controller_pid();
     let started = Instant::now();
-    // Graceful path waits up to SHUTDOWN_TIMEOUT then kills.
+
     controller.shutdown_graceful();
     let elapsed = started.elapsed();
     assert!(

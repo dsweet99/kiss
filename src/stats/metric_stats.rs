@@ -51,11 +51,11 @@ impl MetricStats {
                 stats.functions_per_file.push(fm.functions);
                 stats.interface_types_per_file.push(fm.interface_types);
                 stats.concrete_types_per_file.push(fm.concrete_types);
-                // Skip __init__.py for imported_names_per_file to stay in sync
-                // with `kiss check` (`src/counts/mod.rs::check_file_metrics`)
-                // and `kiss stats --all`
-                // (`src/stats_detailed/python.rs::py_import_metric`), both of
-                // which omit __init__.py for this metric. See grounding M6.
+
+
+
+
+
                 let fname = parsed
                     .path
                     .file_name()

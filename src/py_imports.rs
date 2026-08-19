@@ -97,7 +97,7 @@ pub(crate) fn collect_import_from_names(node: Node, source: &str, names: &mut Ha
                 }
             }
             "wildcard_import" if seen_import => {
-                // `from foo import *` — count as one imported name
+
                 names.insert("*".to_string());
             }
             _ => {}
@@ -133,8 +133,8 @@ mod tests {
 
     #[test]
     fn test_wildcard_import_counted() {
-        // `from foo import *` should count as at least 1 imported name,
-        // since it pulls names into the namespace.
+
+
         let p = parse("from foo import *");
         assert!(
             count_imports(p.tree.root_node(), &p.source) >= 1,
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn test_is_type_checking_block_direct() {
         let p = parse("if TYPE_CHECKING:\n    import os\nx = 1");
-        // root child 0 is the if statement
+
         let if_node = p.tree.root_node().child(0).unwrap();
         assert!(is_type_checking_block(if_node, &p.source));
     }

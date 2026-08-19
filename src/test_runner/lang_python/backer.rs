@@ -73,9 +73,9 @@ impl LanguagePlanner for PythonModule {
                 .map(|id| TestSelector::new(kiss::Language::Python, id))
                 .collect());
         }
-        // Mirror Rust: prefer the workspace selector cache before a full pytest
-        // collect. Warm `kiss test .` already planned from that cache; rediscovery
-        // must not re-spawn collection (sameq-scale suites hang for hours there).
+
+
+
         if let Some((cached_py, _cached_rs, _fp)) =
             crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
                 &self.repo_root,
@@ -107,7 +107,7 @@ impl LanguagePlanner for PythonModule {
         if self.py_source_paths.is_empty() {
             return Ok(CoverageFreshness::Fresh);
         }
-        // Line-precise index entries are only valid under the env that recorded them.
+
         if python_population_environment_mismatch(
             &self.repo_root,
             &self.test_args,
@@ -140,8 +140,8 @@ impl LanguagePlanner for PythonModule {
         if has_current_population {
             Ok(CoverageFreshness::Fresh)
         } else if has_line_precise_entries {
-            // Ordinary source edits with usable line-precise index entries: reuse
-            // prior coverage without requiring a full population refresh.
+
+
             Ok(CoverageFreshness::ReusablePrior)
         } else {
             Ok(CoverageFreshness::Stale)
@@ -202,8 +202,8 @@ pub(crate) fn select_fresh_python_source_selectors(
     py_source_paths: &[PathBuf],
     python_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
 ) -> Option<BTreeSet<String>> {
-    // Mirror Rust check-aggregate policy: only single-file diffs pay for
-    // entry-backed line narrowing. Larger diffs use the file-level index.
+
+
     const LINE_PRECISE_FILE_LIMIT: usize = 1;
     if !python_changed_lines.is_empty()
         && python_changed_lines.len() <= LINE_PRECISE_FILE_LIMIT
@@ -391,7 +391,7 @@ mod tests {
             kiss::Language::Python,
             "tests/test_app.py::test_alpha",
         )];
-        // Still recorded env → Fresh via line-precise or population.
+
         assert_eq!(
             module.freshness(&universe).unwrap(),
             CoverageFreshness::Fresh

@@ -2,13 +2,13 @@
 #[path = "ast_plan_coverage.rs"]
 mod ast_plan_coverage;
 
-// AST-first planning helpers (Tasks 4 & 5).
-//
-// Call sites prefer the AST path; on parse failure they fall back to the
-// lexical helpers in `lex.rs` / `signature.rs` and emit a single-shape
-// warning so the fallback is observable. Returned offsets are byte offsets
-// into the original source string and may be unioned with lexical hits to
-// preserve current behavior during the transition.
+
+
+
+
+
+
+
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -182,11 +182,11 @@ pub(super) fn ast_definition_ident_offsets_from_result(
     owner: Option<&str>,
     language: Language,
 ) -> Vec<(usize, usize)> {
-    // For free-function renames (owner=None) keep the historical "exactly one
-    // matching definition" behavior, so nested same-named function shadows
-    // are left alone. The owner-aliasing expansion below is only for
-    // owner-bearing renames (Python class methods, Rust impl/trait methods),
-    // where the H1/H5 fixes intentionally rename overrides too.
+
+
+
+
+
     if owner.is_none() {
         let Some(def) = result.matching_definition(name, owner) else {
             return Vec::new();

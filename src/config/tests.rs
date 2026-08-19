@@ -155,8 +155,8 @@ fn test_unknown_key_returns_error() {
 
 #[test]
 fn test_thresholds_section_accepts_boolean_parameters() {
-    // Users may put `boolean_parameters` in [thresholds] (the catch-all section).
-    // But THRESHOLDS_KEYS doesn't include it, so it's rejected as unknown.
+
+
     let result = Config::try_load_from_content(
         "[thresholds]\nboolean_parameters = 2",
         ConfigLanguage::Python,
@@ -192,7 +192,7 @@ fn load_and_load_for_language_with_override_apply_toml() {
 
     let missing = tempfile::NamedTempFile::new().unwrap();
     std::fs::remove_file(missing.path()).unwrap();
-    // Missing override keeps whatever load_for_language produced (cwd .kissconfig may apply).
+
     let fallback =
         Config::load_for_language_with_override(missing.path(), ConfigLanguage::Python);
     let baseline = Config::load_for_language(ConfigLanguage::Python);

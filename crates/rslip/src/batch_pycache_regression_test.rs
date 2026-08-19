@@ -45,8 +45,8 @@ timeout: None,
         "from lib import value\n\ndef test_value():\n    assert value() == 1\n",
     )
     .unwrap();
-    // Reinstall the failing-run bytecode after the source rewrite so a naive
-    // import would still execute assert value() == 2.
+
+
     restore_test_pycs(root, &stale_pycs);
 
     req.force_rerun = true;

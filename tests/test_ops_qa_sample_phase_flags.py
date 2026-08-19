@@ -6,7 +6,7 @@ from ops.qa import sample_phase_flags, sample_phase_flags_with_repo
 
 
 def test_sample_phase_flags_llvm_cov_nextest_parent_is_not_test_execution() -> None:
-    # Persistent parent stays alive across compile/export; must not arm test phase.
+
     command = (
         "/home/user/.cargo/bin/cargo-llvm-cov llvm-cov nextest "
         "--no-report --build-jobs 2"
@@ -45,9 +45,9 @@ def test_sample_phase_flags_warm_shim_test_with_nextest_parent() -> None:
 
 
 def test_sample_phase_flags_ignores_nested_tempfile_cargo_during_shim_tests() -> None:
-    # Full-repo observer: outer SelectorEntries shims must not overlap with
-    # nested subject cargo under /tmp/.tmp… (Rust tempfile), which is not the
-    # observed batch compile-once phase.
+
+
+
     commands = [
         "/home/user/.cargo/bin/cargo-llvm-cov llvm-cov nextest --no-report",
         "/repo/target/debug/kiss __rust-llvm-cov-target-runner "
@@ -64,8 +64,8 @@ def test_sample_phase_flags_ignores_nested_tempfile_cargo_during_shim_tests() ->
 
 
 def test_sample_phase_flags_ignores_kiss_export_minimal_during_shim_tests() -> None:
-    # Live full-repo overlap sample: export-contract subject compile under
-    # /tmp/kiss-export-minimal-* while SelectorEntries shims are running.
+
+
     commands = [
         "/home/user/.cargo/bin/cargo-llvm-cov llvm-cov nextest --no-report",
         "/repo/target/debug/kiss __rust-llvm-cov-target-runner "

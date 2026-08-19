@@ -77,9 +77,9 @@ pub(crate) fn publish_successful_build_identity(
     previous_baseline_bytes: u64,
 ) -> io::Result<u64> {
     let build_target_is_cache_owned = plan.build_target.starts_with(&req.cache_root);
-    // Repo `target/` is retained across samples and can be tens of GB of
-    // incremental objects. The growth cap only deletes cache-owned trees, so
-    // do not recursively size the external target on the cold coverage path.
+
+
+
     let current_target_bytes = if build_target_is_cache_owned {
         path_size_bytes(&plan.build_target)?
     } else {

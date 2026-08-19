@@ -72,7 +72,7 @@ fn path_has_source_ext(path_part: &str) -> bool {
 }
 
 pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, String> {
-    // Bare `kiss test` is equivalent to `kiss test .`.
+
     if operands.is_empty() {
         return Ok(TestInvocation::All);
     }

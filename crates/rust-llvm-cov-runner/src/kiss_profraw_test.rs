@@ -27,7 +27,7 @@ fn resolve_kiss_profraw_prefers_env_then_output_dir_layout() {
     let tmp = tempfile::tempdir().unwrap();
     let forced = tmp.path().join("forced-profraw");
     let old = std::env::var_os(KISS_PROFRAW_DIR_ENV);
-    // SAFETY: serialized by shim_test_env_lock.
+
     unsafe {
         std::env::set_var(KISS_PROFRAW_DIR_ENV, &forced);
     }
@@ -47,7 +47,7 @@ fn resolve_kiss_profraw_prefers_env_then_output_dir_layout() {
         .join("instances");
     fs::create_dir_all(&output).unwrap();
     let old = std::env::var_os(KISS_PROFRAW_DIR_ENV);
-    // SAFETY: serialized by shim_test_env_lock.
+
     unsafe {
         std::env::remove_var(KISS_PROFRAW_DIR_ENV);
     }
@@ -72,7 +72,7 @@ fn redirect_sets_discard_pattern_under_kiss_profraw() {
         Some(path.as_os_str())
     );
     assert!(kiss_profraw.is_dir());
-    // SAFETY: serialized by shim_test_env_lock.
+
     match old {
         Some(value) => unsafe { std::env::set_var("LLVM_PROFILE_FILE", value) },
         None => unsafe { std::env::remove_var("LLVM_PROFILE_FILE") },
@@ -100,7 +100,7 @@ fn redirect_this_process_sets_absolute_discard_path_and_is_idempotent() {
         std::env::var_os("LLVM_PROFILE_FILE").as_deref(),
         Some(first.as_os_str())
     );
-    // SAFETY: serialized by shim_test_env_lock.
+
     match old {
         Some(value) => unsafe { std::env::set_var("LLVM_PROFILE_FILE", value) },
         None => unsafe { std::env::remove_var("LLVM_PROFILE_FILE") },
@@ -120,7 +120,7 @@ fn redirect_this_process_overwrites_prior_env_deliberate_delegation_resets() {
         .join("instances")
         .join("binary.profraw");
     let old = std::env::var_os("LLVM_PROFILE_FILE");
-    // SAFETY: serialized by shim_test_env_lock.
+
     unsafe {
         std::env::set_var("LLVM_PROFILE_FILE", &intentional);
     }
@@ -130,8 +130,8 @@ fn redirect_this_process_overwrites_prior_env_deliberate_delegation_resets() {
         std::env::var_os("LLVM_PROFILE_FILE").as_deref(),
         Some(redirected.as_os_str())
     );
-    // Shim/child paths deliberately set their own sink after inheritance.
-    // SAFETY: serialized by shim_test_env_lock.
+
+
     unsafe {
         std::env::set_var("LLVM_PROFILE_FILE", &intentional);
     }
@@ -180,7 +180,7 @@ fn redirect_inherited_uses_kiss_profraw_env() {
     let kiss_profraw = tmp.path().join("profraw");
     let old_profile = std::env::var_os("LLVM_PROFILE_FILE");
     let old_kiss_profraw = std::env::var_os(KISS_PROFRAW_DIR_ENV);
-    // SAFETY: serialized by shim_test_env_lock.
+
     unsafe {
         std::env::set_var("LLVM_PROFILE_FILE", "/tmp/should-be-redirected.profraw");
         std::env::set_var(KISS_PROFRAW_DIR_ENV, &kiss_profraw);
@@ -189,7 +189,7 @@ fn redirect_inherited_uses_kiss_profraw_env() {
     let redirected = std::env::var_os("LLVM_PROFILE_FILE").unwrap();
     assert!(redirected.to_string_lossy().contains(DISCARD_PROFILE_PATTERN));
     assert!(kiss_profraw.is_dir());
-    // SAFETY: serialized by shim_test_env_lock.
+
     match old_profile {
         Some(value) => unsafe { std::env::set_var("LLVM_PROFILE_FILE", value) },
         None => unsafe { std::env::remove_var("LLVM_PROFILE_FILE") },

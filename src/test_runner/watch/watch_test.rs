@@ -142,7 +142,7 @@ fn native_watcher_observes_create_modify_rename_delete() {
         "expected modify event"
     );
 
-    // Atomic save: write temp then rename over target (both paths visible).
+
     let tmp_write = tmp.path().join(".w.py.tmp");
     let renamed = tmp.path().join("w2.py");
     std::fs::write(&tmp_write, "a=3\n").unwrap();

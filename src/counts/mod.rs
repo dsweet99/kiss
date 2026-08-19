@@ -166,7 +166,7 @@ pub fn check_file_metrics(
             "Consider splitting types into separate modules by responsibility.",
         );
     }
-    // Skip __init__.py - it's a module definition file that naturally aggregates imports
+
     if m.imports > cfg.imported_names_per_file && fname != "__init__.py" {
         push_py_file_threshold(
             v,

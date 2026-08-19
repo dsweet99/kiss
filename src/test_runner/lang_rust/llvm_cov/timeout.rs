@@ -21,9 +21,9 @@ pub(super) fn selector_timeout_millis_for_batch(
     coverage_output_mode: &CoverageOutputMode,
     gate: &kiss::GateConfig,
 ) -> Result<BTreeMap<String, u64>, String> {
-    // CheckAggregate already runs the full nextest universe. Catch-all "*"
-    // timeouts do not need PATH::symbol remapping, and that remap dominates
-    // cold rust_llvm_cov after `.kiss` is removed.
+
+
+
     if matches!(coverage_output_mode, CoverageOutputMode::CheckAggregate { .. })
         && !timeout_rules_need_report_ids(&gate.max_unit_test_seconds)
     {
@@ -35,8 +35,8 @@ pub(super) fn selector_timeout_millis_for_batch(
             })
             .collect());
     }
-    // Map logical nextest ids → PATH::symbol before applying path-pattern limits.
-    // Fail closed: never apply catch-all limits against bare logical ids.
+
+
     let report_ids = crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, selectors)?;
     selectors
         .iter()

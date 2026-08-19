@@ -64,7 +64,7 @@ pub(crate) fn load_reusable_rslip_cache_entry(
 }
 
 pub(crate) fn entry_is_reusable(entry: &RslipCacheEntry, source_root: &Path) -> bool {
-    // FAIL/TIMEOUT must always re-run; only Passed outcomes are reusable.
+
     if entry.status != rpytest_runner::TestStatus::Passed {
         return false;
     }
@@ -182,7 +182,7 @@ pub(crate) fn covered_file_digests(
         digests.insert(module.to_string(), digest);
     }
     if digests.is_empty() {
-        // Coverage listed only synthetic keys: still reusable (no on-disk inputs).
+
         return Some(digests);
     }
     Some(digests)

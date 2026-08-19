@@ -189,7 +189,7 @@ fn prune_one_unreferenced_snapshot(path: &Path, active_id: &str, prior_id: Optio
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return 0;
     };
-    // Staging dirs (`.` prefix): another publisher may still own them; never fail.
+
     let keep = !name.starts_with('.') && (name == active_id || prior_id == Some(name));
     if keep {
         return 0;

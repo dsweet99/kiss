@@ -46,7 +46,7 @@ pub(crate) fn selectors_fingerprint(selectors: &[String]) -> String {
 ///
 /// Callers currently load per-entry coverage even on a hit (seal has no payloads);
 /// the reader exists so the positive-only contract stays testable and honest.
-#[allow(dead_code)] // exercised by unit tests; write path is production
+#[allow(dead_code)]
 pub(crate) fn try_warm_all_hit_seal(
     req: &RustCoverageBatchRequest,
     identity: &RustCoverageBatchIdentity,

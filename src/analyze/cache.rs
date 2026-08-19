@@ -21,10 +21,10 @@ pub(crate) struct FullCacheStoreInput<'a> {
 }
 
 pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
-    // Cache writes are independent of report mode: every successful static
-    // `kiss check` run primes the cache so subsequent invocations can hit it.
-    // Skip writes for timing breakdowns and suppressed-status callers (for
-    // example shrink pre-flight).
+
+
+
+
     if inp.opts.show_timing || inp.opts.suppress_final_status {
         return;
     }

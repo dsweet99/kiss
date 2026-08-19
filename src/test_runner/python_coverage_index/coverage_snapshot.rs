@@ -55,7 +55,7 @@ pub(crate) fn write_python_coverage_snapshot(
     covered_lines: &CoveredLinesMap,
 ) -> Result<(), String> {
     let Some(manifest) = read_python_population_manifest(repo_root) else {
-        // Population not published yet; skip snapshot (caller may publish next).
+
         return Ok(());
     };
     let cache_root = python_coverage_cache_root(repo_root)?;

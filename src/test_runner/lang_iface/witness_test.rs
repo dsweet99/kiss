@@ -199,8 +199,8 @@ fn time_limit_reclassify_forces_miss_on_affected_selector() {
 
 #[test]
 fn warm_accept_reclassify_applies_tighter_session_gate() {
-    // Stored Passed + long duration must become TimedOut when the current gate
-    // tightens — ownership of time-limit policy on the accept/warm side.
+
+
     let loose = GateConfig {
         max_unit_test_seconds: vec![("*".into(), 3600.0)],
         ..GateConfig::default()
@@ -212,7 +212,7 @@ fn warm_accept_reclassify_applies_tighter_session_gate() {
     let under_loose = reclassify_statuses_with_gate(
         &["tests/a.py::t".into()],
         &[WitnessStatus::Passed],
-        &[Some(2_000_000_000)], // 2s
+        &[Some(2_000_000_000)],
         &loose,
     );
     assert_eq!(under_loose, vec![WitnessStatus::Passed]);

@@ -59,12 +59,12 @@ fn test_structs_and_helpers() {
     assert!(clustering::compute_cluster_similarity(&[0, 1], &ps) > 0.0);
     assert!(extraction::is_nontrivial_chunk("a b c d e f g h i j k", 10));
     assert!(!extraction::is_nontrivial_chunk("a b c", 10));
-    assert!(!extraction::is_nontrivial_chunk("a b c d e f g h i j k", 3)); // too few lines
+    assert!(!extraction::is_nontrivial_chunk("a b c d e f g h i j k", 3));
 }
 
 #[test]
 fn test_python_duplication() {
-    // Multi-line function (>= 5 lines) to pass MIN_CHUNK_LINES filter
+
     let code = "def foo():\n    x = 1\n    y = 2\n    z = 3\n    a = 4\n    b = 5\n    return x + y + z + a + b";
     let mut tmp1 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
     let mut tmp2 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
@@ -134,7 +134,7 @@ fn test_cluster_duplicates_from_chunks_smoke() {
 
 #[test]
 fn test_rust_duplication() {
-    // Multi-line function (>= 5 lines) to pass MIN_CHUNK_LINES filter
+
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     write!(tmp, "fn foo() {{\n    let x = 1;\n    let y = 2;\n    let z = 3;\n    let a = 4;\n    let b = 5;\n}}").unwrap();
     let parsed = parse_rust_file(tmp.path()).unwrap();
@@ -174,21 +174,21 @@ fn test_cmp_chunk_key_and_min_chunk() {
         end_line: 5,
         normalized: "y".into(),
     };
-    // Test cmp_chunk_key from mod.rs
+
     assert!(cmp_chunk_key(&c1, &c2).is_lt());
-    // Test clustering::cmp_chunk_key
+
     assert!(clustering::cmp_chunk_key(&c1, &c2).is_lt());
-    // Test min_chunk_in_cluster
+
     let cluster = DuplicateCluster {
         chunks: vec![c2.clone(), c1.clone()],
         avg_similarity: 0.9,
     };
     let min = clustering::min_chunk_in_cluster(&cluster).unwrap();
     assert_eq!(min.file, PathBuf::from("a.py"));
-    // Test sort_clusters_deterministic
+
     let mut clusters = vec![cluster];
     clustering::sort_clusters_deterministic(&mut clusters);
-    // Test chunks_are_nested
+
     assert!(!chunks_are_nested(&c1, &c2));
 }
 

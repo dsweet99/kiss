@@ -190,7 +190,7 @@ fn maybe_write_warm_hit_seal_from_hits(
 }
 
 fn shared_batch_context(reqs: &[RslipRequest]) -> Option<String> {
-    // Identity-only context (no whole-tree walk). Hit/miss is coverage-digest gated.
+
     reqs.first()
         .and_then(|first| rslip_request_context_fingerprint(first).ok())
 }

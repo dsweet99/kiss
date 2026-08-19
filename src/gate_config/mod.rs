@@ -159,7 +159,7 @@ impl GateConfig {
             merge_global_lenient(self, global);
         }
         if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
-            // TestSectionConfig owns full [test] unknown-key validation.
+
             merge_test_gates_lenient(self, test);
         }
     }

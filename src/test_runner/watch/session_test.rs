@@ -20,7 +20,7 @@ impl WatchEventSource for SettleScript {
     ) -> Result<Vec<NormalizedWatchEvent>, RecvTimeout> {
         match self.steps.pop_front() {
             Some(Err(RecvTimeout::Timeout)) => {
-                // Cap sleep so settle tests stay fast even when the machine asks for longer.
+
                 std::thread::sleep(timeout.min(Duration::from_millis(15)));
                 Err(RecvTimeout::Timeout)
             }

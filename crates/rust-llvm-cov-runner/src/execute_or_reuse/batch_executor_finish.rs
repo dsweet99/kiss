@@ -148,8 +148,8 @@ pub(crate) fn finish_fresh_batch_after_export(
         process_residual_count: finish.process_residual_count,
         ..Default::default()
     };
-    // Selective and population finishes both reject unmatched selectors so a
-    // never-executed selector cannot be reported or cached as PASS.
+
+
     let kind = if req.population_publication_selectors.is_some() {
         "population coverage"
     } else {
@@ -306,7 +306,7 @@ pub(crate) fn test_binaries_from_shim_metadata(
         if let Some(executable) = item.argv.first() {
             let path = PathBuf::from(executable);
             let id = test_binary_id_for_path(&path);
-            // Digest once per binary id; re-reading a fat executable per shim row is O(N×size).
+
             if !by_id.contains_key(&id) {
                 let digest = digest_test_binary(&path)?;
                 by_id.insert(

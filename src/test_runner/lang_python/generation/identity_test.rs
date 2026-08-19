@@ -65,7 +65,7 @@ fn execution_identity_is_memoized_within_cycle() {
     let args: Vec<String> = vec![];
     super::identity_memo::clear_python_execution_identity_memo();
     let first = current_python_execution_identity(repo, &args).unwrap();
-    // Mutate sources; memo must still return the cycle-start identity.
+
     fs::write(repo.join("app.py"), b"x = 2\n").unwrap();
     let second = current_python_execution_identity(repo, &args).unwrap();
     assert_eq!(

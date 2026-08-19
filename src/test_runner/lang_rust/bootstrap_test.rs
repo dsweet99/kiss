@@ -37,7 +37,7 @@ fn bootstrap_repo_rust_witness_when_env_set() {
             try_warm_rust_cached_summary(root, &planned, &identity, &kiss::GateConfig::default()).is_some()
         );
     }
-    // Publish Full for *current planned* universe so All-mode can accept.
+
     let statuses = vec![WitnessStatus::Passed; planned.len()];
     let durations = vec![Some(0u64); planned.len()];
     let empty_cov = Default::default();

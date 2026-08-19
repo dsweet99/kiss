@@ -65,9 +65,9 @@ pub(crate) fn run_batch_subprocess(
             output_channel.errors.join("; "),
         ));
     }
-    // Final shim ingest, then drain/reap before counting. Full-repo -j32 batches can
-    // still have one worker process-group alive briefly after cargo/nextest returns;
-    // counting without reaping falsely reports rust_process_residual_count > 0.
+
+
+
     let mut seen_shim_metadata = HashSet::new();
     ingest_live_shim_identities(
         process_tree.registry().as_ref(),

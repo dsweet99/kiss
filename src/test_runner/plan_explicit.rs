@@ -35,8 +35,8 @@ pub(super) fn plan_explicit_target_selectors(
     }
     let direct_python: Vec<_> = query.direct_python.into_iter().collect();
     let direct_rust: Vec<_> = query.direct_rust.into_iter().collect();
-    // Pure test-operand plans: run only named selectors; no covering selection,
-    // population, or prior-failure fan-out.
+
+
     if source_paths.is_empty() {
         return Ok(PlannedSelectors {
             repo_root: repo_root.to_path_buf(),
@@ -107,7 +107,7 @@ fn reject_non_member_rust_targets(
 ) -> Result<(), String> {
     let mut rust_paths: Vec<PathBuf> = query.rust_files.iter().cloned().collect();
     rust_paths.extend(query.rust_lines.keys().cloned());
-    // Direct rust selectors are PATH::symbol strings; recover file paths when present.
+
     for selector in &query.direct_rust {
         let path_part = selector.split_once("::").map_or(selector.as_str(), |(p, _)| p);
         let candidate = PathBuf::from(path_part);

@@ -64,8 +64,8 @@ pub fn detect_duplicates_from_chunks(
     if chunks.len() < 2 {
         return Vec::new();
     }
-    // Hot path: computing shingles + MinHash per chunk. Parallelize, but keep a stable
-    // signature ordering (par_iter() over slices is indexed, so Vec preserves order).
+
+
     let signatures: Vec<MinHashSignature> = chunks
         .par_iter()
         .map(|c| {
@@ -126,8 +126,8 @@ pub fn cluster_duplicates_from_chunks(
         .into_iter()
         .collect();
 
-    // Compute similarity in parallel; only keep pairs that pass threshold.
-    // Skip nested pairs (parent function vs its inner closure in the same file).
+
+
     let good_pairs: Vec<(usize, usize, f64)> = candidates
         .par_iter()
         .filter(|&&(i, j)| !chunks_are_nested(&chunks[i], &chunks[j]))

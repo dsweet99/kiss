@@ -74,12 +74,12 @@ fn test_get_usize() {
     assert_eq!(get_usize(&table, "negative"), None);
 }
 
-// === Bug-hunting tests ===
+
 
 #[test]
 fn test_min_similarity_integer_accepted() {
-    // TOML treats `min_similarity = 1` as an integer, not float.
-    // The config should accept integer values and coerce to float.
+
+
     let mut gate = GateConfig::default();
     gate.merge_from_toml("[global]\nmin_similarity = 1");
     assert!(

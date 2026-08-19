@@ -103,7 +103,7 @@ fn test_gate_config_defaults() {
 fn test_gate_config_load() {
     let gate = GateConfig::load();
     assert!(gate.min_similarity > 0.0 && gate.min_similarity <= 1.0);
-    // Repo-local .kissconfig may be clamp-generated with threshold = min per-file coverage (possibly 0).
+
     assert!(gate.test_coverage_threshold <= 100);
 }
 

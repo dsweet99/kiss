@@ -6,7 +6,7 @@
 //! TODO: Add clustering for cohesion analysis (Leiden/Louvain algorithm)
 //! once the core layering functionality is stable.
 
-// `kiss layout` CLI was removed; this module remains for unit tests and programmatic reuse.
+
 
 use kiss::{DependencyGraph, Language, LayerInfo};
 use kiss::{LayoutAnalysis, LayoutMetrics, WhatIfAnalysis};

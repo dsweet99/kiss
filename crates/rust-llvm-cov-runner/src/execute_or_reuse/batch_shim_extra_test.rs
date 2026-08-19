@@ -31,7 +31,7 @@ fn target_runner_shim_routes_child_output_through_side_channel_only() {
     let mut env = std::collections::BTreeMap::new();
     apply_output_channel_env(&mut env, &channel_config);
     for (key, value) in env {
-        // SAFETY: test-only env mutation serialized by ENV_LOCK.
+
         unsafe {
             std::env::set_var(key, value);
         }
@@ -44,7 +44,7 @@ fn target_runner_shim_routes_child_output_through_side_channel_only() {
         &[script.clone().into_os_string()],
     );
 
-    // SAFETY: test-only env mutation serialized by ENV_LOCK.
+
     unsafe {
         std::env::remove_var(crate::execute_or_reuse::batch_output_channel::OUTPUT_CHANNEL_SOCKET_ENV);
         std::env::remove_var(crate::execute_or_reuse::batch_output_channel::OUTPUT_CHANNEL_TOKEN_ENV);
@@ -191,19 +191,19 @@ fn target_runner_shim_reports_missing_command() {
 #[test]
 fn nextest_list_phase_detection_reads_environment() {
     let _env_guard = shim_test_env_lock();
-    // SAFETY: serialized by shim_test_env_lock.
+
     unsafe {
         std::env::remove_var("NEXTEST_TEST_PHASE");
     }
     assert!(!super::batch_shim_child::is_nextest_list_phase());
 
-    // SAFETY: serialized by shim_test_env_lock.
+
     unsafe {
         std::env::set_var("NEXTEST_TEST_PHASE", "list");
     }
     assert!(super::batch_shim_child::is_nextest_list_phase());
 
-    // SAFETY: serialized by shim_test_env_lock.
+
     unsafe {
         std::env::remove_var("NEXTEST_TEST_PHASE");
     }

@@ -189,7 +189,7 @@ fn is_support_input(rel: &Path) -> bool {
     if rel.file_name().and_then(|n| n.to_str()) == Some("conftest.py") {
         return true;
     }
-    // Cache-input helpers treat every .py/.rs as an input; those are source paths here.
+
     if is_source_ext(rel) {
         return false;
     }
@@ -247,7 +247,7 @@ mod tests {
         assert!(f.is_relevant(Path::new(".cargo/config.toml")));
         assert!(f.is_relevant(Path::new("foo.inc")));
         assert!(f.is_relevant(Path::new("conftest.py")));
-        // Exact-file targets must not treat unrelated .py as support via is_rslip_cache_input.
+
         let exact = WatchPathFilter::build(
             tmp.path(),
             &[],

@@ -83,8 +83,8 @@ pub(crate) fn workspace_files_fingerprint_for_cache(
 }
 
 fn workspace_files_fingerprint_git(repo_root: &Path, ignore: &[String]) -> io::Result<String> {
-    // Include untracked (non-ignored) sources: discovery finds their tests, but
-    // plain `git ls-files` would leave the selector cache falsely current.
+
+
     let output = kiss::scrubbed_git_command(repo_root)
         .args([
             "ls-files",
@@ -214,7 +214,7 @@ pub(crate) fn load_cached_workspace_selectors(
     if !cache_matches(&durable, repo_root, ignore, &fp) {
         return None;
     }
-    // Refresh `.kiss` so the next warm hit stays on the primary path.
+
     let _ = write_cache_at(&cache_path(repo_root), &durable);
     Some((durable.python_selectors, durable.rust_selectors, fp))
 }
@@ -235,8 +235,8 @@ pub(crate) fn load_workspace_selectors_for_count(
         return None;
     }
     if !ignore.is_empty() && cache.ignore != ignore && !cache.ignore.is_empty() {
-        // Prefer an exact ignore match when the cache recorded a non-empty list.
-        // Empty-cache ignore is the common test-plan case under cov's check-ignore merge.
+
+
         return None;
     }
     Some((cache.python_selectors, cache.rust_selectors))
@@ -259,8 +259,8 @@ pub(crate) fn store_workspace_selectors(
         python_selectors: python_selectors.to_vec(),
         rust_selectors: rust_selectors.to_vec(),
     };
-    // Fail closed: a returned fingerprint means the store succeeded. Prefer both
-    // writes; accept durable-only so load's durable fallback can still warm.
+
+
     let primary_ok = write_cache_at(&cache_path(repo_root), &cache).is_ok();
     let durable_ok = write_cache_at(&durable_cache_path(repo_root), &cache).is_ok();
     if primary_ok || durable_ok {

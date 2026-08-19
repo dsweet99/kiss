@@ -213,19 +213,19 @@ pub fn enumerate_workspace_python_selectors(
         let root = repo_root.to_string_lossy().to_string();
         let (py_files, _rs_files) =
             kiss::gather_files_by_lang(&[root], Some(kiss::Language::Python), ignore);
-        // Match pytest's default file discovery: only test_*.py / *_test.py.
-        // Passing every file under tests/ (helpers, gp.py, conftest.py) forces
-        // pytest to import modules that are not part of normal collection and
-        // can collide on shared basenames or pull in intentional-fail helpers.
+
+
+
+
         let test_paths = py_files
             .into_iter()
             .filter(|path| is_pytest_nodeid_source_file(path))
             .collect::<Vec<_>>();
         return collect_python_nodeids(repo_root, Some(&test_paths), pytest_args);
     }
-    // Bound collection to `tests/` when present. Empty paths make pytest walk the
-    // whole repo (including `target/`, crates, etc.), which dominated cold planning
-    // even when every nodeid lived under tests/.
+
+
+
     let tests_root = repo_root.join("tests");
     if tests_root.is_dir() {
         return collect_python_nodeids(repo_root, Some(&[tests_root]), pytest_args);

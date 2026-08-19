@@ -191,7 +191,7 @@ fn align_statuses_preserves_missing_duration_as_none() {
     )
     .unwrap();
     let by = BTreeMap::from([("tests::a".into(), WitnessStatus::Passed)]);
-    let summary = SelectorExecutionSummary::default(); // no duration map entry
+    let summary = SelectorExecutionSummary::default();
     let aligned = align_statuses(tmp.path(), &["tests::a".into()], &by, &summary, None)
         .unwrap()
         .unwrap();

@@ -46,8 +46,8 @@ pub(crate) fn walk_file(node: Node, source: &str, in_type_checking: bool, agg: &
 }
 
 pub(crate) fn is_interface_type(class_node: Node, source: &str) -> bool {
-    // tree-sitter-python has historically used "superclasses" as a field name, but to be robust we
-    // also fall back to finding an argument_list child directly.
+
+
     let supers = class_node.child_by_field_name("superclasses").or_else(|| {
         let mut c = class_node.walk();
         class_node

@@ -114,8 +114,8 @@ pub(crate) fn load_check_aggregate_population_state(
     if aggregate.selectors != manifest.selectors {
         return None;
     }
-    // Compact in-memory index: covered-file keys only. Values are unused for
-    // check-aggregate selection (any hit selects the full selector universe).
+
+
     let line_index = aggregate
         .aggregate_covered_lines
         .keys()

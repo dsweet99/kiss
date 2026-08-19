@@ -11,7 +11,7 @@ use crate::test_runner::runners::{
 };
 use crate::test_runner::lang_rust::llvm_cov::error::map_rust_llvm_cov_error;
 
-#[allow(dead_code)] // check-aggregate warm path retired from production; kept for unit tests
+#[allow(dead_code)]
 pub(crate) fn cached_summary_from_check_aggregate_population(
     repo_root: &Path,
     selectors: &[String],
@@ -46,8 +46,8 @@ fn print_rust_llvm_cov_outcome(
     report_id: &str,
     gate: &kiss::GateConfig,
 ) -> rpytest_runner::TestStatus {
-    // Limits must use PATH::symbol report ids so patterns like ["rust", 10] match.
-    // Logical nextest ids (bare fn / tests::fn) fall through to ["*", 0] otherwise.
+
+
     let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
         outcome.status,
         report_id,
@@ -114,7 +114,7 @@ pub(crate) fn finish_rust_coverage_batch_result(
         {
             print_rust_llvm_cov_outcome(outcome, &report_id, gate)
         } else {
-            // Already counted in the collapsed PASS (cached) line above.
+
             crate::test_runner::status_labels::apply_unit_test_time_limit(
                 outcome.status,
                 &report_id,
@@ -122,7 +122,7 @@ pub(crate) fn finish_rust_coverage_batch_result(
                 gate,
             )
         };
-        // last_status / witness storage keep runner-raw; SLA is accept-owned.
+
         statuses.push((outcome.selector.clone(), raw));
         summary.record(SelectorExecutionRecord {
             selector: report_id.clone(),
@@ -136,7 +136,7 @@ pub(crate) fn finish_rust_coverage_batch_result(
             exit_code: outcome.exit_code,
             duration: outcome.duration,
         });
-        // Also index raw by logical id so ensure miss_set lookups hit storage status.
+
         summary
             .raw_statuses
             .insert(outcome.selector.clone(), raw);

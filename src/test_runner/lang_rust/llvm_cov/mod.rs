@@ -100,7 +100,7 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors_with_gate(
     )
 }
 
-#[allow(dead_code)] // retained for CheckAggregate population callers outside `kiss test`
+#[allow(dead_code)]
 pub(crate) fn run_rust_llvm_cov_check_aggregate_population_selectors(
     repo_root: &Path,
     selectors: &[String],
@@ -120,14 +120,14 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_population_selectors(
     )
 }
 
-#[allow(dead_code)] // retained warm helper; production path uses ensure kernel Accept
+#[allow(dead_code)]
 pub(crate) fn cached_rust_check_aggregate_selectors(
     repo_root: &Path,
     selectors: &[String],
     extra: &[String],
 ) -> Result<Option<SelectorExecutionSummary>, String> {
     let cache_root = repo_root.join(".kiss").join("rust_llvm_cov_cache");
-    // Shared execution witness is the warm authority (no llvm-cov export).
+
     if cache_root.join("execution_witness.json").is_file()
         || cache_root.join("index.json").is_file()
     {
@@ -141,8 +141,8 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
             return Ok(Some(summary));
         }
     }
-    // Legacy check-aggregate shortcut: only when population is explicitly marked
-    // and selector universe matches (never with expected_selectors = None).
+
+
     if !cache_root.join("index.json").is_file() {
         return Ok(None);
     }
@@ -164,7 +164,7 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
     ))
 }
 
-#[allow(clippy::too_many_arguments)] // gate threaded for session ownership; options struct is next
+#[allow(clippy::too_many_arguments)]
 fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
     repo_root: &Path,
     selectors: &[String],
@@ -278,7 +278,7 @@ fn execute_rust_coverage_batch_compat(
     execute_rust_coverage_batch(batch_req, &tools).map_err(map_rust_llvm_cov_error)
 }
 
-#[allow(clippy::too_many_arguments)] // gate threaded for session ownership; options struct is next
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn rust_coverage_batch_request_from_parts(
     repo_root: &Path,
     selectors: &[String],

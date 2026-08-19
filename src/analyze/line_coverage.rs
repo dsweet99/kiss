@@ -63,7 +63,7 @@ fn cfg_test_only_rust_files(rs_files: &[PathBuf]) -> BTreeSet<PathBuf> {
             let syn::Item::Mod(module) = item else {
                 continue;
             };
-            // Inline modules have no separate file target; only file modules contribute.
+
             if module.content.is_none() {
                 let Some(target) = resolve_module_file(file, &module) else {
                     continue;
@@ -175,7 +175,7 @@ pub(crate) fn compute_file_line_coverage(
     snapshot: &RuntimeCoverageSnapshot,
 ) -> LineCoverageRecord {
     let Some(denominator_lines) = coverage_denominator_lines(file) else {
-        // Fail closed: unreadable sources must not report as 100% covered.
+
         return LineCoverageRecord {
             file: file.to_path_buf(),
             total_lines: 0,
@@ -332,8 +332,8 @@ impl RustCoverableLineVisitor<'_> {
             return;
         };
         let trimmed = line.trim();
-        // LLVM coverage does not attribute hits to attribute-only lines or bare
-        // `else {` openers even when adjacent body lines execute.
+
+
         if trimmed.is_empty()
             || trimmed.starts_with("//")
             || trimmed.starts_with("#[")

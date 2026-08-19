@@ -175,11 +175,11 @@ fn cli_stats_all_uses_metric_registry_display_names() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // `--all` outputs machine-readable STAT lines with metric_id as the key.
-    // Format: STAT:<metric_id>:<value>:<file>:<line>:<name>
-    // Metric IDs MUST match the canonical registry in `kiss::METRICS`
-    // (`src/stats/definitions.rs`); downstream tooling (mimic, .kissconfig,
-    // summary tables) joins on those IDs.
+
+
+
+
+
     assert!(
         stdout.contains("STAT:positional_args:"),
         "Expected STAT:positional_args line in output. stdout:\n{stdout}"
@@ -192,8 +192,8 @@ fn cli_stats_all_uses_metric_registry_display_names() {
 
 #[test]
 fn cli_stats_all_does_not_consume_path_as_n() {
-    // Regression: `--all` takes an optional N, but it must not steal the first PATH argument.
-    // Users should be able to run: `kiss stats --all <path>` without needing `--`.
+
+
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("mod.py"), "def foo():\n    return 1\n").unwrap();
     let output = kiss_binary()
@@ -216,8 +216,8 @@ fn cli_stats_all_does_not_consume_path_as_n() {
 
 #[test]
 fn cli_stats_summary_includes_lines_per_file() {
-    // Regression: `--all` already reports `lines_per_file`; the summary should include it too
-    // so that users see the same metric set across views.
+
+
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("mod.py"), "def foo():\n    return 1\n").unwrap();
     let output = kiss_binary().arg("stats").arg(tmp.path()).output().unwrap();
@@ -250,7 +250,7 @@ fn cli_viz_writes_dot_file() {
 
     let dot = fs::read_to_string(&out_path).unwrap();
     assert!(dot.contains("digraph kiss"), "dot:\n{dot}");
-    // At least one edge should exist.
+
     assert!(dot.contains("->"), "dot:\n{dot}");
 }
 
@@ -349,7 +349,7 @@ fn cli_viz_zoom_zero_collapses_to_one_node() {
     );
 
     let mmd = fs::read_to_string(&out_path).unwrap();
-    // One node, no edges.
+
     let node_lines = mmd
         .lines()
         .filter(|l| l.trim_start().starts_with('c') && l.contains('['))

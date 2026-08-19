@@ -62,7 +62,7 @@ fn binary_ids_compatible(expected: &str, shim_binary: &str) -> bool {
     if shim_binary.rsplit("::").next() == Some(leaf) {
         return true;
     }
-    // Cargo test artifact stems look like `leaf-<hash>`.
+
     shim_binary
         .strip_prefix(leaf)
         .is_some_and(|rest| rest.starts_with('-') && rest.len() > 1)
@@ -133,7 +133,7 @@ mod tests {
             resolve_shim_metadata(&by_full_name, &missing_items, "old-bin$case").unwrap_err();
         assert!(format!("{missing:?}").contains("missing target-runner metadata"));
 
-        // Same leaf, two hashed stems: still ambiguous after binary filtering.
+
         let ambiguous_items = vec![
             shim("aclick_usage-aaa$case"),
             shim("aclick_usage-bbb$case"),
@@ -146,7 +146,7 @@ mod tests {
         .unwrap_err();
         assert!(format!("{ambiguous:?}").contains("ambiguous target-runner metadata"));
 
-        // Unrelated binary stems with a shared test suffix → missing (not ambiguous).
+
         let unrelated = vec![shim("bin-a$case"), shim("bin-b$case")];
         let missing_compat =
             resolve_shim_metadata(&by_full_name, &unrelated, "old-bin$case").unwrap_err();

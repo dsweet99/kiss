@@ -101,7 +101,7 @@ mod tests {
             source_root: tmp.path().display().to_string(),
             files: BTreeMap::new(),
         };
-        // entry_state missing → false before snapshot read; still exercises Some(reverse).
+
         assert!(!reverse_bound_index_ok(tmp.path(), &manifest, &index));
     }
 }

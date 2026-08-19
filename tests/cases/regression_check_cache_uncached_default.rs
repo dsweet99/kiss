@@ -26,10 +26,10 @@ use std::process::Command;
 use tempfile::TempDir;
 
 fn write_corpus(dir: &std::path::Path) {
-    // One trivial source file plus a co-located test reference, so the
-    // default `test_coverage` gate can pass and `kiss check` exits 0
-    // without `--all`. The gate firing is unrelated to the cache bug —
-    // we just don't want it masking what we're trying to measure.
+
+
+
+
     fs::write(dir.join("lib.py"), "def add(a, b):\n    return a + b\n").unwrap();
     fs::write(
         dir.join("test_lib.py"),
@@ -40,8 +40,8 @@ fn write_corpus(dir: &std::path::Path) {
         dir,
         &[("test_lib.py::test_add", vec![("lib.py", vec![1, 2])])],
     );
-    // Permissive config so no structural violations and the gate is
-    // satisfied by the static test reference above.
+
+
     fs::write(
         dir.join(".kissconfig"),
         "[global]\n\

@@ -6,7 +6,7 @@ use std::sync::Mutex;
 #[cfg(unix)]
 pub(crate) fn capture_stdout(f: impl FnOnce()) -> String {
     use std::os::fd::FromRawFd;
-    // Parallel `cargo test` threads must not interleave STDOUT fd redirection.
+
     static LOCK: Mutex<()> = Mutex::new(());
     let _guard = LOCK
         .lock()

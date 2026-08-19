@@ -47,18 +47,18 @@ pub(crate) fn qualified_rust_module_name(path: &Path) -> String {
         })
         .unwrap_or_default();
 
-    // Strip everything up to and including the last "src" or "tests" segment
-    // (both are standard Rust source roots).
+
+
     if let Some(pos) = dirs.iter().rposition(|d| d == "src" || d == "tests") {
         dirs = dirs[(pos + 1)..].to_vec();
     }
 
-    // For absolute paths without a known source root, keep a short tail.
+
     if path.is_absolute() && dirs.len() > 2 {
         dirs = dirs[(dirs.len() - 2)..].to_vec();
     }
 
-    // mod.rs represents the parent directory, not itself.
+
     if stem == "mod" {
         if dirs.is_empty() {
             return "mod".to_string();
@@ -76,10 +76,10 @@ pub(crate) fn qualified_rust_module_name(path: &Path) -> String {
 pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> DependencyGraph {
     let mut graph = DependencyGraph::new();
     let mut internal_modules = HashSet::new();
-    // Map bare module stems to qualified names for import resolution.
-    // Rust `use` statements reference crate-level names, so imports
-    // appear as bare stems (e.g. `utils`) that we need to map to the
-    // qualified graph key (e.g. `foo.utils`).
+
+
+
+
     let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
 
     for parsed in parsed_files {
@@ -113,13 +113,13 @@ pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> Dependen
             }
         }
 
-        // `mod foo;` declares a child module relative to this module (except at crate roots).
+
         for child in imports.mod_decls {
             let expected = resolve::qualify_child_module(&module_name, &child);
             if internal_modules.contains(&expected) {
                 graph.add_dependency(&module_name, &expected);
             } else {
-                // Fallback: treat as a bare import.
+
                 resolve::resolve_import(
                     &child,
                     &module_name,

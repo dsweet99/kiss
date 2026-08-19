@@ -19,7 +19,7 @@ pub(super) fn kiss_binary() -> Command {
 /// - `positional_args`: check skips for methods; stats still list STATs for all units. The sync
 ///   test cannot match method-only rows to check output, so the metric is excluded in full.
 const NON_SHARED_METRICS: &[&str] = &[
-    // Architectural
+
     "cycle_size",
     "duplication",
     "orphan_module",
@@ -28,7 +28,7 @@ const NON_SHARED_METRICS: &[&str] = &[
     "fan_in",
     "fan_out",
     "dependency_depth",
-    "positional_args", // check skips inside_class methods
+    "positional_args",
 ];
 
 fn is_shared_metric(id: &str) -> bool {

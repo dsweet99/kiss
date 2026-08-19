@@ -109,7 +109,7 @@ fn executor_error_does_not_emit_rust_llvm_cov_stage() {
 #[test]
 fn rust_coverage_batch_request_fails_closed_without_report_ids() {
     let tmp = tempfile::tempdir().unwrap();
-    // Empty package: no #[test] symbols → map omits the requested selector.
+
     std::fs::create_dir_all(tmp.path().join("src")).unwrap();
     std::fs::write(
         tmp.path().join("Cargo.toml"),

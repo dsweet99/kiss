@@ -292,8 +292,8 @@ mod tests {
         )
         .unwrap();
         assert!(try_warm_hit_seal(std::slice::from_ref(&req), context).is_some());
-        // Change length so the mtime/len fast path cannot mask digest drift
-        // on coarse-resolution filesystems (same-length rewrite can keep len).
+
+
         fs::write(&app, "x = 22\n").unwrap();
         assert!(try_warm_hit_seal(std::slice::from_ref(&req), context).is_none());
     }
@@ -335,8 +335,8 @@ mod tests {
             Some("fp-abc".to_string()),
         )
         .unwrap();
-        // Delete the covered file so per-file stamp checks would fail; content
-        // fingerprint match must still allow the warm hit.
+
+
         fs::remove_file(&app).unwrap();
         assert!(try_warm_hit_seal(std::slice::from_ref(&req), context).is_some());
         req.content_fingerprint = Some("fp-other".to_string());

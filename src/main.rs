@@ -1,5 +1,5 @@
 #![allow(clippy::redundant_pub_crate)]
-// CLI/analyze use owned "context" structs at API boundaries; pedantic prefers references everywhere.
+
 #![allow(clippy::needless_pass_by_value)]
 
 mod analyze;
@@ -20,7 +20,7 @@ use rust_llvm_cov_runner::{
 };
 
 fn main() {
-    // Drop runs in `run_kiss_main` before `process::exit` (exit skips destructors).
+
     std::process::exit(run_kiss_main());
 }
 

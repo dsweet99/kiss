@@ -122,7 +122,7 @@ pub(crate) fn open_publish_tmp(
         .open(temporary_path)
     {
         Ok(file) => Ok(file),
-        // Parent can vanish between create_dir_all and create_new under races.
+
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
             fs::create_dir_all(final_parent)
                 .map_err(|retry| path_step_err(artifact, "create_dir_all retry", final_parent, retry))?;

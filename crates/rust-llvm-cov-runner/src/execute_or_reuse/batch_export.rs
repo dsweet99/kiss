@@ -97,7 +97,7 @@ impl SubprocessInstanceExporter {
             .ok_or_else(|| RustLlvmCovError::InvalidRequest("profile path has no parent".into()))?;
         let profdata_path = profile_dir.join(format!("{}.profdata", request.instance_id));
         if !merge_instance_profile(&self.tools, &request.profile_path, &profdata_path)? {
-            // Fork/_exit and similar tests can leave empty or malformed profraw.
+
             return Ok(RustLineCoverage {
                 files: BTreeMap::new(),
             });

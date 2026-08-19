@@ -47,7 +47,7 @@ fn evidence_from_v1_bundle_builds_complete_evidence() {
     };
     let evidence = evidence_from_v1_bundle(&selectors, &bundle).expect("complete");
     assert!(evidence.complete);
-    // Empty coverage for a selector no longer aborts migration.
+
     let with_empty = evidence_from_v1_bundle(
         &selectors,
         &V1Bundle {

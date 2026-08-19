@@ -266,7 +266,7 @@ fn rslip_coverage_from_outcome(outcome: &PytestRunOutcome) -> Result<LineCoverag
         .ok_or_else(|| RslipError::MissingArtifact(runtime::COVERAGE_ARTIFACT.to_string()))?;
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
-        // Pytest can exit before writing coverage (crash, collect error, early kill).
+
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
             return Err(RslipError::MissingArtifact(runtime::COVERAGE_ARTIFACT.to_string()));
         }

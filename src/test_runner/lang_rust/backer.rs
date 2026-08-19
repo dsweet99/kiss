@@ -93,7 +93,7 @@ impl RustModule {
         }
     }
 
-    #[allow(dead_code)] // ensure kernel publishes Full universe; retained for backer tests
+    #[allow(dead_code)]
     pub(crate) fn population_manifest_selectors(&self) -> Result<Vec<String>, String> {
         enumerate_workspace_rust_selectors(&self.repo_root, &self.ignore)
     }

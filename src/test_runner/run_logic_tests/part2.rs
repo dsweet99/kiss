@@ -164,7 +164,7 @@ metrics: true,
         gate: kiss::GateConfig::default()
         },
     );
-    // Local temp repos may lack rslip population; accept success or a controlled runner error.
+
     match code {
         Ok(0) => {}
         Ok(other) => panic!("unexpected exit code {other}"),

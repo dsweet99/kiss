@@ -19,11 +19,11 @@ fn test_fast_communities_assigns_all_nodes() {
 
 #[test]
 fn test_should_use_fast_coarsen_regressions() {
-    // Guard against regressions that re-enable the slow Leiden path for aggressive zoom values.
-    assert!(should_use_fast_coarsen(2_000, 0, 10)); // node threshold
-    assert!(should_use_fast_coarsen(100, 10_000, 50)); // edge threshold
-    assert!(should_use_fast_coarsen(1_000, 0, 100)); // aggressive coarsen (target << nodes)
-    assert!(!should_use_fast_coarsen(100, 0, 90)); // not aggressive, small graph
+
+    assert!(should_use_fast_coarsen(2_000, 0, 10));
+    assert!(should_use_fast_coarsen(100, 10_000, 50));
+    assert!(should_use_fast_coarsen(1_000, 0, 100));
+    assert!(!should_use_fast_coarsen(100, 0, 90));
 }
 
 #[test]
@@ -119,9 +119,9 @@ fn test_coarsen_with_target_respects_explicit_count() {
 
 #[test]
 fn test_build_cluster_labels_titles_clusters_with_common_directory_name() {
-    // Regression: a cluster of files all under the same directory should be
-    // labelled with that directory name (a meaningful cluster identifier),
-    // not as a list of full file paths.
+
+
+
     let nodes: Vec<String> = (0..5).map(|i| format!("rs:n{i}")).collect();
     let mut paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
     for (i, n) in nodes.iter().enumerate() {
@@ -149,8 +149,8 @@ fn test_build_cluster_labels_titles_clusters_with_common_directory_name() {
 
 #[test]
 fn test_build_cluster_labels_collapses_multilevel_common_prefix() {
-    // When members share more than one directory level, the title should
-    // include the deepest common prefix (here `pkg/sub`).
+
+
     let nodes: Vec<String> = vec!["py:a".into(), "py:b".into(), "py:c".into()];
     let mut paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
     paths_map.insert("py:a".into(), PathBuf::from("/repo/src/pkg/sub/x.py"));
@@ -184,7 +184,7 @@ fn merge_communities_to_target_merges_connected_singletons() {
     let mut edges: BTreeSet<(String, String)> = BTreeSet::new();
     edges.insert(("a".to_string(), "b".to_string()));
     edges.insert(("b".to_string(), "c".to_string()));
-    // Unknown endpoints are ignored by partition/weight rebuild.
+
     edges.insert(("a".to_string(), "missing".to_string()));
     edges.insert(("ghost".to_string(), "b".to_string()));
 

@@ -320,7 +320,7 @@ fn empty_all_mode_publishes_empty_full_without_run() {
 
 #[test]
 fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
-    // Plan unit test #7: Accept skips run; delta publish updates one selector.
+
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
             language: "rust".into(),
@@ -345,7 +345,7 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
     assert!(state.borrow().run_calls.is_empty(), "Accept must not run selectors");
     assert_eq!(state.borrow().publish_calls, 0);
 
-    // Force miss on one selector via incomplete status, then delta publish.
+
     state.borrow_mut().witness.as_mut().unwrap().statuses[1] = WitnessStatus::Failed;
     state.borrow_mut().witness.as_mut().unwrap().complete = false;
     state.borrow_mut().run_exit_code = 0;

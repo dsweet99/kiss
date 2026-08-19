@@ -126,11 +126,11 @@ fn h10_code_unit_has_byte_range(p: &ParsedFile) {
 
 fn file_h1_to_h3_discovery(tmp: &tempfile::TempDir) {
     use std::fs;
-    // H1: .py files are discoverable
+
     fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-    // H2: non-.py files are ignored by find_python_files
+
     fs::write(tmp.path().join("b.txt"), "x\n").unwrap();
-    // H3: nested .py files are discoverable
+
     let sub = tmp.path().join("sub");
     fs::create_dir(&sub).unwrap();
     fs::write(sub.join("c.py"), "x=1\n").unwrap();

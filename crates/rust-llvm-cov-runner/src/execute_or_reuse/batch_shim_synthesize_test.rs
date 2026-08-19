@@ -100,7 +100,7 @@ fn colliding_lib_and_bin_libtest_prefix_disambiguates_via_src_mods() {
                 src_path: Some(bin_src.to_string_lossy().into_owned()),
                 is_test_harness: true,
             },
-            // Non-test bin must be ignored even if it shares the prefix.
+
             BatchCompilerArtifact {
                 executable: Some("/repo/target/debug/kiss".into()),
                 filenames: vec![],

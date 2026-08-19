@@ -313,8 +313,8 @@ pub fn load_current_generation_line_index(
     cache_root: &Path,
     source_root: &Path,
 ) -> Option<RustCoverageIndex> {
-    // Share population-loader artifact validation, including entry-derived
-    // index agreement, so callers cannot observe a tampered index.files map.
+
+
     let manifest = read_population_manifest(cache_root)?;
     let index = read_index_with_files(cache_root)?;
     if !population_artifacts_compatible(cache_root, source_root, &index, &manifest, None) {

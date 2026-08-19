@@ -12,7 +12,7 @@ fn store_workspace_selectors_fails_closed_when_writes_fail() {
         "def test_a():\n    assert True\n",
     )
     .unwrap();
-    // Block both primary (.kiss/...) and durable (target/kiss-plan/...) parents.
+
     fs::write(root.join(".kiss"), "not-a-directory").unwrap();
     fs::write(root.join("target"), "not-a-directory").unwrap();
     assert!(
@@ -68,7 +68,7 @@ fn git_fingerprint_includes_untracked_sources() {
     store_workspace_selectors(root, &[], &[], &["a".into()]);
     assert!(load_cached_workspace_selectors(root, &[]).is_some());
 
-    // Untracked source must invalidate: discovery will see its tests.
+
     fs::write(root.join("src").join("extra.rs"), "pub fn b() {}\n").unwrap();
     assert!(
         load_cached_workspace_selectors(root, &[]).is_none(),

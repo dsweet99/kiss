@@ -30,7 +30,7 @@ fn shim_rows_for_bin(
 fn test_binaries_from_shim_metadata_avoids_per_row_digest_amplification() {
     let tmp = tempfile::tempdir().unwrap();
     let bin = tmp.path().join("fat-bin");
-    // Large enough that N full re-reads would dominate /proc/self/io rchar.
+
     let payload = vec![0x5au8; 256 * 1024];
     std::fs::write(&bin, &payload).unwrap();
     let items = shim_rows_for_bin(tmp.path(), &bin, 80);
@@ -39,7 +39,7 @@ fn test_binaries_from_shim_metadata_avoids_per_row_digest_amplification() {
     let after = proc_rchar().expect("rchar");
     assert_eq!(binaries.len(), 1);
     let delta = after.saturating_sub(before);
-    // Bug: 80 × 256KiB ≈ 20MiB. Fix: one digest ≈ 256KiB (+ small overhead).
+
     assert!(
         delta < 2 * 1024 * 1024,
         "expected single digest of fat binary, rchar delta={delta}"

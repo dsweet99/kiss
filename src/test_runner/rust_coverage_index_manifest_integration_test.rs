@@ -185,7 +185,7 @@ fn assert_population_current(
 
 #[test]
 fn rust_forced_selective_entry_refresh_keeps_population_manifest_current_regression() {
-    // Fake tools + placeholder runners: VISION ≤2s alone without Cargo runner resolve warm-up.
+
     let tmp = tempfile::tempdir().unwrap();
     write_minimal_demo_crate(tmp.path());
     let req = selective_refresh_request(tmp.path());

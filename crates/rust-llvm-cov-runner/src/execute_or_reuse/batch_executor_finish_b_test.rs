@@ -58,8 +58,8 @@ fn finish_fresh_check_aggregate_publishes_successful_outcomes() {
         },
         finish_context(),
     );
-    // Publication may fail validation on fixture digests; either a published result or a
-    // structured InvalidRequest still exercises the success-path construction above.
+
+
     match result {
         Ok(ok) => {
             assert!(ok.batch_error.is_none() || ok.counters.aggregate_exports >= 1);

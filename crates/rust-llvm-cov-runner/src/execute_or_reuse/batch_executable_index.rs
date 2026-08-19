@@ -138,8 +138,8 @@ fn list_test_names_from_executable(
     binary_id: &str,
     kiss_profraw: &std::path::Path,
 ) -> Result<Vec<String>, RustLlvmCovError> {
-    // Instrumented binaries dump continuous-mode `default_*_0_*.profraw` into CWD
-    // unless LLVM_PROFILE_FILE is set; keep those discard dumps under `.kiss/profraw`.
+
+
     crate::kiss_profraw::ensure_kiss_profraw(kiss_profraw).map_err(RustLlvmCovError::Io)?;
     let mut command = Command::new(path);
     command.arg("--list");

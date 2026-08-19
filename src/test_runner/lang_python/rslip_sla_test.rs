@@ -6,7 +6,7 @@ use std::time::Duration;
 
 #[test]
 fn batch_template_applies_per_selector_timeouts() {
-    // Allowed paths share the generous wall kill; zero/ban still short-circuits.
+
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),
@@ -30,8 +30,8 @@ max_unit_test_seconds = [["tests/slow/dbs", 180], ["tests/allowed", 60], ["*", 0
 
 #[test]
 fn nonzero_sla_does_not_become_pytest_wall_kill() {
-    // Wall kill must outlast coverage/import setup (180s). Path-pattern SLA is
-    // enforced later via apply_unit_test_time_limit on call-phase duration.
+
+
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),

@@ -52,9 +52,9 @@ fn static_reference_coverage_apis_are_removed_from_src() {
 
 #[test]
 fn kiss_check_stays_static_only_without_test_ref_analysis() {
-    // Behavioral stand-in for the old perf regression: static check path must
-    // not depend on analyze_test_refs_* at all (proven by the scan above), and
-    // detection helpers used by runtime coverage population must still work.
+
+
+
     assert!(kiss::is_test_file(std::path::Path::new("tests/test_x.py")));
     assert!(kiss::is_rust_test_file(std::path::Path::new(
         "src/foo_test.rs"

@@ -52,8 +52,8 @@ pub(crate) fn build_target_runner_cargo_config_toml(
         req.coverage_output_mode,
         CoverageOutputMode::CheckAggregate { .. }
     ) {
-        // No target.runner: tests run directly under nextest. Profile data goes to
-        // the shared LLVM_PROFILE_FILE pool configured on the batch env.
+
+
         return String::new();
     }
     let platform = toml_basic_string(&req.host_platform);
@@ -76,10 +76,10 @@ pub(crate) fn apply_target_runner_env(
     ) {
         return;
     }
-    // cargo-llvm-cov overwrites LLVM_PROFILE_FILE; LLVM_PROFILE_FILE_NAME is
-    // honored and placed under CARGO_LLVM_COV_TARGET_DIR (same as build_target).
-    // Use a per-run token so stale pool-*.profraw from earlier cov runs are not
-    // merged into this export (that produces empty seed-filtered object sets).
+
+
+
+
     let run_token = req
         .generated_config
         .parent()
@@ -93,9 +93,9 @@ pub(crate) fn apply_target_runner_env(
 }
 
 fn build_nextest_default_filter(req: &RustCoverageBatchRequest) -> String {
-    // A full CheckAggregate population enumerates thousands of selectors. Building
-    // an OR of every test name makes nextest matching pathologically slow and
-    // dominates cold `kiss cov` wall time versus native llvm-cov nextest.
+
+
+
     let runnable: Vec<&String> = req
         .logical_selectors
         .iter()
@@ -109,7 +109,7 @@ fn build_nextest_default_filter(req: &RustCoverageBatchRequest) -> String {
         if runnable.len() == req.logical_selectors.len() {
             return "all()".to_string();
         }
-        // Still run the population, but exclude zero-limit bans from execution.
+
         let excludes = req
             .logical_selectors
             .iter()
@@ -120,7 +120,7 @@ fn build_nextest_default_filter(req: &RustCoverageBatchRequest) -> String {
         return format!("all() & {excludes}");
     }
     if runnable.is_empty() {
-        // No runnable selectors (all banned): nextest must match nothing.
+
         return "not all()".to_string();
     }
     let exact = rust_test_args_request_exact_match(&req.test_args);
@@ -274,13 +274,13 @@ mod tests {
     #[test]
     fn refresh_guard_does_not_serialize_nextest_threads() {
         let req = crate::plan::batch_plan::RustCoverageBatchRequest::witness();
-        // SAFETY: this test observes the variable immediately and restores it
-        // before returning; scheduling must not depend on this guard.
+
+
         unsafe {
             std::env::set_var("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE", "1");
         }
         assert_eq!(nextest_test_threads(&req), req.jobs.to_string());
-        // SAFETY: see the set_var note above.
+
         unsafe {
             std::env::remove_var("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE");
         }

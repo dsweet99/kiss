@@ -45,9 +45,9 @@ pub(super) fn store_and_publish_check_aggregate(
                 export.exported,
             ),
         };
-    // CheckAggregate coverage is stored once in check_aggregate.json (per
-    // binary). Strip per-selector maps before entries/ so we do not duplicate
-    // ~180KB × thousands of tests on disk.
+
+
+
     for outcome in &mut completed {
         outcome.coverage = RustLineCoverage {
             files: BTreeMap::new(),

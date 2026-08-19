@@ -48,7 +48,7 @@ pub fn codebase_coverage_gate_failure_lines(ctx: &CodebaseCoverageGateFailureCtx
 
 #[allow(clippy::implicit_hasher)]
 pub fn coverage_gate_failure_lines(ctx: &CoverageGateFailureCtx<'_>) -> Vec<String> {
-    // Per-file enforcement: list failing files first, then unreferenced units
+
     let threshold = ctx.threshold;
     let mut failing: Vec<_> = ctx
         .file_pcts

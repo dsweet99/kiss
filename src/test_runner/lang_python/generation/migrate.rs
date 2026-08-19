@@ -95,8 +95,8 @@ pub(super) fn evidence_from_v1_bundle(
 ) -> Option<PopulationEvidence> {
     let mut evidence = PopulationEvidence::from_ordered_selectors(selectors);
     for selector in selectors {
-        // Empty coverage is allowed: a selector may be in the population without
-        // covering any indexable source file (e.g. failed/fixture-only tests).
+
+
         let cov = selector_coverage_from_index(selector, &bundle.index, &bundle.coverage);
         evidence.absorb_selector(SelectorEvidence {
             selector: selector.clone(),

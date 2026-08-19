@@ -75,7 +75,7 @@ fn collect_py_units(py_files: &[PathBuf]) -> Vec<kiss::UnitMetrics> {
 
     collect_lang_units(LangCollect {
         files: py_files,
-        // parse_files currently always returns Ok(...); keep the Result surface explicit.
+
         parse: |files| {
             parse_files(files)
                 .unwrap_or_else(|_| Vec::new())

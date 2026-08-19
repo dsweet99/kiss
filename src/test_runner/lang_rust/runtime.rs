@@ -54,7 +54,7 @@ impl LanguageRuntime for RustRuntime {
         };
         let summary = match request.mode {
             AcceptMode::All => {
-                // Cov / Full population: CheckAggregate path (binary-level publish).
+
                 crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_check_aggregate_selectors_with_gate(
                     &request.repo_root,
                     miss_set,
@@ -66,7 +66,7 @@ impl LanguageRuntime for RustRuntime {
                 )?
             }
             AcceptMode::Subset => {
-                // Test path Miss/repair: selector-entry exports.
+
                 crate::test_runner::runners::run_rust_llvm_cov_selectors(
                     &request.repo_root,
                     miss_set,
@@ -146,8 +146,8 @@ impl LanguageRuntime for RustRuntime {
         planned: &[String],
         witness: &ExecutionWitness,
     ) -> SelectorExecutionSummary {
-        // Warm accept must not re-parse the Rust workspace; use the fingerprint
-        // cache shared with cov time gates (`rust_report_id_cache`).
+
+
         let report_ids =
             crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
                 &request.repo_root,
@@ -188,11 +188,11 @@ impl LanguageRuntime for RustRuntime {
         request: &EnsureRequest,
         selectors: &[String],
     ) -> Result<Vec<String>, String> {
-        // Witness stores nextest logical ids for every executed selector, including
-        // tests whose source files are `--ignore`d for coverage. Map them the same
-        // way cold batch construction does (`rust_report_ids_for_selectors` uses
-        // an empty ignore list). An ignore-filtered map misses those names and
-        // fails closed on warm time-gate reclassify.
+
+
+
+
+
         let report_ids =
             crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
                 &request.repo_root,

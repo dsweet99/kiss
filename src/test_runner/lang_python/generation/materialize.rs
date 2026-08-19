@@ -92,7 +92,7 @@ pub(crate) fn evidence_from_cached_outcomes(
     for delta in deltas {
         evidence.absorb_selector(delta);
     }
-    // Missing selectors remain unresolved; never reconstruct by scanning entries/.
+
     evidence.recompute_complete();
     Ok(evidence)
 }

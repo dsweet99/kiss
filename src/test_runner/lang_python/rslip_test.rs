@@ -142,8 +142,8 @@ fn rslip_request_and_version_contracts_are_explicit() {
     assert_eq!(req.cwd, tmp.path());
     assert_eq!(req.pytest_args, extra);
     assert!(req.force_rerun);
-    // Allowed paths use a generous wall kill; path-pattern SLA is applied to
-    // call-phase duration after the test finishes.
+
+
     let expected = timeout_for_selector("tests/test_app.py::test_ok");
     assert_eq!(req.timeout, Some(expected));
     assert_eq!(expected, DEFAULT_PYTEST_TIMEOUT);

@@ -244,7 +244,7 @@ fn combined_selectors_routes_changed_python_and_rust_tests() {
 #[test]
 #[allow(non_snake_case)]
 fn EngineBackers_empty_when_no_language_has_work() {
-    // Covers EngineBackers empty planner/prior-failure output.
+
     let tmp = tempfile::TempDir::new().unwrap();
     let changed_tests = ChangedTestSelectors::default();
     let python_changed_lines = BTreeMap::new();

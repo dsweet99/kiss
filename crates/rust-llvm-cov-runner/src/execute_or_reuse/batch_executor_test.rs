@@ -58,7 +58,7 @@ fn all_hit_rejects_empty_coverage_pass_entries() {
     let req = batch_executor_request(repo.path());
     store_batch_executor_selector(repo.path(), &req, "alpha");
     store_batch_executor_selector(repo.path(), &req, "beta");
-    // Overwrite alpha with empty-coverage PASS (poison shape from old unmatched path).
+
     let tools = tools();
     let identity = batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
@@ -79,7 +79,7 @@ fn all_hit_rejects_empty_coverage_pass_entries() {
         },
         &identity.generation_fingerprint,
     );
-    // Bypass store_rust_cov_cache_entry stability guard so we can plant poison bytes.
+
     fs::write(&path, serde_json::to_vec(&poison).unwrap()).unwrap();
 
     let result =

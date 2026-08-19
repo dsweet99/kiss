@@ -343,7 +343,7 @@ fn batch_pytest_failure_is_stored_after_coverage_parse() {
     }))
     .run_or_reuse_many_bounded(vec![req], 1);
 
-    // FAIL outcomes are never cache-reusable; kiss test must re-execute them.
+
     assert_eq!(rerun[0].as_ref().unwrap().cache_status, CacheStatus::MissStored);
     assert_eq!(rerun[0].as_ref().unwrap().status, TestStatus::Failed);
     assert_eq!(calls.get(), 1);

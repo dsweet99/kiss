@@ -226,7 +226,7 @@ fn begin_with_layout_sweeps_orphan_default_profraw() {
     assert!(!repo.join("default_root_0_1.profraw").exists());
     assert!(!crate_dir.join("default_crate_0_2.profraw").exists());
     assert!(!kiss.join("tmp").exists());
-    // Intentional instance profiles under the live run are not orphan-swept.
+
     fs::write(
         plan.target_runner_output_dir.join("intentional.profraw"),
         b"keep",

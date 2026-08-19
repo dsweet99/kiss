@@ -115,19 +115,19 @@ fn test_lsh_candidates_handles_empty_and_too_many_bucket_members() {
     );
 }
 
-// === Bug-hunting tests ===
+
 
 #[test]
 fn test_generate_shingles_zero_size_returns_empty() {
-    // shingle_size=0 is degenerate; should return empty set, not panic.
-    // windows(0) panics in Rust, so this exposes a missing guard.
+
+
     let shingles = generate_shingles("hello world test", 0);
     assert!(shingles.is_empty());
 }
 
 #[test]
 fn test_estimate_similarity_is_symmetric() {
-    // Similarity should be the same regardless of argument order.
+
     let sig1 = MinHashSignature {
         hashes: vec![1, 2, 3, 4, 5],
     };

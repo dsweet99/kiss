@@ -33,9 +33,9 @@ pub fn require_git_repo_root(repo: &Path) -> Result<PathBuf, String> {
     git_repo_root(repo)
 }
 
-// See `kiss::scrubbed_git_command`: strip parent-process `GIT_*`
-// overrides so wrappers (notably pre-commit) cannot redirect kiss
-// into the wrapper's index/worktree.
+
+
+
 pub(crate) fn git_command(repo: &Path) -> Command {
     kiss::scrubbed_git_command(repo)
 }

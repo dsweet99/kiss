@@ -47,7 +47,7 @@ fn write_demo_crate(root: &Path, value: u32) -> PathBuf {
         "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
     )
     .unwrap();
-    // Pre-seed lockfile so warm fixtures avoid a cold `cargo generate-lockfile`.
+
     fs::write(
         root.join("Cargo.lock"),
         "version = 4\n\n[[package]]\nname = \"demo\"\nversion = \"0.1.0\"\n",

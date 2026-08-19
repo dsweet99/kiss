@@ -61,9 +61,9 @@ pub(super) fn execute_language_phase(
     };
     let phase_duration = started.elapsed();
     let mut index_rebuild_duration = std::time::Duration::ZERO;
-    // Publish population derived state even when some selectors failed/timed out.
-    // Otherwise a few hung/failing tests force every later `kiss test .` to re-run
-    // the full population (hours on sameq-scale suites).
+
+
+
     if let ExecutionPhase::Population(selectors) = phase {
         let index_started = Instant::now();
         module.write_manifest(selectors, ctx)?;
@@ -89,8 +89,8 @@ fn should_rebuild_after_selective(
     match phase {
         ExecutionPhase::NoWork | ExecutionPhase::Population(_) => false,
         ExecutionPhase::Selective(_) => {
-            // Skip rewrite when this selective phase only re-read cache hits.
-            // (Python used to always rebuild; that reloaded sameq-scale line_index.)
+
+
             summary.cache_misses > 0 || summary.cache_unstored > 0
         }
     }

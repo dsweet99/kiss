@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Run the adversarial CLI with all subcommands registered."""
 
 from __future__ import annotations

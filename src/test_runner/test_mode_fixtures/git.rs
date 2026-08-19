@@ -42,7 +42,7 @@ pub(crate) fn ensure_main_branch(dir: &Path) {
         .output()
         .unwrap();
     if !out.status.success() {
-        // Empty repo: `git init -b main` already set the initial branch name.
+
         return;
     }
     let current = String::from_utf8(out.stdout).unwrap().trim().to_string();

@@ -19,7 +19,7 @@ fn dot_escape(s: &str) -> String {
 }
 
 fn mermaid_escape_label(s: &str) -> String {
-    // Mermaid labels render HTML; keep it simple and safe.
+
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -27,7 +27,7 @@ fn mermaid_escape_label(s: &str) -> String {
 }
 
 fn mermaid_node_id(prefix: &str, name: &str) -> String {
-    // Mermaid identifiers should be simple; normalize to [a-z0-9_].
+
     let mut out = String::with_capacity(prefix.len() + name.len() + 3);
     out.push_str(prefix);
     out.push_str("__");
@@ -56,7 +56,7 @@ fn write_graph_dot(
     graph: &DependencyGraph,
     prefix: &str,
 ) -> std::io::Result<()> {
-    // Keep output stable for diffs: sort nodes/edges.
+
     let mut nodes: BTreeSet<String> = BTreeSet::new();
     for name in graph.nodes.keys() {
         nodes.insert(name.clone());
@@ -137,8 +137,8 @@ pub(crate) fn write_coarsened_mermaid(
     g: &CoarsenedGraph,
 ) -> std::io::Result<()> {
     for (i, label) in g.labels.iter().enumerate() {
-        // Embedded newlines split `c0["..."]` across lines and break many Mermaid parsers
-        // (rendered diagram shows bare ids like `c0` / stray digits instead of the label).
+
+
         let label = label.replace('\n', " — ");
         let label = mermaid_escape_label(&label);
         writeln!(out, "  c{i}[\"{label}\"]")?;

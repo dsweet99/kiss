@@ -113,7 +113,7 @@ fn missing_coverage_artifact_is_stored_as_failed_miss() {
     let req = rslip_sample_request(tmp.path());
     let rslip = Rslip::new(PytestRunner::from_fn(|req| {
         let path = req.artifacts[0].path.clone();
-        // Intentionally do not write the coverage artifact.
+
         Ok(PytestRunOutcome {
             nodeid: req.nodeid,
             status: TestStatus::Passed,
@@ -139,7 +139,7 @@ fn missing_coverage_artifact_is_stored_as_failed_miss() {
     let second = Rslip::new(PytestRunner::from_fn(move |req| {
         calls_for_runner.set(calls_for_runner.get() + 1);
         let path = req.artifacts[0].path.clone();
-        // Still missing coverage: empty-coverage entries are never cache hits.
+
         Ok(PytestRunOutcome {
             nodeid: req.nodeid,
             status: TestStatus::Passed,

@@ -81,7 +81,7 @@ fn check_aggregate_source_selection_returns_population_or_empty() {
         selectors: vec!["tests::covers_src".to_string()],
         line_index: BTreeMap::from([(
             "src/lib.rs".to_string(),
-            BTreeSet::new(), // compact check-aggregate: key presence only
+            BTreeSet::new(),
         )]),
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),

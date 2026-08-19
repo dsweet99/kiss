@@ -244,16 +244,16 @@ fn fingerprint_includes_gate_comment_removal_enabled() {
 
 #[test]
 fn fingerprint_covers_all_config_fields() {
-    // All Config fields are `usize`, so struct size / field size == field count.
-    // If a non-usize field is ever added, this will catch it as a count mismatch.
+
+
     let field_count = std::mem::size_of::<Config>() / std::mem::size_of::<usize>();
     assert_eq!(
         field_count, 23,
         "Config field count changed; update mix_config_into_fingerprint and this test"
     );
-    // Exhaustive destructure: adding a field to Config without listing it here
-    // is a compile error, forcing the developer to update this test AND
-    // mix_config_into_fingerprint.
+
+
+
     let Config {
         statements_per_function: _,
         methods_per_class: _,

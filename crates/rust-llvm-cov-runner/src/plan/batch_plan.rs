@@ -92,11 +92,11 @@ pub fn build_rust_coverage_batch_plan(
     let runner_map_path = super::batch_plan_nextest_config::runner_map_path_for_request(req);
     let mut env = req.env.clone();
     ensure_coverage_link_build_id(&mut env);
-    // Prevent parent CheckAggregate pool mode from leaking into SelectorEntries runs.
+
     env.remove("KISS_RUST_COVERAGE_PROFILE_POOL");
-    // Discard host/list/compile dumps under `.kiss/profraw` via batch env.
-    // CheckAggregate still sets LLVM_PROFILE_FILE_NAME for the intentional pool
-    // (cargo-llvm-cov overwrites LLVM_PROFILE_FILE for test collection).
+
+
+
     crate::kiss_profraw::ensure_kiss_profraw_env(&mut env, &req.source_root);
     let build_target_value = build_target.to_string_lossy().to_string();
     env.insert(

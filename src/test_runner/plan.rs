@@ -177,10 +177,10 @@ fn planned_all(
     workspace_files_fingerprint: Option<String>,
     gate: &kiss::GateConfig,
 ) -> PlannedSelectors {
-    // Warm `kiss test .`: when coverage populations are already current for the
-    // planned selector sets, run as selective reuse instead of re-populating
-    // (avoids rediscovery + index republish on every third warm run).
-    // Check cheap artifact presence before identity / tool-version work.
+
+
+
+
     let python_population_required = if py_sel.is_empty() {
         false
     } else if !crate::test_runner::python_coverage_index::python_coverage_index_file_present(

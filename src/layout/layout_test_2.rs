@@ -2,19 +2,19 @@ use super::*;
 
 #[test]
 fn test_count_layering_violations_with_manual_layers() {
-    // Test the function with manually constructed layers to verify
-    // it correctly detects violations when they exist
+
+
     use kiss::LayerInfo;
 
     let mut graph = DependencyGraph::new();
-    graph.add_dependency("foundation", "app"); // foundation -> app edge
+    graph.add_dependency("foundation", "app");
 
-    // Manually create layers where foundation is at layer 0 and app is at layer 1
-    // This means the edge foundation -> app goes from layer 0 to layer 1 (violation!)
+
+
     let layer_info = LayerInfo {
         layers: vec![
-            vec!["foundation".to_string()], // layer 0
-            vec!["app".to_string()],        // layer 1
+            vec!["foundation".to_string()],
+            vec!["app".to_string()],
         ],
     };
 
@@ -23,17 +23,17 @@ fn test_count_layering_violations_with_manual_layers() {
 
 #[test]
 fn test_count_layering_violations_missing_layer_info() {
-    // If a module isn't in layer_info, it shouldn't count as violation
+
     use kiss::LayerInfo;
 
     let mut graph = DependencyGraph::new();
     graph.add_dependency("a", "unknown");
 
     let layer_info = LayerInfo {
-        layers: vec![vec!["a".to_string()]], // only 'a' has a layer
+        layers: vec![vec!["a".to_string()]],
     };
 
-    // 'unknown' has no layer, so this edge is not counted
+
     assert_eq!(count_layering_violations(&graph, &layer_info), 0);
 }
 
@@ -80,7 +80,7 @@ fn test_analyze_layout_with_python_files() {
 
     let analysis = analyze_layout(&py_files, &rs_files, &opts).unwrap();
     assert_eq!(analysis.project_name, "test_project");
-    // With two modules (one importing the other), we should have layers
+
     assert!(analysis.layer_info.num_layers() > 0);
 }
 
@@ -144,7 +144,7 @@ fn test_analyze_layout_project_name_default() {
     };
 
     let analysis = analyze_layout(&py_files, &rs_files, &opts).unwrap();
-    // Falls back to current dir name or "project"
+
     assert!(!analysis.project_name.is_empty());
 }
 
@@ -201,15 +201,15 @@ fn test_run_layout_no_files_error() {
 #[test]
 fn test_project_name_from_paths() {
     let paths = vec!["/tmp/myproject/src".to_string()];
-    // May return Some or None depending on whether /tmp/myproject/src exists
+
     let _ = project_name_from_paths(&paths);
-    // Empty paths should return None
+
     assert!(project_name_from_paths(&[]).is_none());
 }
 
 #[test]
 fn test_project_name_from_cwd() {
-    // Should return Some with the current directory name
+
     let result = project_name_from_cwd();
     assert!(result.is_some());
 }

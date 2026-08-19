@@ -183,7 +183,7 @@ fn try_evaluate_records_with_time_falls_through_on_incomplete() {
         percent: 100,
         first_uncovered_line: None,
     }];
-    // Empty repo: timing population is incomplete → fast-path must fall through.
+
     let code = try_evaluate_records_with_time(
         &records,
         &RecordsEvalCtx {
@@ -244,7 +244,7 @@ fn time_only_gate_path_runs_when_coverage_threshold_zero() {
         allow_refresh: true,
         pytest_args: &[],
 };
-    // No durable rust population → incomplete timings → nonzero.
+
     assert_eq!(run_cov_command(&args), 1);
 }
 
@@ -291,7 +291,7 @@ fn allow_refresh_false_incomplete_time_gate_fails_closed() {
             ignore: &[],
         },
     );
-    // Empty universe timings are Incomplete or Disabled/Passed; Incomplete must be Some(1).
+
     if matches!(
         evaluate_time_gate_for_cov(&args, tmp.path(), &files, &[]),
         RuntimeGateEval::Incomplete
@@ -343,7 +343,7 @@ fn timing_true_empty_universe_short_circuits_or_fails_softly() {
         allow_refresh: false,
         pytest_args: &[],
 };
-    // Empty dir → no files → 0; or gate-disabled short circuit.
+
     let code = run_cov_command(&args);
     assert!(code == 0 || code == 1, "code={code}");
 }

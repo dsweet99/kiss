@@ -33,11 +33,11 @@ pub(crate) fn python_population_manifest_is_current_for_args_with_env_keys(
     else {
         return false;
     };
-    // Prefer the warm-seal plan path first: skip tree rehash / entry restat.
+
     if python_population_manifest_is_current_for_warm_seal(repo_root, selectors, &identity) {
         return true;
     }
-    // Complete or incomplete generation with matching identity/universe.
+
     if super::generation::current_generation_plan_matches(repo_root, selectors, test_args) {
         return true;
     }
@@ -55,8 +55,8 @@ fn python_population_manifest_is_current_for_warm_seal(
     if !rslip::warm_hit_seal_exists(&cache_root) {
         return false;
     }
-    // v2: population.json is a pointer, not a v1 manifest. Use warm generation
-    // (no line_index) and skip source-tree rehash while the seal file exists.
+
+
     if let Ok(pinned) =
         super::generation::try_load_pinned_python_generation_warm(repo_root)
     {
@@ -203,7 +203,7 @@ pub(crate) fn stored_python_universe_population(
                 identity: format!("gen:{}", pinned.generation_id),
             });
         }
-        // Incompatible/incomplete generation: fall through to v1 sidecars when present.
+
     }
     let identity =
         current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
@@ -354,8 +354,8 @@ fn current_python_population_manifest_identity_with_env_keys(
         python_version,
         pytest_version,
         pytest_args: test_args.to_vec(),
-        // Ignore env_keys contents for PYTHONPATH: always normalize via repo root.
-        // Callers still pass PYTHON_COVERAGE_ENV_KEYS for allowlist documentation.
+
+
         env: {
             let _ = env_keys;
             kiss::python_coverage_env_map(repo_root)

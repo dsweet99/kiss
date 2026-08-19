@@ -51,7 +51,7 @@ pub(super) fn compute_cluster_similarity(
     indices: &[usize],
     pair_sims: &HashMap<(usize, usize), f64>,
 ) -> f64 {
-    // Iterate O(k²) pairs within cluster instead of O(all_pairs) - faster for small clusters
+
     let mut total = 0.0;
     let mut count = 0;
     for i in 0..indices.len() {
@@ -94,7 +94,7 @@ pub(super) fn sort_clusters_deterministic(clusters: &mut [DuplicateCluster]) {
                     .unwrap_or(Ordering::Equal)
             })
             .then_with(|| {
-                // Deterministic tie-breaker: ensure stable ordering when size + avg_similarity tie.
+
                 match (min_chunk_in_cluster(a), min_chunk_in_cluster(b)) {
                     (Some(ca), Some(cb)) => cmp_chunk_key(ca, cb),
                     _ => Ordering::Equal,
@@ -142,7 +142,7 @@ pub(super) fn cluster_from_pairs(
     chunks: &[CodeChunk],
     good_pairs: Vec<(usize, usize, f64)>,
 ) -> Vec<DuplicateCluster> {
-    // Cluster in serial (union-find), but store only indices + similarity.
+
     let mut uf = UnionFind::new(chunks.len());
     let mut pair_similarities: HashMap<(usize, usize), f64> =
         HashMap::with_capacity(good_pairs.len());

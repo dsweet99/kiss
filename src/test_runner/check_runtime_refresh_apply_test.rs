@@ -26,7 +26,7 @@ fn scoped_refresh_env_guard_is_safe_across_threads() {
     let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     unsafe { std::env::remove_var(key) };
-    // Many short-lived overlapping guards stress the depth/env publication race.
+
     for _ in 0..64 {
         std::thread::scope(|scope| {
             for _ in 0..8 {
@@ -216,7 +216,7 @@ fn apply_identity_only_repair_publishes_when_maps_match_injected_index() {
     )
     .expect("bare crate can build an executable index");
     let line_map = inject_synthetic_binary_into_index(&mut build, &selectors[0], "bin-a");
-    // Keep selector→binary map aligned for every discovered selector.
+
     for selector in &selectors {
         build
             .index

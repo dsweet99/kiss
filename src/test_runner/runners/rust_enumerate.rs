@@ -37,8 +37,8 @@ pub(crate) fn rust_logical_to_kiss_test_ids(
     ignore: &[String],
 ) -> Result<BTreeMap<String, String>, String> {
     let mut map = BTreeMap::new();
-    // Reporting must not collapse to logical ids because an unrelated file is
-    // temporarily unparseable; skip those files and keep mapping the rest.
+
+
     for (path, logical) in
         enumerate_workspace_rust_test_entries(repo_root, ignore, ParseErrorPolicy::Skip)?
     {
@@ -55,7 +55,7 @@ pub(crate) fn rust_logical_to_kiss_test_ids(
 }
 
 fn source_may_contain_rust_test_attr(source: &str) -> bool {
-    // Matches the discovery rule in rust_test_refs: bare `#[test]` only.
+
     source.contains("#[test]") || source.contains("#[ test]")
 }
 
@@ -64,8 +64,8 @@ fn rust_selector_parse_threads() -> usize {
         .map(|n| n.get())
         .unwrap_or(4)
         .max(1);
-    // syn allocates heavily. With a low MALLOC_ARENA_MAX (malvin sandbox uses 2),
-    // oversubscription thrashes arenas and slows cold Rust planning.
+
+
     match std::env::var("MALLOC_ARENA_MAX")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
@@ -91,8 +91,8 @@ fn rust_selector_parse_pool() -> &'static rayon::ThreadPool {
 
 fn gather_member_rust_files(repo_root: &Path, ignore: &[String]) -> Vec<PathBuf> {
     let root = repo_root.to_string_lossy().to_string();
-    // Skip include! expansion: the workspace walk already lists every `.rs` file,
-    // and expand_rust_files re-parses the tree with syn (cold-plan hotspot).
+
+
     let (_py_files, rs_files) =
         kiss::gather_files_by_lang_opts(&[root], Some(kiss::Language::Rust), ignore, false);
     match cargo_workspace_member_manifest_dirs(repo_root) {
@@ -114,9 +114,9 @@ fn gather_member_rust_files(repo_root: &Path, ignore: &[String]) -> Vec<PathBuf>
 }
 
 fn selectors_in_rust_file(path: &Path) -> Result<(PathBuf, Vec<String>), String> {
-    // rust_test_functions_in only recognizes bare #[test]; skip syn when
-    // absent (cannot hide test selectors). Invalid syntax in those files
-    // still fails fast because they take the parse path below.
+
+
+
     let source = std::fs::read_to_string(path).map_err(|e| {
         format!(
             "error: kiss test: failed to read Rust workspace file {}: {e}",
@@ -173,8 +173,8 @@ fn enumerate_workspace_rust_test_entries(
     let rs_files = gather_member_rust_files(repo_root, ignore);
     let t_gather = t0.elapsed();
     let n_files = rs_files.len();
-    // Parse + extract selectors inside each worker so syn ASTs stay thread-local
-    // (syn/proc-macro2 types are !Send). Only Send selector strings cross threads.
+
+
     let t_parse_started = std::time::Instant::now();
     let parse_threads = rust_selector_parse_threads();
     let parsed: Vec<Result<(PathBuf, Vec<String>), String>> =

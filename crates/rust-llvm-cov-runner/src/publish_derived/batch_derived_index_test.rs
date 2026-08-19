@@ -243,7 +243,7 @@ fn rust_population_state_exposes_generation_and_index_fields() {
 #[test]
 fn entry_state_mismatch_rejects_population_with_reverse_metadata() {
     let fixture = published_alpha_derived_fixture();
-    // Drop the token without clearing reverse activation, simulating a torn write.
+
     std::fs::remove_file(fixture.req.cache_root.join("entry_state.json")).unwrap();
     assert!(
         load_current_population_state(

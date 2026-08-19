@@ -96,7 +96,7 @@ const TEST_GATE_MERGE_KEYS: &[&str] = &[
 ];
 
 pub(super) fn merge_test(merged: &mut toml::Table, ex: &toml::Table, nw: &toml::Table) {
-    // Prefer existing runtime keys (jobs/plugins/ignore); take gate metrics from new.
+
     let mut table = toml::Table::new();
     if let Some(toml::Value::Table(ex_t)) = ex.get("test") {
         for (k, v) in ex_t {

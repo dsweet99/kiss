@@ -32,8 +32,8 @@ fn assert_watch_interrupted_gone(mut watch: WatchProc, timeout: Duration) {
     let pid = watch.pid();
     let deadline = Instant::now() + timeout;
     loop {
-        // Prefer waitpid: a SIGINT-killed child is a zombie until reaped, and
-        // `kill(pid, 0)` still succeeds on zombies.
+
+
         if let Ok(Some(status)) = watch.child.try_wait() {
             std::mem::forget(watch);
             assert!(
@@ -52,7 +52,7 @@ fn assert_watch_interrupted_gone(mut watch: WatchProc, timeout: Duration) {
     }
 }
 
-#[allow(clippy::zombie_processes)] // WatchProc::Drop always reaps the child.
+#[allow(clippy::zombie_processes)]
 fn start_watch(args: &[&str], dir: &Path) -> WatchProc {
     let mut child = Command::new(env!("CARGO_BIN_EXE_kiss"))
         .args(args)

@@ -17,8 +17,8 @@ pub(super) fn count_statements(node: Node) -> usize {
 }
 
 pub(super) fn is_statement(kind: &str) -> bool {
-    // Statement definition: any statement within a function body that is not an import or signature.
-    // Excludes: import_statement, import_from_statement, future_import_statement
+
+
     matches!(
         kind,
         "expression_statement"

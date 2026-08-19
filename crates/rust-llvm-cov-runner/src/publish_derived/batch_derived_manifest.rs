@@ -49,8 +49,8 @@ pub(crate) fn write_population_manifest(
         test_binaries: test_binary_records(test_binaries),
         reverse_line_index: reverse_meta,
     };
-    // Concurrent orphan-tmp sweep or tree replacement can yield NotFound mid-publish.
-    // Retry once with a fresh tmp name.
+
+
     let mut last_err = None;
     for attempt in 0..2 {
         let attempt_tmp = if attempt == 0 {

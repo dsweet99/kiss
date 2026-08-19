@@ -62,7 +62,7 @@ fn apply_output_channel_env_sets_socket_and_token() {
         .get(OUTPUT_CHANNEL_TOKEN_ENV)
         .expect("token env present");
     assert_eq!(token_hex.len(), 32);
-    // SAFETY: test-only env mutation restored below.
+
     unsafe {
         for (key, value) in &env {
             std::env::set_var(key, value);
@@ -71,7 +71,7 @@ fn apply_output_channel_env_sets_socket_and_token() {
     let loaded = super::output_channel_config_from_env().expect("config from env");
     assert_eq!(loaded.socket_path, config.socket_path);
     assert_eq!(loaded.token, config.token);
-    // SAFETY: test-only env cleanup.
+
     unsafe {
         std::env::remove_var(OUTPUT_CHANNEL_SOCKET_ENV);
         std::env::remove_var(OUTPUT_CHANNEL_TOKEN_ENV);

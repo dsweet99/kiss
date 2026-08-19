@@ -206,7 +206,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
     .unwrap();
     assert!(!both.sel.python.is_empty());
     assert!(!both.sel.rust.is_empty());
-    // Warm coverage populations may clear population_required; cold trees keep it.
+
 
     let python_only = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
@@ -271,8 +271,8 @@ fn plan_repo_root_target_matches_all_via_dot() {
         via_all.population_required.python,
         via_dot.population_required.python
     );
-    // All forces population only when the on-disk coverage population is not
-    // already current for the planned selector set (warm reuse stays selective).
+
+
     assert!(!via_all.population_required.python);
     assert!(!via_all.coverage_decision_engine_used);
     assert!(!via_root.coverage_decision_engine_used);
@@ -300,8 +300,8 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
     assert!(planned.coverage_decision_engine_used);
     assert!(all.source_paths.rust.is_empty());
     assert!(!all.coverage_decision_engine_used);
-    // Partial targets stay on the decision-engine path (not planned_all). The engine
-    // may still request population for cold/missing coverage; that is not All broadening.
+
+
 }
 
 #[test]

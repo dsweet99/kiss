@@ -227,8 +227,8 @@ fn repeated_operations_do_not_collide() {
 #[cfg(debug_assertions)]
 #[test]
 fn release_build_public_calls_are_no_ops_even_when_configured() {
-    // Public after_* APIs wait up to DEFAULT_TIMEOUT (30s). Prove the barrier is
-    // armed via wait_if_targeted + short_policy so kiss cov time gates stay green.
+
+
     let dir = temp_dir();
     let _env = EnvGuard::set(Some(&dir), Some("artifact:after_rename"));
     let result = wait_if_targeted(

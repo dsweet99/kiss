@@ -33,7 +33,7 @@ fn publish_then_warm_load_reads_coverage_and_timings() {
     let repo = tmp.path();
     std::fs::create_dir_all(repo.join(".git")).unwrap();
     std::fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
-    // Identity probing needs python/pytest; use synthetic plan fields via publish API.
+
     let Ok((py, pt)) = detect_rslip_versions(repo) else {
         return;
     };

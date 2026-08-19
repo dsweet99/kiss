@@ -98,7 +98,7 @@ fn explicit_single_python_test_harness_stays_under_50ms() {
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
 
-    // Warm tool-version cache and rslip entry so the measured hit path is steady.
+
     let warm_code = run_test(run_args(true));
     assert_eq!(warm_code, 0, "warm force run must pass");
 

@@ -88,7 +88,7 @@ fn try_publish_empty_all(
     module: &dyn LanguageRuntime,
     planned: &[String],
 ) -> Result<Option<LanguageEnsureResult>, String> {
-    // Empty All-mode universe: publish empty Full (no accept/run).
+
     if !(planned.is_empty() && request.mode == AcceptMode::All) {
         return Ok(None);
     }
@@ -123,9 +123,9 @@ fn try_accept_or_warm_report(
             generation_id: Some(w.generation_id.clone()),
         });
     }
-    // Warm incomplete: TimedOut/Unresolved stay reported without runner re-entry
-    // unless --force. Failed still repairs. (sameq generations can leave timeout
-    // slots as unresolved forever otherwise.)
+
+
+
     if !request.force
         && let Some(w) = witness.as_ref()
         && all_misses_warm_skippable(w, misses)
@@ -148,9 +148,9 @@ fn run_misses_and_maybe_publish(
     identity: &str,
 ) -> Result<LanguageEnsureResult, String> {
     let batch = module.run_selectors(request, misses)?;
-    // Full All-mode cold runs set publication_universe to the planned universe.
-    // Partial incomplete repairs leave it None so languages delta-repair instead of
-    // rebuilding the whole derived population (sameq-scale line indexes).
+
+
+
     let publication_universe = batch.publication_universe.clone().or_else(|| {
         if request.mode == AcceptMode::All && batch.selectors.len() == planned.len() {
             Some(planned.to_vec())
@@ -166,10 +166,10 @@ fn run_misses_and_maybe_publish(
         publication_universe,
         summary: batch.summary.clone(),
     };
-    // Skip republish when repair only re-read unchanged cache hits (common for
-    // incomplete generations whose TimedOut/Failed selectors remain terminal).
-    // Do not skip when identity drifted: rslip all-hit must publish the current
-    // fingerprint so coverage load accepts without re-running pytest.
+
+
+
+
     let identity_unchanged = witness
         .as_ref()
         .is_some_and(|w| w.identity_digest == identity);
@@ -180,7 +180,7 @@ fn run_misses_and_maybe_publish(
             generation_id: witness.map(|w| w.generation_id),
         });
     }
-    // Always publish collected outcomes before surfacing nonzero execution status.
+
     module.publish_outcomes(request, &publish)?;
     Ok(LanguageEnsureResult {
         summary: merge_accept_and_run(planned, witness.as_ref(), &batch),

@@ -109,9 +109,9 @@ fn kiss_stats_summary_excludes_init_py_imports() {
         .find(|l| l.trim_start().starts_with("imported_names_per_file"));
 
     if let Some(row) = imports_row {
-        // If the row appears, every numeric column must be 0 — otherwise the
-        // summary is exposing an __init__.py import count that `kiss check`
-        // refuses to emit a violation for, breaking M6.
+
+
+
         let nums: Vec<usize> = row
             .split_whitespace()
             .skip(1)

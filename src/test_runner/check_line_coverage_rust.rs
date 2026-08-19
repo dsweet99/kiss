@@ -23,8 +23,8 @@ pub(crate) fn load_rust_runtime_coverage(
     if let Some(cov) = try_load_rust_coverage_from_witness(repo_root, &identity, &selectors, gate) {
         return Ok(cov);
     }
-    // Fail closed: never accept aggregate/population with expected_selectors = None
-    // when proving readiness for the planned universe (plan invariant 7).
+
+
     if let Some(snapshot) = rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
         &cache_root,
         repo_root,
@@ -44,8 +44,8 @@ pub(crate) fn load_rust_runtime_coverage(
             remap_rust_covered_lines(repo_root, snapshot.covered_lines)?,
         ));
     }
-    // Witness Accept + reusable prior aggregate (same selection context): coverage is
-    // sufficient without rebuilding the executable index (plan invariant 6).
+
+
     if let Some(cov) = try_load_rust_coverage_from_witness_prior(
         repo_root,
         &cache_root,
@@ -65,8 +65,8 @@ fn rust_selectors_for_coverage_load(
     repo_root: &Path,
     ignore: &[String],
 ) -> Result<Vec<String>, RuntimeCoverageLoadError> {
-    // Prefer the warm workspace selector cache (same plan as `kiss test`) so
-    // post-test coverage does not re-walk/parse the whole Rust tree.
+
+
     if let Some((_, rust_selectors, _)) =
         crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
             repo_root, ignore,
@@ -88,7 +88,7 @@ pub(super) fn try_load_rust_coverage_from_witness(
     if witness.covered_lines.is_empty() {
         return None;
     }
-    // Silent Accept (do not print PASS lines or rebuild report-id maps).
+
     if !rust_witness_accepts_planned(repo_root, &mut witness, identity, selectors, gate) {
         return None;
     }
@@ -143,9 +143,9 @@ pub(super) fn try_load_rust_coverage_from_witness_prior(
     if !rust_witness_accepts_planned(repo_root, &mut witness, identity, selectors, gate) {
         return None;
     }
-    // Load prior against the Full witness universe (not the possibly ignore-filtered
-    // cov planned set). `load_reusable_prior_check_aggregate` requires exact
-    // selector equality with the on-disk aggregate.
+
+
+
     let prior = rust_llvm_cov_runner::load_reusable_prior_check_aggregate(
         cache_root,
         repo_root,
@@ -285,7 +285,7 @@ mod tests {
         let loaded =
             try_load_rust_coverage_from_witness(tmp.path(), &identity, &selectors, &kiss::GateConfig::default()).unwrap();
         assert!(loaded.covered_lines.contains_key("src/lib.rs"));
-        // Empty covered_lines → None even if witness would accept.
+
         let empty = BTreeMap::new();
         let _ = publish_rust_execution_witness(PublishRustWitness {
             repo_root: tmp.path(),

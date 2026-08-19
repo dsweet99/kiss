@@ -290,7 +290,7 @@ fn cfg_helpers_cover_item_and_expr_variants_exhaustively() {
         "-1",
         "unsafe { 1 }",
         "while false {}",
-        // yield needs nightly in some contexts; skip if parse fails
+
     ];
     let mut parsed = 0usize;
     for snippet in expr_snippets {

@@ -131,7 +131,7 @@ pub(crate) fn load_current_python_population_max_duration(
         || file.input_fingerprint != pop_id.input_fingerprint
         || file.entries_fingerprint != pop_id.entries_fingerprint
     {
-        // Rebuild full sidecar once, then re-read max.
+
         let _ = load_current_python_population_durations(repo_root, pytest_args)?;
         let bytes = fs::read(&dur_path).ok()?;
         let file: PopulationDurationsMaxOnly = serde_json::from_slice(&bytes).ok()?;

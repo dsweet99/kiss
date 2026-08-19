@@ -113,7 +113,7 @@ pub(crate) fn publish_python_derived_state_with_filter_force(
             )
         });
     let Some(selectors) = selectors_to_publish else {
-        // Selective index-only rebuild when no population selectors are known.
+
         return rebuild_selection_index_fallback(repo_root, &is_indexable);
     };
     if !force_publish

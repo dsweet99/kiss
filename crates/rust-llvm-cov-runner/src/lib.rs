@@ -22,7 +22,7 @@ mod structure_regression_test;
 #[cfg(test)]
 mod test_support;
 
-// Crate-root aliases for moved modules (internal `crate::batch_*` / brace imports).
+
 #[allow(unused_imports)]
 pub(crate) use plan::batch_plan_shim_const;
 pub(crate) use execute_or_reuse::batch_executable_index;

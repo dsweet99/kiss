@@ -15,7 +15,7 @@ pub(crate) struct EnsureRequest {
     pub(crate) repo_root: PathBuf,
     pub(crate) mode: AcceptMode,
     pub(crate) lang_filter: Option<Language>,
-    #[allow(dead_code)] // reserved for future ignore-aware discovery in LanguageRuntime
+    #[allow(dead_code)]
     pub(crate) ignore: Vec<String>,
     pub(crate) force: bool,
     /// Selectors that must re-run even if the witness still says Passed (prior failures).
@@ -99,13 +99,13 @@ impl EnsureRuntimeResult {
 }
 
 #[derive(Clone, Debug, Default)]
-#[allow(dead_code)] // LanguageRuntime contract surface
+#[allow(dead_code)]
 pub(crate) struct CoverageSnapshot {
     pub(crate) covered_lines: BTreeMap<String, Vec<u32>>,
 }
 
 #[derive(Clone, Debug, Default)]
-#[allow(dead_code)] // LanguageRuntime contract surface
+#[allow(dead_code)]
 pub(crate) struct StatusTimingSnapshot {
     pub(crate) selectors: Vec<String>,
     pub(crate) statuses: Vec<WitnessStatus>,
@@ -113,7 +113,7 @@ pub(crate) struct StatusTimingSnapshot {
 }
 
 /// Per-language cache/run/publish policy for the shared ensure kernel.
-#[allow(dead_code)] // contract surface for kernel + future reporters
+#[allow(dead_code)]
 pub(crate) trait LanguageRuntime {
     fn language(&self) -> Language;
 

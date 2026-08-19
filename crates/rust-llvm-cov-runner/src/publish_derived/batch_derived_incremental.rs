@@ -28,8 +28,8 @@ pub fn rekey_selector_entries_to_identity(
     prior_generation: &str,
     selectors: &[String],
 ) -> Result<(), RustLlvmCovError> {
-    // One directory scan: per-selector full-directory walks are O(selectors×entries)
-    // and hang `kiss cov` on large caches (~10k entries × ~1.5k selectors).
+
+
     let by_selector = index_generation_selector_entries(&req.cache_root, prior_generation);
     for selector in selectors {
         let mut entry = by_selector.get(selector).cloned().ok_or_else(|| {
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn rekey_and_validate_scale_with_many_decoy_entries() {
-        // Regression: per-selector full-directory scans made kiss cov hang on large caches.
+
         let repo = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(repo.path().join("src")).unwrap();
         std::fs::write(repo.path().join("Cargo.toml"), "[package]\n").unwrap();

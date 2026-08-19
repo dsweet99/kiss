@@ -117,17 +117,17 @@ fn test_is_bool_param() {
     }
 }
 
-// === Bug-hunting tests ===
+
 
 #[test]
 fn test_inner_fn_statements_not_counted_in_outer() {
-    // Inner named functions are separate scopes. Their body statements should NOT
-    // be counted in the outer function's statement count (matching Python behavior).
+
+
     let (inputs, block) =
         parse_fn("fn outer() { let x = 1; fn inner() { let y = 2; let z = 3; } }");
     let m = compute_rust_function_metrics(&inputs, &block, 0);
-    // Expected: 2 statements (let x + fn inner as an item)
-    // Bug: recursion counts inner's body too → 4
+
+
     assert_eq!(
         m.statements, 2,
         "Inner fn body statements should not count in outer fn (got {})",
@@ -137,7 +137,7 @@ fn test_inner_fn_statements_not_counted_in_outer() {
 
 #[test]
 fn test_inner_fn_locals_not_counted_in_outer() {
-    // Inner fn's local variables should not be attributed to the outer function.
+
     let (inputs, block) =
         parse_fn("fn outer() { let a = 1; fn inner() { let b = 2; let c = 3; } }");
     let m = compute_rust_function_metrics(&inputs, &block, 0);
@@ -150,7 +150,7 @@ fn test_inner_fn_locals_not_counted_in_outer() {
 
 #[test]
 fn test_inner_fn_branches_not_counted_in_outer() {
-    // Branches inside inner functions should not inflate outer function's branch count.
+
     let (inputs, block) = parse_fn("fn outer() { fn inner(x: i32) { if x > 0 {} if x < 0 {} } }");
     let m = compute_rust_function_metrics(&inputs, &block, 0);
     assert_eq!(
@@ -198,11 +198,11 @@ fn test_file_metrics() {
 
 #[test]
 fn test_use_statements_in_function_not_counted() {
-    // Statement definition: any statement within a function body that is not an import or signature.
-    // use statements inside function bodies should NOT be counted as statements
+
+
     let (_, b) = parse_fn("fn f() { use std::io::Write; let x = 1; println!(\"{}\", x); }");
     let m = compute_rust_function_metrics(&syn::punctuated::Punctuated::new(), &b, 0);
-    // Should be 2 statements (let + println), not 3 (use + let + println)
+
     assert_eq!(
         m.statements, 2,
         "use statements inside functions should not be counted"
@@ -213,27 +213,27 @@ fn test_use_statements_in_function_not_counted() {
 fn test_count_use_names() {
     use std::io::Write;
 
-    // Single name: `use foo::bar;`
+
     let u: syn::ItemUse = syn::parse_str("use foo::bar;").unwrap();
     assert_eq!(count_use_names(&u.tree), 1);
 
-    // Grouped names: `use foo::{bar, baz};`
+
     let u2: syn::ItemUse = syn::parse_str("use foo::{bar, baz};").unwrap();
     assert_eq!(count_use_names(&u2.tree), 2);
 
-    // Glob: `use foo::*;`
+
     let u3: syn::ItemUse = syn::parse_str("use foo::*;").unwrap();
     assert_eq!(count_use_names(&u3.tree), 1);
 
-    // Rename: `use foo::bar as b;`
+
     let u4: syn::ItemUse = syn::parse_str("use foo::bar as b;").unwrap();
     assert_eq!(count_use_names(&u4.tree), 1);
 
-    // Nested groups: `use foo::{bar, baz::{qux, quux}};`
+
     let u5: syn::ItemUse = syn::parse_str("use foo::{bar, baz::{qux, quux}};").unwrap();
     assert_eq!(count_use_names(&u5.tree), 3);
 
-    // File-level counting: use items count imported names
+
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(
         tmp,

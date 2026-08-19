@@ -65,9 +65,9 @@ fn ctime_ns(meta: &fs::Metadata) -> u64 {
     #[cfg(not(unix))]
     {
         let _ = meta;
-        // Without a reliable status-change time, refuse to treat metadata as
-        // content identity: collect_file_meta still records 0, and try_* will
-        // only hit if nothing else drifts — prefer miss via schema/tools checks.
+
+
+
         0
     }
 }
@@ -181,9 +181,9 @@ pub fn try_identity_from_mtime_seal(
     if !file_meta_matches(source_root, &seal.files) {
         return None;
     }
-    // File mtimes matched, but env/args still affect generation and selection
-    // fingerprints (e.g. RUSTFLAGS). Reject the seal when the live request
-    // would not reproduce the sealed generation fingerprint.
+
+
+
     let live_generation = crate::plan::batch_fingerprint::generation_fingerprint(
         &seal.input_digest,
         req,

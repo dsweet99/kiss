@@ -307,7 +307,7 @@ fn check_aggregate_branch_builds_export_requests_with_shim_metadata() {
         Arc::new(|_, _, _, _| unreachable!("check aggregate uses aggregate exporter")),
     )
     .unwrap_err();
-    // Should get past shim synthesis into aggregate export / finish.
+
     let message = format!("{err:?}");
     assert!(
         message.contains("export")

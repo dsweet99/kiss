@@ -65,7 +65,7 @@ fn allow_refresh_true_invokes_refresh_on_identity_mismatch() {
         "allow_refresh false must fail closed on identity mismatch"
     );
 
-    // allow_refresh true must refresh (re-run / republish) so load succeeds.
+
     let refreshed = load_or_refresh_snapshot(
         repo,
         required,

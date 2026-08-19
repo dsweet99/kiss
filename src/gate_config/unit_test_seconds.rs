@@ -42,7 +42,7 @@ pub fn matched_rule_for_selector<'a>(
 pub fn limit_for_selector(rules: &[(String, f64)], selector: &str) -> f64 {
     matched_rule_for_selector(rules, selector)
         .map(|m| m.limit_seconds)
-        // Parser requires a trailing "*"; keep a safe fallback for empty/partial tables.
+
         .unwrap_or_else(defaults_max)
 }
 
@@ -103,7 +103,7 @@ pub fn format_toml_rules(rules: &[(String, f64)]) -> String {
     for (pattern, secs) in rules {
         out.push_str(&format!("\"{pattern}\" = {secs}\n"));
     }
-    // Caller wraps as [test.max_unit_test_seconds] when multi-entry.
+
     out
 }
 
@@ -195,7 +195,7 @@ fn pattern_matches(pattern: &str, path: &str) -> bool {
     if pattern == "*" {
         return true;
     }
-    // Trailing `/` means "directory prefix" (e.g. `tests/` ≡ `tests`).
+
     let pattern = pattern.trim_start_matches("./").trim_end_matches('/');
     let path = path.trim_start_matches("./");
     if pattern.is_empty() {
@@ -205,7 +205,7 @@ fn pattern_matches(pattern: &str, path: &str) -> bool {
         || path.starts_with(&format!("{pattern}/"))
         || path.starts_with(&format!("{pattern}::"))
         || path.starts_with(pattern) && {
-            // Allow prefix match on file path segment boundary.
+
             path.as_bytes().get(pattern.len()) == Some(&b'/')
                 || path.as_bytes().get(pattern.len()) == Some(&b':')
                 || path.len() == pattern.len()
@@ -266,7 +266,7 @@ mod tests {
         );
         assert_eq!(catch_all_limit(&rules), Some(0.0));
         assert!(validate_rules(&[]).is_err());
-        // Empty table falls back to defaults_max inside limit_for_selector.
+
         assert!((limit_for_selector(&[], "x.py::t") - defaults_max()).abs() < f64::EPSILON);
         assert!(pattern_matches("tests/fast", "tests/fast/a.py"));
         assert!(!pattern_matches("tests/fast", "tests/slow/a.py"));
@@ -275,9 +275,9 @@ mod tests {
 
     #[test]
     fn trailing_slash_directory_prefix_matches_descendants() {
-        // Bug: ["tests/", 10] never matched tests/webtester/... because
-        // pattern_matches appended '/' without stripping a trailing slash,
-        // producing the non-matching prefix "tests//".
+
+
+
         assert!(pattern_matches("tests/", "tests/webtester/a.py"));
         assert!(pattern_matches("tests/", "tests/fast/a.py"));
         assert!(pattern_matches("tests/", "tests"));
@@ -298,9 +298,9 @@ mod tests {
 
     #[test]
     fn rust_path_pattern_matches_report_ids_not_bare_logical_names() {
-        // .kissconfig ["rust", 10] is meant for PATH::symbol report ids.
-        // Bare nextest logical ids must not silently fall through to ["*", 0]
-        // when the caller maps them via rust_logical_to_kiss_test_ids first.
+
+
+
         let arr = Value::Array(vec![
             Value::Array(vec![Value::String("rust".into()), Value::Integer(10)]),
             Value::Array(vec![Value::String("*".into()), Value::Integer(0)]),
@@ -317,7 +317,7 @@ mod tests {
                 .abs()
                 < f64::EPSILON
         );
-        // Without the path prefix, first-match falls through to the catch-all ban.
+
         assert!((limit_for_selector(&rules, "kiss_bare_rule_api") - 0.0).abs() < f64::EPSILON);
         assert!((limit_for_selector(&rules, "tests::test_check_clean") - 0.0).abs() < f64::EPSILON);
     }

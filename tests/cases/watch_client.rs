@@ -321,7 +321,7 @@ fn watcher_reloads_kissconfig_threshold_change() {
         "from lib import f\n\ndef test_f():\n    assert f() == 0\n",
     )
     .unwrap();
-    // Start with threshold 0 so the first cycle passes despite unused().
+
     write_kissconfig_with_threshold(tmp.path(), 1.0, 0);
     commit_all(tmp.path(), "init");
 
@@ -343,7 +343,7 @@ fn watcher_reloads_kissconfig_threshold_change() {
         String::from_utf8_lossy(&ok.stderr)
     );
 
-    // Raise threshold; watcher should reload and fail coverage on the next cycle.
+
     write_kissconfig_with_threshold(tmp.path(), 1.0, 90);
     std::thread::sleep(Duration::from_secs(4));
 

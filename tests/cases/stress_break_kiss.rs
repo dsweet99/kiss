@@ -14,39 +14,39 @@ fn get_func_node(p: &kiss::ParsedFile) -> tree_sitter::Node<'_> {
     p.tree.root_node().child(0).unwrap()
 }
 
-// ═══════════════════════════════════════════════════════════════
-// H1: Partial parse errors — tree-sitter ERROR nodes silently
-//     corrupt metrics instead of being detected.
-// ═══════════════════════════════════════════════════════════════
+
+
+
+
 
 #[test]
 fn h1_syntax_error_in_function_body_still_produces_metrics() {
-    // Missing colon after `if True` — tree-sitter recovers but AST is mangled.
+
     let code = "def foo():\n    x = 1\n    if True\n        y = 2\n    return x, y\n";
     let p = parse(code);
     let root = p.tree.root_node();
 
-    // Check if tree-sitter produced any ERROR nodes
+
     let has_error = has_error_node(root);
     assert!(
         has_error,
         "Expected tree-sitter to produce ERROR nodes for broken syntax"
     );
 
-    // kiss still computes metrics on this broken AST — verify it doesn't panic
+
     let func = get_func_node(&p);
     let m = compute_function_metrics(func, &p.source);
 
-    // The real question: are these metrics *trustworthy*?
-    // With the broken `if True` (no colon), tree-sitter may misparse the body.
-    // Statements could be undercounted if `y = 2` lands inside an ERROR node.
-    // We just verify it doesn't panic and returns *something*.
+
+
+
+
     assert!(m.statements >= 1, "Should have at least 1 statement");
 }
 
 #[test]
 fn h1_error_node_in_return_corrupts_return_value_count() {
-    // Return statement with syntax error: `return (a b)` — missing comma
+
     let code = "def foo():\n    return (a b)\n";
     let p = parse(code);
 
@@ -63,7 +63,7 @@ fn h1_error_node_in_return_corrupts_return_value_count() {
 
 #[test]
 fn h1_unclosed_string_corrupts_entire_function() {
-    // Unclosed triple-quote swallows subsequent code
+
     let code = "def foo():\n    x = '''\n    y = 1\n    return y\n\ndef bar():\n    return 1\n";
     let p = parse(code);
     let fm = compute_file_metrics(&p);
@@ -88,9 +88,9 @@ fn has_error_node(node: tree_sitter::Node) -> bool {
     false
 }
 
-// ═══════════════════════════════════════════════════════════════
-// H2: Numeric literals must not collapse to identical fingerprints.
-// ═══════════════════════════════════════════════════════════════
+
+
+
 
 #[test]
 fn h2_numeric_literals_stay_distinct_after_normalization() {
@@ -120,8 +120,8 @@ fn h2_numeric_literals_stay_distinct_after_normalization() {
 
 #[test]
 fn h2_single_variable_rename_drops_similarity() {
-    // Two genuinely duplicated functions where one variable is renamed.
-    // With shingle_size=3, each renamed token poisons 3 shingles.
+
+
     let code_a =
         "x = get_data()\ny = transform(x)\nz = validate(y)\nresult = process(z)\nreturn result\n";
     let code_b =
@@ -136,17 +136,17 @@ fn h2_single_variable_rename_drops_similarity() {
     let sig_b = compute_minhash(&shingles_b, 100);
     let sim = estimate_similarity(&sig_a, &sig_b);
 
-    // These are clearly duplicates, but a single rename may push similarity below 0.9
+
     assert!(
         sim > 0.5,
         "Near-duplicate with single rename should still have >50% similarity, got {sim}"
     );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// H3: Megafunction — large generated functions stress the
-//     metric walkers and duplication pipeline.
-// ═══════════════════════════════════════════════════════════════
+
+
+
+
 
 #[test]
 fn h3_function_with_1000_statements() {
@@ -173,7 +173,7 @@ fn h3_function_with_1000_statements() {
 
 #[test]
 fn h3_deeply_nested_indentation() {
-    // 50 levels of nesting — tests the indentation walker
+
     let mut code = String::from("def deep():\n");
     let mut indent = String::from("    ");
     for i in 0..50 {

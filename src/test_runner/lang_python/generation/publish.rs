@@ -187,8 +187,8 @@ pub(crate) fn generation_durations_file(timings: &[SelectorTimingRecord]) -> Gen
     let mut max_duration_ns = 0_u64;
     let mut durations_ns = Vec::with_capacity(timings.len());
     for row in timings {
-        // Preserve absence: do not collapse None into 0 (indistinguishable from a
-        // true zero-length run once written to the durations sidecar).
+
+
         if let Some(ns) = row.duration_ns {
             max_duration_ns = max_duration_ns.max(ns);
         }
@@ -208,7 +208,7 @@ pub(crate) fn path_maxes_from_timing_rows(
     use std::collections::BTreeMap;
     let mut by_path: BTreeMap<String, (u64, String)> = BTreeMap::new();
     for row in timings {
-        // Skip unknown timings so path maxes never invent a fake 0 ns run.
+
         let Some(ns) = row.duration_ns else {
             continue;
         };

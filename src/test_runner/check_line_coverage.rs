@@ -152,7 +152,7 @@ pub(crate) fn load_python_runtime_coverage(
     if let Some(coverage) = try_coverage_from_generation(repo_root, pytest_args)? {
         return Ok(coverage);
     }
-    // v1→v2 migrate only when no pinned generation matched (not on identity mismatch).
+
     if crate::test_runner::python_coverage_index::try_migrate_complete_v1_generation(
         repo_root,
         pytest_args,

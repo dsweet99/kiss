@@ -64,7 +64,7 @@ fn cov_records_cache_round_trip_hits_then_misses_on_source_change() {
     let loaded = try_load_cov_records(&key).expect("warm hit");
     assert_eq!(loaded, records);
 
-    // Content change with distinct mtime must miss.
+
     std::thread::sleep(Duration::from_millis(5));
     fs::write(&py, "x = 2\n").unwrap();
     let _ = fs::File::options()

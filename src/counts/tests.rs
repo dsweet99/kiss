@@ -190,8 +190,8 @@ fn test_check_file_metrics_direct() {
     let cfg = Config::default();
     let mut viols = Vec::new();
     check_file_metrics(&m, 100, Path::new("test.py"), &cfg, &mut viols);
-    // With default config and small file, should have no violations
-    // With default config, violations depend on threshold values
+
+
     let _ = viols;
 }
 

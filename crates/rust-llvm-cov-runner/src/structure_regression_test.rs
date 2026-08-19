@@ -25,7 +25,7 @@ fn verb_directories_and_substrate_files_exist() {
 
 #[test]
 fn stable_public_api_names_resolve_at_crate_root() {
-    // Compile-time witness: these names must remain reachable at the crate root.
+
     use crate::{
         CoverageOutputMode, TARGET_RUNNER_SHIM_SUBCOMMAND, build_rust_coverage_batch_plan,
         execute_rust_coverage_batch, load_current_population_durations,
@@ -33,7 +33,7 @@ fn stable_public_api_names_resolve_at_crate_root() {
     };
     assert!(!TARGET_RUNNER_SHIM_SUBCOMMAND.is_empty());
     let _ = CoverageOutputMode::SelectorEntries;
-    // Keep the imports live so rustc rejects removal of the pub use surface.
+
     let _ = (
         execute_rust_coverage_batch,
         build_rust_coverage_batch_plan,
@@ -71,7 +71,7 @@ fn production_rs_files(package: &str) -> Vec<PathBuf> {
 fn file_has_forbidden_import(path: &std::path::Path, needles: &[&str]) -> Option<String> {
     let text = std::fs::read_to_string(path).unwrap();
     for needle in needles {
-        // Match package path segments used in imports / paths.
+
         if text.contains(&format!("crate::{needle}::"))
             || text.contains(&format!("use crate::{needle}"))
             || text.contains(&format!("{needle}::"))
@@ -79,7 +79,7 @@ fn file_has_forbidden_import(path: &std::path::Path, needles: &[&str]) -> Option
                 .lines()
                 .any(|line| line.contains(needle) && (line.contains("use ") || line.contains("crate::")))
         {
-            // Narrow: only flag explicit crate::<package> references.
+
             if text.contains(&format!("crate::{needle}")) {
                 return Some(format!("{path:?} contains crate::{needle}"));
             }

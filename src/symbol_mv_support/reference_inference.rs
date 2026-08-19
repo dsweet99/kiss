@@ -22,8 +22,8 @@ pub(super) use reference_inference_rust::{
     method_return_type, strip_rust_type_prefix, type_after_pattern_last_before,
 };
 
-// Receiver-type inference for owner-qualified `kiss mv` rename. Extracted
-// from `reference.rs` to keep that file under the `lines_per_file` gate.
+
+
 
 pub(super) fn infer_python_receiver_type_at(
     content: &str,

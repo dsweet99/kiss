@@ -65,7 +65,7 @@ fn reverse_hit_increments_query_hit_counter() {
         batch.incorporate_process_reverse_query_counters();
         assert_eq!(batch.reverse_query_hits, 1);
         assert_eq!(batch.reverse_unavailable.total(), 0);
-        // Second incorporate must not double-count the same process watermark.
+
         batch.incorporate_process_reverse_query_counters();
         assert_eq!(batch.reverse_query_hits, 1);
     });

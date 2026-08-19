@@ -119,8 +119,8 @@ fn mtime_seal_false_hit_when_same_length_content_changes_with_restored_mtime() {
     let hit = try_identity_from_mtime_seal(&req.cache_root, repo.path(), &req, &tools);
     #[cfg(coverage)]
     {
-        // Parallel llvm-cov can leave ctime unchanged on some filesystems; the
-        // selector must still execute successfully for check-aggregate publish.
+
+
         let _ = hit;
         return;
     }

@@ -21,11 +21,11 @@ use super::settle::SettleMachine;
 use crate::test_runner::runners::clear_python_collect_memo;
 use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome, run_test_once};
 
-// Re-export for nudge unit tests that import via `super::super::*`.
+
 #[allow(unused_imports)]
 pub(super) use super::session_cycle::take_queued_cycle_args;
 
-#[allow(dead_code)] // used by session unit tests via `super::*`
+#[allow(dead_code)]
 pub(crate) fn run_watch_loop(
     args: RunTestCmdArgs<'_>,
     settle: Duration,

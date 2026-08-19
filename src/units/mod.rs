@@ -69,7 +69,7 @@ pub fn extract_code_units(parsed: &ParsedFile) -> Vec<CodeUnit> {
 #[must_use]
 pub fn count_code_units(parsed: &ParsedFile) -> usize {
     let root = parsed.tree.root_node();
-    // Always include the synthetic module unit.
+
     1 + count_from_node(root)
 }
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Adversarial ops: find kiss coverage counterexamples via malvin."""
 
 from __future__ import annotations

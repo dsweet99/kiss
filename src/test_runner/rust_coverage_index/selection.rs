@@ -57,8 +57,8 @@ pub(crate) fn resolve_rust_population_state(
     let _ = rust_source_paths;
     let identity = current_rust_coverage_batch_identity(repo_root, test_args)?;
     let cache_root = rust_coverage_cache_root(repo_root);
-    // Warm hit: skip workspace enumeration. Fingerprints already seal the
-    // selector universe into the population / check-aggregate artifacts.
+
+
     let current =
         rust_llvm_cov_runner::load_current_population_state(&cache_root, repo_root, &identity, None);
     if let Some(current) = current {
@@ -223,9 +223,9 @@ fn select_check_aggregate_current_basis(
     rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     population: &rust_llvm_cov_runner::RustPopulationState,
 ) -> Option<BTreeSet<String>> {
-    // Compact check-aggregate indexes store empty value sets; membership is
-    // key presence. Only single-file diffs use entry-backed line narrowing
-    // (needed for coverage-cache witness precision); larger diffs stay O(files).
+
+
+
     const LINE_PRECISE_FILE_LIMIT: usize = 1;
     if !rust_changed_lines.is_empty() && rust_changed_lines.len() <= LINE_PRECISE_FILE_LIMIT {
         let changed_rels = changed_line_rels(repo_root, rust_changed_lines);

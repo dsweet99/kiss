@@ -36,7 +36,7 @@ pub fn write_kissconfig_with_threshold(root: &Path, settle: f64, threshold: u8) 
     .unwrap();
 }
 
-#[allow(clippy::zombie_processes)] // WatchProc::Drop always reaps the child.
+#[allow(clippy::zombie_processes)]
 pub fn start_watch(dir: &Path, args: &[&str]) -> WatchProc {
     let mut child = Command::new(env!("CARGO_BIN_EXE_kiss"))
         .args(args)

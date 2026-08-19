@@ -6,7 +6,7 @@ use std::path::Path;
 fn profile_path_uses_per_binary_pool_pattern_when_env_set() {
     let _lock = crate::test_support::shim_test_env_lock();
     let old = std::env::var_os(PROFILE_POOL_ENV);
-    // SAFETY: test lock serializes env mutation for shim tests.
+
     unsafe { std::env::set_var(PROFILE_POOL_ENV, "1") };
     let command = [OsString::from("/repo/target/debug/deps/covers_lib-abc")];
     let path = profile_path_for_instance(Path::new("/tmp/out"), "instance", &command);
@@ -16,7 +16,7 @@ fn profile_path_uses_per_binary_pool_pattern_when_env_set() {
             .join("_repo_target_debug_deps_covers_lib-abc")
             .join(PROFILE_POOL_FILE_PATTERN)
     );
-    // SAFETY: restore prior value under the same lock.
+
     unsafe {
         match old {
             Some(value) => std::env::set_var(PROFILE_POOL_ENV, value),
@@ -29,7 +29,7 @@ fn profile_path_uses_per_binary_pool_pattern_when_env_set() {
 fn profile_pool_dirs_differ_across_test_binaries() {
     let _lock = crate::test_support::shim_test_env_lock();
     let old = std::env::var_os(PROFILE_POOL_ENV);
-    // SAFETY: test lock serializes env mutation for shim tests.
+
     unsafe { std::env::set_var(PROFILE_POOL_ENV, "1") };
     let left = profile_path_for_instance(
         Path::new("/tmp/out"),
@@ -46,7 +46,7 @@ fn profile_pool_dirs_differ_across_test_binaries() {
         left.file_name().and_then(|name| name.to_str()),
         Some(PROFILE_POOL_FILE_PATTERN)
     );
-    // SAFETY: restore prior value under the same lock.
+
     unsafe {
         match old {
             Some(value) => std::env::set_var(PROFILE_POOL_ENV, value),
@@ -59,7 +59,7 @@ fn profile_pool_dirs_differ_across_test_binaries() {
 fn profile_path_uses_instance_file_when_pool_disabled() {
     let _lock = crate::test_support::shim_test_env_lock();
     let old = std::env::var_os(PROFILE_POOL_ENV);
-    // SAFETY: test lock serializes env mutation for shim tests.
+
     unsafe { std::env::remove_var(PROFILE_POOL_ENV) };
     let path = profile_path_for_instance(
         Path::new("/tmp/out"),
@@ -67,7 +67,7 @@ fn profile_path_uses_instance_file_when_pool_disabled() {
         &[OsString::from("/bin/unused")],
     );
     assert_eq!(path, Path::new("/tmp/out/instance.profraw"));
-    // SAFETY: restore prior value under the same lock.
+
     unsafe {
         match old {
             Some(value) => std::env::set_var(PROFILE_POOL_ENV, value),

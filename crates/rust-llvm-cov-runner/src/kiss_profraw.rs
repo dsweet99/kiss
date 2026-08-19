@@ -25,7 +25,7 @@ pub(crate) fn kiss_profraw_from_cache_root(cache_root: &Path) -> PathBuf {
 }
 
 pub(crate) fn repo_root_from_cache_root(cache_root: &Path) -> Option<PathBuf> {
-    // cache = repo/.kiss/rust_llvm_cov_cache
+
     if cache_root.file_name()?.to_str()? != "rust_llvm_cov_cache" {
         return None;
     }
@@ -71,7 +71,7 @@ pub(crate) fn resolve_kiss_profraw(output_dir: &Path) -> PathBuf {
 }
 
 fn kiss_profraw_from_target_runner_output_dir(output_dir: &Path) -> Option<PathBuf> {
-    // repo/.kiss/rust_llvm_cov_cache/runs/<run>/instances
+
     let run = output_dir.parent()?;
     let runs = run.parent()?;
     let cache = runs.parent()?;
@@ -87,7 +87,7 @@ pub(crate) fn redirect_llvm_profile_file_to_kiss_profraw(
 ) -> io::Result<PathBuf> {
     ensure_kiss_profraw(kiss_profraw)?;
     let path = discard_llvm_profile_path(kiss_profraw);
-    // SAFETY: process-local discard sink before spawning intentional children.
+
     unsafe {
         std::env::set_var("LLVM_PROFILE_FILE", &path);
     }
@@ -134,7 +134,7 @@ pub fn redirect_this_process(repo_root: &Path) -> io::Result<PathBuf> {
     let path = discard_llvm_profile_path(&kiss_profraw);
     let already_redirected = llvm_profile_file_is(&path);
     let path = redirect_llvm_profile_file_to_kiss_profraw(&kiss_profraw)?;
-    // SAFETY: process-local discard metadata for children / later sweeps.
+
     unsafe {
         std::env::set_var(KISS_PROFRAW_DIR_ENV, &kiss_profraw);
     }

@@ -129,7 +129,7 @@ pub(super) fn statuses_from_summary(
             TestStatus::Passed => WitnessStatus::Passed,
         };
         statuses.push(status);
-        // Preserve absence: do not collapse missing timings into 0.
+
         durations.push(summary.selector_durations_ns.get(sel).copied());
     }
     (statuses, durations)

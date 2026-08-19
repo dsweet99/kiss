@@ -136,7 +136,7 @@ fn reverse_index_answers_disjoint_line_requests() {
         BTreeMap::from([(lib, BTreeSet::from([2_u32]))]),
     );
     publish_bound_reverse(&cache, &source, "gen1", "entries-fp");
-    // Disjoint wanted lines spanning both selectors.
+
     let wanted = BTreeMap::from([("src/lib.rs".into(), BTreeSet::from([1_u32, 2_u32]))]);
     assert_reverse_matches_forward_oracle(&cache, &source, "gen1", &wanted);
     let hit = crate::query_reverse_line_index(&cache, "gen1", &wanted).unwrap();
@@ -157,7 +157,7 @@ fn reverse_index_answers_multi_range_selector_coverage() {
         "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\n",
     )
     .unwrap();
-    // One selector covers two non-contiguous ranges (1..=2 and 4..=4).
+
     write_passed_entry(
         &cache,
         "gen1",

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn identity_drift_with_unchanged_outcomes_still_publishes() {
-    // rslip all-hit after fingerprint drift must publish the current identity.
+
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
             language: "python".into(),

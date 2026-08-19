@@ -48,7 +48,7 @@ def measure_repo(
     stdout = sys.stdout
     try:
         sys.stdout = buffer
-        run_comparison(repo_path)  # type: ignore[operator]
+        run_comparison(repo_path)
     except RuntimeError as exc:
         sys.stdout = stdout
         return (

@@ -181,11 +181,11 @@ fn test_kissignore_file() {
     assert!(files[0].path.ends_with("a.py"));
 }
 
-// === Bug-hunting tests ===
+
 
 #[test]
 fn test_should_ignore_matches_filenames() {
-    // Per CLI help: --ignore=PREFIX ignores files/directories starting with PREFIX.
+
     assert!(
         should_ignore(
             std::path::Path::new("src/test_utils.py"),
@@ -201,7 +201,7 @@ fn test_should_ignore_matches_filenames() {
 
 #[test]
 fn test_always_ignored_includes_env_dir() {
-    // Many Python projects use "env/" for virtualenvs, not just ".venv" or "venv".
+
     assert!(
         is_always_ignored("env"),
         "'env' should be always ignored (common virtualenv directory)"
@@ -211,7 +211,7 @@ fn test_always_ignored_includes_env_dir() {
 #[test]
 fn test_process_source_entry_and_ext_entry() {
     use std::sync::Mutex;
-    // Test process_source_entry with a valid file
+
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("test.py"), "").unwrap();
     let results = Mutex::new(Vec::new());
@@ -221,7 +221,7 @@ fn test_process_source_entry_and_ext_entry() {
     }
     assert!(!results.into_inner().unwrap().is_empty());
 
-    // Test process_ext_entry
+
     let results2 = Mutex::new(Vec::new());
     for entry in ignore::WalkBuilder::new(tmp.path()).build() {
         let state = process_ext_entry(entry, "py", &results2);

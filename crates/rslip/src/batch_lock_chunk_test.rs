@@ -14,9 +14,9 @@ type TimingSlots = Arc<Mutex<Vec<Option<Instant>>>>;
 
 #[test]
 fn large_miss_batch_submits_one_bounded_call_without_retaining_entry_locks() {
-    // Regression for EMFILE when sameq-scale miss sets held one flock FD each
-    // for the entire batch (ulimit -n 4096; ~14k selectors). Brief lock/recheck
-    // plus one full runner call must not retain a lock per queued miss.
+
+
+
     let tmp = tempfile::tempdir().unwrap();
     write_ok_sample(tmp.path());
     let miss_count = 4500;
@@ -44,9 +44,9 @@ fn large_miss_batch_submits_one_bounded_call_without_retaining_entry_locks() {
 
 #[test]
 fn bounded_miss_queue_starts_third_before_slow_first_finishes() {
-    // Wave scheduling with jobs=2 waits for the first wave before starting the
-    // third miss. One full queue plus a jobs-bounded worker pool starts the
-    // third while the slow first is still running.
+
+
+
     let tmp = tempfile::tempdir().unwrap();
     write_ok_sample(tmp.path());
     let starts = empty_timing_slots(3);
@@ -121,7 +121,7 @@ fn run_blocking_first_worker_queue(
     let queue = Arc::new(Mutex::new(
         reqs.into_iter().enumerate().collect::<VecDeque<_>>(),
     ));
-    // First worker blocks until third has started (proves continuous pull).
+
     let (third_started_tx, third_started_rx) = mpsc::channel::<()>();
     let third_started_rx = Arc::new(Mutex::new(Some(third_started_rx)));
     let (tx, rx) = mpsc::channel();
@@ -134,7 +134,7 @@ fn run_blocking_first_worker_queue(
         let third_tx = third_started_tx.clone();
         thread::spawn(move || {
             loop {
-                // Drop the queue guard before blocking so another worker can pull.
+
                 let Some((index, req)) = queue.lock().unwrap().pop_front() else {
                     break;
                 };
@@ -200,8 +200,8 @@ fn assert_concurrent_normal_entry_wins(root: &Path) {
 }
 
 fn assert_empty_concurrent_entry_does_not_win_over_timeout(root: &Path) {
-    // Empty-coverage concurrent entries are never reusable; finalize stores the
-    // live timeout outcome instead of treating the empty entry as a hit.
+
+
     let mut req = rslip_sample_request(root);
     req.nodeid = "test_sample.py::test_timeout".to_string();
     let fingerprint = rslip_cache_fingerprint(&req).unwrap();

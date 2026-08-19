@@ -173,7 +173,7 @@ fn resolve_main_branch_fallback_uses_local_name_then_master() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     commit_file(&tmp, "a.py", "x=1\n", "root");
-    // No origin/* refs: local `<name>` wins over master candidates.
+
     let local = resolve_main_branch_name(tmp.path(), Some("main"), None).unwrap();
     assert_eq!(local, "main", "main: local <name> when origin/<name> absent");
 
@@ -192,7 +192,7 @@ fn resolve_main_branch_fallback_uses_local_name_then_master() {
             .unwrap()
             .success()
     );
-    // Missing origin/<cli-name> and local <cli-name>: fall through to origin/master.
+
     let via_master = resolve_main_branch_name(tmp.path(), None, Some("does-not-exist")).unwrap();
     assert_eq!(
         via_master, "origin/master",

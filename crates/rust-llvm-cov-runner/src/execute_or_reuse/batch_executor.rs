@@ -80,7 +80,7 @@ where
             .map_err(|message| RustLlvmCovError::InvalidRequest(format!("batch plan: {message}")))
     })?;
 
-    // Zero-limit bans never execute, even under force_rerun.
+
     if !req.logical_selectors.is_empty()
         && req
             .logical_selectors
@@ -107,9 +107,9 @@ where
     ) && !req.force_rerun
         && let Some(result) = try_all_hit_fast_path(req, tools, &identity)?
     {
-        // Lock-free only when derived state already validates and no publication
-        // is needed. Never publish/repair here: a TOCTOU stale flip must wait for
-        // a lock-owning publisher (below or a later call).
+
+
+
         return Ok(with_process_reverse_query_counters(result));
     }
 
@@ -345,7 +345,7 @@ fn all_hit_outcomes(
         else {
             return Ok(None);
         };
-        // FAIL/TIMEOUT must be re-executed; only Passed outcomes are cache-reusable.
+
         if entry.status != TestStatus::Passed {
             return Ok(None);
         }
@@ -354,16 +354,16 @@ fn all_hit_outcomes(
         {
             entry.coverage = crate::selector_coverage_from_validated(aggregate, selector);
         }
-        // Match Python entry_is_reusable: empty coverage is not reusable.
+
         if entry.coverage.files.is_empty() {
             return Ok(None);
         }
         completed.push(outcome_from_entry(entry, RustCovCacheStatus::Hit));
         saw_cache_hit = true;
     }
-    // Positive-only seal binds to entry_state.json. On all-hit before derived
-    // publish (or when stores invalidated entry_state), skip rather than fail
-    // the reusable hit path; seal write errors still propagate when state is present.
+
+
+
     if saw_cache_hit
         && crate::publish_derived::batch_entry_state::read_entry_state(&req.cache_root)
             .is_some_and(|state| state.generation_fingerprint == identity.generation_fingerprint)

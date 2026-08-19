@@ -26,7 +26,7 @@ impl LogicalSelectorId {
         &self.0
     }
 
-    #[allow(dead_code)] // paired with ReportSelectorId::into_string at conversion boundaries
+    #[allow(dead_code)]
     pub(crate) fn into_string(self) -> String {
         self.0
     }
@@ -37,7 +37,7 @@ impl ReportSelectorId {
         Self(id.into())
     }
 
-    #[allow(dead_code)] // used by unit tests; Deref covers most call sites
+    #[allow(dead_code)]
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
@@ -156,7 +156,7 @@ mod tests {
         assert_eq!(logical.as_str(), "tests::case");
         assert_eq!(report.as_str(), "src/lib.rs::case");
         assert_eq!(logical.clone().into_string(), "tests::case");
-        // Conversion requires an explicit map — no silent String coercion either way.
+
         let map = BTreeMap::from([("tests::case".into(), "src/lib.rs::case".into())]);
         assert_eq!(
             report_id_for_logical(&map, &logical).as_str(),

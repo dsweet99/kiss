@@ -14,7 +14,7 @@ pub struct UnitMetrics {
     pub name: String,
     pub kind: &'static str,
     pub line: usize,
-    // function-scope
+
     pub statements: Option<usize>,
     pub arguments: Option<usize>,
     pub args_positional: Option<usize>,
@@ -29,16 +29,16 @@ pub struct UnitMetrics {
     pub boolean_parameters: Option<usize>,
     pub annotations: Option<usize>,
     pub calls: Option<usize>,
-    // type-scope
+
     pub methods: Option<usize>,
-    // file-scope
+
     pub lines: Option<usize>,
     pub imports: Option<usize>,
     pub file_statements: Option<usize>,
     pub file_functions: Option<usize>,
     pub interface_types: Option<usize>,
     pub concrete_types: Option<usize>,
-    // module-scope
+
     pub fan_in: Option<usize>,
     pub fan_out: Option<usize>,
     pub indirect_deps: Option<usize>,

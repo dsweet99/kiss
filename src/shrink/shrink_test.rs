@@ -105,13 +105,13 @@ fn test_check_shrink_constraints_with_violations() {
         target: ShrinkTarget::GraphEdges,
         target_value: 100,
     };
-    // Target violated, constraint (code_units) also violated
+
     let current = GlobalMetrics {
         files: 44,
-        code_units: 960, // > 950 baseline
+        code_units: 960,
         statements: 3200,
         graph_nodes: 56,
-        graph_edges: 110, // > 100 target
+        graph_edges: 110,
     };
     let result = check_shrink_constraints(&state, &current);
     assert_eq!(result.violations.len(), 2);

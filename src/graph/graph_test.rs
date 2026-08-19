@@ -15,18 +15,18 @@ pub(super) fn new_graph() -> DependencyGraph {
 
 #[test]
 fn test_touch_dynamic_import_helpers_for_static_coverage() {
-    // Touch private helpers so static test-ref coverage includes them.
+
     let mut parser = create_parser().unwrap();
     let code = "def f():\n    import importlib\n    importlib.import_module(\"pkg.target\")\n    __import__(\"pkg.other\")\n";
     let tree = parser.parse(code, None).unwrap();
     let root = tree.root_node();
 
-    // Ensure extract_imports_for_cache sees the dynamic imports.
+
     let imports = extract_imports_for_cache(root, code);
     assert!(imports.contains(&"pkg.target".into()));
     assert!(imports.contains(&"pkg.other".into()));
 
-    // Directly touch helper fns with a best-effort call node.
+
     let call_node = root
         .descendant_for_byte_range(code.find("importlib.import_module").unwrap(), code.len())
         .unwrap();
@@ -73,7 +73,7 @@ fn test_graph_imports_and_cycles() {
     assert!(!cycle_info.cycles.is_empty());
     assert_eq!(g.get_or_create_node("test"), g.get_or_create_node("test"));
     g.add_dependency("x", "x");
-    // Self-dependencies are rejected: neither node nor edge is created
+
     assert!(
         !g.nodes.contains_key("x"),
         "Self-dependency should not create node"
@@ -89,15 +89,15 @@ fn test_graph_imports_and_cycles() {
 
 #[test]
 fn test_from_import_does_not_create_edges_to_imported_names() {
-    // Hypothesis 1 repro: `from X import Y` currently adds both `X` and `Y` as dependencies.
-    // That can create huge, fake SCC cycles when `Y` happens to match some other module name.
-    //
-    // This fixture is *acyclic* under real Python import semantics:
-    // - a imports b (and name c from b)
-    // - b imports c (and name a from c)
-    // - c imports nothing
-    //
-    // There is no module-level cycle unless we incorrectly treat imported names as modules.
+
+
+
+
+
+
+
+
+
     let mut parser = create_parser().unwrap();
     let files: Vec<(PathBuf, Vec<String>)> = vec![
         (
@@ -130,8 +130,8 @@ fn test_from_import_does_not_create_edges_to_imported_names() {
 
 #[test]
 fn test_dotted_import_does_not_create_edges_to_middle_segments() {
-    // Hypothesis 2 repro: `import foo.bar` is currently split into segments `foo` and `bar`,
-    // which can spuriously create an edge to a local `bar.py` module.
+
+
     let mut parser = create_parser().unwrap();
     let files: Vec<(PathBuf, Vec<String>)> = vec![
         (
@@ -141,7 +141,7 @@ fn test_dotted_import_does_not_create_edges_to_middle_segments() {
                 "import foo.bar\n",
             ),
         ),
-        // Local module named `bar` should NOT be considered imported by `import foo.bar`.
+
         (PathBuf::from("bar.py"), Vec::new()),
     ];
 
@@ -159,8 +159,8 @@ fn test_dotted_import_does_not_create_edges_to_middle_segments() {
 
 #[test]
 fn test_qualified_module_name_includes_full_package_path() {
-    // Hypothesis 3 repro: qualified_module_name currently only includes the leaf parent dir,
-    // so deep paths can collide (e.g., pkg1/sub/utils.py and pkg2/sub/utils.py).
+
+
     use std::path::Path;
     let a = qualified_module_name(Path::new("pkg1/sub/utils.py"));
     let b = qualified_module_name(Path::new("pkg2/sub/utils.py"));
@@ -275,9 +275,9 @@ fn test_type_checking_imports_included_in_graph() {
 
 #[test]
 fn test_from_dot_import_name_is_dependency_candidate() {
-    // Regression for orphan false-positives:
-    // `from . import target` has no explicit module name, so the imported name needs to be
-    // treated as a module candidate for dependency graph purposes.
+
+
+
     let mut parser = create_parser().unwrap();
     let code = "def f():\n    from . import target\n    return 0\n";
     let imports = extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);

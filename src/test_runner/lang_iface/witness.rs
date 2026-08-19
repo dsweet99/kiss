@@ -373,9 +373,9 @@ pub(crate) fn all_misses_warm_skippable(witness: &ExecutionWitness, misses: &[St
         return false;
     }
     let index = selector_index(&witness.selectors);
-    // TimedOut stays terminal without --force. Unresolved on an incomplete generation
-    // is the sameq-scale stale-slot case: re-entry only republishes the same misses
-    // after a multi-second rslip/line_index round trip. Failed still repairs.
+
+
+
     misses.iter().all(|sel| match index.get(sel.as_str()) {
         Some(&i) => matches!(
             witness.statuses[i],

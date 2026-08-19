@@ -97,8 +97,8 @@ fn maybe_reload_picks_up_equal_length_same_mtime_edit() {
     assert_eq!(live.gate_config.test_coverage_threshold, 10);
 
     std::fs::write(&cfg_path, b).unwrap();
-    // Simulate a filesystem that left metadata unchanged: keep the old signature,
-    // so only the content digest can detect the edit.
+
+
     live.kissconfig_sig = PathSignature::from_path(&cfg_path);
     assert_ne!(file_digest(&cfg_path), live.kissconfig_digest);
     assert!(live

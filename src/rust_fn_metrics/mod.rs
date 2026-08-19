@@ -110,13 +110,13 @@ fn contains_test_ident(tokens: proc_macro2::TokenStream, negated: bool) -> bool 
     while let Some(tt) = iter.next() {
         match &tt {
             TokenTree::Ident(id) if *id == "test" => {
-                // If we're inside an odd number of not() wrappers, this is NOT test code
+
                 if !negated {
                     return true;
                 }
             }
             TokenTree::Ident(id) if *id == "not" => {
-                // Recurse into not() with flipped negation
+
                 if let Some(TokenTree::Group(g)) = iter.next()
                     && contains_test_ident(g.stream(), !negated)
                 {
@@ -124,7 +124,7 @@ fn contains_test_ident(tokens: proc_macro2::TokenStream, negated: bool) -> bool 
                 }
             }
             TokenTree::Ident(id) if *id == "all" || *id == "any" => {
-                // Recurse into all/any groups, preserving current negation
+
                 if let Some(TokenTree::Group(g)) = iter.next()
                     && contains_test_ident(g.stream(), negated)
                 {
@@ -160,7 +160,7 @@ fn count_use_names(tree: &syn::UseTree) -> usize {
     }
 }
 
-// Allow: metrics are computed incrementally from different sources (args, visitor, attr_count)
+
 #[allow(clippy::field_reassign_with_default)]
 pub fn compute_rust_function_metrics(
     inputs: &syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
@@ -247,11 +247,11 @@ impl FunctionMetricsVisitor {
 
 impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-        // Statement definition: statements exclude imports and signatures.
-        // Skip use statements inside function bodies
+
+
         let is_use_item = matches!(stmt, Stmt::Item(syn::Item::Use(_)));
-        // Skip inner fn items: they are separate scopes whose body metrics
-        // should not be attributed to the enclosing function.
+
+
         let is_inner_fn = matches!(stmt, Stmt::Item(syn::Item::Fn(_)));
         if !is_use_item {
             self.statements += 1;
@@ -264,7 +264,7 @@ impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
         }
     }
 
-    // Match arms count as branches for coverage weighting (aligned with Python elif/case clauses).
+
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
         self.on_enter_expr(expr);

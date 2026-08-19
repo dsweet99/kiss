@@ -6,9 +6,9 @@ use tempfile::TempDir;
 
 use super::*;
 
-// Use the production scrubbed-env builder so these tests don't pick
-// up `GIT_INDEX_FILE`/`GIT_DIR` from an outer pre-commit wrapper and
-// silently operate on the real repo's index.
+
+
+
 fn git_in(dir: &Path) -> Command {
     super::git_command(dir)
 }

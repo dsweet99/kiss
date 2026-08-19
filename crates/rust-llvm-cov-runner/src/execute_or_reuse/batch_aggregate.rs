@@ -48,7 +48,7 @@ pub fn aggregate_logical_selectors(
         if matched.is_empty() {
             eprintln!("kiss: unmatched rust selector during aggregate: {selector}");
             counters.unmatched_selectors += 1;
-            // Never report PASS for a selector that did not execute.
+
             outcomes.push(unmatched_failed_outcome(selector));
             continue;
         }

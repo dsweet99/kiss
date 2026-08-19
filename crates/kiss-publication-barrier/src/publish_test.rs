@@ -226,7 +226,7 @@ fn open_publish_tmp_retries_when_parent_is_missing() {
     let dir = temp_dir();
     let nested = dir.join("nested");
     let tmp_path = nested.join("out.tmp");
-    // Parent absent → first create_new yields NotFound; helper recreates and retries.
+
     let mut file = open_publish_tmp("artifact", &tmp_path, &nested).unwrap();
     file.write_all(b"payload\n").unwrap();
     drop(file);

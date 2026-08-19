@@ -15,7 +15,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-// Re-exported for `#[cfg(test)]` modules that `use super::*`.
+
 #[cfg(test)]
 use crate::RustLineCoverage;
 #[cfg(test)]
@@ -60,8 +60,8 @@ pub(crate) fn try_publish_population_derived_state_with_binaries(
     test_binaries: &[RustTestBinaryIdentity],
 ) -> Result<Option<DerivedPublishCounters>, RustLlvmCovError> {
     let Some(selectors) = req.population_publication_selectors.as_deref() else {
-        // Force/final re-stores invalidate entry_state.json; if a reverse-bound
-        // population remains, republish so integrity checks still see a token.
+
+
         return republish_if_entry_state_missing(req, tools, identity, test_binaries);
     };
     if selectors.is_empty() {
@@ -256,7 +256,7 @@ pub fn publish_derived_state_with_binaries(
     ) {
         Ok(removed) => removed,
         Err(err) => {
-            // Never fail publication or delete the activated snapshot on prune errors.
+
             eprintln!("kiss: reverse snapshot prune failed (active snapshot retained): {err:?}");
             0
         }
@@ -297,10 +297,10 @@ pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
     aggregate: &ValidatedCheckAggregate,
 ) -> Result<DerivedPublishCounters, RustLlvmCovError> {
     let pruned = prune_non_current_generations(&req.cache_root, &identity.generation_fingerprint)?;
-    // Compact on-disk index: covered-file keys only. CheckAggregate cannot
-    // attribute lines to individual selectors; loaders already treat key
-    // presence as "whole selector universe". Duplicating all selector names
-    // under every file made index.json ~110MB and dominated cold publish.
+
+
+
+
     let index = aggregate
         .aggregate_covered_lines
         .keys()
@@ -315,7 +315,7 @@ pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
         &entries_fingerprint,
         &index,
     )?;
-    // CheckAggregate lacks exact line-to-selector ownership; omit reverse metadata.
+
     let test_binaries = aggregate
         .binaries
         .values()

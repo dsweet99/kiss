@@ -59,12 +59,12 @@ pub(crate) fn timeout_for_selector_with_gate(gate: &kiss::GateConfig, selector: 
     }
     let limit = gate.unit_test_seconds_limit(selector);
     if limit <= 0.0 {
-        // Ban path: zero/negative limit ⇒ caller short-circuits to TIMEOUT
-        // without invoking the pytest runner.
+
+
         return Duration::ZERO;
     }
-    // Wall kill must outlast coverage/import setup. SLA enforcement uses
-    // call-phase duration via apply_unit_test_time_limit, not this timer.
+
+
     DEFAULT_PYTEST_TIMEOUT
 }
 

@@ -12,8 +12,8 @@ pub fn gather_files(
     let all = find_source_files_with_ignore(root, ignore_prefixes);
     let (mut py, mut rs) = (Vec::new(), Vec::new());
     for sf in all {
-        // Prefer absolute paths without symlink resolution: full canonicalize()
-        // dominated warm `kiss cov` gather on large trees (sameq-3).
+
+
         let path = std::path::absolute(&sf.path).unwrap_or(sf.path);
         match (sf.language, lang) {
             (Language::Python, None | Some(Language::Python)) => py.push(path),

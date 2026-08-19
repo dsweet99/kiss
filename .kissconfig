@@ -3,6 +3,7 @@
 [global]
 orphan_module_enabled = true
 duplication_enabled = true
+comment_removal_enabled = true
 min_similarity = 0.9
 
 [test]

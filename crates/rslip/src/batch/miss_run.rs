@@ -28,7 +28,7 @@ pub(super) fn run_rslip_misses(
     out: &mut [Option<Result<RslipOutcome, RslipError>>],
     on_progress: &mut impl FnMut(RslipBatchProgress),
 ) {
-    // Coalesce, brief-lock/recheck (no retained FDs), then one streaming bounded run.
+
     let groups = coalesce_rslip_miss_candidates(misses);
     let mut seen = slot_filled_mask(out);
     let groups = brief_lock_filter_rslip_miss_groups(groups, out);
@@ -42,8 +42,8 @@ pub(super) fn run_rslip_misses(
     if runner_misses.is_empty() {
         return;
     }
-    // Drop timestamp-granularity bytecode so same-second same-size source edits
-    // cannot be shadowed by a still-"valid" .pyc on the subsequent miss run.
+
+
     let source_roots: BTreeSet<_> = runner_misses
         .iter()
         .map(|miss| miss.req.source_root.clone())
@@ -64,7 +64,7 @@ pub(super) fn run_rslip_misses(
             let resolved = miss.indices.len();
             let mut outcomes = Vec::with_capacity(resolved);
             for (slot_index, slot_result) in handle_rslip_miss_result(miss, result) {
-                // Durable store finishes inside handle_rslip_miss_result before we emit.
+
                 out[slot_index] = Some(clone_rslip_result(&slot_result));
                 seen[slot_index] = true;
                 outcomes.push((slot_index, slot_result));

@@ -23,7 +23,7 @@ pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
     "RUSTDOCFLAGS",
     "CARGO_TARGET_DIR",
     "LLVM_PROFILE_FILE",
-    // QA: HOLD_BEFORE_GO must reach shim via plan.env (not only inheritance).
+
     "KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS",
 ];
 pub(crate) fn relevant_rust_batch_env() -> BTreeMap<String, String> {
@@ -150,7 +150,7 @@ pub(crate) fn rust_population_manifest_is_current_for_args(
     .is_some()
 }
 
-#[allow(dead_code)] // cfg(test) hybrid selection + manifest tests
+#[allow(dead_code)]
 pub(crate) fn load_current_rust_population_state(
     repo_root: &Path,
     selectors: Option<&[String]>,

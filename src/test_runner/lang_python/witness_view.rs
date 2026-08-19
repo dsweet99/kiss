@@ -48,8 +48,8 @@ pub(crate) fn python_witness_from_pinned(pinned: &PinnedPythonGeneration) -> Exe
             }
         }
     }
-    // Incomplete All-mode results stay Full + complete=false so accept can
-    // Miss(incomplete) and repair non-Passed selectors (never scope_subset).
+
+
     ExecutionWitness {
         language: "python".into(),
         scope: WitnessScope::Full,
@@ -63,7 +63,7 @@ pub(crate) fn python_witness_from_pinned(pinned: &PinnedPythonGeneration) -> Exe
     }
 }
 
-#[allow(dead_code)] // retained as read-only warm helper for reporters / diagnostics
+#[allow(dead_code)]
 pub(crate) fn try_warm_python_cached_summary(
     repo_root: &Path,
     planned_selectors: &[String],

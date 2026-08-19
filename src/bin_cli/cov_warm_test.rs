@@ -17,7 +17,7 @@ fn warm_cov_caches_after_tests_is_callable_without_panicking() {
     let repo = tmp.path();
     write_src(repo);
     let gate = kiss::GateConfig::default();
-    // Missing snapshot/runtime coverage: warmer must no-op, not fail the test run.
+
     warm_cov_caches_after_tests(repo, Some(kiss::Language::Python), &[], &gate, &[]);
     assert!(!repo.join(".kiss/cov_records_cache.json").exists());
 }
@@ -52,7 +52,7 @@ fn warm_cov_caches_after_tests_writes_records_when_snapshot_present() {
         "expected file-list cache after successful warm"
     );
 
-    // Second call hits the records fast path (no panic / no rewrite required).
+
     let before = fs::metadata(repo.join(".kiss/cov_records_cache.json"))
         .unwrap()
         .modified()

@@ -61,8 +61,8 @@ pub fn parse_batch_event_stream(stdout: &[u8]) -> Result<BatchEventStream, RustL
         if line.is_empty() {
             continue;
         }
-        // Nocapture / live relay can leak test stdout onto this stream.
-        // Cargo and libtest-json-plus records always start with `{`.
+
+
         if line.first() != Some(&b'{') {
             continue;
         }

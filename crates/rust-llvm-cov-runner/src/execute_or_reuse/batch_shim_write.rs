@@ -72,10 +72,10 @@ fn write_metadata_atomically<T: Serialize>(
 }
 
 pub(crate) fn instance_full_name(command: &[std::ffi::OsString]) -> String {
-    // Prefer nextest identity so shim keys match libtest-json event names
-    // (`pkg::bin$test`). Argv `--exact` paths use hashed file stems
-    // (`bin-<hash>`), which collide across integration tests that share a
-    // function name (common in sameq_style `kiss_bare_rule_api` fixtures).
+
+
+
+
     if should_use_nextest_env_for_instance(command)
         && let (Some(binary_id), Some(test_name)) = (
             std::env::var("NEXTEST_BINARY_ID").ok(),

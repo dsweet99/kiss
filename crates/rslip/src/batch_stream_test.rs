@@ -49,7 +49,7 @@ fn streaming_bounded_fn_completes_fast_indices_before_slow_first() {
         assert_eq!(jobs, 2);
         assert_eq!(reqs.len(), 3);
         let mut slots: Vec<_> = reqs.into_iter().map(Some).collect();
-        // Simulate jobs=2 completing fast indices before a slow index 0.
+
         for index in [1usize, 2, 0] {
             let req = slots[index].take().expect("each index completes once");
             order_for_runner.lock().unwrap().push(index);

@@ -114,8 +114,8 @@ fn python_manifest_current_always_normalizes_pythonpath_regardless_of_allowlist(
     let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", &custom);
     std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
     let selector = "tests/test_app.py::test_value".to_string();
-    // Empty allowlist and PYTHON_COVERAGE_ENV_KEYS must agree: PYTHONPATH is
-    // always normalized into coverage identity (see python_coverage_env_map).
+
+
     let identity_empty =
         current_python_population_manifest_identity_with_env_keys(tmp.path(), &[], &[]).unwrap();
     let identity_keys = current_python_population_manifest_identity_with_env_keys(

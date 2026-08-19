@@ -7,7 +7,7 @@ use crate::{RslipError, RslipOutcome};
 use super::RslipBatchProgress;
 
 pub(super) fn format_cached_status_dump(outcomes: &[RslipOutcome]) -> String {
-    // Large warm dumps: one summary line per status instead of dozens of println!s.
+
     if outcomes.len() > 32 {
         return format_cached_status_totals(outcomes);
     }
@@ -86,7 +86,7 @@ pub(super) fn emit_prepare_resolved_progress(
     if hits.is_empty() {
         return;
     }
-    // Prefer one collapsed dump over thousands of SelectorFinalized clones.
+
     on_progress(RslipBatchProgress::CachedStatusDump {
         body: format_cached_status_dump(&hits),
     });

@@ -9,7 +9,7 @@ pub const THRESHOLDS_KEYS: &[&str] = &[
     "max_indentation_depth",
     "interface_types_per_file",
     "concrete_types_per_file",
-    // Back-compat: older configs used classes_per_file for types-per-file.
+
     "classes_per_file",
     "nested_function_depth",
     "returns_per_function",
@@ -32,7 +32,7 @@ pub const SHARED_KEYS: &[&str] = &[
     "functions_per_file",
     "interface_types_per_file",
     "concrete_types_per_file",
-    // Back-compat: older configs used types_per_file for concrete types.
+
     "types_per_file",
     "imported_names_per_file",
     "cycle_size",
@@ -61,7 +61,7 @@ pub const PYTHON_KEYS: &[&str] = &[
     "functions_per_file",
     "interface_types_per_file",
     "concrete_types_per_file",
-    // Back-compat alias.
+
     "types_per_file",
     "cycle_size",
     "indirect_dependencies",
@@ -80,7 +80,7 @@ pub const RUST_KEYS: &[&str] = &[
     "functions_per_file",
     "interface_types_per_file",
     "concrete_types_per_file",
-    // Back-compat alias.
+
     "types_per_file",
     "returns_per_function",
     "nested_function_depth",

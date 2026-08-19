@@ -158,7 +158,7 @@ fn reverse_rejects_file_digest_mismatch() {
     seed(&cache, &source);
     let info = publish_bound_reverse(&cache, &source, "gen1", "fp");
     let root = snapshot_path(&cache, &info.snapshot_id);
-    // Leave file-record bytes unchanged; corrupt only the declared digest in meta.
+
     let mut meta: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join("meta.json")).unwrap()).unwrap();
     let key = meta["files"].as_object().unwrap().keys().next().unwrap().clone();

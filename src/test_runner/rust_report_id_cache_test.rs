@@ -16,7 +16,7 @@ fn report_id_cache_round_trip_hits_without_rebuild() {
         "[package]\nname=\"t\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
     )
     .unwrap();
-    // First call may miss and build (or yield empty if parse path differs); store explicitly.
+
     let mut map = BTreeMap::new();
     map.insert("tests::t".into(), "src/lib.rs::t".into());
     store_cached(root, &[], &map).unwrap();

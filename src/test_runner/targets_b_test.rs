@@ -138,7 +138,7 @@ fn resolve_python_parametrized_nodeid_is_direct_selector() {
     init_git_repo(tmp.path());
     let tests = tmp.path().join("tests");
     fs::create_dir_all(&tests).unwrap();
-    // Collection would fail; explicit nodeids must not invoke pytest --collect-only.
+
     fs::write(
         tests.join("conftest.py"),
         "def pytest_configure(config):\n    raise RuntimeError('collect must not run')\n",

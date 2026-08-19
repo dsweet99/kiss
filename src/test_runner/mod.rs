@@ -118,7 +118,7 @@ pub(crate) fn apply_force_bad(
     rs.sort();
     rs.dedup();
     planned.prior_failure_selectors.rust = rs;
-    // Also select bad tests that normal rules omitted (e.g. warm `kiss test .`).
+
     for sel in &planned.prior_failure_selectors.python {
         if !planned.sel.python.iter().any(|s| s == sel) {
             planned.sel.python.push(sel.clone());
@@ -146,9 +146,9 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
 }
 
 pub(crate) fn emit_test_progress(message: &str) {
-    // Write the current STDOUT fd so watch/progress lines stay visible after
-    // `dup2` capture and do not flush a separate `std::io::stdout()` handle
-    // that may already be wrapped by a `BufWriter`.
+
+
+
     #[cfg(unix)]
     {
         let mut line = Vec::with_capacity(message.len() + 1);
@@ -181,9 +181,9 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     let jobs = a.jobs;
     let extra = a.extra;
     let python_extra = a.python_extra;
-    // Fresh identity + collect memos for this test/watch cycle.
+
     crate::test_runner::runners::clear_python_collect_memo();
-    // Emit before planning so long selector/coverage work is not silent.
+
     emit_test_progress("kiss test: Planning ...");
     let plan_started = std::time::Instant::now();
     match plan_for_invocation(&a) {

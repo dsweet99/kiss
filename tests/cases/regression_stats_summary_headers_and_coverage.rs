@@ -35,8 +35,8 @@ fn build_corpus(dir: &std::path::Path) {
         "def nobody_calls_me():\n    x = 1\n    y = 2\n    return x + y\n",
     )
     .unwrap();
-    // Two long, near-identical functions in different files so the duplicate
-    // detector (default `min_similarity = 0.9`) classifies them as a cluster.
+
+
     let dup_body = (0..40)
         .map(|i| format!("    a{i} = {i} + {i}"))
         .collect::<Vec<_>>()
@@ -138,8 +138,8 @@ fn cli_stats_summary_emits_violations_header_with_duplicate_and_orphan_counts() 
         "Violations header missing `orphan`: {line}\nfull stdout:\n{stdout}"
     );
 
-    // Corpus is constructed so both counts must be > 0 — a regression where the
-    // computation is silently skipped (e.g. always reporting 0) will fail here.
+
+
     let nums: Vec<usize> = line
         .split(|c: char| !c.is_ascii_digit())
         .filter(|s| !s.is_empty())

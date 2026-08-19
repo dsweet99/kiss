@@ -56,8 +56,8 @@ fn load_check_aggregate_population_skips_index_json_body() {
     let fixture = aggregate_backed_population_fixture();
     let index_path = fixture.req.cache_root.join("index.json");
     let original = std::fs::read(&index_path).expect("index.json");
-    // Corrupt the huge files map while leaving a parseable stub that would fail
-    // full conservative equality if it were consulted.
+
+
     std::fs::write(
         &index_path,
         format!(
@@ -102,7 +102,7 @@ fn load_check_aggregate_population_rejects_malformed_index_json() {
 fn load_check_aggregate_population_accepts_large_index_with_object_prefix() {
     let fixture = aggregate_backed_population_fixture();
     let index_path = fixture.req.cache_root.join("index.json");
-    // Larger than the full-parse byte limit: must not DOM-parse; object prefix is enough.
+
     let mut huge = Vec::with_capacity(4 * 1024 * 1024 + 64);
     huge.extend_from_slice(b"{\n  \"schema_version\": \"x\",\n  \"pad\": \"");
     huge.extend(std::iter::repeat_n(b'a', 4 * 1024 * 1024));
@@ -151,7 +151,7 @@ fn conservative_check_aggregate_publish_writes_valid_population_index() {
     .expect("aggregate-backed population state");
     assert!(state.line_index.contains_key("src/a.rs"));
     assert!(state.line_index.contains_key("src/b.rs"));
-    // In-memory and on-disk check-aggregate indexes are compact (keys only).
+
     assert!(state.line_index["src/a.rs"].is_empty());
     assert!(state.line_index["src/b.rs"].is_empty());
     assert_eq!(state.selectors, fixture.selectors);

@@ -86,7 +86,7 @@ fn load_memoized(repo_root: &Path) -> Option<LoadedDurations> {
         return None;
     }
     let max = Duration::from_nanos(file.max_duration_ns);
-    // Omit unresolved (None) slots so warm gates never treat absence as 0 ns.
+
     let pairs: Vec<(String, Duration)> = selectors
         .into_iter()
         .zip(file.durations_ns.iter().copied())
@@ -151,7 +151,7 @@ pub(crate) fn try_load_generation_path_maxes_only(
         }
         return Some(file.path_maxes);
     }
-    // Legacy artifact: fall through to full load (backfills path_maxes on disk).
+
     try_load_generation_path_maxes(repo_root)
 }
 
@@ -181,7 +181,7 @@ fn read_pointer(cache_root: &Path) -> Option<PopulationPointer> {
 fn read_durations_file(gen_dir: &Path) -> Option<GenerationDurationsFile> {
     let bytes = fs::read(gen_dir.join("durations.json")).ok()?;
     let file: GenerationDurationsFile = serde_json::from_slice(&bytes).ok()?;
-    // v1 wrote bare u64 (serde still maps into Option as Some); v2 writes null for unknown.
+
     (file.schema_version == GENERATION_DURATIONS_SCHEMA
         || file.schema_version == GENERATION_DURATIONS_SCHEMA_V1)
         .then_some(file)

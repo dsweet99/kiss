@@ -59,15 +59,15 @@ pub(super) fn python_identifier_is_value(node: Node<'_>) -> bool {
             .is_some_and(|n| n.id() == node.id())
     };
     match parent.kind() {
-        // Definition NAME positions are bindings, not references.
+
         "function_definition"
         | "async_function_definition"
         | "class_definition"
         | "typed_parameter"
         | "default_parameter"
         | "typed_default_parameter" => false,
-        // Bare parameter names: `def f(x):` parses `x` as an identifier
-        // child of a `parameters` node.
+
+
         "parameters"
         | "lambda_parameters"
         | "import_from_statement"
@@ -83,9 +83,9 @@ pub(super) fn python_identifier_is_value(node: Node<'_>) -> bool {
         {
             false
         }
-        // Attribute access `obj.attr`: the `attr` part is the attribute
-        // (handled separately as Method when it heads a call); the
-        // `object` part IS a name reference and falls through.
+
+
+
         "attribute" if same("attribute") => false,
         _ => true,
     }

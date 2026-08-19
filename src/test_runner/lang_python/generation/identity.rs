@@ -71,9 +71,9 @@ pub(crate) fn identity_matches_current(
     identity: &PythonExecutionIdentity,
     test_args: &[String],
 ) -> bool {
-    // Full equality including input_fingerprint. Planning, test ensure, and
-    // coverage load share this predicate so a fingerprint change cannot
-    // warm-accept a generation that cov would reject.
+
+
+
     let Ok(current) = current_python_execution_identity(repo_root, test_args) else {
         return false;
     };

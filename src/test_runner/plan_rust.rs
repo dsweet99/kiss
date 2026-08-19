@@ -13,8 +13,8 @@ pub(super) fn rust_population_current_for_all_selectors(
     selectors: &[String],
     gate: &GateConfig,
 ) -> bool {
-    // Cold `.kiss` (no population / witness): skip batch_identity. That path
-    // digests the ordinary Rust source tree and dominated wiped-cache planning.
+
+
     let cache_root =
         crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root);
     if !cache_root.join("population.json").is_file()
@@ -43,8 +43,8 @@ pub(super) fn rust_population_current_for_all_selectors(
     {
         return true;
     }
-    // Derived population.json can lag the execution witness when all-hit publishes
-    // skip index rewrite. A complete Accepting witness is enough for selective reuse.
+
+
     rust_witness_accepts_full_universe(repo_root, &expected, &identity, gate)
 }
 

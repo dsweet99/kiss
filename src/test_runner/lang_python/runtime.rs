@@ -44,7 +44,7 @@ impl LanguageRuntime for PythonRuntime {
     }
 
     fn load_full_witness(&self, repo_root: &Path) -> Result<ExecutionWitness, String> {
-        // Accept/repair only needs statuses + timings; skip line_index (sameq ~1GiB).
+
         let pinned = try_load_pinned_python_generation_warm(repo_root)
             .map_err(|e| format!("python witness load: {e:?}"))?;
         Ok(python_witness_from_pinned(&pinned))
@@ -69,8 +69,8 @@ impl LanguageRuntime for PythonRuntime {
             &request.gate,
         )?;
         let (statuses, durations_ns) = statuses_from_summary(&summary, miss_set);
-        // Full cold All-mode: publish the planned universe. Incomplete repair of a
-        // subset must delta-repair (publication_universe=None), not rebuild.
+
+
         let publication_universe = match request.mode {
             crate::test_runner::lang_iface::AcceptMode::All
                 if miss_set.len() == request.planned.python.len() =>
@@ -165,7 +165,7 @@ fn statuses_from_summary(
     let mut statuses = Vec::with_capacity(selectors.len());
     let mut durations = Vec::with_capacity(selectors.len());
     for sel in selectors {
-        // Prefer runner-raw status for witness storage; accept-path reclassify owns SLA.
+
         let status = match summary.raw_statuses.get(sel).copied().unwrap_or_else(|| {
             if summary.timed_out_selectors.iter().any(|s| s == sel) {
                 TestStatus::TimedOut
@@ -180,7 +180,7 @@ fn statuses_from_summary(
             TestStatus::Passed => WitnessStatus::Passed,
         };
         statuses.push(status);
-        // Preserve absence: do not collapse missing timings into 0.
+
         durations.push(summary.selector_durations_ns.get(sel).copied());
     }
     (statuses, durations)

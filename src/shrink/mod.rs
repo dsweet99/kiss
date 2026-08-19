@@ -85,7 +85,7 @@ impl std::fmt::Display for ShrinkViolation {
 pub fn check_shrink_constraints(state: &ShrinkState, current: &GlobalMetrics) -> ShrinkViolations {
     let mut violations = Vec::new();
 
-    // Check all metrics as constraints (except target uses target_value)
+
     let checks: &[(ShrinkTarget, usize)] = &[
         (ShrinkTarget::Files, state.baseline.files),
         (ShrinkTarget::CodeUnits, state.baseline.code_units),

@@ -31,7 +31,7 @@ pub(crate) struct BodySummary {
 
 pub(crate) fn analyze_body(body: Node, source: &str) -> BodySummary {
     let mut agg = BodyAgg::default();
-    // Start at indentation depth 1 (function body baseline).
+
     let _ = walk_body(body, source, 1, &mut agg);
     BodySummary {
         statements: agg.statements,
@@ -45,7 +45,7 @@ pub(crate) fn analyze_body(body: Node, source: &str) -> BodySummary {
     }
 }
 
-// Returns statement count for this subtree (including this node if it is a statement).
+
 pub(crate) fn walk_body(
     node: Node,
     source: &str,

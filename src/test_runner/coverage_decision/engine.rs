@@ -56,9 +56,9 @@ fn plan_language(
     _diff: &ChangedDiff,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-    // Rust freshness ignores the universe slice; skip workspace enumeration on the
-    // common warm selective path. Python can do the same when index selection is
-    // already complete (avoid pytest collection after source edits).
+
+
+
     match planner.language() {
         kiss::Language::Rust => plan_rust_language(planner, changed_tests),
         kiss::Language::Python => plan_python_language(planner, changed_tests),
@@ -69,9 +69,9 @@ fn plan_python_language(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-    // Warm selective path: freshness with an empty universe still consults the
-    // coverage index / env gates, avoiding pytest collection when the index hit
-    // is already complete and there are no prior failures to filter.
+
+
+
     if planner.prior_failures().is_empty() {
         let freshness = planner.freshness(&[])?;
         if !freshness.requires_population() {
@@ -91,8 +91,8 @@ fn plan_rust_language(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-    // Match Python: prior failures force full-universe planning so selective
-    // freshness cannot skip rediscovery / population when failures remain.
+
+
     if !planner.prior_failures().is_empty() {
         return plan_with_universe(planner, changed_tests);
     }

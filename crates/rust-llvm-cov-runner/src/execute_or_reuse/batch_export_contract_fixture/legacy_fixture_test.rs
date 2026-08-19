@@ -52,7 +52,7 @@ fn per_selector_oracle_uses_fake_cargo_for_fast_coverage() {
         permissions.set_mode(0o755);
         std::fs::set_permissions(&fake_cargo, permissions).unwrap();
     }
-    // SAFETY: test-local env override for oracle cargo program.
+
     unsafe {
         std::env::set_var("KISS_ORACLE_CARGO", &fake_cargo);
     }
@@ -69,7 +69,7 @@ fn per_selector_oracle_uses_fake_cargo_for_fast_coverage() {
         tmp.path().join("cache"),
         &[],
     );
-    // SAFETY: restore default oracle cargo program selection.
+
     unsafe {
         std::env::remove_var("KISS_ORACLE_CARGO");
     }

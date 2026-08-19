@@ -10,13 +10,13 @@ fn parse_py(path: &Path) -> ParsedFile {
 
 #[test]
 fn c2_break_1_empty_init_py_is_falsely_orphaned() {
-    // C2 Break #1: __init__.py entry point check is dead code.
-    //
-    // qualified_module_name renames pkg/__init__.py → "pkg". Then is_entry_point("pkg")
-    // extracts bare name "pkg", which never matches "__init__". The __init__ exemption
-    // in is_entry_point is unreachable for __init__.py inside a package directory.
-    //
-    // Prediction: empty __init__.py should NOT be flagged as orphan_module.
+
+
+
+
+
+
+
     use std::fs;
     use tempfile::TempDir;
 
@@ -47,14 +47,14 @@ fn c2_break_1_empty_init_py_is_falsely_orphaned() {
 
 #[test]
 fn c2_break_2_ambiguous_dotted_suffix_skips_parent_fallback() {
-    // C2 Break #2: resolve_import's dotted branch returns None when matches.len() > 1,
-    // even though the parent-module fallback could disambiguate.
-    //
-    // Both qualified names end with "services.handler" → matches.len() == 2.
-    // The parent fallback (prefix "team_a.services.") would resolve to the correct one,
-    // but is only tried when matches.is_empty(), not when ambiguous.
-    //
-    // Prediction: team_a.services.handler should NOT be orphan.
+
+
+
+
+
+
+
+
     use std::fs;
     use tempfile::TempDir;
 
@@ -136,11 +136,11 @@ fn build_cross_pkg_registry_fixture() -> (tempfile::TempDir, Vec<std::path::Path
 
 #[test]
 fn c2_break_3_many_cross_package_importers_all_fail_on_ambiguous_suffix() {
-    // C2 Break #3: Repeated directory structures cause suffix ambiguity that makes ALL
-    // importers — even from different packages — fail resolution simultaneously.
-    // Both qualified names end with "core.registry" → matches.len() == 2 for every importer.
-    //
-    // Prediction: at least one registry module should NOT be orphan.
+
+
+
+
+
     let (_tmp, paths) = build_cross_pkg_registry_fixture();
     let parsed: Vec<_> = paths.iter().map(|p| parse_py(p)).collect();
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
@@ -159,11 +159,11 @@ fn c2_break_3_many_cross_package_importers_all_fail_on_ambiguous_suffix() {
 
 #[test]
 fn c2_break_4_type_checking_only_import_makes_module_invisible() {
-    // C2 Break #4: Imports inside `if TYPE_CHECKING:` blocks are skipped by extraction.
-    // A module imported ONLY inside TYPE_CHECKING has zero fan_in in the graph, even though
-    // it is genuinely used for type annotations.
-    //
-    // Prediction: a type-definitions module imported for annotations should NOT be orphan.
+
+
+
+
+
     use std::fs;
     use tempfile::TempDir;
 
@@ -213,12 +213,12 @@ fn c2_break_4_type_checking_only_import_makes_module_invisible() {
 
 #[test]
 fn c2_break_5_absolute_path_truncation_creates_qualified_name_collision() {
-    // C2 Break #5: For absolute paths without a `src/` root, qualified_module_name truncates
-    // to the last 2 directory components. Two files at different locations but with the same
-    // last-2 dirs produce identical qualified names, silently merging into one graph node.
-    //
-    // Prediction: two files at different paths should produce distinct qualified names
-    // (graph.paths should have 2 entries, not 1).
+
+
+
+
+
+
     use std::fs;
     use tempfile::TempDir;
 

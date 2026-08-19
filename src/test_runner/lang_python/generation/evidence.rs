@@ -45,7 +45,7 @@ impl PopulationEvidence {
     }
 
     pub(crate) fn recompute_complete(&mut self) {
-        // Passed selectors may cover no indexable sources (fixture-only / assertion-only).
+
         self.complete = self
             .timings
             .iter()
@@ -93,7 +93,7 @@ pub(crate) fn selector_evidence_from_outcome(
 
 fn measured_duration(outcome: &RslipOutcome) -> Option<Duration> {
     if outcome.duration.is_zero() && outcome.cache_status == CacheStatus::Hit {
-        // Warm-seal hits synthesize zero; treat as unmeasured.
+
         return None;
     }
     Some(outcome.duration)

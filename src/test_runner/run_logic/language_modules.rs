@@ -50,7 +50,7 @@ impl LanguageExecutor for PythonModule {
     }
 
     fn write_manifest(&self, selectors: &[String], ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        // Publication is owned by the ensure kernel; skip duplicate write on population.
+
         let _ = (self, selectors, ctx);
         Ok(())
     }
@@ -147,7 +147,7 @@ impl LanguageExecutor for RustModule {
     fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
         let index = crate::test_runner::coverage_index::for_language(kiss::Language::Rust);
         let _ = (index.cache_root(&ctx.planned.repo_root), index.index_file_present(&ctx.planned.repo_root));
-        // Ensure kernel owns witness publish; derived index rebuild stays for selective hits.
+
         crate::test_runner::rust_coverage_index::publish_rust_derived_state_with_filter(
             &ctx.planned.repo_root,
             None,
@@ -197,8 +197,8 @@ fn ensure_rust_via_kernel(
     use crate::test_runner::ensure_runtime::{
         ensure_languages_runtime, ensure_request_from_planned,
     };
-    // Match Python ensure: only CLI --force. Prior failures re-run via witness
-    // miss / non-Passed cache entries, not by invalidating the whole Rust set.
+
+
     let force = ctx.options.force_rerun;
     let mut planned = ctx.planned.clone();
     planned.sel.rust = selectors.to_vec();
@@ -218,7 +218,7 @@ fn ensure_rust_via_kernel(
     Ok(result.rust().map(|r| r.summary.clone()).unwrap_or_default())
 }
 
-#[allow(dead_code)] // test seam + legacy selective path retained for unit coverage
+#[allow(dead_code)]
 pub(super) fn run_rslip_selectors_for_module(
     selectors: &[String],
     ctx: &RunContext<'_, '_>,
@@ -226,8 +226,8 @@ pub(super) fn run_rslip_selectors_for_module(
     if selectors.is_empty() {
         return Ok(SelectorExecutionSummary::default());
     }
-    // Force-rerun only the CLI --force flag and recorded prior failures — never the
-    // entire population — otherwise one failed selector invalidates all cache hits.
+
+
     runners::run_rslip_selectors(
         &ctx.planned.repo_root,
         selectors,
@@ -240,7 +240,7 @@ pub(super) fn run_rslip_selectors_for_module(
     )
 }
 
-#[allow(dead_code)] // test seam for selective/population llvm-cov behavior
+#[allow(dead_code)]
 pub(super) fn run_rust_selectors_for_module(
     selectors: &[String],
     ctx: &RunContext<'_, '_>,
@@ -249,8 +249,8 @@ pub(super) fn run_rust_selectors_for_module(
     if selectors.is_empty() {
         return Ok(SelectorExecutionSummary::default());
     }
-    // Force-rerun only the CLI --force flag — never the entire population from
-    // prior failures. Prior failures are forced per-selector (Python force_set parity).
+
+
     let force_rerun = ctx.options.force_rerun;
     if !force_rerun
         && let Ok(identity) =

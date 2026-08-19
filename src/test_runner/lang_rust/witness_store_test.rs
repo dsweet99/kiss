@@ -149,7 +149,7 @@ fn warm_helpers_use_caller_gate_not_cwd_defaults() {
     let identity = sample_identity();
     let selectors = vec!["a".into()];
     let empty_cov = Default::default();
-    // 2s Passed witness.
+
     publish_rust_execution_witness(PublishRustWitness {
         repo_root: tmp.path(),
         identity: &identity,

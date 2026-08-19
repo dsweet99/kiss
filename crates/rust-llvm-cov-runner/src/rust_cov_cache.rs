@@ -121,7 +121,7 @@ fn generation_entry_name_if_match(path: &Path, generation: &str) -> io::Result<O
     if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
         return Ok(None);
     }
-    // Concurrent publishers may remove an entry between readdir and read.
+
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -158,9 +158,9 @@ fn entry_equal_except_duration(left: &RustCovCacheEntry, right: &RustCovCacheEnt
 /// rewrite because `generation_fingerprint` differs.
 fn entry_stable_for_generation(left: &RustCovCacheEntry, right: &RustCovCacheEntry) -> bool {
     if left.coverage.files.is_empty() && !right.coverage.files.is_empty() {
-        // CheckAggregate stores compact entries (no line maps). A later
-        // SelectorEntries publish for the same generation must be allowed to
-        // fill coverage; empty-to-full is not map churn.
+
+
+
         return false;
     }
     left.schema_version == right.schema_version
@@ -176,9 +176,9 @@ pub fn store_rust_cov_cache_entry(
     entry: &RustCovCacheEntry,
 ) -> io::Result<()> {
     let path = rust_cov_cache_entry_path(cache_root, fingerprint);
-    // Keep existing bytes when this generation already published a matching
-    // outcome. Fresh timings still land in population_durations.json after
-    // derived publish. Coverage/duration-only churn must not resize entries/.
+
+
+
     if let Ok(existing_bytes) = fs::read(&path)
         && let Ok(existing) = serde_json::from_slice::<RustCovCacheEntry>(&existing_bytes)
         && (entry_equal_except_duration(&existing, entry)

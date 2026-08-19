@@ -184,8 +184,8 @@ fn refresh_python_and_rust_parallel(
     pytest_args: &[String],
     gate: &kiss::GateConfig,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
-    // Per-language file locks allow overlap. Refcounted ScopedRefreshEnvGuard makes
-    // the process-wide refresh env marker safe across these two threads.
+
+
     std::thread::scope(|scope| {
         let python = scope.spawn(|| {
             ensure_python_runtime_coverage(repo_root, ignore, jobs, pytest_args, gate)
@@ -226,8 +226,8 @@ impl ScopedRefreshEnvGuard {
             .expect("refresh env state lock");
         if state.0 == 0 {
             state.1 = Some(std::env::var_os(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV));
-            // SAFETY: process-wide marker for nested kiss/check children during refresh.
-            // Depth counting allows concurrent Python+Rust refresh threads to share it.
+
+
             unsafe { std::env::set_var(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV, "1") };
         }
         state.0 += 1;
@@ -251,9 +251,9 @@ impl Drop for ScopedRefreshEnvGuard {
 pub(crate) fn restore_refresh_active_env(old: Option<std::ffi::OsString>) {
     let key = COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     match old {
-        // SAFETY: restores the guard set by `ScopedRefreshEnvGuard::set`.
+
         Some(value) => unsafe { std::env::set_var(key, value) },
-        // SAFETY: restores the absence of the guard set above.
+
         None => unsafe { std::env::remove_var(key) },
     }
 }
@@ -312,8 +312,8 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
         vec![],
     )
     .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
-    // Incremental CheckAggregate repair stays language-owned; command path still
-    // funnels full refresh through the shared ensure factory/kernel.
+
+
     if let Some(stats) = try_repair_rust_check_aggregate_labeled(
         repo_root,
         ignore,
@@ -341,7 +341,7 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
 ///
 /// Runs through the shared ensure factory/kernel against repo-local `./.kiss`
 /// coverage artifacts.
-#[allow(dead_code)] // summary-shaped API retained for cov/runtime callers
+#[allow(dead_code)]
 pub(crate) fn ensure_rust_runtime_coverage_shared(
     repo_root: &Path,
     ignore: &[String],

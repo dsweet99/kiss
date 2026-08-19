@@ -14,8 +14,8 @@ def test_publication_writer_command_rust_selector_uses_file_targets_force_metric
 
     artifact = next(iter(RUST_SELECTOR_PUBLISH_ARTIFACTS))
     cmd = publication_writer_command("rust", Path("/tmp/repo"), artifact, jobs=2)
-    # Subset file targets → SelectorEntries (reverse/entry_state). Not `test .`
-    # (AcceptMode::All → CheckAggregate, which omits reverse metadata).
+
+
     test_idx = cmd.index("test")
     assert cmd[test_idx + 1 : test_idx + 3] == ["tests/alpha.rs", "tests/beta.rs"]
     assert "--force" in cmd
@@ -60,7 +60,7 @@ def test_cargo_executable_name_reads_trailing_binary_name() -> None:
 
 
 def test_llvm_tool_uses_single_thread_ignores_export_contract_package_name() -> None:
-    # Regression: substring " export" matched `-p export-contract-runner`.
+
     command = (
         "/home/user/.cargo/bin/cargo-llvm-cov llvm-cov test "
         "-p export-contract-runner -- --test-threads=1"
@@ -92,7 +92,7 @@ def test_llvm_tool_uses_single_thread_requires_flags_on_real_export_and_merge() 
 
 
 def test_observer_keeps_max_build_jobs_across_nested_invocations() -> None:
-    # Nested fixture cargo-llvm-cov may report a smaller --build-jobs than kiss -j.
+
     observed: int | None = None
     for jobs in (32, 4, 8):
         if observed is None or jobs > observed:
@@ -115,6 +115,6 @@ def test_cargo_build_jobs_ignores_tmp_fixture_batches_for_observer_contract() ->
     )
     assert cargo_build_jobs_from_command(top) == 32
     assert cargo_build_jobs_from_command(nested) == 4
-    # Observer recording filter: keep top-level, drop /tmp fixtures.
+
     assert "libtest-json-plus" in top and "/tmp/" not in top
     assert "libtest-json-plus" in nested and "/tmp/" in nested

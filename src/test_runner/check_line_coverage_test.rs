@@ -163,8 +163,8 @@ fn repository_root_for_universe_walks_up_to_git_directory() {
 
 #[test]
 fn load_python_runtime_coverage_matches_configured_pytest_plugin_args() {
-    // Regression: sameq-3 publishes population with `-p` plugin args, but kiss cov
-    // previously validated with `[]`, so every warm cov refreshed then failed.
+
+
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
@@ -338,7 +338,7 @@ fn load_python_runtime_coverage_honors_session_pytest_extra() {
         &kiss::GateConfig::default(),
     )
     .expect_err("no population");
-    // Must use session extras (not reload plugin-only config) when probing identity.
+
     let msg = err.to_string();
     assert!(
         msg.contains("missing or stale/incompatible population")

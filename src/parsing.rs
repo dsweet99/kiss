@@ -68,8 +68,8 @@ pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseErro
 
     Ok(paths
         .par_iter()
-        // Creating a tree-sitter parser + setting the language is relatively expensive.
-        // Reuse one parser per Rayon worker thread instead of per file.
+
+
         .map_init(
             || create_parser().map_or_else(|_| ParserSlot::Failed, ParserSlot::Ready),
             |slot, path| match slot {

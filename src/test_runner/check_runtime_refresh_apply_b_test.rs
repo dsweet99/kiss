@@ -1,4 +1,4 @@
-// Split from check_runtime_refresh_apply_test.rs for lines_per_file.
+
 
 #[test]
 fn apply_identity_only_repair_on_bare_index_reports_structured_failure() {

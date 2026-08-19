@@ -17,7 +17,7 @@ fn first_func(p: &ParsedFile) -> tree_sitter::Node<'_> {
 /// callers can skip unreliable results.
 #[test]
 fn function_with_syntax_error_sets_has_error_flag() {
-    // Missing colon after `if True` — tree-sitter inserts ERROR nodes
+
     let code = "def foo():\n    x = 1\n    if True\n        y = 2\n    return x\n";
     let p = parse_py(code);
     let func = first_func(&p);

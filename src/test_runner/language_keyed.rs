@@ -26,7 +26,7 @@ impl<T> LanguageKeyed<T> {
         }
     }
 
-    #[allow(dead_code)] // mapper for transforming both language slots uniformly
+    #[allow(dead_code)]
     pub(crate) fn map<U>(self, mut f: impl FnMut(T) -> U) -> LanguageKeyed<U> {
         LanguageKeyed {
             python: f(self.python),

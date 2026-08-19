@@ -160,11 +160,11 @@ fn format_layers(out: &mut String, layer_info: &LayerInfo) {
 }
 
 const fn default_layer_name(level: usize, total: usize) -> &'static str {
-    // Layer naming follows a consistent pattern:
-    // - Layer 0: Foundation (base utilities, no dependencies)
-    // - Top layer: Application (orchestration, entry points)
-    // - Layer 1 (when not top): Domain (business logic)
-    // - Layers 2..top-1: Intermediate
+
+
+
+
+
     if level == 0 {
         "Foundation"
     } else if level == total - 1 {

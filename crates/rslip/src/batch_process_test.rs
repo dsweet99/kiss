@@ -47,7 +47,7 @@ fn assert_contention_results(root: &Path, first: Child, second: Child) {
     let second_output = second.wait_with_output().unwrap();
     assert_child_success("first", &first_output);
     assert_child_success("second", &second_output);
-    // Brief locks allow concurrent runners; finalize recheck keeps one cache entry.
+
     let execution_log = fs::read_to_string(root.join("executions.log")).unwrap();
     let executions = execution_log.lines().count();
     assert!(
@@ -81,8 +81,8 @@ fn configure_two_process_contention_child<'a>(
         .arg("--nocapture")
         .env("RSLIP_TWO_PROCESS_CONTENTION_CHILD", child_id)
         .env("RSLIP_TWO_PROCESS_CONTENTION_ROOT", root)
-        // Both children would otherwise write the parent test's profile
-        // concurrently, producing an invalid profraw file.
+
+
         .env_remove("LLVM_PROFILE_FILE")
 }
 

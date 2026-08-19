@@ -32,10 +32,10 @@ pub(crate) fn run_target_runner_shim_inner(
     platform: &str,
     command: &[OsString],
 ) -> io::Result<i32> {
-    // Instrumented shim hosts must not dump coverage into an inherited outer
-    // LLVM_PROFILE_FILE; only the delegated test child should write profiles.
-    // Redirect the host sink under `.kiss/profraw` instead of unsetting (unset
-    // dumps `default_*.profraw` into the process CWD).
+
+
+
+
     crate::kiss_profraw::redirect_inherited_llvm_profile_file(output_dir)?;
     let result = run_target_runner_shim_after_redirect(output_dir, runner_map, platform, command);
     let cleanup_err = crate::kiss_profraw::cleanup_kiss_profraw_for_pid(

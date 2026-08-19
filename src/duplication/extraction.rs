@@ -25,9 +25,9 @@ pub(crate) fn is_nontrivial_chunk(normalized: &str, line_count: usize) -> bool {
 
 #[must_use]
 pub fn extract_chunks_for_duplication(parsed_files: &[&ParsedFile]) -> Vec<CodeChunk> {
-    // Parallelize per-file extraction but preserve deterministic ordering:
-    // - files in input order
-    // - within each file, traversal order from `extract_function_chunks`
+
+
+
     let mut per_file: Vec<(usize, Vec<CodeChunk>)> = parsed_files
         .par_iter()
         .enumerate()
@@ -53,8 +53,8 @@ pub fn extract_chunks_for_duplication(parsed_files: &[&ParsedFile]) -> Vec<CodeC
 
 #[must_use]
 pub fn extract_rust_chunks_for_duplication(parsed_files: &[&ParsedRustFile]) -> Vec<CodeChunk> {
-    // Rust AST (`syn::File`) is not Send/Sync, so we keep this sequential.
-    // Ordering is naturally stable by input order.
+
+
     let mut chunks = Vec::new();
     for parsed in parsed_files {
         extract_rust_function_chunks(&parsed.ast, &parsed.source, &parsed.path, &mut chunks);

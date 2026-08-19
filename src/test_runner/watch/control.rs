@@ -60,7 +60,7 @@ pub(crate) struct NudgeRequest {
 pub(crate) struct WatchControlServer {
     socket_path: PathBuf,
     session_path: PathBuf,
-    _listener_keep: (), // listener owned by accept thread
+    _listener_keep: (),
     shutdown: Arc<AtomicBool>,
     accept_handle: Option<JoinHandle<()>>,
     pub nudge_rx: Receiver<NudgeRequest>,
@@ -163,7 +163,7 @@ pub(crate) fn probe_live_watcher(repo_root: &Path) -> Result<Option<SessionFile>
     let lock_path = watch_lock_path(repo_root);
     match WatchLockGuard::try_lock(&lock_path) {
         Ok(Some(_guard)) => {
-            // No watcher: release immediately so concurrent one-shot T can also run.
+
             Ok(None)
         }
         Ok(None) => Ok(Some(wait_for_session(repo_root)?)),

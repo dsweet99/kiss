@@ -125,7 +125,7 @@ pub(crate) fn load_pinned_warm_locked(
 fn read_pointer(cache_root: &Path) -> Result<PopulationPointer, GenerationLoadError> {
     let bytes = fs::read(pointer_path(cache_root)).map_err(|_| GenerationLoadError::MissingOrStale)?;
     let pointer: PopulationPointer = serde_json::from_slice(&bytes).map_err(|_| {
-        // v1 population.json is not a pointer; treat as stale for generation readers.
+
         GenerationLoadError::MissingOrStale
     })?;
     if pointer.schema_version != POINTER_SCHEMA_VERSION {

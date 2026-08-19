@@ -169,13 +169,13 @@ mod tests {
 
     #[test]
     fn target_runner_shim_program_honors_test_override() {
-        // SAFETY: this unit test reads the variable immediately and restores it
-        // before returning; no other test in this module depends on it.
+
+
         unsafe {
             std::env::set_var("KISS_RUST_LLVM_COV_TARGET_RUNNER_SHIM", "/tmp/kiss-test");
         }
         assert_eq!(target_runner_shim_program(), "/tmp/kiss-test");
-        // SAFETY: see the set_var note above.
+
         unsafe {
             std::env::remove_var("KISS_RUST_LLVM_COV_TARGET_RUNNER_SHIM");
         }

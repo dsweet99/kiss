@@ -70,8 +70,8 @@ impl CurrentRunLifecycleGuard {
         let run_err = self.cleanup.remove(&self.cache_root, &self.run_root).err();
         let kiss_profraw = crate::kiss_profraw::kiss_profraw_from_cache_root(&self.cache_root);
         let profraw_err = crate::kiss_profraw::cleanup_kiss_profraw(&kiss_profraw).err();
-        // CheckAggregate has no per-process discard cleanup; mid-run CWD dumps from
-        // instrumented children that scrub LLVM_PROFILE_FILE are cleared here.
+
+
         let orphan_err = crate::kiss_profraw::repo_root_from_cache_root(&self.cache_root)
             .and_then(|root| crate::kiss_profraw::sweep_orphan_default_profraw(&root).err());
         fold_cleanup_errors([run_err, profraw_err, orphan_err])

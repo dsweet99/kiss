@@ -256,7 +256,7 @@ fn target_runner_shim_ignores_nextest_env_for_shell_script_commands() {
     fs::write(&script, "#!/bin/sh\nexit 8\n").unwrap();
     make_executable(&script);
 
-    // SAFETY: test-only env mutation restored by process exit.
+
     unsafe {
         std::env::set_var("NEXTEST_TEST_PHASE", "run");
         std::env::set_var("NEXTEST_BINARY_ID", "kiss-ai::bin/kiss");
@@ -280,7 +280,7 @@ fn target_runner_shim_ignores_nextest_env_for_shell_script_commands() {
         "kiss-ai::bin/kiss$bin_cli::run::run_coverage::hidden_rust_llvm_cov_target_runner_dispatches_before_config_loading"
     );
     assert!(metadata.profile_path.starts_with(&output));
-    // SAFETY: the lock serializes test-only mutation of process-wide nextest env.
+
     unsafe {
         std::env::remove_var("NEXTEST_TEST_PHASE");
         std::env::remove_var("NEXTEST_BINARY_ID");
@@ -329,7 +329,7 @@ fn target_runner_shim_prefers_nextest_ids_over_exact_file_stem() {
     let output = tmp.path().join("instances");
     let runner_map = tmp.path().join("runner-map.json");
     fs::write(&runner_map, b"{\"x86_64-unknown-linux-gnu\":[]}").unwrap();
-    // Non-.sh path so nextest env applies; hashed stem mimics cargo artifacts.
+
     let binary = tmp.path().join("aclick_usage-abc123def");
     fs::write(&binary, "#!/bin/sh\nexit 0\n").unwrap();
     make_executable(&binary);

@@ -196,7 +196,7 @@ fn try_load_rejects_wrong_cache_schema_version() {
 #[test]
 fn load_current_population_durations_hits_manifest_sidecar_without_index() {
     let fixture = published_alpha_derived_fixture();
-    // Ensure sidecar exists from a prior load/publish.
+
     let _ = load_current_population_durations(
         &fixture.req.cache_root,
         &fixture.req.source_root,
@@ -206,7 +206,7 @@ fn load_current_population_durations_hits_manifest_sidecar_without_index() {
         None,
     )
     .expect("seed sidecar");
-    // Remove reverse/index artifacts that full population-state load needs.
+
     let _ = fs::remove_file(fixture.req.cache_root.join("index.json"));
     let hit = load_current_population_durations(
         &fixture.req.cache_root,
@@ -293,7 +293,7 @@ fn load_durations_from_entries_rejects_selector_mismatch() {
     );
     let entry =
         crate::rust_cov_cache::load_rust_cov_cache_entry(&req.cache_root, &alpha_fp).unwrap();
-    // beta's fingerprint points at a payload whose selector is still "alpha".
+
     crate::rust_cov_cache::store_rust_cov_cache_entry(&req.cache_root, &beta_fp, &entry).unwrap();
     let pop = RustPopulationState {
         input_fingerprint: identity.input_digest.clone(),

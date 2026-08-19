@@ -5,7 +5,7 @@
 //! not yet migrated to the language packages directly.
 
 pub(crate) use crate::test_runner::lang_iface::{ExecutionWitness, WitnessScope, WitnessStatus};
-#[allow(unused_imports)] // compatibility re-exports for migrated call sites
+#[allow(unused_imports)]
 pub(crate) use crate::test_runner::lang_python::try_warm_python_cached_summary;
 pub(crate) use crate::test_runner::lang_rust::{
     PublishRustWitness, RustWarmDecision, maybe_bootstrap_rust_witness,

@@ -3,7 +3,7 @@ mod batch_process_tree_groups;
 #[path = "batch_process_tree_reap.rs"]
 mod batch_process_tree_reap;
 
-#[allow(unused_imports)] // re-exported for unit tests via `super::`
+#[allow(unused_imports)]
 pub(crate) use batch_process_tree_groups::signal_process_group;
 pub(crate) use batch_process_tree_groups::{
     identity_still_valid, process_group_alive, signal_validated_process_group,
@@ -129,8 +129,8 @@ impl BatchProcessTreeGuard {
     }
 
     pub fn terminate_descendants(&self, grace: Duration) -> usize {
-        // Scope-level guards share this flag with `BatchScopeInterruptGuard`; only
-        // standalone subprocess guards may mark interruption during descendant teardown.
+
+
         if self.owns_sigint_handler {
             self.interrupted.store(true, Ordering::SeqCst);
         }
@@ -228,8 +228,8 @@ type SigintHandlerState = (Arc<ProcessTreeRegistry>, Arc<AtomicBool>);
 
 #[cfg(unix)]
 extern "C" fn handle_sigint(_signal: libc::c_int) {
-    // Async-signal-safe-ish: no Mutex::lock, no sleep. Flag the batch and
-    // best-effort kill recorded groups; `wait_child_with_interruption` reaps.
+
+
     let flag = ACTIVE_SIGINT_FLAG.load(Ordering::SeqCst);
     if !flag.is_null() {
         unsafe {
@@ -274,7 +274,7 @@ fn install_sigint_handler(
         Arc::as_ptr(&registry) as *mut ProcessTreeRegistry,
         Ordering::SeqCst,
     );
-    let previous = unsafe {
+    unsafe {
         let mut action: libc::sigaction = std::mem::zeroed();
         action.sa_sigaction = handle_sigint as *const () as usize;
         action.sa_flags = 0;
@@ -284,11 +284,7 @@ fn install_sigint_handler(
         if rc != 0 {
             return Err(io::Error::last_os_error());
         }
-        old.sa_sigaction
     };
-    if previous == 0 {
-        // Handler installed from default/ignored disposition.
-    }
     Ok(())
 }
 

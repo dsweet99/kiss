@@ -111,7 +111,7 @@ fn python_backend_identity(repo_root: &Path) -> Option<String> {
     }
     let path = python_coverage_cache_root_population(repo_root)?;
     let bytes = fs::read(path).ok()?;
-    // Ignore selectors: counting them forces a full array parse of a large manifest.
+
     #[derive(serde::Deserialize)]
     struct PopHead {
         input_fingerprint: String,

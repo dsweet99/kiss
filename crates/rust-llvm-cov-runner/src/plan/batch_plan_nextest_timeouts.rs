@@ -17,8 +17,8 @@ pub(crate) fn append_slow_timeout_toml(out: &mut String, req: &RustCoverageBatch
         ));
         return;
     }
-    // Timeout overrides always use exact/anchored filters so one selector's
-    // limit cannot kill substring-overlapping tests.
+
+
     let exact = true;
     let mut by_period: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     for selector in &req.logical_selectors {

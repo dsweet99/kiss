@@ -17,8 +17,8 @@ pub(crate) fn run_delegated_list_child(
 ) -> io::Result<i32> {
     let mut delegated_command = build_delegated_command(delegated, command);
     scrub_coverage_build_env(&mut delegated_command);
-    // List children are often instrumented; scrubbing without a discard sink
-    // leaves `default_*.profraw` in the package CWD.
+
+
     let kiss_profraw = crate::kiss_profraw::resolve_kiss_profraw(output_dir);
     crate::kiss_profraw::ensure_kiss_profraw(&kiss_profraw)?;
     delegated_command.env(

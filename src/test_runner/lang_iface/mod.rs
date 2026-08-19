@@ -13,7 +13,7 @@ pub(crate) use runtime::{
     EnsureRequest, EnsureRuntimeResult, LanguageEnsureResult, LanguageRuntime, OutcomeBatch,
     PublishBatch,
 };
-#[allow(unused_imports)] // contract types used by LanguageRuntime default methods / call sites
+#[allow(unused_imports)]
 pub(crate) use runtime::{CoverageSnapshot, StatusTimingSnapshot};
 
 #[cfg(test)]

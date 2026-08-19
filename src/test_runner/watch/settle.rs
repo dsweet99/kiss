@@ -120,7 +120,7 @@ impl SettleMachine {
         if self.pending.is_empty() {
             return SettlePoll::Idle;
         }
-        // Refresh once so callers see current signatures, but do not re-arm settle.
+
         let _ = refresh_pending_unsettled(self, now, &mut refresh);
         let mut paths: Vec<PathBuf> = self.pending.keys().cloned().collect();
         self.pending.clear();

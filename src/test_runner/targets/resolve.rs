@@ -42,7 +42,7 @@ pub(crate) fn resolve_target_operands(
         let abs = canonicalize_target_path(repo_root, &parsed)?;
         reject_ignored_target(repo_root, &abs, ignore, &parsed.raw)?;
         reject_lang_mismatch(lang_filter, parsed.language, &parsed.raw)?;
-        // Explicit single-test selectors: trust the nodeid and skip pytest --collect-only.
+
         if let Some(nodeid) = explicit_python_test_selector(repo_root, &parsed, &abs) {
             insert_direct(&mut query, Language::Python, nodeid);
             continue;
@@ -108,8 +108,8 @@ fn apply_parsed_target(
                 }
                 insert_direct(query, model.language, test.selector.clone());
             }
-            // Test-file / tests-dir path operands are direct selectors only; do not
-            // treat them as coverage sources for index-based covering selection.
+
+
             let is_test_operand = match model.language {
                 Language::Python => is_test_file(abs) || is_in_test_directory(abs),
                 Language::Rust => is_rust_test_file(abs),
@@ -190,7 +190,7 @@ fn attach_python_tests(
     )?;
     let rel = repo_relative(repo_root, &model.path).unwrap_or_else(|| model.path.display().to_string());
     attach_python_nodeids(model, &nodeids, &rel);
-    // Drop tests that collection did not confirm.
+
     model.direct_tests.retain(|test| !test.selector.is_empty());
     for def in &mut model.definitions {
         if def.is_unit_test && def.test_selector.as_ref().is_none_or(String::is_empty) {

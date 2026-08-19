@@ -228,7 +228,7 @@ fn build_tool_identity_cache_key(repo_root: &Path) -> ToolIdentityCacheKey {
 }
 
 fn which_meta(program: &Path) -> Option<(u64, Option<SystemTime>)> {
-    // Best-effort: if PATH resolution fails, key still includes program name.
+
     file_meta(program).or_else(|| {
         std::env::var_os("PATH").and_then(|paths| {
             for dir in std::env::split_paths(&paths) {

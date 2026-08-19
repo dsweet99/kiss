@@ -87,8 +87,8 @@ pub(crate) struct EnvVarGuard {
 impl EnvVarGuard {
     pub(crate) fn set(key: &'static str, value: &Path) -> Self {
         let prior = std::env::var_os(key);
-        // SAFETY: real-tool parity tests hold TARGET_RUNNER_ENV_LOCK while the
-        // process-wide shim override is set, and restore the variable in Drop.
+
+
         unsafe {
             std::env::set_var(key, value);
         }
@@ -98,7 +98,7 @@ impl EnvVarGuard {
 
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
-        // SAFETY: this restores the variable modified by EnvVarGuard::set.
+
         unsafe {
             if let Some(prior) = &self.prior {
                 std::env::set_var(self.key, prior);

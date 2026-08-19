@@ -165,7 +165,7 @@ fn test_resolve_import() {
     assert!(resolve_import("unknown", Some("attr"), &bare_to_qualified).is_empty());
 }
 
-// === Bug-hunting tests ===
+
 
 #[test]
 fn test_indirect_deps_in_cycle() {

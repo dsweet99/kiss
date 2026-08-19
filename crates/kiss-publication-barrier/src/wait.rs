@@ -111,7 +111,7 @@ fn configured_barrier_dir() -> io::Result<Option<PathBuf>> {
     let dir = PathBuf::from(raw);
     let canonical = match dir.canonicalize() {
         Ok(path) => path,
-        // Stale barrier dirs from a prior QA process must not fail production publishes.
+
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(err) => {
             return Err(io::Error::new(

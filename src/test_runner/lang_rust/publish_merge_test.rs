@@ -104,7 +104,7 @@ fn statuses_from_summary_classifies_failed_and_timeout() {
 
 #[test]
 fn statuses_from_summary_prefers_raw_over_effective_sla() {
-    // Cold run may mark TimedOut for exit/SLA while witness storage must keep runner-raw Passed.
+
     let mut summary = SelectorExecutionSummary::default();
     summary.record(SelectorExecutionRecord {
         selector: "slow_but_passed".into(),

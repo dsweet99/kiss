@@ -37,8 +37,8 @@ pub fn infer_gate_config_for_paths(
             .collect::<Vec<ParsedRustFile>>()
     };
 
-    // Coverage threshold is owned by `kiss cov` (runtime line coverage). Mimic/clamp
-    // keep the default threshold rather than inferring from deleted static-reference coverage.
+
+
     gate.duplication_enabled =
         !has_reportable_duplicates(&py_parsed, &rs_parsed, gate.min_similarity);
     gate.orphan_module_enabled = !has_orphan_modules(&py_parsed, &rs_parsed);

@@ -29,9 +29,9 @@ pub(crate) fn nextest_binary_id(package_name: &str, target_name: &str, kinds: &[
     if kind_set.contains("bench") {
         return format!("{package_name}::bench/{target_name}");
     }
-    // Nextest lists library unit tests under the package id when the lib target
-    // name matches the package (or a renamed lib). Libtest-json-plus still uses
-    // `{package}::{target_name}`; prefer the libtest spelling for synthesize.
+
+
+
     libtest_binary_prefix(package_name, target_name)
 }
 

@@ -65,8 +65,8 @@ impl CoverageIndex for RustCoverageIndex {
     }
 
     fn index_file_present(&self, repo_root: &Path) -> bool {
-        // Rust index presence is modeled via population/witness state; the on-disk
-        // cache root existing is the shared “has index storage” signal.
+
+
         rust::rust_coverage_cache_root(repo_root).exists()
     }
 

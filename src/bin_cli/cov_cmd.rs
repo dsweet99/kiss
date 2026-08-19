@@ -136,7 +136,7 @@ fn try_evaluate_records_with_time(
             );
             return Some(1);
         }
-        // Schema bump / stale entries: force cold path so coverage can refresh once.
+
         return None;
     }
     let coverage_failed = evaluate_coverage_gate(
@@ -256,15 +256,15 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
         );
     }
     let threshold = args.gate_config.test_coverage_threshold;
-    // Time-only / count-only: skip line-coverage record computation when coverage gate and --all
-    // do not need records.
+
+
     if threshold == 0 && !args.bypass_gate {
         let repo_root = repository_root_for_universe(universe_root);
         let required = RequiredCoverageLanguages {
             python: !files.py_files.is_empty(),
             rust: !files.rs_files.is_empty(),
         };
-        // Ensure populations are current so schema bumps can refresh durations once.
+
         let _ = load_or_refresh_snapshot(
             &repo_root,
             required,

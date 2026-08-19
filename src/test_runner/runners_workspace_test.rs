@@ -57,7 +57,7 @@ fn rust_logical_to_kiss_test_ids_uses_path_and_bare_fn_name() {
 
 #[test]
 fn rust_logical_to_kiss_test_ids_maps_repo_path_test_file() {
-    // Regression: *_test.rs fixtures must not fall back to bare logical ids.
+
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let map = rust_logical_to_kiss_test_ids(&repo, &[]).unwrap();
     let logical = "format_failures_preserve_order_and_full_selectors";
@@ -153,8 +153,8 @@ fn rust_module_population_manifest_selectors_uses_workspace_discovery() {
 #[test]
 fn enumerate_workspace_rust_selectors_fails_fast_on_invalid_syntax() {
     let tmp = TempDir::new().unwrap();
-    // Must include bare #[test] so the file is syn-parsed (non-test files are
-    // skipped; they cannot contribute selectors under rust_test_functions_in).
+
+
     write_demo_crate(&tmp, "#[test]\nfn broken(\n");
 
     let err = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap_err();

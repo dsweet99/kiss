@@ -193,10 +193,10 @@ impl SubprocessPytestRunner {
         let started = Instant::now();
         let mut cmd = Command::new(&req.python);
         cmd.current_dir(&req.cwd);
-        // Parent shells (e.g. malvin) may export PYTEST_ADDOPTS=--testmon; isolated
-        // node runs must not inherit that, matching SubprocessPytestCollector.
-        // PYTEST_DISABLE_PLUGIN_AUTOLOAD is set inside PYTEST_MAIN only for the
-        // outer pytest.main, then cleared so nested pytest can autoload plugins.
+
+
+
+
         cmd.env_remove("PYTEST_ADDOPTS");
         cmd.env_remove("PYTEST_DISABLE_PLUGIN_AUTOLOAD");
         cmd.envs(&req.env);

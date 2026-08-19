@@ -184,8 +184,8 @@ fn resolve_objects_by_binary_ids(
     let mut unmatched = Vec::new();
     for id in profile_ids {
         if !seed_ids.is_empty() && !seed_ids.contains(id) {
-            // Shared LLVM profile pools contain every binary id. Keep only the
-            // seed binary's objects so aggregate line maps stay per-binary.
+
+
             continue;
         }
         match try_resolve_object_for_binary_id(tools, catalog, seed_objects, binary_id_map, id)? {
@@ -203,12 +203,12 @@ fn resolve_objects_by_binary_ids(
                 profdata.display()
             )));
         }
-        // Binary-id resolution already matched every selected profile id to a catalog object.
-        // Skip the redundant full `llvm-cov export -check-binary-ids` validation export.
+
+
         return Ok(resolved);
     }
-    // Nested coverage / deleted artifacts can leave orphan binary ids in a
-    // merged profile. Keep seed objects whose build-ids are still present.
+
+
     resolve_with_orphan_profile_ids(
         tools,
         profdata,
@@ -256,9 +256,9 @@ fn try_resolve_object_for_binary_id(
     binary_id_map: &BinaryIdObjectMap,
     expected_id: &str,
 ) -> Result<Option<PathBuf>, RustLlvmCovError> {
-    // The catalog map is authoritative. Rescanning every object with
-    // llvm-readobj on each miss is O(orphans × catalog) and pathologically
-    // slow for large binaries; orphan seeds are handled separately.
+
+
+
     Ok(binary_id_map.lookup(expected_id).cloned())
 }
 

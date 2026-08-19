@@ -93,7 +93,7 @@ fn test_collect_use_paths() {
 
 #[test]
 fn extracts_function_scoped_use() {
-    // Function-scoped imports should be captured (matching Python behavior)
+
     let ast = parse_rust_code(
         r"
 fn foo() {
@@ -151,7 +151,7 @@ mod inner {
 #[test]
 fn mod_decls_prefer_child_module_under_same_parent() {
     use std::io::Write;
-    // Two different `foo.rs` modules exist; `mod foo;` in `a/mod.rs` should only depend on `a.foo`.
+
     fn has_edge(g: &DependencyGraph, from: &str, to: &str) -> bool {
         let from_idx = *g.nodes.get(from).expect("from node");
         let to_idx = *g.nodes.get(to).expect("to node");
@@ -204,8 +204,8 @@ fn test_qualified_rust_module_name() {
 #[test]
 fn test_same_stem_different_dirs_no_collision() {
     use std::io::Write;
-    // Two files with the same stem in different directories should have
-    // distinct module identities in the graph.
+
+
     let tmp = tempfile::TempDir::new().unwrap();
     let dir_a = tmp.path().join("src").join("foo");
     let dir_b = tmp.path().join("src").join("bar");
@@ -224,7 +224,7 @@ fn test_same_stem_different_dirs_no_collision() {
     let refs: Vec<&crate::rust_parsing::ParsedRustFile> = vec![&pa, &pb];
     let graph = build_rust_dependency_graph(&refs);
 
-    // Should have 2 distinct nodes, not 1 collapsed node
+
     assert_eq!(
         graph.nodes.len(),
         2,

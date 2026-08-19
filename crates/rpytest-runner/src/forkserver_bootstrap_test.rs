@@ -225,9 +225,9 @@ fn forkserver_bootstrap_rejects_configure_exception() {
 
 #[test]
 fn forkserver_bootstrap_clears_ini_addopts_unknown_without_plugins() {
-    // Repos like sameq-3 put --random-order in pytest.ini addopts. With
-    // PYTEST_DISABLE_PLUGIN_AUTOLOAD, that flag is unrecognized unless we
-    // clear addopts during bootstrap (collector already does this).
+
+
+
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join("pytest.ini"),

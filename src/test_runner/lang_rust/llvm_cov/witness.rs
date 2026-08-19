@@ -48,7 +48,7 @@ pub(super) fn publish_rust_witness_after_batch(
         summary,
         existing_full.as_ref(),
     )? else {
-        // Incomplete relative to the Full universe: leave the Full pointer unchanged.
+
         return Ok(());
     };
     let all_passed = aligned.statuses.iter().all(|s| *s == WitnessStatus::Passed);
@@ -110,8 +110,8 @@ pub(super) fn full_publication_selectors(
         );
     }
 
-    // Selective: only publish Full when this run covers the current population
-    // or merges into an existing Full witness.
+
+
     let mut selectors = batch_req.logical_selectors.clone();
     if let Some(existing) = existing_full {
         for sel in &existing.selectors {
@@ -142,7 +142,7 @@ fn population_full_selectors(
 ) -> Option<Vec<String>> {
     let mut selectors = publication.to_vec();
     if let Some(existing) = existing_full {
-        // Never shrink below an existing same-identity Full universe.
+
         for sel in &existing.selectors {
             if !selectors.contains(sel) {
                 selectors.push(sel.clone());
@@ -165,7 +165,7 @@ fn check_aggregate_full_selectors(
     existing_full: Option<&ExecutionWitness>,
     by_logical: &BTreeMap<String, WitnessStatus>,
 ) -> Option<Vec<String>> {
-    // Prefer an existing Full universe (membership-compatible repair merge).
+
     if let Some(existing) = existing_full {
         let mut selectors = existing.selectors.clone();
         for sel in &batch_req.logical_selectors {
@@ -177,7 +177,7 @@ fn check_aggregate_full_selectors(
         selectors.dedup();
         return Some(selectors);
     }
-    // No Full base: only claim Full when this batch equals the current population.
+
     let mut selectors = batch_req.logical_selectors.clone();
     selectors.sort();
     selectors.dedup();
@@ -275,7 +275,7 @@ pub(super) fn align_statuses(
             .map(Some)
             .or_else(|| prior_durations.get(sel.as_str()).copied())
             .flatten();
-        // Preserve absence: do not collapse missing timings into 0.
+
         durations_ns.push(dur);
     }
     Ok(Some(AlignedWitnessStatuses {

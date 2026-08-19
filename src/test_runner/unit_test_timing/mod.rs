@@ -84,7 +84,7 @@ pub(super) fn selector_matches_ignore_prefix(selector: &str, ignore: &[String]) 
 }
 
 fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<UnitTestTiming>> {
-    // Must match population publication / `load_python_runtime_coverage` pytest args.
+
     let pairs = crate::test_runner::python_coverage_index::load_current_python_population_durations(
         repo_root,
         pytest_args,
@@ -105,8 +105,8 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
     let (req, tools) = resolved_rust_batch_request_parts(repo_root, &[]).ok()?;
     let identity = rust_llvm_cov_runner::batch_identity(&req, &tools).ok()?;
     let cache_root = rust_coverage_cache_root(repo_root);
-    // Prefer population selectors from the validated current state (covers both
-    // SelectorEntries and CheckAggregate populations) without scanning orphans.
+
+
     if let Some(pairs) = rust_llvm_cov_runner::load_current_population_durations(
         &cache_root,
         repo_root,

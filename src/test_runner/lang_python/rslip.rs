@@ -20,7 +20,7 @@ pub(crate) use super::rslip_request::{DEFAULT_PYTEST_TIMEOUT, timeout_for_select
 #[cfg(test)]
 use super::rslip_request::python_version_supports_rslip;
 
-#[allow(clippy::too_many_arguments)] // session gate added; callers pass EnsureRequest fields
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_rslip_selectors(
     repo_root: &Path,
     selectors: &[String],
@@ -70,10 +70,10 @@ fn run_rslip_selectors_with_runner(
         .iter()
         .map(|selector| selector.as_str())
         .collect();
-    // Use the session gate passed by the caller (CLI / EnsureRequest). Do not reload
-    // from cwd here — that can disagree with `--config` / defaults for one kiss test.
+
+
     let gate = &args.gate;
-    // Build shared request fields once; only nodeid / force_rerun / timeout vary.
+
     let mut template = rslip_request_from_parts(
         args.repo_root,
         "",
@@ -135,15 +135,15 @@ fn partition_rslip_requests(
     let mut runnable = Vec::new();
     for selector in input.selectors {
         let timeout = timeout_for_selector_with_gate(input.gate, selector);
-        // Ban path (limit <= 0): do not invoke the runner; mark TIMEOUT immediately.
+
         if timeout.is_zero() {
             record_immediate_timeout(selector, summary, statuses, stdout);
             continue;
         }
         let mut req = input.template.clone();
         req.nodeid = selector.clone();
-        // Template uses selector "" for shared fields; per-selector timeout
-        // must follow path-pattern limits (not the catch-all from "").
+
+
         req.timeout = Some(timeout);
         req.force_rerun = input.force_rerun || input.force_set.contains(selector.as_str());
         reqs.push(req);
@@ -181,9 +181,9 @@ fn record_rslip_selector_result(
 ) {
     match result {
         Ok(outcome) => {
-            // Storage ownership: keep runner-raw status in `statuses` (last_status /
-            // witness publish inputs). SLA reclassification for exit/reporting uses
-            // `apply_unit_test_time_limit`; warm accept reclassifies stored raw again.
+
+
+
             let raw = outcome.status;
             let effective = crate::test_runner::status_labels::apply_unit_test_time_limit(
                 raw,
@@ -205,8 +205,8 @@ fn record_rslip_selector_result(
                 duration: outcome.duration,
             });
         }
-        // Keep population/selective batches moving: one rslip Io/runner error must
-        // not discard thousands of already-resolved cache hits.
+
+
         Err(_) => {
             statuses.push((selector.to_string(), rpytest_runner::TestStatus::Failed));
             summary.record(SelectorExecutionRecord {

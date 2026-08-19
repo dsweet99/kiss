@@ -39,7 +39,7 @@ fn cfg_attrs_and_expr_error_paths_are_conservative() {
     assert_eq!(cfg_expr_active("any".parse().unwrap()), None);
     assert_eq!(cfg_expr_active("all".parse().unwrap()), None);
     assert_eq!(cfg_expr_active("target_os".parse().unwrap()), None);
-    // Malformed tokens are either rejected (None) or treated as inactive (Some(false)).
+
     for snippet in ["target_os > \"linux\"", "target_os = 1", "mystery"] {
         let value = cfg_expr_active(snippet.parse().unwrap());
         assert!(
@@ -215,7 +215,7 @@ fn module_path_attr_ignores_non_string_path_forms() {
 
 #[test]
 fn unreadable_source_is_not_reported_as_fully_covered() {
-    // Impact-5 regression: unreadable sources must not fail open as 100%.
+
     let missing =
         std::path::PathBuf::from("/tmp/kiss-missing-coverage-denom-file-does-not-exist.rs");
     let snapshot = RuntimeCoverageSnapshot {
@@ -258,13 +258,13 @@ fn cfg_helpers_cover_verbatim_yield_group_and_unknown_item() {
     });
     assert!(expr_cfg_active(&group));
 
-    // Force item_cfg_active_b's `_ => true` arm via Verbatim item.
+
     let item = syn::Item::Verbatim(TokenStream::from_iter([TokenTree::Ident(Ident::new(
         "mystery",
         Span::call_site(),
     ))]));
     assert!(item_cfg_active(&item));
 
-    // Keep a Group token around so the constructor path stays exercised in cfg fuzzing.
+
     let _ = TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new()));
 }

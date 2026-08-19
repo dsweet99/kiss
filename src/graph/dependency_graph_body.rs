@@ -153,7 +153,7 @@ pub(crate) fn is_test_module(graph: &DependencyGraph, module_name: &str) -> bool
         .any(|c| c.as_os_str() == OsStr::new("tests") || c.as_os_str() == OsStr::new("test"))
 }
 
-// --- module naming (merged from former `names.rs`) ---
+
 pub(crate) fn file_stem_str(path: &Path) -> &str {
     path.file_stem()
         .map_or("unknown", |s| s.to_str().unwrap_or("unknown"))

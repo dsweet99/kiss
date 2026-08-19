@@ -1,7 +1,7 @@
 pub(crate) fn push_dotted_segments(raw: &str, modules: &mut Vec<String>) {
-    // Treat dotted module paths as a single import target (e.g., "foo.bar", not ["foo", "bar"]).
-    // Splitting creates spurious edges to unrelated local modules named like common segments
-    // ("utils", "types", "errors", etc.), which can inflate SCC cycles dramatically.
+
+
+
     let trimmed = raw.trim().trim_start_matches('.');
     if trimmed.is_empty() {
         return;

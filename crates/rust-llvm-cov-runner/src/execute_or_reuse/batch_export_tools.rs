@@ -131,7 +131,7 @@ pub(crate) fn read_profdata_binary_ids(
     Ok(parse_profdata_show_binary_ids(&output.stdout))
 }
 
-#[allow(dead_code)] // retained for tests and optional strict validation
+#[allow(dead_code)]
 pub(crate) fn objects_satisfy_profile(
     tools: &ExportTools,
     profdata: &Path,

@@ -49,8 +49,8 @@ pub(crate) fn generation_matches(
     if !identity_matches_current(repo_root, &pinned.plan.base_identity, test_args) {
         return false;
     }
-    // Compare the selector universe directly; rebuilding a plan would rehash
-    // the whole Python tree via current_python_execution_identity.
+
+
     let mut expected = selectors.to_vec();
     expected.sort();
     expected.dedup();

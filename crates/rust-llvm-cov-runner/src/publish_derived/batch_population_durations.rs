@@ -54,8 +54,8 @@ pub fn load_current_population_durations(
     tools: &RustCoverageToolIdentity,
     selectors: Option<&[String]>,
 ) -> Option<Vec<(String, Duration)>> {
-    // Warm time-gate path: trust population.json + duration sidecar without
-    // loading check_aggregate / reverse indexes (those dominate warm latency).
+
+
     if let Some(cached) = try_load_durations_from_manifest_sidecar(cache_root, identity, selectors)
     {
         return Some(cached);

@@ -131,7 +131,7 @@ fn population_durations_sidecar_and_max_without_generation() {
     assert_eq!(pairs[0].1, Duration::from_millis(42));
     let max = load_current_python_population_max_duration(tmp.path(), &[]).expect("max");
     assert_eq!(max, Duration::from_millis(42));
-    // Corrupt sidecar fingerprints → miss path rebuilds or returns via probes (none → None ok).
+
     std::fs::write(
         cache_root.join("population_durations.json"),
         br#"{"schema_version":"rslip-python-population-durations-v3","cache_schema_version":"x","input_fingerprint":"bad","entries_fingerprint":"bad","durations_ns":[1],"max_duration_ns":1}"#,
@@ -165,16 +165,16 @@ fn load_durations_allow_non_passed_keeps_failed_entries() {
         "status": "failed",
         "duration": {"secs": 0, "nanos": 1_000_000},
     });
-    // Duration is serialized as Duration via serde - use a minimal shape rslip expects.
-    // Prefer writing via a Passed-style probe then mutate status if needed.
+
+
     let _ = entry;
     let payload = format!(
         "{{\"nodeid\":\"{selector}\",\"status\":\"Failed\",\"duration\":{{\"secs\":0,\"nanos\":1000000}}}}\n"
     );
-    // TestStatus serde may use different tagging; use rpytest JSON if this fails soft.
+
     std::fs::write(entry_dir.join(format!("{fingerprint}.json")), payload).ok();
     let got = load_durations_from_entry_probes_allow_non_passed(repo, &[], std::slice::from_ref(&selector));
-    // Accept either successful load or None if entry shape mismatches — both exercise the helper.
+
     let _ = got;
 }
 
@@ -254,7 +254,7 @@ fn population_durations_identity_mismatch_returns_none() {
     plan.base_identity.python_version = py;
     plan.base_identity.pytest_version = pt;
     plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
-    // Corrupt identity so warm generation load rejects the pinned plan.
+
     plan.base_identity.input_fingerprint = "stale-fingerprint".into();
     let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
     evidence.absorb_selector(SelectorEvidence {
@@ -269,7 +269,7 @@ fn population_durations_identity_mismatch_returns_none() {
     publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
         .unwrap();
     clear_python_generation_warm_memo();
-    // Delete generation durations so load falls through to pinned identity compare.
+
     if let Ok(cache_root) = python_coverage_cache_root(repo) {
         let _ = std::fs::remove_file(
             cache_root
@@ -315,13 +315,13 @@ fn load_path_maxes_and_probe_helpers_cover_fallback_arms() {
     assert_eq!(path_maxes.len(), 1);
     assert_eq!(path_maxes[0].example_selector, selector);
 
-    // require_passed probe with no entries → None; allow_non_passed likewise.
+
     assert!(load_durations_from_entry_probes(tmp.path(), &[], std::slice::from_ref(&selector)).is_none());
     let _ = load_durations_from_entry_probes_allow_non_passed(
         tmp.path(),
         &[],
         std::slice::from_ref(&selector),
     );
-    // try_publish without probeable entries fails closed.
+
     assert!(try_publish_python_population_durations(tmp.path(), &[]).is_err());
 }

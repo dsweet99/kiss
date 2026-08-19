@@ -29,7 +29,7 @@ fn evaluate_runtime_gate_threshold_semantics() {
         evaluate_runtime_gate(&timings, &rules(2.0)),
         RuntimeGateEval::Passed
     ));
-    // Equality at threshold fails.
+
     let exact = TimingPopulation::Complete(vec![UnitTestTiming {
         language: Language::Rust,
         selector: "exact".into(),
@@ -106,8 +106,8 @@ fn path_pattern_limits_differ_per_selector() {
 
 #[test]
 fn rust_report_id_selectors_match_rust_path_pattern() {
-    // Regression: bare nextest logical ids fall through to ["*", 0].
-    // load_rust_timings maps them to PATH::symbol before evaluate_runtime_gate.
+
+
     let rules = vec![
         ("rust".to_string(), 10.0),
         ("*".to_string(), 0.0),
@@ -371,7 +371,7 @@ fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
         timing: true,
         pytest_args: &[],
 });
-    // Sole-* is Incomplete-or-Failed first; multi-prefix path_max should Pass for tests/fast.
+
     assert!(
         matches!(eval, RuntimeGateEval::Passed | RuntimeGateEval::Failed(_)),
         "unexpected {eval:?}"

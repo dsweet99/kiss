@@ -22,7 +22,7 @@ mod params_tests {
 
     #[test]
     fn run_analyze_uncached_fields_are_named() {
-        // Compile-time shape check: static analysis no longer carries coverage inputs.
+
         let _ = std::mem::size_of::<RunAnalyzeUncached<'_>>();
     }
 }

@@ -78,7 +78,7 @@ pub(crate) fn publish_rust_execution_witness(
     let (selectors, statuses, durations_ns) =
         order_witness_rows(selectors, statuses, durations_ns);
 
-    // Subset publications must not overwrite the Full pointer (plan CP H1).
+
     if scope == WitnessScope::Subset {
         return Ok(String::new());
     }

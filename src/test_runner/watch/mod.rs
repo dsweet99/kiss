@@ -33,7 +33,7 @@ pub(crate) use lock::{WatchLockGuard, watch_lock_path};
 pub(crate) use reload::{WatchLiveConfig, WatchReloadSeed};
 #[allow(unused_imports)]
 pub(crate) use roots::resolve_watch_registrations;
-#[allow(unused_imports)] // unit tests import via `super::*` / sibling modules
+#[allow(unused_imports)]
 pub(crate) use session::{run_watch_loop, run_watch_loop_with};
 pub(crate) use session_entry::run_test_watch;
 #[allow(unused_imports)]
@@ -48,7 +48,7 @@ use event_source::NormalizedWatchEvent as Ev;
 use filter::WatchPathFilter as Filter;
 use settle::{PathSignature as Sig, SettleMachine as Machine};
 
-#[allow(dead_code)] // used by unit tests; watch UI no longer prints the label
+#[allow(dead_code)]
 pub(crate) fn invocation_label(invocation: &TestInvocation) -> String {
     match invocation {
         TestInvocation::Commit => "commit".into(),

@@ -26,17 +26,17 @@ fn handle_rslip_miss_result_once(
 ) -> Result<RslipOutcome, RslipError> {
     let outcome = match result {
         Ok(outcome) => outcome,
-        // Timeouts become TimedOut outcomes (empty coverage) so a large
-        // population can finish instead of hanging forever on one stuck test.
+
+
         Err(PytestRunError::Timeout(timeout)) => {
-            // TimedOut is already reported on stdout as TIMEOUT; no stderr noise.
+
             return finalize_timed_out_miss_outcome(miss, timeout, 124, String::new());
         }
         Err(err) => return Err(RslipError::Runner(err)),
     };
     let coverage = match rslip_coverage_from_outcome(&outcome) {
         Ok(coverage) => coverage,
-        // Missing coverage must not abort a multi-thousand-selector population.
+
         Err(RslipError::MissingArtifact(name)) => {
             return finalize_failed_miss_outcome(
                 miss,

@@ -23,17 +23,17 @@ mod params;
 mod pipeline;
 mod print;
 
-// `pub use` items are re-exports for `crate::analyze::*`; the RHS is otherwise unused in this module.
+
 #[allow(unused_imports)]
 pub(crate) use cache::{FullCacheStoreInput, maybe_store_full_cache};
 pub(crate) use coverage::collect_line_coverage_viols;
-#[allow(unused_imports)] // Public API surface (`crate::analyze::check_coverage_gate`).
+#[allow(unused_imports)]
 pub use coverage_gate::check_coverage_gate;
 pub(crate) use coverage_gate::evaluate_line_gate;
 #[allow(unused_imports)]
 pub use coverage_types::CheckCoverageGateParams;
 pub use dry::{DryRunParams, run_dry};
-#[allow(unused_imports)] // Public API surface for `kiss` library consumers.
+#[allow(unused_imports)]
 pub use dup_detect::{detect_py_duplicates, detect_rs_duplicates};
 pub use entry::{run_analyze, run_analyze_with_result};
 #[allow(unused_imports)]
