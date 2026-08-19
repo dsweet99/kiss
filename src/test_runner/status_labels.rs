@@ -1,4 +1,3 @@
-//! PASS / FAIL / TIMEOUT labels and path-limit reclassification.
 
 use kiss::GateConfig;
 use rpytest_runner::TestStatus;

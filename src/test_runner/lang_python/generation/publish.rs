@@ -1,4 +1,3 @@
-//! Publish immutable Python population generations.
 
 use std::fs;
 use std::path::Path;
@@ -157,10 +156,6 @@ pub(crate) fn pointer_digest_for_tests(generation_id: &str, manifest_sha: &str) 
     sha256_hex(format!("{generation_id}:{manifest_sha}").as_bytes())
 }
 
-/// Per source-path max wall time for multi-prefix `max_unit_test_seconds` warm gates.
-///
-/// Selectors sharing a path before `::` share one limit; storing the max (and one
-/// example selector) avoids materializing every selector pair on warm `kiss cov`.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub(crate) struct PathMaxDuration {
     pub(crate) path: String,
@@ -171,11 +166,8 @@ pub(crate) struct PathMaxDuration {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub(crate) struct GenerationDurationsFile {
     pub(crate) schema_version: String,
-    /// Parallel to generation plan selector order (see manifest.plan.selectors).
-    /// `None` means unresolved / unknown timing (not a zero-length run).
     pub(crate) durations_ns: Vec<Option<u64>>,
     pub(crate) max_duration_ns: u64,
-    /// Unique path → max duration; empty on legacy artifacts until backfilled.
     #[serde(default)]
     pub(crate) path_maxes: Vec<PathMaxDuration>,
 }

@@ -1,6 +1,5 @@
 #![cfg(unix)]
 
-//! Shared fixtures + nudge-loop test modules.
 
 use super::*;
 use crate::bin_cli::args::TestInvocation;

@@ -31,8 +31,6 @@ pub fn prune_obsolete_selective_generations(
     )
 }
 
-/// Selective runs prune obsolete result generations only after a successful batch.
-/// Failed or interrupted runs must retain the complete population snapshot generation.
 pub(crate) fn maybe_prune_obsolete_selective_after_batch(
     req: &RustCoverageBatchRequest,
     identity: &RustCoverageBatchIdentity,

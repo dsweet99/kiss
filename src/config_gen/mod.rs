@@ -1,4 +1,3 @@
-//! Config generation and mimic merge helpers.
 
 mod collect;
 mod config_keys;

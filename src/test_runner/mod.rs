@@ -37,7 +37,6 @@ pub(crate) use planned_selectors::{
 #[cfg(test)]
 pub(crate) use planned_selectors::should_force_cold_initialization;
 
-/// Compatibility path: llvm-cov adapters live under `lang_rust::llvm_cov`.
 pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
 
 use kiss::Language;
@@ -81,13 +80,10 @@ pub struct RunTestCmdArgs<'a> {
     pub metrics: bool,
     pub jobs: usize,
     pub extra: &'a [String],
-    /// Python-only pytest args: configured `-p` plugins plus CLI `extra`.
     pub python_extra: &'a [String],
     pub ignore: &'a [String],
     pub lang_filter: Option<Language>,
     pub config_main_branch: Option<&'a str>,
-    /// Session gate from CLI config load; runtime must not reload independently
-    /// except `kiss test --watch`, which reloads when `.kissconfig` changes.
     pub gate_config: kiss::GateConfig,
 }
 
@@ -166,7 +162,6 @@ pub(crate) fn emit_test_progress(message: &str) {
     }
 }
 
-/// Log a named stage duration to stdout as `kiss test: stage <name> <ms>ms`.
 pub(crate) fn emit_stage_time(stage: &str, duration: std::time::Duration) {
     emit_test_progress(&format!(
         "kiss test: stage {stage} {}ms",

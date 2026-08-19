@@ -1,8 +1,6 @@
-//! Metric types for shrink constraints (split from `mod` to satisfy `concrete_types_per_file`).
 
 use serde::{Deserialize, Serialize};
 
-/// The five top-line metrics from the "Analyzed:" summary line.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GlobalMetrics {
     pub files: usize,
@@ -12,7 +10,6 @@ pub struct GlobalMetrics {
     pub graph_edges: usize,
 }
 
-/// Which metric is being minimized.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShrinkTarget {
     Files,

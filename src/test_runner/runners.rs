@@ -180,7 +180,6 @@ pub(crate) fn kiss_test_report_id(map: &BTreeMap<String, String>, logical: &str)
         .unwrap_or_else(|| logical.to_string())
 }
 
-/// PATH::symbol id required for path-pattern limits; missing entries are hard errors.
 pub(crate) fn require_kiss_test_report_id(
     map: &BTreeMap<String, String>,
     logical: &str,
@@ -192,7 +191,6 @@ pub(crate) fn require_kiss_test_report_id(
     })
 }
 
-/// Build the logical→report map and require every selector to be present.
 pub(crate) fn rust_report_ids_for_selectors(
     repo_root: &Path,
     selectors: &[String],

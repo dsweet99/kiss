@@ -1,6 +1,3 @@
-//! Real-tool contract: direct per-instance export must match `cargo llvm-cov --json`.
-//!
-//! Run manually: `KISS_REAL_TOOL_TESTS=1 cargo nextest run -p rust-llvm-cov-runner real_tool_direct_export_matches_cargo_llvm_cov_json`
 
 use std::collections::BTreeMap;
 use std::fs;

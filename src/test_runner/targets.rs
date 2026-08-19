@@ -1,4 +1,3 @@
-//! Explicit `kiss test` PATH / PATH::symbol target parsing and resolution.
 
 mod expand;
 mod model;

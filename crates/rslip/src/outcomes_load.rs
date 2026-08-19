@@ -1,4 +1,3 @@
-//! Batch load helpers for cached rslip outcomes.
 
 use std::io;
 
@@ -14,11 +13,6 @@ pub fn load_cached_outcomes_many(
     load_cached_outcomes_many_with_reuse(reqs, true)
 }
 
-/// Load cached outcomes for a validated population without re-checking per-file digests.
-///
-/// Callers must already have proven the population is current (input + entries
-/// fingerprints). Re-hashing every covered source for thousands of selectors
-/// dominates warm `kiss cov` snapshot loads.
 pub fn load_cached_outcomes_many_trusting_population(
     reqs: &[RslipRequest],
 ) -> Vec<Result<Option<RslipOutcome>, RslipError>> {

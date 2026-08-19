@@ -1,5 +1,3 @@
-//! Compile-time / source-scan proof that the static-reference coverage checker
-//! is gone (plan unit test 7 / acceptance criterion 8).
 
 use std::fs;
 use std::path::PathBuf;

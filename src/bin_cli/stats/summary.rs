@@ -289,7 +289,6 @@ fn print_cached_summary(
     );
 }
 
-/// Pure helper for summary-path tests: build the runtime section from resolved rules.
 fn unit_test_runtime_section_for_rules(
     paths: &[String],
     lang_filter: Option<Language>,

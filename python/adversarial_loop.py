@@ -1,4 +1,3 @@
-"""Adversarial foil → fix loop orchestration."""
 
 from __future__ import annotations
 

@@ -58,11 +58,6 @@ pub fn analyze_file(parsed: &ParsedFile, config: &Config) -> Vec<Violation> {
     analyze_file_with_statement_count(parsed, config).1
 }
 
-/// Analyze a parsed Python file and return both:
-/// - its statement count (for summary reporting), and
-/// - the violations emitted by the standard checks.
-///
-/// This exists to avoid recomputing file metrics in hot paths like `kiss check`.
 #[must_use]
 pub fn analyze_file_with_statement_count(
     parsed: &ParsedFile,

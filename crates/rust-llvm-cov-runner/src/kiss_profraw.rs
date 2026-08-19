@@ -1,9 +1,3 @@
-//! Ephemeral `.kiss/profraw` sinks for discard LLVM profile dumps.
-//!
-//! Instrumented processes with no intentional `LLVM_PROFILE_FILE` otherwise write
-//! `default_*.profraw` into the process CWD. Kiss redirects those dumps under
-//! `.kiss/profraw` and deletes them once the coverage batch no longer needs them.
-//! Intentional instance/pool profiles stay on their export paths.
 
 use std::fs;
 use std::io;
@@ -40,7 +34,6 @@ pub(crate) fn discard_llvm_profile_path(kiss_profraw: &Path) -> PathBuf {
     kiss_profraw.join(DISCARD_PROFILE_PATTERN)
 }
 
-/// Export discard sink env for every coverage batch plan (does not create dirs).
 pub(crate) fn ensure_kiss_profraw_env(
     env: &mut std::collections::BTreeMap<String, String>,
     repo_root: &Path,
@@ -81,7 +74,6 @@ fn kiss_profraw_from_target_runner_output_dir(output_dir: &Path) -> Option<PathB
     Some(kiss_profraw_from_cache_root(cache))
 }
 
-/// Point this process's LLVM profile sink at `.kiss/profraw` (discard only).
 pub(crate) fn redirect_llvm_profile_file_to_kiss_profraw(
     kiss_profraw: &Path,
 ) -> io::Result<PathBuf> {
@@ -98,7 +90,6 @@ pub(crate) fn redirect_inherited_llvm_profile_file(output_dir: &Path) -> io::Res
     redirect_llvm_profile_file_to_kiss_profraw(&resolve_kiss_profraw(output_dir)).map(|_| ())
 }
 
-/// Walk up from `start` for `.git`; fall back to the absolute start directory.
 pub fn discover_repo_root(start: &Path) -> PathBuf {
     let start = start
         .canonicalize()
@@ -120,12 +111,6 @@ pub fn discover_repo_root(start: &Path) -> PathBuf {
     }
 }
 
-/// Unconditionally redirect this process to absolute `<repo>/.kiss/profraw`.
-///
-/// LLVM reads `LLVM_PROFILE_FILE` in `__llvm_profile_initialize` before `main`,
-/// so a late `set_var` alone does not move dump-at-exit. When the env is not
-/// already the absolute discard path, set it and re-exec (skipped under
-/// `cfg(test)` so unit tests do not restart the harness).
 pub fn redirect_this_process(repo_root: &Path) -> io::Result<PathBuf> {
     let repo_root = repo_root
         .canonicalize()
@@ -163,9 +148,6 @@ fn reexec_current_process() -> io::Result<()> {
     }
 }
 
-/// Delete leftover discard `*.profraw` under `<repo>/.kiss/profraw`.
-///
-/// Keeps the directory itself so this process's LLVM dump-at-exit still has a sink.
 pub fn sweep_kiss_profraw_dir(repo_root: &Path) -> io::Result<()> {
     let kiss_profraw = kiss_profraw_dir(repo_root);
     let entries = match fs::read_dir(&kiss_profraw) {
@@ -179,7 +161,6 @@ pub fn sweep_kiss_profraw_dir(repo_root: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Best-effort pid-scoped cleanup of the discard sink (does not beat LLVM atexit).
 pub struct KissProfrawProcessGuard {
     kiss_profraw: PathBuf,
     pid: u32,
@@ -200,7 +181,6 @@ impl Drop for KissProfrawProcessGuard {
     }
 }
 
-/// Delete discard dumps for one writer pid (`…_{pid}.profraw`); concurrency-safe.
 pub(crate) fn cleanup_kiss_profraw_for_pid(kiss_profraw: &Path, pid: u32) -> io::Result<()> {
     let suffix = format!("_{pid}.profraw");
     let entries = match fs::read_dir(kiss_profraw) {
@@ -220,7 +200,6 @@ pub(crate) fn cleanup_kiss_profraw_for_pid(kiss_profraw: &Path, pid: u32) -> io:
     Ok(())
 }
 
-/// Delete all discard `*.profraw` under `.kiss/profraw`; remove the dir if empty.
 pub(crate) fn cleanup_kiss_profraw(kiss_profraw: &Path) -> io::Result<()> {
     let entries = match fs::read_dir(kiss_profraw) {
         Ok(entries) => entries,
@@ -233,7 +212,6 @@ pub(crate) fn cleanup_kiss_profraw(kiss_profraw: &Path) -> io::Result<()> {
     ignore_absent_or_nonempty(fs::remove_dir(kiss_profraw))
 }
 
-/// Batch-begin orphan sweep: repo root, immediate `crates/<pkg>/`, leftover `.kiss/tmp`.
 pub(crate) fn sweep_orphan_default_profraw(repo_root: &Path) -> io::Result<()> {
     delete_default_profraw_in_dir(repo_root)?;
     let crates_dir = repo_root.join("crates");

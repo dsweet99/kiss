@@ -1,4 +1,3 @@
-"""CLI tests for adversarial fix-cheat command."""
 
 from __future__ import annotations
 

@@ -1,4 +1,3 @@
-"""Tests for adversarial CLI entry wiring."""
 
 from __future__ import annotations
 

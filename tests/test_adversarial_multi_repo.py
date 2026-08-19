@@ -1,4 +1,3 @@
-"""Tests for adversarial multi-repo helpers."""
 
 from __future__ import annotations
 

@@ -1,7 +1,3 @@
-//! Publish Full Rust execution witnesses after successful batches.
-//!
-//! CheckAggregate incremental repairs must merge into an existing Full witness.
-//! They must never replace a Full pointer with the repair subset alone.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -82,8 +78,6 @@ fn load_matching_full_witness(
     .then_some(witness)
 }
 
-/// Decide the Full selector universe for publication. Returns `None` when this
-/// batch must not claim or overwrite Full.
 pub(super) fn full_publication_selectors(
     batch_req: &RustCoverageBatchRequest,
     repo_root: &Path,

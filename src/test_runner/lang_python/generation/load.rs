@@ -1,4 +1,3 @@
-//! Load and validate the current Python population generation.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -66,16 +65,12 @@ pub(crate) fn load_pinned_locked(
     })
 }
 
-/// Warm cov path: coverage + timings only (no selector_coverage / line_index).
-/// Prefer [`super::memo::try_load_pinned_python_generation_warm_memoized`] from cov
-/// so source/backend validation runs once per command.
 pub(crate) fn try_load_pinned_python_generation_warm(
     repo_root: &Path,
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {
     super::memo::try_load_pinned_python_generation_warm_memoized(repo_root)
 }
 
-/// Presence only: pointer + core artifacts. Does not read or parse line_index.
 pub(crate) fn pinned_python_generation_artifacts_present(repo_root: &Path) -> bool {
     let Ok(cache_root) = python_coverage_cache_root(repo_root) else {
         return false;

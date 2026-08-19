@@ -1,4 +1,3 @@
-//! Generation artifact and timing record types.
 
 use serde::{Deserialize, Serialize};
 

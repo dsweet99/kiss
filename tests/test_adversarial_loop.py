@@ -1,4 +1,3 @@
-"""Tests for adversarial loop CLI."""
 
 from __future__ import annotations
 

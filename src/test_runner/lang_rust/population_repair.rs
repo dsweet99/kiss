@@ -3,9 +3,6 @@ use crate::test_runner::rust_coverage_index::{
     publish_rust_derived_state_with_filter, rust_population_manifest_is_current_for_args,
 };
 
-/// All-mode witness accept can skip the executor, which used to leave a
-/// corrupted `population.json` in place. Rebuild the manifest from the
-/// current generation when it is not loadable.
 pub(super) fn repair_stale_population_on_all_mode_accept(
     request: &EnsureRequest,
     planned: &[String],

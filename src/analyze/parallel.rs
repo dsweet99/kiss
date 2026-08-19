@@ -28,7 +28,6 @@ pub(crate) fn run_rust_analysis(
 type GraphResult = (Option<DependencyGraph>, Vec<Violation>);
 type DupResult = Vec<DuplicateCluster>;
 
-/// Parallel Python graph + duplication work.
 pub(crate) struct ParallelPyIn<'a> {
     pub py_parsed: &'a [ParsedFile],
     pub rs_graph: Option<&'a DependencyGraph>,

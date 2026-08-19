@@ -78,7 +78,6 @@ impl From<&CodeChunk> for CachedCodeChunk {
     }
 }
 
-/// Per-repo analyze/check cache root (`repo/.kiss`), matching coverage caches.
 pub fn cache_dir(repo_root: &Path) -> PathBuf {
     repo_root.join(".kiss")
 }

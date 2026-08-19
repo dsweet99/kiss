@@ -1,8 +1,6 @@
-//! Process-wide reverse-query telemetry counters.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Why a reverse snapshot query fell back to the forward-entry scan.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ReverseUnavailableReason {
     Schema,
@@ -60,7 +58,6 @@ static UNAVAILABLE: [AtomicU64; 7] = [
     AtomicU64::new(0),
     AtomicU64::new(0),
 ];
-/// Watermark for copying process reverse counters into batch results without double-counting.
 static LAST_COPIED_HITS: AtomicU64 = AtomicU64::new(0);
 static LAST_COPIED_UNAVAILABLE: [AtomicU64; 7] = [
     AtomicU64::new(0),
@@ -146,7 +143,6 @@ pub fn snapshot_reverse_query_counters() -> ReverseQueryCounters {
     }
 }
 
-/// Process reverse counters accumulated since the last copy into batch counters.
 pub fn take_reverse_query_counters_since_last_copy() -> ReverseQueryCounters {
     let current = snapshot_reverse_query_counters();
     let prior_hits = LAST_COPIED_HITS.swap(current.hits, Ordering::Relaxed);

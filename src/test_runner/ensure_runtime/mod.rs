@@ -1,4 +1,3 @@
-//! Shared ensure-runtime kernel and factory composition root.
 
 mod kernel;
 mod factory;

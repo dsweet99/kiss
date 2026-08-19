@@ -1,4 +1,3 @@
-//! Single integration-test crate: links once against `kiss` instead of one binary per `tests/*.rs` file.
 #[path = "common/mod.rs"]
 mod common;
 #[path = "support/mod.rs"]

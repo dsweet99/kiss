@@ -1,4 +1,3 @@
-//! Migrate complete v1 Python derived state into a v2 generation.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -68,7 +67,6 @@ fn load_complete_v1_bundle(
     }))
 }
 
-/// Prefer the durations sidecar; otherwise probe entries without requiring Passed.
 fn load_v1_durations_for_migrate(
     repo_root: &Path,
     test_args: &[String],

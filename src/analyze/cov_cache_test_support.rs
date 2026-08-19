@@ -1,4 +1,3 @@
-//! Shared helpers for cov outer-cache unit tests.
 
 use std::fs;
 use std::path::Path;

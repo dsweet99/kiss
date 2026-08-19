@@ -98,11 +98,6 @@ pub fn detect_duplicates_from_chunks(
     duplicates
 }
 
-/// Optimized duplication pipeline used by `kiss check`.
-///
-/// This produces the same `DuplicateCluster` output as
-/// `cluster_duplicates(&detect_duplicates_from_chunks(chunks, config), chunks)` but avoids
-/// cloning `CodeChunk` values for intermediate pairs/candidates.
 #[must_use]
 pub fn cluster_duplicates_from_chunks(
     chunks: &[CodeChunk],

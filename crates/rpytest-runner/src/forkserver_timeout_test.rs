@@ -11,7 +11,6 @@ macro_rules! python {
     };
 }
 
-/// Parent waitpid deadline must still time out when the child ignores SIGALRM.
 #[test]
 fn forkserver_timeout_survives_child_sigalrm_ignore() {
     let tmp = tempfile::tempdir().unwrap();
@@ -51,7 +50,6 @@ signal.setitimer(signal.ITIMER_REAL, 0)\n",
     );
 }
 
-/// Metamorphic: timeout vs no-timeout on the same sleeping node must disagree.
 #[test]
 fn forkserver_timeout_metamorphic_vs_untimed_sleep() {
     let tmp = tempfile::tempdir().unwrap();

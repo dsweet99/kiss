@@ -1,4 +1,3 @@
-//! Edit plan types for `kiss mv`.
 
 use std::path::PathBuf;
 

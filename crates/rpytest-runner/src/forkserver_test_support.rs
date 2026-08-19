@@ -1,4 +1,3 @@
-//! Shared helpers for forkserver unit tests.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

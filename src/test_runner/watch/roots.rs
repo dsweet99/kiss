@@ -1,4 +1,3 @@
-//! Resolve native watch registrations from a test invocation.
 
 use std::path::{Path, PathBuf};
 

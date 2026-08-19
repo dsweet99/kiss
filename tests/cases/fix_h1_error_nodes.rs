@@ -12,9 +12,6 @@ fn first_func(p: &ParsedFile) -> tree_sitter::Node<'_> {
     p.tree.root_node().child(0).unwrap()
 }
 
-/// Bug H1: kiss should not report metrics for functions whose AST contains
-/// ERROR nodes. The `has_error` flag on `FunctionMetrics` should be set so
-/// callers can skip unreliable results.
 #[test]
 fn function_with_syntax_error_sets_has_error_flag() {
 

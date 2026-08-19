@@ -1,4 +1,3 @@
-//! Acceptance: one-shot `kiss test` defers to a live `kiss test --watch`.
 
 #![cfg(unix)]
 

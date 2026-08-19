@@ -1,4 +1,3 @@
-//! Planning API unit coverage.
 
 use super::{EnsureSelectorsArgs, ensure_request_for_selectors, ensure_request_from_planned};
 use crate::test_runner::lang_iface::AcceptMode;

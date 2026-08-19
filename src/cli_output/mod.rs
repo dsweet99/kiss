@@ -16,10 +16,6 @@ pub use cov_gate::{
 pub const VIOLATIONS_FIX_HINT: &str =
     "Run 'kiss rules' for more information about fixing violations.";
 
-/// Coverage message for a definition-level unreferenced code unit.
-///
-/// File-level percentages can read 100% under weighted overlays or integer rounding
-/// while individual helpers remain unreferenced; never claim full coverage on the unit line.
 pub fn format_unreferenced_unit_coverage_message(file_pct: usize) -> String {
     if file_pct >= 100 {
         "This code unit has no test reference. Add test coverage.".to_string()
@@ -28,7 +24,6 @@ pub fn format_unreferenced_unit_coverage_message(file_pct: usize) -> String {
     }
 }
 
-/// Format a candidate list for display, truncating to `max` items with ellipsis.
 pub fn format_candidate_list(candidates: &[String], max: usize) -> String {
     if candidates.len() > max {
         format!("{}…", candidates[..max].join(", "))
@@ -37,7 +32,6 @@ pub fn format_candidate_list(candidates: &[String], max: usize) -> String {
     }
 }
 
-/// Whether a path participates in the per-file test-coverage gate.
 pub fn is_coverage_gate_file(path: &Path) -> bool {
     !crate::test_refs::is_test_file(path)
         && !crate::test_refs::is_in_test_directory(path)
@@ -45,7 +39,6 @@ pub fn is_coverage_gate_file(path: &Path) -> bool {
         && !crate::rust_test_refs::is_binary_entry_point(path)
 }
 
-/// Returns the minimum per-file coverage percentage, or 100 if no files have definitions.
 pub fn min_per_file_coverage(
     definitions: &[(PathBuf, String, usize)],
     unreferenced: &[(PathBuf, String, usize)],
@@ -54,7 +47,6 @@ pub fn min_per_file_coverage(
     map.values().min().copied().unwrap_or(100)
 }
 
-/// Minimum per-file coverage among files subject to the test-coverage gate.
 pub fn min_gate_eligible_per_file_coverage(
     definitions: &[(PathBuf, String, usize)],
     unreferenced: &[(PathBuf, String, usize)],
@@ -190,8 +182,6 @@ pub fn print_duplicates(lang: &str, clusters: &[DuplicateCluster]) {
     }
 }
 
-/// Static-reference unreferenced counts were removed with the old checker.
-/// These helpers remain as stable no-ops for callers that only need emptiness.
 pub fn count_py_unreferenced(parsed: &[ParsedFile]) -> usize {
     let _ = parsed;
     0

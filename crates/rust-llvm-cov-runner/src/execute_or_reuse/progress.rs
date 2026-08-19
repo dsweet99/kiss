@@ -1,4 +1,3 @@
-//! Flushed stdout progress for long silent cargo / nextest / llvm-cov stretches.
 
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -38,7 +37,6 @@ enum CargoNextestPhase {
     Nextest,
 }
 
-/// Tracks cargo-build vs nextest inside one `cargo llvm-cov nextest` process.
 pub(crate) struct CargoNextestProgress {
     sink: ProgressSink,
     phase: CargoNextestPhase,
@@ -53,7 +51,6 @@ enum ProgressSink {
     Capture(Arc<Mutex<Vec<String>>>),
 }
 
-/// Finishes cargo/nextest progress on all exit paths (ok, error, interrupt).
 pub(crate) struct FinishCargoNextestProgress(pub Arc<Mutex<CargoNextestProgress>>);
 
 impl Drop for FinishCargoNextestProgress {

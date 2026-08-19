@@ -1,7 +1,3 @@
-//! Fixture: production functions "covered" only by syntactic witnesses that
-//! never run at runtime. Each bypass family mirrors cases in
-//! `src/rust_test_refs/tests_coverage_witness.rs` but lives in `fake_rust/` for
-//! integration tests and human inspection.
 
 pub fn actually_covered() -> i32 {
     1

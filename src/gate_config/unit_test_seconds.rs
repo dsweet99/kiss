@@ -1,9 +1,7 @@
-//! Ordered path-pattern → seconds table for `max_unit_test_seconds`.
 
 use crate::config::ConfigError;
 use toml::Value;
 
-/// Default catch-all: every test under 2s.
 pub fn default_max_unit_test_seconds() -> Vec<(String, f64)> {
     vec![("*".to_string(), defaults_max())]
 }
@@ -12,7 +10,6 @@ pub const fn defaults_max() -> f64 {
     crate::defaults::gate::MAX_UNIT_TEST_SECONDS
 }
 
-/// First matching ordered rule for `selector`, if any.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MatchedUnitTestSecondsRule<'a> {
     pub index: usize,
@@ -20,7 +17,6 @@ pub struct MatchedUnitTestSecondsRule<'a> {
     pub limit_seconds: f64,
 }
 
-/// First matching pattern wins. `"*"` matches every selector.
 pub fn matched_rule_for_selector<'a>(
     rules: &'a [(String, f64)],
     selector: &str,
@@ -38,7 +34,6 @@ pub fn matched_rule_for_selector<'a>(
     None
 }
 
-/// First matching pattern wins. `"*"` matches every selector.
 pub fn limit_for_selector(rules: &[(String, f64)], selector: &str) -> f64 {
     matched_rule_for_selector(rules, selector)
         .map(|m| m.limit_seconds)
@@ -69,7 +64,6 @@ pub fn validate_rules(rules: &[(String, f64)]) -> Result<(), String> {
     Ok(())
 }
 
-/// True when duration is at or above the selector's limit (limit 0 ⇒ any run times out).
 pub fn exceeds_limit(rules: &[(String, f64)], selector: &str, duration_secs: f64) -> bool {
     let limit = limit_for_selector(rules, selector);
     duration_secs >= limit

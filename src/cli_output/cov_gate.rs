@@ -8,7 +8,6 @@ pub struct CoverageGateFailureCtx<'a> {
     pub file_pcts: &'a HashMap<PathBuf, usize>,
 }
 
-/// Diagnostics for codebase-scope gate failure: `(file, first_uncovered_line, file_pct)`.
 pub struct CodebaseCoverageGateFailureCtx<'a> {
     pub percent: usize,
     pub threshold: usize,

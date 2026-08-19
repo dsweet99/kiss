@@ -21,12 +21,6 @@ pub(crate) fn check_aggregate_entries_fingerprint(
     )
 }
 
-/// Fail-safe: a present but unparseable `index.json` forces population rebuild
-/// even when check-aggregate can otherwise skip the index body.
-///
-/// Large indexes are not consulted on this path. Fully parsing a multi-ten-MB
-/// `index.json` into a DOM dominates warm `kiss test` latency, so only small
-/// stubs get a full parse; large files are sniffed for a leading `{`.
 fn index_json_malformed(cache_root: &Path) -> bool {
     let path = cache_root.join("index.json");
     if !path.is_file() {
@@ -133,8 +127,6 @@ pub(crate) fn load_check_aggregate_population_state(
     })
 }
 
-/// True when the population is backed by check-aggregate (conservative: any
-/// covered file selects the full selector universe).
 pub fn is_check_aggregate_population(state: &RustPopulationState) -> bool {
     state
         .entries_fingerprint

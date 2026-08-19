@@ -53,10 +53,6 @@ pub fn run_mv_inner(opts: MvOptions) -> Result<(), ()> {
     Ok(())
 }
 
-/// When the user is moving a top-level symbol with `--to DEST`, refuse if
-/// `DEST` already defines a top-level symbol with `new_name`. Otherwise the
-/// move would silently produce two definitions in `DEST` (the second
-/// shadowing the first) — see KPOP H10.
 fn check_destination_collision(req: &MvRequest) -> Result<(), ()> {
     let Some(dest_path) = req.to.as_ref() else {
         return Ok(());

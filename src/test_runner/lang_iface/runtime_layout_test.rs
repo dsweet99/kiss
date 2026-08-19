@@ -1,4 +1,3 @@
-//! Layout guard: traits only in lang_iface; language packages own their impls.
 
 #[test]
 fn lang_iface_has_no_python_or_rust_impl_files() {

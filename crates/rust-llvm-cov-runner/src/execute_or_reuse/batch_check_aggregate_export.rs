@@ -328,7 +328,6 @@ fn spawn_check_aggregate_export(
 struct CheckAggregateExporter {
     tools: ExportTools,
     binary_id_map: BinaryIdObjectMap,
-    /// Cache of pool profraw → binary ids (shared across export workers).
     profraw_binary_ids: Arc<Mutex<BTreeMap<PathBuf, Vec<String>>>>,
 }
 

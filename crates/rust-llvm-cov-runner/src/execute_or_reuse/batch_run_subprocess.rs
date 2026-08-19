@@ -328,11 +328,6 @@ fn ensure_batch_env_dirs(plan: &RustCoverageBatchPlan) -> Result<(), BatchSubpro
     Ok(())
 }
 
-/// Drop enclosing coverage env, then apply the nested plan env.
-///
-/// Nested batches often run inside an outer instrumented test that already set
-/// `LLVM_PROFILE_FILE`. Inheriting that path lets nested binaries write foreign
-/// binary ids into the outer profile and breaks check-aggregate catalog resolve.
 pub(crate) fn apply_batch_subprocess_env(command: &mut Command, env: &BTreeMap<String, String>) {
     crate::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(command);
     command.envs(env);

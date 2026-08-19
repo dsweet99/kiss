@@ -10,7 +10,6 @@ use std::fs;
 use std::path::Path;
 use tempfile::tempdir;
 
-/// Authoritative forward-entry oracle used to check reverse answers.
 fn forward_oracle_selectors(
     cache: &Path,
     source: &Path,

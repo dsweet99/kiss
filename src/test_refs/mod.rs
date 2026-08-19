@@ -1,7 +1,3 @@
-//! Test-file detection helpers for Python sources.
-//!
-//! Static-reference ("kiss coverage") analysis was removed; runtime coverage is
-//! owned exclusively by `kiss cov`.
 
 pub(crate) mod detection;
 

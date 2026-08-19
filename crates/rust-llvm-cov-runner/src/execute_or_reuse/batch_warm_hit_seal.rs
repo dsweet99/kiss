@@ -1,6 +1,3 @@
-//! Positive-only warm all-hit seal: record that a prior all-passed batch under
-//! the same generation / selector set was observed. The reader returns whether
-//! that positive record is still valid; there is no negative-seal contract.
 
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -23,8 +20,6 @@ struct WarmAllHitSeal {
     entries_fingerprint: String,
     selectors_fingerprint: String,
     selector_count: usize,
-    /// Retained for on-disk compatibility; readers require `true`. Writers always
-    /// emit `true` (positive-only contract).
     all_passed: bool,
 }
 
@@ -41,11 +36,6 @@ pub(crate) fn selectors_fingerprint(selectors: &[String]) -> String {
     format!("{h:016x}")
 }
 
-/// Returns `Some(())` when a valid positive all-hit seal matches this request.
-/// Seals with `all_passed: false`, mismatches, or unreadable data yield `None`.
-///
-/// Callers currently load per-entry coverage even on a hit (seal has no payloads);
-/// the reader exists so the positive-only contract stays testable and honest.
 #[allow(dead_code)]
 pub(crate) fn try_warm_all_hit_seal(
     req: &RustCoverageBatchRequest,

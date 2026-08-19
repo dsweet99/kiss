@@ -14,7 +14,6 @@ pub struct FunctionMetrics {
     pub decorators: usize,
     pub max_return_values: usize,
     pub calls: usize,
-    /// True if the function's AST contains ERROR or MISSING nodes from parse recovery
     pub has_error: bool,
 }
 

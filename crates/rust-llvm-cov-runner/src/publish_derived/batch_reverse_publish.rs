@@ -1,4 +1,3 @@
-//! Immutable reverse-line-index snapshot publication and pruning.
 
 use crate::publish_derived::batch_io_skip_not_found::{
     dir_entry_path_ok_missing, read_dir_ok_missing, remove_dir_all_ok_missing,

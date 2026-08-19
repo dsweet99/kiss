@@ -1,4 +1,3 @@
-//! Unit coverage for Python incomplete-generation refresh helpers.
 
 use super::check_runtime_refresh_python::{
     ensure_python_runtime_coverage, finalize_incomplete_repair_load,

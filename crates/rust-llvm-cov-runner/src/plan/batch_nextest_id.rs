@@ -2,19 +2,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Libtest-json-plus binary-id prefix embedded in test names (`{prefix}$test`).
-///
-/// For unit tests this is always `{package}::{target_name}`, even when nextest's
-/// own binary id uses a different spelling (e.g. package-only for libs, or
-/// `{package}::bin/{name}` for bins). Lib and bin targets that share a target
-/// name therefore collide in libtest names and must be disambiguated elsewhere.
 pub(crate) fn libtest_binary_prefix(package_name: &str, target_name: &str) -> String {
     format!("{package_name}::{target_name}")
 }
 
-/// Derive nextest's binary id from a cargo compiler-artifact target.
-///
-/// Nextest ids look like `pkg`, `pkg::bin/name`, `pkg::integration`, etc.
 pub(crate) fn nextest_binary_id(package_name: &str, target_name: &str, kinds: &[String]) -> String {
     let kind_set: std::collections::BTreeSet<&str> = kinds.iter().map(String::as_str).collect();
     if kind_set.contains("bin") {
@@ -53,7 +44,6 @@ pub(crate) fn package_name_from_manifest(
     Some(name)
 }
 
-/// Prefer `target/.../deps/<exe>` over `target/.../<exe>` when both exist.
 pub(crate) fn prefer_deps_executable(existing: &str, candidate: &str) -> bool {
     let candidate_in_deps = Path::new(candidate)
         .parent()

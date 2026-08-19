@@ -1,4 +1,3 @@
-//! Explicit PATH / directory / named-test target planning for `kiss test`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;

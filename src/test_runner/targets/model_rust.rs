@@ -1,4 +1,3 @@
-//! Rust source model for `kiss test` targets (syn AST only; no lexical fallback).
 
 use std::path::Path;
 

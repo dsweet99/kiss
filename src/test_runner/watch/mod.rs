@@ -1,10 +1,3 @@
-//! Native filesystem watch session for `kiss test --watch`.
-//!
-//! One watcher per repo serves every one-shot client (`kiss test` / `kiss test .`),
-//! including clients whose `--lang` / path targets differ from the watcher's
-//! invocation. The client's `--lang` does not change the watcher's universe;
-//! coverage refresh in a cycle uses the watcher's invocation. The client reports
-//! the watcher's combined (tests + coverage) exit code.
 
 mod coverage;
 #[cfg(unix)]
@@ -59,7 +52,6 @@ pub(crate) fn invocation_label(invocation: &TestInvocation) -> String {
     }
 }
 
-/// Watch mode is silent; cycle path summaries are not printed.
 pub(crate) fn print_cycle_summary(_paths: &[PathBuf]) {}
 
 pub(crate) fn apply_normalized_event(

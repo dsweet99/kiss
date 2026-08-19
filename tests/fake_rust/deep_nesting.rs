@@ -1,4 +1,3 @@
-//! Code with too much indentation depth (threshold: 4)
 
 pub fn deeply_nested(x: i32) -> i32 {
     if x > 0 {

@@ -1,4 +1,3 @@
-//! Env-gated bootstrap / debug for local acceptance.
 
 use std::path::Path;
 

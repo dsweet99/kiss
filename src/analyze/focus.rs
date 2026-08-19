@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 
 use kiss::{DuplicateCluster, Language, Violation, find_source_files_with_ignore};
 
-/// Files under `root` matching `lang` and not ignored.
 pub fn gather_files(
     root: &Path,
     lang: Option<Language>,
@@ -24,7 +23,6 @@ pub fn gather_files(
     (py, rs)
 }
 
-/// Canonical paths for the given focus path list (files or directories).
 pub fn build_focus_set(
     focus_paths: &[String],
     lang: Option<Language>,
@@ -46,11 +44,6 @@ pub fn build_focus_set(
     focus_set
 }
 
-/// Whether analysis results should be restricted to a focus subset.
-///
-/// When `restrict` is false, every file is in focus (no filter). When true,
-/// only paths in `paths` are in focus; an empty `paths` set means the user
-/// specified focus path(s) that matched zero source files.
 #[derive(Debug, Clone)]
 pub struct FocusFilter {
     restrict: bool,

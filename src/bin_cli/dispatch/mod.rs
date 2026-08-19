@@ -1,4 +1,3 @@
-//! Command dispatch for the `kiss` binary.
 
 mod handlers;
 mod options;

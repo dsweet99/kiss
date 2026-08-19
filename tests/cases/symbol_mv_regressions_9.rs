@@ -1,25 +1,3 @@
-//! Regression: `kiss mv` must rename identifier references that appear inside
-//! the **code-bearing braces** of a Python f-string (PEP 498).
-//!
-//! `is_code_offset` in `src/symbol_mv_support/lex.rs` treats every `'…'` /
-//! `"…"` as opaque string content. It never inspects the `f` / `b` / `r`
-//! prefix, so it cannot tell that the contents of `f"…{expr}…"` between the
-//! braces is actually executable Python code that may reference the symbol
-//! being renamed.
-//!
-//! Result: after `kiss mv a.py::helper renamed`,
-//!
-//! - the definition in `a.py` is rewritten,
-//! - the `from a import helper` line in `b.py` is rewritten to
-//!   `from a import renamed`,
-//! - but `f"value={helper()}"` in `b.py` is left literally as
-//!   `f"value={helper()}"`.
-//!
-//! Running `b.caller()` after the rename now raises
-//! `NameError: name 'helper' is not defined` because the import was rewritten
-//! but the f-string body was not.
-//!
-//! See `_kpop/exp_log_mv_serious_bug_4.md` (H1).
 
 use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};

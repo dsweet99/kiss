@@ -46,7 +46,6 @@ fn test_binaries_from_shim_metadata_avoids_per_row_digest_amplification() {
     );
 }
 
-/// Metamorphic: duplicate rows must not change the identity set vs a single row.
 #[test]
 fn test_binaries_from_shim_metadata_duplicates_are_idempotent() {
     let tmp = tempfile::tempdir().unwrap();
@@ -57,7 +56,6 @@ fn test_binaries_from_shim_metadata_duplicates_are_idempotent() {
     assert_eq!(once, many);
 }
 
-/// Fuzz: for any seed, N≥1 duplicate rows for one binary yield exactly one identity.
 #[test]
 fn test_binaries_from_shim_metadata_fuzz_duplicate_count() {
     let seed = std::env::var("KISS_DIGEST_FUZZ_SEED")

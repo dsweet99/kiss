@@ -1,4 +1,3 @@
-//! Single planning API that produces `EnsureRequest` for test and cov.
 
 use std::path::Path;
 
@@ -9,9 +8,6 @@ use crate::test_runner::language_keyed::LanguageKeyed;
 use crate::test_runner::ensure_runtime::EnsureFromPlanned;
 use crate::test_runner::runners;
 
-/// Build an All-mode ensure request from the shared planning API (cov / full universe).
-///
-/// Discovers selectors for `repo_root` (not cwd), matching `plan_all_selectors` policy.
 pub(crate) fn ensure_request_for_all(
     repo_root: &Path,
     ignore: &[String],
@@ -51,7 +47,6 @@ pub(crate) fn ensure_request_for_all(
     })
 }
 
-/// Build an ensure request from already-planned selectors (kiss test).
 pub(crate) fn ensure_request_from_planned(args: EnsureFromPlanned<'_>) -> EnsureRequest {
     EnsureRequest {
         repo_root: args
@@ -75,7 +70,6 @@ pub(crate) fn ensure_request_from_planned(args: EnsureFromPlanned<'_>) -> Ensure
     }
 }
 
-/// Cov All-mode request with an explicit planned universe (e.g. incomplete repair).
 pub(crate) struct EnsureSelectorsArgs<'a> {
     pub repo_root: &'a Path,
     pub ignore: &'a [String],

@@ -1,4 +1,3 @@
-"""Tests for python.coverage_stats."""
 
 from __future__ import annotations
 

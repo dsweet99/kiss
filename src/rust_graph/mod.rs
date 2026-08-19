@@ -19,15 +19,6 @@ pub use include_graph::{IncludeGraph, build_include_graph, expand_rust_files};
 #[cfg(test)]
 mod tests;
 
-/// Compute a qualified Rust module name from a file path.
-///
-/// Mirrors the Python `qualified_module_name` to avoid collisions
-/// when two files in different directories share the same stem
-/// (e.g. `foo/utils.rs` and `bar/utils.rs`).
-///
-/// - `src/foo.rs`       → `"foo"`
-/// - `src/foo/bar.rs`   → `"foo.bar"`
-/// - `src/foo/mod.rs`   → `"foo"`   (mod.rs represents its parent)
 pub(crate) fn qualified_rust_module_name(path: &Path) -> String {
     use std::path::Component;
 

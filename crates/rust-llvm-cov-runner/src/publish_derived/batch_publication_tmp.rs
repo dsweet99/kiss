@@ -1,4 +1,3 @@
-//! Sweep orphaned publication `*.tmp` files left by crashed publishers.
 
 use crate::publish_derived::batch_io_skip_not_found::{
     dir_entry_ok_missing, file_type_ok_missing, read_dir_ok_missing,
@@ -8,18 +7,8 @@ use std::io;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-/// Temps newer than this are assumed in-flight and left alone.
 const ORPHAN_TMP_MIN_AGE: Duration = Duration::from_secs(60);
 
-/// Remove leftover `*.tmp` files under `cache_root` (recursive).
-///
-/// Call only from selector-entry derived publishers (`publish_derived_state*`)
-/// while holding the batch lock. Do not call from `kiss check` / check-aggregate
-/// paths: crash-recovery QA starts a concurrent check reader that must leave a
-/// killed writer's staged entry temp intact for the harness to observe.
-///
-/// Only temps older than [`ORPHAN_TMP_MIN_AGE`] are removed so a concurrent
-/// publisher's in-flight `.*.tmp` is not deleted between write and rename.
 pub(crate) fn sweep_orphaned_publication_tmps(cache_root: &Path) -> io::Result<()> {
     let cutoff = SystemTime::now()
         .checked_sub(ORPHAN_TMP_MIN_AGE)

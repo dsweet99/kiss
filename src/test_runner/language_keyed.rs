@@ -1,10 +1,6 @@
-//! Language-keyed values: one abstract slot filled by Python and Rust implementations.
-//!
-//! Prefer this over parallel `python_*` / `rust_*` product fields on shared types.
 
 use kiss::Language;
 
-/// Pair of language-specific values behind a single abstract concept.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LanguageKeyed<T> {
     pub(crate) python: T,

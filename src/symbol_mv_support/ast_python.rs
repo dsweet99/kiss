@@ -1,4 +1,3 @@
-//! Python AST extraction for `kiss mv` definitions and references.
 
 use tree_sitter::{Node, Parser};
 
@@ -39,16 +38,6 @@ pub(super) fn parse_python(content: &str) -> ParseOutcome {
     })
 }
 
-/// Decide whether a bare `identifier` node represents a *use* of a name
-/// (i.e. a reference site) rather than a binding/definition site. Catches
-/// callback-style uses like `map(my_fn, …)`, kwarg values like `key=my_fn`,
-/// assignment RHS like `ref = my_fn`, container literals, return values,
-/// etc. — fixes KPOP round 6 H2 ("function-as-value not renamed").
-///
-/// References that are emitted via dedicated branches above (calls,
-/// decorators, imports, await, raise-from, global/nonlocal/delete) are
-/// also re-emitted here when the walker recurses into them; the planner
-/// dedupes by (start, end), so duplicates are harmless.
 pub(super) fn python_identifier_is_value(node: Node<'_>) -> bool {
     let Some(parent) = node.parent() else {
         return true;

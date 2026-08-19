@@ -21,7 +21,6 @@ pub(crate) fn is_workspace_rust_selector_file_cached(
             .is_some_and(|dir| member_manifest_dirs.contains(&dir))
 }
 
-/// Repository-relative crate roots for Rust paths that are not root workspace members.
 pub(crate) fn non_member_rust_crate_roots(
     repo_root: &Path,
     rust_paths: &[PathBuf],

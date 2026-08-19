@@ -1,4 +1,3 @@
-//! Rust `include!` path helpers shared by discovery and the dependency graph.
 
 use std::path::{Path, PathBuf};
 

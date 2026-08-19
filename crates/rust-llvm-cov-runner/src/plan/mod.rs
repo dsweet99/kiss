@@ -1,4 +1,3 @@
-//! Internal `plan` package for rust-llvm-cov-runner call flow.
 
 pub(crate) mod batch_plan_shim_const;
 

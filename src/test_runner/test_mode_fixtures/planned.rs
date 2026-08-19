@@ -1,4 +1,3 @@
-//! Empty `PlannedSelectors` for run-logic unit tests.
 
 use std::path::PathBuf;
 

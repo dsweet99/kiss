@@ -1,4 +1,3 @@
-//! Inline tests for `ast_python.rs`. Split out per `lines_per_file` rule.
 
 use super::super::ast_models::{ParseOutcome, ReferenceKind};
 use super::{

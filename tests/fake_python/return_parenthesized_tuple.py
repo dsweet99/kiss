@@ -1,4 +1,3 @@
-"""Fixture for return_values_per_function: parenthesized tuple return."""
 
 
 def f():

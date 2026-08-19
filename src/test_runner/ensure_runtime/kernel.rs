@@ -1,4 +1,3 @@
-//! Generic accept → run misses → always publish kernel.
 
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, EnsureRuntimeResult, LanguageEnsureResult, LanguageRuntime,

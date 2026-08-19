@@ -14,8 +14,6 @@ pub(crate) fn is_init_module(graph: &DependencyGraph, module_name: &str) -> bool
         .is_some_and(|s| s == "__init__")
 }
 
-/// Build a map from path → list of module names that share that path.
-/// Used to suppress phantom orphans when the same file has multiple module names.
 pub(crate) fn path_dedup_set(graph: &DependencyGraph) -> HashMap<PathBuf, Vec<String>> {
     let mut map: HashMap<PathBuf, Vec<String>> = HashMap::new();
     for (name, path) in &graph.paths {
@@ -24,7 +22,6 @@ pub(crate) fn path_dedup_set(graph: &DependencyGraph) -> HashMap<PathBuf, Vec<St
     map
 }
 
-/// Returns true if another module name sharing the same path has edges (non-orphan).
 pub(crate) fn is_path_covered_by_another(
     graph: &DependencyGraph,
     module_name: &str,

@@ -1,4 +1,3 @@
-"""Trivial pytest that exercises real_mod for live coverage."""
 
 try:
     from .real_mod import marker

@@ -23,7 +23,6 @@ impl RequestedArtifact {
     }
 }
 
-/// Parent-process pytest configuration identity for a reusable forkserver controller.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PytestBootstrap {
     pub cwd: PathBuf,
@@ -41,7 +40,6 @@ impl PytestBootstrap {
     }
 }
 
-/// Drop selector-specific artifact/runtime keys from an environment map.
 #[must_use]
 pub fn parent_safe_env(env: &BTreeMap<String, String>) -> BTreeMap<String, String> {
     env.iter()

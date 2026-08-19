@@ -1,4 +1,3 @@
-//! Reverse-index fields on Rust batch counter recording.
 
 use super::SelectorExecutionSummary;
 use rust_llvm_cov_runner::RustCoverageBatchCounters;

@@ -1,9 +1,3 @@
-//! Compact population wall-duration sidecar for warm `kiss cov` time gates.
-//!
-//! Authoritative durations still live in per-selector entry JSON. Warm loads of
-//! thousands of full coverage entries dominate wall time, so derived state can
-//! publish (and warm loads can rebuild) a small sidecar keyed to the current
-//! population identity.
 
 use crate::publish_derived::batch_derived_index::RustPopulationState;
 use crate::plan::batch_fingerprint::{
@@ -28,7 +22,6 @@ struct PopulationDurationsFile {
     generation_fingerprint: String,
     input_fingerprint: String,
     entries_fingerprint: String,
-    /// selector -> duration as nanoseconds
     durations: BTreeMap<String, u64>,
 }
 
@@ -40,12 +33,6 @@ pub(crate) fn invalidate_population_durations(cache_root: &Path) {
     let _ = fs::remove_file(population_durations_path(cache_root));
 }
 
-/// Load validated wall durations for every selector in the current population.
-///
-/// Prefers `population_durations.json` when it matches the population identity.
-/// On miss, loads per-selector entry durations and publishes the sidecar.
-///
-/// Returns `None` when the population or any selector entry is missing/invalid.
 pub fn load_current_population_durations(
     cache_root: &Path,
     source_root: &Path,
@@ -174,7 +161,6 @@ pub(crate) fn write_population_durations(
     })
 }
 
-/// Best-effort publish after population write. Failures leave the warm path to rebuild.
 pub(crate) fn try_publish_durations_after_population(
     cache_root: &Path,
     identity: &RustCoverageBatchIdentity,

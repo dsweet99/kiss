@@ -1,4 +1,3 @@
-"""Tests for adversarial metric parsing and prompt building."""
 
 from __future__ import annotations
 

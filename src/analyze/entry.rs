@@ -36,13 +36,10 @@ fn try_cache_hit(
     })
 }
 
-/// Run analysis and return a simple success/failure bool.
-/// Use `run_analyze_with_result` if you need the computed metrics.
 pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
     run_analyze_with_result(opts).success
 }
 
-/// Run analysis and return detailed result including global metrics.
 pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
     let t0 = std::time::Instant::now();
     let universe_root = Path::new(opts.universe);

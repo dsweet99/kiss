@@ -1,7 +1,3 @@
-//! Rust-specific lexer steppers and helpers used by `is_code_offset`.
-//!
-//! Handles Rust line/block comments, raw strings (`r"…"` / `r#…"…"#…`), and
-//! single-quote char literals (`'a'`, `'\n'`, etc.).
 
 use super::lex::{LexState, StringState};
 

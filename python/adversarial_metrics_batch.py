@@ -1,4 +1,3 @@
-"""Metrics batch logic for adversarial calibration."""
 
 from __future__ import annotations
 

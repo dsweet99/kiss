@@ -1,4 +1,3 @@
-//! A file with too many types (threshold: 8)
 
 pub struct Type1 { pub value: i32 }
 pub struct Type2 { pub value: i32 }

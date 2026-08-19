@@ -149,13 +149,6 @@ fn entry_equal_except_duration(left: &RustCovCacheEntry, right: &RustCovCacheEnt
         && left.test_binary_ids == right.test_binary_ids
 }
 
-/// Same generation + outcome identity: keep the first published entry bytes.
-///
-/// Forced re-runs at different `-j` can rewrite coverage maps with small
-/// nondeterministic line-set differences (and variable-width Duration JSON).
-/// That churn breaks retained-cache byte-stability audits even when the
-/// generation fingerprint is unchanged. Population / generation bumps still
-/// rewrite because `generation_fingerprint` differs.
 fn entry_stable_for_generation(left: &RustCovCacheEntry, right: &RustCovCacheEntry) -> bool {
     if left.coverage.files.is_empty() && !right.coverage.files.is_empty() {
 

@@ -1,10 +1,3 @@
-//! Machine-readable rule output for LLM consumption.
-//!
-//! This module generates structured RULE: lines with metric IDs, operators, thresholds, and
-//! descriptions suitable for parsing by automation/LLMs. For human-friendly sentence templates,
-//! see `kiss::rule_defs` in the library crate.
-//!
-//! Both modules now use canonical metric IDs to ensure consistency.
 
 use kiss::{Config, GateConfig, Language};
 use std::path::PathBuf;

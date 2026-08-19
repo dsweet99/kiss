@@ -59,11 +59,6 @@ fn is_object_file(path: &str) -> bool {
         .is_some_and(|ext| matches!(ext, "o" | "rlib"))
 }
 
-/// Scan only cargo's immediate debug output dirs.
-///
-/// Do **not** recursively walk the entire `target/` tree: it often embeds
-/// `llvm-cov-target`, `incremental`, and other multi-GB trees, and reading
-/// build-ids for every file there dominates cold `kiss cov` wall time.
 fn collect_instrumented_objects_from_build_target(build_target: &Path, out: &mut Vec<PathBuf>) {
     let mut scanned = BTreeSet::new();
     for dir in [

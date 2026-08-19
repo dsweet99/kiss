@@ -1,4 +1,3 @@
-//! Generation path helpers and SHA-256 digests.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;

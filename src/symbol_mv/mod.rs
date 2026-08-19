@@ -1,4 +1,3 @@
-//! Semantic rename/move (`kiss mv`): query parsing, planning, and transactional apply.
 
 mod edit;
 mod opts;

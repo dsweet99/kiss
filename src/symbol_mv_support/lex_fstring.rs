@@ -1,16 +1,6 @@
-//! Python f-string lexer support for `is_code_offset`.
-//!
-//! Treats the literal text portion of an f-string as "string-like" and the
-//! code-bearing brace expressions (`{ … }`) as "code-like", so the
-//! identifier-occurrence filter in `kiss mv` can rewrite references inside
-//! `f"… {expr} …"` braces.
 
 use super::lex::{LexState, StringState};
 
-/// Detect a Python f-string opener at `idx` (covers `f`, `F`, `rf`, `fr`,
-/// and case variants). On success: mutates `state` into the matching
-/// `FString*` variant and returns the number of bytes consumed (prefix +
-/// opening quote(s)). Returns `None` for non-f-string code.
 pub(super) fn try_parse_python_fstring_start(
     state: &mut LexState,
     bytes: &[u8],
@@ -33,9 +23,6 @@ pub(super) fn try_parse_python_fstring_start(
     Some(prefix_len + if triple { 3 } else { 1 })
 }
 
-/// Returns `(prefix_len, quote_idx)` if the bytes at `idx` start with a
-/// Python f-string prefix (`f`, `F`, `rf`, `fr`, etc.). Rejects
-/// identifier-internal positions (e.g., the `f` in `something_f"x"`).
 fn parse_python_fstring_prefix(bytes: &[u8], idx: usize, target: usize) -> Option<(usize, usize)> {
     if idx > 0 {
         let prev = bytes[idx - 1];
@@ -111,9 +98,6 @@ fn step_fstring_text(
     close_fstring_text_quote(state, bytes, idx, target, quote, triple).unwrap_or(1)
 }
 
-/// Detect a two-byte escape inside f-string text: a backslash followed by
-/// any byte (`\X`), or a doubled brace (`{{` / `}}`). Returns the number of
-/// bytes to consume (always 2) when matched, or `None` otherwise.
 const fn matches_two_byte_text_escape(
     b: u8,
     bytes: &[u8],
@@ -128,9 +112,6 @@ const fn matches_two_byte_text_escape(
     if matched { Some(2) } else { None }
 }
 
-/// If the byte at `idx` is the f-string's closing quote, exit the f-string
-/// state and return the number of bytes consumed (1 for single, 3 for
-/// triple). Returns `None` if not a closing quote.
 fn close_fstring_text_quote(
     state: &mut LexState,
     bytes: &[u8],
@@ -155,10 +136,6 @@ fn close_fstring_text_quote(
     }
 }
 
-/// Step inside the code-bearing brace expression of an f-string. We only
-/// track `{` / `}` to maintain the nesting depth so we know when the
-/// expression closes. Identifier-occurrence filtering treats every byte
-/// here as "code", which is exactly what we want for `kiss mv`.
 fn step_fstring_code(state: &mut LexState, bytes: &[u8], idx: usize, depth: usize) -> usize {
     match bytes[idx] {
         b'{' => set_fstring_depth(state, depth + 1),

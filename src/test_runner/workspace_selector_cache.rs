@@ -1,4 +1,3 @@
-//! Cached workspace selector lists for `kiss test .` (All) warm planning.
 
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -26,8 +25,6 @@ fn cache_path(repo_root: &Path) -> PathBuf {
     repo_root.join(".kiss").join(CACHE_FILE_NAME)
 }
 
-/// Survives `rm -rf .kiss` so cold-dot planning can reuse a fingerprint-checked
-/// selector list without re-running pytest/syn rediscovery.
 fn durable_cache_path(repo_root: &Path) -> PathBuf {
     repo_root
         .join("target")
@@ -74,7 +71,6 @@ fn workspace_files_fingerprint(repo_root: &Path, ignore: &[String]) -> io::Resul
     workspace_files_fingerprint_walk(repo_root, ignore)
 }
 
-/// Shared fingerprint for other warm caches (report-id map, etc.).
 pub(crate) fn workspace_files_fingerprint_for_cache(
     repo_root: &Path,
     ignore: &[String],
@@ -219,11 +215,6 @@ pub(crate) fn load_cached_workspace_selectors(
     Some((durable.python_selectors, durable.rust_selectors, fp))
 }
 
-/// Load selector lists for population counting (`max_num_tests`).
-///
-/// Unlike planning loads, this does not require a fingerprint match: the cache
-/// was written by the test run that is immediately evaluating gates. Prefer an
-/// ignore-list match when present; otherwise accept the on-disk population.
 pub(crate) fn load_workspace_selectors_for_count(
     repo_root: &Path,
     ignore: &[String],

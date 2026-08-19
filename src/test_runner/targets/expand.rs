@@ -1,4 +1,3 @@
-//! Expand directory `kiss test` operands using check-style discovery.
 
 use std::path::{Path, PathBuf};
 

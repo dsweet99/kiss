@@ -1,4 +1,3 @@
-//! Smoke coverage for RustRuntime trait methods.
 
 use super::RustRuntime;
 use crate::test_runner::lang_iface::{

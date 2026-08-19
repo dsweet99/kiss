@@ -1,7 +1,3 @@
-//! Abstract coverage-index concept with Python and Rust implementations.
-//!
-//! Prefer dispatching through this module (or [`CoverageIndex`]) over calling
-//! `python_coverage_index` / `rust_coverage_index` as unrelated parallel stacks.
 
 use std::path::{Path, PathBuf};
 
@@ -9,17 +5,14 @@ use kiss::Language;
 
 use crate::test_runner::coverage_decision::SupportedLanguage;
 
-/// Concrete Python coverage-index implementation.
 pub(crate) mod python {
     pub(crate) use crate::test_runner::python_coverage_index::*;
 }
 
-/// Concrete Rust coverage-index implementation.
 pub(crate) mod rust {
     pub(crate) use crate::test_runner::rust_coverage_index::*;
 }
 
-/// Shared coverage-index operations implemented per supported language.
 pub(crate) trait CoverageIndex: SupportedLanguage {
     fn cache_root(&self, repo_root: &Path) -> PathBuf;
     fn index_file_present(&self, repo_root: &Path) -> bool;
@@ -75,7 +68,6 @@ impl CoverageIndex for RustCoverageIndex {
     }
 }
 
-/// Return the coverage-index implementation for `language`.
 pub(crate) fn for_language(language: Language) -> Box<dyn CoverageIndex> {
     match language {
         Language::Python => Box::new(PythonCoverageIndex),

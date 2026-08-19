@@ -1,9 +1,3 @@
-//! Regressions for review findings against the parser-first `kiss mv` work.
-//! Sibling files (split per `lines_per_file` advice in
-//! `.llm_style/style.md`):
-//! - `review_findings_python.rs`
-//! - `review_findings_rust.rs`
-//! - `review_findings_cache.rs`
 
 use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};
@@ -155,12 +149,6 @@ def caller(obj):
     );
 }
 
-/// Bug: `ast_definition_ident_offsets` searches the def span (which now
-/// includes decorators) for the first `name` substring. A decorator name
-/// containing the symbol name as a substring (`helper_dec` ⊃ `helper`)
-/// shadows the real `def helper`, so the rename lands inside the decorator
-/// name and the actual definition is left intact.
-/// Code ref: `src/symbol_mv_support/ast_plan.rs::ast_definition_ident_offsets`.
 #[test]
 fn review_decorator_substring_must_not_misplace_definition_rename() {
     let tmp = TempDir::new().unwrap();

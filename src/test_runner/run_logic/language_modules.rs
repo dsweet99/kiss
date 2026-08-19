@@ -342,8 +342,6 @@ fn should_try_cached_rust_check_aggregate(
     !force_rerun && population_publication_selectors.is_none()
 }
 
-/// Test seam mirroring the population branch of [`run_rust_selectors_for_module`]:
-/// always SelectorEntries with publication selectors (never CheckAggregate).
 #[cfg(test)]
 pub(super) fn run_rust_population_selectors_with_batch_deps<D, E>(
     selectors: &[String],

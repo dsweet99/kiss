@@ -1,11 +1,9 @@
-//! Per-selector nextest `slow-timeout` overrides for kiss unit-test limits.
 
 use std::collections::BTreeMap;
 
 use crate::plan::batch_plan::RustCoverageBatchRequest;
 use crate::plan::batch_plan_nextest_config::{nextest_filter_string, toml_basic_string};
 
-/// Append profile-level / per-selector `slow-timeout` rules (`terminate-after = 1`).
 pub(crate) fn append_slow_timeout_toml(out: &mut String, req: &RustCoverageBatchRequest) {
     if req.selector_timeout_millis.is_empty() {
         return;

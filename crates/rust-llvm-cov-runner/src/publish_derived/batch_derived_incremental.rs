@@ -16,11 +16,6 @@ pub struct IncrementalPublishPlan<'a> {
     pub test_binaries: &'a [RustTestBinaryIdentity],
 }
 
-/// Re-store prior-generation selector entries under the current identity.
-///
-/// Preserves measured `duration` (and coverage bindings) while updating
-/// `generation_fingerprint` and the entry fingerprint path so current-population
-/// timing loads remain complete after CheckAggregate / SelectorEntries repair.
 pub fn rekey_selector_entries_to_identity(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
@@ -112,7 +107,6 @@ fn validate_successor_entries(
     Ok(())
 }
 
-/// Single pass over `entries/` for one generation → selector map (first wins).
 fn index_generation_selector_entries(
     cache_root: &Path,
     generation: &str,

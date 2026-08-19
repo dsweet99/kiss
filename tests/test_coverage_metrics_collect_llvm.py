@@ -1,4 +1,3 @@
-"""Tests for llvm coverage collection in python.coverage_collect."""
 
 from __future__ import annotations
 

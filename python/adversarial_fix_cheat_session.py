@@ -1,4 +1,3 @@
-"""Malvin fix-cheat session orchestration."""
 
 from __future__ import annotations
 

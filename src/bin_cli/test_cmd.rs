@@ -22,10 +22,8 @@ pub struct TestCommandArgs<'a> {
     pub coverage_all: bool,
     pub watch: bool,
     pub jobs: usize,
-    /// Explicit `--jobs` when set; `None` means jobs came from config (reloadable).
     pub jobs_cli: Option<usize>,
     pub ignore: &'a [String],
-    /// CLI `--ignore` only (before config merge); used when reloading `.kissconfig`.
     pub cli_ignore: &'a [String],
     pub extra: &'a [String],
     pub lang_filter: Option<kiss::Language>,
@@ -33,13 +31,11 @@ pub struct TestCommandArgs<'a> {
     pub py_config: &'a kiss::Config,
     pub rs_config: &'a kiss::Config,
     pub gate_config: &'a kiss::GateConfig,
-    /// When false (`--defaults`), the watcher does not reload `.kissconfig`.
     pub reload_kissconfig: bool,
     pub config_path: Option<&'a PathBuf>,
 }
 
 thread_local! {
-    /// Test-only: when set, `run_test_command` uses this instead of probing/nudging W.
     static CLIENT_RESULT_OVERRIDE: Cell<Option<Result<Option<i32>, String>>> = const { Cell::new(None) };
 }
 
@@ -52,7 +48,6 @@ pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
     run_test_command_with(args, run_test)
 }
 
-/// Injectable local runner for unit tests (assert client path never calls it).
 pub(crate) fn run_test_command_with(
     args: TestCommandArgs<'_>,
     run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
@@ -129,9 +124,6 @@ pub(crate) fn run_test_command_with(
     finish_with_coverage(&args, code)
 }
 
-/// If a live watcher owns the repo, nudge it and evaluate coverage from cache.
-///
-/// Returns `Ok(None)` when no watcher is present (caller runs tests locally).
 #[cfg(unix)]
 fn try_run_as_watcher_client(args: &TestCommandArgs<'_>) -> Result<Option<i32>, String> {
     if let Some(overridden) = CLIENT_RESULT_OVERRIDE.with(Cell::take) {
@@ -192,8 +184,6 @@ fn apply_watcher_client_exit(
     exit_code
 }
 
-/// Watcher coverage step: same gates as one-shot, but `allow_refresh: true` so a
-/// load Err is repaired in this cycle instead of FAIL-looping.
 pub(crate) fn evaluate_watch_coverage(
     cycle: &RunTestCmdArgs<'_>,
     cov: &WatchCoverageParams<'_>,
@@ -304,7 +294,6 @@ fn run_watch_cov_score(args: &CovCommandArgs<'_>) -> i32 {
     code
 }
 
-/// Local one-shot path after successful tests: evaluate coverage from cache only.
 pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -> i32 {
     let universe = universe_root_for_test_invocation(&args.invocation);
     let python_extra =
@@ -338,8 +327,6 @@ pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -
     }
 }
 
-/// Universe root for post-test cov warming: single path/dir target when present,
-/// otherwise the repository root (`.`).
 fn universe_root_for_test_invocation(invocation: &TestInvocation) -> PathBuf {
     match invocation {
         TestInvocation::Targets(targets) if targets.len() == 1 => {

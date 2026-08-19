@@ -1,4 +1,3 @@
-"""Tests for adversarial metrics batch helpers."""
 
 from __future__ import annotations
 

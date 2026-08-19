@@ -1,4 +1,3 @@
-//! Immutable Python coverage generations (v2).
 
 mod types;
 mod paths;

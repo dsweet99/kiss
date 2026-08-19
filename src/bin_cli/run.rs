@@ -44,7 +44,6 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
     dispatch(cli, &py_config, &rs_config, &gate_config, &test_section)
 }
 
-/// Validate `--watch` combinations. Returns `Some(exit_code)` on failure.
 fn prepare_watch_flags(cli: &Cli) -> Option<i32> {
     let Commands::Test {
         watch,

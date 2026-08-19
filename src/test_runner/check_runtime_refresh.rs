@@ -42,7 +42,6 @@ mod python_refresh_tests;
 pub(crate) const COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV: &str =
     "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE";
 
-/// Per-language runtime-refresh counters (filled by each language's refresh impl).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LanguageRefreshStats {
     pub(crate) test_instances: usize,
@@ -52,7 +51,6 @@ pub(crate) struct LanguageRefreshStats {
     pub(crate) full_refresh: bool,
 }
 
-/// Coverage runtime-refresh outcome keyed by supported language (not rust_*-only product fields).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct CoverageRefreshStats {
     pub(crate) by_language:
@@ -214,8 +212,6 @@ pub(crate) struct ScopedRefreshEnvGuard {
     _private: (),
 }
 
-/// Depth + saved prior env value, guarded together so concurrent `set`/`Drop`
-/// cannot observe a bumped depth before the process env marker is written.
 static REFRESH_ENV_STATE: Mutex<(usize, Option<Option<std::ffi::OsString>>)> =
     Mutex::new((0, None));
 
@@ -337,10 +333,6 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     finalize_population_summary_labeled(repo_root, ignore, &summary, true, caller_label)
 }
 
-/// Shared Rust ensure/refresh entry point used by `kiss test`.
-///
-/// Runs through the shared ensure factory/kernel against repo-local `./.kiss`
-/// coverage artifacts.
 #[allow(dead_code)]
 pub(crate) fn ensure_rust_runtime_coverage_shared(
     repo_root: &Path,

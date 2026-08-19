@@ -24,7 +24,6 @@ pub fn git_repo_root(repo: &Path) -> Result<PathBuf, String> {
         .map_err(|e| format!("failed to canonicalize repo root: {e}"))
 }
 
-/// Assert `repo` is inside a work tree and return the canonical toplevel.
 pub fn require_git_repo_root(repo: &Path) -> Result<PathBuf, String> {
     let out = git_output(repo, &["rev-parse", "--is-inside-work-tree"])?;
     if out.trim() != "true" {

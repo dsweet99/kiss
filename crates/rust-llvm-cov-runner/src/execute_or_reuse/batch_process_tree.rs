@@ -137,10 +137,6 @@ impl BatchProcessTreeGuard {
         self.reap_lingering_descendants(grace)
     }
 
-    /// Reap still-alive recorded process groups without marking interruption.
-    ///
-    /// Used on the successful completion path so a late-exiting worker cannot be
-    /// reported as a residual after the parent status is already observed.
     pub fn reap_lingering_descendants(&self, grace: Duration) -> usize {
         let identities = self.registry.identities();
         for identity in &identities {
@@ -173,8 +169,6 @@ impl Drop for BatchProcessTreeGuard {
 #[cfg(unix)]
 static SIGINT_STATE: OnceLock<Mutex<Option<SigintHandlerState>>> = OnceLock::new();
 
-/// Raw pointers published for the SIGINT handler so it never needs `Mutex::lock`.
-/// Cleared before the owning `Arc`s are dropped in `clear_sigint_handler`.
 #[cfg(unix)]
 static ACTIVE_SIGINT_FLAG: AtomicPtr<AtomicBool> = AtomicPtr::new(std::ptr::null_mut());
 #[cfg(unix)]

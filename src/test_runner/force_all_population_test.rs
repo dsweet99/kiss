@@ -1,4 +1,3 @@
-//! `--force` population policy: only `TestInvocation::All` upgrades to a full population.
 
 use crate::bin_cli::args::TestInvocation;
 use kiss::Language;

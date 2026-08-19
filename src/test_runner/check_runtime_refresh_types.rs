@@ -1,4 +1,3 @@
-//! Types and language adapters for coverage runtime refresh.
 
 use std::path::Path;
 
@@ -9,7 +8,6 @@ use super::{
     ensure_rust_runtime_coverage,
 };
 
-/// Shared runtime-refresh contract implemented by Python and Rust refresh paths.
 pub(crate) trait CoverageRuntimeRefresh {
     fn language(&self) -> kiss::Language;
     fn ensure(

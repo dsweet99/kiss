@@ -1,4 +1,3 @@
-//! A function with too many statements (threshold: 25)
 
 pub fn bloated_function() {
     let a = 1;

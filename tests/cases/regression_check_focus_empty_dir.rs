@@ -1,19 +1,3 @@
-//! Regression test for `kiss check` focus filter being silently disabled
-//! when the focus path resolves to zero source files.
-//!
-//! Bug discovered via KPOP (see `_kpop/exp_log_kiss_check_bug2.md`):
-//! `kiss check UNIVERSE FOCUS` is documented as "report only these"
-//! (`src/bin_cli/args.rs:43`). When `FOCUS` is a directory containing no
-//! `.py` / `.rs` files (or whose source files are all filtered out by
-//! `--lang` / `--ignore`), `build_focus_set` (`src/analyze/focus.rs:26`)
-//! returns an empty `HashSet`. Then `is_focus_file`
-//! (`src/analyze/focus.rs:47`) treats the empty set as "no filter active"
-//! and returns `true`, so `filter_viols_by_focus` retains every
-//! universe-wide violation. The user sees the full report instead of the
-//! narrowed/empty one they asked for.
-//!
-//! These tests lock in the fixed behavior: `is_focus_file` distinguishes
-//! "no focus specified" from "focus specified but matched zero files".
 
 use crate::common::seed_python_runtime_coverage;
 use std::fs;
@@ -24,15 +8,10 @@ fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
 }
 
-/// Writes a file that triggers a `positional_args` violation under defaults
-/// (threshold is 3 positional args; this function has 8).
 fn write_violating_py(path: &std::path::Path) {
     fs::write(path, "def big(a, b, c, d, e, f, g, h):\n    return a\n").unwrap();
 }
 
-/// Baseline (locks in current correct behavior): when the focus path is a
-/// directory that *does* contain a source file, focus filtering correctly
-/// restricts violations to that file.
 #[test]
 fn cli_check_focus_dir_with_source_restricts_report() {
     let tmp = TempDir::new().unwrap();
@@ -61,8 +40,6 @@ fn cli_check_focus_dir_with_source_restricts_report() {
     );
 }
 
-/// Regression test for the fixed bug: when the focus path is a directory with
-/// no source files, `kiss check` must not dump every universe violation.
 #[test]
 fn cli_check_focus_dir_with_no_source_does_not_leak_universe() {
     let tmp = TempDir::new().unwrap();

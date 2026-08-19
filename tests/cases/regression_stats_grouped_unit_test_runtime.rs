@@ -1,5 +1,3 @@
-//! CLI regression: `kiss stats` groups `unit_test_runtime_sec` by ordered
-//! `max_unit_test_seconds` rules without double-counting nested prefixes.
 
 use crate::common::seed_python_runtime_coverage;
 use std::fs;

@@ -1,8 +1,3 @@
-//! Warm-path cache of per-file line-coverage records for `kiss cov`.
-//!
-//! Invalidation keys on source mtimes/sizes plus lightweight on-disk coverage
-//! backend identities (Python population + Rust check_aggregate fingerprints),
-//! so a warm hit skips snapshot reload and record recomputation.
 
 use std::fs;
 use std::path::{Path, PathBuf};

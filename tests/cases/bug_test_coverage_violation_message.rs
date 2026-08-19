@@ -1,4 +1,3 @@
-//! Regression: runtime line-coverage violations must not read "100% covered".
 
 use crate::common::seed_python_runtime_coverage;
 use std::fs;

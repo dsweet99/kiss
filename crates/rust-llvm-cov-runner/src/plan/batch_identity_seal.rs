@@ -18,9 +18,6 @@ struct SealFileMeta {
     path: String,
     len: u64,
     mtime_ns: u64,
-    /// Unix ctime (status-change time). Content writes and mtime restores via
-    /// `utimensat` update ctime even when mtime is forced back, so same-length
-    /// rewrites with preserved mtime still miss the seal.
     ctime_ns: u64,
 }
 
@@ -108,8 +105,6 @@ fn file_meta_matches(source_root: &Path, expected: &[SealFileMeta]) -> bool {
     current == expected
 }
 
-/// Persist a content-identity seal keyed by input-file size/mtime/ctime metadata.
-/// Written by `kiss cov` publish so the next `kiss test` can skip re-hashing.
 pub fn write_identity_mtime_seal(
     cache_root: &Path,
     source_root: &Path,
@@ -155,7 +150,6 @@ fn parent_tmp_path(path: &Path) -> io::Result<PathBuf> {
     Ok(parent.join(format!(".input_mtime_seal.{nanos}.tmp")))
 }
 
-/// Fast path: reuse digests when input-file size/mtime/ctime set and tool identity match.
 pub fn try_identity_from_mtime_seal(
     cache_root: &Path,
     source_root: &Path,

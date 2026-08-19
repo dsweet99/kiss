@@ -1,4 +1,3 @@
-//! Lock-owned entry-state token for Rust coverage derived-state freshness.
 
 use crate::rust_cov_cache::rust_cov_unique_suffix;
 use crate::RustLlvmCovError;

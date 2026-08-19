@@ -1,4 +1,3 @@
-//! Shared helpers for `kiss test --watch` acceptance tests.
 
 use std::path::Path;
 use std::process::{Child, Command, Stdio};

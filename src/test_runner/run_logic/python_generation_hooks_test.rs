@@ -1,4 +1,3 @@
-//! Coverage witnesses for Python generation hooks.
 
 use super::{generation_already_current, is_indexable};
 use crate::test_runner::coverage_decision::RunContext;

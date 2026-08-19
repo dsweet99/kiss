@@ -267,9 +267,6 @@ fn handle_rslip_batch_progress(
     }
 }
 
-/// Each Linux forkserver worker is a bootstrapped pytest process (~100 MiB
-/// VmRSS). `kiss test --watch` with `num_jobs = 32` otherwise keeps 32 of
-/// those alive at once, which is what dominated first-cycle peak RSS.
 const MAX_RSLIP_PARALLEL_JOBS: usize = 12;
 
 fn rslip_parallel_jobs(jobs: usize) -> usize {

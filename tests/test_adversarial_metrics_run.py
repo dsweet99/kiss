@@ -1,4 +1,3 @@
-"""Integration tests for adversarial metrics batch runner."""
 
 from __future__ import annotations
 

@@ -1,8 +1,3 @@
-//! Abstract language-understanding layer with Python and Rust implementations.
-//!
-//! Layer-2 analysis (parse / units / graph / test refs / metrics) should be reached
-//! through these traits rather than by matching on language and calling parallel
-//! `parsing` vs `rust_parsing` (etc.) APIs directly.
 
 mod analysis;
 mod graph;
@@ -24,18 +19,15 @@ use crate::py_metrics::{FileMetrics as PyFileMetrics, compute_file_metrics as co
 use crate::rust_fn_metrics::{RustFileMetrics, compute_rust_file_metrics};
 use crate::rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file};
 
-/// Parse a single Python file through the abstract Python analysis impl.
 pub fn parse_python_path(path: &Path) -> Result<ParsedFile, ParseError> {
     let mut parser = create_parser()?;
     parse_python_file(&mut parser, path)
 }
 
-/// Parse a single Rust file through the abstract Rust analysis impl.
 pub fn parse_rust_path(path: &Path) -> Result<ParsedRustFile, RustParseError> {
     parse_rust_file(path)
 }
 
-/// File-level metrics for the abstract analysis layer (concrete shapes still differ).
 pub enum FileMetrics {
     Python(PyFileMetrics),
     Rust(RustFileMetrics),

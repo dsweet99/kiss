@@ -1,8 +1,3 @@
-//! `kiss shrink` - constrained minimization of codebase metrics.
-//!
-//! Workflow:
-//! 1. `kiss shrink start <metric>=<target>` - save current metrics, set target
-//! 2. `kiss shrink check` - run analysis and report constraint violations
 
 mod metrics;
 
@@ -13,35 +8,27 @@ pub use metrics::{GlobalMetrics, ShrinkTarget};
 
 const SHRINK_FILE: &str = ".kiss_shrink";
 
-/// Persisted shrink state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShrinkState {
-    /// Baseline metrics captured at `shrink start`.
     pub baseline: GlobalMetrics,
-    /// The metric being minimized.
     pub target: ShrinkTarget,
-    /// The target value (must be ≤ baseline value for target metric).
     pub target_value: usize,
 }
 
 impl ShrinkState {
-    /// Load shrink state from `.kiss_shrink` in the current directory.
     pub fn load() -> Option<Self> {
         Self::load_from(Path::new(SHRINK_FILE))
     }
 
-    /// Load from a specific path.
     pub fn load_from(path: &Path) -> Option<Self> {
         let content = std::fs::read_to_string(path).ok()?;
         toml::from_str(&content).ok()
     }
 
-    /// Save to `.kiss_shrink` in the current directory.
     pub fn save(&self) -> std::io::Result<()> {
         self.save_to(Path::new(SHRINK_FILE))
     }
 
-    /// Save to a specific path.
     pub fn save_to(&self, path: &Path) -> std::io::Result<()> {
         let content =
             toml::to_string_pretty(self).map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -49,7 +36,6 @@ impl ShrinkState {
     }
 }
 
-/// Result of checking current metrics against shrink constraints.
 #[derive(Debug, Default)]
 pub struct ShrinkViolations {
     pub violations: Vec<ShrinkViolation>,
@@ -81,7 +67,6 @@ impl std::fmt::Display for ShrinkViolation {
     }
 }
 
-/// Check current metrics against shrink state constraints.
 pub fn check_shrink_constraints(state: &ShrinkState, current: &GlobalMetrics) -> ShrinkViolations {
     let mut violations = Vec::new();
 
@@ -115,7 +100,6 @@ pub fn check_shrink_constraints(state: &ShrinkState, current: &GlobalMetrics) ->
     ShrinkViolations { violations }
 }
 
-/// Parse "metric=value" argument.
 pub fn parse_target_arg(arg: &str) -> Result<(ShrinkTarget, usize), String> {
     let parts: Vec<&str> = arg.splitn(2, '=').collect();
     if parts.len() != 2 {

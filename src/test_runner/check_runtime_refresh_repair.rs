@@ -108,9 +108,6 @@ pub(super) fn try_repair_rust_check_aggregate_labeled(
     }
 }
 
-/// When a Full complete witness already accepts All-mode for the planned
-/// selectors under the current identity, binary-digest churn must not force a
-/// test re-execution refresh (`kiss test && kiss cov` mutual warm).
 pub(crate) fn maybe_downgrade_rerun_when_witness_warm(
     repo_root: &Path,
     selectors: &[String],

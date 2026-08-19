@@ -1,11 +1,6 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-/// Resolve the program that implements `__rust-llvm-cov-target-runner`.
-///
-/// Unit-test harnesses live at `target/.../deps/kiss-<hash>` and speak libtest, not clap.
-/// When that path is `current_exe`, nested coverage plans must prefer the adjacent non-hashed
-/// `kiss` CLI so nextest list does not forward `--output-dir` into libtest.
 pub(crate) fn target_runner_shim_program() -> String {
     resolve_target_runner_shim_program(
         std::env::var_os("KISS_RUST_LLVM_COV_TARGET_RUNNER_SHIM"),

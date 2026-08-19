@@ -1,9 +1,3 @@
-//! Data model and dispatch boundary for AST-aware symbol move (Task 1).
-//!
-//! These types are the canonical AST surface area consumed by `definition.rs`,
-//! `reference.rs`, and `edits.rs`. The parser path produces `Definition` and
-//! `Reference` records from a parsed file; on parse failure callers fall back
-//! to the existing lexical scanners (see `lex.rs`, `signature.rs`).
 
 use crate::Language;
 
@@ -58,9 +52,6 @@ pub(super) struct Reference {
     pub kind: ReferenceKind,
 }
 
-/// A `impl <Trait> for <Type>` link discovered in the file. Used so that
-/// renaming a trait method propagates to overrides and to method-call
-/// receivers whose static type is a known implementor.
 #[derive(Clone, Debug)]
 pub(super) struct TraitImpl {
     pub trait_name: String,

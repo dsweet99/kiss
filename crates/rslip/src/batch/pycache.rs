@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::Path;
 
-/// Directory names skipped while searching for `__pycache__` trees.
 const SKIP_DIRS: &[&str] = &[
     ".git",
     "target",
@@ -12,11 +11,6 @@ const SKIP_DIRS: &[&str] = &[
     ".pytest_cache",
 ];
 
-/// Remove `__pycache__` directories under `root`.
-///
-/// Python timestamp-based `.pyc` invalidation uses one-second resolution. A
-/// same-size rewrite in the same second can leave bytecode that still looks
-/// valid, so miss runs must not trust existing caches under the source root.
 pub(super) fn purge_pycache_under(root: &Path) {
     let Ok(entries) = fs::read_dir(root) else {
         return;

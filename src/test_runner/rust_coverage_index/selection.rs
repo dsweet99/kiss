@@ -8,8 +8,6 @@ use super::{
     rust_coverage_cache_root, selectors_by_changed_file_line, selectors_for_source_paths,
 };
 
-/// Resolved Rust coverage population path. Variants carry only the data that
-/// path needs; illegal freshness/basis/state/delta bags cannot be constructed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ResolvedRustPopulation {
     Current {

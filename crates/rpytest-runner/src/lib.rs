@@ -1,7 +1,3 @@
-//! Pytest execution boundary for tools that need per-test outcomes.
-//!
-//! The cold subprocess and forkserver runners share one outcome contract so
-//! coverage and cache callers do not need to own pytest process details.
 
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]

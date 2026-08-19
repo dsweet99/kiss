@@ -1,4 +1,3 @@
-//! Unit tests for Full witness publish merge / no-shrink rules.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

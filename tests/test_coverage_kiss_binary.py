@@ -1,4 +1,3 @@
-"""Tests for kiss binary resolution in python coverage helpers."""
 
 from __future__ import annotations
 

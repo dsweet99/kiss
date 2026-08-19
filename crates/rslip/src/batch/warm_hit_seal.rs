@@ -1,5 +1,3 @@
-//! Compact warm-hit seal: skip per-entry opens when a prior all-resolved
-//! batch under the same context / selector set still has matching digests.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -29,8 +27,6 @@ struct WarmHitSeal {
     context_fingerprint: String,
     selectors_fingerprint: String,
     selector_count: usize,
-    /// Workspace py/rs files fingerprint from planning; when present and matched
-    /// by the request, skips per-file covered stamp checks.
     #[serde(default)]
     content_fingerprint: Option<String>,
     covered_files: BTreeMap<String, FileStamp>,
@@ -135,7 +131,6 @@ fn upgrade_warm_hit_seal_content_fingerprint(
     Ok(())
 }
 
-/// When the seal is valid, synthesize hit outcomes without opening entries.
 pub(crate) fn try_warm_hit_seal(
     reqs: &[RslipRequest],
     context_fingerprint: &str,

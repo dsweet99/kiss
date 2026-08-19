@@ -30,9 +30,7 @@ pub struct CovCommandArgs<'a> {
     pub ignore: &'a [String],
     pub timing: bool,
     pub jobs: usize,
-    /// When false, cache-only (no refresh); after `kiss test` the cache is already ensured.
     pub allow_refresh: bool,
-    /// Session pytest args (plugins + CLI extras); must match test publication.
     pub pytest_args: &'a [String],
 }
 

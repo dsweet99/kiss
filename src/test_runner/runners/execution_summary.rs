@@ -15,10 +15,7 @@ pub(crate) struct SelectorExecutionSummary {
     pub(crate) failed: usize,
     pub(crate) failed_selectors: Vec<String>,
     pub(crate) timed_out_selectors: Vec<String>,
-    /// Per-selector wall times observed in this summary (logical or report id).
     pub(crate) selector_durations_ns: std::collections::BTreeMap<String, u64>,
-    /// Runner-raw statuses for storage (witness); SLA effective status lives in
-    /// failed/timed_out selectors for live exit reporting.
     pub(crate) raw_statuses: std::collections::BTreeMap<String, rpytest_runner::TestStatus>,
     pub(crate) max_passing_run_duration: Duration,
     pub(crate) rust_build_invocations: usize,
@@ -63,8 +60,6 @@ pub(crate) enum SelectorCacheRecord {
 pub(crate) struct SelectorExecutionRecord {
     pub(crate) selector: String,
     pub(crate) status: rpytest_runner::TestStatus,
-    /// Runner-raw status for witness/last_status storage when SLA reclassification
-    /// is applied only for live exit/reporting (`status`). `None` means same as `status`.
     pub(crate) raw_status: Option<rpytest_runner::TestStatus>,
     pub(crate) cache_record: SelectorCacheRecord,
     pub(crate) exit_code: Option<i32>,

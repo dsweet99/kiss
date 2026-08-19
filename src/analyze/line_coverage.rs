@@ -246,8 +246,6 @@ pub(crate) fn line_records_from_cache(
         .collect()
 }
 
-/// Returns `None` when the source file cannot be read (fail closed for coverage %).
-/// Returns `Some(empty)` for a readable empty file (treated as 100% covered).
 fn coverage_denominator_lines(file: &Path) -> Option<BTreeSet<usize>> {
     let contents = fs::read_to_string(file).ok()?;
     if contents.is_empty() {

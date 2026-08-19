@@ -1,4 +1,3 @@
-//! Resolve explicit test targets into direct selectors and coverage line maps.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -16,10 +15,8 @@ use crate::test_runner::runners::collect_python_nodeids_for_targets;
 pub(crate) struct TargetSelectionQuery {
     pub direct_python: BTreeSet<String>,
     pub direct_rust: BTreeSet<String>,
-    /// Whole-file PATH operands (file-level coverage selection).
     pub python_files: BTreeSet<PathBuf>,
     pub rust_files: BTreeSet<PathBuf>,
-    /// PATH::symbol operands (line-precise coverage selection).
     pub python_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
     pub rust_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
 }
@@ -60,7 +57,6 @@ pub(crate) fn resolve_target_operands(
     Ok(query)
 }
 
-/// Nodeid for an explicit Python test operand without running collection.
 fn explicit_python_test_selector(
     repo_root: &Path,
     parsed: &ParsedTestTarget,

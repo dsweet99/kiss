@@ -6,9 +6,6 @@ use rslip::RslipRequest;
 use crate::test_runner::runners::command_stdout;
 use crate::test_runner::python_coverage_index::python_coverage_cache_root;
 
-/// Default per-test ceiling for python population/selective runs.
-/// Large enough for sameq slow tests (~137s observed), short enough to stop
-/// hung webtester/network tests from blocking `kiss test .` for hours.
 pub(crate) const DEFAULT_PYTEST_TIMEOUT: Duration = Duration::from_secs(180);
 
 pub(crate) fn rslip_request_from_parts(
@@ -47,7 +44,6 @@ pub(crate) fn rslip_request_from_parts(
     })
 }
 
-/// Test/helper seam: load cwd gate once. Prefer `timeout_for_selector_with_gate` on session paths.
 #[cfg(test)]
 pub(crate) fn timeout_for_selector(selector: &str) -> Duration {
     timeout_for_selector_with_gate(&kiss::GateConfig::load(), selector)

@@ -1,19 +1,11 @@
-//! Distinct identities for Rust test selectors.
-//!
-//! Nextest / witnesses use logical ids (`tests::fn`, bare names). Gate patterns and
-//! reporting expect `PATH::symbol` report ids. Mixing the two as bare `String` made
-//! silent catch-all bans (`["*", 0]`) easy; these newtypes make the conversion
-//! boundary explicit.
 
 use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::Deref;
 
-/// Nextest-facing selector id (bare fn name or `tests::fn`).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct LogicalSelectorId(String);
 
-/// Kiss report / gate-pattern selector id (`path/to/file.rs::symbol`).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct ReportSelectorId(String);
 
@@ -97,10 +89,6 @@ impl From<String> for ReportSelectorId {
     }
 }
 
-/// Convert a logical nextest id to a report id using the workspace map.
-///
-/// Falls back to the logical string when unmapped (caller must treat that as
-/// report-shaped already, or accept catch-all gate behavior).
 pub(crate) fn report_id_for_logical(
     map: &BTreeMap<String, String>,
     logical: &LogicalSelectorId,
@@ -111,10 +99,6 @@ pub(crate) fn report_id_for_logical(
     ))
 }
 
-/// Map logical selector strings to report-id strings via the typed boundary.
-///
-/// Call sites that still hold `String` slices convert here so logical vs report
-/// identities cannot be mixed without an explicit `LogicalSelectorId` step.
 pub(crate) fn report_strings_for_logical_strings(
     map: &BTreeMap<String, String>,
     logicals: &[String],
@@ -126,7 +110,6 @@ pub(crate) fn report_strings_for_logical_strings(
         .collect()
 }
 
-/// Convert one logical string through the typed boundary.
 pub(crate) fn report_string_for_logical_string(
     map: &BTreeMap<String, String>,
     logical: &str,
@@ -134,7 +117,6 @@ pub(crate) fn report_string_for_logical_string(
     report_id_for_logical(map, &LogicalSelectorId::new(logical)).into_string()
 }
 
-/// Map a slice of logical ids to report ids (same order).
 pub(crate) fn report_ids_for_logicals(
     map: &BTreeMap<String, String>,
     logicals: &[LogicalSelectorId],

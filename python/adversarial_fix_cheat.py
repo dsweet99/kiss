@@ -1,4 +1,3 @@
-"""Fix kiss against cheat repos: runtime coverage estimation, not static-reference tricks."""
 
 from __future__ import annotations
 

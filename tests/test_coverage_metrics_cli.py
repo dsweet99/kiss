@@ -1,4 +1,3 @@
-"""Tests for python.coverage_metrics comparison and CLI."""
 
 from __future__ import annotations
 
@@ -16,7 +15,7 @@ def test_main_help() -> None:
     runner = CliRunner()
     result = runner.invoke(coverage_metrics_main, ["--help"])
     assert result.exit_code == 0
-    assert coverage_metrics_main.__doc__ is not None
+    assert "Compare kiss coverage" in result.output
 
 
 def test_coverage_comparison_namedtuple_fields() -> None:

@@ -1,4 +1,3 @@
-"""Tests for repo language detection in python.coverage_stats."""
 
 from __future__ import annotations
 

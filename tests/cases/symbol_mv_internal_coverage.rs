@@ -1,5 +1,3 @@
-//! Integration tests exercising `symbol_mv_support` AST walkers via complex
-//! rename scenarios.
 
 use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};

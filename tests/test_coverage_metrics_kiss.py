@@ -1,4 +1,3 @@
-"""Tests for kiss subprocess integration in python coverage helpers."""
 
 from __future__ import annotations
 

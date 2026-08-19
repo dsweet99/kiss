@@ -1,4 +1,3 @@
-//! Build reverse line coverage from authoritative selector entries.
 
 use crate::rust_cov_cache::{RustCovCacheEntry, repo_relative_coverage_file};
 use crate::{CACHE_SCHEMA_VERSION, RustLlvmCovError};

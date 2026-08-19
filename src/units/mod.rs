@@ -63,9 +63,6 @@ pub fn extract_code_units(parsed: &ParsedFile) -> Vec<CodeUnit> {
     units
 }
 
-/// Fast-path for callers that only need the *count* of units.
-///
-/// This matches `extract_code_units(parsed).len()` but avoids allocations and string copies.
 #[must_use]
 pub fn count_code_units(parsed: &ParsedFile) -> usize {
     let root = parsed.tree.root_node();

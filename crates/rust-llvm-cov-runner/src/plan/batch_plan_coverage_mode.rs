@@ -13,8 +13,6 @@ pub enum CoverageOutputMode {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckAggregateRepairPublication {
-    /// Generation fingerprint of the reusable prior check-aggregate whose
-    /// selector entries supply retained timings/coverage bindings.
     pub prior_generation: String,
     pub selector_binary_ids: BTreeMap<String, Vec<String>>,
     pub test_binaries: Vec<RustTestBinaryIdentity>,

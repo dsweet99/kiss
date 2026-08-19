@@ -1,4 +1,3 @@
-//! Python 3.12+ line coverage with conservative per-test caching.
 
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
@@ -68,11 +67,7 @@ pub struct RslipRequest {
     pub env: BTreeMap<String, String>,
     pub cache_root: PathBuf,
     pub force_rerun: bool,
-    /// Per-test wall-clock limit for pytest execution. Not part of the cache key.
     pub timeout: Option<Duration>,
-    /// Optional workspace content fingerprint for warm-hit seal fast validation.
-    /// Not part of the cache key. When set and matching the seal, per-file stamps
-    /// are skipped.
     pub content_fingerprint: Option<String>,
 }
 
@@ -182,7 +177,6 @@ impl Rslip {
     }
 }
 
-/// Digest map for covered files plus the test module; `None` if any path is missing.
 pub fn covered_file_digests_for(
     source_root: &Path,
     nodeid: &str,

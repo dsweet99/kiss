@@ -1,4 +1,3 @@
-//! Immutable Python population generation schemas.
 
 mod identity_types;
 mod artifact_types;

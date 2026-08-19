@@ -53,11 +53,6 @@ pub fn execute_rust_coverage_batch(
     })
 }
 
-/// Shared executor body used by production and regression tests.
-///
-/// After a fresh batch returns a result, this always routes through
-/// `finalize_after_fresh_batch` so publication and selective pruning stay bound
-/// to `execute_rust_coverage_batch` (including failed selective runs).
 pub(crate) fn execute_rust_coverage_batch_with_fresh<F>(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,

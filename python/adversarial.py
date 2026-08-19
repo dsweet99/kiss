@@ -1,4 +1,3 @@
-"""Adversarial foil: drive malvin to find coverage metric counterexamples."""
 
 from __future__ import annotations
 

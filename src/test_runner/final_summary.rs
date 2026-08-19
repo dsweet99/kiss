@@ -1,4 +1,3 @@
-//! Final stdout recap for completed non-dry `kiss test` cycles.
 
 use std::io::{IsTerminal, Write};
 use std::time::Duration;

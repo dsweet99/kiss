@@ -1,4 +1,3 @@
-//! Capture and filter cycle stdout for one-shot watcher clients.
 
 use std::io::{Read, Write};
 use std::sync::Mutex;
@@ -9,8 +8,6 @@ fn stdout_redirect_lock() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Capture stdout to a tempfile (no pipe-buffer deadlock), then replay to the
-/// original stdout so the watcher tty still sees the cycle.
 #[cfg(unix)]
 pub(crate) fn tee_stdout<R>(f: impl FnOnce() -> R) -> (R, String) {
     use std::os::fd::AsRawFd;
@@ -63,8 +60,6 @@ pub(crate) fn tee_stdout<R>(f: impl FnOnce() -> R) -> (R, String) {
     (result, String::from_utf8_lossy(&buf).into_owned())
 }
 
-/// Lines a one-shot client should reprint so FAIL / VIOLATION detail matches
-/// a non-watcher `kiss test` (without progress noise like Planning / PASS:).
 pub(crate) fn extract_client_report(captured: &str) -> String {
     let mut lines = Vec::new();
     for line in captured.lines() {

@@ -28,7 +28,6 @@ pub fn validate_supported_rust_test_args(test_args: &[String]) -> Result<(), Str
     Ok(())
 }
 
-/// Output-only flags do not change which tests run or their coverage.
 #[must_use]
 pub fn identity_relevant_test_args(test_args: &[String]) -> Vec<String> {
     test_args

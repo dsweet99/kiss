@@ -16,13 +16,9 @@ use batch_events_serde::{CargoBuildFinished, CargoCompilerArtifact, LibtestRecor
 pub struct BatchCompilerArtifact {
     pub executable: Option<String>,
     pub filenames: Vec<String>,
-    /// Nextest / libtest-json-plus binary id when this artifact is a runnable test harness.
     pub nextest_binary_id: Option<String>,
-    /// Libtest-json-plus name prefix (`{package}::{target}`) for unit-test harnesses.
     pub libtest_binary_prefix: Option<String>,
-    /// `target.src_path` from the cargo compiler-artifact (crate root for the target).
     pub src_path: Option<String>,
-    /// True when cargo reported `profile.test` (unit/integration test harness).
     pub is_test_harness: bool,
 }
 
@@ -31,7 +27,6 @@ pub struct BatchTestTerminal {
     pub full_name: String,
     pub test_name: String,
     pub passed: bool,
-    /// True when nextest killed the test for exceeding `slow-timeout`.
     pub timed_out: bool,
     pub exec_time_secs: f64,
     pub stdout: Option<String>,
@@ -275,7 +270,6 @@ pub fn selector_matches_test(full_name: &str, selector: &str, exact: bool) -> bo
     }
 }
 
-/// Indexed matcher: exact/`$` suffix lookup once the selector set is large.
 pub struct SelectorMatchIndex<'a> {
     indexed: bool,
     names: HashSet<&'a str>,

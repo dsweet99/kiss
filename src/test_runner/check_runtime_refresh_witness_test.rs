@@ -1,4 +1,3 @@
-//! Witness-gated CheckAggregate repair downgrade tests.
 
 use super::super::{
     CheckAggregateRepairDecision, maybe_downgrade_rerun_when_witness_warm,

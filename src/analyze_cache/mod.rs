@@ -29,7 +29,6 @@ pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     h
 }
 
-/// Nanoseconds since UNIX epoch from file metadata, or 0 if unavailable.
 #[must_use]
 pub fn mtime_ns_since_epoch(meta: &std::fs::Metadata) -> u128 {
     meta.modified()
@@ -40,7 +39,6 @@ pub fn mtime_ns_since_epoch(meta: &std::fs::Metadata) -> u128 {
         })
 }
 
-/// Mix path bytes, length, and mtime into an FNV-1a accumulator.
 #[must_use]
 pub fn mix_path_len_mtime(mut h: u64, path: &Path) -> u64 {
     h = fnv1a64(h, path.to_string_lossy().as_bytes());
@@ -51,7 +49,6 @@ pub fn mix_path_len_mtime(mut h: u64, path: &Path) -> u64 {
     h
 }
 
-/// Sort paths lexicographically by display string, then mix each path's meta.
 #[must_use]
 pub fn mix_sorted_paths_len_mtime<'a, I>(mut h: u64, files: I) -> u64
 where

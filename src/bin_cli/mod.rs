@@ -1,4 +1,3 @@
-//! CLI wiring for the `kiss` binary (subcommands, config loading, dispatch).
 
 pub mod args;
 mod check_cmd;

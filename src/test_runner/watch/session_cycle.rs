@@ -1,4 +1,3 @@
-//! One watch-cycle execution helpers.
 
 use std::path::Path;
 use std::sync::mpsc::SyncSender;

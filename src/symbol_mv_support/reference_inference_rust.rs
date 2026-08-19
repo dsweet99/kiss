@@ -1,5 +1,3 @@
-//! Rust receiver-type / annotation helpers split out of
-//! `reference_inference.rs` to keep that file under the `lines_per_file` gate.
 
 use super::{find_impl_blocks, rfind_word_boundary, split_method_receiver};
 
@@ -85,10 +83,6 @@ pub(crate) fn infer_receiver_type_at(content: &str, upto: usize, receiver: &str)
     .find_map(|pat| type_after_pattern_last_before(content, upto, &pat))
 }
 
-/// Walk backwards from `upto` to the innermost enclosing `impl` block that
-/// contains the offset, and return the *type* the impl is for. Recognizes
-/// both `impl Type { ... }` and `impl Trait for Type { ... }` shapes.
-/// `Self` and `self` inside such a block resolve to this type.
 pub(crate) fn enclosing_rust_impl_type(content: &str, upto: usize) -> Option<String> {
     let bytes = content.as_bytes();
     let mut search_end = upto;
@@ -117,10 +111,6 @@ pub(crate) fn enclosing_rust_impl_type(content: &str, upto: usize) -> Option<Str
     None
 }
 
-/// Given the header text between `impl` and the opening brace, return the
-/// concrete type the impl applies to. Strips a leading generic param list
-/// (`<T: Bound>`), handles the `Trait for Type` shape, and unwraps a single
-/// generic argument list on the type itself (`Foo<T> -> Foo`).
 fn parse_impl_target(header: &str) -> Option<String> {
     let mut s = header.trim_start();
     if s.starts_with('<') {

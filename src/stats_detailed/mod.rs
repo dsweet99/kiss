@@ -1,4 +1,3 @@
-//! Per-unit detailed metrics for `kiss stats --detailed`.
 
 mod python;
 mod rust;
@@ -25,11 +24,6 @@ fn module_id_for_path(path: &std::path::Path, graph: &DependencyGraph) -> String
         .unwrap_or_else(|| module_name_from_path(path))
 }
 
-/// Aggregate file-scope metrics that aren't graph-derived.
-///
-/// All other File-scope `UnitMetrics` fields are filled in here so the caller
-/// only has to forward what the language-specific file-metrics struct already
-/// computed.
 #[derive(Clone, Copy)]
 pub(crate) struct FileScopeMetrics {
     pub lines: usize,

@@ -1,5 +1,3 @@
-//! `kiss __coverage --all` must not emit coverage violations for test modules.
-//! Test files are witness sources, not production gate targets.
 
 use crate::common::seed_python_runtime_coverage;
 use std::fs;

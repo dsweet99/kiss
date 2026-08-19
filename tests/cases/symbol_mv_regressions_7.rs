@@ -1,14 +1,3 @@
-//! Regression: `kiss mv` must not rewrite identifier occurrences inside
-//! comments or string literals in files other than the moved-definition body.
-//!
-//! Existing test `regression_move_rename_should_not_touch_comments_or_strings`
-//! (`symbol_mv_regressions_3.rs`) only covers the moved-definition body, which
-//! is filtered through `rename_definition_text` -> `is_code_offset`. The
-//! reference-edit path (`collect_reference_edits` /
-//! `collect_source_rename_edits`) has no string/comment awareness, so it
-//! corrupts comments and string literals in other files.
-//!
-//! See `_kpop/exp_log_mv_serious_bug_2.md` (H1).
 
 use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};

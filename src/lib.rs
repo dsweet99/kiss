@@ -1,4 +1,3 @@
-//! Library crate for kiss metrics and analysis.
 
 #![allow(clippy::redundant_pub_crate)]
 #![allow(clippy::must_use_candidate)]

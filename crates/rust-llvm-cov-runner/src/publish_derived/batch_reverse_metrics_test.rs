@@ -1,4 +1,3 @@
-//! Unit tests for reverse-index telemetry counters and metric keys.
 
 use crate::publish_derived::batch_entry_state::publish_next_entry_state;
 use crate::plan::batch_fingerprint::entry_fingerprint;

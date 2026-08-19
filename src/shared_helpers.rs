@@ -1,11 +1,9 @@
-//! Tiny identical helpers shared across coverage/cache call sites.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Collect present environment variables for an allowlist of keys.
 pub fn env_map_from_allowlist(keys: &[&str]) -> BTreeMap<String, String> {
     keys.iter()
         .filter_map(|key| {
@@ -16,12 +14,6 @@ pub fn env_map_from_allowlist(keys: &[&str]) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// PYTHONPATH for Python coverage/cache identity.
-///
-/// When unset, empty, or pointing at paths that do not include this repo root,
-/// defaults to the canonical repo root. Otherwise a shell that exported another
-/// project's PYTHONPATH (common when driving `kiss test` from a different tree)
-/// would invalidate warm populations and re-run thousands of selectors.
 pub fn pythonpath_for_coverage_identity(repo_root: &Path) -> String {
     let root = repo_root
         .canonicalize()
@@ -42,7 +34,6 @@ fn pythonpath_contains_repo_root(pythonpath: &str, root: &Path) -> bool {
     })
 }
 
-/// Coverage-identity env map for Python (`PYTHONPATH` only, normalized).
 pub fn python_coverage_env_map(repo_root: &Path) -> BTreeMap<String, String> {
     BTreeMap::from([(
         "PYTHONPATH".to_string(),
@@ -50,7 +41,6 @@ pub fn python_coverage_env_map(repo_root: &Path) -> BTreeMap<String, String> {
     )])
 }
 
-/// Sorted `entries/*.json` paths under a coverage/cache root.
 pub fn json_entry_paths(cache_root: &Path) -> Vec<PathBuf> {
     let entries_dir = cache_root.join("entries");
     let Ok(entries) = fs::read_dir(entries_dir) else {
@@ -68,9 +58,6 @@ pub fn json_entry_paths(cache_root: &Path) -> Vec<PathBuf> {
     paths
 }
 
-/// Build a `git` Command rooted at `repo` with parent-process `GIT_*`
-/// overrides removed so wrappers (notably pre-commit) cannot redirect
-/// kiss into the wrapper's index/worktree.
 pub fn scrubbed_git_command(repo: &Path) -> Command {
     let mut c = Command::new("git");
     c.current_dir(repo)

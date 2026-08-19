@@ -1,4 +1,3 @@
-//! Regression tests for include! rollup and graph edge resolution.
 
 use kiss::config::Config;
 use kiss::rust_counts::{analyze_rust_file, analyze_rust_file_include_rollup};

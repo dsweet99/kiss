@@ -257,8 +257,6 @@ fn coverage_refresh_error_constructors_and_display_cover_all_arms() {
     assert!(exec.to_string().contains("1/3"));
 }
 
-/// Log label: finalize_population_summary_labeled with a kiss-test caller label does not
-/// emit a hard-coded "kiss cov:" prefix. The label is passed through to the eprintln output.
 #[test]
 fn finalize_population_summary_labeled_uses_caller_label_not_kiss_cov() {
 

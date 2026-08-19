@@ -1,4 +1,3 @@
-//! Configuration loading and threshold merging.
 
 mod error;
 mod keys;

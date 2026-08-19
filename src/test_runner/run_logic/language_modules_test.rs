@@ -363,9 +363,6 @@ fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
     assert_eq!(summary.total, selectors.len());
 }
 
-/// Aggregate selection scope: records that aggregate-only cached coverage may
-/// conservatively select the full population for a PATH::symbol request.
-/// This test does not claim per-test attribution from the aggregate cache.
 #[test]
 fn aggregate_selection_scope_is_conservative_not_per_test() {
 

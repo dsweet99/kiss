@@ -117,10 +117,6 @@ fn run_target_runner_shim_after_redirect(
 pub(crate) const PROFILE_POOL_ENV: &str = "KISS_RUST_COVERAGE_PROFILE_POOL";
 pub(crate) const PROFILE_POOL_FILE_PATTERN: &str = "pool-%32m.profraw";
 
-/// Profile sink for one shim instance.
-///
-/// CheckAggregate pool mode uses a **per-test-binary** subdirectory so online
-/// `%Nm` merge pools do not mix coverage from unrelated test executables.
 pub(crate) fn profile_path_for_instance(
     output_dir: &Path,
     instance_id: &str,
@@ -189,10 +185,6 @@ fn run_delegated_child(
     ))
 }
 
-/// CheckAggregate pool mode: skip handshake + output capture.
-///
-/// Population only needs exit status and per-binary `LLVM_PROFILE_FILE` sinks.
-/// The full piped/handshake path dominates cold `kiss cov` wall time.
 fn run_delegated_child_pool_fast(
     delegated: &[String],
     command: &[OsString],

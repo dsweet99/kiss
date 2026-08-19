@@ -1,9 +1,6 @@
 use kiss::Config;
 use kiss::graph::{DependencyGraph, analyze_graph};
 
-/// Bug H5: If the same file path appears under two different module names
-/// in the dependency graph, `analyze_graph` should deduplicate by path
-/// and not produce phantom orphan violations.
 #[test]
 fn same_path_two_module_names_no_phantom_orphan() {
     let mut g = DependencyGraph::new();

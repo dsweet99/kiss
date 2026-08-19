@@ -1,4 +1,3 @@
-//! Settle state machine: trailing-edge quiet + metadata age.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -101,10 +100,6 @@ impl SettleMachine {
         self.deadline = Some(now + self.settle);
     }
 
-    /// Skip the quiet period and return pending paths (or `ScopeDirty`) immediately.
-    ///
-    /// Idle with an empty pending set is not handled here: callers should run a cycle
-    /// directly instead of calling `force_ready`.
     pub(crate) fn force_ready(
         &mut self,
         now: Instant,

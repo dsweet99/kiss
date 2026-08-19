@@ -1,4 +1,3 @@
-//! Generation currentness helpers used by planning and publication.
 
 use std::path::Path;
 
@@ -17,9 +16,6 @@ pub(crate) fn current_complete_generation_matches(
     }
 }
 
-/// Identity + selector-universe match, including incomplete generations.
-/// Planning uses this so warm incomplete sameq-scale suites stay selective; the
-/// ensure kernel owns incomplete repair/reporting.
 pub(crate) fn current_generation_plan_matches(
     repo_root: &Path,
     selectors: &[String],

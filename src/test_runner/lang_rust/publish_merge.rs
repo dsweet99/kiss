@@ -1,4 +1,3 @@
-//! Merge helpers for Rust ensure-publish.
 
 use std::collections::{BTreeMap, BTreeSet};
 

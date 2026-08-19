@@ -1,4 +1,3 @@
-//! Additional OS-process reverse races: post-manifest lock, kill/repair, prune.
 
 use crate::execute_or_reuse::batch_lock::lock_batch;
 use crate::publish_derived::batch_reverse_process_race_support::{

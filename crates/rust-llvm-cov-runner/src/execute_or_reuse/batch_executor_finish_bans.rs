@@ -1,4 +1,3 @@
-//! Zero-limit ban handling for fresh-batch finish aggregation.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -9,8 +8,6 @@ use crate::{
     batch_plan::RustCoverageBatchRequest,
 };
 
-/// Aggregate runnable selectors, then insert TIMEOUT for zero-limit bans without
-/// counting bans as unmatched (they are intentionally not executed).
 pub(crate) fn aggregate_with_zero_limit_bans(
     req: &RustCoverageBatchRequest,
     exact: bool,

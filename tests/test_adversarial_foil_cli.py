@@ -1,4 +1,3 @@
-"""Tests for adversarial foil CLI invocation."""
 
 from __future__ import annotations
 

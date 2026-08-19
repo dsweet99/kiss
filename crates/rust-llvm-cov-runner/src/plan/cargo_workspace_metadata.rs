@@ -211,7 +211,6 @@ impl WorkspaceMetadata {
         closure
     }
 
-    /// Returns `None` when the `.rs` path cannot be classified conservatively.
     pub(crate) fn rs_compile_time_classification(
         &self,
         source_root: &Path,
@@ -266,7 +265,6 @@ impl WorkspaceMetadata {
         }
     }
 
-    /// Repository-relative crate root for a nested non-member local Cargo package.
     pub(crate) fn non_member_local_crate_root(
         &self,
         source_root: &Path,
@@ -301,8 +299,6 @@ impl WorkspaceMetadata {
         (!rel.is_empty()).then_some(rel)
     }
 
-    /// True when `file` sits under a local `Cargo.toml` that is not any package
-    /// known to this cargo metadata (nested non-member / foreign crate).
     #[cfg(test)]
     pub(crate) fn is_non_member_local_crate_source(
         &self,

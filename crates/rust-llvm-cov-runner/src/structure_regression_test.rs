@@ -1,4 +1,3 @@
-//! Structure regression tests for Proposal 2 call-flow packages.
 
 use std::path::PathBuf;
 

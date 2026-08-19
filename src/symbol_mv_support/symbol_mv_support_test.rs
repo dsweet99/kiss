@@ -1,4 +1,3 @@
-//! Unit tests for `symbol_mv_support` (separate file so `kiss` skips it for size rules).
 
 use std::fs;
 use std::path::Path;

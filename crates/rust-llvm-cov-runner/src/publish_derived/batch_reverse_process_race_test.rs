@@ -1,4 +1,3 @@
-//! OS-process races for reverse snapshot publication (flock + rename semantics).
 
 use crate::publish_derived::batch_entry_state::read_entry_state;
 use crate::execute_or_reuse::batch_lock::lock_batch;

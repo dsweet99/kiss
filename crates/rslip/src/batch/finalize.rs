@@ -60,8 +60,6 @@ fn handle_rslip_miss_result_once(
     finalize_cacheable_miss_outcome(miss, rslip_outcome)
 }
 
-/// Keep child stderr (e.g. ignored atexit coverage-write failures) and append
-/// the synthetic missing-artifact line. Empty child stderr yields only that line.
 fn missing_artifact_stderr(child_stderr: &[u8], name: &str) -> String {
     let mut combined = String::from_utf8_lossy(child_stderr).into_owned();
     if !combined.is_empty() && !combined.ends_with('\n') {
@@ -123,7 +121,6 @@ fn finalize_status_miss_outcome(
     finalize_cacheable_miss_outcome(miss, rslip_outcome)
 }
 
-/// Lock, recheck for a concurrent cache entry, then store this outcome if still missing.
 fn finalize_cacheable_miss_outcome(
     miss: &RslipMiss,
     outcome: RslipOutcome,

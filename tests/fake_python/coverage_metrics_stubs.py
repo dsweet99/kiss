@@ -1,4 +1,3 @@
-"""Shared PATH stubs for coverage_metrics tests."""
 
 from __future__ import annotations
 

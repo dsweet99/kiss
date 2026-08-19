@@ -1,4 +1,3 @@
-//! Parse a single `PATH` or `PATH::symbol` test target.
 
 use std::path::{Path, PathBuf};
 
@@ -10,7 +9,6 @@ pub(crate) struct ParsedTestTarget {
     pub path: PathBuf,
     pub symbol: Option<String>,
     pub member: Option<String>,
-    /// Full pytest nodeid when the operand uses class `::` and/or `[params]`.
     pub python_nodeid: Option<String>,
     pub language: Language,
 }

@@ -11,7 +11,6 @@ use kiss::{
 
 use crate::analyze::focus::gather_files;
 
-/// Inputs for [`run_dry`].
 pub struct DryRunParams<'a> {
     pub path: &'a str,
     pub filter_files: &'a [String],

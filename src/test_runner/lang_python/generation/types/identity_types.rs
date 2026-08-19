@@ -1,4 +1,3 @@
-//! Execution identity and coverage map aliases.
 
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -1,7 +1,3 @@
-//! Cycle-scoped memo for `current_python_execution_identity`.
-//!
-//! Plan, ensure, and cov must share one identity per watch/test cycle so the
-//! Python tree is not walked separately with divergent results.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -16,7 +12,6 @@ struct IdentityMemoEntry {
     identity: PythonExecutionIdentity,
 }
 
-/// Clear the execution-identity memo. Call at the start of each test/watch cycle.
 pub(crate) fn clear_python_execution_identity_memo() {
     if let Ok(mut guard) = IDENTITY_MEMO.lock() {
         *guard = None;

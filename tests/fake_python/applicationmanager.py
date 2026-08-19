@@ -1,4 +1,3 @@
-"""A 'God Class' that does way too many unrelated things."""
 
 import re
 import smtplib
@@ -21,19 +20,6 @@ def _validate_identifier(identifier: str) -> str:
 
 
 class ApplicationManager:
-    """
-    This class violates Single Responsibility Principle badly.
-    It handles:
-    - Database operations
-    - Email sending
-    - File I/O
-    - Configuration management
-    - User session management
-    - Logging
-    - Caching
-    - API calls
-    - Report generation
-    """
 
     def __init__(self, config_path: str = "config.json"):
         self.config_path = config_path

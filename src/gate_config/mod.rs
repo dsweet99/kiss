@@ -10,7 +10,6 @@ use crate::defaults;
 use std::fmt;
 use std::path::Path;
 
-/// Which coverage surface `kiss cov` compares to `test_coverage_threshold`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TestCoverageScope {
     ByFile,
@@ -43,7 +42,6 @@ impl fmt::Display for TestCoverageScope {
     }
 }
 
-/// Keys that live under `[global]` in `.kissconfig`.
 const GLOBAL_KEYS: &[&str] = &[
     "min_similarity",
     "duplication_enabled",
@@ -61,17 +59,12 @@ test_coverage_scope/max_unit_test_seconds/max_num_tests under [test]";
 pub struct GateConfig {
     pub test_coverage_threshold: usize,
     pub test_coverage_scope: TestCoverageScope,
-    /// Ordered path-pattern → seconds limits; last entry must be `"*"`.
     pub max_unit_test_seconds: Vec<(String, f64)>,
-    /// Maximum number of unit tests in the current population.
-    /// `0` means any test count greater than zero fails.
     pub max_num_tests: usize,
     pub min_similarity: f64,
     pub duplication_enabled: bool,
     pub orphan_module_enabled: bool,
     pub comment_removal_enabled: bool,
-    /// Directory prefixes, relative to the repository root, where Python docstrings
-    /// and Rust doc comments are allowed. Empty allows documentation in no directory.
     pub docs_allowed: Vec<String>,
 }
 
@@ -126,10 +119,6 @@ impl GateConfig {
         config
     }
 
-    /// Try to load gate config from a file, returning an error on failure.
-    ///
-    /// This is the Result-based API for library embedding. Unlike `load_from`,
-    /// this function returns errors instead of printing to stderr.
     pub fn try_load_from(path: &Path) -> Result<Self, ConfigError> {
         let content = std::fs::read_to_string(path).map_err(|e| ConfigError::IoError {
             path: path.display().to_string(),
@@ -138,10 +127,6 @@ impl GateConfig {
         Self::try_load_from_content(&content)
     }
 
-    /// Try to load gate config from TOML content, returning an error on failure.
-    ///
-    /// This is the Result-based API for library embedding. Unlike the internal merge,
-    /// this function returns errors instead of printing to stderr.
     pub fn try_load_from_content(content: &str) -> Result<Self, ConfigError> {
         let mut config = Self::default();
         config.try_merge_from_toml(content)?;
@@ -168,7 +153,6 @@ impl GateConfig {
         }
     }
 
-    /// Result-based merge that returns errors instead of printing to stderr.
     fn try_merge_from_toml(&mut self, toml_str: &str) -> Result<(), ConfigError> {
         let value = toml_str
             .parse::<toml::Table>()

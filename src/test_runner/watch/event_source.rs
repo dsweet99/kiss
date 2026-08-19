@@ -1,4 +1,3 @@
-//! Watch event source abstraction and notify adapter.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
@@ -125,7 +124,6 @@ pub(crate) fn format_watch_setup_error(err: &notify::Error, root: &Path) -> Stri
     }
 }
 
-/// Fake event source for unit tests.
 #[cfg(test)]
 pub(crate) struct FakeWatchEventSource {
     pub events: Vec<NormalizedWatchEvent>,

@@ -1,4 +1,3 @@
-//! Build edit plans for `kiss mv`.
 
 use std::collections::BTreeSet;
 use std::fs;

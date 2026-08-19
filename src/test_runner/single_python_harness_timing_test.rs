@@ -1,4 +1,3 @@
-//! Single explicit Python `kiss test` harness timing (temp repo, not sameq).
 
 use std::fs;
 use std::io::{BufRead, BufReader, Write};

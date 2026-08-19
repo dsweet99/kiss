@@ -1,4 +1,3 @@
-//! Additional Python regressions for parser-first `kiss mv`.
 
 use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};

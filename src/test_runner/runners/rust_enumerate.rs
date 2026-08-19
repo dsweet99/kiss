@@ -1,4 +1,3 @@
-//! Cold-plan Rust workspace selector enumeration.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -30,8 +29,6 @@ pub fn enumerate_workspace_rust_selectors(
     Ok(selectors.into_iter().collect())
 }
 
-/// Map nextest-style logical selectors (`tests::fn`) to `kiss test` PATH::symbol
-/// ids (`path/file.rs::fn`) for PASS/FAIL/TIMEOUT reporting.
 pub(crate) fn rust_logical_to_kiss_test_ids(
     repo_root: &Path,
     ignore: &[String],

@@ -1,4 +1,3 @@
-"""Parse kiss __coverage --all output into per-file coverage percentages."""
 
 from __future__ import annotations
 

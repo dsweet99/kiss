@@ -1,4 +1,3 @@
-//! Shared stdout capture for unit tests that assert printed recap/progress lines.
 
 use std::io::{Read, Write};
 use std::sync::Mutex;

@@ -22,8 +22,6 @@ pub(crate) struct RslipCacheEntry {
     pub(crate) exit_code: Option<i32>,
     pub(crate) duration: std::time::Duration,
     pub(crate) coverage: LineCoverage,
-    /// Content digests for covered files plus the test module path (keyed as stored
-    /// in coverage / as the nodeid module path). Empty coverage ⇒ never reusable.
     #[serde(default)]
     pub(crate) covered_digests: BTreeMap<String, String>,
 }
@@ -53,7 +51,6 @@ pub(crate) fn load_rslip_cache_entry(
     (entry.schema_version == CACHE_SCHEMA_VERSION).then_some(entry)
 }
 
-/// Load a cache entry that is still valid under coverage-gated reuse rules.
 pub(crate) fn load_reusable_rslip_cache_entry(
     cache_root: &Path,
     fingerprint: &str,
@@ -123,7 +120,6 @@ pub(crate) fn rslip_request_context_fingerprint(req: &RslipRequest) -> io::Resul
     compute_rslip_request_context_fingerprint(req)
 }
 
-/// Tool/args/env identity only (no whole-tree source hash). Hit/miss uses covered digests.
 fn compute_rslip_request_context_fingerprint(req: &RslipRequest) -> io::Result<String> {
     let mut h = rslip_fnv1a64(0xcbf2_9ce4_8422_2325, CACHE_SCHEMA_VERSION.as_bytes());
     h = rslip_fnv1a64(h, req.python.to_string_lossy().as_bytes());
@@ -155,9 +151,6 @@ pub(crate) fn rslip_cache_fingerprint_from_context(
     format!("{h:016x}")
 }
 
-/// Digest map for every digestable covered file path plus the test module when present.
-/// Returns `None` when coverage is empty or a digestable covered file is missing on disk.
-/// Synthetic / non-file keys (`<frozen …>`, `.kiss/…`, `[type …]`) are omitted.
 pub(crate) fn covered_file_digests(
     source_root: &Path,
     nodeid: &str,

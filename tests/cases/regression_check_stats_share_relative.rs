@@ -1,14 +1,3 @@
-//! Regression for `kiss check` and `kiss stats` not sharing the analyze
-//! cache when invoked with a *relative* path argument (the default).
-//!
-//! Before the fix, `kiss check` canonicalized discovered file paths
-//! (`src/analyze/focus.rs::gather_files`) while `kiss stats`'s
-//! `collect_files` did not, so the two commands hashed different path
-//! strings into `fingerprint_for_check` and produced two separate
-//! `check_full_*.bin` files when the input root was relative (`.`).
-//! After the fix (use `kiss::discovery::gather_files_by_lang` in stats),
-//! both commands produce the same fingerprint and share one cache file.
-//! See `_kpop/exp_log_check_stats_share.md` (round 2).
 
 use crate::common::{list_full_check_cache_files, seed_python_runtime_coverage};
 use std::fs;

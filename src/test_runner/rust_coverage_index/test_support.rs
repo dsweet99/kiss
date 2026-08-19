@@ -56,7 +56,6 @@ pub(crate) fn write_test_entry_with_args(
     rust_llvm_cov_runner::invalidate_entry_state(&rust_coverage_cache_root(repo_root));
 }
 
-/// Thin facade: publish population/index via the crate owner (no kiss-side JSON writer).
 pub(crate) fn write_rust_population_manifest_for_args(
     repo_root: &Path,
     selectors: &[String],

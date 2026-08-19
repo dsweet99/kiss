@@ -1,4 +1,3 @@
-"""Tests for adversarial fix command and metrics_pass."""
 
 from __future__ import annotations
 

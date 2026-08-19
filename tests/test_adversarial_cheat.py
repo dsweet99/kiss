@@ -1,4 +1,3 @@
-"""Tests for adversarial cheat command and verification."""
 
 from __future__ import annotations
 

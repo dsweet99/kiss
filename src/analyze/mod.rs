@@ -1,4 +1,3 @@
-//! Full-universe analysis: parsing, graphs, coverage, duplication, and reporting.
 
 mod cache;
 mod coverage;

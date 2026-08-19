@@ -49,22 +49,17 @@ enum PublishedRuntime {
     Error(io::ErrorKind, String),
 }
 
-/// Progress events emitted while a bounded rslip batch runs.
 #[derive(Debug)]
 pub enum RslipBatchProgress {
-    /// Cache prepare finished; misses still need pytest execution.
     Prepared {
         cache_hits: usize,
         cache_misses: usize,
         elapsed: Duration,
     },
-    /// One or more selectors finalized (print payload only).
     SelectorFinalized {
         outcomes: Vec<(usize, Result<RslipOutcome, RslipError>)>,
     },
-    /// Preformatted cached status lines (warm-hit seal path).
     CachedStatusDump { body: String },
-    /// Miss-work heartbeat (`tests_remaining=`).
     TestsRemaining { remaining: usize },
 }
 

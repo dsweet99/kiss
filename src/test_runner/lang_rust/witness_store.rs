@@ -1,4 +1,3 @@
-//! Rust on-disk execution witness (pinned Full authority).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -136,7 +135,6 @@ fn order_witness_rows(
     )
 }
 
-/// Keep the existing Full pointer when a same-identity publish would shrink it.
 fn refuse_full_shrink(
     repo_root: &Path,
     identity_digest: &str,
@@ -278,7 +276,6 @@ pub(crate) fn try_warm_rust_cached_summary(
     ))
 }
 
-/// Warm accept, else return the miss-set when a compatible witness exists.
 pub(crate) fn rust_warm_or_miss_selectors(
     repo_root: &Path,
     planned_selectors: &[String],

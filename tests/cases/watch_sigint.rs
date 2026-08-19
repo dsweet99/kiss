@@ -1,4 +1,3 @@
-//! Subprocess SIGINT acceptance for foreground `kiss test --watch`.
 
 #![cfg(unix)]
 

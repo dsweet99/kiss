@@ -1,4 +1,3 @@
-//! Second file with duplicated code (nearly identical to duplicate1.rs)
 
 pub fn process_customer_data(name: &str, age: i32, email: &str) -> String {
     let validated_name = name.trim().to_uppercase();

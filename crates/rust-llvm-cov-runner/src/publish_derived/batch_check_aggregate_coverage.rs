@@ -8,10 +8,6 @@ use super::{
 };
 use crate::RustLineCoverage;
 
-/// Selector line maps from a stored check-aggregate for `generation_fingerprint`.
-///
-/// CheckAggregate entries no longer duplicate per-binary coverage. Covering-test
-/// selection reconstructs the same union that `attach_binary_line_maps` used.
 pub fn selector_coverage_from_check_aggregate_generation(
     cache_root: &Path,
     generation_fingerprint: &str,

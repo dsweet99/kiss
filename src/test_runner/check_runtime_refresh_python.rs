@@ -1,4 +1,3 @@
-//! Python incomplete-generation repair and full cold refresh for `kiss test`.
 
 use std::path::Path;
 

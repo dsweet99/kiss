@@ -1,4 +1,3 @@
-//! Python AST metrics for kiss.
 
 mod body_walk;
 mod compute;

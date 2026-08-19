@@ -1,8 +1,6 @@
-//! Shared formatting for fresh test-execution durations.
 
 use std::time::Duration;
 
-/// Round `duration` to two decimal places and append `s` (e.g. `0.00s`, `12.34s`).
 pub(crate) fn format_test_duration(duration: Duration) -> String {
     let secs = duration.as_secs_f64();
     format!("{secs:.2}s")

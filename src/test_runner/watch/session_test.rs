@@ -8,7 +8,6 @@ use std::collections::VecDeque;
 use std::env;
 use std::time::Duration;
 
-/// Event source that plays a scripted sequence (settle / disconnect tests).
 struct SettleScript {
     steps: VecDeque<Result<Vec<NormalizedWatchEvent>, RecvTimeout>>,
 }

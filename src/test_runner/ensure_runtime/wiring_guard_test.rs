@@ -1,4 +1,3 @@
-//! Grep-style wiring guards for retired bypass patterns.
 
 #[test]
 fn cov_python_refresh_uses_factory_and_planning_api() {

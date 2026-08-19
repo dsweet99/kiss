@@ -1,8 +1,3 @@
-//! Compact Python population wall-duration sidecar for warm `kiss cov` time gates.
-//!
-//! Authoritative durations live in per-selector rslip entry JSON. Loading thousands
-//! of full coverage entries (and re-validating digests) dominates warm wall time,
-//! so derived state publishes a small sidecar keyed to the current population.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -27,9 +22,7 @@ struct PopulationDurationsFile {
     cache_schema_version: String,
     input_fingerprint: String,
     entries_fingerprint: String,
-    /// Wall durations in nanoseconds, parallel to `population.json` selectors.
     durations_ns: Vec<u64>,
-    /// `durations_ns.iter().copied().max()` — warm catch-all time gates only need this.
     max_duration_ns: u64,
 }
 
@@ -37,11 +30,6 @@ fn population_durations_path(cache_root: &Path) -> PathBuf {
     cache_root.join("population_durations.json")
 }
 
-/// Load validated wall durations for every selector in the current Python population.
-///
-/// Prefers `population_durations.json` when it matches the population identity.
-/// On miss, probes per-selector entry durations (without coverage/digest work) and
-/// publishes the sidecar for the next warm load.
 pub(crate) fn load_current_python_population_durations(
     repo_root: &Path,
     pytest_args: &[String],
@@ -78,9 +66,6 @@ pub(crate) fn load_current_python_population_durations(
     Some(pairs)
 }
 
-/// Load only the max wall duration for the current Python population.
-///
-/// Warm catch-all (`"*"`) time gates use this to avoid cloning thousands of selectors.
 pub(crate) fn load_current_python_population_max_duration(
     repo_root: &Path,
     pytest_args: &[String],
@@ -140,7 +125,6 @@ pub(crate) fn load_current_python_population_max_duration(
     Some(Duration::from_nanos(file.max_duration_ns))
 }
 
-/// Path-prefix max durations for multi-pattern warm time gates.
 pub(crate) fn load_current_python_population_path_maxes(
     repo_root: &Path,
     pytest_args: &[String],
@@ -173,7 +157,6 @@ struct PopulationIdentityOnly {
     entries_fingerprint: String,
 }
 
-/// Publish durations for the just-written population (best-effort).
 #[allow(dead_code)]
 pub(crate) fn try_publish_python_population_durations(
     repo_root: &Path,
@@ -279,7 +262,6 @@ fn load_durations_from_entry_probes(
     load_durations_from_entry_probes_inner(repo_root, pytest_args, selectors, true)
 }
 
-/// Like [`load_durations_from_entry_probes`], but keeps durations for non-Passed entries.
 pub(crate) fn load_durations_from_entry_probes_allow_non_passed(
     repo_root: &Path,
     pytest_args: &[String],

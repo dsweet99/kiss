@@ -1,4 +1,3 @@
-//! Materialize generation evidence from cached selector outcomes.
 
 use std::path::Path;
 
@@ -26,8 +25,6 @@ pub(crate) fn materialize_and_publish_from_cached_outcomes(
     Ok((plan, generation_id))
 }
 
-/// Load evidence deltas for a subset of selectors from cached outcomes.
-/// Missing outcomes are omitted (caller treats them as unresolved / fail-closed).
 pub(crate) fn selector_deltas_from_cached_outcomes(
     repo_root: &Path,
     selectors: &[String],

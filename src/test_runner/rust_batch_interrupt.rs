@@ -1,4 +1,3 @@
-//! Process-wide flag set when a Rust coverage batch is interrupted (Ctrl-C).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 

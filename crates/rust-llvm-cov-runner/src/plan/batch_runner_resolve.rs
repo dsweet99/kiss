@@ -14,7 +14,6 @@ pub const RUNNER_RESOLVER_POLICY_VERSION: &str = "runner-resolve-v1";
 const RUNNER_RESOLVE_CACHE_SCHEMA: &str = "rust-runner-resolve-v1";
 const RUNNER_RESOLVE_CACHE_FILE: &str = "runner_resolve_cache.json";
 
-/// Platform key (Cargo target triple) to delegated runner argv before KISS shim wrapping.
 pub type DelegatedRunnerMap = BTreeMap<String, Vec<String>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

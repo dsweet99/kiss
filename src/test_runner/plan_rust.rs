@@ -1,4 +1,3 @@
-//! Rust population currentness for warm `kiss test .` planning.
 
 use crate::test_runner::execution_witness::{
     rust_identity_digest_from_batch, try_load_rust_execution_witness,

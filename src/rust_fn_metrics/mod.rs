@@ -89,10 +89,6 @@ fn add_import_names(out: &mut RustFileMetrics, tree: &syn::UseTree) {
     out.imports += count_use_names(tree);
 }
 
-/// Returns true if the module has a `#[cfg(test)]` or similar attribute indicating test code.
-///
-/// Handles compound expressions like `#[cfg(all(test, ...))]` and negations
-/// like `#[cfg(not(test))]` (returns false) and `#[cfg(not(not(test)))]` (returns true).
 pub fn is_cfg_test_mod(m: &syn::ItemMod) -> bool {
     m.attrs.iter().any(|attr| {
         if !attr.path().is_ident("cfg") {
@@ -142,16 +138,11 @@ fn contains_test_ident(tokens: proc_macro2::TokenStream, negated: bool) -> bool 
     false
 }
 
-/// Count attributes excluding doc comments (`#[doc = "..."]` / `///` lowered to `doc`).
-///
-/// Matches `kiss check` / `annotations_per_function` so stats and detailed output use the same rule.
 #[must_use]
 pub fn count_non_doc_attrs(attrs: &[syn::Attribute]) -> usize {
     attrs.iter().filter(|a| !a.path().is_ident("doc")).count()
 }
 
-/// Count the number of individual names imported by a `use` tree.
-/// `use foo::bar;` → 1, `use foo::{bar, baz};` → 2, `use foo::*;` → 1 (glob counts as 1).
 fn count_use_names(tree: &syn::UseTree) -> usize {
     match tree {
         syn::UseTree::Path(p) => count_use_names(&p.tree),

@@ -1,4 +1,3 @@
-//! Memoized covered-file digests for batch prepare.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -9,7 +8,6 @@ use super::{
 };
 use crate::LineCoverage;
 
-/// Memoized covered-file digests for a batch prepare (paths → digest or missing).
 pub(crate) type DigestMemo = std::collections::HashMap<String, Option<String>>;
 
 pub(crate) fn digest_recorded_path_memo(

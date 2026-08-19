@@ -31,7 +31,6 @@ pub struct RustCoverageBatchCounters {
 }
 
 impl RustCoverageBatchCounters {
-    /// Copy process reverse hit / unavailable deltas into this batch result.
     pub fn incorporate_process_reverse_query_counters(&mut self) {
         let delta = take_reverse_query_counters_since_last_copy();
         self.reverse_query_hits += delta.hits;

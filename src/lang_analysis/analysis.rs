@@ -1,8 +1,6 @@
-//! Shared language-understanding identity.
 
 use crate::discovery::Language;
 
-/// Shared language-understanding identity for analysis stacks.
 pub trait LanguageAnalysis {
     fn language(&self) -> Language;
 }

@@ -1,4 +1,3 @@
-//! Compact generation durations for warm time gates.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -49,7 +48,6 @@ pub(crate) fn try_load_generation_max_duration(repo_root: &Path) -> Option<Durat
     Some(load_memoized(repo_root)?.max)
 }
 
-/// Path → max duration rows for multi-prefix warm time gates (no full pair materialization).
 pub(crate) fn try_load_generation_path_maxes(
     repo_root: &Path,
 ) -> Option<Vec<PathMaxDuration>> {
@@ -118,10 +116,6 @@ fn load_memoized(repo_root: &Path) -> Option<LoadedDurations> {
     })
 }
 
-/// Fast path: read only `durations.json` when `path_maxes` is already present.
-///
-/// Does not populate the pairs memo with an empty vector (avoids poisoning a
-/// later `try_load_generation_durations_pairs` call in the same process).
 pub(crate) fn try_load_generation_path_maxes_only(
     repo_root: &Path,
 ) -> Option<Vec<PathMaxDuration>> {

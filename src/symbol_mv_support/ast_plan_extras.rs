@@ -1,7 +1,3 @@
-//! Auxiliary planner helpers split out of `ast_plan.rs` to keep that file
-//! under the `lines_per_file` gate. Covers ambiguity detection, shadowing
-//! ranges, owner-aware reference filtering, and the parse-failure warning
-//! sink (one line per file per `kiss mv` invocation).
 
 use std::cell::RefCell;
 use std::collections::HashSet;

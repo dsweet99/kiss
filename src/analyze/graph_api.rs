@@ -7,21 +7,18 @@ use kiss::lang_analysis::{
     LanguageGraph, LanguageParser, PythonAnalysis, RustAnalysis, build_graphs as build_lang_graphs,
 };
 
-/// Config bundle for graph orphan analysis on Python and Rust graphs.
 pub struct GraphConfigs<'a> {
     pub py_config: &'a Config,
     pub rs_config: &'a Config,
     pub gate: &'a GateConfig,
 }
 
-/// Inputs for [`analyze_graphs`].
 pub struct AnalyzeGraphsIn<'a> {
     pub py_graph: Option<&'a DependencyGraph>,
     pub rs_graph: Option<&'a DependencyGraph>,
     pub configs: GraphConfigs<'a>,
 }
 
-/// Pick the Python or Rust graph for a source file path based on extension.
 #[allow(dead_code)]
 pub fn graph_for_path<'a>(
     path: &Path,
@@ -41,7 +38,6 @@ pub fn graph_for_path<'a>(
     })
 }
 
-/// Build a Python dependency graph from a list of Python file paths.
 pub fn build_py_graph_from_files(py_files: &[PathBuf]) -> std::io::Result<DependencyGraph> {
     let results = PythonAnalysis
         .parse_many(py_files)
@@ -50,7 +46,6 @@ pub fn build_py_graph_from_files(py_files: &[PathBuf]) -> std::io::Result<Depend
     Ok(PythonAnalysis.build_graph(&parsed))
 }
 
-/// Build a Rust dependency graph from a list of Rust file paths.
 pub fn build_rs_graph_from_files(rs_files: &[PathBuf]) -> DependencyGraph {
     let results = RustAnalysis
         .parse_many(rs_files)
@@ -125,7 +120,6 @@ mod graph_for_path_extension_tests {
     use kiss::DependencyGraph;
     use std::path::Path;
 
-    /// Regression: `Path::extension()` preserves casing (e.g. `.PY`); matching must be ASCII-insensitive.
     #[test]
     fn graph_for_path_accepts_uppercase_py_and_rs_extensions() {
         let py = DependencyGraph::new();

@@ -1,4 +1,3 @@
-//! `kiss cov` unit-test time-gate evaluation (sole-`*` and multi-prefix path-max).
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -23,7 +22,6 @@ pub(crate) struct CovTimeGateOpts<'a> {
     pub(crate) pytest_args: &'a [String],
 }
 
-/// Evaluate the unit-test time gate for `kiss cov`, with a fast path for sole `"*"`.
 pub(crate) fn evaluate_cov_time_gate(opts: CovTimeGateOpts<'_>) -> RuntimeGateEval {
     if opts.limits.is_empty() {
         return RuntimeGateEval::Disabled;
@@ -49,7 +47,6 @@ pub(crate) fn evaluate_cov_time_gate(opts: CovTimeGateOpts<'_>) -> RuntimeGateEv
     evaluate_runtime_gate(&timings, opts.limits)
 }
 
-/// Multi-prefix warm path: Python path→max rows + optional Rust pair scan.
 fn try_evaluate_multi_prefix_path_max_gate(opts: CovTimeGateOpts<'_>) -> Option<RuntimeGateEval> {
     let want_python = opts.include.python
         && matches!(opts.lang_filter, None | Some(Language::Python));

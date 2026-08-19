@@ -1,4 +1,3 @@
-//! Native watch entry: acquire lock, register FS source, run the loop.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;

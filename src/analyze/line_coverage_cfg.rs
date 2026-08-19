@@ -1,4 +1,3 @@
-//! cfg(active) helpers for Rust coverable-line walking.
 pub(super) fn stmt_cfg_active(stmt: &syn::Stmt) -> bool {
     match stmt {
         syn::Stmt::Local(local) => cfg_attrs_active(&local.attrs),
@@ -128,8 +127,6 @@ pub(super) fn cfg_attrs_active(attrs: &[syn::Attribute]) -> bool {
     })
 }
 
-/// True when an item is marked `#[doc = "kiss-coverage-off"]` (or, when stabilized,
-/// `#[coverage(off)]`) so it is excluded from the coverable-line denominator.
 pub(super) fn coverage_off_attrs(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(attr_marks_coverage_off)
 }

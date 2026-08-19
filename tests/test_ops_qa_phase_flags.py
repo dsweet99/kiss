@@ -34,11 +34,6 @@ def test_publication_writer_command_rust_aggregate_uses_dot_force() -> None:
 
 
 def test_force_publication_target_clears_cov_records_cache(tmp_path: Path) -> None:
-    """Forcing republication must invalidate the warm records cache.
-
-    Otherwise kiss test short-circuits on cov_records_cache.json and never
-    re-enters rslip/rust publication (breaking publication-crash barriers).
-    """
     kiss = tmp_path / ".kiss"
     kiss.mkdir()
     records = kiss / "cov_records_cache.json"

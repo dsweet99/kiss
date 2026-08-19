@@ -95,8 +95,6 @@ impl ForkserverController {
         outcome_from_response(response, request_id, timeout, started)
     }
 
-    /// Fast shutdown for batch Drop: do not wait on pytest unconfigure (can be
-    /// hundreds of ms on large suites). Best-effort shutdown message, then kill.
     pub(crate) fn shutdown(&mut self) {
         if self.shutting_down {
             return;
@@ -106,7 +104,6 @@ impl ForkserverController {
         force_reap(&mut self.child);
     }
 
-    /// Wait for graceful pytest unconfigure, then force-kill if needed.
     #[cfg(test)]
     pub(crate) fn shutdown_graceful(&mut self) {
         if self.shutting_down {

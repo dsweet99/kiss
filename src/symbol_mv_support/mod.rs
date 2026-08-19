@@ -1,4 +1,3 @@
-//! Helpers for `kiss mv`: identifier spans, reference filtering, transactional apply.
 
 mod ast_models;
 mod ast_plan;

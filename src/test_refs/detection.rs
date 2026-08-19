@@ -1,4 +1,3 @@
-//! Python test-file path detection.
 
 use std::path::Path;
 
@@ -20,10 +19,6 @@ pub fn is_test_file(path: &std::path::Path) -> bool {
     has_python_test_naming(path)
 }
 
-/// Files pytest should receive as explicit collect paths under ignore filtering.
-///
-/// Excludes `conftest.py` (loaded automatically by pytest) so multi-path
-/// collection does not treat every conftest as a top-level import target.
 #[must_use]
 pub fn is_pytest_nodeid_source_file(path: &Path) -> bool {
     let is_conftest = path

@@ -1,4 +1,3 @@
-//! Inline tests for `ast_rust.rs`. Split out per `lines_per_file` rule.
 
 use super::super::ast_models::{ParseOutcome, ReferenceKind, SymbolKind};
 use super::super::ast_rust_span::compute_line_offsets;

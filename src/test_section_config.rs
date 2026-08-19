@@ -20,9 +20,7 @@ pub struct TestSectionConfig {
     pub main_branch: Option<String>,
     pub num_jobs: usize,
     pub watch_settle_seconds: f64,
-    /// Explicit pytest plugin modules loaded via `-p` while plugin autoload is disabled.
     pub pytest_plugins: Vec<String>,
-    /// Directory subtrees or file path patterns excluded when collecting tests.
     pub ignore: Vec<String>,
 }
 
@@ -38,7 +36,6 @@ impl Default for TestSectionConfig {
     }
 }
 
-/// Expand plugin module names into pytest `-p` CLI pairs.
 pub fn pytest_plugin_cli_args(plugins: &[String]) -> Vec<String> {
     let mut args = Vec::with_capacity(plugins.len().saturating_mul(2));
     for plugin in plugins {
@@ -52,7 +49,6 @@ pub fn pytest_plugin_cli_args(plugins: &[String]) -> Vec<String> {
     args
 }
 
-/// Prefixed plugin `-p` args followed by caller `extra` args (Python-only).
 pub fn effective_python_pytest_args(plugins: &[String], extra: &[String]) -> Vec<String> {
     let mut args = pytest_plugin_cli_args(plugins);
     args.extend(extra.iter().cloned());
@@ -60,12 +56,10 @@ pub fn effective_python_pytest_args(plugins: &[String], extra: &[String]) -> Vec
 }
 
 impl TestSectionConfig {
-    /// Expand configured plugin modules into pytest `-p` CLI pairs.
     pub fn pytest_plugin_cli_args(&self) -> Vec<String> {
         pytest_plugin_cli_args(&self.pytest_plugins)
     }
 
-    /// Config `[test].ignore` entries followed by CLI `--ignore` prefixes, normalized.
     #[must_use]
     pub fn merged_ignore(&self, cli_ignore: &[String]) -> Vec<String> {
         let mut ignore = self.ignore.clone();
@@ -107,7 +101,6 @@ impl TestSectionConfig {
         Ok(c)
     }
 
-    /// Load `[test]` from `path` only (no cwd `.kissconfig` merge).
     pub fn try_load_path_only(path: &Path) -> Result<Self, ConfigError> {
         let mut c = Self::default();
         if !path.exists() {

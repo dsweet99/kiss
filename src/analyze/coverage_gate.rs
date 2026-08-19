@@ -108,7 +108,6 @@ fn evaluate_codebase(
     })
 }
 
-/// Static-reference coverage gating was removed; runtime coverage is owned by `kiss cov`.
 #[allow(dead_code)]
 pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
     let _ = p;

@@ -1,4 +1,3 @@
-/// Threshold value that effectively disables a check (for N/A metrics in a language)
 pub const NOT_APPLICABLE: usize = usize::MAX;
 
 pub mod python {
@@ -59,11 +58,8 @@ pub mod duplication {
 pub mod gate {
     pub const TEST_COVERAGE_THRESHOLD: usize = 90;
     pub const TEST_COVERAGE_SCOPE: &str = "codebase";
-    /// TOML literal including quotes, for `default_config_toml` emission.
     pub const TEST_COVERAGE_SCOPE_TOML: &str = "\"codebase\"";
-    /// Max wall seconds per unit test (`kiss test`); `0` disables. VISION: under 2s.
     pub const MAX_UNIT_TEST_SECONDS: f64 = 2.0;
-    /// Default maximum unit-test population size (`kiss test` / `kiss cov`).
     pub const MAX_NUM_TESTS: usize = 999_999;
 }
 

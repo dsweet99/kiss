@@ -1,4 +1,3 @@
-//! Extract code units for one supported language.
 
 use super::analysis::{LanguageAnalysis, PythonAnalysis, RustAnalysis};
 use crate::parsing::ParsedFile;
@@ -6,7 +5,6 @@ use crate::rust_parsing::ParsedRustFile;
 use crate::rust_units::{RustCodeUnit, extract_rust_code_units};
 use crate::units::{CodeUnit, extract_code_units};
 
-/// Extract code units for one supported language.
 pub trait LanguageUnits: LanguageAnalysis {
     type Parsed;
     type Unit;

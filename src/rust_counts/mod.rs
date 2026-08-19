@@ -28,7 +28,6 @@ pub fn analyze_rust_file(parsed: &ParsedRustFile, config: &Config) -> Vec<Violat
     violations
 }
 
-/// File-level metrics rolled up from `include!` fragments onto the includer path.
 #[must_use]
 pub fn analyze_rust_file_include_rollup(
     parent: &ParsedRustFile,

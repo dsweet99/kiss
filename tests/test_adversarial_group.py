@@ -1,4 +1,3 @@
-"""Tests for lazy adversarial Click group."""
 
 from __future__ import annotations
 

@@ -1,7 +1,3 @@
-//! Aggregated Python covered-lines snapshot for warm `kiss cov`.
-//!
-//! Built while scanning rslip entries for the coverage index, so `kiss cov` can
-//! load one compact file instead of re-parsing thousands of per-test entries.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

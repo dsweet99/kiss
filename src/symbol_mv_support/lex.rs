@@ -9,9 +9,6 @@ pub(super) enum StringState {
     TripleSingle,
     TripleDouble,
     RawString(usize),
-    /// Python f-string. `depth` tracks the `{ ... }` nesting depth: depth == 0
-    /// means we're in the literal text portion (string-like), depth >= 1 means
-    /// we're inside a code-bearing brace expression (code-like).
     FStringSingle {
         depth: usize,
     },
@@ -27,9 +24,6 @@ pub(super) enum StringState {
 }
 
 impl StringState {
-    /// True when the byte at the current position is *string literal content*
-    /// (not code) for the purposes of identifier-occurrence filtering. The
-    /// brace-bearing region of an f-string (`depth >= 1`) counts as code.
     pub(super) const fn is_string_literal(self) -> bool {
         match self {
             Self::None => false,
@@ -94,8 +88,6 @@ pub(super) fn step_lex_state(scan: &mut LexScan<'_>) -> usize {
     step_code_state(scan)
 }
 
-/// Dispatch to the appropriate string-state stepper. Returns `None` when not
-/// currently inside a string state (caller falls through to code stepping).
 fn step_inside_string_state(
     state: &mut LexState,
     bytes: &[u8],
@@ -190,8 +182,6 @@ fn step_python_code_state(state: &mut LexState, bytes: &[u8], idx: usize, target
     open_python_string_at(state, bytes, idx, target).unwrap_or(1)
 }
 
-/// Open a regular (non-f-string) Python string literal at `idx`, distinguishing
-/// single vs triple quote. Returns `None` if the byte is not `'` or `"`.
 fn open_python_string_at(
     state: &mut LexState,
     bytes: &[u8],

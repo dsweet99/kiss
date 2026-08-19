@@ -1,4 +1,3 @@
-//! Collapsed PASS/FAIL/TIMEOUT dumps for large warm cache-hit batches.
 
 use std::collections::BTreeMap;
 

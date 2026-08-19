@@ -1,4 +1,3 @@
-//! Planning adapters for git modes, `.` (All), and explicit PATH / directory targets.
 
 use kiss::Language;
 

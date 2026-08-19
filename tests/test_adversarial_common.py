@@ -1,4 +1,3 @@
-"""Tests for adversarial path helpers."""
 
 from __future__ import annotations
 

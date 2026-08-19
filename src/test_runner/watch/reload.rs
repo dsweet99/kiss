@@ -1,4 +1,3 @@
-//! Reload `.kissconfig` into a live `kiss test --watch` session.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -10,19 +9,16 @@ use super::settle::{PathSignature, SettleMachine};
 use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::RunTestCmdArgs;
 
-/// CLI-fixed inputs needed to re-merge config after `.kissconfig` changes.
 #[derive(Debug, Clone)]
 pub(crate) struct WatchReloadSeed {
     pub cli_ignore: Vec<String>,
     pub jobs_cli: Option<usize>,
     pub extra: Vec<String>,
     pub coverage_all: bool,
-    /// When false (e.g. `--defaults`), never reload from disk.
     pub enabled: bool,
     pub config_path: PathBuf,
 }
 
-/// Owned, reloadable watch-session configuration.
 pub(crate) struct WatchLiveConfig {
     pub invocation: TestInvocation,
     pub main_branch_cli: Option<String>,
@@ -101,9 +97,6 @@ impl WatchLiveConfig {
         }
     }
 
-    /// Reload from disk when `.kissconfig` (or configured path) changed.
-    ///
-    /// Returns `true` when values were refreshed.
     pub(crate) fn maybe_reload(
         &mut self,
         repo_root: &Path,

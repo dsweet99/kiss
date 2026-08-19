@@ -1,8 +1,3 @@
-//! Shared execution witness: re-exports from language packages.
-//!
-//! Accept types live in `lang_iface`; Python view in `lang_python`; Rust store
-//! in `lang_rust`. This module remains as a stable import path for call sites
-//! not yet migrated to the language packages directly.
 
 pub(crate) use crate::test_runner::lang_iface::{ExecutionWitness, WitnessScope, WitnessStatus};
 #[allow(unused_imports)]
@@ -13,7 +8,6 @@ pub(crate) use crate::test_runner::lang_rust::{
     try_load_rust_execution_witness, try_warm_rust_cached_summary,
 };
 
-/// Compatibility shim for callers that still import `execution_witness::accept`.
 #[allow(unused_imports)]
 pub(crate) mod accept {
     pub(crate) use crate::test_runner::lang_iface::{

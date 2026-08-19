@@ -1,4 +1,3 @@
-//! Aggregate distributions for `kiss stats` and mimic-style config generation.
 
 mod collect_py;
 mod collect_rust;

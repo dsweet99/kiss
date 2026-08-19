@@ -1,18 +1,12 @@
-/// Error type for configuration validation
 #[derive(Debug, Clone)]
 pub enum ConfigError {
-    /// Unknown key in a config section
     UnknownKey { key: String, section: String },
-    /// Unknown section in the config file
     UnknownSection {
         section: String,
         hint: Option<String>,
     },
-    /// Invalid value for a config key
     InvalidValue { key: String, message: String },
-    /// Failed to parse TOML content
     ParseError { message: String },
-    /// Failed to read config file
     IoError { path: String, message: String },
 }
 

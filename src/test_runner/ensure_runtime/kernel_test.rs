@@ -1,4 +1,3 @@
-//! Fake-runtime unit tests for the ensure kernel.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -23,7 +22,6 @@ struct FakeState {
     run_calls: Vec<Vec<String>>,
     publish_calls: usize,
     run_exit_code: i32,
-    /// Override for `current_identity` (default `"id"`).
     identity: Option<String>,
 }
 

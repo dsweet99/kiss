@@ -1,4 +1,3 @@
-//! Embedded forkserver controller (part A: bootstrap + session lifecycle).
 
 pub(crate) const FORKSERVER_CONTROLLER_A: &str = r#"
 import importlib

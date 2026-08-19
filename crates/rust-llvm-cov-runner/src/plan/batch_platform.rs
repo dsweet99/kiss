@@ -1,6 +1,5 @@
 use crate::RustLlvmCovError;
 
-/// Reject unsupported platforms before any batch cache or target mutation.
 pub fn ensure_batch_platform_supported() -> Result<(), RustLlvmCovError> {
     #[cfg(not(target_os = "linux"))]
     {

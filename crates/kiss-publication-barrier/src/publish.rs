@@ -4,11 +4,6 @@ use std::path::Path;
 
 use crate::{after_rename, after_sync_before_rename};
 
-/// Atomically publish `temporary_path` to `final_path` with QA barrier hooks.
-///
-/// Order: same-parent check → `create_dir_all` → `create_new` tmp → `write` →
-/// `sync_all` → `after_sync_before_rename` → drop handle → `rename` (best-effort
-/// tmp remove on rename Err) → `after_rename` → parent-dir `sync_all`.
 pub fn publish_atomically(
     artifact: &str,
     final_path: &Path,
@@ -18,8 +13,6 @@ pub fn publish_atomically(
     publish_atomically_inner(artifact, final_path, temporary_path, PublishSync::FileAndParent, write)
 }
 
-/// Same publish order as [`publish_atomically`], but skip per-file and parent
-/// `sync_all`. Batch writers flush bytes, then fsync the directory once.
 pub fn publish_atomically_without_parent_sync(
     artifact: &str,
     final_path: &Path,
@@ -110,7 +103,6 @@ fn path_step_err(artifact: &str, step: &str, path: &Path, err: io::Error) -> io:
     )
 }
 
-/// `create_new` the temp file; if the parent vanished, recreate and retry once.
 pub(crate) fn open_publish_tmp(
     artifact: &str,
     temporary_path: &Path,
@@ -136,8 +128,6 @@ pub(crate) fn open_publish_tmp(
     }
 }
 
-/// Sync the parent directory after rename. Missing parent is success: the bytes
-/// were already published, and a concurrent tree replacement can remove the dir.
 pub(crate) fn sync_publish_parent(artifact: &str, final_parent: &Path) -> io::Result<()> {
     match File::open(final_parent) {
         Ok(parent_dir) => parent_dir

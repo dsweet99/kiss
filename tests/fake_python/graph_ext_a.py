@@ -1,4 +1,3 @@
-"""Fixture: internal module with external imports."""
 
 import json
 import os

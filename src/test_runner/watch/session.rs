@@ -1,4 +1,3 @@
-//! Watch session orchestration for `kiss test --watch`.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -69,7 +68,6 @@ fn live_from_args_disabled(
     )
 }
 
-/// Like `run_watch_loop`, but the cycle body and coverage step are injectable (unit tests).
 pub(crate) fn run_watch_loop_with<F, C>(
     args: RunTestCmdArgs<'_>,
     settle: Duration,

@@ -18,16 +18,6 @@ use crate::Language;
 
 use super::ast_models::{AstResult, FallbackReason, ParseOutcome};
 
-/// Owners that should be treated as equivalent to the queried `owner` for
-/// rename planning.
-///
-/// - **Rust**: `{owner}` plus, when `owner` names a trait defined in this
-///   file, every `T` such that `impl owner for T { ... }` appears here.
-///   Propagates a trait-method rename to overrides and to method-call sites
-///   whose static receiver type implements the trait (KPOP H5).
-/// - **Python**: `{owner}` plus every (transitively) declared subclass
-///   `class X(owner): ...`. Propagates a parent-class method rename to
-///   subclass overrides (KPOP H1).
 fn owner_aliases(
     result: &AstResult,
     content: &str,

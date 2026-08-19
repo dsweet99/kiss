@@ -13,7 +13,6 @@ pub fn format_section(out: &mut String, name: &str, section: Option<&toml::Value
     }
 }
 
-/// Which language sections to take from the newly generated TOML when merging.
 #[derive(Clone, Copy)]
 pub enum MergeLanguageUpdate {
     PythonOnly,

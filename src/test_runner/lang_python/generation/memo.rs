@@ -1,4 +1,3 @@
-//! Command-scoped memo for warm generation loads (one validation per cov command).
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -14,7 +13,6 @@ struct WarmMemoEntry {
     result: Result<PinnedPythonGeneration, GenerationLoadError>,
 }
 
-/// Clear the warm-generation memo. Call at the start of each `kiss cov` command.
 pub(crate) fn clear_python_generation_warm_memo() {
     if let Ok(mut guard) = WARM_MEMO.lock() {
         *guard = None;

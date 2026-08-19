@@ -1,6 +1,5 @@
 use kiss::{Config, GateConfig, Language};
 
-/// Language filter plus Python/Rust configs and gate (for check / full analysis).
 pub struct ShrinkFullContext<'a> {
     pub lang_filter: Option<Language>,
     pub py_config: &'a Config,
@@ -8,7 +7,6 @@ pub struct ShrinkFullContext<'a> {
     pub gate_config: &'a GateConfig,
 }
 
-/// Language filter plus configs for shrink start (no gate).
 pub struct ShrinkStartContext<'a> {
     pub lang_filter: Option<Language>,
     pub py_config: &'a Config,

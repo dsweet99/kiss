@@ -78,7 +78,6 @@ pub(crate) fn write_population_manifest(
     Err(RustLlvmCovError::Io(last_err.expect("NotFound retry path")))
 }
 
-/// Write `population.json`, then best-effort publish the durations sidecar.
 pub(crate) fn write_population_and_durations(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,

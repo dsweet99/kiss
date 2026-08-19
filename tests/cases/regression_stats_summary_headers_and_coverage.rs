@@ -1,16 +1,3 @@
-//! Regression tests for the new `kiss stats` summary headers and `test_coverage`
-//! row added in response to the request:
-//!
-//! > In the `kiss stats` output, could you include a header like
-//! > `Analyzed: 213 files, 1967 code_units, 8880 statements, 213 graph_nodes, 335 graph_edges`
-//! > and another with
-//! > - number of duplicate code violations (according to `kiss check` parameters)
-//! > - number of orphan code violations
-//! > and in the tables, could you include coverage (which is now a per-file metric).
-//!
-//! Each test below pins one of those three contracts. They are intentionally
-//! tolerant about whitespace and exact numeric values — only structural
-//! invariants are asserted, so unrelated metric drift won't break them.
 
 use std::fs;
 use std::process::Command;
@@ -20,9 +7,6 @@ fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
 }
 
-/// Build a tiny Python corpus with: an importer, an importee, an orphan module
-/// (imported by nobody), and a near-duplicate function pair so that both
-/// duplicate and orphan counts have a chance to be > 0 in the summary headers.
 fn build_corpus(dir: &std::path::Path) {
     fs::write(
         dir.join("importer.py"),

@@ -1,8 +1,3 @@
-//! Regression tests for `kiss check --ignore=PREFIX` filename and directory matching.
-//!
-//! The `--ignore=<PREFIX>` flag's help text in `src/bin_cli/args.rs` reads
-//! `"Ignore files/directories starting with PREFIX (repeatable)"`. These tests
-//! lock in that contract for both directory and filename prefix matching.
 
 use crate::common::seed_python_runtime_coverage;
 use std::fs;
@@ -17,9 +12,6 @@ fn write_trivial_py(path: &std::path::Path) {
     fs::write(path, "def f():\n    return 1\n").unwrap();
 }
 
-/// Baseline (locks in current behavior): `--ignore` correctly excludes a
-/// directory whose name starts with PREFIX. This part of the contract
-/// already works and should never regress.
 #[test]
 fn cli_check_ignore_excludes_matching_directory() {
     let tmp = TempDir::new().unwrap();
@@ -53,8 +45,6 @@ fn cli_check_ignore_excludes_matching_directory() {
     );
 }
 
-/// `--ignore=PREFIX` excludes files whose names start with PREFIX, per the
-/// `--ignore` help text in `src/bin_cli/args.rs`.
 #[test]
 fn cli_check_ignore_excludes_matching_filename() {
     let tmp = TempDir::new().unwrap();

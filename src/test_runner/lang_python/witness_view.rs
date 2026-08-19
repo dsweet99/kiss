@@ -1,4 +1,3 @@
-//! Python generation viewed as a shared execution witness.
 
 use std::path::Path;
 

@@ -1,4 +1,3 @@
-//! Bundles for pipeline entry points (kiss argument thresholds).
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -6,7 +5,6 @@ use std::time::Instant;
 use crate::analyze::focus::FocusFilter;
 use crate::analyze::options::AnalyzeOptions;
 
-/// Inputs for [`crate::analyze::pipeline::run_analyze_uncached`].
 pub(crate) struct RunAnalyzeUncached<'a> {
     pub opts: &'a AnalyzeOptions<'a>,
     pub py_files: &'a [PathBuf],

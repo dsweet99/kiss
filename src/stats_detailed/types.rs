@@ -1,13 +1,3 @@
-/// Per-unit metrics carried into `kiss stats --table` and `kiss stats --all`.
-///
-/// Field names are internal; metric IDs surfaced to the user (e.g. on `STAT:` lines)
-/// come from the canonical registry `kiss::stats::METRICS`. Each `Option<usize>` is
-/// `Some` when the metric is meaningful for the unit's `kind` and the underlying
-/// language collector populates it; otherwise `None` so the metric is skipped for
-/// that unit when computing top-N outliers.
-///
-/// Construct via `UnitMetrics::new(file, name, kind, line)` and set the metrics
-/// that apply to the unit; everything else stays `None`.
 #[derive(Debug, Clone)]
 pub struct UnitMetrics {
     pub file: String,

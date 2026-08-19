@@ -1,4 +1,3 @@
-//! Round-trip tests for Rust execution witness store.
 
 use std::path::Path;
 

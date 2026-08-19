@@ -1,4 +1,3 @@
-//! VCS-mode planning (`--commit` / `--base` / `--main`) for `kiss test`.
 
 use kiss::Language;
 
@@ -12,7 +11,6 @@ pub(crate) struct PlanSelectorsRequest<'a> {
     pub main_branch_cli: Option<&'a str>,
     pub base_branch_cli: Option<&'a str>,
     pub ignore: &'a [String],
-    /// Per-language CLI extras packed for planning.
     pub extras: crate::test_runner::language_keyed::LanguageKeyed<&'a [String]>,
     pub lang_filter: Option<Language>,
     pub config_main_branch: Option<&'a str>,

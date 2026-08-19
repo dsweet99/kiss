@@ -33,8 +33,6 @@ pub(crate) fn merge_profiles(
     Ok(())
 }
 
-/// Merge one instance profile. `Ok(false)` means the profile is missing or
-/// unusable (malformed/truncated); callers treat that as empty coverage.
 pub(crate) fn merge_instance_profile(
     tools: &ExportTools,
     profile_input: &Path,

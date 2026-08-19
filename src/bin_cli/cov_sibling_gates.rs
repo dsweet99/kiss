@@ -1,4 +1,3 @@
-//! Sibling gates evaluated with coverage under `kiss test` / `kiss cov`.
 
 use std::path::Path;
 

@@ -1,4 +1,3 @@
-"""Adversarial cheat: repos that pass cached kiss coverage but not runtime tools."""
 
 from __future__ import annotations
 

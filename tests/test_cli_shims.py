@@ -1,4 +1,3 @@
-"""In-process coverage for small CLI shim modules."""
 
 from __future__ import annotations
 

@@ -1,8 +1,3 @@
-//! Cached universe file lists for warm `kiss cov` gather.
-//!
-//! Invalidation keys on ignore/lang filter plus lightweight coverage-backend
-//! identities (same population fingerprints `cov_records_cache` already uses),
-//! so a warm hit skips walking the tree.
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -1,11 +1,8 @@
-//! Watch coverage types shared by the watch loop and CLI.
 
-/// Coverage step outcome for one watch cycle (after tests exit 0).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct WatchCoverageResult {
     pub exit_code: i32,
     pub error: Option<String>,
-    /// FAIL/VIOLATION report text for one-shot clients (optional inject for tests).
     pub output: Option<String>,
     pub interrupted: bool,
 }
@@ -53,7 +50,6 @@ impl WatchCoverageResult {
     }
 }
 
-/// Configs needed to evaluate coverage inside the watch loop.
 pub(crate) struct WatchCoverageParams<'a> {
     pub py_config: &'a kiss::Config,
     pub rs_config: &'a kiss::Config,

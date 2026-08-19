@@ -53,7 +53,6 @@ pub struct FullCheckCache {
     pub py_duplicates: Vec<CachedDuplicateCluster>,
     pub rs_duplicates: Vec<CachedDuplicateCluster>,
 
-    /// Per-file content digests captured at cache-write time; verified on replay.
     #[serde(default)]
     pub file_content_digests: Vec<(String, u64)>,
 }

@@ -1,4 +1,3 @@
-//! Unit tests for shared `accept_witness`.
 
 use kiss::GateConfig;
 

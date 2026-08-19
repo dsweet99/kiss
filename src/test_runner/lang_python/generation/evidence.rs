@@ -1,4 +1,3 @@
-//! Build generation evidence from selector outcomes without full-entry scans.
 
 use std::collections::BTreeMap;
 use std::path::Path;

@@ -189,7 +189,6 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
     })
 }
 
-/// Minimal pipeline fixture for stats summary tests (no parse / no coverage cache).
 #[cfg(test)]
 pub(crate) fn empty_full_pipeline_result_for_tests() -> FullPipelineResult {
     use crate::analyze::parallel::RustAnalysis;

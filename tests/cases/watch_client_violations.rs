@@ -1,4 +1,3 @@
-//! Acceptance: one-shot `kiss test` surfaces watcher VIOLATION lines.
 
 #![cfg(unix)]
 

@@ -1,4 +1,3 @@
-"""Tests for batch adversarial verification."""
 
 from __future__ import annotations
 

@@ -1,4 +1,3 @@
-//! Python language runtime, generation, collect, and rslip adapters.
 
 mod witness_view;
 mod runtime;

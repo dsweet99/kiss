@@ -1,4 +1,3 @@
-//! Test-file helpers for one supported language.
 
 use std::path::Path;
 
@@ -6,7 +5,6 @@ use super::analysis::{LanguageAnalysis, PythonAnalysis, RustAnalysis};
 use crate::rust_test_refs::is_rust_test_file;
 use crate::test_refs::{is_in_test_directory, is_test_file};
 
-/// Test-file helpers for one supported language.
 pub trait LanguageTestRefs: LanguageAnalysis {
     fn is_test_path(&self, path: &Path) -> bool;
 }

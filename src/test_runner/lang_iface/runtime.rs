@@ -1,4 +1,3 @@
-//! `LanguageRuntime` and ensure request/result types.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -18,14 +17,10 @@ pub(crate) struct EnsureRequest {
     #[allow(dead_code)]
     pub(crate) ignore: Vec<String>,
     pub(crate) force: bool,
-    /// Selectors that must re-run even if the witness still says Passed (prior failures).
     pub(crate) force_selectors: Vec<String>,
     pub(crate) jobs: usize,
-    /// Session gate for this ensure (loaded once by CLI / caller; do not reload).
     pub(crate) gate: GateConfig,
-    /// Per-language CLI extras (pytest plugins / cargo test args) — not parallel product fields.
     pub(crate) extras: LanguageKeyed<Vec<String>>,
-    /// Planned selectors keyed by language.
     pub(crate) planned: LanguageKeyed<Vec<String>>,
 }
 
@@ -34,10 +29,6 @@ impl EnsureRequest {
         self.planned.planned_for(language)
     }
 
-    /// Whether this request includes `language`.
-    ///
-    /// Empty planned All-mode still requires the module so the kernel can publish
-    /// an empty Full witness (seeded cov fixtures / empty repos).
     pub(crate) fn requires(&self, language: Language) -> bool {
         match self.lang_filter {
             Some(filter) if filter != language => return false,
@@ -58,7 +49,6 @@ pub(crate) struct OutcomeBatch {
     pub(crate) statuses: Vec<WitnessStatus>,
     pub(crate) durations_ns: Vec<Option<u64>>,
     pub(crate) covered_lines: BTreeMap<String, Vec<u32>>,
-    /// Full planned universe for Full publication; None means delta/repair only.
     pub(crate) publication_universe: Option<Vec<String>>,
 }
 
@@ -83,7 +73,6 @@ pub(crate) struct LanguageEnsureResult {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EnsureRuntimeResult {
-    /// Per-language ensure outcomes (not parallel Option product fields).
     pub(crate) by_language: LanguageKeyed<Option<LanguageEnsureResult>>,
     pub(crate) exit_code: i32,
 }
@@ -112,7 +101,6 @@ pub(crate) struct StatusTimingSnapshot {
     pub(crate) durations_ns: Vec<Option<u64>>,
 }
 
-/// Per-language cache/run/publish policy for the shared ensure kernel.
 #[allow(dead_code)]
 pub(crate) trait LanguageRuntime {
     fn language(&self) -> Language;
@@ -170,7 +158,6 @@ pub(crate) trait LanguageRuntime {
         witness: &ExecutionWitness,
     ) -> SelectorExecutionSummary;
 
-    /// Report planned selectors from a witness without assuming all Passed.
     fn cached_witness_summary(
         &self,
         request: &EnsureRequest,
@@ -181,8 +168,6 @@ pub(crate) trait LanguageRuntime {
         summary_from_witness_statuses(planned, witness, |selector| selector.to_string(), false)
     }
 
-    /// Selectors used when applying `max_unit_test_seconds` during accept.
-    /// Rust witnesses store nextest logical ids; time-gate patterns expect PATH::symbol.
     fn selectors_for_time_gate(
         &self,
         _request: &EnsureRequest,

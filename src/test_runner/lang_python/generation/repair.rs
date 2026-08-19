@@ -1,4 +1,3 @@
-//! Repair an existing generation with changed-selector evidence.
 
 use std::path::Path;
 

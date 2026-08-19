@@ -88,8 +88,6 @@ impl PytestRunner {
         }
     }
 
-    /// Build a runner whose bounded path can invoke `on_complete` while other
-    /// requests are still outstanding (for streaming / durability tests).
     pub fn from_streaming_bounded_fn<F>(run_many_bounded: F) -> Self
     where
         F: Fn(Vec<PytestRunRequest>, usize, &mut dyn FnMut(usize, PytestRunResult)) + 'static,

@@ -1,4 +1,3 @@
-//! Exclusive flock for the live watcher process (`watch.lock`).
 
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -6,13 +5,11 @@ use std::path::{Path, PathBuf};
 
 use fs2::FileExt;
 
-/// Held for the watcher's lifetime; released on drop (or process exit).
 pub(crate) struct WatchLockGuard {
     _file: File,
 }
 
 impl WatchLockGuard {
-    /// Block until the exclusive lock is acquired.
     #[cfg(test)]
     pub(crate) fn lock(path: &Path) -> io::Result<Self> {
         let file = open_watch_lock(path)?;
@@ -20,7 +17,6 @@ impl WatchLockGuard {
         Ok(Self { _file: file })
     }
 
-    /// Non-blocking exclusive lock. `Ok(None)` means another process holds it.
     pub(crate) fn try_lock(path: &Path) -> io::Result<Option<Self>> {
         let file = open_watch_lock(path)?;
         match file.try_lock_exclusive() {

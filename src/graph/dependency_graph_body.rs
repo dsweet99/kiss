@@ -69,8 +69,6 @@ impl DependencyGraph {
         }
     }
 
-    /// BFS from `start`, returning (`total_reachable`, `max_depth`).
-    /// `total_reachable` counts all nodes reachable at depth >= 1 (excludes start itself).
     pub(crate) fn compute_reachable_and_depth(&self, start: NodeIndex) -> (usize, usize) {
         use std::collections::{HashSet, VecDeque};
         let mut visited = HashSet::new();
@@ -110,13 +108,10 @@ impl DependencyGraph {
         }
     }
 
-    /// Returns the qualified module name for a path, if the path is in this graph.
     pub fn module_for_path(&self, path: &std::path::Path) -> Option<String> {
         self.path_to_module.get(path).cloned()
     }
 
-    /// Returns test modules that import the given module (directly).
-    /// Used for coverage: "candidate" tests that could cover definitions in `module`.
     pub fn test_importers_of(&self, module: &str) -> Vec<String> {
         let Some(&idx) = self.nodes.get(module) else {
             return Vec::new();
@@ -128,7 +123,6 @@ impl DependencyGraph {
             .collect()
     }
 
-    /// True if `from_module` has a direct edge to `to_module` (`from_module` imports `to_module`).
     pub fn imports(&self, from_module: &str, to_module: &str) -> bool {
         let (Some(&from_idx), Some(&to_idx)) =
             (self.nodes.get(from_module), self.nodes.get(to_module))
@@ -181,7 +175,6 @@ pub(crate) fn trim_src_suffix(mut dirs: Vec<String>) -> Vec<String> {
 pub(crate) fn join_qualified_dirs_and_stem(dirs: &[String], stem: &str) -> String {
     format!("{}.{}", dirs.join("."), stem)
 }
-/// Qualified module id from path (dirs + stem; `pkg/__init__.py` → `pkg`).
 pub fn qualified_module_name(path: &Path) -> String {
     let stem = file_stem_str(path);
     let dirs = trim_src_suffix(parent_dir_strings(path));
@@ -231,8 +224,6 @@ pub(crate) fn is_orphan(fan_in: usize, fan_out: usize, module_name: &str) -> boo
     fan_in == 0 && fan_out == 0 && !is_entry_point(module_name)
 }
 
-/// Rust crate roots (`src/lib.rs`, `src/main.rs`, `src/build.rs`) aggregate the whole crate;
-/// their indirect-dependency counts reflect project size, not a single module's coupling.
 pub(crate) fn is_crate_root_aggregator(graph: &DependencyGraph, module_name: &str) -> bool {
     let Some(path) = graph.paths.get(module_name) else {
         return false;

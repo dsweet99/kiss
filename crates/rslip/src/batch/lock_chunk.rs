@@ -37,8 +37,6 @@ pub(super) fn coalesce_rslip_miss_candidates(
     runner_groups
 }
 
-/// Briefly lock each miss group, recheck the cache, then release the lock.
-/// Retains only groups that are still missing so FDs are not held across the run.
 pub(super) fn brief_lock_filter_rslip_miss_groups(
     groups: Vec<RslipCacheCandidateGroup>,
     out: &mut [Option<Result<RslipOutcome, RslipError>>],

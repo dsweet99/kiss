@@ -13,14 +13,10 @@ use python_seed_helpers::{
     python_entries_fingerprint, python_rslip_cache_root_for_repo, python_source_input_fingerprint,
 };
 
-/// Repo-local `.kiss` cache root (used by integration tests that assert
-/// where `check_full_*.bin` lands after `kiss check` / `kiss stats`).
 pub fn cache_dir_under(repo: &Path) -> PathBuf {
     repo.join(".kiss")
 }
 
-/// True for files matching `check_full_*.bin` (the full-check analyze
-/// cache file). Used as the predicate for [`list_full_check_cache_files`].
 pub fn is_full_check_cache_file(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
         return false;
@@ -31,8 +27,6 @@ pub fn is_full_check_cache_file(path: &Path) -> bool {
             .is_some_and(|ext| ext.eq_ignore_ascii_case("bin"))
 }
 
-/// Sorted list of `check_full_*.bin` files in `repo/.kiss`.
-/// Returns an empty `Vec` if the cache dir does not exist yet.
 pub fn list_full_check_cache_files(repo: &Path) -> Vec<PathBuf> {
     let dir = cache_dir_under(repo);
     let Ok(rd) = fs::read_dir(dir) else {

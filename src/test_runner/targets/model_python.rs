@@ -1,4 +1,3 @@
-//! Python source model for `kiss test` targets (AST only; no lexical fallback).
 
 use std::path::Path;
 
@@ -125,7 +124,6 @@ fn looks_like_python_test(name: &str, owner: Option<&str>) -> bool {
         || owner.is_some_and(|owner| owner.starts_with("Test") && name.starts_with("test"))
 }
 
-/// Replace provisional selectors with stable pytest nodeids when collection succeeds.
 pub(super) fn attach_python_nodeids(
     model: &mut SourceModel,
     nodeids: &[String],

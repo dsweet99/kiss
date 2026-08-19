@@ -1,4 +1,3 @@
-//! Planned selector and run-option types for `kiss test`.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -12,24 +11,19 @@ use super::RunTestCmdArgs;
 #[derive(Clone)]
 pub(crate) struct PlannedSelectors {
     pub repo_root: PathBuf,
-    /// Planned selectors keyed by language (not parallel py_sel/rs_sel product fields).
     pub sel: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
     pub population_required: crate::test_runner::language_keyed::LanguageKeyed<bool>,
-    /// Per-language source paths involved in this plan.
     pub source_paths: crate::test_runner::language_keyed::LanguageKeyed<Vec<PathBuf>>,
     pub vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed<usize>,
     pub snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed<usize>,
     pub snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed<bool>,
     pub prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
     pub coverage_decision_engine_used: bool,
-    /// Per-language selection basis from each `LanguagePlanner`.
     pub selection_basis: crate::test_runner::language_keyed::LanguageKeyed<
         crate::test_runner::coverage_decision::SelectionBasis,
     >,
     pub ignore: Vec<String>,
-    /// Workspace py/rs fingerprint from selector-cache planning (warm seal fast path).
     pub workspace_files_fingerprint: Option<String>,
-    /// Pure explicit test operands: skip full index rebuild after selective cache miss.
     pub skip_index_rebuild_after_selective:
         crate::test_runner::language_keyed::LanguageKeyed<bool>,
 }
@@ -39,10 +33,8 @@ pub(crate) struct SelectorRunOptions<'a> {
     pub force_rerun: bool,
     pub metrics: bool,
     pub jobs: usize,
-    /// Per-language CLI extras (pytest plugins / cargo test args).
     pub extras: crate::test_runner::language_keyed::LanguageKeyed<&'a [String]>,
     pub plan_duration: Duration,
-    /// Same session gate the CLI loaded for this `kiss test` invocation.
     pub gate: kiss::GateConfig,
 }
 
@@ -77,10 +69,6 @@ pub(crate) fn apply_cold_initialization_population(
     }
 }
 
-/// `kiss test . --force` requires a full population phase, even when the prior
-/// generation is current. Selective invocations (`Targets`, `Commit`, `Base`,
-/// `Main`) keep their existing selector plan; `--force` only bypasses caches
-/// for those planned selectors.
 pub(crate) fn apply_force_all_population(a: &RunTestCmdArgs<'_>, planned: &mut PlannedSelectors) {
     if !a.force_rerun {
         return;

@@ -1,4 +1,3 @@
-//! Language-neutral contracts for the shared ensure-runtime funnel.
 
 mod witness;
 mod runtime;

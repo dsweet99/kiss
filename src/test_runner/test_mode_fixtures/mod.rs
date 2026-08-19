@@ -1,4 +1,3 @@
-//! Shared git + synthetic-coverage fixtures for change-mode planning tests.
 
 mod git;
 mod python_warm;

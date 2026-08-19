@@ -1,4 +1,3 @@
-//! Rust language runtime, witness store, and llvm-cov adapters.
 
 mod witness_store;
 mod runtime;

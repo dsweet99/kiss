@@ -1,4 +1,3 @@
-//! Accept-rule helpers for execution witnesses.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -76,7 +75,6 @@ pub(crate) struct ExecutionWitness {
     pub(crate) selectors: Vec<String>,
     pub(crate) statuses: Vec<WitnessStatus>,
     pub(crate) durations_ns: Vec<Option<u64>>,
-    /// Aggregate covered lines (repo-relative paths). Empty when unknown.
     pub(crate) covered_lines: BTreeMap<String, Vec<u32>>,
     pub(crate) complete: bool,
     pub(crate) generation_id: String,
@@ -109,7 +107,6 @@ pub(crate) fn accept_witness(
     }
 }
 
-/// Selectors the ensure kernel must run after a Miss (or all planned on force / no witness).
 pub(crate) fn miss_selectors_for_repair(
     mode: AcceptMode,
     planned_selectors: &[String],
@@ -137,8 +134,6 @@ pub(crate) fn miss_selectors_for_repair(
     }
 }
 
-/// Prior-failure selectors must re-run even when the witness still says Passed
-/// (failure skips witness publish, leaving stale Passed). Does not batch-force.
 pub(crate) fn union_force_selectors_into_misses(
     planned: &[String],
     misses: &mut Vec<String>,
@@ -215,16 +210,6 @@ fn selector_index(selectors: &[String]) -> BTreeMap<&str, usize> {
         .collect()
 }
 
-/// Reclassify raw stored statuses under the current unit-test time-limit gate.
-///
-/// Ownership: this is the authoritative warm-path application of
-/// `max_unit_test_seconds`. Live runners may also call `apply_unit_test_time_limit`
-/// for immediate stdout/summary labeling; stored witness rows are reclassified
-/// here so a later gate change still takes effect on accept without re-running.
-///
-/// Missing timings (`None`) are not collapsed to zero: under an active time gate,
-/// a Passed row without a duration fails closed to Failed so repair re-runs it
-/// (TimedOut would warm-skip and strand the selector without a measured time).
 pub(crate) fn reclassify_statuses_with_gate(
     selectors: &[String],
     raw_statuses: &[WitnessStatus],
@@ -259,7 +244,6 @@ pub(crate) fn reclassify_statuses_with_gate(
         .collect()
 }
 
-/// Emit today's cache-hit reporting contract without spawning runners.
 pub(crate) fn summary_from_accepted_witness(
     planned_selectors: &[String],
     witness: &ExecutionWitness,
@@ -268,8 +252,6 @@ pub(crate) fn summary_from_accepted_witness(
     summary_from_witness_statuses(planned_selectors, witness, report_id, true)
 }
 
-/// Report planned selectors from a witness, including non-Passed terminals.
-/// When `require_all_passed`, every planned selector must be Passed (Accept path).
 pub(crate) fn summary_from_witness_statuses(
     planned_selectors: &[String],
     witness: &ExecutionWitness,

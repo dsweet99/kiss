@@ -1,4 +1,3 @@
-//! Python population generation publication hooks for language execution.
 
 use crate::test_runner::coverage_decision::RunContext;
 use crate::test_runner::python_coverage_index::{

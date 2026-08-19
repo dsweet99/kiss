@@ -1,4 +1,3 @@
-//! Grouped `unit_test_runtime_sec` table for `kiss stats`.
 
 use std::fmt::Write;
 use std::time::Duration;
@@ -39,10 +38,6 @@ pub(crate) struct UnitTestRuntimeGroupedReport {
     pub(crate) rows: Vec<UnitTestRuntimeGroupRow>,
 }
 
-/// Partition cached timings by the ordered first-match `max_unit_test_seconds` rules.
-///
-/// Returns `None` only when there are no configured rules. Otherwise every rule gets a
-/// row, including groups with zero available samples.
 pub(crate) fn build_unit_test_runtime_grouped_report(
     timings: &[UnitTestTiming],
     rules: &[(String, f64)],

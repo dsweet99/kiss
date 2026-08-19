@@ -1,4 +1,3 @@
-//! Explicit PATH test-operand planning: named tests only, no prior-failure fan-out.
 
 use std::fs;
 use std::path::Path;

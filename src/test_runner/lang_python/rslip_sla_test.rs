@@ -1,4 +1,3 @@
-//! Python wall-kill vs path-pattern SLA eccentricity lock.
 
 use super::{DEFAULT_PYTEST_TIMEOUT, timeout_for_selector};
 use std::fs;

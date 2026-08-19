@@ -1,7 +1,3 @@
-//! Bug: nested non-member Cargo workspaces were scored for by_file coverage
-//! while their tests were never executed under the root llvm-cov population.
-//! Policy B: exclude those sources from ordinary_source_digests and fail fast
-//! when path-targeting them.
 
 use std::fs;
 use std::process::Command;

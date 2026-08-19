@@ -1,4 +1,3 @@
-//! Internal `execute_or_reuse` package for rust-llvm-cov-runner call flow.
 
 pub(crate) mod batch_aggregate;
 

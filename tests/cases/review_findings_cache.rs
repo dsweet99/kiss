@@ -1,29 +1,9 @@
-//! Parse-cache regression for review findings against parser-first `kiss mv`.
-//! Sibling of `review_findings.rs`; split per `lines_per_file` advice
-//! in `.llm_style/style.md`.
 
 use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};
 use std::fs;
 use tempfile::TempDir;
 
-/// Bug: `cached_parse` keys the per-invocation parse cache on
-/// `(content.as_ptr(), content.len(), language)`. Inside `plan_edits`, each
-/// candidate file in `append_reference_edits` is read into a transient
-/// `String` that is dropped at the end of the loop iteration. On Linux glibc
-/// (and most allocators), the next `String` of identical capacity is almost
-/// always handed the freed slot — so the next file's pointer collides with
-/// the previous file's pointer and length. The cache returns the previous
-/// file's `AstResult`, whose `start/end` offsets are then matched against
-/// the new file's bytes. Sites that don't line up are silently dropped, so
-/// real call sites in the second file are not renamed.
-///
-/// The construction below pads `b.py` and `c.py` to identical byte lengths.
-/// `b.py` puts `helper()` at one column; `c.py` puts `helper()` at a
-/// different column with a non-`helper` identifier sitting at b's offset.
-/// With the cache bug, c's `helper()` is missed.
-/// Code ref: `src/symbol_mv_support/ast_plan.rs::cached_parse` (key uses
-/// `content.as_ptr() as usize`, no content hash).
 #[test]
 fn review_parse_cache_must_not_collide_on_pointer_reuse_across_files() {
     let tmp = TempDir::new().unwrap();

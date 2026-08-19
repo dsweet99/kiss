@@ -1,4 +1,3 @@
-//! Strict manifest-bound reverse snapshot reads with safe fallback.
 
 use crate::publish_derived::batch_entry_state::{read_entry_state, EntryState};
 use crate::publish_derived::batch_reverse_build::{

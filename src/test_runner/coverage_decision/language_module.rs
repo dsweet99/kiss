@@ -7,10 +7,6 @@ use crate::test_runner::{PlannedSelectors, SelectorRunOptions};
 use kiss::Language;
 use std::path::Path;
 
-/// Shared language-identity concept for planner/executor and ensure runtime stacks (#6).
-///
-/// Planner and ensure `LanguageRuntime` types implement this in addition to their
-/// stack-specific traits so language identity is not redefined per abstraction.
 pub(crate) trait SupportedLanguage {
     fn language(&self) -> Language;
 }
@@ -26,7 +22,6 @@ macro_rules! define_language_policy_traits {
             fn population_plan(&self, universe: &[TestSelector]) -> PopulationPlan;
             fn select(&self) -> Result<SelectionDecision, String>;
             fn manifest_env_allowlist(&self) -> &'static [&'static str];
-            /// How this language chose covering tests (symmetric for Python and Rust).
             fn selection_basis(&self) -> SelectionBasis {
                 SelectionBasis::Current
             }

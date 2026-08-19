@@ -1,4 +1,3 @@
-//! Smoke coverage for PythonRuntime trait methods.
 
 use super::PythonRuntime;
 use crate::test_runner::lang_iface::{

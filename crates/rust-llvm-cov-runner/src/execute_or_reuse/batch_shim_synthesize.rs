@@ -18,12 +18,6 @@ pub(crate) fn check_aggregate_pool_profile_path_for_run(
     build_target.join(format!("{run_token}-pool-%32m.profraw"))
 }
 
-/// Build shim metadata for CheckAggregate when there is no target runner.
-///
-/// Maps each terminal libtest name to a test-harness executable. Libtest-json-plus
-/// uses `{package}::{target}$…` for both lib and bin unit tests when they share a
-/// target name, so colliding prefixes are disambiguated via each target's
-/// `src_path` top-level `mod` declarations.
 pub(crate) fn synthesize_check_aggregate_shim_metadata(
     stream: &BatchEventStream,
     profile_path: &Path,

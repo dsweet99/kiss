@@ -1,4 +1,3 @@
-//! CLI / request options for `kiss mv`.
 
 use std::path::PathBuf;
 

@@ -1,9 +1,3 @@
-//! Warm `kiss cov` derived caches after a successful `kiss test`.
-//!
-//! After tests leave the coverage population current, the first `kiss cov`
-//! still had to gather sources and recompute per-file records (~seconds on
-//! large repos). Publishing the same file-list + records caches `kiss cov`
-//! uses makes the post-test cov path a cache hit.
 
 use std::path::Path;
 
@@ -19,8 +13,6 @@ use crate::test_runner::check_line_coverage::{
     RequiredCoverageLanguages, load_check_runtime_coverage, repository_root_for_universe,
 };
 
-/// Ensure `.kiss/cov_file_list_cache.json` and `.kiss/cov_records_cache.json`
-/// match the current population so the next `kiss cov` can stay warm.
 pub(crate) fn warm_cov_caches_after_tests(
     universe_root: &Path,
     lang_filter: Option<Language>,

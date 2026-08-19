@@ -1,4 +1,3 @@
-//! Parse source files for one supported language.
 
 use std::path::PathBuf;
 
@@ -6,10 +5,8 @@ use super::analysis::{LanguageAnalysis, PythonAnalysis, RustAnalysis};
 use crate::parsing::{ParseError, ParsedFile, parse_files};
 use crate::rust_parsing::{ParsedRustFile, RustParseError, parse_rust_files};
 
-/// One parse attempt for a path.
 pub type ParseResults<T, E> = Vec<Result<T, E>>;
 
-/// Parse source files for one supported language.
 pub trait LanguageParser: LanguageAnalysis {
     type Parsed;
     type Error;

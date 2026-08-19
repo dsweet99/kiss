@@ -1,4 +1,3 @@
-//! Internal `publish_derived` package for rust-llvm-cov-runner call flow.
 
 pub(crate) mod batch_check_aggregate;
 

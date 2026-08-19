@@ -1,7 +1,3 @@
-//! Python dependency graph construction and analysis.
-//!
-//! Split `include!` shells keep per-includer rollup under `lines_per_file` while avoiding a
-//! single flat include chain that would roll ~900 lines into `graph/mod.rs`.
 
 mod dependency_graph {
     use petgraph::Direction;

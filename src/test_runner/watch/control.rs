@@ -1,4 +1,3 @@
-//! Watcher control socket: length-prefixed JSON nudge request/reply.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -18,7 +17,6 @@ use super::lock::{WatchLockGuard, watch_dir, watch_lock_path};
 pub(crate) const WATCH_SOCKET_TMP_DIR: &str = "/tmp/.kiss-watch";
 
 const SESSION_FILE_NAME: &str = "session.json";
-/// Large enough for FAIL/VIOLATION report text forwarded to one-shot clients.
 const MAX_FRAME_LEN: u32 = 256 * 1024;
 const CLIENT_SESSION_RETRY: Duration = Duration::from_millis(200);
 const CLIENT_SESSION_SLEEP: Duration = Duration::from_millis(10);
@@ -39,8 +37,6 @@ pub(crate) struct NudgeReplyMsg {
     pub pid: u32,
     #[serde(default)]
     pub error: Option<String>,
-    /// FAIL / VIOLATION report lines for the one-shot client to print on stdout
-    /// (same shape as a non-watcher `kiss test`).
     #[serde(default)]
     pub output: Option<String>,
 }
@@ -51,7 +47,6 @@ pub(crate) struct SessionFile {
     pub socket: String,
 }
 
-/// One client nudge delivered to the watch loop, with a per-connection reply slot.
 pub(crate) struct NudgeRequest {
     pub msg: NudgeRequestMsg,
     pub reply: SyncSender<NudgeReplyMsg>,
@@ -67,9 +62,6 @@ pub(crate) struct WatchControlServer {
 }
 
 impl WatchControlServer {
-    /// Bind the control socket, write `session.json`, and start the accept thread.
-    ///
-    /// Caller must already hold `watch.lock`. Unlinks any leftover socket at the hashed path.
     pub(crate) fn start(repo_root: &Path) -> Result<Self, String> {
         let socket_path = watch_socket_path(repo_root)?;
         if let Some(parent) = socket_path.parent() {
@@ -123,14 +115,12 @@ impl Drop for WatchControlServer {
     }
 }
 
-/// Ownership bundle: flock + control server. Drop releases both.
 pub(crate) struct WatchSessionOwner {
     pub _lock: WatchLockGuard,
     pub control: WatchControlServer,
 }
 
 impl WatchSessionOwner {
-    /// Take the watch lock, bind the control socket, and publish session.json.
     pub(crate) fn acquire(repo_root: &Path) -> Result<Self, String> {
         let lock_path = watch_lock_path(repo_root);
         let lock = match WatchLockGuard::try_lock(&lock_path) {
@@ -157,8 +147,6 @@ impl WatchSessionOwner {
     }
 }
 
-/// Probe whether a watcher holds the lock. If free, drop immediately (no W).
-/// If held, return the session (retrying briefly while W publishes session.json).
 pub(crate) fn probe_live_watcher(repo_root: &Path) -> Result<Option<SessionFile>, String> {
     let lock_path = watch_lock_path(repo_root);
     match WatchLockGuard::try_lock(&lock_path) {
@@ -171,7 +159,6 @@ pub(crate) fn probe_live_watcher(repo_root: &Path) -> Result<Option<SessionFile>
     }
 }
 
-/// Probe the lock; if a watcher is live, nudge it and wait for the cycle reply.
 #[cfg(test)]
 pub(crate) fn try_client_nudge(
     repo_root: &Path,

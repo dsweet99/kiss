@@ -1,8 +1,3 @@
-//! Durable nextest-logical → PATH::symbol map for warm `kiss cov` time gates.
-//!
-//! `rust_logical_to_kiss_test_ids` re-parses the Rust workspace; caching by the
-//! same files fingerprint as workspace selectors keeps multi-prefix time gates
-//! off that path on warm cov.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -33,7 +28,6 @@ fn cache_path(repo_root: &Path) -> PathBuf {
     repo_root.join(".kiss").join(CACHE_FILE_NAME)
 }
 
-/// Return the logical→report-id map, using a fingerprint-keyed disk cache when valid.
 pub(crate) fn rust_logical_to_kiss_test_ids_cached(
     repo_root: &Path,
     ignore: &[String],

@@ -74,7 +74,6 @@ fn config_key_for_graph(metric_id: &str) -> Option<&'static str> {
     })
 }
 
-/// Map `metric_id` to config key (some metrics use different config key names)
 pub(crate) fn config_key_for(metric_id: &str) -> Option<&'static str> {
     config_key_for_fn(metric_id)
         .or_else(|| config_key_for_file(metric_id))

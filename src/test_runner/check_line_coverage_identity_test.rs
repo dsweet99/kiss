@@ -1,4 +1,3 @@
-//! Fingerprint / identity mismatch coverage load tests.
 
 use super::*;
 use std::collections::BTreeMap;

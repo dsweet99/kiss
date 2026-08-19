@@ -1,4 +1,3 @@
-//! Shared helpers for reverse-index unit and process-race tests.
 
 use crate::publish_derived::batch_entry_state::publish_next_entry_state;
 use crate::batch_lock::lock_batch;

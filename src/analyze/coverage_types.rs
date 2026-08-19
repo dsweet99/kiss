@@ -1,7 +1,6 @@
 use crate::analyze::FocusFilter;
 use kiss::{GateConfig, ParsedFile, ParsedRustFile};
 
-/// Inputs for [`crate::analyze::coverage_gate::check_coverage_gate`].
 #[allow(dead_code)]
 pub struct CheckCoverageGateParams<'a> {
     pub py_parsed: &'a [ParsedFile],

@@ -1,4 +1,3 @@
-"""Tests for adversarial subprocess integration."""
 
 from __future__ import annotations
 

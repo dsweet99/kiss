@@ -1,4 +1,3 @@
-//! Shared `kiss mv` integration-test helpers.
 
 use super::mv_oracles::{OracleBundle, run_post_move_oracles_from_root};
 use crate::symbol_mv_matrix::{ScenarioSpec, fixture_root};

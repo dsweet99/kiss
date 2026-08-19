@@ -1,4 +1,3 @@
-//! Source-model spans for explicit test-target selection.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

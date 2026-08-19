@@ -8,12 +8,6 @@ use std::process::{Command, Stdio};
 use crate::execute_or_reuse::batch_process_tree::ProcessGroupIdentity;
 
 pub(crate) const DELEGATED_GO_ENV: &str = "KISS_RUST_LLVM_COV_DELEGATED_GO";
-/// Optional QA/debug hold (milliseconds) after writing start identities and before
-/// releasing the delegated handshake. Unset/0 keeps production paths fast.
-///
-/// Intentionally omitted from [`COVERAGE_BUILD_ENV_KEYS`]: batch subprocess env
-/// scrubbing must not strip this from the shim host (which reads it via
-/// `std::env`). Delegated children may inherit it; that is harmless.
 pub(crate) const HOLD_BEFORE_GO_MS_ENV: &str = "KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS";
 
 const COVERAGE_BUILD_ENV_KEYS: &[&str] = &[

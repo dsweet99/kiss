@@ -1,4 +1,3 @@
-//! Shared spawn/barrier helpers for reverse OS-process race tests.
 
 use std::env;
 use std::fs;

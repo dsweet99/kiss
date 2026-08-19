@@ -4,7 +4,6 @@ use kiss::{Config, Language};
 use crate::analyze::graph_api::{build_graphs, graph_stats};
 use crate::analyze_parse::parse_all;
 
-/// Inputs for [`compute_global_metrics`].
 pub struct GlobalMetricsInput<'a> {
     pub paths: &'a [String],
     pub ignore: &'a [String],

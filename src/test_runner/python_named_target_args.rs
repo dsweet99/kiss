@@ -1,4 +1,3 @@
-//! Shared RunTestCmdArgs builders for explicit Python target unit tests.
 
 use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::RunTestCmdArgs;

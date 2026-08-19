@@ -35,7 +35,6 @@ impl Language {
         }
     }
 
-    /// Lowercase language label for gates and CLI output (`python` / `rust`).
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -112,11 +111,6 @@ pub fn gather_files_by_lang(
     gather_files_by_lang_opts(paths, lang_filter, ignore_prefixes, true)
 }
 
-/// Like [`gather_files_by_lang`], but optionally skips `include!` expansion.
-///
-/// Selector enumeration walks the tree for every `.rs` file already; expanding
-/// `include!` targets requires a second full syn parse of the workspace and
-/// dominated cold `kiss test` Rust planning.
 pub fn gather_files_by_lang_opts(
     paths: &[String],
     lang_filter: Option<Language>,

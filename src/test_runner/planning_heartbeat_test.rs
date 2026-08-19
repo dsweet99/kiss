@@ -1,4 +1,3 @@
-//! Early planning progress for long silent `kiss test` startup.
 
 #[test]
 fn run_test_emits_planning_heartbeat_before_plan_work() {

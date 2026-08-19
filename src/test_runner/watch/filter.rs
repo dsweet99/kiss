@@ -1,4 +1,3 @@
-//! Relevant-path filtering for watch events.
 
 use std::path::{Path, PathBuf};
 

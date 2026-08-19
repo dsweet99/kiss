@@ -1,4 +1,3 @@
-//! Rust line coverage with conservative per-selector caching.
 
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]

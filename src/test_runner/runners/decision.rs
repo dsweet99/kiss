@@ -40,13 +40,11 @@ pub(crate) struct CombinedSelectorInput<'a> {
     pub(crate) source_paths: &'a [PathBuf],
     pub(crate) test_paths: &'a [PathBuf],
     pub(crate) changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
-    /// Per-language CLI test extras (same abstract slot as `EnsureRequest.extras`).
     pub(crate) test_args: crate::test_runner::language_keyed::LanguageKeyed<&'a [String]>,
     pub(crate) lang_filter: Option<kiss::Language>,
     pub(crate) ignore: &'a [String],
     pub(crate) extra_direct_python: &'a [String],
     pub(crate) extra_direct_rust: &'a [String],
-    /// When false (explicit PATH / PATH::… targets), do not load or merge prior failures.
     pub(crate) include_prior_failures: bool,
 }
 
@@ -230,7 +228,6 @@ struct EngineBackerInputs<'a> {
 struct EngineBackers {
     backers: Vec<Box<dyn LanguagePlanner>>,
     prior_failures: Vec<TestSelector>,
-    /// From each planner's `LanguagePlanner::selection_basis`.
     selection_basis: crate::test_runner::language_keyed::LanguageKeyed<SelectionBasis>,
 }
 

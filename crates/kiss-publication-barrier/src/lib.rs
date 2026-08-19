@@ -16,10 +16,6 @@ pub(crate) use wait::{
     wait_if_targeted,
 };
 
-/// Process-id + monotonic counter for uniquely named temporary files.
-///
-/// A counter avoids collisions when concurrent threads publish in the same
-/// nanosecond (the previous clock-based suffix could collide).
 pub fn unique_process_suffix() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);

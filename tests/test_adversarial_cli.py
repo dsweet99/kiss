@@ -1,4 +1,3 @@
-"""Tests for python.adversarial_cli group wiring."""
 
 from __future__ import annotations
 

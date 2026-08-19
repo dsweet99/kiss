@@ -1,4 +1,3 @@
-"""Pure helpers for coverage comparison metrics."""
 
 from __future__ import annotations
 

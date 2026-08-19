@@ -1,4 +1,3 @@
-//! Additional reverse-query contract tests (rejection, reclaim, I/O bounds).
 
 use crate::publish_derived::batch_entry_state::publish_next_entry_state;
 use crate::publish_derived::batch_reverse_build::{hex_digest, BuiltReverseIndex, FileReverseRecord};

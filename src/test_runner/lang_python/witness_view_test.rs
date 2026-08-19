@@ -1,4 +1,3 @@
-//! Tests for Python generation → execution witness view.
 
 use crate::test_runner::lang_iface::{WitnessScope, WitnessStatus};
 use crate::test_runner::python_coverage_index::generation::{

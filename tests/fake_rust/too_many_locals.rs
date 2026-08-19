@@ -1,4 +1,3 @@
-//! A function with too many local variables (threshold: 10)
 
 pub fn variable_hoarder() -> i32 {
     let var1 = 1;

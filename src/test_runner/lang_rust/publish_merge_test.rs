@@ -1,4 +1,3 @@
-//! Unit tests for Rust publish-merge helpers.
 
 use super::publish_merge::{
     covered_sets_for_publish, merge_statuses, publish_complete, publication_universe,

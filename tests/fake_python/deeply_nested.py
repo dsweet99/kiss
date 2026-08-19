@@ -1,11 +1,9 @@
-"""Examples of overly nested code - too many indentation levels."""
 
 
 from collections.abc import Mapping
 
 
 def process_user_request(request, user, permissions, config):
-    """This function has way too much nesting."""
     result = {"success": False, "data": None, "errors": []}
 
     if request is not None:
@@ -60,7 +58,6 @@ def process_user_request(request, user, permissions, config):
 
 
 def calculate_shipping(order, customer, warehouse, carrier_rates, promotions, settings):
-    """Another deeply nested function."""
     shipping_cost = 0.0
 
     if order:
@@ -109,7 +106,6 @@ def calculate_shipping(order, customer, warehouse, carrier_rates, promotions, se
 
 
 def validate_form_submission(form_data, schema, rules, context, options):
-    """Yet another deeply nested validation function."""
     errors = []
     warnings = []
 

@@ -1,7 +1,3 @@
-//! Current-population unit-test wall timings from durable coverage caches.
-//!
-//! Gate policy and stats formatting live in higher layers; this module only
-//! loads validated durable durations for the current Python/Rust populations.
 
 use std::path::Path;
 use std::time::Duration;
@@ -28,7 +24,6 @@ pub(crate) enum TimingPopulation {
     Incomplete,
 }
 
-/// Per-language include flags for timing collection (LanguageKeyed, not a parallel product).
 pub(crate) type TimingLangInclude = crate::test_runner::language_keyed::LanguageKeyed<bool>;
 
 #[derive(Clone, Copy, Debug)]
@@ -231,8 +226,6 @@ pub(crate) fn runtime_gate_failure_lines(viols: &[RuntimeGateViolation]) -> Vec<
     lines
 }
 
-/// Best-effort timings for `kiss stats`: use whatever coverage-cache durations exist.
-/// Unlike the cov gate path, a missing language population does not abort the other language.
 pub(crate) fn collect_available_unit_test_timings(opts: TimingCollectOpts<'_>) -> Vec<UnitTestTiming> {
     let want_python = opts.include.python
         && matches!(opts.lang_filter, None | Some(Language::Python));
@@ -276,10 +269,6 @@ fn cheap_codebase_test_count(
     Some(total)
 }
 
-/// Count helper for `kiss test` / `kiss cov` `max_num_tests` sibling gate.
-///
-/// Prefer the warm workspace selector cache; fall back to current unit-test
-/// timing population size when the cache is missing or ignore-mismatched.
 pub(crate) fn codebase_test_count_for_cov(
     universe: &Path,
     lang_filter: Option<Language>,

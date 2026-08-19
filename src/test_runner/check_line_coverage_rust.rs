@@ -1,4 +1,3 @@
-//! Rust runtime coverage loading for `kiss cov`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

@@ -1,4 +1,3 @@
-//! allow_refresh identity-mismatch refresh path.
 
 use super::*;
 #[test]

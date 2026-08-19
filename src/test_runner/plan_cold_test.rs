@@ -1,4 +1,3 @@
-//! Cold-cache planning coverage for `plan_all_selectors` miss arms.
 
 use std::fs;
 use std::path::Path;

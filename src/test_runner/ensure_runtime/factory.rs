@@ -1,4 +1,3 @@
-//! Composition root: construct language modules and call the ensure kernel.
 
 use crate::test_runner::coverage_decision::SupportedLanguage;
 use crate::test_runner::ensure_runtime::ensure_runtime_cache;

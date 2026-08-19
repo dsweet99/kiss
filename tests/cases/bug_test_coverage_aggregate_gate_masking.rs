@@ -1,8 +1,3 @@
-//! Regression for test-coverage gate scope: default/`codebase` aggregates;
-//! explicit `by_file` still fails when any production file is below threshold
-//! even if aggregate coverage clears the gate (18/19 referenced with threshold 90).
-//!
-//! `KPop` bughunt (`_malvin/20260523_185300_52l1g7oq/_kpop/exp_log_*.md`).
 
 use crate::common::seed_python_runtime_coverage;
 use std::fmt::Write as _;
@@ -92,8 +87,6 @@ fn run_cov_from_corpus_root(
         .expect("kiss test should run")
 }
 
-/// Explicit `by_file`: whole-repo must fail when any production file is below the threshold,
-/// even if aggregate coverage clears the gate (18/19 referenced with threshold 90).
 #[test]
 fn bug_whole_repo_check_fails_when_one_file_below_coverage_threshold() {
     let tmp = TempDir::new().unwrap();
@@ -122,7 +115,6 @@ fn bug_whole_repo_check_fails_when_one_file_below_coverage_threshold() {
     );
 }
 
-/// Explicit `by_file`: focused and whole-repo checks must agree on pass/fail for the same file.
 #[test]
 fn bug_whole_repo_and_focused_check_agree_on_coverage_gate() {
     let tmp = TempDir::new().unwrap();
@@ -146,7 +138,6 @@ fn bug_whole_repo_and_focused_check_agree_on_coverage_gate() {
     );
 }
 
-/// Omitted / default scope uses codebase aggregation: line-weighted aggregate (~95%) clears 90.
 #[test]
 fn default_scope_whole_repo_passes_when_aggregate_clears() {
     let tmp = TempDir::new().unwrap();
@@ -170,7 +161,6 @@ fn default_scope_whole_repo_passes_when_aggregate_clears() {
     );
 }
 
-/// Same corpus under explicit codebase scope: line-weighted aggregate (~95%) clears threshold 90.
 #[test]
 fn codebase_scope_whole_repo_passes_when_aggregate_clears() {
     let tmp = TempDir::new().unwrap();
@@ -195,7 +185,6 @@ fn codebase_scope_whole_repo_passes_when_aggregate_clears() {
     );
 }
 
-/// Focused bad.py under codebase scope aggregates only that file and must fail.
 #[test]
 fn codebase_scope_focused_bad_py_fails() {
     let tmp = TempDir::new().unwrap();

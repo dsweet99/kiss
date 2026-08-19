@@ -1,4 +1,3 @@
-//! Reverse-bound population validation without rescanning entries/*.json.
 
 use crate::publish_derived::batch_derived_index_types::{
     OnDiskIndexWithFiles, PopulationManifestOnDisk, ReverseLineIndexManifestMeta,

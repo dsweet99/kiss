@@ -1,4 +1,3 @@
-//! Migrate complete v1 Python derived state — focused tests.
 
 use super::{
     V1Bundle, evidence_from_v1_bundle, selector_coverage_from_index,

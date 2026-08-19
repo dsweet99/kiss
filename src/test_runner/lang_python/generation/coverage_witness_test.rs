@@ -1,4 +1,3 @@
-//! Coverage and acceptance witnesses for Python generations.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

@@ -1,4 +1,3 @@
-//! Watcher-client override unit tests for `run_test_command_with`.
 
 use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};

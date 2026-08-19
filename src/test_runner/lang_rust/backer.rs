@@ -24,7 +24,6 @@ pub(crate) struct RustBackerInput<'a> {
     pub(crate) resolved: Option<ResolvedRustPopulation>,
 }
 
-/// Build the Rust language planner (selection basis is on `LanguagePlanner`).
 pub(crate) fn rust_llvm_cov_backer(input: RustBackerInput<'_>) -> Box<dyn LanguagePlanner> {
     Box::new(RustModule::new_with_resolved(input))
 }

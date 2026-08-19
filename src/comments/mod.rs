@@ -1,5 +1,3 @@
-//! Flag non-doc comments when `comment_removal_enabled` is true.
-//! Flag Python docstrings and Rust doc comments outside `docs_allowed`.
 
 use std::path::Path;
 

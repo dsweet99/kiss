@@ -1,4 +1,3 @@
-//! Enumerate cache entry generations and build the forward coverage index.
 
 use crate::rust_cov_cache::{RustCovCacheEntry, repo_relative_coverage_file};
 use crate::{RustLineCoverage, RustLlvmCovError};

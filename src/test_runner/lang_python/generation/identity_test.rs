@@ -1,4 +1,3 @@
-//! Direct coverage for Python execution-identity helpers.
 
 use std::fs;
 

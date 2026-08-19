@@ -1,5 +1,3 @@
-//! Output emission for cache-hit paths. Split out of `mod.rs` to keep the
-//! `analyze_cache` module under the per-file size threshold.
 use crate::analyze::FocusFilter;
 use kiss::check_universe_cache::FullCheckCache;
 use kiss::cli_output::{print_duplicates, print_final_status, print_violations};
@@ -21,10 +19,6 @@ pub(super) fn emit_cached_bypass(
     !has_violations
 }
 
-/// Cached counterpart to the gated default flow: if the cached coverage data
-/// would trip the `test_coverage` gate, emit `VIOLATION` and per-definition
-/// coverage violations exactly like `evaluate_gate` does in the live path; on
-/// success, emit base + graph violations + duplicates.
 pub(super) fn emit_cached_gated(
     cache: FullCheckCache,
     opts: &crate::analyze::AnalyzeOptions<'_>,

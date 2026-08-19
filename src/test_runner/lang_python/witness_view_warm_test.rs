@@ -1,4 +1,3 @@
-//! Extra coverage for Python witness warm helper.
 
 use super::witness_view::try_warm_python_cached_summary;
 use crate::test_runner::python_coverage_index::generation::{

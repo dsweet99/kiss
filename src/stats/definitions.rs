@@ -12,7 +12,6 @@ pub struct MetricDef {
     pub scope: MetricScope,
 }
 
-/// Central registry of all metrics with stable IDs
 pub const METRICS: &[MetricDef] = &[
     MetricDef {
         metric_id: "statements_per_function",

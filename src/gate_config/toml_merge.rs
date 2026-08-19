@@ -1,4 +1,3 @@
-//! TOML merge helpers for GateConfig.
 
 use super::*;
 use crate::config::{apply_lenient_string_list, get_usize, parse_string_list_key, ConfigError};
@@ -100,7 +99,6 @@ pub(super) fn merge_test_gates_strict(
     Ok(())
 }
 
-/// Parse `max_num_tests`: nonnegative integer (`0` means any test fails).
 pub(super) fn try_get_max_num_tests(table: &toml::Table) -> Result<Option<usize>, ConfigError> {
     let Some(value) = table.get("max_num_tests") else {
         return Ok(None);

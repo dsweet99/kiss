@@ -1,4 +1,3 @@
-//! Forced explicit Python target must not widen into a full population.
 
 use std::fs;
 use std::path::Path;

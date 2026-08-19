@@ -1,4 +1,3 @@
-//! Generation publish/load focused tests.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

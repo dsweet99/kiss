@@ -78,7 +78,6 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
     )
 }
 
-/// CheckAggregate ensure path that uses the caller's session gate (no cwd reload).
 pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors_with_gate(
     repo_root: &Path,
     selectors: &[String],

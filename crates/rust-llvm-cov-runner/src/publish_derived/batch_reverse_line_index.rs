@@ -1,8 +1,3 @@
-//! Generation-scoped derived reverse line index for fast PATH::symbol selection.
-//!
-//! Authoritative coverage remains per-test entry JSON. This index is disposable
-//! and rebuildable from those entries. Readers trust only immutable snapshots
-//! bound by population manifest + entry_state tokens.
 
 pub use crate::publish_derived::batch_reverse_build::{REVERSE_LINE_INDEX_SCHEMA, ReversePublishInfo};
 pub use crate::publish_derived::batch_reverse_publish::{

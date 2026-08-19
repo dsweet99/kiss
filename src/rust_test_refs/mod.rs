@@ -1,8 +1,3 @@
-//! Rust test-file detection and test-function discovery.
-//!
-//! Static-reference ("kiss coverage") analysis was removed; runtime coverage is
-//! owned exclusively by `kiss cov`. `rust_test_functions_in` remains for the
-//! runtime coverage population selector path.
 
 use std::path::Path;
 use syn::{Attribute, Item};
@@ -49,10 +44,6 @@ fn has_ignore_attribute(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|a| a.path().is_ident("ignore"))
 }
 
-/// Returns true if the file path is a Rust binary entry point.
-///
-/// Excludes paths that contain a **normal** path component named exactly `tests`
-/// (Cargo’s integration-test tree).
 #[must_use]
 pub fn is_binary_entry_point(path: &Path) -> bool {
     if path
@@ -99,7 +90,6 @@ fn collect_test_fn_ids(items: &[Item], prefix: &str, out: &mut Vec<String>) {
     }
 }
 
-/// Discover `#[test]` function selectors in a parsed Rust file.
 #[must_use]
 pub fn rust_test_functions_in(parsed: &ParsedRustFile) -> Vec<String> {
     let mut out = Vec::new();

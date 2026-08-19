@@ -156,7 +156,6 @@ impl Config {
         self.merge_from_toml_with_path(content, lang, None);
     }
 
-    /// Result-based merge that returns errors instead of printing to stderr.
     pub(crate) fn try_merge_from_toml(
         &mut self,
         content: &str,

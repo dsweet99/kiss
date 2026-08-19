@@ -1,4 +1,3 @@
-//! Query parsing for `kiss mv`.
 
 use std::path::PathBuf;
 
