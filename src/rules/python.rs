@@ -65,7 +65,7 @@ pub(super) const PY_RULE_SPECS: &[RuleSpec] = &[
         metric: "boolean_parameters",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.boolean_parameters),
-        description: "boolean_parameters is the maximum number of boolean default parameters (True/False) in a Python function.",
+        description: "boolean_parameters is the maximum number of bool-typed parameters and True/False defaults in a Python function.",
     },
     RuleSpec {
         metric: "annotations_per_function",
@@ -83,7 +83,7 @@ pub(super) const PY_RULE_SPECS: &[RuleSpec] = &[
         metric: "methods_per_class",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.methods_per_class),
-        description: "methods_per_class is the maximum number of methods defined on a Python class.",
+        description: "methods_per_class is the maximum number of methods defined directly on a Python class (nested helpers are not counted).",
     },
     RuleSpec {
         metric: "statements_per_file",
@@ -173,6 +173,6 @@ pub(super) const PY_RULE_SPECS: &[RuleSpec] = &[
         metric: "doc",
         op: "==",
         threshold: ThresholdValue::Usize(|_, _| 0),
-        description: "doc counts Python docstrings and Rust doc comments (///, //!, /**, /*!). Allowed only under docs_allowed directory prefixes (relative to the repository root). Empty docs_allowed allows documentation in no directory. Default is [].",
+        description: "doc counts Python docstrings (including attribute docs) and Rust doc comments (///, //!, /**, /*!) plus `#[doc]` / `#![doc]` attributes. Allowed only under docs_allowed directory prefixes (relative to the repository root). Empty docs_allowed allows documentation in no directory. Default is [].",
     },
 ];

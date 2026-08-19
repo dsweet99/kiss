@@ -73,7 +73,7 @@ pub(crate) fn try_warm_python_cached_summary(
         return None;
     }
     let mut witness = python_witness_from_pinned(&pinned);
-    let gate = GateConfig::load();
+    let gate = GateConfig::load_for_repo(repo_root);
     witness.statuses = reclassify_statuses_with_gate(
         &witness.selectors,
         &witness.statuses,

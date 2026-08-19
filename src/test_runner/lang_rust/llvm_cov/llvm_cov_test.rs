@@ -318,6 +318,16 @@ fn check_aggregate_population_can_return_cached_summary() {
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
     };
+    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    std::fs::create_dir_all(&cache_root).unwrap();
+    std::fs::write(
+        cache_root.join("population_durations.json"),
+        format!(
+            r#"{{"schema_version":"rust-population-durations-v1","cache_schema_version":"{}","generation_fingerprint":"generation","input_fingerprint":"input","entries_fingerprint":"check-aggregate:abc","durations":{{"tests::case":12000000,"tests::other":34000000}}}}"#,
+            rust_llvm_cov_runner::CACHE_SCHEMA_VERSION
+        ),
+    )
+    .unwrap();
 
     let summary =
         cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population)
@@ -326,6 +336,10 @@ fn check_aggregate_population_can_return_cached_summary() {
     assert_eq!(summary.total, 2);
     assert_eq!(summary.cache_hits, 2);
     assert_eq!(summary.cache_misses, 0);
+    assert_eq!(
+        summary.selector_durations_ns.values().copied().sum::<u64>(),
+        46_000_000
+    );
 
     let mut entry_backed = population;
     entry_backed.entries_fingerprint = "entry-fingerprint".to_string();

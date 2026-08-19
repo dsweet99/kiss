@@ -42,6 +42,21 @@ fn workspace_selector_cache_round_trips_then_misses_on_touch() {
 }
 
 #[test]
+fn load_workspace_selectors_for_count_requires_matching_ignore() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(
+        root.join("tests").join("test_a.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+    store_workspace_selectors(root, &[], &["tests/test_a.py::test_a".into()], &[]);
+    assert!(super::load_workspace_selectors_for_count(root, &["tests/slow".into()]).is_none());
+    assert!(super::load_workspace_selectors_for_count(root, &[]).is_some());
+}
+
+#[test]
 fn git_fingerprint_includes_untracked_sources() {
     let tmp = tempdir().unwrap();
     let root = tmp.path();

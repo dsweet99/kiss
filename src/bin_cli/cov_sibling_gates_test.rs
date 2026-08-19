@@ -109,7 +109,15 @@ fn max_num_tests_gate_skipped_when_bypass() {
         allow_refresh: false,
         pytest_args: &[],
     };
-    assert!(!evaluate_max_num_tests_gate(&args, Path::new("."), &[]));
+    assert!(!evaluate_max_num_tests_gate(
+        &args,
+        Path::new("."),
+        &CovFileSets {
+            py_files: vec![PathBuf::from("a.py")],
+            rs_files: Vec::new(),
+        },
+        &[],
+    ));
 }
 
 #[test]
@@ -134,6 +142,10 @@ fn max_num_tests_gate_fails_closed_without_population() {
         pytest_args: &[],
     };
     let tmp = tempfile::tempdir().unwrap();
-    assert!(evaluate_max_num_tests_gate(&args, tmp.path(), &[]));
+    let files = CovFileSets {
+        py_files: vec![tmp.path().join("lib.py")],
+        rs_files: Vec::new(),
+    };
+    assert!(evaluate_max_num_tests_gate(&args, tmp.path(), &files, &[]));
 }
 

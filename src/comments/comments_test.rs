@@ -109,6 +109,13 @@ fn python_flags_docstrings_outside_allowed_dirs() {
         ),
         0
     );
+    assert_eq!(
+        py_docs(
+            "class C:\n    x = 1\n    \"\"\"attr doc\"\"\"\n",
+            &["nowhere"]
+        ),
+        1
+    );
 }
 
 #[test]
@@ -120,6 +127,8 @@ fn rust_flags_doc_comments_outside_allowed_dirs() {
     assert_eq!(rs_docs("/*! d */\nfn f() {}\n", &["nowhere"]), 1);
     assert_eq!(rs_docs("// n\nfn f() {}\n", &["nowhere"]), 0);
     assert_eq!(rs_docs("/* n */\nfn f() {}\n", &["nowhere"]), 0);
+    assert_eq!(rs_docs("#[doc = \"hidden\"]\nfn f() {}\n", &["nowhere"]), 1);
+    assert_eq!(rs_docs("#![doc = \"mod\"]\nfn f() {}\n", &["nowhere"]), 1);
 }
 
 #[test]

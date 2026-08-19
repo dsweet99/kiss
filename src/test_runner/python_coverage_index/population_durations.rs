@@ -286,7 +286,7 @@ fn load_durations_from_entry_probes_inner(
             &python_version,
             &pytest_version,
             false,
-        &kiss::GateConfig::load(),
+        &kiss::GateConfig::load_for_repo(repo_root),
     )
         .ok()?;
         let fingerprint = rslip::cache_fingerprint_for_request(&req).ok()?;

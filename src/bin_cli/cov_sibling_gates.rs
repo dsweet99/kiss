@@ -1,7 +1,6 @@
 
 use std::path::Path;
 
-use kiss::Language;
 use kiss::cli_output::print_final_status;
 
 use crate::bin_cli::cov_cmd::{CovCommandArgs, CovFileSets};
@@ -67,6 +66,7 @@ pub(crate) fn apply_time_gate_eval(eval: &RuntimeGateEval) -> bool {
 pub(crate) fn evaluate_max_num_tests_gate(
     args: &CovCommandArgs<'_>,
     universe_root: &Path,
+    files: &CovFileSets,
     ignore: &[String],
 ) -> bool {
     if args.bypass_gate {
@@ -76,8 +76,8 @@ pub(crate) fn evaluate_max_num_tests_gate(
         universe_root,
         args.lang_filter,
         TimingLangInclude {
-            python: matches!(args.lang_filter, None | Some(Language::Python)),
-            rust: matches!(args.lang_filter, None | Some(Language::Rust)),
+            python: !files.py_files.is_empty(),
+            rust: !files.rs_files.is_empty(),
         },
         ignore,
         args.pytest_args,

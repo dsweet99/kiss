@@ -83,7 +83,7 @@ pub(crate) fn evidence_from_cached_outcomes(
         &plan.selectors,
         test_args,
         is_indexable,
-        &kiss::GateConfig::load(),
+        &kiss::GateConfig::load_for_repo(repo_root),
     )?;
     let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
     for delta in deltas {

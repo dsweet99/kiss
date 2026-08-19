@@ -281,29 +281,9 @@ fn try_check_aggregate_hit_after_lock(
     let Some(population) = population else {
         return Ok(None);
     };
-    if !population
-        .entries_fingerprint
-        .starts_with("check-aggregate:")
-    {
+    let Some(completed) = check_aggregate_hit_completed(req, &population) else {
         return Ok(None);
-    }
-    let completed = req
-        .logical_selectors
-        .iter()
-        .map(|selector| RustLlvmCovOutcome {
-            selector: selector.clone(),
-            status: TestStatus::Passed,
-            exit_code: Some(0),
-            duration: Duration::ZERO,
-            coverage: crate::RustLineCoverage {
-                files: BTreeMap::new(),
-            },
-            test_binary_ids: Vec::new(),
-            cache_status: RustCovCacheStatus::Hit,
-            stdout: None,
-            stderr: None,
-        })
-        .collect();
+    };
     Ok(Some(RustCoverageBatchResult {
         completed,
         batch_error: None,
@@ -313,6 +293,42 @@ fn try_check_aggregate_hit_after_lock(
         },
         test_binaries: population.test_binaries.into_values().collect(),
     }))
+}
+
+fn check_aggregate_hit_completed(
+    req: &RustCoverageBatchRequest,
+    population: &crate::publish_derived::batch_derived_index::RustPopulationState,
+) -> Option<Vec<RustLlvmCovOutcome>> {
+    if !population
+        .entries_fingerprint
+        .starts_with("check-aggregate:")
+    {
+        return None;
+    }
+    let pairs = crate::publish_derived::batch_population_durations::try_load_population_durations(
+        &req.cache_root,
+        population,
+    )?;
+    let duration_by_selector: BTreeMap<_, _> = pairs.into_iter().collect();
+    req.logical_selectors
+        .iter()
+        .map(|selector| {
+            let duration = duration_by_selector.get(selector).copied()?;
+            Some(RustLlvmCovOutcome {
+                selector: selector.clone(),
+                status: TestStatus::Passed,
+                exit_code: Some(0),
+                duration,
+                coverage: crate::RustLineCoverage {
+                    files: BTreeMap::new(),
+                },
+                test_binary_ids: Vec::new(),
+                cache_status: RustCovCacheStatus::Hit,
+                stdout: None,
+                stderr: None,
+            })
+        })
+        .collect()
 }
 
 fn all_hit_outcomes(
@@ -356,8 +372,6 @@ fn all_hit_outcomes(
         completed.push(outcome_from_entry(entry, RustCovCacheStatus::Hit));
         saw_cache_hit = true;
     }
-
-
 
     if saw_cache_hit
         && crate::publish_derived::batch_entry_state::read_entry_state(&req.cache_root)

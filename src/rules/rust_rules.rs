@@ -65,7 +65,7 @@ pub(super) const RS_RULE_SPECS: &[RuleSpec] = &[
         metric: "methods_per_class",
         op: "<",
         threshold: ThresholdValue::Usize(|c, _| c.methods_per_class),
-        description: "methods_per_class is the maximum number of methods in an `impl` block for a Rust type.",
+        description: "methods_per_class is the maximum number of inherent methods on a Rust type across all `impl Type` blocks in a file.",
     },
     RuleSpec {
         metric: "statements_per_file",
@@ -155,6 +155,6 @@ pub(super) const RS_RULE_SPECS: &[RuleSpec] = &[
         metric: "doc",
         op: "==",
         threshold: ThresholdValue::Usize(|_, _| 0),
-        description: "doc counts Python docstrings and Rust doc comments (///, //!, /**, /*!). Allowed only under docs_allowed directory prefixes (relative to the repository root). Empty docs_allowed allows documentation in no directory. Default is [].",
+        description: "doc counts Python docstrings (including attribute docs) and Rust doc comments (///, //!, /**, /*!) plus `#[doc]` / `#![doc]` attributes. Allowed only under docs_allowed directory prefixes (relative to the repository root). Empty docs_allowed allows documentation in no directory. Default is [].",
     },
 ];

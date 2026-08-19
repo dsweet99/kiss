@@ -67,7 +67,6 @@ fn collect_docs_in_body(body: Node<'_>, parsed: &ParsedFile, out: &mut Vec<Viola
         if is_docstring_statement(child) {
             out.push(doc_violation(&parsed.path, child.start_position().row + 1));
         }
-        return;
     }
 }
 

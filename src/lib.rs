@@ -56,7 +56,10 @@ pub use comments::{
     COMMENT_METRIC, DOC_METRIC, collect_comment_violations, collect_doc_violations,
     has_non_doc_comments,
 };
-pub use config::{Config, ConfigError, ConfigLanguage, is_similar};
+pub use config::{
+    Config, ConfigError, ConfigLanguage, find_repo_root, is_similar, kissconfig_path_for_repo,
+    kissconfig_path_from_cwd,
+};
 pub use counts::analyze_file;
 pub use counts::analyze_file_with_statement_count;
 pub use defaults::default_config_toml;

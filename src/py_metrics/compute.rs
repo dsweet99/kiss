@@ -4,7 +4,7 @@ use tree_sitter::Node;
 use super::body_walk::analyze_body;
 use super::file_stats::count_file_statements;
 use super::file_walk::collect_file_counts;
-use super::nesting::{compute_nested_function_depth, count_node_kind};
+use super::nesting::compute_nested_function_depth;
 use super::parameters::{count_decorators, count_parameters};
 use super::types::{ClassMetrics, FileMetrics, FunctionMetrics};
 
@@ -41,7 +41,30 @@ pub fn compute_class_metrics(node: Node) -> ClassMetrics {
         return ClassMetrics::default();
     };
     ClassMetrics {
-        methods: count_node_kind(body, "function_definition"),
+        methods: count_direct_class_methods(body),
+    }
+}
+
+fn count_direct_class_methods(body: Node) -> usize {
+    let mut cursor = body.walk();
+    body.named_children(&mut cursor)
+        .filter(|child| is_direct_method(*child))
+        .count()
+}
+
+fn is_direct_method(node: Node) -> bool {
+    match node.kind() {
+        "function_definition" | "async_function_definition" => true,
+        "decorated_definition" => {
+            let mut cursor = node.walk();
+            node.named_children(&mut cursor).any(|child| {
+                matches!(
+                    child.kind(),
+                    "function_definition" | "async_function_definition"
+                )
+            })
+        }
+        _ => false,
     }
 }
 
@@ -90,5 +113,39 @@ mod tests {
 
         assert_eq!(compute_class_metrics(class_node).methods, 1);
         assert_eq!(compute_file_metrics(&parsed).functions, 2);
+    }
+
+    #[test]
+    fn class_metrics_ignore_nested_helpers() {
+        let parsed = parse_python_source(
+            "class C:\n    def method(self):\n        def helper():\n            return 1\n        return helper()\n",
+        );
+        let root = parsed.tree.root_node();
+        let class_node = root
+            .children(&mut root.walk())
+            .find(|node| node.kind() == "class_definition")
+            .expect("class");
+        assert_eq!(compute_class_metrics(class_node).methods, 1);
+    }
+
+    #[test]
+    fn match_case_tree_has_case_clause() {
+        let parsed = parse_python_source("def f(x):\n    match x:\n        case 1:\n            return 1\n");
+        fn kinds(node: tree_sitter::Node) -> Vec<(String, usize)> {
+            let mut out = vec![(
+                node.kind().to_string(),
+                node.start_position().row + 1,
+            )];
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                out.extend(kinds(child));
+            }
+            out
+        }
+        let found = kinds(parsed.tree.root_node());
+        assert!(
+            found.iter().any(|(k, _)| k == "case_clause"),
+            "kinds={found:?}"
+        );
     }
 }

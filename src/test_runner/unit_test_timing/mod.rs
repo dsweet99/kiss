@@ -133,23 +133,29 @@ fn load_rust_timings_from_witness(
         try_load_rust_execution_witness, try_warm_rust_cached_summary,
     };
     let witness = try_load_rust_execution_witness(repo_root).ok()?;
-    let _ = try_warm_rust_cached_summary(repo_root, &witness.selectors, identity, &kiss::GateConfig::default())?;
+    let _ = try_warm_rust_cached_summary(
+        repo_root,
+        &witness.selectors,
+        identity,
+        &kiss::GateConfig::load_for_repo(repo_root),
+    )?;
     if witness.durations_ns.len() != witness.selectors.len() {
         return None;
     }
     let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).ok()?;
-    Some(
-        witness
-            .selectors
-            .iter()
-            .zip(witness.durations_ns.iter())
-            .map(|(selector, &ns)| UnitTestTiming {
+    witness
+        .selectors
+        .iter()
+        .zip(witness.durations_ns.iter())
+        .map(|(selector, &ns)| {
+            let duration = Duration::from_nanos(ns?);
+            Some(UnitTestTiming {
                 language: Language::Rust,
                 selector: report_string_for_logical_string(&report_ids, selector),
-                duration: Duration::from_nanos(ns.unwrap_or(0)),
+                duration,
             })
-            .collect(),
-    )
+        })
+        .collect::<Option<Vec<_>>>()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -251,14 +257,7 @@ fn cheap_codebase_test_count(
     let repo_root = repository_root_for_universe(universe);
     let (py, rs) = super::workspace_selector_cache::load_workspace_selectors_for_count(
         &repo_root, ignore,
-    )
-    .or_else(|| {
-        if ignore.is_empty() {
-            None
-        } else {
-            super::workspace_selector_cache::load_workspace_selectors_for_count(&repo_root, &[])
-        }
-    })?;
+    )?;
     let mut total = 0usize;
     if include.python && matches!(lang_filter, None | Some(Language::Python)) {
         total += py.len();

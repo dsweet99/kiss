@@ -151,7 +151,9 @@ pub use batch_derived_index::{
     load_current_generation_line_index, load_current_population_state,
     load_reusable_prior_population_state, reusable_snapshot_delta,
 };
-pub use batch_population_durations::load_current_population_durations;
+pub use batch_population_durations::{
+    load_current_population_durations, try_load_population_durations,
+};
 pub use batch_events::{
     BatchCompilerArtifact, BatchEventStream, BatchTestTerminal, aggregate_selectors_for_test,
     parse_batch_event_stream, selector_matches_test,

@@ -14,6 +14,26 @@ fn test_helpers() {
 }
 
 #[test]
+fn inherent_impls_for_same_type_are_counted_together() {
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    writeln!(
+        tmp,
+        "struct S;\nimpl S {{ fn a(&self) {{}} fn b(&self) {{}} fn c(&self) {{}} }}\nimpl S {{ fn d(&self) {{}} fn e(&self) {{}} fn f(&self) {{}} }}\n"
+    )
+    .unwrap();
+    let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+    let cfg = Config {
+        methods_per_class: 5,
+        ..Default::default()
+    };
+    let viols = analyze_rust_file(&parsed, &cfg);
+    assert!(
+        viols.iter().any(|v| v.metric == "methods_per_class" && v.value == 6),
+        "split inherent impls must sum methods, got {viols:?}"
+    );
+}
+
+#[test]
 fn test_analyzer_basic() {
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(tmp, "fn foo() {{}}").unwrap();

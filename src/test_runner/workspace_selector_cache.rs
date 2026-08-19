@@ -225,9 +225,7 @@ pub(crate) fn load_workspace_selectors_for_count(
     if cache.source_root != root {
         return None;
     }
-    if !ignore.is_empty() && cache.ignore != ignore && !cache.ignore.is_empty() {
-
-
+    if cache.ignore != ignore {
         return None;
     }
     Some((cache.python_selectors, cache.rust_selectors))

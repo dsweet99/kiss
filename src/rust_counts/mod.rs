@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use syn::{Block, ImplItem, Item};
 
@@ -25,6 +26,7 @@ pub fn analyze_rust_file(parsed: &ParsedRustFile, config: &Config) -> Vec<Violat
     for item in &parsed.ast.items {
         analyzer.analyze_item(item);
     }
+    analyzer.flush_inherent_method_counts();
     violations
 }
 
@@ -67,14 +69,16 @@ struct RustAnalyzer<'a> {
     file: &'a Path,
     config: &'a Config,
     violations: &'a mut Vec<Violation>,
+    inherent_method_counts: HashMap<String, (usize, usize)>,
 }
 
 impl<'a> RustAnalyzer<'a> {
-    const fn new(file: &'a Path, config: &'a Config, violations: &'a mut Vec<Violation>) -> Self {
+    fn new(file: &'a Path, config: &'a Config, violations: &'a mut Vec<Violation>) -> Self {
         Self {
             file,
             config,
             violations,
+            inherent_method_counts: HashMap::new(),
         }
     }
 
@@ -237,8 +241,15 @@ impl<'a> RustAnalyzer<'a> {
         let type_name = get_impl_type_name(impl_block);
         let line = impl_block.impl_token.span.start().line;
         let name = type_name.as_deref().unwrap_or("<impl>");
-
-        self.check_methods_per_class(line, name, method_count);
+        if impl_block.trait_.is_none() {
+            let entry = self
+                .inherent_method_counts
+                .entry(name.to_string())
+                .or_insert((line, 0));
+            entry.1 += method_count;
+        } else {
+            self.check_methods_per_class(line, name, method_count);
+        }
 
         for impl_item in &impl_block.items {
             if let ImplItem::Fn(method) = impl_item {
@@ -274,6 +285,13 @@ impl<'a> RustAnalyzer<'a> {
                     .suggestion("Extract related methods into a separate type with its own impl.")
                     .build(),
             );
+        }
+    }
+
+    fn flush_inherent_method_counts(&mut self) {
+        let counts = std::mem::take(&mut self.inherent_method_counts);
+        for (name, (line, count)) in counts {
+            self.check_methods_per_class(line, &name, count);
         }
     }
 

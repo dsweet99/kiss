@@ -262,7 +262,8 @@ pub(crate) fn summary_from_witness_statuses(
     let mut planned = planned_selectors.to_vec();
     planned.sort();
     planned.dedup();
-    let records = planned_witness_records(&planned, witness, &index, &report_id, require_all_passed);
+    let records = planned_witness_records(&planned, witness, &index, &report_id, require_all_passed)
+        .expect("witness records include stored durations");
     emit_cached_witness_lines(&records);
     let mut summary = SelectorExecutionSummary::default();
     for (report, status, duration) in records {
@@ -284,7 +285,7 @@ fn planned_witness_records(
     index: &std::collections::BTreeMap<&str, usize>,
     report_id: &impl Fn(&str) -> String,
     require_all_passed: bool,
-) -> Vec<(String, TestStatus, Duration)> {
+) -> Option<Vec<(String, TestStatus, Duration)>> {
     let mut records = Vec::with_capacity(planned.len());
     for selector in planned {
         let i = index[selector.as_str()];
@@ -297,10 +298,10 @@ fn planned_witness_records(
         records.push((
             report_id(selector),
             status,
-            Duration::from_nanos(witness.durations_ns[i].unwrap_or(0)),
+            Duration::from_nanos(witness.durations_ns[i]?),
         ));
     }
-    records
+    Some(records)
 }
 
 fn emit_cached_witness_lines(records: &[(String, TestStatus, Duration)]) {

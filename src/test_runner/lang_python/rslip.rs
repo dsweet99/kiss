@@ -16,7 +16,7 @@ use crate::test_runner::last_status::{python_last_status_identity, record_status
 use super::rslip_request::timeout_for_selector_with_gate;
 pub(crate) use super::rslip_request::{detect_rslip_versions, rslip_request_from_parts};
 #[cfg(test)]
-pub(crate) use super::rslip_request::{DEFAULT_PYTEST_TIMEOUT, timeout_for_selector};
+pub(crate) use super::rslip_request::timeout_for_selector;
 #[cfg(test)]
 use super::rslip_request::python_version_supports_rslip;
 

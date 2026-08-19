@@ -20,6 +20,22 @@ fn tools() -> crate::RustCoverageToolIdentity {
     witness_batch_tools()
 }
 
+fn write_check_aggregate_hit_durations(
+    req: &crate::plan::batch_plan::RustCoverageBatchRequest,
+    identity: &crate::plan::batch_fingerprint::RustCoverageBatchIdentity,
+) {
+    let population = crate::publish_derived::batch_derived_index::load_current_population_state(
+        &req.cache_root, &req.source_root, identity, req.population_publication_selectors.as_deref(),
+    ).expect("published population");
+    let pairs: Vec<_> = population
+        .selectors
+        .iter()
+        .map(|s| (s.clone(), Duration::from_millis(1)))
+        .collect();
+    crate::batch_population_durations::write_population_durations(&req.cache_root, &population, &pairs)
+        .unwrap();
+}
+
 #[test]
 fn all_hit_batch_returns_without_batch_lock_or_spawn() {
     let repo = batch_executor_fixture_repo();
@@ -320,6 +336,7 @@ fn check_aggregate_population_rechecks_cache_after_lock_without_fresh_run() {
         &req, &tools, &identity, &aggregate,
     )
     .unwrap();
+    write_check_aggregate_hit_durations(&req, &identity);
 
     let result =
         execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {

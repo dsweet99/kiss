@@ -31,12 +31,48 @@ fn append_rust_comment_kind(parsed: &ParsedRustFile, out: &mut Vec<Violation>, m
             i = next;
             continue;
         }
+        if matches!(mode, ScanMode::Doc)
+            && let Some(next) = take_doc_attribute(bytes, i)
+        {
+            push_kind(parsed, out, mode, true, i);
+            i = next;
+            continue;
+        }
         if let Some(next) = skip_string_or_char(bytes, i) {
             i = next;
             continue;
         }
         i += 1;
     }
+}
+
+fn take_doc_attribute(bytes: &[u8], i: usize) -> Option<usize> {
+    let rest = bytes.get(i..)?;
+    let start = if rest.starts_with(b"#![doc") {
+        i + 6
+    } else if rest.starts_with(b"#[doc") {
+        i + 5
+    } else {
+        return None;
+    };
+    skip_attr_to_bracket_end(bytes, start)
+}
+
+fn skip_attr_to_bracket_end(bytes: &[u8], mut i: usize) -> Option<usize> {
+    let mut depth = 1;
+    while i < bytes.len() && depth > 0 {
+        if bytes[i] == b'"' {
+            i = skip_double_string(bytes, i);
+            continue;
+        }
+        match bytes[i] {
+            b'[' => depth += 1,
+            b']' => depth -= 1,
+            _ => {}
+        }
+        i += 1;
+    }
+    (depth == 0).then_some(i)
 }
 
 fn push_kind(

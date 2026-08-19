@@ -113,7 +113,7 @@ fn evaluate_records_with_time(
     let time_failed =
         apply_time_gate_eval(&time_eval);
     let max_num_tests_failed =
-        evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.ignore);
+        evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
     finish_sibling_gates(SiblingGateResult {
         coverage_failed,
         time_failed,
@@ -147,7 +147,7 @@ fn try_evaluate_records_with_time(
     let time_failed =
         apply_time_gate_eval(&time_eval);
     let max_num_tests_failed =
-        evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.ignore);
+        evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
     Some(finish_sibling_gates(SiblingGateResult {
         coverage_failed,
         time_failed,
@@ -275,7 +275,7 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
         let time_eval = evaluate_time_gate_for_cov(args, universe_root, &files, &ignore);
         let time_failed = apply_time_gate_eval(&time_eval);
         let max_num_tests_failed =
-            evaluate_max_num_tests_gate(args, universe_root, &ignore);
+            evaluate_max_num_tests_gate(args, universe_root, &files, &ignore);
         return finish_sibling_gates(SiblingGateResult {
             coverage_failed: false,
             time_failed,

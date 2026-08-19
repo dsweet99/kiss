@@ -95,7 +95,7 @@ fn try_load_durations_from_manifest_sidecar(
     try_load_population_durations(cache_root, &population)
 }
 
-pub(crate) fn try_load_population_durations(
+pub fn try_load_population_durations(
     cache_root: &Path,
     population: &RustPopulationState,
 ) -> Option<Vec<(String, Duration)>> {

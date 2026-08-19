@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::cache::{digest_recorded_path, rslip_fnv1a64};
 use crate::{CacheStatus, LineCoverage, RslipOutcome, RslipRequest};
 
-const SEAL_SCHEMA_VERSION: &str = "rslip-warm-hit-v3";
+const SEAL_SCHEMA_VERSION: &str = "rslip-warm-hit-v4";
 const SEAL_FILE_NAME: &str = "warm_hit_seal.json";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,6 +31,8 @@ struct WarmHitSeal {
     content_fingerprint: Option<String>,
     covered_files: BTreeMap<String, FileStamp>,
     failed_nodeids: Vec<String>,
+    #[serde(default)]
+    selector_durations_ns: BTreeMap<String, u64>,
 }
 
 fn seal_path(cache_root: &Path) -> PathBuf {
@@ -149,8 +151,7 @@ pub(crate) fn try_warm_hit_seal(
     let selectors_fp = selectors_fingerprint(reqs.iter().map(|req| req.nodeid.as_str()));
     let files_ok = content_fingerprint_matches(reqs, &seal)
         || covered_files_still_match(&first.source_root, &seal.covered_files);
-    let schema_ok = seal.schema_version == SEAL_SCHEMA_VERSION
-        || seal.schema_version == "rslip-warm-hit-v2";
+    let schema_ok = seal.schema_version == SEAL_SCHEMA_VERSION;
     let ok = schema_ok
         && seal.context_fingerprint == context_fingerprint
         && seal.selector_count == reqs.len()
@@ -163,29 +164,28 @@ pub(crate) fn try_warm_hit_seal(
         let _ = upgrade_warm_hit_seal_content_fingerprint(&first.cache_root, &seal, fp);
     }
     let failed: BTreeSet<&str> = seal.failed_nodeids.iter().map(String::as_str).collect();
-    Some(
-        reqs.iter()
-            .map(|req| {
-                let failed = failed.contains(req.nodeid.as_str());
-                RslipOutcome {
-                    nodeid: req.nodeid.clone(),
-                    status: if failed {
-                        TestStatus::Failed
-                    } else {
-                        TestStatus::Passed
-                    },
-                    exit_code: Some(if failed { 1 } else { 0 }),
-                    duration: Duration::ZERO,
-                    coverage: LineCoverage {
-                        files: BTreeMap::new(),
-                    },
-                    cache_status: CacheStatus::Hit,
-                    stdout: None,
-                    stderr: None,
-                }
-            })
-            .collect(),
-    )
+    let mut outcomes = Vec::with_capacity(reqs.len());
+    for req in reqs {
+        let nanos = *seal.selector_durations_ns.get(&req.nodeid)?;
+        let failed = failed.contains(req.nodeid.as_str());
+        outcomes.push(RslipOutcome {
+            nodeid: req.nodeid.clone(),
+            status: if failed {
+                TestStatus::Failed
+            } else {
+                TestStatus::Passed
+            },
+            exit_code: Some(if failed { 1 } else { 0 }),
+            duration: Duration::from_nanos(nanos),
+            coverage: LineCoverage {
+                files: BTreeMap::new(),
+            },
+            cache_status: CacheStatus::Hit,
+            stdout: None,
+            stderr: None,
+        });
+    }
+    Some(outcomes)
 }
 
 pub(crate) fn write_warm_hit_seal(
@@ -202,21 +202,10 @@ pub(crate) fn write_warm_hit_seal(
             "warm hit seal requires aligned nodeids and outcomes",
         ));
     }
-    let mut covered_files = BTreeMap::new();
-    for (recorded, digest) in &covered_digests {
-        let Some(stamp) = stamp_for_path(source_root, recorded, digest) else {
-            continue;
-        };
-        covered_files.insert(recorded.clone(), stamp);
-    }
+    let covered_files = covered_file_stamps(source_root, &covered_digests);
     if covered_files.is_empty() {
         return Err(io::Error::other("warm hit seal requires covered file stamps"));
     }
-    let failed_nodeids = outcomes
-        .iter()
-        .filter(|outcome| outcome.status != TestStatus::Passed)
-        .map(|outcome| outcome.nodeid.clone())
-        .collect::<Vec<_>>();
     let seal = WarmHitSeal {
         schema_version: SEAL_SCHEMA_VERSION.to_string(),
         context_fingerprint: context_fingerprint.to_string(),
@@ -224,7 +213,8 @@ pub(crate) fn write_warm_hit_seal(
         selector_count: nodeids.len(),
         content_fingerprint,
         covered_files,
-        failed_nodeids,
+        failed_nodeids: failed_outcome_nodeids(outcomes),
+        selector_durations_ns: outcome_durations_ns(outcomes),
     };
     let path = seal_path(cache_root);
     if let Some(parent) = path.parent() {
@@ -242,6 +232,40 @@ pub(crate) fn write_warm_hit_seal(
     drop(file);
     fs::rename(tmp, path)?;
     Ok(())
+}
+
+fn covered_file_stamps(
+    source_root: &Path,
+    covered_digests: &BTreeMap<String, String>,
+) -> BTreeMap<String, FileStamp> {
+    let mut covered_files = BTreeMap::new();
+    for (recorded, digest) in covered_digests {
+        let Some(stamp) = stamp_for_path(source_root, recorded, digest) else {
+            continue;
+        };
+        covered_files.insert(recorded.clone(), stamp);
+    }
+    covered_files
+}
+
+fn failed_outcome_nodeids(outcomes: &[RslipOutcome]) -> Vec<String> {
+    outcomes
+        .iter()
+        .filter(|outcome| outcome.status != TestStatus::Passed)
+        .map(|outcome| outcome.nodeid.clone())
+        .collect()
+}
+
+fn outcome_durations_ns(outcomes: &[RslipOutcome]) -> BTreeMap<String, u64> {
+    outcomes
+        .iter()
+        .map(|outcome| {
+            (
+                outcome.nodeid.clone(),
+                u64::try_from(outcome.duration.as_nanos()).unwrap_or(u64::MAX),
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -268,7 +292,7 @@ mod tests {
             nodeid: req.nodeid.clone(),
             status: TestStatus::Passed,
             exit_code: Some(0),
-            duration: Duration::ZERO,
+            duration: Duration::from_millis(12),
             coverage: LineCoverage {
                 files: BTreeMap::new(),
             },
@@ -286,7 +310,8 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(try_warm_hit_seal(std::slice::from_ref(&req), context).is_some());
+        let hit = try_warm_hit_seal(std::slice::from_ref(&req), context).expect("warm hit");
+        assert_eq!(hit[0].duration, Duration::from_millis(12));
 
 
         fs::write(&app, "x = 22\n").unwrap();
@@ -312,7 +337,7 @@ mod tests {
             nodeid: req.nodeid.clone(),
             status: TestStatus::Passed,
             exit_code: Some(0),
-            duration: Duration::ZERO,
+            duration: Duration::from_millis(12),
             coverage: LineCoverage {
                 files: BTreeMap::new(),
             },

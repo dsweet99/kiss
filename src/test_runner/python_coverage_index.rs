@@ -133,7 +133,7 @@ pub(crate) fn publish_python_derived_state_with_filter_force(
                 &problems,
                 test_args,
                 &is_indexable,
-                &kiss::GateConfig::load(),
+                &kiss::GateConfig::load_for_repo(repo_root),
             )?;
             let _ = generation::repair_python_population_generation(
                 repo_root,

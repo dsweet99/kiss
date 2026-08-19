@@ -1,5 +1,5 @@
 
-use super::{DEFAULT_PYTEST_TIMEOUT, timeout_for_selector};
+use super::timeout_for_selector;
 use std::fs;
 use std::time::Duration;
 
@@ -22,15 +22,13 @@ max_unit_test_seconds = [["tests/slow/dbs", 180], ["tests/allowed", 60], ["*", 0
     let allowed = timeout_for_selector("tests/allowed/test_foo.py::test_ok");
     let banned = timeout_for_selector("tests/fast/test_foo.py::test_ok");
     std::env::set_current_dir(previous).unwrap();
-    assert_eq!(slow, DEFAULT_PYTEST_TIMEOUT);
-    assert_eq!(allowed, DEFAULT_PYTEST_TIMEOUT);
+    assert_eq!(slow, Duration::from_secs(180));
+    assert_eq!(allowed, Duration::from_secs(60));
     assert_eq!(banned, Duration::ZERO);
 }
 
 #[test]
 fn nonzero_sla_does_not_become_pytest_wall_kill() {
-
-
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),
@@ -43,11 +41,5 @@ max_unit_test_seconds = [["tests/allowed", 60], ["*", 0]]
     std::env::set_current_dir(tmp.path()).unwrap();
     let allowed = timeout_for_selector("tests/allowed/test_foo.py::test_ok");
     std::env::set_current_dir(previous).unwrap();
-    assert_eq!(DEFAULT_PYTEST_TIMEOUT, Duration::from_secs(180));
-    assert_eq!(allowed, DEFAULT_PYTEST_TIMEOUT);
-    assert_ne!(
-        allowed,
-        Duration::from_secs(60),
-        "allowed SLA (60s) must not become the pytest wall kill"
-    );
+    assert_eq!(allowed, Duration::from_secs(60));
 }

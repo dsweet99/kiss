@@ -74,7 +74,7 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
         None,
         publication_binary_ids,
         repair_publication,
-        kiss::GateConfig::load(),
+        kiss::GateConfig::load_for_repo(repo_root),
     )
 }
 
@@ -115,7 +115,7 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_population_selectors(
         Some(population_publication_selectors),
         None,
         None,
-        kiss::GateConfig::load(),
+        kiss::GateConfig::load_for_repo(repo_root),
     )
 }
 
@@ -135,7 +135,7 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
                 repo_root, extra,
             )?;
         if let Some(summary) = crate::test_runner::execution_witness::try_warm_rust_cached_summary(
-            repo_root, selectors, &identity, &kiss::GateConfig::load(),
+            repo_root, selectors, &identity, &kiss::GateConfig::load_for_repo(repo_root),
         ) {
             return Ok(Some(summary));
         }
@@ -342,7 +342,7 @@ pub(crate) fn build_current_rust_test_executable_index(
         jobs,
         Some(selectors.to_vec()),
         CoverageOutputMode::SelectorEntries,
-        &kiss::GateConfig::load(),
+        &kiss::GateConfig::load_for_repo(repo_root),
     )?;
     let plan = build_rust_coverage_batch_plan(&request)?;
     let versions = detect_rust_coverage_tool_versions(repo_root)?;

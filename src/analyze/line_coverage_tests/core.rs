@@ -36,6 +36,33 @@ fn empty_file_is_fully_covered() {
 }
 
 #[test]
+fn python_coverage_denominator_includes_match_break_continue() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("flow.py");
+    std::fs::write(
+        &file,
+        "def f(xs):\n    for x in xs:\n        if x:\n            continue\n        break\n    match x:\n        case 1:\n            return 1\n    return 0\n",
+    )
+    .unwrap();
+    let denom = coverage_denominator_lines(&file).expect("readable python source");
+    let source = std::fs::read_to_string(&file).unwrap();
+    for (idx, line) in source.lines().enumerate() {
+        let n = idx + 1;
+        let trimmed = line.trim();
+        if trimmed.starts_with("continue")
+            || trimmed.starts_with("break")
+            || trimmed.starts_with("match ")
+            || trimmed.starts_with("case ")
+        {
+            assert!(
+                denom.contains(&n),
+                "denominator must include {trimmed} on line {n}: {denom:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn python_coverage_denominator_ignores_non_coverable_lines() {
     let tmp = tempfile::tempdir().unwrap();
     let file = tmp.path().join("src").join("shim.py");

@@ -144,9 +144,7 @@ fn rslip_request_and_version_contracts_are_explicit() {
     assert!(req.force_rerun);
 
 
-    let expected = timeout_for_selector("tests/test_app.py::test_ok");
-    assert_eq!(req.timeout, Some(expected));
-    assert_eq!(expected, DEFAULT_PYTEST_TIMEOUT);
+    assert_eq!(req.timeout, Some(Duration::from_secs(2)));
     assert!(python_version_supports_rslip("3.12.0"));
     assert!(python_version_supports_rslip("4.0.0"));
     assert!(!python_version_supports_rslip("3.11.9"));
