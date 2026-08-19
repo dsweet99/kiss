@@ -27,6 +27,7 @@ pub(crate) fn current_generation_plan_matches(
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn current_generation_matches_plan(
     repo_root: &Path,
     selectors: &[String],

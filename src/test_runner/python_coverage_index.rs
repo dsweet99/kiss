@@ -123,26 +123,16 @@ pub(crate) fn publish_python_derived_state_with_filter_force(
         return Ok(index);
     }
     if !force_publish
-        && let Some(pinned) =
-            generation::current_generation_matches_plan(repo_root, &selectors, test_args)
+        && generation::try_restamp_matching_pinned_universe(
+            repo_root,
+            &selectors,
+            test_args,
+            &is_indexable,
+            None,
+        )?
     {
-        if !pinned.complete {
-            let problems = generation::problem_selectors_from_timings(&pinned.timings);
-            let deltas = generation::selector_deltas_from_cached_outcomes(
-                repo_root,
-                &problems,
-                test_args,
-                &is_indexable,
-                &kiss::GateConfig::load_for_repo(repo_root),
-            )?;
-            let _ = generation::repair_python_population_generation(
-                repo_root,
-                &deltas,
-                GenerationReason::IncompleteRepair,
-            )?;
-        }
         return load_current_python_coverage_index(repo_root).ok_or_else(|| {
-            "error: kiss test: Python generation index missing after incomplete repair".to_string()
+            "error: kiss test: Python generation index missing after pinned restamp".to_string()
         });
     }
     if !force_publish
@@ -339,13 +329,13 @@ pub(crate) fn python_selectors_by_changed_file_line(
     if let Ok(pinned) = generation::try_load_pinned_python_generation(repo_root) {
         let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for (rel, wanted_lines) in changed_rels {
-            let Some(file_index) = pinned.line_index.get(rel) else {
+            if !pinned.line_index.files.contains_key(rel) {
                 continue;
-            };
+            }
             let mut selectors = BTreeSet::new();
             for line in wanted_lines {
-                if let Some(ids) = file_index.get(line) {
-                    selectors.extend(ids.iter().cloned());
+                for name in pinned.line_index.selectors_for_line(rel, *line) {
+                    selectors.insert(name.to_string());
                 }
             }
             if !selectors.is_empty() {

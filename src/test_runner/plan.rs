@@ -243,7 +243,7 @@ fn planned_all(
         ignore: ignore.to_vec(),
         workspace_files_fingerprint,
         skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
+            python: true,
             rust: false,
         },
     }

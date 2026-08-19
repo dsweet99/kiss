@@ -14,6 +14,136 @@ use super::types::{GenerationReason, TimingCacheDisposition};
 use crate::test_runner::python_coverage_index::PYTHON_SELECTOR_DISCOVERY_VERSION;
 use crate::test_runner::runners::detect_rslip_versions;
 
+fn assert_published_interned_line_index(repo: &Path) {
+    let full = super::load::try_load_pinned_python_generation(repo).unwrap();
+    assert_eq!(
+        full.line_index.schema_version,
+        super::types::InternedLineIndex::default().schema_version
+    );
+    assert_eq!(
+        full.line_index.selectors_for_line("app.py", 1),
+        vec!["t.py::test_a"]
+    );
+}
+
+fn assert_legacy_line_index_interns_without_name_blowup() {
+    let long = "tests/fast/pkg/test_module.py::test_with_a_very_long_selector_name";
+    let mut legacy: BTreeMap<String, BTreeMap<u32, BTreeSet<String>>> = BTreeMap::new();
+    let mut lines = BTreeMap::new();
+    for line in 1..=80u32 {
+        lines.insert(
+            line,
+            BTreeSet::from([long.to_string(), format!("{long}_other")]),
+        );
+    }
+    legacy.insert("pkg/mod.py".to_string(), lines);
+    let legacy_bytes = serde_json::to_vec(&legacy).unwrap();
+    let interned = super::types::decode_line_index_bytes(&legacy_bytes).unwrap();
+    assert_eq!(interned.selectors.len(), 2);
+    assert_eq!(interned.selectors_for_line("pkg/mod.py", 1).len(), 2);
+    let interned_bytes = serde_json::to_vec(&interned).unwrap();
+    assert!(
+        interned_bytes.len() * 4 < legacy_bytes.len(),
+        "interned {} vs legacy {}",
+        interned_bytes.len(),
+        legacy_bytes.len()
+    );
+}
+
+fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path) {
+    let pinned = super::load::try_load_pinned_python_generation(repo).unwrap();
+    let mut stale_kc = pinned.plan.clone();
+    stale_kc.base_identity.kissconfig_test_digest = "stale-kissconfig".into();
+    let mut evidence = PopulationEvidence::from_ordered_selectors(&stale_kc.selectors);
+    evidence.coverage = pinned.coverage.clone();
+    evidence.selector_coverage = pinned.selector_coverage.clone();
+    evidence.timings = pinned.timings.clone();
+    evidence.complete = pinned.complete;
+    evidence.rebuild_line_index();
+    super::publish::publish_python_population_generation(
+        repo,
+        &stale_kc,
+        &evidence,
+        GenerationReason::Complete,
+    )
+    .unwrap();
+    let wrote = super::repair::restamp_and_repair_python_population_generation(
+        repo,
+        &[],
+        &[],
+        GenerationReason::Complete,
+    )
+    .unwrap();
+    assert!(wrote.is_some());
+    let after_kc = try_load_pinned_python_generation_warm(repo).unwrap();
+    assert_ne!(
+        after_kc.plan.base_identity.kissconfig_test_digest,
+        "stale-kissconfig"
+    );
+
+    let mut stale_fp = after_kc.plan.clone();
+    stale_fp.base_identity.input_fingerprint = "stale-fingerprint".into();
+    let mut fp_evidence = PopulationEvidence::from_ordered_selectors(&stale_fp.selectors);
+    fp_evidence.coverage = after_kc.coverage.clone();
+    fp_evidence.selector_coverage = after_kc.selector_coverage.clone();
+    fp_evidence.timings = after_kc.timings.clone();
+    fp_evidence.complete = after_kc.complete;
+    fp_evidence.rebuild_line_index();
+    super::publish::publish_python_population_generation(
+        repo,
+        &stale_fp,
+        &fp_evidence,
+        GenerationReason::Complete,
+    )
+    .unwrap();
+    let refused = super::repair::try_restamp_matching_pinned_universe(
+        repo,
+        &stale_fp.selectors,
+        &[],
+        &|_, _| true,
+        None,
+    )
+    .unwrap();
+    assert!(
+        !refused,
+        "unknown run-miss set must rematerialize fingerprint drift"
+    );
+    assert_eq!(
+        try_load_pinned_python_generation_warm(repo)
+            .unwrap()
+            .plan
+            .base_identity
+            .input_fingerprint,
+        "stale-fingerprint"
+    );
+    let restamped = super::repair::try_restamp_matching_pinned_universe(
+        repo,
+        &stale_fp.selectors,
+        &[],
+        &|_, _| true,
+        Some(&[]),
+    )
+    .unwrap();
+    assert!(restamped, "bounded rslip misses may restamp fingerprint drift");
+    assert_ne!(
+        try_load_pinned_python_generation_warm(repo)
+            .unwrap()
+            .plan
+            .base_identity
+            .input_fingerprint,
+        "stale-fingerprint"
+    );
+}
+
+fn assert_repair_skips_line_index_bytes(repo: &Path) {
+    let without_line_index =
+        super::load::try_load_pinned_python_generation_without_line_index(repo).unwrap();
+    assert!(without_line_index.line_index.files.is_empty());
+    assert!(!without_line_index.selector_coverage.is_empty());
+    let index = super::load::generation_file_index(&without_line_index);
+    assert!(index.contains_key("app.py"));
+}
+
 fn passed_evidence(selector: &str, file: &str, lines: &[u32]) -> SelectorEvidence {
     SelectorEvidence {
         selector: selector.to_string(),
@@ -57,7 +187,9 @@ fn publish_then_warm_load_reads_coverage_and_timings() {
         Some(&BTreeSet::from([1u32]))
     );
     assert_eq!(pinned.timings.len(), 1);
-    let _ = Path::new(".");
+    assert_published_interned_line_index(repo);
+    assert_legacy_line_index_interns_without_name_blowup();
+    assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo);
 }
 
 #[test]
@@ -109,4 +241,13 @@ fn selective_repair_updates_only_changed_selector_coverage() {
             BTreeSet::from([2u32])
         )]))
     );
+    assert_eq!(
+        after.line_index.selectors_for_line("app.py", 1),
+        vec!["t.py::test_b"]
+    );
+    assert_eq!(
+        after.line_index.selectors_for_line("app.py", 2),
+        vec!["t.py::test_a", "t.py::test_b"]
+    );
+    assert_repair_skips_line_index_bytes(repo);
 }

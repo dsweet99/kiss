@@ -11,6 +11,7 @@ pub(crate) struct SelectorExecutionSummary {
     pub(crate) total: usize,
     pub(crate) cache_hits: usize,
     pub(crate) cache_misses: usize,
+    pub(crate) cache_miss_selectors: Vec<String>,
     pub(crate) cache_unstored: usize,
     pub(crate) failed: usize,
     pub(crate) failed_selectors: Vec<String>,
@@ -75,10 +76,14 @@ impl SelectorExecutionSummary {
         self.raw_statuses.insert(record.selector.clone(), raw);
         match record.cache_record {
             SelectorCacheRecord::Hit => self.cache_hits += 1,
-            SelectorCacheRecord::MissStored => self.cache_misses += 1,
+            SelectorCacheRecord::MissStored => {
+                self.cache_misses += 1;
+                self.cache_miss_selectors.push(record.selector.clone());
+            }
             SelectorCacheRecord::MissUnstored => {
                 self.cache_misses += 1;
                 self.cache_unstored += 1;
+                self.cache_miss_selectors.push(record.selector.clone());
             }
         }
         match record.status {

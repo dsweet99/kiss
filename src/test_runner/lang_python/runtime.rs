@@ -98,12 +98,22 @@ impl LanguageRuntime for PythonRuntime {
         };
         if let Some(universe) = batch.publication_universe.as_ref() {
             let started = std::time::Instant::now();
-            publish_python_derived_state_with_filter(
-                &request.repo_root,
-                Some(universe),
-                &request.extras.python,
-                is_indexable,
-            )?;
+            let restamped = !request.force
+                && crate::test_runner::lang_python::generation::try_restamp_matching_pinned_universe(
+                    &request.repo_root,
+                    universe,
+                    &request.extras.python,
+                    &is_indexable,
+                    Some(batch.summary.cache_miss_selectors.as_slice()),
+                )?;
+            if !restamped {
+                publish_python_derived_state_with_filter(
+                    &request.repo_root,
+                    Some(universe),
+                    &request.extras.python,
+                    is_indexable,
+                )?;
+            }
             crate::test_runner::emit_stage_time("python_generation_publish", started.elapsed());
         } else {
             let started = std::time::Instant::now();

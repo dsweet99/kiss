@@ -72,6 +72,7 @@ fn cold_all_enumerates_and_stores_fingerprint() {
     assert_both_languages(&both);
     assert!(both.population_required.python);
     assert!(both.population_required.rust);
+    assert!(both.skip_index_rebuild_after_selective.python);
     assert!(both.workspace_files_fingerprint.is_some());
 
     let py_hit = plan_all(Some(Language::Python));

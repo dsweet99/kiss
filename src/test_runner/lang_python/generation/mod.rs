@@ -14,9 +14,10 @@ mod current;
 mod durations_load;
 
 pub(crate) use current::{
-    current_complete_generation_matches, current_generation_matches_plan,
-    current_generation_plan_matches,
+    current_complete_generation_matches, current_generation_plan_matches,
 };
+#[allow(unused_imports)]
+pub(crate) use current::current_generation_matches_plan;
 #[allow(unused_imports)]
 pub(crate) use evidence::{PopulationEvidence, SelectorEvidence};
 pub(crate) use identity::current_python_execution_identity;
@@ -26,8 +27,9 @@ pub(crate) use identity_memo::clear_python_execution_identity_memo;
 pub(crate) use identity::population_plan_for_selectors;
 #[allow(unused_imports)]
 pub(crate) use load::{
-    GenerationLoadError, generation_file_index, pinned_python_generation_artifacts_present,
-    try_load_pinned_python_generation, try_load_pinned_python_generation_warm,
+    GenerationLoadError, file_index_from_selector_coverage, generation_file_index,
+    pinned_python_generation_artifacts_present, try_load_pinned_python_generation,
+    try_load_pinned_python_generation_warm, try_load_pinned_python_generation_without_line_index,
 };
 pub(crate) use materialize::{
     materialize_and_publish_from_cached_outcomes, selector_deltas_from_cached_outcomes,
@@ -38,6 +40,7 @@ pub(crate) use migrate::try_migrate_complete_v1_generation;
 pub(crate) use publish::publish_python_population_generation;
 pub(crate) use repair::{
     problem_selectors_from_timings, repair_python_population_generation,
+    try_restamp_matching_pinned_universe,
 };
 #[allow(unused_imports)]
 pub(crate) use types::{

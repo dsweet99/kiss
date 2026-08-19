@@ -14,6 +14,7 @@ use crate::test_runner::capture_stdout::capture_stdout;
 fn assert_mixed_miss_summary(summary: &SelectorExecutionSummary) {
     assert_eq!(summary.total, 2);
     assert_eq!(summary.cache_misses, 2);
+    assert_eq!(summary.cache_miss_selectors.len(), 2);
     assert_eq!(summary.cache_hits, 0);
     assert_eq!(summary.failed, 1);
     assert_eq!(summary.exit_code, 1);

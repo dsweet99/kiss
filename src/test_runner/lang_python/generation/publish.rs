@@ -21,9 +21,19 @@ pub(crate) fn publish_python_population_generation(
     evidence: &PopulationEvidence,
     reason: GenerationReason,
 ) -> Result<String, String> {
+    publish_python_population_generation_reusing(repo_root, plan, evidence, reason, None)
+}
+
+pub(crate) fn publish_python_population_generation_reusing(
+    repo_root: &Path,
+    plan: &PythonPopulationPlan,
+    evidence: &PopulationEvidence,
+    reason: GenerationReason,
+    reuse_generation_id: Option<&str>,
+) -> Result<String, String> {
     let cache_root = python_coverage_cache_root(repo_root)?;
     let _guard = rslip::lock_rslip_derived_state(&cache_root).map_err(|e| e.to_string())?;
-    let id = publish_locked(&cache_root, plan, evidence, reason)?;
+    let id = publish_locked(&cache_root, plan, evidence, reason, reuse_generation_id)?;
     super::memo::clear_python_generation_warm_memo();
     Ok(id)
 }
@@ -33,31 +43,46 @@ pub(crate) fn publish_locked(
     plan: &PythonPopulationPlan,
     evidence: &PopulationEvidence,
     reason: GenerationReason,
+    reuse_generation_id: Option<&str>,
 ) -> Result<String, String> {
     let generation_id = format!("gen-{}", python_unique_suffix());
     let staged = create_staging_dir(cache_root)?;
     let mut artifacts = Vec::new();
-    push_artifact(
-        &mut artifacts,
-        &staged,
-        "coverage.json",
-        &evidence.coverage,
-    )?;
-    push_artifact(
-        &mut artifacts,
-        &staged,
-        "selector_coverage.json",
-        &evidence.selector_coverage,
-    )?;
-    push_artifact(
-        &mut artifacts,
-        &staged,
-        "line_index.json",
-        &evidence.line_index,
-    )?;
-    push_artifact(&mut artifacts, &staged, "timings.json", &evidence.timings)?;
-    let durations = generation_durations_file(&evidence.timings);
-    push_artifact(&mut artifacts, &staged, "durations.json", &durations)?;
+    let reuse_dir = reuse_generation_id.map(|id| generation_dir(cache_root, id));
+    if let Some(src) = reuse_dir.as_deref() {
+        push_hardlinked_artifact(&mut artifacts, &staged, src, "coverage.json")?;
+        push_hardlinked_artifact(&mut artifacts, &staged, src, "selector_coverage.json")?;
+        push_artifact(
+            &mut artifacts,
+            &staged,
+            "line_index.json",
+            &evidence.line_index,
+        )?;
+        push_hardlinked_artifact(&mut artifacts, &staged, src, "timings.json")?;
+        push_hardlinked_artifact(&mut artifacts, &staged, src, "durations.json")?;
+    } else {
+        push_artifact(
+            &mut artifacts,
+            &staged,
+            "coverage.json",
+            &evidence.coverage,
+        )?;
+        push_artifact(
+            &mut artifacts,
+            &staged,
+            "selector_coverage.json",
+            &evidence.selector_coverage,
+        )?;
+        push_artifact(
+            &mut artifacts,
+            &staged,
+            "line_index.json",
+            &evidence.line_index,
+        )?;
+        push_artifact(&mut artifacts, &staged, "timings.json", &evidence.timings)?;
+        let durations = generation_durations_file(&evidence.timings);
+        push_artifact(&mut artifacts, &staged, "durations.json", &durations)?;
+    }
     let manifest = GenerationManifest {
         schema_version: GENERATION_SCHEMA_VERSION.to_string(),
         generation_id: generation_id.clone(),
@@ -95,6 +120,39 @@ fn push_artifact<T: serde::Serialize>(
         name: name.to_string(),
         byte_length: bytes.len() as u64,
         sha256: digest,
+    });
+    Ok(())
+}
+
+fn push_hardlinked_artifact(
+    artifacts: &mut Vec<ArtifactDigest>,
+    staged: &Path,
+    src_dir: &Path,
+    name: &str,
+) -> Result<(), String> {
+    super::paths::validate_artifact_name(name)?;
+    let src = src_dir.join(name);
+    let dst = staged.join(name);
+    if fs::hard_link(&src, &dst).is_err() {
+        fs::copy(&src, &dst).map_err(|e| {
+            format!(
+                "error: kiss: reuse generation artifact `{name}` {} -> {}: {e}",
+                src.display(),
+                dst.display()
+            )
+        })?;
+        let file = fs::File::open(&dst).map_err(|e| {
+            format!("error: kiss: open reused artifact {}: {e}", dst.display())
+        })?;
+        file.sync_all().map_err(|e| {
+            format!("error: kiss: sync reused artifact {}: {e}", dst.display())
+        })?;
+    }
+    let (byte_length, sha256) = super::paths::sha256_file(&dst)?;
+    artifacts.push(ArtifactDigest {
+        name: name.to_string(),
+        byte_length,
+        sha256,
     });
     Ok(())
 }

@@ -1,6 +1,6 @@
 
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -23,6 +23,26 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     hex_encode(hasher.finalize().as_slice())
+}
+
+pub(crate) fn sha256_file(path: &Path) -> Result<(u64, String), String> {
+    let mut file = File::open(path).map_err(|e| {
+        format!("error: kiss: open {} for digest: {e}", path.display())
+    })?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 65536];
+    let mut byte_length = 0u64;
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(|e| format!("error: kiss: read {} for digest: {e}", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        byte_length += n as u64;
+    }
+    Ok((byte_length, hex_encode(hasher.finalize().as_slice())))
 }
 
 fn hex_encode(bytes: &[u8]) -> String {

@@ -7,7 +7,7 @@ pub(crate) use artifact_types::{
     PopulationPointer, SelectorTimingRecord, TimingCacheDisposition,
 };
 pub(crate) use identity_types::{
-    COLLECTOR_SEMANTICS_VERSION, CoveredLinesMap, GENERATION_SCHEMA_VERSION, LineIndexMap,
-    POINTER_SCHEMA_VERSION, PythonExecutionIdentity, PythonPopulationPlan, RUNNER_SEMANTICS_VERSION,
-    SelectorCoverageMap,
+    COLLECTOR_SEMANTICS_VERSION, CoveredLinesMap, GENERATION_SCHEMA_VERSION, InternedLineIndex,
+    LineIndexMap, POINTER_SCHEMA_VERSION, PythonExecutionIdentity, PythonPopulationPlan,
+    RUNNER_SEMANTICS_VERSION, SelectorCoverageMap, decode_line_index_bytes,
 };

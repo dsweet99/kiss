@@ -7,7 +7,7 @@ use rpytest_runner::TestStatus;
 use rslip::{CacheStatus, LineCoverage, RslipOutcome};
 
 use super::types::{
-    CoveredLinesMap, LineIndexMap, SelectorCoverageMap, SelectorTimingRecord,
+    CoveredLinesMap, InternedLineIndex, LineIndexMap, SelectorCoverageMap, SelectorTimingRecord,
     TimingCacheDisposition,
 };
 
@@ -39,8 +39,43 @@ impl PopulationEvidence {
         for selector in selectors {
             evidence.timings.push(unresolved_timing(selector));
         }
+        evidence.line_index = InternedLineIndex::from_selectors(selectors);
         evidence.complete = false;
         evidence
+    }
+
+    pub(crate) fn rebuild_line_index(&mut self) {
+        let selector_coverage = std::mem::take(&mut self.selector_coverage);
+        self.line_index.files.clear();
+        self.line_refs.clear();
+        self.line_index.selectors = self
+            .timings
+            .iter()
+            .map(|row| row.selector.clone())
+            .collect();
+        self.line_index.reindex();
+        for (selector, coverage) in &selector_coverage {
+            let Some(id) = self.line_index.id_of(selector) else {
+                continue;
+            };
+            for (file, lines) in coverage {
+                let file_slot = self.line_index.files.entry(file.clone()).or_default();
+                for &line in lines {
+                    file_slot.entry(line).or_default().insert(id);
+                }
+            }
+        }
+        self.line_refs = self
+            .line_index
+            .files
+            .iter()
+            .flat_map(|(file, lines)| {
+                lines
+                    .iter()
+                    .map(|(line, ids)| ((file.clone(), *line), ids.len() as u32))
+            })
+            .collect();
+        self.selector_coverage = selector_coverage;
     }
 
     pub(crate) fn recompute_complete(&mut self) {
@@ -197,17 +232,20 @@ fn remove_line_index_selector(
     line: u32,
     selector: &str,
 ) {
-    let Some(file_index) = evidence.line_index.get_mut(file) else {
+    let Some(id) = evidence.line_index.id_of(selector) else {
+        return;
+    };
+    let Some(file_index) = evidence.line_index.files.get_mut(file) else {
         return;
     };
     if let Some(selectors) = file_index.get_mut(&line) {
-        selectors.remove(selector);
+        selectors.remove(&id);
         if selectors.is_empty() {
             file_index.remove(&line);
         }
     }
     if file_index.is_empty() {
-        evidence.line_index.remove(file);
+        evidence.line_index.files.remove(file);
     }
 }
 
@@ -216,6 +254,7 @@ fn add_coverage_contribution(
     selector: &str,
     coverage: &CoveredLinesMap,
 ) {
+    let selector_id = evidence.line_index.id_of(selector);
     for (file, lines) in coverage {
         for &line in lines {
             let key = (file.clone(), line);
@@ -225,13 +264,16 @@ fn add_coverage_contribution(
                 .entry(file.clone())
                 .or_default()
                 .insert(line);
-            evidence
-                .line_index
-                .entry(file.clone())
-                .or_default()
-                .entry(line)
-                .or_default()
-                .insert(selector.to_string());
+            if let Some(id) = selector_id {
+                evidence
+                    .line_index
+                    .files
+                    .entry(file.clone())
+                    .or_default()
+                    .entry(line)
+                    .or_default()
+                    .insert(id);
+            }
         }
     }
 }
