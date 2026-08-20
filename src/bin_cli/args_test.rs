@@ -110,14 +110,12 @@ fn test_branch_options_are_mode_specific() {
     assert!(validate_test_branch_options(&TestInvocation::Base, None, Some("origin/main")).is_ok());
     assert!(validate_test_branch_options(&TestInvocation::All, Some("main"), None).is_err());
     assert!(validate_test_branch_options(&TestInvocation::Commit, None, Some("base")).is_err());
-    assert!(
-        validate_test_branch_options(
-            &TestInvocation::Targets(vec!["a.py".into()]),
-            Some("main"),
-            None
-        )
-        .is_err()
-    );
+    assert!(validate_test_branch_options(
+        &TestInvocation::Targets(vec!["a.py".into()]),
+        Some("main"),
+        None
+    )
+    .is_err());
 }
 
 #[test]
@@ -130,13 +128,12 @@ fn test_command_help_is_language_neutral_for_shared_options() {
         .to_string();
 
     assert!(help.contains("Force selected tests to rerun instead of reusing test-runner caches"));
-    assert!(
-        help.contains(
-            "Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"
-        )
-    );
+    assert!(help
+        .contains("Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"));
     assert!(help.contains("Maximum number of test jobs to run concurrently"));
-    assert!(help.contains("commit|base|main|.|TARGET"));
+    assert!(help.contains("commit, base, main, ., or PATH / PATH::symbol / directory"));
+    assert!(help.contains("[TARGET]"));
+    assert!(!help.contains("commit|base|main|.|TARGET"));
     assert!(!help.contains("all|TARGET"));
     assert!(!help.contains("validate-selection"));
     assert!(!help.contains("Force Python tests"));
@@ -153,29 +150,25 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(help.contains("Filter by language: python (py) or rust (rs)"));
     assert!(help.contains("Use built-in defaults, ignoring config files"));
     assert!(help.contains("Run static complexity, graph, and duplicate checks"));
-    assert!(help.contains("Show metric statistics for codebase"));
+    assert!(help.contains("Show metric statistics for the codebase"));
     assert!(help.contains("Generate .kissconfig thresholds from an existing codebase"));
-    assert!(help.contains(
-        "Shortcut: generate .kissconfig from current directory (same as: mimic . --out .kissconfig)"
-    ));
-    assert!(
-        help.contains(
-            "Write a default .kissconfig into `REPO_PATH` (defaults to current directory)"
-        )
-    );
-    assert!(help.contains("Detect duplicate code blocks (uses function-level chunks)"));
+    assert!(help.contains("Generate .kissconfig from the current directory"));
+    assert!(!help.contains("Shortcut: generate .kissconfig from current directory"));
+    assert!(help.contains("Write a default .kissconfig"));
+    assert!(!help.contains("into `REPO_PATH`"));
+    assert!(help.contains("Detect duplicate code blocks"));
     assert!(help.contains("Display all available rules and their current thresholds"));
     assert!(!help.contains("Show effective configuration (merged from all sources)"));
     assert!(Cli::command().find_subcommand("config").is_none());
-    assert!(
-        help.contains("Write dependency graph (Mermaid or Graphviz DOT based on output extension)")
-    );
-    assert!(help.contains(
-        "Run covering tests, then enforce runtime line coverage and unit-test time gates"
-    ));
-    assert!(!help.contains("Coverage-only evaluation (prefer `kiss test` for the full path)"));
-    assert!(help.contains("Semantic rename/move for Python and Rust symbols (beta)"));
+    assert!(help.contains("Write a dependency graph"));
+    assert!(!help.contains("Output markdown path"));
+    assert!(help.contains("Run covering tests and enforce coverage and time gates"));
+    assert!(!help.contains("Coverage-only evaluation (prefer kiss test for the full path)"));
+    assert!(help.contains("Rename or move a Python or Rust symbol (beta)"));
     assert!(help.contains("Usage:"));
+    assert!(help.contains("Examples:"));
+    assert!(help.contains("kiss clamp"));
+    assert!(!help.contains("EXAMPLES:"));
 }
 
 #[test]
@@ -186,11 +179,19 @@ fn check_and_cov_help_describe_options() {
         .expect("check subcommand exists")
         .render_long_help()
         .to_string();
-    assert!(check.contains("Files or directories to analyze"));
+    assert!(check.contains("Codebase root, optionally followed by focus paths"));
     assert!(check.contains("Path prefix to exclude"));
     assert!(check.contains("Print analysis stage timings"));
     assert!(check.contains("Usage:"));
     assert!(Cli::command().find_subcommand("cov").is_none());
+    let mut command = Cli::command();
+    let viz = command
+        .find_subcommand_mut("viz")
+        .expect("viz subcommand exists")
+        .render_long_help()
+        .to_string();
+    assert!(viz.contains("Output file (.md, .mmd/.mermaid, or .dot)"));
+    assert!(!viz.contains("Output markdown path"));
 }
 
 #[test]

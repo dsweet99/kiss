@@ -6,15 +6,25 @@ use std::path::PathBuf;
 mod cli_commands;
 pub use cli_commands::Commands;
 
+const AFTER_HELP: &str = "\
+Examples:
+  kiss clamp                      Generate .kissconfig from the current directory
+  kiss check .                    Run static analysis on the current directory
+  kiss check . src/module/        Check one module against the full codebase
+  kiss test                       Run tests and enforce runtime coverage
+  kiss check --lang rust src/     Analyze only Rust files in src/
+  kiss mimic . --out .kissconfig  Generate config from a codebase
+  kiss init                       Write a default .kissconfig
+  kiss viz graph.md               Write a Mermaid dependency graph
+";
+
 #[derive(Parser, Debug)]
 #[command(
     name = "kiss",
     version,
     about = "Code-quality metrics tool for Python and Rust"
 )]
-#[command(
-    after_help = "EXAMPLES:\n  kiss check .                 Run static analysis on current directory\n  kiss check . src/module/     Analyze module against full codebase (focus mode)\n  kiss test                    Run tests and enforce runtime coverage\n  kiss check --lang rust src/  Analyze only Rust files in src/\n  kiss mimic . --out .kissconfig   Generate config from codebase\n  kiss init .                  Write a default .kissconfig"
-)]
+#[command(after_help = AFTER_HELP)]
 pub struct Cli {
     #[arg(
         long,
@@ -48,7 +58,9 @@ pub fn parse_language(s: &str) -> Result<Language, String> {
     match s.to_lowercase().as_str() {
         "python" | "py" => Ok(Language::Python),
         "rust" | "rs" => Ok(Language::Rust),
-        _ => Err(format!("Unknown language '{s}'. Use 'python' or 'rust'.")),
+        _ => Err(format!(
+            "unknown language '{s}'; use python, py, rust, or rs"
+        )),
     }
 }
 
