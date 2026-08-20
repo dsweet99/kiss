@@ -99,25 +99,25 @@ impl GateConfig {
     }
 }
 
+fn load_from_file(path: &Path) -> GateConfig {
+    let mut config = GateConfig::default();
+    if let Ok(c) = std::fs::read_to_string(path) {
+        config.merge_from_toml(&c);
+    }
+    config
+}
+
 impl GateConfig {
     pub fn load() -> Self {
-        Self::load_from_file(&crate::config::kissconfig_path_from_cwd())
+        load_from_file(&crate::config::kissconfig_path_from_cwd())
     }
 
     pub fn load_for_repo(repo_root: &Path) -> Self {
-        Self::load_from_file(&crate::config::kissconfig_path_for_repo(repo_root))
+        load_from_file(&crate::config::kissconfig_path_for_repo(repo_root))
     }
 
     pub fn load_from(path: &Path) -> Self {
         let mut config = Self::load();
-        if let Ok(c) = std::fs::read_to_string(path) {
-            config.merge_from_toml(&c);
-        }
-        config
-    }
-
-    fn load_from_file(path: &Path) -> Self {
-        let mut config = Self::default();
         if let Ok(c) = std::fs::read_to_string(path) {
             config.merge_from_toml(&c);
         }

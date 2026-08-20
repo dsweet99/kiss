@@ -28,8 +28,31 @@ fn test_print_rules() {
     let config = Config::python_defaults();
     let gate = GateConfig::default();
     print_summary_term_definitions();
+    print_rule_specs("global", global::GLOBAL_RULE_SPECS, &config, &gate);
+    print_rule_specs("test", test_rules::TEST_RULE_SPECS, &config, &gate);
     print_threshold_rules("Python", &config, &gate);
     print_threshold_rules("Rust", &Config::rust_defaults(), &gate);
+}
+
+#[test]
+fn global_and_test_rule_specs_use_shared_metrics() {
+    let global_metrics: Vec<_> = global::GLOBAL_RULE_SPECS.iter().map(|s| s.metric).collect();
+    assert_eq!(global_metrics, ["min_similarity", "comment", "doc"]);
+    let test_metrics: Vec<_> = test_rules::TEST_RULE_SPECS.iter().map(|s| s.metric).collect();
+    assert_eq!(
+        test_metrics,
+        [
+            "test_coverage_threshold",
+            "max_unit_test_seconds",
+            "max_num_tests"
+        ]
+    );
+    let py_metrics: Vec<_> = python::PY_RULE_SPECS.iter().map(|s| s.metric).collect();
+    let rs_metrics: Vec<_> = rust_rules::RS_RULE_SPECS.iter().map(|s| s.metric).collect();
+    for metric in global_metrics.iter().chain(test_metrics.iter()) {
+        assert!(!py_metrics.contains(metric), "{metric} still under Python");
+        assert!(!rs_metrics.contains(metric), "{metric} still under Rust");
+    }
 }
 #[test]
 fn test_run_config_and_print_config() {

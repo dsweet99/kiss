@@ -18,8 +18,8 @@ fn cli_rules_command_runs() {
         "Should output definitions. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("RULE:"),
-        "Should output rules. stdout: {stdout}"
+        stdout.contains("RULE: [global]") && stdout.contains("RULE: [test]"),
+        "Should output global and test rules. stdout: {stdout}"
     );
 }
 #[test]
@@ -73,8 +73,8 @@ fn cli_rules_filter_python_only() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(
-        stdout.contains("[Python]"),
-        "Should show Python rules. stdout: {stdout}"
+        stdout.contains("[Python]") && stdout.contains("RULE: [global]"),
+        "Should show Python and global rules. stdout: {stdout}"
     );
     assert!(
         !stdout.contains("[Rust]"),

@@ -139,40 +139,4 @@ pub(super) const PY_RULE_SPECS: &[RuleSpec] = &[
         threshold: ThresholdValue::Usize(|c, _| c.dependency_depth),
         description: "dependency_depth is the maximum length of an import chain in the dependency graph.",
     },
-    RuleSpec {
-        metric: "test_coverage_threshold",
-        op: ">=",
-        threshold: ThresholdValue::Usize(|_, g| g.test_coverage_threshold),
-        description: "test_coverage_threshold is the minimum percent of syntactically coverable source lines covered by cached rslip runtime coverage. Enforcement is per file or codebase-wide according to `test_coverage_scope` (default `codebase`). `kiss test` uses a current cache and refreshes missing or stale Python coverage before enforcing it.",
-    },
-    RuleSpec {
-        metric: "max_unit_test_seconds",
-        op: "<",
-        threshold: ThresholdValue::F64(|_, g| g.catch_all_unit_test_seconds()),
-        description: "max_unit_test_seconds is an ordered path-pattern → seconds table (must end with \"*\"). First match wins. Enforced by `kiss test` and used by `kiss test` for TIMEOUT labeling. Catch-all 0 bans unmatched paths. Default \"*\" = 2.0.",
-    },
-    RuleSpec {
-        metric: "max_num_tests",
-        op: "<=",
-        threshold: ThresholdValue::Usize(|_, g| g.max_num_tests),
-        description: "max_num_tests is the maximum number of unit tests in the current population (Python + Rust). Enforced by `kiss test` alongside coverage. `0` means any test fails. Default is 999999. Config key lives under `[test]`.",
-    },
-    RuleSpec {
-        metric: "min_similarity",
-        op: ">=",
-        threshold: ThresholdValue::F64(|_, g| g.min_similarity),
-        description: "min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).",
-    },
-    RuleSpec {
-        metric: "comment",
-        op: "==",
-        threshold: ThresholdValue::Usize(|_, _| 0),
-        description: "comment counts non-doc comments. Enforced only when comment_removal_enabled=true. Python docstrings and Rust doc comments (///, //!, /**, /*!) are allowed in docs_allowed directories.",
-    },
-    RuleSpec {
-        metric: "doc",
-        op: "==",
-        threshold: ThresholdValue::Usize(|_, _| 0),
-        description: "doc counts Python docstrings (including attribute docs) and Rust doc comments (///, //!, /**, /*!) plus `#[doc]` / `#![doc]` attributes. Allowed only under docs_allowed directory prefixes (relative to the repository root). Empty docs_allowed allows documentation in no directory. Default is [].",
-    },
 ];

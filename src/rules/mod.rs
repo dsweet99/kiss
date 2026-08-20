@@ -2,8 +2,10 @@
 use kiss::{Config, GateConfig, Language};
 use std::path::PathBuf;
 
+mod global;
 mod python;
 mod rust_rules;
+mod test_rules;
 
 #[cfg(test)]
 mod tests;
@@ -37,6 +39,8 @@ pub fn run_rules(
     _use_defaults: bool,
 ) {
     print_summary_term_definitions();
+    print_rule_specs("global", global::GLOBAL_RULE_SPECS, py_config, gate_config);
+    print_rule_specs("test", test_rules::TEST_RULE_SPECS, py_config, gate_config);
     match lang_filter {
         Some(Language::Python) => print_threshold_rules("Python", py_config, gate_config),
         Some(Language::Rust) => print_threshold_rules("Rust", rs_config, gate_config),
@@ -67,9 +71,13 @@ fn print_threshold_rules(lang: &str, c: &Config, g: &GateConfig) {
     } else {
         rust_rules::RS_RULE_SPECS
     };
+    print_rule_specs(lang, specs, c, g);
+}
+
+fn print_rule_specs(section: &str, specs: &[RuleSpec], c: &Config, g: &GateConfig) {
     for spec in specs {
         println!(
-            "RULE: [{lang}] [{} {} {}] {}",
+            "RULE: [{section}] [{} {} {}] {}",
             spec.metric,
             spec.op,
             spec.threshold.format(c, g),
