@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -126,8 +125,8 @@ pub(crate) fn miss_selectors_for_repair(
     match accept_witness(mode, &planned, current_identity_digest, witness) {
         AcceptDecision::Accept => Vec::new(),
         AcceptDecision::Miss(reason) => match reason {
-            "incomplete" | "non_passed" | "missing_selector" => {
-                non_passed_planned(&planned, witness)
+            "incomplete" | "non_passed" | "missing_selector" | "missing_duration" => {
+                repair_planned(&planned, witness)
             }
             _ => planned,
         },
@@ -146,12 +145,14 @@ pub(crate) fn union_force_selectors_into_misses(
     }
 }
 
-fn non_passed_planned(planned: &[String], witness: &ExecutionWitness) -> Vec<String> {
+fn repair_planned(planned: &[String], witness: &ExecutionWitness) -> Vec<String> {
     let index = selector_index(&witness.selectors);
     planned
         .iter()
         .filter(|sel| match index.get(sel.as_str()) {
-            Some(&i) => witness.statuses[i] != WitnessStatus::Passed,
+            Some(&i) => {
+                witness.statuses[i] != WitnessStatus::Passed || witness.durations_ns[i].is_none()
+            }
             None => true,
         })
         .cloned()
@@ -186,6 +187,9 @@ fn accept_all(planned: &[String], witness: &ExecutionWitness) -> AcceptDecision 
     if witness.statuses.iter().any(|s| *s != WitnessStatus::Passed) {
         return AcceptDecision::Miss("non_passed");
     }
+    if witness.durations_ns.iter().any(Option::is_none) {
+        return AcceptDecision::Miss("missing_duration");
+    }
     AcceptDecision::Accept
 }
 
@@ -197,6 +201,9 @@ fn accept_subset(planned: &[String], witness: &ExecutionWitness) -> AcceptDecisi
         };
         if witness.statuses[i] != WitnessStatus::Passed {
             return AcceptDecision::Miss("non_passed");
+        }
+        if witness.durations_ns[i].is_none() {
+            return AcceptDecision::Miss("missing_duration");
         }
     }
     AcceptDecision::Accept
@@ -233,12 +240,8 @@ pub(crate) fn reclassify_statuses_with_gate(
                     other => WitnessStatus::from_test_status(other),
                 };
             };
-            let effective = apply_unit_test_time_limit(
-                base,
-                selector,
-                Duration::from_nanos(ns),
-                gate,
-            );
+            let effective =
+                apply_unit_test_time_limit(base, selector, Duration::from_nanos(ns), gate);
             WitnessStatus::from_test_status(effective)
         })
         .collect()
@@ -262,8 +265,9 @@ pub(crate) fn summary_from_witness_statuses(
     let mut planned = planned_selectors.to_vec();
     planned.sort();
     planned.dedup();
-    let records = planned_witness_records(&planned, witness, &index, &report_id, require_all_passed)
-        .expect("witness records include stored durations");
+    let records =
+        planned_witness_records(&planned, witness, &index, &report_id, require_all_passed)
+            .expect("witness records include stored durations");
     emit_cached_witness_lines(&records);
     let mut summary = SelectorExecutionSummary::default();
     for (report, status, duration) in records {
@@ -356,14 +360,13 @@ pub(crate) fn all_misses_warm_skippable(witness: &ExecutionWitness, misses: &[St
         return false;
     }
     let index = selector_index(&witness.selectors);
-
-
-
     misses.iter().all(|sel| match index.get(sel.as_str()) {
-        Some(&i) => matches!(
-            witness.statuses[i],
-            WitnessStatus::TimedOut | WitnessStatus::Unresolved
-        ),
+        Some(&i) => {
+            matches!(
+                witness.statuses[i],
+                WitnessStatus::TimedOut | WitnessStatus::Unresolved
+            ) && witness.durations_ns[i].is_some()
+        }
         None => false,
     })
 }

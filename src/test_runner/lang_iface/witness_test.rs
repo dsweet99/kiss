@@ -1,9 +1,9 @@
-
 use kiss::GateConfig;
 
 use super::witness::{
-    AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
-    miss_selectors_for_repair, reclassify_statuses_with_gate,
+    accept_witness, all_misses_warm_skippable, miss_selectors_for_repair,
+    reclassify_statuses_with_gate, AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope,
+    WitnessStatus,
 };
 
 fn witness(
@@ -182,13 +182,7 @@ fn time_limit_reclassify_forces_miss_on_affected_selector() {
         effective,
         vec![WitnessStatus::TimedOut, WitnessStatus::TimedOut]
     );
-    let mut w = witness(
-        WitnessScope::Full,
-        "id",
-        &["a", "b"],
-        &effective,
-        true,
-    );
+    let mut w = witness(WitnessScope::Full, "id", &["a", "b"], &effective, true);
     w.statuses = effective;
     assert_eq!(
         accept_witness(AcceptMode::All, &["a".into(), "b".into()], "id", &w),
@@ -198,8 +192,6 @@ fn time_limit_reclassify_forces_miss_on_affected_selector() {
 
 #[test]
 fn warm_accept_reclassify_applies_tighter_session_gate() {
-
-
     let loose = GateConfig {
         max_unit_test_seconds: vec![("*".into(), 3600.0)],
         ..GateConfig::default()
@@ -230,23 +222,15 @@ fn missing_duration_fails_closed_under_active_time_gate() {
         max_unit_test_seconds: vec![("*".into(), 60.0)],
         ..GateConfig::default()
     };
-    let effective = reclassify_statuses_with_gate(
-        &["a".into()],
-        &[WitnessStatus::Passed],
-        &[None],
-        &gate,
-    );
+    let effective =
+        reclassify_statuses_with_gate(&["a".into()], &[WitnessStatus::Passed], &[None], &gate);
     assert_eq!(effective, vec![WitnessStatus::Failed]);
     let disabled = GateConfig {
         max_unit_test_seconds: vec![],
         ..GateConfig::default()
     };
-    let kept = reclassify_statuses_with_gate(
-        &["a".into()],
-        &[WitnessStatus::Passed],
-        &[None],
-        &disabled,
-    );
+    let kept =
+        reclassify_statuses_with_gate(&["a".into()], &[WitnessStatus::Passed], &[None], &disabled);
     assert_eq!(kept, vec![WitnessStatus::Passed]);
 }
 
@@ -309,9 +293,62 @@ fn force_and_missing_witness_run_all_planned() {
         miss_selectors_for_repair(AcceptMode::All, &planned, "id", Some(&w), true),
         planned
     );
-    assert!(
-        miss_selectors_for_repair(AcceptMode::All, &planned, "id", Some(&w), false).is_empty()
+    assert!(miss_selectors_for_repair(AcceptMode::All, &planned, "id", Some(&w), false).is_empty());
+}
+
+#[test]
+fn missing_duration_rejects_accept_and_repairs_selector() {
+    let mut w = witness(
+        WitnessScope::Full,
+        "id",
+        &["a", "b"],
+        &[WitnessStatus::Passed, WitnessStatus::Passed],
+        true,
     );
+    w.durations_ns[1] = None;
+    assert_eq!(
+        accept_witness(AcceptMode::All, &["a".into(), "b".into()], "id", &w),
+        AcceptDecision::Miss("missing_duration")
+    );
+    assert_eq!(
+        accept_witness(AcceptMode::Subset, &["b".into()], "id", &w),
+        AcceptDecision::Miss("missing_duration")
+    );
+    assert_eq!(
+        accept_witness(AcceptMode::Subset, &["a".into()], "id", &w),
+        AcceptDecision::Accept
+    );
+    assert_eq!(
+        miss_selectors_for_repair(
+            AcceptMode::Subset,
+            &["a".into(), "b".into()],
+            "id",
+            Some(&w),
+            false,
+        ),
+        vec!["b".to_string()]
+    );
+}
+
+#[test]
+fn unresolved_without_duration_is_not_warm_skippable() {
+    let mut w = witness(
+        WitnessScope::Full,
+        "id",
+        &["a"],
+        &[WitnessStatus::Unresolved],
+        false,
+    );
+    w.durations_ns[0] = None;
+    assert!(!all_misses_warm_skippable(&w, &["a".into()]));
+    let with_duration = witness(
+        WitnessScope::Full,
+        "id",
+        &["a"],
+        &[WitnessStatus::Unresolved],
+        false,
+    );
+    assert!(all_misses_warm_skippable(&with_duration, &["a".into()]));
 }
 
 #[test]
@@ -324,8 +361,7 @@ fn force_selectors_invalidate_stale_passed_without_batch_force() {
         &[WitnessStatus::Passed, WitnessStatus::Passed],
         true,
     );
-    let mut misses =
-        miss_selectors_for_repair(AcceptMode::Subset, &planned, "id", Some(&w), false);
+    let mut misses = miss_selectors_for_repair(AcceptMode::Subset, &planned, "id", Some(&w), false);
     assert!(misses.is_empty(), "stale Passed witness would warm-accept");
     crate::test_runner::lang_iface::union_force_selectors_into_misses(
         &planned,
