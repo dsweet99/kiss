@@ -164,9 +164,6 @@ fn top_level_help_describes_commands_and_global_flags() {
         help.contains("Write dependency graph (Mermaid or Graphviz DOT based on output extension)")
     );
     assert!(help.contains(
-        "Constrained minimization: `kiss shrink METRIC=VALUE` to start, `kiss shrink` to check"
-    ));
-    assert!(help.contains(
         "Run covering tests, then enforce runtime line coverage and unit-test time gates"
     ));
     assert!(help.contains("Coverage-only evaluation (prefer `kiss test` for the full path)"));

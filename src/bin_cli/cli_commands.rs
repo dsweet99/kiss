@@ -105,20 +105,6 @@ pub enum Commands {
         ignore: Vec<String>,
     },
     #[command(
-        about = "Constrained minimization: `kiss shrink METRIC=VALUE` to start, `kiss shrink` to check"
-    )]
-    Shrink {
-        #[arg(
-            value_name = "METRIC=VALUE",
-            help = "Target metric and value (metrics: files, code_units, statements, graph_nodes, graph_edges)"
-        )]
-        target: Option<String>,
-        #[arg(default_value = ".", help = "Files or directories to analyze")]
-        paths: Vec<String>,
-        #[arg(long, value_name = "PREFIX", help = "Path prefix to exclude")]
-        ignore: Vec<String>,
-    },
-    #[command(
         alias = "t",
         about = "Run covering tests, then enforce runtime line coverage and unit-test time gates"
     )]

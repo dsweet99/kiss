@@ -62,6 +62,7 @@ pub(crate) fn build_rs_graph(rs_parsed: &[ParsedRustFile]) -> Option<DependencyG
     build_lang_graphs(&[], rs_parsed).1
 }
 
+#[allow(dead_code)]
 pub fn build_graphs(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],

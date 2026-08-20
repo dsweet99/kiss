@@ -16,7 +16,6 @@ pub struct AnalyzeOptions<'a> {
 #[derive(Debug, Clone)]
 pub struct AnalyzeResult {
     pub success: bool,
-    pub metrics: Option<kiss::GlobalMetrics>,
 }
 
 #[cfg(test)]
@@ -25,11 +24,7 @@ mod options_tests {
 
     #[test]
     fn analyze_result_carries_success_flag() {
-        let result = AnalyzeResult {
-            success: true,
-            metrics: None,
-        };
+        let result = AnalyzeResult { success: true };
         assert!(result.success);
-        assert!(result.metrics.is_none());
     }
 }

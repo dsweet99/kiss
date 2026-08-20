@@ -159,33 +159,3 @@ RULE: [Rust] [dependency_depth < 3] dependency_depth is the maximum length of a 
 RULE: [Rust] [test_coverage_threshold >= 90] test_coverage_threshold is the minimum percent of syntactically coverable source lines per Rust file covered by cached llvm-cov runtime coverage. `kiss test` uses a current cache; when Rust coverage is stale, it reuses selector coverage only when the compiled test executable digest is unchanged, reruns invalidated selectors, and falls back to a full Rust test-population refresh whenever reuse cannot be proven safe.
 RULE: [Rust] [min_similarity >= 0.90] min_similarity is the minimum similarity required to report duplicate code (when duplication_enabled=true).
 ```
-
-
-## kiss shrink: How simple is simple enough?
-
-When you run `kiss check`, you'll see some global metrics like
-```
-Analyzed: 45 files, 991 code_units, 3323 statements, 57 graph_nodes, 129 graph_edges
-```
-kiss doesn't normally constrain these because, if it did, you wouldn't be able to add new features. But for a fixed set of functionality, you probably want the simplest codebase you can have.  kiss helps with the `shrink` workflow. Initialize with
-```
-kiss shrink graph_edges=120
-```
-This tells kiss to clamp all the global metrics to their current values *except* for the one you specify. In this case, `graph_edges`, which kiss clamps to 120, slightly lower than the current 129. You may choose any number as the constraint.
-
-Next, ask your LLM to iterate until
-```
-kiss shrink
-```
-passes.  `kiss shrink` will flag `graph_edges>120` as a violation, trigger your LLM to refactor, reducing the number of connections between different code units without increasing any other global measure or any of the usual `kiss check` measures. This would tend to make your code more cohesive.
-
-Choosing to constrain different global metrics will have different effects:
-
-| Target | What the LLM would do |
-|---|---|
-| statements | Remove dead code, simplify conditionals, inline trivial functions |
-| code_units | Consolidate similar functions, remove unused helpers |
-| graph_edges | Remove unnecessary imports, colocate tightly-coupled code |
-| graph_nodes | Merge small modules, remove orphan modules |
-
-Note that only `kiss shrink` will constrain global metrics. `kiss check` will ignore them.

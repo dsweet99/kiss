@@ -8,9 +8,6 @@ mod cov_workspace_files;
 pub mod dispatch;
 mod mimic;
 mod run;
-mod shrink;
-mod shrink_analysis_types;
-mod shrink_types;
 pub mod stats;
 mod test_cmd;
 pub mod util;
@@ -21,8 +18,5 @@ pub use util::set_sigpipe_default;
 #[cfg(test)]
 #[path = "gates_core.rs"]
 mod gates_core;
-#[cfg(test)]
-#[path = "gates_shrink.rs"]
-mod gates_shrink;
 #[cfg(test)]
 mod tests_touch;

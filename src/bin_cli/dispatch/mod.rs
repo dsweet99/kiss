@@ -11,12 +11,12 @@ use crate::bin_cli::config_session::run_init_command;
 
 use handlers::{
     dispatch_check, dispatch_clamp, dispatch_config, dispatch_cov, dispatch_dry, dispatch_mimic,
-    dispatch_mv, dispatch_rules, dispatch_shrink, dispatch_stats, dispatch_test, dispatch_viz,
+    dispatch_mv, dispatch_rules, dispatch_stats, dispatch_test, dispatch_viz,
 };
 use options::{
     CheckDispatchOptions, ConfigDispatchOptions, CovDispatchOptions, DryDispatchOptions,
     MimicDispatchOptions, MvDispatchOptions, MvOutputFlags, RulesDispatchOptions,
-    ShrinkDispatchOptions, StatsDispatchOptions, TestDispatchOptions, TriConfig,
+    StatsDispatchOptions, TestDispatchOptions, TriConfig,
     VizDispatchOptions,
 };
 
@@ -133,17 +133,6 @@ fn dispatch_tools(
             zoom,
             num_nodes,
             ignore,
-        }),
-        Commands::Shrink {
-            target,
-            paths,
-            ignore,
-        } => dispatch_shrink(ShrinkDispatchOptions {
-            lang,
-            target,
-            paths,
-            ignore,
-            cfg,
         }),
         test_command @ Commands::Test { .. } => dispatch_test_command(
             lang,

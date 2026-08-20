@@ -24,6 +24,7 @@ pub struct ParseAllTimedParams<'a> {
     pub show_timing: bool,
 }
 
+#[allow(dead_code)]
 pub fn parse_all(
     py_files: &[PathBuf],
     rs_files: &[PathBuf],

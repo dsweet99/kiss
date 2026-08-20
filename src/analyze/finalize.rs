@@ -123,7 +123,7 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         dups: rs_dups_vec,
     } = products.rs;
 
-    let metrics = finalize_header(HeaderPhase {
+    let _metrics = finalize_header(HeaderPhase {
         opts,
         result: &products.result,
         file_count,
@@ -160,10 +160,7 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         t_phase2: outcome.t_phase2,
     });
 
-    AnalyzeResult {
-        success,
-        metrics: Some(metrics),
-    }
+    AnalyzeResult { success }
 }
 
 #[cfg(test)]

@@ -5,14 +5,6 @@ use super::TriConfig;
 
 use crate::bin_cli::args::TestInvocation;
 
-pub(crate) struct ShrinkDispatchOptions<'a> {
-    pub lang: Option<Language>,
-    pub target: Option<String>,
-    pub paths: Vec<String>,
-    pub ignore: Vec<String>,
-    pub cfg: &'a TriConfig<'a>,
-}
-
 pub(crate) struct TestDispatchOptions<'a> {
     pub lang: Option<Language>,
     pub invocation: TestInvocation,

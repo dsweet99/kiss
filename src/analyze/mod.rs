@@ -14,7 +14,6 @@ mod finalize_types;
 mod focus;
 mod graph_api;
 pub(crate) mod line_coverage;
-mod metrics_global;
 mod options;
 mod parallel;
 mod params;
@@ -32,6 +31,7 @@ pub use coverage_types::CheckCoverageGateParams;
 pub use dry::{DryRunParams, run_dry};
 #[allow(unused_imports)]
 pub use dup_detect::{detect_py_duplicates, detect_rs_duplicates};
+#[allow(unused_imports)]
 pub use entry::{run_analyze, run_analyze_with_result};
 #[allow(unused_imports)]
 pub use focus::{
@@ -43,7 +43,7 @@ pub use graph_api::{
     AnalyzeGraphsIn, GraphConfigs, analyze_graphs, build_graphs, build_py_graph_from_files,
     build_rs_graph_from_files, graph_for_path,
 };
-pub use metrics_global::{GlobalMetricsInput, compute_global_metrics};
+#[allow(unused_imports)]
 pub use options::{AnalyzeOptions, AnalyzeResult};
 #[cfg(test)]
 pub(crate) use pipeline::empty_full_pipeline_result_for_tests;

@@ -57,10 +57,7 @@ fn evaluate_by_file(
     }) {
         println!("{line}");
     }
-    Some(crate::analyze::options::AnalyzeResult {
-        success: false,
-        metrics: None,
-    })
+    Some(crate::analyze::options::AnalyzeResult { success: false })
 }
 
 fn evaluate_codebase(
@@ -98,10 +95,7 @@ fn evaluate_codebase(
     }) {
         println!("{line}");
     }
-    Some(crate::analyze::options::AnalyzeResult {
-        success: false,
-        metrics: None,
-    })
+    Some(crate::analyze::options::AnalyzeResult { success: false })
 }
 
 #[allow(dead_code)]

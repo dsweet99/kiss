@@ -205,5 +205,5 @@ fn test_run_analyze_current_repo_in_process() {
 
     let result = crate::analyze::run_analyze_with_result(&opts);
 
-    assert!(result.metrics.is_some());
+    assert!(result.success);
 }

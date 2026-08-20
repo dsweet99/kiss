@@ -6,10 +6,6 @@ use crate::analyze::params::RunAnalyzeUncached;
 use crate::analyze::pipeline::run_analyze_uncached;
 use kiss::cli_output::print_no_files_message;
 
-fn empty_repo_metrics() -> kiss::GlobalMetrics {
-    kiss::GlobalMetrics::default()
-}
-
 fn focus_filter_for_opts(opts: &AnalyzeOptions<'_>) -> FocusFilter {
     build_focus_filter(
         opts.focus_paths,
@@ -28,12 +24,8 @@ fn try_cache_hit(
     if opts.show_timing || opts.suppress_final_status {
         return None;
     }
-    crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus).map(|ok| {
-        AnalyzeResult {
-            success: ok,
-            metrics: None,
-        }
-    })
+    crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus)
+        .map(|ok| AnalyzeResult { success: ok })
 }
 
 pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
@@ -46,10 +38,7 @@ pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
     let (py_files, rs_files) = gather_files(universe_root, opts.lang_filter, opts.ignore_prefixes);
     if py_files.is_empty() && rs_files.is_empty() {
         print_no_files_message(opts.lang_filter, universe_root);
-        return AnalyzeResult {
-            success: true,
-            metrics: Some(empty_repo_metrics()),
-        };
+        return AnalyzeResult { success: true };
     }
     let focus = focus_filter_for_opts(opts);
     if let Some(hit) = try_cache_hit(opts, &py_files, &rs_files, &focus) {
@@ -91,11 +80,6 @@ mod entry_touch {
             show_timing,
             suppress_final_status,
         }
-    }
-
-    #[test]
-    fn empty_repo_matches_default_metrics() {
-        assert_eq!(empty_repo_metrics(), kiss::GlobalMetrics::default());
     }
 
     #[test]

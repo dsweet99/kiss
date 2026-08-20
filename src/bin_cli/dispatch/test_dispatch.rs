@@ -90,13 +90,6 @@ fn call_handler_dispatchers(
         num_nodes: None,
         ignore: vec![],
     });
-    let _ = handlers::dispatch_shrink(options::ShrinkDispatchOptions {
-        lang: None,
-        target: Some("files=1".to_string()),
-        paths: vec![".".to_string()],
-        ignore: vec![],
-        cfg,
-    });
     let _ = handlers::dispatch_test(options::TestDispatchOptions {
         lang: None,
         invocation: crate::bin_cli::args::TestInvocation::Commit,
