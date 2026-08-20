@@ -22,13 +22,13 @@ fn witness_cli_types() {
 
 #[test]
 fn cov_subcommand_parses_as_coverage() {
-    let cli = Cli::parse_from(["kiss", "cov", ".", "-j", "7"]);
+    assert!(Cli::try_parse_from(["kiss", "cov", "."]).is_err());
+    assert!(Cli::command().find_subcommand("cov").is_none());
+    let cli = Cli::parse_from(["kiss", "__coverage", ".", "-j", "7"]);
     assert!(matches!(
         cli.command,
         Commands::Coverage { jobs: Some(7), .. }
     ));
-    let cli_alias = Cli::parse_from(["kiss", "__coverage", "."]);
-    assert!(matches!(cli_alias.command, Commands::Coverage { .. }));
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(help.contains(
         "Run covering tests, then enforce runtime line coverage and unit-test time gates"
     ));
-    assert!(help.contains("Coverage-only evaluation (prefer `kiss test` for the full path)"));
+    assert!(!help.contains("Coverage-only evaluation (prefer `kiss test` for the full path)"));
     assert!(help.contains("Semantic rename/move for Python and Rust symbols (beta)"));
     assert!(help.contains("Usage:"));
 }
@@ -183,14 +183,7 @@ fn check_and_cov_help_describe_options() {
     assert!(check.contains("Path prefix to exclude"));
     assert!(check.contains("Print analysis stage timings"));
     assert!(check.contains("Usage:"));
-    let mut command = Cli::command();
-    let cov = command
-        .find_subcommand_mut("cov")
-        .expect("cov subcommand exists")
-        .render_long_help()
-        .to_string();
-    assert!(cov.contains("Coverage-only evaluation (prefer `kiss test` for the full path)"));
-    assert!(cov.contains("Include files that currently pass the coverage gate"));
+    assert!(Cli::command().find_subcommand("cov").is_none());
 }
 
 #[test]

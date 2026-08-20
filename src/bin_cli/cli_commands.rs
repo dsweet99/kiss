@@ -160,8 +160,8 @@ pub enum Commands {
         extra: Vec<String>,
     },
     #[command(
-        name = "cov",
-        alias = "__coverage",
+        name = "__coverage",
+        hide = true,
         about = "Coverage-only evaluation (prefer `kiss test` for the full path)"
     )]
     Coverage {
