@@ -38,6 +38,16 @@ fn config_subcommand_is_removed() {
 }
 
 #[test]
+fn help_subcommand_is_removed() {
+    assert!(Cli::try_parse_from(["kiss", "help"]).is_err());
+    assert!(Cli::try_parse_from(["kiss", "help", "check"]).is_err());
+    assert!(Cli::command().find_subcommand("help").is_none());
+    let help = Cli::command().render_long_help().to_string();
+    assert!(help.contains("--help"));
+    assert!(!help.contains("Print this message or the help of the given subcommand"));
+}
+
+#[test]
 fn test_accepts_coverage_all_flag() {
     let cli = Cli::parse_from(["kiss", "test", ".", "--coverage-all"]);
     assert!(matches!(
@@ -165,6 +175,7 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(help.contains("Display all available rules and their current thresholds"));
     assert!(!help.contains("Show effective configuration (merged from all sources)"));
     assert!(Cli::command().find_subcommand("config").is_none());
+    assert!(Cli::command().find_subcommand("help").is_none());
     assert!(help.contains("Write a dependency graph"));
     assert!(!help.contains("Output markdown path"));
     assert!(help.contains("Run covering tests and enforce coverage and time gates"));

@@ -22,7 +22,8 @@ Examples:
 #[command(
     name = "kiss",
     version,
-    about = "Code-quality metrics tool for Python and Rust"
+    about = "Code-quality metrics tool for Python and Rust",
+    disable_help_subcommand = true
 )]
 #[command(after_help = AFTER_HELP)]
 pub struct Cli {
